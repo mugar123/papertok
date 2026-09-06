@@ -2,94 +2,96 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
+// Full-line comments only: a `//` inside a string would otherwise cut the line.
+const stripComments = (source) => source
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^[ \t]*\/\/.*$/gm, '');
+const read = async (path) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
 
 /**
- * SOURCE tests for the route transition.
+ * SOURCE tests for the route transition (spec:
+ * docs/superpowers/specs/2026-09-06-transicion-tarjeta-entidad-design.md).
+ *
+ * Measured before this, signed in, chunk warm: `mode="wait"` made the two
+ * pages strictly sequential — two frames with no page painted between the
+ * feed going and the entity arriving, an exit on an ease-in put there to
+ * hide that gap, ~500ms from tap to a still page. The pages coexist now: the
+ * deeper one on top, the other held opaque underneath.
  */
-test('a page arrives and leaves on opacity and a slide, with no scale to re-raster at the end', async () => {
-  const jsx = await read('./PageTransition.jsx');
-  const variants = jsx.slice(jsx.indexOf('const routeVariants = {'), jsx.indexOf('const reducedMotionVariants'));
-  assert.doesNotMatch(variants, /scale:/, 'no scale in the route variants');
-  assert.match(variants, /x: direction \* TRAVEL_PX/);
-  assert.match(variants, /x: direction \* -TRAVEL_PX \* 0\.6/);
-  assert.doesNotMatch(jsx, /transformOrigin/, 'nothing left for an origin to anchor');
-  assert.doesNotMatch(jsx, /isProject/, 'a project page rides the same transition as the rest');
+test('the two pages of one navigation coexist, and App tells them about it once', async () => {
+  const app = await read('../../App.jsx');
+  assert.match(app, /<AnimatePresence mode="sync" initial=\{false\} custom=\{pageTransitionCustom\}>/);
+  assert.doesNotMatch(app, /mode="wait"/, 'no page waits for another to finish leaving');
+  assert.match(app, /const pageTransitionCustom = usePageTransitionCustom\(\)/);
+  assert.match(app, /<PageTransitionCustomProvider value=\{pageTransitionCustom\}>/);
+  // Exactly one caller, or the direction memory goes backwards.
+  assert.equal((app.match(/usePageTransitionCustom\(\)/g) || []).length, 1);
 });
 
-/**
- * SOURCE test for the tab bar.
- *
- * The three navbar tabs are siblings, and history cannot say which way a move
- * between them goes: every tab press is a push, so the index only ever grows.
- * Measured before this, signed in: `data-nav-direction` was 1 going to
- * Following AND 1 coming back, so the page entered from the right both times
- * and returning to a tab looked like arriving somewhere new. The order of the
- * bar is what knows, and it wins over history when it has an answer.
- */
-test('a move between navbar tabs takes its direction from the bar, not from history', async () => {
+test('a page is a plain element the stylesheet moves, not a motion component', async () => {
   const jsx = await read('./PageTransition.jsx');
+  assert.match(jsx, /^import \{ usePresence, usePresenceData \} from 'framer-motion';$/m, 'framer is the bookkeeper, nothing more');
+  assert.match(jsx, /^import '\.\/PageTransition\.css';$/m);
+  assert.match(jsx, /^import \{ EXIT_SAFETY_MS, pageMotionFor \} from '\.\/pageMotion\.js';$/m);
+  for (const gone of [/\bmotion\./, /useReducedMotion/, /variants/, /\bx:/, /ease/, /TRAVEL_PX/, /duration/]) {
+    assert.doesNotMatch(jsx, gone, `${gone} left with the old transition`);
+  }
+  assert.match(jsx, /<div\s+ref=\{rootRef\}\s+className="page-transition"\s+data-nav-direction=\{direction\}\s+data-page-motion=\{motion\}\s+onAnimationEnd=\{handleAnimationEnd\}\s*>/);
+  assert.match(jsx, /const motion = present && settled \? 'rest' : pageMotionFor\(\{ direction, lateral, present \}\);/);
+});
+
+test('the leaving page reads the navigation that ejects it, and never computes one', async () => {
+  const jsx = await read('./PageTransition.jsx');
+  assert.match(jsx, /const \[present, safeToRemove\] = usePresence\(\);/);
+  assert.match(jsx, /const presenceCustom = usePresenceData\(\);/);
+  assert.match(jsx, /const providerCustom = usePageTransitionCustomValue\(\);/);
+  assert.match(jsx, /const \{ direction, lateral \} = presenceCustom \?\? providerCustom;/);
+  assert.doesNotMatch(jsx, /usePageTransitionCustom\(\)/, 'the component never computes the direction itself');
+  // A component file that also exports a function breaks Fast Refresh.
+  assert.doesNotMatch(jsx, /export function/, 'PageTransition.jsx exports only its component');
+});
+
+test('a move between navbar tabs takes its direction from the bar, not from history', async () => {
   const hook = await read('../../hooks/usePageTransitionCustom.js');
   assert.match(hook, /import \{ lateralTabDirection \} from '\.\.\/utils\/tabDirection\.js';/);
   // The lateral answer wins; history is the fallback, not the other way round.
   assert.match(hook, /const lateral = lateralTabDirection\(useLocation\(\)\.pathname\);/);
   assert.match(hook, /return \{ direction: lateral \?\? historyDirection, lateral: lateral !== null \};/);
-  // A component file that also exports a function breaks Fast Refresh for the
-  // whole module, which is why the hook does not live beside the component.
-  assert.doesNotMatch(jsx, /export function/, 'PageTransition.jsx exports only its component');
 });
 
-/**
- * SOURCE test for the page on its way OUT.
- *
- * `AnimatePresence` keeps the previous `<Routes>` element itself while it
- * exits — the same React element, never re-rendered — so the outgoing
- * `PageTransition` cannot learn that a navigation happened and resolves its
- * `exit` against the `custom` it mounted with. Measured before `App` passed
- * one down: the first tab switch after arriving at the bar left on the 200ms
- * hierarchy clock and in the direction it had arrived with, while the incoming
- * page correctly used the lateral one — the two halves of one handover
- * disagreeing. Every switch after that was right, which is exactly what makes
- * it easy to miss.
- */
-test('the leaving page is told about the navigation it is leaving for', async () => {
-  const transition = await read('./PageTransition.jsx');
-  // The component READS the answer; it must never compute one. `<Routes
-  // location={…}>` gives its subtree a location context of its own, so the
-  // outgoing page — kept mounted by AnimatePresence — sees the tab it is
-  // LEAVING. Measured with the component calling the hook itself: the leaving
-  // page asked about "/" while the memory had already moved to "/following",
-  // got -1, and dragged the shared memory back with it.
-  assert.match(transition, /const custom = usePageTransitionCustomValue\(\);/);
-  assert.match(transition, /custom=\{custom\}/);
-  assert.doesNotMatch(transition, /usePageTransitionCustom\(\)/, 'the component never computes the direction itself');
-  const app = await read('../../App.jsx');
-  assert.match(app, /const pageTransitionCustom = usePageTransitionCustom\(\)/);
-  assert.match(app, /<PageTransitionCustomProvider value=\{pageTransitionCustom\}>/);
-  assert.match(app, /<AnimatePresence mode="wait" initial=\{false\} custom=\{pageTransitionCustom\}>/);
-  // Exactly one caller, or the memory goes backwards.
-  assert.equal((app.match(/usePageTransitionCustom\(\)/g) || []).length, 1);
-});
-
-/**
- * A step sideways is shorter than a step down. Measured before this: the
- * outgoing page was gone at 250ms and the incoming one did not reach full
- * opacity until ~549ms, with `mode="wait"` holding them strictly sequential.
- */
-test('a lateral move is quicker than a descent, on the same curves', async () => {
+test('the leaving page hands itself back when its own animation ends, or when the clock runs out', async () => {
   const jsx = await read('./PageTransition.jsx');
-  const enter = Number(jsx.match(/const ENTER_MS = ([\d.]+);/)?.[1]);
-  const exit = Number(jsx.match(/const EXIT_MS = ([\d.]+);/)?.[1]);
-  const lateralEnter = Number(jsx.match(/const LATERAL_ENTER_MS = ([\d.]+);/)?.[1]);
-  const lateralExit = Number(jsx.match(/const LATERAL_EXIT_MS = ([\d.]+);/)?.[1]);
-  for (const [name, value] of Object.entries({ enter, exit, lateralEnter, lateralExit })) {
-    assert.ok(Number.isFinite(value), `${name} is declared as a number`);
-  }
-  assert.ok(lateralEnter < enter, 'a tab arrives quicker than a page entered from a card');
-  assert.ok(lateralExit < exit, 'and it leaves quicker too');
-  // Under half of what the pair used to cost end to end.
-  assert.ok(lateralEnter + lateralExit <= 0.36, 'the pair stays inside a third of a second');
-  const variants = jsx.slice(jsx.indexOf('const routeVariants = {'), jsx.indexOf('const reducedMotionVariants'));
-  assert.match(variants, /duration: lateral \? LATERAL_ENTER_MS : ENTER_MS, ease: EASE \}/);
-  assert.match(variants, /duration: lateral \? LATERAL_EXIT_MS : EXIT_MS, ease: EASE_LEAVING \}/);
+  const handler = jsx.match(/const handleAnimationEnd = useCallback\(\(event\) => \{([\s\S]*?)\n {2}\}, \[present, safeToRemove\]\);/);
+  assert.ok(handler, 'one animationend handler, keyed on presence');
+  assert.match(handler[1], /if \(event\.target !== rootRef\.current\) return;/, 'the cards\' and the hero\'s animationend bubble here too');
+  assert.match(handler[1], /if \(present\) setSettled\(true\);/);
+  assert.match(handler[1], /else if \(safeToRemove\) safeToRemove\(\);/);
+  const clock = jsx.match(/useEffect\(\(\) => \{\s*if \(present \|\| !safeToRemove\) return undefined;([\s\S]*?)\}, \[present, safeToRemove\]\);/);
+  assert.ok(clock, 'the safety clock is keyed on presence');
+  assert.match(clock[1], /const timer = window\.setTimeout\(safeToRemove, EXIT_SAFETY_MS\);/);
+  assert.match(clock[1], /return \(\) => window\.clearTimeout\(timer\);/);
+});
+
+test('the leaving page is lifted by the scroll it had, tracked only while present', async () => {
+  const jsx = await read('./PageTransition.jsx');
+  const tracker = jsx.match(/useLayoutEffect\(\(\) => \{\s*if \(!present\) return undefined;([\s\S]*?)\}, \[present\]\);/);
+  assert.ok(tracker, 'the scroll listener lives and dies with presence, in the layout phase');
+  assert.match(tracker[1], /window\.addEventListener\('scroll', record, \{ passive: true \}\);/);
+  assert.match(tracker[1], /return \(\) => window\.removeEventListener\('scroll', record\);/);
+  assert.match(jsx, /root\.style\.top = present \? '' : `\$\{-scrollYRef\.current\}px`;/);
+});
+
+test('a new page starts at the top, instantly, and only when it is a step somewhere', async () => {
+  const jsx = await read('./PageTransition.jsx');
+  assert.match(jsx, /const arrivalDirection = useRef\(direction\);/);
+  assert.match(jsx, /useLayoutEffect\(\(\) => \{\s*if \(arrivalDirection\.current !== 0\) window\.scrollTo\(\{ top: 0, behavior: 'instant' \}\);\s*\}, \[\]\);/);
+});
+
+test('a cold chunk suspends inside the page arriving', async () => {
+  const jsx = await read('./PageTransition.jsx');
+  assert.match(jsx, /^import RouteFallback from '\.\/RouteFallback\.jsx';$/m);
+  assert.match(jsx, /<Suspense fallback=\{<RouteFallback \/>\}>\{children\}<\/Suspense>/);
+  const app = await read('../../App.jsx');
+  // The outer boundary stays as the net for anything that suspends outside a page.
+  assert.ok((app.match(/<Suspense fallback=\{<RouteFallback \/>\}>/g) || []).length >= 1);
 });

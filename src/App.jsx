@@ -28,15 +28,14 @@ import './App.css'
 // is its own chunk: the 2 MB single bundle was the measured cost of every
 // screen riding in the boot graph (25 static screens, 0.9–1.3 s of parse).
 //
-// React Router v7 navigations run inside startTransition, but that does not
-// keep the current screen on while a chunk downloads here: `AnimatePresence
-// mode="wait"` mounts the incoming screen from its own exit-complete callback,
-// outside the transition, so a screen that suspends there commits the
-// RouteFallback above the presence wrapper. The outgoing screen has finished
-// leaving by then (measured: opacity 0 before the fallback ever commits), so
-// nothing is cut; what a cold chunk costs is a gap between exit and entrance,
-// kept invisible under 320 ms by the fallback's own delay. The screens are
-// preloadable (`lazyWithPreload`) so the ones prefetched below never suspend at all.
+// The router commits a navigation synchronously (`useTransitions={false}` in
+// main.jsx), and `AnimatePresence mode="sync"` mounts the incoming screen in
+// that same commit, beside the outgoing one. A screen whose chunk is cold
+// suspends inside its own PageTransition's Suspense boundary, so the
+// RouteFallback (delayed 320 ms by its stylesheet) is drawn within the page
+// arriving while the page leaving stays on screen, held opaque underneath.
+// The screens are preloadable (`lazyWithPreload`) so the ones prefetched
+// below never suspend at all.
 
 // The sign-in page rides in that same list rather than in the boot graph, as it
 // used to: a session that already exists never renders it, and a guest reaches
@@ -206,13 +205,15 @@ function AppContent() {
           A div, not <main>: several routes render their own <main> inside. */}
       <div id="main-content" tabIndex={-1}>
       <Suspense fallback={<RouteFallback />}>
-      {/* `custom` so the page on its way OUT resolves its exit against this
-          navigation rather than the one that mounted it: AnimatePresence keeps
-          the previous <Routes> element itself, so the outgoing PageTransition
-          never re-renders and would otherwise leave in the direction, and on
-          the clock, it arrived with. */}
+      {/* `mode="sync"`: the page leaving and the page arriving share the
+          screen, the deeper one on top (PageTransition.css). `custom` so the
+          page on its way OUT reads the navigation that ejects it
+          (usePresenceData) rather than the one that mounted it: AnimatePresence
+          keeps the previous <Routes> element itself. `initial={false}` keeps
+          the motion elements inside the first page from replaying their
+          `initial` on the app's first render. */}
       <PageTransitionCustomProvider value={pageTransitionCustom}>
-      <AnimatePresence mode="wait" initial={false} custom={pageTransitionCustom}>
+      <AnimatePresence mode="sync" initial={false} custom={pageTransitionCustom}>
         <Routes location={location} key={location.pathname}>
           <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
           <Route
