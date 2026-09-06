@@ -33,9 +33,12 @@ import './App.css'
 // that same commit, beside the outgoing one. A screen whose chunk is cold
 // suspends inside its own PageTransition's Suspense boundary, so the
 // RouteFallback (delayed 320 ms by its stylesheet) is drawn within the page
-// arriving while the page leaving stays on screen, held opaque underneath.
-// The screens are preloadable (`lazyWithPreload`) so the ones prefetched
-// below never suspend at all.
+// arriving. The page leaving does not wait for it: it is held for its own
+// 220 ms and then hands itself back, so a cold chunk can leave up to ~100 ms
+// of blank between the held page going and the fallback revealing — still
+// ~200 ms sooner than the fallback ever appeared under `mode="wait"`. The
+// screens are preloadable (`lazyWithPreload`) so the ones prefetched below
+// never suspend at all.
 
 // The sign-in page rides in that same list rather than in the boot graph, as it
 // used to: a session that already exists never renders it, and a guest reaches
