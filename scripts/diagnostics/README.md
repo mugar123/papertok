@@ -168,3 +168,33 @@ started to leave 400 ms after touchend. Needs `IS_DEMO = true` flipped locally
 "Allow remote automation" once, then `ORIGIN=http://localhost:5174 node
 scripts/diagnostics/safari-tabs-probe.mjs`. It seeds the demo session through
 `localStorage` on a first load and reads the same event log.
+
+## `page-transition-frames.mjs` — a route transition, frame by frame (2026-09-06)
+
+The before/after of `docs/superpowers/specs/2026-09-06-transicion-tarjeta-entidad-design.md`:
+the feed's card giving way to an entity page, the way back, a tab to the next.
+Every compositor frame of the second around ONE navigation as a JPEG plus a
+contact sheet, and a `requestAnimationFrame` sampler installed in the page the
+same tick the navigation fires, which notes per frame whether `.navbar` exists
+and each route page's `data-page-motion`, opacity, transform and position.
+
+```bash
+node scripts/diagnostics/page-transition-frames.mjs '.pc-author-link' author-desktop demo
+node scripts/diagnostics/page-transition-frames.mjs '.pc-author-link' author-mobile demo mobile
+node scripts/diagnostics/page-transition-frames.mjs '.pc-topic-link' topic-desktop demo
+node scripts/diagnostics/page-transition-frames.mjs '.pc-author-link' back-desktop demo back
+node scripts/diagnostics/page-transition-frames.mjs '.pc-author-link' back-scrolled-desktop demo back scroll=600
+node scripts/diagnostics/page-transition-frames.mjs 'a[href="#/research"]' tab-desktop demo
+```
+
+The summary line reads `sampler: 71 frames; bar in 71/71; void 0 (-); overlap 14;
+settled at 236 ms`: frames the page produced with the bar mounted, frames with
+no page at ≥ 0.98 opacity (the old `mode="wait"` handover had two), frames with
+two route pages on screen, and the first frame after which one page stands
+alone at rest. `back` clicks the selector first, waits 1.8 s, and records
+`history.back()`; `scroll=<px>` with it scrolls the page it opened first, so the
+leaving page's lift by its own scroll (`top` in the samples) is on record. `demo`
+needs `IS_DEMO = true` flipped locally (never
+committed) and a server on a Worker-allowed origin (5173/5174/5175;
+`ORIGIN=http://localhost:5175` to pick another). `OUT=<dir>` keeps the frames,
+samples and sheets out of the tree.
