@@ -14,8 +14,8 @@ import {
   mergeShowcaseCards,
   needsVisibilityChoice,
   profileIsPublic,
+  readConfirmedOwnUserProfile,
   readOwnLists,
-  readOwnUserProfile,
   readProfileLists,
   readUserProfileByHandle,
 } from '../../services/userProfileService.js';
@@ -36,6 +36,7 @@ import { resolveProfileView } from '../../utils/profileAccess.js';
 import { resolveListColor } from '../../utils/listColors.js';
 import { areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
 import { resolvedPaperTitle } from '../../utils/paperDisplayTitle.js';
+import { isTransientReadError, patientRead, slowNoticeStatus } from '../../utils/boundedRead.js';
 import {
   createPendingIdRequests,
   requestMissingRecords,
@@ -98,6 +99,12 @@ const PROFILE_TAB_ROW_LIMIT = 60;
 // the moment the backend answers again.
 const LIKED_RETRY_BASE_MS = 600;
 const LIKED_RETRY_MAX_MS = 60_000;
+// The statuses under which the page is still waiting for its own profile and
+// may move between waits ('loading' is the skeleton; 'slow' and 'offline' are
+// the state page with a read still running behind it). A page already showing
+// a profile — seeded from the session cache or the device — is 'ready', and a
+// slow revalidation behind it must never pull it back into a wait.
+const WAITING_STATUSES = ['loading', 'slow', 'offline'];
 
 function authorLine(authors) {
   const names = (Array.isArray(authors) ? authors : [])
@@ -378,35 +385,99 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
 
   useEffect(() => {
     let active = true;
-    const request = selfMode ? readOwnUserProfile() : readUserProfileByHandle(handle);
-    request
-      .then(result => {
-        if (profileCacheKey) {
+    // A read that fails for good — permission, demo mode, a thrown TypeError —
+    // is reported only when there is nothing to show: a failed revalidation
+    // must not replace a perfectly good cached view with an error page; the
+    // page keeps what it is showing and the next mount tries again.
+    const reportFailure = (error) => {
+      if (!active) return;
+      if (profileCacheKey && ownProfileCache.get(profileCacheKey)) return;
+      setStatus(error?.code === 'USER_PROFILES_UNSUPPORTED_IN_DEMO' ? 'unsupported' : 'error');
+    };
+
+    if (!selfMode) {
+      readUserProfileByHandle(handle)
+        .then(result => {
           // A visitor's not-found is not cached: the profile could be created
           // a moment later, and 'not-found' must stay a fresh answer.
-          if (selfMode) {
-            rememberOwnProfile(user?.uid, result);
-            if (result) saveStoredProfile(user?.uid, result);
+          if (profileCacheKey) {
+            if (result) ownProfileCache.set(profileCacheKey, { profile: result });
+            else ownProfileCache.delete(profileCacheKey);
           }
-          else if (result) ownProfileCache.set(profileCacheKey, { profile: result });
-          else ownProfileCache.delete(profileCacheKey);
-        }
+          if (!active) return;
+          setProfile(result);
+          setStatus(result ? 'ready' : 'not-found');
+        })
+        .catch(error => {
+          console.error('Error loading public profile:', error);
+          reportFailure(error);
+        });
+      return () => { active = false; };
+    }
+
+    // The owner's read gets patience rather than a guillotine: a slow answer
+    // is announced as slow, retried, and accepted whenever it lands, and
+    // "could not be loaded" is reserved for a read that actually failed.
+    //
+    // And the patience only means something because the read is the confirmed
+    // one. `readOwnUserProfile` RESOLVES `null` for a document the local
+    // cache merely failed to find — half a millisecond, no rejection, on a
+    // channel that never opened — and a success is not something
+    // `patientRead` can retry. This page then wrote that non-answer into
+    // `ownProfileCache`, which is SHARED: the comments sheet seeds its footer
+    // straight from that entry, so one visit here with a stalled channel made
+    // the sheet tell an account with a public profile to create one, while
+    // this page settled on its "no profile yet" owner mode. An unconfirmed
+    // absence now rejects as `unavailable`, a transient error: the loop keeps
+    // asking, and only a server answer — a profile, or a confirmed `null` —
+    // settles anything or reaches the cache.
+    const controller = new AbortController();
+    const uid = user?.uid;
+    const startedAt = Date.now();
+    const applyOwnProfile = (ownProfile) => {
+      // Authoritative by construction, which is what earns the write-through.
+      rememberOwnProfile(uid, ownProfile);
+      if (uid && ownProfile) saveStoredProfile(uid, ownProfile);
+      if (!active) return;
+      setProfile(ownProfile);
+      // Having no public profile yet is a normal state of one's own page,
+      // not a missing page.
+      setStatus('ready');
+    };
+    patientRead(() => readConfirmedOwnUserProfile(), {
+      attempts: 2,
+      label: 'own profile',
+      signal: controller.signal,
+      // `onSlow` fires at every intermediate timeout AND at every transient
+      // rejection, and an unconfirmed absence is the instant kind: without
+      // the gate the skeleton became "this is taking longer than usual"
+      // inside the first frame, before anything had taken long. Being
+      // offline is exempt, which is why the gate decides that too.
+      onSlow: (attemptNumber, info) => {
         if (!active) return;
-        setProfile(result);
-        // Having no public profile yet is a normal state of one's own page,
-        // not a missing page.
-        setStatus(result || selfMode ? 'ready' : 'not-found');
-      })
+        const waited = slowNoticeStatus(Date.now() - startedAt, info);
+        if (!waited) return;
+        setStatus(current => (WAITING_STATUSES.includes(current) ? waited : current));
+      },
+      onLateResult: applyOwnProfile,
+    })
+      .then(applyOwnProfile)
       .catch(error => {
-        console.error('Error loading public profile:', error);
-        if (!active) return;
-        // A failed revalidation must not replace a perfectly good cached view
-        // with an error page; the page keeps what it is showing and the next
-        // mount tries again.
-        if (profileCacheKey && ownProfileCache.get(profileCacheKey)) return;
-        setStatus(error?.code === 'USER_PROFILES_UNSUPPORTED_IN_DEMO' ? 'unsupported' : 'error');
+        if (isTransientReadError(error)) {
+          // The budget is spent, the loop is not: the page is already on
+          // 'slow' or 'offline' from `onSlow`, and `onLateResult` stays armed
+          // to seat the answer whenever it comes.
+          console.warn('The own profile did not answer in time', error);
+          return;
+        }
+        console.error('Error loading own profile:', error);
+        reportFailure(error);
       });
-    return () => { active = false; };
+    return () => {
+      active = false;
+      // The retry loop outlives the promise on purpose; leaving must end it.
+      controller.abort();
+    };
   }, [handle, selfMode, reloadToken, profileCacheKey, user?.uid]);
 
   // The showcase read, for the visitor tab only: the owner tab renders the
@@ -747,6 +818,9 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     notFoundBody: 'The handle may have changed or the link may be incomplete.',
     errorTitle: 'The profile could not be loaded',
     errorBody: 'Check your connection and try again.',
+    slowTitle: 'Your profile is taking longer than usual',
+    offlineTitle: 'It looks like you are offline',
+    waitingBody: 'Still trying. Nothing has changed.',
     unsupportedTitle: 'Profiles are unavailable in demo mode',
     unsupportedBody: 'Open this link in the full PaperTok app.',
     retry: 'Try again',
@@ -797,6 +871,9 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     notFoundBody: 'Puede que el handle haya cambiado o que el enlace esté incompleto.',
     errorTitle: 'No se pudo cargar el perfil',
     errorBody: 'Comprueba tu conexión e inténtalo de nuevo.',
+    slowTitle: 'Tu perfil está tardando más de lo normal',
+    offlineTitle: 'Parece que no hay conexión',
+    waitingBody: 'Seguimos intentándolo. No ha cambiado nada.',
     unsupportedTitle: 'Los perfiles no están disponibles en el modo demo',
     unsupportedBody: 'Abre este enlace en la aplicación completa de PaperTok.',
     retry: 'Reintentar',
@@ -883,20 +960,30 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     const state = {
       'not-found': { title: copy.notFoundTitle, body: copy.notFoundBody },
       error: { title: copy.errorTitle, body: copy.errorBody },
+      slow: { title: copy.slowTitle, body: copy.waitingBody },
+      offline: { title: copy.offlineTitle, body: copy.waitingBody },
       unsupported: { title: copy.unsupportedTitle, body: copy.unsupportedBody },
     }[status];
+    // 'slow' and 'offline' are waits with a read still running behind them;
+    // only 'error' is the page giving up. Try again is offered in all three,
+    // because pressing it is never wrong, and it brings the skeleton back
+    // before the fresh read starts.
+    const waiting = status === 'slow' || status === 'offline';
 
     return (
-      <main className={`${pageClass} public-profile-page--state`}>
+      <main className={`${pageClass} public-profile-page--state`} aria-busy={waiting}>
         <div className="public-profile-shell">
           <p className="profile-kicker">{copy.brand}</p>
           <h1>{state.title}</h1>
           {state.body && <p className="public-profile-state-body">{state.body}</p>}
-          {status === 'error' && (
+          {(waiting || status === 'error') && (
             <button
               type="button"
               className="public-profile-retry"
-              onClick={() => setReloadToken(token => token + 1)}
+              onClick={() => {
+                setStatus('loading');
+                setReloadToken(token => token + 1);
+              }}
             >
               <RefreshCw size={16} /> {copy.retry}
             </button>
