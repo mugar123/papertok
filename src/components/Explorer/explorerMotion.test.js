@@ -238,3 +238,20 @@ test('the experience panel arrives open only when it is short', async () => {
   assert.match(jsx, /const EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS = 4;/);
   assert.match(jsx, /setOrcidInfo\(record\);\s*setIsExperienceOpen\(\(record\?\.employments\?\.length \?\? 0\) <= EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS\);/);
 });
+
+/**
+ * The block's grey rows exist to hold the box at the paragraph's height until
+ * the paragraph is known. A topic's local tagline ("From subatomic particles
+ * to distant galaxies", one line) and an OpenAlex topic's own description used
+ * to skip them — painted as prose while Wikipedia was still being asked — so
+ * the box took two heights in a row and the hero settled twice. Measured from
+ * cold at 1280×900 with `explorer-hero-frames.mjs`: on T11090 the body went
+ * 109 → 170px when the OpenAlex description landed, held still for 450ms, then
+ * 170 → 243px when Wikipedia did; on hep-ph, born with the tagline at 58px,
+ * one 97px settle the moment Wikipedia answered. Held on the rows, the box
+ * moves once (146 → 155px), and the local description is what a MISS shows.
+ */
+test('the Wikipedia block waits on its rows; the local description is the fallback for a miss, not a first draft', async () => {
+  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  assert.match(jsx, /const wikiDescription = isWikiRequestPending\s*\?\s*''\s*:\s*\(visibleWikiInfo\?\.extract \|\| topicFallbackDescription\);/);
+});

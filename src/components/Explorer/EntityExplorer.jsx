@@ -445,7 +445,18 @@ export default function EntityExplorer({
     ? localizedTopicEntity?.description
       || (typeof entity?.description === 'string' ? entity.description : '')
     : '';
-  const wikiDescription = visibleWikiInfo?.extract || topicFallbackDescription;
+  // The local description — a category's tagline, an OpenAlex topic's own
+  // sentence — is what the block shows once Wikipedia has MISSED, not a first
+  // draft to show while it is being asked. Painted as prose with the request
+  // still in flight, the box took two heights in a row and the hero settled
+  // twice (measured from cold at 1280×900 with `explorer-hero-frames.mjs`: on
+  // T11090 the body went 109 → 170px when the OpenAlex description landed,
+  // held still for 450ms, then 170 → 243px when Wikipedia did; on hep-ph,
+  // born with the tagline at 58px, one 97px settle the moment the paragraph
+  // came). Held on the grey rows until the request settles, the box moves
+  // once, and by 9px (146 → 155): the rows are measured to the paragraph's
+  // own line box for exactly this.
+  const wikiDescription = isWikiRequestPending ? '' : (visibleWikiInfo?.extract || topicFallbackDescription);
   const hasLoadedWikiImage = Boolean(
     visibleWikiInfo?.thumbnail && loadedWikiImageUrl === visibleWikiInfo.thumbnail,
   );
@@ -2056,8 +2067,8 @@ export default function EntityExplorer({
                   }}
               >
                 <div
-                  className={`ehc-wiki ${isWikiDescriptionExpanded ? 'is-expanded' : ''} ${isWikiRequestPending && !wikiDescription ? 'is-loading' : ''}`}
-                  aria-busy={isWikiRequestPending && !wikiDescription}
+                  className={`ehc-wiki ${isWikiDescriptionExpanded ? 'is-expanded' : ''} ${isWikiRequestPending ? 'is-loading' : ''}`}
+                  aria-busy={isWikiRequestPending}
                 >
                 {/* The shapes hand over to the prose in ONE React commit, and
                     the fade is the paragraph's own CSS (`wikiProseIn`), not a
@@ -2073,7 +2084,7 @@ export default function EntityExplorer({
                     it. A cross-fade is not worth a commit boundary here: the
                     height animation IS the handover, and the words only need to
                     arrive rather than appear. */}
-                {isWikiRequestPending && !wikiDescription ? (
+                {isWikiRequestPending ? (
                   <div className="ehc-wiki-skeleton" role="status" aria-label={isEnglish ? 'Loading topic details' : 'Cargando información del tema'}>
                     {/* Three lines because the collapsed paragraph is clamped
                         to exactly three, then the show-more toggle, then the
