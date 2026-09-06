@@ -939,15 +939,20 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
             The header above stays a handle. */}
         <DrawerBody className="comments-sheet-frame">
         <div className="comments-sheet-body">
-          {/* The skeleton and the empty verdict cross-fade rather than swap.
-              React used to replace one with the other in a single frame:
-              three grey lines, then a centred message, with nothing between.
-              `popLayout` takes the leaving skeleton out of flow, so the
-              message has the body to itself in the same frame and the lines
-              fade over it, settling 6px as they go, while it rises into
-              place. `initial={false}`: a thread served from the cache opens
-              straight on its state, and an entrance there would be motion
-              for nothing. */}
+          {/* The three things the body can be — the skeleton, the empty
+              verdict, the thread — are one presence, so every change between
+              them is a handover instead of a cut. React used to replace one
+              with the other in a single frame: three grey lines, then a
+              centred message, with nothing between. `popLayout` takes the
+              leaving one out of flow, so the arriving one has the body to
+              itself in the same frame and the other fades over it.
+
+              The thread was the odd one out until it joined: it appeared and
+              vanished on its own, which is why deleting the last comment of a
+              paper used to erase it in a frame — the row never got to play
+              the exit every other row plays. `initial={false}`: a thread
+              served from the cache opens straight on its state, and an
+              entrance there would be motion for nothing. */}
           <AnimatePresence mode="popLayout" initial={false}>
           {status === 'loading' && (
             <motion.div
@@ -990,6 +995,123 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
               <p>{text(COPY.empty)}</p>
             </motion.div>
           )}
+            {status === 'ready' && thread.length > 0 && (
+              /* A leaving list is rendered from the children it had, not the
+                 ones it has — so when the last comment goes, this element
+                 leaves still carrying that row, and its exit IS the row's:
+                 the same slide and the same 180 ms, over an empty verdict
+                 already rising underneath it. No entrance of its own, though;
+                 the rows below own the reveal. */
+              <motion.ul
+                key="thread"
+                className="comments-list"
+                exit={prefersReducedMotion
+                  ? { opacity: 0, transition: { duration: 0.1 } }
+                  : { opacity: 0, x: -16, transition: { duration: 0.18, ease: LEAVE } }}
+              >
+                {/* `popLayout` takes the leaving row out of flow, so the rows
+                    under it can start closing the gap in the same frame instead
+                    of waiting for it to finish; `layout` is what makes them
+                    travel rather than jump. Deleting a comment used to teleport
+                    the rest of the thread upward by the height of the row.
+
+                    Arriving is the other half, and it is two different events:
+                    the thread arriving (every row is new, so they queue behind
+                    the skeleton they are replacing) and one row arriving into a
+                    thread already on screen (nothing to queue behind). A row on
+                    the sheet's first frame is neither — see `paintedBody`. */}
+                <AnimatePresence mode="popLayout">
+                {thread.map((entry, index) => (
+                  <motion.li
+                    key={entry.id}
+                    className="comments-list-item"
+                    layout={prefersReducedMotion ? false : 'position'}
+                    initial={rowArrives ? { opacity: 0, y: 6 } : false}
+                    animate={{
+                      opacity: 1,
+                      y: 0,
+                      transition: rowArrives
+                        ? {
+                          duration: 0.2,
+                          ease: [0.23, 1, 0.32, 1],
+                          delay: threadArrives ? revealDelay(index) : 0,
+                        }
+                        : { duration: 0 },
+                    }}
+                    /* Out to the side, not down: a row that leaves along the
+                       axis the list scrolls on is indistinguishable from the
+                       list scrolling. */
+                    exit={prefersReducedMotion
+                      ? { opacity: 0, transition: { duration: 0.1 } }
+                      : { opacity: 0, x: -16, transition: { duration: 0.18, ease: LEAVE } }}
+                    transition={{ duration: 0.24, ease: RESIZE }}
+                  >
+                    <CommentRow
+                      comment={entry}
+                      isReply={false}
+                      viewerUid={viewerUid}
+                      canInteract={canInteract}
+                      busy={busy}
+                      onReply={startReply}
+                      onEdit={startEdit}
+                      onDelete={remove}
+                      onReport={report}
+                      isEnglish={isEnglish}
+                      text={text}
+                      onNavigate={requestClose}
+                    />
+                    {entry.replies.length > 0 && (
+                      <ul className="comments-replies">
+                        <AnimatePresence mode="popLayout">
+                        {entry.replies.map(reply => (
+                          <motion.li
+                            key={reply.id}
+                            layout={prefersReducedMotion ? false : 'position'}
+                            initial={rowArrives ? { opacity: 0, y: 4 } : false}
+                            animate={{
+                              opacity: 1,
+                              y: 0,
+                              /* A reply comes in with its parent, so it takes
+                                 its parent's delay exactly — head start and
+                                 stagger slot both. The pair is one entry of the
+                                 index, not two. */
+                              transition: rowArrives
+                                ? {
+                                  duration: 0.18,
+                                  ease: [0.23, 1, 0.32, 1],
+                                  delay: threadArrives ? revealDelay(index) : 0,
+                                }
+                                : { duration: 0 },
+                            }}
+                            exit={prefersReducedMotion
+                              ? { opacity: 0, transition: { duration: 0.1 } }
+                              : { opacity: 0, x: -12, transition: { duration: 0.16, ease: LEAVE } }}
+                            transition={{ duration: 0.24, ease: RESIZE }}
+                          >
+                            <CommentRow
+                              comment={reply}
+                              isReply
+                              viewerUid={viewerUid}
+                              canInteract={canInteract}
+                              busy={busy}
+                              onReply={startReply}
+                              onEdit={startEdit}
+                              onDelete={remove}
+                              onReport={report}
+                              isEnglish={isEnglish}
+                              text={text}
+                              onNavigate={requestClose}
+                            />
+                          </motion.li>
+                        ))}
+                        </AnimatePresence>
+                      </ul>
+                    )}
+                  </motion.li>
+                ))}
+                </AnimatePresence>
+              </motion.ul>
+            )}
           </AnimatePresence>
           {WAITING_COPY[status] && (
             // 'slow' and 'offline' are still waits — they keep `aria-busy` and
@@ -1008,111 +1130,6 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                 {text(COPY.retry)}
               </Button>
             </div>
-          )}
-          {status === 'ready' && thread.length > 0 && (
-            <ul className="comments-list">
-              {/* `popLayout` takes the leaving row out of flow, so the rows
-                  under it can start closing the gap in the same frame instead
-                  of waiting for it to finish; `layout` is what makes them
-                  travel rather than jump. Deleting a comment used to teleport
-                  the rest of the thread upward by the height of the row.
-
-                  Arriving is the other half, and it is two different events:
-                  the thread arriving (every row is new, so they queue behind
-                  the skeleton they are replacing) and one row arriving into a
-                  thread already on screen (nothing to queue behind). A row on
-                  the sheet's first frame is neither — see `paintedBody`. */}
-              <AnimatePresence mode="popLayout">
-              {thread.map((entry, index) => (
-                <motion.li
-                  key={entry.id}
-                  className="comments-list-item"
-                  layout={prefersReducedMotion ? false : 'position'}
-                  initial={rowArrives ? { opacity: 0, y: 6 } : false}
-                  animate={{
-                    opacity: 1,
-                    y: 0,
-                    transition: rowArrives
-                      ? {
-                        duration: 0.2,
-                        ease: [0.23, 1, 0.32, 1],
-                        delay: threadArrives ? revealDelay(index) : 0,
-                      }
-                      : { duration: 0 },
-                  }}
-                  /* Out to the side, not down: a row that leaves along the
-                     axis the list scrolls on is indistinguishable from the
-                     list scrolling. */
-                  exit={prefersReducedMotion
-                    ? { opacity: 0, transition: { duration: 0.1 } }
-                    : { opacity: 0, x: -16, transition: { duration: 0.18, ease: LEAVE } }}
-                  transition={{ duration: 0.24, ease: RESIZE }}
-                >
-                  <CommentRow
-                    comment={entry}
-                    isReply={false}
-                    viewerUid={viewerUid}
-                    canInteract={canInteract}
-                    busy={busy}
-                    onReply={startReply}
-                    onEdit={startEdit}
-                    onDelete={remove}
-                    onReport={report}
-                    isEnglish={isEnglish}
-                    text={text}
-                    onNavigate={requestClose}
-                  />
-                  {entry.replies.length > 0 && (
-                    <ul className="comments-replies">
-                      <AnimatePresence mode="popLayout">
-                      {entry.replies.map(reply => (
-                        <motion.li
-                          key={reply.id}
-                          layout={prefersReducedMotion ? false : 'position'}
-                          initial={rowArrives ? { opacity: 0, y: 4 } : false}
-                          animate={{
-                            opacity: 1,
-                            y: 0,
-                            /* A reply comes in with its parent, so it takes
-                               its parent's delay exactly — head start and
-                               stagger slot both. The pair is one entry of the
-                               index, not two. */
-                            transition: rowArrives
-                              ? {
-                                duration: 0.18,
-                                ease: [0.23, 1, 0.32, 1],
-                                delay: threadArrives ? revealDelay(index) : 0,
-                              }
-                              : { duration: 0 },
-                          }}
-                          exit={prefersReducedMotion
-                            ? { opacity: 0, transition: { duration: 0.1 } }
-                            : { opacity: 0, x: -12, transition: { duration: 0.16, ease: LEAVE } }}
-                          transition={{ duration: 0.24, ease: RESIZE }}
-                        >
-                          <CommentRow
-                            comment={reply}
-                            isReply
-                            viewerUid={viewerUid}
-                            canInteract={canInteract}
-                            busy={busy}
-                            onReply={startReply}
-                            onEdit={startEdit}
-                            onDelete={remove}
-                            onReport={report}
-                            isEnglish={isEnglish}
-                            text={text}
-                            onNavigate={requestClose}
-                          />
-                        </motion.li>
-                      ))}
-                      </AnimatePresence>
-                    </ul>
-                  )}
-                </motion.li>
-              ))}
-              </AnimatePresence>
-            </ul>
           )}
           {status === 'ready' && hasMore && (
             <Button

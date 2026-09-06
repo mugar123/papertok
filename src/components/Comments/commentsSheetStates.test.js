@@ -11,7 +11,12 @@ const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
  */
 test('the skeleton and the empty state cross-fade in place', async () => {
   const jsx = await read('./CommentsSheet.jsx');
-  const presence = jsx.match(/<AnimatePresence mode="popLayout" initial=\{false\}>[\s\S]*?<\/AnimatePresence>/);
+  // Sliced, not matched: the thread inside this presence brings a nested
+  // `</AnimatePresence>` of its own, and a lazy regex would stop at it.
+  const opened = jsx.indexOf('<AnimatePresence mode="popLayout" initial={false}>');
+  const after = jsx.indexOf('{WAITING_COPY[status] && (');
+  assert.ok(opened !== -1 && after > opened, 'the body presence is where it was');
+  const presence = [jsx.slice(opened, after)];
   assert.ok(presence, 'one presence holds the skeleton and the empty state');
   assert.match(presence[0], /status === 'loading' && \(\s*<motion\.div\s+key="loading"\s+className="comments-sheet-loading"/);
   assert.match(presence[0], /status === 'ready' && thread\.length === 0 && \(\s*<motion\.div\s+key="empty"\s+className="comments-sheet-state"/);
@@ -95,4 +100,24 @@ test('the empty verdict leaves instead of vanishing under the first comment', as
   const empty = jsx.match(/<motion\.div\s+key="empty"[\s\S]*?>/)?.[0] || '';
   assert.match(empty, /exit=\{prefersReducedMotion/, 'the empty state has an exit at all');
   assert.match(empty, /\{ opacity: 0, y: -4, transition: \{ duration: 0\.14, ease: LEAVE \} \}/);
+});
+
+test('the thread lives in that presence too, so its last row still gets to leave', async () => {
+  const jsx = await read('./CommentsSheet.jsx');
+  const opened = jsx.indexOf('<AnimatePresence mode="popLayout" initial={false}>');
+  const after = jsx.indexOf('{WAITING_COPY[status] && (');
+  const presence = jsx.slice(opened, after);
+  // It used to sit outside, appearing and vanishing on its own: deleting the
+  // last comment of a paper erased it in a single frame, and the row never
+  // played the exit every other row plays.
+  assert.match(presence, /status === 'ready' && thread\.length > 0 && \(/);
+  assert.match(presence, /<motion\.ul\s+key="thread"\s+className="comments-list"/);
+  // A leaving list is rendered from the children it had, so its exit is the
+  // last row's: the same slide, the same 180 ms.
+  const row = jsx.match(/exit=\{prefersReducedMotion\s*\?\s*\{ opacity: 0, transition: \{ duration: 0\.1 \} \}\s*:\s*\{ opacity: 0, x: -16, transition: \{ duration: 0\.18, ease: LEAVE \} \}\}/g) ?? [];
+  assert.equal(row.length, 2, 'the list leaves with the very gesture its rows leave with');
+  // ...and it arrives with nothing of its own: the rows own the reveal.
+  const tag = presence.match(/<motion\.ul[^>]*>/)?.[0] || '';
+  assert.ok(tag, 'the list opens as one tag');
+  assert.doesNotMatch(tag, /initial=|animate=/, 'no entrance on the container');
 });
