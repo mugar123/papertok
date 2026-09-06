@@ -28,8 +28,8 @@
 // with touch emulation. `idx=N` clicks the Nth match; `scroll=N` (with `back`)
 // scrolls the page it opened N px down before the way back, so the leaving
 // page's lift by its own scroll (`top` in the samples) is on record. PORT=9232 picks another
-// debugging port; OUT=<dir> another output directory. No dependencies; Node
-// ≥ 22 for the global WebSocket.
+// debugging port; OUT=<dir> another output directory; CHROME=<path> another
+// binary. No dependencies; Node ≥ 22 for the global WebSocket.
 import { spawn } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -129,7 +129,10 @@ function summarise(samples) {
     if (!atRest(s)) moved = true;
     else if (moved && settled === null) settled = s.t;
   }
-  return `sampler: ${total} frames; bar in ${withBar}/${total}; void ${voidFrames.length} (${voidFrames.map((s) => `${s.t}ms`).join(' ') || '-'}); overlap ${overlap}; settled at ${settled === null ? 'never within the window' : `${settled} ms`}`;
+  // Three answers, not two: a page that never moved is not a page that
+  // never stopped moving.
+  const settledText = !moved ? 'no movement observed' : settled === null ? 'never within the window' : `${settled} ms`;
+  return `sampler: ${total} frames; bar in ${withBar}/${total}; void ${voidFrames.length} (${voidFrames.map((s) => `${s.t}ms`).join(' ') || '-'}); overlap ${overlap}; settled at ${settledText}`;
 }
 
 try {
@@ -196,11 +199,17 @@ try {
   writeFileSync(sheetPath, html);
   await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => {});
   const rows = Math.ceil(pick.length / 6);
-  const rowH = mobile ? 422 + 22 : 180 + 22;
+  // A row is one frame scaled to `w` plus its caption. The screencast keeps
+  // the viewport's aspect inside its max box (390×844 on mobile, ~800×562
+  // for the 1280×900 window), so the height follows from that box, not
+  // from a guess — a guessed 180px cropped the desktop sheet's lower rows.
+  const capW = mobile ? 390 : 800;
+  const capH = mobile ? 844 : 562;
+  const rowH = Math.round(capH * w / capW) + 22;
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 6 * (w + 6) + 16, height: rows * rowH + 16, deviceScaleFactor: 1, mobile: false });
   await cdp.send('Page.navigate', { url: `file://${sheetPath}` });
   await sleep(1200);
-  const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+  const shot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
   writeFileSync(join(OUT, `${label}-sheet.png`), Buffer.from(shot.data, 'base64'));
   console.log('sheet:', join(OUT, `${label}-sheet.png`));
 } finally {
