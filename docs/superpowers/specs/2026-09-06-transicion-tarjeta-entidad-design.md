@@ -150,3 +150,21 @@ Las cifras medidas se añaden a este documento en una sección «Después».
 - **Entidad → entidad → volver.** Si el navegador despacha el `scroll` de su propia restauración antes del render de salida, la página que se va se desplaza durante sus 180 ms. La ref alimentada por `scroll` es la mejor lectura disponible; se comprueba en la medida.
 - **Doble subida en el héroe.** La página sube 10 px en 220 ms y el héroe vivo sigue con su `slideUpFade` de 420 ms (solo opacidad, desde 0.35). No se solapan en eje; si en la medida se lee como un escalón, es una decisión aparte sobre el Explorer, no sobre esta transición.
 - **`mode="sync"` con navegaciones rápidas.** Pueden convivir tres raíces (dos saliendo, una entrando); cada una se limpia sola y el reloj de seguridad cubre el evento perdido.
+
+## 11. Después (medido el 2026-09-06)
+
+Con `scripts/diagnostics/page-transition-frames.mjs`, build de demo local, chunk caliente, muestreo por `requestAnimationFrame` y screencast por CDP. Las hojas de contactos y las muestras quedan en `.superpowers/measure-transicion/` de la sesión que lo midió (ignorado, no se commitea).
+
+| Escenario | Fotogramas con barra | Fotogramas vacíos | Fotogramas con dos páginas | Quieta a los |
+| --- | --- | --- | --- | --- |
+| Tarjeta → autor, escritorio | 84/84 | 0 | 16 | 293 ms |
+| Tarjeta → autor, móvil | 83/83 | 0 | 16 | 305 ms |
+| Tarjeta → tema, escritorio | 83/83 | 0 | 15 | 299 ms |
+| Autor → volver, escritorio | 85/85 | 0 | 13 | 226 ms |
+| Autor → volver, móvil | 85/85 | 0 | 13 | 229 ms |
+| Autor a 600 px → volver, escritorio | 85/85 | 0 | 13 | 221 ms |
+| For you → Research, escritorio | 84/84 | 0 | 16 | 294 ms |
+
+Frente a los criterios de §9: barra en todos los fotogramas, cumplido en los siete (0 fotogramas sin barra, frente a «todos menos el primero» de hoy); cero fotogramas vacíos, cumplido en los siete (frente a 2 de hoy); entidad quieta antes de 260 ms, cumplido solo en las tres vueltas (226, 229, 221 ms) y no en las tres entradas ni en la pestaña (293–305 ms, 33–45 ms por encima del objetivo: la página retenida —`hold`— no se retira del DOM hasta que su propia animación de 220 ms termina y dispara `safeToRemove`, así que el fotograma de una sola página con `data-page-motion` en `rest` llega uno o dos `requestAnimationFrame` después de que opacidad y transform de la que entra ya están en su valor final; en la vuelta no hay ese paso porque la página retenida nunca animó y ya estaba en reposo); feed retenido sin moverse durante la ida, cumplido (opacidad 1 y `transform: none` constantes en las cuatro hojas de ida, sin un solo fotograma en que la que se queda cambie); tarjetas en reposo al volver, cumplido (`motion: rest`, opacidad 1 y `transform: none` constantes en las tres vueltas); pestaña sin hueco, cumplido (16 fotogramas con las dos páginas y 0 vacíos, frente a los ≈184 ms medidos antes).
+
+Lo que las hojas enseñan y las cifras no: las siete `-sheet.png` salieron con `ERR_INVALID_URL` porque el guion navega a `file://` con la ruta de `OUT` tal cual, y con el `OUT` relativo que pide este mismo paso Chrome no resuelve esa URL; la revisión se hizo igual, abriendo cada `-sheet.html` (intacto) por un servidor estático efímero y los fotogramas sueltos de `<label>-frames/`. Con eso a la vista: el héroe de autor no muestra un escalón perceptible entre el fotograma recién asentado (296 ms, con el esqueleto) y uno con datos ya cargados (1546 ms) — título y chips ocupan la misma posición, así que el riesgo de la doble subida (§10) no se manifestó en esta pasada. En la vuelta con scroll, la página saliente mantiene `top: "-600px"` en los 13 fotogramas en que aún existe, sin saltar nunca a su cabecera antes de desvanecerse, así que tampoco se vio el riesgo de la restauración de scroll (§10). El aviso «Ayúdanos a mejorar PaperTok» sigue apareciendo sobre la página nueva en las siete capturas, como ya anota §8.
