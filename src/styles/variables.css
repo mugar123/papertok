@@ -239,6 +239,10 @@
   --transition-base: 200ms ease;
   --transition-slow: 320ms ease;
   --transition-spring: 500ms cubic-bezier(0.16, 1, 0.3, 1);
+  /* The arrival curve the app already runs on — pcArrive, slideUpFade, the
+     explorer's error — as a token, so the route transition names it instead
+     of adding one more copy of the literal. */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* ── Z-index ── */
   --z-base: 1;

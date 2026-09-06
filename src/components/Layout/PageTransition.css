@@ -1,0 +1,152 @@
+/* ============================================
+   PageTransition — one page gives way to another under a fixed bar
+
+   Two pages share the screen during a navigation (AnimatePresence
+   mode="sync"): the deeper one on top, the other underneath, opaque and
+   still. Two pages never fade at once, so there is no dip in brightness
+   and no frame without a page painted. Which of the six movements a page
+   runs is `pageMotion.js`'s table, written to `data-page-motion` by
+   PageTransition.jsx; this file only moves.
+
+   Everything is CSS keyframes on opacity and transform: predetermined
+   motion that has to stay smooth while the arriving page mounts 1300px of
+   content, which JS-driven values do not. Measured before this (signed in,
+   chunk warm): mode="wait" left two frames with no page painted, the exit
+   accelerated on an ease-in put there to hide that gap, and the handover
+   took ~500ms from tap to a still page.
+   ============================================ */
+
+.page-transition {
+  /* The only place a duration is written. `hold` lasts the longest
+     entrance: the held page does not know which one runs on top of it,
+     and 40ms under an already opaque page is invisible. */
+  --page-enter-ms: 220ms;
+  --page-leave-ms: 180ms;
+  --page-lateral-ms: 180ms;
+  --page-fade-ms: 150ms;
+  --page-hold-ms: 220ms;
+  --page-reduced-ms: 120ms;
+  /* The box the motion.div used to set inline: without an explicit width a
+     flex-column route root measures against its content and jumps on load. */
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── The page on its way out ───
+   Out of flow the same frame it stops being present (the attribute is set
+   from the render), so the page arriving takes its place in the document
+   at once. `top` is set inline by the component: minus the window scroll
+   the page had, so what was on screen stays on screen while it goes.
+   `height: auto`: fixed, the root's 100% would be the viewport, and a flex
+   column that tall would try to squeeze a long page into it. Taps go
+   through to the page underneath or the one on top. */
+.page-transition[data-page-motion="hold"],
+.page-transition[data-page-motion="leave"],
+.page-transition[data-page-motion="fade"] {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: auto;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* ─── The page arriving with a movement ───
+   Above the held page only while it animates: once the animation ends the
+   component drops the attribute, and with it this stacking context, so a
+   fixed element inside the page (the paper reader) is not trapped under
+   the bar afterwards. Both indices stay under --z-nav. */
+.page-transition[data-page-motion="enter"],
+.page-transition[data-page-motion="enter-lateral"] {
+  position: relative;
+  z-index: 2;
+}
+
+/* `both`: a page whose animation starts a frame late must not flash opaque
+   before its fade; and the end state holds until the attribute goes. */
+.page-transition[data-page-motion="enter"] {
+  animation: pageEnter var(--page-enter-ms) var(--ease-out-expo) both;
+}
+
+.page-transition[data-page-motion="enter-lateral"][data-nav-direction="1"] {
+  animation: pageEnterFromRight var(--page-lateral-ms) var(--ease-out-expo) both;
+}
+
+.page-transition[data-page-motion="enter-lateral"][data-nav-direction="-1"] {
+  animation: pageEnterFromLeft var(--page-lateral-ms) var(--ease-out-expo) both;
+}
+
+/* A real animation that changes nothing: `animationend` is what hands the
+   page back to AnimatePresence, and a page without an animation would be
+   removed at once, under a page still arriving. */
+.page-transition[data-page-motion="hold"] {
+  animation: pageHold var(--page-hold-ms) linear both;
+}
+
+/* Out the way it came in: the entity rose 10px on arrival, it drops 10px
+   on the way back. Ease-out — the page is gone before it looks slow. */
+.page-transition[data-page-motion="leave"] {
+  animation: pageLeave var(--page-leave-ms) var(--ease-out-expo) both;
+}
+
+/* A replace, or a redirect: no step to animate, the old page dissolves. */
+.page-transition[data-page-motion="fade"] {
+  animation: pageFadeOut var(--page-fade-ms) var(--ease-out-expo) both;
+}
+
+@keyframes pageEnter {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes pageEnterFromRight {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes pageEnterFromLeft {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes pageLeave {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(10px); }
+}
+
+@keyframes pageFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes pageFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pageHold {
+  from, to { opacity: 1; }
+}
+
+/* Fewer and gentler, not none: the fades stay (they are what keeps two
+   pages from teleporting), the movement goes, and everything is shorter.
+   The lateral selectors repeat both attributes to match the specificity
+   of the rules they override. */
+@media (prefers-reduced-motion: reduce) {
+  .page-transition[data-page-motion="enter"],
+  .page-transition[data-page-motion="enter-lateral"][data-nav-direction="1"],
+  .page-transition[data-page-motion="enter-lateral"][data-nav-direction="-1"] {
+    animation: pageFadeIn var(--page-reduced-ms) var(--ease-out-expo) both;
+  }
+
+  .page-transition[data-page-motion="leave"],
+  .page-transition[data-page-motion="fade"] {
+    animation: pageFadeOut var(--page-reduced-ms) var(--ease-out-expo) both;
+  }
+
+  .page-transition[data-page-motion="hold"] {
+    animation: pageHold var(--page-reduced-ms) linear both;
+  }
+}

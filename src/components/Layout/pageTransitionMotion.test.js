@@ -1,0 +1,119 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { EXIT_SAFETY_MS, PAGE_MOTIONS } from './pageMotion.js';
+
+const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '');
+const read = async (path) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
+
+/** Every `--page-<name>-ms: <n>ms` declared in the file, by name. */
+function durations(css) {
+  const out = {};
+  for (const [, name, ms] of css.matchAll(/--page-([a-z-]+)-ms: (\d+)ms;/g)) out[name] = Number(ms);
+  return out;
+}
+
+/** The body of one `@keyframes <name> { … }` block. */
+function keyframes(css, name) {
+  const match = css.match(new RegExp(`@keyframes ${name} \\{([\\s\\S]*?)\\n\\}`));
+  assert.ok(match, `@keyframes ${name} is declared`);
+  return match[1];
+}
+
+/**
+ * SOURCE tests for the route transition's stylesheet (spec §5–§6 of
+ * docs/superpowers/specs/2026-09-06-transicion-tarjeta-entidad-design.md).
+ */
+test('six durations, every one inside the 300ms UI band, and the hold outlasts both entrances', async () => {
+  const css = await read('./PageTransition.css');
+  const ms = durations(css);
+  assert.deepEqual(Object.keys(ms).sort(), ['enter', 'fade', 'hold', 'lateral', 'leave', 'reduced']);
+  for (const [name, value] of Object.entries(ms)) assert.ok(value > 0 && value <= 300, `${name}: ${value}ms`);
+  assert.ok(ms.hold >= ms.enter && ms.hold >= ms.lateral, 'the held page is not removed under a page still arriving');
+  assert.ok(ms.reduced < ms.enter, 'reduced motion is shorter, not just flatter');
+  // Declared once, on the root, and nowhere else as a literal.
+  const root = css.match(/\.page-transition \{([\s\S]*?)\n\}/);
+  assert.ok(root, 'the root rule');
+  assert.equal(root[1].match(/--page-[a-z-]+-ms:/g).length, 6);
+  assert.equal(css.replace(root[1], '').match(/\b\d+ms\b/g), null, 'durations are named, never repeated as literals');
+});
+
+test('the leaving page hands itself back before the safety clock, never after', async () => {
+  const ms = durations(await read('./PageTransition.css'));
+  assert.ok(EXIT_SAFETY_MS > Math.max(...Object.values(ms)), `${EXIT_SAFETY_MS}ms outlasts every duration`);
+});
+
+test('every motion has a rule, arrivals and departures ride the app curve, nothing eases in', async () => {
+  const css = await read('./PageTransition.css');
+  for (const motion of PAGE_MOTIONS) {
+    if (motion === 'rest') {
+      assert.doesNotMatch(css, /data-page-motion="rest"/, 'rest is the absence of a rule');
+      continue;
+    }
+    assert.match(css, new RegExp(`\\[data-page-motion="${motion}"\\]`), `${motion} has a rule`);
+  }
+  assert.doesNotMatch(css, /ease-in(?!-out)/);
+  assert.doesNotMatch(css, /cubic-bezier\(/, 'the curve is the token, not a literal');
+  const animations = [...css.matchAll(/animation: (\S+) var\(--page-[a-z-]+-ms\) (\S+) both;/g)];
+  assert.equal(animations.length, 9, 'six motions and three reduced-motion rewrites, each named, timed and filled both ways');
+  for (const [, name, easing] of animations) {
+    assert.ok(name === 'pageHold' ? easing === 'linear' : easing === 'var(--ease-out-expo)', `${name} runs on ${easing}`);
+  }
+  assert.equal(css.match(/animation:/g).length, animations.length, 'no animation escapes the form above');
+});
+
+test('the token is the curve the app already runs on', async () => {
+  const variables = await read('../../styles/variables.css');
+  assert.match(variables, /--ease-out-expo: cubic-bezier\(0\.16, 1, 0\.3, 1\);/);
+});
+
+test('pages move on opacity and transform only, and land with no transform to re-raster', async () => {
+  const css = await read('./PageTransition.css');
+  const names = [...css.matchAll(/@keyframes ([a-zA-Z]+) \{/g)].map((m) => m[1]);
+  assert.deepEqual([...names].sort(), ['pageEnter', 'pageEnterFromLeft', 'pageEnterFromRight', 'pageFadeIn', 'pageFadeOut', 'pageHold', 'pageLeave']);
+  for (const name of names) {
+    const body = keyframes(css, name);
+    assert.doesNotMatch(body, /\b(width|height|top|left|right|bottom|margin|padding)\s*:/, `${name} stays on the compositor`);
+    assert.match(body, /opacity:/);
+  }
+  for (const name of ['pageEnter', 'pageEnterFromRight', 'pageEnterFromLeft']) {
+    assert.match(keyframes(css, name), /to \{ opacity: 1; transform: none; \}/, `${name} lands with no transform`);
+  }
+  assert.match(keyframes(css, 'pageEnter'), /from \{ opacity: 0; transform: translateY\(10px\); \}/);
+  assert.match(keyframes(css, 'pageEnterFromRight'), /from \{ opacity: 0; transform: translateX\(10px\); \}/);
+  assert.match(keyframes(css, 'pageEnterFromLeft'), /from \{ opacity: 0; transform: translateX\(-10px\); \}/);
+  assert.match(keyframes(css, 'pageLeave'), /to \{ opacity: 0; transform: translateY\(10px\); \}/, 'leaves the way it came');
+  assert.match(keyframes(css, 'pageHold'), /from, to \{ opacity: 1; \}/, 'held: a real animation that changes nothing, so animationend fires');
+});
+
+test('the leaving page is out of flow and under the bar; an arriving page covers it only while animating', async () => {
+  const css = await read('./PageTransition.css');
+  const leaving = css.match(/\.page-transition\[data-page-motion="hold"\],\s*\.page-transition\[data-page-motion="leave"\],\s*\.page-transition\[data-page-motion="fade"\] \{([\s\S]*?)\n\}/);
+  assert.ok(leaving, 'the three leaving motions share one geometry rule');
+  assert.match(leaving[1], /position: fixed;/);
+  assert.match(leaving[1], /left: 0;\s*right: 0;/);
+  assert.match(leaving[1], /height: auto;/, 'a fixed flex column must not squeeze a 1300px page into the viewport');
+  assert.match(leaving[1], /z-index: 1;/);
+  assert.match(leaving[1], /pointer-events: none;/);
+  assert.doesNotMatch(leaving[1], /\btop:/, '`top` is the page\'s own scroll, set inline by the component');
+  const entering = css.match(/\.page-transition\[data-page-motion="enter"\],\s*\.page-transition\[data-page-motion="enter-lateral"\] \{([\s\S]*?)\n\}/);
+  assert.ok(entering, 'the two animated arrivals share one stacking rule');
+  assert.match(entering[1], /position: relative;/);
+  assert.match(entering[1], /z-index: 2;/);
+  const root = css.match(/\.page-transition \{([\s\S]*?)\n\}/)[1];
+  assert.match(root, /width: 100%;\s*height: 100%;\s*display: flex;\s*flex-direction: column;/, 'the route root keeps the box the motion.div had');
+});
+
+test('reduced motion keeps the fades and drops the movement, for all five animated motions', async () => {
+  const css = await read('./PageTransition.css');
+  const block = css.match(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*)\n\}\s*$/);
+  assert.ok(block, 'one reduced-motion block closes the file');
+  const reduced = block[1];
+  for (const motion of ['enter', 'enter-lateral', 'hold', 'leave', 'fade']) {
+    assert.match(reduced, new RegExp(`\\[data-page-motion="${motion}"\\]`), `${motion} is redefined`);
+  }
+  const names = [...reduced.matchAll(/animation: (\S+) var\(--page-reduced-ms\)/g)].map((m) => m[1]);
+  assert.deepEqual([...new Set(names)].sort(), ['pageFadeIn', 'pageFadeOut', 'pageHold']);
+  assert.doesNotMatch(reduced, /translate/);
+  assert.equal(reduced.match(/animation:/g).length, names.length, 'every reduced animation rides the reduced clock');
+});
