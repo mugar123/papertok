@@ -20,6 +20,17 @@ function keyframes(css, name) {
   return match[1];
 }
 
+/** selector → keyframe name, for every rule in `css` that declares an animation. */
+function animationsBySelector(css) {
+  const map = {};
+  for (const [, selectors, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const name = body.match(/animation: (\S+) /)?.[1];
+    if (!name) continue;
+    for (const selector of selectors.split(',')) map[selector.trim()] = name;
+  }
+  return map;
+}
+
 /**
  * SOURCE tests for the route transition's stylesheet (spec §5–§6 of
  * docs/superpowers/specs/2026-09-06-transicion-tarjeta-entidad-design.md).
@@ -28,6 +39,7 @@ test('six durations, every one inside the 300ms UI band, and the hold outlasts b
   const css = await read('./PageTransition.css');
   const ms = durations(css);
   assert.deepEqual(Object.keys(ms).sort(), ['enter', 'fade', 'hold', 'lateral', 'leave', 'reduced']);
+  assert.deepEqual(ms, { enter: 220, leave: 180, lateral: 180, fade: 150, hold: 220, reduced: 120 }, "the spec's durations, exactly");
   for (const [name, value] of Object.entries(ms)) assert.ok(value > 0 && value <= 300, `${name}: ${value}ms`);
   assert.ok(ms.hold >= ms.enter && ms.hold >= ms.lateral, 'the held page is not removed under a page still arriving');
   assert.ok(ms.reduced < ms.enter, 'reduced motion is shorter, not just flatter');
@@ -60,6 +72,28 @@ test('every motion has a rule, arrivals and departures ride the app curve, nothi
     assert.ok(name === 'pageHold' ? easing === 'linear' : easing === 'var(--ease-out-expo)', `${name} runs on ${easing}`);
   }
   assert.equal(css.match(/animation:/g).length, animations.length, 'no animation escapes the form above');
+});
+
+test('each motion runs the keyframes named for it, and reduced motion swaps only the movement', async () => {
+  const css = await read('./PageTransition.css');
+  const [base, reduced] = css.split('@media (prefers-reduced-motion: reduce)');
+  assert.ok(reduced, 'the reduced-motion block is there to split on');
+  assert.deepEqual(animationsBySelector(base), {
+    '.page-transition[data-page-motion="enter"]': 'pageEnter',
+    '.page-transition[data-page-motion="enter-lateral"][data-nav-direction="1"]': 'pageEnterFromRight',
+    '.page-transition[data-page-motion="enter-lateral"][data-nav-direction="-1"]': 'pageEnterFromLeft',
+    '.page-transition[data-page-motion="hold"]': 'pageHold',
+    '.page-transition[data-page-motion="leave"]': 'pageLeave',
+    '.page-transition[data-page-motion="fade"]': 'pageFadeOut',
+  });
+  assert.deepEqual(animationsBySelector(reduced), {
+    '.page-transition[data-page-motion="enter"]': 'pageFadeIn',
+    '.page-transition[data-page-motion="enter-lateral"][data-nav-direction="1"]': 'pageFadeIn',
+    '.page-transition[data-page-motion="enter-lateral"][data-nav-direction="-1"]': 'pageFadeIn',
+    '.page-transition[data-page-motion="hold"]': 'pageHold',
+    '.page-transition[data-page-motion="leave"]': 'pageFadeOut',
+    '.page-transition[data-page-motion="fade"]': 'pageFadeOut',
+  });
 });
 
 test('the token is the curve the app already runs on', async () => {
