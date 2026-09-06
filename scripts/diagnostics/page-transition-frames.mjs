@@ -19,8 +19,11 @@
 //     `.pc-title`'s computed opacity, the held feed must keep it at 1 —
 //     written to <label>-samples.json. From it the script prints: frames
 //     with the bar, frames with no page at ≥ 0.5 opacity ("void"), frames
-//     with two pages (overlap), the first frame after which one page stands
-//     alone at rest ("settled"), and the lowest held-card opacity seen
+//     with two pages (overlap), frames where a held page is still there
+//     beside a page already at rest ("exposed": fixed, it paints OVER the
+//     page that has just settled — the flash on every tab switch before
+//     2026-09-06's fix), the first frame after which one page stands alone
+//     at rest ("settled"), and the lowest held-card opacity seen
 //     ("held cards ≥ …"). A main thread busy mounting a page skips rAF
 //     ticks, so the sampler counts frames the page produced, not wall-clock
 //     milliseconds.
@@ -145,9 +148,17 @@ function summarise(samples) {
   // Three answers, not two: a page that never moved is not a page that
   // never stopped moving.
   const settledText = !moved ? 'no movement observed' : settled === null ? 'never within the window' : `${settled} ms`;
-  const heldCards = samples.flatMap((s) => s.pages.filter((p) => p.motion === 'hold' && p.card !== null).map((p) => p.card));
+  // A held page is meant to be UNDER the page arriving, and the arriving page
+  // drops its stacking the frame it settles; a held page still there in that
+  // frame is fixed beside a static sibling, and paints over it. Eight such
+  // frames per tab switch before 2026-09-06's fix: the For you card at 60%
+  // over a Research page already at rest.
+  const isHeld = (p) => p.motion === 'hold' || p.motion === 'hold-lateral';
+  const isRest = (p) => p.motion === null || p.motion === 'rest';
+  const exposed = samples.filter((s) => s.pages.some(isHeld) && s.pages.some(isRest));
+  const heldCards = samples.flatMap((s) => s.pages.filter((p) => isHeld(p) && p.card !== null).map((p) => p.card));
   const heldText = heldCards.length ? `held cards ≥ ${Math.min(...heldCards).toFixed(2)}` : 'held cards n/a';
-  return `sampler: ${total} frames; bar in ${withBar}/${total}; void ${voidFrames.length} (${voidFrames.map((s) => `${s.t}ms`).join(' ') || '-'}); overlap ${overlap}; settled at ${settledText}; ${heldText}`;
+  return `sampler: ${total} frames; bar in ${withBar}/${total}; void ${voidFrames.length} (${voidFrames.map((s) => `${s.t}ms`).join(' ') || '-'}); overlap ${overlap}; exposed ${exposed.length} (${exposed.map((s) => `${s.t}ms`).join(' ') || '-'}); settled at ${settledText}; ${heldText}`;
 }
 
 try {

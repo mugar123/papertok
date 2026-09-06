@@ -5,8 +5,10 @@ import { EXIT_SAFETY_MS, PAGE_MOTIONS, pageMotionFor } from './pageMotion.js';
 /**
  * BEHAVIOUR tests for the pure table behind `PageTransition` (spec §7 of
  * docs/superpowers/specs/2026-09-06-transicion-tarjeta-entidad-design.md).
- * The rule: the deeper page goes on top, the other stays underneath, opaque
- * and still. A page on its way out reads the navigation that ejects it.
+ * The rule: the deeper page goes on top, the other gives way underneath for
+ * exactly as long as the page on top takes to arrive — so a held page is
+ * named for the entrance above it. A page on its way out reads the
+ * navigation that ejects it.
  */
 const table = [
   // present, lateral, direction → motion
@@ -16,8 +18,8 @@ const table = [
   [true, false, -1, 'reveal'],
   [true, false, 0, 'rest'],
   [true, true, 0, 'rest'],
-  [false, true, 1, 'hold'],
-  [false, true, -1, 'hold'],
+  [false, true, 1, 'hold-lateral'],
+  [false, true, -1, 'hold-lateral'],
   [false, false, 1, 'hold'],
   [false, false, -1, 'leave'],
   [false, false, 0, 'fade'],
@@ -34,7 +36,7 @@ test('every answer is a declared motion, and every declared motion is reachable'
   const seen = new Set(table.map(([present, lateral, direction]) => pageMotionFor({ present, lateral, direction })));
   for (const motion of seen) assert.ok(PAGE_MOTIONS.includes(motion), `${motion} is declared`);
   for (const motion of PAGE_MOTIONS) assert.ok(seen.has(motion), `${motion} is reachable`);
-  assert.equal(PAGE_MOTIONS.length, 7);
+  assert.equal(PAGE_MOTIONS.length, 8);
 });
 
 test('out-of-range input reads as direction 0, not lateral, present', () => {

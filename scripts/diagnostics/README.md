@@ -189,12 +189,16 @@ node scripts/diagnostics/page-transition-frames.mjs 'a[href="#/research"]' tab-d
 ```
 
 The summary line reads `sampler: 71 frames; bar in 71/71; void 0 (-); overlap 14;
-settled at 236 ms; held cards ≥ 1.00`: frames the page produced with the bar
-mounted, frames with no page at ≥ 0.5 opacity (the old `mode="wait"` handover
-had two), frames with two route pages on screen, the first frame after which
-one page stands alone at rest, and the lowest opacity seen on a held page's
-first card title (`held cards ≥ 1.00` means the held feed never dipped —
-anything lower means a card replayed its arrival under the entity page).
+exposed 0 (-); settled at 236 ms; held cards ≥ 1.00`: frames the page produced
+with the bar mounted, frames with no page at ≥ 0.5 opacity (the old
+`mode="wait"` handover had two), frames with two route pages on screen, frames
+with a held page still beside a page already at rest (`exposed`: the held page
+is `position: fixed` and paints OVER the page that has just settled — eight of
+them per tab switch before 2026-09-06's fix, the For you card at 60% over
+Research), the first frame after which one page stands alone at rest, and the
+lowest opacity seen on a held page's first card title (`held cards ≥ 1.00`
+means the held feed never dipped — anything lower means a card replayed its
+arrival under the entity page).
 `back` clicks the selector first, waits 1.8 s, and records `history.back()`;
 `scroll=<px>` with it scrolls the page it opened first, so the leaving page's
 lift by its own scroll (`top` in the samples) is on record. `demo` needs
