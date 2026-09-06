@@ -1,30 +1,36 @@
 /* ============================================
-   PageTransition — one page gives way to another under a fixed bar
+   PageTransition — one page settles over another under a fixed bar
 
    Two pages share the screen during a navigation (AnimatePresence
-   mode="sync"): the deeper one on top, the other underneath, opaque and
-   still. Two pages never fade at once, so there is no dip in brightness
-   and no frame without a page painted. Which of the six movements a page
-   runs is `pageMotion.js`'s table, written to `data-page-motion` by
-   PageTransition.jsx; this file only moves.
+   mode="sync"): the deeper one on top, travelling; the one underneath
+   recedes a little — smaller and dimmer — instead of sitting still, so the
+   handover reads as a sheet settling over the page it came from, and the
+   way back as that sheet lifting off. Two pages never fade OUT at once, so
+   there is no dip in brightness and no frame without a page painted.
+   Which of the movements a page runs is `pageMotion.js`'s table, written
+   to `data-page-motion` by PageTransition.jsx; this file only moves.
 
    Everything is CSS keyframes on opacity and transform: predetermined
    motion that has to stay smooth while the arriving page mounts 1300px of
-   content, which JS-driven values do not. Measured before this (signed in,
-   chunk warm): mode="wait" left two frames with no page painted, the exit
-   accelerated on an ease-in put there to hide that gap, and the handover
-   took ~500ms from tap to a still page.
+   content, which JS-driven values do not.
+
+   The first cut of this was a 10px rise over 220ms on an expo-out: measured
+   clean (no void frames, bar in every frame) and felt like nothing — the
+   expo curve did 80% of its change in the first 60ms, and the held page did
+   not move. A page has to be seen travelling for the change to feel fluid:
+   24px over 300ms on a quad-out, with the page underneath giving way.
    ============================================ */
 
 .page-transition {
   /* The only place a duration is written. `hold` lasts the longest
      entrance: the held page does not know which one runs on top of it,
-     and 40ms under an already opaque page is invisible. */
-  --page-enter-ms: 220ms;
-  --page-leave-ms: 180ms;
+     and 120ms under an already opaque page is invisible. */
+  --page-enter-ms: 300ms;
+  --page-leave-ms: 260ms;
   --page-lateral-ms: 180ms;
   --page-fade-ms: 150ms;
-  --page-hold-ms: 220ms;
+  --page-hold-ms: 300ms;
+  --page-reveal-ms: 260ms;
   --page-reduced-ms: 120ms;
   /* The box the motion.div used to set inline: without an explicit width a
      flex-column route root measures against its content and jumps on load. */
@@ -53,11 +59,12 @@
   pointer-events: none;
 }
 
-/* ─── The page arriving with a movement ───
+/* ─── The page arriving on top ───
    Above the held page only while it animates: once the animation ends the
    component drops the attribute, and with it this stacking context, so a
    fixed element inside the page (the paper reader) is not trapped under
-   the bar afterwards. Both indices stay under --z-nav. */
+   the bar afterwards. Both indices stay under --z-nav. A page REVEALED on
+   the way back is not here: it must stay under the page leaving. */
 .page-transition[data-page-motion="enter"],
 .page-transition[data-page-motion="enter-lateral"] {
   position: relative;
@@ -67,37 +74,43 @@
 /* `both`: a page whose animation starts a frame late must not flash opaque
    before its fade; and the end state holds until the attribute goes. */
 .page-transition[data-page-motion="enter"] {
-  animation: pageEnter var(--page-enter-ms) var(--ease-out-expo) both;
+  animation: pageEnter var(--page-enter-ms) var(--ease-out-quad) both;
 }
 
 .page-transition[data-page-motion="enter-lateral"][data-nav-direction="1"] {
-  animation: pageEnterFromRight var(--page-lateral-ms) var(--ease-out-expo) both;
+  animation: pageEnterFromRight var(--page-lateral-ms) var(--ease-out-quad) both;
 }
 
 .page-transition[data-page-motion="enter-lateral"][data-nav-direction="-1"] {
-  animation: pageEnterFromLeft var(--page-lateral-ms) var(--ease-out-expo) both;
+  animation: pageEnterFromLeft var(--page-lateral-ms) var(--ease-out-quad) both;
 }
 
-/* A real animation that changes nothing: `animationend` is what hands the
-   page back to AnimatePresence, and a page without an animation would be
-   removed at once, under a page still arriving. */
+/* Giving way: the page underneath shrinks by 2% and dims to 60% while the
+   deeper page settles over it. It is removed when this ends, under a page
+   that is opaque by then. */
 .page-transition[data-page-motion="hold"] {
-  animation: pageHold var(--page-hold-ms) linear both;
+  animation: pageHold var(--page-hold-ms) var(--ease-out-quad) both;
 }
 
-/* Out the way it came in: the entity rose 10px on arrival, it drops 10px
+/* Coming back: the page that gave way returns to size and brightness
+   under the page lifting off it. */
+.page-transition[data-page-motion="reveal"] {
+  animation: pageReveal var(--page-reveal-ms) var(--ease-out-quad) both;
+}
+
+/* Out the way it came in: the entity rose 24px on arrival, it drops 24px
    on the way back. Ease-out — the page is gone before it looks slow. */
 .page-transition[data-page-motion="leave"] {
-  animation: pageLeave var(--page-leave-ms) var(--ease-out-expo) both;
+  animation: pageLeave var(--page-leave-ms) var(--ease-out-quad) both;
 }
 
 /* A replace, or a redirect: no step to animate, the old page dissolves. */
 .page-transition[data-page-motion="fade"] {
-  animation: pageFadeOut var(--page-fade-ms) var(--ease-out-expo) both;
+  animation: pageFadeOut var(--page-fade-ms) var(--ease-out-quad) both;
 }
 
 @keyframes pageEnter {
-  from { opacity: 0; transform: translateY(10px); }
+  from { opacity: 0; transform: translateY(24px); }
   to { opacity: 1; transform: none; }
 }
 
@@ -113,7 +126,17 @@
 
 @keyframes pageLeave {
   from { opacity: 1; transform: none; }
-  to { opacity: 0; transform: translateY(10px); }
+  to { opacity: 0; transform: translateY(24px); }
+}
+
+@keyframes pageHold {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0.6; transform: scale(0.98); }
+}
+
+@keyframes pageReveal {
+  from { opacity: 0.6; transform: scale(0.98); }
+  to { opacity: 1; transform: none; }
 }
 
 @keyframes pageFadeOut {
@@ -126,8 +149,14 @@
   to { opacity: 1; }
 }
 
-@keyframes pageHold {
-  from, to { opacity: 1; }
+@keyframes pageDim {
+  from { opacity: 1; }
+  to { opacity: 0.6; }
+}
+
+@keyframes pageBrighten {
+  from { opacity: 0.6; }
+  to { opacity: 1; }
 }
 
 /* Fewer and gentler, not none: the fades stay (they are what keeps two
@@ -138,15 +167,19 @@
   .page-transition[data-page-motion="enter"],
   .page-transition[data-page-motion="enter-lateral"][data-nav-direction="1"],
   .page-transition[data-page-motion="enter-lateral"][data-nav-direction="-1"] {
-    animation: pageFadeIn var(--page-reduced-ms) var(--ease-out-expo) both;
+    animation: pageFadeIn var(--page-reduced-ms) var(--ease-out-quad) both;
   }
 
   .page-transition[data-page-motion="leave"],
   .page-transition[data-page-motion="fade"] {
-    animation: pageFadeOut var(--page-reduced-ms) var(--ease-out-expo) both;
+    animation: pageFadeOut var(--page-reduced-ms) var(--ease-out-quad) both;
   }
 
   .page-transition[data-page-motion="hold"] {
-    animation: pageHold var(--page-reduced-ms) linear both;
+    animation: pageDim var(--page-reduced-ms) var(--ease-out-quad) both;
+  }
+
+  .page-transition[data-page-motion="reveal"] {
+    animation: pageBrighten var(--page-reduced-ms) var(--ease-out-quad) both;
   }
 }

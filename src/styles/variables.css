@@ -243,6 +243,10 @@
      explorer's error — as a token, so the route transition names it instead
      of adding one more copy of the literal. */
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  /* A readable ease-out for a movement that has to be SEEN travel: the expo
+     above does 80% of its change in the first quarter, which on a fast
+     machine reads as a cut. Quad spends the whole duration decelerating. */
+  --ease-out-quad: cubic-bezier(0.25, 0.46, 0.45, 0.94);
 
   /* ── Z-index ── */
   --z-base: 1;

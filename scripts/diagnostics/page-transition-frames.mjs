@@ -18,7 +18,7 @@
 //     position and — when the page holds cards under it — the first
 //     `.pc-title`'s computed opacity, the held feed must keep it at 1 —
 //     written to <label>-samples.json. From it the script prints: frames
-//     with the bar, frames with no page at ≥ 0.98 opacity ("void"), frames
+//     with the bar, frames with no page at ≥ 0.5 opacity ("void"), frames
 //     with two pages (overlap), the first frame after which one page stands
 //     alone at rest ("settled"), and the lowest held-card opacity seen
 //     ("held cards ≥ …"). A main thread busy mounting a page skips rAF
@@ -129,7 +129,9 @@ class CDP {
 function summarise(samples) {
   const total = samples.length;
   const withBar = samples.filter((s) => s.navbar).length;
-  const voidFrames = samples.filter((s) => !s.pages.some((p) => p.opacity >= 0.98));
+  // A held page dims to 0.6 by design, so "void" is a frame with no page even
+  // half painted — what mode="wait" used to leave between exit and entrance.
+  const voidFrames = samples.filter((s) => !s.pages.some((p) => p.opacity >= 0.5));
   const overlap = samples.filter((s) => s.pages.length >= 2).length;
   const atRest = (s) => s.pages.length === 1
     && (s.pages[0].motion === null || s.pages[0].motion === 'rest')

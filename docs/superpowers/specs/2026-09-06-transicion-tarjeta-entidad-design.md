@@ -31,7 +31,7 @@ Además, el desplazamiento usa el atajo `x` de framer, que no va por compositor,
 - **Propósito:** evitar un cambio brusco, y hacer legible la jerarquía (entras en algo, y al volver sales de ello).
 - **Herramienta:** animación CSS (`@keyframes`) para todo el movimiento: es predeterminado y tiene que seguir fluido mientras la página nueva monta 1300 px de contenido. framer-motion se queda solo como contable de presencia (`AnimatePresence`, `usePresence`, `usePresenceData`).
 - **Propiedades:** `opacity` y `transform` (`translateY`, `translateX`). Nada más.
-- **Curva:** `cubic-bezier(0.16, 1, 0.3, 1)`, la expo-out que ya usa toda la app (`pcArrive`, `slideUpFade`, `.explorer-error`). Pasa a ser un token, `--ease-out-expo`, en `src/styles/variables.css`; los literales existentes no se tocan. Ninguna salida usa ease-in.
+- **Curva:** `--ease-out-quad` (`cubic-bezier(0.25, 0.46, 0.45, 0.94)`), un ease-out que decelera durante todo el recorrido. La primera versión usó la expo-out de la app (`--ease-out-expo`, que queda declarada) y se sintió como un corte: hace el 80 % del cambio en los primeros 60 ms. Ninguna salida usa ease-in.
 - **Duraciones:** dentro de la banda de 300 ms (§5).
 - **Interrupción y salida:** cada página sale por donde entró (la entidad sube al llegar y baja al irse). Una navegación durante una transición no rompe nada: cada página saliente se gestiona sola (§6).
 - **Movimiento reducido:** solo opacidad, 120 ms. Nunca cero.
@@ -59,13 +59,15 @@ Una regla: **la página más profunda va encima; la otra se queda debajo, quieta
 
 | Navegación (`direction`, `lateral`) | Página que llega | Página que se va |
 | --- | --- | --- |
-| Push a más profundidad (`1`, `false`): tarjeta → entidad, entidad → entidad, lista → entidad | **`enter`**, encima. Opacidad 0→1 y `translateY(10px)`→0, **220 ms**, `--ease-out-expo` | **`hold`**, debajo. Retenida opaca y quieta 220 ms |
-| Vuelta (`-1`) | **`rest`**, debajo. Sin animación; las tarjetas del feed en reposo (`[data-nav-direction="-1"]` en `PaperCard.css`, sin cambios) | **`leave`**, encima. Opacidad 1→0 y 0→`translateY(10px)`, **180 ms**, `--ease-out-expo` |
-| Pestaña a pestaña (`±1`, `true`) | **`enter-lateral`**, encima. Opacidad 0→1 y `translateX(direction × 10px)`→0, **180 ms** | **`hold`**, debajo, 220 ms |
+| Push a más profundidad (`1`, `false`): tarjeta → entidad, buscador → entidad, entidad → entidad | **`enter`**, encima. Opacidad 0→1 y `translateY(24px)`→0, **300 ms**, `--ease-out-quad` | **`hold`**, debajo. Cede: opacidad 1→0,6 y `scale(0.98)`, 300 ms |
+| Vuelta (`-1`), incluida la flecha del héroe | **`reveal`**, debajo. Recupera tamaño y brillo: opacidad 0,6→1 y `scale(0.98)`→1, **260 ms**; las tarjetas del feed en reposo (`[data-nav-direction="-1"]` en `PaperCard.css`, sin cambios) | **`leave`**, encima. Opacidad 1→0 y 0→`translateY(24px)`, **260 ms**, `--ease-out-quad`. Sale por donde entró |
+| Pestaña a pestaña (`±1`, `true`) | **`enter-lateral`**, encima. Opacidad 0→1 y `translateX(direction × 10px)`→0, **180 ms** | **`hold`**, debajo, cede igual, 300 ms |
 | Replace o primera entrada (`0`) | **`rest`** | **`fade`**, encima. Solo opacidad, **150 ms** |
-| `prefers-reduced-motion: reduce` | `enter` y `enter-lateral`: solo opacidad, **120 ms** | `leave` y `fade`: solo opacidad, 120 ms; `hold`: 120 ms |
+| `prefers-reduced-motion: reduce` | `enter` y `enter-lateral`: solo opacidad, **120 ms**; `reveal`: 0,6→1 | `leave` y `fade`: solo opacidad, 120 ms; `hold`: 1→0,6 |
 
-Las duraciones viven como propiedades personalizadas en la raíz de la transición (`--page-enter-ms: 220ms`, `--page-leave-ms: 180ms`, `--page-lateral-ms: 180ms`, `--page-fade-ms: 150ms`, `--page-hold-ms: 220ms`, `--page-reduced-ms: 120ms`) y solo ahí. `hold` dura lo que la entrada más larga: la página retenida no sabe cuál corre encima, y un desmontaje 40 ms tarde bajo una página ya opaca es invisible.
+Una regla: **la página más profunda va encima y viaja; la de debajo cede un poco en vez de quedarse clavada**, como una hoja que se posa sobre la página de la que viene, y al volver como esa hoja levantándose. Nunca se disuelven las dos a la vez.
+
+Las duraciones viven como propiedades personalizadas en la raíz de la transición (`--page-enter-ms: 300ms`, `--page-leave-ms: 260ms`, `--page-lateral-ms: 180ms`, `--page-fade-ms: 150ms`, `--page-hold-ms: 300ms`, `--page-reveal-ms: 260ms`, `--page-reduced-ms: 120ms`) y solo ahí. `hold` dura lo que la entrada más larga: la página retenida no sabe cuál corre encima, y un desmontaje 40 ms tarde bajo una página ya opaca es invisible.
 
 Lo que desaparece: `TRAVEL_PX`, `ENTER_MS`, `EXIT_MS`, `LATERAL_*`, `EASE`, `EASE_LEAVING`, `routeVariants`, `reducedMotionVariants`, el `motion.div`, el atajo `x`, `useReducedMotion` en este componente.
 
@@ -170,3 +172,18 @@ Frente a los criterios de §9: barra en todos los fotogramas, cumplido en los si
 Lo que las hojas enseñan y las cifras no: las siete `-sheet.png` salieron con `ERR_INVALID_URL` porque el guion navega a `file://` con la ruta de `OUT` tal cual, y con el `OUT` relativo que pide este mismo paso Chrome no resuelve esa URL; la revisión se hizo igual, abriendo cada `-sheet.html` (intacto) por un servidor estático efímero y los fotogramas sueltos de `<label>-frames/`. Con eso a la vista: el héroe de autor no muestra un escalón perceptible entre el fotograma recién asentado (296 ms, con el esqueleto) y uno con datos ya cargados (1546 ms) — título y chips ocupan la misma posición, así que el riesgo de la doble subida (§10) no se manifestó en esta pasada. En la vuelta con scroll, la página saliente mantiene `top: "-600px"` en los 13 fotogramas en que aún existe, sin saltar nunca a su cabecera antes de desvanecerse, así que tampoco se vio el riesgo de la restauración de scroll (§10). El aviso «Ayúdanos a mejorar PaperTok» sigue apareciendo sobre la página nueva en las siete capturas, como ya anota §8.
 
 **Re-medido tras el arreglo de la ola final (hallazgo 1).** Con el mismo guion, ya corrigiendo `pathToFileURL`, se repitieron las dos entradas y la vuelta con scroll: tarjeta → autor (83 fotogramas; barra 83/83; 0 vacíos; 16 en solapamiento; quieta a los 312 ms; `held cards ≥ 1.00`), pestaña For you → Research (84 fotogramas; barra 84/84; 0 vacíos; 16 en solapamiento; quieta a los 296 ms; `held cards ≥ 1.00`) y autor a 600 px → volver (85 fotogramas; barra 85/85; 0 vacíos; 13 en solapamiento; quieta a los 231 ms; sin página en `hold` en esta navegación, así que no hay cifra de tarjeta que leer). En las dos idas, el título de la primera tarjeta del feed retenido se quedó en opacidad 1 en cada fotograma muestreado — la repetición que encontró la revisión final (la retenida saltaba a `data-nav-direction="1"` y `pcArrive` volvía a correr desde 0) ya no aparece. Las tres hojas de contacto (`fix-author-desktop-sheet.png`, `fix-tab-desktop-sheet.png`, `fix-back-desktop-sheet.png`) se abren ahora como capturas reales, no como la página de error de Chrome.
+
+## 12. Segunda versión (2026-09-06, tras verla en producción)
+
+La primera versión medía limpia y se sentía como un corte: 10 px en 220 ms sobre una expo-out que hace el 80 % del cambio en los primeros 60 ms, con el feed retenido clavado. Cambios: la página nueva sube 24 px en 300 ms sobre `--ease-out-quad`; la retenida cede (opacidad 0,6 y `scale(0.98)`); en la vuelta la de arriba baja 24 px y se desvanece en 260 ms mientras la de abajo recupera tamaño y brillo (movimiento nuevo `reveal`). La misma coreografía cubre tarjeta → entidad, buscador → entidad y entidad → entidad (todo es un push por `PageTransition`), y la flecha del héroe es la vuelta.
+
+Medido igual que §11, build de demo, chunk caliente. El «vacío» del muestreo pasa a contar fotogramas sin ninguna página a ≥ 0,5 de opacidad, porque la retenida baja a 0,6 a propósito.
+
+| Escenario | Fotogramas con barra | Fotogramas vacíos | Fotogramas con dos páginas | Quieta a los |
+| --- | --- | --- | --- | --- |
+| Tarjeta → autor, escritorio | 84/84 | 0 | 20 | 363 ms |
+| Tarjeta → autor, móvil | 85/85 | 0 | 20 | 348 ms |
+| Autor a 600 px → volver, escritorio | 84/84 | 0 | 17 | 305 ms |
+
+En las hojas: a 99 ms la página de autor ya se lee sobre la tarjeta, que se atenúa y encoge; a 237 ms la tarjeta es un rastro; a 300 ms la página está quieta. En la vuelta, a 106 ms la página de autor baja y se desvanece mostrando la zona a la que estaba desplazada, nunca su cabecera, y el feed recupera el brillo a 173 ms. El primer título de tarjeta del feed retenido se mantiene en opacidad 1 en todos los fotogramas.
+
