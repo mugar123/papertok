@@ -50,4 +50,5 @@ test('out-of-range input reads as direction 0, not lateral, present', () => {
 
 test('the safety clock is a whole number of milliseconds a timer can take', () => {
   assert.ok(Number.isInteger(EXIT_SAFETY_MS) && EXIT_SAFETY_MS > 0);
+  assert.equal(EXIT_SAFETY_MS, 700);
 });
