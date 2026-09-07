@@ -378,6 +378,9 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
   const similarEntries = useMemo(() => buildRelatedPaperEntries(papers), [papers]);
   const sourceLabel = graph.source === 'opencitations' ? 'OpenCitations' : 'OpenCitations + OpenAlex';
   const isSelectingPaper = Boolean(selectedPaperKey) && isSelectionReady;
+  // Which side of the dot the label sits on. Decided from the settled column,
+  // so it commits once and the slide below carries the crossing.
+  const chipOnLeft = layout.centerX > box.width - 180;
   const isMap = mode === 'graph' && view === 'map';
   const isList = mode === 'graph' && view === 'list';
   // Only the short states shrink the sheet: a map that is still loading keeps
@@ -556,19 +559,30 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
             </svg>
 
             <div className="graph-rule" style={{ top: `${layout.ruleY}px`, transformOrigin: `${layout.centerX}px 50%` }} />
+            {/* The column each of these stands in is handed over as
+                `--mark-x` / `--chip-x`, which PaperCard.css puts on the
+                native `translate` property and transitions. That is what
+                makes the centre MOVE when the neighbourhood arrives and
+                builds the axis under it, instead of teleporting 533px
+                across the plot in one frame. */}
             <div
               className={`graph-mark ${isLeaving ? 'is-gone' : ''} ${isArriving ? 'is-sliding' : ''}`}
               style={{
-                left: `${(isArriving && !hasSlid ? previousCenterX : layout.centerX) - 8}px`,
+                '--mark-x': `${(isArriving && !hasSlid ? previousCenterX : layout.centerX) - 8}px`,
                 top: `${layout.ruleY - 8}px`,
               }}
             />
             <span
               className={`graph-chip ${isLeaving ? 'is-gone' : ''}`}
-              data-side={layout.centerX > box.width - 180 ? 'left' : 'right'}
-              style={layout.centerX > box.width - 180
-                ? { right: `${box.width - layout.centerX + 16}px`, top: `${layout.ruleY}px` }
-                : { left: `${layout.centerX + 16}px`, top: `${layout.ruleY}px` }}
+              data-side={chipOnLeft ? 'left' : 'right'}
+              style={{
+                // Both sides are measured from the same edge, so crossing over
+                // is one value changing rather than two anchors swapping.
+                '--chip-x': chipOnLeft
+                  ? `calc(${layout.centerX - 16}px - 100%)`
+                  : `${layout.centerX + 16}px`,
+                top: `${layout.ruleY}px`,
+              }}
             >
               {isWalking
                 ? `${isEnglish ? 'Centre' : 'Centro'} · ${center.year}`

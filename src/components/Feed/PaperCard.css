@@ -1511,21 +1511,36 @@ a.pc-citations {
   animation: graphRuleIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) 0.12s backwards;
 }
 
+/* The centre's column is carried by `--mark-x` on the NATIVE `translate`
+   property, never by `left`. Two reasons, both learned here: `translate`
+   composes with the `transform` that `relatedItemIn` animates instead of
+   being replaced by it, and it moves the dot without laying the plot out
+   again. The transition is what turns the recompute into a move — see
+   `.graph-chip` for the whole story. */
 .graph-mark {
   position: absolute;
+  /* Above the label. They sit 16px apart at rest, but the move to the settled
+     column is long enough that the dot overtakes its own label -- measured, it
+     spends about two thirds of the slide inside the label's box, and the label
+     paints an opaque `--bg-card`. The dot is the datum; it does not get to
+     disappear halfway through the move that exists to show it travelling.
+     Below `.graph-node` (z-index 3), as it was. */
+  z-index: 2;
+  left: 0;
   width: 16px;
   height: 16px;
   border-radius: var(--radius-full);
   background: var(--accent-primary);
   box-shadow: 0 0 0 3px var(--bg-card);
+  translate: var(--mark-x, 0);
+  transition: translate 0.28s var(--ease-out-quad);
   animation: relatedItemIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) 0.14s backwards;
 }
 
-/* After a hop the axis is recomputed, so the mark slides to the column its new
-   citation count earns rather than reappearing there. */
+/* A hop rebuilds the axis under a mark that is already on screen, so its
+   entrance has no business replaying over the slide. */
 .graph-mark.is-sliding {
   animation: none;
-  transition: left 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .graph-mark.is-gone {
@@ -1534,18 +1549,39 @@ a.pc-citations {
   transition: opacity 160ms ease-out;
 }
 
-/* The label is centred on the rule with the NATIVE `translate` property, not
-   with `transform`: `relatedItemIn` below is a shared keyframe that writes
-   `transform`, and a keyframe replaces the rule's own for as long as it runs.
-   Written as `transform: translateY(-50%)` the centring was dropped for the
-   whole 280ms arrival and handed back in a single frame at the end -- the
-   label sat 5.5px under the dot and then jumped up to meet it (measured
-   2026-09-07). `translate` and `transform` are separate properties and
-   compose, so the slide runs on top of the centring instead of replacing it.
-   Same reason `dialogIn` animates the native `scale` (styles/variables.css). */
+/* The label is placed by the NATIVE `translate` property, not by `transform`
+   and not by `left`/`right`. Three things ride on that one choice:
+
+   1. The centring. `relatedItemIn` below is a shared keyframe that writes
+      `transform`, and a keyframe replaces the rule's own for as long as it
+      runs. Written as `transform: translateY(-50%)` the centring was dropped
+      for the whole 280ms arrival and handed back in a single frame at the end
+      -- the label sat 5.5px under the dot and then jumped up to meet it
+      (measured 2026-09-07). `translate` and `transform` are separate
+      properties and compose. Same reason `dialogIn` animates the native
+      `scale` (styles/variables.css).
+   2. The column. `--chip-x` carries the horizontal placement, so the label
+      and the dot are moved by one property that can be transitioned.
+   3. The side. Anchored at `left: 0` in both cases -- a label that sits to
+      the LEFT of the dot says so with `calc(... - 100%)` rather than by
+      switching to `right`, so a flip is one value changing, which the
+      transition below can carry, instead of two anchors swapping. */
 .graph-chip {
   position: absolute;
-  translate: 0 -50%;
+  left: 0;
+  translate: var(--chip-x, 0) -50%;
+  /* The axis is built from the neighbourhood, so it does not exist until the
+     graph lands: the centre stands at the middle of the plot and then moves
+     to the column its citation count earns. Measured 2026-09-07 at 1280x900,
+     that move was 533.6px in a single frame, with the label crossing to the
+     other side of the dot in the same one.
+
+     `--ease-out-quad`, not the house expo: this is half the width of the plot
+     and the expo spends 80% of it in the first quarter, which over a distance
+     this long reads as a cut with a tail rather than a move — the exact case
+     the token was declared for (styles/variables.css). A hop through the
+     graph is the same move over a shorter distance and shares the rule. */
+  transition: translate 0.28s var(--ease-out-quad);
   padding: 0 7px;
   background: var(--bg-card);
   color: var(--text-primary);

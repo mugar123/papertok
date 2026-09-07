@@ -58,3 +58,53 @@ test('the centre is placed at half the plot, which is what makes a late sibling 
   assert.match(css, /\.knowledge-source\s*\{[^}]*height:\s*var\(--graph-source-height\)/);
   assert.match(css, /--graph-source-height:\s*30px/);
 });
+
+/**
+ * The centre also moves SIDEWAYS, and for a reason that only exists once the
+ * data is in: the horizontal axis is a log scale built from the neighbourhood,
+ * so until the graph lands there is no scale and the centre stands at the
+ * middle of the plot. When it lands, the centre goes to the column its own
+ * citation count earns. Measured 2026-09-07 at 1280x900: 533.6px in a single
+ * frame, with the label crossing to the other side of the dot in that same
+ * frame. It is a move, so it is animated as one.
+ */
+test('the centre carries its column on `translate`, never on `left`, so the move can be transitioned', async () => {
+  const jsx = await read('./RelatedPapersSheet.jsx');
+
+  // The x is handed over as a variable; the stylesheet decides what property
+  // it lands on. `left` would lay the plot out again every frame, and
+  // `transform` is taken -- `relatedItemIn` animates it.
+  assert.match(jsx, /'--mark-x': `\$\{\(isArriving && !hasSlid \? previousCenterX : layout\.centerX\) - 8\}px`/);
+  assert.match(jsx, /'--chip-x': chipOnLeft\s*\? `calc\(\$\{layout\.centerX - 16\}px - 100%\)`\s*: `\$\{layout\.centerX \+ 16\}px`/);
+
+  // Both sides measured from the same edge: a crossing is one value changing,
+  // which a transition can carry, not two anchors swapping.
+  const mark = jsx.slice(jsx.indexOf('className={`graph-mark'), jsx.indexOf('className={`graph-chip'));
+  assert.doesNotMatch(mark, /\bleft:/, 'the dot is placed by translate now');
+  const chip = jsx.slice(jsx.indexOf('className={`graph-chip'));
+  const chipStyle = chip.slice(0, chip.indexOf('>'));
+  assert.doesNotMatch(chipStyle, /\bright:\s*`/, 'the label anchored by `right` cannot cross sides smoothly');
+});
+
+test('the move is a transition on translate, with the curve declared for a distance that has to be seen', async () => {
+  const css = await read('./PaperCard.css');
+
+  for (const selector of ['.graph-mark', '.graph-chip']) {
+    const rule = css.match(new RegExp(`\\${selector}\\s*\\{[^}]*\\}`))?.[0] || '';
+    assert.match(rule, /translate: var\(--(mark|chip)-x/, `${selector} lost its column variable`);
+    assert.match(
+      rule,
+      /transition: translate 0\.28s var\(--ease-out-quad\)/,
+      `${selector} must move on the token declared for a movement that has to be seen travel, `
+      + 'not on the house expo -- over half the width of the plot the expo reads as a cut with a tail',
+    );
+    assert.doesNotMatch(rule, /transition:[^;]*\bleft\b/, 'a transition on `left` lays the plot out every frame');
+  }
+
+  // Movement goes under reduced motion; the centre arrives where it belongs.
+  const reduced = css.slice(css.indexOf('prefers-reduced-motion'));
+  const block = reduced.match(/\.graph-rule,[\s\S]*?\}/)?.[0] || '';
+  assert.match(block, /\.graph-mark,/);
+  assert.match(block, /\.graph-chip,/);
+  assert.match(block, /transition: none;/);
+});
