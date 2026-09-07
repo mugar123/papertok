@@ -526,6 +526,10 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   // after a reload and on every scroll). A ref, not state: it moves on every
   // scroll event and nothing needs to re-render for it — reRankFeed reads it
   // inside its functional setPapers.
+  //
+  // A preferences-change reset replaces the list without resetting this ref or
+  // scrolling to top, so it can name a paper no longer in papers — then
+  // reRankFeed and the merge lock only the top few cards. Not enforced.
   const visiblePaperIdRef = useRef(null);
   const reportVisiblePaper = useCallback((paperId) => {
     visiblePaperIdRef.current = paperId || null;
@@ -1390,7 +1394,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         filtered = diversifiedWeightedShuffle(filtered, {
           scorePaper: calculateAndAttachScore,
           weights: recommendationWeights.current,
-          initialPapers: reset ? [] : papers,
+          initialPapers: reset && !keepThroughVisible ? [] : papers,
         });
       }
       filtered = takeFeedPage(filtered, PAGE_SIZE);
@@ -1658,8 +1662,12 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     reRankFeed();
     if (recommendationProfileReady) {
       feedCache.current = {};
-      // The cards through the one the reader is on stay; the fresh ranking
-      // lands below them (mergeFreshFeedPage).
+      // mergeFreshFeedPage keeps the cards through the visible one and lands
+      // the fresh ranking below them. reRankFeed() above changes papers
+      // whenever it reorders anything, changing loadPapers' identity — so this
+      // effect's cleanup usually clears the timer before it fires. Pre-existing
+      // race, documented in STATE.md's 2026-09-07 entry; keepThroughVisible
+      // makes both outcomes safe, so it's not dead code.
       const refreshTimer = setTimeout(
         () => loadPapers(true, null, true, undefined, { keepThroughVisible: true }),
         0,
