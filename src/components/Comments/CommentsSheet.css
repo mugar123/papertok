@@ -66,11 +66,24 @@
   min-width: 0;
 }
 
+/* The field rule draws itself from the left as the sheet lands — the same
+   200 ms beat the thread sets down on (`SHEET_ARRIVAL`, CommentsSheet.jsx),
+   so the opening is one gesture and not two. `both` is what holds it at
+   `scaleX(0)` through the delay; without it the rule is drawn, then erased,
+   then drawn again. CSS and not framer because it runs once, on mount, and
+   there is nothing here to hand over to. */
 .comments-sheet-heading::before {
   content: '';
   width: 34px;
   height: 3px;
   background: var(--area-accent, var(--accent-primary));
+  transform-origin: left center;
+  animation: comments-rule-draw 260ms cubic-bezier(0.16, 1, 0.3, 1) 200ms both;
+}
+
+@keyframes comments-rule-draw {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
 }
 
 .comments-sheet-titles {
@@ -121,10 +134,19 @@
 
 /* ── Loading ──
    Most papers have no thread at all and answer in a couple of hundred
-   milliseconds. Holding the placeholder back means that common open shows the
-   sheet and its composer with nothing flashing grey, and the skeleton appears
-   only when there is genuinely a wait to describe. It stays in the DOM
-   throughout, so `aria-busy` still announces the load to a screen reader.
+   milliseconds. The placeholder is held back for `SKELETON_HOLD`
+   (CommentsSheet.jsx) so that common open shows the sheet and its composer
+   with nothing flashing grey, and the skeleton appears only when there is
+   genuinely a wait to describe. The wrapper stays in the DOM throughout, so
+   `aria-busy` still announces the load to a screen reader.
+
+   The hold used to live here, as a delay on this animation — the rows were
+   rendered from the first frame and simply sat at `opacity: 0`. That leaked:
+   on a fast read the wrapper starts leaving at, say, 250 ms and framer keeps
+   it mounted for the 180 ms of its exit, so at 320 ms this animation fired
+   anyway and the bars faded IN, on their own clock, across the comments that
+   had just arrived. Now the rows are not rendered until the hold is out, and
+   this is simply the fade they make on arrival.
 
    `animation: … forwards` from `opacity: 0` is the pattern that dies inside a
    `content-visibility: auto` subtree. This sheet is mounted at the root of
@@ -132,12 +154,12 @@
    that way if the sheet is ever moved.
 
    On the rows, not on `.comments-sheet-loading`: that element is framer's now
-   (it fades out as the empty state arrives), and a CSS animation on the same
-   element's `opacity` would sit above the inline value framer writes for the
-   whole of the exit. */
+   (it fades out as the thread or the empty state arrives), and a CSS animation
+   on the same element's `opacity` would sit above the inline value framer
+   writes for the whole of the exit. */
 .comments-sheet-loading .comment-skeleton {
   opacity: 0;
-  animation: comments-skeleton-reveal 140ms ease-out 320ms forwards;
+  animation: comments-skeleton-reveal 140ms ease-out forwards;
 }
 
 @keyframes comments-skeleton-reveal {
@@ -628,6 +650,13 @@
    common open that never needed it. */
 @media (prefers-reduced-motion: reduce) {
   .comment-skeleton span {
+    animation: none;
+  }
+
+  /* The rule is drawn, not implied by the animation: switching the animation
+     off has to leave it at full width, which `none` does — the element's own
+     `width` is what it falls back to. */
+  .comments-sheet-heading::before {
     animation: none;
   }
 

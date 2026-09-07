@@ -216,11 +216,32 @@ const ARRIVE = [0.16, 1, 0.3, 1];
 const LEAVE = [0.4, 0, 1, 1];
 const RESIZE = [0.4, 0, 0.2, 1];
 
-/* The reveal keeps the shape the stylesheet had: the first rows land close
-   together and everything from the fifth on shares one delay, so a long thread
-   does not turn into a countdown. */
-const ROW_DELAYS = [0, 0.03, 0.055, 0.075, 0.09];
-const rowDelay = index => ROW_DELAYS[index] ?? 0.1;
+/* ── Opening the sheet: the index sets down ──
+   The drawer's slide is the sheet arriving; this is the thread arriving inside
+   it, and the two are deliberately not the same moment. The slide is 400 ms on
+   a curve that spends almost all of it in the first half (`.ui-drawer-popup`,
+   ui/drawer.css: 53 % of the travel is done at 150 ms and 84 % at 200), so
+   anything the body reveals before then plays while the sheet is still under
+   the edge of the screen. That is how the reveal used to be lost: on a thread
+   served from the cache every row was opaque by 300 ms and what the reader
+   actually saw was a slab of settled text rising into place — an entrance
+   nobody could point at.
+
+   So the body holds at its hidden state until the sheet is 84 % home, and only
+   then does the thread set down. Nothing is withheld by it: for those 200 ms
+   the body is behind the screen edge, and the reveal still has 170 ms left to
+   run once the sheet is fully at rest, which is the part that is actually
+   seen. The masthead's field rule draws itself on the same beat
+   (`comments-rule-draw`, CommentsSheet.css) so the sheet has one arrival and
+   not two. */
+const SHEET_ARRIVAL = 200;
+
+/* The cascade: the first rows land close together and everything from the
+   fifth on shares one delay, so a long thread does not turn into a countdown.
+   Widened from the shape the stylesheet had — at the old 30 ms the rows read
+   as one block, and the whole point of the beat is that it can be seen. */
+const ROW_DELAYS = [0, 0.035, 0.065, 0.09, 0.11];
+const rowDelay = index => ROW_DELAYS[index] ?? 0.13;
 
 /* The head start the reveal gives the skeleton it replaces. `popLayout` takes
    the leaving skeleton out of flow, so the thread has the body in the same
@@ -235,11 +256,11 @@ const rowDelay = index => ROW_DELAYS[index] ?? 0.1;
    frame and leaves no overlap — measured both ways. */
 const REVEAL_LEAD = 0.12;
 
-/* How long the skeleton holds itself invisible before it fades in, in step
-   with `.comments-sheet-loading .comment-skeleton` (CommentsSheet.css). A
-   healthy thread read finishes inside it, which is the whole point of the
-   hold — and it is also why the lead above is owed only sometimes: a handover
-   from a body that was blank all along has no grey to wait for. */
+/* How long the body waits before it admits to being slow. A healthy thread
+   read finishes inside it, which is the whole point of the hold: the common
+   open never flashes grey. It is also why the lead above is owed only
+   sometimes — a handover from a body that was blank all along has no grey to
+   wait for. */
 const SKELETON_HOLD = 320;
 
 /**
@@ -698,19 +719,10 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
   )), [rows, viewerUid, hiddenLocally]);
   const thread = useMemo(() => groupThread(visibleRows), [visibleRows]);
 
-  /* What the body painted in the last frame it committed — or `null`, which
-     is the sheet's own first frame. The reveal below is a handover, so it has
-     to know what it is handing over from.
-
-     `null` is the case that was wrong. A thread served from the cache is on
-     screen from the drawer's own first frame, and the drawer's slide is
-     400 ms (`.ui-drawer-popup`, ui/drawer.css) — while the reveal is over
-     inside 300 (the last row waits 0.1 and runs 0.2). So on that open every
-     row finished arriving while the sheet was still travelling, and what the
-     reader actually saw was a slab of settled text rising into place. The
-     sheet's own arrival is the entrance there, which is the same verdict
-     `initial={false}` already reaches for the skeleton and the empty state
-     above. */
+  /* What the body painted in the last frame it committed. The reveal is a
+     handover as often as it is an opening, so it has to know what it is
+     handing over from — grey bars on their way out are the one thing worth
+     waiting for. */
   const bodyKind = status === 'loading' ? 'skeleton'
     : status !== 'ready' ? 'waiting'
       : (thread.length ? 'thread' : 'empty');
@@ -725,11 +737,13 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
     return () => cancelAnimationFrame(frame);
   }, [bodyKind]);
 
-  /* Whether the skeleton has been up long enough to be grey at all. It holds
-     itself invisible for its first 320 ms (`.comments-sheet-loading
-     .comment-skeleton`, CommentsSheet.css) — longer than a healthy thread read
-     — so the common open hands over from a body that was blank the whole time
-     and is owed no head start whatsoever. */
+  /* Whether the wait has gone on long enough to be worth describing. The hold
+     is longer than a healthy thread read on purpose, so the common open never
+     flashes grey — and it now decides whether the skeleton rows are RENDERED,
+     not merely whether they are transparent, which is what stops them fading
+     in on their own clock while the wrapper is already leaving. It also says
+     whether the reveal below owes the skeleton a head start: a handover from
+     a body that was blank the whole time has no grey to wait for. */
   const [skeletonShowing, setSkeletonShowing] = useState(false);
   useEffect(() => {
     if (bodyKind !== 'skeleton') {
@@ -739,13 +753,19 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
     const timer = setTimeout(() => setSkeletonShowing(true), SKELETON_HOLD);
     return () => clearTimeout(timer);
   }, [bodyKind]);
-  // A row on the first frame has nothing to arrive from. Every other row does:
-  // the whole thread replacing the skeleton, or one comment just posted.
-  const rowArrives = !prefersReducedMotion && paintedBody !== null;
-  // Only the thread's own arrival queues. A single new row lands now — it is
-  // the answer to something the reader just did, and it waits for nothing.
-  const threadArrives = rowArrives && paintedBody !== 'thread';
-  // ...and only grey the reader can actually see is worth waiting for.
+  /* The beat the whole body waits for. Until it lands the thread is rendered
+     at its hidden state — present, measured, unpainted — and the sheet is
+     still climbing the last 16 % of its travel with the body under the screen
+     edge. A thread that only arrives later than this reveals as it lands, and
+     the wait costs it nothing. Reduced motion never waits: there is nothing
+     to be late for. */
+  const [sheetArrived, setSheetArrived] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSheetArrived(true), SHEET_ARRIVAL);
+    return () => clearTimeout(timer);
+  }, []);
+  const revealed = prefersReducedMotion || sheetArrived;
+  // Only grey the reader can actually see is worth waiting for on top of it.
   const clearingSkeleton = paintedBody === 'skeleton' && skeletonShowing;
   const revealDelay = index => (clearingSkeleton ? REVEAL_LEAD : 0) + rowDelay(index);
 
@@ -964,7 +984,13 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
               exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
               transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.18, ease: [0.4, 0, 1, 1] }}
             >
-              {[0, 1, 2].map(index => (
+              {/* Empty until the hold is out, and the wrapper carries the
+                  `aria-busy` on its own meanwhile. The rows used to be here
+                  from the first frame, held at `opacity: 0` by a delay in the
+                  stylesheet — which fired anyway while the wrapper was
+                  leaving, and painted grey bars across comments that had
+                  already arrived. Nothing rendered is nothing to leak. */}
+              {skeletonShowing && [0, 1, 2].map(index => (
                 <div className="comment-skeleton" key={index} aria-hidden="true">
                   <span /><span /><span />
                 </div>
@@ -976,8 +1002,11 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
               key="empty"
               className="comments-sheet-state"
               role="status"
+              /* Held hidden until the sheet is home, like the thread: a
+                 verdict about a paper's conversation deserves to be read
+                 arriving, not found already sitting there. */
               initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
+              animate={revealed ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
               /* It had no exit: the first comment of a paper replaced "nobody
                  has commented yet" in a single frame, which is the one moment
                  in the sheet where a reader is watching for their own words to
@@ -1026,18 +1055,18 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                     key={entry.id}
                     className="comments-list-item"
                     layout={prefersReducedMotion ? false : 'position'}
-                    initial={rowArrives ? { opacity: 0, y: 6 } : false}
-                    animate={{
-                      opacity: 1,
-                      y: 0,
-                      transition: rowArrives
-                        ? {
-                          duration: 0.2,
-                          ease: [0.23, 1, 0.32, 1],
-                          delay: threadArrives ? revealDelay(index) : 0,
-                        }
-                        : { duration: 0 },
-                    }}
+                    initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+                    animate={revealed
+                      ? {
+                        opacity: 1,
+                        y: 0,
+                        transition: prefersReducedMotion
+                          ? { duration: 0 }
+                          : { duration: 0.24, ease: ARRIVE, delay: revealDelay(index) },
+                      }
+                      /* Not yet: the sheet is still climbing. Held, not
+                         animated — a row waiting its turn is not moving. */
+                      : { opacity: 0, y: 8, transition: { duration: 0 } }}
                     /* Out to the side, not down: a row that leaves along the
                        axis the list scrolls on is indistinguishable from the
                        list scrolling. */
@@ -1067,22 +1096,19 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                           <motion.li
                             key={reply.id}
                             layout={prefersReducedMotion ? false : 'position'}
-                            initial={rowArrives ? { opacity: 0, y: 4 } : false}
-                            animate={{
-                              opacity: 1,
-                              y: 0,
-                              /* A reply comes in with its parent, so it takes
-                                 its parent's delay exactly — head start and
-                                 stagger slot both. The pair is one entry of the
-                                 index, not two. */
-                              transition: rowArrives
-                                ? {
-                                  duration: 0.18,
-                                  ease: [0.23, 1, 0.32, 1],
-                                  delay: threadArrives ? revealDelay(index) : 0,
-                                }
-                                : { duration: 0 },
-                            }}
+                            initial={prefersReducedMotion ? false : { opacity: 0, y: 6 }}
+                            /* A reply sets down with its parent, on its
+                               parent's beat: the pair is one entry of the
+                               index, not two. */
+                            animate={revealed
+                              ? {
+                                opacity: 1,
+                                y: 0,
+                                transition: prefersReducedMotion
+                                  ? { duration: 0 }
+                                  : { duration: 0.22, ease: ARRIVE, delay: revealDelay(index) },
+                              }
+                              : { opacity: 0, y: 6, transition: { duration: 0 } }}
                             exit={prefersReducedMotion
                               ? { opacity: 0, transition: { duration: 0.1 } }
                               : { opacity: 0, x: -12, transition: { duration: 0.16, ease: LEAVE } }}

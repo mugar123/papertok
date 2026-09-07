@@ -24,14 +24,21 @@ test('the skeleton and the empty state cross-fade in place', async () => {
   // of flow, so the message takes the space in the same frame.
   assert.match(presence[0], /exit=\{prefersReducedMotion \? \{ opacity: 0 \} : \{ opacity: 0, y: 6 \}\}/);
   assert.match(presence[0], /initial=\{prefersReducedMotion \? \{ opacity: 0 \} : \{ opacity: 0, y: 10 \}\}/);
-  assert.match(presence[0], /animate=\{\{ opacity: 1, y: 0 \}\}/);
+  // Gated on the sheet's arrival now, like the thread: see the reveal test.
+  assert.match(presence[0], /animate=\{revealed \? \{ opacity: 1, y: 0 \} : \{ opacity: 0, y: 10 \}\}/);
 });
 
 test('the delayed reveal sits on the rows, so framer owns the skeleton\'s own opacity', async () => {
   const css = await read('./CommentsSheet.css');
   const block = css.match(/\.comments-sheet-loading \.comment-skeleton \{[^}]*\}/)?.[0] || '';
   assert.match(block, /opacity: 0;/);
-  assert.match(block, /animation: comments-skeleton-reveal 140ms ease-out 320ms forwards;/);
+  assert.match(block, /animation: comments-skeleton-reveal 140ms ease-out forwards;/);
+  // The hold is the component's now: rows held at `opacity: 0` still fired
+  // this animation while the wrapper was leaving, painting grey over the
+  // comments that had just arrived.
+  assert.doesNotMatch(block, /320ms/, 'the hold is no longer a delay on the fade');
+  const jsx = await read('./CommentsSheet.jsx');
+  assert.match(jsx, /\{skeletonShowing && \[0, 1, 2\]\.map\(index => \(/, 'the rows are not rendered inside the hold');
   assert.doesNotMatch(css, /\n\.comments-sheet-loading \{[^}]*animation:/, 'a CSS animation on the motion element would override its exit');
   // `popLayout` positions the leaving element against the nearest positioned
   // ancestor; the body has to be that ancestor, not the sheet above it.
@@ -69,20 +76,26 @@ test('the thread waits for the skeleton to clear before its first row lands', as
   );
   assert.match(jsx, /const revealDelay = index => \(clearingSkeleton \? REVEAL_LEAD : 0\) \+ rowDelay\(index\);/);
   // A comment just posted is the answer to something the reader did: no queue.
-  assert.match(jsx, /delay: threadArrives \? revealDelay\(index\) : 0,/, 'a single new row does not queue');
+  const cascade = jsx.match(/ease: ARRIVE, delay: revealDelay\(index\) \},/g) ?? [];
+  assert.equal(cascade.length, 2, 'the cascade is the reveal, for a row and for a reply');
 });
 
-test('the row reveal belongs to a handover, so the sheet never opens playing one', async () => {
+test('opening the sheet plays the reveal, and it waits for the sheet to get there', async () => {
   const jsx = await read('./CommentsSheet.jsx');
-  // `null` is the sheet's own first frame: nothing was painted before it, so a
-  // thread that is already there has nothing to arrive from.
-  assert.match(jsx, /const rowArrives = !prefersReducedMotion && paintedBody !== null;/);
-  assert.match(jsx, /const threadArrives = rowArrives && paintedBody !== 'thread';/);
-  // Both the rows and the replies hang their entrance off it.
-  const entrances = jsx.match(/initial=\{rowArrives \? \{ opacity: 0, y: \d+ \} : false\}/g) ?? [];
-  assert.equal(entrances.length, 2, 'the row and the reply both gate their entrance');
-  // Reduced motion is folded into `rowArrives`, so neither can slip past it.
-  assert.doesNotMatch(jsx, /initial=\{prefersReducedMotion \? false : \{ opacity: 0, y: \d+ \}\}/);
+  // The drawer's slide is 400 ms and spends 84 % of its travel in the first
+  // 200, so a reveal that starts at once is over before the sheet is home —
+  // which is how a real animation came to read as no animation at all.
+  assert.match(jsx, /const SHEET_ARRIVAL = 200;/);
+  assert.match(
+    jsx,
+    /const timer = setTimeout\(\(\) => setSheetArrived\(true\), SHEET_ARRIVAL\);/,
+    'the beat is the sheet\'s own, not the read\'s',
+  );
+  assert.match(jsx, /const revealed = prefersReducedMotion \|\| sheetArrived;/, 'reduced motion never waits');
+  // Held, not animated: a row waiting its turn is not moving.
+  const held = jsx.match(/: \{ opacity: 0, y: \d+, transition: \{ duration: 0 \} \}\}/g) ?? [];
+  assert.equal(held.length, 2, 'the row and the reply both hold until the sheet is home');
+  assert.match(jsx, /animate=\{revealed\s*\?\s*\{ opacity: 1, y: 0 \} : \{ opacity: 0, y: 10 \}\}/, 'so does the empty verdict');
 });
 
 test('what the body painted is recorded after the frame, not during the effect', async () => {
