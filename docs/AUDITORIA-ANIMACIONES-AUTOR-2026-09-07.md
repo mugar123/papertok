@@ -186,6 +186,34 @@ mitiga estos dos defectos: los empeora.
 
 ---
 
+## 3 bis. Verificado tras los arreglos (mismo día, mismas sondas)
+
+Arreglados en `ecab111` (el remontaje) y `cf35e1a` (la banda), medidos otra vez
+contra el mismo perfil con sesión y un build de producción del árbol con los
+arreglos dentro.
+
+| Objetivo | Antes | Después |
+|---|---|---|
+| Generaciones del nodo del héroe, en frío | **4** | **1–2** (sólo el relevo esqueleto→vivo, que es irreducible) |
+| Retroceso de la tira de pestañas | **−68,1 px** escritorio, −108 móvil, −349,6 reduced motion | **0 en los cuatro casos** |
+| Salto de la banda de barra | **+56 px** (52 móvil) en UN fotograma | **0** — se abre en 245 ms, máximo **6,35 px/fotograma** |
+| Reduced motion: saltos de un fotograma ≥ 8 px | **6**, suma de magnitudes **1104,8 px**, con un retroceso de −349,6 | **1**, de **281,7 px**, ninguno hacia atrás |
+
+La apertura de la banda, fotograma a fotograma (frío, escritorio): `padTop`
+0 → 6,35 → 12,31 → 17,93 → 23,29 → 28,36 → 33,08 → 37,48 → 41,56 → 45,25 →
+48,51 → 51,29 → 53,51 → 55,09 → 55,92 → 56 px. Ease-out, front-loaded, sobre el
+mismo reloj de 240 ms de `navbarArrive`.
+
+Sin fotogramas perdidos: 537 muestras en 9 s en escritorio, 528 en móvil, 535 en
+reduced motion — 59,7, 58,7 y 59,4 fps. Animar `padding-top` es una animación de
+layout, pero cae sobre fotogramas en los que el settle ya está forzando layout
+completo, así que no añade pasadas.
+
+Lo que **queda** y no se tocó, por estar en la lista de lo ya decidido: el mayor
+movimiento por fotograma sigue siendo **32,9 px** (escritorio) / 32,5 px (móvil),
+y es entero del settle del panel de experiencia — el hallazgo refutado 2/3 de la
+sección 6.
+
 ## 4. Reducciones (impacto bajo, sin medición nueva)
 
 - `EntityExplorer.css:754` y `:1021` — `exSkelSweep 1.5s ease-in-out infinite`
