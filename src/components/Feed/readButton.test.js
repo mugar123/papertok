@@ -91,3 +91,27 @@ test('SOURCE: a stored copy from a list or a profile row opens on the skeleton',
   const palette = await read('../../utils/searchDestinations.js');
   assert.match(palette, /state: \{ paper \}/, 'the palette hands over the paper itself, which does paint');
 });
+
+/**
+ * The rail holds still. It is centred on its own height — `translate: 0 -50%`
+ * against the card on a phone, `align-self: center` beside it otherwise — so
+ * any change to that height moves every button in the column, like and
+ * comments and save included.
+ *
+ * Exactly one label here changes at runtime: this button's. It crosses between
+ * one line ("Leído", "Leer", "Abrir fuente") and two ("Leer artículo",
+ * "Versión abierta") when the reader marks the paper read, and again when the
+ * open-access copy resolves a moment after the paper is opened — that second
+ * one arrives unannounced, which is how it was noticed. Measured on 390x844
+ * against the built stylesheet: 12.5 px of rail before this, 0 after, with the
+ * like button's top identical across all eight label states.
+ */
+test('the read button reserves both its lines, so the rail never moves under it', async () => {
+  const css = await readFile(new URL('./PaperCard.css', import.meta.url), 'utf8');
+  const rule = css.match(/\.pc-side-btn--seen \.pc-side-label \{[^}]*\}/)?.[0];
+  assert.ok(rule, 'the seen button reserves its label box');
+  // 0.625rem/1.25 — two lines is 2.5em of the label's own size.
+  assert.match(rule, /min-height: 2\.5em;/);
+  // `min-`, so a third line would still fit rather than spill.
+  assert.doesNotMatch(rule, /\n\s*height:/, 'a fixed height would clip a longer translation');
+});

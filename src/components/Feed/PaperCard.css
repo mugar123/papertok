@@ -1013,6 +1013,26 @@ a.pc-citations {
   transition: color var(--transition-fast);
 }
 
+/* Two lines, always, whatever this one currently says.
+
+   The rail is centred on its own height — `translate: 0 -50%` against the
+   card on a phone, `align-self: center` beside it otherwise — so anything
+   that changes that height moves every button in the column, like and
+   comments and save included. And exactly one label here changes at runtime:
+   this one. It reads "Leer artículo" or "Versión abierta" on two lines, and
+   "Leído", "Leer" or "Abrir fuente" on one, and it crosses between them twice
+   in a normal session — when the reader marks the paper read, and when the
+   open-access copy resolves a moment AFTER the paper is opened, which is the
+   one that arrives unannounced. Measured on 390x844: 12.5 px of rail height,
+   half of it under everything above.
+
+   Reserving the taller of the two is what makes the rail a constant. `min-`
+   and not a fixed height so a third line, if some language ever needs one,
+   still fits rather than spilling. */
+.pc-side-btn--seen .pc-side-label {
+  min-height: 2.5em;
+}
+
 .pc-side-icon {
   width: 40px;
   height: 40px;
