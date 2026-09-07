@@ -79,6 +79,31 @@ export function FollowingProvider({ children }) {
     ? institutionLocalizationState.names
     : EMPTY_LOCALIZED_INSTITUTION_NAMES;
 
+  // What the remount used to do, done in place.
+  //
+  // `useState(Boolean(user))` above was a correct reading of the account only
+  // because this provider was rebuilt once the account was known: `App` keyed
+  // it on `user?.uid`, and that key flipped when `onAuthStateChanged` answered.
+  // It is keyed on a generation now (utils/accountScope.js) and a session
+  // merely BECOMING KNOWN no longer rebuilds anything — so on a cold load this
+  // mounts with `user` still null and `loading` reads false while the uid is on
+  // its way. A `loading: false` with nothing in hand is an unconfirmed absence
+  // presented as an answer: "you follow nobody" to an account that follows
+  // fifty, and the gate `FeedContext` waits on before it loads a feed at all.
+  //
+  // State adjusted during render — the documented way to reset state when a
+  // prop changes — rather than in an effect: the gate then closes in the very
+  // render the uid appears instead of a commit later, and there is no
+  // cascading render for `react-hooks/set-state-in-effect` to object to. Every
+  // other piece of state here is already right for an empty account, so
+  // `loading` is the only one that has to be re-read.
+  const accountId = user?.uid || null;
+  const [loadingAccount, setLoadingAccount] = useState(accountId);
+  if (loadingAccount !== accountId) {
+    setLoadingAccount(accountId);
+    setLoading(Boolean(accountId));
+  }
+
   useEffect(() => {
     if (!user?.uid) {
       return undefined;

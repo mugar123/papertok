@@ -4,6 +4,7 @@ import { AnimatePresence } from 'framer-motion'
 import PageTransition from './components/Layout/PageTransition'
 import { PageTransitionCustomProvider, usePageTransitionCustom } from './hooks/usePageTransitionCustom'
 import { safeExternalUrl } from './utils/externalUrl.js'
+import { INITIAL_ACCOUNT_SCOPE, accountScopeKey, nextAccountScope } from './utils/accountScope.js'
 import RouteFallback from './components/Layout/RouteFallback'
 import RouteAnnouncer from './components/Layout/RouteAnnouncer'
 import { AuthProvider, useAuth } from './context/AuthContext'
@@ -503,9 +504,22 @@ function AppContent() {
 }
 
 function UserScopedAppContent() {
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
+  // This key exists to isolate per-account state (e507856, "isolate
+  // recommendation state"): everything below it is rebuilt when the reader
+  // becomes SOMEBODY ELSE. It must not be rebuilt when the account merely
+  // becomes KNOWN, which is what keying on `user?.uid || 'signed-out'` did —
+  // `user` is null on the first render of every load, so the key flipped once
+  // on every signed-in cold load and React destroyed this whole tree,
+  // <Routes> included, mid-paint. `utils/accountScope.js` has the measurement.
+  // State adjusted during render, the documented way to derive state from a
+  // prop; the key reads `scope` rather than the state so this render already
+  // mounts under the right one.
+  const [previousScope, setPreviousScope] = useState(INITIAL_ACCOUNT_SCOPE)
+  const scope = nextAccountScope(previousScope, { uid: user?.uid, authLoading })
+  if (scope !== previousScope) setPreviousScope(scope)
   return (
-    <FollowingProvider key={user?.uid || 'signed-out'}>
+    <FollowingProvider key={accountScopeKey(scope)}>
       <FollowingUpdatesProvider>
         <EmailNotificationsProvider>
           <AppContent />

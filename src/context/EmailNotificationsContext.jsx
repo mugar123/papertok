@@ -52,6 +52,19 @@ export function EmailNotificationsProvider({ children }) {
   const notificationDataReady = !followsLoading && !followsError;
   const hasFollows = followedEntities.length > 0;
 
+  // The same reset `FollowingContext` does, and for the same reason: the tree
+  // above is no longer rebuilt when the session resolves
+  // (utils/accountScope.js), so `useState(Boolean(user))` no longer catches the
+  // account arriving and a cold load would render these preferences as
+  // loaded-and-empty. Keyed on the account alone, so the effect below re-running
+  // on `language` or `userEmail` cannot re-close the gate and flicker the
+  // settings screen.
+  const [loadingAccount, setLoadingAccount] = useState(userId);
+  if (loadingAccount !== userId) {
+    setLoadingAccount(userId);
+    setLoading(Boolean(userId));
+  }
+
   useEffect(() => {
     if (!userId) return undefined;
     let cancelled = false;
