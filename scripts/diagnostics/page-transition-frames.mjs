@@ -2,7 +2,7 @@
 // the entity back to the feed, a tab to the next — for the before/after of
 // docs/superpowers/specs/2026-09-06-transicion-tarjeta-entidad-design.md.
 //
-//   node scripts/diagnostics/page-transition-frames.mjs '<css selector>' <label> [demo] [mobile] [back] [idx=N] [scroll=N]
+//   node scripts/diagnostics/page-transition-frames.mjs '<css selector>' <label> [demo] [mobile] [back] [idx=N] [scroll=N] [backat=MS]
 //
 // Loads ORIGIN (default http://localhost:5174) at `#/`, waits for the selector
 // and the 4.5 s the explorer chunk prefetch needs, then records around ONE
@@ -35,7 +35,13 @@
 // scrolls the page it opened N px down before the way back, so the leaving
 // page's lift by its own scroll (`top` in the samples) is on record. PORT=9232 picks another
 // debugging port; OUT=<dir> another output directory; CHROME=<path> another
-// binary. No dependencies; Node ≥ 22 for the global WebSocket.
+// binary. `backat=MS` is how long after the click the way back is taken
+// (2200 ms by default, when the page it opened has settled); a smaller number
+// records the way back taken WHILE the page arriving is still moving, which is
+// the interruption case. PROFILE_DIR=<dir> reuses a profile the user has signed
+// in to instead of a throwaway one — used as-is and never deleted, and the only
+// way to record a transition a signed-out reader cannot reach. No dependencies;
+// Node ≥ 22 for the global WebSocket.
 import { spawn } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -46,7 +52,12 @@ const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/M
 const PORT = Number(process.env.PORT || 9231);
 const ORIGIN = process.env.ORIGIN || 'http://localhost:5174';
 const OUT = process.env.OUT || process.cwd();
-const PROFILE = join(tmpdir(), `papertok-page-transition-${process.pid}`);
+// A run of its own leaves its profile behind, and inside the repo that is an
+// untracked directory. `PROFILE_DIR` names a profile to reuse instead — one the
+// user has signed in to, for what the page only does for a signed-in reader. It
+// is used as-is, so a session survives between runs, and it is NEVER deleted.
+const OWN_PROFILE = !process.env.PROFILE_DIR;
+const PROFILE = process.env.PROFILE_DIR || join(tmpdir(), `papertok-page-transition-${process.pid}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const [, , sel, label = 'run', ...rest] = process.argv;
@@ -60,6 +71,12 @@ const mobile = flags.has('mobile');
 const demo = flags.has('demo');
 const back = flags.has('back');
 const scrollPx = Number(([...flags].find((f) => f.startsWith('scroll=')) || 'scroll=0').slice(7));
+// How long after the click the way back is taken. 2200ms by default — the
+// page it opened has settled by then. A smaller number records the way back
+// taken WHILE the page arriving is still moving, which is the interruption
+// case: 400ms of it is the screencast warming up, so the wait before that is
+// the rest.
+const backAt = Number(([...flags].find((f) => f.startsWith('backat=')) || 'backat=2200').slice(7));
 
 const DEMO_SEED = `(() => { try {
   localStorage.setItem('papertok_user', JSON.stringify({ uid: 'demo-user-123', displayName: 'Demo User', email: 'demo@papertok.app', photoURL: '', providerData: [{ providerId: 'google.com' }] }));
@@ -184,7 +201,7 @@ try {
   const clickExpr = `(() => { const el = document.querySelectorAll(${JSON.stringify(sel)})[${idx}]; const t = (el.textContent || '').trim().slice(0, 40); el.click(); return t; })()`;
   if (back) {
     console.log('opened:', await cdp.eval(clickExpr));
-    await sleep(1800); // the page it opened is still by now; the record is the way back
+    await sleep(Math.max(0, backAt - 400)); // the 400ms below is the screencast warming up
     if (scrollPx) {
       // A scroll event only reaches the page's listener on a rendered frame:
       // give it a few before the way back.
@@ -239,7 +256,9 @@ try {
   writeFileSync(join(OUT, `${label}-sheet.png`), Buffer.from(shot.data, 'base64'));
   console.log('sheet:', join(OUT, `${label}-sheet.png`));
 } finally {
-  chrome.kill('SIGKILL');
+  // SIGTERM, not SIGKILL: a kill only reaches the parent, and the renderers go
+  // on writing into a profile that may be the user''s own.
+  chrome.kill();
   await sleep(400);
-  rmSync(PROFILE, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
+  if (OWN_PROFILE) rmSync(PROFILE, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
 }

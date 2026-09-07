@@ -1,14 +1,32 @@
 // Per-frame geometry of the Explorer hero's arrivals, over CDP against a
 // headless Chrome. No dependencies (Node >= 22 for the global WebSocket).
 //
-//   node explorer-hero-frames.mjs route '#/explorer/author/A…' [mobile] [ms]
-//   node explorer-hero-frames.mjs fromfeed '<css selector>' [late] [idx=N] [ms]
+//   node explorer-hero-frames.mjs route '#/explorer/author/A…' [demo] [mobile] [slow] [ms]
+//   node explorer-hero-frames.mjs fromfeed '<css selector>' [demo] [late] [idx=N] [from=<hash>] [pre=<css>] [ms]
 //   node explorer-hero-frames.mjs fromsearch author|institution|topic|project q=<text> [late] [mobile] [ms]
 //   node explorer-hero-frames.mjs shotwhen '#/explorer/…' '<js expression>' out.png
 //
-// `fromsearch` needs a build made with IS_DEMO = true (never committed): the
-// palette only mounts for a signed-in user, and the demo session is whatever
-// localStorage says it is.
+// Two ways to reach a page that only exists for a signed-in reader, and they
+// are not interchangeable:
+//
+//   * `demo` seeds a demo session in localStorage before the first script. It
+//     needs a build made with IS_DEMO = true (never committed). Cheap, but it
+//     short-circuits Firestore and auth — measured 2026-09-07, a demo build
+//     HIDES the subtree remount and the navbar band snap on an entity page,
+//     because the demo user resolves in a setTimeout(0). Use it for the
+//     skeleton and the palette, not for what the session's arrival does.
+//   * PROFILE_DIR=<dir> reuses a Chrome profile the user has signed in to.
+//     Used as-is and NEVER deleted (see OWN_PROFILE below). This is the only
+//     way to measure the real thing. Chrome locks a --user-data-dir, so the
+//     window where the session was opened must be closed first.
+//
+// `fromsearch` is demo-only: the palette does not mount without a session and
+// the demo one is whatever localStorage says it is.
+//
+// `from=<hash>` starts the click somewhere other than the feed — an author
+// inside an institution page, which is the same route as the author page and
+// so runs the whole unmount/mount transition. `pre=<css>` clicks something
+// first (the Authors tab, whose cards do not exist until it is opened).
 //
 // Every rAF a record of the hero body (box, the WAAPI settle's from/to/
 // currentTime, computed height, overflow), the experience panel and its inner,
@@ -25,7 +43,12 @@ import { join } from 'node:path';
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PORT = Number(process.env.PORT || 9226);
 const ORIGIN = process.env.ORIGIN || 'http://localhost:5173';
-const PROFILE = join(tmpdir(), `papertok-hero-frames-${process.pid}`);
+// A run of its own leaves its profile behind, and inside the repo that is an
+// untracked directory. `PROFILE_DIR` names a profile to reuse instead — one the
+// user has signed in to, for what the page only does for a signed-in reader. It
+// is used as-is, so a session survives between runs, and it is NEVER deleted.
+const OWN_PROFILE = !process.env.PROFILE_DIR;
+const PROFILE = process.env.PROFILE_DIR || join(tmpdir(), `papertok-hero-frames-${process.pid}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function launch() {
@@ -123,6 +146,12 @@ const REPORT = `(() => {
   return { frames: p.length, gaps, changes };
 })()`;
 
+// The demo session the app reads at boot. Inline in `fromsearch` before; named
+// here because `fromfeed` needs it too: a signed-out feed links its authors to
+// /public/entity/, not /explorer/author/, so the route under review is only
+// reachable from the feed with a session. Needs an IS_DEMO = true build.
+const DEMO_SEED = "(() => { try { localStorage.setItem('papertok_user', JSON.stringify({ uid: 'demo-user-123', displayName: 'Demo User', email: 'demo@papertok.app', photoURL: '', providerData: [{ providerId: 'google.com' }] })); localStorage.setItem('papertok_onboardingComplete', 'true'); localStorage.setItem('papertok_selectedCategories', JSON.stringify(['bio.neuro', 'physics'])); } catch {} })();";
+
 const [, , mode, arg, ...rest] = process.argv;
 const flags = new Set(rest);
 const idx = Number(([...flags].find((f) => f.startsWith('idx=')) || 'idx=0').slice(4));
@@ -142,6 +171,9 @@ try {
   }
   if (flags.has('slow')) await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
   cdp.on('Page.frameNavigated', ({ frame }) => { if (!frame.parentId) console.log('[navigated]', frame.url.slice(0, 120)); });
+  // `fromsearch` seeds it itself (before its own navigate); every other mode
+  // opts in with `demo`.
+  if (flags.has('demo') && mode !== 'fromsearch') await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: DEMO_SEED });
 
   const clickAndSample = async (selector, pick) => {
     await cdp.eval(SAMPLER);
@@ -162,10 +194,14 @@ try {
     const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' });
     writeFileSync(out || 'shotwhen.png', Buffer.from(data, 'base64'));
     console.log('screenshot:', out || 'shotwhen.png');
-    chrome.kill('SIGKILL'); rmSync(PROFILE, { recursive: true, force: true }); process.exit(0);
+    // SIGTERM, not SIGKILL: a kill only reaches the parent, and the renderers
+    // go on writing into a profile that may be the user''s own.
+    chrome.kill(); await sleep(300);
+    if (OWN_PROFILE) rmSync(PROFILE, { recursive: true, force: true });
+    process.exit(0);
   } else if (mode === 'fromsearch') {
     const query = ([...flags].find((f) => f.startsWith('q=')) || 'q=harvard').slice(2);
-    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { try { localStorage.setItem('papertok_user', JSON.stringify({ uid: 'demo-user-123', displayName: 'Demo User', email: 'demo@papertok.app', photoURL: '', providerData: [{ providerId: 'google.com' }] })); localStorage.setItem('papertok_onboardingComplete', 'true'); localStorage.setItem('papertok_selectedCategories', JSON.stringify(['bio.neuro', 'physics'])); } catch {} })();` });
+    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: DEMO_SEED });
     await cdp.send('Page.navigate', { url: `${ORIGIN}/?probe=${Date.now()}#/` });
     const trigger = flags.has('mobile') ? '.navbar-icon-btn--search-compact' : '.navbar-search';
     for (let i = 0; i < 400; i++) { if (await cdp.eval(`!!document.querySelector(${JSON.stringify(trigger)})`).catch(() => false)) break; await sleep(100); }
@@ -185,15 +221,31 @@ try {
     await sleep(800);
     await clickAndSample(item, 0);
   } else if (mode === 'fromfeed') {
-    await cdp.send('Page.navigate', { url: `${ORIGIN}/?probe=${Date.now()}#/` });
+    // The page the click starts from. '#/' (the feed) by default; `from=<hash>`
+    // for a click that starts anywhere else — an author inside an institution
+    // page, which is the same route as the author page and so runs the whole
+    // unmount/mount transition.
+    const from = ([...flags].find((f) => f.startsWith('from=')) || 'from=#/').slice(5);
+    await cdp.send('Page.navigate', { url: `${ORIGIN}/?probe=${Date.now()}${from}` });
     for (let i = 0; i < 400; i++) { if (await cdp.eval(`document.querySelectorAll(${JSON.stringify(arg)}).length > ${idx}`).catch(() => false)) break; await sleep(100); }
     await sleep(flags.has('late') ? 4000 : 1500);
+    // A click that has to be set up first — the Authors tab of an institution,
+    // whose cards do not exist until the tab is opened. Waited for, clicked,
+    // and given a second to mount what the real click needs.
+    const pre = ([...flags].find((f) => f.startsWith('pre=')) || '').slice(4);
+    if (pre) {
+      for (let i = 0; i < 200; i++) { if (await cdp.eval(`!!document.querySelector(${JSON.stringify(pre)})`).catch(() => false)) break; await sleep(100); }
+      console.log('pre:', await cdp.eval(`(() => { const el = document.querySelector(${JSON.stringify(pre)}); if (!el) return null; el.click(); return (el.textContent || '').trim().slice(0, 30); })()`));
+      for (let i = 0; i < 200; i++) { if (await cdp.eval(`document.querySelectorAll(${JSON.stringify(arg)}).length > ${idx}`).catch(() => false)) break; await sleep(100); }
+      await sleep(1200);
+    }
     await clickAndSample(arg, idx);
   }
   const report = await cdp.eval(REPORT);
   console.log(JSON.stringify({ frames: report.frames, gaps: report.gaps }));
   for (const c of report.changes) console.log(JSON.stringify(c));
 } finally {
-  chrome.kill('SIGKILL');
-  rmSync(PROFILE, { recursive: true, force: true });
+  chrome.kill();
+  await sleep(300);
+  if (OWN_PROFILE) rmSync(PROFILE, { recursive: true, force: true });
 }

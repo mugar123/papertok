@@ -26,6 +26,50 @@ node scripts/diagnostics/test-openalex.js
 When a diagnostic becomes a stable regression check, replace its live request with a fixture
 and move the behavior into a colocated `*.test.js` file under `src/` or `worker/`.
 
+## Measuring a page that only exists for a signed-in reader (2026-09-07)
+
+Three of these probes can drive a page behind the session, and there are two
+ways in. They are not interchangeable, and picking the wrong one costs a whole
+audit.
+
+**A demo build** (`IS_DEMO = true` in `src/services/firebase.js`, never
+committed, put back to `false` before committing anything) seeds a fake session
+from `localStorage`. It is cheap and it is the only way to open the search
+palette. But it short-circuits Firestore and auth: the demo user resolves in a
+`setTimeout(0)` (`AuthContext.jsx:60-75`), so nothing that depends on the session
+ARRIVING ever happens. Measured 2026-09-07: a demo build hides both of the
+defects the entity page's arrival actually has — the subtree remount when
+`onAuthStateChanged` flips the key at `App.jsx:508`, and the navbar band’s
+unanimated 56px appearing mid-settle — and its feed only ever hands out the fast
+id-keyed author route, never the slow name-keyed one. Use it for skeletons and
+for the palette; never to judge what a signed-in arrival does.
+
+**A real profile** is `PROFILE_DIR=<dir>`, a Chrome `--user-data-dir` the user
+has signed in to themselves. The probe reuses it as-is and NEVER deletes it:
+each of the three guards its cleanup with `OWN_PROFILE = !process.env.PROFILE_DIR`
+and terminates Chrome with SIGTERM rather than SIGKILL, because a kill only
+reaches the parent and the renderers go on writing into that profile.
+
+```bash
+# The user opens this VISIBLE window and signs in. Never ask them for
+# credentials and never write any into a script, a log or a URL.
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --remote-debugging-port=9223 --user-data-dir="$HOME/.papertok-probe-profile" \
+  --no-first-run --no-default-browser-check http://localhost:5174
+
+# Then CLOSE it — Chrome locks a --user-data-dir while an instance is alive —
+# and measure against it:
+PROFILE_DIR="$HOME/.papertok-probe-profile" ORIGIN=http://localhost:5174 \
+  node scripts/diagnostics/explorer-hero-frames.mjs route '#/explorer/author/A5006398227' 9000
+```
+
+A signed-out feed links its authors to `/public/entity/…` rather than
+`/explorer/…`, which doubles as a check that the session was inherited. And
+`.pc-author-link[href*="?name="]` picks the fast id-keyed route while
+`[href*="arxivId="]` picks the slow name-keyed one.
+
+Measure the production build, not `vite dev` — see the note under `open` below.
+
 ## `explorer-loading-probe.mjs` — how an entity page waits (2026-09-03)
 
 Drives a headless Chrome over CDP (no dependencies; Node ≥ 22 for the global
@@ -138,7 +182,14 @@ node scripts/diagnostics/explorer-hero-frames.mjs route '#/explorer/author/A5068
 node scripts/diagnostics/explorer-hero-frames.mjs fromfeed '.pc-topic-link' late 7000
 node scripts/diagnostics/explorer-hero-frames.mjs fromsearch author q=moher late 6000   # needs an IS_DEMO build
 node scripts/diagnostics/explorer-hero-frames.mjs shotwhen '#/explorer/author/A5068353058' "(()=>{const p=document.querySelector('#ehc-experience-panel');return !!p&&p.getBoundingClientRect().height<110;})()" squeeze.png
+node scripts/diagnostics/explorer-hero-frames.mjs fromfeed '.ee-author-card:not(.ex-skel-row)' demo late 'from=#/explorer/institution/I136199984' 'pre=.ee-tabs .ee-tab:nth-child(2)' 8000
 ```
+
+`from=<hash>` starts the click somewhere other than the feed and `pre=<css>`
+clicks something first, which together reach the third door into an author page:
+an author card inside an institution's Authors tab, whose cards do not exist
+until the tab is opened. `demo` seeds the demo session for the modes that do not
+seed it themselves, and `PROFILE_DIR` (above) is the alternative for a real one.
 
 `fromsearch` seeds a demo session in `localStorage` before the first script and
 types with `Input.insertText` (cmdk ignores the native value setter). Build with
@@ -199,7 +250,10 @@ Research), the first frame after which one page stands alone at rest, and the
 lowest opacity seen on a held page's first card title (`held cards ≥ 1.00`
 means the held feed never dipped — anything lower means a card replayed its
 arrival under the entity page).
-`back` clicks the selector first, waits 1.8 s, and records `history.back()`;
+`back` clicks the selector first, waits `backat=<ms>` (2200 by default, when the
+page it opened has settled) and records `history.back()` — a smaller `backat`
+records the way back taken WHILE the page arriving is still moving, which is the
+interruption case;
 `scroll=<px>` with it scrolls the page it opened first, so the leaving page's
 lift by its own scroll (`top` in the samples) is on record. `demo` needs
 `IS_DEMO = true` flipped locally (never committed) and a server on a
