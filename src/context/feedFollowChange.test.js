@@ -46,3 +46,34 @@ test('SOURCE: the automatic retry after a failed reset keeps the option', async 
   const retry = bounded(code, 'if (reset && !autoRetryUsedRef.current) {', '}, 2500);', 'the automatic retry', 8);
   assert.match(retry, /loadPapersRef\.current\?\.\(true, activeMode, false, undefined, \{ keepThroughVisible \}\);/);
 });
+
+test('SOURCE: the following effect records nothing off the feed route and compares against the last applied signature', async () => {
+  const code = stripComments(await read('./FeedContext.jsx'));
+  const effect = bounded(
+    code,
+    'const followingSignatureRef = useRef(null);',
+    '}, [feedRouteActive, followedEntities, followingLoading',
+    'the following effect',
+    40,
+  );
+  const signatureAt = effect.indexOf("const signature = followedEntities");
+  const gateAt = effect.indexOf('if (!feedRouteActive) return;');
+  const compareAt = effect.indexOf('if (followingSignatureRef.current === signature) return;');
+  const recordAt = effect.indexOf('followingSignatureRef.current = signature;');
+  assert.ok(signatureAt >= 0 && gateAt >= 0 && compareAt >= 0 && recordAt >= 0, 'the four steps are there');
+  assert.ok(gateAt > signatureAt, 'the signature is computed first (the topic warm-up above it stays unconditional)');
+  assert.ok(gateAt < compareAt && gateAt < recordAt, 'off the feed route nothing is compared nor recorded: a follow and its undo cost nothing');
+  assert.match(
+    effect,
+    /setTimeout\(\s*\(\) => loadPapers\(true, null, true, undefined, \{ keepThroughVisible: true \}\),\s*0,?\s*\)/,
+    'the refresh keeps the reader on their card',
+  );
+  assert.match(effect, /reRankFeed\(\);/, 'the visible cards are still re-ranked, anchored, before the fresh page arrives');
+});
+
+test('SOURCE: the topic warm-up still runs before the gate, so the prewarm test keeps its 12-line window', async () => {
+  const code = stripComments(await read('./FeedContext.jsx'));
+  const head = bounded(code, 'const followingSignatureRef = useRef(null);', 'const signature = followedEntities', 'the head of the effect', 12);
+  assert.match(head, /void loadTopicRetrieval\(\);/);
+  assert.doesNotMatch(head, /feedRouteActive/, 'the gate comes after the signature, not before the warm-up');
+});

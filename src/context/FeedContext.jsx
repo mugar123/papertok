@@ -1643,6 +1643,12 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       .map(entity => `${entity.type}:${entity.canonicalId}`)
       .sort()
       .join('|');
+    // Off the feed route nothing is compared nor recorded: a follow toggled
+    // from an entity page is picked up on the next visit to the feed, against
+    // the last signature the feed applied — so following and unfollowing on
+    // the way costs nothing, and no source cascade fires for a feed nobody is
+    // looking at (reported 2026-09-07, same rule as the preferences effect).
+    if (!feedRouteActive) return;
     if (followingSignatureRef.current === signature) return;
     if (followingSignatureRef.current === null) {
       followingSignatureRef.current = signature;
@@ -1652,11 +1658,15 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     reRankFeed();
     if (recommendationProfileReady) {
       feedCache.current = {};
-      // Keep the existing cards visible while a follow change refreshes ranking.
-      const refreshTimer = setTimeout(() => loadPapers(true, null, true), 0);
+      // The cards through the one the reader is on stay; the fresh ranking
+      // lands below them (mergeFreshFeedPage).
+      const refreshTimer = setTimeout(
+        () => loadPapers(true, null, true, undefined, { keepThroughVisible: true }),
+        0,
+      );
       return () => clearTimeout(refreshTimer);
     }
-  }, [followedEntities, followingLoading, isKnownPaper, loadPapers, reRankFeed, recommendationProfileReady]);
+  }, [feedRouteActive, followedEntities, followingLoading, isKnownPaper, loadPapers, reRankFeed, recommendationProfileReady]);
 
   // Save current papers to cache before switching, then restore or fetch
   const handleSetFeedMode = useCallback((newMode) => {
