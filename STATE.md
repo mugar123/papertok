@@ -1,5 +1,21 @@
 # Estado / pendientes
 
+## Crear y editar listas vuelve a guardarse: las rules admiten `color` (2026-09-07)
+
+**«Al editar el nombre de una lista no me deja guardar.»** No era el nombre:
+desde la 0.2 (27-08) el cliente escribe `color` en `users/{uid}/lists/{id}` y la
+regla `allow create, update` tenía una lista cerrada de claves sin él, así que
+Firestore contestaba `permission-denied` a crear (dos caminos) y a editar
+nombre, icono o color. Reproducido en el emulador: la escritura del diálogo con
+`color` cae en `firestore.rules:828`; sin `color`, pasa. La suite de rules
+estaba en verde porque ningún cuerpo de lista llevaba `color`. Arreglo: `color`
+admitido como opcional y restringido a los ocho ids de `LIST_COLORS`, con un
+test que recorre la lista desde la fuente; el diálogo registra ahora el error
+real en consola. El arreglo son los commits `6114ec2` y `b9d96f1`; el
+despliegue de las rules a producción y la verificación en vivo quedan
+pendientes, a cargo del usuario con su propia sesión de Firebase:
+`npx --yes firebase-tools@15.26.0 deploy --only firestore:rules --project papertok-168df`.
+
 ## El feed y las listas ya no quedan rehenes de un stream de Firestore muerto (2026-09-06)
 
 **«Parece que el feed principal y los papers de las listas tardan mucho en
