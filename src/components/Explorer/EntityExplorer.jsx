@@ -1846,7 +1846,7 @@ export default function EntityExplorer({
                       // closing, so the last thing seen is an empty fold
                       // rather than text being guillotined by the clip.
                       opacity: { duration: 0.2, ease: [0.16, 1, 0.3, 1] },
-                      height: { duration: 0.34, ease: [0.16, 1, 0.3, 1] },
+                      height: { duration: 0.26, ease: [0.16, 1, 0.3, 1] },
                     }}
                 >
                   <div className="ehc-experience-inner">

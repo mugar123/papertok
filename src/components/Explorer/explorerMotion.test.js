@@ -255,3 +255,57 @@ test('the Wikipedia block waits on its rows; the local description is the fallba
   const jsx = stripComments(await read('./EntityExplorer.jsx'));
   assert.match(jsx, /const wikiDescription = isWikiRequestPending\s*\?\s*''\s*:\s*\(visibleWikiInfo\?\.extract \|\| topicFallbackDescription\);/);
 });
+
+/**
+ * The skeleton's sweep is constant motion in a loop, and constant motion is
+ * `linear`. On an `ease-in-out` a loop stalls at both ends and runs fast
+ * through the middle, so the sweep read as a pulse rather than as a pass —
+ * a heartbeat under a page that is waiting, which is the opposite of what a
+ * shimmer is for.
+ */
+test('the skeleton sweeps at a constant speed, because it never starts or stops', async () => {
+  const css = stripComments(await read('./EntityExplorer.css'));
+  const sweeps = [...css.matchAll(/animation: exSkelSweep ([\d.]+s) (\S+) infinite;/g)];
+  assert.ok(sweeps.length >= 2, 'both the shapes and the wiki lines carry the sweep');
+  for (const [, , easing] of sweeps) {
+    assert.equal(easing, 'linear', 'a looping sweep must not ease at its ends');
+  }
+});
+
+/**
+ * A delay longer than the wait it decorates is an animation that never runs.
+ * Measured 2026-09-07 with a real session: the skeleton stands 418ms on the
+ * fast id-keyed author route, and the ladder reached 1.08s — the last two rows
+ * never swept once. The wave still walks down the page, on a 30ms step
+ * throughout instead of 60 and 120 at the bottom.
+ */
+test('no shape waits longer for its turn than the skeleton is on screen', async () => {
+  const css = stripComments(await read('./EntityExplorer.css'));
+  const ladder = [...css.matchAll(/\.explorer-skeleton [^{]*::after \{ animation-delay: ([\d.]+)s; \}/g)]
+    .map(([, seconds]) => Number(seconds));
+  assert.ok(ladder.length >= 15, `the ladder is still there, got ${ladder.length} steps`);
+  const longest = Math.max(...ladder);
+  assert.ok(longest <= 0.5, `no step may outlive the skeleton's own 418ms wait by much; longest is ${longest}s`);
+});
+
+/**
+ * The chevron turns on the panel's clock — one gesture, not two events, and
+ * that pairing is deliberate. The number is what changed: 340ms put a
+ * disclosure over the 300ms ceiling for UI motion, where the band is 150-250ms.
+ */
+test('the experience disclosure and its chevron share one clock, and it is under the ceiling', async () => {
+  const css = stripComments(await read('./EntityExplorer.css'));
+  const chevron = css.match(/\.ehc-name-toggle > svg:last-child \{\s*transition: transform ([\d.]+)s ([^;]+);/);
+  assert.ok(chevron, 'the chevron still turns on a transition of its own');
+  const seconds = Number(chevron[1]);
+  assert.ok(seconds <= 0.3, `a disclosure stays under the 300ms ceiling, got ${seconds}s`);
+
+  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  const panel = jsx.match(/height: \{ duration: ([\d.]+), ease: \[0\.16, 1, 0\.3, 1\] \},/);
+  assert.ok(panel, 'the panel still opens on a height transition');
+  assert.equal(
+    Number(panel[1]),
+    seconds,
+    'the chevron finishing before the fold made them read as two separate events',
+  );
+});

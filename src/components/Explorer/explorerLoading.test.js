@@ -19,9 +19,42 @@ test('the skeleton shimmer is a transform on a pseudo-element, not a repainted b
 
 test('the sweep keeps its phase down the page, now on the pseudo-element', async () => {
   const css = await read('./EntityExplorer.css');
-  assert.match(css, /\.explorer-skeleton \.ex-skel-name::after \{ animation-delay: 0\.06s; \}/);
-  assert.match(css, /\.explorer-skeleton \.ex-skel-row:nth-child\(4\) \.ex-skel::after \{ animation-delay: 0\.96s; \}/);
-  assert.match(css, /\.ex-skel-row:nth-child\(5\) \.ex-skel::after \{ animation-delay: 0\.48s; \}/);
+
+  // The claim is the SHAPE of the ladder, not its numbers: each group's phase
+  // grows as the eye goes down it, so the sweep reads as one wave passing
+  // rather than as every block pulsing at once. Pinned as an ordering because
+  // the numbers are tuned against how long the skeleton actually stands
+  // (explorerMotion.test.js caps them against that measurement), and three
+  // magic values here broke every time they were.
+  const phasesOf = (pattern) => [...css.matchAll(pattern)].map(([, seconds]) => Number(seconds));
+  const rising = (values, what) => {
+    assert.ok(values.length >= 3, `${what}: expected a ladder, got ${values.length} step(s)`);
+    for (let i = 1; i < values.length; i += 1) {
+      assert.ok(values[i] > values[i - 1], `${what}: step ${i} (${values[i]}s) must come after ${values[i - 1]}s`);
+    }
+  };
+
+  rising(
+    phasesOf(/\.explorer-skeleton \.ex-skel-strip \.ex-skel(?::nth-child\(\d\))?::after \{ animation-delay: ([\d.]+)s; \}/g),
+    'the identity strip',
+  );
+  rising(
+    phasesOf(/\.explorer-skeleton \.ex-skel-row:nth-child\(\d\) \.ex-skel::after \{ animation-delay: ([\d.]+)s; \}/g),
+    'the five waiting rows',
+  );
+  rising(
+    phasesOf(/\.explorer-skeleton \.ehc-wiki-skeleton span:nth-child\(\d\)::after \{ animation-delay: ([\d.]+)s; \}/g),
+    'the Wikipedia lines',
+  );
+  // The list skeleton the live page paints while it loads more keeps its own.
+  rising(
+    phasesOf(/\n\.ex-skel-row:nth-child\(\d\) \.ex-skel::after \{ animation-delay: ([\d.]+)s; \}/g),
+    'the live list skeleton',
+  );
+  // The head of the page still leads the wave.
+  const head = phasesOf(/\.explorer-skeleton \.ex-skel-type::after \{ animation-delay: ([\d.]+)s; \}/g);
+  assert.deepEqual(head, [0], 'the type kicker is where the wave starts');
+
   // No phase rule is left on the block, where it would now delay nothing.
   assert.doesNotMatch(css, /\.ex-skel \{ animation-delay/);
   assert.doesNotMatch(css, /\.ex-skel-name \{ animation-delay/);

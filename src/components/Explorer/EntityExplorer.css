@@ -385,9 +385,13 @@
 
 /* The chevron turns on the panel's clock, not on the generic 120ms one. It is
    the same gesture: the arrow finishing a fifth of the way through the fold
-   made them read as two separate events, one of them already over. */
+   made them read as two separate events, one of them already over. The pair
+   was 0.34s, which put a disclosure over the 300ms ceiling for UI motion (the
+   band for one is 150-250ms); 0.26s keeps them paired inside it. The fold's
+   CLOSE keeps its own 0.3s and its own curve — EXPERIENCE_FOLD_OUT in the JSX
+   says why closing is not opening reversed. */
 .ehc-name-toggle > svg:last-child {
-  transition: transform 0.34s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ehc-name-toggle.is-open > svg:last-child {
@@ -803,7 +807,7 @@
   background: linear-gradient(90deg, transparent, var(--bg-glass-hover), transparent);
   /* The same sweep as every other shape on the page (`exSkelSweep`, in the
      skeleton section below), so the paragraph and the rows wait in step. */
-  animation: exSkelSweep 1.5s ease-in-out infinite;
+  animation: exSkelSweep 1.5s linear infinite;
 }
 
 .ehc-wiki-toggle {
@@ -1070,7 +1074,7 @@
   inset: 0;
   transform: translateX(-105%);
   background: linear-gradient(90deg, transparent, var(--bg-glass-hover), transparent);
-  animation: exSkelSweep 1.5s ease-in-out infinite;
+  animation: exSkelSweep 1.5s linear infinite;
 }
 
 @keyframes exSkelSweep {
@@ -1211,34 +1215,34 @@
    they would delay nothing. */
 .explorer-skeleton .ex-skel-type::after { animation-delay: 0s; }
 .explorer-skeleton .ehc-icon.ex-skel::after,
-.explorer-skeleton .ex-skel-name::after { animation-delay: 0.06s; }
-.explorer-skeleton .ehc-info .ex-skel-sub::after { animation-delay: 0.12s; }
-.explorer-skeleton .ex-skel-strip .ex-skel::after { animation-delay: 0.18s; }
-.explorer-skeleton .ex-skel-strip .ex-skel:nth-child(2)::after { animation-delay: 0.21s; }
-.explorer-skeleton .ex-skel-strip .ex-skel:nth-child(3)::after { animation-delay: 0.24s; }
-.explorer-skeleton .ex-skel-strip .ex-skel:nth-child(4)::after { animation-delay: 0.27s; }
-.explorer-skeleton .ehc-stats-grid .ex-skel::after { animation-delay: 0.3s; }
+.explorer-skeleton .ex-skel-name::after { animation-delay: 0.03s; }
+.explorer-skeleton .ehc-info .ex-skel-sub::after { animation-delay: 0.06s; }
+.explorer-skeleton .ex-skel-strip .ex-skel::after { animation-delay: 0.09s; }
+.explorer-skeleton .ex-skel-strip .ex-skel:nth-child(2)::after { animation-delay: 0.12s; }
+.explorer-skeleton .ex-skel-strip .ex-skel:nth-child(3)::after { animation-delay: 0.15s; }
+.explorer-skeleton .ex-skel-strip .ex-skel:nth-child(4)::after { animation-delay: 0.18s; }
+.explorer-skeleton .ehc-stats-grid .ex-skel::after { animation-delay: 0.21s; }
 .explorer-skeleton .ex-skel-follow::after,
-.explorer-skeleton .ex-skel-meta::after { animation-delay: 0.36s; }
-.explorer-skeleton .orcid-skeleton .ex-skel::after { animation-delay: 0.42s; }
-.explorer-skeleton .ex-skel-tab::after { animation-delay: 0.48s; }
-.explorer-skeleton .ex-skel-search::after { animation-delay: 0.54s; }
+.explorer-skeleton .ex-skel-meta::after { animation-delay: 0.24s; }
+.explorer-skeleton .orcid-skeleton .ex-skel::after { animation-delay: 0.27s; }
+.explorer-skeleton .ex-skel-tab::after { animation-delay: 0.3s; }
+.explorer-skeleton .ex-skel-search::after { animation-delay: 0.33s; }
 
 /* The list picks the wave up where the chrome left it, instead of restarting
    the count at zero and reading as a second, unrelated animation. */
-.explorer-skeleton .ex-skel-row:nth-child(1) .ex-skel::after { animation-delay: 0.6s; }
-.explorer-skeleton .ex-skel-row:nth-child(2) .ex-skel::after { animation-delay: 0.72s; }
-.explorer-skeleton .ex-skel-row:nth-child(3) .ex-skel::after { animation-delay: 0.84s; }
-.explorer-skeleton .ex-skel-row:nth-child(4) .ex-skel::after { animation-delay: 0.96s; }
-.explorer-skeleton .ex-skel-row:nth-child(5) .ex-skel::after { animation-delay: 1.08s; }
+.explorer-skeleton .ex-skel-row:nth-child(1) .ex-skel::after { animation-delay: 0.36s; }
+.explorer-skeleton .ex-skel-row:nth-child(2) .ex-skel::after { animation-delay: 0.39s; }
+.explorer-skeleton .ex-skel-row:nth-child(3) .ex-skel::after { animation-delay: 0.42s; }
+.explorer-skeleton .ex-skel-row:nth-child(4) .ex-skel::after { animation-delay: 0.45s; }
+.explorer-skeleton .ex-skel-row:nth-child(5) .ex-skel::after { animation-delay: 0.48s; }
 
 /* An institution's Wikipedia paragraph rides the same sweep from its own
    spans, so it is phased through those. */
-.explorer-skeleton .ehc-wiki-skeleton span:nth-child(1)::after { animation-delay: 0.42s; }
-.explorer-skeleton .ehc-wiki-skeleton span:nth-child(2)::after { animation-delay: 0.45s; }
-.explorer-skeleton .ehc-wiki-skeleton span:nth-child(3)::after { animation-delay: 0.48s; }
-.explorer-skeleton .ehc-wiki-skeleton span:nth-child(4)::after { animation-delay: 0.51s; }
-.explorer-skeleton .ehc-wiki-skeleton span:nth-child(5)::after { animation-delay: 0.54s; }
+.explorer-skeleton .ehc-wiki-skeleton span:nth-child(1)::after { animation-delay: 0.27s; }
+.explorer-skeleton .ehc-wiki-skeleton span:nth-child(2)::after { animation-delay: 0.3s; }
+.explorer-skeleton .ehc-wiki-skeleton span:nth-child(3)::after { animation-delay: 0.33s; }
+.explorer-skeleton .ehc-wiki-skeleton span:nth-child(4)::after { animation-delay: 0.36s; }
+.explorer-skeleton .ehc-wiki-skeleton span:nth-child(5)::after { animation-delay: 0.39s; }
 
 /* Reserved rather than live: the standing copy of the block, held open while
    the entity resolves so the hero it belongs to does not grow underneath the
