@@ -1534,9 +1534,18 @@ a.pc-citations {
   transition: opacity 160ms ease-out;
 }
 
+/* The label is centred on the rule with the NATIVE `translate` property, not
+   with `transform`: `relatedItemIn` below is a shared keyframe that writes
+   `transform`, and a keyframe replaces the rule's own for as long as it runs.
+   Written as `transform: translateY(-50%)` the centring was dropped for the
+   whole 280ms arrival and handed back in a single frame at the end -- the
+   label sat 5.5px under the dot and then jumped up to meet it (measured
+   2026-09-07). `translate` and `transform` are separate properties and
+   compose, so the slide runs on top of the centring instead of replacing it.
+   Same reason `dialogIn` animates the native `scale` (styles/variables.css). */
 .graph-chip {
   position: absolute;
-  transform: translateY(-50%);
+  translate: 0 -50%;
   padding: 0 7px;
   background: var(--bg-card);
   color: var(--text-primary);
