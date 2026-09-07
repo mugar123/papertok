@@ -1,5 +1,51 @@
 # Estado / pendientes
 
+## Seguir o dejar de seguir desde la página de una entidad ya no mueve al lector de su paper (2026-09-07)
+
+**«En papers en proyectos, al meterme en el proyecto, seguir el proyecto,
+dejar de seguirlo y volver al paper original, se recarga el feed de forma
+espontánea y el paper en el que estaba desaparece.»** No era de proyectos:
+cualquier cambio en `followedEntities` disparaba en `FeedContext` un
+`reRankFeed()` y un `loadPapers(true, null, true)` que sustituía la lista
+entera por una página aleatoria de la que el filtro de vistos excluye el
+paper actual (cada tarjeta pintada entra en `sessionSeenPapers`), y lo hacía
+fuera de la ruta del feed y dos veces (follow y unfollow cambian la firma
+`tipo:id` y se comparaba contra la última vista, no contra la última
+aplicada). Al volver, `resumeIndex` no encontraba el id y caía al índice:
+otro paper en el mismo sitio. Existía desde el 16-07 (afa1af6); el arreglo
+del resume del 03-09 lo dejó a la vista. Ahora el efecto de seguimiento se
+gatea con `feedRouteActive` como el de preferencias, compara contra la
+última firma aplicada (follow y unfollow seguidos no cuestan nada) y pide
+la recarga con `keepThroughVisible`: `loadPapers` conserva las tarjetas
+hasta la visible más el lookahead (`mergeFreshFeedPage`,
+`utils/feedReRankSplit.js`) y coloca la página fresca debajo.
+
+Verificado en local sobre un Chrome headless por CDP (el pane del navegador
+de la sesión estaba oculto: sin layout no hay tarjeta «bajo el viewport»),
+con cuenta demo — `IS_DEMO` local, revertido — y con la entidad AUTOR,
+porque los papers de arXiv que sirvió el feed no traían proyecto de OpenAIRE.
+El **control con el código anterior reproduce el bug** en el mismo arnés: el
+lector estaba en «Computable Model-Independent Bounds…» y volvía a «Optimal
+Single Qubit Tomography…», índice 4 → 1, lista de 15 → 17, y **6 peticiones a
+fuentes del feed mientras se estaba en la página de la entidad**; la consola
+enseña el mecanismo completo, `refresco DISPARA` → `loadPapers{reset:true}` →
+`loadPapers{reset:false, n:2}`, ese último el auto-avance tras filtrarse todo
+por vistos. Con el arreglo, en los dos recorridos y tres ejecuciones: **mismo
+paper al volver**, índice 4 → 4, el prefijo 0..6 intacto (el `locked` de
+`splitFeedForReRank`: ancla 4 más `lookahead` 3), la cola re-rankeada, y **2
+peticiones en la página de la entidad**, ambas la búsqueda de autor de la
+propia página. Fijado con `context/feedFollowChange.test.js` (SOURCE, cuatro
+tests, cada uno comprobado por mutación) y `utils/feedReRankSplit.test.js`.
+
+**Queda abierto, preexistente y no tocado aquí:** el refresco se programa con
+`setTimeout(…, 0)` y el efecto devuelve un `clearTimeout`, con `reRankFeed()`
+justo delante cambiando `papers` y con ello la identidad de `loadPapers`. Es
+una carrera: en el camino medido la limpieza gana y el refresco no llega a
+dispararse, así que quien quita el bug es la puerta de ruta y
+`keepThroughVisible` queda de red de seguridad. La estructura es idéntica
+antes y después del cambio; ordenarla es otra tarea, y hacerlo devolvería
+recargas del feed a los cambios de seguimiento.
+
 ## Crear y editar listas vuelve a guardarse: las rules admiten `color` (2026-09-07)
 
 **«Al editar el nombre de una lista no me deja guardar.»** No era el nombre:
@@ -15,6 +61,7 @@ real en consola. El arreglo son los commits `6114ec2` y `b9d96f1`; el
 despliegue de las rules a producción y la verificación en vivo quedan
 pendientes, a cargo del usuario con su propia sesión de Firebase:
 `npx --yes firebase-tools@15.26.0 deploy --only firestore:rules --project papertok-168df`.
+
 
 ## El feed y las listas ya no quedan rehenes de un stream de Firestore muerto (2026-09-06)
 
