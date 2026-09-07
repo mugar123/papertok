@@ -52,3 +52,15 @@ test('a failed create/save is tied to the name field, not only announced', async
   );
   assert.match(errorParagraph[0], /role="alert"/, 'the create-list error paragraph lost role="alert"');
 });
+
+test('a failed create/save reaches the console with the real error, not only the screen', async () => {
+  const jsx = await read('./CreateListDialog.jsx');
+  // The catch of `submit`: it must bind the error and hand it to console.error.
+  // A permission-denied from the rules and a dead connection paint the same
+  // "try again"; the console is the only place that tells them apart.
+  const submitCatch = jsx.match(/catch \((\w+)\) \{([\s\S]*?)\n\s*\}/);
+  assert.ok(submitCatch, 'submit() no longer has a `catch (err) {` block; update this test alongside it');
+  const [, errName, body] = submitCatch;
+  assert.match(body, new RegExp(`console\\.error\\([^)]*\\b${errName}\\b`));
+  assert.match(body, /dispatch\(\{ type: 'failed' \}\)/);
+});

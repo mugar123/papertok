@@ -169,7 +169,10 @@ export default function CreateListDialog({
       else await onCreate(fields.name, fields.icon, fields.color);
       inFlight.current = false;
       onClose();
-    } catch {
+    } catch (err) {
+      // The window says "try again"; the console says why. A permission-denied
+      // from the rules and a dead connection look identical on screen.
+      console.error('The list could not be saved', err);
       inFlight.current = false;
       dispatch({ type: 'failed' });
     }
