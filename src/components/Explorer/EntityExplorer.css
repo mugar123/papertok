@@ -23,16 +23,68 @@
    notch, which the bar already covers. Border-box, so `min-height: 100dvh`
    and the error's `height: 100dvh` keep meaning the whole screen with the
    padding inside them. Without the bar nothing here applies. */
+/* And the band OPENS; it does not appear.
+
+   `appChrome` does not arrive with the page. `/explorer/:type/:id` is
+   deliberately not behind ProtectedRoute (App.jsx) so a signed-out reader gets
+   it too, which makes this the one page that paints real content while the auth
+   gate is still open — and the class lands mid-flight. Measured 2026-09-07 over
+   CDP, production build, real signed-in session, cold, 1280×900: the class
+   arrived at t=909 and this padding-top went 0 → 56px in ONE frame, 217ms into
+   the hero body's own 360ms `useHeightSettle` — two vertical movements of the
+   same rows on the same frames, one eased and one cut. On a phone the same
+   frame also dropped `.explorer-hero`'s padding to --space-4, a second cut in
+   the opposite direction.
+
+   The settle cannot absorb it: it animates `height` on `.explorer-hero-content`
+   (useHeightSettle.js), which owns a BOTTOM edge, and this is a top edge on an
+   ancestor — above even the hero's Back button. Moving it into the settle means
+   moving the settle to the outer box, which EntityExplorer.jsx measured and
+   rejected (the tab strip snapped 515 → 451 in one frame). So the offset is not
+   moved; it is given a clock.
+
+   The clock is the bar's own `navbarArrive` (Navbar.css), copied byte for byte,
+   because this is the same event: the bar fades in over exactly these 240ms, so
+   the page clears the band on the frames the bar is filling it.
+
+   Declared HERE and not on the base rules, which matters three ways. A
+   transition is read from the after-change style, so it runs when the class
+   lands and not when it leaves — the reverse flip (a profile error after a
+   cached hydration drops `showNavbar`) keeps today's single frame instead of
+   holding an empty band open, which is the artefact App.jsx:124-130 records
+   having measured. A signed-out page never matches these selectors, so its own
+   top edge stays instant through rotations and the mobile URL bar. And
+   `.explorer--app` is on the skeleton and error roots too
+   (EntityExplorer.jsx), so all three are covered by one declaration.
+
+   Every other path pays nothing by construction: a transition never runs
+   against an element's first computed style, so a tap from the feed — which
+   mounts the container already carrying the class — and an explorer-to-explorer
+   hop — which remounts the route on `key={location.pathname}` — animate
+   nothing. Only a flip on a container already on screen does, which is the
+   defect and nothing else. */
 .explorer--app {
   padding-top: var(--nav-total);
+  transition: padding-top 0.24s ease-out;
 }
 
+/* The notch this hands back to the bar travels on the same clock, so on a
+   device with an inset the two opposite-signed moves — the page down by
+   --nav-total, this up by the inset — read as one landing instead of two
+   curves cancelling unevenly. The mobile override further down only restates
+   `padding-top`, so it inherits this. */
 .explorer--app .explorer-hero {
   padding-top: var(--space-5);
+  transition: padding-top 0.24s ease-out;
 }
 
+/* Invisible at scrollTop 0, which is where a cold load sits — but this page has
+   been scrollable for ~500ms by the time the class lands, and a reader already
+   past the dock point would otherwise see the toolbar cut 56px while everything
+   around it slid. */
 .explorer--app .explorer-toolbar-wrapper {
   top: var(--nav-total);
+  transition: top 0.24s ease-out;
 }
 
 .explorer-error {
@@ -2441,6 +2493,14 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* The band lands instantly instead of opening. The bar's own `navbarArrive`
+     is switched off under this same query (Navbar.css), so there is nothing
+     left travelling for an instant band to be out of step with. These three
+     repeat the compound selectors of the rules at the top of the file because
+     that is what it takes to beat `.explorer--app .explorer-hero`. */
+  .explorer--app,
+  .explorer--app .explorer-hero,
+  .explorer--app .explorer-toolbar-wrapper,
   .explorer-hero-content,
   /* The error screen's entrance (`slideUpFade`) goes with the rest. */
   .explorer-error,
