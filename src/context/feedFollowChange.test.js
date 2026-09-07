@@ -60,9 +60,10 @@ test('SOURCE: the following effect records nothing off the feed route and compar
   const gateAt = effect.indexOf('if (!feedRouteActive) return;');
   const compareAt = effect.indexOf('if (followingSignatureRef.current === signature) return;');
   const recordAt = effect.indexOf('followingSignatureRef.current = signature;');
-  assert.ok(signatureAt >= 0 && gateAt >= 0 && compareAt >= 0 && recordAt >= 0, 'the four steps are there');
+  const appliedRecordAt = effect.indexOf('followingSignatureRef.current = signature;\n    reRankFeed();');
+  assert.ok(signatureAt >= 0 && gateAt >= 0 && compareAt >= 0 && recordAt >= 0 && appliedRecordAt >= 0, 'the four steps are there');
   assert.ok(gateAt > signatureAt, 'the signature is computed first (the topic warm-up above it stays unconditional)');
-  assert.ok(gateAt < compareAt && gateAt < recordAt, 'off the feed route nothing is compared nor recorded: a follow and its undo cost nothing');
+  assert.ok(gateAt < compareAt && gateAt < recordAt && gateAt < appliedRecordAt, 'off the feed route nothing is compared nor recorded: a follow and its undo cost nothing');
   assert.match(
     effect,
     /setTimeout\(\s*\(\) => loadPapers\(true, null, true, undefined, \{ keepThroughVisible: true \}\),\s*0,?\s*\)/,
