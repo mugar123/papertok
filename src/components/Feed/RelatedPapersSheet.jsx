@@ -23,6 +23,7 @@ import {
 import ScientificText from '../ScientificText';
 import { Toggle } from '../ui/toggle.jsx';
 import { useLanguage } from '../../context/LanguageContext';
+import { usePopupOpenOnMount } from '../../hooks/usePopupOpenOnMount.js';
 import { Drawer, DrawerClose, DrawerContent, DrawerTitle } from '../ui/drawer.jsx';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs.jsx';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.jsx';
@@ -86,16 +87,20 @@ function LoadingState({ label }) {
 /**
  * A Base UI Drawer (ui/drawer.jsx): a bottom sheet a thumb can swipe away.
  * PaperCard mounts the sheet and unmounts it on `onClose`, so the sheet owns
- * its open state: every way out — the X, Escape, the scrim, a swipe, a paper
- * chosen from the list — takes `open` down, the primitive plays the exit
- * (the drawer's slide, or the settle-and-fade of `is-selecting-paper` in
- * PaperCard.css) and only then, from `onOpenChangeComplete(false)`, is the
- * parent told: `onSelectPaper` when a paper is waiting, `onClose` otherwise.
- * The primitive also owns the focus trap, Escape and the restore.
+ * its open state — mounted closed and opened on the next frame, which is the
+ * price of arriving instead of appearing (`usePopupOpenOnMount`: the drawer's
+ * whole entrance lives in `data-starting-style`, and Base UI does not give
+ * that to a popup that was already open on its first render). Every way out
+ * — the X, Escape, the scrim, a swipe, a paper chosen from the list — takes
+ * `open` down, the primitive plays the exit (the drawer's slide, or the
+ * settle-and-fade of `is-selecting-paper` in PaperCard.css) and only then,
+ * from `onOpenChangeComplete(false)`, is the parent told: `onSelectPaper`
+ * when a paper is waiting, `onClose` otherwise. The primitive also owns the
+ * focus trap, Escape and the restore.
  */
 export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onSelectPaper }) {
   const { isEnglish, locale } = useLanguage();
-  const [open, setOpen] = useState(true);
+  const { open, setOpen } = usePopupOpenOnMount();
   const hasGraphIdentifier = Boolean(getCitationGraphDoi(paper));
   const [mode, setMode] = useState(hasGraphIdentifier ? 'graph' : 'similar');
   const [view, setView] = useState('map');
@@ -168,7 +173,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     pendingSelectionRef.current = null;
     setIsSelectionReady(false);
     setOpen(false);
-  }, []);
+  }, [setOpen]);
 
   const requestPaper = useCallback((relatedPaper, paperKey) => {
     if (closingRef.current) return;
@@ -178,7 +183,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     setSelectedPaperKey(paperKey);
     setIsSelectionReady(true);
     setOpen(false);
-  }, []);
+  }, [setOpen]);
 
   // The primitive has finished the exit — the parent hears of it here and
   // nowhere else. A paper chosen from the sheet is handed over; anything

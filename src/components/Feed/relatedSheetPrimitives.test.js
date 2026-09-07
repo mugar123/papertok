@@ -21,17 +21,30 @@ test('the connections sheet is a modal Base UI Drawer that owns its open state a
   assert.doesNotMatch(jsx, /useDialogFocus|is-closing|setIsClosing|transitionTimerRef|onAnimationEnd|setTimeout\(\s*finish/);
   assert.doesNotMatch(jsx, /modal=\{false\}/, 'FeedContainer probes [aria-modal="true"]; the sheet must stay modal');
 
-  // PaperCard unmounts the sheet on `onClose`, so the sheet owns `open`.
-  assert.match(jsx, /const \[open, setOpen\] = useState\(true\);/);
+  // PaperCard unmounts the sheet on `onClose`, so the sheet owns `open` --
+  // but it is never open on its first render. Base UI seeds `mounted` from
+  // `open`, so a drawer that mounts open never reaches `'starting'` and never
+  // gets `data-starting-style`, which is where the whole arrival is written
+  // (ui/drawer.css). Measured 2026-09-07 at 1280x900: mounted open, the popup
+  // stood at its final transform with opacity 1 in the first frame it
+  // existed and `getAnimations()` was empty -- the sheet did not arrive, it
+  // appeared. `usePopupOpenOnMount` is the one frame that fixes it.
+  assert.match(jsx, /import \{ usePopupOpenOnMount \} from '\.\.\/\.\.\/hooks\/usePopupOpenOnMount\.js';/);
+  assert.match(jsx, /const \{ open, setOpen \} = usePopupOpenOnMount\(\);/);
+  assert.doesNotMatch(
+    jsx,
+    /const \[open, setOpen\] = useState\(true\);/,
+    'a sheet that mounts open never arrives',
+  );
   assert.match(jsx, /<Drawer\s+open=\{open\}\s+onOpenChange=\{\(nextOpen\) => \{ if \(!nextOpen\) requestClose\(\); \}\}\s+onOpenChangeComplete=\{handleOpenChangeComplete\}/);
   assert.match(jsx, /<DrawerContent\s[\s\S]*?className=\{`related-sheet related-sheet--graph related-sheet--\$\{sheetStatus\} [\s\S]*?overlayClassName="related-overlay"[\s\S]*?aria-modal="true"/);
 
   // Every way out takes `open` down and waits: a dismissal and a chosen
   // paper are told apart when the exit has finished, not before.
-  const close = jsx.match(/const requestClose = useCallback\(\(\) => \{([\s\S]*?)\}, \[\]\);/);
+  const close = jsx.match(/const requestClose = useCallback\(\(\) => \{([\s\S]*?)\}, \[setOpen\]\);/);
   assert.ok(close, 'requestClose is gone');
   assert.match(close[1], /setOpen\(false\);/);
-  const pick = jsx.match(/const requestPaper = useCallback\(\(relatedPaper, paperKey\) => \{([\s\S]*?)\}, \[\]\);/);
+  const pick = jsx.match(/const requestPaper = useCallback\(\(relatedPaper, paperKey\) => \{([\s\S]*?)\}, \[setOpen\]\);/);
   assert.ok(pick, 'requestPaper is gone');
   assert.match(pick[1], /pendingSelectionRef\.current = \{ paper: relatedPaper, key: paperKey \};/);
   assert.match(pick[1], /setOpen\(false\);/);
