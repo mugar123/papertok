@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RERANK_LOOKAHEAD, splitFeedForReRank } from './feedReRankSplit.js';
+import { RERANK_LOOKAHEAD, mergeFreshFeedPage, splitFeedForReRank } from './feedReRankSplit.js';
 
 const papers = (n) => Array.from({ length: n }, (_, i) => ({ id: `p${i}` }));
 const ids = (list) => list.map(paper => paper.id);
@@ -59,4 +59,41 @@ test('a short or empty list never throws', () => {
 test('the lookahead is configurable', () => {
   const { locked } = splitFeedForReRank(papers(10), { anchorPaperIds: ['p2'], lookahead: 1 });
   assert.deepEqual(ids(locked), ['p0', 'p1', 'p2']);
+});
+
+const fresh = (n) => Array.from({ length: n }, (_, i) => ({ id: `q${i}` }));
+
+test('mergeFreshFeedPage: with nothing on screen the fresh page stands alone', () => {
+  const page = fresh(4);
+  assert.deepEqual(ids(mergeFreshFeedPage([], page, { anchorPaperIds: ['p5'] })), ['q0', 'q1', 'q2', 'q3']);
+  assert.deepEqual(ids(mergeFreshFeedPage(null, page)), ['q0', 'q1', 'q2', 'q3']);
+});
+
+test('mergeFreshFeedPage: a reader on p5 keeps 0..7 and the fresh page follows; the old queue goes', () => {
+  const previous = papers(10);
+  const page = fresh(3);
+  const merged = mergeFreshFeedPage(previous, page, { anchorPaperIds: ['p5'] });
+  assert.deepEqual(ids(merged), ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'q0', 'q1', 'q2']);
+  assert.ok(merged.includes(previous[5]), 'the card under the viewport survives, same object');
+  assert.equal(previous.length, 10, 'the previous list is not mutated');
+  assert.equal(page.length, 3, 'the fresh page is not mutated');
+});
+
+test('mergeFreshFeedPage: without an anchor the top three stay, as the re-rank does', () => {
+  const merged = mergeFreshFeedPage(papers(10), fresh(2));
+  assert.equal(RERANK_LOOKAHEAD, 3);
+  assert.deepEqual(ids(merged), ['p0', 'p1', 'p2', 'q0', 'q1']);
+});
+
+test('mergeFreshFeedPage: an anchor that is not in the list behaves like no anchor', () => {
+  const merged = mergeFreshFeedPage(papers(10), fresh(2), { anchorPaperIds: [null, 'nope'] });
+  assert.deepEqual(ids(merged), ['p0', 'p1', 'p2', 'q0', 'q1']);
+});
+
+test('mergeFreshFeedPage: a fresh paper already locked is not shown twice', () => {
+  const previous = papers(6);
+  const page = [{ id: 'q0' }, { id: 'p1' }, { id: 'q1' }];
+  const merged = mergeFreshFeedPage(previous, page, { anchorPaperIds: ['p2'] });
+  assert.deepEqual(ids(merged), ['p0', 'p1', 'p2', 'p3', 'p4', 'q0', 'q1']);
+  assert.equal(merged[1], previous[1], 'the locked copy wins, not the fresh one');
 });

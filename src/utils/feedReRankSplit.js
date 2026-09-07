@@ -27,3 +27,21 @@ export function splitFeedForReRank(papers, { anchorPaperIds = [], lookahead = RE
     queue: list.slice(safeSplit),
   };
 }
+
+/**
+ * A refresh that keeps the reader's place.
+ *
+ * A follow change used to replace the whole list with a fresh page, and the
+ * fresh page never contains the card the reader is on: every painted paper is
+ * in the session's seen set. Coming back from the entity page landed on a
+ * different paper at the same index (reported 2026-09-07). The refresh now
+ * keeps what the re-rank would lock — through the visible card plus the
+ * lookahead — and puts the fresh page right below it; the old queue goes.
+ */
+export function mergeFreshFeedPage(previous, fresh, { anchorPaperIds = [], lookahead = RERANK_LOOKAHEAD } = {}) {
+  const incoming = Array.isArray(fresh) ? fresh : [];
+  const { locked } = splitFeedForReRank(previous, { anchorPaperIds, lookahead });
+  if (locked.length === 0) return incoming;
+  const lockedIds = new Set(locked.map(paper => paper?.id));
+  return [...locked, ...incoming.filter(paper => !lockedIds.has(paper?.id))];
+}
