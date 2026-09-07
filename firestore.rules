@@ -827,7 +827,7 @@ service cloud.firestore {
           && !('publicShareId' in resource.data);
         allow create, update: if ownsUserTree(userId)
           && request.resource.data.keys().hasOnly([
-            'id', 'name', 'emoji', 'paperIds', 'createdAt', 'publicShareId',
+            'id', 'name', 'emoji', 'color', 'paperIds', 'createdAt', 'publicShareId',
             // F12: `onProfile` and `publicSyncedAt` are stamped by the Worker
             // (attribution mirror and last-sync marker); `updatedAt` by the
             // client on each edit. They are tolerated rather than protected:
@@ -838,6 +838,14 @@ service cloud.firestore {
           ])
           && validString(request.resource.data.name, 120)
           && validString(request.resource.data.emoji, 40)
+          // The 0.2 palette. Optional: lists made before it carry no colour and
+          // the client derives one from the id. Ids, not hex values, and only
+          // the eight the picker offers — mirrored by hand from LIST_COLORS in
+          // src/utils/listColors.js; the rules test ties the two lists together.
+          && (!('color' in request.resource.data)
+            || request.resource.data.color in [
+              'ochre', 'olive', 'green', 'teal', 'blue', 'indigo', 'violet', 'crimson'
+            ])
           && request.resource.data.paperIds is list
           && request.resource.data.paperIds.size() <= 500
           && (!('onProfile' in request.resource.data)

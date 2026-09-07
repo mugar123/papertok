@@ -22,6 +22,7 @@ import {
 import { toIndexedName } from '../src/services/userSearchService.js';
 import { PUBLIC_LIST_LIMITS } from '../src/services/publicListPayload.js';
 import { buildSavedPaperPayload } from '../src/utils/savedPaperPayload.js';
+import { LIST_COLORS } from '../src/utils/listColors.js';
 import {
   deleteDoc,
   deleteField,
@@ -2378,6 +2379,71 @@ test('an unpublished list is created and deleted freely, as before', async () =>
     id: 'plain', name: 'Sin publicar', emoji: '📚', paperIds: [], createdAt: new Date(),
   }));
   await assertSucceeds(deleteDoc(doc(db, 'users', ALICE, 'lists', 'plain')));
+});
+
+// =========================================================================
+// Colour of a list (0.2 palette). The client has written `color` since the
+// palette landed; these are the writes it actually makes.
+// =========================================================================
+
+test('creating a list with a palette colour is allowed, from both create paths', async () => {
+  await reset();
+  const db = asAlice();
+  // ListsPage.handleCreateList and SaveToListModal.handleCreateList write this
+  // exact shape: createdAt as an ISO string, colour as a palette id.
+  await assertSucceeds(setDoc(doc(db, 'users', ALICE, 'lists', 'list_1'), {
+    id: 'list_1', name: 'Nueva', emoji: 'Folder', color: 'indigo',
+    paperIds: [], createdAt: new Date().toISOString(),
+  }));
+});
+
+test('editing name, icon and colour together is allowed, on a plain and on a published list', async () => {
+  await reset();
+  await seedPublished();
+  const db = asAlice();
+  // ListsPage.handleEditList: a partial update, `updatedAt` from the server.
+  await assertSucceeds(updateDoc(doc(db, 'users', ALICE, 'lists', 'l1'), {
+    name: 'Papers de mugar', emoji: 'Folder', color: 'indigo', updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(setDoc(doc(db, 'users', ALICE, 'lists', 'plain'), {
+    id: 'plain', name: 'Sin publicar', emoji: '📚', paperIds: [], createdAt: new Date(),
+  }));
+  await assertSucceeds(updateDoc(doc(db, 'users', ALICE, 'lists', 'plain'), {
+    name: 'Renombrada', emoji: 'Star', color: 'teal', updatedAt: serverTimestamp(),
+  }));
+});
+
+test('every id of the palette is accepted, and nothing outside it', async () => {
+  await reset();
+  const db = asAlice();
+  // Ties the hand-copied list in the rules to the one the picker offers: a
+  // colour added to LIST_COLORS without touching the rules fails here.
+  for (const color of LIST_COLORS) {
+    await assertSucceeds(setDoc(doc(db, 'users', ALICE, 'lists', `c-${color}`), {
+      id: `c-${color}`, name: 'Color', emoji: 'Folder', color,
+      paperIds: [], createdAt: new Date().toISOString(),
+    }));
+  }
+  await assertFails(setDoc(doc(db, 'users', ALICE, 'lists', 'bad-1'), {
+    id: 'bad-1', name: 'Color', emoji: 'Folder', color: '#ff0000',
+    paperIds: [], createdAt: new Date().toISOString(),
+  }));
+  await assertFails(setDoc(doc(db, 'users', ALICE, 'lists', 'bad-2'), {
+    id: 'bad-2', name: 'Color', emoji: 'Folder', color: 7,
+    paperIds: [], createdAt: new Date().toISOString(),
+  }));
+  await assertFails(updateDoc(doc(db, 'users', ALICE, 'lists', 'c-teal'), { color: 'magenta' }));
+});
+
+test('a list without colour is still valid: the ones made before the palette', async () => {
+  await reset();
+  const db = asAlice();
+  await assertSucceeds(setDoc(doc(db, 'users', ALICE, 'lists', 'old'), {
+    id: 'old', name: 'De antes', emoji: '📚', paperIds: [], createdAt: new Date(),
+  }));
+  await assertSucceeds(updateDoc(doc(db, 'users', ALICE, 'lists', 'old'), {
+    name: 'Renombrada sin color', updatedAt: serverTimestamp(),
+  }));
 });
 
 test('pinning a share still works: the rules read the owner table themselves', async () => {
