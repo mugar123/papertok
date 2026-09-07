@@ -5,6 +5,7 @@ import { UsersRound, X } from 'lucide-react';
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
 import { isReadTimeout, patientRead } from '../../utils/boundedRead.js';
 import { readFollowList, rememberFollowList } from '../../utils/profileSessionCaches.js';
+import { usePopupOpenOnMount } from '../../hooks/usePopupOpenOnMount.js';
 import { Drawer, DrawerContent } from '../ui/drawer.jsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.jsx';
 import {
@@ -191,18 +192,11 @@ export default function FollowSheet({
   // so the open state lives here: closing flips `open`, the drawer plays its
   // leave, and only `onOpenChangeComplete(false)` tells the parent — once.
   //
-  // Mounted closed and opened on the next frame, on purpose. Base UI plays
-  // `data-starting-style` only when `open` flips on a root that is already
-  // mounted; a Drawer that mounts open skips the arrival entirely — measured
-  // at opacity 1 on its first frame, on desktop and on phones — and there is
-  // no prop for it (`animateInitialOpen` is internal to menus). One frame is
-  // the price of the sheet arriving instead of appearing.
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setOpen(true));
-    return () => cancelAnimationFrame(frame);
-  }, []);
-  const requestClose = useCallback(() => setOpen(false), []);
+  // Mounted closed and opened on the next frame, on purpose — the one frame
+  // that is the price of a sheet arriving instead of appearing. This sheet
+  // found it first; `usePopupOpenOnMount` is that same fix, written down once
+  // so the next popup does not have to find it again.
+  const { open, setOpen, requestClose } = usePopupOpenOnMount();
   // Reads the sheet starts outside the per-tab effect — paging — end with the
   // sheet, not with the tab. Created in an effect so a dev-mode double mount
   // gets a fresh controller rather than one its first cleanup already aborted.

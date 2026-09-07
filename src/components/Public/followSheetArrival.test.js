@@ -11,7 +11,10 @@ import { readFile } from 'node:fs/promises';
  *    skips it (`useTransitionStatus`, `animateInitialOpen` is not exposed).
  *    Measured 2026-09-06: the sheet was at opacity 1 on its first frame, on
  *    desktop and on phones alike. Mounting closed and opening on the next
- *    frame is what makes the arrival exist.
+ *    frame is what makes the arrival exist. The mechanism moved to
+ *    `usePopupOpenOnMount` on 2026-09-07, when the comments sheet turned out
+ *    to have the same hole; what this guards is that the sheet still takes
+ *    its open state from there and never goes back to `useState(true)`.
  * 2. The reads. Every row's account goes through the loader, whose one rule
  *    is that a failure is not an answer. A `readUserProfile(...).catch(() =>
  *    null)` here was how a dropped request became "Account unavailable" for
@@ -27,9 +30,14 @@ const stripComments = source => source
 test('the sheet mounts closed and opens on the next frame, so Base UI plays the arrival', async () => {
   const jsx = stripComments(await read('./FollowSheet.jsx'));
 
-  assert.match(jsx, /const \[open, setOpen\] = useState\(false\);/);
-  assert.match(jsx, /requestAnimationFrame\(\(\) => setOpen\(true\)\)/);
-  assert.match(jsx, /cancelAnimationFrame\(frame\)/, 'an unmount before the frame must not open a dead sheet');
+  assert.match(jsx, /const \{ open, setOpen, requestClose \} = usePopupOpenOnMount\(\);/);
+  assert.match(jsx, /import \{ usePopupOpenOnMount \} from '\.\.\/\.\.\/hooks\/usePopupOpenOnMount\.js';/);
+  assert.doesNotMatch(jsx, /useState\(true\)/, 'a sheet that mounts open never arrives');
+
+  const hook = stripComments(await read('../../hooks/usePopupOpenOnMount.js'));
+  assert.match(hook, /const \[open, setOpen\] = useState\(false\);/);
+  assert.match(hook, /requestAnimationFrame\(\(\) => setOpen\(true\)\)/);
+  assert.match(hook, /cancelAnimationFrame\(frame\)/, 'an unmount before the frame must not open a dead sheet');
 });
 
 test('every profile behind a row is read through the loader, never settled by a catch', async () => {

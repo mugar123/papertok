@@ -35,6 +35,7 @@ import { commentIsDissociated } from '../../utils/commentIdentity.js';
 import { createSessionCache } from '../../utils/sessionCache.js';
 import { isReadTimeout, patientRead, slowNoticeStatus, withReadTimeout } from '../../utils/boundedRead.js';
 import { areaAccentForPaper } from '../../utils/areaAccent.js';
+import { usePopupOpenOnMount } from '../../hooks/usePopupOpenOnMount.js';
 import { Button } from '../ui/button.jsx';
 import { Drawer, DrawerBody, DrawerContent } from '../ui/drawer.jsx';
 import { Textarea } from '../ui/textarea.jsx';
@@ -496,8 +497,12 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
   // dismisses it on a phone. App.jsx mounts it as `{commentsPaper && …}`, so
   // the open state lives here: closing flips `open`, the drawer plays its
   // leave, and only `onOpenChangeComplete(false)` tells the parent — once.
-  const [open, setOpen] = useState(true);
-  const requestClose = useCallback(() => setOpen(false), []);
+  //
+  // It opens on the frame AFTER mount, and that frame is the difference
+  // between the sheet arriving and the sheet appearing: Base UI does not
+  // animate a popup that is already open on its first render. See
+  // `usePopupOpenOnMount` — the whole reason is written down there.
+  const { open, setOpen, requestClose } = usePopupOpenOnMount();
   const composerInput = useRef(null);
   const dupReported = useRef(false);
   const viewerUid = ownProfile.uid || null;
@@ -761,9 +766,14 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
      to be late for. */
   const [sheetArrived, setSheetArrived] = useState(false);
   useEffect(() => {
+    // Keyed to `open`, not to mount: the drawer starts its slide on the frame
+    // the flag flips (`usePopupOpenOnMount`), and the beat belongs to the
+    // slide. The masthead's rule keeps step for free — the popup is not in the
+    // DOM until then, so its CSS clock starts on the same frame.
+    if (!open) return undefined;
     const timer = setTimeout(() => setSheetArrived(true), SHEET_ARRIVAL);
     return () => clearTimeout(timer);
-  }, []);
+  }, [open]);
   const revealed = prefersReducedMotion || sheetArrived;
   // Only grey the reader can actually see is worth waiting for on top of it.
   const clearingSkeleton = paintedBody === 'skeleton' && skeletonShowing;
