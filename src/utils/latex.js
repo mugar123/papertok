@@ -29,10 +29,90 @@ function decodeHtmlEntity(entity) {
   }
 }
 
+/**
+ * JATS does not deposit a formula: it deposits one COMPLETE compilable
+ * document per formula, preamble and all, inside a `<tex-math>` — and next to
+ * it, in an `<alternatives>`, a MathML spelling of that same formula. Verified
+ * against PMC12824388 (`fullTextXML`), the paper whose card printed
+ * `\documentclass[12pt]{minimal} \usepackage{amsmath} …` as prose.
+ *
+ * None of it was being removed. `SCIENTIFIC_MARKUP_TAG` wants a letter after
+ * the `<`, so the CDATA markers and PMC's `<?equation-image-name …?>` outlived
+ * the `<tex-math>` that explained them; and the preamble is LaTeX rather than
+ * markup, so no pass here ever looked at it.
+ */
+const XML_COMMENT = /<!--[\s\S]*?-->/g;
+const XML_PROCESSING_INSTRUCTION = /<\?[\s\S]*?\?>/g;
+// Dropping both markers keeps the section's content and also survives the
+// truncated abstract that arrives cut mid-section, with its opener orphaned.
+const CDATA_MARKER = /<!\[CDATA\[|\]\]>/g;
+const NAMESPACE = '(?:[a-z][\\w.-]*:)?';
+const ALTERNATIVES = new RegExp(`<${NAMESPACE}alternatives(?:\\s[^<>]*)?>([\\s\\S]*?)</${NAMESPACE}alternatives\\s*>`, 'gi');
+const TEX_MATH = new RegExp(`<${NAMESPACE}tex-math(?:\\s[^<>]*)?>([\\s\\S]*?)</${NAMESPACE}tex-math\\s*>`, 'i');
+const STANDALONE_DOCUMENT = /\\documentclass[\s\S]*?\\begin\{document\}([\s\S]*?)\\end\{document\}/g;
+
+function stripOuterDollars(body) {
+  const display = /^\$\$([\s\S]*)\$\$$/.exec(body);
+  if (display) return display[1];
+  const inline = /^\$([\s\S]*)\$$/.exec(body);
+  return inline ? inline[1] : body;
+}
+
+/**
+ * The MathML twin reaches us flattened to bare characters, so
+ * `{T}_{{{{\rm{c}}}}}^{0}` and `Tc0` are one formula written twice.
+ */
+function flattenFormula(expression) {
+  return expression.replace(/\\[a-zA-Z]+\s*/g, '').replace(/[{}$_^\\\s]/g, '');
+}
+
+/**
+ * Replaces each per-formula document with the formula it was compiling.
+ *
+ * Springer writes `$$…$$` in `<tex-math>` whether the formula is inline or
+ * displayed — `114.0 mg$${}_{{\rm{NH}}_3}$$ h−1` is a subscripted unit, not an
+ * equation — so those delimiters carry no display information and the formula
+ * comes out inline, where the sentence expects it. In `\( \)` rather than
+ * `$ $`, so a stray dollar in the prose cannot pair with it.
+ *
+ * A relay that already stripped the tags (Semantic Scholar) leaves no
+ * `<alternatives>` to choose from, and its flattened twin arrives glued to the
+ * preamble. Only the twin goes: the glued run is not always all duplicate — in
+ * `114.0 mgNH3\documentclass…` the `mg` is prose and only `NH3` repeats the
+ * formula — so what is dropped is the flattening of THIS formula, matched
+ * exactly, or nothing at all.
+ */
+function unwrapStandaloneDocuments(text) {
+  let output = '';
+  let cursor = 0;
+  let match;
+
+  STANDALONE_DOCUMENT.lastIndex = 0;
+  while ((match = STANDALONE_DOCUMENT.exec(text)) !== null) {
+    let head = output + text.slice(cursor, match.index);
+    const formula = stripOuterDollars(match[1].trim());
+    const twin = flattenFormula(formula);
+    if (twin && head.endsWith(twin)) head = head.slice(0, -twin.length);
+    output = `${head}\\(${formula}\\)`;
+    cursor = match.index + match[0].length;
+  }
+
+  return output + text.slice(cursor);
+}
+
 export function normalizeScientificMarkup(text) {
   if (!text) return '';
 
-  return String(text)
+  // `<alternatives>` is resolved while its tags still stand, which is what
+  // makes the choice independent of the order the publisher wrote the two
+  // spellings in — both orders occur in the wild.
+  const chosen = String(text)
+    .replace(XML_COMMENT, '')
+    .replace(XML_PROCESSING_INSTRUCTION, '')
+    .replace(CDATA_MARKER, '')
+    .replace(ALTERNATIVES, (block, body) => TEX_MATH.exec(body)?.[1] ?? body);
+
+  return unwrapStandaloneDocuments(chosen)
     .replace(/<br\s*\/?>/gi, ' ')
     .replace(SCIENTIFIC_MARKUP_TAG, '')
     .replace(/&(?:amp|gt|lt|quot|apos|nbsp|minus|le|ge|times|#39|#\d+|#x[\da-f]+);/gi, decodeHtmlEntity)

@@ -1,5 +1,37 @@
 # Estado / pendientes
 
+## El preámbulo LaTeX que JATS mete alrededor de cada fórmula ya no se imprime como prosa (2026-09-07)
+
+**«He encontrado este bug de renderizado del latex.»** La tarjeta de
+«Persistence of vortexlike phase fluctuations…» (10.1038/s41467-025-67503-z)
+imprimía, en mitad del abstract, `<![CDATA[\documentclass[12pt]{minimal}
+\usepackage{amsmath} … \begin{document}`, luego la fórmula renderizada y
+luego `]]>`. Springer no deposita la fórmula: deposita **un documento `.tex`
+completo y compilable por fórmula**, preámbulo incluido, dentro del
+`<tex-math>` de un `<alternatives>` de JATS, y al lado la misma fórmula en
+MathML (verificado en `PMC12824388`). Nada de eso se limpiaba:
+`SCIENTIFIC_MARKUP_TAG` exige una letra detrás del `<`, así que los
+marcadores CDATA y las instrucciones de proceso de PMC (`<?equation-image-name
+…?>`) sobrevivían al `<tex-math>` que los explicaba, y el preámbulo, que es
+LaTeX y no marcado, no lo miraba ninguna pasada. Se conservaban además **las
+dos** ramas de `<alternatives>`, así que la fórmula se pintaba dos veces: una
+aplanada del MathML (`T c 0`) y otra renderizada. `normalizeScientificMarkup`
+—el embudo por el que pasa todo lo que se pinta: tarjeta, lector, resaltados,
+exportación y el `aria-label` de `EntityExplorer`— resuelve ahora el
+`<alternatives>` con las etiquetas todavía puestas (los editores escriben las
+dos ramas en los dos órdenes), tira comentarios, PIs y marcadores CDATA, y
+desenvuelve el documento hasta dejar la fórmula. Sale **inline** (`\( \)`):
+Springer escribe `$$…$$` sea la fórmula inline o desplazada, así que esos
+delimitadores no dicen nada del modo, y `114.0 mg$${}_{{\rm{NH}}_3}$$ h−1` es
+un subíndice de unidad, no una ecuación centrada. Cuando la fuente ya llega
+sin etiquetas (Semantic Scholar) el gemelo aplanado viene **pegado** al
+preámbulo, y sólo se quita el aplanado de esa fórmula, exacto: en
+`114.0 mgNH3\documentclass…` el `mg` es prosa y sólo `NH3` es duplicado.
+Colateral cerrado: `isSafeMath` (`latexExport.js`) rechaza `\documentclass`,
+así que la fórmula contaminada caía al camino de texto plano y **el .tex y el
+PDF imprimían el preámbulo**. Auditoría y plan en
+`docs/superpowers/plans/2026-09-07-latex-jats-preambulo.md`.
+
 ## Seguir o dejar de seguir desde la página de una entidad ya no mueve al lector de su paper (2026-09-07)
 
 **«En papers en proyectos, al meterme en el proyecto, seguir el proyecto,

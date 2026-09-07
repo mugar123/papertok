@@ -267,3 +267,99 @@ test('translating for the renderer leaves the chunk the .tex reads untouched', (
   assert.equal(chunk.value, chunk.raw);
   assert.match(chunk.raw, /^\\begin\{eqnarray\}/);
 });
+
+// Springer Nature deposits each abstract formula as a COMPLETE compilable
+// `.tex` — preamble and all — inside the `<tex-math>` of a JATS
+// `<alternatives>`, next to a MathML spelling of the same formula. Verified
+// against PMC12824388 (`fullTextXML`) for 10.1038/s41467-025-67503-z, which is
+// the paper whose card printed the preamble as prose.
+const JATS_ALTERNATIVES = '<!--Abstract rendered from JATS-->The mechanism controlling the transition temperature '
+  + '<inline-formula id="IEq1"><alternatives>'
+  + '<tex-math id="d33e242"><?equation-image-name d33e242.gif?><?equation-image-status READY?>'
+  + '<![CDATA[\\documentclass[12pt]{minimal} \\usepackage{amsmath} \\usepackage{upgreek} '
+  + '\\setlength{\\oddsidemargin}{-69pt} \\begin{document}$${T}_{{{{\\rm{c}}}}}^{0}$$\\end{document}]]>'
+  + '</tex-math>'
+  + '<mml:math xmlns:mml="http://www.w3.org/1998/Math/MathML"><mml:msubsup><mml:mrow><mml:mi>T</mml:mi></mml:mrow> '
+  + '<mml:mrow><mml:mi>c</mml:mi></mml:mrow> <mml:mrow><mml:mn>0</mml:mn></mml:mrow></mml:msubsup></mml:math>'
+  + '</alternatives></inline-formula> as a function of doping.';
+
+// The same abstract as Semantic Scholar relays it: the tags are already gone,
+// so there is no `<alternatives>` left to choose from — the MathML spelling
+// arrives flattened and GLUED to the preamble that follows it.
+const RELAYED_FULL = 'The mechanism controlling the transition temperature Tc0\\documentclass[12pt]{minimal} '
+  + '\\usepackage{amsmath} \\usepackage{wasysym} \\setlength{\\oddsidemargin}{-69pt} '
+  + '\\begin{document}$${T}_{{{{\\rm{c}}}}}^{0}$$\\end{document} as a function of doping.';
+
+// Same relay, but the glued run is only PART duplicate: `mg` is real prose and
+// `NH3` is the flattened formula. Real abstract, 10.1038/s41467-024-45534-2.
+const RELAYED_TAIL = 'The catalyst exhibits a yield rate for NH3 of 114.0 mgNH3\\documentclass[12pt]{minimal} '
+  + '\\usepackage{amsmath} \\setlength{\\oddsidemargin}{-69pt} '
+  + '\\begin{document}$${}_{{{{{{\\rm{NH}}}}}}_3}$$\\end{document} h−1 cm−2, which exceeds previous values.';
+
+test('unwraps the standalone LaTeX document JATS wraps around every formula', () => {
+  const normalized = normalizeScientificMarkup(JATS_ALTERNATIVES);
+
+  assert.equal(
+    normalized,
+    'The mechanism controlling the transition temperature \\({T}_{{{{\\rm{c}}}}}^{0}\\) as a function of doping.',
+  );
+});
+
+test('drops the markup the tag stripper cannot see', () => {
+  // `SCIENTIFIC_MARKUP_TAG` requires a letter after the `<`, so everything
+  // opening with `<!` or `<?` used to survive it: the CDATA markers were left
+  // orphaned mid-sentence once their `<tex-math>` wrapper was stripped.
+  const normalized = normalizeScientificMarkup(JATS_ALTERNATIVES);
+
+  assert.doesNotMatch(normalized, /<!\[CDATA\[|\]\]>/);
+  assert.doesNotMatch(normalized, /<\?|\?>|equation-image/);
+  assert.doesNotMatch(normalized, /\\(?:documentclass|usepackage|setlength)/);
+  assert.doesNotMatch(normalized, /\\(?:begin|end)\{document\}/);
+});
+
+test('keeps one spelling of a formula that arrives twice', () => {
+  // `<alternatives>` carries the same formula as LaTeX and as MathML. Keeping
+  // both printed it twice — once flattened to `T c 0`, once rendered.
+  const normalized = normalizeScientificMarkup(JATS_ALTERNATIVES);
+
+  assert.equal(normalized.match(/\\\(/g).length, 1, 'exactly one formula survives');
+  assert.doesNotMatch(normalized, /T\s+c\s+0/, 'the flattened MathML twin is gone');
+});
+
+test('drops the flattened twin a relay glues to the preamble', () => {
+  assert.equal(
+    normalizeScientificMarkup(RELAYED_FULL),
+    'The mechanism controlling the transition temperature \\({T}_{{{{\\rm{c}}}}}^{0}\\) as a function of doping.',
+  );
+});
+
+test('strips only the twin from a glued run, never the prose in front of it', () => {
+  // `mgNH3` is `mg` (prose) + `NH3` (the flattened formula). Dropping the whole
+  // run would eat the unit and leave a yield rate of 114.0 of nothing.
+  const normalized = normalizeScientificMarkup(RELAYED_TAIL);
+
+  assert.equal(
+    normalized,
+    'The catalyst exhibits a yield rate for NH3 of 114.0 mg\\({}_{{{{{{\\rm{NH}}}}}}_3}\\) h−1 cm−2, '
+    + 'which exceeds previous values.',
+  );
+  assert.match(normalized, /114\.0 mg\\\(/);
+  assert.match(normalized, /rate for NH3 of/, 'the NH3 that is prose stays');
+});
+
+test('the unwrapped formula reaches the renderer as one math chunk', async () => {
+  await loadKatex();
+
+  for (const raw of [JATS_ALTERNATIVES, RELAYED_FULL, RELAYED_TAIL]) {
+    const chunks = splitLatexText(raw);
+    const math = chunks.filter(chunk => chunk.type === 'math');
+    assert.equal(math.length, 1, 'one formula, not one per alternative');
+    assert.doesNotThrow(() => katex.renderToString(math[0].value, { throwOnError: true }));
+
+    for (const chunk of chunks.filter(chunk => chunk.type === 'text')) {
+      // `isSafeMath` (latexExport.js) rejects `\documentclass`, so a preamble
+      // that got this far fell back to plain text and PRINTED in the .tex.
+      assert.doesNotMatch(chunk.value, /\\(?:documentclass|usepackage)/);
+    }
+  }
+});
