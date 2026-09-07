@@ -214,9 +214,37 @@
 /* The field glyph stays when the paper brings figures. Hiding it outright took
    away the one mark that says which science this is, and it is the constant of
    the card: every paper has a field, only some have clippings. Behind the
-   figures it steps back rather than leaving. */
-.pc-figures ~ .pc-sheet .pc-watermark {
-  opacity: 0.1;
+   figures it steps back rather than leaving.
+
+   It steps back for a clipping that is ACTUALLY ON THE SHEET, though, and only
+   where clippings are drawn at all — both of which this rule used to get wrong
+   by keying on `.pc-figures ~` alone (measured 2026-09-07, see
+   paperCardWatermark.test.js):
+
+   The clippings are fetched behind `isCardSettled` (PaperCard.jsx), 240ms after
+   the card is reported visible, so `.pc-figures` can only ever mount with the
+   card already in front of the reader — and `.pc-figure:not(.is-loaded)` holds
+   every one of them at `opacity: 0` until its picture lands. So the glyph gave
+   up 29% of its ink in a single frame, 130ms BEFORE the first clipping was
+   visible: on the guest feed, 0.140 as the card arrived, 0.100 with four
+   clippings mounted and none loaded, first picture painted 130ms later. Ink
+   left and nothing arrived to take its place, which is what reads as a glow
+   that then goes away. `:has(.pc-figure.is-loaded)` moves the handover onto the
+   frame a clipping appears, and the transition below carries it over that
+   clipping's own entrance, so the two are one event.
+
+   And `~` is structural — it ignores `display` — so below the breakpoint that
+   hides the clippings outright the glyph was still stepping aside for pictures
+   that are never drawn. `not all and (max-width: …)` is the exact complement of
+   that query; `min-width: 1081px` would leave a 1080.5px viewport answering
+   neither.
+
+   Where `:has()` is not supported the whole rule is dropped and the glyph keeps
+   its resting weight: no receding, and no flash either. */
+@media not all and (max-width: 1080px) {
+  .pc-figures:has(.pc-figure.is-loaded) ~ .pc-sheet .pc-watermark {
+    opacity: 0.1;
+  }
 }
 
 .pc-watermark {
@@ -226,6 +254,11 @@
   color: var(--area-accent, var(--accent-primary));
   opacity: 0.14;
   pointer-events: none;
+  /* The clipping's own entrance: `FIGURE_ENTRANCE_BASE_MS` (620ms) on the
+     curve `figureClipIn` runs. The glyph gives way over exactly as long as the
+     first clipping takes to arrive, so it reads as making room rather than as
+     something switching off. */
+  transition: opacity 620ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .pc-watermark svg {
@@ -2733,6 +2766,11 @@ a.pc-citations {
   .pc,
   .pc-sheet,
   .pc-figure,
+  /* Beside `.pc-figure`, never without it: with movement refused a clipping
+     appears in one frame, so the glyph has to make room in that same frame.
+     A 620ms cross-fade next to an instant arrival is the two coming apart
+     again, which is the fault this pairing exists to close. */
+  .pc-watermark,
   .pc-follow-reason,
   .pc-meta,
   .pc-chips,
