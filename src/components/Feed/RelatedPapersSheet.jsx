@@ -870,10 +870,23 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
 
         {mode === 'graph' && renderPeek()}
 
-        {mode === 'graph' && graphStatus === 'ready' && (
+        {/* Reserved, not conditional. This row is 30px tall and the sheet's
+            height is fixed, so the plot above it is whatever the column
+            leaves — and the centre of the map sits at half the plot
+            (`ruleY = height / 2`). Rendered only once the graph had loaded,
+            it took 30px off the plot the moment the data landed and moved
+            the dot and its "This paper" label 15px up, a second after the
+            sheet had finished arriving and stood still. It is rendered for
+            as long as the sheet stands at its graph height; only the text
+            waits for the data. */}
+        {mode === 'graph' && sheetStatus === 'ready' && (
           <div className="knowledge-source">
-            <span>{sourceLabel}</span>
-            <span>{isEnglish ? 'One hop · cached 24 h' : 'Un salto · en caché 24 h'}</span>
+            {graphStatus === 'ready' && (
+              <>
+                <span>{sourceLabel}</span>
+                <span>{isEnglish ? 'One hop · cached 24 h' : 'Un salto · en caché 24 h'}</span>
+              </>
+            )}
           </div>
         )}
       </DrawerContent>
