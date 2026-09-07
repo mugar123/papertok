@@ -21,7 +21,7 @@ import {
   logRankingBatch,
   readRecommendationWeights,
 } from '../utils/recommendationEngine';
-import { splitFeedForReRank } from '../utils/feedReRankSplit.js';
+import { mergeFreshFeedPage, splitFeedForReRank } from '../utils/feedReRankSplit.js';
 import {
   readProfileDriftCheckedAt,
   readSeenPaperIds,
@@ -970,7 +970,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   // Tracks consecutive fast skips in the current session to detect user disengagement.
   // When the user rapidly swipes past papers, boredomLevel rises and triggers exploration.
   // Load papers when preferences are available
-  const loadPapers = useCallback(async (reset = false, mode, randomizeStart = false, pageOverride) => {
+  const loadPapers = useCallback(async (reset = false, mode, randomizeStart = false, pageOverride, { keepThroughVisible = false } = {}) => {
     if (!userPreferences || userPreferences.length === 0) return;
     if (!recommendationProfileReady) return;
     if (!reset && loading) return;
@@ -1451,7 +1451,12 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       let nextPapers;
       let nextPage;
       if (reset) {
-        nextPapers = filtered;
+        // A follow change refreshes the ranking but the reader keeps their
+        // place: the cards through the visible one stay, the fresh page lands
+        // below them (mergeFreshFeedPage). A plain reset still replaces all.
+        nextPapers = keepThroughVisible
+          ? mergeFreshFeedPage(papers, filtered, { anchorPaperIds: [visiblePaperIdRef.current] })
+          : filtered;
         nextPage = currentPage + 1;
       } else {
         const prev = papers;
@@ -1542,7 +1547,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           autoRetryUsedRef.current = true;
           setTimeout(() => {
             if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
-              loadPapersRef.current?.(true, activeMode);
+              loadPapersRef.current?.(true, activeMode, false, undefined, { keepThroughVisible });
             }
           }, 2500);
         }

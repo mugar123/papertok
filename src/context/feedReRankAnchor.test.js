@@ -26,7 +26,7 @@ function bounded(code, from, to, label, maxLines) {
  */
 test('SOURCE: the re-rank splits through the deepest of the interacted and the visible paper', async () => {
   const code = stripComments(await read('./FeedContext.jsx'));
-  assert.match(code, /import \{ splitFeedForReRank \} from '\.\.\/utils\/feedReRankSplit\.js';/);
+  assert.match(code, /import \{ (?:mergeFreshFeedPage, )?splitFeedForReRank \} from '\.\.\/utils\/feedReRankSplit\.js';/);
   const rerank = bounded(code, 'const reRankFeed = useCallback(', '}, [calculateAndAttachScore]);', 'reRankFeed', 30);
   assert.match(rerank, /splitFeedForReRank\(prevPapers, \{\s*anchorPaperIds: \[sourcePaperId, visiblePaperIdRef\.current\],?\s*\}\)/,
     'both anchors go in, the split picks the deepest');
