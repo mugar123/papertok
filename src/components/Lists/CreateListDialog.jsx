@@ -26,7 +26,7 @@
  * while `open` is false — that is how the exit gets to play before the popup
  * leaves the document.
  */
-import { useEffect, useId, useReducer, useRef } from 'react';
+import { useEffect, useId, useReducer, useRef, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import { AVAILABLE_ICONS, getIcon } from '../../utils/icons.js';
 import { Button } from '../ui/button.jsx';
@@ -127,13 +127,37 @@ export default function CreateListDialog({
   // and both would read a stale `busy: false` and write two lists.
   const inFlight = useRef(false);
 
-  const editing = Boolean(list);
-  const { id: listId, name: listName, emoji: listIcon } = list ?? {};
+  /**
+   * The list the window is showing, which is not always the list it is being
+   * handed. The caller clears its own state in the same turn it closes the
+   * window -- `onClose={() => setEditing(null)}` -- but Base UI keeps the
+   * popup in the document until `createListOut` has played, so a `list` read
+   * straight through would make the window change its mind on the way out.
+   * Everything that tells the two windows apart hangs off `editing`: the
+   * title, the colour hint, the privacy note and the submit button. Measured
+   * 2026-09-07, closing the editor: at the first frame after the click the
+   * card already read "Nueva lista" / "Crear" and had grown from 417px to
+   * 487px, and it faded out at that new size -- one window becoming the other
+   * in front of the owner, which is what reads as two of them overlapping.
+   *
+   * So the window holds the list it was opened with until it is gone. The
+   * hold is React's own "adjust state while rendering": it is written only
+   * while the window is open, and it re-renders before the browser paints,
+   * so the window never shows a frame of the wrong list on the way in
+   * either. `open` is still the caller's — a component left mounted for good
+   * is closed between uses like any other, and takes the next list then.
+   */
+  const [openedWith, setOpenedWith] = useState(list);
+  if (open && openedWith !== list) setOpenedWith(list);
+  const activeList = open ? list : openedWith;
+
+  const editing = Boolean(activeList);
+  const { id: listId, name: listName, emoji: listIcon } = activeList ?? {};
   // Not `list.color`: a list made before the palette existed has none, and the
   // card is already painting it with the colour derived from its id. The picker
   // has to tick that one, or opening the editor silently offers to change a
   // colour the owner never sees as current.
-  const listColor = editing ? resolveListColorId(list) : null;
+  const listColor = editing ? resolveListColorId(activeList) : null;
 
   useEffect(() => {
     if (!open) return;
