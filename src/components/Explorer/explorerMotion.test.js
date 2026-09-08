@@ -309,3 +309,31 @@ test('the experience disclosure and its chevron share one clock, and it is under
     'the chevron finishing before the fold made them read as two separate events',
   );
 });
+
+/**
+ * The hero's settle is the only `useHeightSettle` in the app, and it must stand
+ * down while the route transition is moving the page around it. Measured
+ * 2026-09-07 stepping back from an author to the institution it was opened
+ * from: four settles inside 76ms (302.5>287.4, 296.5>313.8, 291.9>315.4,
+ * 288.8>316.8), each restarting a full 360ms clock, the tab strip dipping 16px
+ * and the first row's height flickering 236>194>237>172 — instead of the page
+ * being where the reader left it.
+ *
+ * `enabled: false` keeps the hook's memory of the box current without
+ * animating, so the first datum to land after the page comes to rest still
+ * settles from the right height.
+ */
+test('the hero settle stands down while the page is still arriving', async () => {
+  const code = (await read('./EntityExplorer.jsx')).replace(/^\s*\/\/.*$/gm, '');
+  assert.match(code, /const isPageArriving = useIsPageArriving\(\);/,
+    'the page asks the transition, rather than sniffing data-page-motion');
+
+  const call = code.match(/useHeightSettle\(([\s\S]*?)\n {2}\);/);
+  assert.ok(call, 'the hero body settles');
+  assert.match(call[1], /enabled: !prefersReducedMotion/, 'reduced motion still switches it off entirely');
+  assert.match(call[1], /suspended: isPageArriving/,
+    'and the arrival suspends it per commit — a render-time boolean answers 38ms late');
+  // The curve stays where it was measured: an expo-out spent 70px of a 268px
+  // ORCID arrival in one frame on a phone.
+  assert.match(call[1], /easing: 'cubic-bezier\(0\.4, 0, 0\.2, 1\)'/);
+});

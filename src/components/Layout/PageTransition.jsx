@@ -1,8 +1,9 @@
 import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { usePresence, usePresenceData } from 'framer-motion';
 import { usePageTransitionCustomValue } from '../../hooks/usePageTransitionCustom.js';
+import { PageArrivalProvider } from '../../hooks/usePageArrival.js';
 import RouteFallback from './RouteFallback.jsx';
-import { EXIT_SAFETY_MS, pageMotionFor } from './pageMotion.js';
+import { EXIT_SAFETY_MS, isArrivalMotion, pageMotionFor } from './pageMotion.js';
 import './PageTransition.css';
 
 /**
@@ -73,6 +74,18 @@ export default function PageTransition({ children }) {
   }
 
   const motion = present && settled ? 'rest' : pageMotionFor({ direction, lateral, present });
+
+  // Handed to everything inside the page, so a settle in there does not animate
+  // a second displacement while this one is travelling. A callback, not a flag:
+  // it is asked at the moment of a commit and answers from the DOM — the
+  // attribute this render wrote, and whether the animation is still running —
+  // rather than from a `settled` that is one React commit behind the frame the
+  // page actually stopped on. See usePageArrival.js for the measurement.
+  const isArriving = useCallback(() => {
+    const root = rootRef.current;
+    if (!root || !isArrivalMotion(root.dataset.pageMotion)) return false;
+    return root.getAnimations().some((animation) => animation.playState === 'running');
+  }, []);
 
   // A new page starts at the top. It used to by accident: with the pages in
   // sequence the document emptied between exit and entrance and the scroll
@@ -160,7 +173,9 @@ export default function PageTransition({ children }) {
       {/* A chunk that is not cached suspends HERE, inside the page arriving,
           so the fallback (delayed 320ms in RouteFallback.css) is drawn over
           this page alone while the one leaving stays on screen. */}
-      <Suspense fallback={<RouteFallback />}>{children}</Suspense>
+      <PageArrivalProvider value={isArriving}>
+        <Suspense fallback={<RouteFallback />}>{children}</Suspense>
+      </PageArrivalProvider>
     </div>
   );
 }

@@ -15,6 +15,12 @@ const SAME_HEIGHT_PX = 1;
  *   settle in flight).
  * - `natural`: the box's height with nothing holding it, measured on this
  *   commit.
+ * - `suspended`: whether something outside the box owns its displacement on
+ *   this commit — the route transition still moving the whole page. Then there
+ *   is nothing to carry: a settle under a page that is itself travelling is a
+ *   second animation of the same content on a different clock. The memory is
+ *   still kept, so the first change after the page lands settles from the right
+ *   height.
  *
  * `remember` is always the natural height. The memory follows the box on
  * EVERY commit, so a height that changed without a declared dep — a toggle
@@ -29,8 +35,11 @@ const SAME_HEIGHT_PX = 1;
  * re-aimed from where the box is, so the box never eases to a height that is
  * already wrong and snaps the difference at the end.
  */
-export function planHeightSettle({ remembered, depsChanged, running, current, natural }) {
+export function planHeightSettle({ remembered, depsChanged, running, current, natural, suspended }) {
   const remember = natural;
+  // Checked before the in-flight branch: a suspended commit decides nothing
+  // about an animation that is already running, it simply does not start one.
+  if (suspended) return { action: 'none', remember };
   if (running) {
     if (Math.abs(natural - running.to) < SAME_HEIGHT_PX) {
       return { action: 'resume', from: running.from, to: running.to, currentTime: running.currentTime, remember };

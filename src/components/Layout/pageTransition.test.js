@@ -32,7 +32,7 @@ test('a page is a plain element the stylesheet moves, not a motion component', a
   const jsx = await read('./PageTransition.jsx');
   assert.match(jsx, /^import \{ usePresence, usePresenceData \} from 'framer-motion';$/m, 'framer is the bookkeeper, nothing more');
   assert.match(jsx, /^import '\.\/PageTransition\.css';$/m);
-  assert.match(jsx, /^import \{ EXIT_SAFETY_MS, pageMotionFor \} from '\.\/pageMotion\.js';$/m);
+  assert.match(jsx, /^import \{ EXIT_SAFETY_MS, isArrivalMotion, pageMotionFor \} from '\.\/pageMotion\.js';$/m);
   for (const gone of [/\bmotion\./, /useReducedMotion/, /variants/, /\bx:/, /ease/, /TRAVEL_PX/, /duration/]) {
     assert.doesNotMatch(jsx, gone, `${gone} left with the old transition`);
   }

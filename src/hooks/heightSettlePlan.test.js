@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { depsAreSame, planHeightSettle } from './heightSettlePlan.js';
 
 /**
@@ -64,4 +65,66 @@ test('depsAreSame compares position by position with Object.is', () => {
   assert.equal(depsAreSame([1, 'a'], [1, 'b']), false);
   assert.equal(depsAreSame([NaN], [NaN]), true);
   assert.equal(depsAreSame([1], [1, 2]), false);
+});
+
+/**
+ * A settle carries a datum that lands late on a page the reader is already
+ * looking at. While the route transition is still moving the page, the page
+ * itself is the displacement and a settle is a second owner of it. Measured
+ * 2026-09-07 stepping back from an author to the institution it was opened
+ * from: four settles inside 76ms, each restarting a full 360ms clock under a
+ * reveal that was still running, with the tab strip dipping 16px instead of
+ * being where it was left.
+ */
+test('a suspended commit starts nothing, whatever the heights say', () => {
+  assert.deepEqual(
+    planHeightSettle({ remembered: 114, depsChanged: true, running: null, current: null, natural: 237.9, suspended: true }),
+    { action: 'none', remember: 237.9 },
+  );
+});
+
+test('a suspended commit still remembers the box, so the first change after the page lands settles from the right height', () => {
+  const plan = planHeightSettle({ remembered: 114, depsChanged: true, running: null, current: null, natural: 316.8, suspended: true });
+  assert.equal(plan.remember, 316.8);
+  // And that memory is what the next, unsuspended commit animates FROM.
+  assert.deepEqual(
+    planHeightSettle({ remembered: plan.remember, depsChanged: true, running: null, current: null, natural: 380, suspended: false }),
+    { action: 'animate', from: 316.8, to: 380, remember: 380 },
+  );
+});
+
+test('suspension is not the same as no change: without it the same commit animates', () => {
+  const args = { remembered: 114, depsChanged: true, running: null, current: null, natural: 237.9 };
+  assert.equal(planHeightSettle({ ...args, suspended: true }).action, 'none');
+  assert.equal(planHeightSettle({ ...args, suspended: false }).action, 'animate');
+  assert.equal(planHeightSettle(args).action, 'animate', 'and omitting it keeps the old behaviour');
+});
+
+/**
+ * SOURCE: the hook is the half of this that node cannot run — it needs a DOM,
+ * a layout and a running animation. These pin the two decisions it makes on its
+ * own, both of which a passing pure suite would otherwise leave free.
+ */
+const hookSource = async () => (await readFile(new URL('./useHeightSettle.js', import.meta.url), 'utf8'))
+  .replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
+
+test('SOURCE: the hook asks whether it is suspended, and hands the answer to the plan', async () => {
+  const code = await hookSource();
+  assert.match(code, /const standDown = typeof suspended === 'function' && suspended\(\);/,
+    'the predicate is called inside the layout effect, where the DOM is current');
+  assert.match(code, /planHeightSettle\(\{[^}]*suspended: standDown[^}]*\}\)/,
+    'and the plan is the one that decides, so the decision stays testable');
+});
+
+/**
+ * A settle already in flight was started by a page that was at rest. Suspension
+ * stops a NEW one from starting; it must not cancel that one, because the hook
+ * cancels before measuring and would leave the box snapping to its natural
+ * height instead of finishing the movement the reader is already watching.
+ */
+test('SOURCE: a suspended commit leaves a settle already in flight alone', async () => {
+  const code = await hookSource();
+  const order = code.indexOf('if (standDown && inFlight) return;');
+  assert.ok(order > 0, 'a suspended commit with a settle in flight returns early');
+  assert.ok(order < code.indexOf('inFlight.cancel()'), 'and it returns BEFORE anything is cancelled');
 });

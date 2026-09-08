@@ -45,6 +45,35 @@ export const PAGE_MOTIONS = Object.freeze(['enter', 'enter-lateral', 'reveal', '
  */
 export const EXIT_SAFETY_MS = 700;
 
+/**
+ * Whether a page running this motion is still ARRIVING — travelling into place,
+ * as opposed to sitting at rest or on its way out.
+ *
+ * What reads this is the height settle inside the page (`useHeightSettle`, via
+ * the arrival context). A settle exists to carry a piece of data that lands
+ * LATE on a page the reader is already looking at; a page that is still flying
+ * in has no wait to smooth over, and a second animated height under a page that
+ * is itself moving is two owners of the same displacement.
+ *
+ * `reveal` counts. Coming back is a fresh mount — `AnimatePresence` keys on the
+ * pathname, so the page stepped back to was unmounted when it was left — and
+ * its data comes back from cache in bursts. Measured 2026-09-07 on an
+ * institution stepped back to from one of its authors: four settles inside
+ * 76ms, each restarting a full 360ms clock (302.5>287.4, 296.5>313.8,
+ * 291.9>315.4, 288.8>316.8), while the reveal was still running. What a reader
+ * sees is the tab strip and the papers wobbling instead of being where they
+ * were left.
+ *
+ * The motions of a page on its way out — `leave`, `hold`, `hold-lateral`,
+ * `fade` — are deliberately NOT arrivals. A settle still running on the leaving
+ * page finishes: measured at 10.4px of travel on a page that is `position:
+ * fixed` and cannot push anything, where cancelling it would snap to opacity
+ * 0.9 in one frame instead.
+ */
+export function isArrivalMotion(motion) {
+  return motion === 'enter' || motion === 'enter-lateral' || motion === 'reveal';
+}
+
 export function pageMotionFor({ direction, lateral, present } = {}) {
   const sign = typeof direction === 'number' && Number.isFinite(direction) ? Math.sign(direction) : 0;
   const isLateral = lateral === true;

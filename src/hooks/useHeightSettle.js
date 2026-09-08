@@ -50,9 +50,17 @@ const restingOverflow = new WeakMap();
  * rest is only clipped while the box is moving.
  *
  * `enabled: false` keeps the memory up to date without animating (reduced
- * motion).
+ * motion). `suspended` is the same thing decided per commit rather than per
+ * render: a function asked, inside the layout effect, whether this particular
+ * change should be carried or snapped. It exists because the answer — "is the
+ * route transition still moving this page?" — is only true for a few hundred
+ * milliseconds and a React flag for it arrives late. Measured 2026-09-07: with
+ * the gate on a state flag, the page was visually at rest (opacity 1,
+ * translate 0) at 302ms but `animationend` had not been committed yet, and the
+ * skeleton-to-hero handover landing at 329ms in that 38ms window was snapped
+ * 115.8px instead of settled — a worse defect than the one the gate was for.
  */
-export function useHeightSettle(ref, deps, { enabled = true, duration = 360, easing = EASE } = {}) {
+export function useHeightSettle(ref, deps, { enabled = true, suspended, duration = 360, easing = EASE } = {}) {
   const lastHeightRef = useRef(null);
   const lastDepsRef = useRef(null);
 
@@ -67,6 +75,12 @@ export function useHeightSettle(ref, deps, { enabled = true, duration = 360, eas
     const inFlight = typeof el.getAnimations === 'function'
       ? el.getAnimations().find((animation) => animation.id === SETTLE_ID)
       : null;
+    // Asked here, before anything is cancelled: the DOM knows whether the page
+    // is still moving, and it knows it now. A settle already in flight belongs
+    // to a page that was at rest when it started, so it is left alone — only
+    // the starting of a NEW one is suspended.
+    const standDown = typeof suspended === 'function' && suspended();
+    if (standDown && inFlight) return;
     let running = null;
     let current = null;
     if (inFlight) {
@@ -76,7 +90,7 @@ export function useHeightSettle(ref, deps, { enabled = true, duration = 360, eas
       inFlight.cancel();
     }
     const natural = el.getBoundingClientRect().height;
-    const plan = planHeightSettle({ remembered: lastHeightRef.current, depsChanged, running, current, natural });
+    const plan = planHeightSettle({ remembered: lastHeightRef.current, depsChanged, running, current, natural, suspended: standDown });
     lastHeightRef.current = plan.remember;
     if (!enabled || plan.action === 'none' || typeof el.animate !== 'function') return;
     if (!restingOverflow.has(el)) restingOverflow.set(el, el.style.overflow);

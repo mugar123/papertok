@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { EXIT_SAFETY_MS, PAGE_MOTIONS } from './pageMotion.js';
+import { EXIT_SAFETY_MS, PAGE_MOTIONS, isArrivalMotion, pageMotionFor } from './pageMotion.js';
 
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '');
 const read = async (path) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
@@ -172,4 +172,71 @@ test('reduced motion keeps the fades and drops the movement, for all seven anima
   assert.deepEqual([...new Set(names)].sort(), ['pageBrighten', 'pageDim', 'pageFadeIn', 'pageFadeOut']);
   assert.doesNotMatch(reduced, /translate|scale/);
   assert.equal(reduced.match(/animation:/g).length, names.length, 'every reduced animation rides the reduced clock');
+});
+
+/** Comments too: these assert on code, and prose must not be able to satisfy them. */
+const stripAll = (source) => source.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
+
+/**
+ * A height settle inside a page carries a datum that lands LATE on a page the
+ * reader is already looking at. While the page itself travels there is no wait
+ * to smooth over, and a settle there is a second owner of the same
+ * displacement on a different clock.
+ */
+test('every motion is classified as arriving or not, and exactly the three that travel INTO place are', () => {
+  const arriving = PAGE_MOTIONS.filter(isArrivalMotion);
+  assert.deepEqual(arriving, ['enter', 'enter-lateral', 'reveal']);
+  // Nothing outside the table, and nothing in it left unclassified.
+  for (const motion of PAGE_MOTIONS) assert.equal(typeof isArrivalMotion(motion), 'boolean');
+  assert.equal(isArrivalMotion(undefined), false, 'a page with no motion is not arriving');
+});
+
+/**
+ * Coming back is a fresh mount — AnimatePresence keys on the pathname, so the
+ * page stepped back to was unmounted when it was left — and its data returns
+ * from cache in bursts. Measured 2026-09-07 stepping back from an author to the
+ * institution it was opened from: four settles inside 76ms, each restarting a
+ * full 360ms clock, under a reveal still running.
+ */
+test('the page revealed on the way back counts as arriving, because it is a fresh mount', () => {
+  const revealed = pageMotionFor({ direction: -1, lateral: false, present: true });
+  assert.equal(revealed, 'reveal');
+  assert.ok(isArrivalMotion(revealed));
+});
+
+/**
+ * The other half of the rule. A settle still running on the page being ejected
+ * finishes: it is `position: fixed` and cannot push anything, it was measured at
+ * 10.4px of remaining travel, and cancelling it snapped to opacity 0.9 in one
+ * frame instead.
+ */
+test('no motion of a page on its way out is an arrival', () => {
+  for (const direction of [1, -1, 0]) {
+    for (const lateral of [true, false]) {
+      const motion = pageMotionFor({ direction, lateral, present: false });
+      assert.equal(isArrivalMotion(motion), false, `${motion} is a leaving motion`);
+    }
+  }
+});
+
+/**
+ * The gate is asked at the moment of a commit, and must answer from the DOM.
+ * Measured 2026-09-07 with it derived from the `settled` state instead: the page
+ * was visually at rest (opacity 1, translate 0) at 302ms, `animationend` had
+ * fired but its setState had not been committed, and the skeleton-to-hero
+ * handover landing at 329ms inside that 38ms window was snapped 115.8px in one
+ * frame — a worse defect than the one the gate exists for.
+ */
+test('SOURCE: the arrival is a predicate read from the DOM, not a flag one commit behind', async () => {
+  const code = stripAll(await readFile(new URL('./PageTransition.jsx', import.meta.url), 'utf8'));
+  const gate = code.match(/const isArriving = useCallback\(\(\) => \{([\s\S]*?)\n {2}\}, \[\]\);/);
+  assert.ok(gate, 'the gate is a stable callback, so a consumer can ask it whenever it needs to');
+
+  assert.match(gate[1], /isArrivalMotion\(root\.dataset\.pageMotion\)/,
+    'a page on its way out must never report itself as arriving');
+  assert.match(gate[1], /getAnimations\(\)\.some\(\(animation\) => animation\.playState === 'running'\)/,
+    'and a page whose animation has finished is not arriving, whatever React has committed');
+
+  assert.match(code, /<PageArrivalProvider value=\{isArriving\}>/,
+    'the page subtree is handed the predicate itself');
 });

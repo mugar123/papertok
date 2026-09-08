@@ -19,6 +19,7 @@ import {
 } from '../../utils/entityExplorer';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useHeightSettle } from '../../hooks/useHeightSettle';
+import { useIsPageArriving } from '../../hooks/usePageArrival.js';
 import { CATEGORIES } from '../../data/categories';
 import { areaAccentForCategory as getAreaGradient, areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
 import { explorerSkeletonShape, hasAuthorsTab } from '../../utils/explorerSkeletonShape.js';
@@ -225,6 +226,9 @@ export default function EntityExplorer({
   const appChromeClass = appChrome ? ' explorer--app' : '';
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
+  // While the route transition is still moving this page, the settle stands
+  // down: see the measurement in usePageArrival.js.
+  const isPageArriving = useIsPageArriving();
   const { language, isEnglish, locale } = useLanguage();
   const { trackEvent } = useAnalyticsConsent();
   const [searchParams] = useSearchParams();
@@ -481,7 +485,12 @@ export default function EntityExplorer({
     // and on a phone a 268px ORCID arrival on the expo-out spent 70px of it
     // in a single frame. Same reasoning, and the same curve, as the Wikipedia
     // fold's collapse: the page has to land, not appear.
-    { enabled: !prefersReducedMotion, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' },
+    // Not while the page is arriving. A settle carries a datum that lands late
+    // on a page at rest; under a route transition it is a second owner of the
+    // same displacement, on a different clock. Measured stepping back from an
+    // author to its institution: four settles in 76ms, each restarting a full
+    // 360ms, and the tab strip dipping 16px instead of being where it was left.
+    { enabled: !prefersReducedMotion, suspended: isPageArriving, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' },
   );
   const getInteractionState = useCallback((paper) => ({
     isLiked: likedPaperIds.has(paper.id),

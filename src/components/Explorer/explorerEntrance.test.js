@@ -38,7 +38,9 @@ test('the hero settles between its heights instead of snapping at the handover',
   // dependency list and its options, and this must read through it.
   const jsx = (await read('./EntityExplorer.jsx')).replace(/^\s*\/\/.*$/gm, '');
   assert.match(jsx, /import \{ useHeightSettle \} from '\.\.\/\.\.\/hooks\/useHeightSettle';/);
-  assert.match(jsx, /const heroBodyRef = useRef\(null\);\s*useHeightSettle\(\s*heroBodyRef,\s*\[isLoadingEntity, entity, orcidInfo, isLoadingOrcid, wikiDescription, isWikiRequestPending, recentImpact, hasLoadedWikiImage\],\s*\{ enabled: !prefersReducedMotion, easing: 'cubic-bezier\(0\.4, 0, 0\.2, 1\)' \},\s*\);/);
+  // `suspended` is the route transition's own gate: a settle under a page that
+  // is still travelling is a second owner of the same displacement.
+  assert.match(jsx, /const heroBodyRef = useRef\(null\);\s*useHeightSettle\(\s*heroBodyRef,\s*\[isLoadingEntity, entity, orcidInfo, isLoadingOrcid, wikiDescription, isWikiRequestPending, recentImpact, hasLoadedWikiImage\],\s*\{ enabled: !prefersReducedMotion, suspended: isPageArriving, easing: 'cubic-bezier\(0\.4, 0, 0\.2, 1\)' \},\s*\);/);
   // The easing is passed here, not changed in the hook: the hook's expo-out
   // default is right for a box that appears, and this is the one box whose
   // growth moves everything beneath it. Measured on a phone opening an author:
@@ -69,7 +71,7 @@ test('the height settle is a FLIP on one property, decided every commit and re-a
   assert.match(hook, /const \[start, end\] = inFlight\.effect\.getKeyframes\(\);/);
   assert.match(hook, /current = el\.getBoundingClientRect\(\)\.height;\s*inFlight\.cancel\(\);/);
   // The decision is the pure module's; the hook only measures and drives.
-  assert.match(hook, /const plan = planHeightSettle\(\{ remembered: lastHeightRef\.current, depsChanged, running, current, natural \}\);/);
+  assert.match(hook, /const plan = planHeightSettle\(\{ remembered: lastHeightRef\.current, depsChanged, running, current, natural, suspended: standDown \}\);/);
   assert.match(hook, /lastHeightRef\.current = plan\.remember;/);
   assert.match(hook, /el\.animate\(\s*\[\{ height: `\$\{plan\.from\}px` \}, \{ height: `\$\{plan\.to\}px` \}\],/);
   assert.match(hook, /if \(plan\.action === 'resume'\) animation\.currentTime = plan\.currentTime;/);
