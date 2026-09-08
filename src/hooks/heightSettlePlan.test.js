@@ -139,3 +139,38 @@ test('SOURCE: a suspended commit hands the box over instead of leaving it clippe
   assert.match(branch[1], /lastHeightRef\.current = el\.getBoundingClientRect\(\)\.height;/,
     'the memory follows the box, so the next settle starts from where it really is');
 });
+
+/**
+ * The memory kept while another owner had the box is a frame of THEIR animation.
+ * Animating from it drops the box to that stale height in one frame — keyframe 0
+ * is applied at currentTime 0 — and then eases back up over 360ms on a curve
+ * that is nearly flat at its head, so there is a visible dead stop between the
+ * drop and the climb. Down, then up, with nothing on screen having caused the
+ * drop: exactly the complaint suspension was introduced to remove, arriving
+ * from the other side.
+ */
+test('the first commit after another owner had the box re-syncs instead of animating from a stale height', () => {
+  assert.deepEqual(
+    planHeightSettle({ remembered: 261, depsChanged: true, running: null, current: null, natural: 320.2, resync: true }),
+    { action: 'none', remember: 320.2 },
+  );
+});
+
+test('re-syncing leaves the memory on the truth, so the NEXT change settles from it', () => {
+  const synced = planHeightSettle({ remembered: 261, depsChanged: true, running: null, current: null, natural: 320.2, resync: true });
+  assert.deepEqual(
+    planHeightSettle({ remembered: synced.remember, depsChanged: true, running: null, current: null, natural: 360 }),
+    { action: 'animate', from: 320.2, to: 360, remember: 360 },
+  );
+});
+
+test('SOURCE: the hook raises the stale flag while suspended and spends it on the next commit', async () => {
+  const code = await hookSource();
+  assert.match(code, /const resync = !standDown && staleMemoryRef\.current;\s*staleMemoryRef\.current = standDown;/,
+    'read once, then set to whatever this commit is');
+  assert.match(code, /planHeightSettle\(\{[^}]*resync[^}]*\}\)/, 'and the plan is what decides');
+  // The hand-over branch returns early, so it has to raise the flag itself.
+  const branch = code.match(/if \(standDown && inFlight\) \{([\s\S]*?)\n {4}\}/);
+  assert.ok(branch);
+  assert.match(branch[1], /staleMemoryRef\.current = true;/);
+});

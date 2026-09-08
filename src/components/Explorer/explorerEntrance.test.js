@@ -71,7 +71,7 @@ test('the height settle is a FLIP on one property, decided every commit and re-a
   assert.match(hook, /const \[start, end\] = inFlight\.effect\.getKeyframes\(\);/);
   assert.match(hook, /current = el\.getBoundingClientRect\(\)\.height;\s*inFlight\.cancel\(\);/);
   // The decision is the pure module's; the hook only measures and drives.
-  assert.match(hook, /const plan = planHeightSettle\(\{ remembered: lastHeightRef\.current, depsChanged, running, current, natural, suspended: standDown \}\);/);
+  assert.match(hook, /const plan = planHeightSettle\(\{ remembered: lastHeightRef\.current, depsChanged, running, current, natural, suspended: standDown, resync \}\);/);
   assert.match(hook, /lastHeightRef\.current = plan\.remember;/);
   assert.match(hook, /el\.animate\(\s*\[\{ height: `\$\{plan\.from\}px` \}, \{ height: `\$\{plan\.to\}px` \}\],/);
   assert.match(hook, /if \(plan\.action === 'resume'\) animation\.currentTime = plan\.currentTime;/);

@@ -63,6 +63,11 @@ const restingOverflow = new WeakMap();
 export function useHeightSettle(ref, deps, { enabled = true, suspended, duration = 360, easing = EASE } = {}) {
   const lastHeightRef = useRef(null);
   const lastDepsRef = useRef(null);
+  // Raised for as long as something else owns the box, and read once on the
+  // first commit after that. The memory taken while suspended is a frame of the
+  // other owner's animation, so the commit that inherits it must re-sync rather
+  // than animate from it.
+  const staleMemoryRef = useRef(false);
 
   useLayoutEffect(() => {
     const depsChanged = !depsAreSame(lastDepsRef.current, deps);
@@ -94,6 +99,7 @@ export function useHeightSettle(ref, deps, { enabled = true, suspended, duration
       el.style.overflow = restingOverflow.get(el) ?? '';
       restingOverflow.delete(el);
       lastHeightRef.current = el.getBoundingClientRect().height;
+      staleMemoryRef.current = true;
       return;
     }
     let running = null;
@@ -105,7 +111,9 @@ export function useHeightSettle(ref, deps, { enabled = true, suspended, duration
       inFlight.cancel();
     }
     const natural = el.getBoundingClientRect().height;
-    const plan = planHeightSettle({ remembered: lastHeightRef.current, depsChanged, running, current, natural, suspended: standDown });
+    const resync = !standDown && staleMemoryRef.current;
+    staleMemoryRef.current = standDown;
+    const plan = planHeightSettle({ remembered: lastHeightRef.current, depsChanged, running, current, natural, suspended: standDown, resync });
     lastHeightRef.current = plan.remember;
     if (!enabled || plan.action === 'none' || typeof el.animate !== 'function') return;
     if (!restingOverflow.has(el)) restingOverflow.set(el, el.style.overflow);

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, BadgeCheck, Check, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
 import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution, getEntityRecentImpact, getLocalTopicEntity, enrichAuthorInstitutionLocalization } from '../../services/openAlexService';
@@ -558,9 +558,8 @@ export default function EntityExplorer({
     measure(wikiDescriptionTextRef.current, setWikiDescriptionExpandedHeight, setIsWikiDescriptionExpandable);
   }, []);
 
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(measureExpandableDescriptions);
-    return () => window.cancelAnimationFrame(frame);
+  useLayoutEffect(() => {
+    measureExpandableDescriptions();
   }, [entity?.summary, measureExpandableDescriptions, wikiDescription]);
 
   // `resize` fires repeatedly on mobile — as the URL bar collapses while
