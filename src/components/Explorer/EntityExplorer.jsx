@@ -461,6 +461,10 @@ export default function EntityExplorer({
   // once, and by 9px (146 → 155): the rows are measured to the paragraph's
   // own line box for exactly this.
   const wikiDescription = isWikiRequestPending ? '' : (visibleWikiInfo?.extract || topicFallbackDescription);
+
+  // The block exists only once its lookup has settled, with everything it is
+  // ever going to have — see the fold below for why it is not held open.
+  const showWikiBlock = !isWikiRequestPending && Boolean(wikiDescription || entity?.homepage_url);
   const hasLoadedWikiImage = Boolean(
     visibleWikiInfo?.thumbnail && loadedWikiImageUrl === visibleWikiInfo.thumbnail,
   );
@@ -477,9 +481,36 @@ export default function EntityExplorer({
   // animated the strip snapped to its new place while the box closed over
   // it (measured: tabs 515 → 451 in one frame under a 200 ms settle).
   const heroBodyRef = useRef(null);
+  // True while the Wikipedia fold is animating its OWN height. A ref, not
+  // state: `suspended` below is called inside a layout effect, where a state
+  // value read from this render would already be stale.
+  //
+  // One owner per displacement, and this is the second half of it. Dropping the
+  // wiki from the settle's deps is not enough on its own: ANY dep that fires
+  // while the fold is mid-unfold makes the settle measure a natural height
+  // taken half way through someone else's animation. Measured 2026-09-08 with
+  // only the deps removed — the image inside the block finished loading during
+  // the unfold, `hasLoadedWikiImage` fired, the settle took 261px for a box
+  // whose real height was 320.2, clamped it there under `overflow: hidden` and
+  // released onto a 55.7px jump of the tab strip.
+  const wikiFoldAnimatingRef = useRef(false);
+  const settleSuspended = useCallback(
+    () => isPageArriving() || wikiFoldAnimatingRef.current,
+    [isPageArriving],
+  );
   useHeightSettle(
     heroBodyRef,
-    [isLoadingEntity, entity, orcidInfo, isLoadingOrcid, wikiDescription, isWikiRequestPending, recentImpact, hasLoadedWikiImage],
+    // `wikiDescription` and `isWikiRequestPending` are deliberately NOT here.
+    // The Wikipedia block animates its own arrival now (the fold below), so it
+    // owns that displacement; a settle on the same commit is a second owner of
+    // it. Measured 2026-09-08 with them still listed: the settle read the box
+    // WHILE the fold was mid-unfold, took 261px for the natural height, clamped
+    // the box there under `overflow: hidden` for its full 360ms, and released
+    // onto a real height of 320.2 — the tab strip jumped 59.2px in one frame
+    // after an unfold that had looked finished. The hook keeps its memory of
+    // the box on every commit regardless of deps, so dropping them costs
+    // nothing: the next change still settles from the right height.
+    [isLoadingEntity, entity, orcidInfo, isLoadingOrcid, recentImpact, hasLoadedWikiImage],
     // A gentle ease-in-out rather than the hook's expo-out default. What
     // travels here is everything under the hero — the tab strip, the list —
     // and on a phone a 268px ORCID arrival on the expo-out spent 70px of it
@@ -490,8 +521,16 @@ export default function EntityExplorer({
     // same displacement, on a different clock. Measured stepping back from an
     // author to its institution: four settles in 76ms, each restarting a full
     // 360ms, and the tab strip dipping 16px instead of being where it was left.
-    { enabled: !prefersReducedMotion, suspended: isPageArriving, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' },
+    { enabled: !prefersReducedMotion, suspended: settleSuspended, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' },
   );
+  // A fold unmounted in the middle of its animation never reports completing,
+  // and a latch left raised would suspend every settle on the page for good.
+  useEffect(() => {
+    if (showWikiBlock) return undefined;
+    wikiFoldAnimatingRef.current = false;
+    return undefined;
+  }, [showWikiBlock]);
+
   const getInteractionState = useCallback((paper) => ({
     isLiked: likedPaperIds.has(paper.id),
     isSaved: savedPaperIds.has(paper.id),
@@ -2020,15 +2059,26 @@ export default function EntityExplorer({
             </div>
           )}
           
-          {/* Wikipedia or external info. An institution stays in the list
-              with the topics: its skeleton reserved this block for the whole
-              wait, and an institution without a homepage on record used to
-              lose it the frame the hero landed — the list rose by its height,
-              then dropped again when the paragraph came. Held open, the
-              paragraph replaces the shapes in place, and one that never comes
-              folds the block away instead of cutting it. */}
+          {/* Wikipedia or external info, and it ARRIVES rather than appears.
+              Between 2026-09-06 and 2026-09-08 this block was held open with
+              grey rows for the whole lookup so the paragraph could replace them
+              in place; that kept the list still, and it also meant the block
+              never had an entrance — it was simply already there.
+
+              It mounts when its lookup has SETTLED now, with everything it is
+              ever going to have, and unfolds from nothing. Gated on settled
+              rather than on content: mounting early on `homepage_url` alone —
+              which the entity carries and the lookup does not — would put the
+              block on screen before the prose and let the paragraph grow it a
+              second time. One mount, one unfold.
+
+              The page skeleton no longer reserves this block either
+              (explorerSkeletonShape.js). Reserved space and an entrance
+              animation are two answers to the same question: with both, the
+              hero shrinks by the reservation when the live hero lands without
+              the block, then grows again when it unfolds — down, then up. */}
           <AnimatePresence initial={false}>
-            {(wikiDescription || entity?.homepage_url || (isWikiRequestPending && ['concept', 'topic', 'institution'].includes(type))) && (
+            {showWikiBlock && (
               // No `layout`. The hero body's settle already carries this
               // height; a projection on top of it was a second owner of
               // the same number, and it scaled the paragraph while the
@@ -2038,6 +2088,13 @@ export default function EntityExplorer({
               // it arrives or leaves; in between, the settle moves it.
               <motion.div
                 className="ehc-wiki-fold"
+                // While this runs, the hero's settle stands down: the fold is
+                // the owner of this height. `onAnimationComplete` covers the
+                // arrival and the exit alike; the effect below is the belt to
+                // its braces, for a fold torn down mid-animation, which never
+                // reports completing.
+                onAnimationStart={() => { wikiFoldAnimatingRef.current = true; }}
+                onAnimationComplete={() => { wikiFoldAnimatingRef.current = false; }}
                 // The fold is a box of its own around the padded block, so
                 // that `height: 0` means nothing rather than the 26px of
                 // padding and border a border-box clamps at — and it carries
@@ -2066,13 +2123,22 @@ export default function EntityExplorer({
                 exit={prefersReducedMotion
                   ? { opacity: 0 }
                   : { opacity: 0, height: 0, marginTop: -HERO_STACK_GAP_PX, y: -6, transition: WIKI_FOLD_OUT }}
+                // `--ease-out-quad`, not this file's usual expo-out. The block
+                // opens ~155px of space and everything below it rides that,
+                // which is the case the project badge was measured on: an
+                // expo-out spends most of its travel in the first frames, so
+                // the list leaps and then crawls. Simulated at 60fps over
+                // 155px: the 420ms expo-out this replaces peaks at 35.4px in a
+                // single frame; `--ease-out-quad` at 320ms peaks at 15.2px, in
+                // less time. Opacity lands first, so the words are readable
+                // while the box is still opening.
                 transition={prefersReducedMotion
                   ? { duration: 0 }
                   : {
-                    opacity: { duration: 0.3 },
-                    height: { duration: 0.42, ease: [0.16, 1, 0.3, 1] },
-                    marginTop: { duration: 0.42, ease: [0.16, 1, 0.3, 1] },
-                    y: { duration: 0.38, ease: [0.16, 1, 0.3, 1] },
+                    opacity: { duration: 0.24 },
+                    height: { duration: 0.32, ease: [0.25, 0.46, 0.45, 0.94] },
+                    marginTop: { duration: 0.32, ease: [0.25, 0.46, 0.45, 0.94] },
+                    y: { duration: 0.32, ease: [0.25, 0.46, 0.45, 0.94] },
                   }}
               >
                 <div

@@ -44,15 +44,20 @@ test('each type reserves the block it actually carries', () => {
   // does come grows the hero from the bottom under the settle's clip.
   assert.equal(explorerSkeletonShape('author').aside, 'none');
   assert.equal(explorerSkeletonShape('author', { hasOrcid: true }).aside, 'orcid');
-  assert.equal(explorerSkeletonShape('institution').aside, 'wiki');
-  // A fetched topic mounts the Wikipedia block on its grey rows the frame the
-  // hero lands, and holds them until Wikipedia answers (2026-09-06). Left
-  // unreserved, the handover grew the hero by the block: measured on T11090
-  // from cold at 1280×900, the body went 109 → 234px the moment the entity
-  // came. Local and free-text topics are born resolved and never show this
-  // skeleton, so the reservation only ever stands in for a block that comes.
-  assert.equal(explorerSkeletonShape('topic').aside, 'wiki');
-  assert.equal(explorerSkeletonShape('concept').aside, 'wiki');
+  // The Wikipedia block is reserved by NOBODY, and that is the point.
+  // Reserved space and an entrance animation are two answers to the same
+  // question. Between 2026-09-06 and 2026-09-08 the block was reserved here
+  // and held open on its grey rows until Wikipedia answered, because
+  // unreserved it used to appear at full height in one frame (measured on
+  // T11090 from cold at 1280×900: the body went 109 → 234px the moment the
+  // entity came). It unfolds on arrival now instead (EntityExplorer.jsx), so
+  // reserving it too would give the reader the same complaint from the other
+  // side: the skeleton holds 146px, the live hero lands without the block
+  // because the lookup is still out, the settle shrinks the box by that much,
+  // and the unfold grows it back — down, then up.
+  assert.equal(explorerSkeletonShape('institution').aside, 'none');
+  assert.equal(explorerSkeletonShape('topic').aside, 'none');
+  assert.equal(explorerSkeletonShape('concept').aside, 'none');
   // Measured at 390px: a project hero landed 276px taller than its skeleton,
   // 122 of it the summary box OpenAIRE returns for nearly every grant.
   assert.equal(explorerSkeletonShape('project').aside, 'summary');

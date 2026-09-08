@@ -76,11 +76,26 @@ export function useHeightSettle(ref, deps, { enabled = true, suspended, duration
       ? el.getAnimations().find((animation) => animation.id === SETTLE_ID)
       : null;
     // Asked here, before anything is cancelled: the DOM knows whether the page
-    // is still moving, and it knows it now. A settle already in flight belongs
-    // to a page that was at rest when it started, so it is left alone — only
-    // the starting of a NEW one is suspended.
+    // is still moving, and it knows it now.
     const standDown = typeof suspended === 'function' && suspended();
-    if (standDown && inFlight) return;
+    if (standDown && inFlight) {
+      // Another owner has taken this box — a child animating its own height.
+      // The settle in flight is holding it clipped and SMALLER than its
+      // content, so leaving it to finish would hide everything the new owner
+      // does and then release it all in one frame. Measured 2026-09-08 on an
+      // institution, with this branch returning instead: the Wikipedia fold
+      // unfolded inside a box still clamped at 148.8px, and the tab strip
+      // jumped 74.8px the frame the clamp let go.
+      //
+      // Handing the box over costs only what the settle had left to travel,
+      // and the handover happens on the new owner's first commit — when it is
+      // still at nothing — so that remainder is small.
+      inFlight.cancel();
+      el.style.overflow = restingOverflow.get(el) ?? '';
+      restingOverflow.delete(el);
+      lastHeightRef.current = el.getBoundingClientRect().height;
+      return;
+    }
     let running = null;
     let current = null;
     if (inFlight) {

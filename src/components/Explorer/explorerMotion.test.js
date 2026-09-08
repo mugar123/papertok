@@ -331,9 +331,37 @@ test('the hero settle stands down while the page is still arriving', async () =>
   const call = code.match(/useHeightSettle\(([\s\S]*?)\n {2}\);/);
   assert.ok(call, 'the hero body settles');
   assert.match(call[1], /enabled: !prefersReducedMotion/, 'reduced motion still switches it off entirely');
-  assert.match(call[1], /suspended: isPageArriving/,
-    'and the arrival suspends it per commit — a render-time boolean answers 38ms late');
+  assert.match(call[1], /suspended: settleSuspended/,
+    'and something suspends it per commit — a render-time boolean answers 38ms late');
+  // Two owners can take the box: the route transition while it moves the whole
+  // page, and the Wikipedia fold while it animates its own height.
+  const gate = code.match(/const settleSuspended = useCallback\(\s*\(\) => ([^,]+),/);
+  assert.ok(gate, 'the suspension is one stable predicate');
+  assert.match(gate[1], /isPageArriving\(\)/);
+  assert.match(gate[1], /wikiFoldAnimatingRef\.current/);
   // The curve stays where it was measured: an expo-out spent 70px of a 268px
   // ORCID arrival in one frame on a phone.
   assert.match(call[1], /easing: 'cubic-bezier\(0\.4, 0, 0\.2, 1\)'/);
+});
+
+/**
+ * One owner per displacement. The Wikipedia block animates its own arrival, so
+ * the hero's settle must not animate the same change on the same commit.
+ *
+ * Measured 2026-09-08 with `wikiDescription` and `isWikiRequestPending` still in
+ * the settle's deps: the settle read the box WHILE the fold was mid-unfold, took
+ * 261px for the natural height, clamped the box there under `overflow: hidden`
+ * for its full 360ms, and released onto a real height of 320.2 — the tab strip
+ * jumped 59.2px in one frame after an unfold that had looked finished.
+ */
+test('the settle does not chase the Wikipedia block, which animates its own arrival', async () => {
+  const code = (await read('./EntityExplorer.jsx')).replace(/^\s*\/\/.*$/gm, '');
+  const deps = code.match(/useHeightSettle\(\s*heroBodyRef,\s*\[([^\]]*)\]/);
+  assert.ok(deps, 'the settle declares what is worth a movement');
+  assert.doesNotMatch(deps[1], /wikiDescription/, 'the fold owns its own height');
+  assert.doesNotMatch(deps[1], /isWikiRequestPending/);
+  // What stays: the handover and the blocks that have no entrance of their own.
+  for (const dep of ['isLoadingEntity', 'entity', 'orcidInfo', 'isLoadingOrcid', 'recentImpact', 'hasLoadedWikiImage']) {
+    assert.match(deps[1], new RegExp(`\\b${dep}\\b`), `${dep} still settles`);
+  }
 });

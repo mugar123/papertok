@@ -117,14 +117,25 @@ test('SOURCE: the hook asks whether it is suspended, and hands the answer to the
 });
 
 /**
- * A settle already in flight was started by a page that was at rest. Suspension
- * stops a NEW one from starting; it must not cancel that one, because the hook
- * cancels before measuring and would leave the box snapping to its natural
- * height instead of finishing the movement the reader is already watching.
+ * A suspended commit means another owner has taken the box — the route
+ * transition moving the whole page, or a child animating its own height. A
+ * settle still in flight is holding that box CLIPPED and smaller than its
+ * content, so letting it finish hides everything the new owner does and then
+ * releases it in one frame.
+ *
+ * Measured 2026-09-08 on an institution, with this branch returning early
+ * instead: the Wikipedia fold unfolded inside a box still clamped at 148.8px,
+ * and the tab strip jumped 74.8px the frame the clamp let go. Handing the box
+ * over costs only what the settle had left to travel, and the handover lands on
+ * the new owner's first commit — when it is still at nothing.
  */
-test('SOURCE: a suspended commit leaves a settle already in flight alone', async () => {
+test('SOURCE: a suspended commit hands the box over instead of leaving it clipped', async () => {
   const code = await hookSource();
-  const order = code.indexOf('if (standDown && inFlight) return;');
-  assert.ok(order > 0, 'a suspended commit with a settle in flight returns early');
-  assert.ok(order < code.indexOf('inFlight.cancel()'), 'and it returns BEFORE anything is cancelled');
+  const branch = code.match(/if \(standDown && inFlight\) \{([\s\S]*?)\n {4}\}/);
+  assert.ok(branch, 'a suspended commit with a settle in flight has a branch of its own');
+  assert.match(branch[1], /inFlight\.cancel\(\);/, 'the settle lets go');
+  assert.match(branch[1], /el\.style\.overflow = restingOverflow\.get\(el\) \?\? '';/,
+    'and the clip goes with it, or the new owner animates inside a box that still hides it');
+  assert.match(branch[1], /lastHeightRef\.current = el\.getBoundingClientRect\(\)\.height;/,
+    'the memory follows the box, so the next settle starts from where it really is');
 });

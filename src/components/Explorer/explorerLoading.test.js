@@ -107,9 +107,27 @@ test('the ORCID record and the impact score are requested together, declared bef
   assert.match(jsx, /setEntity\(data \|\| handedEntity\);\s*setIsLoadingEntity\(false\);[\s\S]*?if \(wantsOrcid\) setIsLoadingOrcid\(true\);[\s\S]*?await Promise\.all\(\[\s*wantsRecentImpact \? loadRecentImpact\(\) : null,\s*wantsOrcid \? loadOrcid\(\) : null,\s*\]\);/);
 });
 
-test('an institution keeps its Wikipedia block open while the paragraph is on its way', async () => {
+/**
+ * The block arrives rather than appears: it mounts once its lookup has SETTLED,
+ * with everything it is ever going to have, and unfolds from nothing.
+ *
+ * Gated on settled and not merely on content. `homepage_url` comes with the
+ * entity and the prose comes later, so a condition that accepted the homepage
+ * alone would mount the block early and let the paragraph grow it a second
+ * time — one arrival animation, then an unannounced resize under it.
+ */
+test('the Wikipedia block waits for its lookup to settle, then arrives as one mount', async () => {
   const jsx = await read('./EntityExplorer.jsx');
-  assert.match(jsx, /isWikiRequestPending && \['concept', 'topic', 'institution'\]\.includes\(type\)/);
+  assert.match(jsx, /const showWikiBlock = !isWikiRequestPending && Boolean\(wikiDescription \|\| entity\?\.homepage_url\);/,
+    'the block does not exist while its lookup is out');
+  assert.match(jsx, /\{showWikiBlock && \(/, 'and that is the only thing that mounts it');
+  // While it animates its own height it owns the box, and the hero's settle
+  // stands down: measured, a settle reading the box mid-unfold took a target
+  // 59.2px short of the truth and snapped the difference when it released.
+  assert.match(jsx, /onAnimationStart=\{\(\) => \{ wikiFoldAnimatingRef\.current = true; \}\}/);
+  assert.match(jsx, /onAnimationComplete=\{\(\) => \{ wikiFoldAnimatingRef\.current = false; \}\}/);
+  assert.doesNotMatch(jsx, /isWikiRequestPending && \['concept', 'topic', 'institution'\]\.includes\(type\)/,
+    'and it is no longer held open on grey rows for the whole wait');
 });
 
 test('the experience panel grows into place when the ORCID record lands', async () => {
@@ -161,7 +179,17 @@ test('the Wikipedia block folds inside a wrapper that also absorbs the stack gap
   assert.match(fold[0], /initial=\{prefersReducedMotion \? \{ opacity: 0 \} : \{ opacity: 0, height: 0, marginTop: -HERO_STACK_GAP_PX, y: -8 \}\}/);
   assert.match(fold[0], /animate=\{\{ opacity: 1, height: 'auto', marginTop: 0, y: 0 \}\}/);
   assert.match(fold[0], /exit=\{prefersReducedMotion\s*\?\s*\{ opacity: 0 \}\s*:\s*\{ opacity: 0, height: 0, marginTop: -HERO_STACK_GAP_PX, y: -6, transition: WIKI_FOLD_OUT \}\}/);
-  assert.match(fold[0], /marginTop: \{ duration: 0\.42, ease: \[0\.16, 1, 0\.3, 1\] \}/);
+  // The arrival opens ~155px of space and everything below rides it, which is
+  // the case the project badge was measured on: an expo-out spends most of its
+  // travel in the first frames, so the list leaps and then crawls. Simulated at
+  // 60fps over 155px, the 420ms expo-out this replaced peaks at 35.4px in one
+  // frame; `--ease-out-quad` at 320ms peaks at 15.2px, in less time.
+  assert.match(fold[0], /height: \{ duration: 0\.32, ease: \[0\.25, 0\.46, 0\.45, 0\.94\] \}/);
+  assert.match(fold[0], /marginTop: \{ duration: 0\.32, ease: \[0\.25, 0\.46, 0\.45, 0\.94\] \}/);
+  assert.match(fold[0], /y: \{ duration: 0\.32, ease: \[0\.25, 0\.46, 0\.45, 0\.94\] \}/);
+  assert.doesNotMatch(fold[0], /duration: 0\.42/, 'the arrival no longer runs the expo-out that front-loads it');
+  // Opacity lands first, so the words are readable while the box still opens.
+  assert.match(fold[0], /opacity: \{ duration: 0\.24 \}/);
   // The collapse is not the arrival reversed: what moves is the list below,
   // and it has to land. What this pins is the worst single frame, because that
   // is the jolt. Measured on `explorer-loading-probe.mjs wikiexit`: the
