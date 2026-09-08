@@ -1,4 +1,5 @@
 import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.js';
+import { matchesAuthorName } from '../utils/authorNameMatch.js';
 
 /**
  * Builder class for creating unified Paper objects from various adapters
@@ -179,6 +180,30 @@ export class PaperBuilder {
     }
     if (enrichmentData.referenceCount !== undefined) {
       merged.referenceCount = Math.max(merged.referenceCount || 0, enrichmentData.referenceCount);
+    }
+
+    // An author with an OpenAlex id opens their page in one request; without
+    // one the explorer has to find them again from the name, which measured
+    // 2462 ms against 433. arXiv never supplies ids, so this is where a card's
+    // authors get theirs.
+    //
+    // The id is GRAFTED, never substituted: OpenAlex writes "Cuello, N." where
+    // arXiv writes "Nicolás Cuello", and taking its list whole would rewrite
+    // the names on a card seconds after it painted, in a different order. So
+    // the name a paper already has is matched against the enrichment and only
+    // the id travels. An author the enrichment does not name, or does not
+    // disambiguate, is left exactly as it was.
+    if (enrichmentData.authors?.length) {
+      if (!merged.authors?.length) {
+        merged.authors = enrichmentData.authors;
+      } else {
+        merged.authors = merged.authors.map((author) => {
+          if (typeof author === 'string' || author?.id) return author;
+          const match = enrichmentData.authors.find(candidate => candidate?.id
+            && matchesAuthorName(author?.name, candidate?.name));
+          return match ? { ...author, id: match.id } : author;
+        });
+      }
     }
 
     // Merge arrays

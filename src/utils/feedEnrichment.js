@@ -15,12 +15,26 @@ export function getOpenAlexEnrichmentId(paperOrId) {
     }
   }
 
+  // Last, because the identifiers above are better routes to the same work: the
+  // arXiv landing-page filter found 5 of 5 measured papers where the DOI route
+  // missed one. But a paper that is on neither -- a NASA ADS record, say --
+  // used to be unenrichable, and OpenAlex often has it under the DOI its
+  // journal issued. The arXiv pseudo-DOI is skipped: it is the arXiv id again.
+  const doi = normalizeEnrichmentDoi(typeof paperOrId === 'string' ? '' : paperOrId?.doi);
+  if (doi) return `doi:${doi}`;
+
   return '';
+}
+
+function normalizeEnrichmentDoi(value) {
+  const doi = String(value || '').trim().toLowerCase().replace(/^https?:\/\/(?:dx\.)?doi\.org\//, '');
+  if (!/^10\.\d{4,9}\/\S+$/.test(doi) || /^10\.48550\/arxiv\./.test(doi)) return '';
+  return doi;
 }
 
 export function needsOpenAlexEnrichment(paper) {
   const id = getOpenAlexEnrichmentId(paper);
-  if (!id || !(/^(?:openalex:)?W\d+$/i.test(id) || /^\d{4}\.\d{4,5}$/.test(id) || /^[a-z][a-z.-]+\/\d{7}$/i.test(id))) {
+  if (!id || !(/^(?:openalex:)?W\d+$/i.test(id) || /^\d{4}\.\d{4,5}$/.test(id) || /^[a-z][a-z.-]+\/\d{7}$/i.test(id) || /^doi:/.test(id))) {
     return false;
   }
 

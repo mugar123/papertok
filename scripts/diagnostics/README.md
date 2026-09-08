@@ -70,6 +70,30 @@ A signed-out feed links its authors to `/public/entity/…` rather than
 
 Measure the production build, not `vite dev` — see the note under `open` below.
 
+## `author-door-census.mjs` — which door the feed hands out (2026-09-07)
+
+A card links an author by OpenAlex id when it has one and by name plus
+`?arxivId=` when it does not, and the second door costs three round trips before
+the hero paints (`src/utils/explorerPaths.js`). This counts which one the real
+feed actually gives, over a production build and a signed-in profile:
+
+```bash
+PROFILE_DIR="$HOME/.papertok-probe-profile" ORIGIN=http://localhost:5174 \
+  node scripts/diagnostics/author-door-census.mjs 20000
+SCROLL=8 PORT=9232 PROFILE_DIR=… ORIGIN=… node scripts/diagnostics/author-door-census.mjs 15000
+```
+
+It counts `.pc-author-link` by href AND reads the feed snapshot the app leaves in
+`localStorage`, which holds the whole page rather than only the mounted cards —
+so each paper's source, its OpenAlex enrichment and whether its authors carry an
+id are read together. `openAlexKeys` prints what the enrichment blob really
+brought back, which is how one tells "the id is here and is not propagated" from
+"the id was never asked for". `SCROLL=<n>` pages the feed down first: the first
+screenful is the freshest arXiv, not a sample of the feed. `OUT=<path>` dumps the
+raw census. Measured 2026-09-07 (`docs/AUDITORIA-PUERTAS-AUTOR-2026-09-07.md`):
+57% slow on the first page, 92% after eight. A demo build answers 0% — its feed
+only ever hands out the fast door.
+
 ## `explorer-loading-probe.mjs` — how an entity page waits (2026-09-03)
 
 Drives a headless Chrome over CDP (no dependencies; Node ≥ 22 for the global

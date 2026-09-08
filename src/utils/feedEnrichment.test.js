@@ -107,3 +107,35 @@ test('paper identity survives a late OpenAlex merge that adds nothing new', () =
   assert.equal(result[1].citationCount, 9);
   assert.ok(Object.is(result[2], noopChange), 'record present but changes nothing: same object');
 });
+
+test('a journal DOI is a way into OpenAlex when there is no arXiv id', () => {
+  // Measured 2026-09-07: a paper whose arXiv landing page OpenAlex has not
+  // indexed can still be there under the DOI its journal issued, and that
+  // route was never tried.
+  assert.equal(
+    getOpenAlexEnrichmentId({ id: '2609.04966', arxivId: '2609.04966', doi: '10.1142/S0218271826500495' }),
+    '2609.04966',
+    'the arXiv id still wins: its landing-page filter found 5 of 5 where the DOI route missed one',
+  );
+  assert.equal(getOpenAlexEnrichmentId({ id: 'ads:2023ASPC', doi: '10.1142/S0218271826500495' }), 'doi:10.1142/s0218271826500495');
+  assert.equal(getOpenAlexEnrichmentId({ id: 'ads:x', doi: 'https://doi.org/10.1023/A:1024156116636' }), 'doi:10.1023/a:1024156116636');
+  assert.equal(
+    getOpenAlexEnrichmentId({ id: 'pmid:1', doi: '10.48550/arxiv.2506.06595' }),
+    '',
+    'the arXiv pseudo-DOI is not a second route to the same work',
+  );
+  assert.equal(getOpenAlexEnrichmentId({ id: 'pmid:1', doi: 'not a doi' }), '');
+});
+
+test('a paper reachable only by its DOI is worth enriching', () => {
+  assert.equal(needsOpenAlexEnrichment({
+    id: 'ads:2023ASPC',
+    doi: '10.1142/S0218271826500495',
+    sources: { primary: 'nasa-ads', enrichedBy: [] },
+  }), true);
+  assert.equal(needsOpenAlexEnrichment({
+    id: 'ads:2023ASPC',
+    doi: '10.1142/S0218271826500495',
+    sources: { primary: 'nasa-ads', enrichedBy: ['openalex'] },
+  }), false);
+});

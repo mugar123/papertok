@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { mapCrossrefInstitutionWork } from './crossrefInstitutionService.js';
+import { openAlexClient } from './openAlexClient.js';
 import {
   dribblingFetch,
   settleWithin,
@@ -13,8 +15,10 @@ import {
   buildRecentImpactUrl,
   dedupeAuthors,
   enrichAuthorInstitutionLocalization,
+  enrichPapersBatch,
   fetchRecentImpactWorks,
   fetchPaperByWorkId,
+  getAuthorProfileExact,
   getLocalTopicEntity,
   isOpenAlexEnrichmentId,
   mapOpenAlexEnrichmentWork,
@@ -548,4 +552,153 @@ test('SOURCE: the works and authors requests persist through persistentSlim unde
   assert.match(code, /persistentKey: worksCacheKey,[\s\S]*?persistentSlim: slimWorksPage,/);
   assert.match(code, /const authorsCacheKey = `entity-authors-v2:/);
   assert.match(code, /persistentKey: authorsCacheKey,[\s\S]*?persistentSlim: slimAuthorsPage,/);
+});
+
+test('the enrichment carries the authors with their OpenAlex ids', () => {
+  const mapped = mapOpenAlexEnrichmentWork({
+    id: 'https://openalex.org/W123',
+    authorships: [
+      { author: { id: 'https://openalex.org/A5006398227', display_name: 'A. M. Gavrilik' } },
+      { author: { id: null, display_name: 'Do, Tuan' } },
+      { author: {} },
+    ],
+  });
+
+  assert.deepEqual(mapped.enrichment.authors, [
+    { name: 'A. M. Gavrilik', id: 'https://openalex.org/A5006398227' },
+    // OpenAlex leaves an authorship undisambiguated often enough to matter --
+    // 3 of 18 papers on a measured feed page -- and the name is still worth
+    // carrying, so the entry stays with a null id rather than being dropped.
+    { name: 'Do, Tuan', id: null },
+    { name: 'Unknown', id: null },
+  ]);
+});
+
+test('a work with no authorships enriches without an authors key', () => {
+  const mapped = mapOpenAlexEnrichmentWork({ id: 'https://openalex.org/W123' });
+  assert.equal('authors' in mapped.enrichment, false, 'nothing to graft is not the same as an empty list');
+});
+
+test('SOURCE: the enrichment request asks OpenAlex for the authorships', async () => {
+  // Without this field the ids never reach the browser at all, and the card
+  // has to send the reader through the name door. OpenAlex refuses subfield
+  // selection (`authorships.author.id` answers 400), so it is all or nothing.
+  const source = (await readFile(new URL('./openAlexService.js', import.meta.url), 'utf8'))
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+  const select = source.match(/const OPENALEX_ENRICHMENT_SELECT = \[([\s\S]*?)\]\.join/);
+  assert.ok(select, 'the select list is still a literal array');
+  assert.ok(/'authorships'/.test(select[1]), 'authorships is in the select list');
+});
+
+test('a DOI-keyed id is fetched by DOI and comes back under that key', async () => {
+  // Overriding the singleton's fetchImpl rather than globalThis.fetch: the
+  // client binds its own at construction, so a global stub never reaches it
+  // and the test would go to the real network and pass for the wrong reason.
+  const realFetch = openAlexClient.fetchImpl;
+  const urls = [];
+  openAlexClient.fetchImpl = async (url) => {
+    urls.push(String(url));
+    return new Response(JSON.stringify({
+      results: [{
+        id: 'https://openalex.org/W7202263130',
+        doi: 'https://doi.org/10.1142/s0218271826500495',
+        cited_by_count: 3,
+        authorships: [{ author: { id: 'https://openalex.org/A7', display_name: 'Ada Lovelace' } }],
+      }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+
+  try {
+    const result = await enrichPapersBatch(['doi:10.1142/s0218271826500495']);
+    // The client percent-encodes the query on its way out, so the check is
+    // against the decoded URL rather than the literal one.
+    const asked = urls.map(url => decodeURIComponent(url));
+    assert.ok(asked.some(url => url.includes('filter=doi:10.1142/s0218271826500495')), `asked by DOI, got ${asked.join(' ')}`);
+    assert.ok(result['doi:10.1142/s0218271826500495'], 'keyed by the id the feed will look it up with');
+    assert.equal(result['doi:10.1142/s0218271826500495'].authors[0].id, 'https://openalex.org/A7');
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+  }
+});
+
+// A helper for the two tests below: they both need to know WHEN each request
+// was issued, not only that it was.
+function recordingFetch(handlers) {
+  const urls = [];
+  return {
+    urls,
+    impl: async (url) => {
+      const decoded = decodeURIComponent(String(url));
+      urls.push(decoded);
+      for (const [pattern, respond] of handlers) {
+        if (decoded.includes(pattern)) return respond();
+      }
+      return new Response('{}', { status: 404 });
+    },
+  };
+}
+
+test('the name search does not wait for the work lookup to fail', async () => {
+  // The paper OpenAlex has not indexed is the majority case -- 51 of 56 slow
+  // links on a measured feed page -- and there the work lookup can only 404.
+  // Running the name search behind it made three round trips out of one.
+  const realFetch = openAlexClient.fetchImpl;
+  let releaseWork;
+  const workHeld = new Promise((resolve) => { releaseWork = resolve; });
+  const { urls, impl } = recordingFetch([
+    ['works/doi:', async () => { await workHeld; return new Response('{}', { status: 404 }); }],
+    ['authors?search=', () => new Response(JSON.stringify({
+      results: [{ id: 'https://openalex.org/A5139858328', display_name: 'Romain Grane', works_count: 1, summary_stats: { h_index: 0 } }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })],
+  ]);
+  openAlexClient.fetchImpl = impl;
+
+  try {
+    const pending = getAuthorProfileExact('Romain Grane', '2609.05134');
+    // Long enough for anything the call fires up front to have been issued.
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.ok(
+      urls.some(url => url.includes('authors?search=')),
+      `the name search was still waiting on the work: ${urls.join(' ')}`,
+    );
+
+    releaseWork();
+    const profile = await pending;
+    assert.equal(profile.id, 'https://openalex.org/A5139858328');
+    assert.ok(
+      !urls.some(url => url.includes('works?filter=doi:')),
+      'the standby DOI query is gone: measured 2026-09-07, it rescued 0 of 8 and was strictly worse in 2',
+    );
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+  }
+});
+
+test('the authorship match still beats the name search when the work is there', async () => {
+  // "A. M. Gavrilik" is three different entities in OpenAlex, so the exact
+  // identity has to win whenever the paper can supply one.
+  const realFetch = openAlexClient.fetchImpl;
+  const { urls, impl } = recordingFetch([
+    ['works/doi:', () => new Response(JSON.stringify({
+      id: 'https://openalex.org/W1',
+      authorships: [{ author: { id: 'https://api.openalex.org/authors/A5008807080', display_name: 'A. M. Gavrilik' } }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })],
+    ['authors/A5008807080', () => new Response(JSON.stringify({
+      id: 'https://openalex.org/A5008807080', display_name: 'A. M. Gavrilik', works_count: 92, summary_stats: { h_index: 15 },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })],
+    ['authors?search=', () => new Response(JSON.stringify({
+      results: [{ id: 'https://openalex.org/A5087022088', display_name: 'A M Gavrilik', works_count: 1, summary_stats: { h_index: 0 } }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })],
+  ]);
+  openAlexClient.fetchImpl = impl;
+
+  try {
+    const profile = await getAuthorProfileExact('A. M. Gavrilik', '2309.03290');
+    assert.equal(profile.id, 'https://openalex.org/A5008807080');
+    assert.equal(profile.h_index, 15);
+    assert.ok(!urls.some(url => url.includes('works?filter=doi:')), 'still no standby query');
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+  }
 });

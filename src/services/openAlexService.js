@@ -5,6 +5,7 @@
 
 import { CATEGORIES } from '../data/categories.js';
 import { reconstructOpenAlexAbstract } from '../utils/openAlexAbstract.js';
+import { matchesAuthorName } from '../utils/authorNameMatch.js';
 import { withRequestDeadline } from '../utils/requestDeadline.js';
 import {
   applyInstitutionWorksFallback,
@@ -60,6 +61,12 @@ const OPENALEX_ENRICHMENT_SELECT = [
   'primary_location',
   'type',
   'open_access',
+  // The ids that decide which door a card's author link opens: with one, the
+  // explorer asks for the profile once; without, it has to find the author
+  // again from the name. Measured 2026-09-07, that is 433 ms against 2462 ms.
+  // Subfield selection is refused (`authorships.author.id` answers 400), so
+  // this costs the whole authorships array: ~5.7 KB a work.
+  'authorships',
   // OpenAlex charges per call, not per field, so this rides along on a request
   // the feed already makes. It costs ~2.6 KB per paper and buys a readable card
   // for the sources that arrive without one -- half of NASA's records, a tenth
@@ -121,10 +128,22 @@ export function mapOpenAlexEnrichmentWork(work) {
     ? work.concepts
     : (work.topics || []);
 
+  // Absent rather than empty when the work has no authorships: `merge` fills a
+  // gap with this list, and an empty one would erase the authors a card is
+  // already showing.
+  const authorships = Array.isArray(work.authorships) ? work.authorships : [];
+  const authors = authorships.length > 0
+    ? authorships.map(authorship => ({
+      name: authorship?.author?.display_name || 'Unknown',
+      id: authorship?.author?.id || null,
+    }))
+    : undefined;
+
   return {
     openAlexId,
     arxivId,
     enrichment: {
+      ...(authors ? { authors } : {}),
       abstract: reconstructOpenAlexAbstract(work.abstract_inverted_index),
       concepts: semanticTopics,
       topics: work.topics || [],
@@ -200,7 +219,11 @@ async function enrichInstitutionWithRor(institution, prefetchedRor = null) {
  * @returns {Promise<Object>} Map of { arxivId: { concepts, cited_by_count, related_works } }
  */
 export function isOpenAlexEnrichmentId(id) {
-  const value = String(id || '').trim().replace(/v\d+$/, '');
+  const raw = String(id || '').trim();
+  // A DOI is taken whole: stripping a trailing `v<n>` the way an arXiv id needs
+  // would corrupt one that legitimately ends that way.
+  if (/^doi:10\.\d{4,9}\/\S+$/i.test(raw)) return true;
+  const value = raw.replace(/v\d+$/, '');
   return /^\d{4}\.\d{4,5}$/.test(value)
     || /^[a-z][a-z.-]+\/\d{7}$/i.test(value)
     || /^(?:openalex:|https:\/\/openalex\.org\/)?W\d+$/i.test(value);
@@ -210,6 +233,7 @@ export async function enrichPapersBatch(arxivIds, options = {}) {
   const validIds = [...new Set((Array.isArray(arxivIds) ? arxivIds : [])
     .filter(id => typeof id === 'string' && id.trim() !== '')
     .map(id => {
+      if (/^doi:/i.test(id)) return `doi:${id.slice(4).toLowerCase()}`;
       const pure = id.startsWith('arxiv:') ? id.split(':')[1] : id;
       return pure.replace(/v\d+$/, '');
     })
@@ -234,9 +258,12 @@ export async function enrichPapersBatch(arxivIds, options = {}) {
   // Separate OpenAlex IDs and ArXiv IDs
   const openAlexIds = [];
   const arxivIdsOnly = [];
+  const doisOnly = [];
   
   toFetch.forEach(id => {
-    if (id.startsWith('openalex:') || id.startsWith('https://openalex.org/') || /^W\d+$/.test(id)) {
+    if (/^doi:/i.test(id)) {
+      doisOnly.push(id.slice(4));
+    } else if (id.startsWith('openalex:') || id.startsWith('https://openalex.org/') || /^W\d+$/.test(id)) {
       openAlexIds.push(id.replace('openalex:', '').replace('https://openalex.org/', ''));
     } else {
       arxivIdsOnly.push(id);
@@ -282,6 +309,17 @@ export async function enrichPapersBatch(arxivIds, options = {}) {
                writeOpenAlexPersistent(`enrichment:${arxivId}`, enrichment);
                result[arxivId] = enrichment;
              }
+             // OpenAlex answers with the DOI lowercased and prefixed; the feed
+             // looks the paper up by the same id it asked with, so both sides
+             // are normalized the same way.
+             const workDoi = String(work.doi || work.ids?.doi || '')
+               .trim().toLowerCase().replace(/^https?:\/\/(?:dx\.)?doi\.org\//, '');
+             if (workDoi) {
+               CACHE.set(`doi:${workDoi}`, enrichment);
+               writeOpenAlexPersistent(`enrichment:doi:${workDoi}`, enrichment);
+               result[`doi:${workDoi}`] = enrichment;
+             }
+
              CACHE.set(`openalex:${openAlexId}`, enrichment);
              writeOpenAlexPersistent(`enrichment:openalex:${openAlexId}`, enrichment);
              result[`openalex:${openAlexId}`] = enrichment;
@@ -309,6 +347,11 @@ export async function enrichPapersBatch(arxivIds, options = {}) {
   for (let i = 0; i < openAlexIds.length; i += CHUNK_SIZE) {
     const chunk = openAlexIds.slice(i, i + CHUNK_SIZE);
     chunkRequests.push(fetchChunk(buildOpenAlexIdFilter(chunk)));
+  }
+
+  for (let i = 0; i < doisOnly.length; i += CHUNK_SIZE) {
+    const chunk = doisOnly.slice(i, i + CHUNK_SIZE);
+    chunkRequests.push(fetchChunk(`doi:${encodeURIComponent(chunk.join('|'))}`));
   }
 
   await Promise.all(chunkRequests);
@@ -362,35 +405,6 @@ export async function getArxivIdsForOpenAlexWorks(openAlexUrls) {
     // Related works fetch failed
   }
   return result;
-}
-// Helper for strict author name matching
-function isNameMatch(p, o) {
-  if (p === o) return true;
-  if (p.length === 1 && o.charAt(0) === p) return true;
-  if (o.length === 1 && p.charAt(0) === o) return true;
-  if (p.length > 3 && o.length > 3 && (p.startsWith(o) || o.startsWith(p))) return true;
-  return false;
-}
-
-function normalizeNameForMatch(name) {
-  return name.normalize("NFD")
-             .replace(/[\u0300-\u036f]/g, "") // Remove accents
-             .replace(/-/g, ' ') // Convert hyphens to spaces
-             .toLowerCase()
-             .replace(/[^a-z\s]/g, '') // Keep only letters and spaces
-             .split(/\s+/)
-             .filter(Boolean);
-}
-
-function matchesAuthorName(reqName, oaName) {
-  if (!reqName || !oaName) return false;
-  const reqParts = normalizeNameForMatch(reqName);
-  const oaParts = normalizeNameForMatch(oaName);
-  
-  const reqInOa = reqParts.length > 0 && reqParts.every(p => oaParts.some(o => isNameMatch(p, o)));
-  const oaInReq = oaParts.length > 0 && oaParts.every(o => reqParts.some(p => isNameMatch(p, o)));
-  
-  return reqInOa || oaInReq;
 }
 
 /**
@@ -463,51 +477,47 @@ export async function getAuthorProfileByOrcid(orcidId) {
  */
 export async function getAuthorProfileExact(authorName, arxivId) {
   if (!authorName) return null;
-  
+
   // If no arxivId, fallback to standard search
   if (!arxivId) return getAuthorProfile(authorName);
-  
+
+  // The name search starts NOW rather than third in line. For a paper OpenAlex
+  // has not indexed -- 51 of 56 slow author links on a feed page measured
+  // 2026-09-07 -- the work lookup below can only 404, and running the search
+  // behind it turned one round trip into three. The authorship match still
+  // wins whenever the paper can supply one: "A. M. Gavrilik" is three
+  // different entities in OpenAlex, and only the paper says which.
+  const byName = getAuthorProfile(authorName).catch(() => null);
+
   try {
-    // 1. Fetch the exact work from OpenAlex using the arXiv pseudo-DOI
+    // There used to be a standby `works?filter=doi:` here for when OpenAlex
+    // "drops pseudo-DOIs". Measured over 8 indexed papers it rescued none, and
+    // in 2 it was strictly worse -- the direct lookup found the work and the
+    // filter returned nothing -- so it was pure latency in front of the search
+    // that could actually answer.
     const cleanArxivId = arxivId.replace(/v\d+$/, '');
     const workUrl = `https://api.openalex.org/works/doi:10.48550/arxiv.${cleanArxivId}`;
-    let workResponse = await fetchWithTimeout(workUrl, 8000).catch(() => null);
+    const workResponse = await fetchWithTimeout(workUrl, 8000).catch(() => null);
 
-    // If direct fetch fails (sometimes OpenAlex drops pseudo-DOIs), fallback to a filter search
-    if (!workResponse || !workResponse.ok) {
-       const searchUrl = `https://api.openalex.org/works?filter=doi:10.48550/arxiv.${cleanArxivId}`;
-       const searchRes = await fetchWithTimeout(searchUrl, 8000).catch(() => null);
-       if (searchRes && searchRes.ok) {
-          const data = await searchRes.json();
-          if (data.results && data.results.length > 0) {
-             // We mock a successful workResponse to reuse the logic below
-             workResponse = { ok: true, json: async () => data.results[0] };
-          }
-       }
-    }
-    
     if (workResponse && workResponse.ok) {
       const workData = await workResponse.json();
-      
-      if (workData.authorships) {
-        // 2. Find the author in the paper's authors list that matches the requested name
 
-        // Exact match or closest match
+      if (workData.authorships) {
+        // Find the author in the paper's authors list that matches the requested name
         let bestMatch = null;
         for (const authorship of workData.authorships) {
-           const authorDisplayName = authorship.author.display_name;
+           const authorDisplayName = authorship.author?.display_name;
            if (!authorDisplayName) continue;
-           
+
            if (matchesAuthorName(authorName, authorDisplayName)) {
               bestMatch = authorship.author;
               break;
            }
         }
-        
-        // 3. If we found the exact author ID, fetch their specific profile to get H-index etc.
+
+        // With the exact author ID, fetch their profile for H-index etc.
         if (bestMatch && bestMatch.id) {
-           const authorProfileUrl = bestMatch.id; // It's a full URL like https://api.openalex.org/authors/A...
-           const profileResponse = await fetchWithTimeout(authorProfileUrl, 10000);
+           const profileResponse = await fetchWithTimeout(bestMatch.id, 10000);
            if (profileResponse.ok) {
               const author = await profileResponse.json();
               return {
@@ -517,51 +527,35 @@ export async function getAuthorProfileExact(authorName, arxivId) {
                 cited_by_count: author.cited_by_count || 0,
                 h_index: author.summary_stats ? author.summary_stats.h_index : 0,
                 orcid: author.orcid || null,
-                institution: (author.last_known_institutions && author.last_known_institutions.length > 0) 
-                    ? author.last_known_institutions[0].display_name 
+                institution: (author.last_known_institutions && author.last_known_institutions.length > 0)
+                    ? author.last_known_institutions[0].display_name
                     : null,
                 concepts: author.x_concepts ? author.x_concepts.slice(0, 5) : []
               };
            }
-        } else if (bestMatch) {
-           // We found the author in the paper, but OpenAlex failed to link an ID to them for this specific work.
-           // Fallback to searching the author database directly using their matched display name.
-           const fallback = await getAuthorProfile(bestMatch.display_name || authorName);
-           if (fallback) return fallback;
         }
+        // The work named them but OpenAlex never linked an id to that
+        // authorship. The search already in flight is the answer; it was
+        // started from the name the reader clicked, which is the one the card
+        // shows, rather than from OpenAlex's spelling of it.
       }
     }
-    
-    // If the exact match fails (e.g. OpenAlex hasn't indexed this arXiv paper yet), fallback:
-    // Do a global search for the name, as it's better than showing an empty stub
-    const fallbackProfile = await getAuthorProfile(authorName);
-    if (fallbackProfile) return fallbackProfile;
-
-    return {
-      id: `stub-${authorName.replace(/\s+/g, '-')}`,
-      display_name: authorName,
-      works_count: null,
-      cited_by_count: null,
-      h_index: null,
-      institution: null,
-      concepts: []
-    };
-    
   } catch {
-    // Fallback if full logic fails
-    const fallbackProfile = await getAuthorProfile(authorName);
-    if (fallbackProfile) return fallbackProfile;
-    
-    return {
-      id: `stub-${authorName.replace(/\s+/g, '-')}`,
-      display_name: authorName,
-      works_count: null,
-      cited_by_count: null,
-      h_index: null,
-      institution: null,
-      concepts: []
-    };
+    // Whatever the work lookup did, the search below is what answers.
   }
+
+  const fallbackProfile = await byName;
+  if (fallbackProfile) return fallbackProfile;
+
+  return {
+    id: `stub-${authorName.replace(/\s+/g, '-')}`,
+    display_name: authorName,
+    works_count: null,
+    cited_by_count: null,
+    h_index: null,
+    institution: null,
+    concepts: []
+  };
 }
 
 /**

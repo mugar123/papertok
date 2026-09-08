@@ -185,3 +185,76 @@ test('leaves the placeholder alone when the enrichment has nothing either', () =
     'No abstract available.',
   );
 });
+
+test('OpenAlex ids are grafted onto the authors a card already shows, without touching the names', () => {
+  const base = PaperBuilder.create({
+    id: '2609.05134',
+    sources: { primary: 'arxiv', enrichedBy: [] },
+    authors: [
+      { name: 'Nicolás Cuello', id: null, affiliation: null },
+      { name: 'Mario Sucerquia', id: null, affiliation: null },
+    ],
+  });
+
+  const merged = PaperBuilder.merge(base, {
+    authors: [
+      // OpenAlex writes the same people differently, and out of order.
+      { name: 'Sucerquia, M.', id: 'https://openalex.org/A2' },
+      { name: 'Nicolas Cuello', id: 'https://openalex.org/A1' },
+    ],
+  }, 'openalex');
+
+  assert.deepEqual(merged.authors, [
+    { name: 'Nicolás Cuello', id: 'https://openalex.org/A1', affiliation: null },
+    { name: 'Mario Sucerquia', id: 'https://openalex.org/A2', affiliation: null },
+  ], 'the card keeps its own spelling and order, and gains the id');
+});
+
+test('an author OpenAlex does not name, or does not disambiguate, is left as it was', () => {
+  const base = PaperBuilder.create({
+    id: '2609.05134',
+    authors: [{ name: 'Ada Lovelace', id: null }, { name: 'Grace Hopper', id: null }],
+  });
+
+  const merged = PaperBuilder.merge(base, {
+    authors: [
+      { name: 'Ada Lovelace', id: null },
+      { name: 'Someone Else', id: 'https://openalex.org/A9' },
+    ],
+  }, 'openalex');
+
+  assert.deepEqual(merged.authors, [{ name: 'Ada Lovelace', id: null }, { name: 'Grace Hopper', id: null }]);
+});
+
+test('an id the paper already carries is never overwritten by the enrichment', () => {
+  const base = PaperBuilder.create({
+    id: 'openalex:W1',
+    authors: [{ name: 'Ada Lovelace', id: 'https://openalex.org/A1' }],
+  });
+
+  const merged = PaperBuilder.merge(base, {
+    authors: [{ name: 'A. Lovelace', id: 'https://openalex.org/A999' }],
+  }, 'openalex');
+
+  assert.equal(merged.authors[0].id, 'https://openalex.org/A1');
+});
+
+test('a paper that arrives with no authors takes the enrichment list whole', () => {
+  const base = PaperBuilder.create({ id: '2609.05134', authors: [] });
+
+  const merged = PaperBuilder.merge(base, {
+    authors: [{ name: 'Ada Lovelace', id: 'https://openalex.org/A1' }],
+  }, 'openalex');
+
+  assert.deepEqual(merged.authors, [{ name: 'Ada Lovelace', id: 'https://openalex.org/A1' }]);
+});
+
+test('enrichment without authors leaves the list alone', () => {
+  const base = PaperBuilder.create({
+    id: '2609.05134',
+    authors: [{ name: 'Ada Lovelace', id: null }],
+  });
+
+  const merged = PaperBuilder.merge(base, { citationCount: 4 }, 'openalex');
+  assert.deepEqual(merged.authors, [{ name: 'Ada Lovelace', id: null }]);
+});
