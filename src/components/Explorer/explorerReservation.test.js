@@ -100,10 +100,10 @@ test('the impact cell and its grid are born at the size the score will take', as
   // a topic's or a project's aside keeps measuring to its own content.
   assert.match(css, /\.ehc-stats-grid:has\(\.ehc-stat-box--impact\) \{\s*width: 264px;\s*\}/);
   // Two lines of 0.625rem/1.3 mono: 1.625rem.
-  assert.match(css, /\.ehc-stat-detail \{[^}]*\n  min-height: 1\.625rem;\n\}/);
+  assert.match(css, /\.ehc-stat-detail \{[^}]*\n {2}min-height: 1\.625rem;\n\}/);
   // Under 900px the aside spans the row and the grid with it — width wins
   // over the fixed 264 there.
-  assert.match(css, /\.ehc-hero-aside \.ehc-stats-grid \{\n    width: 100%;\n    max-width: none;\n    flex: 1 1 100%;\n  \}/);
+  assert.match(css, /\.ehc-hero-aside \.ehc-stats-grid \{\n {4}width: 100%;\n {4}max-width: none;\n {4}flex: 1 1 100%;\n {2}\}/);
   // The skeleton's last cell carries the detail box on the pages that have it.
   // `display: block` is load-bearing: the bar's parent is the `.ehc-stat-detail`
   // span, not the flex `.ehc-stat-box`, so without it the bar stays inline and
