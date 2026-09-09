@@ -1636,6 +1636,12 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     return () => clearTimeout(refreshTimer);
   }, [feedMode, feedRouteActive, isKnownPaper, loadPapers, recommendationProfileReady, user?.uid, userPreferences]);
 
+  // The last following signature the FEED applied, or null while there is no
+  // account to have one. Null, not '': the tree no longer remounts when the
+  // uid arrives (accountScope.js adopts the first account at the same
+  // generation), so with '' recorded while the session was still unknown, the
+  // account's real follows landing read as a follow CHANGE — a re-rank and,
+  // with the profile ready, a replacing reload — on every signed-in cold load.
   const followingSignatureRef = useRef(null);
 
   useEffect(() => {
@@ -1653,6 +1659,10 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     // the way costs nothing, and no source cascade fires for a feed nobody is
     // looking at (reported 2026-09-07, same rule as the preferences effect).
     if (!feedRouteActive) return;
+    if (!user?.uid) {
+      followingSignatureRef.current = null;
+      return;
+    }
     if (followingSignatureRef.current === signature) return;
     if (followingSignatureRef.current === null) {
       followingSignatureRef.current = signature;
@@ -1674,7 +1684,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       );
       return () => clearTimeout(refreshTimer);
     }
-  }, [feedRouteActive, followedEntities, followingLoading, isKnownPaper, loadPapers, reRankFeed, recommendationProfileReady]);
+  }, [feedRouteActive, followedEntities, followingLoading, isKnownPaper, loadPapers, reRankFeed, recommendationProfileReady, user?.uid]);
 
   // Save current papers to cache before switching, then restore or fetch
   const handleSetFeedMode = useCallback((newMode) => {

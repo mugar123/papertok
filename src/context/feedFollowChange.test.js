@@ -54,7 +54,7 @@ test('SOURCE: the following effect records nothing off the feed route and compar
     'const followingSignatureRef = useRef(null);',
     '}, [feedRouteActive, followedEntities, followingLoading',
     'the following effect',
-    40,
+    46,
   );
   const signatureAt = effect.indexOf("const signature = followedEntities");
   const gateAt = effect.indexOf('if (!feedRouteActive) return;');
@@ -77,4 +77,35 @@ test('SOURCE: the topic warm-up still runs before the gate, so the prewarm test 
   const head = bounded(code, 'const followingSignatureRef = useRef(null);', 'const signature = followedEntities', 'the head of the effect', 12);
   assert.match(head, /void loadTopicRetrieval\(\);/);
   assert.doesNotMatch(head, /feedRouteActive/, 'the gate comes after the signature, not before the warm-up');
+});
+
+/**
+ * The tree no longer remounts when the uid arrives (src/utils/accountScope.js
+ * adopts the first account at the same generation), so this effect used to run
+ * once with `user` null and `followedEntities` empty, record '' as its baseline,
+ * and then read the account's real follows landing as a follow CHANGE — a
+ * re-rank and, with the recommendation profile ready, a cache wipe and a
+ * replacing reload, on every signed-in cold load of '/'. FollowingContext and
+ * EmailNotificationsContext were given a gate for the account arriving late;
+ * this effect's ref was not. A signed-out reader has no follows to compare,
+ * so waiting for the account loses nothing.
+ */
+test('SOURCE: the following baseline is recorded only under a known account', async () => {
+  const code = stripComments(await read('./FeedContext.jsx'));
+  const effect = bounded(
+    code,
+    'const followingSignatureRef = useRef(null);',
+    '}, [feedRouteActive, followedEntities, followingLoading',
+    'the following effect',
+    46,
+  );
+  const guardAt = effect.search(/if \(!user\?\.uid\) \{\s*followingSignatureRef\.current = null;\s*return;\s*\}/);
+  const compareAt = effect.indexOf('if (followingSignatureRef.current === signature) return;');
+  assert.ok(guardAt >= 0, 'no account, no baseline: the ref is cleared and nothing is compared');
+  assert.ok(guardAt < compareAt, 'decided before anything is compared or recorded');
+  assert.match(
+    code,
+    /\}, \[feedRouteActive, followedEntities, followingLoading, isKnownPaper, loadPapers, reRankFeed, recommendationProfileReady, user\?\.uid\]\);/,
+    'the account is a dependency, so the uid arriving re-runs the effect',
+  );
 });
