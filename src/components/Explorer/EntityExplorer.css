@@ -132,26 +132,60 @@
 }
 
 /* A faint wash of the entity's own imagery, kept light so the page stays a
-   white sheet rather than a photo header. */
+   white sheet rather than a photo header.
+
+   Two boxes, and that is the whole fix. The element used to carry the image
+   itself, `top: -20%; bottom: 0`, so its box was 120% of the hero's height —
+   and the hero is growing exactly when the wash mounts: the thumbnail
+   finishes loading in the same stretch in which the Wikipedia block unfolds
+   (320ms) and, from cold, the navbar band opens (240ms). Measured 2026-09-09
+   on Harvard from cold, production, signed in: 21 distinct heights from 374
+   to 576px (+54%) while the whole 280ms fade ran. `cover` rescaled the
+   photograph on every one of them, and a 48px blur over a 1536px-wide layer
+   — the most expensive paint in the codebase, which the 768px media query
+   below already switches off on phones — was rasterised 21 times in a row.
+
+   The element is only the mask now: it sits on the hero's own box so the
+   gradient still closes at the hero's bottom edge. The image is on a
+   pseudo-element with a FIXED box, and fixed is the whole point — a
+   percentage is what made it move. -96px is the -20% the old box started at
+   on a hero at its resting 481px. 720px is not that box's height (that was
+   577); it is chosen to outlast the hero at every height it takes — 481 at
+   rest, ~700 with the Wikipedia paragraph expanded — so the picture never
+   runs out from under the mask and leaves a hard edge. The crop moves by a
+   few dozen pixels of a 1536px-tall blurred image at 10% opacity, which is
+   why a number that survives every hero beats one that matches today's.
+   30% for the mask's solid stop, not 40%: the gradient used to run over the
+   taller box, so its solid part reached ~28% of the hero. */
 .ehc-bg-blur {
   position: absolute;
-  top: -20%;
-  left: -10%;
-  right: -10%;
-  bottom: 0;
-  background-size: cover;
-  background-position: center;
-  filter: blur(48px) saturate(1.1);
+  inset: 0;
   opacity: 0.1;
   z-index: -1;
   pointer-events: none;
-  mask-image: linear-gradient(to bottom, black 40%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, black 40%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 30%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 30%, transparent 100%);
   /* No animation here. It used to fade this in over 3s while the component
      faded the same property in over 1s to a different target, and a property
      with two animators has no defined look for as long as both are running. The
-     component owns it now; 0.1 below is the resting weight, and the reason the
+     component owns it now; 0.1 above is the resting weight, and the reason the
      photograph reads as a wash rather than as a picture. */
+}
+
+/* The picture, on a box that does not know how tall the hero is. The URL comes
+   in on a custom property from the component (a pseudo-element cannot read an
+   inline `background-image`). */
+.ehc-bg-blur::before {
+  content: '';
+  position: absolute;
+  top: -96px;
+  left: -10%;
+  right: -10%;
+  height: 720px;
+  background-image: var(--ehc-wash-image);
+  background-size: cover;
+  background-position: center;
+  filter: blur(48px) saturate(1.1);
 }
 
 .explorer-hero-top {

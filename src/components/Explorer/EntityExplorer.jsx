@@ -1570,6 +1570,9 @@ export default function EntityExplorer({
               // built-in `easeInOut`: the one unnamed curve in a hero of ~85
               // hand-typed arrivals. It is a 10% wash; it does not need a
               // second to arrive, it needs to arrive WITH its photograph.
+              // The URL rides a custom property because the picture is on
+              // the element's `::before`, on a box of its own — see the
+              // stylesheet for the measurement that put it there.
               initial={{ opacity: 0 }}
               animate={{ opacity: 0.1 }}
               exit={{ opacity: 0 }}
@@ -1577,7 +1580,7 @@ export default function EntityExplorer({
                 ? { duration: 0 }
                 : { duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
               className="ehc-bg-blur"
-              style={{ backgroundImage: `url(${visibleWikiInfo.thumbnail})` }}
+              style={{ '--ehc-wash-image': `url(${visibleWikiInfo.thumbnail})` }}
             ></motion.div>
           )}
         </AnimatePresence>
