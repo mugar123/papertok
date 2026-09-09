@@ -244,6 +244,40 @@ started to leave 400 ms after touchend. Needs `IS_DEMO = true` flipped locally
 scripts/diagnostics/safari-tabs-probe.mjs`. It seeds the demo session through
 `localStorage` on a first load and reads the same event log.
 
+## `explorer-glitch-frames.mjs` — a navigation's frames AND its geometry, on one clock (2026-09-09)
+
+`explorer-hero-frames.mjs` samples the hero; this one samples EVERY page under
+`#main-content` (two during a navigation) and records a `Page.screencast` at
+the same time, naming each PNG by the same `Date.now()` the sampler stamps its
+lines with — so `f096_01813ms.png` and the sampler line `t=1813` are the same
+instant. It also records three boxes the older probe did not: the wash
+(`.ehc-bg-blur`) with its box and not just its opacity, the recent-impact cell
+with its detail text, and the hero aside with its stats grid. Those three are
+what `docs/AUDITORIA-GLITCHES-EXPLORER-2026-09-09.md` was found with.
+
+```bash
+export PROFILE_DIR="$HOME/.papertok-probe-profile" ORIGIN=http://localhost:5174
+node scripts/diagnostics/explorer-glitch-frames.mjs chain '#/explorer/institution/I136199984' '.ee-author-card:not(.ex-skel-row)' tab=authors wait=2500 7000 out=/tmp/chain profile
+node scripts/diagnostics/explorer-glitch-frames.mjs route '#/explorer/author/A5068353058' 8000 out=/tmp/author
+node scripts/diagnostics/explorer-glitch-frames.mjs route '#/explorer/institution/I136199984' 7000 out=/tmp/inst
+```
+
+`chain` opens the first route, optionally clicks the Authors tab
+(`tab=authors`), waits for the selector, waits `wait=` ms more, and only then
+starts sampling, casting and (with `profile`) the V8 sampler, so the click is
+the first thing in the record. Use `:not(.ex-skel-row)` in the selector: with a
+session the authors list takes longer, and a bare `.ee-author-card` clicks a
+skeleton row and the run ends "clean" because it never navigated. `profile`
+prints tasks over 50ms with their outermost app frame; read it only on a
+production build — `vite dev`'s `jsxDEV` alone measured 1004ms of self time
+in a 5.6s run and turned every data arrival into a 100–700ms freeze that the
+build does not have.
+
+The `route`/`chain` output is one JSON line, then one `t=` line per frame on
+which something changed, with a `p0`/`p1` JSON per page. A quick per-field diff
+of consecutive lines is the readable form; `docs/AUDITORIA-GLITCHES-EXPLORER-2026-09-09.md`
+§6 has the crop command for the PNGs.
+
 ## `page-transition-frames.mjs` — a route transition, frame by frame (2026-09-06)
 
 The before/after of `docs/superpowers/specs/2026-09-06-transicion-tarjeta-entidad-design.md`:
