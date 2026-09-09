@@ -64,6 +64,10 @@ export function hasAuthorsTab(type, entity = null) {
  *   types, whose counts always come. A project's cells are each conditional
  *   (budget, funding, dates, participants) and two is what usually lands;
  *   four reserved where two arrive shrank the grid by a row at the handover.
+ * - `impact` — whether the grid's last cell is the recent-impact one, whose
+ *   detail wraps to two lines once the score is known. Measured 2026-09-09:
+ *   unreserved, the cell grew 64.5 → 77.5px when the score landed and the
+ *   ORCID card under the header dropped 10.3px in one frame.
  *
  * `hasOrcid`: whether the route already knows the author has an ORCID record
  * (an ORCID id in the URL). The card was reserved for every author; three of
@@ -81,6 +85,12 @@ export function explorerSkeletonShape(type, { hasOrcid = false } = {}) {
     identity: authorish ? 'topics' : institutionish ? 'credentials' : 'none',
     aside: authorish ? (hasOrcid ? 'orcid' : 'none') : projectish ? 'summary' : 'none',
     stats: projectish ? 2 : 4,
+    // Whether the fourth cell is the recent-impact one, with a detail line
+    // under its label. `RecentImpactStat` mounts for authors and institutions
+    // (EntityExplorer.jsx); the skeleton reserves its two-line detail so the
+    // grid is born at the height it will have once the score lands, and the
+    // ORCID card under the header does not drop when it does.
+    impact: authorish || institutionish,
     // Every type the Explorer serves can be followed — `followEntity` covers
     // author, institution, project, concept and topic — so the button is part
     // of the spine, not of a variant.

@@ -90,3 +90,17 @@ test('an unknown type falls back to the plainest shape and still renders', () =>
   assert.equal(shape.aside, 'none');
   assert.ok(shape.tabs >= 1);
 });
+
+test('the skeleton knows which pages carry the recent-impact cell', () => {
+  // `RecentImpactStat` mounts for authors and institutions only
+  // (EntityExplorer.jsx), and its cell is the one with a two-line detail
+  // under the label. Measured 2026-09-09 on a cold author: the cell grew
+  // 64.5 → 77.5px when the score landed and the ORCID card under the header
+  // dropped 10.3px in one frame. The skeleton reserves that detail line on
+  // exactly the pages where the cell lands, and nowhere else.
+  assert.equal(explorerSkeletonShape('author').impact, true);
+  assert.equal(explorerSkeletonShape('institution').impact, true);
+  for (const type of ['concept', 'topic', 'project', 'source']) {
+    assert.equal(explorerSkeletonShape(type).impact, false);
+  }
+});
