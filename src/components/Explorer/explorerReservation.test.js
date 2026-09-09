@@ -69,7 +69,10 @@ test('the project skeleton reserves its summary box and the stat cells that land
   const jsx = await read('./EntityExplorer.jsx');
   assert.match(jsx, /const ProjectSummarySkeleton = \(\) => \(\s*<div className="project-summary-box project-summary-box--reserved" aria-hidden="true">\s*<div className="ehc-wiki-skeleton">/);
   assert.match(jsx, /\{shape\.aside === 'summary' && <ProjectSummarySkeleton \/>\}/);
-  assert.match(jsx, /\{Array\.from\(\{ length: shape\.stats \}, \(_, i\) => \(/);
+  // Block body since Task 3 (2026-09-09): the last cell needs to know whether
+  // it's the recent-impact one, so the map computes `isImpact` before
+  // returning the cell rather than returning it directly.
+  assert.match(jsx, /\{Array\.from\(\{ length: shape\.stats \}, \(_, i\) => \{/);
   const css = stripComments(await read('./EntityExplorer.css'));
   assert.match(css, /\.project-summary-box--reserved \{\s*font-size: 0\.9375rem;\s*line-height: 1\.6;/);
 });
@@ -77,4 +80,39 @@ test('the project skeleton reserves its summary box and the stat cells that land
 test('the page skeleton asks the route whether an ORCID card is coming', async () => {
   const jsx = await read('./EntityExplorer.jsx');
   assert.match(jsx, /const shape = explorerSkeletonShape\(type, \{ hasOrcid: Boolean\(extractOrcid\(id\)\) \}\);/);
+});
+
+/**
+ * The recent-impact cell used to be born one line short. Measured 2026-09-09
+ * on a cold author in production, signed in: "Calculating…" laid the cell out
+ * at 124×64.5 and the grid at 249×112.9, the score landed 484ms later as
+ * "Very high · 2023–2026" and the cell became 131.5×77.5, the grid 264×125.9,
+ * and the header — a wrapping flex row — grew 10.3px. Everything under it
+ * moved by that much in one frame: the experience panel, the ORCID card, the
+ * "Verified ORCID profile" pill. The settle animates the body's bottom edge,
+ * not where its children sit. So the grid takes its width up front, the
+ * detail its two lines, and the skeleton paints the same cell.
+ */
+test('the impact cell and its grid are born at the size the score will take', async () => {
+  const css = stripComments(await read('./EntityExplorer.css'));
+  // The grid measured to content under a 264px max and reached the max only
+  // once the score landed. Pinned — but only where the growing cell exists, so
+  // a topic's or a project's aside keeps measuring to its own content.
+  assert.match(css, /\.ehc-stats-grid:has\(\.ehc-stat-box--impact\) \{\s*width: 264px;\s*\}/);
+  // Two lines of 0.625rem/1.3 mono: 1.625rem.
+  assert.match(css, /\.ehc-stat-detail \{[^}]*\n  min-height: 1\.625rem;\n\}/);
+  // Under 900px the aside spans the row and the grid with it — width wins
+  // over the fixed 264 there.
+  assert.match(css, /\.ehc-hero-aside \.ehc-stats-grid \{\n    width: 100%;\n    max-width: none;\n    flex: 1 1 100%;\n  \}/);
+  // The skeleton's last cell carries the detail box on the pages that have it.
+  // `display: block` is load-bearing: the bar's parent is the `.ehc-stat-detail`
+  // span, not the flex `.ehc-stat-box`, so without it the bar stays inline and
+  // width/height do nothing.
+  assert.match(css, /\.ex-skel-stat-detail \{ display: block; width: 96px; height: 8px; margin-top: 2px; \}/);
+  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  // The skeleton's last cell IS the impact cell on those pages: it carries the
+  // class the `:has()` above keys on, and the detail box that sets the height.
+  assert.match(jsx, /const isImpact = shape\.impact && i === shape\.stats - 1;/);
+  assert.match(jsx, /className=\{`ehc-stat-box\$\{isImpact \? ' ehc-stat-box--impact' : ''\}`\}/);
+  assert.match(jsx, /\{isImpact && \(\s*<span className="ehc-stat-detail"><span className="ex-skel ex-skel-stat-detail"><\/span><\/span>\s*\)\}/);
 });

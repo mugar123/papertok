@@ -639,6 +639,29 @@
   border-left: 1px solid var(--border-default);
 }
 
+/* Born at its settled width, and only where it grows. The recent-impact cell's
+   detail is one line while it says "Calculating…" and two once the score is
+   known; with the grid measured to content, that second line took it from
+   249×112.9 to 264×125.9 (measured 2026-09-09, cold author, production, signed
+   in) and the header — a wrapping flex row — grew 10.3px, dropping the
+   experience panel, the ORCID card and its "Verified ORCID profile" pill by
+   that much in ONE frame. The settle animates the body's bottom edge, not
+   where its children sit, so nothing eased it.
+
+   264 is not a guess: two columns of `minmax(94px, 1fr)` under a 264px
+   max-width cap each column at 132, and the settled cell measured 131.5 — the
+   grid is AT its cap once the score lands, whatever the score's wording. So
+   pinning it here is exact rather than tuned to one label.
+
+   Scoped with `:has()` rather than set on `.ehc-stats-grid`, because only
+   author and institution carry this cell (explorerSkeletonShape.js). A topic's
+   or a project's aside has nothing that grows and keeps measuring to its own
+   content; widening those to 264 would be a look change with no defect behind
+   it. The skeleton's last cell carries the same class for the same reason. */
+.ehc-stats-grid:has(.ehc-stat-box--impact) {
+  width: 264px;
+}
+
 .ehc-stat-box {
   display: flex;
   flex-direction: column;
@@ -698,10 +721,15 @@
   to { opacity: 1; }
 }
 
+/* Two lines from the first frame. "Calculating…" is one line; the settled
+   detail ("Very high · 2023–2026") wraps to two in a 131px cell, and a cell
+   that grows by a line moves everything under the header (see
+   .ehc-stats-grid). 0.625rem × 1.3 × 2. */
 .ehc-stat-detail {
   color: var(--text-secondary);
   font: 500 0.625rem/1.3 var(--font-mono);
   margin-top: 2px;
+  min-height: 1.625rem;
 }
 
 /* Wikipedia excerpt — a standfirst carrying the field rule down its edge. */
@@ -1157,6 +1185,14 @@
    arrives. Inside, a number and its label, at the sizes the real ones set. */
 .ex-skel-stat-value { width: 46px; height: 17px; }
 .ex-skel-stat-label { width: 68px; height: 9px; margin-top: 5px; }
+
+/* The impact cell's detail, one bar inside the live `.ehc-stat-detail` box so
+   the reservation is the box's own min-height and cannot drift from it.
+   `display: block` because this bar is NOT a flex item: its parent is the
+   `.ehc-stat-detail` span, not `.ehc-stat-box`. The sibling bars get their
+   width and height for free by being blockified as flex children of the box;
+   this one would stay inline and ignore both. */
+.ex-skel-stat-detail { display: block; width: 96px; height: 8px; margin-top: 2px; }
 
 /* The ORCID career block, while it is being fetched. */
 .ex-skel-stack { flex: 1; }
@@ -2371,6 +2407,7 @@
   }
 
   .ehc-hero-aside .ehc-stats-grid {
+    width: 100%;
     max-width: none;
     flex: 1 1 100%;
   }

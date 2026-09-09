@@ -1429,12 +1429,22 @@ export default function EntityExplorer({
 
               <div className="ehc-hero-aside">
                 <div className="ehc-stats-grid">
-                  {Array.from({ length: shape.stats }, (_, i) => (
-                    <div key={i} className="ehc-stat-box">
-                      <span className="ex-skel ex-skel-stat-value"></span>
-                      <span className="ex-skel ex-skel-stat-label"></span>
-                    </div>
-                  ))}
+                  {Array.from({ length: shape.stats }, (_, i) => {
+                    // The last cell IS the recent-impact one on the pages that
+                    // carry it, so it takes that cell's class — the stylesheet
+                    // pins the grid's width through it — and the detail box
+                    // whose two reserved lines are the cell's real height.
+                    const isImpact = shape.impact && i === shape.stats - 1;
+                    return (
+                      <div key={i} className={`ehc-stat-box${isImpact ? ' ehc-stat-box--impact' : ''}`}>
+                        <span className="ex-skel ex-skel-stat-value"></span>
+                        <span className="ex-skel ex-skel-stat-label"></span>
+                        {isImpact && (
+                          <span className="ehc-stat-detail"><span className="ex-skel ex-skel-stat-detail"></span></span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
                 {/* Every entity the Explorer serves can be followed, so the
                     button belongs to the spine. Leaving it out took 32px out
