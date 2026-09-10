@@ -375,3 +375,81 @@ Un truco que ahorra tiempo: `fromfeed` con el selector
 `[href*="arxivId="]` la lenta por nombre; sin sesión los enlaces del feed apuntan
 a `/public/entity/…` y no a `/explorer/…`, lo que sirve además como comprobación
 de que la sesión se ha heredado.
+
+---
+
+## 11. Ejecución de la revisión del 09-09 (medido el 10-09)
+
+Los diez hallazgos de la revisión de código de `5fb6c03..aea5a59` se ejecutaron en la rama
+`sdd/animaciones-autor`, una tarea por commit, cada una con su test que falla primero y su
+comprobación por mutación, y cada una revisada por un agente independiente. Suite final:
+**2479 tests, 0 fallos, lint limpio**.
+
+### La decisión que ordena todo lo demás
+
+**El settle vuelve a ser el único dueño de la altura del héroe.** Durante dos días (del
+`3b96b3a` al `aea5a59`) el fold de Wikipedia animó su propia `height: 'auto'` dentro de la
+caja que ya anima `useHeightSettle`, y para que no se pisaran el hook acumuló nueve
+mecanismos de reconciliación. La revisión midió ese andamiaje como la causa de tres
+defectos distintos. Ahora el bloque entra por **opacidad** y su espacio lo lleva el settle
+bajo su recorte — igual que el panel de experiencia, que ya lo hacía bien en la misma caja.
+
+**No volver a proponer que un hijo de `.explorer-hero-content` anime su altura.** Un bloque
+que llega dentro de esa caja anima su contenido; el espacio lo lleva `useHeightSettle`.
+
+Una consecuencia que costó encontrar: con el fold sólo animando opacidad, **nadie cerraba
+el hueco al irse**. `AnimatePresence` retira el nodo con un `setState` propio que
+re-renderiza `AnimatePresence` pero **no** a `EntityExplorer`, y el settle sólo mide en los
+commits de ese componente. Cerrado con `onExitComplete`, que incrementa un contador incluido
+en los deps del settle. Verificado leyendo el `onExit` de framer: `setRenderedChildren` y
+`onExitComplete()` son dos sentencias síncronas seguidas, así que el mismo commit está
+garantizado por construcción, no por el agrupamiento de React.
+
+### El «después», medido
+
+Build de producción del worktree servido en `:5174`, perfil de Chrome con sesión real.
+
+| Caso | Antes | Después |
+|---|---|---|
+| **Institución → autor** | **+152,3 px en UN fotograma** a 642 ms, sin settle | Un único settle `237,938 → 390,234` corriendo su reloj entero (`@0` → `@333`); la tira se desliza 389,9 → 542,2 |
+| **Institución en frío** | Esqueleto 30 ms, después las cuatro cifras de golpe | **0 fotogramas de esqueleto**; 0 saltos ≥20 px sin settle |
+| **Vuelta autor → institución** | Cuatro settles en 76 ms, la tira hundiéndose 16 px | 0 settles durante el `reveal`; asienta 287,4 → 320,2 **durante** la vuelta, en reposo a 336 ms |
+
+Los cuatro números del esqueleto vienen además de una corrida propia de la Tarea 11: cero
+fotogramas con `.explorer-skeleton` y las cuatro cifras en pantalla a **t = 484 ms**, con el
+héroe todavía en opacidad 0,35 — es decir, los datos ya están cuando empieza el fundido.
+Control negativo hecho con un id inventado (`skel: true`), así que la sonda discrimina.
+
+### Lo que NO está medido, y conviene no dar por hecho
+
+- **El cambio de idioma con el bloque de Wikipedia abierto.** El mecanismo está verificado
+  en código y revisado —el bloque se queda montado a través de una re-búsqueda en vez de
+  plegarse y volver— pero no se ha visto en vivo.
+- **Móvil y `prefers-reduced-motion`** no se remidieron tras estos cambios.
+
+### Trampa de la sonda, para quien repita la medida
+
+`explorer-hero-frames.mjs` **no acota** su `querySelector` a la página que se queda, así que
+mientras las dos comparten pantalla lee la tira de la **saliente**. Eso produce un
+`−102,2 px` a t≈356 que parece un salto y no lo es. `entity-back-frames.mjs` sí lo acota
+(`data-page-motion` distinto de `leave`/`hold`/`fade`); convendría portar esa acotación.
+
+### Una limitación conocida que queda abierta
+
+El injerto de ids de OpenAlex por **posición** (que arregla que dos coautores con el mismo
+apellido recibieran el mismo id) **no alcanza a los papers de colaboración**, que son justo
+los que motivaron el bug: `MAX_ENRICHMENT_AUTHORS = 50` acota el lado de OpenAlex y el de
+arXiv no se acota, así que las listas nunca tienen la misma longitud y sólo actúa el
+respaldo por coincidencia única. **No es una regresión de seguridad** — esos autores caen en
+`null` (la puerta lenta), nunca en el id de otra persona. El arreglo futuro es barato porque
+el recorte es de prefijo: permitir la posición cuando
+`candidates.length === MAX_ENRICHMENT_AUTHORS && index < candidates.length`.
+
+### Dos trampas del repositorio que mordieron durante la ejecución
+
+- **`OpenAlexClient` es un singleton de módulo con una caché de respuestas DELANTE de
+  `fetchImpl`**, y no se limpia entre tests del mismo proceso. Dos tests que usen la misma
+  URL comparten en silencio una respuesta y el stub del segundo **no dispara nunca** — deja
+  el test verde sin probar nada. Usa ids distintos por test.
+- **`no-use-before-define` es estricto con variables**: un test colocado encima del helper
+  que usa pasa `node --test` y **rompe el lint**.

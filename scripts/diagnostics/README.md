@@ -369,3 +369,17 @@ handshake at 3.8 s, the profile from the server right after. `HANDLE` and
 `HANDLE2` pick the two profiles (default `mugar`, `nick_mugar`). The comments
 sheet is not a usable surface for this as a guest: the thread anchor is
 resolved at the Worker and a paper without comments never touches Firestore.
+
+### Reading these two probes after 2026-09-10
+
+`explorer-hero-frames.mjs` does NOT scope its `querySelector` to the page that stays, so
+while two route pages share the screen it reads the LEAVING page's elements. That shows up
+as a large negative jump (measured: −102.2px at t≈356 on an institution → author step) which
+is an artefact, not a defect. `entity-back-frames.mjs` does scope it — it picks the
+`#main-content > div` whose `data-page-motion` is not `leave`/`hold`/`hold-lateral`/`fade`
+— and that scoping is worth porting to the hero probe.
+
+What to look for now that the hero's settle owns its height again: a tab strip that moves
+WITHOUT a `settle` in the same frame is the defect. A move of 150px carried by a settle
+whose `@` advances frame by frame is the fix working. `0 settles during the return` stays
+correct for a back navigation — the route arrival suspends the settle on purpose.
