@@ -607,6 +607,43 @@ test('gives the daily use back when the PDF never downloads', async () => {
   assert.match(state.periodKeys[0], /^ai:\d{4}-\d{2}-\d{2}$/);
 });
 
+/**
+ * Why the download failed, on the wire.
+ *
+ * Every unreadable source arrived as the same `AI_REWRITE_NEEDS_FULL_TEXT`, so a
+ * mirror that timed out, a paywall and PMC's HTML interstitial were one line in
+ * the logs — and the interstitial, which was every PubMed paper, hid behind the
+ * other two for as long as it lasted. `detail` names which one it was without
+ * changing what the reader is told.
+ */
+test('an HTML interstitial in place of the PDF is reported as such', async () => {
+  const { events } = await runRewrite({
+    pdf: async () => new Response('<html>Preparing to download', {
+      headers: { 'content-type': 'text/html' },
+    }),
+    provider: async () => { throw new Error('The model must not be asked without a PDF'); },
+  }, {
+    ...REWRITE_ENV,
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
+  });
+
+  const error = events.find(event => event.type === 'error');
+  assert.equal(error.code, 'AI_REWRITE_NEEDS_FULL_TEXT');
+  assert.equal(error.detail, 'not_pdf');
+});
+
+test('a source that never answers is told apart from one that answered wrong', async () => {
+  const { events } = await runRewrite({
+    pdf: async () => new Response('gone', { status: 404 }),
+    provider: async () => { throw new Error('The model must not be asked without a PDF'); },
+  }, {
+    ...REWRITE_ENV,
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
+  });
+
+  assert.equal(events.at(-1).detail, 'unreachable');
+});
+
 test('gives the daily use back when the provider refuses before the stream starts', async () => {
   const state = newLedgerState();
 

@@ -359,8 +359,19 @@ function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
+/**
+ * The paper's PDF as base64, or why there is none.
+ *
+ * The reason travels because "the download produced nothing" covered three
+ * different failures that need three different answers: a mirror that never
+ * replied is worth retrying, a server that answered with an HTML interstitial
+ * instead of the file is a source that has to be swapped, and a PDF over the cap
+ * is a paper this endpoint will never read. They were indistinguishable in the
+ * logs, which is how PMC's interstitial hid behind arXiv's timeouts.
+ */
 export async function fetchPaperPdf(pdfUrl, timeoutMs = AI_REQUEST_BUDGETS.pdfOnlySourceMs) {
-  if (!isAIReadablePdfUrl(pdfUrl)) return null;
+  const failed = reason => ({ base64: null, reason });
+  if (!isAIReadablePdfUrl(pdfUrl)) return failed('unreachable');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -374,22 +385,24 @@ export async function fetchPaperPdf(pdfUrl, timeoutMs = AI_REQUEST_BUDGETS.pdfOn
       });
       if (![301, 302, 303, 307, 308].includes(response.status)) break;
       const location = response.headers.get('location');
-      if (!location || redirectCount === 3) return null;
+      if (!location || redirectCount === 3) return failed('unreachable');
       const nextUrl = new URL(location, currentUrl).toString();
-      if (!isAIReadablePdfUrl(nextUrl)) return null;
+      if (!isAIReadablePdfUrl(nextUrl)) return failed('unreachable');
       currentUrl = nextUrl;
     }
-    if (!response?.ok || !isAIReadablePdfUrl(response.url || currentUrl)) return null;
+    if (!response?.ok || !isAIReadablePdfUrl(response.url || currentUrl)) return failed('unreachable');
     const contentType = response.headers.get('content-type') || '';
     const contentLength = Number(response.headers.get('content-length') || 0);
-    if (!contentType.toLowerCase().includes('pdf') || contentLength > MAX_PDF_BYTES) return null;
+    if (!contentType.toLowerCase().includes('pdf')) return failed('not_pdf');
+    if (contentLength > MAX_PDF_BYTES) return failed('too_large');
     // `content-length` is the server's word for it, and a chunked response gives
     // none: the cap has to hold against the bytes themselves.
     const bytes = await readBoundedBytes(response, MAX_PDF_BYTES);
-    if (!bytes?.length) return null;
-    return bytesToBase64(bytes);
+    if (!bytes) return failed('too_large');
+    if (!bytes.length) return failed('unreachable');
+    return { base64: bytesToBase64(bytes), reason: '' };
   } catch {
-    return null;
+    return failed('unreachable');
   } finally {
     clearTimeout(timeout);
   }
@@ -1465,7 +1478,7 @@ export async function handleAIExplanation(request, env, { now = Date.now } = {})
       deadline,
       paper.abstract ? AI_REQUEST_BUDGETS.pdfWithAbstractMs : AI_REQUEST_BUDGETS.pdfOnlySourceMs,
     );
-    const pdfBase64 = pdfBudgetMs > 0 ? await fetchPaperPdf(paper.pdfUrl, pdfBudgetMs) : null;
+    const pdfBase64 = pdfBudgetMs > 0 ? (await fetchPaperPdf(paper.pdfUrl, pdfBudgetMs)).base64 : null;
     // The paper was accepted with a PDF and no abstract, so an empty download is
     // the source being unreachable, not the paper being unusable. Blaming the
     // paper here also spent the daily use on a transient failure.

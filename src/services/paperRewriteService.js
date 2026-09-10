@@ -57,7 +57,12 @@ export function getRewritablePdfUrl(paper) {
     candidates.push(`https://arxiv.org/pdf/${arxivId}.pdf`);
   }
   if (paper?.openAccess && paper?.pdfUrl) candidates.push(paper.pdfUrl);
-  if (paper?.pmcid) candidates.push(`https://pmc.ncbi.nlm.nih.gov/articles/${encodeURIComponent(paper.pmcid)}/pdf/`);
+  // Europe PMC rather than PMC itself: `pmc.ncbi.nlm.nih.gov/articles/<id>/pdf/`
+  // answers anything without a browser with a 1.8 KB HTML interstitial, so the
+  // worker downloaded a "preparing to download" page and reported every PubMed
+  // paper as having no full text. The Europe PMC render of the same article
+  // serves `application/pdf` on the first response.
+  if (paper?.pmcid) candidates.push(`https://europepmc.org/articles/${encodeURIComponent(paper.pmcid)}?pdf=render`);
   return candidates.find(isAIReadablePdfUrl) || '';
 }
 

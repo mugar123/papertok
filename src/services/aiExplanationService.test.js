@@ -40,6 +40,18 @@ test('does not send a subscription-only PDF to the backend', () => {
   assert.equal(result.pdfUrl, '');
 });
 
+/** The same substitution as the rewrite: PMC's own page is an HTML interstitial
+ *  to anything without a browser, and Europe PMC's render is the PDF itself. */
+test('a PubMed-only paper is sent to the backend as its Europe PMC render', () => {
+  const result = serializePaperForExplanation({
+    id: 'paper-3',
+    title: 'A PubMed paper',
+    pmcid: 'PMC10000000',
+  });
+
+  assert.equal(result.pdfUrl, 'https://europepmc.org/articles/PMC10000000?pdf=render');
+});
+
 test('hides AI explanations for a closed paper without an abstract', () => {
   const paper = { openAccess: false, abstract: 'No abstract available.' };
 

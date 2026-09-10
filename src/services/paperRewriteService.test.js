@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  canRewritePaper,
   createNdjsonParser,
+  getRewritablePdfUrl,
   PaperRewriteError,
   rewriteCacheKey,
   rewritePaper,
@@ -151,5 +153,30 @@ test('the identity falls back through doi, arxiv id and title', () => {
   assert.notEqual(
     rewriteCacheKey({ title: 'One paper' }, level, 'es'),
     rewriteCacheKey({ title: 'Another paper' }, level, 'es'),
+  );
+});
+
+/**
+ * Where a PubMed paper is read from.
+ *
+ * `pmc.ncbi.nlm.nih.gov/articles/<id>/pdf/` answers a client without a browser
+ * with a 1.8 KB HTML interstitial — a "preparing to download" page whose real
+ * link is written by JavaScript — so the worker downloaded that, saw it was not
+ * a PDF, and told every PubMed reader the paper had no full text. Europe PMC's
+ * render of the same article serves `application/pdf` on the first response
+ * (measured 10-09: 200, 5 087 489 bytes), which is what the worker can read.
+ */
+test('a paper with only a PMCID reads through Europe PMC, which serves the PDF bytes', () => {
+  assert.equal(
+    getRewritablePdfUrl({ pmcid: 'PMC10000000' }),
+    'https://europepmc.org/articles/PMC10000000?pdf=render',
+  );
+  assert.equal(canRewritePaper({ pmcid: 'PMC10000000' }), true);
+});
+
+test('an arXiv copy still wins over the PubMed one', () => {
+  assert.equal(
+    getRewritablePdfUrl({ arxivId: '2401.00001', pmcid: 'PMC10000000' }),
+    'https://arxiv.org/pdf/2401.00001.pdf',
   );
 });

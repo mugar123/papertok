@@ -33,7 +33,9 @@ function getOpenPdfUrl(paper) {
     candidates.push(`https://arxiv.org/pdf/${arxivId}.pdf`);
   }
   if (paper?.openAccess && paper?.pdfUrl) candidates.push(paper.pdfUrl);
-  if (paper?.pmcid) candidates.push(`https://pmc.ncbi.nlm.nih.gov/articles/${encodeURIComponent(paper.pmcid)}/pdf/`);
+  // The Europe PMC render, not PMC's own page: that one is an HTML interstitial
+  // to any client without a browser. See `getRewritablePdfUrl`.
+  if (paper?.pmcid) candidates.push(`https://europepmc.org/articles/${encodeURIComponent(paper.pmcid)}?pdf=render`);
   return candidates.find(isAIReadablePdfUrl) || '';
 }
 

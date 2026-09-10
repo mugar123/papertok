@@ -756,13 +756,18 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
     }, HEARTBEAT_INTERVAL_MS);
 
     try {
-      const pdfBase64 = await fetchPaperPdf(paper.pdfUrl, PDF_FETCH_BUDGET_MS);
+      const { base64: pdfBase64, reason: pdfReason } = await fetchPaperPdf(paper.pdfUrl, PDF_FETCH_BUDGET_MS);
       // The paper arrived with a PDF and was accepted on it, so an empty download
       // is the source being unreachable, not the paper being unrewritable — a
       // stalled arXiv mirror reads the same as a paywall from here. The reader
       // sees the same sentence either way; what changes is that a use is no
-      // longer burnt on a Gemini call nobody made.
-      if (!pdfBase64) throw new AIExplanationError('AI_REWRITE_NEEDS_FULL_TEXT', 422);
+      // longer burnt on a Gemini call nobody made, and that `detail` says which
+      // of the three failures it was rather than leaving them one line.
+      if (!pdfBase64) {
+        const unreadable = new AIExplanationError('AI_REWRITE_NEEDS_FULL_TEXT', 422);
+        unreadable.detail = pdfReason;
+        throw unreadable;
+      }
 
       stage = 'reading';
       modelTimer = setTimeout(() => modelDeadline.abort(), STREAM_BUDGET_MS);
@@ -869,6 +874,9 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
         type: 'error',
         code,
         ...(known && error.quota ? { quota: error.quota } : {}),
+        // Not shown to the reader: it is what tells a stalled mirror apart from
+        // a source that answers with something other than the file.
+        ...(known && error.detail ? { detail: error.detail } : {}),
         ...(sections.length > 0 ? { partial: true } : {}),
       }).catch(() => {});
       console.warn('AI rewrite', JSON.stringify({
@@ -881,6 +889,7 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
         durationMs: Date.now() - startedAt,
         stage,
         code,
+        ...(known && error.detail ? { detail: error.detail } : {}),
         outcome: code === 'AI_CLIENT_GONE' ? 'client_gone' : 'stream_failed',
       }));
     } finally {
