@@ -15,6 +15,11 @@ export class PaperBuilder {
     const isPreprint = data.publicationStatus === 'preprint'
       || data.publicationType === 'preprint'
       || !data.publicationType;
+    // arXiv is the one source whose silence really does mean preprint. For
+    // everyone else a missing type is a gap in the record, and writing
+    // `preprint` into it turned every PubMed journal article into one.
+    const publicationType = data.publicationType
+      || ((data.sources?.primary === 'arxiv' || data.provider === 'arxiv') ? 'preprint' : undefined);
     
     // Normalize DOI
     let doi = data.doi;
@@ -52,7 +57,7 @@ export class PaperBuilder {
       conference: data.conference || undefined,
       year: data.year || new Date().getFullYear(),
       publisher: data.publisher || undefined,
-      publicationType: data.publicationType || 'preprint',
+      publicationType,
       publicationStatus: data.publicationStatus || (isPreprint ? 'preprint' : 'published'),
       peerReviewed: data.peerReviewed ?? !isPreprint,
       openAccess: data.openAccess !== undefined ? data.openAccess : true,

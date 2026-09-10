@@ -125,6 +125,30 @@ function assignPubmedCategory(paper, internalCategories) {
   };
 }
 
+// esummary reports the article's own `pubtype` list, which is the only thing in
+// the payload that says what a record IS. Reading it is what keeps a peer
+// reviewed article from arriving as a preprint: `PaperBuilder` used to default a
+// missing type to `preprint`, and this adapter never filled one in.
+//
+// Ordered: `Preprint` wins over everything (PubMed tags preprints as such and
+// nothing else about the record contradicts it), and `Review` before
+// `Journal Article` because a review carries both.
+const PUBTYPE_MAP = [
+  [/preprint/i, 'preprint'],
+  [/review/i, 'review'],
+  [/journal article/i, 'article'],
+  [/letter|comment|editorial/i, 'letter'],
+  [/clinical trial|randomized/i, 'article'],
+];
+
+function publicationTypeFromPubtype(pubtype) {
+  const list = Array.isArray(pubtype) ? pubtype : (pubtype ? [pubtype] : []);
+  for (const [pattern, type] of PUBTYPE_MAP) {
+    if (list.some(entry => pattern.test(String(entry)))) return type;
+  }
+  return undefined; // unknown stays unknown; PaperBuilder must not default it
+}
+
 export class PubmedAdapter extends BaseAdapter {
   // `workerOptions` is the injection seam `openAlexClient` already uses:
   // `import.meta.env` does not exist under `node --test`, so without it this
@@ -274,10 +298,12 @@ export class PubmedAdapter extends BaseAdapter {
       year: raw.pubdate ? parseInt(raw.pubdate.substring(0, 4)) : new Date().getFullYear(),
       published: raw.pubdate || '',
       publicationStatus: 'published',
+      publicationType: publicationTypeFromPubtype(raw.pubtype),
       openAccess: isOpenAccess,
       pdfUrl,
       landingPageUrl,
-      citationsCount: 0,
+      // citationsCount omitted on purpose: esummary has no citation data, and a
+      // hard-coded 0 reads downstream as a CONFIRMED zero rather than a gap.
       provider: this.name,
       raw
     };
