@@ -80,6 +80,16 @@ to Pro turns it on with no code change.
 | `npm run build` | Create the production bundle |
 | `npm run preview` | Serve the production bundle locally |
 | `npm run check` | Run lint, tests, and production build |
+| `npm run test:rules` | Firestore rules against the emulator (needs a JRE: `PATH="/opt/homebrew/opt/openjdk/bin:$PATH"` on a Homebrew Mac) |
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and on every push to `main`: a `check` job
+(`npm ci` + `npm run check`, with the same repository variables the Pages build uses) and a `rules`
+job (Temurin 21, `firebase-tools@15.27.0`, `npm run test:rules`). `deploy.yml` is the GitHub Pages
+publish and keeps its own verify step; production is Vercel, which runs no tests, so what keeps
+`main` green is a branch protection rule requiring the `check` and `rules` checks before merge.
+Every action is pinned to a commit SHA; Dependabot proposes the bumps weekly.
 
 ## Adding a Scientific Provider
 

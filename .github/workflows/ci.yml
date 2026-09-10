@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: ['main']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # deploy.yml's Verify step plus `npm run build`. The build is what needs
+      # the VITE_* values: vite.config.js refuses to build a bundle that
+      # reaches no backend. Same repository variables as deploy.yml.
+      - name: Check
+        run: npm run check
+        env:
+          VITE_REPORT_API_URL: ${{ vars.VITE_REPORT_API_URL }}
+          VITE_PAPER_API_BASE_URL: ${{ vars.VITE_PAPER_API_BASE_URL }}
+          VITE_SCOPUS_ENABLED: ${{ vars.VITE_SCOPUS_ENABLED }}
+          VITE_UNPAYWALL_EMAIL: ${{ vars.VITE_UNPAYWALL_EMAIL }}
+
+  rules:
+    name: rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # The Firestore emulator is a Java program that firebase-tools downloads
+      # on first use into ~/.cache/firebase/emulators.
+      - name: Setup Java
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Cache the Firestore emulator
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firestore-emulator-${{ runner.os }}-firebase-tools-15.27.0
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `npm run test:rules` calls a bare `firebase`, so the CLI goes on the
+      # PATH; the version is the one verified locally (`firebase --version`).
+      - name: Install firebase-tools
+        run: npm install -g firebase-tools@15.27.0
+
+      - name: Firestore rules against the emulator
+        run: npm run test:rules
