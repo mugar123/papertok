@@ -75,8 +75,13 @@ const RESERVATION_PREFIX = 'reservation:';
 // A reservation only lives while the Modal call is in flight, and that call is
 // capped well under a minute. Five minutes is a wide margin for it, and short
 // enough that a reservation orphaned between reserve and settle — a cancelled
-// request, an eviction — stops shrinking the monthly cap almost at once instead
-// of until the first of next month.
+// request, an eviction — is resolved almost at once instead of hanging over the
+// counter until the first of next month.
+//
+// Expiring a reservation is not proof that nothing was billed: the call that
+// opened it very likely reached Modal and ran. So an unsettled reservation is
+// charged in full when it expires — the same rule the client applies to
+// consumption it cannot measure — and the cap stays on the conservative side.
 export const RESERVATION_TTL_MS = 5 * 60 * 1000;
 
 /**
@@ -96,19 +101,28 @@ function reservationRecord(value, now) {
   };
 }
 
+/**
+ * Closes every reservation whose call can no longer settle it.
+ *
+ * The two amounts are the same money seen from two counters: it leaves
+ * `reservedMicros`, which is what `releasedMicros` measures, and lands in
+ * `spentMicros`, which is what `chargedMicros` measures. It is not forgiven.
+ */
 async function sweepExpiredReservations(transaction, now) {
   const entries = await transaction.list({ prefix: RESERVATION_PREFIX });
   let releasedMicros = 0;
+  let chargedMicros = 0;
   for (const [key, value] of entries) {
     const record = reservationRecord(value, now);
     if (record.expiresAt <= now) {
       await transaction.delete(key);
       releasedMicros += record.amountMicros;
+      chargedMicros += record.amountMicros;
     } else if (!record.dated) {
       await transaction.put(key, { amountMicros: record.amountMicros, expiresAt: record.expiresAt });
     }
   }
-  return releasedMicros;
+  return { releasedMicros, chargedMicros };
 }
 
 function json(payload, status = 200) {
@@ -140,7 +154,7 @@ export class KimiBudgetLedger {
         transaction.get('reservedMicros'),
         transaction.get(reservationKey),
       ]);
-      const spentMicros = positiveInteger(spentValue);
+      let spentMicros = positiveInteger(spentValue);
       const reservedMicros = positiveInteger(reservedValue);
 
       if (action === 'reserve') {
@@ -152,11 +166,16 @@ export class KimiBudgetLedger {
             reservedMicros,
           };
         }
-        const releasedMicros = await sweepExpiredReservations(transaction, now);
+        const { releasedMicros, chargedMicros } = await sweepExpiredReservations(transaction, now);
         const liveReservedMicros = Math.max(0, reservedMicros - releasedMicros);
-        // Written before the cap check: those keys are already gone, so a
-        // rejected reservation must not leave the counter claiming otherwise.
+        // Both written before the cap check: those keys are already gone, so a
+        // rejected reservation must not leave the counters claiming otherwise —
+        // and the money an expired reservation stood for is spend, not slack.
         if (releasedMicros) await transaction.put('reservedMicros', liveReservedMicros);
+        if (chargedMicros) {
+          spentMicros += chargedMicros;
+          await transaction.put('spentMicros', spentMicros);
+        }
         const amountMicros = positiveInteger(payload.amountMicros);
         const hardCapMicros = positiveInteger(payload.hardCapMicros);
         if (!amountMicros || !hardCapMicros || spentMicros + liveReservedMicros + amountMicros > hardCapMicros) {

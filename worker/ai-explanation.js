@@ -847,8 +847,9 @@ async function settleKimiBudget(env, reservation, chargedMicros) {
       resetAt: getMonthlyBudgetReset().resetAt,
     };
   } catch {
-    // Leaving the reservation in place is the safest failure mode: it can only
-    // reduce future Kimi usage, never let spending exceed the configured cap.
+    // Leaving the reservation in place is the safest failure mode: the ledger
+    // charges it in full once it expires, so a settle that never lands costs the
+    // reservation's conservative estimate rather than nothing at all.
     return null;
   }
 }

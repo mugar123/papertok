@@ -62,15 +62,16 @@ test('resets the Kimi safety budget at the next UTC month', () => {
   });
 });
 
-test('an expired reservation stops shrinking the monthly cap', async () => {
+test('an expired reservation is charged, not forgiven: the cap stays conservative', async () => {
   const harness = ledgerHarness({
     reservedMicros: 150_000,
     'reservation:orphan': { amountMicros: 150_000, expiresAt: Date.now() - 1 },
   });
 
   // The invocation that opened `reservation:orphan` died between reserve and
-  // settle, so nothing was ever going to delete it. Without the sweep this
-  // reservation would not fit and the fallback would stay dead all month.
+  // settle. Its expiry says nobody will ever settle it — not that Modal never
+  // billed for it. Freeing the money would let a run of crashed calls spend the
+  // month's cap twice, so the reservation is charged in full and closed.
   const result = await harness.call({
     action: 'reserve',
     reservationId: 'fresh',
@@ -78,9 +79,9 @@ test('an expired reservation stops shrinking the monthly cap', async () => {
     hardCapMicros: 200_000,
   });
 
-  assert.equal(result.accepted, true);
-  assert.equal(result.reservedMicros, 150_000);
-  assert.equal(harness.store.get('reservedMicros'), 150_000);
+  assert.equal(result.accepted, false);
+  assert.equal(harness.store.get('spentMicros'), 150_000);
+  assert.equal(harness.store.get('reservedMicros'), 0);
   assert.equal(harness.store.has('reservation:orphan'), false);
 });
 
