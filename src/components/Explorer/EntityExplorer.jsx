@@ -19,6 +19,7 @@ import {
 } from '../../utils/entityExplorer';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useHeightSettle } from '../../hooks/useHeightSettle';
+import { useActiveTabRule } from '../../hooks/useActiveTabRule.js';
 import { useIsPageArriving } from '../../hooks/usePageArrival.js';
 import { CATEGORIES } from '../../data/categories';
 import { areaAccentForCategory as getAreaGradient, areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
@@ -440,6 +441,12 @@ export default function EntityExplorer({
   // strip sits inside the hero after the body, and with the outer box
   // animated the strip snapped to its new place while the box closed over
   // it (measured: tabs 515 → 451 in one frame under a 200 ms settle).
+  // The tab strip's travelling rule (see the strip below for why). The row is
+  // held in STATE, not a ref: the live strip does not exist while the entity
+  // loads, and a ref would be read once as null and never again.
+  const [tabsRow, setTabsRow] = useState(null);
+  const tabRule = useActiveTabRule(tabsRow, `${activeTab}:${isEnglish}`, '.ee-tab.active');
+
   const heroBodyRef = useRef(null);
   useHeightSettle(
     heroBodyRef,
@@ -2202,7 +2209,19 @@ export default function EntityExplorer({
           )}
         </div>
         
-        <div className="ee-tabs">
+        <div className="ee-tabs" ref={setTabsRow}>
+          {/* One rule that TRAVELS, rather than a border handed from one tab
+              to the next. Measured 2026-09-10 on an institution: the yellow
+              mark jumped 40 → 110.7px in a single frame, the only unanimated
+              thing left in the tab switch. Same mechanism, curve and duration
+              as the navbar's (`utils/navRule.js`, shared): a transform a CSS
+              transition animates on the compositor, so it keeps sliding while
+              the main thread mounts the other tab's list. */}
+          <span
+            className={`ee-tab-rule${tabRule.measured ? ' is-measured' : ''}`}
+            aria-hidden="true"
+            style={{ transform: tabRule.transform || undefined, opacity: tabRule.transform ? 1 : 0 }}
+          />
           <button className={`ee-tab ${activeTab === 'papers' ? 'active' : ''}`} onClick={() => openTab('papers')}>
              {isEnglish ? 'Papers' : 'Artículos'}
           </button>

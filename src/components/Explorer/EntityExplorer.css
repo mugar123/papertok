@@ -1484,12 +1484,37 @@
   margin-top: var(--space-4);
   border-bottom: 1px solid var(--border-default);
   padding: 0 var(--space-5);
+  /* The travelling rule is absolute against this. */
+  position: relative;
+}
+
+/* The mark the active tab carries, as one element that MOVES between them.
+   Same shape and clock as the navbar's rule (Navbar.css), and for the same
+   reason: a transform transitions on the compositor, so it keeps sliding
+   while the main thread is busy mounting the other tab's list. The base
+   width keeps the horizontal scale near 1, so a 3px bar's ends are not
+   visibly stretched. */
+.ee-tab-rule {
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 80px;
+  height: 3px;
+  background: var(--brand-yellow);
+  transform-origin: 0 50%;
+  will-change: transform;
+  pointer-events: none;
+}
+
+/* Armed only once the rule has been placed: the first measurement lands it
+   under the current tab without a slide from the strip's left edge. */
+.ee-tab-rule.is-measured {
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.16s ease-out;
 }
 
 .ee-tab {
   background: transparent;
   border: none;
-  border-bottom: 3px solid transparent;
   color: var(--text-secondary);
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
@@ -1505,11 +1530,11 @@
   }
 }
 
-/* The active surface is marked by the brand thread, as in the navbar. */
+/* The active surface takes the weight; the yellow thread is the travelling
+   rule above, not a border this tab paints for itself. */
 .ee-tab.active {
   color: var(--text-primary);
   font-weight: var(--fw-semibold);
-  border-bottom-color: var(--brand-yellow);
 }
 
 .ee-tab:focus-visible {

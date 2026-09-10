@@ -356,3 +356,46 @@ test('the settle carries the Wikipedia block: its mount and its contents are dep
     assert.match(deps[1], new RegExp(`\\b${dep}\\b`), `${dep} settles`);
   }
 });
+
+/**
+ * The tab strip's yellow mark TRAVELS between tabs instead of being a border
+ * each tab paints for itself. Measured 2026-09-10 on an institution before
+ * this: switching Papers → Authors moved the mark 40 → 110.7px in a single
+ * frame, the only unanimated thing left in the switch.
+ *
+ * Same mechanism, curve and duration as the navbar's rule, and the maths is
+ * literally the same module (`utils/navRule.js`): a transform a CSS transition
+ * animates on the compositor, so it keeps sliding while the main thread mounts
+ * the other tab's list — which is exactly when it is busy (the same switch
+ * swaps 30 rows for 30 cards).
+ */
+test('the tab strip is marked by one rule that travels, not a border each tab paints', async () => {
+  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  const css = stripComments(await read('./EntityExplorer.css'));
+
+  // The row is held in STATE, not a ref: the live strip does not exist while
+  // the entity loads, so a ref would be read once as null and — its deps
+  // unchanged by the strip mounting — never read again. Measured with a ref:
+  // the rule was in the DOM, armed, and permanently invisible.
+  assert.match(jsx, /const \[tabsRow, setTabsRow\] = useState\(null\);/);
+  assert.match(jsx, /const tabRule = useActiveTabRule\(tabsRow, `\$\{activeTab\}:\$\{isEnglish\}`, '\.ee-tab\.active'\);/);
+  assert.match(jsx, /<div className="ee-tabs" ref=\{setTabsRow\}>/);
+  assert.match(jsx, /className=\{`ee-tab-rule\$\{tabRule\.measured \? ' is-measured' : ''\}`\}/,
+    'the transition is armed only once the rule has been placed, or it slides in from the strip edge on load');
+
+  // The tab no longer paints its own thread.
+  const activeTab = css.match(/\.ee-tab\.active \{([^}]*)\}/);
+  assert.ok(activeTab, 'the active tab still has a rule of its own');
+  assert.doesNotMatch(activeTab[1], /border-bottom-color/, 'the yellow thread is the travelling rule, not a border handed over');
+
+  // The rule itself: a compositor transform, on the navbar's clock.
+  const rule = css.match(/\.ee-tab-rule \{([^}]*)\}/);
+  assert.ok(rule, 'the rule exists');
+  assert.match(rule[1], /position: absolute;/);
+  assert.match(rule[1], /transform-origin: 0 50%;/);
+  assert.match(rule[1], /background: var\(--brand-yellow\);/);
+  const armed = css.match(/\.ee-tab-rule\.is-measured \{([^}]*)\}/);
+  assert.ok(armed, 'the transition lives behind the arming class');
+  assert.match(armed[1], /transition: transform 0\.28s cubic-bezier\(0\.4, 0, 0\.2, 1\), opacity 0\.16s ease-out;/,
+    'the navbar\'s curve and duration: one gesture, one clock');
+});
