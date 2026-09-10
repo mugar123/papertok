@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
+const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
 
 /**
  * SOURCE tests for how an author, an institution or a project page waits, and
@@ -108,26 +109,27 @@ test('the ORCID record and the impact score are requested together, declared bef
 });
 
 /**
- * The block arrives rather than appears: it mounts once its lookup has SETTLED,
- * with everything it is ever going to have, and unfolds from nothing.
- *
- * Gated on settled and not merely on content. `homepage_url` comes with the
- * entity and the prose comes later, so a condition that accepted the homepage
- * alone would mount the block early and let the paragraph grow it a second
- * time — one arrival animation, then an unannounced resize under it.
+ * The block arrives rather than appears, and the hero's settle is what carries
+ * its space. It mounts once its lookup has settled with everything it is
+ * going to have, its CONTENTS fade in, and the box grows under the settle's clip —
+ * the same arrival the ORCID card and the experience panel already make. For
+ * two days (3b96b3a → aea5a59) the fold animated its own `height: 'auto'` and
+ * the settle stood down behind a latch; measured 2026-09-09, that latch, its
+ * re-sync and its hand-over branch were the bug (a snapped handover on every
+ * navigation, a mid-exit height animated from, a homepage-only block left
+ * clamped). One owner of the height, and it is not framer.
  */
-test('the Wikipedia block waits for its lookup to settle, then arrives as one mount', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
-  assert.match(jsx, /const showWikiBlock = !isWikiRequestPending && Boolean\(wikiDescription \|\| entity\?\.homepage_url\);/,
-    'the block does not exist while its lookup is out');
-  assert.match(jsx, /\{showWikiBlock && \(/, 'and that is the only thing that mounts it');
-  // While it animates its own height it owns the box, and the hero's settle
-  // stands down: measured, a settle reading the box mid-unfold took a target
-  // 59.2px short of the truth and snapped the difference when it released.
-  assert.match(jsx, /onAnimationStart=\{\(\) => \{ wikiFoldAnimatingRef\.current = true; \}\}/);
-  assert.match(jsx, /onAnimationComplete=\{\(\) => \{ wikiFoldAnimatingRef\.current = false; \}\}/);
-  assert.doesNotMatch(jsx, /isWikiRequestPending && \['concept', 'topic', 'institution'\]\.includes\(type\)/,
-    'and it is no longer held open on grey rows for the whole wait');
+test('the Wikipedia block arrives under the settle: its fold animates opacity only', async () => {
+  const jsx = (await read('./EntityExplorer.jsx')).replace(/^\s*\/\/.*$/gm, '');
+  const fold = jsx.match(/<motion\.div\s+className="ehc-wiki-fold"([\s\S]*?)>\s*<div\s+className=\{`ehc-wiki /);
+  assert.ok(fold, 'the fold is a motion wrapper around the padded `.ehc-wiki`');
+  assert.match(fold[1], /initial=\{\{ opacity: 0 \}\}/, 'it starts invisible, at its full height');
+  assert.match(fold[1], /animate=\{\{ opacity: 1 \}\}/);
+  assert.match(fold[1], /exit=\{\{ opacity: 0, transition: \{ duration: 0\.15 \} \}\}/, 'it leaves the way it came, quickly — the settle closes the space after it');
+  assert.doesNotMatch(fold[1], /height/, 'framer never touches the height: the settle owns it');
+  assert.doesNotMatch(fold[1], /marginTop|\by:/, 'nor the margin or a translate: nothing here moves layout');
+  assert.doesNotMatch(fold[1], /onAnimationStart|onAnimationComplete|layout/, 'no latch, no projection');
+  assert.doesNotMatch(jsx, /wikiFoldAnimatingRef|WIKI_FOLD_OUT|HERO_STACK_GAP_PX/, 'and nothing is left of the second owner');
 });
 
 test('the experience panel grows into place when the ORCID record lands', async () => {
@@ -161,62 +163,13 @@ test('the page skeleton reserves as many rows as the list skeleton paints', asyn
 });
 
 /**
- * A topic whose Wikipedia lookup misses folds its block away. Measured before
- * the fix: the block's `height` reached 0 but its padding and border (26px)
- * stayed, and the parent's 16px flex gap went with it at unmount — the list
- * jumped 42px in one frame after a 400ms fold that had looked finished.
+ * With the settle owning the space, the fold's wrapper has nothing to clip: the
+ * hero body clips while it grows. A leftover `overflow: hidden` on the wrapper
+ * would only cut the paragraph's own "Read more" transition.
  */
-test('the Wikipedia block folds inside a wrapper that also absorbs the stack gap', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
-  assert.match(jsx, /const HERO_STACK_GAP_PX = 16;/);
-  // No `layout` on the fold: the hero body's settle already carries this
-  // height, and a projection on top of it scaled the paragraph (measured:
-  // scaleY 1.21 for 380ms on a topic, 1.3 for a frame on an institution).
-  const fold = jsx.match(/<motion\.div\s+className="ehc-wiki-fold"[\s\S]*?>\s*<div\s+className=\{`ehc-wiki /);
-  assert.ok(fold, 'the fold declares no layout projection');
-  assert.doesNotMatch(fold[0], /\blayout\b/);
-  assert.ok(fold, 'the motion wrapper is a box of its own around the padded `.ehc-wiki`');
-  assert.match(fold[0], /initial=\{prefersReducedMotion \? \{ opacity: 0 \} : \{ opacity: 0, height: 0, marginTop: -HERO_STACK_GAP_PX, y: -8 \}\}/);
-  assert.match(fold[0], /animate=\{\{ opacity: 1, height: 'auto', marginTop: 0, y: 0 \}\}/);
-  assert.match(fold[0], /exit=\{prefersReducedMotion\s*\?\s*\{ opacity: 0 \}\s*:\s*\{ opacity: 0, height: 0, marginTop: -HERO_STACK_GAP_PX, y: -6, transition: WIKI_FOLD_OUT \}\}/);
-  // The arrival opens ~155px of space and everything below rides it, which is
-  // the case the project badge was measured on: an expo-out spends most of its
-  // travel in the first frames, so the list leaps and then crawls. Simulated at
-  // 60fps over 155px, the 420ms expo-out this replaced peaks at 35.4px in one
-  // frame; `--ease-out-quad` at 320ms peaks at 15.2px, in less time.
-  assert.match(fold[0], /height: \{ duration: 0\.32, ease: \[0\.25, 0\.46, 0\.45, 0\.94\] \}/);
-  assert.match(fold[0], /marginTop: \{ duration: 0\.32, ease: \[0\.25, 0\.46, 0\.45, 0\.94\] \}/);
-  assert.match(fold[0], /y: \{ duration: 0\.32, ease: \[0\.25, 0\.46, 0\.45, 0\.94\] \}/);
-  assert.doesNotMatch(fold[0], /duration: 0\.42/, 'the arrival no longer runs the expo-out that front-loads it');
-  // Opacity lands first, so the words are readable while the box still opens.
-  assert.match(fold[0], /opacity: \{ duration: 0\.24 \}/);
-  // The collapse is not the arrival reversed: what moves is the list below,
-  // and it has to land. What this pins is the worst single frame, because that
-  // is the jolt. Measured on `explorer-loading-probe.mjs wikiexit`: the
-  // arrival's expo-out at 420ms gave -31.9px, the catalog's steep ease-in-out
-  // at 280ms gave -39.7px (right shape, too few frames to spend the peak over),
-  // and this pair gives -16.0px. The fade keeps the house exit curve, and it
-  // tracks the collapse rather than racing it: 400 against 480 is an 80ms tail,
-  // where every earlier version left the list moving under an invisible block
-  // for 120ms or more.
-  const foldOut = jsx.match(/const WIKI_FOLD_OUT = \{[\s\S]*?\n\};/);
-  assert.ok(foldOut, 'the fold has a closing transition of its own');
-  assert.match(foldOut[0], /opacity: \{ duration: 0\.4, ease: \[0\.4, 0, 1, 1\] \}/);
-  assert.match(foldOut[0], /height: \{ duration: 0\.48, ease: \[0\.4, 0, 0\.2, 1\] \}/);
-  assert.match(foldOut[0], /marginTop: \{ duration: 0\.48, ease: \[0\.4, 0, 0\.2, 1\] \}/);
-  assert.match(foldOut[0], /y: \{ duration: 0\.48, ease: \[0\.4, 0, 0\.2, 1\] \}/);
-  // The space must not finish before the block it is vacating has faded.
-  const seconds = (name) => Number(foldOut[0].match(new RegExp(`${name}: \\{ duration: ([\\d.]+)`))[1]);
-  assert.ok(seconds('opacity') < seconds('height'), 'the fade lands before the space closes');
-  assert.ok(seconds('height') - seconds('opacity') <= 0.1, 'and no more than 100ms before it');
-  assert.doesNotMatch(foldOut[0], /\[0\.16, 1, 0\.3, 1\]/, 'the collapse must not ride the arrival curve');
-  assert.doesNotMatch(foldOut[0], /\[0\.77, 0, 0\.175, 1\]/, 'nor the steep ease-in-out that peaked worse than what it replaced');
-  const css = await read('./EntityExplorer.css');
-  assert.match(css, /\.ehc-wiki-fold \{\s*overflow: hidden;\s*\}/);
-  // The constant stands for `--space-4`, the gap `.explorer-hero-content` stacks with.
-  const tokens = await read('../../styles/variables.css');
-  assert.match(tokens, /--space-4: 1rem;/);
-  assert.match(css, /\.explorer-hero-content \{[^}]*gap: var\(--space-4\);/);
+test('the fold wrapper is a plain box now', async () => {
+  const css = stripComments(await read('./EntityExplorer.css'));
+  assert.doesNotMatch(css, /\.ehc-wiki-fold \{/, 'no rule of its own');
 });
 
 test('the list mounts in idle chunks, rows below the fold are skipped, and the sentinel waits for the page', async () => {
