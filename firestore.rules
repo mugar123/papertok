@@ -1017,31 +1017,39 @@ service cloud.firestore {
     // stamped with this request's time — and that document's own rules
     // (below) refuse the stamp before the interval has passed. Two documents,
     // one batch, no server.
-    function throttleSatisfied(action) {
+    //
+    // The stamp also names the document it vouches for. The interval is
+    // evaluated once per batch (on the ledger update), so before `lastId`
+    // one stamp covered N creates in the same batch and the interval was
+    // paid once for all of them (audit 2026-09-10, finding 7a). A batch
+    // holds one write per document, so one stamp now covers exactly one
+    // create. The two getAfter() calls are one read: rules memoize them.
+    function throttleSatisfied(action, id) {
       return getAfter(
         /databases/$(database)/documents/users/$(request.auth.uid)/rateLimits/$(action)
-      ).data.lastAt == request.time;
+      ).data.lastAt == request.time
+        && getAfter(
+          /databases/$(database)/documents/users/$(request.auth.uid)/rateLimits/$(action)
+        ).data.lastId == id;
     }
 
     function validRateLimitDoc(action) {
       return (action == 'comments' || action == 'stubs' || action == 'reports')
         && request.resource.data.keys().hasOnly(['lastAt', 'count', 'lastId'])
-        && request.resource.data.keys().hasAll(['lastAt', 'count'])
+        && request.resource.data.keys().hasAll(['lastAt', 'count', 'lastId'])
         // The stamp IS the mechanism: `throttleSatisfied` compares it against
         // request.time, so a backdated or future stamp must be unwritable.
         && request.resource.data.lastAt == request.time
         && request.resource.data.count is int
         && request.resource.data.count >= 0
         // `lastId` names the ONE document this stamp vouches for (audit
-        // 2026-09-10, finding 7a). Optional in this deploy so that bundles
-        // still in the air keep writing `{ lastAt, count }`; the second
-        // deploy makes `throttleSatisfied` require it. 1500 is Firestore's
-        // document-id ceiling; the longest id the client stamps is a paper
-        // key (base64url of an identity of at most 600 characters).
-        && (!('lastId' in request.resource.data)
-          || request.resource.data.lastId is string
-            && request.resource.data.lastId.size() > 0
-            && request.resource.data.lastId.size() <= 1500);
+        // 2026-09-10, finding 7a); `throttleSatisfied` compares it with the
+        // id being created. 1500 is Firestore's document-id ceiling; the
+        // longest id the client stamps is a paper key (base64url of an
+        // identity of at most 600 characters).
+        && request.resource.data.lastId is string
+        && request.resource.data.lastId.size() > 0
+        && request.resource.data.lastId.size() <= 1500;
     }
 
     // Intervals per action, server-enforced. Coarse on purpose: this is the
@@ -1183,7 +1191,7 @@ service cloud.firestore {
       allow create: if request.auth != null
         && !commentsFrozen()
         && validPaperStub()
-        && throttleSatisfied('stubs');
+        && throttleSatisfied('stubs', paperKey);
       // Immutable after creation, except for the admin. The stub's metadata
       // is what every reader of the thread sees; a cache anyone could rewrite
       // would be a defacement surface. Stale metadata is repaired by the
@@ -1203,7 +1211,7 @@ service cloud.firestore {
           // A comment hangs off a stub that exists — already, or created in
           // this same batch (the first-comment flow).
           && existsAfter(/databases/$(database)/documents/papers/$(paperKey))
-          && throttleSatisfied('comments');
+          && throttleSatisfied('comments', commentId);
         allow update: if request.auth != null
           && (
             // The author may rewrite the text, and the edit is marked with
@@ -1294,7 +1302,7 @@ service cloud.firestore {
       allow list: if isAdmin() && request.query.limit <= 1000;
       allow create: if request.auth != null
         && validReport()
-        && throttleSatisfied('reports');
+        && throttleSatisfied('reports', reportId);
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['status'])

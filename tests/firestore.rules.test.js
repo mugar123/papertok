@@ -1115,9 +1115,10 @@ function commentBody(uid, handle, overrides = {}) {
   };
 }
 
-function stamp(db, uid, action) {
+/** A stamp names the one document it vouches for (finding 7a, 2026-09-10). */
+function stamp(db, uid, action, lastId) {
   return [doc(db, 'users', uid, 'rateLimits', action),
-    { lastAt: serverTimestamp(), count: increment(1) }];
+    { lastAt: serverTimestamp(), count: increment(1), lastId }];
 }
 
 /** The batch the app really sends: comment + throttle stamp (+ stub + its stamp). */
@@ -1125,24 +1126,25 @@ function commentBatch(db, uid, body, { paper = PAPER, stub = null } = {}) {
   const batch = writeBatch(db);
   if (stub) {
     batch.set(doc(db, 'papers', paper), stub);
-    const [stubRef, stubStamp] = stamp(db, uid, 'stubs');
+    const [stubRef, stubStamp] = stamp(db, uid, 'stubs', paper);
     batch.set(stubRef, stubStamp, { merge: true });
   }
   const commentRef = doc(collection(db, 'papers', paper, 'comments'));
   batch.set(commentRef, body);
-  const [commentsRef, commentsStamp] = stamp(db, uid, 'comments');
+  const [commentsRef, commentsStamp] = stamp(db, uid, 'comments', commentRef.id);
   batch.set(commentsRef, commentsStamp, { merge: true });
   return { batch, commentRef };
 }
 
 function reportBatch(db, uid, overrides = {}) {
   const batch = writeBatch(db);
-  batch.set(doc(collection(db, 'reports')), {
+  const reportRef = doc(collection(db, 'reports'));
+  batch.set(reportRef, {
     reporterUid: uid, targetPath: `papers/${PAPER}/comments/c1`,
     targetAuthorUid: ALICE, reason: 'spam', status: 'open',
     createdAt: serverTimestamp(), ...overrides,
   });
-  const [ref, body] = stamp(db, uid, 'reports');
+  const [ref, body] = stamp(db, uid, 'reports', reportRef.id);
   batch.set(ref, body, { merge: true });
   return batch;
 }
@@ -1190,7 +1192,7 @@ test('F3: a stub create needs its throttle stamp, and works with it', async () =
   const db = asAlice();
   const batch = writeBatch(db);
   batch.set(doc(db, 'papers', PAPER), stubBody());
-  const [ref, body] = stamp(db, ALICE, 'stubs');
+  const [ref, body] = stamp(db, ALICE, 'stubs', PAPER);
   batch.set(ref, body, { merge: true });
   await assertSucceeds(batch.commit());
 });
@@ -1204,7 +1206,7 @@ test('F3: a stub is immutable to users; the admin can repair and delete it', asy
   const db = asBob();
   const batch = writeBatch(db);
   batch.set(doc(db, 'papers', PAPER), stubBody({ title: 'Replaced', createdBy: BOB }));
-  const [ref, body] = stamp(db, BOB, 'stubs');
+  const [ref, body] = stamp(db, BOB, 'stubs', PAPER);
   batch.set(ref, body, { merge: true });
   await assertFails(batch.commit());
   await assertFails(deleteDoc(doc(asAlice(), 'papers', PAPER)));
@@ -1218,7 +1220,7 @@ test('F3: the stub identity must cohere with the identifiers it carries', async 
     const db = asAlice();
     const batch = writeBatch(db);
     batch.set(doc(db, 'papers', PAPER), stubBody(overrides));
-    const [ref, body] = stamp(db, ALICE, 'stubs');
+    const [ref, body] = stamp(db, ALICE, 'stubs', PAPER);
     batch.set(ref, body, { merge: true });
     return batch.commit();
   };
@@ -1247,7 +1249,7 @@ test('F3: the second create on an existing stub is refused — one paper, one th
   const db = asBob();
   const batch = writeBatch(db);
   batch.set(doc(db, 'papers', PAPER), stubBody({ createdBy: BOB }));
-  const [ref, body] = stamp(db, BOB, 'stubs');
+  const [ref, body] = stamp(db, BOB, 'stubs', PAPER);
   batch.set(ref, body, { merge: true });
   // set() on an existing document is an update to the rules, and updates are
   // admin-only: the loser of the race falls back to commenting on the stub
@@ -1347,15 +1349,15 @@ test('F3: the ledger accepts only known actions, with a well-typed count', async
   // An unknown action would be a free parking spot under users/{uid} — the
   // allowlist is what keeps this subcollection meaning one thing.
   await assertFails(setDoc(doc(asAlice(), 'users', ALICE, 'rateLimits', 'anything'),
-    { lastAt: serverTimestamp(), count: 1 }));
+    { lastAt: serverTimestamp(), count: 1, lastId: 'c1' }));
   // On an otherwise-valid create, the count typing is the deciding clause.
   await assertFails(setDoc(doc(asAlice(), 'users', ALICE, 'rateLimits', 'comments'),
-    { lastAt: serverTimestamp(), count: 'nope' }));
+    { lastAt: serverTimestamp(), count: 'nope', lastId: 'c1' }));
   await assertFails(setDoc(doc(asAlice(), 'users', ALICE, 'rateLimits', 'comments'),
-    { lastAt: serverTimestamp(), count: -1 }));
+    { lastAt: serverTimestamp(), count: -1, lastId: 'c1' }));
 });
 
-test('finding 7a (first deploy): the ledger accepts a well-typed lastId, and nothing else new', async () => {
+test('finding 7a: the ledger carries a well-typed lastId, and nothing else new', async () => {
   // The stamp is about to name the document it vouches for. This deploy
   // only opens the allowlist so the client can start writing the field;
   // the requirement lands in the second deploy, once every live bundle
@@ -1363,8 +1365,9 @@ test('finding 7a (first deploy): the ledger accepts a well-typed lastId, and not
   await resetSocial();
   await assertSucceeds(setDoc(doc(asAlice(), 'users', ALICE, 'rateLimits', 'comments'),
     { lastAt: serverTimestamp(), count: 1, lastId: 'c1' }));
-  // Still optional in this deploy.
-  await assertSucceeds(setDoc(doc(asBob(), 'users', BOB, 'rateLimits', 'comments'),
+  // Required since the second deploy: a stamp that names nothing vouches for
+  // nothing.
+  await assertFails(setDoc(doc(asBob(), 'users', BOB, 'rateLimits', 'comments'),
     { lastAt: serverTimestamp(), count: 1 }));
   // But when present it is a non-empty, bounded string.
   await assertFails(setDoc(doc(asDave(), 'users', DAVE, 'rateLimits', 'comments'),
@@ -1378,12 +1381,72 @@ test('finding 7a (first deploy): the ledger accepts a well-typed lastId, and not
     { lastAt: serverTimestamp(), count: 1, lastId: 'c1', smuggled: true }));
 });
 
+test('finding 7a: two comments in one batch with one stamp do not land', async () => {
+  // `throttleSatisfied` only compared `lastAt` with request.time, and the
+  // interval is evaluated once per batch, on the ledger update: N comments
+  // sharing one stamp paid the 15 s interval once (audit 2026-09-10). The
+  // stamp now names the ONE document it vouches for, and a batch cannot
+  // write the ledger twice.
+  await resetSocial();
+  const db = asAlice();
+  const batch = writeBatch(db);
+  const first = doc(collection(db, 'papers', PAPER, 'comments'));
+  const second = doc(collection(db, 'papers', PAPER, 'comments'));
+  batch.set(first, commentBody(ALICE, 'alice'));
+  batch.set(second, commentBody(ALICE, 'alice'));
+  const [ref, body] = stamp(db, ALICE, 'comments', first.id);
+  batch.set(ref, body, { merge: true });
+  await assertFails(batch.commit());
+  // A stamp naming a document that is not the one being created is no stamp.
+  const forged = commentBatch(db, ALICE, commentBody(ALICE, 'alice'));
+  const [forgedRef, forgedBody] = stamp(db, ALICE, 'comments', 'somebody-elses-id');
+  forged.batch.set(forgedRef, forgedBody, { merge: true });
+  await assertFails(forged.batch.commit());
+  // And a stamp without the field (a stale bundle) is refused outright.
+  const stale = writeBatch(db);
+  stale.set(doc(collection(db, 'papers', PAPER, 'comments')), commentBody(ALICE, 'alice'));
+  stale.set(doc(db, 'users', ALICE, 'rateLimits', 'comments'),
+    { lastAt: serverTimestamp(), count: increment(1) }, { merge: true });
+  await assertFails(stale.commit());
+});
+
+test('finding 7a: two stubs in one batch with one stamp do not land', async () => {
+  await resetSocial({ stub: false });
+  const db = asAlice();
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'papers', PAPER), stubBody());
+  batch.set(doc(db, 'papers', 'k-other'), stubBody({
+    canonicalKey: 'arxiv:2401.12345', doi: undefined, arxivId: '2401.12345',
+  }));
+  const [ref, body] = stamp(db, ALICE, 'stubs', PAPER);
+  batch.set(ref, body, { merge: true });
+  await assertFails(batch.commit());
+});
+
+test('finding 7a: two reports in one batch with one stamp do not land', async () => {
+  await resetSocial();
+  const db = asAlice();
+  const batch = writeBatch(db);
+  const first = doc(collection(db, 'reports'));
+  const second = doc(collection(db, 'reports'));
+  for (const ref of [first, second]) {
+    batch.set(ref, {
+      reporterUid: ALICE, targetPath: `papers/${PAPER}/comments/c1`,
+      targetAuthorUid: ALICE, reason: 'spam', status: 'open',
+      createdAt: serverTimestamp(),
+    });
+  }
+  const [ref, body] = stamp(db, ALICE, 'reports', first.id);
+  batch.set(ref, body, { merge: true });
+  await assertFails(batch.commit());
+});
+
 test('F3: a stub cannot be created in somebody else\'s name', async () => {
   await resetSocial({ stub: false });
   const db = asAlice();
   const batch = writeBatch(db);
   batch.set(doc(db, 'papers', PAPER), stubBody({ createdBy: BOB }));
-  const [ref, body] = stamp(db, ALICE, 'stubs');
+  const [ref, body] = stamp(db, ALICE, 'stubs', PAPER);
   batch.set(ref, body, { merge: true });
   await assertFails(batch.commit());
 });
@@ -1404,15 +1467,15 @@ test('F3: the throttle ledger cannot be reset, backdated, or read by others', as
   await assertFails(deleteDoc(doc(asAlice(), 'users', ALICE, 'rateLimits', 'comments')));
   // Writing a stamp that is not this request's time defeats the comparison.
   await assertFails(setDoc(doc(asAlice(), 'users', ALICE, 'rateLimits', 'comments'),
-    { lastAt: SIXTY_S_AGO(), count: 1 }));
+    { lastAt: SIXTY_S_AGO(), count: 1, lastId: 'c1' }));
   // Also on a fresh CREATE, where no interval applies and the stamp clause is
   // the one that decides — the mutation pass caught this exact gap.
   await assertFails(setDoc(doc(asDave(), 'users', DAVE, 'rateLimits', 'comments'),
-    { lastAt: SIXTY_S_AGO(), count: 1 }));
+    { lastAt: SIXTY_S_AGO(), count: 1, lastId: 'c1' }));
   // Another account can neither read nor write my ledger.
   await assertFails(getDoc(doc(asBob(), 'users', ALICE, 'rateLimits', 'comments')));
   await assertFails(setDoc(doc(asBob(), 'users', ALICE, 'rateLimits', 'comments'),
-    { lastAt: serverTimestamp(), count: 1 }));
+    { lastAt: serverTimestamp(), count: 1, lastId: 'c1' }));
 });
 
 // --- comments: threading ----------------------------------------------------
@@ -1566,7 +1629,7 @@ test('F3: the killswitch freezes comments and stubs, and only the admin holds it
   const db = asAlice();
   const frozenStub = writeBatch(db);
   frozenStub.set(doc(db, 'papers', 'k-other'), stubBody({ canonicalKey: 'pmid:99', doi: undefined }));
-  const [ref, body] = stamp(db, ALICE, 'stubs');
+  const [ref, body] = stamp(db, ALICE, 'stubs', 'k-other');
   frozenStub.set(ref, body, { merge: true });
   await assertFails(frozenStub.commit());
   // Reporting stays open while the room is on fire.
