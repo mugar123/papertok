@@ -268,7 +268,7 @@ export async function rewritePaper(paper, level = 'university', {
         onMeta?.(event);
         // The first ping is eight seconds out; without this the reader would
         // spend those eight seconds on a generic label.
-        onProgress?.({ stage: 'source', elapsedMs: 0 });
+        onProgress?.({ stage: 'source' });
         return;
       }
       if (event.type === 'section') {
@@ -282,7 +282,7 @@ export async function rewritePaper(paper, level = 'university', {
         };
         onSection?.(section, sections.length);
         sections.push(section);
-        onProgress?.({ stage: 'writing', elapsedMs: 0 });
+        onProgress?.({ stage: 'writing' });
         return;
       }
       if (event.type === 'error') {
@@ -299,6 +299,10 @@ export async function rewritePaper(paper, level = 'university', {
       // downloading the paper and the model is reading it. What it does carry is
       // which of those two the wait is currently in, which is the difference
       // between a minute that looks broken and a minute that looks busy.
+      // Only this call carries a time, and that matters now that the reader
+      // prints it: `elapsedMs: 0` beside the stage on `meta` and on every
+      // section was filler, and printed it walked the clock back to zero at the
+      // one moment the reader can see progress being made.
       if (event.type === 'ping') {
         onProgress?.({ stage: event.stage || 'reading', elapsedMs: event.elapsedMs || 0 });
       }
