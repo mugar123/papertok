@@ -257,6 +257,10 @@ export default function EntityExplorer({
   const closeSelectedPaper = useCallback(() => setSelectedPaper(null), []);
   const [wikiInfo, setWikiInfo] = useState(null);
   const [settledWikiRequestKey, setSettledWikiRequestKey] = useState('');
+  // Whether this entity's Wikipedia block has opened. Once it has, a re-lookup
+  // (the language changed, a localized name landed) keeps it mounted on its
+  // rows instead of folding it out and in — see `showWikiBlock`.
+  const [wikiBlockOpened, setWikiBlockOpened] = useState(false);
   // The fold's removal is `AnimatePresence`'s own state update, which never
   // reaches this component — so the ~155px the block was holding would drop in
   // an unanimated reflow after its fade. Bumping this on `onExitComplete` gives
@@ -450,9 +454,15 @@ export default function EntityExplorer({
   // own line box for exactly this.
   const wikiDescription = isWikiRequestPending ? '' : (visibleWikiInfo?.extract || topicFallbackDescription);
 
-  // The block exists only once its lookup has settled, with everything it is
-  // ever going to have — see the fold below for why it is not held open.
-  const showWikiBlock = !isWikiRequestPending && Boolean(wikiDescription || entity?.homepage_url);
+  // The block opens the first time its lookup settles WITH content — never on
+  // `homepage_url` alone while the prose is still out, which would settle the
+  // box twice — and stays open from then on through a re-lookup, holding its
+  // rows until the new paragraph replaces them in place. Closed only by a
+  // settled lookup that finds nothing. Adjusted during render, the documented
+  // way to derive state from a prop, so the settling commit is the opening one.
+  const wikiHasContent = Boolean(wikiDescription || entity?.homepage_url);
+  if (!isWikiRequestPending && wikiHasContent && !wikiBlockOpened) setWikiBlockOpened(true);
+  const showWikiBlock = wikiBlockOpened && (wikiHasContent || isWikiRequestPending);
   const hasLoadedWikiImage = Boolean(
     visibleWikiInfo?.thumbnail && loadedWikiImageUrl === visibleWikiInfo.thumbnail,
   );
@@ -620,6 +630,7 @@ export default function EntityExplorer({
       setEntityAuthors([]);
       setSearchQuery('');
       setWikiInfo(null);
+      setWikiBlockOpened(false);
       setOrcidInfo(null);
       setIsLoadingOrcid(false);
       setIsExperienceOpen(true);
@@ -2089,17 +2100,13 @@ export default function EntityExplorer({
                     arrive rather than appear. */}
                 {isWikiRequestPending ? (
                   <div className="ehc-wiki-skeleton" role="status" aria-label={isEnglish ? 'Loading topic details' : 'Cargando información del tema'}>
-                    {/* Three lines because the collapsed paragraph is clamped
-                        to exactly three, then the show-more toggle, then the
-                        source links. Measured against a settled block: these
-                        five rows reserve 146px where 155px arrives — 9px out,
-                        which the `layout` transition absorbs without anything
-                        below appearing to move. Reserving the prose alone came
-                        up 33px short, and the prose plus a `min-height: 92px`
-                        that guessed at the rest came up 63px short. That gap
-                        was the shove: the description lands on a fetch of its
-                        own, after the entity's, so whatever it is short by gets
-                        taken out of the list's position while it is being read. */}
+                    {/* A re-lookup, not the first one: the block is already
+                        open and holds its rows until the new paragraph
+                        replaces them in the same commit. Three lines because
+                        the collapsed paragraph is clamped to exactly three,
+                        then the show-more toggle, then the source links —
+                        146px where 155px arrives, and the settle carries
+                        those 9px. */}
                     <span />
                     <span />
                     <span />

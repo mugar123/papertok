@@ -133,6 +133,33 @@ test('the Wikipedia block arrives under the settle: its fold animates opacity on
 });
 
 /**
+ * Once open, the block stays open across a RE-lookup. `wikiRequestKey` carries
+ * the language and the localized name, so switching the app language on an
+ * institution (or a localized name landing late) starts a new lookup; gated on
+ * `!isWikiRequestPending` alone, that unmounted the block — a 480ms fold-out,
+ * the list rising — and mounted it again when the new paragraph came. Reported
+ * and reproduced 2026-09-09. Open once with content, the block holds its rows
+ * while the new lookup is out and swaps them for the prose in place, which is
+ * what the pre-3b96b3a code did and what the in-fold skeleton branch is for.
+ */
+test('the Wikipedia block opens once, and a re-lookup swaps its contents in place', async () => {
+  const jsx = (await read('./EntityExplorer.jsx')).replace(/^\s*\/\/.*$/gm, '');
+  assert.match(jsx, /const \[wikiBlockOpened, setWikiBlockOpened\] = useState\(false\);/);
+  // Adjusted during render — the documented way to derive state from a prop —
+  // so the commit that settles with content is the one that opens the block.
+  assert.match(
+    jsx,
+    /const wikiHasContent = Boolean\(wikiDescription \|\| entity\?\.homepage_url\);\s*if \(!isWikiRequestPending && wikiHasContent && !wikiBlockOpened\) setWikiBlockOpened\(true\);/,
+  );
+  assert.match(jsx, /const showWikiBlock = wikiBlockOpened && \(wikiHasContent \|\| isWikiRequestPending\);/,
+    'held open through a re-lookup, and closed only when a settled lookup finds nothing');
+  // Per entity, from closed: the next page's first lookup opens it again.
+  const reset = jsx.match(/setWikiInfo\(null\);([\s\S]{0,400})/);
+  assert.ok(reset && /setWikiBlockOpened\(false\);/.test(reset[1]), 'reset with the rest of the wiki state when the entity changes');
+  assert.match(jsx, /\{isWikiRequestPending \? \(\s*<div className="ehc-wiki-skeleton" role="status"/, 'the rows inside the block are what a re-lookup shows');
+});
+
+/**
  * The fold's removal is `AnimatePresence`'s own state update and never reaches
  * this component, so without a commit at that moment the ~155px the block held
  * drops in an unanimated reflow after its fade — the failure this whole change
