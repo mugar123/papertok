@@ -2185,6 +2185,44 @@ test('F9: the slack above the cap is GONE, and that is the measured number', asy
   assert.equal(await attempt(7), 'refused', 'and one above it must not');
 });
 
+test('finding 1: the heaviest legitimate CREATE at the cap still lands with the uid check', async () => {
+  // The create path is the only one the audit clause touched, and it had
+  // never been measured on its own: F1 and F9 measured renames. Measured on
+  // 2026-09-10 with validPinnedLists unrolled to ten entries (the shipped
+  // file cuts at six, so probing seven against it measures `size() <= 6`
+  // and nothing else): the heaviest create — six owned pins, born public,
+  // reservation and search entry in the same batch — tops out at six with
+  // `existsAfter` and at six with `getAfter(...).data.uid`. The swap costs
+  // one comparison and moves no ceiling. This test pins the consequence:
+  // at the cap the write lands, one above it never does.
+  await reset({ aliceProfile: false });
+  await seedOwnedLists(7);
+  const attempt = async (count) => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await deleteDoc(doc(db, 'userProfiles', ALICE));
+      await deleteDoc(doc(db, 'handles', 'alice'));
+      await deleteDoc(doc(db, 'userSearch', ALICE));
+    });
+    const db = asAlice();
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'userProfiles', ALICE), {
+      handle: 'alice', displayName: 'Alice', pinnedLists: ownedPins(count),
+      visibility: 'public', createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    });
+    batch.set(doc(db, 'handles', 'alice'), { uid: ALICE, createdAt: serverTimestamp() });
+    batch.set(doc(db, 'userSearch', ALICE), searchEntry('alice', 'alice'));
+    try {
+      await batch.commit();
+      return 'allowed';
+    } catch {
+      return 'refused';
+    }
+  };
+  assert.equal(await attempt(6), 'allowed', 'a create at the cap must land');
+  assert.equal(await attempt(7), 'refused', 'and one above it must not');
+});
+
 test('F9: the worst case — six pins, going private, leaving the index', async () => {
   // The most expensive write this ruleset accepts: the full pinned array, the
   // ownership get() per pin, the visibility clause AND the existsAfter that

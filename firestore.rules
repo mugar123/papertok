@@ -307,6 +307,13 @@ service cloud.firestore {
     // spent: the next clause added here takes the cap to five.
     // `tests/firestore.rules.test.js` measures both numbers so neither can move
     // unnoticed.
+    //
+    // Re-measured 2026-09-10 (validPinnedLists unrolled to ten): swapping the
+    // create's `existsAfter(handles)` for `getAfter(handles).data.uid` left
+    // both ceilings at six — create and rename. A `.matches()` on `photo` in
+    // validPublicProfile, on the other hand, took the rename-with-photo
+    // ceiling to FIVE, which is why the photo allowlist stays in the client
+    // (`cleanPhoto`, userProfileService.js) and is not enforced here.
     function profileSearchStateValid(uid) {
       return profileIsPublic(request.resource.data)
         ? searchIndexCoherentAfter(uid)
