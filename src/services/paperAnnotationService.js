@@ -35,6 +35,24 @@ export function canAnnotatePassage(quote) {
 }
 
 /**
+ * The same vocabulary the rewrite uses, for the same reason: an expired session
+ * fails inside `getIdToken` and never reaches the worker that would have named
+ * it, so without this the rail says «no se ha podido explicar este pasaje» to a
+ * reader whose only way forward is to sign in again.
+ */
+export function toAnnotationError(error, { cancelled = false } = {}) {
+  if (error instanceof PaperAnnotationError) return error;
+  if (error?.name === 'AbortError') {
+    return new PaperAnnotationError(cancelled ? 'AI_CANCELLED' : 'AI_TIMEOUT');
+  }
+  if (error?.name === 'WorkerApiAuthError') return new PaperAnnotationError('AI_AUTH_REQUIRED');
+  if (typeof error?.code === 'string' && error.code.startsWith('auth/')) {
+    return new PaperAnnotationError('AI_AUTH_REQUIRED');
+  }
+  return new PaperAnnotationError('AI_UNAVAILABLE');
+}
+
+/**
  * @returns {Promise<{note: string, model: string, remainingUses: number|null}>}
  */
 export async function annotatePassage(paper, {
@@ -88,12 +106,7 @@ export async function annotatePassage(paper, {
       remainingUses: typeof payload?.remainingUses === 'number' ? payload.remainingUses : null,
     };
   } catch (error) {
-    if (error instanceof PaperAnnotationError) throw error;
-    if (error?.name === 'AbortError') {
-      throw new PaperAnnotationError(signal?.aborted ? 'AI_CANCELLED' : 'AI_TIMEOUT');
-    }
-    if (error?.name === 'WorkerApiAuthError') throw new PaperAnnotationError('AI_AUTH_REQUIRED');
-    throw new PaperAnnotationError('AI_UNAVAILABLE');
+    throw toAnnotationError(error, { cancelled: Boolean(signal?.aborted) });
   } finally {
     clearTimeout(deadline);
     signal?.removeEventListener('abort', abortFromCaller);

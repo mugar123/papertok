@@ -262,6 +262,10 @@ const ERROR_COPY = {
       title: 'Se han acabado los usos de hoy',
       body: 'Los usos de IA se reponen mañana. Mientras tanto, el paper original sigue donde estaba.',
     },
+    AI_QUOTA_EXHAUSTED_PROVIDER: {
+      title: 'El servicio agotó su cuota de hoy',
+      body: 'El límite es del proveedor del modelo, no tuyo: tus usos siguen intactos. Suele liberarse en un rato.',
+    },
     AI_NOT_CONFIGURED: {
       title: 'La reescritura no está disponible',
       body: 'Esta función todavía no está activada aquí. No es culpa del paper.',
@@ -290,6 +294,22 @@ const ERROR_COPY = {
       title: 'Reescritura cancelada',
       body: 'Se detuvo antes de empezar a escribir.',
     },
+    AI_REQUEST_TOO_LARGE: {
+      title: 'El paper es demasiado grande para reescribirlo',
+      body: 'No cabe en una sola petición al modelo. El original sigue donde estaba.',
+    },
+    AI_SOURCE_UNAVAILABLE: {
+      title: 'No se pudo descargar el paper',
+      body: 'La fuente no contestó a tiempo. Suele ser pasajero: reintenta en un momento.',
+    },
+    AI_INVALID_REQUEST_UPSTREAM: {
+      title: 'El modelo rechazó este paper',
+      body: 'No es un fallo del servicio: con este documento la respuesta sería la misma. Prueba con otro nivel o con el original.',
+    },
+    AI_FALLBACK_BUDGET_EXHAUSTED: {
+      title: 'El presupuesto mensual de respaldo se agotó',
+      body: 'El modelo de reserva no puede trabajar más este mes. Vuelve a intentarlo cuando el principal esté disponible.',
+    },
     AI_UNAVAILABLE: {
       title: 'No se ha podido reescribir',
       body: 'Algo falló entre el lector y el modelo. Reintentar suele bastar.',
@@ -307,6 +327,10 @@ const ERROR_COPY = {
     AI_QUOTA_EXHAUSTED: {
       title: 'Today’s uses have run out',
       body: 'AI uses come back tomorrow. In the meantime, the original paper is still where it was.',
+    },
+    AI_QUOTA_EXHAUSTED_PROVIDER: {
+      title: 'The service has used up today’s quota',
+      body: 'The ceiling is the model provider’s, not yours: your own uses are untouched. It usually frees up before long.',
     },
     AI_NOT_CONFIGURED: {
       title: 'Rewriting is not available',
@@ -335,6 +359,22 @@ const ERROR_COPY = {
     AI_CANCELLED: {
       title: 'Rewrite cancelled',
       body: 'It stopped before any writing began.',
+    },
+    AI_REQUEST_TOO_LARGE: {
+      title: 'This paper is too large to rewrite',
+      body: 'It does not fit in a single request to the model. The original is still where it was.',
+    },
+    AI_SOURCE_UNAVAILABLE: {
+      title: 'The paper could not be downloaded',
+      body: 'The source did not answer in time. That is usually passing: try again in a moment.',
+    },
+    AI_INVALID_REQUEST_UPSTREAM: {
+      title: 'The model refused this paper',
+      body: 'Not a service failure: with this document the answer would be the same. Try another level, or the original.',
+    },
+    AI_FALLBACK_BUDGET_EXHAUSTED: {
+      title: 'The monthly backup budget has run out',
+      body: 'The reserve model cannot work again this month. Try once the main one is available.',
     },
     AI_UNAVAILABLE: {
       title: 'The paper could not be rewritten',
@@ -388,10 +428,14 @@ const ERROR_TONES = {
   AI_UNAVAILABLE: 'broken',
   AI_INVALID_RESPONSE: 'broken',
   AI_EMPTY_RESPONSE: 'broken',
+  AI_SOURCE_UNAVAILABLE: 'wait',
+  AI_FALLBACK_BUDGET_EXHAUSTED: 'wait',
   AI_AUTH_REQUIRED: 'closed',
   AI_NOT_CONFIGURED: 'closed',
   AI_INVALID_PAPER: 'closed',
   AI_REWRITE_NEEDS_FULL_TEXT: 'closed',
+  AI_REQUEST_TOO_LARGE: 'closed',
+  AI_INVALID_REQUEST_UPSTREAM: 'closed',
 };
 
 /**
@@ -407,6 +451,11 @@ const UNRETRYABLE_ERRORS = new Set([
   'AI_AUTH_REQUIRED',
   'AI_NOT_CONFIGURED',
   'AI_INVALID_PAPER',
+  // The paper does not shrink, the model's no is deterministic, and the month
+  // does not end because a button was pressed.
+  'AI_REQUEST_TOO_LARGE',
+  'AI_INVALID_REQUEST_UPSTREAM',
+  'AI_FALLBACK_BUDGET_EXHAUSTED',
 ]);
 
 /**
@@ -779,7 +828,11 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
       setStatus(result.incomplete ? 'incomplete' : 'ready');
     } catch (caught) {
       if (caught instanceof PaperRewriteError && caught.code === 'AI_CANCELLED') return;
-      setError(caught instanceof PaperRewriteError ? caught.code : 'AI_UNAVAILABLE');
+      // The whole error, not only its code: `quota.scope` is what tells the
+      // reader's own ceiling from the provider's, and those need opposite advice.
+      setError(caught instanceof PaperRewriteError
+        ? { code: caught.code, quota: caught.quota }
+        : { code: 'AI_UNAVAILABLE', quota: null });
       setStatus('error');
       // Most failures hand the use back, and the worker does it after the count
       // on the `meta` line was already sent. Re-reading is the only way the chip
@@ -1175,11 +1228,20 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
 
   const gateError = supportsRewrite ? null : 'AI_REWRITE_NEEDS_FULL_TEXT';
   const shownStatus = gateError ? 'error' : status;
-  const shownError = gateError || error;
+  const shownError = gateError || error?.code || null;
+  /**
+   * The same 429 means two opposite things. The reader's own ten uses run out
+   * until tomorrow and there is nothing to do; the model provider's ceiling is
+   * somebody else's and usually frees up in minutes — and it is the far more
+   * common of the two. Told they had spent their allowance, readers who had
+   * spent none of it stopped asking.
+   */
+  const providerQuota = shownError === 'AI_QUOTA_EXHAUSTED' && error?.quota?.scope === 'provider';
   const isStreaming = shownStatus === 'streaming';
-  const errorCopy = ERROR_COPY[isEnglish ? 'en' : 'es'][shownError]
+  const errorCopy = ERROR_COPY[isEnglish ? 'en' : 'es'][providerQuota ? 'AI_QUOTA_EXHAUSTED_PROVIDER' : shownError]
     || ERROR_COPY[isEnglish ? 'en' : 'es'].AI_UNAVAILABLE;
-  const canRetry = supportsRewrite && !UNRETRYABLE_ERRORS.has(shownError);
+  const errorTone = providerQuota ? 'wait' : (ERROR_TONES[shownError] || 'broken');
+  const canRetry = supportsRewrite && (providerQuota || !UNRETRYABLE_ERRORS.has(shownError));
 
   // One truth for all the floating chrome. A rewrite in flight overrides the
   // scroll state: the streaming indicator lives on the bar, so the bar (and
@@ -1476,7 +1538,7 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
                  an empty one: a rule down the side in the colour of what went
                  wrong, the code set in mono because that is machine data, then the
                  same two-line hierarchy the rest of the document uses. */
-              <div className="rd-error" role="alert" data-tone={ERROR_TONES[shownError] || 'broken'}>
+              <div className="rd-error" role="alert" data-tone={errorTone}>
                 <span className="rd-error-kicker">
                   <AlertCircle size={12} />
                   {copy.errorKicker}

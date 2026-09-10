@@ -7,7 +7,9 @@ import {
   PaperRewriteError,
   rewriteCacheKey,
   rewritePaper,
+  toRewriteError,
 } from './paperRewriteService.js';
+import { WorkerApiAuthError } from './workerApiClient.js';
 
 test('assembles events only once their line closes', () => {
   const parser = createNdjsonParser();
@@ -179,4 +181,41 @@ test('an arXiv copy still wins over the PubMed one', () => {
     getRewritablePdfUrl({ arxivId: '2401.00001', pmcid: 'PMC10000000' }),
     'https://arxiv.org/pdf/2401.00001.pdf',
   );
+});
+
+/* ============================================================
+   What a failure is called by the time the reader sees it
+   ============================================================ */
+
+/**
+ * The reader has copy for `AI_AUTH_REQUIRED` and hides the retry button behind
+ * it, because retrying is exactly what cannot help. An expired Firebase session
+ * fails inside `getIdToken`, never reaching the worker that would have named it,
+ * and arrived as `AI_UNAVAILABLE` — "something broke, try again" — for a reader
+ * whose only way forward was to sign in.
+ */
+test('an expired Firebase session maps to AI_AUTH_REQUIRED', () => {
+  assert.equal(
+    toRewriteError({ name: 'FirebaseError', code: 'auth/user-token-expired' }).code,
+    'AI_AUTH_REQUIRED',
+  );
+  assert.equal(
+    toRewriteError({ name: 'FirebaseError', code: 'auth/network-request-failed' }).code,
+    'AI_AUTH_REQUIRED',
+  );
+  assert.equal(toRewriteError(new WorkerApiAuthError()).code, 'AI_AUTH_REQUIRED');
+});
+
+test('a rewrite error the stream already named is never renamed', () => {
+  const named = new PaperRewriteError('AI_QUOTA_EXHAUSTED', { scope: 'provider' });
+  assert.equal(toRewriteError(named), named);
+  // The scope is what tells the reader's own ceiling from the provider's, and it
+  // only survives if the error object does.
+  assert.equal(toRewriteError(named).quota.scope, 'provider');
+});
+
+test('an abort is a timeout unless the caller asked for it', () => {
+  assert.equal(toRewriteError({ name: 'AbortError' }).code, 'AI_TIMEOUT');
+  assert.equal(toRewriteError({ name: 'AbortError' }, { cancelled: true }).code, 'AI_CANCELLED');
+  assert.equal(toRewriteError(new TypeError('Failed to fetch')).code, 'AI_UNAVAILABLE');
 });

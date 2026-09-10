@@ -1285,10 +1285,16 @@ export async function verifyFirebaseAccount(request, env) {
     return { ...identity, unlimitedAI: hasUnlimitedAI(env, identity) };
   } catch (error) {
     if (error instanceof WorkerAuthError) {
-      throw new AIExplanationError(
-        error.status === 503 ? 'AI_NOT_CONFIGURED' : 'AI_AUTH_REQUIRED',
-        error.status,
-      );
+      // Both of the verifier's 503s used to arrive as `AI_NOT_CONFIGURED`, and
+      // the reader's copy for that code says the feature is not switched on
+      // here — no retry offered. Only a missing key is actually that; Identity
+      // Toolkit being briefly unreachable is an outage, and this verifier sits
+      // in front of every AI route, so the whole feature read as "never coming"
+      // for as long as Google was down.
+      const code = error.status !== 503
+        ? 'AI_AUTH_REQUIRED'
+        : error.code === 'AUTH_NOT_CONFIGURED' ? 'AI_NOT_CONFIGURED' : 'AI_UNAVAILABLE';
+      throw new AIExplanationError(code, error.status);
     }
     throw error;
   }

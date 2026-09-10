@@ -168,6 +168,30 @@ export function createNdjsonParser() {
   };
 }
 
+/**
+ * What a failure is called by the time the reader sees it.
+ *
+ * The worker names its own refusals and those arrive as `PaperRewriteError`
+ * already; what this is for is the failures that never reach it. An expired or
+ * revoked session fails inside `getIdToken`, before a single byte leaves the
+ * browser, and collapsing that into `AI_UNAVAILABLE` told the reader that
+ * something had broken and to try again — when trying again was the one thing
+ * that could not work, and signing in was.
+ */
+export function toRewriteError(error, { cancelled = false } = {}) {
+  if (error instanceof PaperRewriteError) return error;
+  if (error?.name === 'AbortError') {
+    return new PaperRewriteError(cancelled ? 'AI_CANCELLED' : 'AI_TIMEOUT');
+  }
+  if (error?.name === 'WorkerApiAuthError') return new PaperRewriteError('AI_AUTH_REQUIRED');
+  // Firebase reports a revoked, expired or unreachable session through its own
+  // `auth/*` codes, which never travel over the wire.
+  if (typeof error?.code === 'string' && error.code.startsWith('auth/')) {
+    return new PaperRewriteError('AI_AUTH_REQUIRED');
+  }
+  return new PaperRewriteError('AI_UNAVAILABLE');
+}
+
 export async function rewritePaper(paper, level = 'university', {
   language = 'es',
   force = false,
@@ -297,12 +321,7 @@ export async function rewritePaper(paper, level = 'university', {
     if (!streamError) rewriteCache.set(cacheKey, result);
     return { ...result, incomplete: Boolean(streamError) };
   } catch (error) {
-    if (error instanceof PaperRewriteError) throw error;
-    if (error?.name === 'AbortError') {
-      throw new PaperRewriteError(signal?.aborted ? 'AI_CANCELLED' : 'AI_TIMEOUT');
-    }
-    if (error?.name === 'WorkerApiAuthError') throw new PaperRewriteError('AI_AUTH_REQUIRED');
-    throw new PaperRewriteError('AI_UNAVAILABLE');
+    throw toRewriteError(error, { cancelled: Boolean(signal?.aborted) });
   } finally {
     if (stallTimer) clearTimeout(stallTimer);
     signal?.removeEventListener('abort', abortFromCaller);
