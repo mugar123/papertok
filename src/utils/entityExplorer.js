@@ -55,7 +55,10 @@ export function filterAndSortEntityPapers(papers, { searchQuery = '', filters = 
     }
 
     if (!matchesCategory(paper, filters.category)) return false;
-    if (filters.peerReviewed && !paper.isPeerReviewed) return false;
+    // `peerReviewed` is the field `PaperBuilder` writes and every adapter feeds.
+    // The filter used to read a differently spelled flag that no paper ever
+    // carried, so turning the toggle on emptied the list.
+    if (filters.peerReviewed && paper.peerReviewed !== true) return false;
     if (minYear !== null && getPaperTimestamp(paper) < new Date(`${minYear}-01-01T00:00:00Z`).getTime()) return false;
     return true;
   });

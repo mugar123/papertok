@@ -19,7 +19,7 @@ const papers = [
     categories: ['quant-ph'],
     published: '2020-01-01',
     citationCount: 50,
-    isPeerReviewed: true,
+    peerReviewed: true,
   },
   {
     id: 'recent-cs',
@@ -28,7 +28,7 @@ const papers = [
     categories: ['cs.DC'],
     published: '2026-01-01',
     citationCount: 5,
-    isPeerReviewed: false,
+    peerReviewed: false,
   },
 ];
 
@@ -40,9 +40,23 @@ test('filters project papers by text and top-level category', () => {
 });
 
 test('applies peer-review and date filters to project papers', () => {
+  // The filter asked for a differently spelled flag that no adapter writes and
+  // `PaperBuilder` does not build: with it, every paper failed the test and the
+  // toggle emptied the list. The fixtures above now carry the field papers
+  // really have, and a reviewed paper inside the window must survive both.
+  const recent = {
+    id: 'recent-reviewed',
+    title: 'Fresh',
+    authors: [],
+    categories: ['cs.DC'],
+    published: `${new Date().getFullYear()}-01-01`,
+    citationCount: 1,
+    peerReviewed: true,
+  };
+
   assert.deepEqual(
-    filterAndSortEntityPapers(papers, { filters: { peerReviewed: true, dateRange: 'last_year' } }),
-    []
+    filterAndSortEntityPapers([...papers, recent], { filters: { peerReviewed: true, dateRange: 'last_year' } }).map(p => p.id),
+    ['recent-reviewed'],
   );
 });
 

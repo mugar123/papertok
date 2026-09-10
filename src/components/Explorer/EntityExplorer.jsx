@@ -2321,7 +2321,7 @@ export default function EntityExplorer({
                   </div>
                   <h3 className="eli-title">
                     <ScientificText>{paper.title}</ScientificText>
-                    {paper.isPeerReviewed && (
+                    {paper.peerReviewed && (
                       // The name is on the badge itself (the row is the focus
                       // stop, so the badge is not made focusable); the tooltip
                       // spells it out for a pointer.
