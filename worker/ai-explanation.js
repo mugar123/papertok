@@ -1317,6 +1317,9 @@ const REFUNDABLE_AI_CODES = new Set([
   // second — the source being unreachable, which is the same event
   // `AI_SOURCE_UNAVAILABLE` covers for the explainer.
   'AI_REWRITE_NEEDS_FULL_TEXT',
+  // `AI_CLIENT_GONE` is deliberately absent. A reader that closes the tab
+  // mid-rewrite got the answer it asked for and the provider billed for it;
+  // refunding would make hanging up the cheapest way to retry for free.
 ]);
 
 export function shouldRefundAIQuota(error) {

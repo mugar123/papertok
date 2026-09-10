@@ -486,6 +486,10 @@ export async function* streamModelSections(upstreamBody) {
     }
     yield { type: 'end', rawText, finishReason, firstTextAtMs };
   } finally {
+    // A consumer that stops pulling — the pump, because its own reader hung up —
+    // used to just drop the lock and leave the provider streaming into nobody.
+    // Cancelling closes the socket, which is what stops the meter running.
+    await reader.cancel?.().catch(() => {});
     reader.releaseLock?.();
   }
 }
@@ -706,7 +710,16 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
 
     const send = async (value) => {
       if (closed) return;
-      await writer.write(encoder.encode(ndjsonLine(value)));
+      try {
+        await writer.write(encoder.encode(ndjsonLine(value)));
+      } catch (error) {
+        // The only way a write fails here is that the other end is gone. It is
+        // not an outage and it is not our fault, so it must not look like either
+        // to the refund predicate: the rewrite was produced and billed for.
+        const gone = new AIExplanationError('AI_CLIENT_GONE', 499);
+        gone.cause = error;
+        throw gone;
+      }
     };
 
     /**
@@ -728,14 +741,19 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
     // The download, and then the model ingesting the PDF and thinking, together
     // outlast any reasonable client stall timeout before a single token exists.
     // A heartbeat proves the connection is alive through that silence.
-    const heartbeat = setInterval(() => {
-      void send({ type: 'ping', stage, elapsedMs: Date.now() - startedAt }).catch(() => {});
-    }, HEARTBEAT_INTERVAL_MS);
-
     // Armed around the model alone. Folding the download into the same budget
-    // would let a slow mirror eat the time the rewrite itself needs.
+    // would let a slow mirror eat the time the rewrite itself needs. Declared
+    // before the heartbeat because the heartbeat is what aborts it.
     const modelDeadline = new AbortController();
     let modelTimer = null;
+
+    const heartbeat = setInterval(() => {
+      void send({ type: 'ping', stage, elapsedMs: Date.now() - startedAt })
+        // During the model's silence the ping is the only write in flight, so it
+        // is the only thing that can discover the reader left. Nobody is waiting
+        // for the answer any more: stop paying for it.
+        .catch(() => modelDeadline.abort());
+    }, HEARTBEAT_INTERVAL_MS);
 
     try {
       const pdfBase64 = await fetchPaperPdf(paper.pdfUrl, PDF_FETCH_BUDGET_MS);
@@ -832,6 +850,9 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
         ...(sections.length === 0 && rawAll ? { rawHead: rawAll.slice(0, 400) } : {}),
       }));
     } catch (error) {
+      // Whatever went wrong, nothing is going to consume the rest of this run:
+      // cut the model off before doing anything else with the failure.
+      modelDeadline.abort();
       // Before the `send`, which is the call most likely to fail next: a reader
       // that has already hung up cannot be told anything, but the use it
       // reserved still has to come back.
@@ -860,7 +881,7 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
         durationMs: Date.now() - startedAt,
         stage,
         code,
-        outcome: 'stream_failed',
+        outcome: code === 'AI_CLIENT_GONE' ? 'client_gone' : 'stream_failed',
       }));
     } finally {
       clearInterval(heartbeat);

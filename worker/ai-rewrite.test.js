@@ -849,3 +849,58 @@ test('an oversized chunked rewrite body is cut off at the cap', { timeout: 10_00
     error => error.code === 'AI_REQUEST_TOO_LARGE' && error.status === 413,
   ));
 });
+
+/* ============================================================
+   The reader who leaves
+   ============================================================ */
+
+const settle = ms => new Promise(resolve => { setTimeout(resolve, ms); });
+
+/**
+ * A provider that keeps producing sections until somebody cancels it.
+ *
+ * Bounded at two hundred frames on purpose: if the hang-up goes unnoticed the
+ * pump writes them all and the test fails, rather than spinning forever.
+ */
+function endlessSseStream(onCancel) {
+  let produced = 0;
+  return new Response(new ReadableStream({
+    pull(controller) {
+      if (produced >= 200) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(new TextEncoder().encode(sseFrame(sectionLine('intro', `Section ${produced}.`))));
+      produced += 1;
+    },
+    cancel() { onCancel(); },
+  }), { headers: { 'content-type': 'text/event-stream' } });
+}
+
+test('a reader that hangs up after content keeps its use and cancels the model', { timeout: 15_000 }, async () => {
+  const state = newLedgerState();
+  let upstreamCancelled = false;
+
+  // The wait happens inside the harness so the doubles are still installed while
+  // the pump unwinds: the rewrite outlives the handler that returned it.
+  await withRewriteHarness({
+    provider: async () => endlessSseStream(() => { upstreamCancelled = true; }),
+  }, async () => {
+    const response = await handlePaperRewrite(rewriteRequest(), {
+      ...REWRITE_ENV,
+      REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
+    });
+    const reader = response.body.getReader();
+    await reader.read(); // meta
+    await reader.read(); // the first section
+    await reader.cancel();
+    await settle(200);
+  });
+
+  // The reader was handed a rewrite and then closed the tab. Gemini read the PDF
+  // and billed for it, so the use is spent: refunding it would make hanging up
+  // the cheapest way to retry for free.
+  assert.equal(state.release, 0);
+  // And nobody is listening any more, so the model must stop generating.
+  assert.equal(upstreamCancelled, true);
+});
