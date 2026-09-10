@@ -1264,20 +1264,13 @@
 .explorer-skeleton .ex-skel-row:nth-child(4) .ex-skel::after { animation-delay: 0.45s; }
 .explorer-skeleton .ex-skel-row:nth-child(5) .ex-skel::after { animation-delay: 0.48s; }
 
-/* An institution's Wikipedia paragraph rides the same sweep from its own
-   spans, so it is phased through those. */
+/* The project summary's rows (ProjectSummarySkeleton borrows the Wikipedia
+   block's line box: three lines and a toggle) ride the same sweep, phased
+   through their own spans. */
 .explorer-skeleton .ehc-wiki-skeleton span:nth-child(1)::after { animation-delay: 0.27s; }
 .explorer-skeleton .ehc-wiki-skeleton span:nth-child(2)::after { animation-delay: 0.3s; }
 .explorer-skeleton .ehc-wiki-skeleton span:nth-child(3)::after { animation-delay: 0.33s; }
 .explorer-skeleton .ehc-wiki-skeleton span:nth-child(4)::after { animation-delay: 0.36s; }
-.explorer-skeleton .ehc-wiki-skeleton span:nth-child(5)::after { animation-delay: 0.39s; }
-
-/* Reserved rather than live: the standing copy of the block, held open while
-   the entity resolves so the hero it belongs to does not grow underneath the
-   reader when the real one mounts. */
-.ehc-wiki--reserved {
-  width: 100%;
-}
 
 /* The authors tab of an institution: a round tile, a name, an affiliation. */
 .ex-skel-avatar { width: 40px; height: 40px; border-radius: var(--radius-full); }

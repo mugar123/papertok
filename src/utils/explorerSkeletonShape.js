@@ -47,11 +47,12 @@ export function hasAuthorsTab(type, entity = null) {
  *   height the frame the entity came (measured on T11090 from cold at
  *   1280×900: the body grew 109 → 234px in one frame, all of it the block).
  *   It is unreserved again now that the block ARRIVES INSTEAD OF APPEARING —
- *   it mounts when its lookup settles and unfolds from nothing
- *   (EntityExplorer.jsx). Reserving it as well would put the same complaint
- *   back from a new direction: the skeleton holds 146px, the live hero lands
- *   without the block because the lookup is still out, the settle SHRINKS the
- *   box by that much, and the unfold then grows it again — down, then up.
+ *   it mounts when its lookup settles and the hero's settle grows the box
+ *   around it (EntityExplorer.jsx). Reserving it as well would put the same
+ *   complaint back from a new direction: the skeleton holds 146px, the live
+ *   hero lands without the block because the lookup is still out, the settle
+ *   SHRINKS the box by that much, and the unfold then grows it again — down,
+ *   then up.
  *   Reserved space and an entrance animation are two answers to the same
  *   question, and only one of them can be right at a time. The summary used to be
  *   left unreserved on the grounds that a project "has no block it always

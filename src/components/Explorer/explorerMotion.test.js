@@ -266,7 +266,7 @@ test('the Wikipedia block waits on its rows; the local description is the fallba
 test('the skeleton sweeps at a constant speed, because it never starts or stops', async () => {
   const css = stripComments(await read('./EntityExplorer.css'));
   const sweeps = [...css.matchAll(/animation: exSkelSweep ([\d.]+s) (\S+) infinite;/g)];
-  assert.ok(sweeps.length >= 2, 'both the shapes and the wiki lines carry the sweep');
+  assert.ok(sweeps.length >= 2, 'both the shapes and the summary lines carry the sweep');
   for (const [, , easing] of sweeps) {
     assert.equal(easing, 'linear', 'a looping sweep must not ease at its ends');
   }

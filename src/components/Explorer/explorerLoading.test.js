@@ -45,7 +45,7 @@ test('the sweep keeps its phase down the page, now on the pseudo-element', async
   );
   rising(
     phasesOf(/\.explorer-skeleton \.ehc-wiki-skeleton span:nth-child\(\d\)::after \{ animation-delay: ([\d.]+)s; \}/g),
-    'the Wikipedia lines',
+    'the project summary lines',
   );
   // The list skeleton the live page paints while it loads more keeps its own.
   rising(
@@ -59,6 +59,14 @@ test('the sweep keeps its phase down the page, now on the pseudo-element', async
   // No phase rule is left on the block, where it would now delay nothing.
   assert.doesNotMatch(css, /\.ex-skel \{ animation-delay/);
   assert.doesNotMatch(css, /\.ex-skel-name \{ animation-delay/);
+});
+
+test('nothing is left of the page skeleton reserving the Wikipedia block', async () => {
+  const jsx = (await read('./EntityExplorer.jsx')).replace(/^\s*\/\/.*$/gm, '');
+  assert.doesNotMatch(jsx, /WikiBlockSkeleton/, "explorerSkeletonShape never answers 'wiki' any more, so the component was unreachable");
+  const css = stripComments(await read('./EntityExplorer.css'));
+  assert.doesNotMatch(css, /\.ehc-wiki--reserved/);
+  assert.doesNotMatch(css, /\.explorer-skeleton \.ehc-wiki-skeleton span:nth-child\(5\)/, 'no skeleton under the page skeleton has a fifth span (the in-block rows of a re-lookup do, and keep theirs)');
 });
 
 test('a skeleton row holds still instead of rising like the row it stands in for', async () => {

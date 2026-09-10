@@ -134,26 +134,6 @@ const OrcidCardSkeleton = () => (
 );
 
 /**
- * The Wikipedia paragraph before it has been fetched.
- *
- * The same five rows the live block uses while its own request is in flight —
- * three lines of clamped prose, the show-more toggle, the source links — so an
- * institution's skeleton hands over to the live hero without the description
- * moving.
- */
-const WikiBlockSkeleton = () => (
-  <div className="ehc-wiki is-loading ehc-wiki--reserved" aria-hidden="true">
-    <div className="ehc-wiki-skeleton">
-      <span />
-      <span />
-      <span />
-      <span className="ehc-wiki-skeleton-toggle" />
-      <span className="ehc-wiki-skeleton-links" />
-    </div>
-  </div>
-);
-
-/**
  * The project's summary box before the grant has answered. The live box is
  * three clamped lines of serif at 0.9375rem/1.6 and a show-more toggle, in a
  * box padded 16/16/10 — the same line box `.ehc-wiki-skeleton` already
@@ -1425,15 +1405,15 @@ export default function EntityExplorer({
             </div>
 
             {/* The block beside the header, and the clearest tell of which page
-                is loading: an author's ORCID card, an institution's Wikipedia
-                paragraph. A project carries neither — its summary is optional —
-                so it reserves nothing rather than inventing a block that would
-                then have to collapse. Placed here, inside
-                `.explorer-hero-content`, because that is where the live ones
-                are: hung off `.explorer-hero` instead it missed the container's
-                16px gap and measured against the wrong parent. */}
+                is loading: an author's ORCID card, a project's summary box.
+                The Wikipedia block is not reserved: it arrives under the
+                settle once its lookup settles (explorerSkeletonShape.js says
+                why a reservation and an arrival cannot both be right). Placed
+                here, inside `.explorer-hero-content`, because that is where
+                the live ones are: hung off `.explorer-hero` instead it missed
+                the container's 16px gap and measured against the wrong
+                parent. */}
             {shape.aside === 'orcid' && <OrcidCardSkeleton />}
-            {shape.aside === 'wiki' && <WikiBlockSkeleton />}
             {shape.aside === 'summary' && <ProjectSummarySkeleton />}
           </div>
 
