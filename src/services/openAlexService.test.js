@@ -726,6 +726,37 @@ test('the authorship match still beats the name search when the work is there', 
 });
 
 /**
+ * The work names the author but OpenAlex never linked an id to that
+ * authorship. Before 78cb22d a second search ran from OpenAlex's own spelling
+ * of the name; 78cb22d deleted it and left only the search already in flight
+ * from the CARD's spelling — an initialled "N. Cuello" where the work says
+ * "Nicolás Cuello" — which is the one more likely to miss. Both spellings are
+ * tried again: the card's first (it was already out), OpenAlex's if that misses.
+ */
+test('an authorship without an id falls back to a search from the spelling the work used', async () => {
+  const realFetch = openAlexClient.fetchImpl;
+  const { urls, impl } = recordingFetch([
+    ['works/doi:', () => new Response(JSON.stringify({
+      id: 'https://openalex.org/W1',
+      authorships: [{ author: { id: null, display_name: 'Nicolás Cuello' } }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })],
+    // The card's spelling misses; the work's spelling finds them.
+    ['authors?search=N.', () => new Response(JSON.stringify({ results: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })],
+    ['authors?search=Nicol', () => new Response(JSON.stringify({
+      results: [{ id: 'https://openalex.org/A5', display_name: 'Nicolás Cuello', works_count: 12, summary_stats: { h_index: 4 } }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })],
+  ]);
+  openAlexClient.fetchImpl = impl;
+  try {
+    const profile = await getAuthorProfileExact('N. Cuello', '2310.04521');
+    assert.equal(profile.id, 'https://openalex.org/A5', 'found from the spelling the work used');
+    assert.ok(urls.some((url) => url.includes('authors?search=Nicol')), 'the second search ran');
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+  }
+});
+
+/**
  * Measured 2026-09-09 on a warm institution: the skeleton stood for 30 ms —
  * two frames — before the hero replaced it, and the four numbers landed at
  * once inside the hero's own crossfade. A flash, not a wait. getEntityById

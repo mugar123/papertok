@@ -545,9 +545,17 @@ export async function getAuthorProfileExact(authorName, arxivId) {
            }
         }
         // The work named them but OpenAlex never linked an id to that
-        // authorship. The search already in flight is the answer; it was
-        // started from the name the reader clicked, which is the one the card
-        // shows, rather than from OpenAlex's spelling of it.
+        // authorship. The search already in flight — from the name the reader
+        // clicked, the card's spelling — is tried first because it is already
+        // out; if it misses, the work's own spelling of the name is the better
+        // query (78cb22d deleted this second search; the 2026-09-09 review put
+        // it back: "N. Cuello" misses where "Nicolás Cuello" does not).
+        if (bestMatch && bestMatch.display_name) {
+          const fromCard = await byName;
+          if (fromCard) return fromCard;
+          const fromWork = await getAuthorProfile(bestMatch.display_name).catch(() => null);
+          if (fromWork) return fromWork;
+        }
       }
     }
   } catch {
