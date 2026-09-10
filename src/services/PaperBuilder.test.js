@@ -173,6 +173,32 @@ test('deduplicates provider records by a stable arXiv identifier before title ma
   assert.ok(deduplicated[0].sources.enrichedBy.includes('huggingface'));
 });
 
+test('deduplication keeps the citation count whichever source comes first', () => {
+  // Adapters speak `citationsCount`; only `create` translates it. A raw duplicate
+  // reaching `merge` as the enrichment carried its count in the name `merge`
+  // never read, so arXiv-then-OpenAlex ended on a confirmed zero while
+  // OpenAlex-then-arXiv kept the 250.
+  const arx = PaperBuilder.create({
+    id: 'arxiv:2401.00001',
+    title: 'Same',
+    authors: [{ name: 'A' }],
+    sources: { primary: 'arxiv', enrichedBy: [] },
+  });
+  const oa = {
+    id: 'W1',
+    title: 'Same',
+    authors: [{ name: 'A' }],
+    arxivId: '2401.00001',
+    citationsCount: 250,
+    provider: 'openalex',
+    sources: { primary: 'openalex', enrichedBy: [] },
+  };
+
+  const [merged] = PaperBuilder.deduplicate([arx, oa]);
+  assert.equal(merged.citationCount, 250);
+  assert.equal(merged.citationCountKnown, true);
+});
+
 test('fills a missing abstract from the OpenAlex enrichment that already runs', () => {
   // Half of NASA's records and a tenth of Europe PMC's arrive without one, and a
   // card whose body reads "Resumen no disponible" is dead weight in a feed you

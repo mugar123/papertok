@@ -179,8 +179,12 @@ export class PaperBuilder {
     if (!merged.accessSource && enrichmentData.accessSource) merged.accessSource = enrichmentData.accessSource;
     
     // Merge numbers
-    if (enrichmentData.citationCount !== undefined) {
-      merged.citationCount = Math.max(merged.citationCount || 0, enrichmentData.citationCount);
+    // Adapters speak `citationsCount` and only `create` translates it, so a raw
+    // duplicate arriving through `deduplicate` carried its count in the name
+    // this branch never read.
+    const incomingCount = enrichmentData.citationCount ?? enrichmentData.citationsCount;
+    if (incomingCount !== undefined && incomingCount !== null) {
+      merged.citationCount = Math.max(merged.citationCount || 0, incomingCount);
       merged.citationCountKnown = enrichmentData.citationCountKnown ?? true;
     }
     if (enrichmentData.referenceCount !== undefined) {
