@@ -5,7 +5,7 @@ import {
   settleWithin,
   withStubbedFetch,
 } from '../test-support/deadlineHarness.js';
-import { fetchWithTimeout } from './openAireService.js';
+import { CACHE, fetchWithTimeout, getProjectDetails } from './openAireService.js';
 
 test('the deadline covers an OpenAIRE body that never finishes', async () => {
   // The worst shape of the family: the response comes back unread and
@@ -62,4 +62,67 @@ test('a cancelled project search still reads as a cancellation', async () => {
       'AbortError',
     );
   });
+});
+
+/**
+ * The only Explorer read with no cache: every return to a project paid a full
+ * OpenAIRE round trip with the skeleton on screen (2026-09-09 review). The
+ * same 24 h CACHE its two neighbours in this file use.
+ */
+test('getProjectDetails answers a second call from the cache without a request', async () => {
+  let calls = 0;
+  const stub = async () => {
+    calls++;
+    return new Response(JSON.stringify({
+      response: {
+        results: {
+          result: [{
+            header: { 'dri:objIdentifier': { $: 'corda__h2020::abc' } },
+            metadata: {
+              'oaf:entity': {
+                'oaf:project': {
+                  code: { $: '101000000' },
+                  acronym: { $: 'QUANTUMLEAP' },
+                  title: { $: 'Quantum leap' },
+                  startdate: { $: '2021-01-01' },
+                  enddate: { $: '2025-12-31' },
+                  totalcost: { $: '4998750' },
+                  fundedamount: { $: '4998750' },
+                  currency: { $: 'EUR' },
+                  fundingtree: { funder: { shortname: { $: 'EC' }, name: { $: 'European Commission' } } },
+                },
+              },
+            },
+          }],
+        },
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  CACHE.clear();
+  try {
+    await withStubbedFetch(stub, async () => {
+      const first = await getProjectDetails('101000000');
+      const second = await getProjectDetails('101000000');
+      assert.equal(first?.acronym, 'QUANTUMLEAP');
+      assert.deepEqual(second, first, 'the same object, from the cache');
+      assert.equal(calls, 1, 'one request for two calls');
+    });
+  } finally {
+    CACHE.clear();
+  }
+});
+
+test('getProjectDetails does not cache a miss', async () => {
+  let calls = 0;
+  const stub = async () => { calls++; return new Response('{}', { status: 404 }); };
+  CACHE.clear();
+  try {
+    await withStubbedFetch(stub, async () => {
+      assert.equal(await getProjectDetails('nope'), null);
+      assert.equal(await getProjectDetails('nope'), null);
+      assert.equal(calls, 2, 'a miss is asked again — OpenAIRE indexes late');
+    });
+  } finally {
+    CACHE.clear();
+  }
 });

@@ -53,6 +53,15 @@ function extractFunder(p) {
 
 export async function getProjectDetails(projectId) {
   if (!projectId) return null;
+  // The same 24 h cache the two lookups below keep. Without it this was the
+  // only Explorer read that paid a full round trip on every return, with the
+  // project's skeleton — the one that reserves worst — on screen for all of
+  // it (2026-09-09). A miss is not cached: OpenAIRE indexes late.
+  const cacheKey = `projectDetails_${projectId}`;
+  if (CACHE.has(cacheKey)) {
+    const cached = CACHE.get(cacheKey);
+    if (Date.now() - cached.timestamp < CACHE_TTL) return cached.data;
+  }
   const url = `https://api.openaire.eu/search/projects?format=json&size=1&grantID=${encodeURIComponent(projectId)}`;
   try {
     const response = await fetchWithTimeout(url);
@@ -106,7 +115,7 @@ export async function getProjectDetails(projectId) {
       }
     }
 
-    return {
+    const details = {
       id: p.code?.["$"],
       openaireId: res?.header?.["dri:objIdentifier"]?.["$"] || null,
       title: p.title?.["$"] || "Unknown Project",
@@ -127,6 +136,8 @@ export async function getProjectDetails(projectId) {
       measures,
       openAccess: String(p.oamandatepublications?.["$"]).toLowerCase() === 'true',
     };
+    CACHE.set(cacheKey, { data: details, timestamp: Date.now() });
+    return details;
   } catch (e) {
     console.error("Error fetching project details:", e);
     return null;
