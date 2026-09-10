@@ -1025,13 +1025,23 @@ service cloud.firestore {
 
     function validRateLimitDoc(action) {
       return (action == 'comments' || action == 'stubs' || action == 'reports')
-        && request.resource.data.keys().hasOnly(['lastAt', 'count'])
+        && request.resource.data.keys().hasOnly(['lastAt', 'count', 'lastId'])
         && request.resource.data.keys().hasAll(['lastAt', 'count'])
         // The stamp IS the mechanism: `throttleSatisfied` compares it against
         // request.time, so a backdated or future stamp must be unwritable.
         && request.resource.data.lastAt == request.time
         && request.resource.data.count is int
-        && request.resource.data.count >= 0;
+        && request.resource.data.count >= 0
+        // `lastId` names the ONE document this stamp vouches for (audit
+        // 2026-09-10, finding 7a). Optional in this deploy so that bundles
+        // still in the air keep writing `{ lastAt, count }`; the second
+        // deploy makes `throttleSatisfied` require it. 1500 is Firestore's
+        // document-id ceiling; the longest id the client stamps is a paper
+        // key (base64url of an identity of at most 600 characters).
+        && (!('lastId' in request.resource.data)
+          || request.resource.data.lastId is string
+            && request.resource.data.lastId.size() > 0
+            && request.resource.data.lastId.size() <= 1500);
     }
 
     // Intervals per action, server-enforced. Coarse on purpose: this is the

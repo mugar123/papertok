@@ -1355,6 +1355,29 @@ test('F3: the ledger accepts only known actions, with a well-typed count', async
     { lastAt: serverTimestamp(), count: -1 }));
 });
 
+test('finding 7a (first deploy): the ledger accepts a well-typed lastId, and nothing else new', async () => {
+  // The stamp is about to name the document it vouches for. This deploy
+  // only opens the allowlist so the client can start writing the field;
+  // the requirement lands in the second deploy, once every live bundle
+  // sends it (the F8 `visibility` pattern).
+  await resetSocial();
+  await assertSucceeds(setDoc(doc(asAlice(), 'users', ALICE, 'rateLimits', 'comments'),
+    { lastAt: serverTimestamp(), count: 1, lastId: 'c1' }));
+  // Still optional in this deploy.
+  await assertSucceeds(setDoc(doc(asBob(), 'users', BOB, 'rateLimits', 'comments'),
+    { lastAt: serverTimestamp(), count: 1 }));
+  // But when present it is a non-empty, bounded string.
+  await assertFails(setDoc(doc(asDave(), 'users', DAVE, 'rateLimits', 'comments'),
+    { lastAt: serverTimestamp(), count: 1, lastId: 7 }));
+  await assertFails(setDoc(doc(asDave(), 'users', DAVE, 'rateLimits', 'comments'),
+    { lastAt: serverTimestamp(), count: 1, lastId: '' }));
+  await assertFails(setDoc(doc(asDave(), 'users', DAVE, 'rateLimits', 'comments'),
+    { lastAt: serverTimestamp(), count: 1, lastId: 'x'.repeat(1501) }));
+  // The allowlist opened for one key, not for a parking spot.
+  await assertFails(setDoc(doc(asDave(), 'users', DAVE, 'rateLimits', 'comments'),
+    { lastAt: serverTimestamp(), count: 1, lastId: 'c1', smuggled: true }));
+});
+
 test('F3: a stub cannot be created in somebody else\'s name', async () => {
   await resetSocial({ stub: false });
   const db = asAlice();
