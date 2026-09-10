@@ -611,7 +611,11 @@ function streamHeaders(extraHeaders) {
   };
 }
 
-function replayCachedRewrite(cached, extraHeaders) {
+function replayCachedRewrite(cached, level, language, extraHeaders) {
+  // The cheap path has to be visible in the same stream as the expensive one:
+  // without a line of its own a cache hit is indistinguishable from a request
+  // that never happened, and the hit rate is the whole point of the cache.
+  console.info('AI rewrite', JSON.stringify({ kvHit: true, level, language }));
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     start(controller) {
@@ -751,6 +755,13 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
     // request, so from the retry onwards it is the name of the model that was
     // asked first, not of the one that answered.
     let activeModel = model;
+    // Where the wall clock went. A rewrite that takes ninety seconds is either
+    // downloading, waiting on a model that has not spoken yet, or writing, and
+    // `durationMs` alone cannot tell those apart — which is the first question
+    // anybody asks about a slow one.
+    let pdfMs = 0;
+    let pdfBytes = 0;
+    let upstreamStatus = 0;
     // What the heartbeat is currently waiting on. The reader shows it, because
     // "downloading the paper" and "the model is reading it" are a minute of
     // waiting either way and only one of them is worth staying for.
@@ -804,7 +815,13 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
     }, HEARTBEAT_INTERVAL_MS);
 
     try {
+      const pdfStartedAt = Date.now();
       const { base64: pdfBase64, reason: pdfReason } = await fetchPaperPdf(paper.pdfUrl, PDF_FETCH_BUDGET_MS);
+      pdfMs = Date.now() - pdfStartedAt;
+      // The file as it left the mirror, not as it travels: base64 is four
+      // characters per three bytes, and reporting the inflated number would put
+      // every paper a third closer to the cap than it is.
+      pdfBytes = pdfBase64 ? Math.floor(pdfBase64.replace(/=+$/, '').length * 3 / 4) : 0;
       // The paper arrived with a PDF and was accepted on it, so an empty download
       // is the source being unreachable, not the paper being unrewritable — a
       // stalled arXiv mirror reads the same as a paywall from here. The reader
@@ -851,6 +868,7 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
         await send({ type: 'ping', stage, elapsedMs: Date.now() - startedAt, model: activeModel });
         upstream = await askModel(fallback);
       }
+      upstreamStatus = upstream.status;
 
       stage = 'writing';
       for await (const event of streamModelSections(upstream.body)) {
@@ -925,6 +943,11 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
         firstTextAtMs: firstTextAt,
         finishReason,
         durationMs: Date.now() - startedAt,
+        pdfMs,
+        pdfBytes,
+        kvHit: false,
+        upstreamStatus,
+        refunded,
         // A rewrite that succeeded but was not stored is the truncation guard
         // firing, and it is the only way to see it happening from the logs.
         cached: cachedWrite,
@@ -967,6 +990,13 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
         rawLength,
         firstTextAtMs: firstTextAt,
         durationMs: Date.now() - startedAt,
+        pdfMs,
+        pdfBytes,
+        kvHit: false,
+        upstreamStatus,
+        // Read straight off the latch, so the line says what the ledger did
+        // rather than what the predicate would have said if asked again.
+        refunded,
         stage,
         code,
         ...(known && error.detail ? { detail: error.detail } : {}),
@@ -1013,7 +1043,7 @@ export async function handlePaperRewrite(request, env, extraHeaders = {}) {
   const cacheKey = await rewriteCacheKey(paper, level, language, model);
 
   const cached = await readCachedRewrite(env, cacheKey);
-  if (cached) return replayCachedRewrite(cached, extraHeaders);
+  if (cached) return replayCachedRewrite(cached, level, language, extraHeaders);
 
   // Last thing before the response commits, and deliberately so: everything
   // above is cheap and can still answer with a real status line, and everything

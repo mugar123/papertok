@@ -1109,6 +1109,107 @@ test('an oversized chunked rewrite body is cut off at the cap', { timeout: 10_00
 });
 
 /* ============================================================
+   What the logs can answer afterwards
+   ============================================================ */
+
+/** Every `AI rewrite` line a run wrote, parsed. */
+async function runRewriteCapturingLogs(harnessOptions, env, requestOverrides) {
+  const lines = [];
+  const originalInfo = console.info;
+  const originalWarn = console.warn;
+  const capture = (label, payload) => {
+    if (label === 'AI rewrite') {
+      try {
+        lines.push(JSON.parse(payload));
+      } catch {
+        // A line that is not the JSON blob is not what this is measuring.
+      }
+    }
+  };
+  console.info = capture;
+  console.warn = capture;
+  try {
+    const result = await runRewrite(harnessOptions, env, requestOverrides);
+    return { ...result, lines };
+  } finally {
+    console.info = originalInfo;
+    console.warn = originalWarn;
+  }
+}
+
+/**
+ * A rewrite that takes ninety seconds is either downloading, waiting on the
+ * model, or writing, and the log said only how long the whole thing took. Task 8
+ * measures the split in production; these are the fields it reads.
+ */
+test('a finished rewrite logs where its time and its bytes went', async () => {
+  const { lines } = await runRewriteCapturingLogs({
+    provider: async () => sseResponse([
+      sseFrame(sectionLine('intro', 'It began.')),
+      sseFrame('', { finishReason: 'STOP' }),
+    ]),
+  }, {
+    ...REWRITE_ENV,
+    AI_REWRITE_STORE: fakeRewriteStore(),
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
+  });
+
+  assert.equal(lines.length, 1);
+  const [logged] = lines;
+  assert.equal(typeof logged.pdfMs, 'number');
+  // `readablePdf` is the four bytes of a PDF header, and base64 is what actually
+  // travels to Gemini: the number has to be the download, not the encoding.
+  assert.equal(logged.pdfBytes, 4);
+  assert.equal(logged.kvHit, false);
+  assert.equal(logged.upstreamStatus, 200);
+  assert.equal(logged.refunded, false);
+});
+
+test('a replay says it never touched the model', async () => {
+  const store = fakeRewriteStore();
+  const env = {
+    ...REWRITE_ENV,
+    AI_REWRITE_STORE: store,
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
+  };
+  await runRewrite({
+    provider: async () => sseResponse([
+      sseFrame(sectionLine('intro', 'It began.')),
+      sseFrame('', { finishReason: 'STOP' }),
+    ]),
+  }, env);
+
+  const { lines } = await runRewriteCapturingLogs({
+    pdf: async () => { throw new Error('A cache hit must not download the PDF'); },
+    provider: async () => { throw new Error('A cache hit must not reach the model'); },
+  }, env);
+
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].kvHit, true);
+  assert.equal(lines[0].level, 'university');
+  assert.equal(lines[0].language, 'en');
+});
+
+test('a refund shows up in the line that reports the failure', async () => {
+  const { lines } = await runRewriteCapturingLogs({
+    pdf: async () => new Response('gone', { status: 404 }),
+    provider: async () => { throw new Error('The model must not be asked without a PDF'); },
+  }, {
+    ...REWRITE_ENV,
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
+  });
+
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].refunded, true);
+  assert.equal(lines[0].code, 'AI_REWRITE_NEEDS_FULL_TEXT');
+  // The download was attempted and failed: there is a duration, and no bytes.
+  assert.equal(typeof lines[0].pdfMs, 'number');
+  assert.equal(lines[0].pdfBytes, 0);
+  // Nothing was ever asked of the model.
+  assert.equal(lines[0].upstreamStatus, 0);
+});
+
+/* ============================================================
    The reader who leaves
    ============================================================ */
 
