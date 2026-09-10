@@ -130,14 +130,11 @@ export function buildRewritePrompt(paper, level, language = 'es') {
   const config = REWRITE_LEVELS[level];
   if (!config) throw new AIExplanationError('AI_INVALID_LEVEL', 400);
   const isEnglish = normalizeExplanationLanguage(language) === 'en';
-  const metadata = JSON.stringify({
-    title: paper.title,
-    authors: paper.authors,
-    year: paper.year,
-    doi: paper.doi,
-    journal: paper.journal,
-    categories: paper.categories,
-  }, null, 2);
+  // Identity only. Authors, journal and categories arrive from the client and
+  // are not part of the cache key, so a poisoned list would steer a rewrite that
+  // is then stored — and served to everybody else — under the honest key. The
+  // year is a number after normalization, which carries no instructions.
+  const metadata = JSON.stringify({ title: paper.title, year: paper.year, doi: paper.doi }, null, 2);
 
   const shared = isEnglish
     ? `Task: rewrite the attached paper so a reader at the stated level can read the paper itself, not a summary of it.
