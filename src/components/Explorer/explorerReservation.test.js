@@ -48,8 +48,8 @@ test('a query topic is born resolved rather than loading', async () => {
   // from CATEGORIES with no fetch either. Born loading, it painted the skeleton
   // for one commit and settled 109→146 DURING the page's own entrance.
   assert.match(jsx, /const localTopic = useMemo\(\s*\(\) => \(type === 'topic' \|\| type === 'concept' \? getLocalTopicEntity\(id\) : null\),\s*\[id, type\],\s*\);/);
-  assert.match(jsx, /const bornResolved = Boolean\(handedEntity\) \|\| Boolean\(localTopic\) \|\| \(type === 'topic' && isOpaqueQueryTopicText\(id\)\);/);
-  assert.match(jsx, /useState\(\(\) => \(bornResolved \? \(handedEntity \|\| localTopic \|\| resolveQueryTopicRoute\(id, searchParams\)\) : null\)\)/);
+  assert.match(jsx, /const bornResolved = Boolean\(handedEntity\) \|\| Boolean\(localTopic\) \|\| Boolean\(cachedEntity\) \|\| \(type === 'topic' && isOpaqueQueryTopicText\(id\)\);/);
+  assert.match(jsx, /useState\(\(\) => \(bornResolved \? \(handedEntity \|\| localTopic \|\| cachedEntity \|\| resolveQueryTopicRoute\(id, searchParams\)\) : null\)\)/);
   assert.match(jsx, /const \[isLoadingEntity, setIsLoadingEntity\] = useState\(\(\) => !bornResolved\);/);
   // And a navigation between entities takes the same shortcut, in the same
   // batch as the reset, so no skeleton commit ever paints.

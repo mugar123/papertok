@@ -113,7 +113,7 @@ test('the list is loading from the first live frame, so the empty-state copy nev
 
 test('the ORCID record and the impact score are requested together, declared before either starts', async () => {
   const jsx = await read('./EntityExplorer.jsx');
-  assert.match(jsx, /setEntity\(data \|\| handedEntity\);\s*setIsLoadingEntity\(false\);[\s\S]*?if \(wantsOrcid\) setIsLoadingOrcid\(true\);[\s\S]*?await Promise\.all\(\[\s*wantsRecentImpact \? loadRecentImpact\(\) : null,\s*wantsOrcid \? loadOrcid\(\) : null,\s*\]\);/);
+  assert.match(jsx, /setEntity\(data \|\| handedEntity \|\| cachedEntity\);\s*setIsLoadingEntity\(false\);[\s\S]*?if \(wantsOrcid\) setIsLoadingOrcid\(true\);[\s\S]*?await Promise\.all\(\[\s*wantsRecentImpact \? loadRecentImpact\(\) : null,\s*wantsOrcid \? loadOrcid\(\) : null,\s*\]\);/);
 });
 
 /**

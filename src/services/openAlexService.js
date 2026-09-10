@@ -1120,6 +1120,30 @@ export async function findInstitution({ rorUrl, name, aliases = [] }) {
 }
 
 /**
+ * The entity the persistent cache already holds for this route, or null —
+ * synchronously, for a page deciding what it is born with.
+ *
+ * `getEntityById` reads the same entry first, but it is async, and a page
+ * that awaits it has painted a skeleton by the time it answers. Measured
+ * 2026-09-09 on a warm institution: the skeleton stood for 30 ms — two frames
+ * — before the hero replaced it, a flash that reads as a glitch rather than
+ * as a wait. A page born from this peek paints its data on its first frame,
+ * the way one handed over from the search palette does; the load effect still
+ * runs and upgrades the record (an institution gains its ROR localisation
+ * there), so nothing is lost by not waiting.
+ *
+ * Authors and institutions only: topics are born from CATEGORIES already, and
+ * a project's record is OpenAIRE's, not this cache's. Only a FRESH entry
+ * qualifies — a stale one is `getEntityById`'s business, which revalidates.
+ */
+export function peekEntity(type, id) {
+  if (!id || (type !== 'author' && type !== 'institution')) return null;
+  const cleanId = String(id).includes('/') ? String(id).split('/').pop() : String(id);
+  const cached = readOpenAlexPersistent(`entity:${type}:${cleanId}`, ENTITY_CACHE_TTL_MS);
+  return cached && !cached.stale && cached.data ? cached.data : null;
+}
+
+/**
  * Fetch entity metadata by ID
  */
 export async function getEntityById(type, id) {

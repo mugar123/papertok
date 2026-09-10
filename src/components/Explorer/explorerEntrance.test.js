@@ -92,12 +92,12 @@ test('the explorer is born with the entity a link handed over, and treats its ow
   assert.match(jsx, /import \{ useParams, useNavigate, useSearchParams, useLocation \} from 'react-router-dom';/);
   assert.match(jsx, /import \{ handedEntityFor \} from '\.\.\/\.\.\/utils\/explorerHandover\.js';/);
   assert.match(jsx, /const handedEntity = useMemo\(\(\) => handedEntityFor\(type, id, location\.state\), \[id, location\.state, type\]\);/);
-  assert.match(jsx, /const bornResolved = Boolean\(handedEntity\) \|\| Boolean\(localTopic\) \|\| \(type === 'topic' && isOpaqueQueryTopicText\(id\)\);/);
-  assert.match(jsx, /useState\(\(\) => \(bornResolved \? \(handedEntity \|\| localTopic \|\| resolveQueryTopicRoute\(id, searchParams\)\) : null\)\)/);
-  // The load never puts a handed page back into the skeleton.
-  assert.match(jsx, /if \(handedEntity\) \{\s*setEntity\(handedEntity\);\s*setIsLoadingEntity\(false\);\s*\} else \{\s*setIsLoadingEntity\(true\);\s*setEntity\(null\);\s*\}/);
-  assert.match(jsx, /setEntity\(data \|\| handedEntity\);/);
-  assert.match(jsx, /\}, \[type, id, searchParams, entityReloadKey, handedEntity\]\);/);
+  assert.match(jsx, /const bornResolved = Boolean\(handedEntity\) \|\| Boolean\(localTopic\) \|\| Boolean\(cachedEntity\) \|\| \(type === 'topic' && isOpaqueQueryTopicText\(id\)\);/);
+  assert.match(jsx, /useState\(\(\) => \(bornResolved \? \(handedEntity \|\| localTopic \|\| cachedEntity \|\| resolveQueryTopicRoute\(id, searchParams\)\) : null\)\)/);
+  // The load never puts a handed or cached page back into the skeleton.
+  assert.match(jsx, /const bornWith = handedEntity \|\| cachedEntity;\s*if \(bornWith\) \{\s*setEntity\(bornWith\);\s*setIsLoadingEntity\(false\);\s*\} else \{\s*setIsLoadingEntity\(true\);\s*setEntity\(null\);\s*\}/);
+  assert.match(jsx, /setEntity\(data \|\| handedEntity \|\| cachedEntity\);/);
+  assert.match(jsx, /\}, \[type, id, searchParams, entityReloadKey, handedEntity, cachedEntity\]\);/);
 });
 
 /**
@@ -113,5 +113,14 @@ test('the explorer is born with the entity a link handed over, and treats its ow
  */
 test('a thrown fetch keeps the hero the palette already painted, instead of demolishing it', async () => {
   const jsx = (await read('./EntityExplorer.jsx')).replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
-  assert.match(jsx, /loadEntity\(\)\.catch\(error => \{\s*if \(isCancelled\) return;\s*console\.error\('Failed to load entity', error\);\s*setEntity\(handedEntity \|\| null\);\s*setEntityError\('ENTITY_LOAD_FAILED'\);\s*setIsLoadingEntity\(false\);\s*\}\);/);
+  assert.match(jsx, /loadEntity\(\)\.catch\(error => \{\s*if \(isCancelled\) return;\s*console\.error\('Failed to load entity', error\);\s*setEntity\(handedEntity \|\| cachedEntity \|\| null\);\s*setEntityError\('ENTITY_LOAD_FAILED'\);\s*setIsLoadingEntity\(false\);\s*\}\);/);
+});
+
+test('an entity already in the persistent cache is born resolved, like one handed over from the palette', async () => {
+  const jsx = (await read('./EntityExplorer.jsx')).replace(/^\s*\/\/.*$/gm, '');
+  assert.match(jsx, /import \{[^}]*\bpeekEntity\b[^}]*\} from '\.\.\/\.\.\/services\/openAlexService/);
+  assert.match(jsx, /const cachedEntity = useMemo\(\(\) => peekEntity\(type, id\), \[id, type\]\);/);
+  assert.match(jsx, /const bornResolved = Boolean\(handedEntity\) \|\| Boolean\(localTopic\) \|\| Boolean\(cachedEntity\) \|\| \(type === 'topic' && isOpaqueQueryTopicText\(id\)\);/);
+  assert.match(jsx, /useState\(\(\) => \(bornResolved \? \(handedEntity \|\| localTopic \|\| cachedEntity \|\| resolveQueryTopicRoute\(id, searchParams\)\) : null\)\)/,
+    'the handed entity still wins — it is the fresher of the two');
 });

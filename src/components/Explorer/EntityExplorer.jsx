@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, BadgeCheck, Check, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
-import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution, getEntityRecentImpact, getLocalTopicEntity, enrichAuthorInstitutionLocalization } from '../../services/openAlexService';
+import { getEntityById, peekEntity, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution, getEntityRecentImpact, getLocalTopicEntity, enrichAuthorInstitutionLocalization } from '../../services/openAlexService';
 import { isOpenAlexRateLimitError } from '../../services/openAlexClient';
 import { fetchPapersByIds, getAuthorPapers } from '../../services/arxivService';
 import { isScopusEnabled, PubmedAdapter, ScopusAdapter, SemanticScholarAdapter } from '../../services/adapters';
@@ -215,8 +215,15 @@ export default function EntityExplorer({
     () => (type === 'topic' || type === 'concept' ? getLocalTopicEntity(id) : null),
     [id, type],
   );
-  const bornResolved = Boolean(handedEntity) || Boolean(localTopic) || (type === 'topic' && isOpaqueQueryTopicText(id));
-  const [entity, setEntity] = useState(() => (bornResolved ? (handedEntity || localTopic || resolveQueryTopicRoute(id, searchParams)) : null));
+  // The fourth way to be born live (2026-09-09): the record is already in the
+  // persistent cache. Measured on a warm institution, born loading instead:
+  // the skeleton for 30 ms — two frames — then the hero replacing it, which
+  // reads as a flash rather than as a wait. The handed entity still wins when
+  // both exist; it is the fresher of the two. The load effect below runs
+  // either way and upgrades the record.
+  const cachedEntity = useMemo(() => peekEntity(type, id), [id, type]);
+  const bornResolved = Boolean(handedEntity) || Boolean(localTopic) || Boolean(cachedEntity) || (type === 'topic' && isOpaqueQueryTopicText(id));
+  const [entity, setEntity] = useState(() => (bornResolved ? (handedEntity || localTopic || cachedEntity || resolveQueryTopicRoute(id, searchParams)) : null));
   const [entityError, setEntityError] = useState(null);
   const [entityReloadKey, setEntityReloadKey] = useState(0);
   const [papers, setPapers] = useState([]);
@@ -598,8 +605,9 @@ export default function EntityExplorer({
 
     async function loadEntity() {
       setEntityError(null);
-      if (handedEntity) {
-        setEntity(handedEntity);
+      const bornWith = handedEntity || cachedEntity;
+      if (bornWith) {
+        setEntity(bornWith);
         setIsLoadingEntity(false);
       } else {
         setIsLoadingEntity(true);
@@ -719,7 +727,7 @@ export default function EntityExplorer({
         if (isCancelled) return;
       }
       
-      setEntity(data || handedEntity);
+      setEntity(data || handedEntity || cachedEntity);
       setIsLoadingEntity(false);
 
       // Both follow-up requests declare themselves before either starts, in
@@ -794,14 +802,14 @@ export default function EntityExplorer({
       // `null` would be silently pretending the upgrade succeeded. It stays
       // the true record of the failure for `retryEntity`, and for whatever
       // inline notice or telemetry reads it next.
-      setEntity(handedEntity || null);
+      setEntity(handedEntity || cachedEntity || null);
       setEntityError('ENTITY_LOAD_FAILED');
       setIsLoadingEntity(false);
     });
     return () => {
       isCancelled = true;
     };
-  }, [type, id, searchParams, entityReloadKey, handedEntity]);
+  }, [type, id, searchParams, entityReloadKey, handedEntity, cachedEntity]);
 
   useEffect(() => {
     if (!canLoadWikiInfo) {

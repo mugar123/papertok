@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { mapCrossrefInstitutionWork } from './crossrefInstitutionService.js';
-import { openAlexClient } from './openAlexClient.js';
+import { openAlexClient, writeOpenAlexPersistent } from './openAlexClient.js';
 import {
   dribblingFetch,
   settleWithin,
@@ -23,6 +23,7 @@ import {
   isOpenAlexEnrichmentId,
   mapOpenAlexEnrichmentWork,
   normalizeRecentImpactEntityId,
+  peekEntity,
   searchInstitutions,
   searchLocalTopics,
 } from './openAlexService.js';
@@ -700,5 +701,32 @@ test('the authorship match still beats the name search when the work is there', 
     assert.ok(!urls.some(url => url.includes('works?filter=doi:')), 'still no standby query');
   } finally {
     openAlexClient.fetchImpl = realFetch;
+  }
+});
+
+/**
+ * Measured 2026-09-09 on a warm institution: the skeleton stood for 30 ms —
+ * two frames — before the hero replaced it, and the four numbers landed at
+ * once inside the hero's own crossfade. A flash, not a wait. getEntityById
+ * reads this same entry first, but it is async, and by the time it answers
+ * the skeleton has painted. A page born from the entry paints its data on its
+ * first frame, the way one handed over from the search palette does.
+ */
+test('peekEntity answers the persistent cache synchronously, fresh entries only, authors and institutions only', () => {
+  const previousStorage = openAlexClient.storage;
+  const previousStore = openAlexClient.persistentStore;
+  const memory = new Map();
+  openAlexClient.storage = { getItem: (k) => memory.get(k) ?? null, setItem: (k, v) => memory.set(k, v), removeItem: (k) => memory.delete(k) };
+  openAlexClient.persistentStore = null;
+  try {
+    writeOpenAlexPersistent('entity:author:A5000000001', { id: 'https://openalex.org/A5000000001', display_name: 'Ada Lovelace', works_count: 3 });
+    assert.equal(peekEntity('author', 'https://openalex.org/A5000000001')?.display_name, 'Ada Lovelace', 'a full OpenAlex url is keyed by its last segment, like getEntityById');
+    assert.equal(peekEntity('author', 'A5000000001')?.works_count, 3, 'and a bare id finds the same entry');
+    assert.equal(peekEntity('author', 'A5000000002'), null, 'unknown: null, never a stub');
+    assert.equal(peekEntity('project', 'A5000000001'), null, 'projects come from OpenAIRE, never from here');
+    assert.equal(peekEntity('topic', 'A5000000001'), null, 'topics are born local already');
+  } finally {
+    openAlexClient.storage = previousStorage;
+    openAlexClient.persistentStore = previousStore;
   }
 });
