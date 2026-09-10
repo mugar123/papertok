@@ -4,7 +4,7 @@
 
 - Node.js 22
 - npm
-- A Firebase web project for authenticated flows
+- A Firebase web project for authenticated flows (the live one is wired in `src/services/firebase.js`; see below)
 - A Cloudflare account only when developing or deploying Worker functionality
 
 ## Setup
@@ -24,11 +24,15 @@ Frontend variables are public in the built JavaScript:
 
 | Variable | Purpose |
 | --- | --- |
-| `VITE_FIREBASE_*` | Firebase web configuration |
 | `VITE_PAPER_API_BASE_URL` | Cloudflare Worker base URL |
 | `VITE_REPORT_API_URL` | Legacy report API alias |
 | `VITE_SCOPUS_ENABLED` | Enables Scopus-backed browser flows. Declared `false` in `src/utils/deployFlags.js`, which is where the decision is made and reviewed; `vite build` fails when this variable disagrees with that declaration, so change the declaration first. Check `/health/scopus` on the Worker before ever declaring it on: with the flag on and the key refused, the feed queues calls that only ever fail. Scopus reaches Elsevier through the Deno Deploy egress in `proxy/README.md`, never from the Worker |
 | `VITE_UNPAYWALL_EMAIL` | Public contact email required by Unpaywall |
+
+The Firebase web configuration is not an environment variable: it is a literal in
+`src/services/firebase.js`. Those values are public by design (they ship in every bundle), and
+`authDomain` is `papertok.app` because Vercel proxies `/__/auth/*` to Firebase's sign-in handler
+(`vercel.json`); the domain and the rewrite have to change together, which is why both live in code.
 
 Never put secret provider tokens in a `VITE_*` variable. See `worker/README.md` for Worker
 secrets. OpenAlex is reached through the Worker's `/openalex/*` route for exactly this reason: since
