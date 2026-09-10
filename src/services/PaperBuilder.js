@@ -197,11 +197,22 @@ export class PaperBuilder {
       if (!merged.authors?.length) {
         merged.authors = enrichmentData.authors;
       } else {
-        merged.authors = merged.authors.map((author) => {
+        const candidates = enrichmentData.authors;
+        // Same work, same order on both sides: when the lists are the same
+        // length the POSITION is the identity, and the name only confirms it.
+        // Otherwise a name may carry an id only when exactly one candidate
+        // matches it — "J. Smith" against two Smiths keeps the slow door
+        // rather than opening the wrong one (2026-09-09 review).
+        const byPosition = candidates.length === merged.authors.length;
+        merged.authors = merged.authors.map((author, index) => {
           if (typeof author === 'string' || author?.id) return author;
-          const match = enrichmentData.authors.find(candidate => candidate?.id
+          const positional = byPosition ? candidates[index] : null;
+          if (positional?.id && matchesAuthorName(author?.name, positional?.name)) {
+            return { ...author, id: positional.id };
+          }
+          const matches = candidates.filter(candidate => candidate?.id
             && matchesAuthorName(author?.name, candidate?.name));
-          return match ? { ...author, id: match.id } : author;
+          return matches.length === 1 ? { ...author, id: matches[0].id } : author;
         });
       }
     }

@@ -226,6 +226,53 @@ test('an author OpenAlex does not name, or does not disambiguate, is left as it 
   assert.deepEqual(merged.authors, [{ name: 'Ada Lovelace', id: null }, { name: 'Grace Hopper', id: null }]);
 });
 
+/**
+ * Two co-authors sharing a surname and an initial. `matchesAuthorName` lets an
+ * initial match any part starting with that letter, so a first-match `find`
+ * handed BOTH of them the first "Wang, J." — executed against the real matcher
+ * during the 2026-09-09 review — and the id door opened the other person's
+ * page with no name check downstream. arXiv and OpenAlex list the same work in
+ * the same order, so when the two lists are the same length the position is
+ * the identity; otherwise only a UNIQUE name match may carry an id.
+ */
+test('co-authors sharing a surname get their own ids, by position', () => {
+  const base = PaperBuilder.create({
+    id: '2609.05134',
+    authors: [{ name: 'Jing Wang', id: null }, { name: 'Jun Wang', id: null }],
+  });
+  const merged = PaperBuilder.merge(base, {
+    authors: [{ name: 'Wang, J.', id: 'https://openalex.org/A1' }, { name: 'Wang, J.', id: 'https://openalex.org/A2' }],
+  }, 'openalex');
+  assert.deepEqual(merged.authors.map((a) => a.id), ['https://openalex.org/A1', 'https://openalex.org/A2']);
+});
+
+test('when the lists differ in length, an ambiguous name carries no id', () => {
+  const base = PaperBuilder.create({
+    id: '2609.05134',
+    authors: [{ name: 'J. Smith', id: null }],
+  });
+  const merged = PaperBuilder.merge(base, {
+    authors: [
+      { name: 'John Smith', id: 'https://openalex.org/A1' },
+      { name: 'Jane Smith', id: 'https://openalex.org/A2' },
+      { name: 'Grace Hopper', id: 'https://openalex.org/A3' },
+    ],
+  }, 'openalex');
+  assert.equal(merged.authors[0].id, null, 'two Smiths match: the door stays the slow one rather than the wrong one');
+});
+
+test('a position that does not match the name falls back to a unique match', () => {
+  // Same length, but OpenAlex lists them in the other order.
+  const base = PaperBuilder.create({
+    id: '2609.05134',
+    authors: [{ name: 'Ada Lovelace', id: null }, { name: 'Grace Hopper', id: null }],
+  });
+  const merged = PaperBuilder.merge(base, {
+    authors: [{ name: 'Hopper, G.', id: 'https://openalex.org/A2' }, { name: 'Lovelace, A.', id: 'https://openalex.org/A1' }],
+  }, 'openalex');
+  assert.deepEqual(merged.authors.map((a) => a.id), ['https://openalex.org/A1', 'https://openalex.org/A2']);
+});
+
 test('an id the paper already carries is never overwritten by the enrichment', () => {
   const base = PaperBuilder.create({
     id: 'openalex:W1',
