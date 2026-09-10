@@ -1494,6 +1494,11 @@ const OA_CONCEPT_MAP = {
   'q-fin': 'C144133560'
 };
 
+// What the entity screen waits before it paints without the list
+// (`ENTITY_PRIMARY_RENDER_BUDGET_MS`, EntityExplorer.jsx). Every deadline below
+// is carved out of it.
+const ENTITY_SCREEN_BUDGET_MS = 7000;
+
 /**
  * Fetch works for a specific entity
  * type: 'institution', 'concept', 'author'
@@ -1502,6 +1507,15 @@ const OA_CONCEPT_MAP = {
  */
 export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc', page = 1, searchQuery = '', filters = {}, entityName = '') {
   if (!id) return { papers: [], total: 0 };
+
+  // The screen cuts its own wait at 7000 ms (`ENTITY_PRIMARY_RENDER_BUDGET_MS`
+  // in EntityExplorer.jsx), and OpenAlex used to be allowed all seven of them —
+  // so on an institution the Crossref fallback started AFTER the page had
+  // already given up, and the reader got the empty state on every institution
+  // OpenAlex was slow about. 3500 + 3250 leaves 250 ms of margin for the
+  // client's own queue.
+  const startedAt = Date.now();
+  const primaryTimeoutMs = type === 'institution' ? 3500 : ENTITY_SCREEN_BUDGET_MS;
   
   const cleanId = id.includes('/') ? id.split('/').pop() : id;
   const isRor = type === 'institution' && (id.includes('ror.org') || !cleanId.startsWith('I'));
@@ -1553,7 +1567,7 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
   
   try {
     const data = await openAlexJson(url, {
-      timeoutMs: 7000,
+      timeoutMs: primaryTimeoutMs,
       retries: 0,
       cacheTtlMs: 5 * 60 * 1000,
       persistentKey: worksCacheKey,
@@ -1568,12 +1582,15 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
     console.error(`OpenAlex getWorksByEntity failed for ${type} ${id}`, err);
     if (type === 'institution') {
       try {
+        // Whatever is left of the screen's budget, never less than the 1500 ms
+        // below which asking is pointless.
+        const remainingMs = Math.max(1500, ENTITY_SCREEN_BUDGET_MS - (Date.now() - startedAt) - 250);
         return await getInstitutionWorksFromCrossref(
           entityName,
           page,
           searchQuery,
           filters,
-          crossrefUrl => fetchWithTimeout(crossrefUrl, 10000),
+          crossrefUrl => fetchWithTimeout(crossrefUrl, remainingMs),
         );
       } catch (fallbackError) {
         console.error(`Crossref institution fallback failed for ${entityName || id}`, fallbackError);

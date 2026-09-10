@@ -20,6 +20,7 @@ import {
   fetchPaperByWorkId,
   getAuthorProfileExact,
   getLocalTopicEntity,
+  getWorksByEntity,
   isOpenAlexEnrichmentId,
   MAX_ENRICHMENT_AUTHORS,
   mapOpenAlexEnrichmentWork,
@@ -780,5 +781,82 @@ test('peekEntity answers the persistent cache synchronously, fresh entries only,
   } finally {
     openAlexClient.storage = previousStorage;
     openAlexClient.persistentStore = previousStore;
+  }
+});
+
+
+/**
+ * OpenAlex stalled, Crossref fast: the two halves of an institution page's worst
+ * case. The stall has to outlast every budget in play — an OpenAlex that answers
+ * 503 on its own before the deadline never exercises the deadline at all, and
+ * the test would measure nothing.
+ *
+ * The OpenAlex half honours the abort signal, because the client's deadline IS
+ * an `AbortController`: a stub that ignored it would take its own sweet time
+ * whatever the timeout said.
+ */
+function slowOpenAlexThenCrossref(openAlexDelayMs, crossrefDelayMs) {
+  const openAlex = (url, options = {}) => new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => resolve(new Response('{}', { status: 503 })),
+      openAlexDelayMs,
+    );
+    options.signal?.addEventListener('abort', () => {
+      clearTimeout(timer);
+      reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+    }, { once: true });
+  });
+
+  const crossref = () => new Promise((resolve) => {
+    setTimeout(() => resolve(new Response(JSON.stringify({
+      message: {
+        items: [{
+          DOI: '10.1000/fallback',
+          title: ['A work Crossref knew about'],
+          author: [{ given: 'Ada', family: 'Researcher' }],
+          issued: { 'date-parts': [[2024, 3, 1]] },
+          'container-title': ['Journal of Fallbacks'],
+          type: 'journal-article',
+          'is-referenced-by-count': 4,
+        }],
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })), crossrefDelayMs);
+  });
+
+  return { openAlex, crossref };
+}
+
+/**
+ * The institution page cuts its own wait at 7000 ms (`EntityExplorer.jsx`), and
+ * OpenAlex was allowed all seven of them before the Crossref fallback was even
+ * asked. The fallback existed and could never arrive in time: the reader got the
+ * empty state on every institution OpenAlex was slow about. 3500 + 3250 leaves
+ * 250 ms of margin for the client's own queue.
+ */
+test('an institution page gets Crossref before the screen budget runs out', async () => {
+  const realOpenAlexFetch = openAlexClient.fetchImpl;
+  const realFetch = globalThis.fetch;
+  const { openAlex, crossref } = slowOpenAlexThenCrossref(30_000, 25);
+  openAlexClient.fetchImpl = openAlex;
+  globalThis.fetch = crossref;
+
+  const started = Date.now();
+  try {
+    const works = await getWorksByEntity(
+      'institution',
+      'I123',
+      'cited_by_count:desc',
+      1,
+      '',
+      {},
+      'Some University',
+    );
+    const elapsed = Date.now() - started;
+
+    assert.ok(works.papers.length > 0, 'the fallback answered');
+    assert.ok(elapsed < 7000, `the screen budget is 7000 ms and the answer took ${elapsed} ms`);
+  } finally {
+    openAlexClient.fetchImpl = realOpenAlexFetch;
+    globalThis.fetch = realFetch;
   }
 });
