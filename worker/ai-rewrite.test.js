@@ -4,6 +4,7 @@ import {
   buildRewritePrompt,
   buildRewriteSystemInstruction,
   cacheableFinish,
+  canonicalPdfUrl,
   createSectionAssembler,
   createSseLineSplitter,
   extractSseFinishReason,
@@ -236,6 +237,46 @@ test('the same paper and settings reuse one cache key', async () => {
   const second = await rewriteCacheKey({ ...paper, year: 1999 }, 'university', 'es', 'gemini-3.5-flash');
   // The year is metadata, not identity: it must not fragment the global cache.
   assert.equal(first, second);
+});
+
+/**
+ * One paper, one entry.
+ *
+ * `pdfUrl` is in the fingerprint because two different papers can share a title,
+ * but the *shape* of an arXiv URL is not part of what makes a paper: the feed
+ * builds `arxiv.org/pdf/2401.00001.pdf`, an OpenAlex record can arrive as
+ * `export.arxiv.org/pdf/2401.00001`, and a version suffix comes and goes as the
+ * authors upload. Each spelling opened its own thirty-day entry and paid for its
+ * own generation of the identical rewrite.
+ */
+test('the same arXiv paper hashes to one key whatever mirror named it', async () => {
+  const base = { title: 'T', arxivId: '2401.00001' };
+  const key = url => rewriteCacheKey({ ...base, pdfUrl: url }, 'simple', 'es', 'm');
+
+  const canonical = await key('https://arxiv.org/pdf/2401.00001');
+  assert.equal(await key('https://arxiv.org/pdf/2401.00001v2.pdf'), canonical);
+  assert.equal(await key('https://export.arxiv.org/pdf/2401.00001'), canonical);
+  assert.equal(await key('https://arxiv.org/pdf/2401.00001.pdf'), canonical);
+  assert.equal(await key('https://ARXIV.org/pdf/2401.00001V7'), canonical);
+
+  // A different paper is still a different key, and a URL that is not arXiv at
+  // all is left exactly as it came.
+  assert.notEqual(
+    await rewriteCacheKey({ ...base, arxivId: '2401.00002', pdfUrl: 'https://arxiv.org/pdf/2401.00002' }, 'simple', 'es', 'm'),
+    canonical,
+  );
+  assert.notEqual(await key('https://europepmc.org/articles/PMC1?pdf=render'), canonical);
+});
+
+test('canonicalises only what arXiv actually names the same document', () => {
+  assert.equal(canonicalPdfUrl('https://arxiv.org/pdf/2401.00001v2.pdf'), 'https://arxiv.org/pdf/2401.00001');
+  assert.equal(canonicalPdfUrl('https://export.arxiv.org/pdf/math/0211159'), 'https://arxiv.org/pdf/math/0211159');
+  // Not arXiv, not touched: a `?pdf=render` query is what makes Europe PMC serve
+  // the file at all, and trimming it would break the download.
+  const europePmc = 'https://europepmc.org/articles/PMC10000000?pdf=render';
+  assert.equal(canonicalPdfUrl(europePmc), europePmc);
+  assert.equal(canonicalPdfUrl(''), '');
+  assert.equal(canonicalPdfUrl(undefined), '');
 });
 
 test('salvages sections from a pretty-printed JSON array', () => {

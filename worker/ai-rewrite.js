@@ -510,12 +510,33 @@ function rewriteStore(env) {
   return null;
 }
 
+/**
+ * The one URL arXiv means by all of its spellings.
+ *
+ * `pdfUrl` belongs in the fingerprint — two papers can share a title, and the
+ * file is what actually gets rewritten — but the shape of an arXiv URL is not
+ * part of what makes a paper. The feed builds `arxiv.org/pdf/<id>.pdf`, an
+ * OpenAlex record can name `export.arxiv.org/pdf/<id>`, and the version suffix
+ * appears and disappears as the authors upload. Each spelling was opening its
+ * own thirty-day entry for the identical rewrite and paying to generate it.
+ *
+ * Only arXiv is folded, and only when the whole URL is one of its plain PDF
+ * paths: elsewhere the tail of the URL is load-bearing — Europe PMC serves the
+ * file at all only because of `?pdf=render` — so anything else comes back
+ * untouched.
+ */
+export function canonicalPdfUrl(url) {
+  const value = String(url || '');
+  const match = value.match(/^https:\/\/(?:export\.)?arxiv\.org\/pdf\/([\w.\-/]+?)(?:v\d+)?(?:\.pdf)?$/i);
+  return match ? `https://arxiv.org/pdf/${match[1].toLowerCase()}` : value;
+}
+
 export async function rewriteCacheKey(paper, level, language, model) {
   const fingerprint = await sha256(JSON.stringify({
     title: paper.title,
     doi: paper.doi,
     arxivId: paper.arxivId,
-    pdfUrl: paper.pdfUrl,
+    pdfUrl: canonicalPdfUrl(paper.pdfUrl),
   }));
   return `${REWRITE_PROMPT_VERSION}:${model}:${language}:${level}:${fingerprint}`;
 }
