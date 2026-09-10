@@ -227,3 +227,38 @@ test('GET is not how you ask for an annotation', async () => {
   );
   assert.equal(response.status, 405);
 });
+
+/** A body that arrives in pieces, which is how a `content-length` cap is dodged. */
+function chunked(bytes, size = 8_192) {
+  return new ReadableStream({
+    start(controller) {
+      for (let i = 0; i < bytes.length; i += size) controller.enqueue(bytes.subarray(i, i + size));
+      controller.close();
+    },
+  });
+}
+
+test('an oversized chunked passage is cut off at the cap', { timeout: 10_000 }, async () => {
+  const ledger = recordingLedger();
+  const bytes = new TextEncoder().encode(JSON.stringify({ ...PASSAGE, context: 'x'.repeat(21_000) }));
+  const request = new Request(ROUTE, {
+    method: 'POST',
+    headers: { origin: ORIGIN, authorization: 'Bearer test-token' },
+    body: chunked(bytes),
+    duplex: 'half',
+  });
+
+  // The model double is the watchdog here: without it a body that gets through
+  // reaches the real Gemini endpoint and the run hangs on the open internet.
+  const { result: response, calls } = await withModel(
+    modelSaid('no debería llegar aquí'),
+    () => withCachedIdentity(() => reportApi.fetch(request, annotationEnv(ledger))),
+  );
+
+  // Twenty-one kilobytes against a twenty-thousand-byte cap, announced by
+  // nothing: the reader of the body is what has to stop.
+  assert.equal(calls.length, 0);
+  assert.equal(response.status, 413);
+  assert.equal((await response.json()).code, 'AI_REQUEST_TOO_LARGE');
+  assert.deepEqual(ledger.actions, []);
+});

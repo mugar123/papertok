@@ -33,6 +33,7 @@ import {
   shouldRefundAIQuota,
   verifyFirebaseAccount,
 } from './ai-explanation.js';
+import { readBoundedJson } from './bounded-body.js';
 
 export const REWRITE_PROMPT_VERSION = 'paper-rewrite-v1';
 const DEFAULT_REWRITE_MODEL = 'gemini-3.5-flash';
@@ -884,10 +885,11 @@ export async function handlePaperRewrite(request, env, extraHeaders = {}) {
 
   const account = await verifyFirebaseAccount(request, env);
   const uid = account.uid;
-  const payload = await request.json().catch(() => null);
-  if (!payload || JSON.stringify(payload).length > MAX_REQUEST_BYTES) {
-    throw new AIExplanationError('AI_INVALID_REQUEST', 400);
-  }
+  const payload = await readBoundedJson(request, MAX_REQUEST_BYTES, {
+    tooLarge: () => new AIExplanationError('AI_REQUEST_TOO_LARGE', 413),
+    invalid: () => new AIExplanationError('AI_INVALID_REQUEST', 400),
+  });
+  if (!payload || typeof payload !== 'object') throw new AIExplanationError('AI_INVALID_REQUEST', 400);
 
   const level = cleanText(payload.level, 30);
   if (!isRewriteLevel(level)) throw new AIExplanationError('AI_INVALID_LEVEL', 400);

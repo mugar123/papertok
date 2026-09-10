@@ -6,6 +6,7 @@ import {
   microsToUsd,
   usdToMicros,
 } from './kimi-budget-ledger.js';
+import { readBoundedBytes, readBoundedJson } from './bounded-body.js';
 import { peekRequestQuota, releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.js';
 import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.js';
 
@@ -382,8 +383,10 @@ export async function fetchPaperPdf(pdfUrl, timeoutMs = AI_REQUEST_BUDGETS.pdfOn
     const contentType = response.headers.get('content-type') || '';
     const contentLength = Number(response.headers.get('content-length') || 0);
     if (!contentType.toLowerCase().includes('pdf') || contentLength > MAX_PDF_BYTES) return null;
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    if (!bytes.length || bytes.length > MAX_PDF_BYTES) return null;
+    // `content-length` is the server's word for it, and a chunked response gives
+    // none: the cap has to hold against the bytes themselves.
+    const bytes = await readBoundedBytes(response, MAX_PDF_BYTES);
+    if (!bytes?.length) return null;
     return bytesToBase64(bytes);
   } catch {
     return null;
@@ -1430,10 +1433,11 @@ export async function handleAIExplanation(request, env, { now = Date.now } = {})
   if (contentLength > MAX_REQUEST_BYTES) throw new AIExplanationError('AI_REQUEST_TOO_LARGE', 413);
   const account = await verifyFirebaseAccount(request, env);
   const uid = account.uid;
-  const payload = await request.json().catch(() => null);
-  if (!payload || JSON.stringify(payload).length > MAX_REQUEST_BYTES) {
-    throw new AIExplanationError('AI_INVALID_REQUEST', 400);
-  }
+  const payload = await readBoundedJson(request, MAX_REQUEST_BYTES, {
+    tooLarge: () => new AIExplanationError('AI_REQUEST_TOO_LARGE', 413),
+    invalid: () => new AIExplanationError('AI_INVALID_REQUEST', 400),
+  });
+  if (!payload || typeof payload !== 'object') throw new AIExplanationError('AI_INVALID_REQUEST', 400);
   const level = cleanText(payload.level, 30);
   if (!LEVELS[level]) throw new AIExplanationError('AI_INVALID_LEVEL', 400);
   const language = normalizeExplanationLanguage(payload.language);

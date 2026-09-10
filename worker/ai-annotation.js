@@ -10,6 +10,7 @@ import {
   shouldRefundAIQuota,
   verifyFirebaseAccount,
 } from './ai-explanation.js';
+import { readBoundedJson } from './bounded-body.js';
 
 /**
  * One passage, explained where the reader is standing.
@@ -199,10 +200,11 @@ export async function handlePassageAnnotation(request, env) {
   const contentLength = Number(request.headers.get('content-length') || 0);
   if (contentLength > MAX_REQUEST_BYTES) throw new AIExplanationError('AI_REQUEST_TOO_LARGE', 413);
   const account = await verifyFirebaseAccount(request, env);
-  const payload = await request.json().catch(() => null);
-  if (!payload || JSON.stringify(payload).length > MAX_REQUEST_BYTES) {
-    throw new AIExplanationError('AI_INVALID_REQUEST', 400);
-  }
+  const payload = await readBoundedJson(request, MAX_REQUEST_BYTES, {
+    tooLarge: () => new AIExplanationError('AI_REQUEST_TOO_LARGE', 413),
+    invalid: () => new AIExplanationError('AI_INVALID_REQUEST', 400),
+  });
+  if (!payload || typeof payload !== 'object') throw new AIExplanationError('AI_INVALID_REQUEST', 400);
 
   const level = cleanText(payload.level, 30);
   if (!isAnnotationLevel(level)) throw new AIExplanationError('AI_INVALID_LEVEL', 400);

@@ -1,6 +1,7 @@
 import { XMLParser } from 'fast-xml-parser';
 import { filterRelevantQueryTopicPapers } from '../src/utils/queryTopicSearch.js';
 import { applyEmailDeliveryLedgerAction } from './email-delivery-ledger.js';
+import { readBoundedJson as readBoundedRequestJson } from './bounded-body.js';
 
 const SUBSCRIPTION_PREFIX = 'notification:subscription:';
 const DELIVERY_STATE_PREFIX = 'notification:delivery-state:';
@@ -90,47 +91,10 @@ function cleanText(value, maxLength = 300) {
 }
 
 async function readBoundedJson(request, maximumBytes = MAX_PREFERENCES_REQUEST_BYTES) {
-  const declaredLength = Number(request.headers.get('content-length') || 0);
-  if (Number.isFinite(declaredLength) && declaredLength > maximumBytes) {
-    throw new EmailNotificationError('EMAIL_REQUEST_TOO_LARGE', 413);
-  }
-  let bytes;
-  if (request.body?.getReader) {
-    const reader = request.body.getReader();
-    const chunks = [];
-    let byteLength = 0;
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        byteLength += value.byteLength;
-        if (byteLength > maximumBytes) {
-          await reader.cancel();
-          throw new EmailNotificationError('EMAIL_REQUEST_TOO_LARGE', 413);
-        }
-        chunks.push(value);
-      }
-    } finally {
-      reader.releaseLock();
-    }
-    bytes = new Uint8Array(byteLength);
-    let offset = 0;
-    for (const chunk of chunks) {
-      bytes.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-  } else {
-    const fallbackBytes = new TextEncoder().encode(await request.text());
-    if (fallbackBytes.byteLength > maximumBytes) {
-      throw new EmailNotificationError('EMAIL_REQUEST_TOO_LARGE', 413);
-    }
-    bytes = fallbackBytes;
-  }
-  try {
-    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
-  } catch {
-    throw new EmailNotificationError('EMAIL_INVALID_REQUEST', 400);
-  }
+  return readBoundedRequestJson(request, maximumBytes, {
+    tooLarge: () => new EmailNotificationError('EMAIL_REQUEST_TOO_LARGE', 413),
+    invalid: () => new EmailNotificationError('EMAIL_INVALID_REQUEST', 400),
+  });
 }
 
 function escapeHtml(value) {

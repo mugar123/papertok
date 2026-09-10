@@ -818,3 +818,34 @@ test('the rewrite prompt carries only identity metadata, never client-controlled
   assert.doesNotMatch(sent, /Ignore previous instructions/);
   assert.match(sent, new RegExp(paper.title));
 });
+
+/** A body that arrives in pieces, which is how a `content-length` cap is dodged. */
+function chunkedBody(bytes, size = 65_536) {
+  return new ReadableStream({
+    start(controller) {
+      for (let i = 0; i < bytes.length; i += size) controller.enqueue(bytes.subarray(i, i + size));
+      controller.close();
+    },
+  });
+}
+
+test('an oversized chunked rewrite body is cut off at the cap', { timeout: 10_000 }, async () => {
+  const bytes = new TextEncoder().encode(JSON.stringify({
+    paper: { title: paper.title, pdfUrl: paper.pdfUrl, abstract: 'x'.repeat(120_000) },
+    level: 'university',
+    language: 'en',
+  }));
+  const request = new Request('https://papertok-report-api.example/ai/rewrite', {
+    method: 'POST',
+    headers: { authorization: 'Bearer test-token' },
+    body: chunkedBody(bytes),
+    duplex: 'half',
+  });
+
+  await withRewriteHarness({
+    provider: async () => { throw new Error('a refused body must never reach the model'); },
+  }, () => assert.rejects(
+    handlePaperRewrite(request, REWRITE_ENV),
+    error => error.code === 'AI_REQUEST_TOO_LARGE' && error.status === 413,
+  ));
+});
