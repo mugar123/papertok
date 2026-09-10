@@ -149,14 +149,18 @@
    gradient still closes at the hero's bottom edge. The image is on a
    pseudo-element with a FIXED box, and fixed is the whole point — a
    percentage is what made it move. -96px is the -20% the old box started at
-   on a hero at its resting 481px. 720px is not that box's height (that was
-   577); it is chosen to outlast the hero at every height it takes — 481 at
-   rest, ~700 with the Wikipedia paragraph expanded — so the picture never
-   runs out from under the mask and leaves a hard edge. The crop moves by a
-   few dozen pixels of a 1536px-tall blurred image at 10% opacity, which is
-   why a number that survives every hero beats one that matches today's.
-   30% for the mask's solid stop, not 40%: the gradient used to run over the
-   taller box, so its solid part reached ~28% of the hero. */
+   on a hero at its resting 481px.
+
+   720px is neither that box's height (that was 577) nor the hero's. It puts
+   the picture's bottom edge at 624px, and the tallest hero measured — an
+   institution with the Wikipedia paragraph expanded — is 721. It does not
+   need to reach: the mask above is linear from solid at 30% to nothing at
+   100%, so at 624 of 721 it is already down to 19% of an opacity that is
+   itself 0.1. The picture ends at under 2% of its own weight — where nothing
+   can see it end — and every pixel added below it would be blurred at 48px
+   and then thrown away by the mask. 30% for the mask's solid stop, not 40%:
+   the gradient used to run over the taller box, so its solid part reached
+   ~28% of the hero. */
 .ehc-bg-blur {
   position: absolute;
   inset: 0;
