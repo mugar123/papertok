@@ -117,7 +117,8 @@ export async function submitReport({ targetPath, targetAuthorUid, reason, note }
   const noteText = typeof note === 'string' ? note.trim().slice(0, REPORT_NOTE_MAX) : '';
 
   const batch = api.batch(api.database);
-  batch.set(api.newReportRef(api.database), {
+  const reportRef = api.newReportRef(api.database);
+  batch.set(reportRef, {
     reporterUid: uid,
     targetPath: path,
     targetAuthorUid: authorUid,
@@ -126,9 +127,11 @@ export async function submitReport({ targetPath, targetAuthorUid, reason, note }
     status: 'open',
     createdAt: api.now(),
   });
+  // The stamp names the report it vouches for; the rules compare `lastId`
+  // against the created document's id, so one stamp covers one report.
   batch.set(
     api.document(api.database, 'users', uid, 'rateLimits', 'reports'),
-    { lastAt: api.now(), count: api.countIncrement(1) },
+    { lastAt: api.now(), count: api.countIncrement(1), lastId: reportRef.id },
     { merge: true },
   );
   await batch.commit();

@@ -61,6 +61,9 @@ test('a report batches the document and its throttle stamp', async () => {
     status: 'open', createdAt: 'NOW',
   });
   assert.equal(ops[1].path, 'users/u1/rateLimits/reports');
+  assert.equal(ops[1].data.lastId, 'auto-1',
+    'the stamp names the report it vouches for (finding 7a)');
+  assert.deepEqual(ops[1].options, { merge: true });
 });
 
 test('an empty note is dropped, not written as an empty string', async () => {
