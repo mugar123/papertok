@@ -371,17 +371,28 @@ export class PaperBuilder {
       ].filter(Boolean);
       const allKeys = [...stableKeys, heuristicKey].filter(Boolean);
 
-      // 2. Find existing match
-      const matchKey = allKeys.find(key => mergedMap.has(key)) || null;
+      // 2. Every group any of our keys already points at.
+      //
+      // A record carrying two identifiers is the BRIDGE between groups that had
+      // no key in common — arXiv under its id, Crossref under its DOI, and the
+      // OpenAlex work that knows both. Taking only the first matching key merged
+      // into one group and then repointed the other group's keys at the result,
+      // so that group fell out of the map and its paper was silently dropped.
+      const groups = [...new Set(allKeys.map(key => mergedMap.get(key)).filter(Boolean))];
 
       // 3. Merge or Add
-      if (matchKey) {
-        const existing = mergedMap.get(matchKey);
-        // We use merge to combine the two. existing is the base, paper is the "enrichment"
-        // We might want to prefer arXiv's PDF, but Elsevier's publication status
-        const merged = this.merge(existing, paper, paper.provider || paper.sources?.primary);
+      if (groups.length > 0) {
+        // Fold the groups into each other first, then the incoming record.
+        // We use merge to combine them. The first group is the base, everything
+        // else is the "enrichment": we might want to prefer arXiv's PDF, but
+        // Elsevier's publication status.
+        let base = groups[0];
+        for (const other of groups.slice(1)) {
+          base = this.merge(base, other, other.provider || other.sources?.primary);
+        }
+        const merged = this.merge(base, paper, paper.provider || paper.sources?.primary);
         for (const [key, value] of mergedMap.entries()) {
-          if (value === existing) mergedMap.set(key, merged);
+          if (groups.includes(value)) mergedMap.set(key, merged);
         }
         
         // Ensure both keys point to the same merged object to prevent future duplicates missing the link

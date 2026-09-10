@@ -199,6 +199,57 @@ test('deduplication keeps the citation count whichever source comes first', () =
   assert.equal(merged.citationCountKnown, true);
 });
 
+/**
+ * The bridge case. A and B share no key at all — different identifiers,
+ * different titles — so they open two groups. C carries BOTH identifiers and is
+ * the only record that can join them, and `deduplicate` took the first matching
+ * key alone: C folded into B, then repointed A's arXiv key at the result, and A
+ * fell out of the map entirely.
+ */
+const BRIDGE_A = {
+  id: 'arxiv:2401.00002',
+  arxivId: '2401.00002',
+  title: 'Original title',
+  authors: [{ name: 'A' }],
+  sources: { primary: 'arxiv', enrichedBy: [] },
+};
+const BRIDGE_B = {
+  id: '10.1000/bridge',
+  doi: '10.1000/bridge',
+  title: 'Revised title',
+  authors: [{ name: 'A' }],
+  sources: { primary: 'crossref', enrichedBy: [] },
+};
+const BRIDGE_C = {
+  id: 'W9',
+  doi: '10.1000/bridge',
+  arxivId: '2401.00002',
+  title: 'Revised title',
+  authors: [{ name: 'A' }],
+  sources: { primary: 'openalex', enrichedBy: [] },
+};
+
+test('a record carrying both identifiers folds the two groups into one', () => {
+  const out = PaperBuilder.deduplicate([PaperBuilder.create(BRIDGE_A), BRIDGE_B, BRIDGE_C]);
+
+  assert.equal(out.length, 1);
+  assert.equal(out[0].doi, '10.1000/bridge');
+  assert.equal(out[0].arxivId, '2401.00002');
+});
+
+test('a record with only a stable key is merged, never dropped', () => {
+  // No authors, so no heuristic key: the arXiv id is the record's only thread
+  // back into the map, and it was the one the bridge overwrote.
+  const out = PaperBuilder.deduplicate([
+    PaperBuilder.create({ ...BRIDGE_A, authors: [] }),
+    BRIDGE_B,
+    BRIDGE_C,
+  ]);
+
+  assert.equal(out.length, 1);
+  assert.ok(out[0].sources.enrichedBy.includes('arxiv'), 'the arXiv record was folded in, not discarded');
+});
+
 test('fills a missing abstract from the OpenAlex enrichment that already runs', () => {
   // Half of NASA's records and a tenth of Europe PMC's arrive without one, and a
   // card whose body reads "Resumen no disponible" is dead weight in a feed you
