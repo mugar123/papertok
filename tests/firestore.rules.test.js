@@ -238,6 +238,31 @@ test('a reserved handle cannot be claimed at all', async () => {
   }
 });
 
+test('a profile cannot be born on top of somebody else\'s reservation', async () => {
+  // Alice holds handles/alice. Bob writes a profile that names that handle
+  // and does not touch the reservation at all: `existsAfter()` was satisfied
+  // by Alice's document, so the profile landed — and the Worker, deleting
+  // Bob's account, freed Alice's handle (audit 2026-09-10, finding 1). The
+  // reservation after the batch has to be the caller's, not just present.
+  await reset();
+  const db = asBob();
+  await assertFails(setDoc(doc(db, 'userProfiles', BOB), {
+    handle: 'alice', displayName: 'Bob', pinnedLists: [], visibility: 'private',
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }));
+  // Absence still refuses, as it did with existsAfter: getAfter() on a
+  // document that does not exist after the batch is an evaluation error.
+  await assertFails(setDoc(doc(db, 'userProfiles', BOB), {
+    handle: 'nobody', displayName: 'Bob', pinnedLists: [], visibility: 'private',
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }));
+  let stored;
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    stored = (await getDoc(doc(context.firestore(), 'handles', 'alice'))).data();
+  });
+  assert.equal(stored.uid, ALICE, 'the reservation never changed hands');
+});
+
 test('an account cannot hold two reservations by renaming', async () => {
   await reset();
   const db = asAlice();

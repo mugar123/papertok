@@ -393,11 +393,17 @@ service cloud.firestore {
         && 'visibility' in request.resource.data
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time
-        // The reservation has to land in the same batch, or the profile
-        // claims a handle nobody holds.
-        && existsAfter(
+        // The reservation has to land in the same batch AND be the caller's.
+        // `existsAfter` alone was satisfied by somebody else's reservation,
+        // so a profile could name a handle another account holds — and the
+        // Worker, deleting that profile, freed the other account's handle
+        // (audit 2026-09-10, finding 1). `getAfter` on a document that does
+        // not exist after the batch is an evaluation error, which denies:
+        // absence is still refused, exactly as before. Same read, one more
+        // comparison; the pin cap measured six before and after (Task 2).
+        && getAfter(
           /databases/$(database)/documents/handles/$(request.resource.data.handle)
-        )
+        ).data.uid == request.auth.uid
         // A profile born private must not be born indexed, and one born public
         // must not inherit an entry that says something else (F9).
         && profileSearchStateValid(profileUid);

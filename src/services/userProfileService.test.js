@@ -559,11 +559,16 @@ test('RULES: a user cannot claim a handle for someone else', async () => {
 
 test('RULES: a profile cannot claim a handle it does not hold', async () => {
   const block = ruleBlock(await loadRules(), '/userProfiles/{profileUid}');
-  // Create: the reservation must exist after the batch.
-  assert.match(block, /existsAfter\(\s*\/databases\/\$\(database\)\/documents\/handles\/\$\(request\.resource\.data\.handle\)\s*\)/);
+  const create = block.slice(block.indexOf('allow create:'), block.indexOf('allow update:'));
+  const update = block.slice(block.indexOf('allow update:'), block.indexOf('allow delete:'));
+  assert.ok(create && update, 'the create and update grants are where expected');
+  // Create: the reservation must exist after the batch AND carry the caller's
+  // uid — bare existence was somebody else's reservation (audit 2026-09-10).
+  assert.match(create, /getAfter\(\s*\/databases\/\$\(database\)\/documents\/handles\/\$\(request\.resource\.data\.handle\)\s*\)\.data\.uid == request\.auth\.uid/);
+  assert.doesNotMatch(create, /existsAfter\(\s*\/databases\/\$\(database\)\/documents\/handles\//);
   // Update: a handle change must both claim the new one and free the old one.
-  assert.match(block, /getAfter\([\s\S]*?handles\/\$\(request\.resource\.data\.handle\)[\s\S]*?\)\.data\.uid == request\.auth\.uid/);
-  assert.match(block, /!existsAfter\(\s*\/databases\/\$\(database\)\/documents\/handles\/\$\(resource\.data\.handle\)\s*\)/);
+  assert.match(update, /getAfter\(\s*\/databases\/\$\(database\)\/documents\/handles\/\$\(request\.resource\.data\.handle\)\s*\)\.data\.uid == request\.auth\.uid/);
+  assert.match(update, /!existsAfter\(\s*\/databases\/\$\(database\)\/documents\/handles\/\$\(resource\.data\.handle\)\s*\)/);
 });
 
 test('RULES: a client cannot set orcid or verified on itself', async () => {
