@@ -75,6 +75,16 @@ const OPENALEX_ENRICHMENT_SELECT = [
   'abstract_inverted_index',
 ].join(',');
 
+/**
+ * How many of a work's authorships travel into the enrichment. The select has
+ * to ask for the whole array (OpenAlex refuses a subfield), but nothing after
+ * it needs more than the authors a card can show: the graft (PaperBuilder)
+ * matches against names the paper already has. Unbounded, a 2,000-author
+ * collaboration paper mapped to ~150K chars of `authors` — over the persistent
+ * store's per-entry cap — so it was never cached across sessions.
+ */
+export const MAX_ENRICHMENT_AUTHORS = 50;
+
 function normalizeDoi(value) {
   return String(value || '').trim().replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '');
 }
@@ -131,7 +141,7 @@ export function mapOpenAlexEnrichmentWork(work) {
   // Absent rather than empty when the work has no authorships: `merge` fills a
   // gap with this list, and an empty one would erase the authors a card is
   // already showing.
-  const authorships = Array.isArray(work.authorships) ? work.authorships : [];
+  const authorships = Array.isArray(work.authorships) ? work.authorships.slice(0, MAX_ENRICHMENT_AUTHORS) : [];
   const authors = authorships.length > 0
     ? authorships.map(authorship => ({
       name: authorship?.author?.display_name || 'Unknown',

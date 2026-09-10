@@ -21,6 +21,7 @@ import {
   getAuthorProfileExact,
   getLocalTopicEntity,
   isOpenAlexEnrichmentId,
+  MAX_ENRICHMENT_AUTHORS,
   mapOpenAlexEnrichmentWork,
   normalizeRecentImpactEntityId,
   peekEntity,
@@ -578,6 +579,26 @@ test('the enrichment carries the authors with their OpenAlex ids', () => {
 test('a work with no authorships enriches without an authors key', () => {
   const mapped = mapOpenAlexEnrichmentWork({ id: 'https://openalex.org/W123' });
   assert.equal('authors' in mapped.enrichment, false, 'nothing to graft is not the same as an empty list');
+});
+
+/**
+ * Collaboration papers carry 1,000–3,000 authorships. Mapped whole, a
+ * 2,000-author work serialises to ~150K chars of `authors` alone — over the
+ * 150,000-char cap a persistent entry may have (openAlexClient.js), so it was
+ * silently dropped and re-fetched every session (2026-09-09 review). The graft
+ * only needs candidates for the names a card already shows, and a card never
+ * shows thousands; fifty keeps the entry under 5K and the first fifty authors
+ * — the ones a reader can actually reach — get their door.
+ */
+test('the mapped authorships are capped, in authorship order', () => {
+  const authorships = Array.from({ length: 2000 }, (_, i) => ({
+    author: { id: `https://openalex.org/A${i}`, display_name: `Author ${i}` },
+  }));
+  const mapped = mapOpenAlexEnrichmentWork({ id: 'https://openalex.org/W1', authorships });
+  assert.equal(mapped.enrichment.authors.length, MAX_ENRICHMENT_AUTHORS);
+  assert.equal(mapped.enrichment.authors[0].id, 'https://openalex.org/A0');
+  assert.equal(mapped.enrichment.authors[MAX_ENRICHMENT_AUTHORS - 1].id, `https://openalex.org/A${MAX_ENRICHMENT_AUTHORS - 1}`);
+  assert.ok(JSON.stringify(mapped.enrichment).length < 20_000, 'and the entry stays far under the persistent cap');
 });
 
 test('SOURCE: the enrichment request asks OpenAlex for the authorships', async () => {
