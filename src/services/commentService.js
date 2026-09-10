@@ -105,12 +105,15 @@ function commentReference(api, paperKey, commentId) {
   return api.document(api.database, 'papers', paperKey, 'comments', commentId);
 }
 
-function stampInto(batch, api, uid, action) {
+function stampInto(batch, api, uid, action, lastId) {
   // `merge` makes the same call a create the first time and an update after,
   // which is exactly the pair of rules that implements the interval.
+  // `lastId` is the id of the document this stamp vouches for: the rules
+  // compare it against the created document's id, and since a batch holds
+  // one write per document, one stamp can only ever cover one create.
   batch.set(
     api.document(api.database, 'users', uid, 'rateLimits', action),
-    { lastAt: api.now(), count: api.countIncrement(1) },
+    { lastAt: api.now(), count: api.countIncrement(1), lastId },
     { merge: true },
   );
 }
@@ -157,11 +160,11 @@ export async function createComment({ anchor, paper, authorHandle, text, replyTo
       createdAt: api.now(),
       createdBy: uid,
     });
-    stampInto(batch, api, uid, 'stubs');
+    stampInto(batch, api, uid, 'stubs', anchor.key);
   }
   const commentRef = api.newCommentRef(api.database, anchor.key);
   batch.set(commentRef, body);
-  stampInto(batch, api, uid, 'comments');
+  stampInto(batch, api, uid, 'comments', commentRef.id);
   await batch.commit();
   return { id: commentRef.id, comment: { ...body, createdAt: new Date() } };
 }

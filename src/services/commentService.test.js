@@ -60,6 +60,9 @@ test('a comment on an existing thread batches exactly comment + stamp', async ()
   });
   assert.equal(ops[1].path, 'users/u1/rateLimits/comments');
   assert.equal(ops[1].data.lastAt, 'NOW');
+  // The stamp names the comment it vouches for: the rules refuse a stamp
+  // that does not, and a batch cannot stamp twice (finding 7a).
+  assert.equal(ops[1].data.lastId, 'auto-1');
   assert.deepEqual(ops[1].options, { merge: true });
   assert.equal(result.id, 'auto-1');
 });
@@ -85,6 +88,9 @@ test('the first comment creates the stub and both stamps in one commit', async (
   assert.equal(stub.canonicalKey, 'arxiv:2401.12345');
   assert.equal(stub.createdBy, 'u1');
   assert.equal(stub.createdAt, 'NOW');
+  const stamps = spy.log.filter(entry => entry.op === 'set' && entry.path.includes('/rateLimits/'));
+  assert.deepEqual(stamps.map(entry => entry.data.lastId), [anchor.key, 'auto-1'],
+    'the stub stamp names the stub, the comment stamp names the comment');
   assert.equal(spy.log.filter(entry => entry.op === 'commit').length, 1);
 });
 
