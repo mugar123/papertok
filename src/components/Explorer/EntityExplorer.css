@@ -756,8 +756,11 @@
      remounted by expanding it, only reclassed — and deliberately an animation
      on the element itself rather than a presence wrapper around the swap: the
      wrapper cost a React commit boundary, and that defeated the `layout`
-     projection on `.ehc-wiki-fold` (the block stopped animating its height and
-     the list flashed 40px). The reduced-motion block below already names
+     projection `.ehc-wiki-fold` carried at the time (the block stopped
+     animating its height and the list flashed 40px). Past tense: that fold
+     animates opacity only now and the hero's settle owns its space, so what
+     stands here is the record of why the wrapper was rejected, not a
+     projection still there to defeat. The reduced-motion block below names
      `.ehc-wiki p`, so this is switched off there with everything else. */
   animation: wikiProseIn 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
 }

@@ -67,42 +67,17 @@ const ENTITY_SUPPLEMENT_RENDER_BUDGET_MS = 3500;
 // folded and the chevron by the name opens it on the reader's own press.
 const EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS = 4;
 
-// How the Wikipedia block's fold CLOSES (its opening stays on the arrival
-// curve, inline on the element).
-//
-// The number that matters here is not the duration, it is the worst single
-// frame: the block is ~160px tall and everything below it travels that far, so
-// whatever the curve does at its steepest is what the reader sees as a jolt.
-// Four measurements, same probe (`explorer-loading-probe.mjs wikiexit`), same
-// topic, reading the fold's own frames:
-//
-//   [0.16, 1, 0.3, 1]   @ 420ms -> -31.9px  the arrival curve, front-loaded:
-//                                           43% of the travel in three frames,
-//                                           then 20px crawling over 300ms
-//   [0.77, 0, 0.175, 1] @ 280ms -> -39.7px  right shape, wrong arithmetic — it
-//                                           holds and settles, but the catalog's
-//                                           ease-in-out has a very steep middle
-//                                           and 280ms leaves too few frames to
-//                                           spend the peak over. WORSE than what
-//                                           it replaced.
-//   [0.4, 0, 0.2, 1]    @ 400ms -> -20.9px  gentler peak, 28 frames
-//   [0.4, 0, 0.2, 1]    @ 480ms -> -16.0px  what is here
-//
-// So: an ease-in-out, because what moves is the list below and it has to LAND
-// (the house exit curve would back-load it and end at full speed — right for a
-// page that is gone by then, wrong here); a gentle one, because the peak IS the
-// problem; and long enough that the peak has somewhere to go. 480ms is the top
-// of the catalog's drawer budget, which is the right bracket for a 160px block
-// — 60ms slower than before for half the jolt.
-//
-// Reading the probe after this change: its headline `biggestSingleFrameMove`
-// may now report a POSITIVE move in the first frames. That is the hero settling
-// as content arrives, not the fold — the fold is the negative run, and it is
-// the one to compare.
 // The ORCID experience panel's collapse. What travels is the page under
 // the panel, and it has to land, so the space rides a gentle ease-in-out
 // while the contents leave on the house exit curve. 300ms because this
 // is a click's answer — the reader is waiting on it.
+//
+// The curve itself was chosen by measurement on the Wikipedia fold, back when
+// that one still closed its own height (four probe runs, written up in
+// `plans/README.md`): what a collapse costs the reader is its worst single
+// frame — travel × steepness ÷ frames — not its duration, and a steep
+// ease-in-out given too few frames measured WORSE than the front-loaded curve
+// it replaced. Shortening this is no free way to make it feel quicker.
 const EXPERIENCE_FOLD_OUT = {
   opacity: { duration: 0.16, ease: [0.4, 0, 1, 1] },
   height: { duration: 0.3, ease: [0.4, 0, 0.2, 1] },

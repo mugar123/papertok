@@ -47,7 +47,7 @@ test('the hero settles between its heights instead of snapping at the handover',
   // the expo-out spent 26% of an ORCID arrival in a single frame (35px of 134,
   // 70px of 268 at a quarter of the CPU); the ease-in-out halved that share
   // (34px of 268) and took the skeleton settle from a 17px worst step to 8.
-  // The same reasoning, and the same curve, as WIKI_FOLD_OUT.
+  // The same reasoning, and the same curve, as EXPERIENCE_FOLD_OUT's height.
   // The same ref on the skeleton's body and on the live one: the remembered
   // height belongs to the slot, so the handover between the two is a settle.
   // The body and not the hero, so the tab strip after it moves with the box
