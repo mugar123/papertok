@@ -698,6 +698,17 @@ async function requestModelStream({ env, paper, level, language, pdfBase64, mode
 }
 
 /**
+ * The refusals worth asking a second model about.
+ *
+ * All three are the provider saying "not now" rather than "not this": a busy
+ * pool, an outage, or flash's own daily ceiling — none of which the lighter
+ * model necessarily shares. Everything else is deterministic about the request
+ * itself (a malformed body, a missing key, a model that does not exist), and
+ * retrying those buys the identical no after a second wait.
+ */
+const RETRY_ON_FALLBACK_MODEL = new Set(['AI_BUSY', 'AI_UNAVAILABLE', 'AI_QUOTA_EXHAUSTED']);
+
+/**
  * Runs the model and pipes sections out as they close.
  *
  * **The 200 commits before any of the slow work starts, and that is the point.**
@@ -736,6 +747,10 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
     let closed = false;
     let cachedWrite = false;
     let refunded = false;
+    // Which model is actually writing. `meta.model` went out before the first
+    // request, so from the retry onwards it is the name of the model that was
+    // asked first, not of the one that answered.
+    let activeModel = model;
     // What the heartbeat is currently waiting on. The reader shows it, because
     // "downloading the paper" and "the model is reading it" are a minute of
     // waiting either way and only one of them is worth staying for.
@@ -804,15 +819,38 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
 
       stage = 'reading';
       modelTimer = setTimeout(() => modelDeadline.abort(), STREAM_BUDGET_MS);
-      const upstream = await requestModelStream({
+      const askModel = candidate => requestModelStream({
         env,
         paper,
         level,
         language,
         pdfBase64,
-        model,
+        model: candidate,
         signal: modelDeadline.signal,
       });
+
+      // Only the call that *opens* the stream is retried, and that boundary is
+      // the whole design: before the first token nothing has been shown and
+      // nothing has been billed, so a second model costs one more wait and
+      // nothing else. Once sections are on screen, starting again would throw
+      // away the half paper the reader is already reading.
+      let upstream;
+      try {
+        upstream = await askModel(model);
+      } catch (error) {
+        const fallback = cleanText(env.AI_FALLBACK_MODEL, 100);
+        const worthRetrying = error instanceof AIExplanationError
+          && RETRY_ON_FALLBACK_MODEL.has(error.code)
+          && fallback
+          && fallback !== model;
+        if (!worthRetrying) throw error;
+        activeModel = fallback;
+        // The reader has been watching "reading" for however long flash took to
+        // refuse. The ping restarts nothing — it says the wait is still live and
+        // now belongs to a different model.
+        await send({ type: 'ping', stage, elapsedMs: Date.now() - startedAt, model: activeModel });
+        upstream = await askModel(fallback);
+      }
 
       stage = 'writing';
       for await (const event of streamModelSections(upstream.body)) {
@@ -835,7 +873,7 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
         }
         if (sections.length > 0) {
           console.warn('AI rewrite salvaged sections from non-JSONL output', JSON.stringify({
-            model,
+            model: activeModel,
             level,
             sections: sections.length,
           }));
@@ -867,6 +905,10 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
         await send({
           type: 'done',
           sectionCount: sections.length,
+          // Which model wrote it, which `meta` could not know: it was sent
+          // before the first request, and the fallback only exists because that
+          // request was refused.
+          model: activeModel,
           // Says on the wire where the paper stopped. The reader is handed a
           // rewrite that ends mid-sentence either way, and leaving that
           // undetectable is the whole failure this flag exists to end.
@@ -875,7 +917,7 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
       }
 
       console.info('AI rewrite', JSON.stringify({
-        model,
+        model: activeModel,
         level,
         language,
         sections: sections.length,
@@ -918,7 +960,7 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
         ...(sections.length > 0 ? { partial: true } : {}),
       }).catch(() => {});
       console.warn('AI rewrite', JSON.stringify({
-        model,
+        model: activeModel,
         level,
         language,
         sections: sections.length,

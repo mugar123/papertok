@@ -920,6 +920,115 @@ test('caches a rewrite that finished, and replays it without a second reservatio
 });
 
 /* ============================================================
+   The second model
+   ============================================================ */
+
+/** Which model a provider call was addressed to. */
+const modelFromUrl = url => String(url).match(/\/models\/([^:]+):/)?.[1] || '';
+
+/**
+ * A provider that fails the primary model and answers on any other one.
+ *
+ * `models` records the order they were asked in, which is the whole assertion:
+ * "it retried" and "it retried on the lighter model" are different claims and
+ * only the sequence separates them.
+ */
+function failingPrimary(models, status = 503, body = { error: { message: 'overloaded' } }) {
+  return async (url) => {
+    const model = modelFromUrl(url);
+    models.push(model);
+    return model === 'gemini-3.5-flash'
+      ? new Response(JSON.stringify(body), { status })
+      : sseResponse([sseFrame(sectionLine('intro', 'It began.'), { finishReason: 'STOP' })]);
+  };
+}
+
+/**
+ * The window where a retry is free.
+ *
+ * Before the first token nothing has been shown and nothing has been billed, so
+ * asking a second model costs the reader one more wait and nothing else. After
+ * it, half the paper is on screen and starting again would throw it away — which
+ * is why this only wraps the call that opens the stream, never the stream.
+ */
+test('a 503 from flash before any token is retried once on the fallback model', async () => {
+  const state = newLedgerState();
+  const models = [];
+
+  const { events } = await runRewrite({ provider: failingPrimary(models) }, {
+    ...REWRITE_ENV,
+    AI_FALLBACK_MODEL: 'gemini-3.5-flash-lite',
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
+  });
+
+  assert.deepEqual(models, ['gemini-3.5-flash', 'gemini-3.5-flash-lite']);
+  assert.equal(events.at(-1).type, 'done');
+  // Said on the wire, because `meta` went out before anybody knew which model
+  // would write the paper.
+  assert.equal(events.at(-1).model, 'gemini-3.5-flash-lite');
+  assert.equal(events.some(event => event.type === 'ping' && event.model === 'gemini-3.5-flash-lite'), true);
+  // The rewrite arrived: there is nothing to give back.
+  assert.equal(state.release, 0);
+});
+
+test('the provider own daily wall on flash is worth trying on flash-lite', async () => {
+  const models = [];
+
+  const { events } = await runRewrite({
+    provider: failingPrimary(models, 429, { error: { message: 'Quota exceeded for GenerateRequestsPerDay' } }),
+  }, {
+    ...REWRITE_ENV,
+    AI_FALLBACK_MODEL: 'gemini-3.5-flash-lite',
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
+  });
+
+  assert.deepEqual(models, ['gemini-3.5-flash', 'gemini-3.5-flash-lite']);
+  assert.equal(events.at(-1).type, 'done');
+});
+
+test('a refusal the lighter model would repeat is not retried', async () => {
+  const models = [];
+
+  // A 400 is deterministic: the same body gets the same no. Retrying it would
+  // buy a second wait for the identical answer.
+  const { events } = await runRewrite({
+    provider: failingPrimary(models, 400, { error: { message: 'request payload is malformed' } }),
+  }, {
+    ...REWRITE_ENV,
+    AI_FALLBACK_MODEL: 'gemini-3.5-flash-lite',
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
+  });
+
+  assert.deepEqual(models, ['gemini-3.5-flash']);
+  assert.equal(events.at(-1).code, 'AI_INVALID_REQUEST_UPSTREAM');
+});
+
+test('with no fallback configured the first refusal is the answer', async () => {
+  const models = [];
+
+  const { events } = await runRewrite({ provider: failingPrimary(models) }, {
+    ...REWRITE_ENV,
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
+  });
+
+  assert.deepEqual(models, ['gemini-3.5-flash']);
+  assert.equal(events.at(-1).code, 'AI_BUSY');
+});
+
+test('a fallback that is the same model is not a fallback', async () => {
+  const models = [];
+
+  const { events } = await runRewrite({ provider: failingPrimary(models) }, {
+    ...REWRITE_ENV,
+    AI_FALLBACK_MODEL: 'gemini-3.5-flash',
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
+  });
+
+  assert.deepEqual(models, ['gemini-3.5-flash']);
+  assert.equal(events.at(-1).code, 'AI_BUSY');
+});
+
+/* ============================================================
    What travels in the prompt
    ============================================================ */
 
