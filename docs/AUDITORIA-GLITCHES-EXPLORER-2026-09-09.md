@@ -257,6 +257,14 @@ corroboró con un segundo autor frío, `idx=4`, **Donald B. Rubin**; un tercero,
 `idx=5` **Todd R. Golub**, se usó aparte para leer las cuatro celdas
 individuales de la rejilla.
 
+Una revisión posterior (misma fecha) rehizo tres de estas medidas con
+corridas nuevas — mismo build, mismo HEAD (`35e2699`; sin cambios de código
+fuente entre `a5cd5c4` y ese commit, sólo la propia sección 7) — porque las
+citas originales no sostenían los números escritos: se incorporó un cuarto
+autor frío, `idx=6` (**Frank B. Hu**), y Kessler y Rubin se repitieron con
+una ventana de captura más larga (12 s en vez de 8 s) para dejar resolver del
+todo el registro ORCID. Cada corrección de abajo dice qué cambió y por qué.
+
 | Medida | Antes | Después |
 |---|---|---|
 | Celda de impacto, «Calculating…» → asentada | 124×64,5 → 131,5×77,5 | 131,5×77,5 — una sola caja, idéntica en «Calculating…» y en la nota asentada (Kessler y Rubin) |
@@ -274,12 +282,23 @@ cambió, y la fila de arriba es sobre la imagen, no el contenedor.
 
 **Las tres preguntas aplazadas de Tasks 3 y 4.**
 
-1. *¿Qué ancho se midió?* 264 px, y constante entre esqueleto, «Calculating…»
-   y nota asentada, en los tres autores fríos medidos (Kessler, Rubin, Golub):
-   la invariante que importa — que no cambia entre estados — se sostiene en
-   los tres. No se reprodujo el caso de ~259 px con la fila de cabecera
-   apretada: ninguno de los tres nombres (Ronald C. Kessler, Donald B. Rubin,
-   Todd R. Golub) llena la fila lo bastante para que el `flex-shrink: 1` de
+1. *¿Qué ancho se midió?* 264 px, y constante entre esqueleto y estado vivo —
+   pero no como se escribió la primera vez. La versión original nombraba a
+   Kessler, Rubin y Golub, sin tener en realidad el ancho del *esqueleto* de
+   ninguno de los tres: de Kessler y Rubin sólo se había leído el estado vivo
+   (nunca su esqueleto), y la única lectura etiquetada «esqueleto» — la de
+   Golub, por un script aparte — conflaba dos rejillas co-montadas (Harvard
+   retenida + el esqueleto de Golub entrando) y había heredado el ancho de la
+   rejilla equivocada. Re-medido con la sonda estándar, que registra cada
+   `.ehc-stats-grid` dentro de su propia página bajo `#main-content` — así que
+   la conflación no puede ocurrir —, sobre tres autores fríos (Kessler, Rubin
+   y **Frank B. Hu**, `idx=3/4/6` de la pestaña Autores de Harvard): los tres
+   entran con la misma caja de esqueleto, `264×131 en x=888`, estable en
+   decenas de fotogramas consecutivos mientras la transición de ruta se
+   asienta, y se convierte en `264×125,9 en el mismo x=888` al llegar el
+   estado vivo — sin desplazamiento de `x` en ninguno de los tres. No se
+   reprodujo el caso de ~259 px con la fila de cabecera apretada: ninguno de
+   los tres nombres llena la fila lo bastante para que el `flex-shrink: 1` de
    `.ehc-stats-grid` entre en juego.
 2. *Las cuatro alturas reales* (Golub, rejilla en reposo, nota asentada en
    «Exceptional · 2023–2026»): **47,5 / 47,5 / 77,5 / 77,5 px**. CSS Grid
@@ -309,17 +328,36 @@ fotograma sin keyframes intermedios (`t=457` esqueleto, `t=624` héroe vivo,
 `settle` nulo en las dos), consistente con el `if (suspended || resync) return
 { action: 'none' }` de `useHeightSettle` cuando el commit cae dentro de la
 ventana en la que la transición de ruta todavía se considera en marcha — un
-mecanismo preexistente, no tocado por este plan. (b) la llegada del registro
-ORCID tampoco animó porque, para Kessler y para Rubin, la tarjeta viva midió
-exactamente 96 px — la misma reserva del esqueleto — así que
-`Math.abs(natural - remembered) < 1` y `planHeightSettle` no programó nada.
-Ninguna de las dos es una regresión de esta tarea: (b) sólo deja de dispararse
-cuando el contenido cabe en la reserva, y ni Kessler ni Rubin tenían una
-biografía ORCID más larga que eso. Esta medida no puede afirmar que el settle
-de la llegada ORCID siga funcionando para una biografía larga (el caso de
-Moher, 185 px): no se repitió porque su nota de impacto ya está en caché en
-este perfil, y una nota cacheada llega junto con el héroe, ocultando la propia
-transición que haría falta observar.
+mecanismo preexistente, no tocado por este plan.
+
+(b) la llegada del registro ORCID tampoco animó para Kessler ni para Rubin —
+pero la explicación original («la tarjeta viva midió exactamente 96 px») citaba
+una línea cruda con `orcidCard:null`: en ese fotograma concreto la tarjeta
+todavía no había llegado, así que esa línea no medía lo que decía medir.
+Repetida la corrida con una ventana de captura más larga (12 s en vez de 8 s,
+para dejar resolver el fetch de ORCID del todo), la tarjeta viva de los dos SÍ
+se deja ver, y en los dos mide exactamente lo mismo que la reserva de su
+esqueleto: en Kessler, `"orcidCard":"20,277.9 1240x96"` — la misma caja exacta
+que medía su `"orcidSkel"` un fotograma antes —; en Rubin, la misma altura
+(96 px) en la misma posición. Así que `Math.abs(natural - remembered) < 1` y
+`planHeightSettle` correctamente no programa nada: no es que el mecanismo
+esté callado, es que Kessler y Rubin tienen perfiles ORCID cortos (sólo la
+cabecera verificada, sin líneas de carrera) que caben en la reserva de 96 px
+pensada para ese caso común.
+
+Que el mecanismo SÍ dispare cuando la tarjeta no cabe se comprobó aparte, con
+el cuarto autor frío, Frank B. Hu: su tarjeta ORCID llegó con 453,4 px (con
+líneas de carrera, no sólo la cabecera) — 357,4 px más que la reserva — y
+`getAnimations().find(id==='height-settle')` capturó el settle completo,
+`"237.938px>942.906px"`, corriendo desde el mismo body de partida (237,9 px,
+igual que en Kessler y Rubin) hasta 942,9 px en 300 ms. No es el caso de
+Moher (185 px) que esta sección quería re-ejercitar — su nota de impacto
+sigue en caché en este perfil, así que esa transición concreta sigue sin
+poder observarse —, pero es la misma ruta de código con un delta mayor
+(357,4 px contra la reserva, frente a los 185 px de Moher), y confirma que el
+settle de la llegada ORCID dispara correctamente cuando el contenido no cabe
+en la reserva. Ninguna de las dos — (a) ni (b) — es una regresión de esta
+tarea.
 
 **Coste de pintado del velo (Task 5, paso opcional).** Se intentó con
 `Tracing.start` (categorías `devtools.timeline`, `disabled-by-default-devtools.timeline*`)
@@ -333,12 +371,19 @@ específico del velo, por conteo de alturas). No se afirma un número
 de que el coste bajó es la caja fija medida arriba (una imagen que no cambia
 de tamaño no tiene motivo para volver a rasterizarse en cada fotograma).
 
-**Lo que no mejoró, si algo.** La rejilla del esqueleto (264×131) no iguala
-exactamente la altura de la rejilla viva (264×125,9): quedan 5,1 px de
-diferencia, repartidos en 2,5 px por fila (medido en Golub celda a celda: fila
-1 pasa de 50 a 47,5 px, fila 2 de 80 a 77,5 px). No reproduce el glitch
-original — que era el desplazamiento horizontal de 75 px, ya cerrado — y el
-paso de esqueleto a héroe es un fundido de opacidad, no un salto de layout,
-así que no se ve como tal; pero es un residuo real, no cero. Y como queda
-dicho arriba, el settle de una biografía ORCID larga no se volvió a ejercitar
-en esta ronda.
+**Lo que no mejoró, si algo.** La rejilla del esqueleto (264×131, medida en
+Kessler, Rubin y Frank B. Hu — arriba) no iguala exactamente la altura de la
+rejilla viva (264×125,9): quedan **131 − 125,9 = 5,1 px** de diferencia,
+derivados de las dos cifras medidas, no leídos directamente en ningún campo.
+Golub, leído celda a celda, ubica el origen: la fila 1 pasa de 50 px en el
+esqueleto a 47,5 en vivo (+2,5) y la fila 2 de 80 a 77,5 (+2,5) — pero
+2,5 + 2,5 = 5,0, no 5,1; los 0,1 px que faltan no salen de esa suma, y caen
+probablemente en el redondeo a la décima de px que aplica la propia sonda a
+cada caja por separado, o en un borde de la rejilla que la suma de dos filas
+no captura. No reproduce el glitch original — que era el desplazamiento
+horizontal de 75 px, ya cerrado — y el paso de esqueleto a héroe es un fundido
+de opacidad, no un salto de layout, así que no se ve como tal; pero es un
+residuo real, no cero. Y, como queda dicho arriba, el settle de una biografía
+ORCID tan larga como la de Moher (185 px) sigue sin ejercitarse directamente
+en esta ronda — el mecanismo sí se comprobó, pero con un delta mayor en otro
+autor.
