@@ -262,6 +262,24 @@ test('a full comment page stops the slice so the next POST can continue', async 
   );
 });
 
+test('a profile pointing at somebody else\'s handle does not free that handle', async () => {
+  // Nothing stops a profile from naming a handle it never held, so the
+  // reservation is only ours to release when the reservation names us back.
+  const admin = memoryAdmin({
+    [`userProfiles/${UID}`]: { handle: HANDLE },
+    [`handles/${HANDLE}`]: { uid: 'victim' },
+  });
+
+  const result = await runAccountDeletionSlice(admin, UID, { ...SERVICE }, {
+    idToken: TOKEN,
+    fetchImpl: async () => new Response('{}', { status: 200 }),
+  });
+
+  assert.equal(result.complete, true);
+  assert.deepEqual(admin.documents[`handles/${HANDLE}`], { uid: 'victim' });
+  assert.equal(admin.documents[`userProfiles/${UID}`], undefined);
+});
+
 test('USER_NOT_FOUND on Auth delete still completes, so a retry after Auth is gone is safe', async () => {
   const admin = memoryAdmin();
   const result = await runAccountDeletionSlice(admin, UID, { ...SERVICE }, {

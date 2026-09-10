@@ -186,7 +186,12 @@ async function deleteProfile(admin, uid) {
   if (search) writes.push(deleteWrite(admin.name(['userSearch', uid])));
   if (showcase) writes.push(deleteWrite(admin.name(['profileLists', uid])));
   const handle = typeof profile?.handle === 'string' ? profile.handle.trim() : '';
-  if (handle && !handle.includes('/') && handle !== '.' && handle !== '..') {
+  const reservation = handle && !handle.includes('/') && handle !== '.' && handle !== '..'
+    ? await admin.getDocument(['handles', handle])
+    : null;
+  // A profile can name a handle it does not hold — nothing reconciles the two —
+  // so the reservation is only ours to free when it names this uid back.
+  if (reservation?.uid === uid) {
     writes.push(deleteWrite(admin.name(['handles', handle])));
   }
   if (profile) writes.push(deleteWrite(admin.name(['userProfiles', uid])));
