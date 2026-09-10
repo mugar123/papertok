@@ -267,7 +267,14 @@ node scripts/diagnostics/explorer-glitch-frames.mjs route '#/explorer/institutio
 starts sampling, casting and (with `profile`) the V8 sampler, so the click is
 the first thing in the record. Use `:not(.ex-skel-row)` in the selector: with a
 session the authors list takes longer, and a bare `.ee-author-card` clicks a
-skeleton row and the run ends "clean" because it never navigated. `profile`
+skeleton row and the run ends "clean" because it never navigated. `idx=N`
+clicks the Nth match of that selector instead of the first, and it is how
+`docs/AUDITORIA-GLITCHES-EXPLORER-2026-09-09.md` §7 names the author of each
+run: the recent-impact score is cached per author in the profile, a cached
+score lands with the hero and hides the very transition being measured, so a
+cold reading needs an entity that profile has not opened yet. `mobile`
+emulates 390×844 at DPR 2 with touch events on, and `slow` throttles the CPU
+×4; both work in `route` and in `chain`. `profile`
 prints tasks over 50ms with their outermost app frame; read it only on a
 production build — `vite dev`'s `jsxDEV` alone measured 1004ms of self time
 in a 5.6s run and turned every data arrival into a 100–700ms freeze that the

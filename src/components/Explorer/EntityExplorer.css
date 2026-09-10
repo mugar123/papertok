@@ -151,6 +151,13 @@
    percentage is what made it move. -96px is the -20% the old box started at
    on a hero at its resting 481px.
 
+   `mask-repeat: no-repeat` because the tile IS this element's box, and the
+   picture now reaches past it: at a resting 481px hero the image ends 143px
+   below the mask's bottom edge, in the next tile down, where the gradient
+   restarts at solid — a band of unmasked photograph that only
+   `.explorer-hero { overflow: hidden }` is hiding. That clip exists for the
+   settle's reveal, and nothing else should be leaning on it.
+
    720px is neither that box's height (that was 577) nor the hero's. It puts
    the picture's bottom edge at 624px, and the tallest hero measured — an
    institution with the Wikipedia paragraph expanded — is 721. It does not
@@ -160,7 +167,16 @@
    can see it end — and every pixel added below it would be blurred at 48px
    and then thrown away by the mask. 30% for the mask's solid stop, not 40%:
    the gradient used to run over the taller box, so its solid part reached
-   ~28% of the hero. */
+   ~28% of the hero.
+
+   What this does NOT claim is that the picture sits where it used to. The box
+   is 120% of the hero's width, 1536px, so `cover` is width-driven for any
+   picture narrower than this box's own 2.1:1 — which is every portrait and
+   4:3 lead Wikipedia serves — and then the rendered image is the same size in
+   both boxes and only the crop moves: the old box centred it at -96.2 +
+   577.2/2 = 192.4 below the hero's top, this one at -96 + 720/2 = 264. The
+   resting slice is ~71px further down the photograph than it was. The claim
+   is that it stops moving WHILE the hero grows, not that it is unchanged. */
 .ehc-bg-blur {
   position: absolute;
   inset: 0;
@@ -169,6 +185,8 @@
   pointer-events: none;
   mask-image: linear-gradient(to bottom, black 30%, transparent 100%);
   -webkit-mask-image: linear-gradient(to bottom, black 30%, transparent 100%);
+  mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
   /* No animation here. It used to fade this in over 3s while the component
      faded the same property in over 1s to a different target, and a property
      with two animators has no defined look for as long as both are running. The
@@ -687,9 +705,11 @@
    where its children sit, so nothing eased it.
 
    264 is not a guess: two columns of `minmax(94px, 1fr)` under a 264px
-   max-width cap each column at 132, and the settled cell measured 131.5 — the
-   grid is AT its cap once the score lands, whatever the score's wording. So
-   pinning it here is exact rather than tuned to one label.
+   max-width cap each column at 131.5 — `box-sizing: border-box` and this
+   grid's own 1px left border leave 263 for the two tracks — and the settled
+   cell measured 131.5. The grid is AT its cap once the score lands, whatever
+   the score's wording. So pinning it here is exact rather than tuned to one
+   label.
 
    Scoped with `:has()` rather than set on `.ehc-stats-grid`, because only
    author and institution carry this cell (explorerSkeletonShape.js). A topic's
@@ -762,7 +782,15 @@
 /* Two lines from the first frame. "Calculating…" is one line; the settled
    detail ("Very high · 2023–2026") wraps to two in a 131px cell, and a cell
    that grows by a line moves everything under the header (see
-   .ehc-stats-grid). 0.625rem × 1.3 × 2. */
+   .ehc-stats-grid). 0.625rem × 1.3 × 2.
+
+   Kept at every viewport, phones included, where the aside spans the row (the
+   768px block below) and the English detail may well fit on one line. The
+   trade is not symmetric: the Spanish detail is the longer of the two and
+   wraps where the English one might not, so a bilingual interface that
+   reserved by the narrower language would jump in the other. Over-reserving
+   costs one line of one cell; under-reserving costs back the jump this whole
+   reservation exists to remove. */
 .ehc-stat-detail {
   color: var(--text-secondary);
   font: 500 0.625rem/1.3 var(--font-mono);

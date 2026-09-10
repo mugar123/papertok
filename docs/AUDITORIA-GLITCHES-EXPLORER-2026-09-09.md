@@ -241,9 +241,23 @@ node scripts/diagnostics/explorer-glitch-frames.mjs route '#/explorer/author/A50
 node scripts/diagnostics/explorer-glitch-frames.mjs route '#/explorer/institution/I136199984' 7000 out=/tmp/inst
 ```
 
+Las corridas de §7 salen de la misma sonda con `idx=N`, que hace clic en el
+enésimo autor de la pestaña en vez de en el primero:
+
+```bash
+# tercera ronda (10-09): Chris Sander frío, Rubin repetido, el velo otra vez
+node scripts/diagnostics/explorer-glitch-frames.mjs chain '#/explorer/institution/I136199984' '.ee-author-card:not(.ex-skel-row)' tab=authors idx=7 wait=2500 12000 out=/tmp/pt-c-idx7
+node scripts/diagnostics/explorer-glitch-frames.mjs chain '#/explorer/institution/I136199984' '.ee-author-card:not(.ex-skel-row)' tab=authors idx=4 wait=2500 12000 out=/tmp/pt-f-idx4
+node scripts/diagnostics/explorer-glitch-frames.mjs route '#/explorer/institution/I136199984' 8000 out=/tmp/pt-a-inst
+```
+
+La sonda imprime a qué autor hizo clic (`clicked: …`), que es como se sabe qué
+`idx` es quién; el orden de la pestaña ha sido estable entre las tres rondas.
+
 Para un autor **frío** (la nota de impacto sin caché) hace falta uno que ese
 perfil no haya visitado, o borrar `recentImpact` de la caché de sesión; Moher
-lo era el 09-09. Un fotograma se recorta con `sips --cropToHeightWidth 700 1280
+lo era el 09-09, y de `idx=2` a `idx=7` están ya todos calientes en este
+perfil. Un fotograma se recorta con `sips --cropToHeightWidth 700 1280
 --cropOffset 0 0 f.png --out crop.png` para mirarlo sin el resto de la página.
 
 ## 7. Después (2026-09-10)
@@ -263,7 +277,15 @@ fuente entre `a5cd5c4` y ese commit, sólo la propia sección 7) — porque las
 citas originales no sostenían los números escritos: se incorporó un cuarto
 autor frío, `idx=6` (**Frank B. Hu**), y Kessler y Rubin se repitieron con
 una ventana de captura más larga (12 s en vez de 8 s) para dejar resolver del
-todo el registro ORCID. Cada corrección de abajo dice qué cambió y por qué.
+todo el registro ORCID.
+
+Una **tercera** ronda (también 10-09, sobre `e0fc3f9`, otra vez sin cambios de
+código fuente respecto de `a5cd5c4`) volvió a medir porque los ficheros crudos
+de las dos anteriores ya no estaban en `/tmp` y varias cifras citadas habían
+dejado de poder releerse en ningún sitio. Entró un quinto autor frío, `idx=7`
+(**Chris Sander**), se repitió Rubin con el mismo `idx=4`, y se corrió otra vez
+la institución para el velo. Cada corrección de abajo dice qué cambió y por
+qué.
 
 | Medida | Antes | Después |
 |---|---|---|
@@ -279,6 +301,16 @@ como el héroe tenga fotogramas — 21 en esta misma corrida, contenedor de
 315,8 a 480,2 px — exactamente lo que Task 4 predijo («la sonda mide el
 contenedor... lo que se comprueba es la imagen»); ese número no es el que
 cambió, y la fila de arriba es sobre la imagen, no el contenedor.
+
+Desde la tercera ronda esa distinción ya no hay que argumentarla: la sonda
+graba el `::before` en su propio campo (`washImg`), así que contenedor e imagen
+se leen de la misma línea. En la corrida de la institución del 10-09, `washImg`
+vale `-96px/720px` en **todos** los fotogramas mientras el contenedor recorre
+otras 21 alturas, esta vez de 314,8 a 480,2 px — un fotograma de arranque de
+diferencia con los 315,8 de la ronda anterior, mismo número de alturas y mismo
+final. Y `img=y`: el campo que hasta esa ronda interrogaba un
+`background-image` en línea que este mismo cambio había borrado — y que por eso
+habría dicho `n` para siempre — vuelve a informar de que la imagen está puesta.
 
 **Las tres preguntas aplazadas de Tasks 3 y 4.**
 
@@ -304,7 +336,13 @@ cambió, y la fila de arriba es sobre la imagen, no el contenedor.
    «Exceptional · 2023–2026»): **47,5 / 47,5 / 77,5 / 77,5 px**. CSS Grid
    empareja la fila 1 (celdas 1 y 2) con la fila 2 (celdas 3 y 4) — no «las
    tres primeras iguales y la cuarta a 77–78» como preveía el plan; son dos
-   pares, no tres-y-uno.
+   pares, no tres-y-uno. Las cuatro cifras vienen del mismo script aparte que
+   este punto acaba de descartar para el ancho, así que valen lo que valga esa
+   fuente. Corroborado con la sonda estándar está el par de abajo — la celda de
+   impacto viva mide `131,5×77,5` en Kessler, en Rubin y en Sander — y, por
+   resta sobre la misma rejilla, el de arriba en 125,9 − 1 − 77,5 = 47,4; el
+   emparejamiento en dos filas es lo que esas dos cifras sostienen (ver el
+   último apartado de esta sección).
 3. *¿Borde visible en el velo de la institución?* No. Con el bloque de
    Wikipedia expandido el héroe llegó a 720,2–721,2 px (el plan predecía
    ~721), y `getComputedStyle(.ehc-bg-blur, '::before')` dio exactamente lo
@@ -323,6 +361,39 @@ p0 {"...","body":"20,136 1240x237.9","...","impact":"1020.5,184.5 131.5x77.5 \"C
 p0 {"...","body":"20,136 1240x237.9","...","impact":"1020.5,184.5 131.5x77.5 \"Very high · 2023–2026\"", ...}   # t=1191 — misma caja
 ```
 
+Esas dos líneas eliden justo los dos campos de los que cuelgan las filas de la
+tabla: `stats`, que **es** la caja de la rejilla, y `settle`, que es la
+afirmación entera de «cero settles». Y los ficheros crudos de aquella ronda
+(`/tmp/v-kessler2.txt`, `/tmp/v-rubin2.txt`, `/tmp/v-chain3.txt`) ya no están
+en disco, así que las elisiones no se pueden rellenar sin inventarlas. En vez
+de suavizar las filas, **la medida se repitió** el 10-09: misma build de
+`dist/`, mismo perfil con sesión, mismo `chain` desde Harvard, con un autor
+frío que este perfil no había abierto — `idx=7`, **Chris Sander**, porque §7
+ya había gastado de `idx=2` a `idx=6`. La geometría es determinista y
+reprodujo exactamente, ahora con `stats` y `settle` sin elidir:
+
+```
+p0 {...,"skel":true,"body":"20,136 1240x131","settle":null,...,"stats":"888,136 264x131","impact":"1020.5,187 131.5x80 \"\"",...}                                  # t=478  — esqueleto
+p0 {...,"skel":false,"body":"20,136 1240x237.9","settle":null,...,"stats":"888,136 264x125.9","impact":"1020.5,184.5 131.5x77.5 \"Calculating…\"",...}             # t=665  — héroe vivo, la nota calculándose
+p0 {...,"skel":false,"body":"20,136 1240x237.9","settle":null,...,"stats":"888,136 264x125.9","impact":"1020.5,184.5 131.5x77.5 \"Exceptional · 2023–2026\"",...}   # t=1112 — la nota aterriza: misma caja
+```
+
+Con eso las filas que iban en prosa quedan leídas de una línea: la rejilla del
+esqueleto es `264×131 en x=888` y la viva `264×125,9 en el mismo x=888`, sin
+paso por `249×112,9`; la celda de impacto mide `131,5×77,5` con «Calculating…»
+y con la nota asentada; `settle` es `null` en los tres fotogramas y el body no
+se mueve de 237,9 px entre el segundo y el tercero. La tarjeta ORCID tampoco:
+`"orcidSkel":"20,277.9 1240x96"` en `t=665` y en `t=1112`, los mismos 277,9 px
+antes y después de la nota.
+
+Una diferencia que conviene decir, porque el «0» de la tabla es de Kessler y
+de Rubin: Sander **sí** produce un settle, pero el de la llegada del registro
+ORCID — su tarjeta mide 231,3 px contra la reserva de 96
+(`"orcidCard":"20,454.3 1240x231.3"` con `"settle":"237.938px>549.547px@0"` en
+`t=1311`) —, que es exactamente el caso (b) de abajo con otro autor más. Las
+dos transiciones de las que trata esta tarea, esqueleto→héroe y la llegada de
+la nota, siguen sin generar ninguno.
+
 (a) esqueleto→héroe no animó: el body saltó de 131 a 237,9 px en un único
 fotograma sin keyframes intermedios (`t=457` esqueleto, `t=624` héroe vivo,
 `settle` nulo en las dos), consistente con el `if (suspended || resync) return
@@ -338,8 +409,24 @@ Repetida la corrida con una ventana de captura más larga (12 s en vez de 8 s,
 para dejar resolver el fetch de ORCID del todo), la tarjeta viva de los dos SÍ
 se deja ver, y en los dos mide exactamente lo mismo que la reserva de su
 esqueleto: en Kessler, `"orcidCard":"20,277.9 1240x96"` — la misma caja exacta
-que medía su `"orcidSkel"` un fotograma antes —; en Rubin, la misma altura
-(96 px) en la misma posición. Así que `Math.abs(natural - remembered) < 1` y
+que medía su `"orcidSkel"` un fotograma antes —; y en Rubin lo mismo, ahora
+citado y no inferido. La afirmación original («la misma altura en la misma
+posición») sólo era alcanzable restándole a `top` el `ty` de la transición de
+ruta, y esa resta no estaba escrita en ninguna parte; su fichero crudo tampoco
+sobrevivió, así que la corrida se repitió el 10-09 con el mismo `idx=4`, la
+misma build y el mismo perfil, y la posición se lee directamente porque las
+dos líneas llegan ya con `"tf":"none"`:
+
+```
+p0 {...,"settle":null,...,"orcidSkel":"20,277.9 1240x96","orcidCard":null,...}   # t=455 — la reserva
+p0 {...,"settle":null,...,"orcidSkel":null,"orcidCard":"20,277.9 1240x96",...}   # t=855 — la tarjeta, misma caja
+```
+
+`settle` es `null` en toda esa corrida. (Su nota de impacto ya está en caché en
+este perfil desde la ronda anterior — entra como «Low · 2023–2026» desde el
+primer fotograma, sin «Calculating…» —, así que lo que la repetición vuelve a
+leer es la tarjeta ORCID, no su camino frío.) Así que
+`Math.abs(natural - remembered) < 1` y
 `planHeightSettle` correctamente no programa nada: no es que el mecanismo
 esté callado, es que Kessler y Rubin tienen perfiles ORCID cortos (sólo la
 cabecera verificada, sin líneas de carrera) que caben en la reserva de 96 px
@@ -375,12 +462,38 @@ de tamaño no tiene motivo para volver a rasterizarse en cada fotograma).
 Kessler, Rubin y Frank B. Hu — arriba) no iguala exactamente la altura de la
 rejilla viva (264×125,9): quedan **131 − 125,9 = 5,1 px** de diferencia,
 derivados de las dos cifras medidas, no leídos directamente en ningún campo.
-Golub, leído celda a celda, ubica el origen: la fila 1 pasa de 50 px en el
-esqueleto a 47,5 en vivo (+2,5) y la fila 2 de 80 a 77,5 (+2,5) — pero
-2,5 + 2,5 = 5,0, no 5,1; los 0,1 px que faltan no salen de esa suma, y caen
-probablemente en el redondeo a la décima de px que aplica la propia sonda a
-cada caja por separado, o en un borde de la rejilla que la suma de dos filas
-no captura. No reproduce el glitch original — que era el desplazamiento
+
+El origen de esos 5,1 px **ya no se apoya en la lectura de Golub**. Aquella
+venía del script aparte que el punto 1 acaba de descartar por conflar dos
+rejillas co-montadas, y si su ancho era el del elemento equivocado sus alturas
+no son mejor evidencia que su ancho: el documento no puede desacreditar una
+fuente en un párrafo y citarla en el siguiente. Las dos filas se reconstruyen
+aquí de la sonda estándar y de la hoja de estilos:
+
+- **Fila 2 (la celda de impacto): medida.** La sonda la registra por su propia
+  caja, dentro de su propia página, así que no puede conflar nada. En la
+  corrida de Sander de más arriba: `"impact":"1020.5,187 131.5x80 \"\""` en el
+  esqueleto (`t=478`) y `"impact":"1020.5,184.5 131.5x77.5 …"` en vivo
+  (`t=665`) — **80 → 77,5 px**, −2,5.
+- **Fila 1: derivada, con la aritmética a la vista.** La rejilla lleva
+  `border-top: 1px` y las dos filas van bajo él, así que fila 1 = alto de la
+  rejilla − 1 − fila 2: **131 − 1 − 80 = 50** en el esqueleto y
+  **125,9 − 1 − 77,5 = 47,4** en vivo, −2,6. Los 50 del esqueleto salen además
+  de la hoja sin medir nada, y coinciden: `.ehc-stat-box` pone
+  `padding: var(--space-2)` arriba y abajo (0,5rem = 8, dos veces) y
+  `border-bottom: 1px`; dentro van `.ex-skel-stat-value` (17 de alto), el
+  `gap: 2px` de la columna flex y `.ex-skel-stat-label` (`margin-top: 5px`, 9
+  de alto) → 8 + 17 + 2 + 5 + 9 + 8 + 1 = **50**. La celda de impacto añade su
+  tercer hijo: otro `gap: 2px`, el `margin-top: 2px` de `.ehc-stat-detail` y su
+  `min-height: 1.625rem` = 26 px (que gana a la barra de 8 que lleva dentro) →
+  50 + 2 + 2 + 26 = **80**, el número medido.
+
+La suma cierra: 2,5 + 2,6 = **5,1**. Cierra por construcción, eso sí — la fila
+1 se obtuvo restando de la misma rejilla cuya diferencia explica, así que no es
+una confirmación independiente; lo que aporta es que ninguna de las dos cifras
+viene ya del script descartado, y que los 0,1 px que antes «faltaban» eran el
+redondeo a la décima que la sonda aplica a cada caja, atribuido a la fila
+equivocada. No reproduce el glitch original — que era el desplazamiento
 horizontal de 75 px, ya cerrado — y el paso de esqueleto a héroe es un fundido
 de opacidad, no un salto de layout, así que no se ve como tal; pero es un
 residuo real, no cero. Y, como queda dicho arriba, el settle de una biografía
