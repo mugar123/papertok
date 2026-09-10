@@ -280,9 +280,14 @@ export class PaperBuilder {
       merged.publicationStatus = 'published';
     }
 
-    // Re-calculate deterministic fields
-    merged.peerReviewed = merged.publicationStatus === 'published'
-      && merged.publicationType !== 'preprint';
+    // Re-calculate deterministic fields — but only when the enrichment brought
+    // publication evidence of its own, or when the base never had an answer.
+    // Recalculating unconditionally let a merge that carried nothing but an
+    // abstract overwrite an explicit `peerReviewed: false` with `true`.
+    if (shouldUpgradePublication || merged.peerReviewed === undefined) {
+      merged.peerReviewed = merged.publicationStatus === 'published'
+        && merged.publicationType !== 'preprint';
+    }
 
     // Open Access logic
     if (enrichmentData.openAccess !== undefined) {

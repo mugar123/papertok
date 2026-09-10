@@ -84,6 +84,23 @@ test('does not mark a repository-hosted preprint as peer reviewed', () => {
   assert.equal(paper.peerReviewed, false);
 });
 
+test('merging an abstract does not manufacture peer review', () => {
+  // The recalculation at the end of `merge` was unconditional, so a record that
+  // says outright it was not reviewed had that denial overwritten by an
+  // enrichment that only carried text: `published` + a type that is not
+  // `preprint` came out `peerReviewed: true`.
+  const base = PaperBuilder.create({
+    id: 'ads:1',
+    title: 'Report',
+    publicationType: 'techreport',
+    publicationStatus: 'published',
+    peerReviewed: false,
+  });
+  const merged = PaperBuilder.merge(base, { abstract: 'Now with text.' }, 'ads');
+
+  assert.equal(merged.peerReviewed, false);
+});
+
 test('a merged twin contributes the arXiv id the base was missing', () => {
   const merged = PaperBuilder.merge(
     { id: 'openalex:W1', title: 'A paper', sources: { primary: 'openalex', enrichedBy: [] } },

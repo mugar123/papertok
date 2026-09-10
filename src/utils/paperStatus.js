@@ -34,6 +34,10 @@ export function reviewStatusForPaper(paper) {
   if (paper.publicationStatus === 'preprint' || paper.publicationType === 'preprint') {
     return 'preprint';
   }
+  // A record that says outright it was not reviewed outranks every inference
+  // drawn from the publication fields: a technical report is `published` and
+  // typed, and a bulletin has a `journal`, and neither went through review.
+  if (paper.peerReviewed === false) return null;
   if (paper.publicationStatus || paper.publicationType || paper.journal || paper.peerReviewed === true) {
     return 'verified';
   }

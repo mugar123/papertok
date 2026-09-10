@@ -37,6 +37,18 @@ test('an empty record claims nothing about peer review', () => {
   assert.equal(reviewTagForPaper({}), null);
 });
 
+test('an explicit peerReviewed:false is never Verified, whatever the publication fields say', () => {
+  // A record that states it was NOT reviewed is the strongest evidence there
+  // is, and it was the one field the label ignored: a technical report typed
+  // and published, or anything carrying a journal name, came out `verified`
+  // over the top of its own denial.
+  assert.equal(
+    reviewStatusForPaper({ publicationStatus: 'published', publicationType: 'techreport', peerReviewed: false }),
+    null,
+  );
+  assert.equal(reviewStatusForPaper({ journal: 'Some Journal', peerReviewed: false }), null);
+});
+
 test('an arXiv copy outranks a publisher that says the paper is closed', () => {
   // OpenAlex reports `is_oa` for the published version. A paper that ran in a
   // subscription journal reads as closed there while its arXiv copy sits free,
