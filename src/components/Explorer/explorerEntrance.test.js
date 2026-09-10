@@ -40,7 +40,7 @@ test('the hero settles between its heights instead of snapping at the handover',
   assert.match(jsx, /import \{ useHeightSettle \} from '\.\.\/\.\.\/hooks\/useHeightSettle';/);
   // `suspended` is the route transition's own gate: a settle under a page that
   // is still travelling is a second owner of the same displacement.
-  assert.match(jsx, /const heroBodyRef = useRef\(null\);[\s\S]*?useHeightSettle\(\s*heroBodyRef,\s*\[isLoadingEntity, entity, orcidInfo, isLoadingOrcid, recentImpact, hasLoadedWikiImage, showWikiBlock, wikiDescription, isWikiRequestPending\],\s*\{ enabled: !prefersReducedMotion, suspended: isPageArriving, easing: 'cubic-bezier\(0\.4, 0, 0\.2, 1\)' \},\s*\);/);
+  assert.match(jsx, /const heroBodyRef = useRef\(null\);[\s\S]*?useHeightSettle\(\s*heroBodyRef,\s*\[isLoadingEntity, entity, orcidInfo, isLoadingOrcid, recentImpact, hasLoadedWikiImage, showWikiBlock, wikiDescription, isWikiRequestPending, wikiFoldExits\],\s*\{ enabled: !prefersReducedMotion, suspended: isPageArriving, easing: 'cubic-bezier\(0\.4, 0, 0\.2, 1\)' \},\s*\);/);
   // The easing is passed here, not changed in the hook: the hook's expo-out
   // default is right for a box that appears, and this is the one box whose
   // growth moves everything beneath it. Measured on a phone opening an author:

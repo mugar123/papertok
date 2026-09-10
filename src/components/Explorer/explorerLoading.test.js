@@ -125,11 +125,26 @@ test('the Wikipedia block arrives under the settle: its fold animates opacity on
   assert.ok(fold, 'the fold is a motion wrapper around the padded `.ehc-wiki`');
   assert.match(fold[1], /initial=\{\{ opacity: 0 \}\}/, 'it starts invisible, at its full height');
   assert.match(fold[1], /animate=\{\{ opacity: 1 \}\}/);
-  assert.match(fold[1], /exit=\{\{ opacity: 0, transition: \{ duration: 0\.15 \} \}\}/, 'it leaves the way it came, quickly — the settle closes the space after it');
+  assert.match(fold[1], /exit=\{prefersReducedMotion \? \{ opacity: 0, transition: \{ duration: 0 \} \} : \{ opacity: 0, transition: \{ duration: 0\.15 \} \}\}/, 'it leaves the way it came, quickly — the settle closes the space after it — and reduced motion cuts that exit too, like its sibling folds');
   assert.doesNotMatch(fold[1], /height/, 'framer never touches the height: the settle owns it');
   assert.doesNotMatch(fold[1], /marginTop|\by:/, 'nor the margin or a translate: nothing here moves layout');
   assert.doesNotMatch(fold[1], /onAnimationStart|onAnimationComplete|layout/, 'no latch, no projection');
   assert.doesNotMatch(jsx, /wikiFoldAnimatingRef|WIKI_FOLD_OUT|HERO_STACK_GAP_PX/, 'and nothing is left of the second owner');
+});
+
+/**
+ * The fold's removal is `AnimatePresence`'s own state update and never reaches
+ * this component, so without a commit at that moment the ~155px the block held
+ * drops in an unanimated reflow after its fade — the failure this whole change
+ * exists to remove, arriving from the exit side. `onExitComplete` is that commit.
+ */
+test('the space the Wikipedia block leaves behind is closed by the settle, not dropped', async () => {
+  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  assert.match(jsx, /const \[wikiFoldExits, setWikiFoldExits\] = useState\(0\);/);
+  assert.match(jsx, /<AnimatePresence initial=\{false\} onExitComplete=\{\(\) => setWikiFoldExits\(\(n\) => n \+ 1\)\}>/);
+  const deps = jsx.match(/useHeightSettle\(\s*heroBodyRef,\s*\[([^\]]*)\]/);
+  assert.ok(deps, 'the settle declares what is worth a movement');
+  assert.match(deps[1], /\bwikiFoldExits\b/, 'and the fold leaving is one of them');
 });
 
 test('the experience panel grows into place when the ORCID record lands', async () => {

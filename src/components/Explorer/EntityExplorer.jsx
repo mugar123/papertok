@@ -257,6 +257,12 @@ export default function EntityExplorer({
   const closeSelectedPaper = useCallback(() => setSelectedPaper(null), []);
   const [wikiInfo, setWikiInfo] = useState(null);
   const [settledWikiRequestKey, setSettledWikiRequestKey] = useState('');
+  // The fold's removal is `AnimatePresence`'s own state update, which never
+  // reaches this component — so the ~155px the block was holding would drop in
+  // an unanimated reflow after its fade. Bumping this on `onExitComplete` gives
+  // the settle the commit it needs: it remembered the height WITH the block on
+  // the commit that started the exit, and animates from there to the short one.
+  const [wikiFoldExits, setWikiFoldExits] = useState(0);
   const [loadedWikiImageUrl, setLoadedWikiImageUrl] = useState('');
   const [orcidInfo, setOrcidInfo] = useState(null);
   const [isLoadingOrcid, setIsLoadingOrcid] = useState(false);
@@ -471,7 +477,7 @@ export default function EntityExplorer({
     // settle grew a latch, a re-sync and a hand-over to stay out of its way —
     // measured 2026-09-09, that machinery was the bug. One owner: the block's
     // contents fade in, and its SPACE is carried here like the ORCID card's.
-    [isLoadingEntity, entity, orcidInfo, isLoadingOrcid, recentImpact, hasLoadedWikiImage, showWikiBlock, wikiDescription, isWikiRequestPending],
+    [isLoadingEntity, entity, orcidInfo, isLoadingOrcid, recentImpact, hasLoadedWikiImage, showWikiBlock, wikiDescription, isWikiRequestPending, wikiFoldExits],
     // A gentle ease-in-out rather than the hook's expo-out default. What
     // travels here is everything under the hero — the tab strip, the list —
     // and on a phone a 268px ORCID arrival on the expo-out spent 70px of it
@@ -2040,7 +2046,7 @@ export default function EntityExplorer({
               animation are two answers to the same question: with both, the
               hero shrinks by the reservation when the live hero lands without
               the block, then grows again when it unfolds — down, then up. */}
-          <AnimatePresence initial={false}>
+          <AnimatePresence initial={false} onExitComplete={() => setWikiFoldExits((n) => n + 1)}>
             {showWikiBlock && (
               <motion.div
                 className="ehc-wiki-fold"
@@ -2055,10 +2061,12 @@ export default function EntityExplorer({
                 // settle latched behind it snapped the handover on every
                 // navigation (2026-09-09). The words fade in over 240ms so they
                 // are readable while the box is still opening; leaving is
-                // quick, and the settle closes the space after the fade.
+                // quick, and the settle closes the space after the fade
+                // (`onExitComplete` gives the settle the commit that
+                // `AnimatePresence`'s own removal does not).
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                exit={{ opacity: 0, transition: { duration: 0.15 } }}
+                exit={prefersReducedMotion ? { opacity: 0, transition: { duration: 0 } } : { opacity: 0, transition: { duration: 0.15 } }}
                 transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.24 }}
               >
                 <div

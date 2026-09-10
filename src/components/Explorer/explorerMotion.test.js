@@ -352,7 +352,7 @@ test('the settle carries the Wikipedia block: its mount and its contents are dep
   const code = (await read('./EntityExplorer.jsx')).replace(/^\s*\/\/.*$/gm, '');
   const deps = code.match(/useHeightSettle\(\s*heroBodyRef,\s*\[([^\]]*)\]/);
   assert.ok(deps, 'the settle declares what is worth a movement');
-  for (const dep of ['isLoadingEntity', 'entity', 'orcidInfo', 'isLoadingOrcid', 'recentImpact', 'hasLoadedWikiImage', 'showWikiBlock', 'wikiDescription', 'isWikiRequestPending']) {
+  for (const dep of ['isLoadingEntity', 'entity', 'orcidInfo', 'isLoadingOrcid', 'recentImpact', 'hasLoadedWikiImage', 'showWikiBlock', 'wikiDescription', 'isWikiRequestPending', 'wikiFoldExits']) {
     assert.match(deps[1], new RegExp(`\\b${dep}\\b`), `${dep} settles`);
   }
 });
