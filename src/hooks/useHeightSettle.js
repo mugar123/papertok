@@ -59,15 +59,19 @@ const restingOverflow = new WeakMap();
  * translate 0) at 302ms but `animationend` had not been committed yet, and the
  * skeleton-to-hero handover landing at 329ms in that 38ms window was snapped
  * 115.8px instead of settled — a worse defect than the one the gate was for.
+ *
+ * ONE owner of the height, and this hook is it. For two days (2026-09-08/09)
+ * a child was allowed to animate its own height inside the settled box — the
+ * Wikipedia fold — and the hook grew a latch, a stale-memory flag, a re-sync
+ * and a hand-over branch to reconcile the two. Measured, the reconciliation
+ * was the bug: the re-sync fired for the route arrival too, where the memory
+ * was honest, and snapped the handover on every navigation. A block that
+ * arrives inside this box animates its CONTENTS (opacity), and the box's
+ * growth — the space, and everything below it — is carried here.
  */
 export function useHeightSettle(ref, deps, { enabled = true, suspended, duration = 360, easing = EASE } = {}) {
   const lastHeightRef = useRef(null);
   const lastDepsRef = useRef(null);
-  // Raised for as long as something else owns the box, and read once on the
-  // first commit after that. The memory taken while suspended is a frame of the
-  // other owner's animation, so the commit that inherits it must re-sync rather
-  // than animate from it.
-  const staleMemoryRef = useRef(false);
 
   useLayoutEffect(() => {
     const depsChanged = !depsAreSame(lastDepsRef.current, deps);
@@ -83,25 +87,6 @@ export function useHeightSettle(ref, deps, { enabled = true, suspended, duration
     // Asked here, before anything is cancelled: the DOM knows whether the page
     // is still moving, and it knows it now.
     const standDown = typeof suspended === 'function' && suspended();
-    if (standDown && inFlight) {
-      // Another owner has taken this box — a child animating its own height.
-      // The settle in flight is holding it clipped and SMALLER than its
-      // content, so leaving it to finish would hide everything the new owner
-      // does and then release it all in one frame. Measured 2026-09-08 on an
-      // institution, with this branch returning instead: the Wikipedia fold
-      // unfolded inside a box still clamped at 148.8px, and the tab strip
-      // jumped 74.8px the frame the clamp let go.
-      //
-      // Handing the box over costs only what the settle had left to travel,
-      // and the handover happens on the new owner's first commit — when it is
-      // still at nothing — so that remainder is small.
-      inFlight.cancel();
-      el.style.overflow = restingOverflow.get(el) ?? '';
-      restingOverflow.delete(el);
-      lastHeightRef.current = el.getBoundingClientRect().height;
-      staleMemoryRef.current = true;
-      return;
-    }
     let running = null;
     let current = null;
     if (inFlight) {
@@ -111,9 +96,7 @@ export function useHeightSettle(ref, deps, { enabled = true, suspended, duration
       inFlight.cancel();
     }
     const natural = el.getBoundingClientRect().height;
-    const resync = !standDown && staleMemoryRef.current;
-    staleMemoryRef.current = standDown;
-    const plan = planHeightSettle({ remembered: lastHeightRef.current, depsChanged, running, current, natural, suspended: standDown, resync });
+    const plan = planHeightSettle({ remembered: lastHeightRef.current, depsChanged, running, current, natural, suspended: standDown });
     lastHeightRef.current = plan.remember;
     if (!enabled || plan.action === 'none' || typeof el.animate !== 'function') return;
     if (!restingOverflow.has(el)) restingOverflow.set(el, el.style.overflow);

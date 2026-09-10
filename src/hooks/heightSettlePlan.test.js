@@ -117,60 +117,28 @@ test('SOURCE: the hook asks whether it is suspended, and hands the answer to the
 });
 
 /**
- * A suspended commit means another owner has taken the box — the route
- * transition moving the whole page, or a child animating its own height. A
- * settle still in flight is holding that box CLIPPED and smaller than its
- * content, so letting it finish hides everything the new owner does and then
- * releases it in one frame.
- *
- * Measured 2026-09-08 on an institution, with this branch returning early
- * instead: the Wikipedia fold unfolded inside a box still clamped at 148.8px,
- * and the tab strip jumped 74.8px the frame the clamp let go. Handing the box
- * over costs only what the settle had left to travel, and the handover lands on
- * the new owner's first commit — when it is still at nothing.
+ * Suspension was briefly a second thing as well — a latch a child raised while
+ * animating its own height — and the hook grew a `resync` for it: the memory
+ * taken while suspended was a frame of THAT animation, so the first commit
+ * after it re-synced instead of animating. Measured 2026-09-09, it also fired
+ * for the route arrival, where the memory was honest (the page travels by
+ * transform), and snapped the skeleton→hero handover on every forward or back
+ * navigation. There is one suspender again, and the memory it keeps is true,
+ * so nothing re-syncs: the first change after the page lands animates from it.
  */
-test('SOURCE: a suspended commit hands the box over instead of leaving it clipped', async () => {
-  const code = await hookSource();
-  const branch = code.match(/if \(standDown && inFlight\) \{([\s\S]*?)\n {4}\}/);
-  assert.ok(branch, 'a suspended commit with a settle in flight has a branch of its own');
-  assert.match(branch[1], /inFlight\.cancel\(\);/, 'the settle lets go');
-  assert.match(branch[1], /el\.style\.overflow = restingOverflow\.get\(el\) \?\? '';/,
-    'and the clip goes with it, or the new owner animates inside a box that still hides it');
-  assert.match(branch[1], /lastHeightRef\.current = el\.getBoundingClientRect\(\)\.height;/,
-    'the memory follows the box, so the next settle starts from where it really is');
-});
-
-/**
- * The memory kept while another owner had the box is a frame of THEIR animation.
- * Animating from it drops the box to that stale height in one frame — keyframe 0
- * is applied at currentTime 0 — and then eases back up over 360ms on a curve
- * that is nearly flat at its head, so there is a visible dead stop between the
- * drop and the climb. Down, then up, with nothing on screen having caused the
- * drop: exactly the complaint suspension was introduced to remove, arriving
- * from the other side.
- */
-test('the first commit after another owner had the box re-syncs instead of animating from a stale height', () => {
+test('there is no resync: the first change after a suspended commit animates from the memory it kept', () => {
+  const suspended = planHeightSettle({ remembered: 114, depsChanged: true, running: null, current: null, natural: 316.8, suspended: true });
   assert.deepEqual(
-    planHeightSettle({ remembered: 261, depsChanged: true, running: null, current: null, natural: 320.2, resync: true }),
-    { action: 'none', remember: 320.2 },
+    planHeightSettle({ remembered: suspended.remember, depsChanged: true, running: null, current: null, natural: 380, suspended: false, resync: true }),
+    { action: 'animate', from: 316.8, to: 380, remember: 380 },
+    'a stray `resync: true` must change nothing — the option is gone',
   );
 });
 
-test('re-syncing leaves the memory on the truth, so the NEXT change settles from it', () => {
-  const synced = planHeightSettle({ remembered: 261, depsChanged: true, running: null, current: null, natural: 320.2, resync: true });
-  assert.deepEqual(
-    planHeightSettle({ remembered: synced.remember, depsChanged: true, running: null, current: null, natural: 360 }),
-    { action: 'animate', from: 320.2, to: 360, remember: 360 },
-  );
-});
-
-test('SOURCE: the hook raises the stale flag while suspended and spends it on the next commit', async () => {
+test('SOURCE: the hook keeps no memory between commits beyond the height and the deps', async () => {
   const code = await hookSource();
-  assert.match(code, /const resync = !standDown && staleMemoryRef\.current;\s*staleMemoryRef\.current = standDown;/,
-    'read once, then set to whatever this commit is');
-  assert.match(code, /planHeightSettle\(\{[^}]*resync[^}]*\}\)/, 'and the plan is what decides');
-  // The hand-over branch returns early, so it has to raise the flag itself.
-  const branch = code.match(/if \(standDown && inFlight\) \{([\s\S]*?)\n {4}\}/);
-  assert.ok(branch);
-  assert.match(branch[1], /staleMemoryRef\.current = true;/);
+  assert.doesNotMatch(code, /staleMemoryRef/, 'no stale flag');
+  assert.doesNotMatch(code, /resync/, 'no resync');
+  assert.doesNotMatch(code, /if \(standDown && inFlight\)/, 'no hand-over branch: with the route arrival as the only suspender there is never a settle in flight to hand over');
+  assert.match(code, /const plan = planHeightSettle\(\{ remembered: lastHeightRef\.current, depsChanged, running, current, natural, suspended: standDown \}\);/);
 });

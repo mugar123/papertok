@@ -15,12 +15,6 @@ const SAME_HEIGHT_PX = 1;
  *   settle in flight).
  * - `natural`: the box's height with nothing holding it, measured on this
  *   commit.
- * - `resync`: the first commit after something else has been owning the box.
- *   The memory kept while it was suspended is a frame of SOMEONE ELSE'S
- *   animation — a height read half way through a fold's unfold — and animating
- *   from it drops the box to that stale value in one frame before easing back
- *   up. Down, then up, with nothing on screen having caused the drop. So this
- *   commit re-syncs and animates nothing; the box is already where it belongs.
  * - `suspended`: whether something outside the box owns its displacement on
  *   this commit — the route transition still moving the whole page. Then there
  *   is nothing to carry: a settle under a page that is itself travelling is a
@@ -41,11 +35,11 @@ const SAME_HEIGHT_PX = 1;
  * re-aimed from where the box is, so the box never eases to a height that is
  * already wrong and snaps the difference at the end.
  */
-export function planHeightSettle({ remembered, depsChanged, running, current, natural, suspended, resync }) {
+export function planHeightSettle({ remembered, depsChanged, running, current, natural, suspended }) {
   const remember = natural;
-  // Both checked before the in-flight branch: neither decides anything about an
-  // animation that is already running, they simply do not start one.
-  if (suspended || resync) return { action: 'none', remember };
+  // Checked before the in-flight branch: a suspended commit decides nothing
+  // about an animation that is already running, it simply does not start one.
+  if (suspended) return { action: 'none', remember };
   if (running) {
     if (Math.abs(natural - running.to) < SAME_HEIGHT_PX) {
       return { action: 'resume', from: running.from, to: running.to, currentTime: running.currentTime, remember };
