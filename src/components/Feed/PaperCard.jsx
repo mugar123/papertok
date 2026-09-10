@@ -320,6 +320,15 @@ const PaperCard = memo(function PaperCard({
   const [resolvedAccess, setResolvedAccess] = useState({ paperId: null, copy: null });
   const [linkedResources, setLinkedResources] = useState({ paperId: null, items: [] });
   const [isCardVisible, setIsCardVisible] = useState(false);
+  // Whether the clippings are lit. Deliberately NOT `isCardVisible`: the two
+  // ends of a card's turn on screen want different thresholds, and one flag
+  // cannot hold both. It is armed at the same 15% that starts the fetch — late
+  // enough that the entrance is still running when the card is centred — and
+  // disarmed only once the card is out of view ENTIRELY. Disarming at 15% too
+  // meant the outgoing card cut its figures from 0.62 to 0 in one frame with a
+  // sliver of it still on screen, which is a flicker the reader would catch on
+  // every swipe; a card that is fully gone can be undressed for free.
+  const [figuresLit, setFiguresLit] = useState(false);
   const [isCardSettled, setIsCardSettled] = useState(false);
   const [isCardIdle, setIsCardIdle] = useState(false);
   const [figures, setFigures] = useState([]);
@@ -413,6 +422,8 @@ const PaperCard = memo(function PaperCard({
       (entries) => {
         const [entry] = entries;
         setIsCardVisible(entry.isIntersecting && entry.intersectionRatio >= 0.15);
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.15) setFiguresLit(true);
+        else if (!entry.isIntersecting) setFiguresLit(false);
         if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
           if (analyticsViewedPaperRef.current !== paperViewKey) {
             analyticsViewedPaperRef.current = paperViewKey;
@@ -475,6 +486,26 @@ const PaperCard = memo(function PaperCard({
 
   // Which clippings have their picture. A figure is not shown on the strength of
   // having a URL — see `.pc-figure:not(.is-loaded)` — so this is what lets it in.
+  //
+  // Having the bytes is only half of it. The entrance is a CSS animation that
+  // starts when the element is given it, so gating it on `load` alone tied it to
+  // something that happens exactly once in a picture's life, and the reader
+  // often was not looking when it did. Measured 2026-09-11, production build,
+  // real session, the reader's own path (feed -> institution -> back): coming
+  // back, the FIRST frame the figures existed they already carried `is-loaded`
+  // and `figureClipIn@0` — the pictures were in the browser's cache, so
+  // `complete` was true the instant the <img> attached — and the 620ms entrance
+  // ran 262ms into a 300ms page transition. From then on `figureClipIn` was gone
+  // from `getAnimations()` altogether: four of seven clippings reached the
+  // screen with their entrance already spent, which is the "they are just there"
+  // the reader reported.
+  //
+  // So `is-loaded` means the picture is in hand AND the card is in front of the
+  // reader. It falls away when the card leaves — off screen, where nothing is
+  // seen going — and comes back when the card does, and an element being given
+  // an animation again is what restarts it. This is also what the rest of the
+  // card already does: `pcArrive` is on the pieces unconditionally and plays
+  // every time they mount, rather than once per paper.
   const [loadedFigures, setLoadedFigures] = useState(() => new Set());
 
   // A new paper means new URLs; carrying the old set over would flash the next
@@ -1053,7 +1084,7 @@ const PaperCard = memo(function PaperCard({
           {scatteredFigures.map(({ item, style }) => (
             <figure
               key={item.url}
-              className={`pc-figure${loadedFigures.has(item.url) ? ' is-loaded' : ''}`}
+              className={`pc-figure${loadedFigures.has(item.url) && figuresLit ? ' is-loaded' : ''}`}
               style={style}
             >
               <img

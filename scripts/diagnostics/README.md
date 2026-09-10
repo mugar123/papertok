@@ -390,3 +390,58 @@ What to look for now that the hero's settle owns its height again: a tab strip t
 WITHOUT a `settle` in the same frame is the defect. A move of 150px carried by a settle
 whose `@` advances frame by frame is the fix working. `0 settles during the return` stays
 correct for a back navigation — the route arrival suspends the settle on purpose.
+
+## `feed-figure-entrance.mjs` — does a clipping PLAY its entrance, or just appear? (2026-09-11)
+
+`.pc-figure` carries `figureClipIn` (620ms), withheld by
+`.pc-figure:not(.is-loaded)`. Whether the reader ever SEES it cannot be read off
+the stylesheet: the class, the image's cache state, React's commit and the
+card's `content-visibility: auto` all land on the same frame budget. This
+samples, per rAF and per figure, the class, the computed opacity, and the one
+reading that settles it — `getAnimations()` with each animation's name,
+playState and currentTime.
+
+```bash
+export PROFILE_DIR="$HOME/.papertok-probe-profile" ORIGIN=http://localhost:5174
+node scripts/diagnostics/feed-figure-entrance.mjs max=10 dwell=1700 [raw]
+```
+
+It walks the reader's own path in three phases and gives a verdict per figure at
+the first frame it is loaded AND on screen: entrance *seen* (`figureClipIn` at
+some currentTime under its duration) or *spent* (no `figureClipIn` at all —
+it ran and finished with nobody watching). `raw` prints the frames of the return.
+
+Measured before the fix: cold, `@0 → @650` with opacity `0 → 0.62`, entrance
+seen. Coming back from an entity page, the FIRST frame the figures existed they
+already carried `is-loaded` and `figureClipIn@0` — the pictures were in the
+browser's cache, so `complete` was true the instant the `<img>` attached. From
+then on the entrance was gone from `getAnimations()` entirely: **four of seven
+clippings reached the screen with their entrance already spent**.
+
+Two traps it hit, both worth knowing:
+
+- **Figures are rare.** Roughly one card in six has any, they need
+  `VITE_PAPER_API_BASE_URL` baked into the build (without it `getPaperFigures`
+  returns `[]` and every card measures clean for the wrong reason), and Research
+  has none by design. The probe walks forward until it finds one rather than
+  assuming a card.
+- **Rebuilding with the preview server up reloads the page** — the old chunk
+  names 404 and the app reloads itself, which wipes the sampler mid-run. The
+  probe now reports `MEDIDA INVÁLIDA` instead of returning half a measurement.
+  Build first, start the preview second.
+
+## `tab-switch-scroll.mjs` — the reader's scroll when the Explorer changes tab (2026-09-11)
+
+Records `scrollY` and `documentElement.scrollHeight` per rAF, plus the tab
+strip's viewport top, across a Papers → Authors switch.
+
+```bash
+node scripts/diagnostics/tab-switch-scroll.mjs '#/explorer/institution/I136199984' at=416 3000
+```
+
+Kept for the negative result and the trap behind it, both in its header: driven
+from `at=4000` the switch looks like a 1499px jump plus a spurious page of
+authors, and none of it is reachable, because `.ee-tabs` is not sticky and a
+finger can only press a tab from `scrollY <= ~416`. From there the same switch
+measures a **0px** jump. `element.click()` will press a control no reader could
+reach; drive this from a position the strip is actually visible at.
