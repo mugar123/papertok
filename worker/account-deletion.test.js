@@ -280,6 +280,54 @@ test('a profile pointing at somebody else\'s handle does not free that handle', 
   assert.equal(admin.documents[`userProfiles/${UID}`], undefined);
 });
 
+test('a write that lands between the sweep and the Auth delete is swept too', async () => {
+  const admin = memoryAdmin({
+    [`userProfiles/${UID}`]: { handle: HANDLE },
+    [`handles/${HANDLE}`]: { uid: UID },
+    [`users/${UID}/highlights/h1`]: { quote: 'a finding' },
+  });
+
+  let result;
+  for (let i = 0; i < 12; i += 1) {
+    result = await runAccountDeletionSlice(admin, UID, { ...SERVICE }, {
+      idToken: TOKEN,
+      // The session is still valid until this call returns, so a client that is
+      // mid-write lands a document the sweep has already walked past.
+      fetchImpl: async () => {
+        admin.documents[`users/${UID}/highlights/late`] = { quote: 'orphan' };
+        return new Response('{}', { status: 200 });
+      },
+    });
+    if (result.complete) break;
+  }
+
+  assert.equal(result.complete, true);
+  assert.equal(admin.documents[`users/${UID}/highlights/late`], undefined);
+});
+
+test('paper stubs lose their createdBy attribution', async () => {
+  const admin = memoryAdmin({
+    [`userProfiles/${UID}`]: { handle: HANDLE },
+    'papers/p1': { createdBy: UID, title: 'T' },
+    'papers/p2': { createdBy: 'other', title: 'U' },
+  });
+
+  let result;
+  for (let i = 0; i < 12; i += 1) {
+    result = await runAccountDeletionSlice(admin, UID, { ...SERVICE }, {
+      idToken: TOKEN,
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+    });
+    if (result.complete) break;
+  }
+
+  assert.equal(result.complete, true);
+  // The stub is shared: everybody else's saves point at it. Only the name goes.
+  assert.equal(admin.documents['papers/p1'].createdBy, undefined);
+  assert.equal(admin.documents['papers/p1'].title, 'T');
+  assert.equal(admin.documents['papers/p2'].createdBy, 'other');
+});
+
 test('USER_NOT_FOUND on Auth delete still completes, so a retry after Auth is gone is safe', async () => {
   const admin = memoryAdmin();
   const result = await runAccountDeletionSlice(admin, UID, { ...SERVICE }, {

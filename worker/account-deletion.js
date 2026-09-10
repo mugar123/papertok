@@ -32,6 +32,7 @@ export const ACCOUNT_DELETION_STAGES = Object.freeze([
   'publicLists',
   'followsOut',
   'followsIn',
+  'papers',
   'profile',
   'userTree',
   'notifications',
@@ -176,6 +177,28 @@ async function deleteFollows(admin, uid, field) {
   return rows.length >= PAGE_SIZE;
 }
 
+/**
+ * The paper stub itself stays: it is a shared document every other reader's
+ * saves, comments and lists point at. Only the attribution goes.
+ *
+ * `reports.reporterUid` and `reports.targetAuthorUid` are deliberately kept.
+ * Nobody but the admin console reads them, and they are the moderation record
+ * of a decision that outlives the account.
+ */
+async function dissociatePapers(admin, uid) {
+  const rows = await admin.runQuery({
+    collectionId: 'papers',
+    where: { field: 'createdBy', op: 'EQUAL', value: uid },
+    limit: PAGE_SIZE,
+  });
+  if (rows.length === 0) return false;
+  await commitBestEffort(
+    admin,
+    rows.map(row => clearFieldsWrite(admin.name(['papers', row.id]), ['createdBy'])),
+  );
+  return rows.length >= PAGE_SIZE;
+}
+
 async function deleteProfile(admin, uid) {
   const [profile, search, showcase] = await Promise.all([
     admin.getDocument(['userProfiles', uid]),
@@ -278,6 +301,9 @@ export async function runAccountDeletionSlice(admin, uid, env, {
   if (await deleteFollows(admin, uid, 'targetUid')) {
     return { complete: false, stage: 'followsIn' };
   }
+  if (await dissociatePapers(admin, uid)) {
+    return { complete: false, stage: 'papers' };
+  }
   if (await deleteProfile(admin, uid)) {
     return { complete: false, stage: 'profile' };
   }
@@ -286,6 +312,10 @@ export async function runAccountDeletionSlice(admin, uid, env, {
   }
   await purgeEmailSubscription(env, uid);
   await deleteAuthAccount(env, idToken, { fetchImpl });
+  // The session stays valid until the line above returns, so anything the client
+  // wrote after the sweep walked past it is an orphan nobody — not even its own
+  // author, now that Auth is gone — can ever remove. Sweep once more.
+  await deleteUserTree(admin, uid);
   return { complete: true, stage: 'auth' };
 }
 
