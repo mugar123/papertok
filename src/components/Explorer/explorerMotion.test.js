@@ -399,3 +399,29 @@ test('the tab strip is marked by one rule that travels, not a border each tab pa
   assert.match(armed[1], /transition: transform 0\.28s cubic-bezier\(0\.4, 0, 0\.2, 1\), opacity 0\.16s ease-out;/,
     'the navbar\'s curve and duration: one gesture, one clock');
 });
+
+/**
+ * The wash's box used to ride the hero's height — `top: -20%; bottom: 0` — and
+ * the hero is growing exactly when the wash mounts: the thumbnail finishes
+ * loading in the same stretch in which the Wikipedia block unfolds (320ms)
+ * and, from cold, the navbar band opens (240ms). Measured 2026-09-09 on
+ * Harvard from cold in production, signed in: the wash went through 21
+ * distinct heights from 374.1 to 576.3px (+54%) while its whole 280ms fade ran,
+ * so `cover` rescaled the photograph on every one of them and the 48px blur
+ * was rasterised 21 times. The image lives on a fixed box now; the element is
+ * only the mask.
+ */
+test('the wash keeps its image on a fixed box, so the hero growing does not rescale it', async () => {
+  const css = stripComments(await read('./EntityExplorer.css'));
+  const container = css.match(/\.ehc-bg-blur \{[^}]*\}/)?.[0] || '';
+  // Without this, a rule that vanished would make every `doesNotMatch` below
+  // pass against an empty string.
+  assert.ok(container, 'the top-level .ehc-bg-blur rule must exist');
+  assert.match(container, /position: absolute;\s*inset: 0;/);
+  assert.doesNotMatch(container, /background|filter|top: -20%|bottom: 0/);
+  assert.match(container, /mask-image: linear-gradient\(to bottom, black 30%, transparent 100%\);/);
+  assert.match(css, /\.ehc-bg-blur::before \{\s*content: '';\s*position: absolute;\s*top: -96px;\s*left: -10%;\s*right: -10%;\s*height: 720px;\s*background-image: var\(--ehc-wash-image\);\s*background-size: cover;\s*background-position: center;\s*filter: blur\(48px\) saturate\(1\.1\);\s*\}/);
+  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  assert.match(jsx, /className="ehc-bg-blur"\s*style=\{\{ '--ehc-wash-image': `url\(\$\{visibleWikiInfo\.thumbnail\}\)` \}\}/);
+  assert.doesNotMatch(jsx, /backgroundImage: `url\(\$\{visibleWikiInfo\.thumbnail\}\)`/);
+});

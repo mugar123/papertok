@@ -101,9 +101,13 @@ test('the impact cell and its grid are born at the size the score will take', as
   assert.match(css, /\.ehc-stats-grid:has\(\.ehc-stat-box--impact\) \{\s*width: 264px;\s*\}/);
   // Two lines of 0.625rem/1.3 mono: 1.625rem.
   assert.match(css, /\.ehc-stat-detail \{[^}]*\n {2}min-height: 1\.625rem;\n\}/);
-  // Under 900px the aside spans the row and the grid with it — width wins
-  // over the fixed 264 there.
-  assert.match(css, /\.ehc-hero-aside \.ehc-stats-grid \{\n {4}width: 100%;\n {4}max-width: none;\n {4}flex: 1 1 100%;\n {2}\}/);
+  // Under 768px the aside spans the row and the grid with it — width wins
+  // over the fixed 264 there. Bounded to that media block: pinned by its
+  // indentation alone, this would still pass if the rule moved to another
+  // breakpoint, which is the one thing the comment above claims.
+  const narrow = css.match(/@media \(max-width: 768px\) \{[\s\S]*?\n\}/)?.[0] || '';
+  assert.ok(narrow, 'the 768px block must exist for the rule below to be bounded by it');
+  assert.match(narrow, /\.ehc-hero-aside \.ehc-stats-grid \{\n {4}width: 100%;\n {4}max-width: none;\n {4}flex: 1 1 100%;\n {2}\}/);
   // The skeleton's last cell carries the detail box on the pages that have it.
   // `display: block` is load-bearing: the bar's parent is the `.ehc-stat-detail`
   // span, not the flex `.ehc-stat-box`, so without it the bar stays inline and
@@ -115,4 +119,18 @@ test('the impact cell and its grid are born at the size the score will take', as
   assert.match(jsx, /const isImpact = shape\.impact && i === shape\.stats - 1;/);
   assert.match(jsx, /className=\{`ehc-stat-box\$\{isImpact \? ' ehc-stat-box--impact' : ''\}`\}/);
   assert.match(jsx, /\{isImpact && \(\s*<span className="ehc-stat-detail"><span className="ex-skel ex-skel-stat-detail"><\/span><\/span>\s*\)\}/);
+  // And the LIVE half of the same reservation, which is what the `:has()`
+  // actually binds to. The pin only holds while the cell that lands wears
+  // `ehc-stat-box--impact`: rename it in RecentImpactStat and the grid goes
+  // back to measuring to content, so the score's second line takes it from
+  // 249 to 264 and drops the ORCID card 10.3px again — with every assertion
+  // above still green, because they only ever look at the skeleton's copy.
+  const impactJsx = stripComments(await read('./RecentImpactStat.jsx'));
+  assert.match(impactJsx, /className=\{`ehc-stat-box ehc-stat-box--impact\$\{impact\?\.stale \? ' ehc-stat-box--stale' : ''\}`\}/);
+  // The other half: which pages mount that cell at all. This list and
+  // `explorerSkeletonShape.impact` (author || institution) are two copies of
+  // one decision; add a type here and its skeleton reserves no detail line,
+  // so that page gets the drop back. Nothing else fails — only a probe run
+  // over a cold entity of the new type would show it.
+  assert.match(jsx, /\{\['institution', 'author'\]\.includes\(type\) && \(\s*<RecentImpactStat/);
 });

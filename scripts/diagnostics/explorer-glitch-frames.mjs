@@ -7,9 +7,11 @@
 // Every rAF a record is taken PER PAGE under #main-content (there are two during
 // a navigation): the page's motion attribute, opacity and transform, and inside
 // it the hero, the hero body and its settle, the wash (.ehc-bg-blur) with its
-// BOX and opacity, the visual slot, the ORCID skeleton/card/badge, the
-// experience panel, the Wikipedia fold, the hero aside with its stats grid and
-// the impact cell (with the detail's text), the tab strip and the first row.
+// BOX, opacity and whether it carries an image, the picture's own box (washImg:
+// the `::before`'s computed top/height), the visual slot, the ORCID
+// skeleton/card/badge, the experience panel, the Wikipedia fold, the hero aside
+// with its stats grid and the impact cell (with the detail's text), the tab
+// strip and the first row.
 // A Page.screencast runs at the same time and every frame the compositor
 // produces is written as PNG to out=dir, named by its time relative to the
 // first sample — the same clock on both sides (Date.now() epoch ms), so a frame
@@ -18,9 +20,13 @@
 // with their outermost app frame, plus inclusive time per app function.
 //
 // Written for docs/AUDITORIA-GLITCHES-EXPLORER-2026-09-09.md. Three things it
-// taught that explorer-hero-frames.mjs could not: the wash's box rides the
-// hero's height (it is `top: -20%; bottom: 0`), the impact cell grows when its
+// taught that explorer-hero-frames.mjs could not: the wash's box rode the
+// hero's height (it was `top: -20%; bottom: 0`), the impact cell grows when its
 // detail wraps, and the click freeze of `vite dev` is jsxDEV, not the app.
+// Since 4853a3e the picture is a `::before` with a fixed box and its URL comes
+// in on `--ehc-wash-image`, so `img=` reads that custom property (an inline
+// `background-image` would report `n` forever) and `washImg` is the box that
+// has to stay still while the container keeps riding the hero.
 //
 // PROFILE_DIR=<dir> reuses a Chrome profile the user has signed in to (see the
 // README, "Measuring a page that only exists for a signed-in reader"). It is
@@ -89,6 +95,7 @@ const SAMPLER = `(() => {
   const op = (el) => el ? Number(getComputedStyle(el).opacity).toFixed(2) : null;
   const tf = (el) => { if (!el) return null; const t = getComputedStyle(el).transform; if (t === 'none') return 'none'; const m = t.match(/matrix\\(([^)]+)\\)/); if (!m) return t; const p = m[1].split(',').map(Number); return 'sx' + r1(p[0]) + ' tx' + r1(p[4]) + ' ty' + r1(p[5]); };
   const settle = (el) => { if (!el || !el.getAnimations) return null; const a = el.getAnimations().find((x) => x.id === 'height-settle'); if (!a) return null; const k = a.effect.getKeyframes(); return k[0].height + '>' + k[1].height + '@' + Math.round(a.currentTime || 0); };
+  const before = (el) => { if (!el) return null; const s = getComputedStyle(el, '::before'); return s.top + '/' + s.height; };
   const page = (p) => {
     const q = (s) => p.querySelector(s);
     const wash = q('.ehc-bg-blur');
@@ -97,7 +104,8 @@ const SAMPLER = `(() => {
       motion: p.getAttribute('data-page-motion'), dir: p.getAttribute('data-nav-direction'), pos: getComputedStyle(p).position, top: p.style.top || '', vis: p.style.visibility || '', op: op(p), tf: tf(p),
       hero: box(hero), heroPad: hero ? getComputedStyle(hero).paddingTop : null, rootPad: q('.explorer-container') ? getComputedStyle(q('.explorer-container')).paddingTop : null,
       skel: !!q('.explorer-skeleton'), body: box(q('.explorer-hero-content')), bodyOp: op(q('.explorer-hero-content')), settle: settle(q('.explorer-hero-content')),
-      wash: wash ? box(wash) + '/' + op(wash) + '/img=' + (wash.style.backgroundImage ? 'y' : 'n') : null,
+      wash: wash ? box(wash) + '/' + op(wash) + '/img=' + (wash.style.getPropertyValue('--ehc-wash-image') ? 'y' : 'n') : null,
+      washImg: before(wash),
       img: q('.ehc-wiki-image') ? box(q('.ehc-wiki-image')) + '/' + op(q('.ehc-wiki-image')) : null, icon: op(q('.ehc-icon')),
       name: q('.ehc-name') ? box(q('.ehc-name')) + ' "' + (q('.ehc-name').textContent || '').slice(0, 18) + '"' : null,
       toggle: q('.ehc-name-toggle') ? box(q('.ehc-name-toggle')) + '/' + (q('.ehc-name-toggle').classList.contains('is-open') ? 'open' : 'closed') : null,
