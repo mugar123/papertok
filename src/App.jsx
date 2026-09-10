@@ -150,7 +150,18 @@ function AppContent() {
   // effective 2G link. `navigator.connection` is absent in Safari, and an
   // unknown connection prefetches as before — guessing "slow" for every
   // iPhone would cost more than it saves.
+  //
+  // Only with a session. A guest on /login has none of the taps these chunks
+  // are for: the avatar and the gear live in the Navbar, which renders only
+  // for a signed-in user (`showNavbar` above), and the overlays open from
+  // cards a guest does not see. The 2.5 s count from the session arriving,
+  // which on a cold load is a few hundred ms after mount; a session that ends
+  // before the timer fires cancels it. Keyed on the uid, not the user object:
+  // AuthContext calls setUser on every auth event, and a fresh object with
+  // the same uid must not re-arm the timer.
+  const sessionUid = user?.uid ?? null
   useEffect(() => {
+    if (!sessionUid) return
     const prefetch = () => {
       const conn = navigator.connection
       const frugal = conn && (conn.saveData || /2g/.test(conn.effectiveType || ''))
@@ -189,7 +200,7 @@ function AppContent() {
     const schedule = window.requestIdleCallback || (fn => setTimeout(fn, 0))
     const timer = setTimeout(() => schedule(prefetch), 2500)
     return () => clearTimeout(timer)
-  }, [])
+  }, [sessionUid])
 
   // HashRouter (src/main.jsx) treats the URL fragment as the route. Letting
   // href="#main-content" reach the browser would rewrite the whole hash, so
