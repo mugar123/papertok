@@ -532,22 +532,30 @@ async function readCachedRewrite(env, key) {
 }
 
 /**
- * Whether the model stopped because it had finished, which is the only state a
- * cache entry may be built from.
+ * Whether this rewrite may be cached, and as what: `'complete'`, `'truncated'`,
+ * or `null` for one that must not be kept at all.
  *
- * Gemini names its reason, and `STOP` is the only one that means "the document
- * is complete". Everything else is the answer being cut mid-paper: `MAX_TOKENS`
- * at the output ceiling, `SAFETY`, `RECITATION`, `BLOCKLIST`,
- * `PROHIBITED_CONTENT` and `SPII` at a filter, `LANGUAGE` and `OTHER` at the
- * rest. A stream that ended without naming any reason is not evidence of
- * completion either, so it is treated as truncated.
+ * Gemini names its reason. `STOP` is the document finishing. `MAX_TOKENS` is the
+ * output ceiling, and it is the one truncation worth keeping: the ceiling is a
+ * property of the paper and the model, so the next attempt returns the identical
+ * half — at the cost of another of the day's uses and another minute of waiting.
+ * Refusing to cache it meant the longest papers, the ones this feature exists
+ * for, were regenerated from scratch on every single open.
  *
- * The asymmetry is the point: reading this wrong in the strict direction costs
- * one regeneration, reading it wrong in the lax direction parks half a paper in
- * KV for thirty days.
+ * Everything else is about *this* attempt rather than about the paper: `SAFETY`,
+ * `RECITATION`, `BLOCKLIST`, `PROHIBITED_CONTENT` and `SPII` at a filter,
+ * `LANGUAGE` and `OTHER` at the rest, and a stream that named no reason at all.
+ * Freezing one of those into KV would serve a transient refusal for thirty days.
+ *
+ * What a `'truncated'` entry has to carry is that it *is* one: the replay path
+ * closes with `done` and no `error` line, so a half paper stored without the
+ * flag is served as a whole one.
  */
-export function isCompleteRewrite(finishReason) {
-  return cleanText(finishReason, 40).toUpperCase() === 'STOP';
+export function cacheableFinish(finishReason) {
+  const reason = cleanText(finishReason, 40).toUpperCase();
+  if (reason === 'STOP') return 'complete';
+  if (reason === 'MAX_TOKENS') return 'truncated';
+  return null;
 }
 
 async function writeCachedRewrite(env, key, value) {
@@ -598,6 +606,10 @@ function replayCachedRewrite(cached, extraHeaders) {
       controller.enqueue(encoder.encode(ndjsonLine({
         type: 'done',
         sectionCount: cached.sections.length,
+        // Said on every replay of a rewrite that hit the token ceiling, exactly
+        // as the live run said it: this is where the paper stops, and it is not
+        // where the paper ends.
+        ...(cached.truncated === true ? { truncated: true } : {}),
       })));
       controller.close();
     },
@@ -819,20 +831,25 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
         await refund(new AIExplanationError(code, 502));
         await send({ type: 'error', code, ...(finishReason ? { finishReason } : {}) });
       } else {
-        // A rewrite the model cut short is half a paper, and the replay path has
-        // no way to say so: it reprints the sections and closes with `done`, with
-        // no `error` line anywhere, which is the only signal the client reads as
-        // incomplete. Cached, that half would be served as the whole paper for
-        // thirty days, so only a clean finish earns an entry.
-        cachedWrite = isCompleteRewrite(finishReason);
-        if (cachedWrite) await writeCachedRewrite(env, cacheKey, { meta, sections });
+        // A half paper may be kept, but only marked as one — and only when the
+        // half is what the next attempt would produce too. `cacheableFinish`
+        // owns both halves of that decision.
+        const finish = cacheableFinish(finishReason);
+        cachedWrite = finish !== null;
+        if (cachedWrite) {
+          await writeCachedRewrite(env, cacheKey, {
+            meta,
+            sections,
+            truncated: finish === 'truncated',
+          });
+        }
         await send({
           type: 'done',
           sectionCount: sections.length,
-          // Says on the wire what the cache decision was based on. The reader is
-          // handed a paper that stops mid-sentence either way, and leaving that
-          // undetectable is the whole failure this guard exists to end.
-          ...(cachedWrite ? {} : { truncated: true, ...(finishReason ? { finishReason } : {}) }),
+          // Says on the wire where the paper stopped. The reader is handed a
+          // rewrite that ends mid-sentence either way, and leaving that
+          // undetectable is the whole failure this flag exists to end.
+          ...(finish === 'complete' ? {} : { truncated: true, ...(finishReason ? { finishReason } : {}) }),
         });
       }
 

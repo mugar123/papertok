@@ -3,12 +3,12 @@ import test from 'node:test';
 import {
   buildRewritePrompt,
   buildRewriteSystemInstruction,
+  cacheableFinish,
   createSectionAssembler,
   createSseLineSplitter,
   extractSseFinishReason,
   extractSseTextDelta,
   handlePaperRewrite,
-  isCompleteRewrite,
   isRewriteLevel,
   parseRewriteSectionLine,
   salvageSections,
@@ -730,22 +730,26 @@ test('does not refund a rewrite the provider actually produced', async () => {
   assert.equal(state.release, 0);
 });
 
-test('only a clean STOP counts as a finished rewrite', () => {
-  assert.equal(isCompleteRewrite('STOP'), true);
-  assert.equal(isCompleteRewrite('stop'), true);
+test('the finish reason decides whether the rewrite is kept, and as what', () => {
+  assert.equal(cacheableFinish('STOP'), 'complete');
+  assert.equal(cacheableFinish('stop'), 'complete');
+  // The ceiling is a property of the paper and the model, not of the attempt:
+  // regenerating gets the same half back, at the same price.
+  assert.equal(cacheableFinish('MAX_TOKENS'), 'truncated');
+  assert.equal(cacheableFinish('max_tokens'), 'truncated');
   for (const reason of [
-    'MAX_TOKENS', 'SAFETY', 'RECITATION', 'BLOCKLIST',
+    'SAFETY', 'RECITATION', 'BLOCKLIST',
     'PROHIBITED_CONTENT', 'SPII', 'LANGUAGE', 'OTHER', 'FINISH_REASON_UNSPECIFIED',
   ]) {
-    assert.equal(isCompleteRewrite(reason), false, `${reason} leaves the document cut short`);
+    assert.equal(cacheableFinish(reason), null, `${reason} is not a rewrite worth keeping`);
   }
-  // A stream that ended without naming a reason is not evidence of completion
-  // either, and guessing wrong in that direction is the expensive one.
-  assert.equal(isCompleteRewrite(''), false);
-  assert.equal(isCompleteRewrite(undefined), false);
+  // A stream that ended without naming a reason is not evidence of anything, and
+  // guessing wrong in that direction parks half a paper in KV for thirty days.
+  assert.equal(cacheableFinish(''), null);
+  assert.equal(cacheableFinish(undefined), null);
 });
 
-test('does not cache a rewrite the model cut short, and says so on the wire', async () => {
+test('does not cache a rewrite a filter cut short, and says so on the wire', async () => {
   const state = newLedgerState();
   const store = fakeRewriteStore();
 
@@ -753,7 +757,7 @@ test('does not cache a rewrite the model cut short, and says so on the wire', as
     provider: async () => sseResponse([
       sseFrame(sectionLine('intro', 'The setup.')),
       sseFrame(sectionLine('methods', 'How it was measured.')),
-      sseFrame('', { finishReason: 'MAX_TOKENS' }),
+      sseFrame('', { finishReason: 'SAFETY' }),
     ]),
   }, {
     ...REWRITE_ENV,
@@ -762,14 +766,81 @@ test('does not cache a rewrite the model cut short, and says so on the wire', as
   });
 
   assert.deepEqual(events.map(event => event.type), ['meta', 'section', 'section', 'done']);
-  // The replay path closes with `done` and carries no `error` line, which is the
-  // only thing the client reads as incomplete. Storing this would serve half a
-  // paper as the whole paper for thirty days.
+  // A filter stop is about this attempt, not about the paper: the next run may
+  // well produce the whole thing, so parking this one for thirty days would
+  // freeze a transient refusal into the answer everybody gets.
   assert.equal(store.entries.size, 0);
   assert.equal(events.at(-1).truncated, true);
-  assert.equal(events.at(-1).finishReason, 'MAX_TOKENS');
+  assert.equal(events.at(-1).finishReason, 'SAFETY');
   // The model did the work it was asked for; the use is not coming back.
   assert.equal(state.release, 0);
+});
+
+/**
+ * The token ceiling is the one truncation worth keeping.
+ *
+ * A paper long enough to hit `maxOutputTokens` hits it again on every reopen —
+ * same paper, same model, same ceiling — so regenerating buys the reader the
+ * identical half paper and costs another of the day's ten uses plus a minute of
+ * waiting. What must survive the trip through KV is the *knowing* that it is a
+ * half: the replay path closes with `done` and carries no `error` line, so
+ * without a flag on it the cached half is served as the whole paper.
+ */
+test('a rewrite cut off at the token ceiling is cached, and replayed as the half paper it is', async () => {
+  const state = newLedgerState();
+  const store = fakeRewriteStore();
+  const env = {
+    ...REWRITE_ENV,
+    AI_REWRITE_STORE: store,
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
+  };
+
+  const { events: first } = await runRewrite({
+    provider: async () => sseResponse([
+      sseFrame(sectionLine('intro', 'The setup.')),
+      sseFrame('', { finishReason: 'MAX_TOKENS' }),
+    ]),
+  }, env);
+
+  assert.equal(first.at(-1).type, 'done');
+  assert.equal(first.at(-1).truncated, true);
+  assert.equal(first.at(-1).finishReason, 'MAX_TOKENS');
+  assert.equal(store.entries.size, 1);
+
+  const { events: second } = await runRewrite({
+    pdf: async () => { throw new Error('A cache hit must not download the PDF'); },
+    provider: async () => { throw new Error('A cache hit must not reach the model'); },
+  }, env);
+
+  assert.deepEqual(second.map(event => event.type), ['meta', 'section', 'done']);
+  assert.equal(second[0].cached, true);
+  assert.equal(second[1].paragraphs[0], 'The setup.');
+  assert.equal(second.at(-1).truncated, true);
+  // Served from KV: the second reader pays nothing and waits for nothing.
+  assert.equal(state.reserve, 1);
+  assert.equal(state.release, 0);
+});
+
+test('a rewrite that finished is not replayed as truncated', async () => {
+  const store = fakeRewriteStore();
+  const env = {
+    ...REWRITE_ENV,
+    AI_REWRITE_STORE: store,
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
+  };
+
+  await runRewrite({
+    provider: async () => sseResponse([
+      sseFrame(sectionLine('intro', 'The setup.')),
+      sseFrame('', { finishReason: 'STOP' }),
+    ]),
+  }, env);
+  const { events } = await runRewrite({
+    pdf: async () => { throw new Error('A cache hit must not download the PDF'); },
+    provider: async () => { throw new Error('A cache hit must not reach the model'); },
+  }, env);
+
+  assert.equal(events.at(-1).truncated, undefined);
 });
 
 test('caches a rewrite that finished, and replays it without a second reservation', async () => {
