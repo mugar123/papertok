@@ -1333,8 +1333,13 @@ const PaperCard = memo(function PaperCard({
                       e.stopPropagation();
                       const paperId = paper.id.startsWith('arxiv:') ? paper.id.split(':')[1] : paper.id;
                       const projectRouteId = project.id || project.code;
+                      // The name rides along on the public route too: without
+                      // it the project hero has nothing to paint optimistically
+                      // and a logged-out reader waits through the whole
+                      // skeleton. The funder is not needed here — the
+                      // identifier is the OpenAIRE id, which names one project.
                       const path = publicMode
-                        ? getPublicEntityPath('project', projectRouteId)
+                        ? getPublicEntityPath('project', projectRouteId, { includeName: true, name: project.acronym })
                         : `/explorer/project/${encodeURIComponent(projectRouteId)}?name=${encodeURIComponent(project.acronym)}&funder=${encodeURIComponent(project.funder)}&arxivId=${paperId}`;
                       trackEvent('select_content', {
                         content_type: 'project',

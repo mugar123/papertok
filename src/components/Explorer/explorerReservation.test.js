@@ -177,7 +177,39 @@ test('a project arriving with a name from the pill paints the hero right away an
   // one and falling back to the route id otherwise.
   assert.match(
     jsx,
-    /\} else \{\s*setEntity\(\{ id, display_name: name \|\| id, type: 'project', funder \}\);\s*\}/,
+    /\} else \{\s*setEntity\(\{\s*id,\s*openaireId: id\.includes\('::'\) \? id : undefined,\s*display_name: name \|\| projectFallbackNameRef\.current,\s*type: 'project',\s*funder,\s*\}\);\s*\}/,
     'the failed-lookup arm is unconditional and sets no _detailsPending',
+  );
+});
+
+/**
+ * What the failed-lookup arm lands still has to make a readable page.
+ *
+ * Two holes it left open. The entity carried no `openaireId`, so the empty
+ * state dropped its "View on OpenAIRE" link in exactly the case where sending
+ * the reader to OpenAIRE helps most — and when the route id is itself an
+ * OpenAIRE id (it contains "::"), that link was one field away. And with no
+ * name in the URL the hero title read
+ * `snsf________::daa28096f9e8879ab3a02b90aa0e2f83`: a raw identifier is not a
+ * title. The page already has bilingual wording for what this is.
+ */
+test('a project whose lookup failed still links out and still has a title', async () => {
+  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+
+  assert.doesNotMatch(jsx, /display_name: name \|\| id,/, 'the raw id is no longer a title');
+  assert.match(
+    jsx,
+    /projectFallbackNameRef\.current = isEnglish \? 'Research project' : 'Proyecto de investigación';/,
+    'the fallback title is the wording the page already uses, in both languages',
+  );
+  assert.match(
+    jsx,
+    /const projectFallbackNameRef = useRef\(/,
+    'held in a ref: the language must not be a dependency of the entity effect, or a toggle drops the page back to its skeleton',
+  );
+  assert.match(
+    jsx,
+    /openAireUrl=\{entity\?\.openaireId \? `https:\/\/explore\.openaire\.eu\/search\/project\?projectId=\$\{encodeURIComponent\(entity\.openaireId\)\}` : null\}/,
+    'the empty state links out from that same field',
   );
 });

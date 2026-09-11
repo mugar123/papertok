@@ -306,6 +306,15 @@ export default function EntityExplorer({
   const viewedEntityRef = useRef('');
   const projectSummaryTextRef = useRef(null);
   const wikiDescriptionTextRef = useRef(null);
+  // The title a project falls back to when its lookup fails and the URL
+  // carried no name. Held in a ref rather than read from the closure: the
+  // entity effect would then have to take the language as a dependency, and a
+  // language toggle would drop every entity page back to its skeleton and
+  // refetch it. The ref is born with the current wording and follows it.
+  const projectFallbackNameRef = useRef(isEnglish ? 'Research project' : 'Proyecto de investigación');
+  useEffect(() => {
+    projectFallbackNameRef.current = isEnglish ? 'Research project' : 'Proyecto de investigación';
+  }, [isEnglish]);
   const localizedTopicEntity = useMemo(
     () => entity?._localTopic ? getLocalTopicEntity(entity.id || id, language) : null,
     [entity, id, language],
@@ -687,8 +696,20 @@ export default function EntityExplorer({
           // optimistic (no name at all). Either way, land an entity with no
           // _detailsPending so the reserved summary and two stat cells stop
           // shimmering forever instead of settling — keep the pill's name if
-          // there was one, else fall back to the route id as before.
-          setEntity({ id, display_name: name || id, type: 'project', funder });
+          // there was one.
+          //
+          // With no name, the title used to be the route id, and a raw
+          // `snsf________::daa28096…` is not a title; the page's own wording
+          // for what this is reads as one. And when that id is an OpenAIRE id
+          // it is also the one useful thing left to offer: the empty state's
+          // link out, which is worth most in exactly this case.
+          setEntity({
+            id,
+            openaireId: id.includes('::') ? id : undefined,
+            display_name: name || projectFallbackNameRef.current,
+            type: 'project',
+            funder,
+          });
         }
         if (!isCancelled) setIsLoadingEntity(false);
         return;

@@ -15,8 +15,25 @@ test('the project pill navigates with the OpenAIRE id and falls back to the code
   const src = strip(await read('./PaperCard.jsx'));
   assert.match(src, /const projectRouteId = project\.id \|\| project\.code;/);
   assert.match(src, /\/explorer\/project\/\$\{encodeURIComponent\(projectRouteId\)\}/);
-  assert.match(src, /getPublicEntityPath\('project', projectRouteId\)/);
   assert.match(src, /disabled=\{!\(project\.id \|\| project\.code\)\}/);
+});
+
+/**
+ * The signed-in path carries `?name=` so the project hero can paint at once
+ * and reserve, inside itself, only what the pill cannot know. The public path
+ * carried neither name nor funder, so a logged-out reader tapping the same
+ * pill got `name === ''`, the optimistic guard never fired, and they sat
+ * through the full skeleton-to-hero jump this branch exists to remove. The
+ * funder is not needed there: the identifier on that route is the OpenAIRE
+ * id, which already names one project.
+ */
+test('the public project path carries the name, so a logged-out reader gets the hero straight away too', async () => {
+  const src = strip(await read('./PaperCard.jsx'));
+  assert.match(
+    src,
+    /getPublicEntityPath\('project', projectRouteId, \{ includeName: true, name: project\.acronym \}\)/,
+    'the same name the signed-in path passes',
+  );
 });
 
 /**
