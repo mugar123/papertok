@@ -899,9 +899,16 @@ export default function EntityExplorer({
         let total = 0;
         let fetchedPapers = [];
         let topicProviderFailure = false;
-        
+        // A project's two counts, kept apart because they answer different
+        // questions. `projectUsableIds` is how many identifiers OpenAIRE
+        // returned for this page; `projectResolvedRows` is how many of them
+        // came back as papers. They agree only when every lookup answered,
+        // and their zeroes mean opposite things — see the cut further down.
+        let projectUsableIds = 0;
+        let projectResolvedRows = 0;
+
         const resolvedId = entity.id || id;
-        
+
         if (type === 'project') {
            const res = await getPapersByProject(resolvedId, page, { funder: searchParams.get('funder') || entity.funder || '' });
            arxivIds = res.arxivIds;
@@ -909,9 +916,11 @@ export default function EntityExplorer({
            // OpenAIRE's total counts every publication of the project, with or
            // without a usable DOI or arXiv id; the ones with neither are
            // already discarded above, so a page that yields none usable does
-           // not promise a next one.
-           const usable = res.arxivIds.length + (res.dois || []).length;
-           total = usable === 0 ? page * 30 : res.total;
+           // not promise a next one. That verdict is not reached here, though:
+           // these identifiers still have to be resolved into papers below,
+           // and what OpenAIRE returned is not what the reader ends up seeing.
+           projectUsableIds = arxivIds.length + dois.length;
+           total = res.total;
         } else if (type === 'author') {
             let papersFromOA = [];
             let arxPapersFromNative = [];
@@ -1044,6 +1053,7 @@ export default function EntityExplorer({
         }
 
         if (type === 'project') {
+          projectResolvedRows = fetchedPapers.length;
           fetchedPapers = filterAndSortEntityPapers(fetchedPapers, {
             searchQuery: debouncedSearch,
             filters,
@@ -1053,6 +1063,20 @@ export default function EntityExplorer({
         }
 
         if (request.cancelled) return;
+
+        // The two zeroes, told apart. No usable identifier at all means
+        // OpenAIRE has nothing indexed for this project, and the empty state
+        // may say so. Identifiers that resolved into no rows means every
+        // lookup above timed out or was refused — each is wrapped in
+        // `settleWithin` and dropped in silence — which is a load failure,
+        // and saying so swaps the empty state's false claim for a Retry
+        // button. Either way this page promises no next one. (Past page 1,
+        // with rows already on screen, the flag raises the inline banner
+        // instead of the empty state, which is the right shape there.)
+        if (type === 'project' && (projectUsableIds === 0 || projectResolvedRows === 0)) {
+          total = page * 30;
+          if (projectUsableIds > 0) setPapersError('PUBLICATIONS_LOAD_FAILED');
+        }
 
         if (topicProviderFailure && fetchedPapers.length > 0) {
           setPapersError('PARTIAL_PUBLICATIONS_LOAD_FAILED');

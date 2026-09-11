@@ -244,10 +244,44 @@ test('the list mounts in idle chunks, rows below the fold are skipped, and the s
  * next page immediately — the spinner chained through empty page after empty
  * page instead of ever stopping. A page with nothing usable must not promise
  * a next one.
+ *
+ * The first cut measured the wrong quantity: it counted the identifiers
+ * OpenAIRE returned, not the rows that reached the list. The rows come from
+ * `fetchPapersByIds` / `enrichPapersBatch` / `fetchPapersByDois`, each wrapped
+ * in `settleWithin` and dropped in silence when it times out — so a project
+ * with 39 publications on a slow connection returned 30 usable identifiers
+ * (`total = 39`, the sentinel kept paging) and zero rows, under an empty state
+ * claiming OpenAIRE had linked nothing to the project. Two counts, kept apart:
+ * both end the pagination, and only the second is an error.
  */
-test('a project page with no usable identifiers ends the pagination instead of chaining empty pages', async () => {
+test('a project page tells an unindexed project from a load that failed, and ends the pagination for both', async () => {
   const src = stripComments(await read('./EntityExplorer.jsx'));
-  assert.match(src, /const usable = res\.arxivIds\.length \+ \(res\.dois \|\| \[\]\)\.length;\s*total = usable === 0 \? page \* 30 : res\.total;/);
+
+  assert.doesNotMatch(
+    src,
+    /const usable = res\.arxivIds\.length/,
+    'the single-number rule, which could not tell the two cases apart, is gone',
+  );
+  assert.match(
+    src,
+    /projectUsableIds = arxivIds\.length \+ dois\.length;\s*total = res\.total;/,
+    'what OpenAIRE returned is counted where it is returned, and judged later',
+  );
+  assert.match(
+    src,
+    /if \(type === 'project'\) \{\s*projectResolvedRows = fetchedPapers\.length;/,
+    'what reached the list is counted before the filter narrows it',
+  );
+
+  const cut = src.match(/if \(type === 'project' && \(projectUsableIds === 0 \|\| projectResolvedRows === 0\)\) \{[^}]*\}/);
+  assert.ok(cut, 'one cut, reading both counts');
+  assert.ok(cut[0].split('\n').length <= 6, `the cut capture spans ${cut[0].split('\n').length} lines, past what it names`);
+  assert.match(cut[0], /total = page \* 30;/, 'either zero ends the pagination');
+  assert.match(
+    cut[0],
+    /if \(projectUsableIds > 0\) setPapersError\('PUBLICATIONS_LOAD_FAILED'\);/,
+    'identifiers that resolved into nothing are a load failure, not an unindexed project',
+  );
 });
 
 /**
