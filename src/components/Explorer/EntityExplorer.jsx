@@ -2561,7 +2561,7 @@ export default function EntityExplorer({
                   <Button variant="outline" size="sm" onClick={retryAuthors}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
                 </div>
               ) : (
-                <ExplorerEmptyState variant="authors" isEnglish={isEnglish} />
+                <ExplorerEmptyState variant={debouncedSearch ? 'authors' : 'authors-none'} isEnglish={isEnglish} />
               )
             )}
             {!isLoadingAuthors && authorsError && entityAuthors.length > 0 && (

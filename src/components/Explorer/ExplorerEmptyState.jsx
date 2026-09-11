@@ -21,6 +21,12 @@ const COPY = {
     en: ['No authors matched your search', 'Try a different spelling, or clear the search to see everyone on this entity.', null],
     es: ['Ningún autor coincide con tu búsqueda', 'Prueba otra grafía, o limpia la búsqueda para ver a todos.', null],
   },
+  // The same tab with nothing typed into it. The copy above would be telling
+  // the reader to clear a search they never ran.
+  'authors-none': {
+    en: ['No authors here', 'Nobody is listed as an author on this entity yet.', null],
+    es: ['No hay autores', 'Todavía no hay nadie listado como autor de esta entidad.', null],
+  },
 };
 
 export function ExplorerEmptyState({ variant, isEnglish, onClearFilters, onRetry, errorMessage, openAireUrl }) {
@@ -37,7 +43,7 @@ export function ExplorerEmptyState({ variant, isEnglish, onClearFilters, onRetry
     );
   }
 
-  const Icon = variant === 'filtered' ? SearchX : variant === 'project-unindexed' ? Briefcase : variant === 'authors' ? Users : FileText;
+  const Icon = variant === 'filtered' ? SearchX : variant === 'project-unindexed' ? Briefcase : variant === 'authors' || variant === 'authors-none' ? Users : FileText;
   const [title, body, action] = COPY[variant][lang];
 
   return (
