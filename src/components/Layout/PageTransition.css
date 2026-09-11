@@ -86,8 +86,24 @@
 
 /* `both`: a page whose animation starts a frame late must not flash opaque
    before its fade; and the end state holds until the attribute goes. */
+/* ── Cover, do not dissolve ──
+   Measured 2026-09-11 (production build, real session, feed -> project page):
+   the travel was a clean 60fps with no dropped frames and no blank beat, and it
+   still read as muddy, because for ~200ms BOTH pages were legible at once —
+   "QUANTUMLEAP" printed over a paper's title. A page held at 0.6 under a page
+   fading up from 0 is a double exposure, and an opaque background does not help
+   while the sheet on top is itself half-transparent.
+
+   So the fade is split off the travel and made shorter. The page arriving
+   reaches full opacity at 40% of its journey and COVERS what it replaces for
+   the rest of it; the remaining 60% is pure travel, on exactly the curve and
+   duration that were tuned per frame. Two animations, not one keyframe block
+   with a stop in the middle: an intermediate keyframe would re-ease the
+   transform across each interval and change that travel. */
 .page-transition[data-page-motion="enter"] {
-  animation: pageEnter var(--page-enter-ms) var(--ease-out-quad) both;
+  animation:
+    pageEnterTravel var(--page-enter-ms) var(--ease-out-quad) both,
+    pageCover calc(var(--page-enter-ms) * 0.4) var(--ease-out-quad) both;
 }
 
 .page-transition[data-page-motion="enter-lateral"][data-nav-direction="1"] {
@@ -128,13 +144,20 @@
 /* Coming back: the page that gave way returns to size and brightness
    under the page lifting off it. */
 .page-transition[data-page-motion="reveal"] {
-  animation: pageReveal var(--page-reveal-ms) var(--ease-out-quad) both;
+  animation:
+    pageRevealTravel var(--page-reveal-ms) var(--ease-out-quad) both,
+    pageUncover calc(var(--page-reveal-ms) * 0.45) var(--ease-out-quad) both;
 }
 
 /* Out the way it came in: the entity rose 24px on arrival, it drops 24px
    on the way back. Ease-out — the page is gone before it looks slow. */
 .page-transition[data-page-motion="leave"] {
-  animation: pageLeave var(--page-leave-ms) var(--ease-out-quad) both;
+  /* The other half of the same idea, coming back: the page lifting off stops
+     competing at half its travel instead of staying readable over the feed all
+     the way out. */
+  animation:
+    pageLeaveTravel var(--page-leave-ms) var(--ease-out-quad) both,
+    pageLeaveFade calc(var(--page-leave-ms) * 0.5) var(--ease-out-quad) both;
 }
 
 /* A replace, or a redirect: no step to animate, the old page dissolves. */
@@ -142,9 +165,25 @@
   animation: pageFadeOut var(--page-fade-ms) var(--ease-out-quad) both;
 }
 
-@keyframes pageEnter {
-  from { opacity: 0; transform: translateY(24px); }
-  to { opacity: 1; transform: none; }
+@keyframes pageEnterTravel {
+  from { transform: translateY(24px); }
+  to { transform: none; }
+}
+
+/* Shared by every page arriving over another. */
+@keyframes pageCover {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pageUncover {
+  from { opacity: 0.6; }
+  to { opacity: 1; }
+}
+
+@keyframes pageLeaveFade {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 /* 28px, not the 10px this started at. Per frame at 60Hz on `--ease-out-quad`,
@@ -174,9 +213,9 @@
   to { opacity: 0.7; transform: translateX(12px); }
 }
 
-@keyframes pageLeave {
-  from { opacity: 1; transform: none; }
-  to { opacity: 0; transform: translateY(24px); }
+@keyframes pageLeaveTravel {
+  from { transform: none; }
+  to { transform: translateY(24px); }
 }
 
 @keyframes pageHold {
@@ -184,9 +223,9 @@
   to { opacity: 0.6; transform: scale(0.98); }
 }
 
-@keyframes pageReveal {
-  from { opacity: 0.6; transform: scale(0.98); }
-  to { opacity: 1; transform: none; }
+@keyframes pageRevealTravel {
+  from { transform: scale(0.98); }
+  to { transform: none; }
 }
 
 @keyframes pageFadeOut {

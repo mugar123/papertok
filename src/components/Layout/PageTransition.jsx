@@ -147,6 +147,17 @@ export default function PageTransition({ children }) {
   // here; only the root's own counts.
   const handleAnimationEnd = useCallback((event) => {
     if (event.target !== rootRef.current) return;
+    // The root now runs TWO animations at once: the travel, which owns the
+    // clock and the tuned per-frame curve, and a shorter fade that covers or
+    // uncovers early so two text pages are never both legible (PageTransition.css
+    // says why). The short one ends first, and acting on it would settle a page
+    // still moving and hand a leaving page back halfway out. Ask the element
+    // which of its own animations are still running rather than naming them:
+    // a fade added later is then handled without touching this.
+    const stillMoving = rootRef.current
+      .getAnimations()
+      .some((animation) => animation.playState === 'running');
+    if (stillMoving) return;
     if (present) setSettled(true);
     else if (safeToRemove) safeToRemove();
   }, [present, safeToRemove]);

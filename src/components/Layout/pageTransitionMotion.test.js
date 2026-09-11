@@ -20,13 +20,18 @@ function keyframes(css, name) {
   return match[1];
 }
 
-/** selector → keyframe name, for every rule in `css` that declares an animation. */
+/**
+ * selector → the keyframe names it runs, for every rule in `css` that declares
+ * an animation. A rule may run TWO: the travel, which owns the clock, and a
+ * shorter fade that covers or uncovers early.
+ */
 function animationsBySelector(css) {
   const map = {};
   for (const [, selectors, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    const name = body.match(/animation: (\S+) /)?.[1];
-    if (!name) continue;
-    for (const selector of selectors.split(',')) map[selector.trim()] = name;
+    const declaration = body.match(/animation:([\s\S]*?);/)?.[1];
+    if (!declaration) continue;
+    const names = declaration.split(',').map((part) => part.trim().split(/\s+/)[0]).filter(Boolean);
+    for (const selector of selectors.split(',')) map[selector.trim()] = names.join(' + ');
   }
   return map;
 }
@@ -90,12 +95,15 @@ test('every motion has a rule, and everything rides a curve that can be seen tra
   assert.doesNotMatch(css, /ease-in(?!-out)/);
   assert.doesNotMatch(css, /cubic-bezier\(/, 'the curve is the token, not a literal');
   assert.doesNotMatch(css, /--ease-out-expo/, 'the expo-out did 80% of its change in the first 60ms: a cut, not a movement');
-  const animations = [...css.matchAll(/animation: (\S+) var\(--page-[a-z-]+-ms\) (\S+) both;/g)];
-  assert.equal(animations.length, 15, 'ten motion rules and five reduced-motion rewrites, each named, timed and filled both ways');
+  // Each animation is `<name> <duration> <easing> both`, where the duration is
+  // a token or a fraction of one — the cover fade is a fraction of the travel
+  // it rides with, so the two can never drift apart when a duration changes.
+  const animations = [...css.matchAll(/(\w+) (?:var\(--page-[a-z-]+-ms\)|calc\(var\(--page-[a-z-]+-ms\) \* 0\.\d+\)) (\S+) both[,;]/g)];
+  assert.equal(animations.length, 18, 'ten motion rules (three of them a travel plus a fade) and five reduced-motion rewrites');
   for (const [, name, easing] of animations) {
     assert.equal(easing, 'var(--ease-out-quad)', `${name} runs on ${easing}`);
   }
-  assert.equal(css.match(/animation:/g).length, animations.length, 'no animation escapes the form above');
+  assert.equal(css.match(/animation:/g).length, 15, 'fifteen rules, no animation escaping the form above');
 });
 
 test('each motion runs the keyframes named for it, and reduced motion swaps only the movement', async () => {
@@ -103,15 +111,15 @@ test('each motion runs the keyframes named for it, and reduced motion swaps only
   const [base, reduced] = css.split('@media (prefers-reduced-motion: reduce)');
   assert.ok(reduced, 'the reduced-motion block is there to split on');
   assert.deepEqual(animationsBySelector(base), {
-    '.page-transition[data-page-motion="enter"]': 'pageEnter',
+    '.page-transition[data-page-motion="enter"]': 'pageEnterTravel + pageCover',
     '.page-transition[data-page-motion="enter-lateral"][data-nav-direction="1"]': 'pageEnterFromRight',
     '.page-transition[data-page-motion="enter-lateral"][data-nav-direction="-1"]': 'pageEnterFromLeft',
     '.page-transition[data-page-motion="hold"]': 'pageHold',
     '.page-transition[data-page-motion="hold-lateral"]': 'pageHold',
     '.page-transition[data-page-motion="hold-lateral"][data-leave-direction="1"]': 'pageHoldToLeft',
     '.page-transition[data-page-motion="hold-lateral"][data-leave-direction="-1"]': 'pageHoldToRight',
-    '.page-transition[data-page-motion="reveal"]': 'pageReveal',
-    '.page-transition[data-page-motion="leave"]': 'pageLeave',
+    '.page-transition[data-page-motion="reveal"]': 'pageRevealTravel + pageUncover',
+    '.page-transition[data-page-motion="leave"]': 'pageLeaveTravel + pageLeaveFade',
     '.page-transition[data-page-motion="fade"]': 'pageFadeOut',
   });
   assert.deepEqual(animationsBySelector(reduced), {
@@ -137,22 +145,36 @@ test('the tokens are declared, and the one this file rides on decelerates for it
 test('pages move on opacity and transform only, travel far enough to be seen, and land with no transform', async () => {
   const css = await read('./PageTransition.css');
   const names = [...css.matchAll(/@keyframes ([a-zA-Z]+) \{/g)].map((m) => m[1]);
-  assert.deepEqual([...names].sort(), ['pageBrighten', 'pageDim', 'pageEnter', 'pageEnterFromLeft', 'pageEnterFromRight', 'pageFadeIn', 'pageFadeOut', 'pageHold', 'pageHoldToLeft', 'pageHoldToRight', 'pageLeave', 'pageReveal']);
+  assert.deepEqual([...names].sort(), ['pageBrighten', 'pageCover', 'pageDim', 'pageEnterFromLeft', 'pageEnterFromRight', 'pageEnterTravel', 'pageFadeIn', 'pageFadeOut', 'pageHold', 'pageHoldToLeft', 'pageHoldToRight', 'pageLeaveFade', 'pageLeaveTravel', 'pageRevealTravel', 'pageUncover']);
   for (const name of names) {
     const body = keyframes(css, name);
     assert.doesNotMatch(body, /\b(width|height|top|left|right|bottom|margin|padding)\s*:/, `${name} stays on the compositor`);
-    assert.match(body, /opacity:/);
+    assert.match(body, /opacity:|transform:/, `${name} moves on the compositor's two properties`);
   }
-  for (const name of ['pageEnter', 'pageEnterFromRight', 'pageEnterFromLeft', 'pageReveal']) {
-    assert.match(keyframes(css, name), /to \{ opacity: 1; transform: none; \}/, `${name} lands with no transform`);
+  // The vertical push is split in two: the travel keeps the curve and the
+  // duration that were tuned per frame, and the fade rides alongside it over a
+  // fraction of the same clock, so the page arriving reaches full opacity while
+  // it is still moving and COVERS the one underneath instead of blending with
+  // it. Measured 2026-09-11 before the split (production, real session): for
+  // ~200ms both pages were legible at once, in both directions.
+  for (const name of ['pageEnterTravel', 'pageEnterFromRight', 'pageEnterFromLeft', 'pageRevealTravel']) {
+    assert.match(keyframes(css, name), /to \{ (?:opacity: 1; )?transform: none; \}/, `${name} lands with no transform`);
   }
-  assert.match(keyframes(css, 'pageEnter'), /from \{ opacity: 0; transform: translateY\(24px\); \}/, 'far enough to be seen');
+  assert.match(keyframes(css, 'pageEnterTravel'), /from \{ transform: translateY\(24px\); \}/, 'far enough to be seen');
+  assert.match(keyframes(css, 'pageCover'), /from \{ opacity: 0; \}\s*to \{ opacity: 1; \}/);
   assert.match(keyframes(css, 'pageEnterFromRight'), /from \{ opacity: 0; transform: translateX\(28px\); \}/);
   assert.match(keyframes(css, 'pageEnterFromLeft'), /from \{ opacity: 0; transform: translateX\(-28px\); \}/);
-  assert.match(keyframes(css, 'pageLeave'), /to \{ opacity: 0; transform: translateY\(24px\); \}/, 'leaves the way it came');
+  assert.match(keyframes(css, 'pageLeaveTravel'), /to \{ transform: translateY\(24px\); \}/, 'leaves the way it came');
+  assert.match(keyframes(css, 'pageLeaveFade'), /from \{ opacity: 1; \}\s*to \{ opacity: 0; \}/);
+  // The fade always ends BEFORE the travel it rides with: that is the whole
+  // point, and a fraction of 1 or more would put the double exposure back.
+  for (const [, fraction] of css.matchAll(/calc\(var\(--page-[a-z-]+-ms\) \* (0\.\d+)\)/g)) {
+    assert.ok(Number(fraction) > 0 && Number(fraction) < 1, `a cover fade runs for ${fraction} of its travel`);
+  }
   // The page underneath gives way, and comes back: never to 0, never to nothing.
   assert.match(keyframes(css, 'pageHold'), /from \{ opacity: 1; transform: none; \}\s*to \{ opacity: 0\.6; transform: scale\(0\.98\); \}/);
-  assert.match(keyframes(css, 'pageReveal'), /from \{ opacity: 0\.6; transform: scale\(0\.98\); \}\s*to \{ opacity: 1; transform: none; \}/);
+  assert.match(keyframes(css, 'pageRevealTravel'), /from \{ transform: scale\(0\.98\); \}\s*to \{ transform: none; \}/);
+  assert.match(keyframes(css, 'pageUncover'), /from \{ opacity: 0\.6; \}\s*to \{ opacity: 1; \}/, 'the page revealed comes back from the same 0.6 it gave way to');
   for (const name of ['pageHoldToLeft', 'pageHoldToRight']) {
     assert.match(keyframes(css, name), /to \{ opacity: 0\.7; transform: translateX\(-?12px\); \}/, `${name} yields without disappearing`);
   }
