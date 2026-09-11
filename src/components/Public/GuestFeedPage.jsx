@@ -20,7 +20,6 @@ const NO_AREAS = Object.freeze([]);
 // The prompt waits for the first card to be on screen, and then a beat more:
 // the feed's own arrival (the atom veil lifting, the card composing) has to
 // finish before anything else asks for the eye.
-const INTERESTS_PROMPT_DELAY_MS = 900;
 
 export default function GuestFeedPage({
   onReady,
@@ -53,13 +52,19 @@ export default function GuestFeedPage({
     return () => onInterestsPromptChange?.(false);
   }, [interestsOpen, onInterestsPromptChange]);
 
-  // The first ask. Not while the sign-in door is open — a guest who went
-  // straight for "Sign in" is about to answer this in the onboarding anyway.
-  useEffect(() => {
-    if (!firstAsk || interestsOpen || interestsPromptSuspended || !feedReady) return undefined;
-    const timer = window.setTimeout(() => setInterestsOpen(true), INTERESTS_PROMPT_DELAY_MS);
-    return () => window.clearTimeout(timer);
-  }, [feedReady, firstAsk, interestsOpen, interestsPromptSuspended]);
+  // The first ask, the moment the page is up — not once the feed has loaded,
+  // and with no beat before it: a visitor who has just arrived is choosing
+  // what to read, and the cards can fill in behind the sheet. Not while the
+  // sign-in door is open — a guest who went straight for "Sign in" is about
+  // to answer this in the onboarding anyway.
+  // Adjusted during render rather than in an effect so the sheet is in the
+  // first paint, not one commit behind it. Once per visit: "Not now" closes
+  // it, and `askedOnce` keeps this from asking again on the next render.
+  const [askedOnce, setAskedOnce] = useState(false);
+  if (firstAsk && !askedOnce && !interestsPromptSuspended) {
+    setAskedOnce(true);
+    setInterestsOpen(true);
+  }
 
   useEffect(() => {
     if (

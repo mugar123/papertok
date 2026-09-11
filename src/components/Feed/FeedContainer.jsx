@@ -21,7 +21,7 @@ import {
 import AnimatedAtom from './AnimatedAtom';
 import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feedLoadingState';
 import { createFeedResumeMemory } from '../../utils/feedResumeMemory.js';
-import { isPullRefresh, pullStartFrom } from '../../utils/feedPullToRefresh.js';
+import { pullStartFrom, pullProgress, pullOutcome } from '../../utils/feedPullToRefresh.js';
 import './FeedContainer.css';
 
 // Per-surface memory of the card each feed was left on: the Siguiendo feed
@@ -52,6 +52,8 @@ function resumeAnchor(papers, scrollKey) {
   const saved = resumeMemory.get(scrollKey);
   return { saved, index: resumeIndex({ papers, savedPaperId: saved.paperId, savedIndex: saved.index }) };
 }
+/** Depth of the band under the navbar in which the mouse asks for the pill. */
+const REFRESH_HOVER_BAND_PX = 120;
 const SCROLL_IDLE_DELAY_MS = 120;
 const SCROLL_INTERACTION_SETTLE_MS = 220;
 
@@ -180,6 +182,13 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   // touch isn't a pull (it didn't begin at scrollTop 0). A ref, not state:
   // the drag distance is only read once, on touchend.
   const pullStartY = useRef(null);
+  const pullStartedAt = useRef(0);
+  const refreshPillRef = useRef(null);
+  // Desktop: the pill lives hidden under the navbar and shows while the mouse
+  // is in the band beneath it. Touch: it shows as the pull progresses.
+  const [refreshPillHover, setRefreshPillHover] = useState(false);
+  const [refreshDone, setRefreshDone] = useState(false);
+  const wasRefreshingRef = useRef(false);
   const [showLoader, setShowLoader] = useState(false);
   const [initialFeedReady, setInitialFeedReady] = useState(false);
   // The cards mounted right now: a window around the card this feed was left
@@ -443,19 +452,59 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   // replace the feed under the reader); touchend reads the distance and
   // clears it either way. Neither calls preventDefault, so native scrolling
   // and the CSS scroll-snap are untouched.
+  const setPull = useCallback((progress) => {
+    const pill = refreshPillRef.current;
+    if (!pill) return;
+    pill.style.setProperty('--pull', String(progress));
+    pill.classList.toggle('is-pulling', progress > 0);
+  }, []);
   const handleTouchStart = useCallback((e) => {
+    if (publicMode) return;
     pullStartY.current = pullStartFrom({
       target: e.target,
       scrollTop: e.currentTarget.scrollTop,
       clientY: e.touches[0].clientY,
     });
-  }, []);
+    pullStartedAt.current = performance.now();
+  }, [publicMode]);
+  const handleTouchMove = useCallback((e) => {
+    if (pullStartY.current === null) return;
+    setPull(pullProgress({ startY: pullStartY.current, currentY: e.touches[0].clientY }));
+  }, [setPull]);
   const handleTouchEnd = useCallback((e) => {
     const startY = pullStartY.current;
     pullStartY.current = null;
     if (startY === null) return;
-    if (isPullRefresh({ startY, endY: e.changedTouches[0].clientY }) && !loading) handleRefresh();
-  }, [handleRefresh, loading]);
+    setPull(0);
+    const outcome = pullOutcome({
+      startY,
+      endY: e.changedTouches[0].clientY,
+      elapsedMs: performance.now() - pullStartedAt.current,
+    });
+    if (outcome === 'refresh' && !loading && !isRefreshing) handleRefresh();
+  }, [handleRefresh, isRefreshing, loading, setPull]);
+
+  // Fine pointer only: a touch also fires a synthetic mousemove where it
+  // landed, and a tap on the card's top edge is not a request for the pill.
+  const handleMouseMove = useCallback((e) => {
+    if (publicMode) return;
+    if (!window.matchMedia('(pointer: fine)').matches) return;
+    const inBand = e.clientY - e.currentTarget.getBoundingClientRect().top < REFRESH_HOVER_BAND_PX;
+    setRefreshPillHover((prev) => (prev === inBand ? prev : inBand));
+  }, [publicMode]);
+  const handleMouseLeave = useCallback(() => setRefreshPillHover(false), []);
+
+  // A short "done" beat once a refresh lands, before the pill hides again.
+  useEffect(() => {
+    if (wasRefreshingRef.current && !isRefreshing) {
+      setRefreshDone(true);
+      const t = setTimeout(() => setRefreshDone(false), 600);
+      wasRefreshingRef.current = false;
+      return () => clearTimeout(t);
+    }
+    wasRefreshingRef.current = isRefreshing;
+    return undefined;
+  }, [isRefreshing]);
 
   const handleOpenPdf = useCallback((paper) => {
     if (!publicMode) trackPdfOpened(paper);
@@ -562,10 +611,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   if (displayState === FEED_DISPLAY_STATES.FEED || atomVeil) {
   return (
     <FeedLandmark landmark={landmark}>
-      {papers.length > 0 && (
+      {!publicMode && papers.length > 0 && (
         <button
           type="button"
-          className="feed-refresh"
+          ref={refreshPillRef}
+          className={`feed-refresh${refreshPillHover || isRefreshing || refreshDone ? ' is-visible' : ''}${isRefreshing ? ' is-refreshing' : ''}${refreshDone ? ' is-done' : ''}`}
           onClick={handleRefresh}
           disabled={isRefreshing}
           aria-busy={isRefreshing || undefined}
@@ -581,7 +631,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
         ref={feedRef}
         onScroll={handleScroll}
         onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
       >
         {papers.map((paper, index) => (
           !inMountWindow(anchoredWindow, index) ? (

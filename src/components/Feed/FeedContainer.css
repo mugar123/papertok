@@ -54,32 +54,59 @@
   height: 1px;
 }
 
-/* Manual refresh for For You: visible only on the first card, so it never
-   competes with a card the reader is actually reading. `translate`, not
-   `transform`, centres it — a transform-based centring here would be at risk
-   of a future transform-driven keyframe stomping it and snapping the pill
-   back off-centre when that animation ends (papertok-transform-centering-vs-arrival).
+/* Manual refresh for For You. Hidden under the navbar until asked for: on a
+   fine pointer, while the mouse is in the band beneath the bar (`is-visible`,
+   set by FeedContainer); on touch, as the pull on the first card progresses
+   (`is-pulling` + `--pull`, 0..1, written straight to the element so a drag
+   never re-renders the feed). While a refresh runs it stays out and spins;
+   when it lands it gives one beat (`is-done`) and goes back under the bar.
+   `translate`, not `transform`, centres it (papertok-transform-centering-vs-arrival).
    `top: 12px`, not `--nav-total + 12px`: this is an absolutely-positioned
-   child of .feed-wrapper, which already carries `margin-top: var(--nav-total)`
-   — its own top edge (where this `top` anchors) is already the navbar's
-   bottom edge, exactly as .feed-empty--veil's `margin-top: 0; inset: 0;`
-   above already relies on. Adding --nav-total again would push the pill a
-   second bar-height too low. */
+   child of .feed-wrapper, which already carries `margin-top: var(--nav-total)`. */
 .feed-refresh {
+  --pull: 0;
   position: absolute; top: 12px; left: 50%;
-  translate: -50% 0; z-index: 5;
+  z-index: 5;
   display: inline-flex; align-items: center; gap: 6px;
   padding: 6px 12px; border-radius: 999px;
   background: var(--bg-card); color: var(--text-primary);
   border: 1px solid var(--border-default); box-shadow: var(--shadow-md);
-  font-size: 0.8rem; opacity: 0.9;
+  font-size: 0.8rem;
+  opacity: 0;
+  translate: -50% -18px;
+  scale: 0.9;
+  pointer-events: none;
+  transition: opacity 160ms ease-in, translate 160ms ease-in, scale 160ms ease-in;
 }
-.feed-refresh:hover { opacity: 1; }
-.feed-refresh:disabled { opacity: 0.75; cursor: default; }
+.feed-refresh.is-visible,
+.feed-refresh:focus-visible {
+  opacity: 1;
+  translate: -50% 0;
+  scale: 1;
+  pointer-events: auto;
+  transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1), translate 200ms cubic-bezier(0.2, 0, 0, 1), scale 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+.feed-refresh.is-pulling {
+  transition: none;
+  opacity: var(--pull);
+  translate: -50% calc(-18px + 30px * var(--pull));
+  scale: calc(0.9 + 0.12 * var(--pull));
+  pointer-events: none;
+}
+.feed-refresh:active:not(:disabled) { scale: 0.96; transition-duration: 80ms; }
+.feed-refresh:disabled { cursor: default; }
+.feed-refresh.is-done { animation: feedRefreshDone 420ms cubic-bezier(0.2, 0, 0, 1); }
 .feed-refresh-icon--spinning { animation: feedRefreshSpin 0.8s linear infinite; }
 @keyframes feedRefreshSpin { to { rotate: 360deg; } }
+@keyframes feedRefreshDone {
+  0% { scale: 1; }
+  35% { scale: 1.08; }
+  100% { scale: 1; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .feed-refresh-icon--spinning { animation: none; }
+  .feed-refresh, .feed-refresh.is-visible { transition: opacity 120ms linear; translate: -50% 0; scale: 1; }
+  .feed-refresh.is-pulling { translate: -50% 0; scale: 1; }
+  .feed-refresh.is-done, .feed-refresh-icon--spinning { animation: none; }
 }
 
 /* No .feed-wrapper override at 768px: --nav-total already switches to
