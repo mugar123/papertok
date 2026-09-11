@@ -1758,13 +1758,7 @@ const PaperCard = memo(function PaperCard({
           <span className="pc-side-label">
             {isReadActive
               ? (isEnglish ? 'Read' : 'Leído')
-              : resolvedOpenCopy || paper.openAccessPdfUrl
-                ? (isEnglish ? 'Open version' : 'Versión abierta')
-                : paper.pdfUrl
-                  ? (isEnglish ? 'Read article' : 'Leer artículo')
-                  : (paper.landingPageUrl || paper.doi
-                    ? (isEnglish ? 'Source' : 'Fuente')
-                    : (isEnglish ? 'Read' : 'Leer'))}
+              : (isEnglish ? 'Mark as read' : 'Marcar leído')}
           </span>
         </Toggle>
 
