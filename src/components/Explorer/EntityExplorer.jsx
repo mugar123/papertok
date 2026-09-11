@@ -43,6 +43,7 @@ import PaperOverlay from '../Feed/PaperOverlay';
 import PDFViewer from '../PDF/PDFViewer';
 import ScientificText from '../ScientificText';
 import RecentImpactStat from './RecentImpactStat';
+import { ExplorerEmptyState, pickEmptyVariant } from './ExplorerEmptyState.jsx';
 import { normalizeScientificMarkup } from '../../utils/latex';
 import { isOpaqueQueryTopicText, resolveQueryTopicRoute } from '../../utils/topicNavigation';
 import { scoreQueryTopicPaper } from '../../utils/queryTopicSearch.js';
@@ -2440,18 +2441,18 @@ export default function EntityExplorer({
             </TooltipProvider>
 
             {!isLoadingPapers && filteredPapers.length === 0 && (
-              <div className="explorer-empty">
-                {papersError ? (
-                  <>
-                    <p role="alert">{getUiErrorMessage(papersError, language, 'PUBLICATIONS_LOAD_FAILED')}</p>
-                    <Button variant="outline" size="sm" onClick={retryPapers}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
-                  </>
-                ) : (
-                  <p>{isEnglish
-                    ? 'No results matched your search and filters.'
-                    : 'No se encontraron resultados que coincidan con tu búsqueda y filtros.'}</p>
-                )}
-              </div>
+              <ExplorerEmptyState
+                variant={pickEmptyVariant({
+                  papersError,
+                  hasActiveFilters: Boolean(debouncedSearch) || Boolean(filters.category) || filters.peerReviewed || Boolean(filters.dateRange),
+                  type,
+                })}
+                isEnglish={isEnglish}
+                errorMessage={papersError ? getUiErrorMessage(papersError, language, 'PUBLICATIONS_LOAD_FAILED') : ''}
+                onRetry={retryPapers}
+                onClearFilters={() => { setSearchQuery(''); setFilters({ category: '', peerReviewed: false, dateRange: '' }); }}
+                openAireUrl={entity?.openaireId ? `https://explore.openaire.eu/search/project?projectId=${encodeURIComponent(entity.openaireId)}` : null}
+              />
             )}
             {!isLoadingPapers && papersError && filteredPapers.length > 0 && (
               <div className="explorer-inline-error" role="alert">
@@ -2509,16 +2510,14 @@ export default function EntityExplorer({
               </div>
             )}
             {!isLoadingAuthors && entityAuthors.length === 0 && (
-              <div className="explorer-empty">
-                {authorsError ? (
-                  <>
-                    <p role="alert">{getUiErrorMessage(authorsError, language, 'AUTHORS_LOAD_FAILED')}</p>
-                    <Button variant="outline" size="sm" onClick={retryAuthors}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
-                  </>
-                ) : (
-                  <p>{isEnglish ? 'No authors matched your search.' : 'No se encontraron autores que coincidan con tu búsqueda.'}</p>
-                )}
-              </div>
+              authorsError ? (
+                <div className="explorer-empty">
+                  <p role="alert">{getUiErrorMessage(authorsError, language, 'AUTHORS_LOAD_FAILED')}</p>
+                  <Button variant="outline" size="sm" onClick={retryAuthors}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
+                </div>
+              ) : (
+                <ExplorerEmptyState variant="authors" isEnglish={isEnglish} />
+              )
             )}
             {!isLoadingAuthors && authorsError && entityAuthors.length > 0 && (
               <div className="explorer-inline-error" role="alert">
