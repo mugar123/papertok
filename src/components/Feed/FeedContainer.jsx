@@ -21,6 +21,7 @@ import {
 import AnimatedAtom from './AnimatedAtom';
 import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feedLoadingState';
 import { createFeedResumeMemory } from '../../utils/feedResumeMemory.js';
+import { isPullRefresh, pullStartFrom } from '../../utils/feedPullToRefresh.js';
 import './FeedContainer.css';
 
 // Per-surface memory of the card each feed was left on: the Siguiendo feed
@@ -31,6 +32,26 @@ import './FeedContainer.css';
 // sessionStorage once the scroll settles, so it outlives the reload the tab
 // gives itself after a deploy (utils/feedResumeMemory.js).
 const resumeMemory = createFeedResumeMemory();
+
+/**
+ * The card a feed opens on, and the memory row that answer came out of.
+ *
+ * Three places need the same answer and must not disagree: the mount
+ * window's first guess, the window re-anchored when the papers arrive late,
+ * and `activeIndex` before any scroll event has reported one. A window
+ * anchored on card N while `activeIndex` is still 0 mounts exactly one card
+ * (`MOUNT_WINDOW_RESUME_RADIUS` is 0) carrying `data-active="false"`, which
+ * paints complete for a frame and then blanks and refades the whole card
+ * body the moment the scroll event lands (PaperCard.css).
+ *
+ * The restore effect below keeps its own inline read of the same two lines
+ * rather than calling this: feedResume.test.js pins that exact text as the
+ * contract for reporting the visible paper before the profile re-rank.
+ */
+function resumeAnchor(papers, scrollKey) {
+  const saved = resumeMemory.get(scrollKey);
+  return { saved, index: resumeIndex({ papers, savedPaperId: saved.paperId, savedIndex: saved.index }) };
+}
 const SCROLL_IDLE_DELAY_MS = 120;
 const SCROLL_INTERACTION_SETTLE_MS = 220;
 
@@ -148,7 +169,13 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   // `.feed-snap-item--pending` placeholder. It self-heals there: nothing
   // resets activeIndex in between, so the target card mounts already
   // isActive=true.
-  const [activeIndex, setActiveIndex] = useState(0);
+  // Seeded from the same anchor the mount window uses, never from a bare 0:
+  // a resumed feed mounts card N and nothing else, and a 0 here would hand
+  // that card `data-active="false"` for the first painted frame — complete,
+  // then blanked and refaded over 280ms plus 175ms of stagger the instant
+  // the scroll event corrected it. The restore effect below re-seeds it for
+  // the other resume shape, a reload whose papers had not arrived yet.
+  const [activeIndex, setActiveIndex] = useState(() => resumeAnchor(papers, scrollKey).index);
   // Where a touch-driven pull-to-refresh started, or null when the current
   // touch isn't a pull (it didn't begin at scrollTop 0). A ref, not state:
   // the drag distance is only read once, on touchend.
@@ -165,10 +192,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   useEffect(() => { papersRef.current = papers; }, [papers]);
   const [mountWindow, setMountWindow] = useState(
     () => {
-      const saved = resumeMemory.get(scrollKey);
+      const { saved, index } = resumeAnchor(papers, scrollKey);
       return initialMountWindow({
         total: papers.length,
-        anchorIndex: resumeIndex({ papers, savedPaperId: saved.paperId, savedIndex: saved.index }),
+        anchorIndex: index,
         radius: saved.paperId ? MOUNT_WINDOW_RESUME_RADIUS : MOUNT_WINDOW_RADIUS,
       });
     },
@@ -188,10 +215,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   // with papers already has the right cards in it.
   const anchoredWindow = useMemo(() => {
     if (mountWindow.hi !== 0 || papers.length === 0) return mountWindow;
-    const saved = resumeMemory.get(scrollKey);
+    const { saved, index } = resumeAnchor(papers, scrollKey);
     return initialMountWindow({
       total: papers.length,
-      anchorIndex: resumeIndex({ papers, savedPaperId: saved.paperId, savedIndex: saved.index }),
+      anchorIndex: index,
       radius: saved.paperId ? MOUNT_WINDOW_RESUME_RADIUS : MOUNT_WINDOW_RADIUS,
     });
   }, [mountWindow, papers, scrollKey]);
@@ -271,6 +298,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     // already set.
     const index = resumeIndex({ papers, savedPaperId: saved.paperId, savedIndex: saved.index });
     reportVisiblePaper?.(papers[index]?.id ?? null);
+    // The other resume shape: a reload restores its place before the papers
+    // have arrived, so the seed above could only answer 0. This runs in a
+    // layout effect, so React flushes the re-render BEFORE the browser
+    // paints and the resumed card still never shows a frame at rest.
+    setActiveIndex(index);
     // A place restored from storage after a reload has an index and no pixel
     // offset; either says there is somewhere to go back to.
     if (feedRef.current && (saved.scrollTop > 0 || saved.index > 0)) {
@@ -405,18 +437,24 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
 
   // Pull-to-refresh, touch only — a mouse has no touch events to answer to,
   // and wheel/trackpad stay native as noted above. touchstart records a start
-  // position only when the pull begins at the very top of the scroller, so a
-  // drag started mid-feed never counts; touchend reads the distance and
+  // position only when the pull begins at the very top of the scroller AND
+  // not inside a scroller of the card's own (utils/feedPullToRefresh.js says
+  // which, and why an expanded abstract answering its own drag used to
+  // replace the feed under the reader); touchend reads the distance and
   // clears it either way. Neither calls preventDefault, so native scrolling
   // and the CSS scroll-snap are untouched.
   const handleTouchStart = useCallback((e) => {
-    pullStartY.current = e.currentTarget.scrollTop === 0 ? e.touches[0].clientY : null;
+    pullStartY.current = pullStartFrom({
+      target: e.target,
+      scrollTop: e.currentTarget.scrollTop,
+      clientY: e.touches[0].clientY,
+    });
   }, []);
   const handleTouchEnd = useCallback((e) => {
-    if (pullStartY.current === null) return;
-    const dy = e.changedTouches[0].clientY - pullStartY.current;
+    const startY = pullStartY.current;
     pullStartY.current = null;
-    if (dy > 90 && !loading) handleRefresh();
+    if (startY === null) return;
+    if (isPullRefresh({ startY, endY: e.changedTouches[0].clientY }) && !loading) handleRefresh();
   }, [handleRefresh, loading]);
 
   const handleOpenPdf = useCallback((paper) => {

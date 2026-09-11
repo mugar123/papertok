@@ -47,6 +47,49 @@ test('SOURCE: the resumed card is looked up in the memory, for the mount window 
   assert.match(restore, /resumeIndex\(\{ papers, savedPaperId: saved\.paperId, savedIndex: saved\.index \}\)/);
 });
 
+/**
+ * The card the container calls active on the FIRST painted frame.
+ *
+ * `activeIndex` was seeded to a bare 0 and only ever corrected inside
+ * `handleScroll`, which runs in a later task than the `useLayoutEffect` that
+ * assigns `scrollTop`. With `MOUNT_WINDOW_RESUME_RADIUS` at 0 the only card
+ * mounted at that first frame is the resumed one, and a 0 here gave it
+ * `data-active="false"`: it painted complete, and the moment the scroll event
+ * landed its title, meta, authors, abstract and action bar blanked out and
+ * faded back in over 280ms plus 175ms of stagger (PaperCard.css `pcArrive`
+ * starts from `opacity: 0`). The seed is the same anchor the mount window
+ * takes, and the restore effect re-seeds it for the other resume shape — a
+ * reload, whose papers have not arrived when the component first renders.
+ */
+test('SOURCE: activeIndex is seeded from the resume anchor, not from a bare 0', async () => {
+  const code = stripComments(await read('./FeedContainer.jsx'));
+  assert.match(
+    code,
+    /function resumeAnchor\(papers, scrollKey\) \{\s*const saved = resumeMemory\.get\(scrollKey\);\s*return \{ saved, index: resumeIndex\(\{ papers, savedPaperId: saved\.paperId, savedIndex: saved\.index \}\) \};\s*\}/,
+    'one helper answers where the feed opens, by paper id first and the saved index only as a fallback',
+  );
+  assert.match(
+    code,
+    /const \[activeIndex, setActiveIndex\] = useState\(\(\) => resumeAnchor\(papers, scrollKey\)\.index\);/,
+    'the seed is the resume anchor',
+  );
+  assert.doesNotMatch(code, /useState\(0\)/, 'no bare 0 seed may come back');
+  // The mount window and the seed must take the SAME anchor: a window on
+  // card N with activeIndex 0 is the defect, whichever of the two is wrong.
+  assert.match(code, /const \{ saved, index \} = resumeAnchor\(papers, scrollKey\);\s*return initialMountWindow\(\{\s*total: papers\.length,\s*anchorIndex: index,/);
+
+  // The reload shape: papers arrive after the first render, so the seed above
+  // could only answer 0. A layout effect flushes its re-render before the
+  // browser paints, so the resumed card still never shows a frame at rest.
+  const restore = bounded(code, 'const restoreAttemptedRef = useRef(false);', '}, [papers, reportVisiblePaper, scrollKey]);', 'the restore effect', 40);
+  assert.match(
+    restore,
+    /reportVisiblePaper\?\.\(papers\[index\]\?\.id \?\? null\);\s*setActiveIndex\(index\);/,
+    'the restore re-seeds activeIndex with the index it has already computed',
+  );
+  assert.match(code, /useLayoutEffect\(\(\) => \{\s*if \(restoreAttemptedRef\.current/, 'and it must stay a LAYOUT effect, or the re-render lands after a paint');
+});
+
 test('SOURCE: the profile and settings screens are warmed at idle, so a deploy does not force a reload on the way there', async () => {
   const code = stripComments(await read('../../App.jsx'));
   const block = bounded(code, 'const prefetch = () => {', 'const schedule = window.requestIdleCallback', 'the idle prefetch', 40);

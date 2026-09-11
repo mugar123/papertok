@@ -51,8 +51,18 @@ test('membership and coverage are half-open on the high side', () => {
 
 test('SOURCE: the container mounts a window and grows it off the critical path', async () => {
   const code = await readFile(new URL('../components/Feed/FeedContainer.jsx', import.meta.url), 'utf8');
-  assert.match(code, /initialMountWindow\(\{\s*total: papers\.length,\s*anchorIndex: resumeIndex\(\{ papers, savedPaperId: saved\.paperId, savedIndex: saved\.index \}\),/,
+  // The anchor goes through `resumeAnchor` now, so the window and the card
+  // the container calls active cannot disagree (feedResume.test.js has the
+  // seed). Both halves are pinned here: the window takes that helper's
+  // index, and the helper is still the paper-id-first lookup this file's
+  // `resumeIndex` tests describe — inlining a bare `savedIndex` into either
+  // one puts the feed back on whatever card the offset now points at.
+  assert.match(code, /initialMountWindow\(\{\s*total: papers\.length,\s*anchorIndex: index,/,
     'the first window is around the paper the feed was left on');
+  assert.match(code, /function resumeAnchor\(papers, scrollKey\) \{\s*const saved = resumeMemory\.get\(scrollKey\);\s*return \{ saved, index: resumeIndex\(\{ papers, savedPaperId: saved\.paperId, savedIndex: saved\.index \}\) \};\s*\}/,
+    'and that index is the saved paper looked up by id, with the saved offset only as a fallback');
+  assert.match(code, /const \{ saved, index \} = resumeAnchor\(papers, scrollKey\);\s*return initialMountWindow\(/,
+    'the window seed reads the helper, not a copy of it');
   assert.match(code, /growMountWindow\(anchoredWindow, papers\.length\)/, 'and grows in idle chunks');
   assert.match(code, /radius: saved\.paperId \? MOUNT_WINDOW_RESUME_RADIUS : MOUNT_WINDOW_RADIUS,/, 'one card when resuming, a neighbour when fresh');
   assert.match(code, /setTimeout\(\(\) => \{\s*handle = schedule\(\(\) => setMountWindow\(growMountWindow\(anchoredWindow, papers\.length\)\)\);\s*\}, Math\.max\(0, MOUNT_WINDOW_SETTLE_MS - sinceMount\)\);/,
