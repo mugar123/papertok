@@ -459,18 +459,6 @@ const UNRETRYABLE_ERRORS = new Set([
 ]);
 
 /**
- * The wait, as a clock rather than as a number of milliseconds.
- *
- * `m:ss`, because the interesting range is thirty seconds to three minutes: a
- * bare seconds count reads as an error code past sixty, and anything finer than
- * a second would be inventing precision the eight-second pings do not have.
- */
-function formatElapsed(ms) {
-  const seconds = Math.max(0, Math.floor(ms / 1_000));
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-}
-
-/**
  * How long the reveal needs before the flag that draws it can come off: the
  * last staggered paragraph starts at `MAX_STAGGER_STEPS × 70ms` and runs for
  * 620ms, plus a margin so the flag never disappears mid-wipe.
@@ -757,14 +745,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    */
   const [quota, setQuota] = useState(null);
   const [stage, setStage] = useState('source');
-  /**
-   * How long this rewrite has been running, as the worker measures it.
-   *
-   * Taken from the pings rather than from a timer of our own: a local clock
-   * would keep counting through a stream that had already died, which is exactly
-   * the question the reader is asking it.
-   */
-  const [elapsedMs, setElapsedMs] = useState(0);
   const abortRef = useRef(null);
   // The reader's own scroll container, so a touch selection outside it (e.g.
   // in a dialog rendered elsewhere in the tree) is never mistaken for one of
@@ -831,7 +811,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     setMeta(null);
     setError(null);
     setStage('source');
-    setElapsedMs(0);
     setStatus('streaming');
 
     // Counted here rather than in the effect: only this branch reaches the
@@ -858,11 +837,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
         // rewrite arrives all at once and must not stage a whole paper's worth
         // of animation nobody asked to watch.
         onSection: (section) => setSections(current => [...current, { ...section, reveal: true }]),
-        onProgress: ({ stage: nextStage, elapsedMs }) => {
-          setStage(nextStage);
-          // Only a ping carries one; `meta` and each section set the stage alone.
-          if (typeof elapsedMs === 'number') setElapsedMs(elapsedMs);
-        },
+        onProgress: ({ stage: nextStage }) => setStage(nextStage),
       });
       setStatus(result.incomplete ? 'incomplete' : 'ready');
     } catch (caught) {
@@ -1671,12 +1646,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                           entrance animation replays, on every change of stage —
                           "downloading" does not jump into "reading". */}
                       <span key={stage} className="rd-ghost-stage">{copy.stages[stage] || copy.writing}</span>
-                      {/* The one thing that separates a wait that is working
-                          from one that has died. Hidden from the live region on
-                          purpose: the stage announces itself, and a clock that
-                          spoke every eight seconds would talk over the whole
-                          wait. */}
-                      <span className="rd-ghost-clock" aria-hidden="true">{formatElapsed(elapsedMs)}</span>
                       <small>{sections.length > 0 ? `${sections.length} ${copy.sections}` : copy.writingHint}</small>
                     </p>
                     <AnimatePresence mode="wait">
