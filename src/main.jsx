@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { HashRouter } from 'react-router-dom'
 import { registerSW } from 'virtual:pwa-register'
 import { applyReloadPolicy, markAppForcedReload } from './utils/appReload.js'
+import { clearStaleOverlayMarker } from './hooks/useOverlayHistory.js'
 import App from './App.jsx'
 import GlobalErrorBoundary from './GlobalErrorBoundary.jsx'
 
@@ -135,6 +136,14 @@ try {
 // render: a reload the READER asked for starts fresh, one the app forced does
 // not.
 applyReloadPolicy()
+
+// A reload taken with the reader or the PDF viewer open lands on that
+// overlay's own history entry, and its `overlay` marker outlives the component
+// it described — react-router rewrites `history.state` only when `idx` is
+// missing, and a cloned entry always has one. Cleared here, before React
+// renders and so before anything can be armed, or the next `arm()` would find
+// its own tag on an entry it never pushed (useOverlayHistory.js).
+clearStaleOverlayMarker({ history: window.history, location: window.location })
 
 registerSW()
 

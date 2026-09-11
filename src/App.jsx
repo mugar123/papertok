@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import PageTransition from './components/Layout/PageTransition'
@@ -69,7 +69,15 @@ const SearchCommand = lazyWithPreload(() => import('./components/Search/SearchCo
 function AppContent() {
   const [pdfPaper, setPdfPaper] = useState(null)
   // Back closes the PDF viewer instead of leaving PaperTok: see useOverlayHistory.js.
-  useOverlayHistory(Boolean(pdfPaper), () => setPdfPaper(null), 'pdf')
+  // Through the viewer's own close, the one the X uses — it owns `open` and
+  // reports back only when its leave has played; `setPdfPaper(null)` is just
+  // the fallback for before the lazy chunk has mounted.
+  const pdfCloseRef = useRef(null)
+  const requestPdfClose = useCallback(() => {
+    if (pdfCloseRef.current) pdfCloseRef.current()
+    else setPdfPaper(null)
+  }, [])
+  useOverlayHistory(Boolean(pdfPaper), requestPdfClose, 'pdf')
   // On a coarse pointer, "open the PDF" means the browser's own viewer in a
   // new tab, straight away: framed PDFs are crippled on every touch platform
   // (iOS paints only the first page; Android Chrome renders nothing), and the
@@ -501,7 +509,7 @@ function AppContent() {
 
       <Suspense fallback={null}>
         {pdfPaper && (
-          <PDFViewer paper={pdfPaper} onClose={() => setPdfPaper(null)} />
+          <PDFViewer paper={pdfPaper} closeRef={pdfCloseRef} onClose={() => setPdfPaper(null)} />
         )}
       </Suspense>
 

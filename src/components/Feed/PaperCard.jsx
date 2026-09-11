@@ -346,7 +346,17 @@ const PaperCard = memo(function PaperCard({
   const [showRelated, setShowRelated] = useState(false);
   const [showReader, setShowReader] = useState(false);
   // Back closes the reader instead of leaving PaperTok: see useOverlayHistory.js.
-  useOverlayHistory(showReader, () => setShowReader(false), 'reader');
+  // It must ASK the reader to close (its own `requestClose`, which the X and
+  // Escape also use) rather than unmount it here — the dialog owns `open` and
+  // tells this card only once its leave has played. `setShowReader(false)` is
+  // the fallback for the one window where there is nothing to ask: the lazy
+  // chunk has not mounted yet, so the ref is still empty.
+  const readerCloseRef = useRef(null);
+  const requestReaderClose = useCallback(() => {
+    if (readerCloseRef.current) readerCloseRef.current();
+    else setShowReader(false);
+  }, []);
+  useOverlayHistory(showReader, requestReaderClose, 'reader');
   /* Where the reader should grow from. The rewrite button's rectangle at the
      moment it was pressed, so the full-screen reader can open out of it and
      collapse back into it rather than appearing from nowhere. */
@@ -1950,6 +1960,7 @@ const PaperCard = memo(function PaperCard({
           <PaperReader
             paper={readablePaper}
             originRect={readerOrigin}
+            closeRef={readerCloseRef}
             onClose={() => setShowReader(false)}
           />
         </Suspense>,

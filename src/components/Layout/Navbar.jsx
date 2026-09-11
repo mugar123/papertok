@@ -6,6 +6,7 @@ import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { Search, Layers, Newspaper, UserCheck } from 'lucide-react';
 import NavPreferencesMenu from './NavPreferencesMenu';
+import { shouldOpenSearchOnSlash } from './searchShortcut.js';
 import './Navbar.css';
 
 /**
@@ -82,12 +83,9 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
 
   useEffect(() => {
     const handleShortcut = (event) => {
-      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
-      const target = event.target;
-      const isTyping = target instanceof Element && target.closest(
-        'input, textarea, select, [contenteditable="true"]',
-      );
-      if (isTyping) return;
+      // Bound on `window`, so a modal dialog's inertness does not filter it:
+      // the guard has to be asked explicitly (searchShortcut.js).
+      if (!shouldOpenSearchOnSlash(event, document)) return;
       event.preventDefault();
       onOpenSearch();
     };

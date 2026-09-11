@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   AlertCircle,
@@ -712,7 +712,7 @@ const KIND_LABELS = {
   en: { abstract: 'Abstract', intro: 'Introduction', background: 'Background', methods: 'Methods', results: 'Results', discussion: 'Discussion', conclusion: 'Conclusion', other: 'Section' },
 };
 
-export default function PaperReader({ paper, onClose, originRect = null }) {
+export default function PaperReader({ paper, onClose, originRect = null, closeRef = null }) {
   const { isEnglish } = useLanguage();
   const { user } = useAuth();
   const uid = user?.uid;
@@ -790,6 +790,20 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
    */
   const [open, setOpen] = useState(true);
   const requestClose = useCallback(() => setOpen(false), []);
+  /**
+   * The one way out, published for the browser's Back button.
+   *
+   * The card arms `useOverlayHistory` with whatever this ref holds, so Back
+   * ends up in `requestClose` — the same function the X, Escape and
+   * `onOpenChange(false)` already travel through — instead of deleting this
+   * node with `open` still true, which would cut the leave short and leave
+   * Base UI's scroll lock and `inert` sitting on the page behind it, with
+   * nothing left to unwind them (useOverlayHistory.js).
+   * `useImperativeHandle` rather than a hand-written `closeRef.current = …`:
+   * it publishes in the layout phase, before the frame the card arms on, and
+   * clears itself on unmount — and a prop is not ours to mutate by hand.
+   */
+  useImperativeHandle(closeRef, () => requestClose, [requestClose]);
   // Where focus lands on open: the way back, as it always was
   // (`data-dialog-initial-focus`, now the popup's `initialFocus`).
   const closeButtonRef = useRef(null);

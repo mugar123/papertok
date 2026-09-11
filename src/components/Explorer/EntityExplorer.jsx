@@ -222,7 +222,15 @@ export default function EntityExplorer({
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [pdfPaperToView, setPdfPaperToView] = useState(null);
   // Back closes this PDF viewer instead of leaving PaperTok: see useOverlayHistory.js.
-  useOverlayHistory(Boolean(pdfPaperToView), () => setPdfPaperToView(null), 'pdf');
+  // Through the viewer's own close, the one the X uses — it owns `open` and
+  // reports back only when its leave has played; `setPdfPaperToView(null)` is
+  // just the fallback for before the lazy chunk has mounted.
+  const pdfCloseRef = useRef(null);
+  const requestPdfClose = useCallback(() => {
+    if (pdfCloseRef.current) pdfCloseRef.current();
+    else setPdfPaperToView(null);
+  }, []);
+  useOverlayHistory(Boolean(pdfPaperToView), requestPdfClose, 'pdf');
   const closeSelectedPaper = useCallback(() => setSelectedPaper(null), []);
 
   // The paper the overlay is SHOWING, which outlives the one selected. Closing
@@ -2749,7 +2757,7 @@ export default function EntityExplorer({
       </PaperOverlay>
 
       {pdfPaperToView && (
-        <PDFViewer paper={pdfPaperToView} onClose={() => setPdfPaperToView(null)} />
+        <PDFViewer paper={pdfPaperToView} closeRef={pdfCloseRef} onClose={() => setPdfPaperToView(null)} />
       )}
     </div>
   );

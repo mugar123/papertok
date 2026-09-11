@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
+import { useEffect, useImperativeHandle, useMemo, useState, useRef, useCallback } from 'react';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.jsx';
@@ -14,7 +14,7 @@ import { pdfLinksForPaper } from '../../utils/paperOpenTargets.js';
  * also owns what the old overlay did by hand — the focus trap, Escape, the
  * scroll lock and the restore to the button that opened it.
  */
-export default function PDFViewer({ paper, onClose }) {
+export default function PDFViewer({ paper, onClose, closeRef = null }) {
   const { isEnglish } = useLanguage();
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
@@ -53,6 +53,14 @@ export default function PDFViewer({ paper, onClose }) {
   useEffect(() => {
     startTimeRef.current = Date.now();
   }, []);
+
+  /**
+   * The same way out, published for the browser's Back button: the owner arms
+   * `useOverlayHistory` with whatever this ref holds, so Back counts the
+   * bounce and plays the leave exactly as the X does, instead of unmounting
+   * this node with `open` still true (useOverlayHistory.js).
+   */
+  useImperativeHandle(closeRef, () => handleClose, [handleClose]);
 
   // Apunta a lo que el lector está viendo cuando hay iframe, y al PDF que no
   // cabe en él cuando no lo hay.

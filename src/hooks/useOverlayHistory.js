@@ -20,6 +20,17 @@ import { useEffect, useRef } from 'react';
  * (`history.back()`) or it sits behind as a phantom stop a later Back would
  * have to click through before it reached anything real.
  *
+ * That removal is not free, and the design is not leak-free: `history.back()`
+ * does not DELETE the entry it steps off, it only moves off it. So after a
+ * close with the X the tagged entry survives as a forward entry, and a visitor
+ * who presses Forward lands on it — same URL, no overlay, nothing armed, and
+ * one Back press that appears to do nothing before they are moving again. No
+ * web API can remove a session-history entry; only a later real navigation
+ * truncates the forward list, which is what happens in practice the moment
+ * they touch anything in the app. It is the cost of borrowing an entry instead
+ * of owning a route, it is bounded at one dead press, and it is written down
+ * here rather than presented as absent.
+ *
  * `idx` is cloned, never incremented, so the pushed entry carries the SAME
  * idx as the route beneath it. That is what makes it safe rather than a
  * landmine: `routeDirection.js`, `usePageTransitionCustom.js` and the
@@ -45,6 +56,20 @@ import { useEffect, useRef } from 'react';
  * toward the overlay closing rather than staying open over a URL that no
  * longer backs it — the failure direction this hook has to prefer, per
  * "never trap the user".
+ *
+ * What `onClose` must BE: the overlay's own close request — the function its X
+ * and Escape already travel through (`requestClose` in PaperReader,
+ * `handleClose` in PDFViewer) — never the parent's unmount switch. Both
+ * overlays own their `open` internally and call the parent back only from
+ * `onOpenChangeComplete(false)`, so unmounting them straight from here would
+ * tear the node out with `open` still true: the leave animation is cut, and
+ * Base UI never unwinds what a modal took — the scroll lock, `inert` and
+ * `aria-hidden` on everything behind it. A visitor would be left looking at a
+ * live page they cannot scroll or click, trapped by a different mechanism than
+ * the one this hook exists to unblock. Back and the X have to end up in the
+ * same function; the three owners hand this hook exactly that (a `closeRef`
+ * the overlay publishes into, with the unmount switch kept only as the
+ * fallback for the window before the lazy chunk has mounted).
  */
 export function createOverlayHistory({ history, listen, unlisten }) {
   let armed = null;
@@ -65,11 +90,25 @@ export function createOverlayHistory({ history, listen, unlisten }) {
       // browser — has actually popped the first entry.
       const alreadyOnTag = Boolean(history.state) && history.state.overlay === tag;
       if (!alreadyOnTag) {
-        history.pushState(
-          { ...(history.state || {}), overlay: tag },
-          '',
-          typeof location !== 'undefined' ? location.href : undefined,
-        );
+        try {
+          history.pushState(
+            { ...(history.state || {}), overlay: tag },
+            '',
+            typeof location !== 'undefined' ? location.href : undefined,
+          );
+        } catch {
+          // Safari throws SecurityError past ~100 pushes in 30 s, which is why
+          // react-router wraps its own `pushState` too (its history module's
+          // `push()`). This one runs inside a bare `requestAnimationFrame`
+          // callback with no React boundary above it, so an escaping throw
+          // would be an unhandled error. Declining to arm is the only safe
+          // reading of it: there is no entry to pop, so arming would leave
+          // `disarm()` eating a REAL one. The cost is that this one Back press
+          // leaves PaperTok, exactly as it did before this hook existed —
+          // worse than closing the overlay, but never a trap and never a
+          // stolen navigation.
+          return;
+        }
       }
       armed = { tag, onClose };
       listen(onPop);
@@ -84,6 +123,42 @@ export function createOverlayHistory({ history, listen, unlisten }) {
       if (history.state?.overlay === tag) history.back();
     },
   };
+}
+
+/**
+ * A reload with an overlay open leaves its tagged entry behind: the marker is
+ * written into `history.state`, and react-router only ever rewrites that state
+ * when `idx == null` (its history module, `getUrlBasedHistory`), which a cloned
+ * entry never is. So the tag outlives the component it described — the reader
+ * is gone with the rest of the component state, but the state object still
+ * claims one is open. Left there it lies to the next `arm()`: `alreadyOnTag`
+ * would see its own tag on an entry it did not push, skip the push, and then
+ * let `disarm()` step back over an entry that belongs to nobody.
+ *
+ * `main.jsx` calls this once, before React renders, when nothing can be armed
+ * yet. It only clears the marker: the duplicate ENTRY itself cannot be removed
+ * without `history.back()`, and a `back()` at boot is the wrong trade. The
+ * entry below a marked one always carries the same URL (the clone is pushed
+ * with `location.href`), but after a reload its document is gone, so traversing
+ * to it is a fresh load of that URL, not a same-document hop: the app would
+ * boot, immediately reload itself, and boot again. It would also be a
+ * navigation nobody asked for — the marked entry can be one the visitor
+ * reached by pressing FORWARD (see the note on `disarm()` above). What is left
+ * after clearing is one Back press that lands on an identical URL and so looks
+ * like it did nothing: on `/explorer/*` and `/public/paper/*` the in-page back
+ * arrow inherits that, once, after a reload taken with an overlay open.
+ */
+export function clearStaleOverlayMarker({ history, location }) {
+  const state = history?.state;
+  if (!state || typeof state !== 'object' || state.overlay === undefined) return false;
+  const cleaned = { ...state };
+  delete cleaned.overlay;
+  try {
+    history.replaceState(cleaned, '', location?.href);
+  } catch {
+    return false;
+  }
+  return true;
 }
 
 /**

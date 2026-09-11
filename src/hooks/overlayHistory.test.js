@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { createOverlayHistory } from './useOverlayHistory.js';
+import { clearStaleOverlayMarker, createOverlayHistory } from './useOverlayHistory.js';
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
@@ -10,6 +10,13 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '
  * A history whose `back()` pops and notifies synchronously — good enough for
  * the cases below where nothing else touches history between an arm/disarm
  * pair and the assertion that follows it.
+ *
+ * Two ways it is NOT a browser, so no test below may talk about
+ * `history.length`: a real `back()` leaves the entry it steps off in place as
+ * a forward entry (this one deletes it), and a real `pushState` truncates the
+ * forward list (this one cannot, having none). What the depth of `stack`
+ * measures here is how many entries this controller OWNS — one per open, none
+ * after a close — which is the invariant these tests are about.
  */
 function fakeHistory(initial = { idx: 3, key: 'k' }) {
   const stack = [initial]; const listeners = new Set();
@@ -17,6 +24,7 @@ function fakeHistory(initial = { idx: 3, key: 'k' }) {
     history: {
       get state() { return stack[stack.length - 1]; },
       pushState(state) { stack.push(state); },
+      replaceState(state) { stack[stack.length - 1] = state; },
       back() { stack.pop(); listeners.forEach(fn => fn()); },
     },
     listen: (fn) => listeners.add(fn), unlisten: (fn) => listeners.delete(fn),
@@ -45,6 +53,7 @@ function fakeAsyncHistory(initial = { idx: 3, key: 'k' }) {
     },
     listen: (fn) => listeners.add(fn), unlisten: (fn) => listeners.delete(fn),
     stack,
+    get pendingBacks() { return pendingBacks; },
     flushOneBack() {
       if (pendingBacks === 0) return;
       pendingBacks -= 1;
@@ -52,6 +61,20 @@ function fakeAsyncHistory(initial = { idx: 3, key: 'k' }) {
       listeners.forEach(fn => fn());
     },
   };
+}
+
+/**
+ * The callback an owner arms the hook with, extracted by name rather than by
+ * pinning its text: `useOverlayHistory(open, <name>, tag)` → the body of
+ * `const <name> = useCallback(() => { … }, [])`.
+ */
+function armedWith(code, callPattern) {
+  const call = code.match(callPattern);
+  assert.ok(call, `no useOverlayHistory call matching ${callPattern}`);
+  const name = call[1];
+  const fn = code.match(new RegExp(`const ${name} = useCallback\\(\\(\\) => \\{([\\s\\S]*?)\\n  \\}, \\[\\]\\)`));
+  assert.ok(fn, `${name} debe ser un useCallback sin dependencias`);
+  return { name, body: fn[1] };
 }
 
 test('abrir empuja una entrada que conserva idx y key; atrás cierra', () => {
@@ -80,7 +103,7 @@ test('abrir y cerrar con la X tres veces no acumula entradas', () => {
     ctl.arm('reader', () => { closed += 1; });
     assert.equal(f.stack.length, 2, `abrir #${i + 1} empuja exactamente una entrada`);
     ctl.disarm();
-    assert.equal(f.stack.length, 1, `cerrar #${i + 1} la retira; history.length no crece`);
+    assert.equal(f.stack.length, 1, `cerrar #${i + 1} la retira: la pila vuelve a 1, no se acumula una entrada por apertura`);
   }
   assert.equal(closed, 0, 'cerrar con la X nunca pasa por onClose');
 });
@@ -92,7 +115,7 @@ test('abrir y volver con Atrás tres veces no acumula entradas', () => {
     ctl.arm('reader', () => { closed += 1; });
     assert.equal(f.stack.length, 2, `abrir #${i + 1} empuja exactamente una entrada`);
     f.history.back();
-    assert.equal(f.stack.length, 1, `Atrás #${i + 1} la retira; history.length no crece`);
+    assert.equal(f.stack.length, 1, `Atrás #${i + 1} la retira: la pila vuelve a 1, no se acumula una entrada por apertura`);
   }
   assert.equal(closed, 3, 'cada Atrás cierra exactamente una vez');
 });
@@ -129,20 +152,97 @@ test('rearmar antes de que el back() en curso se resuelva no duplica la entrada'
   assert.equal(closed, 1, 'the still-armed overlay is told to close when its entry is actually gone');
 });
 
+test('desarmar con una entrada ajena encima no toca la pila', () => {
+  // The branch this pins: `if (history.state?.overlay === tag)` in disarm().
+  // Neither double models it above, so deleting that line left all ten of the
+  // original tests green. The reachable route to it is a REAL navigation taken
+  // while an overlay is armed — the `/` shortcut was one until searchShortcut.js
+  // gated it — which pushes idx k+1 on top and unmounts the overlay with it.
+  // Without the guard, that unmount's disarm() steps back over the navigation
+  // the visitor just made.
+  const f = fakeAsyncHistory();
+  const ctl = createOverlayHistory(f);
+  let closed = 0;
+  ctl.arm('reader', () => { closed += 1; });
+  assert.deepEqual(f.stack.at(-1), { idx: 3, key: 'k', overlay: 'reader' });
+
+  f.history.pushState({ idx: 4, key: 'k2' });
+  assert.equal(f.stack.length, 3, 'the real navigation is on top now');
+
+  ctl.disarm();
+  assert.equal(f.pendingBacks, 0, 'no back() may be queued: the entry on top is not ours');
+  assert.deepEqual(f.stack.at(-1), { idx: 4, key: 'k2' }, 'the real entry stays put');
+  assert.equal(f.stack.length, 3, 'and nothing is removed');
+  assert.equal(closed, 0, 'nor is the overlay told to close: it is already gone');
+});
+
+test('un pushState que revienta no arma nada (SecurityError de Safari)', () => {
+  const f = fakeHistory();
+  const ctl = createOverlayHistory(f);
+  f.history.pushState = () => { throw new Error('SecurityError: too many pushes'); };
+  let closed = 0;
+
+  assert.doesNotThrow(() => ctl.arm('reader', () => { closed += 1; }), 'the throw must not escape the rAF callback');
+  assert.equal(f.stack.length, 1, 'there is no new entry');
+
+  ctl.disarm();
+  assert.equal(f.stack.length, 1, 'and disarming must not retire the one that was already there');
+
+  f.history.back();
+  assert.equal(closed, 0, 'nothing was armed, so a later Back is not read as an overlay close');
+});
+
+test('el marcador que sobrevive a una recarga se limpia al arrancar', () => {
+  const f = fakeHistory({ idx: 3, key: 'k', overlay: 'reader' });
+  const cleared = clearStaleOverlayMarker({ history: f.history, location: { href: 'https://papertok.app/#/' } });
+
+  assert.equal(cleared, true);
+  assert.deepEqual(f.stack.at(-1), { idx: 3, key: 'k' }, 'el idx y la key de react-router se quedan; solo se va el marcador');
+  assert.equal(f.stack.length, 1, 'limpiar no navega: la entrada duplicada sigue ahí, y retirarla costaría una recarga entera');
+
+  // What the lie cost: `alreadyOnTag` would have seen its own tag on an entry
+  // it never pushed, and el siguiente cierre habría retrocedido sobre ella.
+  const ctl = createOverlayHistory(f);
+  ctl.arm('reader', () => {});
+  assert.equal(f.stack.length, 2, 'con el marcador limpio, armar vuelve a empujar su propia entrada');
+});
+
+test('un arranque normal no toca el historial', () => {
+  const f = fakeHistory();
+  let replaced = 0;
+  f.history.replaceState = () => { replaced += 1; };
+
+  assert.equal(clearStaleOverlayMarker({ history: f.history, location: { href: 'https://papertok.app/#/' } }), false);
+  assert.equal(replaced, 0, 'sin marcador no se reescribe nada');
+  assert.deepEqual(f.stack, [{ idx: 3, key: 'k' }]);
+  assert.equal(clearStaleOverlayMarker({ history: { state: null }, location: null }), false, 'ni con un state vacío');
+});
+
+test('SOURCE: main.jsx limpia el marcador antes de renderizar', async () => {
+  const code = stripComments(await read('../main.jsx'));
+  assert.match(code, /import \{ clearStaleOverlayMarker \} from '\.\/hooks\/useOverlayHistory\.js'/);
+  const callAt = code.indexOf('clearStaleOverlayMarker({');
+  const renderAt = code.indexOf('ReactDOM.createRoot');
+  assert.ok(callAt > -1, 'main.jsx tiene que llamarlo');
+  assert.ok(renderAt > callAt, 'y antes de renderizar, cuando todavía no puede haber nada armado');
+});
+
 test('SOURCE: useOverlayHistory arma en el frame siguiente y cancela en la limpieza', async () => {
   const code = stripComments(await read('./useOverlayHistory.js'));
   const hookBody = code.match(/export function useOverlayHistory\(open, onClose, tag\) \{[\s\S]*?\n\}/);
   assert.ok(hookBody, 'useOverlayHistory must still have this exact signature');
   const body = hookBody[0];
-  assert.match(
-    body,
-    /const frame = requestAnimationFrame\(\(\) => ctl\.arm\(tag, \(\) => closeRef\.current\(\)\)\);/,
-    'arming is deferred a frame so StrictMode\'s synchronous dev-only remount cancels the first arm instead of racing its disarm',
-  );
-  assert.match(
-    body,
-    /cancelAnimationFrame\(frame\);\s*\n\s*ctl\.disarm\(\);/,
-    'cleanup must cancel the pending frame before disarming, in that order',
+  // The names and the whitespace are nobody's business — the ORDER is: the
+  // arm is deferred a frame, and the cleanup cancels that frame (before it
+  // disarms), so StrictMode's synchronous dev-only remount cancels the first
+  // arm instead of racing its disarm.
+  const armedAt = body.indexOf('requestAnimationFrame');
+  const cancelledAt = body.indexOf('cancelAnimationFrame');
+  assert.ok(armedAt > -1, 'arming must still be deferred with requestAnimationFrame');
+  assert.ok(cancelledAt > armedAt, 'cleanup must cancel that frame with cancelAnimationFrame');
+  assert.ok(
+    body.indexOf('ctl.disarm()') > cancelledAt,
+    'the cancel has to come before the disarm, or the pending arm outlives it',
   );
 });
 
@@ -153,11 +253,11 @@ test('SOURCE: el lector de PaperCard usa useOverlayHistory con el tag reader', a
     /import \{ useOverlayHistory \} from '\.\.\/\.\.\/hooks\/useOverlayHistory\.js';/,
     'must import the hook',
   );
-  assert.match(
-    code,
-    /const \[showReader, setShowReader\] = useState\(false\);\s*\n\s*useOverlayHistory\(showReader, \(\) => setShowReader\(false\), 'reader'\);/,
-    'the hook must be armed by showReader itself, right where it is declared',
-  );
+  assert.match(code, /const \[showReader, setShowReader\] = useState\(false\);/);
+  const { body } = armedWith(code, /useOverlayHistory\(showReader, (\w+), 'reader'\)/);
+  assert.match(body, /readerCloseRef\.current\(\)/, 'Atrás tiene que PEDIR el cierre al lector, no desmontarlo');
+  assert.match(body, /setShowReader\(false\)/, 'con el desmontaje solo como respaldo mientras el chunk perezoso no ha montado');
+  assert.match(code, /closeRef=\{readerCloseRef\}/, 'y el lector tiene que recibir ese mismo ref');
 });
 
 test('SOURCE: el visor de PDF de App usa useOverlayHistory con el tag pdf', async () => {
@@ -167,11 +267,11 @@ test('SOURCE: el visor de PDF de App usa useOverlayHistory con el tag pdf', asyn
     /import \{ useOverlayHistory \} from '\.\/hooks\/useOverlayHistory\.js'/,
     'must import the hook',
   );
-  assert.match(
-    code,
-    /const \[pdfPaper, setPdfPaper\] = useState\(null\)\s*\n\s*useOverlayHistory\(Boolean\(pdfPaper\), \(\) => setPdfPaper\(null\), 'pdf'\)/,
-    'the hook must be armed by pdfPaper itself, right where it is declared',
-  );
+  assert.match(code, /const \[pdfPaper, setPdfPaper\] = useState\(null\)/);
+  const { body: armedBody } = armedWith(code, /useOverlayHistory\(Boolean\(pdfPaper\), (\w+), 'pdf'\)/);
+  assert.match(armedBody, /pdfCloseRef\.current\(\)/, 'Atrás tiene que PEDIR el cierre al visor, no desmontarlo');
+  assert.match(armedBody, /setPdfPaper\(null\)/, 'con el desmontaje solo como respaldo mientras el chunk perezoso no ha montado');
+  assert.match(code, /<PDFViewer paper=\{pdfPaper\} closeRef=\{pdfCloseRef\}/, 'y el visor tiene que recibir ese mismo ref');
 
   // Critical point 3: on a coarse pointer, openPdf hands off to a new tab and
   // returns WITHOUT touching pdfPaper — it must arm nothing. Pin that the
@@ -180,7 +280,7 @@ test('SOURCE: el visor de PDF de App usa useOverlayHistory con el tag pdf', asyn
   assert.ok(openPdfBody, 'openPdf must still have this shape');
   const body = openPdfBody[0];
   const setCalls = body.match(/setPdfPaper\(/g) || [];
-  assert.equal(setCalls.length, 1, 'setPdfPaper must be called at most once in openPdf');
+  assert.equal(setCalls.length, 1, 'openPdf must call setPdfPaper exactly once');
   const returnIndex = body.indexOf('if (url && window.open(url, \'_blank\', \'noopener\')) return');
   const setIndex = body.indexOf('setPdfPaper(');
   assert.ok(returnIndex > -1 && setIndex > returnIndex, 'the coarse-pointer hand-off must return before setPdfPaper is ever reached');
@@ -193,9 +293,49 @@ test('SOURCE: el visor de PDF propio de EntityExplorer usa useOverlayHistory con
     /import \{ useOverlayHistory \} from '\.\.\/\.\.\/hooks\/useOverlayHistory\.js';/,
     'must import the hook',
   );
+  assert.match(code, /const \[pdfPaperToView, setPdfPaperToView\] = useState\(null\);/);
+  const { body } = armedWith(code, /useOverlayHistory\(Boolean\(pdfPaperToView\), (\w+), 'pdf'\)/);
+  assert.match(body, /pdfCloseRef\.current\(\)/, 'Atrás tiene que PEDIR el cierre al visor, no desmontarlo');
+  assert.match(body, /setPdfPaperToView\(null\)/, 'con el desmontaje solo como respaldo mientras el chunk perezoso no ha montado');
+  assert.match(code, /<PDFViewer paper=\{pdfPaperToView\} closeRef=\{pdfCloseRef\}/, 'y el visor tiene que recibir ese mismo ref');
+});
+
+/**
+ * Back and the X have to end in the SAME function. There is no DOM in this
+ * suite (node:test, no jsdom), so this is read off the source rather than
+ * exercised: the name each overlay publishes through `useImperativeHandle`
+ * into the owner's `closeRef` — which is what the owner arms
+ * `useOverlayHistory` with — compared against the name its own
+ * `onOpenChange(false)` calls, the one the X and Escape travel through.
+ */
+const publishedClose = (code) => code.match(/useImperativeHandle\(closeRef, \(\) => (\w+),/)?.[1];
+const dialogClose = (code) => code.match(/onOpenChange=\{\((\w+)\) => \{ if \(!\1\) (\w+)\(\); \}\}/)?.[2];
+
+test('SOURCE: en el lector, Atrás y la X terminan en la misma función', async () => {
+  const code = stripComments(await read('../components/Reader/PaperReader.jsx'));
+  const published = publishedClose(code);
+  const dialog = dialogClose(code);
+  assert.ok(published, 'PaperReader tiene que publicar su cierre en closeRef');
+  assert.ok(dialog, 'y seguir cerrando por onOpenChange');
+  assert.equal(published, dialog, 'Atrás y la X tienen que pasar por la misma función');
+  assert.match(code, new RegExp(`onClick=\\{${dialog}\\}`), 'la X llama a esa misma función');
   assert.match(
     code,
-    /const \[pdfPaperToView, setPdfPaperToView\] = useState\(null\);\s*\n\s*useOverlayHistory\(Boolean\(pdfPaperToView\), \(\) => setPdfPaperToView\(null\), 'pdf'\);/,
-    'the hook must be armed by pdfPaperToView itself, right where it is declared',
+    /onOpenChangeComplete=\{\(next\) => \{ if \(!next\) onClose\(\); \}\}/,
+    'y el padre se entera solo cuando la salida ha terminado: por eso Atrás no puede desmontar',
+  );
+});
+
+test('SOURCE: en el visor de PDF, Atrás y la X terminan en la misma función', async () => {
+  const code = stripComments(await read('../components/PDF/PDFViewer.jsx'));
+  const published = publishedClose(code);
+  const dialog = dialogClose(code);
+  assert.ok(published, 'PDFViewer tiene que publicar su cierre en closeRef');
+  assert.ok(dialog, 'y seguir cerrando por onOpenChange');
+  assert.equal(published, dialog, 'Atrás y la X tienen que pasar por la misma función');
+  assert.match(
+    code,
+    /onOpenChangeComplete=\{\(nextOpen\) => \{ if \(!nextOpen\) onClose\(\); \}\}/,
+    'y el padre se entera solo cuando la salida ha terminado',
   );
 });
