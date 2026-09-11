@@ -318,7 +318,10 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   const storedOwnProfile = (cachedProfile === undefined && selfMode && user?.uid)
     ? readStoredProfile(user.uid)
     : null;
-  const seededProfile = cachedProfile !== undefined
+  // Second line of defence behind `rememberOwnProfile`: on `/@handle` the
+  // cached entry is somebody else's document, so it may only seed this page
+  // when it is public. On one's own page anything cached is one's own.
+  const seededProfile = cachedProfile !== undefined && (selfMode || profileIsPublic(cachedProfile.profile))
     ? cachedProfile
     : (storedOwnProfile ? { profile: storedOwnProfile } : undefined);
   const [profile, setProfile] = useState(seededProfile ? seededProfile.profile : null);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from './accountWarmup.js';
 import { UnconfirmedProfileAbsenceError, readConfirmedOwnUserProfile } from './userProfileService.js';
-import { ownListsCache, ownProfileCache, ownProfileKey } from '../utils/profileSessionCaches.js';
+import { handleProfileKey, ownListsCache, ownProfileCache, ownProfileKey } from '../utils/profileSessionCaches.js';
 import { readStoredProfile, saveStoredLists, saveStoredProfile } from '../utils/userScopedStorage.js';
 
 test('hydrateAccountCaches copies this device\'s lists and profile into the session', () => {
@@ -64,6 +64,7 @@ test('an authoritative "no profile" clears the device copy instead of reviving i
 
   await warmAccountCaches('uid-w2', {
     storage,
+    currentUid: () => 'uid-w2',
     readProfile: async () => null,
     readLists: async () => null,
   });
@@ -82,6 +83,7 @@ test('a failed profile read keeps the device copy: absence is not the same as si
 
   await warmAccountCaches('uid-w3', {
     storage,
+    currentUid: () => 'uid-w3',
     readProfile: async () => { throw new Error('offline'); },
     readLists: async () => null,
   });
@@ -115,6 +117,7 @@ test('an absence the cache invented erases nothing: the warm-up runs before any 
   const cacheMiss = ownProfileApi({ exists: () => false, metadata: { fromCache: true } });
   await warmAccountCaches('uid-w4', {
     storage,
+    currentUid: () => 'uid-w4',
     readProfile: () => readConfirmedOwnUserProfile(cacheMiss),
     readLists: async () => null,
   });
@@ -139,6 +142,7 @@ test('an absence the server confirmed still clears both copies', async () => {
   const served = ownProfileApi({ exists: () => false, metadata: { fromCache: false } });
   await warmAccountCaches('uid-w4', {
     storage,
+    currentUid: () => 'uid-w4',
     readProfile: () => readConfirmedOwnUserProfile(served),
     readLists: async () => null,
   });
@@ -158,6 +162,7 @@ test('the unconfirmed absence reaches the warm-up as a failed read, by class', a
 
   await warmAccountCaches('uid-w5', {
     storage,
+    currentUid: () => 'uid-w5',
     readProfile: async () => { throw new UnconfirmedProfileAbsenceError(); },
     readLists: async () => null,
   });
@@ -190,4 +195,62 @@ test('SOURCE: unpublishing forgets the profile on this device, not only in the s
   // does, so only real code is scanned below.
   const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   assert.match(code, /forgetOwnProfile\(user\.uid, unpublishedHandle\);\s*clearStoredProfile\(user\.uid\);/);
+});
+
+/* --- A warm-up outlives the session that started it ---
+   The two reads are a round trip each; signing out does not cancel them. What
+   lands afterwards used to be written into the caches the NEXT account reads,
+   which on the handle-keyed entry is another account's profile served to a
+   visitor who never asked for it. */
+
+test('a warm-up whose reads land after a sign-out writes nothing', async () => {
+  resetAccountWarmup();
+  ownProfileCache.clear();
+  const storage = deviceStorage();
+  let signedIn = 'uid-w6';
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+
+  const pending = warmAccountCaches('uid-w6', {
+    storage,
+    currentUid: () => signedIn,
+    readProfile: () => gate.then(() => ({ uid: 'uid-w6', handle: 'ada', visibility: 'public' })),
+    readLists: async () => null,
+  });
+  signedIn = null; // Sign-out, with the profile read still in flight.
+  release();
+  await pending;
+
+  assert.equal(ownProfileCache.get(handleProfileKey('ada')), undefined,
+    'the previous account\'s profile was published under its handle for whoever comes next');
+  assert.equal(ownProfileCache.get(ownProfileKey('uid-w6')), undefined);
+  assert.equal(readStoredProfile('uid-w6', storage), null, 'and nothing was written to the device either');
+
+  ownProfileCache.clear();
+  resetAccountWarmup();
+});
+
+test('a warm-up the sign-out already reset writes nothing either', async () => {
+  resetAccountWarmup();
+  ownProfileCache.clear();
+  const storage = deviceStorage();
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+
+  const pending = warmAccountCaches('uid-w7', {
+    storage,
+    currentUid: () => 'uid-w7',
+    readProfile: () => gate.then(() => ({ uid: 'uid-w7', handle: 'bob', visibility: 'public' })),
+    readLists: async () => null,
+  });
+  resetAccountWarmup('uid-w7'); // What AuthContext does when the session ends.
+  release();
+  await pending;
+
+  assert.equal(ownProfileCache.get(handleProfileKey('bob')), undefined);
+  assert.equal(ownProfileCache.get(ownProfileKey('uid-w7')), undefined);
+  assert.equal(readStoredProfile('uid-w7', storage), null);
+
+  ownProfileCache.clear();
+  resetAccountWarmup();
 });

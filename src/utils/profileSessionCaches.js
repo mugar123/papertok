@@ -1,4 +1,5 @@
 import { createSessionCache } from './sessionCache.js';
+import { profileIsPublic } from '../services/userProfileService.js';
 
 /**
  * The session caches the profile screens share.
@@ -90,11 +91,19 @@ export function handleProfileKey(handle) {
 export function rememberOwnProfile(uid, profile) {
   const key = ownProfileKey(uid);
   if (!key) return;
+  const previous = ownProfileCache.get(key)?.profile;
   ownProfileCache.set(key, { profile });
-  // The handle-keyed entry is the same document seen from the public side;
-  // leaving the old one behind would serve a renamed profile under its
-  // previous name.
-  if (profile?.handle) ownProfileCache.set(handleProfileKey(profile.handle), { profile });
+  // The handle entry is what a VISITOR reads, so only a public profile may sit
+  // there: the owner's own view of the document is allowed to hold what nobody
+  // else may see. Leaving the old handle behind would also serve a renamed
+  // profile under its previous name.
+  if (previous?.handle && previous.handle !== profile?.handle) {
+    ownProfileCache.delete(handleProfileKey(previous.handle));
+  }
+  if (profile?.handle) {
+    if (profileIsPublic(profile)) ownProfileCache.set(handleProfileKey(profile.handle), { profile });
+    else ownProfileCache.delete(handleProfileKey(profile.handle));
+  }
 }
 
 /**
@@ -218,8 +227,12 @@ export function readFollowList(uid, mode) {
 
 export function forgetOwnProfile(uid, handle) {
   const key = ownProfileKey(uid);
+  // The handle the caller knows about and the handle this cache actually
+  // published are not always the same one — sign-out passes the uid alone —
+  // and an entry left under either name outlives the session that wrote it.
+  const remembered = key ? ownProfileCache.get(key)?.profile?.handle : undefined;
   if (key) ownProfileCache.delete(key);
-  if (handle) ownProfileCache.delete(handleProfileKey(handle));
+  for (const name of [handle, remembered]) if (name) ownProfileCache.delete(handleProfileKey(name));
   if (uid) {
     forgetOwnLists(uid);
     pinnableListsCache.delete(uid);

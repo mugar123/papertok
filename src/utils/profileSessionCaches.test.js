@@ -9,12 +9,16 @@ import {
   forgetFollowStats,
   forgetOwnLists,
   forgetOwnProfile,
+  handleProfileKey,
   ownListsAreFresh,
   ownListsCache,
+  ownProfileCache,
+  ownProfileKey,
   readFollowList,
   rememberFollowList,
   rememberFollowStats,
   rememberOwnLists,
+  rememberOwnProfile,
   reviseOwnLists,
 } from './profileSessionCaches.js';
 
@@ -189,4 +193,40 @@ test('SOURCE: every screen that reads the lists collection seeds from the sessio
     assert.match(source, /useState\(\(\)\s*=>\s*seededLists\s*\?\?\s*\[\]\)/,
       `${path}: the seed belongs in the useState initialiser`);
   }
+});
+
+/* --- The handle-keyed entry is what a VISITOR reads ---
+   `own:{uid}` is the owner's own view of the document and may hold anything the
+   owner is allowed to see. `handle:{handle}` is the same document seen from the
+   public side, and PublicProfilePage seeds a visitor's page from it, so a
+   private profile sitting there is one account's data painted for another. */
+
+test('a private profile is remembered for its owner but never under its handle', () => {
+  rememberOwnProfile('u1', { handle: 'ada', visibility: 'private', bio: 'secret' });
+  assert.ok(ownProfileCache.get(ownProfileKey('u1')));
+  assert.equal(ownProfileCache.get(handleProfileKey('ada')), undefined);
+  forgetOwnProfile('u1');
+});
+
+test('turning a public profile private takes its handle entry down with it', () => {
+  rememberOwnProfile('u1b', { handle: 'ada2', visibility: 'public' });
+  assert.ok(ownProfileCache.get(handleProfileKey('ada2')), 'a public profile is readable by handle');
+  rememberOwnProfile('u1b', { handle: 'ada2', visibility: 'private' });
+  assert.equal(ownProfileCache.get(handleProfileKey('ada2')), undefined);
+  forgetOwnProfile('u1b');
+});
+
+test('renaming a handle does not leave the profile served under the old one', () => {
+  rememberOwnProfile('u1c', { handle: 'before', visibility: 'public' });
+  rememberOwnProfile('u1c', { handle: 'after', visibility: 'public' });
+  assert.equal(ownProfileCache.get(handleProfileKey('before')), undefined);
+  assert.ok(ownProfileCache.get(handleProfileKey('after')));
+  forgetOwnProfile('u1c');
+});
+
+test('forgetting by uid alone also drops the handle entry it created', () => {
+  rememberOwnProfile('u2', { handle: 'bob', visibility: 'public' });
+  forgetOwnProfile('u2');
+  assert.equal(ownProfileCache.get(handleProfileKey('bob')), undefined);
+  assert.equal(ownProfileCache.get(ownProfileKey('u2')), undefined);
 });

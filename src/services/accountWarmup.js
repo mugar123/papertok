@@ -10,7 +10,7 @@
  */
 
 import { collection, getDocs, limit, query } from 'firebase/firestore';
-import { IS_DEMO, db } from './firebase.js';
+import { IS_DEMO, auth, db } from './firebase.js';
 import { OWN_LISTS_PAGE_SIZE, readConfirmedOwnUserProfile } from './userProfileService.js';
 import { queryIsAuthoritative } from '../utils/cacheAuthority.js';
 import {
@@ -64,10 +64,16 @@ export async function warmAccountCaches(uid, {
   storage,
   readProfile = readConfirmedOwnUserProfile,
   readLists = defaultReadLists,
+  currentUid = () => auth.currentUser?.uid,
 } = {}) {
   if (!uid || IS_DEMO || warmed.has(uid)) return;
   warmed.add(uid);
   hydrateAccountCaches(uid, { storage });
+  // Signing out does not cancel a read already in flight. Whatever lands
+  // afterwards belongs to a session that no longer exists, and the caches it
+  // would be written into are the ones the NEXT account reads — including the
+  // handle-keyed entry a visitor is served from.
+  const stillCurrent = () => currentUid() === uid && warmed.has(uid);
   const [profileRead, listsSnapshot] = await Promise.all([
     // A failed read and "no profile" are different answers, and only the
     // second one may erase what this device remembers: an unpublished
@@ -89,6 +95,7 @@ export async function warmAccountCaches(uid, {
     readProfile().then(profile => ({ profile }), () => null),
     readLists(uid).catch(() => null),
   ]);
+  if (!stillCurrent()) return; // Signed out while the reads were in flight.
   if (profileRead?.profile) {
     rememberOwnProfile(uid, profileRead.profile);
     saveStoredProfile(uid, profileRead.profile, storage);
