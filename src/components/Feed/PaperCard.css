@@ -310,25 +310,42 @@
   animation-name: pcArriveAside;
 }
 
-/* Coming back is not arriving. A feed reached by the back arrow — from an
-   author, a paper, a list — is the feed the reader left, resumed on the card
-   they were on (FeedContainer); replaying the arrival on top of that read as
-   the feed reloading. Under a page that slides back in, the cards sit at
-   rest. No `.pc-sheet` entry any more — it has no animation left to suppress.
-   The resumed card mounts already `data-active="true"` (FeedContainer), so
-   each selector below repeats `.pc[data-active="true"]` rather than dropping
-   to the shorter `[data-nav-direction="-1"] .pc-title`: that shorter form
-   ties the rule above on specificity and only wins by coming later in the
-   file, which the next edit here could quietly undo. */
-[data-nav-direction="-1"] .pc[data-active="true"] .pc-follow-reason,
-[data-nav-direction="-1"] .pc[data-active="true"] .pc-meta,
-[data-nav-direction="-1"] .pc[data-active="true"] .pc-chips,
-[data-nav-direction="-1"] .pc[data-active="true"] .pc-topics,
-[data-nav-direction="-1"] .pc[data-active="true"] .pc-title,
-[data-nav-direction="-1"] .pc[data-active="true"] .pc-authors,
-[data-nav-direction="-1"] .pc[data-active="true"] .pc-abstract,
-[data-nav-direction="-1"] .pc[data-active="true"] .pc-action-bar,
-[data-nav-direction="-1"] .pc[data-active="true"] .pc-side-actions {
+/* Coming back is not arriving — but only for the card that was already
+   there. A feed reached by the back arrow — from an author, a paper, a list
+   — is the feed the reader left, resumed on the card they were on
+   (FeedContainer); replaying the arrival on top of that read as the feed
+   reloading. Under a page that slides back in, THAT card sits at rest. No
+   `.pc-sheet` entry any more — it has no animation left to suppress.
+
+   `[data-mounted-active]` is what keeps the rule to that one card.
+   `data-nav-direction` lives on the `PageTransition` wrapper and stays for
+   as long as the page is mounted: it says how the reader got here, not which
+   card they are on. Without the second attribute this rule went on
+   suppressing every card activated afterwards — open an author from a card,
+   press Back, swipe through ten papers and not one of them composed in,
+   which is the whole feature Task 11 shipped. The attribute is set by
+   PaperCard.jsx for a card that was ALREADY active the first time it
+   rendered: the resumed one is (the container seeds `activeIndex` from the
+   card it resumes onto), a card the reader swipes to was mounted inactive
+   first, and every single-paper surface mounts its card active, so those
+   keep the at-rest treatment they have always had here.
+
+   Each selector repeats `.pc[data-active="true"]` rather than dropping to
+   the shorter `[data-nav-direction="-1"] .pc-title`: that shorter form ties
+   the arrival rule above on specificity and would only win by coming later
+   in the file, which the next edit here could quietly undo. Five class-like
+   parts, so (0,5,0) — above the latch block below (0,4,0) and the arrival
+   rule (0,3,0), by specificity and not by order.
+   paperCardArrivalCascade.test.js works the arithmetic out. */
+[data-nav-direction="-1"] .pc[data-active="true"][data-mounted-active] .pc-follow-reason,
+[data-nav-direction="-1"] .pc[data-active="true"][data-mounted-active] .pc-meta,
+[data-nav-direction="-1"] .pc[data-active="true"][data-mounted-active] .pc-chips,
+[data-nav-direction="-1"] .pc[data-active="true"][data-mounted-active] .pc-topics,
+[data-nav-direction="-1"] .pc[data-active="true"][data-mounted-active] .pc-title,
+[data-nav-direction="-1"] .pc[data-active="true"][data-mounted-active] .pc-authors,
+[data-nav-direction="-1"] .pc[data-active="true"][data-mounted-active] .pc-abstract,
+[data-nav-direction="-1"] .pc[data-active="true"][data-mounted-active] .pc-action-bar,
+[data-nav-direction="-1"] .pc[data-active="true"][data-mounted-active] .pc-side-actions {
   animation: none;
 }
 
@@ -344,8 +361,10 @@
    it either, only a real unmount does (a fresh instance, fresh state).
    Specificity four — `.pc` + `[data-active="true"]` + `[data-arrived]` +
    the piece — beats the plain arrival rule's three unconditionally, the
-   same margin the back-nav suppression above keeps over it and for the same
-   reason: not by coming later in the file. */
+   same way the back-nav suppression above (five, since it also qualifies on
+   `[data-mounted-active]`) beats both: not by coming later in the file. The
+   two never contradict each other — both say `animation: none` — so the
+   order between them decides nothing. */
 .pc[data-active="true"][data-arrived] .pc-follow-reason,
 .pc[data-active="true"][data-arrived] .pc-meta,
 .pc[data-active="true"][data-arrived] .pc-chips,

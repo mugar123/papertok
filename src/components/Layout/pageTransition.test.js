@@ -111,9 +111,14 @@ test('the leaving page keeps the direction it arrived with, so the held feed\'s 
   assert.match(jsx, /data-nav-direction=\{present \? direction : arrivedWith\}/);
   assert.doesNotMatch(jsx, /data-nav-direction=\{direction\}/);
   const css = await read('../Feed/PaperCard.css');
-  // The rule this protects: cards at rest under a page reached by the back
-  // arrow. `.pc[data-active="true"]` repeated in the selector (Task 11) is
-  // load-bearing, not decorative — it is what keeps this rule's specificity
-  // above the active-gated arrival it is suppressing.
-  assert.match(css, /\[data-nav-direction="-1"\] \.pc\[data-active="true"\] \.pc-title,/);
+  // The rule this protects: the card at rest under a page reached by the
+  // back arrow. `.pc[data-active="true"]` repeated in the selector (Task 11)
+  // is load-bearing, not decorative — it is what keeps this rule's
+  // specificity above the active-gated arrival it is suppressing.
+  // `[data-mounted-active]` narrows it to the card the feed resumed ONTO;
+  // every card activated after it animates again (Feed/
+  // paperCardArrivalCascade.test.js resolves the whole cascade). This
+  // assertion is about the leaving page keeping its direction, so what it
+  // needs is only that the rule exists and still carries both qualifiers.
+  assert.match(css, /\[data-nav-direction="-1"\] \.pc\[data-active="true"\]\[data-mounted-active\] \.pc-title,/);
 });
