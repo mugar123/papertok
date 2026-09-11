@@ -1,8 +1,5 @@
-/* eslint-disable react-refresh/only-export-components */
 import { Briefcase, FileText, SearchX, Users } from 'lucide-react';
 import { Button } from '../ui/button.jsx';
-
-export { pickEmptyVariant } from './explorerEmptyVariant.js';
 
 // Copy for every non-error variant, as [title, body, action label] per
 // language. 'error' is handled separately below because its body is a
