@@ -42,6 +42,14 @@
   height: 100%;
   display: flex;
   flex-direction: column;
+  /* Its own ground. Two pages share the screen during a navigation, and a page
+     with no background is a sheet you can see through: with Research already at
+     rest and opaque down its own column, the feed held underneath was still
+     showing in the margins either side of it, and then vanished in one frame
+     when AnimatePresence dropped it. Opaque, the page arriving covers what it
+     replaces as it fades in, which is what "arriving" means. Same token `body`
+     paints, so a page at rest looks exactly as it did. */
+  background: var(--bg-primary);
 }
 
 /* ─── The page on its way out ───

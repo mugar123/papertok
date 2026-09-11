@@ -62,6 +62,17 @@ test('six durations, every one inside the 300ms UI band, and a held page rides t
   assert.equal(css.replace(root[1], '').match(/\b\d+ms\b/g), null, 'durations are named, never repeated as literals');
 });
 
+test('a page is an opaque sheet, so the one underneath never shows through it', async () => {
+  const css = await read('./PageTransition.css');
+  const root = css.match(/\.page-transition \{([\s\S]*?)\n\}/);
+  assert.ok(root, 'the root rule');
+  assert.match(
+    root[1],
+    /background: var\(--bg-primary\);/,
+    'the token `body` paints: a page at rest has to look exactly as it did',
+  );
+});
+
 test('the leaving page hands itself back before the safety clock, never after', async () => {
   const ms = durations(await read('./PageTransition.css'));
   assert.ok(EXIT_SAFETY_MS > Math.max(...Object.values(ms)), `${EXIT_SAFETY_MS}ms outlasts every duration`);
