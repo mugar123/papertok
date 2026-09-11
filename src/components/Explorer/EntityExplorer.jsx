@@ -306,15 +306,6 @@ export default function EntityExplorer({
   const viewedEntityRef = useRef('');
   const projectSummaryTextRef = useRef(null);
   const wikiDescriptionTextRef = useRef(null);
-  // The title a project falls back to when its lookup fails and the URL
-  // carried no name. Held in a ref rather than read from the closure: the
-  // entity effect would then have to take the language as a dependency, and a
-  // language toggle would drop every entity page back to its skeleton and
-  // refetch it. The ref is born with the current wording and follows it.
-  const projectFallbackNameRef = useRef(isEnglish ? 'Research project' : 'Proyecto de investigación');
-  useEffect(() => {
-    projectFallbackNameRef.current = isEnglish ? 'Research project' : 'Proyecto de investigación';
-  }, [isEnglish]);
   const localizedTopicEntity = useMemo(
     () => entity?._localTopic ? getLocalTopicEntity(entity.id || id, language) : null,
     [entity, id, language],
@@ -541,6 +532,13 @@ export default function EntityExplorer({
 
   const followEntity = useMemo(() => {
     if (!entity || !['author', 'institution', 'project', 'concept', 'topic'].includes(type)) return null;
+    // An entity we cannot name cannot be followed. A follow is compared by id
+    // and then by name, so any word standing in for a missing name becomes a
+    // key shared with every other entity the page could not name — and the
+    // second one followed would resolve the click against the first. Nothing
+    // stands in here: with no name there is no identity, and no heart.
+    const displayName = type === 'institution' ? entityOfficialName : entityDisplayName;
+    if (!displayName) return null;
     const followType = type === 'concept' ? 'topic' : type;
     const metadata = entity._queryTopic
       ? {
@@ -556,7 +554,7 @@ export default function EntityExplorer({
     return {
       type: followType,
       id: entity.id || entity.code || id,
-      displayName: type === 'institution' ? entityOfficialName : entityDisplayName,
+      displayName,
       source: type === 'project' ? 'openaire' : type === 'concept' || type === 'topic' ? 'papertok' : 'openalex',
       externalIds: {
         orcid: entity.orcid,
@@ -698,15 +696,20 @@ export default function EntityExplorer({
           // shimmering forever instead of settling — keep the pill's name if
           // there was one.
           //
-          // With no name, the title used to be the route id, and a raw
-          // `snsf________::daa28096…` is not a title; the page's own wording
-          // for what this is reads as one. And when that id is an OpenAIRE id
-          // it is also the one useful thing left to offer: the empty state's
-          // link out, which is worth most in exactly this case.
+          // With no name in the URL either, the entity keeps none. A raw
+          // `snsf________::daa28096…` is not a title, but neither is a
+          // stand-in word a name: `display_name` is what the follow identity
+          // is built from, and one stand-in shared by every nameless project
+          // made them all the same follow — following one deleted another's
+          // document. The hero falls back to the page's own label for the type
+          // where it renders the title, in whichever language is on at that
+          // moment. And when the route id is an OpenAIRE id it is the one
+          // useful thing left to offer: the empty state's link out, which is
+          // worth most in exactly this case.
           setEntity({
             id,
             openaireId: id.includes('::') ? id : undefined,
-            display_name: name || projectFallbackNameRef.current,
+            display_name: name,
             type: 'project',
             funder,
           });
@@ -1667,7 +1670,12 @@ export default function EntityExplorer({
             </div>
             <div className="ehc-info">
               <div className="ehc-title-row">
-                <h1 className="ehc-name" style={{ margin: 0 }}>{entityDisplayName}</h1>
+                {/* The type label stands in for a name the entity does not
+                    have — a project whose lookup failed on a route with no
+                    `?name=`. It stands in HERE, not in `entity.display_name`,
+                    which is the follow identity; and being read on every
+                    render it follows a language toggle without a remount. */}
+                <h1 className="ehc-name" style={{ margin: 0 }}>{entityDisplayName || entityTypeLabel}</h1>
                 {type === 'author' && orcidInfo?.employments?.length > 0 && (
                   <button
                     type="button"

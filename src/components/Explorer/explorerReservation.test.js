@@ -174,10 +174,10 @@ test('a project arriving with a name from the pill paints the hero right away an
   // cells shimmered forever with nothing ever arriving. The arm must be a
   // plain, unconditional `else` (no `if (!name)` beside it) that lands an
   // entity with no `_detailsPending`, keeping the pill's name when there was
-  // one and falling back to the route id otherwise.
+  // one.
   assert.match(
     jsx,
-    /\} else \{\s*setEntity\(\{\s*id,\s*openaireId: id\.includes\('::'\) \? id : undefined,\s*display_name: name \|\| projectFallbackNameRef\.current,\s*type: 'project',\s*funder,\s*\}\);\s*\}/,
+    /\} else \{\s*setEntity\(\{\s*id,\s*openaireId: id\.includes\('::'\) \? id : undefined,\s*display_name: name,\s*type: 'project',\s*funder,\s*\}\);\s*\}/,
     'the failed-lookup arm is unconditional and sets no _detailsPending',
   );
 });
@@ -197,15 +197,15 @@ test('a project whose lookup failed still links out and still has a title', asyn
   const jsx = stripComments(await read('./EntityExplorer.jsx'));
 
   assert.doesNotMatch(jsx, /display_name: name \|\| id,/, 'the raw id is no longer a title');
+  // The wording stands in where the title is RENDERED, never inside the
+  // entity: `display_name` is what the follow identity is built from, and one
+  // constant shared by every nameless project made them all the same follow.
+  // explorerProjectIdentity.test.js holds that reasoning and the rest of this
+  // rule; what belongs here is only that the hero still has a title.
   assert.match(
     jsx,
-    /projectFallbackNameRef\.current = isEnglish \? 'Research project' : 'Proyecto de investigación';/,
-    'the fallback title is the wording the page already uses, in both languages',
-  );
-  assert.match(
-    jsx,
-    /const projectFallbackNameRef = useRef\(/,
-    'held in a ref: the language must not be a dependency of the entity effect, or a toggle drops the page back to its skeleton',
+    /<h1 className="ehc-name" style=\{\{ margin: 0 \}\}>\{entityDisplayName \|\| entityTypeLabel\}<\/h1>/,
+    "the hero title falls back to the page's own bilingual label for the type",
   );
   assert.match(
     jsx,

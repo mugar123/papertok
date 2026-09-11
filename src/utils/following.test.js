@@ -137,6 +137,50 @@ test('one spelling of a project name never pulls a different entity in with it',
   );
 });
 
+/**
+ * Why a page must never hand a placeholder name to a follow. Two nameless
+ * projects — an OpenAIRE outage makes several at once — carrying one shared
+ * stand-in name are the SAME follow to everything downstream: the second one's
+ * heart comes up filled, and `toggleFollow` resolves the click against the
+ * first, deleting its document. A name the entity does not have is no name:
+ * it yields no follow at all, and matches nothing.
+ */
+test('a nameless entity is no follow, and a shared placeholder name would have been one', () => {
+  const followedProject = [{
+    type: 'project',
+    canonicalId: 'snsf________::aaa',
+    displayName: 'QUANTUMLEAP: Quantum leap in photonics',
+  }];
+
+  assert.equal(
+    createFollowEntity({ type: 'project', id: 'snsf________::bbb', displayName: '' }),
+    null,
+    'no name, no follow to write',
+  );
+  assert.equal(
+    followsEntity(followedProject, { type: 'project', id: 'snsf________::bbb', displayName: '' }),
+    false,
+    'and an empty name matches nothing, rather than everything',
+  );
+  assert.equal(
+    followsEntity([{ type: 'project', canonicalId: 'snsf________::aaa', displayName: '' }],
+      { type: 'project', id: 'snsf________::bbb', displayName: 'LEAP' }),
+    false,
+    'from either side of the comparison',
+  );
+
+  // The shape of the bug, kept as the reason: one stand-in name on two
+  // different projects IS one follow here, and no rule in this module can tell
+  // them apart — so the stand-in has to stop at the page that renders it.
+  const placeholder = 'Research project';
+  assert.equal(
+    followsEntity([{ type: 'project', canonicalId: 'snsf________::aaa', displayName: placeholder }],
+      { type: 'project', id: 'snsf________::bbb', displayName: placeholder }),
+    true,
+    'two different projects under one placeholder name are indistinguishable',
+  );
+});
+
 test('a project name is its acronym and its title, or whichever of the two it has', () => {
   assert.equal(getProjectDisplayName({ acronym: 'LEAP', title: 'Quantum leap' }), 'LEAP: Quantum leap');
   assert.equal(getProjectDisplayName({ title: 'Quantum leap' }), 'Quantum leap');
