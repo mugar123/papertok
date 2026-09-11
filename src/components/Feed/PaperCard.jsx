@@ -9,6 +9,7 @@ import {
   Lock, Unlock,
 } from 'lucide-react';
 import { canonicalPaperIdentity } from '../../utils/paperCanonicalKey.js';
+import { useCommentCount } from '../../hooks/useCommentCount.js';
 import ScientificText from '../ScientificText';
 import { Button } from '../ui/button.jsx';
 import { Toggle } from '../ui/toggle.jsx';
@@ -266,6 +267,13 @@ const PaperCard = memo(function PaperCard({
   onAuthRequired,
   analyticsSurface = 'feed',
   position,
+  // Whether the feed currently treats this card as the one on screen. Only
+  // FeedContainer passes it; every other place that mounts a card (lists,
+  // the explorer, search, the public paper page, the related-paper overlay)
+  // leaves it at this default, which is exactly where the count below wants
+  // to be: off, since nothing there tells this card apart from an offscreen
+  // one.
+  isActive = false,
 }) {
   // `position` is optional and PaperCard renders on five different surfaces,
   // so it cannot anchor a stable, collision-free id for aria-controls.
@@ -300,6 +308,10 @@ const PaperCard = memo(function PaperCard({
     () => Boolean(onOpenComments && canonicalPaperIdentity(paper)),
     [onOpenComments, paper],
   );
+  // One `count()` read, at most, for the one card the feed says is active —
+  // never for the ones scrolled past or waiting below. See the hook for the
+  // budget this is built against and why it cannot go through the Worker.
+  const commentCount = useCommentCount(paper, Boolean(isActive && canOpenComments));
   const [showAuthorsModal, setShowAuthorsModal] = useState(false);
   // The sheet is leaving with the page: an author was picked from it. It
   // closes in its leaving pose (`is-leaving`, PaperCard.css) — a short drop
@@ -1716,11 +1728,20 @@ const PaperCard = memo(function PaperCard({
             className="pc-side-btn"
             onClick={() => onOpenComments(paper)}
             aria-haspopup="dialog"
+            // The visible label drops to a bare number once it is known, same
+            // as Like/Save above it once they carry a count — but a bare
+            // number is not a name a screen reader can act on, so the
+            // accessible name keeps the word regardless of what is painted.
+            aria-label={commentCount > 0
+              ? `${commentCount} ${isEnglish ? 'comments' : 'comentarios'}`
+              : (isEnglish ? 'Comments' : 'Comentarios')}
           >
             <span className="pc-side-icon">
               <MessageCircle size={20} />
             </span>
-            <span className="pc-side-label">{isEnglish ? 'Comments' : 'Comentarios'}</span>
+            <span className="pc-side-label">
+              {commentCount > 0 ? commentCount : (isEnglish ? 'Comments' : 'Comentarios')}
+            </span>
           </button>
         )}
 

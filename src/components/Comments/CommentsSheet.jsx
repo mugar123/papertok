@@ -36,6 +36,7 @@ import { createSessionCache } from '../../utils/sessionCache.js';
 import { isReadTimeout, patientRead, slowNoticeStatus, withReadTimeout } from '../../utils/boundedRead.js';
 import { areaAccentForPaper } from '../../utils/areaAccent.js';
 import { usePopupOpenOnMount } from '../../hooks/usePopupOpenOnMount.js';
+import { forgetCommentCount } from '../../hooks/useCommentCount.js';
 import { Button } from '../ui/button.jsx';
 import { Drawer, DrawerBody, DrawerContent } from '../ui/drawer.jsx';
 import { Textarea } from '../ui/textarea.jsx';
@@ -861,6 +862,11 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
         setCount(previous => (previous ? { ...previous, count: previous.count + 1 } : previous));
         if (!anchor.stubExists) setAnchor(previous => ({ ...previous, stubExists: true }));
         void invalidateThreadAnchor([anchor.key, ...localThreadKeys(paper)]);
+        // The card's own count is a separate cache (module-scoped, session-
+        // long — see the hook) from the Worker's thread-anchor cache just
+        // invalidated above. Both need dropping or the card would keep
+        // showing last count after the viewer's own post changed it.
+        forgetCommentCount(paper.id);
         announce('success', text(COPY.posted));
       }
       resetComposer();
@@ -892,6 +898,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
         ? { ...previous, count: Math.max(0, previous.count - droppedIds.size) }
         : previous));
       void invalidateThreadAnchor([comment.paperKey ?? anchor.key, anchor.key]);
+      forgetCommentCount(paper.id);
       announce('success', text(COPY.deleted));
     } catch (error) {
       console.error('The comment could not be deleted', error);
