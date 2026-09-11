@@ -15,7 +15,7 @@ test('the atom screen is a veil over the feed, inside the same landmark as the c
   assert.match(jsx, /import \{ AnimatePresence, motion, useReducedMotion \} from 'framer-motion';/);
   assert.match(jsx, /const atomVeil = feedAtomVeilCopy\(\{ displayState, loading, isRefreshing \}\);/);
   // One tree for the wait and for the cards, so the veil can leave over them.
-  const shared = jsx.match(/if \(displayState === FEED_DISPLAY_STATES\.FEED \|\| atomVeil\) \{[\s\S]*?<FeedLandmark landmark=\{landmark\}>[\s\S]*?<div\s+className="feed-container"\s+ref=\{feedRef\}\s+onScroll=\{handleScroll\}[^>]*>[\s\S]*?<AnimatePresence>\s*\{atomVeil && \(\s*<motion\.div\s+key="atom-veil"\s+className="feed-empty feed-empty--veil"/);
+  const shared = jsx.match(/if \(displayState === FEED_DISPLAY_STATES\.FEED \|\| atomVeil\) \{[\s\S]*?<FeedLandmark landmark=\{landmark\}>[\s\S]*?<div\s+className=\{`feed-container[^`]*`\}\s+ref=\{feedRef\}\s+onScroll=\{handleScroll\}[^>]*>[\s\S]*?<AnimatePresence>\s*\{atomVeil && \(\s*<motion\.div\s+key="atom-veil"\s+className="feed-empty feed-empty--veil"/);
   assert.ok(shared, 'the FEED branch and the veil share the landmark and the container');
   // The old standalone returns are gone.
   assert.doesNotMatch(jsx, /className="feed-empty feed-empty--initial-loading"/);

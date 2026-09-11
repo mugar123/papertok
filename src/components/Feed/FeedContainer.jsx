@@ -1,6 +1,6 @@
 import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Check } from 'lucide-react';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getUiErrorMessage } from '../../utils/errorMessages';
@@ -692,14 +692,16 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
           disabled={isRefreshing}
           aria-busy={isRefreshing || undefined}
         >
-          <RefreshCw size={14} aria-hidden="true" className={isRefreshing ? 'feed-refresh-icon--spinning' : undefined} />
+          {refreshDone && !isRefreshing
+            ? <Check size={14} aria-hidden="true" />
+            : <RefreshCw size={14} aria-hidden="true" className={isRefreshing ? 'feed-refresh-icon--spinning' : undefined} />}
           {isEnglish
-            ? (isRefreshing ? 'Refreshing…' : 'Refresh')
-            : (isRefreshing ? 'Actualizando…' : 'Actualizar')}
+            ? (isRefreshing ? 'Refreshing…' : refreshDone ? 'Updated' : 'Refresh')
+            : (isRefreshing ? 'Actualizando…' : refreshDone ? 'Actualizado' : 'Actualizar')}
         </button>
       )}
       <div
-        className="feed-container"
+        className={`feed-container${isRefreshing ? ' feed-container--refreshing' : ''}`}
         ref={feedRef}
         onScroll={handleScroll}
       >

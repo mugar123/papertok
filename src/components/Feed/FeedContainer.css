@@ -103,7 +103,24 @@
   35% { scale: 1.08; }
   100% { scale: 1; }
 }
+/* The papers being replaced. Measured 2026-09-12 without this: at 498ms the
+   card count went 12 → 4 and the paper changed outright, with the long frames
+   of mounting a new feed in plain sight — a cut, not a refresh. Opacity only,
+   so it composites and cannot disturb the scroll-snap geometry underneath;
+   the smooth scroll back to the top happens inside the dip, where it is not
+   a second movement to read. Coming back is slower than going: the new feed
+   arrives rather than snapping on, and the cards' own entrance
+   (`cardSlideUp`, `pcArrive`) runs inside it. */
+.feed-container {
+  transition: opacity 260ms cubic-bezier(0.2, 0, 0, 1);
+}
+.feed-container--refreshing {
+  opacity: 0.4;
+  transition: opacity 180ms ease-in;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .feed-container, .feed-container--refreshing { transition: none; opacity: 1; }
   .feed-refresh, .feed-refresh.is-visible { transition: opacity 120ms linear; translate: -50% 0; scale: 1; }
   .feed-refresh.is-pulling { translate: -50% 0; scale: 1; }
   .feed-refresh.is-done, .feed-refresh-icon--spinning { animation: none; }

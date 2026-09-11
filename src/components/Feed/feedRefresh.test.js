@@ -61,3 +61,36 @@ test('SOURCE: el tirón se decide en el primer movimiento y entonces detiene el 
     'primero se reclama el gesto, y sólo entonces se impide el scroll');
   assert.match(move, /if \(event\.cancelable\) event\.preventDefault\(\);/);
 });
+
+/**
+ * The refresh reads as a handover, not a cut. Measured 2026-09-12 before it:
+ * the card count went 12 → 4 and the paper changed outright at 498ms, with
+ * the long frames of mounting a new feed in plain sight.
+ */
+test('SOURCE: el feed se atenúa mientras se refresca, y sólo con opacidad', async () => {
+  const src = strip(await read('./FeedContainer.jsx'));
+  assert.match(src, /className=\{`feed-container\$\{isRefreshing \? ' feed-container--refreshing' : ''\}`\}/);
+  const css = strip(await read('./FeedContainer.css'));
+  const dip = css.slice(css.indexOf('.feed-container--refreshing {'), css.indexOf('}', css.indexOf('.feed-container--refreshing {')));
+  assert.match(dip, /opacity: 0\.4/);
+  assert.doesNotMatch(dip, /transform|translate|scale|height|filter/,
+    'nada que toque la geometría: debajo hay un scroll-snap que medir');
+  const back = [...css.matchAll(/\.feed-container \{([^}]*)\}/g)]
+    .map((m) => m[1]).find((b) => /transition:\s*opacity \d+ms/.test(b));
+  const outMs = Number(/opacity (\d+)ms/.exec(back)[1]);
+  const inMs = Number(/opacity (\d+)ms/.exec(dip)[1]);
+  assert.ok(outMs > inMs, `la vuelta (${outMs}ms) es más lenta que la ida (${inMs}ms): llega, no aparece de golpe`);
+  const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
+  assert.match(reduced, /\.feed-container, \.feed-container--refreshing \{ transition: none; opacity: 1; \}/,
+    'con movimiento reducido no hay atenuación');
+});
+
+test('SOURCE: la píldora dice qué está haciendo en cada uno de sus tres estados', async () => {
+  const src = strip(await read('./FeedContainer.jsx'));
+  const at = src.indexOf('className={`feed-refresh');
+  assert.ok(at > 0, 'la píldora sigue ahí');
+  const body = src.slice(at, src.indexOf('</button>', at));
+  assert.match(body, /refreshDone && !isRefreshing\s*\?\s*<Check/, 'al terminar, una marca, no la flecha girando');
+  assert.match(body, /isRefreshing \? 'Refreshing…' : refreshDone \? 'Updated' : 'Refresh'/);
+  assert.match(body, /isRefreshing \? 'Actualizando…' : refreshDone \? 'Actualizado' : 'Actualizar'/);
+});
