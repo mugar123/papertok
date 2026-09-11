@@ -388,30 +388,6 @@ const PaperCard = memo(function PaperCard({
   const [resolvedAccess, setResolvedAccess] = useState({ paperId: null, copy: null });
   const [linkedResources, setLinkedResources] = useState({ paperId: null, items: [] });
   const [isCardVisible, setIsCardVisible] = useState(false);
-  // Whether this card's `pcArrive` has already played once while mounted
-  // (PaperCard.css). `isActive` toggles on every scroll-driven activeIndex
-  // change, and a drag that hovers on the 50% snap line flips it
-  // true/false/true before settling; CSS restarts the animation every time
-  // the rule matches again unless something remembers it already ran. That
-  // memory is `wasActive` + `hasArrived`, both state rather than a ref: a
-  // ref written unconditionally on every render would still read `true` on
-  // a render caused by something unrelated (`isCardVisible`, a resource
-  // fetch settling) while the FIRST arrival is still mid-flight, adding
-  // `data-arrived` mid-animation and cutting it short. Flipping `hasArrived`
-  // only inside the `isActive !== wasActive` branch — React's own "adjust
-  // state during render" pattern — means it changes only in reaction to a
-  // genuine transition, and specifically on the FIRST deactivation
-  // (`wasActive` true, going false) rather than the activation itself: at
-  // that instant `data-active` is already leaving `"true"`, so the arrival
-  // rule has already stopped matching regardless, and adding `data-arrived`
-  // in the same commit costs nothing more. Never cleared afterward — a
-  // revisit, jitter or deliberate, then finds the rule already suppressed.
-  const [wasActive, setWasActive] = useState(isActive);
-  const [hasArrived, setHasArrived] = useState(false);
-  if (isActive !== wasActive) {
-    setWasActive(isActive);
-    if (wasActive && !hasArrived) setHasArrived(true);
-  }
   // Whether the clippings are lit. Deliberately NOT `isCardVisible`: the two
   // ends of a card's turn on screen want different thresholds, and one flag
   // cannot hold both. It is armed at the same 15% that starts the fetch — late

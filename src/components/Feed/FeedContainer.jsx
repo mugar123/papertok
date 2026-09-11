@@ -562,10 +562,18 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   if (displayState === FEED_DISPLAY_STATES.FEED || atomVeil) {
   return (
     <FeedLandmark landmark={landmark}>
-      {activeIndex === 0 && papers.length > 0 && !loading && (
-        <button type="button" className="feed-refresh" onClick={handleRefresh}>
-          <RefreshCw size={14} aria-hidden="true" />
-          {isEnglish ? 'Refresh' : 'Actualizar'}
+      {papers.length > 0 && (
+        <button
+          type="button"
+          className="feed-refresh"
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          aria-busy={isRefreshing || undefined}
+        >
+          <RefreshCw size={14} aria-hidden="true" className={isRefreshing ? 'feed-refresh-icon--spinning' : undefined} />
+          {isEnglish
+            ? (isRefreshing ? 'Refreshing…' : 'Refresh')
+            : (isRefreshing ? 'Actualizando…' : 'Actualizar')}
         </button>
       )}
       <div

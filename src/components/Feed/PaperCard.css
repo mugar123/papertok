@@ -1897,7 +1897,9 @@ a.pc-citations {
      back in, or the card renders under the fold instead of above
      `.knowledge-source`. */
   bottom: calc(var(--graph-source-height) + var(--inset-bottom) + var(--bleed));
-  z-index: 4;
+  /* Above every node, the focused one (6) and the travelling dot (8)
+     included: a card laid over the plot must not let a dot through. */
+  z-index: 9;
   padding: 13px 18px 15px;
   border-top: 1px solid var(--border-default);
   background: var(--bg-card);

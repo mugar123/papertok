@@ -6,7 +6,7 @@
  * `startViewTransition` snapshots the whole page before the callback runs,
  * and on a phone at device pixel ratio that snapshot is tens of megabytes of
  * texture. Add a `clip-path` circle on top of a capture that already ate a
- * long frame — 260 ms opening into the dark, 200 ms closing back out of it
+ * long frame — 260 ms opening into the dark, 260 ms closing back out of it
  * (`global.css`, "Theme switch") — and the sweep is what reads as heavy, not
  * the theme change underneath it.
  *

@@ -75,6 +75,12 @@
   font-size: 0.8rem; opacity: 0.9;
 }
 .feed-refresh:hover { opacity: 1; }
+.feed-refresh:disabled { opacity: 0.75; cursor: default; }
+.feed-refresh-icon--spinning { animation: feedRefreshSpin 0.8s linear infinite; }
+@keyframes feedRefreshSpin { to { rotate: 360deg; } }
+@media (prefers-reduced-motion: reduce) {
+  .feed-refresh-icon--spinning { animation: none; }
+}
 
 /* No .feed-wrapper override at 768px: --nav-total already switches to
    --nav-height-mobile there (see variables.css), so a second copy of this
