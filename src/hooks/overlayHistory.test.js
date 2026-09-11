@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { clearStaleOverlayMarker, createOverlayHistory } from './useOverlayHistory.js';
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
@@ -321,6 +321,57 @@ test('SOURCE: el visor de PDF propio de SearchPage usa useOverlayHistory con el 
   assert.match(body, /pdfCloseRef\.current\(\)/, 'Atrás tiene que PEDIR el cierre al visor, no desmontarlo');
   assert.match(body, /setPdfPaper\(null\)/, 'con el desmontaje solo como respaldo mientras el chunk perezoso no ha montado');
   assert.match(code, /<PDFViewer paper=\{pdfPaper\} closeRef=\{pdfCloseRef\}/, 'y el visor tiene que recibir ese mismo ref');
+});
+
+const SRC_DIR = new URL('../', import.meta.url);
+
+/**
+ * Every `.js`/`.jsx` under src/ except the tests, path-relative — same shape
+ * as `accessibilityStructure.test.js`'s `sources()`.
+ */
+async function sourceFilesUnderSrc() {
+  const entries = await readdir(SRC_DIR, { recursive: true });
+  return entries.filter((name) => /\.jsx?$/.test(name) && !/\.test\.jsx?$/.test(name)).sort();
+}
+
+/**
+ * The four SOURCE tests above pin exactly today's owners — three
+ * `<PDFViewer>` mounts and one `<PaperReader>` — by matching each one's file
+ * by name. That pins the past; it does nothing for a FIFTH mount added later
+ * anywhere else under src/, which is exactly how SearchPage's own
+ * `<PDFViewer>` went unwired to this hook until someone noticed by hand (see
+ * the SOURCE test above this one). This test is the net under the per-file
+ * ones: it does not know the owners' names, only the shape — any file that
+ * renders `<PDFViewer` or `<PaperReader` has to also reference
+ * `useOverlayHistory`, or Back would leave PaperTok through it exactly as it
+ * did before this hook existed. `.test.js` files are excluded on purpose:
+ * this file's own SOURCE tests above quote `<PDFViewer …>` inside regex
+ * literals, which would otherwise register as a mount of nothing.
+ */
+test('SOURCE: todo archivo bajo src/ que monta <PDFViewer o <PaperReader usa useOverlayHistory', async (t) => {
+  const matched = [];
+  const offenders = [];
+  for (const file of await sourceFilesUnderSrc()) {
+    const code = stripComments(await readFile(new URL(file, SRC_DIR), 'utf8'));
+    if (!/<PDFViewer\b|<PaperReader\b/.test(code)) continue;
+    matched.push(file);
+    if (!/\buseOverlayHistory\b/.test(code)) offenders.push(file);
+  }
+  t.diagnostic(`archivos que montan <PDFViewer o <PaperReader: ${matched.join(', ') || '(ninguno)'}`);
+  assert.ok(
+    matched.length >= 4,
+    'el rastreo bajo src/ no encontró ni siquiera los cuatro dueños conocidos '
+    + '(App.jsx, EntityExplorer.jsx, SearchPage.jsx, PaperCard.jsx) — antes de '
+    + 'confiar en un resultado vacío o corto, revisa el patrón o el directorio: '
+    + `encontrados ${JSON.stringify(matched)}`,
+  );
+  assert.deepEqual(
+    offenders,
+    [],
+    'estos archivos bajo src/ montan <PDFViewer o <PaperReader sin referenciar '
+    + 'useOverlayHistory, así que Atrás los sacaría de PaperTok en vez de '
+    + `cerrarlos — añádeles useOverlayHistory(open, onClose, tag): ${offenders.join(', ')}`,
+  );
 });
 
 /**

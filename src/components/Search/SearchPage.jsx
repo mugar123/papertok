@@ -241,7 +241,9 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
   // Back closes this PDF viewer instead of leaving PaperTok: see useOverlayHistory.js.
   // Through the viewer's own close, the one the X uses — it owns `open` and
   // reports back only when its leave has played; `setPdfPaper(null)` is just
-  // the fallback for before the lazy chunk has mounted.
+  // the fallback for the sub-frame gap before PDFViewer's own
+  // `useImperativeHandle` has populated the ref — this import (above) is
+  // plain, not lazy, so there is no chunk boundary to blame it on here.
   const pdfCloseRef = useRef(null);
   const requestPdfClose = useCallback(() => {
     if (pdfCloseRef.current) pdfCloseRef.current();
