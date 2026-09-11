@@ -257,6 +257,42 @@
   color: var(--text-on-brand);
 }
 
+/* ── The level chip ──
+   One mark for three buttons. The colour is the surface's, not the chip's: the
+   dock paints the yellow thread (design.md, rule 3) and the phone's bar keeps
+   the plain raised chip the toggle group ships with, so the same element reads
+   correctly in both without a second implementation. */
+.rd-panel { --rd-level-chip: var(--brand-yellow); }
+
+.rd-level-item {
+  position: relative;
+}
+
+/* The button must stop painting its own background, or the destination is
+   already yellow before the chip has left — and a journey nobody can see is
+   just a slower cross-fade. Written against both containers so it outranks the
+   rule above and the toggle's own `data-pressed:bg-card`, which match it on
+   specificity and would otherwise be settled by stylesheet order. */
+.rd-panel .rd-level-item[data-pressed],
+.rd-bar .rd-level-item[data-pressed] {
+  background: transparent;
+  box-shadow: none;
+}
+
+.rd-level-chip {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--rd-level-chip, var(--bg-card));
+  box-shadow: var(--shadow-sm);
+}
+
+/* Painted after the chip in the same stacking context, so the label stays on
+   top of the mark that arrives underneath it. */
+.rd-level-label {
+  position: relative;
+}
+
 /* ── Scroll region ── */
 .rd-scroll {
   flex: 1 1 auto;

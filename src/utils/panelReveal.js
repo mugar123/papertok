@@ -13,8 +13,12 @@
 export const PANEL_REVEAL_ZONE_PX = 140;
 
 /** Grace before it retreats: enough that the boundary cannot flicker, and that
- *  the trip from the text down to the panel is not a race. */
-export const PANEL_HIDE_DELAY_MS = 300;
+ *  the trip from the text down to the panel is not a race. Short, because the
+ *  strip that summons the panel is 140px tall — a hand that wobbles off the
+ *  edge of it is still inside the zone and never asks for the hide at all, so
+ *  the only thing a longer grace buys is the half-second of nothing that made
+ *  the panel feel stuck to the pointer. */
+export const PANEL_HIDE_DELAY_MS = 140;
 
 /** Whether a pointer at this height is inside the strip that summons the panel. */
 export function pointerWakesPanel(clientY, viewportHeight) {

@@ -420,9 +420,11 @@
 
 .rd-export-go {
   flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+  /* One cell, three tenants: the gauge (all three labels, invisible, stacked)
+     and whichever face is on screen. The column takes the width of the widest,
+     so the button stops resizing under its own label. */
+  display: inline-grid;
+  place-items: center;
   min-height: 34px;
   padding: 0 16px;
   border: 1px solid var(--border-ink);
@@ -432,10 +434,45 @@
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
   cursor: pointer;
-  transition: background var(--transition-fast);
+  /* `scale` rather than a `transform: scale()`: the face inside is a Motion
+     element writing its own `transform` every frame of a hand-over, and a
+     press written into that property would be fighting it. The independent
+     property composes with it instead. */
+  transition: background var(--transition-fast), scale 140ms var(--ease-out-expo);
 }
 
+/* The half that was missing: pressing this did nothing until the file arrived,
+   which on a large PDF is a second of a button that looks broken. */
+.rd-export-go:not(:disabled):active { scale: 0.97; }
+
 .rd-export-go:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.rd-export-go-gauge,
+.rd-export-go > .rd-export-go-face {
+  grid-area: 1 / 1;
+}
+
+.rd-export-go-gauge {
+  display: grid;
+  visibility: hidden;
+}
+
+.rd-export-go-gauge > .rd-export-go-face {
+  grid-area: 1 / 1;
+}
+
+/* The row's own gap has nothing left to space: the icon and the label travel
+   together inside a single face now. */
+.rd-export-go-face {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.rd-export-go-icon {
+  display: inline-flex;
+}
 
 @media (hover: hover) and (pointer: fine) {
   .rd-export-go:not(:disabled):hover { background: var(--accent-primary-hover); }

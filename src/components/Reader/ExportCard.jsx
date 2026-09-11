@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Check, Download, FileText, Info, X } from 'lucide-react';
 import { Checkbox } from '../ui/checkbox.jsx';
 import { Label } from '../ui/label.jsx';
@@ -34,6 +35,8 @@ const FORMATS = [
   { id: 'tex', label: 'LaTeX' },
 ];
 
+const EASE_OUT = [0.16, 1, 0.3, 1];
+
 export default function ExportCard({
   copy,
   counts,
@@ -45,6 +48,7 @@ export default function ExportCard({
   busy = false,
 }) {
   const [justSaved, setJustSaved] = useState(false);
+  const prefersReducedMotion = useReducedMotion();
   // PDF first: it opens everywhere, and the .tex stays one tap away for
   // whoever has a TeX toolchain and wants the compilable source.
   const [format, setFormat] = useState('pdf');
@@ -69,6 +73,10 @@ export default function ExportCard({
   }, [justSaved]);
 
   const anyNotes = (include.mine && counts.mine > 0) || (include.ai && counts.ai > 0);
+  /* What the button is saying right now, as one value: it is both the label and
+     the key `AnimatePresence` watches, and deriving them separately is how the
+     two drift apart. */
+  const phase = busy ? 'busy' : justSaved ? 'saved' : 'idle';
 
   return (
     <PopoverContent
@@ -196,13 +204,68 @@ export default function ExportCard({
       <div className="rd-export-foot">
         <span className="rd-export-file"><FileText size={13} /> {fileNames[format]}</span>
         <PopoverClose className="rd-export-cancel">{copy.cancel}</PopoverClose>
-        <button type="button" className="rd-export-go" onClick={handleDownload} disabled={busy}>
-          {justSaved ? <Check size={14} /> : <Download size={14} />}
-          {busy
-            ? copy.generating
-            : justSaved
-              ? copy.downloaded
-              : format === 'pdf' ? copy.downloadPdf : copy.downloadTex}
+        {/* Three states, handed over rather than cut between: the label that is
+            leaving goes up and out before the next one arrives from below, so
+            "Download PDF" → "Generating…" → "Downloaded" reads as one button
+            working rather than as three that flicker in the same place.
+
+            The three labels are three widths — 157px, 143px and 137px, measured
+            — and a button that resizes under its own label drags the whole foot
+            with it twice per download. So the button is sized by all three at
+            once: the gauge below holds them stacked and invisible in the same
+            grid cell the face animates in, which makes the box the width of the
+            longest and leaves nothing to animate. (Motion's `layout` was the
+            first answer here and it did not animate the width at all — three
+            distinct widths across the whole run, measured the same way.) */}
+        <button
+          type="button"
+          className="rd-export-go"
+          onClick={handleDownload}
+          disabled={busy}
+        >
+          <span className="rd-export-go-gauge" aria-hidden="true">
+            {[format === 'pdf' ? copy.downloadPdf : copy.downloadTex, copy.generating, copy.downloaded]
+              .map(label => (
+                <span key={label} className="rd-export-go-face">
+                  <Download size={14} />
+                  {label}
+                </span>
+              ))}
+          </span>
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.span
+              key={phase}
+              className="rd-export-go-face"
+              initial={prefersReducedMotion
+                ? { opacity: 0 }
+                : { opacity: 0, transform: 'translateY(4px)' }}
+              animate={{ opacity: 1, transform: 'translateY(0px)' }}
+              exit={prefersReducedMotion
+                ? { opacity: 0, transition: { duration: 0.1 } }
+                : { opacity: 0, transform: 'translateY(-4px)', transition: { duration: 0.12, ease: EASE_OUT } }}
+              transition={{ duration: prefersReducedMotion ? 0.1 : 0.16, ease: EASE_OUT }}
+            >
+              {phase === 'saved'
+                ? (
+                  /* The one moment worth an accent: the file exists now. A short
+                     spring, because a check that fades in says nothing happened. */
+                  <motion.span
+                    className="rd-export-go-icon"
+                    initial={prefersReducedMotion ? false : { transform: 'scale(0.6)' }}
+                    animate={{ transform: 'scale(1)' }}
+                    transition={{ type: 'spring', duration: 0.4, bounce: 0.25 }}
+                  >
+                    <Check size={14} />
+                  </motion.span>
+                )
+                : <Download size={14} />}
+              {phase === 'busy'
+                ? copy.generating
+                : phase === 'saved'
+                  ? copy.downloaded
+                  : format === 'pdf' ? copy.downloadPdf : copy.downloadTex}
+            </motion.span>
+          </AnimatePresence>
         </button>
       </div>
     </PopoverContent>

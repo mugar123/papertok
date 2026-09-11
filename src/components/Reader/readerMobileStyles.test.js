@@ -353,8 +353,15 @@ test('el cromo superior se aparta con la barra, y un foco lo trae de vuelta', as
  */
 test('la isla táctil lleva el nivel y la descarga, compartidos con el dock', async () => {
   const jsx = await readFile(READER_JSX, 'utf8');
-  assert.match(jsx, /levelSlot=\{levelControl\}/);
+  // Desde 2026-09-12 el nivel viaja dentro de su propio `LayoutGroup` (un
+  // ámbito por superficie, para que el chip amarillo no vuele entre el dock
+  // oculto y la isla), así que lo que esta guarda mira ya no es la forma
+  // literal sino lo que siempre quiso decir: es el MISMO `levelControl`.
+  assert.match(jsx, /levelSlot=\{[^}]*levelControl/);
   assert.match(jsx, /exportSlot=\{exportControl\}/);
+  // Y sigue habiendo una sola implementación de los niveles, no una copia
+  // para el móvil que pueda derivar de la del escritorio.
+  assert.equal((jsx.match(/PAPER_REWRITE_LEVELS\.map/g) || []).length, 1);
 
   const barJsx = await readFile(READER_BAR_JSX, 'utf8');
   assert.match(barJsx, /\{levelSlot\}/);

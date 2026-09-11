@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'framer-motion';
 import {
   AlertCircle,
   ArrowLeft,
@@ -479,6 +479,18 @@ const GHOST_LINES = Object.freeze([
 ]);
 
 const EASE_OUT = [0.16, 1, 0.3, 1];
+/**
+ * For something travelling from one place on screen to another, where the
+ * journey is the message — `--ease-out-quad` in variables.css, as JS.
+ *
+ * Measured on the bench against the two obvious alternatives, chip travelling
+ * 106px: a strong ease-in-out sat still for 71ms before it moved at all, which
+ * on something answering a click reads as a dropped press, and expo-out was
+ * moving at 16ms but spent the distance in the first few frames and arrived
+ * looking like a cut with a smear behind it. This one is off at 20ms and only
+ * half-way at 103ms, so the eye can follow it across.
+ */
+const EASE_TRAVEL = [0.25, 0.46, 0.45, 0.94];
 
 /*
  * The reader's own entrance and exit — growing out of the button that opened
@@ -499,20 +511,35 @@ const EASE_OUT = [0.16, 1, 0.3, 1];
  * Passed to `animate` as objects, never as variant labels, so the panel animates
  * whenever its own state changes and nothing above it can override that.
  */
+/**
+ * The palette's own coming and going, which is not the reader's: this is the
+ * pointer's answer, and it is watched far more often than the reader is opened.
+ *
+ * Short, and travelling a short way. The first version took 260ms to arrive
+ * over 12px and 180ms to leave after a 300ms grace — close to half a second of
+ * palette still on screen after the pointer had left, which reads as the app
+ * being slow to let go. Cutting the durations alone would have raised the
+ * speed of the same 12px journey and turned quick into brusque, so the travel
+ * comes down with them.
+ *
+ * Both halves decelerate. An `easeIn` exit holds the panel almost still through
+ * the first frames — exactly the moment the reader is looking at it to see
+ * whether it heard them.
+ */
 const PANEL_STATES = {
   shown: {
     opacity: 1,
     y: 0,
     scale: 1,
     pointerEvents: 'auto',
-    transition: { duration: 0.26, ease: EASE_OUT },
+    transition: { duration: 0.16, ease: EASE_OUT },
   },
   hidden: {
     opacity: 0,
-    y: 12,
+    y: 8,
     scale: 0.97,
     pointerEvents: 'none',
-    transition: { duration: 0.18, ease: 'easeIn' },
+    transition: { duration: 0.12, ease: EASE_OUT },
   },
 };
 
@@ -1305,11 +1332,29 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
         {PAPER_REWRITE_LEVELS.map(option => (
           <ToggleGroupItem
             key={option.id}
+            className="rd-level-item"
             value={option.id}
             disabled={isStreaming && level !== option.id}
             aria-label={isEnglish ? option.labelEn : option.label}
           >
-            {isEnglish ? option.labelEn : option.label}
+            {/* The mark is not a state of the button any more: it is one
+                element that moves to whichever button was chosen, which is the
+                only version of this that shows you *which way* the level went.
+                Mounted inside the pressed item and matched across the three by
+                `layoutId` — Motion measures the old box and the new one and
+                animates between them, so the markup stays one chip, not three
+                that take turns being visible. */}
+            {level === option.id && (
+              <motion.span
+                layoutId="rd-level-chip"
+                className="rd-level-chip"
+                aria-hidden="true"
+                transition={prefersReducedMotion
+                  ? { duration: 0 }
+                  : { duration: 0.22, ease: EASE_TRAVEL }}
+              />
+            )}
+            <span className="rd-level-label">{isEnglish ? option.labelEn : option.label}</span>
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
@@ -1488,7 +1533,13 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             initial={false}
             animate={(prefersReducedMotion ? STILL_PANEL_STATES : PANEL_STATES)[panel.shown ? 'shown' : 'hidden']}
           >
-            {levelControl}
+            {/* Each surface scopes its own chip. The dock is `display: none` on
+                a touch screen but stays mounted, so both it and the phone's bar
+                hold a level control at once — one shared `layoutId` across the
+                two would hand Motion a box that measures 0x0 and fly the chip
+                out of the screen on the first change. `LayoutGroup` prefixes
+                the id, so each surface animates only against itself. */}
+            <LayoutGroup id="rd-dock-level">{levelControl}</LayoutGroup>
 
             <div className="rd-panel-divider" />
 
@@ -1761,7 +1812,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
         {selectionRoute === 'bar' && sections.length > 0 && (
           <ReaderBar
             copy={copy}
-            levelSlot={levelControl}
+            levelSlot={<LayoutGroup id="rd-bar-level">{levelControl}</LayoutGroup>}
             exportSlot={exportControl}
             streaming={isStreaming}
             visible={barVisible}
