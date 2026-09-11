@@ -63,6 +63,25 @@ async function requestFigures(url, arxivId) {
   }
 }
 
+/**
+ * What the cache already holds for this paper, or `null` if it holds nothing.
+ *
+ * `getPaperFigures` is the door that may have to go and ask; this one only
+ * looks. The distinction matters on arrival: a card coming back into view
+ * usually has its figures cached with the bytes still in the browser, and
+ * making it wait for a promise — behind a settle timer, at that — put the
+ * clippings on screen 53ms AFTER the page had finished arriving, so they
+ * played their entrance over something that had already stopped moving.
+ *
+ * `null` and `[]` are different answers: `[]` is a paper the Worker has
+ * already told us has no figures, and must not trigger another look.
+ */
+export function peekPaperFigures(paper) {
+  const arxivId = normalizeArxivFigureId(paper);
+  if (!arxivId) return null;
+  return figureCache.has(arxivId) ? figureCache.get(arxivId) : null;
+}
+
 export async function getPaperFigures(paper) {
   const arxivId = normalizeArxivFigureId(paper);
   if (!arxivId) return [];
