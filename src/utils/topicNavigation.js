@@ -44,6 +44,40 @@ const GENERIC_TOPIC_LABELS = new Set([
   'untitled',
 ].map(normalizeLabel));
 
+/**
+ * The taxonomy with its labels already normalised, built once.
+ *
+ * `findLocalTopic` used to walk every area and every subcategory and run
+ * `normalizeLabel` — NFKD plus two Unicode regexes — over both labels of each,
+ * on EVERY call. That is a few hundred normalisations per lookup, and a feed
+ * card asks for one per topic it shows.
+ *
+ * Measured 2026-09-11 (production build, real session, CPU profile of leaving
+ * Following with 60 mounted cards for another tab): 41ms of the ~100ms before
+ * the transition could draw its first frame was inside this module, which is
+ * why leaving Following took 99-106ms to start moving while leaving Research
+ * took 30-40ms.
+ *
+ * The order below is the order the old loop visited in — an area, then that
+ * area's subcategories, then the next area — and the walk still stops at the
+ * first match, so which entry wins is unchanged. Only the normalising moved.
+ */
+let taxonomyIndex = null;
+function getTaxonomyIndex() {
+  if (taxonomyIndex) return taxonomyIndex;
+  taxonomyIndex = Object.entries(CATEGORIES).map(([areaId, area]) => ({
+    areaId,
+    area,
+    areaKeys: [area.label, area.labelEn].map(normalizeLabel),
+    subcategories: Object.entries(area.subcategories || {}).map(([categoryId, category]) => ({
+      categoryId,
+      category,
+      keys: [category.label, category.labelEn].map(normalizeLabel),
+    })),
+  }));
+  return taxonomyIndex;
+}
+
 function findLocalTopic(value, language = 'es') {
   if (!value) return null;
   if (CATEGORIES[value]) {
@@ -57,8 +91,8 @@ function findLocalTopic(value, language = 'es') {
   }
 
   const normalized = normalizeLabel(value);
-  for (const [areaId, area] of Object.entries(CATEGORIES)) {
-    if ([area.label, area.labelEn].some(label => normalizeLabel(label) === normalized)) {
+  for (const { areaId, area, areaKeys, subcategories } of getTaxonomyIndex()) {
+    if (areaKeys.some(label => label === normalized)) {
       return {
         id: areaId,
         label: language === 'en' ? area.labelEn || area.label : area.label,
@@ -66,8 +100,8 @@ function findLocalTopic(value, language = 'es') {
         reliable: true,
       };
     }
-    for (const [categoryId, category] of Object.entries(area.subcategories || {})) {
-      if (categoryId === value || [category.label, category.labelEn].some(label => normalizeLabel(label) === normalized)) {
+    for (const { categoryId, category, keys } of subcategories) {
+      if (categoryId === value || keys.some(label => label === normalized)) {
         return {
           id: categoryId,
           label: language === 'en' ? category.labelEn || category.label : category.label,
