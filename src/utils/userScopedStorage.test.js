@@ -5,6 +5,7 @@ import {
   clearStoredProfile,
   clearUserScopedStorage,
   getFollowStatsStorageKey,
+  getLocalHiddenStorageKey,
   getOnboardingStorageKey,
   getOwnListsStorageKey,
   getOwnProfileStorageKey,
@@ -294,4 +295,31 @@ test('onboarding completion survives a reload, per account', () => {
 
   clearUserScopedStorage('uid-o1', storage);
   assert.equal(readStoredOnboarding('uid-o1', storage), null);
+});
+
+/* --- The hidden-comments list belongs to the account that hid them ---------
+   It used to live under one global key, so it outlived its session on a shared
+   browser: the next account inherited what the previous one had chosen not to
+   see. Now the key carries the uid, and the sign-out that clears every other
+   per-account cache clears this one too. */
+
+test('clearUserScopedStorage drops the hidden-comments list', () => {
+  const storage = createStorage();
+  storage.setItem(getLocalHiddenStorageKey('alice'), '["c1"]');
+  storage.setItem(getLocalHiddenStorageKey('bob'), '["c2"]');
+  storage.setItem('papertok:locallyHiddenComments', '["legacy"]');
+
+  clearUserScopedStorage('alice', storage);
+
+  assert.equal(storage.getItem(getLocalHiddenStorageKey('alice')), null);
+  assert.equal(storage.getItem('papertok:locallyHiddenComments'), null,
+    'the orphaned global key is never migrated, only swept away');
+  assert.equal(storage.getItem(getLocalHiddenStorageKey('bob')), '["c2"]',
+    'and the other account on this browser keeps its own');
+});
+
+test('the hidden-comments key is namespaced by uid, and refuses to exist without one', () => {
+  assert.equal(getLocalHiddenStorageKey('alice'), 'papertok:locallyHiddenComments:alice');
+  assert.equal(getLocalHiddenStorageKey(''), null);
+  assert.equal(getLocalHiddenStorageKey(null), null);
 });

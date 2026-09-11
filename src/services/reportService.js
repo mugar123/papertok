@@ -31,12 +31,12 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { auth, db, IS_DEMO } from './firebase.js';
+import { getLocalHiddenStorageKey } from '../utils/userScopedStorage.js';
 
 export const REPORT_REASONS = Object.freeze(['spam', 'abuse', 'other', 'dup-stub']);
 export const REPORT_NOTE_MAX = 500;
 export const REPORT_QUEUE_PAGE_SIZE = 50;
 const TARGET_PATH_MAX = 500;
-const LOCAL_HIDDEN_KEY = 'papertok:locallyHiddenComments';
 const LOCAL_HIDDEN_CAP = 300;
 
 export class ReportUnsupportedError extends Error {
@@ -201,8 +201,13 @@ export async function setCommentsFrozen(frozen, overrides) {
 }
 
 function readLocalHidden(api) {
+  // Keyed by uid: one browser holds two accounts, and a global key made what
+  // one reporter hid follow the next person who signed in — and survive the
+  // reporter's own sign-out.
+  const key = getLocalHiddenStorageKey(api.currentUser?.uid);
+  if (!key) return [];
   try {
-    const raw = api.storage?.getItem(LOCAL_HIDDEN_KEY);
+    const raw = api.storage?.getItem(key);
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed.filter(id => typeof id === 'string') : [];
   } catch {
@@ -222,10 +227,12 @@ export function locallyHiddenCommentIds(overrides) {
 export function hideCommentLocally(commentId, overrides) {
   const api = operations(overrides);
   if (typeof commentId !== 'string' || !commentId) return;
+  const key = getLocalHiddenStorageKey(api.currentUser?.uid);
+  if (!key) return;
   const ids = readLocalHidden(api).filter(id => id !== commentId);
   ids.push(commentId);
   try {
-    api.storage?.setItem(LOCAL_HIDDEN_KEY, JSON.stringify(ids.slice(-LOCAL_HIDDEN_CAP)));
+    api.storage?.setItem(key, JSON.stringify(ids.slice(-LOCAL_HIDDEN_CAP)));
   } catch {
     // Storage full or unavailable: the report still went through; local
     // hiding is best-effort comfort, not a guarantee.

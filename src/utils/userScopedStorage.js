@@ -5,6 +5,14 @@ const FOLLOW_STATS_KEY_PREFIX = 'papertok_followStats:';
 const OWN_LISTS_KEY_PREFIX = 'papertok_ownLists:';
 const OWN_PROFILE_KEY_PREFIX = 'papertok_ownProfile:';
 const ONBOARDING_KEY_PREFIX = 'papertok_onboarding:';
+// The comments a reporter chose not to see. Held here, and not in
+// `reportService.js` where it is used, so this module stays the leaf it is:
+// `FeedContext.jsx` imports it, and the moderation service says of itself that
+// nothing in it is imported by the feed.
+const LOCAL_HIDDEN_PREFIX = 'papertok:locallyHiddenComments';
+// The key this list lived under before it was scoped. Never migrated — one
+// browser's two accounts have no shared answer to migrate to — only swept.
+const LEGACY_LOCAL_HIDDEN_KEY = LOCAL_HIDDEN_PREFIX;
 
 function getStorage(storage) {
   if (storage) return storage;
@@ -15,6 +23,12 @@ function getStorage(storage) {
 export function getSeenPapersStorageKey(userId) {
   if (!userId) return null;
   return `${SEEN_PAPERS_KEY_PREFIX}${encodeURIComponent(userId)}`;
+}
+
+/** No uid, no key: an anonymous hide would be a global hide again. */
+export function getLocalHiddenStorageKey(userId) {
+  if (!userId) return null;
+  return `${LOCAL_HIDDEN_PREFIX}:${encodeURIComponent(userId)}`;
 }
 
 export function readSeenPaperIds(userId, storage) {
@@ -380,6 +394,8 @@ export function clearUserScopedStorage(userId, storage) {
     getOwnListsStorageKey(userId),
     getOwnProfileStorageKey(userId),
     getOnboardingStorageKey(userId),
+    getLocalHiddenStorageKey(userId),
+    LEGACY_LOCAL_HIDDEN_KEY,
     `papertok_following_${safeUserId}`,
     `papertok_following_updates_${safeUserId}`,
     `papertok_readingLibrary_${userId}`,

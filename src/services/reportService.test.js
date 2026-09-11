@@ -13,6 +13,7 @@ import {
   setReportStatus,
   submitReport,
 } from './reportService.js';
+import { getLocalHiddenStorageKey } from '../utils/userScopedStorage.js';
 
 function fakeBatch(log) {
   return {
@@ -158,21 +159,23 @@ test('setCommentVisibility refuses a path that is not a comment', async () => {
 
 test('what I report disappears for me, on this device, bounded', () => {
   const storage = fakeStorage();
-  hideCommentLocally('c1', { storage });
-  hideCommentLocally('c2', { storage });
-  hideCommentLocally('c1', { storage });
-  const hidden = locallyHiddenCommentIds({ storage });
+  const viewer = { uid: 'alice' };
+  hideCommentLocally('c1', { storage, currentUser: viewer });
+  hideCommentLocally('c2', { storage, currentUser: viewer });
+  hideCommentLocally('c1', { storage, currentUser: viewer });
+  const hidden = locallyHiddenCommentIds({ storage, currentUser: viewer });
   assert.deepEqual([...hidden].sort(), ['c1', 'c2']);
-  for (let index = 0; index < 400; index += 1) hideCommentLocally(`x${index}`, { storage });
-  assert.ok(locallyHiddenCommentIds({ storage }).size <= 300, 'the local list is capped');
+  for (let index = 0; index < 400; index += 1) hideCommentLocally(`x${index}`, { storage, currentUser: viewer });
+  assert.ok(locallyHiddenCommentIds({ storage, currentUser: viewer }).size <= 300, 'the local list is capped');
 });
 
 test('no storage, corrupt storage: hiding degrades to a no-op, never a throw', () => {
-  assert.doesNotThrow(() => hideCommentLocally('c1', { storage: null }));
-  assert.deepEqual([...locallyHiddenCommentIds({ storage: null })], []);
+  const viewer = { uid: 'alice' };
+  assert.doesNotThrow(() => hideCommentLocally('c1', { storage: null, currentUser: viewer }));
+  assert.deepEqual([...locallyHiddenCommentIds({ storage: null, currentUser: viewer })], []);
   const corrupt = { getItem: () => '{not json', setItem: () => { throw new Error('full'); } };
-  assert.doesNotThrow(() => hideCommentLocally('c1', { storage: corrupt }));
-  assert.deepEqual([...locallyHiddenCommentIds({ storage: corrupt })], []);
+  assert.doesNotThrow(() => hideCommentLocally('c1', { storage: corrupt, currentUser: viewer }));
+  assert.deepEqual([...locallyHiddenCommentIds({ storage: corrupt, currentUser: viewer })], []);
 });
 
 // --- structural ------------------------------------------------------------
@@ -185,4 +188,46 @@ test('SOURCE: no query in this service is issued without a ceiling', async () =>
     assert.match(shape, /limit\(/, `unbounded query: ${shape}`);
   }
   assert.doesNotMatch(source, /getDocs\((?!query\()/, 'every getDocs goes through a bounded query');
+});
+
+/* --- One browser, two accounts -------------------------------------------
+   The hidden list was a single global key, so what one reporter chose not to
+   see was hidden for whoever signed in next on the same device — and came
+   back to the reporter after a sign-out, on an account that never reported
+   anything. It is per-uid now, and signing out takes it with it
+   (`clearUserScopedStorage`). */
+
+test('locally hidden comments are scoped to the signed-in user', () => {
+  const storage = fakeStorage();
+  const shared = { storage };
+  hideCommentLocally('c1', { ...shared, currentUser: { uid: 'alice' } });
+  assert.deepEqual([...locallyHiddenCommentIds({ ...shared, currentUser: { uid: 'bob' } })], []);
+  assert.deepEqual([...locallyHiddenCommentIds({ ...shared, currentUser: { uid: 'alice' } })], ['c1']);
+});
+
+test('the two accounts keep their own lists rather than sharing one', () => {
+  const storage = fakeStorage();
+  const shared = { storage };
+  hideCommentLocally('c1', { ...shared, currentUser: { uid: 'alice' } });
+  hideCommentLocally('c2', { ...shared, currentUser: { uid: 'bob' } });
+  assert.deepEqual([...locallyHiddenCommentIds({ ...shared, currentUser: { uid: 'alice' } })], ['c1']);
+  assert.deepEqual([...locallyHiddenCommentIds({ ...shared, currentUser: { uid: 'bob' } })], ['c2']);
+});
+
+test('with no session there is no list to read and nothing is written', () => {
+  const storage = fakeStorage();
+  hideCommentLocally('c1', { storage, currentUser: null });
+  assert.deepEqual([...locallyHiddenCommentIds({ storage, currentUser: null })], []);
+  assert.equal(storage.getItem('papertok:locallyHiddenComments'), null,
+    'the old global key must not be written again: it is what leaked between accounts');
+  assert.deepEqual([...locallyHiddenCommentIds({ storage, currentUser: { uid: 'alice' } })], []);
+});
+
+test('the key this service writes is the one the sign-out sweeps', () => {
+  // Both halves of the fix have to agree on one string, and they live in two
+  // modules: this service writes it, `clearUserScopedStorage` removes it.
+  const storage = fakeStorage();
+  hideCommentLocally('c1', { storage, currentUser: { uid: 'alice' } });
+  assert.equal(storage.getItem(getLocalHiddenStorageKey('alice')), JSON.stringify(['c1']));
+  assert.equal(storage.getItem('papertok:locallyHiddenComments'), null);
 });
