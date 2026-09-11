@@ -1,5 +1,6 @@
 import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { RefreshCw } from 'lucide-react';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getUiErrorMessage } from '../../utils/errorMessages';
@@ -133,6 +134,16 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   }, [publicMode, source, trackViewTime]);
   const feedRef = useRef(null);
   const sentinelRef = useRef(null);
+  // The card currently snapped into view, derived in handleScroll from the
+  // same scrollTop/clientHeight math the keyboard-nav effect below already
+  // uses. Task 9 gates a per-card comment-count fetch on it and Task 11 gates
+  // the entrance animation on it, so it must stay true for exactly one card
+  // and track the scroll position on every scroll, not just the mount window.
+  const [activeIndex, setActiveIndex] = useState(0);
+  // Where a touch-driven pull-to-refresh started, or null when the current
+  // touch isn't a pull (it didn't begin at scrollTop 0). A ref, not state:
+  // the drag distance is only read once, on touchend.
+  const pullStartY = useRef(null);
   const [showLoader, setShowLoader] = useState(false);
   const [initialFeedReady, setInitialFeedReady] = useState(false);
   // The cards mounted right now: a window around the card this feed was left
@@ -383,6 +394,22 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     refreshFeed();
   }, [refreshFeed]);
 
+  // Pull-to-refresh, touch only — a mouse has no touch events to answer to,
+  // and wheel/trackpad stay native as noted above. touchstart records a start
+  // position only when the pull begins at the very top of the scroller, so a
+  // drag started mid-feed never counts; touchend reads the distance and
+  // clears it either way. Neither calls preventDefault, so native scrolling
+  // and the CSS scroll-snap are untouched.
+  const handleTouchStart = useCallback((e) => {
+    pullStartY.current = e.currentTarget.scrollTop === 0 ? e.touches[0].clientY : null;
+  }, []);
+  const handleTouchEnd = useCallback((e) => {
+    if (pullStartY.current === null) return;
+    const dy = e.changedTouches[0].clientY - pullStartY.current;
+    pullStartY.current = null;
+    if (dy > 90 && !loading) handleRefresh();
+  }, [handleRefresh, loading]);
+
   const handleOpenPdf = useCallback((paper) => {
     if (!publicMode) trackPdfOpened(paper);
     onOpenPdf(paper);
@@ -397,6 +424,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     const index = container.clientHeight > 0
       ? Math.round(container.scrollTop / container.clientHeight)
       : 0;
+    // Fires on every scroll event, but useState bails out of re-rendering
+    // when the value is unchanged (Object.is), so every tick that doesn't
+    // cross a card boundary is a no-op here.
+    setActiveIndex(index);
     const paperId = papersRef.current[index]?.id || resumeMemory.get(scrollKey).paperId;
     resumeMemory.remember(scrollKey, {
       scrollTop: container.scrollTop,
@@ -484,7 +515,19 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   if (displayState === FEED_DISPLAY_STATES.FEED || atomVeil) {
   return (
     <FeedLandmark landmark={landmark}>
-      <div className="feed-container" ref={feedRef} onScroll={handleScroll}>
+      {activeIndex === 0 && papers.length > 0 && !loading && (
+        <button type="button" className="feed-refresh" onClick={handleRefresh}>
+          <RefreshCw size={14} aria-hidden="true" />
+          {isEnglish ? 'Refresh' : 'Actualizar'}
+        </button>
+      )}
+      <div
+        className="feed-container"
+        ref={feedRef}
+        onScroll={handleScroll}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
         {papers.map((paper, index) => (
           !inMountWindow(anchoredWindow, index) ? (
             // Outside the mount window: a full-height slot, so the scroll
@@ -513,6 +556,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
               onAuthRequired={onAuthRequired}
               analyticsSurface={analyticsSurface}
               position={index + 1}
+              isActive={index === activeIndex}
               // The scroll hint belongs to the first card only, and this prop is
               // the only thing that decides it now: a
               // `.feed-snap-item:not(:first-child) .pc-scroll-hint { display:

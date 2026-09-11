@@ -54,6 +54,28 @@
   height: 1px;
 }
 
+/* Manual refresh for For You: visible only on the first card, so it never
+   competes with a card the reader is actually reading. `translate`, not
+   `transform`, centres it — a transform-based centring here would be at risk
+   of a future transform-driven keyframe stomping it and snapping the pill
+   back off-centre when that animation ends (papertok-transform-centering-vs-arrival).
+   `top: 12px`, not `--nav-total + 12px`: this is an absolutely-positioned
+   child of .feed-wrapper, which already carries `margin-top: var(--nav-total)`
+   — its own top edge (where this `top` anchors) is already the navbar's
+   bottom edge, exactly as .feed-empty--veil's `margin-top: 0; inset: 0;`
+   above already relies on. Adding --nav-total again would push the pill a
+   second bar-height too low. */
+.feed-refresh {
+  position: absolute; top: 12px; left: 50%;
+  translate: -50% 0; z-index: 5;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 999px;
+  background: var(--bg-card); color: var(--text-primary);
+  border: 1px solid var(--border-default); box-shadow: var(--shadow-md);
+  font-size: 0.8rem; opacity: 0.9;
+}
+.feed-refresh:hover { opacity: 1; }
+
 /* No .feed-wrapper override at 768px: --nav-total already switches to
    --nav-height-mobile there (see variables.css), so a second copy of this
    calc here would just be one more place for mobile and desktop to drift
