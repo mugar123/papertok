@@ -136,9 +136,18 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   const sentinelRef = useRef(null);
   // The card currently snapped into view, derived in handleScroll from the
   // same scrollTop/clientHeight math the keyboard-nav effect below already
-  // uses. Task 9 gates a per-card comment-count fetch on it and Task 11 gates
-  // the entrance animation on it, so it must stay true for exactly one card
-  // and track the scroll position on every scroll, not just the mount window.
+  // uses. Task 9 gates a per-card comment-count fetch on it and Task 11
+  // gates the entrance animation on it, and it tracks the scroll position
+  // on every scroll, not just the mount window. But the mount window can
+  // trail it and briefly leave zero cards active, not the wrong one: right
+  // after a resume the window is exactly the one card resumed onto
+  // (`MOUNT_WINDOW_RESUME_RADIUS` is 0), and right after any mount the
+  // first idle growth waits out `MOUNT_WINDOW_SETTLE_MS` (feedMountWindow.js).
+  // A swipe that outruns the window in that stretch — one ordinary swipe
+  // suffices on resume — sets activeIndex to a card still rendered as a
+  // `.feed-snap-item--pending` placeholder. It self-heals there: nothing
+  // resets activeIndex in between, so the target card mounts already
+  // isActive=true.
   const [activeIndex, setActiveIndex] = useState(0);
   // Where a touch-driven pull-to-refresh started, or null when the current
   // touch isn't a pull (it didn't begin at scrollTop 0). A ref, not state:
