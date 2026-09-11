@@ -173,12 +173,16 @@ test('SOURCE: the card takes only the free half of this module', async () => {
   );
   assert.doesNotMatch(hook, /fetchThreadAnchor|invalidateThreadAnchor/);
 
+  // Every occurrence, not just the first — a second, ungated call added
+  // after this one must fail the same way the first would.
   const card = await read('../components/Feed/PaperCard.jsx');
-  const call = card.match(/useCommentCount\([^;]{0,160}?\);/);
-  assert.ok(call, 'PaperCard must call useCommentCount');
-  assert.match(
-    call[0],
-    /^useCommentCount\(paper, Boolean\(isActive && canOpenComments\)\);$/,
-    'and it runs for the active card alone',
-  );
+  const calls = [...card.matchAll(/useCommentCount\([^;]{0,160}?\);/g)];
+  assert.ok(calls.length > 0, 'PaperCard must call useCommentCount');
+  for (const call of calls) {
+    assert.match(
+      call[0],
+      /^useCommentCount\(paper, Boolean\(isActive && canOpenComments\)\);$/,
+      'and it runs for the active card alone',
+    );
+  }
 });

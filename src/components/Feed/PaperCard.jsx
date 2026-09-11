@@ -315,9 +315,13 @@ const PaperCard = memo(function PaperCard({
     [onOpenComments, paper],
   );
   // Two `count()` reads at most, for the one card the feed says is active —
-  // never for the ones scrolled past or waiting below. This gate is the whole
-  // cost budget; commentService.test.js guards it. See the hook for the
-  // budget it is built against and why it cannot go through the Worker.
+  // never for the ones scrolled past or waiting below. That fence has two
+  // links, both guarded, neither the whole budget alone: this call site
+  // (pinned by commentService.test.js and threadAnchorClient.test.js) and the
+  // hook's own refusal to subscribe when `enabled` is false (pinned by
+  // commentCount.test.js) — drop either and a mounted card that is not the
+  // active one starts reading. See the hook for the budget it is built
+  // against and why it cannot go through the Worker.
   const commentCount = useCommentCount(paper, Boolean(isActive && canOpenComments));
   // `1000+` past the cap, the same as the sheet's own header: each key's
   // aggregation stops counting at COMMENT_COUNT_CAP, so the raw sum of two

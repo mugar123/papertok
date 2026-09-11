@@ -313,8 +313,17 @@ test('SOURCE: no query in this service is issued without a ceiling', async () =>
 
 const readSource = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-/** Every module a file pulls in, however it names what it takes. */
-const specifiersOf = (source) => [...new Set([...source.matchAll(/from\s+'([^']+)'/g)].map(hit => hit[1]))].sort();
+/**
+ * Every module a file pulls in, however it names what it takes — named,
+ * default, namespace (all three write `from '…'`/`from "…"`) or a bare
+ * side-effect `import '…';` with no `from` clause at all. Both quote styles
+ * on purpose: `eslint.config.js` carries no `quotes` rule, so nothing else in
+ * this repo stops a new import from arriving double-quoted, and a scan that
+ * only recognised single quotes would let it through uncounted.
+ */
+const specifiersOf = (source) => [...new Set(
+  [...source.matchAll(/(?:from|import)\s+['"]([^'"]+)['"]/g)].map(hit => hit[1]),
+)].sort();
 /** The names taken by name from one specifier. */
 const namesFrom = (source, specifier) => {
   const escaped = specifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -377,13 +386,17 @@ test('SOURCE: the card counts comments through one door, and only when active', 
   assert.doesNotMatch(hook, /firebase/, 'and it never reaches past the service to Firestore itself');
 
   // The line the whole budget rests on, read where it is written: bounded to
-  // the call itself so the match cannot drift into the code around it.
+  // the call itself so the match cannot drift into the code around it. Every
+  // occurrence, not just the first — a second, ungated call added after this
+  // one must fail the same way the first would.
   const card = stripComments(await readSource('../components/Feed/PaperCard.jsx'));
-  const call = card.match(/useCommentCount\([^;]{0,160}?\);/);
-  assert.ok(call, 'PaperCard must call useCommentCount');
-  assert.match(
-    call[0],
-    /^useCommentCount\(paper, Boolean\(isActive && canOpenComments\)\);$/,
-    'the count is gated on the active card that can open a thread — nothing else may fire a read',
-  );
+  const calls = [...card.matchAll(/useCommentCount\([^;]{0,160}?\);/g)];
+  assert.ok(calls.length > 0, 'PaperCard must call useCommentCount');
+  for (const call of calls) {
+    assert.match(
+      call[0],
+      /^useCommentCount\(paper, Boolean\(isActive && canOpenComments\)\);$/,
+      'the count is gated on the active card that can open a thread — nothing else may fire a read',
+    );
+  }
 });

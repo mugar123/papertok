@@ -138,6 +138,28 @@ export function watchCommentCount(paper, onCount, overrides) {
 }
 
 /**
+ * What a read OUTSIDE a subscription's own paint() may show. `enabled` cards
+ * get the raw entry even when stale: `watchCommentCount`'s `paint()` reads
+ * the same `cache.get` unconditionally, by design, so the badge does not
+ * flicker back to the word while a re-read for THIS card is already in
+ * flight — seeding or falling back to that same raw entry here just agrees
+ * with what the subscription is about to paint anyway, not a second rule.
+ *
+ * A card that is not enabled has no subscription to correct it — and on
+ * every surface but the feed (Lists, Search, `PublicPaperPage`, the
+ * related-paper overlay: nowhere passes `isActive`) never will — so it may
+ * only be handed a fresh entry. Anything stale would sit there, wrong, for
+ * the rest of the session: `forgetCommentCount` deliberately leaves the old
+ * answer in `cache` (see above), and a surface with no subscriber is the one
+ * place nothing will ever ask again to correct it.
+ */
+export function paintableCommentCount(paperId, enabled) {
+  if (!paperId) return null;
+  if (enabled) return cache.get(paperId) ?? null;
+  return isFresh(paperId) ? cache.get(paperId) : null;
+}
+
+/**
  * `enabled` is the card's own `isActive && canOpenComments`: off by default
  * everywhere `isActive` is not wired up (every surface but the feed), and off
  * for a paper with nowhere to anchor a thread. Tolerates `enabled` arriving
@@ -149,11 +171,13 @@ export function watchCommentCount(paper, onCount, overrides) {
  *
  * The painted value carries the id it belongs to, so a card handed a
  * different paper without being remounted cannot keep showing the previous
- * one's number: it falls back to what the cache knows about the new id.
+ * one's number: it falls back to what the cache knows about the new id —
+ * through `paintableCommentCount`, so that fallback is held to the same
+ * not-subscribed-means-fresh-only rule as the initial seed below.
  */
 export function useCommentCount(paper, enabled) {
   const paperId = paper?.id ?? null;
-  const [painted, setPainted] = useState(() => ({ id: paperId, entry: cache.get(paperId) ?? null }));
+  const [painted, setPainted] = useState(() => ({ id: paperId, entry: paintableCommentCount(paperId, enabled) }));
   useEffect(() => {
     if (!enabled || !paperId) return undefined;
     // One channel, no addressing: every card is told about every
@@ -169,5 +193,5 @@ export function useCommentCount(paper, enabled) {
     // subscription down and build it up again on every one.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, paperId]);
-  return painted.id === paperId ? painted.entry : (cache.get(paperId) ?? null);
+  return painted.id === paperId ? painted.entry : paintableCommentCount(paperId, enabled);
 }

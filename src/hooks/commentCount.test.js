@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import {
   forgetCommentCount,
   loadCommentCount,
+  paintableCommentCount,
   watchCommentCount,
 } from './useCommentCount.js';
 
@@ -266,6 +267,46 @@ test('el tope viaja con el total en vez de sumarse dos veces', async () => {
   assert.equal(answer.count, 1000, 'y el total se recorta: nunca 2000');
 });
 
+/**
+ * B. `forgetCommentCount` deliberately leaves the stale entry in `cache` — I1
+ * needs it there so a subscribed card can keep painting a number while its
+ * own re-read is in flight. But `useCommentCount`'s two reads OUTSIDE that
+ * subscription (the seed on mount, and the same-render fallback for a paper
+ * handed in without a remount) are not corrected by anything when the card
+ * never subscribes — every surface but the feed (Lists, Search,
+ * `PublicPaperPage`, the related-paper overlay) always calls with
+ * `enabled: false`. `paintableCommentCount(paperId, enabled)` is the rule
+ * both reads are built on: fresh-only when not enabled (nothing will ever
+ * ask again to correct it), whatever is cached — stale or not — when
+ * enabled, because a subscription's own `paint()` reads the same way and
+ * corrects it within the same effect.
+ */
+test('paintableCommentCount: sin suscripción no se pinta un conteo invalidado', async () => {
+  const seen = fixture('kkk', '2401.00011');
+  forgetCommentCount(seen.id);
+  const overrides = { countThread: async () => 3, database: {} };
+  assert.equal(paintableCommentCount(seen.id, false), null, 'nada cacheado todavía: no hay nada que pintar');
+
+  const first = await loadCommentCount(seen, overrides);
+  assert.deepEqual(paintableCommentCount(seen.id, false), first, 'fresco: también se pinta sin suscripción');
+  assert.deepEqual(paintableCommentCount(seen.id, true), first, 'fresco: igual con suscripción');
+
+  forgetCommentCount(seen.id);                    // el propio autor comentó
+  assert.equal(
+    paintableCommentCount(seen.id, false),
+    null,
+    'viciado y sin suscripción: nadie va a corregirlo, así que no se pinta el número viejo',
+  );
+  assert.deepEqual(
+    paintableCommentCount(seen.id, true),
+    first,
+    'viciado pero con suscripción: se sigue pintando — su propio paint() lo corrige en el mismo efecto',
+  );
+
+  assert.equal(paintableCommentCount(null, false), null, 'sin id no hay nada que mirar en la caché');
+  assert.equal(paintableCommentCount(null, true), null);
+});
+
 test('sin identidad no hay lectura ni suscripción', async () => {
   assert.equal(await loadCommentCount(null, { countThread: async () => 1, database: {} }), null);
   assert.equal(await loadCommentCount({}, { countThread: async () => 1, database: {} }), null);
@@ -293,6 +334,16 @@ test('SOURCE: el hook monta la suscripción y devuelve su baja', async () => {
   const closes = hook.indexOf('}, [enabled, paperId]);', opens);
   assert.ok(closes > opens, 'the effect depends on exactly [enabled, paperId]');
   const effect = hook.slice(opens, closes);
+  // A. `PaperCard.jsx` gates its own call site, but that call site is not the
+  // whole budget — the hook must refuse to subscribe on its own too, or a
+  // caller that ever passes `enabled: true` unconditionally (or a future
+  // second call site) is one missing `&&` away from a read for every mounted
+  // card. This is the other half of the fence, asserted where it is written.
+  assert.match(
+    effect,
+    /if \(!enabled \|\| !paperId\) return undefined;/,
+    'the hook must refuse to subscribe when the caller says it is not enabled — the call-site gate is not the whole budget',
+  );
   assert.match(
     effect,
     /return watchCommentCount\(paper,/,
