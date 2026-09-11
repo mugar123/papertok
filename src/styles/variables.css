@@ -17,6 +17,17 @@
   --bg-card: #ffffff;
   --bg-elevated: #ffffff;
   --bg-sunken: #fafafa;
+  /* The plate a paper's own figure is printed on, and the one surface that
+     deliberately has NO counterpart in the dark block: it is paper on both
+     sides, so the dark block inherits this value rather than overriding it.
+     The figures come from ar5iv and arXiv's HTML and most of them bring no
+     background of their own — matplotlib SVGs ship without a background rect,
+     the PDF conversions ship an alpha channel — while their ink is black,
+     because it was drawn for a white page. Theming the plate therefore does not
+     theme the ink on it; it only takes the paper away and leaves black on
+     near-black. Anything that frames a figure we did not draw belongs here.
+     `paperCardFigureContrast.test.js` composites the two and holds the result. */
+  --bg-figure-plate: #ffffff;
   /* "Glass" now means a faint ink wash: light surfaces read better with a
      tint of the text color than with translucent white. */
   --bg-glass: rgba(17, 19, 24, 0.03);

@@ -986,6 +986,13 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  /* The paper goes on the image, not on the well: the well is also the pending
+     skeleton and has to stay grey while it breathes. These are the same figures
+     the feed pins in its margins, and most of them arrive with no background of
+     their own and black ink drawn for a white page — so without this the well's
+     themed surface showed through them and the dark side lost the line art
+     entirely. See `--bg-figure-plate`. */
+  background: var(--bg-figure-plate);
   /* Held back until the bytes have actually decoded — see `.is-loaded`. A
      figure that paints in halfway is worse than a grey rectangle. */
   opacity: 0;

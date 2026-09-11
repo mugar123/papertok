@@ -72,7 +72,11 @@
   position: absolute;
   display: flex;
   padding: 6px;
-  background: var(--bg-card);
+  /* Paper, not a card: `--bg-figure-plate` is white on both sides on purpose.
+     This used to be `--bg-card`, which follows the theme — and the ink in these
+     figures does not, so in the dark the plate went to #16191f underneath black
+     line art and the clipping read at 1.12:1. See the token's own note. */
+  background: var(--bg-figure-plate);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);

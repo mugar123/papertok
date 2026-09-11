@@ -16,16 +16,19 @@ import { readFile } from 'node:fs/promises';
  */
 
 /**
- * The three values that are the same on both sides, and why.
+ * The values that are the same on both sides, and why.
  *
  * They are not "colours we forgot": a brand mark that changes value stops being
- * a mark, and the ink that sits on the yellow cannot flip when the yellow does
- * not. Anything else added here needs a reason written next to it.
+ * a mark, the ink that sits on the yellow cannot flip when the yellow does not,
+ * and a surface that exists to hold artwork we did not draw can only follow the
+ * theme as far as that artwork does. Anything else added here needs a reason
+ * written next to it.
  */
 const SHARED_ON_PURPOSE = new Map([
   ['--brand-yellow', 'the mark itself: it reads the same on paper and on ink'],
   ['--brand-orange', 'a brand accent, not the focus ring — that one deliberately does flip with the theme, to hold 3:1 against both a white page and an ink one'],
   ['--text-on-brand', 'ink, by definition — it exists to sit on the yellow'],
+  ['--bg-figure-plate', "paper for figures out of the papers themselves: they arrive with no background of their own and black ink drawn for a white page, so theming the plate themes everything about the picture except the only thing that matters. See paperCardFigureContrast.test.js, which holds the ink's contrast on both sides"],
 ]);
 
 const COLOUR = /#[0-9a-f]{3,8}\b|rgba?\(/i;
