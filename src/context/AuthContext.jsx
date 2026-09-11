@@ -355,7 +355,9 @@ export function AuthProvider({ children }) {
       }
       return next;
     } catch (updateError) {
-      setReadingPreferences(previous);
+      // A late failure after a session switch must not paint the previous
+      // account's state over the new one.
+      if (auth.currentUser?.uid === userId) setReadingPreferences(previous);
       throw updateError;
     }
   }, [readingPreferences, user?.uid]);
@@ -380,7 +382,9 @@ export function AuthProvider({ children }) {
       }
       return next;
     } catch (updateError) {
-      setProfilePhoto(previous);
+      // A late failure after a session switch must not paint the previous
+      // account's state over the new one.
+      if (auth.currentUser?.uid === userId) setProfilePhoto(previous);
       throw updateError;
     }
   }, [profilePhoto, user?.uid]);
