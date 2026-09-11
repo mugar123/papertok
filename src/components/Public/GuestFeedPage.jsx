@@ -151,6 +151,10 @@ export default function GuestFeedPage({
             ...guestFeed,
             publicMode: true,
             onAuthRequired: requestAccount,
+            // The one action a visitor can complete without an account: the
+            // papers are ours, in state, so Skip drops the card here instead
+            // of asking for a sign-up the reader did not come for.
+            onNotInterested: guestFeed.dismissPaper,
             // One more snap item after the last paper. `requestAccount` is the
             // same door the header uses: it opens the AuthPrompt modal in place
             // instead of routing to /login, which would take the guest away from

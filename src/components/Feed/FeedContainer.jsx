@@ -590,6 +590,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
               isRead={!publicMode && readPaperIds?.has(interactionIdFor(paper))}
               onLike={toggleLike}
               onNotInterested={markNotInterested}
+              onGuestNotInterested={source?.onNotInterested}
               onMarkAsRead={markAsRead}
               onUnmarkAsRead={unmarkAsRead}
               trackViewTime={handleViewTime}

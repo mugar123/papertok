@@ -76,6 +76,17 @@ function mergeKeepingShownOrder(shown, incoming, pageSize) {
  * only holds the answer; a re-render with the same areas is the same plan and
  * loads nothing (`plan.key`).
  */
+/**
+ * Removes one paper from a shown list. Returns the SAME array when there is
+ * nothing to remove, so a miss costs no re-render.
+ */
+export function dropPaperById(papers, paperId) {
+  if (!Array.isArray(papers)) return [];
+  if (!paperId) return papers;
+  const next = papers.filter((paper) => paper?.id !== paperId);
+  return next.length === papers.length ? papers : next;
+}
+
 export function useGuestFeed({ areas = [] } = {}) {
   const [papers, setPapers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -208,6 +219,14 @@ export function useGuestFeed({ areas = [] } = {}) {
     };
   }, [load, plan]);
 
+  // Skip, for a reader with no account. The guest feed's papers only ever live
+  // in this state, so dropping one is the whole action: nothing to write, no
+  // profile to train, and nothing that outlives the page. A visitor pressing
+  // Skip used to get a sign-in prompt instead, which read as a dead button.
+  const dismissPaper = useCallback((paperId) => {
+    setPapers((current) => dropPaperById(current, paperId));
+  }, []);
+
   // Anything still in flight when the page unmounts is dropped, not applied.
   useEffect(() => () => {
     requestIdRef.current += 1;
@@ -221,5 +240,6 @@ export function useGuestFeed({ areas = [] } = {}) {
     isRefreshing,
     areas: plan.areas,
     refresh: () => load(plan, { refresh: true }),
+    dismissPaper,
   };
 }
