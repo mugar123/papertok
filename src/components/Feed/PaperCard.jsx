@@ -30,7 +30,7 @@ import { getRelatedResearchResources } from '../../services/dataCiteService';
 import { getHuggingFaceResearchResources } from '../../services/huggingFaceService';
 import { isOpaqueQueryTopicText, resolvePaperTopic, topicExplorerPath } from '../../utils/topicNavigation';
 import { canRewritePaper } from '../../services/paperRewriteService.js';
-import { getPaperFigures } from '../../services/paperFigureService.js';
+import { getPaperFigures, peekPaperFigures } from '../../services/paperFigureService.js';
 import { CARD_DURATION_MS, tweenScrollTop } from '../../utils/scrollTween.js';
 import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
 import { accessTagForPaper, reviewTagForPaper } from '../../utils/paperStatus.js';
@@ -331,7 +331,14 @@ const PaperCard = memo(function PaperCard({
   const [figuresLit, setFiguresLit] = useState(false);
   const [isCardSettled, setIsCardSettled] = useState(false);
   const [isCardIdle, setIsCardIdle] = useState(false);
-  const [figures, setFigures] = useState([]);
+  // Which clippings this card has. Born with them when the cache already holds
+  // them: `peekPaperFigures` is a plain Map read, so this costs nothing, and it
+  // is the difference between a card that arrives whole and one that arrives
+  // empty and fills in afterwards. Measured 2026-09-11 coming back from
+  // Research: the page reached rest at 237ms and the figures — cached, bytes in
+  // the browser, no request — did not exist until 290ms, so their entrance
+  // played over a card that had already stopped moving.
+  const [figures, setFigures] = useState(() => peekPaperFigures(paper)?.slice(0, 4) ?? []);
   const { followedByType, isFollowing } = useFollowing();
   const { language, isEnglish } = useLanguage();
   const { trackEvent } = useAnalyticsConsent();
@@ -362,6 +369,18 @@ const PaperCard = memo(function PaperCard({
   const relatedHydrationRequestRef = useRef(0);
   const analyticsViewedPaperRef = useRef(null);
   const paperViewKey = paper?.id || paper?.doi || paper?.arxivId || 'paper';
+
+  // A NEW paper in the same card. The feed keys its cards by paper so this
+  // never fires there, but the overlay surfaces (Research, the explorer,
+  // search) hand one mounted card a different paper, and the old paper's
+  // clippings must not be painted against the new one. Adjusted during render
+  // — React's documented way to reset state when a prop changes — because an
+  // effect only runs AFTER the frame that already showed them.
+  const [figuresPaperKey, setFiguresPaperKey] = useState(paperViewKey);
+  if (figuresPaperKey !== paperViewKey) {
+    setFiguresPaperKey(paperViewKey);
+    setFigures(peekPaperFigures(paper)?.slice(0, 4) ?? []);
+  }
 
   useEffect(() => {
     if (!isCardVisible) {
@@ -466,13 +485,16 @@ const PaperCard = memo(function PaperCard({
 
   useEffect(() => {
     let active = true;
-    if (!isCardSettled) return () => { active = false; };
+    // The settle timer is for a card that arrived WITHOUT its clippings: it
+    // keeps a fetch off the frames the card is still arriving on. One that was
+    // born with them has nothing to wait for and nothing to ask.
+    if (!isCardSettled || figures.length > 0) return () => { active = false; };
     getPaperFigures(paper).then(found => {
       // Four is what the margins hold either side of the sheet.
       if (active && found.length > 0) setFigures(found.slice(0, 4));
     });
     return () => { active = false; };
-  }, [isCardSettled, paper]);
+  }, [isCardSettled, paper, figures.length]);
 
   // Held still across renders: the scatter is already deterministic, and a
   // stable object means React never rewrites the inline styles either.

@@ -73,3 +73,63 @@ test('the flag is the card\'s own 15% observer, so it cannot be true off screen'
   assert.match(jsx, /setIsCardVisible\(entry\.isIntersecting && entry\.intersectionRatio >= 0\.15\)/);
   assert.doesNotMatch(jsx, /setIsCardVisible[\s\S]{0,200}rootMargin/);
 });
+
+/**
+ * SOURCE tests for WHETHER a card is born with the clippings it already has.
+ *
+ * Measured 2026-09-11 (production build, real session, Research -> For you):
+ * the page reached rest at 237ms and the four `.pc-figure` elements did not
+ * exist until 290ms. No request went out — they were in `figureCache` with
+ * their bytes in the browser — but the only door into that cache was
+ * `getPaperFigures`, an async call behind a 240ms settle timer. So the
+ * clippings landed on a card that had already stopped moving, and with the
+ * entrance re-armed per mount (above) the reader watched them arrive late.
+ *
+ * The fix is a synchronous cache read at first render. Two things are pinned
+ * here: that the initial state comes from `peekPaperFigures`, and that the
+ * reset for a NEW paper in the same card — the overlay surfaces reuse one
+ * instance — happens during render, not in an effect. An effect would leave
+ * one frame where the previous paper's clippings are painted against this one.
+ */
+test('the card is born with whatever the figure cache already holds', async () => {
+  const src = strip(await read('./PaperCard.jsx'));
+  assert.match(
+    src,
+    /import \{[^}]*\bpeekPaperFigures\b[^}]*\} from '\.\.\/\.\.\/services\/paperFigureService\.js'/,
+    'the synchronous cache read is imported',
+  );
+  assert.match(
+    src,
+    /const \[figures, setFigures\] = useState\(\(\) => peekPaperFigures\(paper\)\?\.slice\(0, 4\) \?\? \[\]\)/,
+    'the first render already has them; `useState([])` would arrive empty',
+  );
+});
+
+test('a new paper in the same card resets the clippings during render, not in an effect', async () => {
+  const src = strip(await read('./PaperCard.jsx'));
+  const start = src.indexOf('const [figuresPaperKey, setFiguresPaperKey]');
+  assert.notEqual(start, -1, 'the reset keeps the key it last reset for');
+  // Bounded at the `if` block's own closing brace: a wider window swallows the
+  // next effect in the file and the assertion below stops meaning anything.
+  const block = src.slice(start, src.indexOf('\n  }', start) + 4);
+  assert.match(block, /if \(figuresPaperKey !== paperViewKey\) \{/);
+  assert.match(block, /setFiguresPaperKey\(paperViewKey\)/);
+  assert.match(block, /setFigures\(peekPaperFigures\(paper\)\?\.slice\(0, 4\) \?\? \[\]\)/);
+  assert.doesNotMatch(
+    block,
+    /useEffect/,
+    'an effect runs after the paint that already showed the previous paper\'s clippings',
+  );
+});
+
+test('a card that already has its clippings does not go asking for them again', async () => {
+  const src = strip(await read('./PaperCard.jsx'));
+  const start = src.indexOf('getPaperFigures(paper)');
+  assert.notEqual(start, -1);
+  const effect = src.slice(src.lastIndexOf('useEffect', start), start);
+  assert.match(
+    effect,
+    /if \(!isCardSettled \|\| figures\.length > 0\) return/,
+    'the settle timer is only for a card that arrived without them',
+  );
+});
