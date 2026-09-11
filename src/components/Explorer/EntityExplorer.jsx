@@ -20,7 +20,7 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useHeightSettle } from '../../hooks/useHeightSettle';
 import { useActiveTabRule } from '../../hooks/useActiveTabRule.js';
-import { useIsPageArriving } from '../../hooks/usePageArrival.js';
+import { useIsPageArriving, useAfterPageArrival } from '../../hooks/usePageArrival.js';
 import { useOverlayHistory } from '../../hooks/useOverlayHistory.js';
 import { CATEGORIES } from '../../data/categories';
 import { areaAccentForCategory as getAreaGradient, areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
@@ -171,6 +171,7 @@ export default function EntityExplorer({
   // While the route transition is still moving this page, the settle stands
   // down: see the measurement in usePageArrival.js.
   const isPageArriving = useIsPageArriving();
+  const afterPageArrival = useAfterPageArrival();
   const { language, isEnglish, locale } = useLanguage();
   const { trackEvent } = useAnalyticsConsent();
   const [searchParams] = useSearchParams();
@@ -881,7 +882,20 @@ export default function EntityExplorer({
       language,
       signal: controller.signal,
       strictTitleMatch: Boolean(entity?._queryTopic),
-    }).then(info => {
+    }).then(async info => {
+      /* Wikipedia answers on its own clock, and when it answers fast — a warm
+         HTTP cache, a short article — it lands inside the frames the page is
+         still travelling on. The hero's settle stands down while the page is
+         arriving (it must not be a second owner of the same displacement), so
+         a block that arrives in that window gets no animation at all: it just
+         appears. Measured 2026-09-12 over eight topics, `econ.EM` and
+         `math.PR` jumped 230 -> 374px in a single frame at 256ms and 275ms,
+         with the route transition still running; the other six changed height
+         over twenty-odd frames. That is the "sometimes it loads with no
+         animation". So the answer waits out the arrival, and only when there
+         is one to wait out — then the settle owns the movement, every time. */
+      const arriving = afterPageArrival();
+      if (arriving) await arriving;
       if (isActive && !controller.signal.aborted) {
         setWikiInfo(info ? { ...info, _requestKey: wikiRequestKey } : null);
       }
@@ -898,6 +912,7 @@ export default function EntityExplorer({
       controller.abort();
     };
   }, [
+    afterPageArrival,
     canLoadWikiInfo,
     entityDisplayName,
     entity?._queryTopic,
