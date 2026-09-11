@@ -21,7 +21,7 @@ import {
 import AnimatedAtom from './AnimatedAtom';
 import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feedLoadingState';
 import { createFeedResumeMemory } from '../../utils/feedResumeMemory.js';
-import { pullStartFrom, pullProgress, pullOutcome } from '../../utils/feedPullToRefresh.js';
+import { pullStartFrom, pullTakesOver, pullProgress, pullOutcome } from '../../utils/feedPullToRefresh.js';
 import './FeedContainer.css';
 
 // Per-surface memory of the card each feed was left on: the Siguiendo feed
@@ -181,8 +181,14 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   // Where a touch-driven pull-to-refresh started, or null when the current
   // touch isn't a pull (it didn't begin at scrollTop 0). A ref, not state:
   // the drag distance is only read once, on touchend.
-  const pullStartY = useRef(null);
-  const pullStartedAt = useRef(0);
+  // One gesture's worth of state. `phase` is 'idle' until a touch lands
+  // somewhere a pull may begin, 'pending' until its first move says which
+  // way it is going, and 'owning' once it is ours — from there the feed is
+  // stopped from scrolling under it.
+  const pullRef = useRef({ phase: 'idle', startY: 0, startX: 0, startedAt: 0 });
+  // The listeners below are attached once per mount, not per render, so what
+  // they need from the render lives here instead of in their closure.
+  const pullDepsRef = useRef({ handleRefresh: null, loading: false, isRefreshing: false });
   const refreshPillRef = useRef(null);
   // Desktop: the pill lives hidden under the navbar and shows while the mouse
   // is in the band beneath it. Touch: it shows as the pull progresses.
@@ -458,31 +464,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     pill.style.setProperty('--pull', String(progress));
     pill.classList.toggle('is-pulling', progress > 0);
   }, []);
-  const handleTouchStart = useCallback((e) => {
-    if (publicMode) return;
-    pullStartY.current = pullStartFrom({
-      target: e.target,
-      scrollTop: e.currentTarget.scrollTop,
-      clientY: e.touches[0].clientY,
-    });
-    pullStartedAt.current = performance.now();
-  }, [publicMode]);
-  const handleTouchMove = useCallback((e) => {
-    if (pullStartY.current === null) return;
-    setPull(pullProgress({ startY: pullStartY.current, currentY: e.touches[0].clientY }));
-  }, [setPull]);
-  const handleTouchEnd = useCallback((e) => {
-    const startY = pullStartY.current;
-    pullStartY.current = null;
-    if (startY === null) return;
-    setPull(0);
-    const outcome = pullOutcome({
-      startY,
-      endY: e.changedTouches[0].clientY,
-      elapsedMs: performance.now() - pullStartedAt.current,
-    });
-    if (outcome === 'refresh' && !loading && !isRefreshing) handleRefresh();
-  }, [handleRefresh, isRefreshing, loading, setPull]);
+  useEffect(() => {
+    pullDepsRef.current = { handleRefresh, loading, isRefreshing };
+  });
 
   // Fine pointer only: a touch also fires a synthetic mousemove where it
   // landed, and a tap on the card's top edge is not a request for the pill.
@@ -576,6 +560,76 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   });
   const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing });
 
+  // Native listeners, not React's: React registers `touchmove` at the root as
+  // passive, so `preventDefault` inside an `onTouchMove` prop is ignored —
+  // and preventing the scroll is the whole point once the pull is ours.
+  useEffect(() => {
+    const el = feedRef.current;
+    if (!el || publicMode) return undefined;
+    const state = pullRef.current;
+    const onStart = (event) => {
+      const touch = event.touches[0];
+      if (!touch) return;
+      const startY = pullStartFrom({
+        target: event.target,
+        scrollTop: el.scrollTop,
+        clientY: touch.clientY,
+        containerTop: el.getBoundingClientRect().top,
+      });
+      state.phase = startY === null ? 'idle' : 'pending';
+      state.startY = startY ?? 0;
+      state.startX = touch.clientX;
+      state.startedAt = performance.now();
+    };
+    const onMove = (event) => {
+      if (state.phase === 'idle') return;
+      const touch = event.touches[0];
+      if (!touch) return;
+      if (state.phase === 'pending') {
+        if (touch.clientY === state.startY && touch.clientX === state.startX) return;
+        if (!pullTakesOver({
+          startY: state.startY, startX: state.startX, currentY: touch.clientY, currentX: touch.clientX,
+        })) {
+          state.phase = 'idle';
+          return;
+        }
+        state.phase = 'owning';
+      }
+      if (event.cancelable) event.preventDefault();
+      setPull(pullProgress({ startY: state.startY, currentY: touch.clientY }));
+    };
+    const onEnd = (event) => {
+      const owning = state.phase === 'owning';
+      state.phase = 'idle';
+      if (!owning) return;
+      setPull(0);
+      const touch = event.changedTouches[0];
+      if (!touch) return;
+      const outcome = pullOutcome({
+        startY: state.startY,
+        endY: touch.clientY,
+        elapsedMs: performance.now() - state.startedAt,
+      });
+      const { handleRefresh: refresh, loading: busy, isRefreshing: running } = pullDepsRef.current;
+      if (outcome === 'refresh' && !busy && !running) refresh?.();
+    };
+    const onCancel = () => {
+      state.phase = 'idle';
+      setPull(0);
+    };
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('touchend', onEnd, { passive: true });
+    el.addEventListener('touchcancel', onCancel, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onCancel);
+    };
+  }, [publicMode, setPull, displayState, atomVeil]);
+
+
   if (displayState === FEED_DISPLAY_STATES.ERROR) {
     return (
       <div className="feed-empty">
@@ -646,9 +700,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
         className="feed-container"
         ref={feedRef}
         onScroll={handleScroll}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
       >
         {papers.map((paper, index) => (
           !inMountWindow(anchoredWindow, index) ? (

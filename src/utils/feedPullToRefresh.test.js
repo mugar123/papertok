@@ -4,24 +4,44 @@ import { readFile } from 'node:fs/promises';
 import {
   PULL_REFRESH_THRESHOLD_PX,
   PULL_FLING_MIN_PX,
+  PULL_BAND_PX,
   PULL_BLOCKING_SCROLLERS,
   pullStartFrom,
+  pullTakesOver,
   pullProgress,
   pullOutcome,
-  isPullRefresh,
 } from './feedPullToRefresh.js';
 
-const noScroller = { closest: () => null };
+const plain = { closest: () => null };
 const insideAbstract = { closest: (sel) => (sel === PULL_BLOCKING_SCROLLERS ? {} : null) };
+// The scroller sits under the navbar, so its own top is the band's origin.
+const TOP = 52;
 
-test('a pull only begins at the top of the feed', () => {
-  assert.equal(pullStartFrom({ target: noScroller, scrollTop: 0, clientY: 200 }), 200);
-  assert.equal(pullStartFrom({ target: noScroller, scrollTop: 1, clientY: 200 }), null);
-  assert.equal(pullStartFrom({ target: noScroller, scrollTop: 700, clientY: 200 }), null);
+test('on the first card the whole card is the gesture: there is nothing above to scroll to', () => {
+  assert.equal(pullStartFrom({ target: plain, scrollTop: 0, clientY: 700, containerTop: TOP }), 700);
+  assert.equal(pullStartFrom({ target: plain, scrollTop: 0, clientY: TOP + 4, containerTop: TOP }), TOP + 4);
 });
 
-test('a drag that begins inside the open abstract is refused', () => {
-  assert.equal(pullStartFrom({ target: insideAbstract, scrollTop: 0, clientY: 200 }), null);
+test('on any other card only the band under the navbar arms a pull', () => {
+  const at = (y) => pullStartFrom({ target: plain, scrollTop: 812, clientY: y, containerTop: TOP });
+  assert.equal(at(TOP + 10), TOP + 10, 'inside the band');
+  assert.equal(at(TOP + PULL_BAND_PX), TOP + PULL_BAND_PX, 'the band includes its own edge');
+  assert.equal(at(TOP + PULL_BAND_PX + 1), null, 'one pixel past it is the feed\'s gesture');
+  assert.equal(at(600), null, 'the middle of the card still goes to the previous paper');
+});
+
+test('a drag that begins inside the open abstract is refused, wherever the feed is', () => {
+  assert.equal(pullStartFrom({ target: insideAbstract, scrollTop: 0, clientY: 200, containerTop: TOP }), null);
+  assert.equal(pullStartFrom({ target: insideAbstract, scrollTop: 812, clientY: TOP + 4, containerTop: TOP }), null);
+});
+
+test('the first move decides: down is the pull, up is the feed, sideways is neither', () => {
+  const move = (dy, dx = 0) => pullTakesOver({ startY: 300, startX: 180, currentY: 300 + dy, currentX: 180 + dx });
+  assert.equal(move(6), true, 'a few pixels down is enough to decide, before the browser scrolls');
+  assert.equal(move(-6), false, 'up is the swipe to the next paper');
+  assert.equal(move(0), false);
+  assert.equal(move(10, 40), false, 'more sideways than vertical is not a pull');
+  assert.equal(move(40, 10), true);
 });
 
 test('progress grows with the distance and is clamped to 1', () => {
@@ -43,12 +63,6 @@ test('a fast fling refreshes before the threshold, but never a tremor', () => {
   assert.equal(fast(60, 30), 'refresh', '60px in 30ms is 2px/ms: a fling');
   assert.equal(fast(PULL_FLING_MIN_PX - 5, 10), 'none', 'too short to be a decision');
   assert.equal(fast(60, 200), 'none', '60px in 200ms is a slow drag short of the threshold');
-});
-
-test('isPullRefresh keeps the slow-drag answer', () => {
-  assert.equal(isPullRefresh({ startY: 100, endY: 100 + PULL_REFRESH_THRESHOLD_PX + 1 }), true);
-  assert.equal(isPullRefresh({ startY: 100, endY: 150 }), false);
-  assert.equal(isPullRefresh({ startY: null, endY: 900 }), false);
 });
 
 /**
