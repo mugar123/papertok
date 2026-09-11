@@ -1820,7 +1820,6 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   const markNotInterested = useCallback(async (paperInput) => {
     const paper = withInteractionId(paperInput);
     const userId = user?.uid;
-    if (!userId) return;
     const newNotInterested = new Set(notInterestedIdsRef.current);
     newNotInterested.add(paper.id);
     setNotInterestedIds(newNotInterested);
@@ -1844,9 +1843,8 @@ export function FeedProvider({ children, feedRouteActive = true }) {
 
     if (IS_DEMO) {
       demoSet('notInterestedIds', Array.from(newNotInterested));
-    } else {
+    } else if (userId) {
       try {
-        
         recordProfileEvent({
           paperId: paper.id,
           kind: 'notInterested',
