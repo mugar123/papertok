@@ -116,8 +116,14 @@ test('SOURCE: la llegada de los bloques se dispara al volverse activa la tarjeta
   // Not just "no cardSlideUp by name" (redundant with followingFeed.test.js's
   // own "the keyframes are gone, not just unused" pair) — no `animation:` on
   // `.pc-sheet` at all: the sheet only sits at rest, it does not carry any
-  // entrance of its own any more.
-  assert.doesNotMatch(css.slice(css.indexOf('.pc-sheet {'), css.indexOf('.pc-sheet {') + 600), /animation:/);
+  // entrance of its own any more. Bounded by `.pc-sheet`'s own closing brace,
+  // not a fixed character count: a `+600` window reaches past this block
+  // into `.pc-figure`'s `animation:` (its `figureClipIn` clip-in, a couple
+  // hundred characters further on), so any growth of the code between the
+  // two blocks would eventually fail this assertion pointing at the wrong
+  // rule instead of at an actual `.pc-sheet` regression.
+  const pcSheetStart = css.indexOf('.pc-sheet {');
+  assert.doesNotMatch(css.slice(pcSheetStart, css.indexOf('}', pcSheetStart)), /animation:/);
   const jsx = strip(await read('./PaperCard.jsx'));
   assert.match(jsx, /data-active=\{isActive \? 'true' : 'false'\}/);
 });
@@ -132,9 +138,47 @@ test('SOURCE: la llegada de los bloques se dispara al volverse activa la tarjeta
 test('SOURCE: prefers-reduced-motion still suppresses the card entrance now that it is gated on data-active', async () => {
   const css = await read('./PaperCard.css');
   const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/g) || [];
+  const winner = reduced.find((block) => /\.pc\[data-active="true"\] \.pc-title[\s\S]*?animation: none;/.test(block));
   assert.ok(
-    reduced.some((block) => /\.pc\[data-active="true"\] \.pc-title[\s\S]*?animation: none;/.test(block)),
+    winner,
     'a reduce block suppresses the data-active-qualified arrival selector, not only the pre-Task-11 bare one',
+  );
+  // Tying (0,3,0) specificity only suppresses the arrival because this block
+  // also comes LATER in the file than the rule it mirrors (the comment right
+  // above it in PaperCard.css says so) — the win is source order, not
+  // specificity. Without pinning that order, a new gated arrival rule added
+  // after this block, or this block moved above the arrival rule, would kill
+  // reduced motion again with the assertion above still green.
+  const arrivalIndex = css.indexOf('.pc[data-active="true"] .pc-follow-reason,');
+  assert.ok(arrivalIndex >= 0, 'the arrival rule this block must outrank by order is still findable');
+  assert.ok(css.indexOf(winner) > arrivalIndex, 'the reduce block must sit after the arrival rule in source order to win the specificity tie');
+});
+
+/**
+ * SOURCE test for the regression the previous review round introduced:
+ * `.pc-abstract` is the only one of the nine arrival pieces with a
+ * `transition` of its own (the 0.42s max-height/mask-size travel that opens
+ * and closes it on tap, PaperCard.css `.pc-abstract { transition: … }`). The
+ * old giant reduced-motion block used to suppress it through a bare
+ * `.pc-abstract` entry; that entry left with the other eight when Finding 1
+ * moved them to the dedicated block above, and only `animation: none`
+ * came with them — `transition: none` was left behind with nothing to carry
+ * it, so `.pc-abstract` kept travelling under reduced motion. A reduced-
+ * motion reader who taps "Read full abstract" gets `toggleExpanded`'s own
+ * scroll-back (PaperCard.jsx, gated on `prefersReducedMotion`) landing
+ * instantly while the panel is still opening over 420ms — the two coming
+ * apart, exactly what that function's own comment says this pairing exists
+ * to prevent.
+ */
+test('SOURCE: reduced motion also stops the abstract panel’s own open/close transition, not just the arrival fade', async () => {
+  const css = await read('./PaperCard.css');
+  const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/g) || [];
+  assert.ok(
+    reduced.some((block) =>
+      /\.pc\[data-active="true"\] \.pc-abstract/.test(block)
+      && /animation: none;/.test(block)
+      && /transition: none;/.test(block)),
+    'the data-active-qualified reduce block sets both animation: none and transition: none, so .pc-abstract’s own 0.42s transition is suppressed too',
   );
 });
 

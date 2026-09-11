@@ -14,8 +14,11 @@ import { localThreadKeys } from '../services/threadAnchorClient.js';
  * aggregation straight from the browser instead — one billed read per local
  * thread key, and `candidateStubIdentities` returns at most two (the paper's
  * canonical identity, plus its arXiv id when the canonical one is a DOI), so
- * the ceiling is TWO reads per paper — but only for the one card the feed
- * says is active, and only once per paper for the whole session:
+ * the ceiling is TWO reads per paper — but only for the active card on a
+ * surface that can open a thread (the feed, `PublicPaperPage` and the
+ * related-paper overlay; see `paintableCommentCount` below for the full
+ * list of surfaces that cannot), and only once per paper for the whole
+ * session:
  * `cache`/`inflight` live at module scope, not inside the hook, so they
  * survive the mount/unmount churn of the feed's sliding mount window (a
  * card's `PaperCard` instance is torn down and rebuilt constantly; the count

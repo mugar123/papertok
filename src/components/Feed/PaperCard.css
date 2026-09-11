@@ -370,7 +370,38 @@
    coming later in the file, and reduced motion went silently dead for all
    nine pieces. Mirrors the arrival rule's own selectors exactly — same
    specificity, three — and wins the same way the two always tied before:
-   by being the later rule in the cascade. */
+   by being the later rule in the cascade.
+
+   `transition: none` rides along with `animation: none` here, even though
+   only one of the nine — `.pc-abstract` — has a transition of its own (the
+   0.42s max-height/mask-size travel that opens and closes it on tap). The
+   old giant reduce block used to carry a bare `.pc-abstract` entry for
+   exactly that; it left with the other eight bare entries when this block
+   replaced them (see the comment on that block, further down), and nothing
+   took over suppressing the transition — only the animation moved. Under
+   reduced motion the panel kept travelling over 420ms while `toggleExpanded`'s
+   own scroll-back (PaperCard.jsx) snapped to the top instantly, since that
+   one IS gated on `prefersReducedMotion` — the two coming apart is exactly
+   what that function's comment says this pairing exists to prevent. Setting
+   `transition: none` for all nine here (not just `.pc-abstract`) costs
+   nothing — the other eight have no transition to lose — and keeps this one
+   block the sole place this selector list's reduced-motion behaviour is
+   decided, rather than splitting `animation` and `transition` across two
+   ends of the file again.
+
+   This block's position is right for a second reason too: it sits after
+   the `pcArriveAside` longhand above (`.pc-follow-reason`'s own
+   `animation-name` override, right after the base arrival rule) as well as
+   after the base rule itself. `animation-name` is one property this block's
+   `animation: none` shorthand resets along with everything else, and
+   `pcArriveAside` sets that same property on that same selector at equal
+   specificity — so if this block came earlier than that override (even if
+   still later than the base rule above it), the override's later, narrower
+   declaration would win `.pc-follow-reason`'s `animation-name` back under
+   reduced motion. The test only pins this block after the base rule's first
+   selector, not after `pcArriveAside` specifically — moving it into the
+   narrow gap between the two would not fail that assertion, so this is a
+   second invariant this comment carries alone. */
 @media (prefers-reduced-motion: reduce) {
   .pc[data-active="true"] .pc-follow-reason,
   .pc[data-active="true"] .pc-meta,
@@ -382,6 +413,7 @@
   .pc[data-active="true"] .pc-action-bar,
   .pc[data-active="true"] .pc-side-actions {
     animation: none;
+    transition: none;
   }
 }
 

@@ -319,7 +319,8 @@ const PaperCard = memo(function PaperCard({
     () => Boolean(onOpenComments && canonicalPaperIdentity(paper)),
     [onOpenComments, paper],
   );
-  // Two `count()` reads at most, for the one card the feed says is active —
+  // Two `count()` reads at most, for the active card on a surface that can
+  // open a thread (the feed, `PublicPaperPage`, the related-paper overlay) —
   // never for the ones scrolled past or waiting below. That fence has two
   // links, both guarded, neither the whole budget alone: this call site
   // (pinned by commentService.test.js and threadAnchorClient.test.js) and the
