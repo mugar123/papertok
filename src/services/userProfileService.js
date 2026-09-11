@@ -132,7 +132,13 @@ function cleanMultilineString(value, maximum) {
  */
 const AVATAR_URL_ALLOWLIST = /^https:\/\/lh[3-6]\.googleusercontent\.com\/[^\s"'<>]+$/;
 
-function cleanPhoto(value) {
+/**
+ * Exported because the allowlist has to hold at BOTH ends. A document written
+ * before this rule existed, or by any path that skipped it, still reaches an
+ * `<img src>` on someone else's screen — and an arbitrary host there logs the
+ * IP of everyone who opens the page.
+ */
+export function cleanPhoto(value) {
   if (typeof value !== 'string') return '';
   const photo = value.trim();
   if (photo.length > USER_PROFILE_LIMITS.photo) return '';

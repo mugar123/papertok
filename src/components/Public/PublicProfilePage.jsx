@@ -11,6 +11,7 @@ import { useFeed } from '../../context/FeedContext.jsx';
 import { useFollowing } from '../../context/FollowingContext.jsx';
 import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.js';
 import {
+  cleanPhoto,
   mergeShowcaseCards,
   needsVisibilityChoice,
   profileIsPublic,
@@ -1022,7 +1023,12 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     || user?.displayName
     || (selfMode ? (user?.email || '').split('@')[0] : '')
     || 'PaperTok';
-  const avatar = profile?.photo || (view.isOwner ? (profilePhoto || user?.photoURL || '') : '');
+  // The stored value is somebody else's writing, so it goes through the same
+  // allowlist that guards the write. The owner's own two fallbacks do not:
+  // `profilePhoto` is this device's recompressed copy and `user.photoURL` comes
+  // from the identity provider, whose hosts (GitHub's among them) are wider
+  // than what a public document may carry.
+  const avatar = cleanPhoto(profile?.photo) || (view.isOwner ? (profilePhoto || user?.photoURL || '') : '');
   const followedContentCount = followedEntities?.length ?? 0;
   const likesCount = likedPaperIds?.size ?? 0;
 

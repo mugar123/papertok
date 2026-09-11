@@ -5,6 +5,7 @@ import { UsersRound, X } from 'lucide-react';
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
 import { isReadTimeout, patientRead } from '../../utils/boundedRead.js';
 import { readFollowList, rememberFollowList } from '../../utils/profileSessionCaches.js';
+import { cleanPhoto } from '../../services/userProfileService.js';
 import { usePopupOpenOnMount } from '../../hooks/usePopupOpenOnMount.js';
 import { Drawer, DrawerContent } from '../ui/drawer.jsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.jsx';
@@ -93,6 +94,11 @@ function Row({ uid, profile, unavailableLabel, onNavigate }) {
     );
   }
 
+  // Every row here is a document another account wrote. The allowlist that
+  // guards the write has to hold on the way out too: a host outside it in this
+  // src logs the IP of everyone who opens the sheet.
+  const photo = cleanPhoto(profile.photo);
+
   return (
     <>
       <Link
@@ -101,10 +107,10 @@ function Row({ uid, profile, unavailableLabel, onNavigate }) {
         onClick={onNavigate}
       >
         <span className="follow-avatar">
-          {profile.photo
+          {photo
             ? (
               <img
-                src={profile.photo}
+                src={photo}
                 alt=""
                 referrerPolicy="no-referrer"
                 // One row in a scrollable follow/followers list -- most rows

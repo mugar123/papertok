@@ -11,6 +11,7 @@ import {
   UnconfirmedProfileAbsenceError,
   UserProfileUnsupportedError,
   changeUserHandle,
+  cleanPhoto,
   createUserProfile,
   deleteOwnUserProfile,
   partitionStalePins,
@@ -774,6 +775,18 @@ test('refuses avatar URLs from anywhere but the allowlist', () => {
   ]) {
     assert.equal(publicAvatarFrom(null, url), '', `${url} must not be stored`);
   }
+});
+
+test('cleanPhoto drops any host outside the allowlist', () => {
+  // Exported because a document written before the allowlist existed, or by a
+  // path that never met it, is still painted by <img src>. The writer is not
+  // the only place this rule has to hold.
+  assert.equal(cleanPhoto('https://evil.example/p.png'), '');
+  assert.equal(cleanPhoto('https://lh3.googleusercontent.com/a/b'), 'https://lh3.googleusercontent.com/a/b');
+  assert.equal(cleanPhoto(INLINE_AVATAR), INLINE_AVATAR);
+  assert.equal(cleanPhoto('javascript:alert(1)'), '');
+  assert.equal(cleanPhoto(undefined), '');
+  assert.equal(cleanPhoto({ toString: () => GOOGLE_AVATAR }), '', 'only a string is a photo');
 });
 
 test('an uploaded photo past the public budget is not mirrored', () => {
