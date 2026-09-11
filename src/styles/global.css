@@ -306,7 +306,7 @@
 
 :root[data-theme='dark']::view-transition-new(root) {
   z-index: 1;
-  animation: themeSweepIn 420ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: themeSweepIn 260ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 :root[data-theme='dark']::view-transition-old(root) {
@@ -315,7 +315,7 @@
 
 :root[data-theme='light']::view-transition-old(root) {
   z-index: 1;
-  animation: themeSweepOut 320ms cubic-bezier(0.4, 0, 1, 1);
+  animation: themeSweepOut 200ms cubic-bezier(0.4, 0, 1, 1);
 }
 
 :root[data-theme='light']::view-transition-new(root) {
