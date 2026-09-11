@@ -177,6 +177,20 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   // public paper page, so the card is painted from the stored copy instead.
   const [overlayPaper, setOverlayPaper] = useState(null);
   const closeOverlayPaper = useCallback(() => setOverlayPaper(null), []);
+
+  // The paper the overlay is SHOWING, which outlives the one selected. Closing
+  // sets `overlayPaper` to null to start the leave; if the card went with it,
+  // the surface would spend its 200ms exit fading out over nothing. This is
+  // dropped when the leave actually ends (`onExitComplete`).
+  //
+  // Adjusted during render rather than in an effect: a paper opened while
+  // another is still leaving has to take over in the same commit, or the
+  // window shows the wrong paper for a frame.
+  const [shownPaper, setShownPaper] = useState(null);
+  if (overlayPaper && overlayPaper !== shownPaper) {
+    setShownPaper(overlayPaper);
+  }
+
   const getInteractionState = useCallback((paper) => ({
     isLiked: likedPaperIds.has(paper.id),
     isSaved: savedPaperIds.has(paper.id),
@@ -1855,15 +1869,16 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       <PaperOverlay
         open={Boolean(overlayPaper)}
         onClose={closeOverlayPaper}
+        onExitComplete={() => setShownPaper(null)}
         isEnglish={isEnglish}
         label={isEnglish ? 'Paper details' : 'Detalles del paper'}
       >
-        {overlayPaper && (
+        {shownPaper && (
           <PaperCard
-            paper={overlayPaper}
-            isLiked={likedPaperIds.has(interactionIdFor(overlayPaper))}
-            isSaved={savedPaperIds.has(interactionIdFor(overlayPaper))}
-            isRead={readPaperIds.has(interactionIdFor(overlayPaper))}
+            paper={shownPaper}
+            isLiked={likedPaperIds.has(interactionIdFor(shownPaper))}
+            isSaved={savedPaperIds.has(interactionIdFor(shownPaper))}
+            isRead={readPaperIds.has(interactionIdFor(shownPaper))}
             onLike={toggleLike}
             onNotInterested={(paper) => { markNotInterested(paper); closeOverlayPaper(); }}
             onMarkAsRead={markAsRead}

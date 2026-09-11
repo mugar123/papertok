@@ -44,6 +44,6 @@ test('SOURCE: the lists page opens a paper with no address as a card from the st
   assert.match(body, /navigate\(path, \{ state: \{ paper, stored: true \} \}\)/, 'an address: the paper page, the stored copy riding along as the fallback');
   assert.doesNotMatch(body, /arxivId: paper\.arxivId \|\| paper\.id/,
     'the raw id is never dressed up as an arXiv id for the PDF viewer again');
-  assert.match(code, /<PaperOverlay[\s\S]*?<PaperCard[\s\S]*?paper=\{overlayPaper\}/,
-    'the overlay hosts the same PaperCard the search page uses');
+  assert.match(code, /<PaperOverlay[\s\S]*?<PaperCard[\s\S]*?paper=\{shownPaper\}/,
+    'the overlay hosts the same PaperCard the search page uses -- `shownPaper`, the one\n     that outlives `overlayPaper` so the card does not vanish mid-exit');
 });

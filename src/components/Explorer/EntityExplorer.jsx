@@ -218,6 +218,20 @@ export default function EntityExplorer({
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [pdfPaperToView, setPdfPaperToView] = useState(null);
   const closeSelectedPaper = useCallback(() => setSelectedPaper(null), []);
+
+  // The paper the overlay is SHOWING, which outlives the one selected. Closing
+  // sets `selectedPaper` to null to start the leave; if the card went with it,
+  // the surface would spend its 200ms exit fading out over nothing. This is
+  // dropped when the leave actually ends (`onExitComplete`).
+  //
+  // Adjusted during render rather than in an effect: a paper opened while
+  // another is still leaving has to take over in the same commit, or the
+  // window shows the wrong paper for a frame.
+  const [shownPaper, setShownPaper] = useState(null);
+  if (selectedPaper && selectedPaper !== shownPaper) {
+    setShownPaper(selectedPaper);
+  }
+
   const [wikiInfo, setWikiInfo] = useState(null);
   const [settledWikiRequestKey, setSettledWikiRequestKey] = useState('');
   // Whether this entity's Wikipedia block has opened. Once it has, a re-lookup
@@ -2593,15 +2607,16 @@ export default function EntityExplorer({
       <PaperOverlay
         open={Boolean(selectedPaper && !pdfPaperToView)}
         onClose={closeSelectedPaper}
+        onExitComplete={() => setShownPaper(null)}
         isEnglish={isEnglish}
         label={isEnglish ? 'Publication details' : 'Detalles de la publicación'}
       >
-        {selectedPaper && (
+        {shownPaper && (
           <PaperCard
-            paper={selectedPaper}
-            isLiked={likedPaperIds.has(interactionIdFor(selectedPaper))}
-            isSaved={savedPaperIds.has(interactionIdFor(selectedPaper))}
-            isRead={readPaperIds.has(interactionIdFor(selectedPaper))}
+            paper={shownPaper}
+            isLiked={likedPaperIds.has(interactionIdFor(shownPaper))}
+            isSaved={savedPaperIds.has(interactionIdFor(shownPaper))}
+            isRead={readPaperIds.has(interactionIdFor(shownPaper))}
             onLike={toggleLike}
             onNotInterested={(paper) => { markNotInterested(paper); setSelectedPaper(null); }}
             onMarkAsRead={markAsRead}
