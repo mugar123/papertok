@@ -64,3 +64,45 @@ test('the lineage strip the map replaced left nothing behind', async () => {
   assert.equal(/knowledge-path/.test(stylesheet), false, 'the old lineage strip still has rules');
   assert.equal(/knowledge-path/.test(component), false, 'the old lineage strip is still rendered');
 });
+
+/** Comments name selectors and offsets in prose; matching them would invent both sides. */
+const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '');
+
+/** The declarations of one rule, by exact selector — bounded so a match can't drift into a neighbour. */
+function ruleBody(css, selector) {
+  const pattern = new RegExp(`(?:^|[};])\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`);
+  const match = css.match(pattern);
+  assert.ok(match, `expected a \`${selector}\` rule in the stylesheet`);
+  return match[1];
+}
+
+test('SOURCE: la tarjeta inferior del grafo se ancla al borde visible, no al sangrado', async () => {
+  // `.related-sheet` is the same element as `ui/drawer.css`'s `.ui-drawer-popup`
+  // (DrawerContent forwards `className` onto it) and its `position: relative`
+  // makes it the containing block for `.graph-peek`, which is absolutely
+  // positioned. A containing block's edge, for an absolutely positioned
+  // descendant, is its PADDING box — and `.related-sheet`'s padding box
+  // bottom edge sits `--bleed` (48px) below the visible viewport edge, by
+  // design: drawer.css pulls the sheet's border box `--bleed` past the fold
+  // (`height` grows by it, a negative `margin-bottom` cancels it back for
+  // normal flow) so a swipe overshoot never uncovers the page behind it.
+  // Normal-flow children are shielded from that by `.related-sheet`'s own
+  // `padding-bottom: calc(var(--inset-bottom) + var(--bleed))`, but an
+  // absolutely positioned child's `bottom` is measured before padding is
+  // applied, so it inherits none of that correction. `.graph-peek`'s
+  // `bottom: var(--graph-source-height)` (30px) therefore lands 30px above
+  // the padding-box edge, i.e. `--bleed` (48px) minus 30px = 18px BELOW the
+  // visible fold — the tarjeta's bottom ~18px render past the screen edge.
+  // Adding `--bleed` (and `--inset-bottom`, for devices with a safe-area
+  // inset) back into `bottom` restores the fold as the reference point.
+  const css = stripComments(await readFile(new URL(CSS, import.meta.url), 'utf8'));
+  const peek = ruleBody(css, '.graph-peek');
+
+  assert.match(
+    peek,
+    /bottom:\s*calc\(var\(--graph-source-height\)\s*\+\s*var\(--inset-bottom\)\s*\+\s*var\(--bleed\)\)/,
+    '.graph-peek must add --bleed and --inset-bottom back into its `bottom` offset, or it is '
+    + "measured against .related-sheet's padding box (which the drawer deliberately bleeds below "
+    + 'the viewport) instead of the visible fold, and its bottom edge renders under the sheet\'s own edge.',
+  );
+});

@@ -1978,7 +1978,14 @@ a.pc-citations {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: var(--graph-source-height);
+  /* Its containing block is `.related-sheet`'s PADDING box, whose bottom
+     edge sits `--bleed` below the visible viewport edge (see the comment on
+     `.related-sheet` above) — an absolute `bottom` never sees the sheet's own
+     `padding-bottom` correction, so the offset has to add `--bleed` (and
+     `--inset-bottom`, for the safe-area devices the padding also covers)
+     back in, or the card renders under the fold instead of above
+     `.knowledge-source`. */
+  bottom: calc(var(--graph-source-height) + var(--inset-bottom) + var(--bleed));
   z-index: 4;
   padding: 13px 18px 15px;
   border-top: 1px solid var(--border-default);
