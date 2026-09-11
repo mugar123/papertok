@@ -264,3 +264,22 @@ test('the first page\'s long wait is announced at 4s, in a fade, under the skele
   assert.match(src, /isLoadingPapers && !isFetchingMore && isPapersLoadSlow && \(\s*<p className="explorer-loading-note"/);
   assert.match(css, /\.explorer-loading-note \{[^}]*animation: slideUpFade/s);
 });
+
+/**
+ * `react-hooks/set-state-in-effect` flags a synchronous setState in an
+ * effect body; the timer effect's first shape guarded itself with
+ * `if (!(...)) { setIsPapersLoadSlow(false); return undefined; }`, which is
+ * exactly that, and was the one lint error in the whole repo. The reset now
+ * lives in `loadPapers`'s page-1 branch instead, an async function the
+ * linter does not trace into, so the effect's own body has nothing left for
+ * the rule to catch — it only starts a timeout and clears it. Re-armed by
+ * route too: `type`/`id` are in the dependency array, so navigating from one
+ * slow-loading project straight into another restarts the four-second clock
+ * instead of inheriting whatever was left of the first one's.
+ */
+test('the timer effect only arms the wait; it never resets the flag inside its own body', async () => {
+  const src = stripComments(await read('./EntityExplorer.jsx'));
+  const effect = src.match(/if \(!\(isLoadingPapers && !isFetchingMore\)\) return undefined;[\s\S]*?\}, \[isLoadingPapers, isFetchingMore, type, id\]\);/);
+  assert.ok(effect, 'the timer effect guards with a plain return, and is keyed to the route as well');
+  assert.doesNotMatch(effect[0], /setIsPapersLoadSlow\(false\)/, 'the reset belongs to loadPapers, not to this effect');
+});

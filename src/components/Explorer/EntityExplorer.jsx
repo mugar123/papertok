@@ -887,6 +887,7 @@ export default function EntityExplorer({
         setIsLoadingPapers(true);
         setPapersError(null);
         setRowBudget(EXPLORER_ROW_CHUNK);
+        setIsPapersLoadSlow(false);
       }
       else setIsFetchingMore(true);
       
@@ -1183,13 +1184,20 @@ export default function EntityExplorer({
   }, [hasMore, isLoadingPapers, isFetchingMore, hasMoreAuthors, isLoadingAuthors, isFetchingMoreAuthors, activeTab, rowsSettled]);
 
   // Armed only while a fresh page is loading (never for "load more", which has
-  // the sentinel's own spinner) and disarmed the instant that stops being
-  // true, so a load that lands well under 4s never shows the note.
+  // the sentinel's own spinner); a load that lands well under 4s clears this
+  // effect before the timeout ever fires, so the note never shows. The flag
+  // itself is reset to false where the next page-1 load starts, inside
+  // `loadPapers` — not here, so this body stays a pure subscription with no
+  // setState of its own (react-hooks/set-state-in-effect). `type`/`id` are
+  // dependencies too: without them, navigating from one slow-loading entity
+  // straight into another keeps `isLoadingPapers` continuously true, so this
+  // effect would never re-run and the new entity's four seconds would be
+  // measured on the previous one's clock.
   useEffect(() => {
-    if (!(isLoadingPapers && !isFetchingMore)) { setIsPapersLoadSlow(false); return undefined; }
+    if (!(isLoadingPapers && !isFetchingMore)) return undefined;
     const handle = setTimeout(() => setIsPapersLoadSlow(true), 4000);
     return () => clearTimeout(handle);
-  }, [isLoadingPapers, isFetchingMore]);
+  }, [isLoadingPapers, isFetchingMore, type, id]);
 
   const handleShare = async () => {
     if (!publicEntityUrl) return;
