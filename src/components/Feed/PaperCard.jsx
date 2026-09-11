@@ -1073,7 +1073,7 @@ const PaperCard = memo(function PaperCard({
       : paper.openAccessPdfUrl
         ? (isEnglish ? 'Read full text' : 'Leer texto completo')
         : (!paper.pdfUrl && !paper.arxivId)
-          ? (isEnglish ? 'Open source' : 'Abrir fuente')
+          ? (isEnglish ? 'Source' : 'Fuente')
           : (isEnglish ? 'Read article' : 'Leer artículo');
   return (
     <div ref={cardRef} className={`pc ${isCardVisible ? 'pc--visible' : ''}`} onClick={handleDoubleTap}>
@@ -1763,7 +1763,7 @@ const PaperCard = memo(function PaperCard({
                 : paper.pdfUrl
                   ? (isEnglish ? 'Read article' : 'Leer artículo')
                   : (paper.landingPageUrl || paper.doi
-                    ? (isEnglish ? 'Open source' : 'Abrir fuente')
+                    ? (isEnglish ? 'Source' : 'Fuente')
                     : (isEnglish ? 'Read' : 'Leer'))}
           </span>
         </Toggle>

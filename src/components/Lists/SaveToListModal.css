@@ -315,11 +315,6 @@
   white-space: nowrap;
 }
 
-.save-modal-row-hint {
-  font-size: var(--fs-xs);
-  color: var(--text-tertiary);
-}
-
 /* A count is machine data. */
 .save-modal-count {
   flex-shrink: 0;

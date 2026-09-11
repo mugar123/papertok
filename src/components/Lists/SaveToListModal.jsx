@@ -606,10 +606,8 @@ export default function SaveToListModal({ paper, onClose }) {
     close: 'Close',
     saveTo: 'Save to',
     saveToHint: 'Applied when you press Save.',
-    readLaterOn: 'In Read later',
-    readLaterOff: 'Add to Read later',
-    readLaterOnHint: 'Kept in your personal queue',
-    readLaterOffHint: 'Keep this paper for another time',
+    readLaterOn: 'Read later',
+    readLaterOff: 'Read later',
     loadingLists: 'Loading lists...',
     listsSlow: 'This is taking longer than usual. Still trying.',
     listsOffline: 'There seems to be no connection. Still trying.',
@@ -638,10 +636,8 @@ export default function SaveToListModal({ paper, onClose }) {
     close: 'Cerrar',
     saveTo: 'Guardar en',
     saveToHint: 'Se aplica al pulsar Guardar.',
-    readLaterOn: 'En Leer después',
-    readLaterOff: 'Añadir a Leer después',
-    readLaterOnHint: 'Guardado en tu cola personal',
-    readLaterOffHint: 'Reserva este paper para otro momento',
+    readLaterOn: 'Leer después',
+    readLaterOff: 'Leer después',
     loadingLists: 'Cargando listas...',
     listsSlow: 'Está tardando más de lo normal. Seguimos intentándolo.',
     listsOffline: 'Parece que no hay conexión. Seguimos intentándolo.',
@@ -718,9 +714,6 @@ export default function SaveToListModal({ paper, onClose }) {
                 <span className="save-modal-row-text">
                   <span className="save-modal-row-name">
                     {pendingReadLater ? copy.readLaterOn : copy.readLaterOff}
-                  </span>
-                  <span className="save-modal-row-hint">
-                    {pendingReadLater ? copy.readLaterOnHint : copy.readLaterOffHint}
                   </span>
                 </span>
               </Toggle>
