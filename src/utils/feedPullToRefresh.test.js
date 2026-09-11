@@ -4,7 +4,8 @@ import { readFile } from 'node:fs/promises';
 import {
   PULL_REFRESH_THRESHOLD_PX,
   PULL_FLING_MIN_PX,
-  PULL_BAND_PX,
+  PULL_BAND_MIN_PX,
+  pullBandDepth,
   PULL_BLOCKING_SCROLLERS,
   pullStartFrom,
   pullTakesOver,
@@ -14,8 +15,11 @@ import {
 
 const plain = { closest: () => null };
 const insideAbstract = { closest: (sel) => (sel === PULL_BLOCKING_SCROLLERS ? {} : null) };
-// The scroller sits under the navbar, so its own top is the band's origin.
+// The scroller sits under the navbar, so its own top is the band's origin,
+// and it is as tall as the phone minus the bar.
 const TOP = 52;
+const H = 792;
+const BAND = pullBandDepth(H);
 
 test('on the first card the whole card is the gesture: there is nothing above to scroll to', () => {
   assert.equal(pullStartFrom({ target: plain, scrollTop: 0, clientY: 700, containerTop: TOP }), 700);
@@ -23,16 +27,23 @@ test('on the first card the whole card is the gesture: there is nothing above to
 });
 
 test('on any other card only the band under the navbar arms a pull', () => {
-  const at = (y) => pullStartFrom({ target: plain, scrollTop: 812, clientY: y, containerTop: TOP });
+  const at = (y) => pullStartFrom({ target: plain, scrollTop: 812, clientY: y, containerTop: TOP, containerHeight: H });
   assert.equal(at(TOP + 10), TOP + 10, 'inside the band');
-  assert.equal(at(TOP + PULL_BAND_PX), TOP + PULL_BAND_PX, 'the band includes its own edge');
-  assert.equal(at(TOP + PULL_BAND_PX + 1), null, 'one pixel past it is the feed\'s gesture');
+  assert.equal(at(TOP + BAND), TOP + BAND, 'the band includes its own edge');
+  assert.equal(at(TOP + BAND + 1), null, 'one pixel past it is the feed\'s gesture');
   assert.equal(at(600), null, 'the middle of the card still goes to the previous paper');
+});
+
+test('the band is a third of the feed, and never less than the floor', () => {
+  assert.equal(pullBandDepth(792), 264, 'a phone: the upper third, not a sliver under the bar');
+  assert.equal(pullBandDepth(300), PULL_BAND_MIN_PX, 'a short screen keeps a reachable floor');
+  assert.equal(pullBandDepth(0), PULL_BAND_MIN_PX);
+  assert.ok(pullBandDepth(792) < 792 / 2, 'and never past halfway: the lower half is the previous paper');
 });
 
 test('a drag that begins inside the open abstract is refused, wherever the feed is', () => {
   assert.equal(pullStartFrom({ target: insideAbstract, scrollTop: 0, clientY: 200, containerTop: TOP }), null);
-  assert.equal(pullStartFrom({ target: insideAbstract, scrollTop: 812, clientY: TOP + 4, containerTop: TOP }), null);
+  assert.equal(pullStartFrom({ target: insideAbstract, scrollTop: 812, clientY: TOP + 4, containerTop: TOP, containerHeight: H }), null);
 });
 
 test('the first move decides: down is the pull, up is the feed, sideways is neither', () => {

@@ -90,7 +90,8 @@ try {
   out.push(await run('B · tarjeta 2, tiro desde el medio', { card: 2, fromBandOffset: null, dy: 160 }));
   out.push(await run('C · tarjeta 2, franja pero hacia ARRIBA', { card: 2, fromBandOffset: 40, dy: -160 }));
   out.push(await run('D · tarjeta 0, tiro desde el medio', { card: 0, fromBandOffset: null, dy: 160 }));
-  out.push(await run('E · tarjeta 3, fling corto desde la franja', { card: 3, fromBandOffset: 30, dy: 80, steps: 2, stepMs: 0 }));
-  out.push(await run('F · tarjeta 4, arrastre largo desde la franja', { card: 4, fromBandOffset: 30, dy: 200, steps: 10, stepMs: 25 }));
+  out.push(await run('E · tarjeta 3, desde 220px (antes fuera de la franja)', { card: 3, fromBandOffset: 220, dy: 200, steps: 10, stepMs: 25 }));
+  out.push(await run('F · tarjeta 4, desde 150px', { card: 4, fromBandOffset: 150, dy: 200, steps: 10, stepMs: 25 }));
+  out.push(await run('G · tarjeta 4, desde 400px (mitad baja)', { card: 4, fromBandOffset: 400, dy: 200, steps: 10, stepMs: 25 }));
   console.log(JSON.stringify(out, null, 1));
 } finally { chrome.kill('SIGKILL'); }

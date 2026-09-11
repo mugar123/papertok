@@ -570,11 +570,13 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     const onStart = (event) => {
       const touch = event.touches[0];
       if (!touch) return;
+      const box = el.getBoundingClientRect();
       const startY = pullStartFrom({
         target: event.target,
         scrollTop: el.scrollTop,
         clientY: touch.clientY,
-        containerTop: el.getBoundingClientRect().top,
+        containerTop: box.top,
+        containerHeight: box.height,
       });
       state.phase = startY === null ? 'idle' : 'pending';
       state.startY = startY ?? 0;

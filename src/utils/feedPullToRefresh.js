@@ -26,11 +26,21 @@ export const PULL_REFRESH_THRESHOLD_PX = 110;
 export const PULL_FLING_VELOCITY_PX_PER_MS = 1.2;
 export const PULL_FLING_MIN_PX = 40;
 /**
- * Depth of the band under the navbar from which a pull may begin on a card
- * that is not the first. Deep enough to be reachable with a thumb, shallow
- * enough that the rest of the card keeps the gesture it already had.
+ * The band under the navbar from which a pull may begin on a card that is not
+ * the first, as a share of the feed's own height with a floor for short
+ * screens. A third: the first attempt used a flat 96px, which on a phone ends
+ * about 148px down the screen — narrow enough that a drag started where a
+ * thumb naturally lands missed it and the refresh looked unimplemented. A
+ * third of the viewport is "the upper part" without argument, and still
+ * leaves the lower two thirds to the swipe to the previous paper, which is
+ * where that gesture is made anyway.
  */
-export const PULL_BAND_PX = 96;
+export const PULL_BAND_RATIO = 1 / 3;
+export const PULL_BAND_MIN_PX = 120;
+
+export function pullBandDepth(containerHeight = 0) {
+  return Math.max(PULL_BAND_MIN_PX, containerHeight * PULL_BAND_RATIO);
+}
 
 /**
  * Scrollers of the card's own. A drag that begins inside one is that
@@ -39,11 +49,14 @@ export const PULL_BAND_PX = 96;
  */
 export const PULL_BLOCKING_SCROLLERS = '.pc-abstract--open';
 
-/** Where a pull may begin, or null. `containerTop` is the scroller's own top. */
-export function pullStartFrom({ target, scrollTop, clientY, containerTop = 0 }) {
+/**
+ * Where a pull may begin, or null. `containerTop` and `containerHeight` are
+ * the scroller's own, so the band is measured from the bar downwards.
+ */
+export function pullStartFrom({ target, scrollTop, clientY, containerTop = 0, containerHeight = 0 }) {
   if (typeof target?.closest === 'function' && target.closest(PULL_BLOCKING_SCROLLERS)) return null;
   if (scrollTop === 0) return clientY;
-  return clientY - containerTop <= PULL_BAND_PX ? clientY : null;
+  return clientY - containerTop <= pullBandDepth(containerHeight) ? clientY : null;
 }
 
 /**

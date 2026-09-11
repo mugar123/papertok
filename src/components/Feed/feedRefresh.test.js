@@ -53,7 +53,7 @@ test('SOURCE: el invitado ve el modal de intereses al montar, sin esperar al fee
 test('SOURCE: el tirón se decide en el primer movimiento y entonces detiene el feed', async () => {
   const src = strip(await read('./FeedContainer.jsx'));
   const start = src.slice(src.indexOf('const onStart = (event) => {'), src.indexOf('const onMove = (event) => {'));
-  assert.match(start, /containerTop: el\.getBoundingClientRect\(\)\.top/, 'la franja se mide desde el borde del scroller');
+  assert.match(start, /containerTop: box\.top,\s*containerHeight: box\.height,/, 'la franja se mide desde el borde del scroller y escala con su alto');
   const move = src.slice(src.indexOf('const onMove = (event) => {'), src.indexOf('const onEnd = (event) => {'));
   assert.match(move, /if \(!pullTakesOver\(\{[\s\S]{0,200}\}\)\) \{\s*state\.phase = 'idle';/,
     'un primer movimiento hacia arriba suelta el gesto para el resto del arrastre');
