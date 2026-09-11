@@ -18,7 +18,9 @@ import { useFollowing } from '../../context/FollowingContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getProjectForPaper } from '../../services/openAireService';
 import { authorExplorerPath } from '../../utils/explorerPaths.js';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import { useStableNavigate } from '../../hooks/useStableNavigate.js';
+import { prefetchTopicWiki } from '../../services/topicPrefetch.js';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 // Before the card's own stylesheet on purpose: PaperCard.css restates a few
 // of the drawer's box declarations for the two sheets and has to come later
@@ -410,7 +412,9 @@ const PaperCard = memo(function PaperCard({
   const { followedByType, isFollowing } = useFollowing();
   const { language, isEnglish } = useLanguage();
   const { trackEvent } = useAnalyticsConsent();
-  const navigate = useNavigate();
+  // Not `useNavigate`: that subscribes every mounted card to the location
+  // (hooks/useStableNavigate.js says what it cost).
+  const navigate = useStableNavigate();
   
   const hasFollowedAuthor = useMemo(() => {
     if (!paper?.authors?.length || !followedByType.author?.length) return false;
@@ -959,8 +963,15 @@ const PaperCard = memo(function PaperCard({
     [language, paper.categories, paper.concepts, paper.primaryCategory]
   );
 
+  // The pointer reaching a pill is the earliest signal that its page may be
+  // next; on a mouse that is a few hundred milliseconds of head start, on
+  // touch it is the press itself. The click repeats it as the safety net.
+  const warmTopic = useCallback((topic) => {
+    void prefetchTopicWiki(topic, language);
+  }, [language]);
   const openTopic = useCallback((event, topic) => {
     event.stopPropagation();
+    warmTopic(topic);
     const path = publicMode
       ? getPublicEntityPath(topic.type, topic.id)
       : topicExplorerPath(topic);
@@ -970,7 +981,7 @@ const PaperCard = memo(function PaperCard({
       position,
     });
     if (path) navigate(path);
-  }, [analyticsSurface, navigate, position, publicMode, trackEvent]);
+  }, [analyticsSurface, navigate, position, publicMode, trackEvent, warmTopic]);
 
   /* The watermark for the paper's branch of science.
    *
@@ -1241,6 +1252,7 @@ const PaperCard = memo(function PaperCard({
               type="button"
               className="pc-category-pill pc-topic-link"
               onClick={(event) => openTopic(event, primaryTopic)}
+              onPointerEnter={() => warmTopic(primaryTopic)}
               title={`${isEnglish ? 'Explore' : 'Explorar'} ${categoryLabel}`}
             >
               {categoryLabel}
@@ -1358,6 +1370,7 @@ const PaperCard = memo(function PaperCard({
                   type="button"
                   className={`pc-semantic-tag pc-topic-link ${tag.source === 'concept' && !topic.reliable ? 'pc-topic-link--external' : ''}`}
                   onClick={(event) => openTopic(event, topic)}
+                  onPointerEnter={() => warmTopic(topic)}
                   title={`${isEnglish ? 'Explore' : 'Explorar'} ${topic.label}`}
                 >
                   {tag.label}
