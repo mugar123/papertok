@@ -167,4 +167,17 @@ test('a project arriving with a name from the pill paints the hero right away an
     jsx,
     /<div key=\{`stat-reserved-\$\{n\}`\} className="ehc-stat-box" aria-hidden="true">\s*<span className="ex-skel ex-skel-stat-value"><\/span>\s*<span className="ex-skel ex-skel-stat-label"><\/span>\s*<\/div>/,
   );
+  // Fix round 1 (2026-09-11): `else if (!name)` only ran for a name-less URL,
+  // so a failed lookup after a name-carrying optimistic entity had already
+  // painted (the normal pill path) hit neither arm — `_detailsPending` was
+  // never cleared and the reserved summary box plus the two reserved stat
+  // cells shimmered forever with nothing ever arriving. The arm must be a
+  // plain, unconditional `else` (no `if (!name)` beside it) that lands an
+  // entity with no `_detailsPending`, keeping the pill's name when there was
+  // one and falling back to the route id otherwise.
+  assert.match(
+    jsx,
+    /\} else \{\s*setEntity\(\{ id, display_name: name \|\| id, type: 'project', funder \}\);\s*\}/,
+    'the failed-lookup arm is unconditional and sets no _detailsPending',
+  );
 });

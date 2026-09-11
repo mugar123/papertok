@@ -675,10 +675,14 @@ export default function EntityExplorer({
              openAccess: details.openAccess,
              websiteUrl: details.websiteUrl,
            });
-        } else if (!name) {
-          // Neither the pill nor OpenAIRE could name it: fall back to the
-          // route id rather than leave the hero with nothing.
-          setEntity({ id, display_name: id, type: 'project', funder });
+        } else {
+          // The lookup failed (bad response, parse miss, or thrown error): the
+          // hero is already painted (with the pill's name) or was never
+          // optimistic (no name at all). Either way, land an entity with no
+          // _detailsPending so the reserved summary and two stat cells stop
+          // shimmering forever instead of settling — keep the pill's name if
+          // there was one, else fall back to the route id as before.
+          setEntity({ id, display_name: name || id, type: 'project', funder });
         }
         if (!isCancelled) setIsLoadingEntity(false);
         return;
