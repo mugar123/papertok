@@ -445,3 +445,37 @@ authors, and none of it is reachable, because `.ee-tabs` is not sticky and a
 finger can only press a tab from `scrollY <= ~416`. From there the same switch
 measures a **0px** jump. `element.click()` will press a control no reader could
 reach; drive this from a position the strip is actually visible at.
+
+## `feed-return-figures-probe.mjs` — coming BACK to the feed, and the tab relay (2026-09-11)
+
+```
+node scripts/diagnostics/feed-return-figures-probe.mjs <label> [overlay] [back] [first] [from=following]
+```
+
+Needs a **production build** on :5174 (`npm run build && npx vite preview --port 5174
+--strictPort`) and the signed-in probe profile at `~/.papertok-probe-profile`. The dev
+server roughly doubles every number here — `jsxDEV` alone turned a click into a freeze
+once, see the Explorer glitch notes above.
+
+Drives the reader's own path: feed (scrolled one card down, so the resume has something
+to restore) → Research → optionally open a paper in the overlay and close it → back to
+the feed. Records the last leg frame by frame plus a `requestAnimationFrame` sampler
+that notes, per frame: each route page's `data-page-motion` / `data-nav-direction` /
+opacity / transform / inline `top`, whether an overlay and an `aria-modal` are up, the
+inline styles on `html` and `body` (Base UI's scroll lock leaves them there), the feed's
+`scrollTop` and mounted card count, every running animation by name, and each
+`.pc-figure` as a three-letter state — `L`oaded class, `img.complete`, `src` present.
+A `PerformanceObserver` for `longtask` and the network requests of that leg print too.
+
+- `overlay` opens the hero paper and closes it before the way back, and records the
+  CLOSE separately as `<label>-close-frames` — that is where an overlay that unmounts
+  its card mid-exit shows up as a blank frame.
+- `first` also records the leg INTO Research, which is the tab relay.
+- `from=following` goes to Following before Research (60 mounted cards, not 15).
+- `back` returns with `history.back()` instead of the tab.
+
+Measured with it on 2026-09-11 (production build, real session): coming back, the page
+reached rest at 233ms and the four clippings only existed at 286ms — already
+`complete`, straight from `figureCache`, no request — and then played a 620-1040ms
+entrance over a page that had stopped moving. That is the whole "the images stay"
+glitch, and it reproduces WITHOUT opening the overlay.
