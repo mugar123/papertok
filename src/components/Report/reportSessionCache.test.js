@@ -43,9 +43,13 @@ test('Research keeps this tab\'s last edition and is seeded from it', async () =
   // would seed one selection's report onto another's.
   assert.match(
     src,
-    /const reportKey = useMemo\(\s*\(\) => JSON\.stringify\(\[timeframe, filters\.categories, filters\.countries\]\),\s*\[timeframe, filters\]/,
+    /const reportCacheKey = \(timeframe, filters\) => JSON\.stringify\(\s*\[timeframe, filters\?\.categories \?\? \[\], filters\?\.countries \?\? \[\]\],\s*\)/,
     'the key is the timeframe and both filter lists',
   );
+  // One function, used by both. Two spellings of "the same key" drift apart in
+  // silence, and the drift shows up as a seed that never matches a write.
+  assert.match(src, /const initialReportKey = reportCacheKey\('7d', \{ categories: \[\], countries: \[\] \}\)/);
+  assert.match(src, /const reportKey = useMemo\(\(\) => reportCacheKey\(timeframe, filters\), \[timeframe, filters\]\)/);
 
   assert.match(
     src,

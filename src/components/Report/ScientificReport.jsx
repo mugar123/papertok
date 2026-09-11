@@ -261,10 +261,9 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   const [customRange, setCustomRange] = useState(null);
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [heroAccess, setHeroAccess] = useState({ paperId: null, copy: null });
-  const reportKey = useMemo(
-    () => JSON.stringify([timeframe, filters.categories, filters.countries]),
-    [timeframe, filters],
-  );
+  /* Through the same function `initialReportKey` uses, so the key the first
+     render reads and the key every later write uses cannot drift apart. */
+  const reportKey = useMemo(() => reportCacheKey(timeframe, filters), [timeframe, filters]);
   const reportRequestId = useRef(0);
   const trendsRef = useRef(null);
   const closeOverlay = useCallback(() => setSelectedPaper(null), []);
