@@ -17,9 +17,11 @@ test('SOURCE: la píldora no existe para el invitado, y el tirón tampoco', asyn
   assert.match(src, /\{!publicMode && papers\.length > 0 && \(\s*<button/, 'sin cuenta no hay píldora');
   const start = src.slice(src.indexOf('const handleTouchStart = useCallback('), src.indexOf('const handleTouchMove'));
   assert.match(start, /if \(publicMode\) return;/, 'sin cuenta el tirón no arranca');
-  const hover = src.slice(src.indexOf('const handleMouseMove = useCallback('), src.indexOf('const handleMouseLeave'));
+  const hover = src.slice(src.indexOf('const handleMouseMove = useCallback('), src.indexOf('}, [handleMouseMove, publicMode]);'));
   assert.match(hover, /if \(publicMode\) return;/);
   assert.match(hover, /pointer: fine/, 'el hover es solo de puntero fino');
+  assert.match(hover, /feedRef\.current\?\.parentElement/, 'se escucha en el envoltorio, padre del scroller y de la píldora');
+  assert.doesNotMatch(src, /onMouseMove=\{handleMouseMove\}|onMouseLeave=/, 'nunca en el scroller: la píldora es su hermano y entrar en ella era un mouseleave');
 });
 
 test('SOURCE: el tirón escribe su progreso en el elemento, no en el estado del feed', async () => {

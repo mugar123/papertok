@@ -486,13 +486,29 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
 
   // Fine pointer only: a touch also fires a synthetic mousemove where it
   // landed, and a tap on the card's top edge is not a request for the pill.
-  const handleMouseMove = useCallback((e) => {
+  // Listened for on the wrapper — the parent of both the scroller and the
+  // pill — never on the scroller itself: the pill is the scroller's sibling,
+  // so with the listener there, the cursor reaching the pill was a
+  // `mouseleave` for the scroller, the pill hid, the cursor was back over
+  // the scroller, the pill showed… a blink for as long as the mouse stayed.
+  const handleMouseMove = useCallback((e, wrapper) => {
     if (publicMode) return;
     if (!window.matchMedia('(pointer: fine)').matches) return;
-    const inBand = e.clientY - e.currentTarget.getBoundingClientRect().top < REFRESH_HOVER_BAND_PX;
+    const inBand = e.clientY - wrapper.getBoundingClientRect().top < REFRESH_HOVER_BAND_PX;
     setRefreshPillHover((prev) => (prev === inBand ? prev : inBand));
   }, [publicMode]);
-  const handleMouseLeave = useCallback(() => setRefreshPillHover(false), []);
+  useEffect(() => {
+    const wrapper = feedRef.current?.parentElement;
+    if (!wrapper || publicMode) return undefined;
+    const onMove = (e) => handleMouseMove(e, wrapper);
+    const onLeave = () => setRefreshPillHover(false);
+    wrapper.addEventListener('mousemove', onMove, { passive: true });
+    wrapper.addEventListener('mouseleave', onLeave);
+    return () => {
+      wrapper.removeEventListener('mousemove', onMove);
+      wrapper.removeEventListener('mouseleave', onLeave);
+    };
+  }, [handleMouseMove, publicMode]);
 
   // A short "done" beat once a refresh lands, before the pill hides again.
   useEffect(() => {
@@ -633,8 +649,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={handleMouseLeave}
       >
         {papers.map((paper, index) => (
           !inMountWindow(anchoredWindow, index) ? (
