@@ -36,7 +36,7 @@ test('a page is a plain element the stylesheet moves, not a motion component', a
   for (const gone of [/\bmotion\./, /useReducedMotion/, /variants/, /\bx:/, /ease/, /TRAVEL_PX/, /duration/]) {
     assert.doesNotMatch(jsx, gone, `${gone} left with the old transition`);
   }
-  assert.match(jsx, /<div\s+ref=\{rootRef\}\s+className="page-transition"\s+data-nav-direction=\{present \? direction : arrivedWith\}\s+data-page-motion=\{motion\}\s+inert=\{!present \|\| undefined\}\s+onAnimationEnd=\{handleAnimationEnd\}\s*>/);
+  assert.match(jsx, /<div\s+ref=\{rootRef\}\s+className="page-transition"\s+data-nav-direction=\{present \? direction : arrivedWith\}\s+data-leave-direction=\{present \? undefined : direction\}\s+data-page-motion=\{motion\}\s+inert=\{!present \|\| undefined\}\s+onAnimationEnd=\{handleAnimationEnd\}\s*>/);
   assert.match(jsx, /const motion = present && settled \? 'rest' : pageMotionFor\(\{ direction, lateral, present \}\);/);
 });
 

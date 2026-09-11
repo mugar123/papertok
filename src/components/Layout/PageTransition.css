@@ -32,7 +32,7 @@
      card at 60% over a Research page already at rest. */
   --page-enter-ms: 300ms;
   --page-leave-ms: 260ms;
-  --page-lateral-ms: 180ms;
+  --page-lateral-ms: 240ms;
   --page-fade-ms: 150ms;
   --page-reveal-ms: 260ms;
   --page-reduced-ms: 120ms;
@@ -100,8 +100,21 @@
   animation: pageHold var(--page-enter-ms) var(--ease-out-quad) both;
 }
 
+/* The fallback, for a lateral hold that somehow has no direction. */
 .page-transition[data-page-motion="hold-lateral"] {
   animation: pageHold var(--page-lateral-ms) var(--ease-out-quad) both;
+}
+
+/* A tab change is a pass, not a dissolve: the page arriving travels and the one
+   it replaces cedes THE OTHER WAY, on the same clock. Which way it cedes is
+   `data-leave-direction` — the navigation ejecting it — because
+   `data-nav-direction` keeps the direction this page arrived with. */
+.page-transition[data-page-motion="hold-lateral"][data-leave-direction="1"] {
+  animation: pageHoldToLeft var(--page-lateral-ms) var(--ease-out-quad) both;
+}
+
+.page-transition[data-page-motion="hold-lateral"][data-leave-direction="-1"] {
+  animation: pageHoldToRight var(--page-lateral-ms) var(--ease-out-quad) both;
 }
 
 /* Coming back: the page that gave way returns to size and brightness
@@ -126,14 +139,31 @@
   to { opacity: 1; transform: none; }
 }
 
+/* 28px, not the 10px this started at. Per frame at 60Hz on `--ease-out-quad`,
+   10px/180ms moved 1.7px on the first frame and had visible movement in 7 of
+   its 11 frames: a fade with a nudge in it. 28px/240ms moves 3.6px and has
+   movement in 13 of 14 — the reader sees a page arrive from a side. */
 @keyframes pageEnterFromRight {
-  from { opacity: 0; transform: translateX(10px); }
+  from { opacity: 0; transform: translateX(28px); }
   to { opacity: 1; transform: none; }
 }
 
 @keyframes pageEnterFromLeft {
-  from { opacity: 0; transform: translateX(-10px); }
+  from { opacity: 0; transform: translateX(-28px); }
   to { opacity: 1; transform: none; }
+}
+
+/* The page underneath gives way along the same axis: 12px, which is 1.6px on
+   its first frame — it yields, it does not race. No scale: shrinking is how
+   the vertical push says "you went deeper", and a tab change has no depth. */
+@keyframes pageHoldToLeft {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0.7; transform: translateX(-12px); }
+}
+
+@keyframes pageHoldToRight {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0.7; transform: translateX(12px); }
 }
 
 @keyframes pageLeave {
@@ -189,6 +219,11 @@
 
   .page-transition[data-page-motion="hold"],
   .page-transition[data-page-motion="hold-lateral"] {
+    animation: pageDim var(--page-reduced-ms) var(--ease-out-quad) both;
+  }
+
+  .page-transition[data-page-motion="hold-lateral"][data-leave-direction="1"],
+  .page-transition[data-page-motion="hold-lateral"][data-leave-direction="-1"] {
     animation: pageDim var(--page-reduced-ms) var(--ease-out-quad) both;
   }
 

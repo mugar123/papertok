@@ -80,10 +80,10 @@ test('SOURCE: a direct link is answered with the reader\'s own copy when the lib
 test('SOURCE: every card surface looks a mark up under the resolved id', async () => {
   for (const [path, subject] of [
     ['../components/Feed/FeedContainer.jsx', 'paper'],
-    ['../components/Search/SearchPage.jsx', 'selectedPaper'],
-    ['../components/Explorer/EntityExplorer.jsx', 'selectedPaper'],
-    ['../components/Report/ScientificReport.jsx', 'selectedPaper'],
-    ['../components/Lists/ListsPage.jsx', 'overlayPaper'],
+    ['../components/Search/SearchPage.jsx', 'shownPaper'],
+    ['../components/Explorer/EntityExplorer.jsx', 'shownPaper'],
+    ['../components/Report/ScientificReport.jsx', 'shownPaper'],
+    ['../components/Lists/ListsPage.jsx', 'shownPaper'],
   ]) {
     const code = stripComments(await read(path));
     assert.doesNotMatch(code, new RegExp(`PaperIds\\??\\.has\\(${subject}\\.id\\)`), `${path} still reads a mark by the raw id`);

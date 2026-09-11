@@ -21,10 +21,19 @@ import './PaperOverlay.css';
  * keeps the component mounted, so the primitive plays the exit in
  * PaperOverlay.css before the popup leaves the document, and owns the focus
  * trap, Escape and the restore to whatever opened it.
+ *
+ * `onExitComplete` is the end of that exit, and callers need it: dropping the
+ * card the moment `open` goes false left the surface fading out over nothing
+ * for 200ms. It is `onOpenChangeComplete(false)` from the primitive, the same
+ * signal `PaperReader` and `SelectionMenu` already listen to.
  */
-export default function PaperOverlay({ open, onClose, isEnglish, label, children }) {
+export default function PaperOverlay({ open, onClose, onExitComplete, isEnglish, label, children }) {
   return (
-    <Dialog open={Boolean(open)} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
+    <Dialog
+      open={Boolean(open)}
+      onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}
+      onOpenChangeComplete={(nextOpen) => { if (!nextOpen) onExitComplete?.(); }}
+    >
       <DialogContent
         className="paper-overlay"
         overlayClassName="paper-overlay-scrim"

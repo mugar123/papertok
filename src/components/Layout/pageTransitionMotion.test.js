@@ -43,7 +43,7 @@ test('six durations, every one inside the 300ms UI band, and a held page rides t
   const css = await read('./PageTransition.css');
   const ms = durations(css);
   assert.deepEqual(Object.keys(ms).sort(), ['enter', 'fade', 'lateral', 'leave', 'reduced', 'reveal']);
-  assert.deepEqual(ms, { enter: 300, leave: 260, lateral: 180, fade: 150, reveal: 260, reduced: 120 }, 'the durations, exactly');
+  assert.deepEqual(ms, { enter: 300, leave: 260, lateral: 240, fade: 150, reveal: 260, reduced: 120 }, 'the durations, exactly');
   for (const [name, value] of Object.entries(ms)) assert.ok(value > 0 && value <= 300, `${name}: ${value}ms`);
   assert.ok(ms.reduced < ms.enter, 'reduced motion is shorter, not just flatter');
   // A held page has no clock of its own. It must end in the very frame the
@@ -80,7 +80,7 @@ test('every motion has a rule, and everything rides a curve that can be seen tra
   assert.doesNotMatch(css, /cubic-bezier\(/, 'the curve is the token, not a literal');
   assert.doesNotMatch(css, /--ease-out-expo/, 'the expo-out did 80% of its change in the first 60ms: a cut, not a movement');
   const animations = [...css.matchAll(/animation: (\S+) var\(--page-[a-z-]+-ms\) (\S+) both;/g)];
-  assert.equal(animations.length, 12, 'eight motions and four reduced-motion rewrites, each named, timed and filled both ways');
+  assert.equal(animations.length, 15, 'ten motion rules and five reduced-motion rewrites, each named, timed and filled both ways');
   for (const [, name, easing] of animations) {
     assert.equal(easing, 'var(--ease-out-quad)', `${name} runs on ${easing}`);
   }
@@ -97,6 +97,8 @@ test('each motion runs the keyframes named for it, and reduced motion swaps only
     '.page-transition[data-page-motion="enter-lateral"][data-nav-direction="-1"]': 'pageEnterFromLeft',
     '.page-transition[data-page-motion="hold"]': 'pageHold',
     '.page-transition[data-page-motion="hold-lateral"]': 'pageHold',
+    '.page-transition[data-page-motion="hold-lateral"][data-leave-direction="1"]': 'pageHoldToLeft',
+    '.page-transition[data-page-motion="hold-lateral"][data-leave-direction="-1"]': 'pageHoldToRight',
     '.page-transition[data-page-motion="reveal"]': 'pageReveal',
     '.page-transition[data-page-motion="leave"]': 'pageLeave',
     '.page-transition[data-page-motion="fade"]': 'pageFadeOut',
@@ -107,6 +109,8 @@ test('each motion runs the keyframes named for it, and reduced motion swaps only
     '.page-transition[data-page-motion="enter-lateral"][data-nav-direction="-1"]': 'pageFadeIn',
     '.page-transition[data-page-motion="hold"]': 'pageDim',
     '.page-transition[data-page-motion="hold-lateral"]': 'pageDim',
+    '.page-transition[data-page-motion="hold-lateral"][data-leave-direction="1"]': 'pageDim',
+    '.page-transition[data-page-motion="hold-lateral"][data-leave-direction="-1"]': 'pageDim',
     '.page-transition[data-page-motion="reveal"]': 'pageBrighten',
     '.page-transition[data-page-motion="leave"]': 'pageFadeOut',
     '.page-transition[data-page-motion="fade"]': 'pageFadeOut',
@@ -122,7 +126,7 @@ test('the tokens are declared, and the one this file rides on decelerates for it
 test('pages move on opacity and transform only, travel far enough to be seen, and land with no transform', async () => {
   const css = await read('./PageTransition.css');
   const names = [...css.matchAll(/@keyframes ([a-zA-Z]+) \{/g)].map((m) => m[1]);
-  assert.deepEqual([...names].sort(), ['pageBrighten', 'pageDim', 'pageEnter', 'pageEnterFromLeft', 'pageEnterFromRight', 'pageFadeIn', 'pageFadeOut', 'pageHold', 'pageLeave', 'pageReveal']);
+  assert.deepEqual([...names].sort(), ['pageBrighten', 'pageDim', 'pageEnter', 'pageEnterFromLeft', 'pageEnterFromRight', 'pageFadeIn', 'pageFadeOut', 'pageHold', 'pageHoldToLeft', 'pageHoldToRight', 'pageLeave', 'pageReveal']);
   for (const name of names) {
     const body = keyframes(css, name);
     assert.doesNotMatch(body, /\b(width|height|top|left|right|bottom|margin|padding)\s*:/, `${name} stays on the compositor`);
@@ -132,12 +136,15 @@ test('pages move on opacity and transform only, travel far enough to be seen, an
     assert.match(keyframes(css, name), /to \{ opacity: 1; transform: none; \}/, `${name} lands with no transform`);
   }
   assert.match(keyframes(css, 'pageEnter'), /from \{ opacity: 0; transform: translateY\(24px\); \}/, 'far enough to be seen');
-  assert.match(keyframes(css, 'pageEnterFromRight'), /from \{ opacity: 0; transform: translateX\(10px\); \}/);
-  assert.match(keyframes(css, 'pageEnterFromLeft'), /from \{ opacity: 0; transform: translateX\(-10px\); \}/);
+  assert.match(keyframes(css, 'pageEnterFromRight'), /from \{ opacity: 0; transform: translateX\(28px\); \}/);
+  assert.match(keyframes(css, 'pageEnterFromLeft'), /from \{ opacity: 0; transform: translateX\(-28px\); \}/);
   assert.match(keyframes(css, 'pageLeave'), /to \{ opacity: 0; transform: translateY\(24px\); \}/, 'leaves the way it came');
   // The page underneath gives way, and comes back: never to 0, never to nothing.
   assert.match(keyframes(css, 'pageHold'), /from \{ opacity: 1; transform: none; \}\s*to \{ opacity: 0\.6; transform: scale\(0\.98\); \}/);
   assert.match(keyframes(css, 'pageReveal'), /from \{ opacity: 0\.6; transform: scale\(0\.98\); \}\s*to \{ opacity: 1; transform: none; \}/);
+  for (const name of ['pageHoldToLeft', 'pageHoldToRight']) {
+    assert.match(keyframes(css, name), /to \{ opacity: 0\.7; transform: translateX\(-?12px\); \}/, `${name} yields without disappearing`);
+  }
 });
 
 test('the leaving page is out of flow and under the bar; an arriving page covers it only while animating', async () => {
@@ -239,4 +246,58 @@ test('SOURCE: the arrival is a predicate read from the DOM, not a flag one commi
 
   assert.match(code, /<PageArrivalProvider value=\{isArriving\}>/,
     'the page subtree is handed the predicate itself');
+});
+
+/**
+ * A tab change has to be seen as a PASS, not as a dissolve.
+ *
+ * Measured 2026-09-11 (production build, real session, For you -> Research):
+ * the entrance moved 10px over 180ms and the page underneath only shrank to
+ * 0.98 and dimmed — the vertical push's language, on a move that has no depth
+ * in it. At 78ms both pages were legible on top of each other and nothing had
+ * travelled anywhere. Per frame at 60Hz on `--ease-out-quad`:
+ *
+ *                     1st frame   frames with visible movement
+ *   10px / 180ms         1.7px          7 of 11
+ *   28px / 240ms         3.6px         13 of 14
+ *   12px / 240ms         1.6px          9 of 14   (the page underneath)
+ *
+ * So the page arriving travels 28px and the one it replaces cedes 12px THE
+ * OTHER WAY, on one clock. The page leaving cannot read its direction from
+ * `data-nav-direction` — that attribute deliberately keeps the direction the
+ * page ARRIVED with, so its own cards do not take the eject for a fresh
+ * arrival — hence `data-leave-direction`, written only while it leaves.
+ */
+test('the page leaving declares the direction that is ejecting it', async () => {
+  const jsx = await read('./PageTransition.jsx');
+  assert.match(
+    jsx,
+    /data-leave-direction=\{present \? undefined : direction\}/,
+    'only while leaving, and it is the ejecting navigation, not `arrivedWith`',
+  );
+  assert.match(
+    jsx,
+    /data-nav-direction=\{present \? direction : arrivedWith\}/,
+    'the arrival attribute is untouched: the held feed must not replay pcArrive',
+  );
+});
+
+test('both pages of a tab change travel, on the same axis and in opposite directions', async () => {
+  const css = await read('./PageTransition.css');
+
+  assert.match(keyframes(css, 'pageEnterFromRight'), /transform: translateX\(28px\)/);
+  assert.match(keyframes(css, 'pageEnterFromLeft'), /transform: translateX\(-28px\)/);
+
+  // The page arriving from the right pushes the one below it to the LEFT.
+  assert.match(keyframes(css, 'pageHoldToLeft'), /to \{ opacity: 0\.7; transform: translateX\(-12px\); \}/);
+  assert.match(keyframes(css, 'pageHoldToRight'), /to \{ opacity: 0\.7; transform: translateX\(12px\); \}/);
+
+  for (const name of ['pageHoldToLeft', 'pageHoldToRight']) {
+    assert.doesNotMatch(keyframes(css, name), /scale/, `${name} is a lateral move; a scale is the push's language`);
+    assert.match(keyframes(css, name), /from \{ opacity: 1; transform: none; \}/, `${name} starts where the page is`);
+  }
+
+  // `pageHold` stays as the fallback for a lateral hold with no direction,
+  // and keeps its scale: that is the vertical push's held page.
+  assert.match(keyframes(css, 'pageHold'), /scale\(0\.98\)/);
 });
