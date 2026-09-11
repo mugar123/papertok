@@ -1,6 +1,24 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { withStubbedFetch } from '../test-support/deadlineHarness.js';
+import { CACHE } from './openAireService.js';
 import { fetchFollowingUpdates } from './followingUpdatesService.js';
+
+const emptyOpenAire = { ok: true, json: async () => ({ response: { header: { total: { $: '0' } }, results: {} } }) };
+
+/** Runs one project follow through the real chain and returns the URLs it asked for. */
+async function urlsForProjectFollow(follow) {
+  const urls = [];
+  CACHE.clear();
+  try {
+    await withStubbedFetch(async (url) => { urls.push(String(url)); return emptyOpenAire; }, () => (
+      fetchFollowingUpdates([{ type: 'project', displayName: 'Quantum leap', source: 'openaire', ...follow }])
+    ));
+  } finally {
+    CACHE.clear();
+  }
+  return urls;
+}
 
 test('retrieves query-topic updates with stored metadata and preserves the full follow match', async () => {
   const follow = {
@@ -122,4 +140,30 @@ test('a category topic in the inbox asks for what is new in the category, not fo
     { type: 'topic', canonicalId: 'query-3f419c36', displayName: 'Spatial transcriptomics', metadata: { query: 'Spatial transcriptomics', categoryIds: [] } },
   ], { topicRetriever: retriever });
   assert.equal(received.excludeProviders, undefined, 'a query topic has only the searches to answer with');
+});
+
+/**
+ * A grant code is not unique across funders — `grantID=100010` answers for
+ * three different projects — and the `canonicalId` of every project followed
+ * before the OpenAIRE id landed is exactly such a bare code. The funder that
+ * tells them apart is stored on the follow, and the digest was not passing
+ * it: the same project whose own page shows 39 publications reached the email
+ * as the mixed 51-row set.
+ */
+test('a project follow carries the funder stored on it into the OpenAIRE query', async () => {
+  const urls = await urlsForProjectFollow({ canonicalId: '100010', metadata: { funder: 'SNSF' } });
+  assert.equal(urls.length, 1, 'one OpenAIRE request, and nothing else to ask once it comes back empty');
+  assert.match(urls[0], /projectID=100010/);
+  assert.match(urls[0], /funder=SNSF/);
+});
+
+test('a project follow with no stored funder asks exactly what it asked before', async () => {
+  // Old follow documents have no `metadata.funder` at all; an absent funder
+  // must leave the request untouched rather than send an empty one.
+  const noMetadata = await urlsForProjectFollow({ canonicalId: 'snsf________::daa28096' });
+  assert.equal(noMetadata.length, 1);
+  assert.doesNotMatch(noMetadata[0], /funder=/);
+
+  const emptyMetadata = await urlsForProjectFollow({ canonicalId: '100010', metadata: {} });
+  assert.doesNotMatch(emptyMetadata[0], /funder=/);
 });

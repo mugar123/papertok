@@ -134,3 +134,82 @@ test('the impact cell and its grid are born at the size the score will take', as
   // over a cold entity of the new type would show it.
   assert.match(jsx, /\{\['institution', 'author'\]\.includes\(type\) && \(\s*<RecentImpactStat/);
 });
+
+/**
+ * The feed's project pill already carries the project's name and funder in
+ * the URL (Task 2), so the hero does not have to sit behind the full-page
+ * skeleton until OpenAIRE answers — it can paint immediately and reserve,
+ * INSIDE the live hero, only the two pieces the pill cannot know: the
+ * summary box and two stat cells. `_detailsPending` marks that optimistic
+ * entity so the hero knows what to reserve, and clears once the real
+ * details land (or, name-less, once the id-as-name fallback lands instead).
+ */
+test('a project arriving with a name from the pill paints the hero right away and reserves inside it what OpenAIRE has not answered yet', async () => {
+  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  assert.match(
+    jsx,
+    /setEntity\(\{ id, display_name: name, type: 'project', funder, _detailsPending: true \}\);\s*setIsLoadingEntity\(false\);/,
+  );
+  assert.match(
+    jsx,
+    /\{type === 'project' && entity\._detailsPending && <ProjectSummarySkeleton \/>\}/,
+  );
+  assert.match(
+    jsx,
+    /entity\._detailsPending && \[1, 2\]\.map\(/,
+    'two reserved stat cells',
+  );
+  // The live project stat cell and the page skeleton's both use `ehc-stat-box`
+  // — there is no `.explorer-stat` anywhere in this codebase — so the
+  // reserved cell must borrow that class, not invent its own, or it reserves
+  // the wrong height.
+  assert.match(
+    jsx,
+    /<div key=\{`stat-reserved-\$\{n\}`\} className="ehc-stat-box" aria-hidden="true">\s*<span className="ex-skel ex-skel-stat-value"><\/span>\s*<span className="ex-skel ex-skel-stat-label"><\/span>\s*<\/div>/,
+  );
+  // Fix round 1 (2026-09-11): `else if (!name)` only ran for a name-less URL,
+  // so a failed lookup after a name-carrying optimistic entity had already
+  // painted (the normal pill path) hit neither arm — `_detailsPending` was
+  // never cleared and the reserved summary box plus the two reserved stat
+  // cells shimmered forever with nothing ever arriving. The arm must be a
+  // plain, unconditional `else` (no `if (!name)` beside it) that lands an
+  // entity with no `_detailsPending`, keeping the pill's name when there was
+  // one.
+  assert.match(
+    jsx,
+    /\} else \{\s*setEntity\(\{\s*id,\s*openaireId: id\.includes\('::'\) \? id : undefined,\s*display_name: name,\s*type: 'project',\s*funder,\s*\}\);\s*\}/,
+    'the failed-lookup arm is unconditional and sets no _detailsPending',
+  );
+});
+
+/**
+ * What the failed-lookup arm lands still has to make a readable page.
+ *
+ * Two holes it left open. The entity carried no `openaireId`, so the empty
+ * state dropped its "View on OpenAIRE" link in exactly the case where sending
+ * the reader to OpenAIRE helps most — and when the route id is itself an
+ * OpenAIRE id (it contains "::"), that link was one field away. And with no
+ * name in the URL the hero title read
+ * `snsf________::daa28096f9e8879ab3a02b90aa0e2f83`: a raw identifier is not a
+ * title. The page already has bilingual wording for what this is.
+ */
+test('a project whose lookup failed still links out and still has a title', async () => {
+  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+
+  assert.doesNotMatch(jsx, /display_name: name \|\| id,/, 'the raw id is no longer a title');
+  // The wording stands in where the title is RENDERED, never inside the
+  // entity: `display_name` is what the follow identity is built from, and one
+  // constant shared by every nameless project made them all the same follow.
+  // explorerProjectIdentity.test.js holds that reasoning and the rest of this
+  // rule; what belongs here is only that the hero still has a title.
+  assert.match(
+    jsx,
+    /<h1 className="ehc-name" style=\{\{ margin: 0 \}\}>\{entityDisplayName \|\| entityTypeLabel\}<\/h1>/,
+    "the hero title falls back to the page's own bilingual label for the type",
+  );
+  assert.match(
+    jsx,
+    /openAireUrl=\{entity\?\.openaireId \? `https:\/\/explore\.openaire\.eu\/search\/project\?projectId=\$\{encodeURIComponent\(entity\.openaireId\)\}` : null\}/,
+    'the empty state links out from that same field',
+  );
+});

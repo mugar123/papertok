@@ -235,3 +235,85 @@ test('the list mounts in idle chunks, rows below the fold are skipped, and the s
   const css = await read('./EntityExplorer.css');
   assert.match(css, /\.explorer-list-item \{[^}]*content-visibility: auto;\s*contain-intrinsic-size: auto 200px;[^}]*\}/);
 });
+
+/**
+ * OpenAIRE's `total` counts every publication of the project, whether or not
+ * it carries a DOI or an arXiv id; `getPapersByProject` already drops the ones
+ * with neither. Left alone, a page that yields zero usable papers still made
+ * `hasMore` (`page * 30 < total`) come out true, so the sentinel asked for the
+ * next page immediately — the spinner chained through empty page after empty
+ * page instead of ever stopping. A page with nothing usable must not promise
+ * a next one.
+ *
+ * The first cut measured the wrong quantity: it counted the identifiers
+ * OpenAIRE returned, not the rows that reached the list. The rows come from
+ * `fetchPapersByIds` / `enrichPapersBatch` / `fetchPapersByDois`, each wrapped
+ * in `settleWithin` and dropped in silence when it times out — so a project
+ * with 39 publications on a slow connection returned 30 usable identifiers
+ * (`total = 39`, the sentinel kept paging) and zero rows, under an empty state
+ * claiming OpenAIRE had linked nothing to the project. Two counts, kept apart:
+ * both end the pagination, and only the second is an error.
+ */
+test('a project page tells an unindexed project from a load that failed, and ends the pagination for both', async () => {
+  const src = stripComments(await read('./EntityExplorer.jsx'));
+
+  assert.doesNotMatch(
+    src,
+    /const usable = res\.arxivIds\.length/,
+    'the single-number rule, which could not tell the two cases apart, is gone',
+  );
+  assert.match(
+    src,
+    /projectUsableIds = arxivIds\.length \+ dois\.length;\s*total = res\.total;/,
+    'what OpenAIRE returned is counted where it is returned, and judged later',
+  );
+  assert.match(
+    src,
+    /if \(type === 'project'\) \{\s*projectResolvedRows = fetchedPapers\.length;/,
+    'what reached the list is counted before the filter narrows it',
+  );
+
+  const cut = src.match(/if \(type === 'project' && \(projectUsableIds === 0 \|\| projectResolvedRows === 0\)\) \{[^}]*\}/);
+  assert.ok(cut, 'one cut, reading both counts');
+  assert.ok(cut[0].split('\n').length <= 6, `the cut capture spans ${cut[0].split('\n').length} lines, past what it names`);
+  assert.match(cut[0], /total = page \* 30;/, 'either zero ends the pagination');
+  assert.match(
+    cut[0],
+    /if \(projectUsableIds > 0\) setPapersError\('PUBLICATIONS_LOAD_FAILED'\);/,
+    'identifiers that resolved into nothing are a load failure, not an unindexed project',
+  );
+});
+
+/**
+ * A project's first page can take close to 17s in the worst case — OpenAIRE's
+ * own 10s budget, then arXiv enrichment and DOI lookups inside
+ * ENTITY_PRIMARY_RENDER_BUDGET_MS's 7s — with nothing on screen but the five
+ * skeleton rows and no word said about what is being waited on. Announced
+ * only once the wait has run past 4s, so a normal load never shows it.
+ */
+test('the first page\'s long wait is announced at 4s, in a fade, under the skeleton rows', async () => {
+  const src = stripComments(await read('./EntityExplorer.jsx'));
+  const css = await read('./EntityExplorer.css');
+  assert.match(src, /setTimeout\(\(\) => setIsPapersLoadSlow\(true\), 4000\)/);
+  assert.match(src, /isLoadingPapers && !isFetchingMore && isPapersLoadSlow && \(\s*<p className="explorer-loading-note"/);
+  assert.match(css, /\.explorer-loading-note \{[^}]*animation: slideUpFade/s);
+});
+
+/**
+ * `react-hooks/set-state-in-effect` flags a synchronous setState in an
+ * effect body; the timer effect's first shape guarded itself with
+ * `if (!(...)) { setIsPapersLoadSlow(false); return undefined; }`, which is
+ * exactly that, and was the one lint error in the whole repo. The reset now
+ * lives in `loadPapers`'s page-1 branch instead, an async function the
+ * linter does not trace into, so the effect's own body has nothing left for
+ * the rule to catch — it only starts a timeout and clears it. Re-armed by
+ * route too: `type`/`id` are in the dependency array, so navigating from one
+ * slow-loading project straight into another restarts the four-second clock
+ * instead of inheriting whatever was left of the first one's.
+ */
+test('the timer effect only arms the wait; it never resets the flag inside its own body', async () => {
+  const src = stripComments(await read('./EntityExplorer.jsx'));
+  const effect = src.match(/if \(!\(isLoadingPapers && !isFetchingMore\)\) return undefined;[\s\S]*?\}, \[isLoadingPapers, isFetchingMore, type, id\]\);/);
+  assert.ok(effect, 'the timer effect guards with a plain return, and is keyed to the route as well');
+  assert.doesNotMatch(effect[0], /setIsPapersLoadSlow\(false\)/, 'the reset belongs to loadPapers, not to this effect');
+});

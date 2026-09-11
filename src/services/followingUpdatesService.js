@@ -102,7 +102,12 @@ async function fetchInstitutionUpdates(follow) {
 }
 
 async function fetchProjectUpdates(follow) {
-  const result = await getPapersByProject(follow.canonicalId, 1);
+  // A bare grant code answers for every funder that ever used it
+  // (`grantID=100010` is three projects), and that is the shape of every
+  // project followed before the OpenAIRE id landed. The funder stored on the
+  // follow is what narrows it; documents written before it was stored carry
+  // none, and for those this is the empty default it always had.
+  const result = await getPapersByProject(follow.canonicalId, 1, { funder: follow.metadata?.funder || '' });
   const [arxivResult, doiResult] = await Promise.allSettled([
     fetchPapersByIds((result.arxivIds || []).slice(0, PAPERS_PER_ENTITY)),
     fetchPapersByDois((result.dois || []).slice(0, PAPERS_PER_ENTITY)),

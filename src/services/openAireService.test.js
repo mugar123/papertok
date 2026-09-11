@@ -5,7 +5,7 @@ import {
   settleWithin,
   withStubbedFetch,
 } from '../test-support/deadlineHarness.js';
-import { CACHE, fetchWithTimeout, getProjectDetails } from './openAireService.js';
+import { CACHE, fetchWithTimeout, getProjectDetails, getPapersByProject, searchProjects } from './openAireService.js';
 
 test('the deadline covers an OpenAIRE body that never finishes', async () => {
   // The worst shape of the family: the response comes back unread and
@@ -125,4 +125,80 @@ test('getProjectDetails does not cache a miss', async () => {
   } finally {
     CACHE.clear();
   }
+});
+
+const emptyOpenAire = { ok: true, json: async () => ({ response: { header: { total: { $: '0' } }, results: {} } }) };
+function capturingFetch(urls) { return async (url) => { urls.push(String(url)); return emptyOpenAire; }; }
+
+test('un id de OpenAIRE consulta los detalles por openaireProjectID', async () => {
+  const urls = [];
+  CACHE.clear();
+  await withStubbedFetch(capturingFetch(urls), () => getProjectDetails('snsf________::abc'));
+  assert.match(urls[0], /openaireProjectID=snsf________%3A%3Aabc/);
+  assert.doesNotMatch(urls[0], /grantID=/);
+});
+
+test('un código a secas lleva el funder a detalles y a publicaciones', async () => {
+  const urls = [];
+  CACHE.clear();
+  await withStubbedFetch(capturingFetch(urls), async () => {
+    await getProjectDetails('100010', { funder: 'SNSF' });
+    await getPapersByProject('100010', 1, { funder: 'SNSF' });
+  });
+  assert.match(urls[0], /grantID=100010/); assert.match(urls[0], /funder=SNSF/);
+  assert.match(urls[1], /projectID=100010/); assert.match(urls[1], /funder=SNSF/);
+});
+
+test('sin funder las URLs quedan como antes', async () => {
+  const urls = [];
+  CACHE.clear();
+  await withStubbedFetch(capturingFetch(urls), () => getPapersByProject('100010', 1));
+  assert.doesNotMatch(urls[0], /funder=/);
+});
+
+/**
+ * A search result carries two identifiers and they are not interchangeable.
+ * `id` is the OpenAIRE object identifier (`dri:objIdentifier`), which names
+ * exactly one project and is what every lookup and every route now uses;
+ * `code` is the bare grant code, which three funders can be using at once.
+ * `id` used to BE the bare code, and that silent change of meaning is what
+ * orphaned every project follow written before it — the field had no test at
+ * all.
+ */
+function projectSearchResponse(header, project) {
+  return async () => ({
+    ok: true,
+    json: async () => ({
+      response: {
+        header: { total: { $: '1' } },
+        results: { result: [{ header, metadata: { 'oaf:entity': { 'oaf:project': project } } }] },
+      },
+    }),
+  });
+}
+
+test('searchProjects keeps the OpenAIRE id and the grant code in separate fields', async () => {
+  const stub = projectSearchResponse(
+    { 'dri:objIdentifier': { $: 'snsf________::daa28096f9e8879ab3a02b90aa0e2f83' } },
+    {
+      code: { $: '100010' },
+      acronym: { $: 'LEAP' },
+      title: { $: 'Quantum leap in photonics' },
+      fundingtree: { funder: { shortname: { $: 'SNSF' } } },
+    },
+  );
+  const { projects } = await withStubbedFetch(stub, () => searchProjects('quantum leap'));
+
+  assert.equal(projects.length, 1);
+  assert.equal(projects[0].id, 'snsf________::daa28096f9e8879ab3a02b90aa0e2f83', 'id is the OpenAIRE object identifier');
+  assert.equal(projects[0].code, '100010', 'code stays the bare grant code');
+  assert.equal(projects[0].funder, 'SNSF');
+});
+
+test('searchProjects falls back to the grant code only when OpenAIRE sends no object identifier', async () => {
+  const stub = projectSearchResponse({}, { code: { $: '100010' }, title: { $: 'Quantum leap in photonics' } });
+  const { projects } = await withStubbedFetch(stub, () => searchProjects('quantum leap'));
+
+  assert.equal(projects[0].id, '100010', 'a row with no OpenAIRE id is still routable');
+  assert.equal(projects[0].code, '100010');
 });

@@ -54,6 +54,26 @@ export function createFollowEntity(input = {}) {
   });
 }
 
+/**
+ * The two spellings a project's name is stored under. A project's canonical id
+ * moved from the bare grant code to the OpenAIRE id, so every follow written
+ * before that move survives only through the displayName fallback below — and
+ * the name it was stored under depends on which surface wrote it: the search
+ * box wrote the acronym alone, the Explorer writes `${acronym}: ${title}`
+ * (getProjectDisplayName). Recognising one and not the other orphans the other
+ * population, and an orphaned follow duplicates itself on the next click.
+ *
+ * The acronym counts as the same name only when it is the WHOLE segment
+ * heading the longer spelling, separator included. Two projects that share an
+ * acronym but not a title keep different names, because neither spelling then
+ * heads the other.
+ */
+function isSameProjectNameSpelling(oneName, otherName) {
+  if (!oneName || !otherName) return false;
+  const [head, full] = oneName.length < otherName.length ? [oneName, otherName] : [otherName, oneName];
+  return full.startsWith(`${head}: `);
+}
+
 export function followsEntity(followedEntities, entity) {
   const normalized = createFollowEntity(entity);
   if (!normalized) return false;
@@ -63,7 +83,10 @@ export function followsEntity(followedEntities, entity) {
   return (followedEntities || []).some((follow) => {
     if (follow.type !== normalized.type) return false;
     if (normalizeFollowId(follow.canonicalId) === id) return true;
-    return Boolean(name && normalizeFollowText(follow.displayName) === name);
+    if (!name) return false;
+    const followName = normalizeFollowText(follow.displayName);
+    if (followName === name) return true;
+    return normalized.type === 'project' && isSameProjectNameSpelling(followName, name);
   });
 }
 

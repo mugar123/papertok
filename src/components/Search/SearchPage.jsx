@@ -59,6 +59,7 @@ import { Input } from '../ui/input.jsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.jsx';
 import { Toggle } from '../ui/toggle.jsx';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
+import { getProjectDisplayName } from '../../utils/entityMetadata.js';
 import {
   authorProminenceWeight,
   buildSearchSectionValues,
@@ -1239,7 +1240,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                     key={project.id}
                     className="search-item search-item-enter"
                     style={{ '--search-item-index': Math.min(index, 6) }}
-                    onClick={() => navigate(`/explorer/project/${project.id}?name=${encodeURIComponent(project.acronym || project.title)}&funder=${encodeURIComponent(project.funder)}`)}
+                    onClick={() => navigate(`/explorer/project/${encodeURIComponent(project.id)}?name=${encodeURIComponent(getProjectDisplayName(project))}&funder=${encodeURIComponent(project.funder)}`)}
                   >
                     <div className="search-item-icon"><Briefcase size={22} /></div>
                     <div className="search-item-info">
@@ -1247,15 +1248,15 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                         <button
                           type="button"
                           className="search-item-title-btn"
-                          onClick={(e) => { e.stopPropagation(); navigate(`/explorer/project/${project.id}?name=${encodeURIComponent(project.acronym || project.title)}&funder=${encodeURIComponent(project.funder)}`); }}
+                          onClick={(e) => { e.stopPropagation(); navigate(`/explorer/project/${encodeURIComponent(project.id)}?name=${encodeURIComponent(getProjectDisplayName(project))}&funder=${encodeURIComponent(project.funder)}`); }}
                         >
-                          {project.acronym ? `${project.acronym}: ${project.title}` : project.title}
+                          {getProjectDisplayName(project)}
                         </button>
                       </h4>
                       <p>{project.funder}{project.budget > 0 ? (() => { try { return ` • ${new Intl.NumberFormat(locale, { style: 'currency', currency: project.currency, maximumFractionDigits: 0 }).format(project.budget)}`; } catch { return ` • ${project.budget.toLocaleString(locale)} €`; } })() : ''}</p>
                     </div>
                     <FollowButton
-                      entity={{ type: 'project', id: project.id, displayName: project.acronym || project.title, source: 'openaire', metadata: { funder: project.funder } }}
+                      entity={{ type: 'project', id: project.id, displayName: getProjectDisplayName(project), source: 'openaire', metadata: { funder: project.funder } }}
                       isFollowing={isFollowing}
                       isPending={isFollowPending}
                       onToggle={handleToggleFollow}

@@ -43,6 +43,8 @@ import PaperOverlay from '../Feed/PaperOverlay';
 import PDFViewer from '../PDF/PDFViewer';
 import ScientificText from '../ScientificText';
 import RecentImpactStat from './RecentImpactStat';
+import { ExplorerEmptyState } from './ExplorerEmptyState.jsx';
+import { pickEmptyVariant } from './explorerEmptyVariant.js';
 import { normalizeScientificMarkup } from '../../utils/latex';
 import { isOpaqueQueryTopicText, resolveQueryTopicRoute } from '../../utils/topicNavigation';
 import { scoreQueryTopicPaper } from '../../utils/queryTopicSearch.js';
@@ -51,6 +53,7 @@ import { settleWithin } from '../../utils/asyncTiming';
 import { fetchTopicPapers } from '../../services/topicRetrievalService.js';
 import { getEntityWikiInfo } from '../../services/wikiService';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
+import { getProjectDisplayName } from '../../utils/entityMetadata.js';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import { safeExternalUrl } from '../../utils/externalUrl.js';
 import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.js';
@@ -251,6 +254,11 @@ export default function EntityExplorer({
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
+  // True once a fresh-page load has run past 4s with nothing on screen but
+  // the skeleton rows — a project's first page can take close to 17s
+  // (OpenAIRE's own budget, then arXiv enrichment and DOI lookups) — so the
+  // reader gets a word for what is being waited on instead of a silent wait.
+  const [isPapersLoadSlow, setIsPapersLoadSlow] = useState(false);
   // How many rows of the list are mounted (utils/entityExplorer.js says why
   // it is not all of them at once).
   const [rowBudget, setRowBudget] = useState(EXPLORER_ROW_CHUNK);
@@ -538,6 +546,13 @@ export default function EntityExplorer({
 
   const followEntity = useMemo(() => {
     if (!entity || !['author', 'institution', 'project', 'concept', 'topic'].includes(type)) return null;
+    // An entity we cannot name cannot be followed. A follow is compared by id
+    // and then by name, so any word standing in for a missing name becomes a
+    // key shared with every other entity the page could not name — and the
+    // second one followed would resolve the click against the first. Nothing
+    // stands in here: with no name there is no identity, and no heart.
+    const displayName = type === 'institution' ? entityOfficialName : entityDisplayName;
+    if (!displayName) return null;
     const followType = type === 'concept' ? 'topic' : type;
     const metadata = entity._queryTopic
       ? {
@@ -553,7 +568,7 @@ export default function EntityExplorer({
     return {
       type: followType,
       id: entity.id || entity.code || id,
-      displayName: type === 'institution' ? entityOfficialName : entityDisplayName,
+      displayName,
       source: type === 'project' ? 'openaire' : type === 'concept' || type === 'topic' ? 'papertok' : 'openalex',
       externalIds: {
         orcid: entity.orcid,
@@ -649,21 +664,24 @@ export default function EntityExplorer({
       }
 
       if (type === 'project') {
-        const name = searchParams.get('name') || id;
+        const name = searchParams.get('name') || '';
         const funder = searchParams.get('funder') || '';
-        
-        // Optimistic display
-        setEntity({ display_name: name, type: 'project', funder });
-        
+
+        if (name) {
+          // The pill already knows the project's name and funder: paint the
+          // hero now, and let it reserve the summary and two stat cells,
+          // inside itself, until OpenAIRE answers.
+          setEntity({ id, display_name: name, type: 'project', funder, _detailsPending: true });
+          setIsLoadingEntity(false);
+        }
+
         // Fetch detailed info
-        const details = await getProjectDetails(id);
+        const details = await getProjectDetails(id, { funder });
         if (isCancelled) return;
         if (details) {
-           const displayName = details.acronym 
-             ? `${details.acronym}: ${details.title}` 
-             : details.title;
+           const displayName = getProjectDisplayName(details);
            setEntity({
-             id: details.id || id,
+             id: id,
              code: details.id || id,
              openaireId: details.openaireId,
              display_name: displayName,
@@ -684,6 +702,31 @@ export default function EntityExplorer({
              openAccess: details.openAccess,
              websiteUrl: details.websiteUrl,
            });
+        } else {
+          // The lookup failed (bad response, parse miss, or thrown error): the
+          // hero is already painted (with the pill's name) or was never
+          // optimistic (no name at all). Either way, land an entity with no
+          // _detailsPending so the reserved summary and two stat cells stop
+          // shimmering forever instead of settling — keep the pill's name if
+          // there was one.
+          //
+          // With no name in the URL either, the entity keeps none. A raw
+          // `snsf________::daa28096…` is not a title, but neither is a
+          // stand-in word a name: `display_name` is what the follow identity
+          // is built from, and one stand-in shared by every nameless project
+          // made them all the same follow — following one deleted another's
+          // document. The hero falls back to the page's own label for the type
+          // where it renders the title, in whichever language is on at that
+          // moment. And when the route id is an OpenAIRE id it is the one
+          // useful thing left to offer: the empty state's link out, which is
+          // worth most in exactly this case.
+          setEntity({
+            id,
+            openaireId: id.includes('::') ? id : undefined,
+            display_name: name,
+            type: 'project',
+            funder,
+          });
         }
         if (!isCancelled) setIsLoadingEntity(false);
         return;
@@ -883,6 +926,7 @@ export default function EntityExplorer({
         setIsLoadingPapers(true);
         setPapersError(null);
         setRowBudget(EXPLORER_ROW_CHUNK);
+        setIsPapersLoadSlow(false);
       }
       else setIsFetchingMore(true);
       
@@ -892,13 +936,27 @@ export default function EntityExplorer({
         let total = 0;
         let fetchedPapers = [];
         let topicProviderFailure = false;
-        
+        // A project's two counts, kept apart because they answer different
+        // questions. `projectUsableIds` is how many identifiers OpenAIRE
+        // returned for this page; `projectResolvedRows` is how many of them
+        // came back as papers. They agree only when every lookup answered,
+        // and their zeroes mean opposite things — see the cut further down.
+        let projectUsableIds = 0;
+        let projectResolvedRows = 0;
+
         const resolvedId = entity.id || id;
-        
+
         if (type === 'project') {
-           const res = await getPapersByProject(resolvedId, page);
+           const res = await getPapersByProject(resolvedId, page, { funder: searchParams.get('funder') || entity.funder || '' });
            arxivIds = res.arxivIds;
            dois = res.dois || [];
+           // OpenAIRE's total counts every publication of the project, with or
+           // without a usable DOI or arXiv id; the ones with neither are
+           // already discarded above, so a page that yields none usable does
+           // not promise a next one. That verdict is not reached here, though:
+           // these identifiers still have to be resolved into papers below,
+           // and what OpenAIRE returned is not what the reader ends up seeing.
+           projectUsableIds = arxivIds.length + dois.length;
            total = res.total;
         } else if (type === 'author') {
             let papersFromOA = [];
@@ -1032,6 +1090,7 @@ export default function EntityExplorer({
         }
 
         if (type === 'project') {
+          projectResolvedRows = fetchedPapers.length;
           fetchedPapers = filterAndSortEntityPapers(fetchedPapers, {
             searchQuery: debouncedSearch,
             filters,
@@ -1041,6 +1100,20 @@ export default function EntityExplorer({
         }
 
         if (request.cancelled) return;
+
+        // The two zeroes, told apart. No usable identifier at all means
+        // OpenAIRE has nothing indexed for this project, and the empty state
+        // may say so. Identifiers that resolved into no rows means every
+        // lookup above timed out or was refused — each is wrapped in
+        // `settleWithin` and dropped in silence — which is a load failure,
+        // and saying so swaps the empty state's false claim for a Retry
+        // button. Either way this page promises no next one. (Past page 1,
+        // with rows already on screen, the flag raises the inline banner
+        // instead of the empty state, which is the right shape there.)
+        if (type === 'project' && (projectUsableIds === 0 || projectResolvedRows === 0)) {
+          total = page * 30;
+          if (projectUsableIds > 0) setPapersError('PUBLICATIONS_LOAD_FAILED');
+        }
 
         if (topicProviderFailure && fetchedPapers.length > 0) {
           setPapersError('PARTIAL_PUBLICATIONS_LOAD_FAILED');
@@ -1172,6 +1245,22 @@ export default function EntityExplorer({
     if (activeTab === 'authors' && observerAuthorsRef.current) observer.observe(observerAuthorsRef.current);
     return () => observer.disconnect();
   }, [hasMore, isLoadingPapers, isFetchingMore, hasMoreAuthors, isLoadingAuthors, isFetchingMoreAuthors, activeTab, rowsSettled]);
+
+  // Armed only while a fresh page is loading (never for "load more", which has
+  // the sentinel's own spinner); a load that lands well under 4s clears this
+  // effect before the timeout ever fires, so the note never shows. The flag
+  // itself is reset to false where the next page-1 load starts, inside
+  // `loadPapers` — not here, so this body stays a pure subscription with no
+  // setState of its own (react-hooks/set-state-in-effect). `type`/`id` are
+  // dependencies too: without them, navigating from one slow-loading entity
+  // straight into another keeps `isLoadingPapers` continuously true, so this
+  // effect would never re-run and the new entity's four seconds would be
+  // measured on the previous one's clock.
+  useEffect(() => {
+    if (!(isLoadingPapers && !isFetchingMore)) return undefined;
+    const handle = setTimeout(() => setIsPapersLoadSlow(true), 4000);
+    return () => clearTimeout(handle);
+  }, [isLoadingPapers, isFetchingMore, type, id]);
 
   const handleShare = async () => {
     if (!publicEntityUrl) return;
@@ -1595,7 +1684,12 @@ export default function EntityExplorer({
             </div>
             <div className="ehc-info">
               <div className="ehc-title-row">
-                <h1 className="ehc-name" style={{ margin: 0 }}>{entityDisplayName}</h1>
+                {/* The type label stands in for a name the entity does not
+                    have — a project whose lookup failed on a route with no
+                    `?name=`. It stands in HERE, not in `entity.display_name`,
+                    which is the follow identity; and being read on every
+                    render it follows a language toggle without a remount. */}
+                <h1 className="ehc-name" style={{ margin: 0 }}>{entityDisplayName || entityTypeLabel}</h1>
                 {type === 'author' && orcidInfo?.employments?.length > 0 && (
                   <button
                     type="button"
@@ -1762,6 +1856,12 @@ export default function EntityExplorer({
                 isEnglish={isEnglish}
               />
             )}
+            {type === 'project' && entity._detailsPending && [1, 2].map((n) => (
+              <div key={`stat-reserved-${n}`} className="ehc-stat-box" aria-hidden="true">
+                <span className="ex-skel ex-skel-stat-value"></span>
+                <span className="ex-skel ex-skel-stat-label"></span>
+              </div>
+            ))}
             {type === 'project' && entity.budget > 0 && (
               <div className="ehc-stat-box">
                 <span className="ehc-stat-value">
@@ -1927,6 +2027,7 @@ export default function EntityExplorer({
           )}
 
           {/* Project Summary - expandable */}
+          {type === 'project' && entity._detailsPending && <ProjectSummarySkeleton />}
           {type === 'project' && entity?.summary && (
             <div
               className={`project-summary-box ${expandedSummary ? 'is-expanded' : ''} ${isProjectSummaryExpandable ? 'is-expandable' : ''}`}
@@ -2379,6 +2480,14 @@ export default function EntityExplorer({
                   </div>
                 ))}
 
+              {isLoadingPapers && !isFetchingMore && isPapersLoadSlow && (
+                <p className="explorer-loading-note" role="status">
+                  {type === 'project'
+                    ? (isEnglish ? 'Asking OpenAIRE for this project’s publications. It can take a few seconds.' : 'Consultando a OpenAIRE las publicaciones del proyecto. Puede tardar unos segundos.')
+                    : (isEnglish ? 'Still loading publications…' : 'Todavía cargando publicaciones…')}
+                </p>
+              )}
+
               {/* Infinite Scroll Sentinel — once every row of this page is in.
                   The box always mounts, because it IS the observer's target and
                   gating it on the fetch would leave nothing to observe. What is
@@ -2399,18 +2508,18 @@ export default function EntityExplorer({
             </TooltipProvider>
 
             {!isLoadingPapers && filteredPapers.length === 0 && (
-              <div className="explorer-empty">
-                {papersError ? (
-                  <>
-                    <p role="alert">{getUiErrorMessage(papersError, language, 'PUBLICATIONS_LOAD_FAILED')}</p>
-                    <Button variant="outline" size="sm" onClick={retryPapers}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
-                  </>
-                ) : (
-                  <p>{isEnglish
-                    ? 'No results matched your search and filters.'
-                    : 'No se encontraron resultados que coincidan con tu búsqueda y filtros.'}</p>
-                )}
-              </div>
+              <ExplorerEmptyState
+                variant={pickEmptyVariant({
+                  papersError,
+                  hasActiveFilters: Boolean(debouncedSearch) || Boolean(filters.category) || filters.peerReviewed || Boolean(filters.dateRange),
+                  type,
+                })}
+                isEnglish={isEnglish}
+                errorMessage={papersError ? getUiErrorMessage(papersError, language, 'PUBLICATIONS_LOAD_FAILED') : ''}
+                onRetry={retryPapers}
+                onClearFilters={() => { setSearchQuery(''); setFilters({ category: '', peerReviewed: false, dateRange: '' }); }}
+                openAireUrl={entity?.openaireId ? `https://explore.openaire.eu/search/project?projectId=${encodeURIComponent(entity.openaireId)}` : null}
+              />
             )}
             {!isLoadingPapers && papersError && filteredPapers.length > 0 && (
               <div className="explorer-inline-error" role="alert">
@@ -2468,16 +2577,14 @@ export default function EntityExplorer({
               </div>
             )}
             {!isLoadingAuthors && entityAuthors.length === 0 && (
-              <div className="explorer-empty">
-                {authorsError ? (
-                  <>
-                    <p role="alert">{getUiErrorMessage(authorsError, language, 'AUTHORS_LOAD_FAILED')}</p>
-                    <Button variant="outline" size="sm" onClick={retryAuthors}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
-                  </>
-                ) : (
-                  <p>{isEnglish ? 'No authors matched your search.' : 'No se encontraron autores que coincidan con tu búsqueda.'}</p>
-                )}
-              </div>
+              authorsError ? (
+                <div className="explorer-empty">
+                  <p role="alert">{getUiErrorMessage(authorsError, language, 'AUTHORS_LOAD_FAILED')}</p>
+                  <Button variant="outline" size="sm" onClick={retryAuthors}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
+                </div>
+              ) : (
+                <ExplorerEmptyState variant={debouncedSearch ? 'authors' : 'authors-none'} isEnglish={isEnglish} />
+              )
             )}
             {!isLoadingAuthors && authorsError && entityAuthors.length > 0 && (
               <div className="explorer-inline-error" role="alert">

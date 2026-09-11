@@ -620,3 +620,39 @@ test('author, institution and topic rows hand their entity over in router state'
   assert.match(palette, /onSelect=\{\(\) => go\(`\/explorer\/institution\/\$\{lastPathSegment\(institution\.id\)\}`, \{ entity: handoverFromSearchRow\('institution', institution\), entityType: 'institution' \}\)\}/);
   assert.match(palette, /onSelect=\{\(\) => go\(`\/explorer\/topic\/\$\{encodeURIComponent\(lastPathSegment\(concept\.id\)\)\}`, \{ entity: handoverFromSearchRow\('topic', concept\), entityType: 'topic' \}\)\}/);
 });
+
+/**
+ * A follow is keyed by `canonicalId`, and a project's id moved from the bare
+ * grant code to the OpenAIRE id when it turned out a grant code is not unique
+ * across funders. `followsEntity` still rescues the follows written before
+ * that move — but only through its displayName fallback, which needs the
+ * search row and the explorer to spell a project's name identically. They did
+ * not: the explorer stored the acronym and the title, the row passed the
+ * acronym alone, so an already-followed project came up with an unfilled
+ * heart and a click on it wrote a second document for the same project. One
+ * helper now spells the name for both surfaces, which is what keeps them from
+ * drifting apart again.
+ */
+test('the search row and the explorer build a project name with the same helper', async () => {
+  const explorer = await readCode('../Explorer/EntityExplorer.jsx');
+  assert.match(
+    page,
+    /import \{ getProjectDisplayName \} from '\.\.\/\.\.\/utils\/entityMetadata\.js';/,
+    'the search page takes the name from the shared helper',
+  );
+  assert.match(
+    page,
+    /entity=\{\{ type: 'project', id: project\.id, displayName: getProjectDisplayName\(project\)/,
+    'the follow the row writes carries the full name',
+  );
+  assert.match(
+    explorer,
+    /const displayName = getProjectDisplayName\(details\);/,
+    'the explorer stores the same string the row now computes',
+  );
+  assert.doesNotMatch(
+    page,
+    /project\.acronym \|\| project\.title/,
+    'the acronym-only name, which orphaned the follow, is gone from the page',
+  );
+});
