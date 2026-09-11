@@ -4,23 +4,27 @@ import { readFile } from 'node:fs/promises';
 import { pickThemeRoute } from './themeTransition.js';
 
 test('reduced motion manda: instantáneo aunque haya VT', () => {
-  assert.equal(pickThemeRoute({ reducedMotion: true, hasViewTransitions: true, coarsePointer: false }), 'instant');
+  assert.equal(pickThemeRoute({ reducedMotion: true, hasViewTransitions: true }), 'instant');
 });
 
 test('sin View Transitions el cambio es instantáneo, no una tormenta de transiciones', () => {
-  assert.equal(pickThemeRoute({ reducedMotion: false, hasViewTransitions: false, coarsePointer: true }), 'instant');
+  assert.equal(pickThemeRoute({ reducedMotion: false, hasViewTransitions: false }), 'instant');
 });
 
-test('puntero grueso: crossfade corto, nunca el barrido', () => {
-  assert.equal(pickThemeRoute({ reducedMotion: false, hasViewTransitions: true, coarsePointer: true }), 'fade');
+/**
+ * Medido el 11-09-2026 en escritorio: el barrido circular iba a 60 fps pero
+ * su borde duro se leía como un corte; toda transición CSS de color lo
+ * bastante amplia para no dejar nada cambiando de golpe caía a 8-9 fps.
+ * Un crossfade compuesto en GPU es lo único que es suave en todas partes.
+ */
+test('con VT el cambio es un crossfade, en cualquier puntero', () => {
+  assert.equal(pickThemeRoute({ reducedMotion: false, hasViewTransitions: true }), 'fade');
 });
 
-test('desktop con VT conserva el barrido de tinta', () => {
-  assert.equal(pickThemeRoute({ reducedMotion: false, hasViewTransitions: true, coarsePointer: false }), 'sweep');
-});
-
-test('SOURCE: el barrido del tema dura 260/200 ms', async () => {
+test('SOURCE: el fundido dura 220 ms y el barrido ya no existe', async () => {
   const css = await readFile(new URL('../styles/global.css', import.meta.url), 'utf8');
-  assert.match(css, /animation: themeSweepIn 260ms/);
-  assert.match(css, /animation: themeSweepOut 260ms/);
+  assert.match(css, /animation: themePlainFade 220ms/);
+  assert.doesNotMatch(css, /themeSweep|--theme-sweep/);
+  const js = await readFile(new URL('./themeTransition.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(js, /markSweepOrigin|'sweep'/);
 });

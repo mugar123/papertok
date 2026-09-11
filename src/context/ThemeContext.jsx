@@ -54,7 +54,7 @@ export function ThemeProvider({ children }) {
     applyTheme(theme);
   }, [theme]);
 
-  const toggleTheme = useCallback((origin) => {
+  const toggleTheme = useCallback(() => {
     const next = theme === 'dark' ? 'light' : 'dark';
     runThemeSwitch(() => {
       // Inside the view transition the change has to be synchronous, so the
@@ -63,7 +63,7 @@ export function ThemeProvider({ children }) {
       applyTheme(next);
       persistTheme(next);
       setChosen(next);
-    }, origin);
+    });
   }, [theme]);
 
   const value = useMemo(() => ({
