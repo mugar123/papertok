@@ -96,6 +96,22 @@ export function calculateInstitutionRecentImpact(works = [], minimumSampleSize =
   return calculateEntityRecentImpact(works, minimumSampleSize);
 }
 
+/**
+ * A funded project's name, spelled the same way wherever it is shown or
+ * stored. The acronym alone is not the name: a follow is keyed by id, and a
+ * project's id moved from the bare grant code to the OpenAIRE id — so every
+ * follow written before that move is only still recognised through
+ * `followsEntity`'s displayName fallback, which compares the stored name with
+ * the one the surface computes. Two surfaces spelling it differently is
+ * exactly what let a reader follow the same project twice.
+ */
+export function getProjectDisplayName(project) {
+  const acronym = String(project?.acronym || '').trim();
+  const title = String(project?.title || '').trim();
+  if (acronym && title) return `${acronym}: ${title}`;
+  return acronym || title;
+}
+
 export function deduplicateProjectParticipants(participants = []) {
   const uniqueParticipants = new Map();
 

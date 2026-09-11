@@ -8,6 +8,7 @@ import {
   migrateLegacyAuthors,
   normalizeFollowId,
 } from './following.js';
+import { getProjectDisplayName } from './entityMetadata.js';
 
 test('normalizes provider URLs into stable ids', () => {
   assert.equal(normalizeFollowId('https://openalex.org/A123'), 'A123');
@@ -38,4 +39,52 @@ test('removes undefined provider fields before persisting a follow', () => {
   });
   assert.deepEqual(follow.externalIds, { semanticScholar: 'S1' });
   assert.deepEqual(follow.metadata.categoryIds, ['cs.AI']);
+});
+
+/**
+ * A grant code is not unique across funders, so `searchProjects().id` moved
+ * from the bare code to the OpenAIRE id (`prefix::hash`), and the Explorer's
+ * entity id moved with it. Both feed `canonicalId`, which is the Firestore
+ * document key — so a project followed before that change is stored under
+ * `project_100010` while the search row now computes
+ * `project_snsf________::…`. The displayName fallback in `followsEntity` is
+ * the only thing that still recognises those follows, and it catches only if
+ * the row spells the name the way the page stored it. It did not: the
+ * Explorer writes `${acronym}: ${title}` and the row passed the acronym
+ * alone, so the heart came up unfilled on a project the reader already
+ * followed and a click wrote a second document for it — a duplicate row in
+ * Following settings, a duplicated entity in the feed and the digest, and an
+ * unfollow that had to be done twice.
+ */
+test('a project followed under its old grant-code id is still recognised from a search row', () => {
+  const stored = [{
+    type: 'project',
+    canonicalId: '100010',
+    displayName: 'QUANTUMLEAP: Quantum leap in photonics',
+    source: 'openaire',
+  }];
+  const row = {
+    id: 'snsf________::daa28096f9e8879ab3a02b90aa0e2f83',
+    code: '100010',
+    acronym: 'QUANTUMLEAP',
+    title: 'Quantum leap in photonics',
+  };
+
+  assert.equal(
+    followsEntity(stored, { type: 'project', id: row.id, displayName: getProjectDisplayName(row) }),
+    true,
+    'the id does not match any more, so the name is what has to',
+  );
+  assert.equal(
+    followsEntity(stored, { type: 'project', id: row.id, displayName: row.acronym }),
+    false,
+    'the acronym on its own is what orphaned the follow',
+  );
+});
+
+test('a project name is its acronym and its title, or whichever of the two it has', () => {
+  assert.equal(getProjectDisplayName({ acronym: 'LEAP', title: 'Quantum leap' }), 'LEAP: Quantum leap');
+  assert.equal(getProjectDisplayName({ title: 'Quantum leap' }), 'Quantum leap');
+  assert.equal(getProjectDisplayName({ acronym: 'LEAP' }), 'LEAP');
+  assert.equal(getProjectDisplayName(null), '');
 });

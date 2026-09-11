@@ -53,6 +53,7 @@ import { settleWithin } from '../../utils/asyncTiming';
 import { fetchTopicPapers } from '../../services/topicRetrievalService.js';
 import { getEntityWikiInfo } from '../../services/wikiService';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
+import { getProjectDisplayName } from '../../utils/entityMetadata.js';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import { safeExternalUrl } from '../../utils/externalUrl.js';
 import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.js';
@@ -657,9 +658,7 @@ export default function EntityExplorer({
         const details = await getProjectDetails(id, { funder });
         if (isCancelled) return;
         if (details) {
-           const displayName = details.acronym 
-             ? `${details.acronym}: ${details.title}` 
-             : details.title;
+           const displayName = getProjectDisplayName(details);
            setEntity({
              id: id,
              code: details.id || id,
