@@ -30,17 +30,7 @@ test('coming back to the feed resumes it at rest instead of replaying the arriva
   const transition = await read('../Layout/PageTransition.jsx');
   assert.match(transition, /data-nav-direction=\{present \? direction : arrivedWith\}/);
   const css = await read('../Feed/PaperCard.css');
-  // `.pc-sheet` dropped out of this rule (Task 11): it no longer has an
-  // animation of its own to suppress, only the pieces inside it do.
-  // `[data-mounted-active]` joined it afterwards, and is what keeps the rule
-  // to the card the feed RESUMED onto: `data-nav-direction` sits on the page
-  // wrapper for the whole visit, so without that qualifier this went on
-  // suppressing every card the reader swiped to next. The cascade the two
-  // resolve to is worked out in Feed/paperCardArrivalCascade.test.js; what
-  // is pinned here is only that coming back still finds the resumed card at
-  // rest, with the full nine-selector list so reverting any one of them
-  // cannot pass on the strength of the other eight.
-  assert.match(css, /\[data-nav-direction="-1"\] \.pc\[data-active="true"\]\[data-mounted-active\] \.pc-follow-reason,[\s\S]*?\[data-nav-direction="-1"\] \.pc\[data-active="true"\]\[data-mounted-active\] \.pc-side-actions \{\s*animation: none;\s*\}/);
+  assert.match(css, /\[data-nav-direction="-1"\] \.pc-sheet,[\s\S]*?\[data-nav-direction="-1"\] \.pc-side-actions \{\s*animation: none;\s*\}/);
 });
 
 test('the hero settles between its heights instead of snapping at the handover', async () => {

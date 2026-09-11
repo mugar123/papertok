@@ -412,23 +412,6 @@ const PaperCard = memo(function PaperCard({
     setWasActive(isActive);
     if (wasActive && !hasArrived) setHasArrived(true);
   }
-  // The second one-shot, latched at mount instead of at the first
-  // deactivation: whether this card was ALREADY the active one the first
-  // time it rendered.
-  //
-  // It is what tells the card the reader RESUMED onto apart from the ones
-  // they activate afterwards, and only the first must stay at rest under a
-  // page reached by the back arrow (PaperCard.css). The feed seeds
-  // `activeIndex` from the card it resumes onto (FeedContainer), so that one
-  // card mounts with `isActive` already true while every card the reader
-  // swipes to was mounted inactive first and only became active later. Every
-  // single-paper surface — lists, the explorer, search, the report, the
-  // public paper page, the related overlay — mounts its card active too, so
-  // each of those keeps the same at-rest treatment on a back navigation that
-  // it had before this existed.
-  //
-  // A ref, not state: it is read during render and must never change again.
-  const mountedActiveRef = useRef(isActive);
   // Whether the clippings are lit. Deliberately NOT `isCardVisible`: the two
   // ends of a card's turn on screen want different thresholds, and one flag
   // cannot hold both. It is armed at the same 15% that starts the fetch — late
@@ -1189,13 +1172,7 @@ const PaperCard = memo(function PaperCard({
           ? (isEnglish ? 'Source' : 'Fuente')
           : (isEnglish ? 'Read article' : 'Leer artículo');
   return (
-    // `data-active="false"` is written, not omitted, unlike this repo's
-    // usual presence-means-true `data-*` convention (`data-arrived` and
-    // `data-mounted-active` beside it included) — load-bearing, not an
-    // oversight: PaperCard.css and paperCardArrival.test.js both pin the
-    // literal `"true"`/`"false"` string, and a future bare `[data-active]`
-    // selector must not silently match a non-active `.pc`.
-    <div ref={cardRef} className={`pc ${isCardVisible ? 'pc--visible' : ''}`} data-active={isActive ? 'true' : 'false'} data-arrived={hasArrived ? 'true' : undefined} data-mounted-active={mountedActiveRef.current ? 'true' : undefined} onClick={handleDoubleTap}>
+    <div ref={cardRef} className={`pc ${isCardVisible ? 'pc--visible' : ''}`} onClick={handleDoubleTap}>
       {/* DEBUG PANEL */}
       {SHOW_RANKING_DEBUG && paper._debugScore && (
         <div className="pc-debug-panel">
@@ -2035,7 +2012,6 @@ const PaperCard = memo(function PaperCard({
             <div className="related-card-content is-ready">
               <PaperCard
                 paper={selectedRelatedPaper}
-                isActive
                 isLiked={Boolean(selectedRelatedState.isLiked)}
                 isSaved={Boolean(selectedRelatedState.isSaved)}
                 isRead={Boolean(selectedRelatedState.isRead)}

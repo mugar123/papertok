@@ -44,17 +44,13 @@
   overflow-x: hidden;
   overflow-y: hidden;
   padding: clamp(20px, 2.5vw, 32px) 0;
-  /* No motion of its own. The sheet used to fade from 0 as well, over 0.42s,
-     while the page it sits in was already fading in over 0.3s: measured, the
-     page was at 0.98 when the sheet had reached 0.67, and the sheet kept
-     fading for 300 ms after the frame had arrived — content appearing after
-     its page. The fade moved to the pieces (`pcArrive` below); the sheet kept
-     a 0.36s travel of its own (`cardSlideUp`). That travel is gone too now:
-     it ran on mount, and the feed mounts cards ahead of the reader through
-     the sliding window (utils/feedMountWindow.js), so by the time a swipe
-     brought the sheet into view the travel had long finished and the arrival
-     read as a hard cut. The pieces carry the whole entrance now, gated on
-     `.pc[data-active="true"]` below; the sheet just sits at rest. */
+  /* Travel only. The sheet used to fade from 0 as well, over 0.42s, while the
+     page it sits in was already fading in over 0.3s: measured, the page was at
+     0.98 when the sheet had reached 0.67, and the sheet kept fading for 300 ms
+     after the frame had arrived — content appearing after its page. The fade
+     now belongs to the pieces (`pcArrive` below), which start with the frame;
+     the sheet only settles into place. */
+  animation: cardSlideUp 0.36s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
 /* ── Figure cards ──
@@ -270,6 +266,11 @@
   height: auto;
 }
 
+@keyframes cardSlideUp {
+  0% { transform: translateY(10px); }
+  100% { transform: none; }
+}
+
 /* ── The arrival ──
    A card composes in rather than popping in, and the paper comes before its
    label: the title first, then the kicker, the authors, the abstract, and
@@ -277,7 +278,7 @@
    under the kicker once there is a paper to explain — and last the actions.
    The pill used to be the first thing on screen, alone for a beat before
    anything else, which is exactly what read as it appearing out of nowhere.
-   Each step is 35 ms behind the one before on the same short settle. The
+   Each step is 45 ms behind the one before on the same short settle. The
    order is an explicit `--arrive` step per piece rather than `nth-child`,
    because half of these pieces are optional and the sequence must not shift
    when one is absent. `backwards` holds the first frame during the delay and
@@ -292,148 +293,39 @@
 .pc-action-bar,
 .pc-side-actions { --arrive: 5; }
 
-.pc[data-active="true"] .pc-follow-reason,
-.pc[data-active="true"] .pc-meta,
-.pc[data-active="true"] .pc-chips,
-.pc[data-active="true"] .pc-topics,
-.pc[data-active="true"] .pc-title,
-.pc[data-active="true"] .pc-authors,
-.pc[data-active="true"] .pc-abstract,
-.pc[data-active="true"] .pc-action-bar,
-.pc[data-active="true"] .pc-side-actions {
-  animation: pcArrive 0.28s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--arrive, 0) * 35ms) backwards;
+.pc-follow-reason,
+.pc-meta,
+.pc-chips,
+.pc-topics,
+.pc-title,
+.pc-authors,
+.pc-abstract,
+.pc-action-bar,
+.pc-side-actions {
+  animation: pcArrive 0.32s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--arrive, 0) * 45ms) backwards;
 }
 
 /* The reason arrives from the side it reads from, the way a label is slid
    under a picture; everything else rises the few pixels the sheet does. */
-.pc[data-active="true"] .pc-follow-reason {
+.pc-follow-reason {
   animation-name: pcArriveAside;
 }
 
-/* Coming back is not arriving — but only for the card that was already
-   there. A feed reached by the back arrow — from an author, a paper, a list
-   — is the feed the reader left, resumed on the card they were on
-   (FeedContainer); replaying the arrival on top of that read as the feed
-   reloading. Under a page that slides back in, THAT card sits at rest. No
-   `.pc-sheet` entry any more — it has no animation left to suppress.
-
-   `[data-mounted-active]` is what keeps the rule to that one card.
-   `data-nav-direction` lives on the `PageTransition` wrapper and stays for
-   as long as the page is mounted: it says how the reader got here, not which
-   card they are on. Without the second attribute this rule went on
-   suppressing every card activated afterwards — open an author from a card,
-   press Back, swipe through ten papers and not one of them composed in,
-   which is the whole feature Task 11 shipped. The attribute is set by
-   PaperCard.jsx for a card that was ALREADY active the first time it
-   rendered: the resumed one is (the container seeds `activeIndex` from the
-   card it resumes onto), a card the reader swipes to was mounted inactive
-   first, and every single-paper surface mounts its card active, so those
-   keep the at-rest treatment they have always had here.
-
-   Each selector repeats `.pc[data-active="true"]` rather than dropping to
-   the shorter `[data-nav-direction="-1"] .pc-title`: that shorter form ties
-   the arrival rule above on specificity and would only win by coming later
-   in the file, which the next edit here could quietly undo. Five class-like
-   parts, so (0,5,0) — above the latch block below (0,4,0) and the arrival
-   rule (0,3,0), by specificity and not by order.
-   paperCardArrivalCascade.test.js works the arithmetic out. */
-[data-nav-direction="-1"] .pc[data-active="true"][data-mounted-active] .pc-follow-reason,
-[data-nav-direction="-1"] .pc[data-active="true"][data-mounted-active] .pc-meta,
-[data-nav-direction="-1"] .pc[data-active="true"][data-mounted-active] .pc-chips,
-[data-nav-direction="-1"] .pc[data-active="true"][data-mounted-active] .pc-topics,
-[data-nav-direction="-1"] .pc[data-active="true"][data-mounted-active] .pc-title,
-[data-nav-direction="-1"] .pc[data-active="true"][data-mounted-active] .pc-authors,
-[data-nav-direction="-1"] .pc[data-active="true"][data-mounted-active] .pc-abstract,
-[data-nav-direction="-1"] .pc[data-active="true"][data-mounted-active] .pc-action-bar,
-[data-nav-direction="-1"] .pc[data-active="true"][data-mounted-active] .pc-side-actions {
+/* Coming back is not arriving. A feed reached by the back arrow — from an
+   author, a paper, a list — is the feed the reader left, resumed on the card
+   they were on (FeedContainer); replaying the arrival on top of that read as
+   the feed reloading. Under a page that slides back in, the cards sit at rest. */
+[data-nav-direction="-1"] .pc-sheet,
+[data-nav-direction="-1"] .pc-follow-reason,
+[data-nav-direction="-1"] .pc-meta,
+[data-nav-direction="-1"] .pc-chips,
+[data-nav-direction="-1"] .pc-topics,
+[data-nav-direction="-1"] .pc-title,
+[data-nav-direction="-1"] .pc-authors,
+[data-nav-direction="-1"] .pc-abstract,
+[data-nav-direction="-1"] .pc-action-bar,
+[data-nav-direction="-1"] .pc-side-actions {
   animation: none;
-}
-
-/* Repeated activation is not arrival. `data-active` toggles on every
-   scroll-driven activeIndex change, and a drag that hovers on the 50% snap
-   line — easy under mandatory snap, while the reader decides whether to
-   commit — flips it true/false/true before settling; without a latch, CSS
-   restarts `pcArrive` every time the rule matches again: a fresh 455ms
-   blank-and-refade of the whole card body, on a card the reader never left.
-   `data-arrived` (PaperCard.jsx) is set once `isActive` has gone back to
-   false after being true, and never cleared while the component stays
-   mounted — a deliberate scroll back to re-read this card does not replay
-   it either, only a real unmount does (a fresh instance, fresh state).
-   Specificity four — `.pc` + `[data-active="true"]` + `[data-arrived]` +
-   the piece — beats the plain arrival rule's three unconditionally, the
-   same way the back-nav suppression above (five, since it also qualifies on
-   `[data-mounted-active]`) beats both: not by coming later in the file. The
-   two never contradict each other — both say `animation: none` — so the
-   order between them decides nothing. */
-.pc[data-active="true"][data-arrived] .pc-follow-reason,
-.pc[data-active="true"][data-arrived] .pc-meta,
-.pc[data-active="true"][data-arrived] .pc-chips,
-.pc[data-active="true"][data-arrived] .pc-topics,
-.pc[data-active="true"][data-arrived] .pc-title,
-.pc[data-active="true"][data-arrived] .pc-authors,
-.pc[data-active="true"][data-arrived] .pc-abstract,
-.pc[data-active="true"][data-arrived] .pc-action-bar,
-.pc[data-active="true"][data-arrived] .pc-side-actions {
-  animation: none;
-}
-
-/* Reduced motion has to beat the plain arrival rule too, unconditionally in
-   effect if not in specificity. Kept here rather than folded into the big
-   `prefers-reduced-motion` block later in this file (PaperCard.css) on
-   purpose: that distance — nine selectors gated on `.pc[data-active="true"]`
-   above, their reduced-motion counterpart 2400+ lines away, still bare — is
-   exactly how this broke unnoticed. Task 11 raised the arrival rule's
-   specificity from one to three by adding the `.pc[data-active="true"]`
-   qualifier; nothing raised its reduced-motion counterpart to match, so the
-   bare selectors down there stopped winning the tie they used to win by
-   coming later in the file, and reduced motion went silently dead for all
-   nine pieces. Mirrors the arrival rule's own selectors exactly — same
-   specificity, three — and wins the same way the two always tied before:
-   by being the later rule in the cascade.
-
-   `transition: none` rides along with `animation: none` here, even though
-   only one of the nine — `.pc-abstract` — has a transition of its own (the
-   0.42s max-height/mask-size travel that opens and closes it on tap). The
-   old giant reduce block used to carry a bare `.pc-abstract` entry for
-   exactly that; it left with the other eight bare entries when this block
-   replaced them (see the comment on that block, further down), and nothing
-   took over suppressing the transition — only the animation moved. Under
-   reduced motion the panel kept travelling over 420ms while `toggleExpanded`'s
-   own scroll-back (PaperCard.jsx) snapped to the top instantly, since that
-   one IS gated on `prefersReducedMotion` — the two coming apart is exactly
-   what that function's comment says this pairing exists to prevent. Setting
-   `transition: none` for all nine here (not just `.pc-abstract`) costs
-   nothing — the other eight have no transition to lose — and keeps this one
-   block the sole place this selector list's reduced-motion behaviour is
-   decided, rather than splitting `animation` and `transition` across two
-   ends of the file again.
-
-   This block's position is right for a second reason too: it sits after
-   the `pcArriveAside` longhand above (`.pc-follow-reason`'s own
-   `animation-name` override, right after the base arrival rule) as well as
-   after the base rule itself. `animation-name` is one property this block's
-   `animation: none` shorthand resets along with everything else, and
-   `pcArriveAside` sets that same property on that same selector at equal
-   specificity — so if this block came earlier than that override (even if
-   still later than the base rule above it), the override's later, narrower
-   declaration would win `.pc-follow-reason`'s `animation-name` back under
-   reduced motion. The test only pins this block after the base rule's first
-   selector, not after `pcArriveAside` specifically — moving it into the
-   narrow gap between the two would not fail that assertion, so this is a
-   second invariant this comment carries alone. */
-@media (prefers-reduced-motion: reduce) {
-  .pc[data-active="true"] .pc-follow-reason,
-  .pc[data-active="true"] .pc-meta,
-  .pc[data-active="true"] .pc-chips,
-  .pc[data-active="true"] .pc-topics,
-  .pc[data-active="true"] .pc-title,
-  .pc[data-active="true"] .pc-authors,
-  .pc[data-active="true"] .pc-abstract,
-  .pc[data-active="true"] .pc-action-bar,
-  .pc[data-active="true"] .pc-side-actions {
-    animation: none;
-    transition: none;
-  }
 }
 
 @keyframes pcArrive {
@@ -2892,18 +2784,22 @@ a.pc-citations {
   }
 
   .pc,
+  .pc-sheet,
   .pc-figure,
   /* Beside `.pc-figure`, never without it: with movement refused a clipping
      appears in one frame, so the glyph has to make room in that same frame.
      A 620ms cross-fade next to an instant arrival is the two coming apart
      again, which is the fault this pairing exists to close. */
   .pc-watermark,
-  /* Not `.pc-sheet` any more (nothing left there to suppress) and not the
-     nine arrival pieces (`.pc-follow-reason` through `.pc-abstract`, see the
-     old list this replaced): their own reduced-motion rule sits next to the
-     arrival rule it mirrors now, not in this unrelated list — see
-     PaperCard.css, the `@media` block right after the arrival's back-nav
-     suppression. */
+  .pc-follow-reason,
+  .pc-meta,
+  .pc-chips,
+  .pc-topics,
+  .pc-title,
+  .pc-authors,
+  .pc-action-bar,
+  .pc-side-actions,
+  .pc-abstract,
   .pc-side-icon,
   .pc-side-btn,
   .pc-scroll-hint,
