@@ -342,7 +342,7 @@ export default function SearchCommand({ open, onOpenChange }) {
         key={project.id}
         value={`project-${project.id}`}
         onSelect={() => go(
-          `/explorer/project/${project.id}`
+          `/explorer/project/${encodeURIComponent(project.id)}`
           + `?name=${encodeURIComponent(project.acronym || project.title)}`
           + `&funder=${encodeURIComponent(project.funder || '')}`,
         )}

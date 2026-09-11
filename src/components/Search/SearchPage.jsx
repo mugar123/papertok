@@ -1225,7 +1225,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                     key={project.id}
                     className="search-item search-item-enter"
                     style={{ '--search-item-index': Math.min(index, 6) }}
-                    onClick={() => navigate(`/explorer/project/${project.id}?name=${encodeURIComponent(project.acronym || project.title)}&funder=${encodeURIComponent(project.funder)}`)}
+                    onClick={() => navigate(`/explorer/project/${encodeURIComponent(project.id)}?name=${encodeURIComponent(project.acronym || project.title)}&funder=${encodeURIComponent(project.funder)}`)}
                   >
                     <div className="search-item-icon"><Briefcase size={22} /></div>
                     <div className="search-item-info">
@@ -1233,7 +1233,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                         <button
                           type="button"
                           className="search-item-title-btn"
-                          onClick={(e) => { e.stopPropagation(); navigate(`/explorer/project/${project.id}?name=${encodeURIComponent(project.acronym || project.title)}&funder=${encodeURIComponent(project.funder)}`); }}
+                          onClick={(e) => { e.stopPropagation(); navigate(`/explorer/project/${encodeURIComponent(project.id)}?name=${encodeURIComponent(project.acronym || project.title)}&funder=${encodeURIComponent(project.funder)}`); }}
                         >
                           {project.acronym ? `${project.acronym}: ${project.title}` : project.title}
                         </button>

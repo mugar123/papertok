@@ -1328,13 +1328,14 @@ const PaperCard = memo(function PaperCard({
                   <button
                     type="button"
                     className="pc-project-badge"
-                    disabled={!project.code}
+                    disabled={!(project.id || project.code)}
                     onClick={(e) => {
                       e.stopPropagation();
                       const paperId = paper.id.startsWith('arxiv:') ? paper.id.split(':')[1] : paper.id;
+                      const projectRouteId = project.id || project.code;
                       const path = publicMode
-                        ? getPublicEntityPath('project', project.code)
-                        : `/explorer/project/${encodeURIComponent(project.code)}?name=${encodeURIComponent(project.acronym)}&funder=${encodeURIComponent(project.funder)}&arxivId=${paperId}`;
+                        ? getPublicEntityPath('project', projectRouteId)
+                        : `/explorer/project/${encodeURIComponent(projectRouteId)}?name=${encodeURIComponent(project.acronym)}&funder=${encodeURIComponent(project.funder)}&arxivId=${paperId}`;
                       trackEvent('select_content', {
                         content_type: 'project',
                         surface: analyticsSurface,
@@ -1342,7 +1343,7 @@ const PaperCard = memo(function PaperCard({
                       });
                       if (path) navigate(path);
                     }}
-                    title={project.code
+                    title={(project.id || project.code)
                       ? (isEnglish ? 'Open research project' : 'Abrir proyecto de investigación')
                       : undefined}
                   >
