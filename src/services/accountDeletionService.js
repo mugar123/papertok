@@ -69,8 +69,8 @@ async function postSlice(api) {
 
 /**
  * Repeats until the Worker reports `complete`, or until the session dies
- * after work has already started — which is what a lost response after Auth
- * deletion looks like from the tab.
+ * once the walk has reached the user tree — which is what a lost response
+ * after Auth deletion looks like from the tab.
  */
 export async function deleteAccount(overrides) {
   const api = operations(overrides);
@@ -81,19 +81,23 @@ export async function deleteAccount(overrides) {
   const confirmedUid = api.currentUid();
   if (!confirmedUid) throw new AccountDeletionError('AUTH_REQUIRED', 401);
 
-  let started = false;
+  let lastStage = null;
   for (let i = 0; i < MAX_SLICES; i += 1) {
     if (api.currentUid() !== confirmedUid) throw new AccountDeletionError('AUTH_REQUIRED', 401);
     let payload;
     try {
       payload = await postSlice(api);
     } catch (error) {
-      if (started && error?.code === 'AUTH_REQUIRED' && api.currentUid() === confirmedUid) {
-        return { complete: true, stage: 'auth' };
-      }
+      // `AUTH_REQUIRED` after the Worker has already deleted the Auth user is
+      // the normal end of a deletion. Before that stage, or as a re-login
+      // demand, it is a failure the user has to see.
+      const authGone = error?.code === 'AUTH_REQUIRED'
+        && ['userTree', 'auth'].includes(lastStage)
+        && api.currentUid() === confirmedUid;
+      if (authGone) return { complete: true, stage: 'auth' };
       throw error;
     }
-    started = true;
+    lastStage = payload?.stage || lastStage;
     if (payload?.complete) return payload;
   }
   throw new AccountDeletionError('ACCOUNT_DELETION_INCOMPLETE', 504);

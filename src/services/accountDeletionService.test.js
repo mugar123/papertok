@@ -68,3 +68,39 @@ test('a session switch between slices stops the deletion before the next POST', 
   );
   assert.equal(calls, 1);
 });
+
+test('AUTH_RECENT_LOGIN_REQUIRED is never success, even after work started', async () => {
+  let calls = 0;
+  await assert.rejects(
+    deleteAccount({
+      isDemo: false,
+      apiBase: 'https://worker.test',
+      currentUid: () => 'alice',
+      request: async () => {
+        calls += 1;
+        if (calls === 1) return new Response(JSON.stringify({ complete: false, stage: 'userTree' }), { status: 202 });
+        return new Response(JSON.stringify({ code: 'AUTH_RECENT_LOGIN_REQUIRED' }), { status: 401 });
+      },
+    }),
+    (error) => error.code === 'AUTH_RECENT_LOGIN_REQUIRED',
+  );
+  assert.equal(calls, 2);
+});
+
+test('a 401 before the user tree was reached is an error, not completion', async () => {
+  let calls = 0;
+  await assert.rejects(
+    deleteAccount({
+      isDemo: false,
+      apiBase: 'https://worker.test',
+      currentUid: () => 'alice',
+      request: async () => {
+        calls += 1;
+        if (calls === 1) return new Response(JSON.stringify({ complete: false, stage: 'comments' }), { status: 202 });
+        return new Response(JSON.stringify({ code: 'AUTH_REQUIRED' }), { status: 401 });
+      },
+    }),
+    (error) => error.code === 'AUTH_REQUIRED' && error.status === 401,
+  );
+  assert.equal(calls, 2);
+});
