@@ -5,7 +5,7 @@ import {
   settleWithin,
   withStubbedFetch,
 } from '../test-support/deadlineHarness.js';
-import { CACHE, fetchWithTimeout, getProjectDetails } from './openAireService.js';
+import { CACHE, fetchWithTimeout, getProjectDetails, getPapersByProject } from './openAireService.js';
 
 test('the deadline covers an OpenAIRE body that never finishes', async () => {
   // The worst shape of the family: the response comes back unread and
@@ -125,4 +125,33 @@ test('getProjectDetails does not cache a miss', async () => {
   } finally {
     CACHE.clear();
   }
+});
+
+const emptyOpenAire = { ok: true, json: async () => ({ response: { header: { total: { $: '0' } }, results: {} } }) };
+function capturingFetch(urls) { return async (url) => { urls.push(String(url)); return emptyOpenAire; }; }
+
+test('un id de OpenAIRE consulta los detalles por openaireProjectID', async () => {
+  const urls = [];
+  CACHE.clear();
+  await withStubbedFetch(capturingFetch(urls), () => getProjectDetails('snsf________::abc'));
+  assert.match(urls[0], /openaireProjectID=snsf________%3A%3Aabc/);
+  assert.doesNotMatch(urls[0], /grantID=/);
+});
+
+test('un código a secas lleva el funder a detalles y a publicaciones', async () => {
+  const urls = [];
+  CACHE.clear();
+  await withStubbedFetch(capturingFetch(urls), async () => {
+    await getProjectDetails('100010', { funder: 'SNSF' });
+    await getPapersByProject('100010', 1, { funder: 'SNSF' });
+  });
+  assert.match(urls[0], /grantID=100010/); assert.match(urls[0], /funder=SNSF/);
+  assert.match(urls[1], /projectID=100010/); assert.match(urls[1], /funder=SNSF/);
+});
+
+test('sin funder las URLs quedan como antes', async () => {
+  const urls = [];
+  CACHE.clear();
+  await withStubbedFetch(capturingFetch(urls), () => getPapersByProject('100010', 1));
+  assert.doesNotMatch(urls[0], /funder=/);
 });

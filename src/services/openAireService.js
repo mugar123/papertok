@@ -51,18 +51,28 @@ function extractFunder(p) {
   return { funderName, fundingStream };
 }
 
-export async function getProjectDetails(projectId) {
+export async function getProjectDetails(projectId, { funder = '' } = {}) {
   if (!projectId) return null;
+  // A grant code alone is not unique across funders (grantID=100010 answers
+  // for NHMRC, SNSF, and UKRI alike), so a bare code needs the funder to land
+  // on the right project. An OpenAIRE id (the `::`-joined form) is already
+  // unambiguous and takes the direct lookup instead.
+  const isOpenAireId = projectId.includes('::');
   // The same 24 h cache the two lookups below keep. Without it this was the
   // only Explorer read that paid a full round trip on every return, with the
   // project's skeleton — the one that reserves worst — on screen for all of
-  // it (2026-09-09). A miss is not cached: OpenAIRE indexes late.
-  const cacheKey = `projectDetails_${projectId}`;
+  // it (2026-09-09). A miss is not cached: OpenAIRE indexes late. The funder
+  // rides along in the key so two funders' answers for the same grant code
+  // cannot overwrite each other.
+  const cacheKey = `projectDetails_${projectId}_${isOpenAireId ? '' : funder}`;
   if (CACHE.has(cacheKey)) {
     const cached = CACHE.get(cacheKey);
     if (Date.now() - cached.timestamp < CACHE_TTL) return cached.data;
   }
-  const url = `https://api.openaire.eu/search/projects?format=json&size=1&grantID=${encodeURIComponent(projectId)}`;
+  const lookup = isOpenAireId
+    ? `openaireProjectID=${encodeURIComponent(projectId)}`
+    : `grantID=${encodeURIComponent(projectId)}${funder ? `&funder=${encodeURIComponent(funder)}` : ''}`;
+  const url = `https://api.openaire.eu/search/projects?format=json&size=1&${lookup}`;
   try {
     const response = await fetchWithTimeout(url);
     if (!response.ok) return null;
@@ -248,18 +258,23 @@ function parseProjectFromResult(result) {
 /**
  * Get papers (PIDs/DOIs) for a specific project
  */
-export async function getPapersByProject(projectCode, page = 1) {
+export async function getPapersByProject(projectCode, page = 1, { funder = '' } = {}) {
   if (!projectCode) return { arxivIds: [], dois: [], total: 0 };
 
-  const cacheKey = `papers_proj_${projectCode}_${page}`;
+  // See getProjectDetails: a bare grant code needs the funder to disambiguate,
+  // an OpenAIRE id already carries it. The cache key includes the funder for
+  // the same reason — two funders sharing a grant code must not collide.
+  const isOpenAireId = projectCode.includes('::');
+  const cacheKey = `papers_proj_${projectCode}_${isOpenAireId ? '' : funder}_${page}`;
   if (CACHE.has(cacheKey)) {
     const cached = CACHE.get(cacheKey);
     if (Date.now() - cached.timestamp < CACHE_TTL) return cached.data;
   }
 
   try {
-    const paramName = projectCode.includes('::') ? 'openaireProjectID' : 'projectID';
-    const url = `https://api.openaire.eu/search/publications?format=json&size=30&page=${page}&${paramName}=${encodeURIComponent(projectCode)}`;
+    const paramName = isOpenAireId ? 'openaireProjectID' : 'projectID';
+    const funderParam = !isOpenAireId && funder ? `&funder=${encodeURIComponent(funder)}` : '';
+    const url = `https://api.openaire.eu/search/publications?format=json&size=30&page=${page}&${paramName}=${encodeURIComponent(projectCode)}${funderParam}`;
     const response = await fetchWithTimeout(url);
     if (!response.ok) throw new Error(`OpenAIRE API error: ${response.status}`);
 
@@ -352,7 +367,7 @@ export async function searchProjects(query, page = 1, options = {}) {
       const budget = totalCost > 0 ? totalCost : fundedAmount;
 
       return {
-        id: p.code?.["$"] || res.header?.["dri:objIdentifier"]?.["$"],
+        id: res.header?.["dri:objIdentifier"]?.["$"] || p.code?.["$"],
         code: p.code?.["$"],
         title: p.title?.["$"] || "Unknown Project",
         acronym: p.acronym?.["$"] || null,
