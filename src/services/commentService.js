@@ -24,7 +24,14 @@
  * Counts are capped `count()` aggregations, the F2 pattern — there is no
  * client-written counter for a cascade delete to corrupt.
  *
- * Nothing here is imported by the feed. A feed load still costs one read.
+ * A feed LOAD still costs one document read: nothing here is on the path that
+ * builds the feed, and no card reads a thread to render. The single door from
+ * the feed into this file is `fetchCommentCount`, reached through
+ * `src/hooks/useCommentCount.js`, and only for the one card the feed says is
+ * active — at most two capped aggregations for that paper, once per session,
+ * after the card is already on screen. Nothing else here may be imported from
+ * the feed path, and nothing else may be imported by that hook; the guard in
+ * commentService.test.js scans both and fails if either drifts.
  */
 
 import {

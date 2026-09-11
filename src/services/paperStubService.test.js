@@ -8,6 +8,8 @@ import {
 } from './paperStubService.js';
 import { keyFromIdentity } from '../utils/paperCanonicalKey.js';
 
+const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+
 const BASE = {
   currentUser: { uid: 'u1' },
   isDemo: false,
@@ -123,7 +125,11 @@ test('SOURCE: nothing on the feed path imports the stub service', async () => {
     '../utils/interactionProfileLoader.js',
     '../services/interactionProfileStore.js',
   ]) {
-    const source = await readFile(new URL(path, import.meta.url), 'utf8');
+    // Comments stripped first: the claim is about code. A file on this path
+    // may legitimately NAME a service in prose — PaperCard.jsx does, to say
+    // which single door its comment count goes through — without importing
+    // a line of it. Strings are untouched, so a dynamic import still trips.
+    const source = stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
     assert.doesNotMatch(source, /paperStubService/, `${path} must stay off the stub collection`);
   }
 });

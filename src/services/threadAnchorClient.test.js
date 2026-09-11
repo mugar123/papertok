@@ -132,6 +132,8 @@ test('SOURCE: the comments sheet asks the Worker first', async () => {
   assert.match(source, /invalidateThreadAnchor/);
 });
 
+const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+
 test('SOURCE: the feed still never touches thread resolution', async () => {
   const { readFile } = await import('node:fs/promises');
   for (const path of [
@@ -139,7 +141,44 @@ test('SOURCE: the feed still never touches thread resolution', async () => {
     '../components/Feed/FeedContainer.jsx',
     '../components/Feed/PaperCard.jsx',
   ]) {
-    const source = await readFile(new URL(path, import.meta.url), 'utf8');
+    const source = stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
     assert.doesNotMatch(source, /threadAnchorClient/, `${path} must stay off the comment thread`);
   }
+});
+
+/**
+ * Since Task 9 the feed path reaches this file transitively — PaperCard ->
+ * hooks/useCommentCount.js -> threadAnchorClient — so the scan above, which
+ * only sees direct imports, no longer covers what it used to. The card takes
+ * exactly one thing from here, and it is the one thing that costs nothing:
+ * `localThreadKeys` is pure string work on the paper already in hand. The two
+ * functions beside it, `fetchThreadAnchor` and `invalidateThreadAnchor`, are
+ * calls to the Worker — the feed must not gain either, and a card mounted per
+ * scroll would put them on a quota shared by every visitor.
+ *
+ * The gate is asserted here too, not only in commentService.test.js: each
+ * guard should stand on its own, and this one's invariant ("the feed does not
+ * resolve threads") rests on the same single line.
+ */
+test('SOURCE: the card takes only the free half of this module', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const read = async (path) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
+  const hook = await read('../hooks/useCommentCount.js');
+  const names = hook.match(/import\s*\{([^}]*)\}\s*from\s*'\.\.\/services\/threadAnchorClient\.js'/);
+  assert.ok(names, 'the hook is the feed path\'s only route into this module');
+  assert.deepEqual(
+    names[1].split(',').map(name => name.trim()).filter(Boolean).sort(),
+    ['localThreadKeys'],
+    'no thread resolution and no Worker call may reach the feed through this hook',
+  );
+  assert.doesNotMatch(hook, /fetchThreadAnchor|invalidateThreadAnchor/);
+
+  const card = await read('../components/Feed/PaperCard.jsx');
+  const call = card.match(/useCommentCount\([^;]{0,160}?\);/);
+  assert.ok(call, 'PaperCard must call useCommentCount');
+  assert.match(
+    call[0],
+    /^useCommentCount\(paper, Boolean\(isActive && canOpenComments\)\);$/,
+    'and it runs for the active card alone',
+  );
 });

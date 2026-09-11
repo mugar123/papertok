@@ -12,6 +12,8 @@ import {
   signInWithProvider,
 } from './authIdentityService.js';
 
+const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+
 const GITHUB = SIGN_IN_PROVIDERS.github;
 const GOOGLE = SIGN_IN_PROVIDERS.google;
 
@@ -293,7 +295,11 @@ test('SOURCE: nothing on the feed path imports the identity service', async () =
     '../utils/interactionProfileLoader.js',
     '../services/interactionProfileStore.js',
   ]) {
-    const source = await readFile(new URL(path, import.meta.url), 'utf8');
+    // Comments stripped first: the claim is about code. A file on this path
+    // may legitimately NAME a service in prose — PaperCard.jsx does, to say
+    // which single door its comment count goes through — without importing
+    // a line of it. Strings are untouched, so a dynamic import still trips.
+    const source = stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
     assert.doesNotMatch(source, /authIdentityService/, `${path} must stay off the auth providers`);
   }
 });

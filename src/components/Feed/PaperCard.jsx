@@ -256,9 +256,15 @@ const PaperCard = memo(function PaperCard({
   onOpenPdf = () => {},
   onSaveToList = () => {},
   // The door to the paper's comment thread. A callback and nothing more:
-  // the sheet, its services and every Firestore read live with the host
-  // (App.jsx, like the PDF viewer and the save modal), so nothing social
-  // enters the feed's module graph and a feed load still costs one read.
+  // the sheet, its pagination, its writes and every Firestore read they need
+  // live with the host (App.jsx, like the PDF viewer and the save modal).
+  // A feed LOAD still costs one document read — none of that is on the
+  // module graph. What the card itself may spend, once the feed says it is
+  // the active one, is the capped `count()` behind the number on this
+  // button: at most two aggregations for that one paper, once per session,
+  // and only through `useCommentCount.js`. That hook is the single door
+  // between this file and the social collections; the guards in
+  // commentService.test.js and threadAnchorClient.test.js hold it shut.
   onOpenComments = null,
   getInteractionState = () => ({}),
   hideScrollHint = false,
@@ -308,10 +314,17 @@ const PaperCard = memo(function PaperCard({
     () => Boolean(onOpenComments && canonicalPaperIdentity(paper)),
     [onOpenComments, paper],
   );
-  // One `count()` read, at most, for the one card the feed says is active —
-  // never for the ones scrolled past or waiting below. See the hook for the
-  // budget this is built against and why it cannot go through the Worker.
+  // Two `count()` reads at most, for the one card the feed says is active —
+  // never for the ones scrolled past or waiting below. This gate is the whole
+  // cost budget; commentService.test.js guards it. See the hook for the
+  // budget it is built against and why it cannot go through the Worker.
   const commentCount = useCommentCount(paper, Boolean(isActive && canOpenComments));
+  // `1000+` past the cap, the same as the sheet's own header: each key's
+  // aggregation stops counting at COMMENT_COUNT_CAP, so the raw sum of two
+  // capped keys is not a number anyone should be shown.
+  const commentCountLabel = commentCount && commentCount.count > 0
+    ? (commentCount.capped ? '1000+' : String(commentCount.count))
+    : null;
   const [showAuthorsModal, setShowAuthorsModal] = useState(false);
   // The sheet is leaving with the page: an author was picked from it. It
   // closes in its leaving pose (`is-leaving`, PaperCard.css) — a short drop
@@ -1732,15 +1745,15 @@ const PaperCard = memo(function PaperCard({
             // as Like/Save above it once they carry a count — but a bare
             // number is not a name a screen reader can act on, so the
             // accessible name keeps the word regardless of what is painted.
-            aria-label={commentCount > 0
-              ? `${commentCount} ${isEnglish ? 'comments' : 'comentarios'}`
+            aria-label={commentCountLabel
+              ? `${commentCountLabel} ${isEnglish ? 'comments' : 'comentarios'}`
               : (isEnglish ? 'Comments' : 'Comentarios')}
           >
             <span className="pc-side-icon">
               <MessageCircle size={20} />
             </span>
             <span className="pc-side-label">
-              {commentCount > 0 ? commentCount : (isEnglish ? 'Comments' : 'Comentarios')}
+              {commentCountLabel ?? (isEnglish ? 'Comments' : 'Comentarios')}
             </span>
           </button>
         )}

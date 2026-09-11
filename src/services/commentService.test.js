@@ -311,9 +311,24 @@ test('SOURCE: no query in this service is issued without a ceiling', async () =>
   );
 });
 
+const readSource = (path) => readFile(new URL(path, import.meta.url), 'utf8');
+const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+/** Every module a file pulls in, however it names what it takes. */
+const specifiersOf = (source) => [...new Set([...source.matchAll(/from\s+'([^']+)'/g)].map(hit => hit[1]))].sort();
+/** The names taken by name from one specifier. */
+const namesFrom = (source, specifier) => {
+  const escaped = specifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const hit = source.match(new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*'${escaped}'`));
+  assert.ok(hit, `expected a named import from ${specifier}`);
+  return hit[1].split(',').map(name => name.trim()).filter(Boolean).sort();
+};
+
 test('SOURCE: nothing on the feed path imports any social service', async () => {
   // The feed-load invariant (one document read), asserted where it can
   // actually break: an import. Superset of the followUserService guard.
+  // Comments are stripped first — the claim is about code. A file naming this
+  // guard in prose (PaperCard.jsx does, to say where its one sanctioned door
+  // is held shut) must not read as an import of the thing it is explaining.
   for (const path of [
     '../context/FeedContext.jsx',
     '../components/Feed/FeedContainer.jsx',
@@ -321,11 +336,54 @@ test('SOURCE: nothing on the feed path imports any social service', async () => 
     '../utils/interactionProfileLoader.js',
     '../services/interactionProfileStore.js',
   ]) {
-    const source = await readFile(new URL(path, import.meta.url), 'utf8');
+    const source = stripComments(await readSource(path));
     assert.doesNotMatch(
       source,
       /followUserService|commentService|paperStubService|reportService|userSearchService/,
       `${path} must stay off the social collections`,
     );
   }
+});
+
+/**
+ * The one sanctioned crack in the wall above, and the fence that keeps it one.
+ *
+ * Task 9 put a comment count on the card's button, so the feed path now does
+ * reach this file — PaperCard -> hooks/useCommentCount.js -> commentService
+ * (which itself imports paperStubService) and -> threadAnchorClient. The scan
+ * above only sees DIRECT imports, so it goes on passing while the module graph
+ * underneath it has changed: a `fetchThreadPage`, or a stub write, added to
+ * that hook would cost the feed reads with nothing failing.
+ *
+ * What is sanctioned is narrow and worth stating exactly: a feed LOAD still
+ * costs one document read; the aggregation fires after the card is mounted,
+ * for the ONE card the feed says is active, at most twice per paper per
+ * session. Both halves of that are asserted here — the hook's only door into
+ * Firestore, and the gate on the call — because they are the whole budget and
+ * nothing else in the suite watches either of them.
+ */
+test('SOURCE: the card counts comments through one door, and only when active', async () => {
+  const hook = stripComments(await readSource('../hooks/useCommentCount.js'));
+  assert.deepEqual(
+    specifiersOf(hook),
+    ['../services/commentService.js', '../services/threadAnchorClient.js', 'react'],
+    'a new import into this hook is a change to the feed\'s read budget: weigh it, then update this list',
+  );
+  assert.deepEqual(
+    namesFrom(hook, '../services/commentService.js'),
+    ['COMMENT_COUNT_CAP', 'fetchCommentCount'],
+    'the capped count is the hook\'s only Firestore entry point (COMMENT_COUNT_CAP is a number, not a read)',
+  );
+  assert.doesNotMatch(hook, /firebase/, 'and it never reaches past the service to Firestore itself');
+
+  // The line the whole budget rests on, read where it is written: bounded to
+  // the call itself so the match cannot drift into the code around it.
+  const card = stripComments(await readSource('../components/Feed/PaperCard.jsx'));
+  const call = card.match(/useCommentCount\([^;]{0,160}?\);/);
+  assert.ok(call, 'PaperCard must call useCommentCount');
+  assert.match(
+    call[0],
+    /^useCommentCount\(paper, Boolean\(isActive && canOpenComments\)\);$/,
+    'the count is gated on the active card that can open a thread — nothing else may fire a read',
+  );
 });
