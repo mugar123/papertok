@@ -76,8 +76,8 @@ test('the palette arrives and leaves inside a fifth of a second', async () => {
   const shown = block(states, 'shown:');
   const hidden = block(states, 'hidden:');
 
-  assert.ok(durationsMs(shown)[0] <= 220, `the palette takes ${durationsMs(shown)[0]}ms to arrive`);
-  assert.ok(durationsMs(hidden)[0] <= 180, `the palette takes ${durationsMs(hidden)[0]}ms to leave`);
+  assert.ok(durationsMs(shown)[0] <= 180, `the palette takes ${durationsMs(shown)[0]}ms to arrive`);
+  assert.ok(durationsMs(hidden)[0] <= 150, `the palette takes ${durationsMs(hidden)[0]}ms to leave`);
   // Shorter travel with the shorter duration: the same 12px in 160ms is a
   // faster-moving panel, which reads as brusque rather than as quick.
   assert.match(states, /y:\s*8\b/, 'expected the hidden state to sit 8px below');

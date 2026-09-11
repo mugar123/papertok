@@ -48,8 +48,8 @@ function PopoverContent({
                there. That curve is right for the growth — it arrives and
                settles — and wrong for the fade, where spending half the
                distance in one frame is a flash, not an appearance. */
-            'motion-safe:[transition:opacity_180ms_linear,scale_220ms_var(--ease-out-expo)]',
-            'motion-safe:data-ending-style:[transition:opacity_140ms_linear,scale_140ms_var(--ease-out-expo)]',
+            'motion-safe:[transition:opacity_150ms_linear,scale_180ms_var(--ease-out-expo)]',
+            'motion-safe:data-ending-style:[transition:opacity_120ms_linear,scale_120ms_var(--ease-out-expo)]',
             'data-starting-style:opacity-0 data-starting-style:scale-[0.96] data-ending-style:opacity-0 data-ending-style:scale-[0.98]',
             className,
           )}

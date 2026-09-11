@@ -540,9 +540,9 @@ const PANEL_STATES = {
     scale: 1,
     pointerEvents: 'auto',
     transition: {
-      duration: 0.2,
+      duration: 0.16,
       ease: EASE_OUT,
-      opacity: { duration: 0.2, ease: 'linear' },
+      opacity: { duration: 0.16, ease: 'linear' },
     },
   },
   hidden: {
@@ -551,9 +551,9 @@ const PANEL_STATES = {
     scale: 0.97,
     pointerEvents: 'none',
     transition: {
-      duration: 0.16,
+      duration: 0.13,
       ease: EASE_OUT,
-      opacity: { duration: 0.16, ease: 'linear' },
+      opacity: { duration: 0.13, ease: 'linear' },
     },
   },
 };
