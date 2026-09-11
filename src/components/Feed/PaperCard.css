@@ -2607,9 +2607,22 @@ a.pc-citations {
     justify-content: flex-end;
   }
 
+  /* The field glyph does not come to the phone (2026-09-11).
+
+     It is a desktop mark: `clamp(120px, 15vw, 190px)` of hairline in a corner
+     of a sheet that has room for one. Here the sheet is full-bleed and the type
+     is anchored to the bottom edge, so the orbit or the sigma ends up behind
+     the title rather than beside it -- and `.pc-figures` is already gone below
+     1080px, so there is nothing left for it to sit with either.
+
+     `display: none` rather than a fade: the SVG is 220px of paths that the
+     phone should not be laying out or painting at all. React mounts it all the
+     same, exactly as it does the clippings this file hides at 1080px.
+
+     Its resting `right`/`top` stay where they are; the phone offsets that used
+     to live here positioned something nobody sees. */
   .pc-watermark {
-    right: 60px;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+    display: none;
   }
 
   .pc-side-actions {

@@ -129,3 +129,72 @@ test('with movement refused the glyph gives way in the same frame as the clippin
   assert.ok(holding, 'expected the reduced-motion block that stills the clippings');
   assert.match(holding, /\.pc-watermark\s*,/, 'the glyph belongs in it too');
 });
+
+/**
+ * And on a phone it is not drawn at all (asked 2026-09-11).
+ *
+ * The glyph was sized for the desktop sheet -- `clamp(120px, 15vw, 190px)` of
+ * hairline in a corner that has room for it. In the phone layout the sheet goes
+ * full-bleed and the type is anchored to the bottom, so the same mark sits
+ * behind the title instead of beside it. Below `max-width: 900px` the card
+ * already rearranges itself (full-bleed `.pc-sheet`, the actions moved to a
+ * thumb rail); the glyph leaves on that same breakpoint rather than one of its
+ * own, so there is no width where the card is laid out for a phone and still
+ * carries a mark drawn for a desktop.
+ *
+ * `display: none`, not `opacity: 0`: the point is that the phone stops drawing
+ * a 220px SVG it was never going to show.
+ */
+
+/**
+ * The condition of the first `@media` block holding a rule that matches
+ * `pattern`. Selector-aware on purpose: `display: none` alone appears in three
+ * blocks of this stylesheet, so a bare substring would name whichever one the
+ * file happens to list first.
+ */
+function mediaConditionOf(css, pattern) {
+  for (const [, condition, block] of css.matchAll(/@media([^{]+)\{((?:[^{}]|\{[^{}]*\})*)\}/g)) {
+    if (pattern.test(block)) return condition.trim();
+  }
+  return null;
+}
+
+test('the glyph is not drawn where the card is laid out for a phone', async () => {
+  const css = await sheet;
+
+  const hiding = watermarkRules(css).filter(([, body]) => /display:\s*none/.test(body));
+  assert.equal(hiding.length, 1, 'exactly one rule should take the glyph off the card');
+
+  // The breakpoint is read from the stylesheet, not spelled here: what this
+  // pins is that the glyph leaves on the SAME query that rearranges the card
+  // for a phone, whatever that width becomes. The thumb rail is the marker --
+  // `.pc-side-actions` going `position: absolute` happens in that block and
+  // nowhere else.
+  const phoneLayout = mediaConditionOf(css, /\.pc-side-actions[^{}]*\{[^{}]*position:\s*absolute/);
+  assert.match(phoneLayout || '', /max-width:\s*\d+px/, 'expected the phone-layout breakpoint');
+  assert.equal(
+    mediaConditionOf(css, /\.pc-watermark[^{}]*\{[^{}]*display:\s*none/),
+    phoneLayout,
+    'the glyph must leave on the same query that moves the actions to the thumb rail',
+  );
+
+  // The mutation guard. `opacity: 0` reads as "invisible" to every other
+  // assertion here while the phone still lays out and paints the SVG, which is
+  // the cost this change exists to drop.
+  assert.ok(
+    !watermarkRules(css).some(([, body]) => /opacity:\s*0(?![.0-9])/.test(body)),
+    'no rule may hide the glyph by fading it to nothing',
+  );
+});
+
+test('the glyph keeps its place on a desktop card', async () => {
+  const css = await sheet;
+
+  // Nothing outside a media query may hide it: the desktop sheet is where the
+  // mark was designed to live, and `paperCardWatermark`'s other tests describe
+  // how it behaves there.
+  assert.ok(
+    !/display:\s*none/.test(ruleBody(css, '.pc-watermark')),
+    'the resting rule must leave the glyph drawn',
+  );
+});
