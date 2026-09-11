@@ -273,12 +273,17 @@ const PaperCard = memo(function PaperCard({
   onAuthRequired,
   analyticsSurface = 'feed',
   position,
-  // Whether the feed currently treats this card as the one on screen. Only
-  // FeedContainer passes it; every other place that mounts a card (lists,
-  // the explorer, search, the public paper page, the related-paper overlay)
-  // leaves it at this default, which is exactly where the count below wants
-  // to be: off, since nothing there tells this card apart from an offscreen
-  // one.
+  // Whether the feed currently treats this card as the one on screen — or,
+  // off the feed, whether this mount is the one paper a single-paper surface
+  // is showing. All six other call sites (lists, the explorer, search, the
+  // scientific report, the public paper page, the related-paper overlay) now
+  // pass it too, bare (`isActive` = `true`), so the entrance animation below
+  // plays there as well. The comment-count read further down is NOT gated by
+  // this prop alone: `canOpenComments` also needs `onOpenComments`, and only
+  // the feed, the public paper page and the related-paper overlay pass that
+  // — the other four call sites never do, so a card mounted there is never
+  // enabled and never reads, `isActive` notwithstanding. See
+  // useCommentCount.js for the budget this protects.
   isActive = false,
 }) {
   // `position` is optional and PaperCard renders on five different surfaces,
@@ -349,6 +354,30 @@ const PaperCard = memo(function PaperCard({
   const [resolvedAccess, setResolvedAccess] = useState({ paperId: null, copy: null });
   const [linkedResources, setLinkedResources] = useState({ paperId: null, items: [] });
   const [isCardVisible, setIsCardVisible] = useState(false);
+  // Whether this card's `pcArrive` has already played once while mounted
+  // (PaperCard.css). `isActive` toggles on every scroll-driven activeIndex
+  // change, and a drag that hovers on the 50% snap line flips it
+  // true/false/true before settling; CSS restarts the animation every time
+  // the rule matches again unless something remembers it already ran. That
+  // memory is `wasActive` + `hasArrived`, both state rather than a ref: a
+  // ref written unconditionally on every render would still read `true` on
+  // a render caused by something unrelated (`isCardVisible`, a resource
+  // fetch settling) while the FIRST arrival is still mid-flight, adding
+  // `data-arrived` mid-animation and cutting it short. Flipping `hasArrived`
+  // only inside the `isActive !== wasActive` branch — React's own "adjust
+  // state during render" pattern — means it changes only in reaction to a
+  // genuine transition, and specifically on the FIRST deactivation
+  // (`wasActive` true, going false) rather than the activation itself: at
+  // that instant `data-active` is already leaving `"true"`, so the arrival
+  // rule has already stopped matching regardless, and adding `data-arrived`
+  // in the same commit costs nothing more. Never cleared afterward — a
+  // revisit, jitter or deliberate, then finds the rule already suppressed.
+  const [wasActive, setWasActive] = useState(isActive);
+  const [hasArrived, setHasArrived] = useState(false);
+  if (isActive !== wasActive) {
+    setWasActive(isActive);
+    if (wasActive && !hasArrived) setHasArrived(true);
+  }
   // Whether the clippings are lit. Deliberately NOT `isCardVisible`: the two
   // ends of a card's turn on screen want different thresholds, and one flag
   // cannot hold both. It is armed at the same 15% that starts the fetch — late
@@ -1105,7 +1134,13 @@ const PaperCard = memo(function PaperCard({
           ? (isEnglish ? 'Source' : 'Fuente')
           : (isEnglish ? 'Read article' : 'Leer artículo');
   return (
-    <div ref={cardRef} className={`pc ${isCardVisible ? 'pc--visible' : ''}`} data-active={isActive ? 'true' : 'false'} onClick={handleDoubleTap}>
+    // `data-active="false"` is written, not omitted, unlike this repo's
+    // usual presence-means-true `data-*` convention (`data-arrived` right
+    // beside it included) — load-bearing, not an oversight: PaperCard.css
+    // and paperCardArrival.test.js both pin the literal `"true"`/`"false"`
+    // string, and a future bare `[data-active]` selector must not silently
+    // match a non-active `.pc`.
+    <div ref={cardRef} className={`pc ${isCardVisible ? 'pc--visible' : ''}`} data-active={isActive ? 'true' : 'false'} data-arrived={hasArrived ? 'true' : undefined} onClick={handleDoubleTap}>
       {/* DEBUG PANEL */}
       {SHOW_RANKING_DEBUG && paper._debugScore && (
         <div className="pc-debug-panel">

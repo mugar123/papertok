@@ -145,13 +145,17 @@ export function watchCommentCount(paper, onCount, overrides) {
  * flight — seeding or falling back to that same raw entry here just agrees
  * with what the subscription is about to paint anyway, not a second rule.
  *
- * A card that is not enabled has no subscription to correct it — and on
- * every surface but the feed (Lists, Search, `PublicPaperPage`, the
- * related-paper overlay: nowhere passes `isActive`) never will — so it may
- * only be handed a fresh entry. Anything stale would sit there, wrong, for
- * the rest of the session: `forgetCommentCount` deliberately leaves the old
- * answer in `cache` (see above), and a surface with no subscriber is the one
- * place nothing will ever ask again to correct it.
+ * A card that is not enabled has no subscription to correct it. `enabled` is
+ * `isActive && canOpenComments` (PaperCard.jsx): every surface that mounts a
+ * card passes `isActive` now, but `canOpenComments` also needs
+ * `onOpenComments`, and only the feed, `PublicPaperPage` and the
+ * related-paper overlay pass that — `EntityExplorer`, `ListsPage`,
+ * `SearchPage` and `ScientificReport` never do, so a card on any of those is
+ * never enabled. Such a card may only be handed a fresh entry. Anything
+ * stale would sit there, wrong, for the rest of the session:
+ * `forgetCommentCount` deliberately leaves the old answer in `cache` (see
+ * above), and a surface with no subscriber is the one place nothing will
+ * ever ask again to correct it.
  */
 export function paintableCommentCount(paperId, enabled) {
   if (!paperId) return null;
@@ -160,9 +164,13 @@ export function paintableCommentCount(paperId, enabled) {
 }
 
 /**
- * `enabled` is the card's own `isActive && canOpenComments`: off by default
- * everywhere `isActive` is not wired up (every surface but the feed), and off
- * for a paper with nowhere to anchor a thread. Tolerates `enabled` arriving
+ * `enabled` is the card's own `isActive && canOpenComments`. `isActive` is
+ * wired up on every surface that mounts a `PaperCard` now (PaperCard.jsx),
+ * so what actually keeps most of them off is `canOpenComments`: it also
+ * needs `onOpenComments`, and only the feed, `PublicPaperPage` and the
+ * related-paper overlay pass that — `EntityExplorer`, `ListsPage`,
+ * `SearchPage` and `ScientificReport` are off unconditionally, same as a
+ * paper with nowhere to anchor a thread. Tolerates `enabled` arriving
  * late or flipping more than once — the feed's mount window can leave a card
  * mounted for a while before it is the active one, and can make it active
  * more than once — because `loadCommentCount` itself is idempotent per

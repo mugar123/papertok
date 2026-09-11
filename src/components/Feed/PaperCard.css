@@ -332,6 +332,59 @@
   animation: none;
 }
 
+/* Repeated activation is not arrival. `data-active` toggles on every
+   scroll-driven activeIndex change, and a drag that hovers on the 50% snap
+   line — easy under mandatory snap, while the reader decides whether to
+   commit — flips it true/false/true before settling; without a latch, CSS
+   restarts `pcArrive` every time the rule matches again: a fresh 455ms
+   blank-and-refade of the whole card body, on a card the reader never left.
+   `data-arrived` (PaperCard.jsx) is set once `isActive` has gone back to
+   false after being true, and never cleared while the component stays
+   mounted — a deliberate scroll back to re-read this card does not replay
+   it either, only a real unmount does (a fresh instance, fresh state).
+   Specificity four — `.pc` + `[data-active="true"]` + `[data-arrived]` +
+   the piece — beats the plain arrival rule's three unconditionally, the
+   same margin the back-nav suppression above keeps over it and for the same
+   reason: not by coming later in the file. */
+.pc[data-active="true"][data-arrived] .pc-follow-reason,
+.pc[data-active="true"][data-arrived] .pc-meta,
+.pc[data-active="true"][data-arrived] .pc-chips,
+.pc[data-active="true"][data-arrived] .pc-topics,
+.pc[data-active="true"][data-arrived] .pc-title,
+.pc[data-active="true"][data-arrived] .pc-authors,
+.pc[data-active="true"][data-arrived] .pc-abstract,
+.pc[data-active="true"][data-arrived] .pc-action-bar,
+.pc[data-active="true"][data-arrived] .pc-side-actions {
+  animation: none;
+}
+
+/* Reduced motion has to beat the plain arrival rule too, unconditionally in
+   effect if not in specificity. Kept here rather than folded into the big
+   `prefers-reduced-motion` block later in this file (PaperCard.css) on
+   purpose: that distance — nine selectors gated on `.pc[data-active="true"]`
+   above, their reduced-motion counterpart 2400+ lines away, still bare — is
+   exactly how this broke unnoticed. Task 11 raised the arrival rule's
+   specificity from one to three by adding the `.pc[data-active="true"]`
+   qualifier; nothing raised its reduced-motion counterpart to match, so the
+   bare selectors down there stopped winning the tie they used to win by
+   coming later in the file, and reduced motion went silently dead for all
+   nine pieces. Mirrors the arrival rule's own selectors exactly — same
+   specificity, three — and wins the same way the two always tied before:
+   by being the later rule in the cascade. */
+@media (prefers-reduced-motion: reduce) {
+  .pc[data-active="true"] .pc-follow-reason,
+  .pc[data-active="true"] .pc-meta,
+  .pc[data-active="true"] .pc-chips,
+  .pc[data-active="true"] .pc-topics,
+  .pc[data-active="true"] .pc-title,
+  .pc[data-active="true"] .pc-authors,
+  .pc[data-active="true"] .pc-abstract,
+  .pc[data-active="true"] .pc-action-bar,
+  .pc[data-active="true"] .pc-side-actions {
+    animation: none;
+  }
+}
+
 @keyframes pcArrive {
   0% { opacity: 0; transform: translateY(8px); }
   100% { opacity: 1; transform: none; }
@@ -2781,22 +2834,18 @@ a.pc-citations {
   }
 
   .pc,
-  .pc-sheet,
   .pc-figure,
   /* Beside `.pc-figure`, never without it: with movement refused a clipping
      appears in one frame, so the glyph has to make room in that same frame.
      A 620ms cross-fade next to an instant arrival is the two coming apart
      again, which is the fault this pairing exists to close. */
   .pc-watermark,
-  .pc-follow-reason,
-  .pc-meta,
-  .pc-chips,
-  .pc-topics,
-  .pc-title,
-  .pc-authors,
-  .pc-action-bar,
-  .pc-side-actions,
-  .pc-abstract,
+  /* Not `.pc-sheet` any more (nothing left there to suppress) and not the
+     nine arrival pieces (`.pc-follow-reason` through `.pc-abstract`, see the
+     old list this replaced): their own reduced-motion rule sits next to the
+     arrival rule it mirrors now, not in this unrelated list — see
+     PaperCard.css, the `@media` block right after the arrival's back-nav
+     suppression. */
   .pc-side-icon,
   .pc-side-btn,
   .pc-scroll-hint,

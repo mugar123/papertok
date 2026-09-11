@@ -106,8 +106,61 @@ test('the project badge opens its space gently over 320ms, and arrives once the 
  */
 test('SOURCE: la llegada de los bloques se dispara al volverse activa la tarjeta, no al montar', async () => {
   const css = strip(await read('./PaperCard.css'));
-  assert.match(css, /\.pc\[data-active="true"\] \.pc-title/);
-  assert.doesNotMatch(css.slice(css.indexOf('.pc-sheet {'), css.indexOf('.pc-sheet {') + 600), /animation: cardSlideUp/);
+  // The full nine-selector list, not just one piece of it: reverting any of
+  // the other eight to a bare `.pc-X` would still pass a test that only
+  // checked `.pc-title`, and lose that piece's gating silently.
+  assert.match(
+    css,
+    /\.pc\[data-active="true"\] \.pc-follow-reason,\s*\.pc\[data-active="true"\] \.pc-meta,\s*\.pc\[data-active="true"\] \.pc-chips,\s*\.pc\[data-active="true"\] \.pc-topics,\s*\.pc\[data-active="true"\] \.pc-title,\s*\.pc\[data-active="true"\] \.pc-authors,\s*\.pc\[data-active="true"\] \.pc-abstract,\s*\.pc\[data-active="true"\] \.pc-action-bar,\s*\.pc\[data-active="true"\] \.pc-side-actions \{\s*animation: pcArrive 0\.28s cubic-bezier\(0\.16, 1, 0\.3, 1\) calc\(var\(--arrive, 0\) \* 35ms\) backwards;\s*\}/,
+  );
+  // Not just "no cardSlideUp by name" (redundant with followingFeed.test.js's
+  // own "the keyframes are gone, not just unused" pair) — no `animation:` on
+  // `.pc-sheet` at all: the sheet only sits at rest, it does not carry any
+  // entrance of its own any more.
+  assert.doesNotMatch(css.slice(css.indexOf('.pc-sheet {'), css.indexOf('.pc-sheet {') + 600), /animation:/);
   const jsx = strip(await read('./PaperCard.jsx'));
   assert.match(jsx, /data-active=\{isActive \? 'true' : 'false'\}/);
+});
+
+/**
+ * SOURCE test for reduced motion, which this task's own gating regressed:
+ * raising the arrival rule's specificity from one to three (by adding
+ * `.pc[data-active="true"]`) let it outrank the reduced-motion block that
+ * used to suppress it at equal specificity by coming later in the file. No
+ * test caught that when it shipped — this is the guard that would have.
+ */
+test('SOURCE: prefers-reduced-motion still suppresses the card entrance now that it is gated on data-active', async () => {
+  const css = await read('./PaperCard.css');
+  const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/g) || [];
+  assert.ok(
+    reduced.some((block) => /\.pc\[data-active="true"\] \.pc-title[\s\S]*?animation: none;/.test(block)),
+    'a reduce block suppresses the data-active-qualified arrival selector, not only the pre-Task-11 bare one',
+  );
+});
+
+/**
+ * SOURCE test for the entrance replaying on a card the reader never left. A
+ * touch drag that hovers on the 50% snap line flips `data-active`
+ * true/false/true before committing, and CSS restarts `pcArrive` every time
+ * the rule matches again unless something remembers the card already
+ * arrived once.
+ */
+test('SOURCE: the arrival does not replay while the card stays mounted, once it has gone active once', async () => {
+  const jsx = strip(await read('./PaperCard.jsx'));
+  assert.match(jsx, /const \[wasActive, setWasActive\] = useState\(isActive\);/);
+  assert.match(jsx, /const \[hasArrived, setHasArrived\] = useState\(false\);/);
+  assert.match(
+    jsx,
+    /if \(isActive !== wasActive\) \{\s*setWasActive\(isActive\);\s*if \(wasActive && !hasArrived\) setHasArrived\(true\);\s*\}/,
+  );
+  assert.match(jsx, /data-arrived=\{hasArrived \? 'true' : undefined\}/);
+
+  const css = strip(await read('./PaperCard.css'));
+  // Specificity four (`.pc` + `[data-active="true"]` + `[data-arrived]` +
+  // the piece) beats the plain arrival rule's three unconditionally, the
+  // same margin the back-nav suppression keeps.
+  assert.match(
+    css,
+    /\.pc\[data-active="true"\]\[data-arrived\] \.pc-follow-reason,\s*\.pc\[data-active="true"\]\[data-arrived\] \.pc-meta,\s*\.pc\[data-active="true"\]\[data-arrived\] \.pc-chips,\s*\.pc\[data-active="true"\]\[data-arrived\] \.pc-topics,\s*\.pc\[data-active="true"\]\[data-arrived\] \.pc-title,\s*\.pc\[data-active="true"\]\[data-arrived\] \.pc-authors,\s*\.pc\[data-active="true"\]\[data-arrived\] \.pc-abstract,\s*\.pc\[data-active="true"\]\[data-arrived\] \.pc-action-bar,\s*\.pc\[data-active="true"\]\[data-arrived\] \.pc-side-actions \{\s*animation: none;\s*\}/,
+  );
 });
