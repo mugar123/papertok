@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getUiErrorMessage } from '../../utils/errorMessages';
+import { createSessionCache } from '../../utils/sessionCache.js';
 import { getScientificReport } from '../../services/scientificReportService';
 import { getScientificTrends } from '../../services/scientificTrendService';
 import { findOpenAccessCopy } from '../../services/unpaywallService';
@@ -151,6 +152,27 @@ function formatTrendPeriod(period, locale = 'es-ES') {
 const ENTER = { hero: 0, stats: 0, trends: 1, topics: 2, coverage: 3, label: 1, cards: 2 };
 
 /**
+ * The editions this tab has already shown, so coming back to Research paints
+ * instead of building itself again in front of the reader.
+ *
+ * Measured 2026-09-11 (production build, real session): the page reached rest
+ * at 275ms and the hero only replaced its skeleton at ~311ms, with the sidebar
+ * still moving at 894ms — every visit, because nothing outlived the unmount,
+ * and `loading` starts true. The service caches the corpus underneath, but a
+ * promise that resolves fast is still a promise: the skeleton had already been
+ * committed. Seeded from here the first render has last time's edition, and
+ * the fresh read replaces it behind. Module-scoped and per-tab; nothing here
+ * survives a reload. Eight is a couple of timeframes across a few filters.
+ */
+const reportCache = createSessionCache({ maxEntries: 8 });
+const reportCacheKey = (timeframe, filters) => JSON.stringify(
+  [timeframe, filters?.categories ?? [], filters?.countries ?? []],
+);
+/* The key the component opens on, so the `useState` initialisers can read the
+   cache before any of their state exists. It has to match the defaults below. */
+const initialReportKey = reportCacheKey('7d', { categories: [], countries: [] });
+
+/**
  * The lead story while the next edition compiles.
  *
  * Without this the hero was the one thing left standing at full strength once
@@ -228,15 +250,21 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   const prefersReducedMotion = useReducedMotion();
   const [timeframe, setTimeframe] = useState('7d');
   const [filters, setFilters] = useState({ categories: [], countries: [] });
-  const [report, setReport] = useState({ mainDiscovery: null, highlights: [] });
-  const [trends, setTrends] = useState({ status: 'loading', items: [] });
-  const [loading, setLoading] = useState(true);
+  const [report, setReport] = useState(() => reportCache.get(initialReportKey)?.report ?? { mainDiscovery: null, highlights: [] });
+  const [trends, setTrends] = useState(() => reportCache.get(initialReportKey)?.trends ?? { status: 'loading', items: [] });
+  // Not loading when there is already an edition on screen: this is a
+  // revalidation behind something, not a wait in front of nothing.
+  const [loading, setLoading] = useState(() => !reportCache.get(initialReportKey));
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
   const [showCustomPicker, setShowCustomPicker] = useState(false);
   const [customRange, setCustomRange] = useState(null);
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [heroAccess, setHeroAccess] = useState({ paperId: null, copy: null });
+  const reportKey = useMemo(
+    () => JSON.stringify([timeframe, filters.categories, filters.countries]),
+    [timeframe, filters],
+  );
   const reportRequestId = useRef(0);
   const trendsRef = useRef(null);
   const closeOverlay = useCallback(() => setSelectedPaper(null), []);
@@ -342,19 +370,39 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   useEffect(() => {
     trendsRef.current = null;
     reportRequestId.current += 1;
+    /* What this tab last showed for this selection. Present on a revisit and on
+       a return to a filter already seen; absent the first time, which is the
+       only time the skeleton is the honest answer. */
+    const cached = reportCache.get(reportKey);
+    if (cached) {
+      setReport(cached.report);
+      setTrends(cached.trends);
+      setLoading(false);
+    }
     const timerId = setTimeout(() => {
-      setTrends(current => ({
-        ...current,
-        status: current.items?.length ? current.status : 'loading',
-        loading: true,
-      }));
-      fetchReport(timeframe, filters, 1, { refreshTrends: true });
+      if (!cached) {
+        setTrends(current => ({
+          ...current,
+          status: current.items?.length ? current.status : 'loading',
+          loading: true,
+        }));
+      }
+      fetchReport(timeframe, filters, 1, { refreshTrends: true, quiet: Boolean(cached) });
     }, 0);
     return () => {
       clearTimeout(timerId);
       reportRequestId.current += 1;
     };
-  }, [timeframe, filters, fetchReport]);
+  }, [timeframe, filters, fetchReport, reportKey]);
+
+  /* Remembered once it is worth showing: a half-built or failed edition must
+     never be what the next visit paints. Mirrors what is on screen rather than
+     writing from inside `fetchReport`, because the trends land separately and
+     the cache should hold the pair the reader actually saw together. */
+  useEffect(() => {
+    if (loading || error || !report?.mainDiscovery) return;
+    reportCache.set(reportKey, { report, trends });
+  }, [reportKey, loading, error, report, trends]);
 
   /* Which selection is on the page, read from what was actually built rather
      than from what was asked for: a period that shrank hands back the last
