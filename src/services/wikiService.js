@@ -64,8 +64,6 @@ export function mapWikipediaSearchResponse(data, language = 'en', {
   };
 }
 
-const wikiInFlight = new Map();
-
 async function searchWikipedia(title, language, signal, { strictTitleMatch = false } = {}) {
   const normalizedTitle = normalizeWikiTitle(title);
   if (!normalizedTitle) return null;
@@ -73,19 +71,6 @@ async function searchWikipedia(title, language, signal, { strictTitleMatch = fal
   const normalizedLanguage = language === 'en' ? 'en' : 'es';
   const cacheKey = `${normalizedLanguage}:${strictTitleMatch ? 'strict' : 'fuzzy'}:${normalizedTitle.toLocaleLowerCase('en-US')}`;
   if (entityWikiCache.has(cacheKey)) return entityWikiCache.get(cacheKey);
-  // One request per key at a time: a lookup that arrives while the same one
-  // is in flight joins it instead of asking Wikipedia again. This is what
-  // lets a prefetch fired from a topic pill (services/topicPrefetch.js) be
-  // the request the explorer then waits on, rather than a second copy of it
-  // that lands 300 ms later and moves the hero after the page has settled.
-  if (wikiInFlight.has(cacheKey)) return wikiInFlight.get(cacheKey);
-  const job = requestWikipedia({ normalizedTitle, normalizedLanguage, cacheKey, signal, strictTitleMatch })
-    .finally(() => { wikiInFlight.delete(cacheKey); });
-  wikiInFlight.set(cacheKey, job);
-  return job;
-}
-
-async function requestWikipedia({ normalizedTitle, normalizedLanguage, cacheKey, signal, strictTitleMatch }) {
   const url = new URL(`https://${normalizedLanguage}.wikipedia.org/w/api.php`);
   url.searchParams.set('action', 'query');
   url.searchParams.set('generator', 'search');

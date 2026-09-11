@@ -126,29 +126,3 @@ test('uses a localized canonical title for a major plural topic', async (t) => {
   assert.equal(result?.title, 'Black hole');
   assert.equal(result?.thumbnail, 'https://upload.wikimedia.org/black-hole.jpg');
 });
-
-/**
- * A prefetch from a topic pill and the explorer's own lookup must be ONE
- * request. Measured 2026-09-11: with two, the explorer waited on its copy
- * and the hero grew 171 px after the page had settled.
- */
-test('two concurrent lookups of the same title share one request', async () => {
-  const { getEntityWikiInfo } = await import('./wikiService.js');
-  const originalFetch = globalThis.fetch;
-  let calls = 0; let release;
-  const gate = new Promise((r) => { release = r; });
-  globalThis.fetch = async () => { calls += 1; await gate; return { ok: true, json: async () => ({ query: { pages: { 1: { title: 'Shared Title Zeta', extract: 'x', index: 1 } } } }) }; };
-  try {
-    const a = getEntityWikiInfo({ title: 'Shared Title Zeta', language: 'en' });
-    const b = getEntityWikiInfo({ title: 'Shared Title Zeta', language: 'en' });
-    await new Promise((r) => setTimeout(r, 5));
-    assert.equal(calls, 1, 'the second lookup joined the first request');
-    release();
-    const [ra, rb] = await Promise.all([a, b]);
-    assert.equal(ra, rb, 'both callers get the same answer');
-    await getEntityWikiInfo({ title: 'Shared Title Zeta', language: 'en' });
-    assert.equal(calls, 1, 'and afterwards the cache answers');
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
