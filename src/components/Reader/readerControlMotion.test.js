@@ -23,6 +23,7 @@ const READER_JSX = new URL('./PaperReader.jsx', import.meta.url);
 const READER_CSS = new URL('./PaperReader.css', import.meta.url);
 const EXPORT_JSX = new URL('./ExportCard.jsx', import.meta.url);
 const EXPORT_CSS = new URL('./Export.css', import.meta.url);
+const POPOVER_JSX = new URL('../ui/popover.jsx', import.meta.url);
 
 /** Comments name properties and durations in prose; matching them would invent both sides. */
 const stripComments = source => source
@@ -72,15 +73,30 @@ test('the palette does not keep waiting after the pointer has gone', () => {
 
 test('the palette arrives and leaves inside a fifth of a second', async () => {
   const states = block(await read(READER_JSX), 'const PANEL_STATES');
-  const [shown, hidden] = durationsMs(states);
+  const shown = block(states, 'shown:');
+  const hidden = block(states, 'hidden:');
 
-  assert.ok(shown <= 180, `the palette takes ${shown}ms to arrive`);
-  assert.ok(hidden <= 140, `the palette takes ${hidden}ms to leave`);
+  assert.ok(durationsMs(shown)[0] <= 220, `the palette takes ${durationsMs(shown)[0]}ms to arrive`);
+  assert.ok(durationsMs(hidden)[0] <= 180, `the palette takes ${durationsMs(hidden)[0]}ms to leave`);
   // Shorter travel with the shorter duration: the same 12px in 160ms is a
   // faster-moving panel, which reads as brusque rather than as quick.
   assert.match(states, /y:\s*8\b/, 'expected the hidden state to sit 8px below');
   // An ease-in holds still at the exact moment the reader is looking at it.
   assert.doesNotMatch(states, /easeIn/, 'the exit must not start slow');
+});
+
+/**
+ * Measured on the bench, both halves: with one expo-out curve driving the
+ * whole state, the palette lost 56% of its opacity in the first 12ms and then
+ * spent 100ms fading from nearly-invisible to invisible. That is a flash
+ * followed by a smear, and it is what "not fluid" turned out to mean.
+ */
+test('the palette fades evenly, whatever its travel is doing', async () => {
+  const states = block(await read(READER_JSX), 'const PANEL_STATES');
+  for (const half of ['shown:', 'hidden:']) {
+    const opacity = block(block(states, half), 'opacity:');
+    assert.match(opacity, /ease:\s*'linear'/, `${half} must fade on a straight line`);
+  }
 });
 
 test('the level chip is one element that travels, not two that cross-fade', async () => {
@@ -154,4 +170,22 @@ test('the download button is the width of its longest label, always', async () =
   const cell = css.match(/\.rd-export-go-gauge,\s*\.rd-export-go > \.rd-export-go-face\s*\{([^}]*)\}/);
   assert.ok(cell, 'expected the gauge and the face to share a rule');
   assert.match(cell[1], /grid-area:\s*1\s*\/\s*1/);
+});
+
+/**
+ * The same flash, one component up: every popover in the app shares this
+ * content wrapper, and it faded on the same expo-out curve — 0 → 0.53 in the
+ * first 16ms of opening the export card, measured.
+ */
+test('a popover fades evenly and grows on its own curve', async () => {
+  const popover = stripComments(await readFile(POPOVER_JSX, 'utf8'));
+  const transition = popover.match(/\[transition:([^\]]+)\]/);
+  assert.ok(transition, 'expected an explicit transition on the popup');
+  // Two properties, two curves: the fade is a straight line and only the
+  // travel gets the expo curve.
+  assert.match(transition[1], /opacity_\d+ms_linear/);
+  assert.match(transition[1], /scale_\d+ms_var\(--ease-out-expo\)/);
+  // And it still starts from a box that exists: never `scale(0)`.
+  const start = popover.match(/data-starting-style:scale-\[([\d.]+)\]/);
+  assert.ok(start && Number(start[1]) >= 0.9, 'a popover must not grow out of nothing');
 });

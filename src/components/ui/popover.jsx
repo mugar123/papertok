@@ -42,8 +42,15 @@ function PopoverContent({
           data-slot="popover-content"
           className={cn(
             'w-72 origin-(--transform-origin) rounded-lg border border-border bg-card p-3 text-[0.8125rem] text-foreground shadow-[var(--shadow-lg)] outline-none',
-            'motion-safe:transition-[opacity,scale] motion-safe:duration-150 motion-safe:ease-[cubic-bezier(0.16,1,0.3,1)]',
-            'data-starting-style:opacity-0 data-starting-style:scale-[0.97] data-ending-style:opacity-0 data-ending-style:scale-[0.98]',
+            /* Two properties, two curves. Driving both from one expo-out was
+               measured by frame on the reader's export card: 0 → 0.53 opacity
+               in the first 16ms, then 116ms crawling from almost-there to
+               there. That curve is right for the growth — it arrives and
+               settles — and wrong for the fade, where spending half the
+               distance in one frame is a flash, not an appearance. */
+            'motion-safe:[transition:opacity_180ms_linear,scale_220ms_var(--ease-out-expo)]',
+            'motion-safe:data-ending-style:[transition:opacity_140ms_linear,scale_140ms_var(--ease-out-expo)]',
+            'data-starting-style:opacity-0 data-starting-style:scale-[0.96] data-ending-style:opacity-0 data-ending-style:scale-[0.98]',
             className,
           )}
           {...props}

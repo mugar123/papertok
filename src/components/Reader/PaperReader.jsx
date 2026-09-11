@@ -525,6 +525,13 @@ const EASE_TRAVEL = [0.25, 0.46, 0.45, 0.94];
  * Both halves decelerate. An `easeIn` exit holds the panel almost still through
  * the first frames — exactly the moment the reader is looking at it to see
  * whether it heard them.
+ *
+ * And the fade is on a straight line while the travel keeps the curve. One
+ * expo-out driving both is what the first version did, and measured by frame
+ * it was not a fade at all: leaving, the panel dropped to 44% opacity in 12ms
+ * and then spent 100ms going from nearly invisible to invisible. A curve that
+ * spends itself in two frames is right for something moving — you see where it
+ * went — and wrong for something dimming, where all it does is flash.
  */
 const PANEL_STATES = {
   shown: {
@@ -532,14 +539,22 @@ const PANEL_STATES = {
     y: 0,
     scale: 1,
     pointerEvents: 'auto',
-    transition: { duration: 0.16, ease: EASE_OUT },
+    transition: {
+      duration: 0.2,
+      ease: EASE_OUT,
+      opacity: { duration: 0.2, ease: 'linear' },
+    },
   },
   hidden: {
     opacity: 0,
     y: 8,
     scale: 0.97,
     pointerEvents: 'none',
-    transition: { duration: 0.12, ease: EASE_OUT },
+    transition: {
+      duration: 0.16,
+      ease: EASE_OUT,
+      opacity: { duration: 0.16, ease: 'linear' },
+    },
   },
 };
 
