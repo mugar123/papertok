@@ -285,7 +285,7 @@ async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, page = 1, filt
     : '';
   
   const promises = topicFilters.map(async (topicFilter) => {
-    let filter = `from_publication_date:${fromStr},to_publication_date:${toStr},type:article,has_doi:true${countryFilter}`;
+    let filter = `from_publication_date:${fromStr},to_publication_date:${toStr},type:article,has_doi:true,language:en${countryFilter}`;
     if (topicFilter) {
       filter += `,${topicFilter}`;
     }

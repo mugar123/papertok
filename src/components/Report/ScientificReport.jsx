@@ -549,6 +549,12 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           </div>
         </div>
 
+        <p className="report-lede">
+          {isEnglish
+            ? 'The most cited papers of the period, by field and country.'
+            : 'Los papers más citados del periodo, por campo y país.'}
+        </p>
+
         <nav className="sr-tabs" aria-label={isEnglish ? 'Edition period' : 'Periodo de la edición'}>
           <span className="sr-tabs-label">{isEnglish ? 'Edition' : 'Edición'}</span>
           {timeOptions.map((o) => {

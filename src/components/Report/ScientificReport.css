@@ -101,6 +101,17 @@
   letter-spacing: 0.02em;
 }
 
+/* What the edition is, in one sentence, under the masthead row. `--text-muted`
+   does not exist in this codebase (SearchPage.css shipped that exact ghost
+   token seven times before profileStyles.test.js started catching it); the
+   established replacement for de-emphasized copy like this is
+   `--text-tertiary`. */
+.report-lede {
+  margin: 0 0 var(--space-4);
+  color: var(--text-tertiary);
+  font-size: 0.9rem;
+}
+
 /* ── Period selector ── */
 .sr-tabs {
   display: flex;

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import {
   buildOpenAlexTopicFilters,
   extractFeaturedConcepts,
@@ -202,4 +203,9 @@ test('only the papers that were missing a count are rebuilt', async () => {
   assert.equal(result[1], plain);
   assert.notEqual(result[2], needy);
   assert.equal(result[2].citationCount, 20);
+});
+
+test('SOURCE: la consulta a OpenAlex pide solo inglés', async () => {
+  const source = await readFile(new URL('./scientificReportService.js', import.meta.url), 'utf8');
+  assert.match(source, /type:article,has_doi:true,language:en\$\{countryFilter\}/);
 });
