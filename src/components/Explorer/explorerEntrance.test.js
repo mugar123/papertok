@@ -124,3 +124,62 @@ test('an entity already in the persistent cache is born resolved, like one hande
   assert.match(jsx, /useState\(\(\) => \(bornResolved \? \(handedEntity \|\| localTopic \|\| cachedEntity \|\| resolveQueryTopicRoute\(id, searchParams\)\) : null\)\)/,
     'the handed entity still wins — it is the fresher of the two');
 });
+
+/**
+ * The four blocks the project details fill in land in one frame, on a hero the
+ * reader is already looking at. They used to land at full opacity with no ramp
+ * of any kind, which is what "everything at once" feels like.
+ */
+test('the blocks a project fills in rise in sequence instead of landing in one frame', async () => {
+  const css = await read('./EntityExplorer.css');
+
+  // From nothing, because these three land where there was nothing. 0.35 is
+  // for a row resolving into a shape of its own size, which they are not.
+  assert.match(
+    css,
+    /@keyframes projectBlockIn \{\s*from \{ opacity: 0; transform: translateY\(8px\); \}\s*to \{ opacity: 1; transform: translateY\(0\); \}\s*\}/,
+    'the entrance rises from nothing',
+  );
+
+  const group = css.match(/\.project-meta-chips,\s*\.project-subjects,\s*\.project-participants \{[^}]*\}/)?.[0] || '';
+  // `backwards`, never a forwards fill. Measured in the page: a filling
+  // animation leaves the computed transform at `matrix(1, 0, 0, 1, 0, 0)` —
+  // an identity matrix, not `none`, whatever the last keyframe says — and that
+  // makes `.project-participants` a containing block for the framer `layout`
+  // grid inside it, whose projection measures against its ancestors.
+  assert.match(group, /animation: projectBlockIn 0\.32s cubic-bezier\(0\.4, 0, 0\.2, 1\) backwards;/);
+  assert.doesNotMatch(group, /\b(both|forwards)\b/, 'no forwards fill: it would strand a transform');
+
+  // Staggered down the page. The claim is the ORDER, not the numbers: each
+  // block waits longer than the one above it, so the group reads as one pass
+  // rather than as four things appearing together.
+  const delayOf = (selector) => {
+    const rule = css.match(new RegExp(`\\.${selector} \\{ animation-delay: ([0-9.]+)s; \\}`));
+    return rule ? Number(rule[1]) : 0;
+  };
+  const summary = css.match(/\.project-summary-box \{[\s\S]*?animation-delay: ([0-9.]+)s;/)?.[1];
+  assert.ok(summary, 'the summary box waits its turn too');
+  assert.ok(
+    Number(summary) < delayOf('project-subjects'),
+    'the summary comes before the topics',
+  );
+  assert.ok(
+    delayOf('project-subjects') < delayOf('project-participants'),
+    'the topics come before the organisations',
+  );
+
+  // The summary box is the one with a skeleton underneath it, so it resolves in
+  // place from 0.35 rather than arriving from nothing.
+  assert.match(
+    css,
+    /\.project-summary-box \{[\s\S]*?animation: staggerFadeUp 0\.32s cubic-bezier\(0\.4, 0, 0\.2, 1\) backwards;/,
+    'the reserved block resolves rather than arrives',
+  );
+
+  // Reduced motion lands them instantly. The height settle they arrive inside
+  // is switched off under the same query (`enabled: !prefersReducedMotion`).
+  const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
+  for (const selector of ['.project-meta-chips', '.project-subjects', '.project-participants', '.project-summary-box,']) {
+    assert.ok(reduced.includes(selector), `${selector} stops animating under reduced motion`);
+  }
+});

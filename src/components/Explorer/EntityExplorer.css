@@ -2041,8 +2041,62 @@
   color: var(--text-tertiary);
 }
 
+/* ── What OpenAIRE fills in, arriving ──
+   The chips, the summary, the topics and the organisations all mount in the one
+   frame the project details land, onto a hero that is already on screen with
+   its name. Unanimated that is four blocks appearing at once at full opacity,
+   which is exactly what "all at once" feels like — the height settle grows the
+   box around them, but the content inside it was never ramping.
+
+   They rise from nothing rather than from the 0.35 `staggerFadeUp` starts at.
+   That starting point is right for a row replacing a shape of its own size;
+   these three land where there was nothing, and starting them half-visible is
+   the pop the comment on `slideUpFade` warns about. The summary box is the
+   exception below: it DOES have a reservation to resolve into.
+
+   `backwards`, not `both`. Only the delay needs covering — without a fill the
+   wait is spent at the base opacity, which is 1, so each block would flash at
+   full strength and then animate. A FORWARDS fill is what must not be here: a
+   filling animation keeps its last keyframe applied for good, and measured in
+   the page (2026-09-11) the computed transform then stays `matrix(1, 0, 0, 1,
+   0, 0)` — an identity matrix, NOT `none`, whatever the keyframe says. A
+   permanent transform makes `.project-participants` a containing block and a
+   stacking context for the framer `layout` grid inside it, whose projection
+   measures against its ancestors. With `backwards` the element returns to its
+   base style the moment the animation ends, and the base declares no transform
+   at all. Checked before writing this: none of the four carries a base
+   transform of its own, so animating `transform` here cannot stamp on one.
+
+   Staggered by 60ms down the page, on the height settle's own curve rather
+   than the hero's expo-out. Two reasons, both already written down here: the
+   settle deliberately left the expo-out because it spent too much of its
+   displacement in one frame and "the page has to land, not appear"; and the
+   page transition measured clean on expo-out and still felt like a cut. These
+   blocks animate INSIDE the settling box, so they move on its clock and its
+   curve. On the expo-out this was at 97% opacity by the halfway mark — the
+   measurement that says "abrupt" before anyone looks at it. */
+@keyframes projectBlockIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.project-meta-chips,
+.project-subjects,
+.project-participants {
+  animation: projectBlockIn 0.32s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+}
+
+.project-subjects { animation-delay: 0.12s; }
+.project-participants { animation-delay: 0.18s; }
+
 /* Expandable summary — the standfirst again, with the field rule. */
 .project-summary-box {
+  /* The one block with a skeleton underneath it, so it takes the rows'
+     treatment: resolving in place from 0.35 rather than arriving from nothing.
+     `backwards` holds it at that 0.35 through its delay, so the reserved box never
+     blinks empty between the shimmer leaving and the words landing. */
+  animation: staggerFadeUp 0.32s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+  animation-delay: 0.06s;
   background: var(--bg-sunken);
   border: 1px solid var(--border-subtle);
   border-left: 3px solid var(--area-accent, var(--accent-primary));
@@ -2680,8 +2734,15 @@
   .ehc-wiki p,
   .ehc-wiki-skeleton span::after,
   .ehc-wiki-toggle svg,
+  .project-summary-box,
   .project-summary-box p,
   .project-summary-toggle svg,
+  /* The four blocks the project details fill in: they land instantly instead
+     of rising. Nothing is lost — the height settle they arrive inside is
+     switched off under this query too. */
+  .project-meta-chips,
+  .project-subjects,
+  .project-participants,
   .ee-author-card.staggerFadeUp,
   .ex-skel,
   .ex-skel::after,
