@@ -109,3 +109,21 @@ test('SOURCE: the following baseline is recorded only under a known account', as
     'the account is a dependency, so the uid arriving re-runs the effect',
   );
 });
+
+/**
+ * A grant code is not unique across funders — `grantID=100010` is three
+ * distinct projects — so a project's `canonicalId`, which is a bare code for
+ * everything followed before the OpenAIRE id landed, needs the funder stored
+ * beside it to resolve to one project. Without it the feed served the mixed
+ * 51-row set for a project whose own page correctly shows 39. Older follow
+ * documents carry no funder at all, and for those the request has to stay
+ * exactly what it was.
+ */
+test('SOURCE: a project follow asks OpenAIRE with the funder stored on it', async () => {
+  const code = stripComments(await read('./FeedContext.jsx'));
+  assert.match(
+    code,
+    /getPapersByProject\(follow\.canonicalId, 1, \{ funder: follow\.metadata\?\.funder \|\| '' \}\)/,
+    'the funder rides along, and an absent one is the empty string this call already defaulted to',
+  );
+});
