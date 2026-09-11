@@ -300,6 +300,29 @@ test('SOURCE: el visor de PDF propio de EntityExplorer usa useOverlayHistory con
   assert.match(code, /<PDFViewer paper=\{pdfPaperToView\} closeRef=\{pdfCloseRef\}/, 'y el visor tiene que recibir ese mismo ref');
 });
 
+test('SOURCE: el visor de PDF propio de SearchPage usa useOverlayHistory con el tag pdf', async () => {
+  // A fourth owner, missed by the original three-owner pass (the reader in
+  // PaperCard, App's shared viewer, EntityExplorer's own): SearchPage mounts
+  // its own `<PDFViewer>` for a paper opened from a search result, with the
+  // same shape as EntityExplorer's. It shares the 'pdf' tag rather than
+  // taking its own: the tag only dedupes against the one shared
+  // `window.history.state`, and these owners are mutually exclusive the same
+  // way App's and EntityExplorer's already are — each PDFViewer is a modal
+  // that makes the rest of the page inert while it is open, so no two of the
+  // four can ever be mounted at once for this to collide against.
+  const code = stripComments(await read('../components/Search/SearchPage.jsx'));
+  assert.match(
+    code,
+    /import \{ useOverlayHistory \} from '\.\.\/\.\.\/hooks\/useOverlayHistory\.js';/,
+    'must import the hook',
+  );
+  assert.match(code, /const \[pdfPaper, setPdfPaper\] = useState\(null\);/);
+  const { body } = armedWith(code, /useOverlayHistory\(Boolean\(pdfPaper\), (\w+), 'pdf'\)/);
+  assert.match(body, /pdfCloseRef\.current\(\)/, 'Atrás tiene que PEDIR el cierre al visor, no desmontarlo');
+  assert.match(body, /setPdfPaper\(null\)/, 'con el desmontaje solo como respaldo mientras el chunk perezoso no ha montado');
+  assert.match(code, /<PDFViewer paper=\{pdfPaper\} closeRef=\{pdfCloseRef\}/, 'y el visor tiene que recibir ese mismo ref');
+});
+
 /**
  * Back and the X have to end in the SAME function. There is no DOM in this
  * suite (node:test, no jsdom), so this is read off the source rather than

@@ -33,6 +33,7 @@ import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAuth } from '../../context/AuthContext';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext';
+import { useOverlayHistory } from '../../hooks/useOverlayHistory.js';
 import {
   USER_SEARCH_DEBOUNCE_MS,
   USER_SEARCH_MIN_LENGTH,
@@ -237,6 +238,16 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
   
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [pdfPaper, setPdfPaper] = useState(null);
+  // Back closes this PDF viewer instead of leaving PaperTok: see useOverlayHistory.js.
+  // Through the viewer's own close, the one the X uses — it owns `open` and
+  // reports back only when its leave has played; `setPdfPaper(null)` is just
+  // the fallback for before the lazy chunk has mounted.
+  const pdfCloseRef = useRef(null);
+  const requestPdfClose = useCallback(() => {
+    if (pdfCloseRef.current) pdfCloseRef.current();
+    else setPdfPaper(null);
+  }, []);
+  useOverlayHistory(Boolean(pdfPaper), requestPdfClose, 'pdf');
   const closeSelectedPaper = useCallback(() => setSelectedPaper(null), []);
 
   // The paper the overlay is SHOWING, which outlives the one selected. Closing
@@ -1431,7 +1442,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
 
       {/* PDF Viewer */}
       {pdfPaper && (
-        <PDFViewer paper={pdfPaper} onClose={() => setPdfPaper(null)} />
+        <PDFViewer paper={pdfPaper} closeRef={pdfCloseRef} onClose={() => setPdfPaper(null)} />
       )}
     </Tabs>
   );
