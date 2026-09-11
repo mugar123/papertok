@@ -550,7 +550,13 @@ export default function SettingsPage() {
       // because the public budget is 60 KB against 280 KB here. A failure is
       // not worth losing the photo the user just set, so it only warns.
       try {
-        await savePublicProfilePhoto(await prepareProfileImage(file, PUBLIC_AVATAR_PRESET));
+        // Pinned to the account that chose the file: two compressions happen
+        // between the click and this write, and `auth.currentUser` may be
+        // somebody else by then.
+        await savePublicProfilePhoto(
+          await prepareProfileImage(file, PUBLIC_AVATAR_PRESET),
+          { currentUser: user },
+        );
       } catch (mirrorError) {
         console.error('Could not mirror the photo to the public profile:', mirrorError);
       }
