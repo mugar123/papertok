@@ -180,7 +180,7 @@ export function clearStaleOverlayMarker({ history, location }) {
  */
 export function useOverlayHistory(open, onClose, tag) {
   const closeRef = useRef(onClose);
-  closeRef.current = onClose;
+  useEffect(() => { closeRef.current = onClose; });
   const ctlRef = useRef(null);
   useEffect(() => {
     if (!open) return undefined;
