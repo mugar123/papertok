@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import PageTransition from './components/Layout/PageTransition'
 import { PageTransitionCustomProvider, usePageTransitionCustom } from './hooks/usePageTransitionCustom'
+import { useOverlayHistory } from './hooks/useOverlayHistory.js'
 import { safeExternalUrl } from './utils/externalUrl.js'
 import { INITIAL_ACCOUNT_SCOPE, accountScopeKey, nextAccountScope } from './utils/accountScope.js'
 import RouteFallback from './components/Layout/RouteFallback'
@@ -67,6 +68,8 @@ const SearchCommand = lazyWithPreload(() => import('./components/Search/SearchCo
 
 function AppContent() {
   const [pdfPaper, setPdfPaper] = useState(null)
+  // Back closes the PDF viewer instead of leaving PaperTok: see useOverlayHistory.js.
+  useOverlayHistory(Boolean(pdfPaper), () => setPdfPaper(null), 'pdf')
   // On a coarse pointer, "open the PDF" means the browser's own viewer in a
   // new tab, straight away: framed PDFs are crippled on every touch platform
   // (iOS paints only the first page; Android Chrome renders nothing), and the

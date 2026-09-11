@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { canonicalPaperIdentity } from '../../utils/paperCanonicalKey.js';
 import { useCommentCount } from '../../hooks/useCommentCount.js';
+import { useOverlayHistory } from '../../hooks/useOverlayHistory.js';
 import ScientificText from '../ScientificText';
 import { Button } from '../ui/button.jsx';
 import { Toggle } from '../ui/toggle.jsx';
@@ -344,6 +345,8 @@ const PaperCard = memo(function PaperCard({
   const [authorsSheetLeaving, setAuthorsSheetLeaving] = useState(false);
   const [showRelated, setShowRelated] = useState(false);
   const [showReader, setShowReader] = useState(false);
+  // Back closes the reader instead of leaving PaperTok: see useOverlayHistory.js.
+  useOverlayHistory(showReader, () => setShowReader(false), 'reader');
   /* Where the reader should grow from. The rewrite button's rectangle at the
      moment it was pressed, so the full-screen reader can open out of it and
      collapse back into it rather than appearing from nowhere. */

@@ -21,6 +21,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useHeightSettle } from '../../hooks/useHeightSettle';
 import { useActiveTabRule } from '../../hooks/useActiveTabRule.js';
 import { useIsPageArriving } from '../../hooks/usePageArrival.js';
+import { useOverlayHistory } from '../../hooks/useOverlayHistory.js';
 import { CATEGORIES } from '../../data/categories';
 import { areaAccentForCategory as getAreaGradient, areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
 import { explorerSkeletonShape, hasAuthorsTab } from '../../utils/explorerSkeletonShape.js';
@@ -220,6 +221,8 @@ export default function EntityExplorer({
 
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [pdfPaperToView, setPdfPaperToView] = useState(null);
+  // Back closes this PDF viewer instead of leaving PaperTok: see useOverlayHistory.js.
+  useOverlayHistory(Boolean(pdfPaperToView), () => setPdfPaperToView(null), 'pdf');
   const closeSelectedPaper = useCallback(() => setSelectedPaper(null), []);
 
   // The paper the overlay is SHOWING, which outlives the one selected. Closing
