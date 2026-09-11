@@ -82,14 +82,25 @@ test('a seeded Research revalidates quietly instead of flashing its skeleton', a
   );
   assert.match(
     effect,
-    /if \(cached\) \{[\s\S]*?setReport\(cached\.report\)[\s\S]*?setTrends\(cached\.trends\)[\s\S]*?setLoading\(false\)/,
-    'a filter change seeds too, not just the mount',
-  );
-  assert.match(
-    effect,
     /if \(!cached\) \{\s*setTrends\(/,
     'the trends are only knocked back to loading when there is nothing to show',
   );
+});
+
+test('a filter change back to a selection already seen seeds during render, not from an effect', async () => {
+  const src = strip(await read('./ScientificReport.jsx'));
+  const start = src.indexOf('const [seededReportKey, setSeededReportKey]');
+  assert.notEqual(start, -1, 'the seeding keeps the key it last seeded for');
+  // Bounded at the adjustment's own closing brace.
+  const block = src.slice(start, src.indexOf('\n  }', start) + 4);
+
+  assert.match(block, /if \(seededReportKey !== reportKey\) \{/);
+  assert.match(block, /setSeededReportKey\(reportKey\)/);
+  assert.match(block, /setReport\(seed\.report\)[\s\S]*?setTrends\(seed\.trends\)[\s\S]*?setLoading\(false\)/);
+  // From an effect it was a commit late — the old selection's report for one
+  // frame — and a synchronous setState in an effect body is also what
+  // `react-hooks/set-state-in-effect` refuses.
+  assert.doesNotMatch(block, /useEffect/);
 });
 
 test('the edition is remembered only once it is worth showing', async () => {

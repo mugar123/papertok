@@ -265,6 +265,26 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   /* Through the same function `initialReportKey` uses, so the key the first
      render reads and the key every later write uses cannot drift apart. */
   const reportKey = useMemo(() => reportCacheKey(timeframe, filters), [timeframe, filters]);
+  /* The same seeding the `useState` initialisers above do for the opening key,
+     for every key after it: a filter change back to a selection this tab has
+     already shown paints that edition instead of a skeleton.
+
+     It runs DURING RENDER, not from an effect. React throws this render away
+     and re-runs the component before it paints, so the cached edition is in the
+     first frame the reader sees. From an effect it was a commit late — the old
+     selection's report for one frame — and a synchronous `setState` in an
+     effect body is also what `react-hooks/set-state-in-effect` refuses. */
+  const [seededReportKey, setSeededReportKey] = useState(initialReportKey);
+  if (seededReportKey !== reportKey) {
+    setSeededReportKey(reportKey);
+    const seed = reportCache.get(reportKey);
+    if (seed) {
+      setReport(seed.report);
+      setTrends(seed.trends);
+      setLoading(false);
+    }
+  }
+
   const afterPageArrival = useAfterPageArrival();
   const reportRequestId = useRef(0);
   const trendsRef = useRef(null);
@@ -387,13 +407,10 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
     reportRequestId.current += 1;
     /* What this tab last showed for this selection. Present on a revisit and on
        a return to a filter already seen; absent the first time, which is the
-       only time the skeleton is the honest answer. */
+       only time the skeleton is the honest answer. Read here only to decide how
+       loudly to revalidate — the seeding itself happens during render, above,
+       so it lands a frame earlier. */
     const cached = reportCache.get(reportKey);
-    if (cached) {
-      setReport(cached.report);
-      setTrends(cached.trends);
-      setLoading(false);
-    }
     const timerId = setTimeout(() => {
       if (!cached) {
         setTrends(current => ({
