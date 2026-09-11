@@ -1412,6 +1412,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
         {shownPaper && (
           <PaperCard
             paper={shownPaper}
+            isActive
             isLiked={likedPaperIds.has(interactionIdFor(shownPaper))}
             isSaved={savedPaperIds.has(interactionIdFor(shownPaper))}
             isRead={readPaperIds.has(interactionIdFor(shownPaper))}

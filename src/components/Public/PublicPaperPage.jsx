@@ -378,6 +378,7 @@ export default function PublicPaperPage({
         >
           <PaperCard
             paper={paper}
+            isActive
             isLiked={isAuthenticated && likedPaperIds.has(paper.id)}
             isSaved={isAuthenticated && savedPaperIds.has(paper.id)}
             isRead={isAuthenticated && readPaperIds.has(paper.id)}

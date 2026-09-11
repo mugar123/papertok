@@ -205,7 +205,15 @@ test('SOURCE: the follow-reason pill arrives after the paper it explains, not on
   assert.match(css, /\.pc-title \{ --arrive: 0; \}/, 'the paper comes first');
   assert.match(css, /\.pc-follow-reason \{ --arrive: 4; \}/, 'and its label after the abstract, never alone ahead of it');
   assert.match(css, /@keyframes pcArrive \{/);
-  assert.match(css, /@keyframes cardSlideUp \{\s*0% \{ transform: translateY\(10px\); \}/, 'the sheet only travels; the pieces carry the fade');
+  // `cardSlideUp` is gone (Task 11, paperCardArrival.test.js): the sheet used
+  // to travel on its own on mount, but the feed mounts cards ahead of the
+  // reader, so the travel had always finished before arrival. The sheet now
+  // sits at rest and the pieces carry the whole entrance, gated on becoming
+  // the active card rather than on mount. `.pc-sheet`'s own comment still
+  // names the old keyframes for anyone tracing history, so this checks the
+  // functional claim — nothing defines or applies them — not the word.
+  assert.doesNotMatch(css, /@keyframes cardSlideUp/, 'the keyframes are gone, not just unused');
+  assert.doesNotMatch(css, /animation:\s*cardSlideUp/, 'and nothing on the sheet plays them');
 });
 
 /**

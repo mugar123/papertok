@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
+/** Comments quote the very code these tests pin, so they are stripped first. */
+const strip = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 /**
  * SOURCE test for the side rail on a phone. Below 900px the rail is absolute
@@ -86,4 +88,26 @@ test('the project badge opens its space gently over 320ms, and arrives once the 
   assert.match(inner, /animate=\{\{ opacity: 1, transform: 'translateY\(0px\)' \}\}/);
   assert.match(inner, /: \{ delay: 0\.12, duration: 0\.2, ease: \[0\.23, 1, 0\.32, 1\] \}\}/, 'the badge waits for the space and then arrives in 200ms');
   assert.doesNotMatch(inner, /\by: \d|scale:/);
+});
+
+/**
+ * SOURCE test for WHEN the card's own pieces arrive.
+ *
+ * `cardSlideUp` and `pcArrive` used to fire on mount, and the feed mounts
+ * cards ahead of the reader through the sliding mount window
+ * (utils/feedMountWindow.js): by the time a swipe brings a card to the
+ * viewport, the mount window has usually had it for a while and the
+ * animation already finished off-screen. The arrival is tied to becoming the
+ * active card instead — `.pc[data-active="true"]` — which FeedContainer sets
+ * from the same scrollTop/clientHeight math that already drives the snap
+ * index. The sheet's own travel (`cardSlideUp`) is dropped outright rather
+ * than re-gated: nothing asked for the frame to slide, only the pieces
+ * inside it, and the sheet now simply sits at rest.
+ */
+test('SOURCE: la llegada de los bloques se dispara al volverse activa la tarjeta, no al montar', async () => {
+  const css = strip(await read('./PaperCard.css'));
+  assert.match(css, /\.pc\[data-active="true"\] \.pc-title/);
+  assert.doesNotMatch(css.slice(css.indexOf('.pc-sheet {'), css.indexOf('.pc-sheet {') + 600), /animation: cardSlideUp/);
+  const jsx = strip(await read('./PaperCard.jsx'));
+  assert.match(jsx, /data-active=\{isActive \? 'true' : 'false'\}/);
 });

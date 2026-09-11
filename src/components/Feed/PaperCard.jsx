@@ -1105,7 +1105,7 @@ const PaperCard = memo(function PaperCard({
           ? (isEnglish ? 'Source' : 'Fuente')
           : (isEnglish ? 'Read article' : 'Leer artículo');
   return (
-    <div ref={cardRef} className={`pc ${isCardVisible ? 'pc--visible' : ''}`} onClick={handleDoubleTap}>
+    <div ref={cardRef} className={`pc ${isCardVisible ? 'pc--visible' : ''}`} data-active={isActive ? 'true' : 'false'} onClick={handleDoubleTap}>
       {/* DEBUG PANEL */}
       {SHOW_RANKING_DEBUG && paper._debugScore && (
         <div className="pc-debug-panel">
@@ -1944,6 +1944,7 @@ const PaperCard = memo(function PaperCard({
             <div className="related-card-content is-ready">
               <PaperCard
                 paper={selectedRelatedPaper}
+                isActive
                 isLiked={Boolean(selectedRelatedState.isLiked)}
                 isSaved={Boolean(selectedRelatedState.isSaved)}
                 isRead={Boolean(selectedRelatedState.isRead)}

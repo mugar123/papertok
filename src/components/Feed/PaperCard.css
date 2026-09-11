@@ -44,13 +44,17 @@
   overflow-x: hidden;
   overflow-y: hidden;
   padding: clamp(20px, 2.5vw, 32px) 0;
-  /* Travel only. The sheet used to fade from 0 as well, over 0.42s, while the
-     page it sits in was already fading in over 0.3s: measured, the page was at
-     0.98 when the sheet had reached 0.67, and the sheet kept fading for 300 ms
-     after the frame had arrived — content appearing after its page. The fade
-     now belongs to the pieces (`pcArrive` below), which start with the frame;
-     the sheet only settles into place. */
-  animation: cardSlideUp 0.36s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  /* No motion of its own. The sheet used to fade from 0 as well, over 0.42s,
+     while the page it sits in was already fading in over 0.3s: measured, the
+     page was at 0.98 when the sheet had reached 0.67, and the sheet kept
+     fading for 300 ms after the frame had arrived — content appearing after
+     its page. The fade moved to the pieces (`pcArrive` below); the sheet kept
+     a 0.36s travel of its own (`cardSlideUp`). That travel is gone too now:
+     it ran on mount, and the feed mounts cards ahead of the reader through
+     the sliding window (utils/feedMountWindow.js), so by the time a swipe
+     brought the sheet into view the travel had long finished and the arrival
+     read as a hard cut. The pieces carry the whole entrance now, gated on
+     `.pc[data-active="true"]` below; the sheet just sits at rest. */
 }
 
 /* ── Figure cards ──
@@ -266,11 +270,6 @@
   height: auto;
 }
 
-@keyframes cardSlideUp {
-  0% { transform: translateY(10px); }
-  100% { transform: none; }
-}
-
 /* ── The arrival ──
    A card composes in rather than popping in, and the paper comes before its
    label: the title first, then the kicker, the authors, the abstract, and
@@ -278,7 +277,7 @@
    under the kicker once there is a paper to explain — and last the actions.
    The pill used to be the first thing on screen, alone for a beat before
    anything else, which is exactly what read as it appearing out of nowhere.
-   Each step is 45 ms behind the one before on the same short settle. The
+   Each step is 35 ms behind the one before on the same short settle. The
    order is an explicit `--arrive` step per piece rather than `nth-child`,
    because half of these pieces are optional and the sequence must not shift
    when one is absent. `backwards` holds the first frame during the delay and
@@ -293,38 +292,43 @@
 .pc-action-bar,
 .pc-side-actions { --arrive: 5; }
 
-.pc-follow-reason,
-.pc-meta,
-.pc-chips,
-.pc-topics,
-.pc-title,
-.pc-authors,
-.pc-abstract,
-.pc-action-bar,
-.pc-side-actions {
-  animation: pcArrive 0.32s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--arrive, 0) * 45ms) backwards;
+.pc[data-active="true"] .pc-follow-reason,
+.pc[data-active="true"] .pc-meta,
+.pc[data-active="true"] .pc-chips,
+.pc[data-active="true"] .pc-topics,
+.pc[data-active="true"] .pc-title,
+.pc[data-active="true"] .pc-authors,
+.pc[data-active="true"] .pc-abstract,
+.pc[data-active="true"] .pc-action-bar,
+.pc[data-active="true"] .pc-side-actions {
+  animation: pcArrive 0.28s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--arrive, 0) * 35ms) backwards;
 }
 
 /* The reason arrives from the side it reads from, the way a label is slid
    under a picture; everything else rises the few pixels the sheet does. */
-.pc-follow-reason {
+.pc[data-active="true"] .pc-follow-reason {
   animation-name: pcArriveAside;
 }
 
 /* Coming back is not arriving. A feed reached by the back arrow — from an
    author, a paper, a list — is the feed the reader left, resumed on the card
    they were on (FeedContainer); replaying the arrival on top of that read as
-   the feed reloading. Under a page that slides back in, the cards sit at rest. */
-[data-nav-direction="-1"] .pc-sheet,
-[data-nav-direction="-1"] .pc-follow-reason,
-[data-nav-direction="-1"] .pc-meta,
-[data-nav-direction="-1"] .pc-chips,
-[data-nav-direction="-1"] .pc-topics,
-[data-nav-direction="-1"] .pc-title,
-[data-nav-direction="-1"] .pc-authors,
-[data-nav-direction="-1"] .pc-abstract,
-[data-nav-direction="-1"] .pc-action-bar,
-[data-nav-direction="-1"] .pc-side-actions {
+   the feed reloading. Under a page that slides back in, the cards sit at
+   rest. No `.pc-sheet` entry any more — it has no animation left to suppress.
+   The resumed card mounts already `data-active="true"` (FeedContainer), so
+   each selector below repeats `.pc[data-active="true"]` rather than dropping
+   to the shorter `[data-nav-direction="-1"] .pc-title`: that shorter form
+   ties the rule above on specificity and only wins by coming later in the
+   file, which the next edit here could quietly undo. */
+[data-nav-direction="-1"] .pc[data-active="true"] .pc-follow-reason,
+[data-nav-direction="-1"] .pc[data-active="true"] .pc-meta,
+[data-nav-direction="-1"] .pc[data-active="true"] .pc-chips,
+[data-nav-direction="-1"] .pc[data-active="true"] .pc-topics,
+[data-nav-direction="-1"] .pc[data-active="true"] .pc-title,
+[data-nav-direction="-1"] .pc[data-active="true"] .pc-authors,
+[data-nav-direction="-1"] .pc[data-active="true"] .pc-abstract,
+[data-nav-direction="-1"] .pc[data-active="true"] .pc-action-bar,
+[data-nav-direction="-1"] .pc[data-active="true"] .pc-side-actions {
   animation: none;
 }
 
