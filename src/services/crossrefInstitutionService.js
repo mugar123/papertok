@@ -18,6 +18,30 @@ function getCrossrefPublishedDate(work) {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
+/**
+ * What Crossref's `type` says about how a work reached the record.
+ *
+ * `peerReviewed` is the canonical field: `PaperBuilder` writes it, the Explorer
+ * filter reads it and `paperStatus` decides the chip from it. This fallback
+ * builds its papers by hand and never goes through `PaperBuilder`, so nobody
+ * else was going to fill the field in for it.
+ *
+ * `posted-content` is Crossref's preprint type, so a work carrying it is
+ * neither published nor reviewed, whatever its DOI looks like.
+ */
+function publicationFactsForCrossrefType(type) {
+  if (type === 'journal-article') {
+    return { publicationType: 'journal', publicationStatus: 'published', peerReviewed: true };
+  }
+  if (type === 'proceedings-article') {
+    return { publicationType: 'conference', publicationStatus: 'published', peerReviewed: true };
+  }
+  if (type === 'posted-content') {
+    return { publicationType: 'preprint', publicationStatus: 'preprint', peerReviewed: false };
+  }
+  return { publicationType: 'publication', publicationStatus: 'published', peerReviewed: false };
+}
+
 export function mapCrossrefInstitutionWork(work) {
   const doi = String(work?.DOI || '').trim().toLowerCase();
   const title = work?.title?.[0] || '';
@@ -25,6 +49,7 @@ export function mapCrossrefInstitutionWork(work) {
   const published = getCrossrefPublishedDate(work);
   const year = Number(published.slice(0, 4)) || new Date().getFullYear();
   const licenseUrl = work.license?.find(license => /^https?:\/\//i.test(license?.URL || ''))?.URL || '';
+  const { publicationType, publicationStatus, peerReviewed } = publicationFactsForCrossrefType(work.type);
 
   return {
     id: `crossref:${doi}`,
@@ -38,8 +63,9 @@ export function mapCrossrefInstitutionWork(work) {
     published,
     journal: work['container-title']?.[0] || '',
     publisher: work.publisher || '',
-    publicationType: work.type === 'journal-article' ? 'journal' : 'publication',
-    publicationStatus: 'published',
+    publicationType,
+    publicationStatus,
+    peerReviewed,
     openAccess: Boolean(licenseUrl),
     license: licenseUrl || undefined,
     landingPageUrl: work.URL || `https://doi.org/${doi}`,
@@ -51,7 +77,10 @@ export function mapCrossrefInstitutionWork(work) {
 }
 
 function matchesInstitutionFallbackFilters(paper, filters = {}) {
-  if (filters.peerReviewed && paper.publicationType !== 'journal') return false;
+  // The canonical field, the one `entityExplorer` and `paperStatus` read. Asking
+  // `publicationType !== 'journal'` instead agreed with it only by accident, and
+  // dropped every refereed work whose venue is not a journal.
+  if (filters.peerReviewed && paper.peerReviewed !== true) return false;
   if (filters.dateRange) {
     const year = paper.year || 0;
     const currentYear = new Date().getFullYear();

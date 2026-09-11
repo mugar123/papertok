@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getInstitutionAuthorsFromCrossref } from './crossrefInstitutionService.js';
+import {
+  getInstitutionAuthorsFromCrossref,
+  getInstitutionWorksFromCrossref,
+  mapCrossrefInstitutionWork,
+} from './crossrefInstitutionService.js';
 
 test('builds a searchable institution author fallback from Crossref works', async () => {
   let requestedUrl = '';
@@ -54,4 +58,61 @@ test('does not pretend that the Crossref author fallback has further pages', asy
   );
 
   assert.deepEqual(result, { authors: [], total: 0, source: 'crossref' });
+});
+
+test('the peer-review filter keeps a refereed Crossref work that is not a journal article', async () => {
+  const request = async () => new Response(JSON.stringify({
+    message: {
+      items: [
+        {
+          DOI: '10.1000/proceedings',
+          title: ['A refereed conference paper'],
+          type: 'proceedings-article',
+          'container-title': ['Proceedings of Reliable Metadata'],
+        },
+        {
+          DOI: '10.1000/posted',
+          title: ['A paper posted before review'],
+          type: 'posted-content',
+        },
+      ],
+    },
+  }), { status: 200 });
+
+  const { papers } = await getInstitutionWorksFromCrossref(
+    'University of Salamanca',
+    1,
+    '',
+    { peerReviewed: true },
+    request,
+  );
+
+  assert.deepEqual(papers.map(paper => paper.id), ['crossref:10.1000/proceedings']);
+  // The filter this replaced asked `publicationType !== 'journal'`, which drops
+  // a refereed conference paper on the strength of its venue's shape.
+  assert.notEqual(papers[0].publicationType, 'journal');
+});
+
+test('derives the canonical peerReviewed field from the Crossref work type', () => {
+  const peerReviewedFor = (type) => mapCrossrefInstitutionWork({
+    DOI: '10.1000/example',
+    title: ['A work of some type'],
+    type,
+  }).peerReviewed;
+
+  assert.equal(peerReviewedFor('journal-article'), true);
+  assert.equal(peerReviewedFor('proceedings-article'), true);
+  assert.equal(peerReviewedFor('posted-content'), false);
+  assert.equal(peerReviewedFor('dataset'), false);
+});
+
+test('does not record a Crossref preprint as published', () => {
+  const preprint = mapCrossrefInstitutionWork({
+    DOI: '10.1000/posted',
+    title: ['A paper posted before review'],
+    type: 'posted-content',
+  });
+
+  assert.equal(preprint.publicationType, 'preprint');
+  assert.equal(preprint.publicationStatus, 'preprint');
 });

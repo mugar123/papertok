@@ -305,6 +305,7 @@ test('maps Crossref institution fallback records into PaperTok papers', () => {
     publisher: 'Example Publisher',
     publicationType: 'journal',
     publicationStatus: 'published',
+    peerReviewed: true,
     openAccess: true,
     license: 'https://creativecommons.org/licenses/by/4.0/',
     landingPageUrl: 'https://doi.org/10.1000/example-work',
