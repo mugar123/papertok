@@ -166,6 +166,7 @@ export default function PageTransition({ children }) {
       ref={rootRef}
       className="page-transition"
       data-nav-direction={present ? direction : arrivedWith}
+      data-leave-direction={present ? undefined : direction}
       data-page-motion={motion}
       inert={!present || undefined}
       onAnimationEnd={handleAnimationEnd}
