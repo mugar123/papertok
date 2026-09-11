@@ -1589,8 +1589,12 @@ export default function EntityExplorer({
           : (isEnglish ? 'Topic' : 'Tema');
   const topConcepts = entity.x_concepts ? entity.x_concepts.slice(0, 4) : [];
 
+  // The type rides on the live container, the way the skeleton already carries
+  // it (`explorer-skeleton--${type}`). What a project fills in late — its stat
+  // cells, its link menu — needs an entrance the other entity types must not
+  // inherit, and there was no hook for that here.
   return (
-    <div className={`explorer-container${appChromeClass}`} style={{ '--area-accent': entityAccent }}>
+    <div className={`explorer-container explorer-container--${type || 'entity'}${appChromeClass}`} style={{ '--area-accent': entityAccent }}>
       {/* Immersive Hero */}
       <div className="explorer-hero">
         <AnimatePresence>

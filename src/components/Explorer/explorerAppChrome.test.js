@@ -35,7 +35,10 @@ test('every root the explorer can return carries the modifier, from one prop', a
   assert.equal((jsx.match(/\$\{appChromeClass\}/g) || []).length, 3, 'skeleton, error and live page');
   assert.match(jsx, /className=\{`explorer-container explorer-skeleton explorer-skeleton--\$\{type \|\| 'entity'\}\$\{appChromeClass\}`\}/);
   assert.match(jsx, /className=\{`explorer-error\$\{appChromeClass\}`\}/);
-  assert.match(jsx, /className=\{`explorer-container\$\{appChromeClass\}`\} style=\{\{ '--area-accent': entityAccent \}\}/);
+  // The live root also carries the entity type, the way the skeleton root above
+  // already does. What a project fills in late needs an entrance the other
+  // types must not inherit, and the type is the only thing that can scope it.
+  assert.match(jsx, /className=\{`explorer-container explorer-container--\$\{type \|\| 'entity'\}\$\{appChromeClass\}`\} style=\{\{ '--area-accent': entityAccent \}\}/);
 });
 
 test('below the bar: the page starts under it, the toolbar docks under it, the hero stops reserving the notch', async () => {

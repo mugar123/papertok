@@ -2089,6 +2089,27 @@
 .project-subjects { animation-delay: 0.12s; }
 .project-participants { animation-delay: 0.18s; }
 
+/* The rest of what the details fill in: the stat cells and the link menu beside
+   the name. They lead the cascade, because they sit above the four blocks.
+
+   Opacity only, and from 0.35 rather than from nothing. Both sit INSIDE the
+   header, which never went away — the cells replace two shimmering reserved
+   ones and the menu joins a line that is already there — so they sharpen into
+   place rather than arrive, and 8px of travel would read as the header row
+   itself moving. `statSettle` is the treatment this file already uses for a
+   stat value whose number lands late. */
+.explorer-container--project .ehc-stat-box,
+.project-links-menu {
+  animation: statSettle 0.32s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+}
+
+/* Left to right across the row, tighter than the blocks below: these are small
+   and side by side, so the same 60ms would read as them queueing up. */
+.explorer-container--project .ehc-stat-box:nth-child(2) { animation-delay: 0.03s; }
+.explorer-container--project .ehc-stat-box:nth-child(3) { animation-delay: 0.06s; }
+.explorer-container--project .ehc-stat-box:nth-child(4) { animation-delay: 0.09s; }
+.explorer-container--project .ehc-stat-box:nth-child(n + 5) { animation-delay: 0.12s; }
+
 /* Expandable summary — the standfirst again, with the field rule. */
 .project-summary-box {
   /* The one block with a skeleton underneath it, so it takes the rows'
@@ -2743,6 +2764,8 @@
   .project-meta-chips,
   .project-subjects,
   .project-participants,
+  .explorer-container--project .ehc-stat-box,
+  .project-links-menu,
   .ee-author-card.staggerFadeUp,
   .ex-skel,
   .ex-skel::after,

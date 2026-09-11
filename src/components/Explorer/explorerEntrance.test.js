@@ -176,10 +176,23 @@ test('the blocks a project fills in rise in sequence instead of landing in one f
     'the reserved block resolves rather than arrives',
   );
 
+  // The rest of what the details fill in, above the four blocks: the stat cells
+  // and the link menu. Opacity only and from 0.35, because both sit inside a
+  // header that never went away — they sharpen rather than arrive.
+  assert.match(
+    css,
+    /\.explorer-container--project \.ehc-stat-box,\s*\.project-links-menu \{\s*animation: statSettle 0\.32s cubic-bezier\(0\.4, 0, 0\.2, 1\) backwards;\s*\}/,
+    'the header pieces fill in too',
+  );
+  // The hook they are scoped by. Without the type on the live container this
+  // would reach every entity page's stats.
+  const jsx = await read('./EntityExplorer.jsx');
+  assert.match(jsx, /className=\{`explorer-container explorer-container--\$\{type \|\| 'entity'\}\$\{appChromeClass\}`\}/);
+
   // Reduced motion lands them instantly. The height settle they arrive inside
   // is switched off under the same query (`enabled: !prefersReducedMotion`).
   const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
-  for (const selector of ['.project-meta-chips', '.project-subjects', '.project-participants', '.project-summary-box,']) {
+  for (const selector of ['.project-meta-chips', '.project-subjects', '.project-participants', '.project-summary-box,', '.explorer-container--project .ehc-stat-box', '.project-links-menu']) {
     assert.ok(reduced.includes(selector), `${selector} stops animating under reduced motion`);
   }
 });
