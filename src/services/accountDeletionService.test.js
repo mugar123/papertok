@@ -7,6 +7,7 @@ test('deleteAccount retries 202 slices until complete', async () => {
   const result = await deleteAccount({
     isDemo: false,
     apiBase: 'https://worker.test',
+    currentUid: () => 'alice',
     request: async () => {
       statuses.push(true);
       if (statuses.length < 3) {
@@ -24,6 +25,7 @@ test('a 401 after work has started is treated as Auth already gone', async () =>
   const result = await deleteAccount({
     isDemo: false,
     apiBase: 'https://worker.test',
+    currentUid: () => 'alice',
     request: async () => {
       calls += 1;
       if (calls === 1) {
@@ -46,4 +48,23 @@ test('demo mode never calls the Worker', async () => {
     error => error instanceof AccountDeletionError
       && error.code === 'ACCOUNT_DELETION_UNSUPPORTED_IN_DEMO',
   );
+});
+
+test('a session switch between slices stops the deletion before the next POST', async () => {
+  let uid = 'alice';
+  let calls = 0;
+  await assert.rejects(
+    deleteAccount({
+      isDemo: false,
+      apiBase: 'https://worker.test',
+      currentUid: () => uid,
+      request: async () => {
+        calls += 1;
+        uid = 'bob'; // Bob signs in while Alice's first slice is in flight.
+        return new Response(JSON.stringify({ complete: false, stage: 'comments' }), { status: 202 });
+      },
+    }),
+    (error) => error instanceof AccountDeletionError && error.code === 'AUTH_REQUIRED',
+  );
+  assert.equal(calls, 1);
 });

@@ -7,7 +7,7 @@
  * confirms, retries 202s, and signs the tab out when the session is already
  * dead.
  */
-import { IS_DEMO } from './firebase.js';
+import { auth, IS_DEMO } from './firebase.js';
 import { authenticatedWorkerFetch } from './workerApiClient.js';
 
 export class AccountDeletionError extends Error {
@@ -29,6 +29,7 @@ function operations(overrides = {}) {
       ? import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '')
       : overrides.apiBase,
     getToken: overrides.getToken,
+    currentUid: overrides.currentUid || (() => auth.currentUser?.uid),
   };
 }
 
@@ -74,14 +75,20 @@ async function postSlice(api) {
 export async function deleteAccount(overrides) {
   const api = operations(overrides);
   if (api.isDemo) throw new AccountDeletionError('ACCOUNT_DELETION_UNSUPPORTED_IN_DEMO', 400);
+  // The account that confirmed is the only one this loop may act on. Each
+  // slice fetches a fresh token from whoever is signed in *now*, so a session
+  // switch mid-deletion would otherwise carry on against the new account.
+  const confirmedUid = api.currentUid();
+  if (!confirmedUid) throw new AccountDeletionError('AUTH_REQUIRED', 401);
 
   let started = false;
   for (let i = 0; i < MAX_SLICES; i += 1) {
+    if (api.currentUid() !== confirmedUid) throw new AccountDeletionError('AUTH_REQUIRED', 401);
     let payload;
     try {
       payload = await postSlice(api);
     } catch (error) {
-      if (started && error?.code === 'AUTH_REQUIRED') {
+      if (started && error?.code === 'AUTH_REQUIRED' && api.currentUid() === confirmedUid) {
         return { complete: true, stage: 'auth' };
       }
       throw error;
