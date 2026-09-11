@@ -642,14 +642,14 @@ export default function EntityExplorer({
         setEntity({ display_name: name, type: 'project', funder });
         
         // Fetch detailed info
-        const details = await getProjectDetails(id);
+        const details = await getProjectDetails(id, { funder });
         if (isCancelled) return;
         if (details) {
            const displayName = details.acronym 
              ? `${details.acronym}: ${details.title}` 
              : details.title;
            setEntity({
-             id: details.id || id,
+             id: id,
              code: details.id || id,
              openaireId: details.openaireId,
              display_name: displayName,
@@ -882,7 +882,7 @@ export default function EntityExplorer({
         const resolvedId = entity.id || id;
         
         if (type === 'project') {
-           const res = await getPapersByProject(resolvedId, page);
+           const res = await getPapersByProject(resolvedId, page, { funder: searchParams.get('funder') || entity.funder || '' });
            arxivIds = res.arxivIds;
            dois = res.dois || [];
            total = res.total;
