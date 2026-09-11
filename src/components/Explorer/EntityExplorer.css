@@ -1846,6 +1846,13 @@
   to { transform: rotate(360deg); }
 }
 
+.explorer-loading-note {
+  padding: var(--space-4) var(--space-5) 0 var(--space-6);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  animation: slideUpFade 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 /* ─── Project detail ─── */
 .project-meta-chips {
   display: flex;
@@ -2643,6 +2650,7 @@
   .ehc-stat-value.is-settled,
   .orcid-career-section--animate > *,
   .ehc-spinner,
+  .explorer-loading-note,
   .ehc-bg-blur {
     animation: none;
     transition: none;

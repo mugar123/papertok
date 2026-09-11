@@ -235,3 +235,32 @@ test('the list mounts in idle chunks, rows below the fold are skipped, and the s
   const css = await read('./EntityExplorer.css');
   assert.match(css, /\.explorer-list-item \{[^}]*content-visibility: auto;\s*contain-intrinsic-size: auto 200px;[^}]*\}/);
 });
+
+/**
+ * OpenAIRE's `total` counts every publication of the project, whether or not
+ * it carries a DOI or an arXiv id; `getPapersByProject` already drops the ones
+ * with neither. Left alone, a page that yields zero usable papers still made
+ * `hasMore` (`page * 30 < total`) come out true, so the sentinel asked for the
+ * next page immediately — the spinner chained through empty page after empty
+ * page instead of ever stopping. A page with nothing usable must not promise
+ * a next one.
+ */
+test('a project page with no usable identifiers ends the pagination instead of chaining empty pages', async () => {
+  const src = stripComments(await read('./EntityExplorer.jsx'));
+  assert.match(src, /const usable = res\.arxivIds\.length \+ \(res\.dois \|\| \[\]\)\.length;\s*total = usable === 0 \? page \* 30 : res\.total;/);
+});
+
+/**
+ * A project's first page can take close to 17s in the worst case — OpenAIRE's
+ * own 10s budget, then arXiv enrichment and DOI lookups inside
+ * ENTITY_PRIMARY_RENDER_BUDGET_MS's 7s — with nothing on screen but the five
+ * skeleton rows and no word said about what is being waited on. Announced
+ * only once the wait has run past 4s, so a normal load never shows it.
+ */
+test('the first page\'s long wait is announced at 4s, in a fade, under the skeleton rows', async () => {
+  const src = stripComments(await read('./EntityExplorer.jsx'));
+  const css = await read('./EntityExplorer.css');
+  assert.match(src, /setTimeout\(\(\) => setIsPapersLoadSlow\(true\), 4000\)/);
+  assert.match(src, /isLoadingPapers && !isFetchingMore && isPapersLoadSlow && \(\s*<p className="explorer-loading-note"/);
+  assert.match(css, /\.explorer-loading-note \{[^}]*animation: slideUpFade/s);
+});

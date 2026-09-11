@@ -237,6 +237,11 @@ export default function EntityExplorer({
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
+  // True once a fresh-page load has run past 4s with nothing on screen but
+  // the skeleton rows — a project's first page can take close to 17s
+  // (OpenAIRE's own budget, then arXiv enrichment and DOI lookups) — so the
+  // reader gets a word for what is being waited on instead of a silent wait.
+  const [isPapersLoadSlow, setIsPapersLoadSlow] = useState(false);
   // How many rows of the list are mounted (utils/entityExplorer.js says why
   // it is not all of them at once).
   const [rowBudget, setRowBudget] = useState(EXPLORER_ROW_CHUNK);
@@ -898,7 +903,12 @@ export default function EntityExplorer({
            const res = await getPapersByProject(resolvedId, page, { funder: searchParams.get('funder') || entity.funder || '' });
            arxivIds = res.arxivIds;
            dois = res.dois || [];
-           total = res.total;
+           // OpenAIRE's total counts every publication of the project, with or
+           // without a usable DOI or arXiv id; the ones with neither are
+           // already discarded above, so a page that yields none usable does
+           // not promise a next one.
+           const usable = res.arxivIds.length + (res.dois || []).length;
+           total = usable === 0 ? page * 30 : res.total;
         } else if (type === 'author') {
             let papersFromOA = [];
             let arxPapersFromNative = [];
@@ -1171,6 +1181,15 @@ export default function EntityExplorer({
     if (activeTab === 'authors' && observerAuthorsRef.current) observer.observe(observerAuthorsRef.current);
     return () => observer.disconnect();
   }, [hasMore, isLoadingPapers, isFetchingMore, hasMoreAuthors, isLoadingAuthors, isFetchingMoreAuthors, activeTab, rowsSettled]);
+
+  // Armed only while a fresh page is loading (never for "load more", which has
+  // the sentinel's own spinner) and disarmed the instant that stops being
+  // true, so a load that lands well under 4s never shows the note.
+  useEffect(() => {
+    if (!(isLoadingPapers && !isFetchingMore)) { setIsPapersLoadSlow(false); return undefined; }
+    const handle = setTimeout(() => setIsPapersLoadSlow(true), 4000);
+    return () => clearTimeout(handle);
+  }, [isLoadingPapers, isFetchingMore]);
 
   const handleShare = async () => {
     if (!publicEntityUrl) return;
@@ -2384,6 +2403,14 @@ export default function EntityExplorer({
                     <div className="ex-skel ex-skel-summary ex-skel-summary--short"></div>
                   </div>
                 ))}
+
+              {isLoadingPapers && !isFetchingMore && isPapersLoadSlow && (
+                <p className="explorer-loading-note" role="status">
+                  {type === 'project'
+                    ? (isEnglish ? 'Asking OpenAIRE for this project’s publications. It can take a few seconds.' : 'Consultando a OpenAIRE las publicaciones del proyecto. Puede tardar unos segundos.')
+                    : (isEnglish ? 'Still loading publications…' : 'Todavía cargando publicaciones…')}
+                </p>
+              )}
 
               {/* Infinite Scroll Sentinel — once every row of this page is in.
                   The box always mounts, because it IS the observer's target and
