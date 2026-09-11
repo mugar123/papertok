@@ -134,3 +134,37 @@ test('the impact cell and its grid are born at the size the score will take', as
   // over a cold entity of the new type would show it.
   assert.match(jsx, /\{\['institution', 'author'\]\.includes\(type\) && \(\s*<RecentImpactStat/);
 });
+
+/**
+ * The feed's project pill already carries the project's name and funder in
+ * the URL (Task 2), so the hero does not have to sit behind the full-page
+ * skeleton until OpenAIRE answers — it can paint immediately and reserve,
+ * INSIDE the live hero, only the two pieces the pill cannot know: the
+ * summary box and two stat cells. `_detailsPending` marks that optimistic
+ * entity so the hero knows what to reserve, and clears once the real
+ * details land (or, name-less, once the id-as-name fallback lands instead).
+ */
+test('a project arriving with a name from the pill paints the hero right away and reserves inside it what OpenAIRE has not answered yet', async () => {
+  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  assert.match(
+    jsx,
+    /setEntity\(\{ id, display_name: name, type: 'project', funder, _detailsPending: true \}\);\s*setIsLoadingEntity\(false\);/,
+  );
+  assert.match(
+    jsx,
+    /\{type === 'project' && entity\._detailsPending && <ProjectSummarySkeleton \/>\}/,
+  );
+  assert.match(
+    jsx,
+    /entity\._detailsPending && \[1, 2\]\.map\(/,
+    'two reserved stat cells',
+  );
+  // The live project stat cell and the page skeleton's both use `ehc-stat-box`
+  // — there is no `.explorer-stat` anywhere in this codebase — so the
+  // reserved cell must borrow that class, not invent its own, or it reserves
+  // the wrong height.
+  assert.match(
+    jsx,
+    /<div key=\{`stat-reserved-\$\{n\}`\} className="ehc-stat-box" aria-hidden="true">\s*<span className="ex-skel ex-skel-stat-value"><\/span>\s*<span className="ex-skel ex-skel-stat-label"><\/span>\s*<\/div>/,
+  );
+});

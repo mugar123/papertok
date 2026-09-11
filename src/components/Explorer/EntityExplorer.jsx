@@ -635,12 +635,17 @@ export default function EntityExplorer({
       }
 
       if (type === 'project') {
-        const name = searchParams.get('name') || id;
+        const name = searchParams.get('name') || '';
         const funder = searchParams.get('funder') || '';
-        
-        // Optimistic display
-        setEntity({ display_name: name, type: 'project', funder });
-        
+
+        if (name) {
+          // The pill already knows the project's name and funder: paint the
+          // hero now, and let it reserve the summary and two stat cells,
+          // inside itself, until OpenAIRE answers.
+          setEntity({ id, display_name: name, type: 'project', funder, _detailsPending: true });
+          setIsLoadingEntity(false);
+        }
+
         // Fetch detailed info
         const details = await getProjectDetails(id, { funder });
         if (isCancelled) return;
@@ -670,6 +675,10 @@ export default function EntityExplorer({
              openAccess: details.openAccess,
              websiteUrl: details.websiteUrl,
            });
+        } else if (!name) {
+          // Neither the pill nor OpenAIRE could name it: fall back to the
+          // route id rather than leave the hero with nothing.
+          setEntity({ id, display_name: id, type: 'project', funder });
         }
         if (!isCancelled) setIsLoadingEntity(false);
         return;
@@ -1748,6 +1757,12 @@ export default function EntityExplorer({
                 isEnglish={isEnglish}
               />
             )}
+            {type === 'project' && entity._detailsPending && [1, 2].map((n) => (
+              <div key={`stat-reserved-${n}`} className="ehc-stat-box" aria-hidden="true">
+                <span className="ex-skel ex-skel-stat-value"></span>
+                <span className="ex-skel ex-skel-stat-label"></span>
+              </div>
+            ))}
             {type === 'project' && entity.budget > 0 && (
               <div className="ehc-stat-box">
                 <span className="ehc-stat-value">
@@ -1913,6 +1928,7 @@ export default function EntityExplorer({
           )}
 
           {/* Project Summary - expandable */}
+          {type === 'project' && entity._detailsPending && <ProjectSummarySkeleton />}
           {type === 'project' && entity?.summary && (
             <div
               className={`project-summary-box ${expandedSummary ? 'is-expanded' : ''} ${isProjectSummaryExpandable ? 'is-expandable' : ''}`}

@@ -2561,6 +2561,14 @@
   cursor: default;
 }
 
+/* Inside the LIVE hero (not the page skeleton, which already turns off
+   `.explorer-hero-content`'s own entrance via `.is-skeleton`), this box
+   mounts alongside content that is already on screen. It rides the hero's
+   settle; it does not get a second, private fade of its own. */
+.explorer-hero-content .project-summary-box--reserved {
+  animation: none;
+}
+
 /* ── The press ──
    Every feedback rule in this file sits inside `@media (hover: hover)`, which
    is correct for a hover and useless for a thumb: on a phone, tapping a paper

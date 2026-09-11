@@ -20,6 +20,17 @@ test("the project is queried with the route's funder and keeps the route id", as
   assert.match(src, /getProjectDetails\(id, \{ funder \}\)/);
   assert.match(src, /getPapersByProject\(resolvedId, page, \{ funder: searchParams\.get\('funder'\) \|\| entity\.funder \|\| '' \}\)/);
   assert.match(src, /code: details\.id \|\| id,/);
+  // Positive half of the pin above: the previous two assertions only prove
+  // entity.id is not details.id, never that it IS the route id. Match the
+  // shorthand `id,` as well as `id: id,` — either is the route id since this
+  // is a destructured `{ id }` param — so the assertion survives a lint pass
+  // that collapses `id: id` to shorthand, but still fails if the route id is
+  // ever replaced by anything else (e.g. `id: details.id` or no id at all).
+  assert.match(
+    src,
+    /setEntity\(\{\s*id(?::\s*id)?,\s*code: details\.id \|\| id,/,
+    'entity.id must be the route id right where entity.code is assigned from details.id',
+  );
   assert.doesNotMatch(
     src,
     /id: details\.id/,
