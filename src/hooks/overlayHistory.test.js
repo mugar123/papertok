@@ -296,7 +296,7 @@ test('SOURCE: el visor de PDF propio de EntityExplorer usa useOverlayHistory con
   assert.match(code, /const \[pdfPaperToView, setPdfPaperToView\] = useState\(null\);/);
   const { body } = armedWith(code, /useOverlayHistory\(Boolean\(pdfPaperToView\), (\w+), 'pdf'\)/);
   assert.match(body, /pdfCloseRef\.current\(\)/, 'Atrás tiene que PEDIR el cierre al visor, no desmontarlo');
-  assert.match(body, /setPdfPaperToView\(null\)/, 'con el desmontaje solo como respaldo mientras el chunk perezoso no ha montado');
+  assert.match(body, /setPdfPaperToView\(null\)/, 'con el desmontaje solo como respaldo mientras el visor no ha publicado su cierre (aquí PDFViewer se importa en plano, sin chunk perezoso que esperar)');
   assert.match(code, /<PDFViewer paper=\{pdfPaperToView\} closeRef=\{pdfCloseRef\}/, 'y el visor tiene que recibir ese mismo ref');
 });
 
@@ -319,7 +319,7 @@ test('SOURCE: el visor de PDF propio de SearchPage usa useOverlayHistory con el 
   assert.match(code, /const \[pdfPaper, setPdfPaper\] = useState\(null\);/);
   const { body } = armedWith(code, /useOverlayHistory\(Boolean\(pdfPaper\), (\w+), 'pdf'\)/);
   assert.match(body, /pdfCloseRef\.current\(\)/, 'Atrás tiene que PEDIR el cierre al visor, no desmontarlo');
-  assert.match(body, /setPdfPaper\(null\)/, 'con el desmontaje solo como respaldo mientras el chunk perezoso no ha montado');
+  assert.match(body, /setPdfPaper\(null\)/, 'con el desmontaje solo como respaldo mientras el visor no ha publicado su cierre (aquí PDFViewer se importa en plano, sin chunk perezoso que esperar)');
   assert.match(code, /<PDFViewer paper=\{pdfPaper\} closeRef=\{pdfCloseRef\}/, 'y el visor tiene que recibir ese mismo ref');
 });
 

@@ -121,9 +121,12 @@ import { useEffect, useRef } from 'react';
  * `aria-hidden` on everything behind it. A visitor would be left looking at a
  * live page they cannot scroll or click, trapped by a different mechanism than
  * the one this hook exists to unblock. Back and the X have to end up in the
- * same function; the three owners hand this hook exactly that (a `closeRef`
+ * same function; the four owners hand this hook exactly that (a `closeRef`
  * the overlay publishes into, with the unmount switch kept only as the
- * fallback for the window before the lazy chunk has mounted).
+ * fallback for the window before the overlay has published its close — a
+ * lazy chunk still loading in `App.jsx` and `PaperCard.jsx`, and the render
+ * before the ref is assigned in `EntityExplorer.jsx` and `SearchPage.jsx`,
+ * which import `PDFViewer` plainly).
  */
 export function createOverlayHistory({ history, listen, unlisten }) {
   let armed = null;

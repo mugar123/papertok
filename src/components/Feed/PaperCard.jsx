@@ -261,9 +261,11 @@ const PaperCard = memo(function PaperCard({
   // live with the host (App.jsx, like the PDF viewer and the save modal).
   // A feed LOAD still costs one document read — none of that is on the
   // module graph. What the card itself may spend, once the feed says it is
-  // the active one, is the capped `count()` behind the number on this
-  // button: at most two aggregations for that one paper, once per session,
-  // and only through `useCommentCount.js`. That hook is the single door
+  // the active one AND there is a signed-in reader behind it, is the capped
+  // `count()` behind the number on this button: at most two aggregations for
+  // that one paper, once per session, and only through `useCommentCount.js`.
+  // A signed-out visitor spends nothing at all — the button still opens the
+  // thread, the number simply does not appear. That hook is the single door
   // between this file and the social collections; the guards in
   // commentService.test.js and threadAnchorClient.test.js hold it shut.
   onOpenComments = null,
@@ -283,8 +285,9 @@ const PaperCard = memo(function PaperCard({
   // this prop alone: `canOpenComments` also needs `onOpenComments`, and only
   // the feed, the public paper page and the related-paper overlay pass that
   // — the other four call sites never do, so a card mounted there is never
-  // enabled and never reads, `isActive` notwithstanding. See
-  // useCommentCount.js for the budget this protects.
+  // enabled and never reads, `isActive` notwithstanding. `!publicMode` is
+  // the third term: no session, no count. See useCommentCount.js for the
+  // budget this protects.
   isActive = false,
 }) {
   // `position` is optional and PaperCard renders on five different surfaces,
@@ -321,15 +324,28 @@ const PaperCard = memo(function PaperCard({
     [onOpenComments, paper],
   );
   // Two `count()` reads at most, for the active card on a surface that can
-  // open a thread (the feed, `PublicPaperPage`, the related-paper overlay) —
-  // never for the ones scrolled past or waiting below. That fence has two
-  // links, both guarded, neither the whole budget alone: this call site
-  // (pinned by commentService.test.js and threadAnchorClient.test.js) and the
-  // hook's own refusal to subscribe when `enabled` is false (pinned by
+  // open a thread (the feed, `PublicPaperPage`, the related-paper overlay),
+  // and only with a session — never for the ones scrolled past or waiting
+  // below, and never for a signed-out visitor. That fence has two links,
+  // both guarded, neither the whole budget alone: this call site (pinned by
+  // commentService.test.js and threadAnchorClient.test.js) and the hook's
+  // own refusal to subscribe when `enabled` is false (pinned by
   // commentCount.test.js) — drop either and a mounted card that is not the
   // active one starts reading. See the hook for the budget it is built
   // against and why it cannot go through the Worker.
-  const commentCount = useCommentCount(paper, Boolean(isActive && canOpenComments));
+  //
+  // `!publicMode` is the session half, and it is the same question every
+  // other action on this card asks before it spends anything: `publicMode`
+  // is what the guest feed sets (`source.publicMode`, FeedContainer) and
+  // what `PublicPaperPage` computes straight from auth
+  // (`publicMode={!isAuthenticated}`). `firestore.rules` lets an anonymous
+  // client `list` any `{path=**}/comments`, so without this a signed-out
+  // visitor scrolling the public feed billed two aggregations per card to
+  // the project's account, with no session and no rate limit, on the app's
+  // highest fan-out surface. It gates the COUNT and nothing else:
+  // `canOpenComments` above is untouched, so the button still opens the
+  // thread for a guest — they just do not pay for a number first.
+  const commentCount = useCommentCount(paper, Boolean(isActive && canOpenComments && !publicMode));
   // `1000+` past the cap, the same as the sheet's own header: each key's
   // aggregation stops counting at COMMENT_COUNT_CAP, so the raw sum of two
   // capped keys is not a number anyone should be shown.

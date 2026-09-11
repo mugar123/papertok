@@ -5,9 +5,10 @@
  * recompute the CSS tokens. What costs is the animation wrapped around it:
  * `startViewTransition` snapshots the whole page before the callback runs,
  * and on a phone at device pixel ratio that snapshot is tens of megabytes of
- * texture. Add a 420 ms `clip-path` circle on top of a capture that already
- * ate a long frame, and the sweep is what reads as heavy — not the theme
- * change underneath it.
+ * texture. Add a `clip-path` circle on top of a capture that already ate a
+ * long frame — 260 ms opening into the dark, 200 ms closing back out of it
+ * (`global.css`, "Theme switch") — and the sweep is what reads as heavy, not
+ * the theme change underneath it.
  *
  *   1. `instant` — no animation at all. Either the reader asked for reduced
  *      motion, in which case a circle crossing the viewport is exactly the
@@ -28,7 +29,7 @@
  *      View Transitions, i.e. desktop). A circle of the incoming theme opens
  *      out of the control the reader just pressed, rather than a fade of the
  *      whole window. Desktop GPUs and DPRs make the same capture cheap
- *      enough that the extra 420 ms of `clip-path` doesn't cost what it
+ *      enough that the extra 260 ms of `clip-path` doesn't cost what it
  *      would on a phone.
  *
  * The animation itself is CSS (`global.css`, "Theme switch"); this module

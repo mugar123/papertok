@@ -181,7 +181,7 @@ test('SOURCE: the card takes only the free half of this module', async () => {
   for (const call of calls) {
     assert.match(
       call[0],
-      /^useCommentCount\(paper, Boolean\(isActive && canOpenComments\)\);$/,
+      /^useCommentCount\(paper, Boolean\(isActive && canOpenComments && !publicMode\)\);$/,
       'and it runs for the active card alone',
     );
   }

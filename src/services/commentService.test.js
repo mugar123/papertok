@@ -366,10 +366,18 @@ test('SOURCE: nothing on the feed path imports any social service', async () => 
  *
  * What is sanctioned is narrow and worth stating exactly: a feed LOAD still
  * costs one document read; the aggregation fires after the card is mounted,
- * for the ONE card the feed says is active, at most twice per paper per
- * session. Both halves of that are asserted here — the hook's only door into
- * Firestore, and the gate on the call — because they are the whole budget and
- * nothing else in the suite watches either of them.
+ * for the ONE card the feed says is active, WITH A SESSION behind it, at most
+ * twice per paper per session. Both halves of that are asserted here — the
+ * hook's only door into Firestore, and the gate on the call — because they
+ * are the whole budget and nothing else in the suite watches either of them.
+ *
+ * The session term was not always there, and its absence was a bill rather
+ * than a bug report: `firestore.rules` allows `list` on
+ * `{path=**}/comments` unauthenticated, so a signed-out visitor scrolling
+ * the public feed billed two aggregations per card to the project's account,
+ * with no session and no rate limit, on the app's highest fan-out surface.
+ * Signed in the budget is unchanged (two reads per paper the reader actually
+ * lands on, once per session); signed out it is zero.
  */
 test('SOURCE: the card counts comments through one door, and only when active', async () => {
   const hook = stripComments(await readSource('../hooks/useCommentCount.js'));
@@ -395,8 +403,29 @@ test('SOURCE: the card counts comments through one door, and only when active', 
   for (const call of calls) {
     assert.match(
       call[0],
-      /^useCommentCount\(paper, Boolean\(isActive && canOpenComments\)\);$/,
-      'the count is gated on the active card that can open a thread — nothing else may fire a read',
+      /^useCommentCount\(paper, Boolean\(isActive && canOpenComments && !publicMode\)\);$/,
+      'the count is gated on the active card that can open a thread, with a session — nothing else may fire a read',
     );
   }
+});
+
+/**
+ * The other half of the guest decision, and the one a later reader is most
+ * likely to undo by accident: the fix is to withhold the COUNT, not the
+ * button. A signed-out visitor still gets a Comments button that opens the
+ * thread — `canOpenComments` asks only whether there is somewhere to open
+ * and something to anchor it to, and `App.jsx` goes on handing
+ * `onOpenComments` to `GuestFeedPage`. Removing either would have closed the
+ * read too, which is exactly why this is pinned beside the gate rather than
+ * left to be re-derived.
+ */
+test('SOURCE: a signed-out reader keeps the comments button; only the count is withheld', async () => {
+  const card = stripComments(await readSource('../components/Feed/PaperCard.jsx'));
+  assert.match(
+    card,
+    /const canOpenComments = useMemo\(\s*\(\) => Boolean\(onOpenComments && canonicalPaperIdentity\(paper\)\),\s*\[onOpenComments, paper\],\s*\);/,
+    'whether the button renders must not learn about the session',
+  );
+  const app = stripComments(await readSource('../App.jsx'));
+  assert.match(app, /<GuestFeedPage[\s\S]{0,400}onOpenComments=\{setCommentsPaper\}/, 'the guest feed still gets the door');
 });

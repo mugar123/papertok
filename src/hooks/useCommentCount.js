@@ -17,8 +17,8 @@ import { localThreadKeys } from '../services/threadAnchorClient.js';
  * the ceiling is TWO reads per paper — but only for the active card on a
  * surface that can open a thread (the feed, `PublicPaperPage` and the
  * related-paper overlay; see `paintableCommentCount` below for the full
- * list of surfaces that cannot), and only once per paper for the whole
- * session:
+ * list of surfaces that cannot), only with a session behind it, and only
+ * once per paper for the whole session:
  * `cache`/`inflight` live at module scope, not inside the hook, so they
  * survive the mount/unmount churn of the feed's sliding mount window (a
  * card's `PaperCard` instance is torn down and rebuilt constantly; the count
@@ -149,12 +149,14 @@ export function watchCommentCount(paper, onCount, overrides) {
  * with what the subscription is about to paint anyway, not a second rule.
  *
  * A card that is not enabled has no subscription to correct it. `enabled` is
- * `isActive && canOpenComments` (PaperCard.jsx): every surface that mounts a
- * card passes `isActive` now, but `canOpenComments` also needs
- * `onOpenComments`, and only the feed, `PublicPaperPage` and the
+ * `isActive && canOpenComments && !publicMode` (PaperCard.jsx): every
+ * surface that mounts a card passes `isActive` now, but `canOpenComments`
+ * also needs `onOpenComments`, and only the feed, `PublicPaperPage` and the
  * related-paper overlay pass that — `EntityExplorer`, `ListsPage`,
  * `SearchPage` and `ScientificReport` never do, so a card on any of those is
- * never enabled. Such a card may only be handed a fresh entry. Anything
+ * never enabled; and `publicMode` turns the last one off for a signed-out
+ * reader, whose comments button still opens but who bills nothing to reach
+ * a number. Such a card may only be handed a fresh entry. Anything
  * stale would sit there, wrong, for the rest of the session:
  * `forgetCommentCount` deliberately leaves the old answer in `cache` (see
  * above), and a surface with no subscriber is the one place nothing will
@@ -167,13 +169,19 @@ export function paintableCommentCount(paperId, enabled) {
 }
 
 /**
- * `enabled` is the card's own `isActive && canOpenComments`. `isActive` is
- * wired up on every surface that mounts a `PaperCard` now (PaperCard.jsx),
- * so what actually keeps most of them off is `canOpenComments`: it also
- * needs `onOpenComments`, and only the feed, `PublicPaperPage` and the
- * related-paper overlay pass that — `EntityExplorer`, `ListsPage`,
- * `SearchPage` and `ScientificReport` are off unconditionally, same as a
- * paper with nowhere to anchor a thread. Tolerates `enabled` arriving
+ * `enabled` is the card's own `isActive && canOpenComments && !publicMode`.
+ * `isActive` is wired up on every surface that mounts a `PaperCard` now
+ * (PaperCard.jsx), so what actually keeps most of them off is
+ * `canOpenComments`: it also needs `onOpenComments`, and only the feed,
+ * `PublicPaperPage` and the related-paper overlay pass that —
+ * `EntityExplorer`, `ListsPage`, `SearchPage` and `ScientificReport` are off
+ * unconditionally, same as a paper with nowhere to anchor a thread. The
+ * third term is the session: `firestore.rules` opens `list` on
+ * `{path=**}/comments` to an anonymous client, so a signed-out visitor
+ * scrolling the public feed would bill two aggregations per card to the
+ * project's account on the app's highest fan-out surface.
+ *
+ * Tolerates `enabled` arriving
  * late or flipping more than once — the feed's mount window can leave a card
  * mounted for a while before it is the active one, and can make it active
  * more than once — because `loadCommentCount` itself is idempotent per
