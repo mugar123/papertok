@@ -4,6 +4,7 @@ import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import { createSessionCache } from '../../utils/sessionCache.js';
+import { useAfterPageArrival } from '../../hooks/usePageArrival.js';
 import { getScientificReport } from '../../services/scientificReportService';
 import { getScientificTrends } from '../../services/scientificTrendService';
 import { findOpenAccessCopy } from '../../services/unpaywallService';
@@ -264,6 +265,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   /* Through the same function `initialReportKey` uses, so the key the first
      render reads and the key every later write uses cannot drift apart. */
   const reportKey = useMemo(() => reportCacheKey(timeframe, filters), [timeframe, filters]);
+  const afterPageArrival = useAfterPageArrival();
   const reportRequestId = useRef(0);
   const trendsRef = useRef(null);
   const closeOverlay = useCallback(() => setSelectedPaper(null), []);
@@ -321,6 +323,14 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
         selection: options.selection,
       });
       if (requestId === reportRequestId.current) {
+        /* The request ran while the page was flying in, which costs nothing —
+           it is off-thread. Painting a whole edition on those frames is what
+           cost: one 46.8ms task, React twice plus 18ms of layout, and two
+           dropped frames mid-animation. So the render waits out the arrival,
+           and only when there is one to wait out. */
+        const arriving = afterPageArrival();
+        if (arriving) await arriving;
+        if (requestId !== reportRequestId.current) return false;
         stopWaiting();
         setReport(data);
         setLoading(false);
@@ -330,6 +340,12 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
       if (trendPromise) {
         const nextTrends = await trendPromise;
         if (requestId === reportRequestId.current) {
+          /* The trends land on their own clock and re-rank the whole edition
+             behind them, so they get the same treatment: the sidebar's figures
+             were the second half of the same stall. */
+          const trendsArriving = afterPageArrival();
+          if (trendsArriving) await trendsArriving;
+          if (requestId !== reportRequestId.current) return false;
           trendsRef.current = nextTrends;
           setTrends({ ...nextTrends, loading: false });
           try {
@@ -360,7 +376,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
         setLoading(false);
       }
     }
-  }, []);
+  }, [afterPageArrival]);
 
   useEffect(() => () => {
     reportRequestId.current += 1;

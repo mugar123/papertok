@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react';
+import { createContext, useCallback, useContext } from 'react';
 
 /**
  * Whether the route page around this subtree is still travelling into place.
@@ -42,4 +42,46 @@ export const PageArrivalProvider = PageArrivalContext.Provider;
  */
 export function useIsPageArriving() {
   return useContext(PageArrivalContext);
+}
+
+/**
+ * A promise that settles once this page has finished arriving, or `null` when
+ * it is not arriving at all — so a caller with nothing to wait for keeps its
+ * synchronous path and costs no frame.
+ *
+ * `useIsPageArriving` answers about THIS instant, which is what a component
+ * committing right now needs. This is for the other shape: work already in
+ * flight, whose RESULT must not land on the frames the page is travelling on.
+ * Measured 2026-09-11, For you -> Research, production build, real session —
+ * tasks over 8ms from the click:
+ *
+ *   +  0ms  42.6ms  the navigation commit
+ *   +127ms  46.8ms  FunctionCall 25, FunctionCall 22, Layout 18
+ *
+ * and the frame sampler saw the matching holes: no frame from 130 to 163ms,
+ * none from 163 to 214ms, both while BOTH pages were still animating. The
+ * reverse trip had no hole at all. That is the freeze a reader reports as "it
+ * sticks for a moment": the page laying itself out on top of its own arrival.
+ *
+ * Polled per frame rather than hung off `animationend`, for the same reason
+ * `PageTransition` asks the DOM instead of trusting a flag: the answer has to
+ * be about the frame being committed. The cap is the backstop for an animation
+ * that never ends (a backgrounded tab) and outlasts every duration in
+ * PageTransition.css.
+ */
+const ARRIVAL_WAIT_CAP_MS = 600;
+
+export function useAfterPageArrival() {
+  const isArriving = useIsPageArriving();
+  return useCallback(() => {
+    if (!isArriving()) return null;
+    return new Promise((resolve) => {
+      const startedAt = performance.now();
+      const tick = () => {
+        if (!isArriving() || performance.now() - startedAt > ARRIVAL_WAIT_CAP_MS) resolve();
+        else requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+  }, [isArriving]);
 }

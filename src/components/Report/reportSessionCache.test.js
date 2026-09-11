@@ -105,3 +105,47 @@ test('the edition is remembered only once it is worth showing', async () => {
   );
   assert.match(effect, /reportCache\.set\(reportKey, \{ report, trends \}\)/);
 });
+
+/**
+ * SOURCE test for WHEN the edition is painted.
+ *
+ * Measured 2026-09-11 (production build, real session, 13 mounted cards), tasks
+ * over 8ms from the click, For you -> Research:
+ *
+ *   +  0ms  42.6ms  EvaluateScript 43, FunctionCall 41   (the navigation commit)
+ *   +127ms  46.8ms  FunctionCall 25, FunctionCall 22, Layout 18
+ *
+ * The frame sampler saw the matching holes: no frame from 130 to 163ms, none
+ * from 163 to 214ms, both while BOTH pages were still animating. The reverse
+ * trip, Research -> For you, had no hole at all — Research unmounts cheaply and
+ * the feed mounts one card. So the freeze is this page laying itself out on top
+ * of its own arrival.
+ *
+ * The network is not delayed and is not the problem: it runs off-thread while
+ * the page flies in. Only the paint waits.
+ */
+test('neither the edition nor the trends are painted on the frames the page is arriving on', async () => {
+  const src = strip(await read('./ScientificReport.jsx'));
+  assert.match(src, /import \{ useAfterPageArrival \} from '\.\.\/\.\.\/hooks\/usePageArrival\.js'/);
+  assert.match(src, /const afterPageArrival = useAfterPageArrival\(\)/);
+
+  for (const [anchor, paint, name] of [
+    ['const arriving = afterPageArrival();', 'setReport(data)', 'the edition'],
+    ['const trendsArriving = afterPageArrival();', 'setTrends({ ...nextTrends', 'the trends'],
+  ]) {
+    const start = src.indexOf(anchor);
+    assert.notEqual(start, -1, `${name} waits for the arrival`);
+    const block = src.slice(start, start + 320);
+    assert.match(
+      block,
+      /if \((?:arriving|trendsArriving)\) await (?:arriving|trendsArriving);/,
+      `${name}: the wait only happens when there is an arrival to wait for`,
+    );
+    assert.match(
+      block,
+      /if \(requestId !== reportRequestId\.current\) return false;/,
+      `${name}: a selection changed during the wait must not be painted`,
+    );
+    assert.ok(block.indexOf(paint) > 0, `${name}: the wait comes before the paint`);
+  }
+});
