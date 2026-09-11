@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { useContext, useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
+import { useContext, useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect, startTransition } from 'react';
 import { FeedContext } from './contexts';
 import { IS_DEMO, db } from '../services/firebase';
 import { setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
@@ -292,6 +292,12 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   useEffect(() => { savedPaperIdsRef.current = savedPaperIds; }, [savedPaperIds]);
   useEffect(() => { readPaperIdsRef.current = readPaperIds; }, [readPaperIds]);
   useEffect(() => { notInterestedIdsRef.current = notInterestedIds; }, [notInterestedIds]);
+  // Read by handlers that must keep one identity across re-ranks: a handler
+  // that lists `papers` in its deps is handed anew to every mounted card on
+  // every `setPapers`, and that alone re-rendered 28 of 30 cards per swipe
+  // (measured 2026-09-11, ~200 ms of React work at each card change).
+  const papersRef = useRef(papers);
+  useEffect(() => { papersRef.current = papers; }, [papers]);
   const categoryAffinities = useRef({});
   const categoryCooldowns = useRef({});
   const conceptAffinities = useRef({});
@@ -541,7 +547,11 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   }, []);
 
   const reRankFeed = useCallback((sourcePaperId = null) => {
-    setPapers(prevPapers => {
+    // A transition: reordering the unseen queue re-renders every card whose
+    // position moved, and as a synchronous update that was a 200-250 ms
+    // block landing right as the reader arrived on a card. Time-sliced, it
+    // yields to the scroll and the wheel between cards.
+    startTransition(() => setPapers(prevPapers => {
       if (!prevPapers || prevPapers.length <= 1) return prevPapers;
       // Lock the cards the reader is on or about to reach: the interacted
       // paper when there is one, and the visible one always — a reload puts
@@ -560,7 +570,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       logRankingBatch('rerank queue', newQueue);
 
       return [...locked, ...newQueue];
-    });
+    }));
   }, [calculateAndAttachScore]);
 
   const reRankFeedRef = useRef(reRankFeed);
@@ -1828,6 +1838,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     // finds neither anchor — the removed id nor the ref that still names it —
     // and falls back to the top, reshuffling everything under the reader
     // (final review, 2026-09-04).
+    const papers = papersRef.current;
     const removedIndex = papers.findIndex((p) => p.id === paper.id);
     const successorId = removedIndex >= 0
       ? (papers[removedIndex + 1]?.id ?? papers[removedIndex - 1]?.id ?? null)
@@ -1861,7 +1872,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         console.error('Error saving not interested:', err);
       }
     }
-  }, [withInteractionId, reRankFeed, recordProfileEvent, user?.uid, papers]);
+  }, [withInteractionId, reRankFeed, recordProfileEvent, user?.uid]);
 
   const markAsRead = useCallback(async (paperInput) => {
     const paper = withInteractionId(paperInput);

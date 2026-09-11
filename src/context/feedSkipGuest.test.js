@@ -35,7 +35,7 @@ test('SOURCE: markNotInterested quita el paper también sin sesión', async () =
   const body = bounded(
     code,
     'const markNotInterested = useCallback(',
-    '}, [withInteractionId, reRankFeed, recordProfileEvent, user?.uid, papers]);',
+    '}, [withInteractionId, reRankFeed, recordProfileEvent, user?.uid]);',
     'markNotInterested',
     50,
   );
