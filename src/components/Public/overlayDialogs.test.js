@@ -73,11 +73,9 @@ test('the interests prompt is a modal Dialog and settles into one parent callbac
   assert.match(settle[0], /if \(answer\) onSubmit\?\.\(answer\);\s*else onDismiss\?\.\(\);/);
   assert.equal((jsx.match(/onDismiss\?\.\(\)/g) ?? []).length, 1);
   assert.equal((jsx.match(/onSubmit\?\.\(/g) ?? []).length, 1);
-  // The close control is named in both languages, and focus opens on the
-  // first area, as the old data-dialog-initial-focus did.
+  // The close control is named in both languages. Initial focus lands on
+  // the title, not the first area — see the dedicated SOURCE test below.
   assert.match(jsx, /closeLabel=\{copy\.close\[mode\]\}/);
-  assert.match(jsx, /initialFocus=\{firstAreaRef\}/);
-  assert.match(jsx, /ref=\{index === 0 \? firstAreaRef : undefined\}/);
   // The chips are the shared Toggle: a native button on which Base UI
   // writes `aria-pressed` and `data-pressed`; the CSS reads the attribute.
   assert.match(jsx, /import \{ Toggle \} from '\.\.\/ui\/toggle\.jsx'/);
@@ -86,6 +84,13 @@ test('the interests prompt is a modal Dialog and settles into one parent callbac
   const css = await gipCss;
   assert.match(css, /\.gip-area\[data-pressed\]\s*\{/);
   assert.doesNotMatch(css, /\.gip-area\.is-selected|:not\(\.is-selected\)/);
+});
+
+test('SOURCE: el onboarding enfoca el título, no el primer chip', async () => {
+  const jsx = await gipJsx;
+  assert.match(jsx, /initialFocus=\{titleRef\}/);
+  assert.match(jsx, /<DialogTitle[^>]*ref=\{titleRef\}[^>]*tabIndex=\{-1\}/);
+  assert.doesNotMatch(jsx, /initialFocus=\{firstAreaRef\}/);
 });
 
 test('the interests sheet docks to the bottom on a phone and floats centred from 640px', async () => {

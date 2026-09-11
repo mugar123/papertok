@@ -263,6 +263,14 @@ const OUTLINE_OFF_ON_PURPOSE = new Map([
     + 'rendering bug rather than as focus',
   ],
   [
+    '.gip-title:focus-visible',
+    'GuestInterestsPrompt moves initialFocus to the sheet’s h2 (tabIndex={-1}) so the '
+    + 'browser does not scroll the sheet to the first chip instead. Like #main-content '
+    + 'above, it is never a normal tab stop: a keyboard user moving through the sheet '
+    + 'never lands here from their own Tab press, so a ring around plain dialog prose '
+    + 'would read as a rendering bug rather than as focus',
+  ],
+  [
     "input:not([type='checkbox']):not([type='radio']):not([type='range']):focus-visible, "
     + "textarea:focus-visible, [contenteditable='true']:focus-visible",
     'the same rule that removes the outline draws the replacement in the next two '

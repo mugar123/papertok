@@ -62,6 +62,13 @@
   color: var(--text-primary);
 }
 
+/* `initialFocus` lands here programmatically (see GuestInterestsPrompt.jsx),
+   not from a tab press or a click, so the ring would only ever show for the
+   one visitor who never asked for it. */
+.gip-title:focus-visible {
+  outline: none;
+}
+
 .gip-lede {
   margin: 0 0 var(--space-5);
   max-width: 48ch;

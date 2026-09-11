@@ -60,7 +60,7 @@ export default function GuestInterestsPrompt({ initialAreas = [], firstAsk = tru
   const { isEnglish } = useLanguage();
   const [open, setOpen] = useState(true);
   const answerRef = useRef(null);
-  const firstAreaRef = useRef(null);
+  const titleRef = useRef(null);
   const [selected, setSelected] = useState(() => new Set(normalizeGuestAreas(initialAreas)));
   const copy = COPY[isEnglish ? 'en' : 'es'];
   const mode = firstAsk ? 'first' : 'edit';
@@ -101,19 +101,18 @@ export default function GuestInterestsPrompt({ initialAreas = [], firstAsk = tru
         className="gip"
         overlayClassName="gip-backdrop"
         closeLabel={copy.close[mode]}
-        initialFocus={firstAreaRef}
+        initialFocus={titleRef}
       >
         <p className="gip-kicker">{copy.kicker[mode]}</p>
-        <DialogTitle className="gip-title">{copy.title}</DialogTitle>
+        <DialogTitle className="gip-title" ref={titleRef} tabIndex={-1}>{copy.title}</DialogTitle>
         <DialogDescription className="gip-lede">{copy.lede[mode]}</DialogDescription>
 
         <div className="gip-areas" role="group" aria-label={copy.areasLabel}>
-          {AREA_ENTRIES.map(([key, area], index) => {
+          {AREA_ENTRIES.map(([key, area]) => {
             const isSelected = selected.has(key);
             return (
               // A shared Toggle: a native button carrying `aria-pressed` and
-              // `data-pressed`, which the area's CSS styles. It forwards the
-              // ref, so the dialog's initialFocus still lands on the first one.
+              // `data-pressed`, which the area's CSS styles.
               <Toggle
                 key={key}
                 variant="outline"
@@ -121,7 +120,6 @@ export default function GuestInterestsPrompt({ initialAreas = [], firstAsk = tru
                 pressed={isSelected}
                 onPressedChange={() => toggle(key)}
                 style={{ '--area-accent': area.gradient }}
-                ref={index === 0 ? firstAreaRef : undefined}
               >
                 <span className="gip-area-icon" aria-hidden="true">
                   <area.icon size={17} strokeWidth={1.75} />
