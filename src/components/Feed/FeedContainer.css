@@ -78,10 +78,24 @@
   border: 1px solid var(--border-default); box-shadow: var(--shadow-md);
   font-size: 0.8rem;
   opacity: 0;
-  translate: -50% -18px;
+  /* En reposo está METIDA bajo la barra, no sólo 18px más arriba: 12px de
+     `top` más su propia altura. La barra es opaca (`--bg-primary`) y va en
+     `--z-nav: 100` contra el 5 de aquí, así que esto es de verdad estar
+     debajo — de donde sale y adonde vuelve.
+     Los 18px de antes no llegaban a la barra, así que la píldora se
+     deshacía a medio aire, y encima las tres transiciones corrían en
+     `ease-in`: la curva que gasta sus primeros fotogramas casi sin moverse,
+     justo cuando el lector acaba de ver el «Actualizado» y está mirando.
+     Ahora el recorrido arranca de inmediato y la opacidad espera 60ms, para
+     que lo que se vea sea una píldora entera metiéndose bajo la barra y no
+     una que se apaga mientras sube. */
+  translate: -50% -40px;
   scale: 0.9;
   pointer-events: none;
-  transition: opacity 160ms ease-in, translate 160ms ease-in, scale 160ms ease-in;
+  transition:
+    opacity 160ms 60ms var(--ease-out-quad),
+    translate 280ms var(--ease-out-quad),
+    scale 280ms var(--ease-out-quad);
 }
 .feed-refresh.is-visible,
 .feed-refresh:focus-visible {
@@ -105,7 +119,7 @@
 .feed-wrapper.is-pulling .feed-refresh {
   transition: none;
   opacity: var(--pull);
-  translate: -50% calc(-18px + 0.55 * var(--pull-y));
+  translate: -50% calc(-40px + 0.9 * var(--pull-y));
   scale: calc(0.9 + 0.12 * var(--pull));
   pointer-events: none;
 }
@@ -135,13 +149,35 @@
   scale: 1;
 }
 .feed-refresh.is-done { animation: feedRefreshDone 520ms cubic-bezier(0.16, 1, 0.3, 1); }
-/* Face slot: icon+label crossfade together. `layout` on the face morphs the
-   pill width across Refreshing → Updated → Refresh without a hard jump. */
+/* Face slot. Las tres caras se apilan en UNA celda de rejilla, y con ellas un
+   medidor invisible que lleva las tres etiquetas: la celda mide siempre lo
+   que la más ancha, así que la píldora no cambia de tamaño al cambiar de
+   cara y las caras sólo se cruzan, centradas, dentro de una caja quieta.
+
+   Esto sustituye a un `layout` de framer sobre esta misma cara, que era el
+   bug que Nicolás reportó el 12-09: el texto se iba a la izquierda, volvía a
+   la derecha y se iba otra vez al terminar. La píldora está centrada con
+   `left: 50%` + `translate: -50%`, así que un cambio de ancho la re-centra
+   en el mismo fotograma — pero la proyección de `layout` sólo compensaba la
+   caja de la CARA, no la del botón que la contiene. Dos cajas moviéndose y
+   una sola animada es exactamente el tirón que se veía. Un ancho que no
+   cambia no tiene ese problema y no necesita animarse. */
 .feed-refresh-face {
-  position: relative;
-  display: inline-flex;
+  display: grid;
   align-items: center;
-  overflow: hidden;
+  justify-items: center;
+}
+.feed-refresh-face > * {
+  grid-area: 1 / 1;
+}
+/* Pone el ancho y nada más. `visibility: hidden` y no `display: none`,
+   porque lo que se necesita de él es justamente que ocupe sitio. */
+.feed-refresh-gauge {
+  display: grid;
+}
+.feed-refresh-gauge > * {
+  grid-area: 1 / 1;
+  visibility: hidden;
 }
 .feed-refresh-content {
   display: inline-flex;
@@ -149,17 +185,14 @@
   gap: 6px;
   white-space: nowrap;
 }
+/* Gira y ya. Llevaba además un `feedRefreshSpinBreath` que lo encogía al 86%
+   dos veces por vuelta: un zoom sobre un icono de 14px no dice nada que no
+   diga el giro, y sobre texto pequeño lee como un tic. Fuera el 12-09. */
 .feed-refresh-icon--spinning {
   transform-origin: center;
-  animation:
-    feedRefreshSpin 0.72s linear infinite,
-    feedRefreshSpinBreath 0.72s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  animation: feedRefreshSpin 0.72s linear infinite;
 }
 @keyframes feedRefreshSpin { to { rotate: 360deg; } }
-@keyframes feedRefreshSpinBreath {
-  0%, 100% { scale: 1; }
-  50% { scale: 0.86; }
-}
 @keyframes feedRefreshDone {
   0% { scale: 1; }
   35% { scale: 1.12; }

@@ -754,9 +754,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
 
   if (displayState === FEED_DISPLAY_STATES.FEED || atomVeil) {
   const refreshPhase = isRefreshing ? 'refreshing' : refreshDone ? 'done' : 'idle';
-  const refreshLabel = isEnglish
-    ? ({ refreshing: 'Refreshing…', done: 'Updated', idle: 'Refresh' }[refreshPhase])
-    : ({ refreshing: 'Actualizando…', done: 'Actualizado', idle: 'Actualizar' }[refreshPhase]);
+  const refreshLabels = isEnglish
+    ? { refreshing: 'Refreshing…', done: 'Updated', idle: 'Refresh' }
+    : { refreshing: 'Actualizando…', done: 'Actualizado', idle: 'Actualizar' };
+  const refreshLabel = refreshLabels[refreshPhase];
   // Done pops in (check + label); refreshing/idle crossfade softer so the
   // handoff reads as one beat with the feed's opacity dip.
   const refreshFaceMotion = prefersReducedMotion
@@ -797,23 +798,30 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
           disabled={isRefreshing}
           aria-busy={isRefreshing || undefined}
         >
-          <motion.span
-            className="feed-refresh-face"
-            layout={!prefersReducedMotion}
-            transition={prefersReducedMotion ? undefined : { layout: { duration: 0.28, ease: [0.2, 0, 0, 1] } }}
-          >
+          <span className="feed-refresh-face">
+            {/* El medidor. Lleva las tres etiquetas apiladas e invisibles, y
+                es lo único que decide el ancho de la píldora: con una caja
+                quieta las caras sólo se cruzan, sin que nada se mueva de
+                sitio. Antes lo hacía un `layout` de framer sobre la cara, y
+                como la píldora va centrada (`left: 50%` + `translate: -50%`)
+                su propia caja se re-centraba en el mismo fotograma sin estar
+                animada: de ahí el texto yéndose a la izquierda, volviendo, y
+                yéndose otra vez al acabar el refresco. */}
+            <span className="feed-refresh-gauge" aria-hidden="true">
+              {Object.values(refreshLabels).map((label) => (
+                <span key={label} className="feed-refresh-content">
+                  <RefreshCw size={14} aria-hidden="true" />
+                  <span className="feed-refresh-label">{label}</span>
+                </span>
+              ))}
+            </span>
             <AnimatePresence initial={false}>
               <motion.span
                 key={refreshPhase}
                 className="feed-refresh-content"
                 initial={refreshFaceMotion.initial}
                 animate={refreshFaceMotion.animate}
-                exit={{
-                  ...refreshFaceMotion.exit,
-                  position: 'absolute',
-                  left: 0,
-                  top: 0,
-                }}
+                exit={refreshFaceMotion.exit}
                 transition={refreshFaceMotion.transition}
               >
                 {refreshPhase === 'done'
@@ -828,7 +836,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
                 <span className="feed-refresh-label">{refreshLabel}</span>
               </motion.span>
             </AnimatePresence>
-          </motion.span>
+          </span>
         </button>
       )}
       <div

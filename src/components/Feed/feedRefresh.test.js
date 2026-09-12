@@ -63,7 +63,7 @@ test('SOURCE: al tirar, los papers vienen con el dedo y sin reloj de por medio',
   assert.match(card, /transition:\s*opacity 0\.9s ease,\s*translate var\(--pc-travel\),\s*transform \d+ms var\(--ease-out-[a-z]+\)/,
     'la tarjeta sabe volver sola al soltar, y sin perder ni la opacidad ni el hundimiento');
   const pill = css.slice(css.indexOf('.feed-wrapper.is-pulling .feed-refresh {'), css.indexOf('}', css.indexOf('.feed-wrapper.is-pulling .feed-refresh {')));
-  assert.match(pill, /translate: -50% calc\(-18px \+ [\d.]+ \* var\(--pull-y\)\)/,
+  assert.match(pill, /translate: -50% calc\(-40px \+ [\d.]+ \* var\(--pull-y\)\)/,
     'la píldora va en el hueco que abren los papers, no en una distancia suya');
   assert.match(css, /\.feed-wrapper\.is-pulling \.feed-refresh-icon \{\s*rotate: calc\(var\(--pull\) \* 180deg\)/,
     'el icono gira con el tirón y entrega medio giro hecho al spinner');
@@ -155,11 +155,56 @@ test('SOURCE: la píldora dice qué está haciendo en cada uno de sus tres estad
   assert.ok(at > 0, 'la píldora sigue tipando sus tres caras');
   const body = src.slice(at, src.indexOf('</button>', at));
   assert.match(body, /AnimatePresence initial=\{false\}/, 'las caras se cruzan, no se cortan');
-  assert.match(body, /position: 'absolute'/, 'la cara que sale no colapsa el ancho de la píldora');
   assert.match(body, /refreshPhase === 'done'\s*\?\s*<Check/, 'al terminar, una marca, no la flecha girando');
   assert.match(body, /refreshing: 'Refreshing…', done: 'Updated', idle: 'Refresh'/);
   assert.match(body, /refreshing: 'Actualizando…', done: 'Actualizado', idle: 'Actualizar'/);
-  assert.match(body, /layout=\{!prefersReducedMotion\}/, 'el ancho de la píldora morphéa con el texto');
+});
+
+/**
+ * El bug que Nicolás reportó el 12-09: al pulsar refresh el texto se iba a la
+ * izquierda, volvía a la derecha, y al terminar se iba otra vez. La píldora
+ * está centrada con `left: 50%` + `translate: -50%`, así que cualquier cambio
+ * de ancho la re-centra en el mismo fotograma; el `layout` de framer que había
+ * aquí compensaba la caja de la CARA pero no la del botón que la contiene, y
+ * dos cajas moviéndose con una sola animada es justo ese tirón.
+ *
+ * La cura no es animar también la otra: es que el ancho no cambie.
+ */
+test('SOURCE: el ancho de la píldora no depende de qué cara lleve puesta', async () => {
+  const src = strip(await read('./FeedContainer.jsx'));
+  const at = src.indexOf("const refreshPhase = isRefreshing");
+  const body = src.slice(at, src.indexOf('</button>', at));
+  assert.match(body, /<span className="feed-refresh-gauge" aria-hidden="true">[\s\S]{0,320}Object\.values\(refreshLabels\)\.map/,
+    'el medidor lleva LAS TRES etiquetas: con una sola, la caja vuelve a depender de cuál');
+  assert.doesNotMatch(body, /layout=\{/, 'nada de morphear el ancho: el arreglo es que no cambie');
+  assert.doesNotMatch(body, /position: 'absolute'/,
+    'la cara que sale se apila en la rejilla; anclarla a left:0 era la mitad del tirón');
+  const css = strip(await read('./FeedContainer.css'));
+  const face = css.slice(css.indexOf('.feed-refresh-face {'), css.indexOf('}', css.indexOf('.feed-refresh-face {')));
+  assert.match(face, /display: grid/);
+  assert.match(face, /justify-items: center/, 'las caras se cruzan centradas, o vuelven a anclarse a un lado');
+  assert.match(css, /\.feed-refresh-face > \* \{\s*grid-area: 1 \/ 1;/, 'todas en la misma celda');
+  const gauge = css.slice(css.indexOf('.feed-refresh-gauge > * {'), css.indexOf('}', css.indexOf('.feed-refresh-gauge > * {')));
+  assert.match(gauge, /visibility: hidden/);
+  assert.doesNotMatch(gauge, /display: none/, 'lo que se necesita del medidor es que ocupe sitio');
+});
+
+/**
+ * La salida, rehecha el mismo día. Iba en `ease-in` —la curva que gasta sus
+ * primeros fotogramas casi sin moverse, justo cuando el lector acaba de leer
+ * «Actualizado»— y sólo 18px, que no llegan a la barra: la píldora se
+ * deshacía a medio aire en vez de meterse debajo.
+ */
+test('SOURCE: la píldora se retira bajo la barra, no se apaga en el aire', async () => {
+  const css = strip(await read('./FeedContainer.css'));
+  const rest = css.slice(css.indexOf('.feed-refresh {'), css.indexOf('}', css.indexOf('.feed-refresh {')));
+  const up = Number(/translate: -50% -(\d+)px/.exec(rest)[1]);
+  assert.ok(up >= 34, `el reposo está bajo la barra (${up}px): con menos, la píldora no llega y se deshace a la vista`);
+  assert.doesNotMatch(rest, /ease-in[;,)\s]/, 'la salida no arranca lenta');
+  const [, opMs, opDelay] = /opacity (\d+)ms (\d+)ms/.exec(rest);
+  const travelMs = Number(/translate (\d+)ms/.exec(rest)[1]);
+  assert.ok(Number(opDelay) > 0, 'la opacidad espera: si se apaga a la vez que sube, no se ve meterse debajo');
+  assert.ok(Number(opMs) + Number(opDelay) <= travelMs, 'y termina dentro del recorrido, no después');
 });
 
 test('SOURCE: el beat de Actualizado deja sitio al crossfade de salida', async () => {
@@ -189,7 +234,11 @@ test('SOURCE: la píldora trabaja sin halo, y el aterrizaje conserva su spring',
     'sin glow: el spinner ya dice que trabaja, y el halo se pintaba encima de los papers del lector');
   assert.doesNotMatch(css, /\.feed-refresh\.is-refreshing \{[^}]*animation:/,
     'y sin latido propio: lo que se mueve durante la espera es el entorno');
-  assert.match(css, /@keyframes feedRefreshSpinBreath/, 'el spinner respira, no sólo gira');
+  assert.doesNotMatch(css, /feedRefreshSpinBreath|scale: 0\.86/,
+    'el icono gira y ya: encogerlo al 86% dos veces por vuelta leía como un tic, no como progreso');
+  const spin = css.slice(css.indexOf('.feed-refresh-icon--spinning {'), css.indexOf('}', css.indexOf('.feed-refresh-icon--spinning {')));
+  assert.doesNotMatch(spin, /scale|zoom/, 'y nada de zoom por otra puerta');
+  assert.match(spin, /animation: feedRefreshSpin [\d.]+s linear infinite;/, 'una sola animación, y lineal');
   assert.match(css, /@keyframes feedRefreshDone[\s\S]*scale: 1\.12/, 'el done hace un pop claro');
   const dip = css.slice(css.indexOf('.feed-container--refreshing {'), css.indexOf('}', css.indexOf('.feed-container--refreshing {')));
   const back = [...css.matchAll(/\.feed-container \{([^}]*)\}/g)]
