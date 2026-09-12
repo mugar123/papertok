@@ -4,7 +4,7 @@ import { CATEGORIES } from '../../data/categories';
 import {
   ArrowLeft, Share2, FileText, Check, Loader2, Dna, BarChart2, TrendingUp, Zap,
   CircleDollarSign, Brain, Cpu, Database, Orbit, FlaskConical, Network, Sigma,
-  BadgeCheck, Eye, CheckCircle2, UserCheck, Briefcase, ExternalLink,
+  Eye, CheckCircle2, UserCheck, Briefcase, ExternalLink,
   Cog, Building, HeartPulse, Code2, PackageOpen, History, Sparkles, MessageCircle,
   Lock, Unlock,
 } from 'lucide-react';
@@ -56,7 +56,6 @@ const ABSTRACT_SETTLE_MS = 180;
  */
 const STATUS_CHIP_ICONS = {
   preprint: FileText,
-  verified: BadgeCheck,
   open: Unlock,
   openCopy: Unlock,
   subscription: Lock,

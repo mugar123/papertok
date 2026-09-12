@@ -56,7 +56,7 @@ test('the drawer\'s sort, category and date rows are single-select ToggleGroups 
   assert.doesNotMatch(css, /\.ee-filter-chip\.active/);
 });
 
-test('follow is a Toggle, peer-review a Switch in a Label, search an Input, the verified badge a Tooltip', async () => {
+test('follow is a Toggle, peer-review a Switch in a Label, search an Input', async () => {
   const jsx = await jsxFile;
   const css = await cssFile;
   assert.match(jsx, /<Toggle\s+variant="outline"\s+className="entity-follow-btn"\s+pressed=\{entityIsFollowing\}/);
@@ -65,7 +65,9 @@ test('follow is a Toggle, peer-review a Switch in a Label, search an Input, the 
   assert.match(jsx, /<Label className="ee-toggle-label">\s*(?:\{\/\*[\s\S]*?\*\/\}\s*)?<Switch\s+checked=\{filters\.peerReviewed\}/);
   assert.doesNotMatch(css, /\.ee-toggle-switch/);
   assert.match(jsx, /<Input\s+type="text"\s+className="explorer-search-input"/);
-  assert.match(jsx, /<TooltipProvider>/);
-  assert.match(jsx, /<TooltipTrigger\s+render=\{<span className="eli-verified" role="img" \/>\}\s+aria-label=/);
+  // El sello «Verificado» era el único tooltip de esta pantalla y se retiró
+  // el 12-09-2026, así que aquí ya no hay ninguno que fijar. Lo que sigue
+  // vigilándose es que nadie se invente uno a mano con atributos y CSS.
   assert.doesNotMatch(jsx, /data-tooltip=/);
+  assert.doesNotMatch(jsx, /Tooltip/, 'sin tooltips: se fue con el sello');
 });

@@ -90,8 +90,10 @@ test('every chip carries a tone, a word and an explanation, in both languages', 
   ];
   for (const paper of papers) {
     for (const english of [true, false]) {
-      for (const tag of [reviewTagForPaper(paper, { english }), accessTagForPaper(paper, { english })]) {
-        assert.ok(tag, 'expected a tag');
+      // `reviewTagForPaper` puede no dar nada: desde el 12-09-2026 sólo hay
+      // distintivo para el preprint, la salvedad. Lo revisado por pares es la
+      // norma y no se señala.
+      for (const tag of [reviewTagForPaper(paper, { english }), accessTagForPaper(paper, { english })].filter(Boolean)) {
         assert.match(tag.tone, /^(amber|blue|green|neutral)$/);
         assert.ok(tag.label.length > 0 && tag.hint.length > 0);
       }
@@ -103,5 +105,40 @@ test('the words differ by language where the term does', () => {
   // "Preprint" is the term in both; "Suscripción" is not.
   assert.equal(reviewTagForPaper({ publicationType: 'preprint' }, { english: false }).label, 'Preprint');
   assert.equal(accessTagForPaper({ openAccess: false }, { english: false }).label, 'Suscripción');
-  assert.equal(reviewTagForPaper({ journal: 'Nature' }, { english: false }).label, 'Verificado');
+  assert.equal(reviewTagForPaper({ journal: 'Nature' }, { english: false }), null,
+    'lo revisado por pares no lleva distintivo: era la norma, no la excepción');
+});
+
+/**
+ * El sello azul «Verificado» se retiró el 12-09-2026 de las tres superficies
+ * que lo pintaban: la fila del explorador, la tarjeta del feed y la portada
+ * del informe. El ESTADO sigue calculándose —los filtros lo usan— pero no
+ * hay distintivo detrás de él.
+ */
+test('sólo el preprint lleva distintivo; lo revisado por pares no', () => {
+  for (const english of [true, false]) {
+    assert.equal(reviewTagForPaper({ journal: 'Nature' }, { english }), null);
+    assert.equal(reviewTagForPaper({ publicationStatus: 'published' }, { english }), null);
+    const preprint = reviewTagForPaper({ publicationType: 'preprint' }, { english });
+    assert.ok(preprint && preprint.key === 'preprint', 'la salvedad sí se señala');
+  }
+  assert.equal(reviewStatusForPaper({ journal: 'Nature' }), 'verified',
+    'el hecho del registro no cambia, sólo deja de pintarse');
+});
+
+test('SOURCE: no queda ningún glifo de verificado en las superficies', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const leer = (ruta) => readFile(new URL(ruta, import.meta.url), 'utf8');
+  const sinComentarios = (x) => x.replace(/\/\*[\s\S]*?\*\/|\{\/\*[\s\S]*?\*\/\}|\/\/.*$/gm, '');
+
+  for (const ruta of ['../components/Feed/PaperCard.jsx', '../components/Report/ScientificReport.jsx']) {
+    const src = sinComentarios(await leer(ruta));
+    assert.doesNotMatch(src, /verified:\s*BadgeCheck/, `${ruta}: glifo muerto`);
+    assert.doesNotMatch(src, /BadgeCheck/, `${ruta}: el icono ya no hace falta`);
+  }
+  const explorer = sinComentarios(await leer('../components/Explorer/EntityExplorer.jsx'));
+  assert.doesNotMatch(explorer, /eli-verified|paper\.peerReviewed && \(/,
+    'la fila del explorador ya no pinta el sello');
+  const css = await leer('../components/Explorer/EntityExplorer.css');
+  assert.doesNotMatch(css, /\.eli-verified/, 'ni queda su regla de estilo');
 });
