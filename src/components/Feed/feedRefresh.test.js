@@ -100,10 +100,19 @@ test('SOURCE: la píldora dice qué está haciendo en cada uno de sus tres estad
 
 test('SOURCE: el beat de Actualizado deja sitio al crossfade de salida', async () => {
   const src = strip(await read('./FeedContainer.jsx'));
-  const at = src.indexOf('wasRefreshingRef.current = true');
+  const at = src.indexOf('wasRefreshingRef.current && !isRefreshing');
   assert.ok(at > 0, 'el efecto del beat sigue ahí');
-  const beat = src.slice(at - 80, at + 420);
+  const beat = src.slice(at, at + 350);
   assert.match(beat, /prefersReducedMotion \? 500 : 1000/, '1s en motion pleno; 500ms si reduced');
-  assert.match(beat, /if \(isRefreshing\) \{[\s\S]*setRefreshDone\(false\)/,
-    'un refresh nuevo limpia el done para no mezclar is-done con el spinner');
+  assert.match(src, /refreshDone && !isRefreshing \? ' is-done'/,
+    'is-done no se mezcla con el spinner; no hace falta setState al empezar');
+});
+
+test('SOURCE: la píldora no asoma solo porque el cursor ya estaba en la franja', async () => {
+  const src = strip(await read('./FeedContainer.jsx'));
+  assert.match(src, /refreshHoverLockedRef = useRef\(true\)/, 'el hover nace cerrado');
+  const hover = src.slice(src.indexOf('const handleMouseMove = useCallback('), src.indexOf('}, [handleMouseMove, publicMode]);'));
+  assert.match(hover, /refreshHoverLockedRef\.current/, 'mientras está cerrado, la franja no enciende la píldora');
+  assert.match(hover, /refreshHoverLockedRef\.current = false/, 'sólo se abre al salir de la franja');
+  assert.match(hover, /wrapper\.contains\(t\)\) return/, 'un pointerdown fuera del feed (sheet/modal) vuelve a cerrarlo');
 });

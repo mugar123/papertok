@@ -193,6 +193,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   // Desktop: the pill lives hidden under the navbar and shows while the mouse
   // is in the band beneath it. Touch: it shows as the pull progresses.
   const [refreshPillHover, setRefreshPillHover] = useState(false);
+  // True until the pointer leaves the hover band once. Stops the pill from
+  // flashing when the feed returns under a cursor that never left the band.
+  const refreshHoverLockedRef = useRef(true);
   const [refreshDone, setRefreshDone] = useState(false);
   const wasRefreshingRef = useRef(false);
   const [showLoader, setShowLoader] = useState(false);
@@ -475,41 +478,64 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   // so with the listener there, the cursor reaching the pill was a
   // `mouseleave` for the scroller, the pill hid, the cursor was back over
   // the scroller, the pill showed… a blink for as long as the mouse stayed.
+  //
+  // Hover starts locked. Coming back from a topic/author/project remounts
+  // the feed under a cursor that never left the band; closing comments/save
+  // is the same. The first mousemove would flash the pill. Stay hidden until
+  // the pointer leaves the band once; after that, hover works as before.
+  // A pointerdown outside the wrapper (sheet, modal, navbar) re-locks.
   const handleMouseMove = useCallback((e, wrapper) => {
     if (publicMode) return;
     if (!window.matchMedia('(pointer: fine)').matches) return;
     const inBand = e.clientY - wrapper.getBoundingClientRect().top < REFRESH_HOVER_BAND_PX;
+    if (refreshHoverLockedRef.current) {
+      if (inBand) {
+        setRefreshPillHover((prev) => (prev ? false : prev));
+        return;
+      }
+      refreshHoverLockedRef.current = false;
+    }
     setRefreshPillHover((prev) => (prev === inBand ? prev : inBand));
   }, [publicMode]);
   useEffect(() => {
     const wrapper = feedRef.current?.parentElement;
     if (!wrapper || publicMode) return undefined;
     const onMove = (e) => handleMouseMove(e, wrapper);
-    const onLeave = () => setRefreshPillHover(false);
+    const onLeave = () => {
+      refreshHoverLockedRef.current = true;
+      setRefreshPillHover(false);
+    };
+    const onPointerDownCapture = (event) => {
+      const t = event.target;
+      if (!(t instanceof Element)) return;
+      if (wrapper.contains(t)) return;
+      refreshHoverLockedRef.current = true;
+      setRefreshPillHover(false);
+    };
     wrapper.addEventListener('mousemove', onMove, { passive: true });
     wrapper.addEventListener('mouseleave', onLeave);
+    document.addEventListener('pointerdown', onPointerDownCapture, true);
     return () => {
       wrapper.removeEventListener('mousemove', onMove);
       wrapper.removeEventListener('mouseleave', onLeave);
+      document.removeEventListener('pointerdown', onPointerDownCapture, true);
     };
   }, [handleMouseMove, publicMode]);
 
   // A short "done" beat once a refresh lands, before the pill hides again.
   // Long enough for the face crossfade to enter, hold, and leave — 600ms
-  // clipped the Updated → Refresh exit mid-fade.
+  // clipped the Updated → Refresh exit mid-fade. While a new refresh runs,
+  // `refreshPhase` already prefers refreshing over done, so we never clear
+  // `refreshDone` synchronously here (react-hooks/set-state-in-effect).
   useEffect(() => {
-    if (isRefreshing) {
-      wasRefreshingRef.current = true;
-      setRefreshDone(false);
-      return undefined;
-    }
-    if (wasRefreshingRef.current) {
+    if (wasRefreshingRef.current && !isRefreshing) {
       setRefreshDone(true);
       const holdMs = prefersReducedMotion ? 500 : 1000;
       const t = setTimeout(() => setRefreshDone(false), holdMs);
       wasRefreshingRef.current = false;
       return () => clearTimeout(t);
     }
+    wasRefreshingRef.current = isRefreshing;
     return undefined;
   }, [isRefreshing, prefersReducedMotion]);
 
@@ -711,7 +737,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
         <button
           type="button"
           ref={refreshPillRef}
-          className={`feed-refresh${refreshPillHover || isRefreshing || refreshDone ? ' is-visible' : ''}${isRefreshing ? ' is-refreshing' : ''}${refreshDone ? ' is-done' : ''}`}
+          className={`feed-refresh${refreshPillHover || isRefreshing || refreshDone ? ' is-visible' : ''}${isRefreshing ? ' is-refreshing' : ''}${refreshDone && !isRefreshing ? ' is-done' : ''}`}
           onClick={handleRefresh}
           disabled={isRefreshing}
           aria-busy={isRefreshing || undefined}
