@@ -151,8 +151,18 @@ const FIGURE_DRIFT_MIN_PX = 8;
 const FIGURE_DRIFT_JITTER_PX = 6;
 const FIGURE_DRIFT_MIN_MS = 4_000;
 const FIGURE_DRIFT_JITTER_MS = 2_000;
-const FIGURE_ENTRANCE_BASE_MS = 620;
-const FIGURE_ENTRANCE_STEP_MS = 140;
+/* The entrance, retuned 2026-09-12. It was 620ms + 140ms per slot on
+   `cubic-bezier(0.16, 1, 0.3, 1)`, and both halves of that fought being seen.
+   The curve is an expo-out, which does ~80% of its travel in the first fifth:
+   a "620ms" arrival whose perceptible movement is about 100ms, so a clipping
+   popped and then crawled. And the step was a longer DURATION, not a delay —
+   with the hold at 20% of the run, the four starts came out 28ms apart while
+   the four durations were 140ms apart, so they began as one clump and each
+   one travelled slower than the last. Now: one duration for all four on
+   `--ease-out-quad`, which spends the whole run moving, and a real stagger
+   between the starts. The last clipping lands at 690ms instead of 1040ms. */
+const FIGURE_ENTRANCE_MS = 420;
+const FIGURE_ENTRANCE_STAGGER_MS = 90;
 
 /** FNV-1a, the same one `buildHighlightId` uses: short, stable, and enough to
  *  tell four slots of one paper apart. */
@@ -196,11 +206,17 @@ function figureScatterStyle(identity, index, total) {
     '--fig-shift-y': `${(signed(angles, 16) * FIGURE_SHIFT_JITTER_PX).toFixed(1)}px`,
     '--fig-drift': `${(FIGURE_DRIFT_MIN_PX + unit(motion, 0) * FIGURE_DRIFT_JITTER_PX).toFixed(1)}px`,
     '--fig-drift-duration': `${Math.round(FIGURE_DRIFT_MIN_MS + unit(motion, 8) * FIGURE_DRIFT_JITTER_MS)}ms`,
-    // The stagger is duration, not delay. A delayed entrance would need
-    // `animation-fill-mode: backwards` to hold its first frame, and inside the
-    // feed's `content-visibility: auto` subtree a held first frame is how a
-    // figure ends up invisible for good.
-    '--fig-in-duration': `${FIGURE_ENTRANCE_BASE_MS + index * FIGURE_ENTRANCE_STEP_MS}ms`,
+    // The stagger is a delay, and the duration is the same for every slot.
+    // The old worry about `animation-fill-mode: backwards` inside the feed's
+    // `content-visibility: auto` subtree — that a held first frame is how a
+    // figure ends up invisible for good — does not survive the gate this
+    // animation already sits behind: the first frame it holds is
+    // `opacity: 0`, which is exactly what `.pc-figure:not(.is-loaded)` paints
+    // anyway, the class is only on while the card is at least 15% on screen
+    // (so the subtree is not being skipped), and it is re-armed on every
+    // return. Nothing can be held past the card leaving.
+    '--fig-in-delay': `${index * FIGURE_ENTRANCE_STAGGER_MS}ms`,
+    '--fig-in-duration': `${FIGURE_ENTRANCE_MS}ms`,
   };
 }
 

@@ -106,14 +106,19 @@ test('the glyph settles into its receded weight instead of stepping', async () =
   const body = ruleBody(await sheet, '.pc-watermark');
 
   assert.match(body, /opacity:\s*0?\.14(?![0-9])/, 'the resting weight of the glyph');
+  // Read off the card rather than written twice: the glyph and the clipping
+  // are one event, and a literal here is how they come apart. Retuned together
+  // on 2026-09-12, 620ms expo -> 420ms quad.
+  const jsx = await readFile(new URL('./PaperCard.jsx', import.meta.url), 'utf8');
+  const entranceMs = Number(/const FIGURE_ENTRANCE_MS = (\d+);/.exec(jsx)[1]);
   assert.match(
     body,
-    /transition:\s*opacity\s+[^;]*\b(?:620ms|0\.62s)\b/,
-    'the glyph gives way over the clipping entrance it is giving way to (FIGURE_ENTRANCE_BASE_MS)',
+    new RegExp(`transition:\\s*opacity\\s+${entranceMs}ms`),
+    `the glyph gives way over the clipping entrance it is giving way to (FIGURE_ENTRANCE_MS, ${entranceMs}ms)`,
   );
   assert.match(
     body,
-    /transition:\s*opacity\s+[^;]*cubic-bezier\(\s*0\.16\s*,\s*1\s*,\s*0\.3\s*,\s*1\s*\)/,
+    /transition:\s*opacity\s+[^;]*var\(--ease-out-quad\)/,
     'and on that entrance own curve',
   );
 });

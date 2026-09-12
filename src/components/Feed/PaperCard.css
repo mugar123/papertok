@@ -96,22 +96,30 @@
      what a figure looks like if they never arrive. */
   rotate: calc(var(--fig-slot-tilt, 0deg) + var(--fig-tilt, 0deg));
   translate: var(--fig-shift-x, 0px) var(--fig-shift-y, 0px);
-  /* Neither animation carries a fill mode, so the resting pose above is what
-     the browser paints before they start and after they end. That is the whole
-     defence against the feed's `content-visibility: auto`: inside a skipped
-     subtree animations do not run at all, and anything that leaned on a fill
-     mode to hold its first frame would stay stuck there — invisible — for as
-     long as the card was off screen. Nothing here holds anything.
-     The drift waits out `--fig-in-duration` plus a beat, and that delay only
+  /* Nothing here holds a pose AFTER it ends: the resting pose above is what
+     the browser paints once both animations are done, which is the defence
+     against the feed's `content-visibility: auto` — inside a skipped subtree
+     animations do not run at all, and a `forwards` fill would leave a figure
+     frozen wherever it happened to be.
+     The entrance does hold its first frame through its delay (`backwards`),
+     which the old duration-as-stagger was written to avoid. It is safe here
+     because of the gate this animation already sits behind: the frame it
+     holds is `opacity: 0`, the same thing `.pc-figure:not(.is-loaded)` paints;
+     `is-loaded` is only on while the card is at least 15% on screen, so the
+     subtree is not one that gets skipped; and leaving the card takes the
+     animation away entirely. See `figureScatterStyle` for why the stagger had
+     to become a delay.
+     The drift waits out the whole entrance plus a beat, and that delay only
      ticks while the card is on screen, so it is the reader lingering over the
      abstract that starts it. The beat was 2.6s, which put the first movement
      3.2s after the clipping landed — long enough that the figure read as
      finished and then twitched. 1.1s hands over while the entrance is still
      the thing you are watching. */
   animation:
-    figureClipIn var(--fig-in-duration, 620ms) cubic-bezier(0.16, 1, 0.3, 1),
+    figureClipIn var(--fig-in-duration, 420ms) var(--ease-out-quad)
+      var(--fig-in-delay, 0ms) backwards,
     figureClipDrift var(--fig-drift-duration, 5s) ease-in-out
-      calc(var(--fig-in-duration, 620ms) + 1.1s) infinite;
+      calc(var(--fig-in-delay, 0ms) + var(--fig-in-duration, 420ms) + 1.1s) infinite;
 }
 
 /* Until the bytes are actually here, the clipping is not.
@@ -128,13 +136,13 @@
 }
 
 /* Laid down rather than switched on: the clipping arrives flat and a touch
-   low, then settles into its slot. The first fifth of the run is a hold, which
-   is what staggers the four — a longer `--fig-in-duration` means a later
-   start, with no `animation-delay` to hold a first frame. There is no closing
+   low, then settles into its slot. The first fifth of the run used to be a
+   hold, which is how the four were staggered before `--fig-in-delay` existed;
+   with a real delay it was only dead time inside the run. There is no closing
    keyframe on purpose: the browser synthesises it from the resting pose, so
    the animation cannot end anywhere else. */
 @keyframes figureClipIn {
-  0%, 20% {
+  0% {
     opacity: 0;
     rotate: 0deg;
     translate: var(--fig-shift-x, 0px) calc(var(--fig-shift-y, 0px) + 12px);
@@ -265,11 +273,12 @@
   color: var(--area-accent, var(--accent-primary));
   opacity: 0.14;
   pointer-events: none;
-  /* The clipping's own entrance: `FIGURE_ENTRANCE_BASE_MS` (620ms) on the
-     curve `figureClipIn` runs. The glyph gives way over exactly as long as the
-     first clipping takes to arrive, so it reads as making room rather than as
-     something switching off. */
-  transition: opacity 620ms cubic-bezier(0.16, 1, 0.3, 1);
+  /* The clipping's own entrance: `FIGURE_ENTRANCE_MS` (420ms) on the curve
+     `figureClipIn` runs. The glyph gives way over exactly as long as the first
+     clipping takes to arrive, so it reads as making room rather than as
+     something switching off. Both moved together on 2026-09-12; they are one
+     event and a stale number here is the two coming apart. */
+  transition: opacity 420ms var(--ease-out-quad);
 }
 
 .pc-watermark svg {

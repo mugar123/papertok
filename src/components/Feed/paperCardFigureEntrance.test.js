@@ -59,7 +59,48 @@ test('the entrance is withheld by the same class the stylesheet gates it on', as
   assert.match(withheld, /opacity: 0;/);
   assert.match(withheld, /animation: none;/);
   // And the entrance itself is still the thing being withheld.
-  assert.match(css, /animation:\s*\n?\s*figureClipIn var\(--fig-in-duration, 620ms\)/);
+  assert.match(css, /animation:\s*\n?\s*figureClipIn var\(--fig-in-duration, 420ms\)/);
+});
+
+/**
+ * SOURCE tests for HOW a clipping arrives, retuned 2026-09-12.
+ *
+ * Both halves of the old shape fought being seen. `cubic-bezier(0.16, 1, 0.3,
+ * 1)` is an expo-out: ~80% of the travel in the first fifth of the run, so a
+ * "620ms" entrance had about 100ms of perceptible movement and then crawled.
+ * And the stagger was a longer DURATION per slot (620 + 140·index) with the
+ * hold pinned at 20% of the run — which puts the four STARTS 28ms apart and
+ * the four ENDS 140ms apart, so the clippings began as one clump and each
+ * travelled slower than the one before. Duration cannot do both jobs: a
+ * stagger the eye can read needs a step of 400ms+, which would leave the last
+ * clipping crawling for a second and a half.
+ */
+test('the clippings stagger by delay and all travel at the same speed', async () => {
+  const jsx = strip(await read('./PaperCard.jsx'));
+  const scatter = jsx.slice(jsx.indexOf('function figureScatterStyle'), jsx.indexOf('function mergeResearchResources'));
+  assert.match(scatter, /'--fig-in-delay': `\$\{index \* FIGURE_ENTRANCE_STAGGER_MS\}ms`/,
+    'the stagger is a delay, and it is the thing that varies per slot');
+  assert.match(scatter, /'--fig-in-duration': `\$\{FIGURE_ENTRANCE_MS\}ms`/);
+  assert.doesNotMatch(scatter, /'--fig-in-duration': [^,]*index/,
+    'duration must not carry the stagger again: it made every later clipping slower');
+  const stagger = Number(/const FIGURE_ENTRANCE_STAGGER_MS = (\d+);/.exec(jsx)[1]);
+  assert.ok(stagger >= 30 && stagger <= 120, `un escalonado que se lee (${stagger}ms)`);
+});
+
+test('the entrance spends its run moving, and holds only its first frame', async () => {
+  const css = strip(await read('./PaperCard.css'));
+  const figure = css.slice(css.indexOf('.pc-figure {'), css.indexOf('}', css.indexOf('.pc-figure {')));
+  assert.match(figure, /figureClipIn var\(--fig-in-duration, 420ms\) var\(--ease-out-quad\)\s*\n?\s*var\(--fig-in-delay, 0ms\) backwards/,
+    'quad, no expo: el expo-out hace el 80 % del viaje en el primer quinto');
+  assert.doesNotMatch(figure, /figureClipIn[^,]*cubic-bezier\(0\.16/, 'y el expo no vuelve por la puerta de atrás');
+  assert.doesNotMatch(figure, /forwards|both/,
+    'nada de fill hacia adelante: dentro de content-visibility: auto una pose retenida es una figura congelada');
+  assert.match(figure, /figureClipDrift[\s\S]{0,140}calc\(var\(--fig-in-delay, 0ms\) \+ var\(--fig-in-duration, 420ms\) \+ 1\.1s\)/,
+    'la deriva espera a la entrada ENTERA, retardo incluido, o empieza encima de ella');
+  const keyframes = css.slice(css.indexOf('@keyframes figureClipIn'), css.indexOf('}', css.indexOf('@keyframes figureClipIn') + 60));
+  assert.doesNotMatch(keyframes, /0%, 20%/,
+    'el hueco del 20 % era el escalonado viejo; con retardo de verdad sólo es tiempo muerto dentro de la carrera');
+  assert.match(keyframes, /0% \{/);
 });
 
 /**
