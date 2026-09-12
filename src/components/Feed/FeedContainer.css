@@ -95,13 +95,13 @@
 }
 .feed-refresh:active:not(:disabled) { scale: 0.96; transition-duration: 80ms; }
 .feed-refresh:disabled { cursor: default; }
-/* Working beat: planted under the bar with a soft glow so the refresh reads
-   as progress, not a frozen label. Opacity-only on the feed still owns the
-   handover; the pill carries the pulse. */
+/* Working: planted under the bar while the refresh runs. It used to pulse an
+   accent ring as well; that glow went on 2026-09-12. The spinner already says
+   "working", and a halo on the one element sitting over the reader's papers
+   is decoration where the environment behind it is doing the talking. */
 .feed-refresh.is-refreshing {
   translate: -50% 0;
   scale: 1;
-  animation: feedRefreshWorking 1.35s cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
 .feed-refresh.is-done { animation: feedRefreshDone 520ms cubic-bezier(0.16, 1, 0.3, 1); }
 /* Face slot: icon+label crossfade together. `layout` on the face morphs the
@@ -129,41 +129,69 @@
   0%, 100% { scale: 1; }
   50% { scale: 0.86; }
 }
-@keyframes feedRefreshWorking {
-  0%, 100% {
-    box-shadow: var(--shadow-md), 0 0 0 0 color-mix(in srgb, var(--accent-primary) 0%, transparent);
-  }
-  50% {
-    box-shadow: var(--shadow-md), 0 0 0 7px color-mix(in srgb, var(--accent-primary) 18%, transparent);
-  }
-}
 @keyframes feedRefreshDone {
   0% { scale: 1; }
   35% { scale: 1.12; }
   62% { scale: 0.96; }
   100% { scale: 1; }
 }
-/* The papers being replaced. Measured 2026-09-12 without this: at 498ms the
-   card count went 12 → 4 and the paper changed outright, with the long frames
-   of mounting a new feed in plain sight — a cut, not a refresh. Opacity only,
-   so it composites and cannot disturb the scroll-snap geometry underneath;
-   the smooth scroll back to the top happens inside the dip, where it is not
-   a second movement to read. Coming back is slower than going: the new feed
-   arrives rather than snapping on, and the cards' own entrance
-   (`cardSlideUp`, `pcArrive`) runs inside it. */
+/* The environment being replaced. Measured 2026-09-12 with none of this: at
+   498ms the card count went 12 → 4 and the paper changed outright, with the
+   long frames of mounting a new feed in plain sight — a cut, not a refresh.
+   Four things carry it, and each answers something the first pass got wrong:
+
+   · A cover, not a dimmer. At 0.4 the title and the abstract still read, so
+     the swap happened where the eye could follow it: two states legible at
+     once, which is exactly the muddiness the page transition already learnt
+     to avoid. 0.2 keeps the shapes and takes the words.
+   · It commits on the click. The dip used to run `ease-in`, which spends its
+     first frames barely moving — the one curve that makes the moment the
+     reader IS watching the slowest part of the animation.
+   · Travel. Opacity alone reads as the screen blinking. The card sinks back
+     the 10px it arrived from (`cardSlideUp`), so leaving is its entrance run
+     backwards and the new paper's arrival answers it. The sink is on `.pc`
+     — the sheet and its figures together — and never on the scroller:
+     underneath is a scroll-snap whose geometry is measured elsewhere.
+   · A held beat before the way back. Mounting a new feed costs 90-173ms
+     frames in which nothing paints at all; 80ms of cover holds that stall
+     under the veil instead of dropping it into the middle of the fade.
+   · One clock per direction, and quad rather than the expo the rest of the
+     app arrives on. Two measurements, both 2026-09-12. With expo the veil
+     went 0.20 → 0.83 in 67ms and then spent 250ms crawling the last sixth: a
+     340ms fade that is perceptually a 70ms one, which is how a clean 60fps
+     still reads as a cut — quad spends its whole duration moving, which is
+     the point of a fade meant to be seen. And with the card on a clock of
+     its own it was home at 134ms while the veil was still lifting at 400ms:
+     two arrivals where the reader should see one. `--pc-travel` hands the
+     card the veil's clock, one value per direction.
+
+   Coming back is slower than going: the feed arrives rather than snapping on,
+   and the cards' own entrance (`cardSlideUp`, `pcArrive`) runs inside it. */
 .feed-container {
-  transition: opacity 320ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 340ms 80ms var(--ease-out-quad);
 }
 .feed-container--refreshing {
-  opacity: 0.4;
-  transition: opacity 150ms ease-in;
+  opacity: 0.2;
+  transition: opacity 180ms var(--ease-out-quad);
+}
+.feed-container--refreshing .pc {
+  /* Leaving is quicker than arriving, and each direction reads its clock from
+     the state it is going TO — which is why the sink's lives here and the
+     rise's lives on `.pc` itself. */
+  --pc-travel: 180ms var(--ease-out-quad);
+  translate: 0 10px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .feed-container, .feed-container--refreshing { transition: none; opacity: 1; }
+  /* The cover STAYS. Refusing movement is not asking to watch twelve cards
+     become four; without it this setting is the only one that still gets the
+     cut the dip exists to hide. What goes is the travel, and the curves
+     flatten to a plain fade. */
+  .feed-container { transition: opacity 200ms 60ms linear; }
+  .feed-container--refreshing { transition: opacity 120ms linear; }
+  .feed-container--refreshing .pc { translate: none; }
   .feed-refresh, .feed-refresh.is-visible { transition: opacity 120ms linear; translate: -50% 0; scale: 1; }
   .feed-refresh.is-pulling { translate: -50% 0; scale: 1; }
-  .feed-refresh.is-refreshing,
   .feed-refresh.is-done,
   .feed-refresh-icon--spinning { animation: none; }
 }

@@ -66,23 +66,52 @@ test('SOURCE: el tirón se decide en el primer movimiento y entonces detiene el 
  * The refresh reads as a handover, not a cut. Measured 2026-09-12 before it:
  * the card count went 12 → 4 and the paper changed outright at 498ms, with
  * the long frames of mounting a new feed in plain sight.
+ *
+ * Reworked the same day. 0.4 turned out to be a dimmer and not a cover — the
+ * words still read through it, so the swap happened where the eye could
+ * follow it — and opacity alone read as the screen blinking. What has not
+ * changed is the one thing no rule here may move: the scroller.
  */
-test('SOURCE: el feed se atenúa mientras se refresca, y sólo con opacidad', async () => {
+test('SOURCE: el feed se cubre mientras se refresca, y el scroller sigue quieto', async () => {
   const src = strip(await read('./FeedContainer.jsx'));
   assert.match(src, /className=\{`feed-container\$\{isRefreshing \? ' feed-container--refreshing' : ''\}`\}/);
   const css = strip(await read('./FeedContainer.css'));
   const dip = css.slice(css.indexOf('.feed-container--refreshing {'), css.indexOf('}', css.indexOf('.feed-container--refreshing {')));
-  assert.match(dip, /opacity: 0\.4/);
+  const cover = Number(/opacity: (0?\.\d+)/.exec(dip)[1]);
+  assert.ok(cover <= 0.25, `el velo tapa de verdad (${cover}): a 0.4 el título y el abstract se seguían leyendo`);
   assert.doesNotMatch(dip, /transform|translate|scale|height|filter/,
     'nada que toque la geometría: debajo hay un scroll-snap que medir');
+  assert.doesNotMatch(dip, /ease-in[;,)\s]/,
+    'la ida no arranca lenta: el clic acaba de ocurrir y es justo el momento que se está mirando');
+  const sinkAt = css.indexOf('.feed-container--refreshing .pc {');
+  const sink = css.slice(sinkAt, css.indexOf('}', sinkAt));
+  assert.match(sink, /translate: 0 10px/, 'el recorrido va en la tarjeta, que se hunde por donde llegó');
+  const card = strip(await read('./PaperCard.css'));
+  assert.match(card, /@keyframes cardSlideUp \{\s*0% \{ transform: translateY\(10px\); \}/,
+    'y son los mismos 10px, o deja de ser su entrada al revés');
+  assert.match(card, /transition: opacity 0\.9s ease, translate var\(--pc-travel\)/,
+    'la tarjeta sabe deslizar, y sin perder su propia transición de opacidad');
   const back = [...css.matchAll(/\.feed-container \{([^}]*)\}/g)]
     .map((m) => m[1]).find((b) => /transition:\s*opacity \d+ms/.test(b));
   const outMs = Number(/opacity (\d+)ms/.exec(back)[1]);
   const inMs = Number(/opacity (\d+)ms/.exec(dip)[1]);
   assert.ok(outMs > inMs, `la vuelta (${outMs}ms) es más lenta que la ida (${inMs}ms): llega, no aparece de golpe`);
+  assert.match(back, /opacity \d+ms \d+ms/,
+    'y espera antes de empezar: montar el feed nuevo cuesta fotogramas de 90-173ms que van bajo el velo');
+  // Un solo reloj por sentido, o son dos llegadas y no una: medido antes de
+  // esto, la tarjeta estaba en casa a 134ms con el velo todavía subiendo a 400.
+  const clock = (decl) => /transition: opacity ([^;]+)/.exec(decl)[1].replace('opacity ', '');
+  assert.equal(/--pc-travel: ([^;]+);/.exec(card)[1], clock(back),
+    'la subida de la tarjeta corre el mismo reloj que la vuelta del velo');
+  assert.equal(/--pc-travel: ([^;]+);/.exec(sink)[1], clock(dip),
+    'y el hundimiento, el mismo que la ida');
+  assert.doesNotMatch(clock(back), /expo/,
+    'nada de expo en la vuelta: 0.20 → 0.83 en 67ms y luego 250ms arrastrando el último sexto es, medido, un corte con buen perfil');
   const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
-  assert.match(reduced, /\.feed-container, \.feed-container--refreshing \{ transition: none; opacity: 1; \}/,
-    'con movimiento reducido no hay atenuación');
+  assert.match(reduced, /\.feed-container--refreshing \.pc \{ translate: none; \}/,
+    'con movimiento reducido se va el recorrido');
+  assert.doesNotMatch(reduced, /\.feed-container[^{]*\{[^}]*opacity: 1/,
+    'pero el velo se queda: sin él, esta preferencia es la única que sigue viendo el corte');
 });
 
 test('SOURCE: la píldora dice qué está haciendo en cada uno de sus tres estados', async () => {
@@ -117,10 +146,14 @@ test('SOURCE: la píldora no asoma solo porque el cursor ya estaba en la franja'
   assert.match(hover, /wrapper\.contains\(t\)\) return/, 'un pointerdown fuera del feed (sheet/modal) vuelve a cerrarlo');
 });
 
-test('SOURCE: el refresh tiene un beat de trabajo y un aterrizaje con spring', async () => {
+test('SOURCE: la píldora trabaja sin halo, y el aterrizaje conserva su spring', async () => {
   const css = strip(await read('./FeedContainer.css'));
-  assert.match(css, /\.feed-refresh\.is-refreshing/, 'mientras corre, la píldora late');
-  assert.match(css, /@keyframes feedRefreshWorking/, 'glow de progreso');
+  assert.match(css, /\.feed-refresh\.is-refreshing \{[^}]*translate: -50% 0/,
+    'mientras corre sigue plantada bajo la barra');
+  assert.doesNotMatch(css, /feedRefreshWorking|box-shadow[^;]*accent/,
+    'sin glow: el spinner ya dice que trabaja, y el halo se pintaba encima de los papers del lector');
+  assert.doesNotMatch(css, /\.feed-refresh\.is-refreshing \{[^}]*animation:/,
+    'y sin latido propio: lo que se mueve durante la espera es el entorno');
   assert.match(css, /@keyframes feedRefreshSpinBreath/, 'el spinner respira, no sólo gira');
   assert.match(css, /@keyframes feedRefreshDone[\s\S]*scale: 1\.12/, 'el done hace un pop claro');
   const dip = css.slice(css.indexOf('.feed-container--refreshing {'), css.indexOf('}', css.indexOf('.feed-container--refreshing {')));
@@ -129,10 +162,40 @@ test('SOURCE: el refresh tiene un beat de trabajo y un aterrizaje con spring', a
   const outMs = Number(/opacity (\d+)ms/.exec(back)[1]);
   const inMs = Number(/opacity (\d+)ms/.exec(dip)[1]);
   assert.ok(outMs >= 300, `vuelta más suave (${outMs}ms)`);
-  assert.ok(inMs <= 160, `ida más rápida (${inMs}ms)`);
+  assert.ok(inMs <= 200, `ida más rápida (${inMs}ms)`);
   const src = strip(await read('./FeedContainer.jsx'));
   assert.match(src, /refreshPhase === 'done'[\s\S]*type: 'spring'/, 'Actualizado entra con spring');
   const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
-  assert.match(reduced, /\.feed-refresh\.is-refreshing/, 'reduced apaga el latido');
+  assert.match(reduced, /\.feed-refresh-icon--spinning \{ animation: none; \}/, 'reduced para el spinner');
+});
+
+/**
+ * The other half of the refresh's environment. From the seventh card a smooth
+ * scroll to the top travels seven viewport-heights of the papers the reader is
+ * about to lose, at an opacity where they are still legible — a second
+ * movement to read on top of the one the dip is already making. Taken under
+ * the cover, the same trip costs nothing.
+ */
+test('SOURCE: el refresco salta arriba bajo el velo, no viaja a la vista', async () => {
+  const src = strip(await read('./FeedContainer.jsx'));
+  const dipMs = Number(/const REFRESH_DIP_MS = (\d+);/.exec(src)[1]);
+  const css = strip(await read('./FeedContainer.css'));
+  const dip = css.slice(css.indexOf('.feed-container--refreshing {'), css.indexOf('}', css.indexOf('.feed-container--refreshing {')));
+  assert.equal(dipMs, Number(/opacity (\d+)ms/.exec(dip)[1]),
+    'el JS espera exactamente lo que la hoja tarda en bajar el velo');
+  const start = src.indexOf('refreshJumpOwedRef.current = true;');
+  assert.ok(start > 0, 'el salto sigue colgando de isRefreshing');
+  const jump = src.slice(src.lastIndexOf('useEffect(() => {', start), src.indexOf('}, [isRefreshing]);', start));
+  assert.match(jump, /setTimeout\([\s\S]{0,160}REFRESH_DIP_MS\)/, 'espera a que el velo esté abajo');
+  assert.match(jump, /scrollTo\(\{ top: 0, behavior: 'auto' \}\)/);
+  assert.doesNotMatch(jump, /'smooth'/, 'nunca suave: ese viaje es justo lo que se quitó');
+  assert.match(jump, /return \(\) => clearTimeout\(t\);/, 'el temporizador no sobrevive al refresco');
+  // Un refresco de caché caliente puede acabar antes que el velo: el salto se
+  // debe igual, o el lector se queda en la tarjeta de la que pidió irse.
+  const owed = jump.slice(0, jump.indexOf('refreshJumpOwedRef.current = true;'));
+  assert.match(owed, /if \(!isRefreshing\)/, 'la rama de "ya terminó" va primero');
+  assert.match(owed, /if \(refreshJumpOwedRef\.current\)[\s\S]{0,200}scrollTo\(\{ top: 0/,
+    'si el temporizador no llegó a disparar, el salto se cobra ahí');
+  assert.match(owed, /refreshJumpOwedRef\.current = false;/, 'y se cobra una sola vez');
 });
 

@@ -54,6 +54,11 @@ function resumeAnchor(papers, scrollKey) {
 }
 /** Depth of the band under the navbar in which the mouse asks for the pill. */
 const REFRESH_HOVER_BAND_PX = 120;
+// How long the feed takes to dip out of sight when a refresh starts. The same
+// 180ms is written in FeedContainer.css (`.feed-container--refreshing`), and
+// feedRefresh.test.js holds the two together: everything this number is used
+// for here is about waiting until the cover is actually down.
+const REFRESH_DIP_MS = 180;
 const SCROLL_IDLE_DELAY_MS = 120;
 const SCROLL_INTERACTION_SETTLE_MS = 220;
 
@@ -190,6 +195,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   // they need from the render lives here instead of in their closure.
   const pullDepsRef = useRef({ handleRefresh: null, loading: false, isRefreshing: false });
   const refreshPillRef = useRef(null);
+  // Whether the scroll back to the top is still owed (see the effect below).
+  const refreshJumpOwedRef = useRef(false);
   // Desktop: the pill lives hidden under the navbar and shows while the mouse
   // is in the band beneath it. Touch: it shows as the pull progresses.
   const [refreshPillHover, setRefreshPillHover] = useState(false);
@@ -354,12 +361,33 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     return () => clearTimeout(hideTimer);
   }, [papers.length, loading, error]);
 
-  // Scroll to top when feed is refreshed manually or mode changes
+  // Back to the top on a manual refresh — behind the cover, not in front of
+  // it. It used to scroll smoothly the moment the refresh started, which from
+  // the seventh card is seven viewport-heights of papers streaming past while
+  // the reader waits for different ones: a long second movement to read, on
+  // top of the one the veil is already making. Now it is a jump, taken once
+  // the veil is down, where there is nothing to see. Waiting matters — at
+  // frame 0 the fade has not started and the jump would be in the clear.
   useEffect(() => {
-    if (isRefreshing && feedRef.current) {
-      feedRef.current.scrollTo({ top: 0, behavior: prefersReducedMotion ? 'auto' : 'smooth' });
+    if (!isRefreshing) {
+      // A refresh off a warm cache can land before the veil is all the way
+      // down, and the jump is still owed: take it here, with what cover there
+      // is, rather than let the cleanup swallow it and leave the reader on
+      // the card they asked to be refreshed away from. Unmount never reaches
+      // this branch, so leaving the feed never scrolls it.
+      if (refreshJumpOwedRef.current) {
+        refreshJumpOwedRef.current = false;
+        feedRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+      }
+      return undefined;
     }
-  }, [isRefreshing, prefersReducedMotion]);
+    refreshJumpOwedRef.current = true;
+    const t = setTimeout(() => {
+      refreshJumpOwedRef.current = false;
+      feedRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+    }, REFRESH_DIP_MS);
+    return () => clearTimeout(t);
+  }, [isRefreshing]);
 
   useEffect(() => {
     return () => {

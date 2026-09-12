@@ -20,7 +20,14 @@
   background: var(--bg-secondary);
   overflow: hidden;
   -webkit-tap-highlight-color: transparent;
-  transition: opacity 0.9s ease;
+  /* `translate`, not `transform`: `pcArrive` and `cardSlideUp` animate
+     transform on the pieces inside, and the two compose instead of one
+     replacing the other. The only thing that moves a card from out here is
+     the refresh sinking it, so the clock is the veil's own and this is the
+     half of it that runs on the way back up (.feed-container--refreshing in
+     FeedContainer.css holds the way down). */
+  --pc-travel: 340ms 80ms var(--ease-out-quad);
+  transition: opacity 0.9s ease, translate var(--pc-travel);
 }
 
 /* ── The page ──
