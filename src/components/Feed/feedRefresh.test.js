@@ -210,7 +210,7 @@ test('SOURCE: la píldora dice qué está haciendo en cada uno de sus tres estad
   const at = src.indexOf("const refreshPhase = isRefreshing");
   assert.ok(at > 0, 'la píldora sigue tipando sus tres caras');
   const body = src.slice(at, src.indexOf('</button>', at));
-  assert.match(body, /AnimatePresence initial=\{false\}/, 'las caras se cruzan, no se cortan');
+  assert.match(body, /AnimatePresence initial=\{false\}/, 'las caras se relevan; la primera no se anima al montar');
   assert.match(body, /refreshPhase === 'done'\s*\?\s*<Check/, 'al terminar, una marca, no la flecha girando');
   assert.match(body, /refreshing: 'Refreshing…', done: 'Updated', idle: 'Refresh'/);
   assert.match(body, /refreshing: 'Actualizando…', done: 'Actualizado', idle: 'Actualizar'/);
@@ -264,25 +264,32 @@ test('SOURCE: la píldora se retira bajo la barra, no se apaga en el aire', asyn
 });
 
 /**
- * Con el dedo, la píldora se va diciendo «Actualizado».
+ * La píldora se va SIEMPRE diciendo «Actualizado».
  *
- * En escritorio el cruce de Actualizado a Actualizar se ve y está bien: la
- * píldora sigue ahí mientras el ratón no salga de la franja, y volver al verbo
- * es volver a ofrecerse. Con el dedo no hay franja: la píldora se esconde en
- * cuanto el beat acaba, así que ese cruce cae justo encima de la salida y el
- * lector ve cambiar el texto de algo que ya se marcha. Reportado desde el
- * móvil el 12-09.
+ * Al terminar el beat la cara volvía al verbo, y ese cruce no informa de nada:
+ * entre uno y otro no ha pasado nada. Con el dedo caía encima de la salida —el
+ * texto cambiaba mientras la píldora se marchaba, reportado desde el móvil el
+ * 12-09— y con el ratón quieto en la franja ocurría delante del lector, que
+ * veía deshacerse la respuesta a lo que acababa de pedir (reportado el mismo
+ * día). Ahora la cara se queda puesta hasta que la píldora está fuera de vista
+ * y vuelve al verbo debajo de la barra, donde no se la ve.
  */
-test('SOURCE: con puntero grueso la cara no vuelve al verbo mientras se ve', async () => {
+test('SOURCE: la cara no vuelve al verbo mientras la píldora se ve', async () => {
   const src = strip(await read('./FeedContainer.jsx'));
-  assert.match(src, /window\.matchMedia\?\.\('\(pointer: coarse\)'\)\.matches === true/,
-    'la distinción es el puntero, no el ancho: un ratón en una pantalla estrecha sigue teniendo franja');
-  assert.match(src, /const refreshPhase = isRefreshing \? 'refreshing' : \(refreshDone \|\| doneTail\) \? 'done' : 'idle';/,
+  assert.match(src, /const refreshPhase = isRefreshing \? 'refreshing' : \(refreshDone \|\| doneHold\) \? 'done' : 'idle';/,
     'la cola sostiene la cara, y sólo la cara');
-  const tail = src.slice(src.indexOf('if (!coarsePointer) return undefined;'), src.indexOf('const handleOpenPdf'));
-  assert.match(tail, /if \(wasDoneRef\.current && !refreshDone\)/, 'se arma al terminar el beat, no al empezarlo');
-  assert.match(tail, /setTimeout\(\(\) => setDoneTail\(false\), PILL_EXIT_MS\)/);
-  assert.match(tail, /return \(\) => clearTimeout\(t\);/);
+  const hold = src.slice(src.indexOf('const pillOnScreen ='), src.indexOf('const handleOpenPdf'));
+  assert.match(hold, /const pillOnScreen = refreshPillHover \|\| refreshPillFocused \|\| isRefreshing \|\| refreshDone;/,
+    'las tres condiciones de is-visible MÁS el foco de teclado, que la saca por CSS sin pasar por el estado');
+  assert.match(hold, /if \(!doneHold \|\| pillOnScreen\) return undefined;/,
+    'mientras se la ve, la cara no cambia: la condición es un estado, no un flanco');
+  assert.match(hold, /setTimeout\(\(\) => setDoneHold\(false\), PILL_EXIT_MS\)/);
+  assert.match(hold, /return \(\) => clearTimeout\(t\);/,
+    'si vuelve a asomar antes de que dispare, sigue siendo la misma visita');
+  assert.match(src, /matches\(':focus-visible'\)/,
+    'el foco que cuenta es el visible: un clic con el ratón también enfoca, y con `:focus` a secas la cara se quedaría clavada para siempre');
+  assert.doesNotMatch(src, /pointer: coarse/,
+    'y ya no depende del puntero: la píldora se va diciendo «Actualizado» con el dedo y con el ratón');
   // La cola tiene que cubrir la salida entera, o el texto cambia todavía a la
   // vista, que es exactamente lo reportado.
   const exitMs = Number(/const PILL_EXIT_MS = (\d+);/.exec(src)[1]);
@@ -291,10 +298,39 @@ test('SOURCE: con puntero grueso la cara no vuelve al verbo mientras se ve', asy
   const travelMs = Number(/translate (\d+)ms/.exec(rest)[1]);
   assert.ok(exitMs >= travelMs, `la cola (${exitMs}ms) cubre el recorrido de salida (${travelMs}ms)`);
   // Y NO toca ni a `is-visible` ni a `is-done`: la píldora se va cuando se iba
-  // y el pop de Actualizado no se repite.
+  // y el acuse no se repite.
   assert.match(src, /refreshPillHover \|\| isRefreshing \|\| refreshDone \? ' is-visible'/,
     'la cola no retiene la píldora en pantalla');
-  assert.match(src, /refreshDone && !isRefreshing \? ' is-done'/, 'ni repite el pop');
+  assert.match(src, /refreshDone && !isRefreshing \? ' is-done'/, 'ni repite el acuse');
+});
+
+/**
+ * El morph de «Actualizando…» a «Actualizado», rehecho el 12-09 (Nicolás: «el
+ * morph se ve sucio»). Las caras viven en la misma celda de rejilla y
+ * `AnimatePresence` monta la nueva antes de desmontar la vieja, así que sin un
+ * reparto explícito de relojes lo que hay en mitad del cambio son dos textos y
+ * dos iconos superpuestos sobre catorce píxeles: la doble exposición que la
+ * transición de página ya aprendió a no hacer.
+ */
+test('SOURCE: las caras de la píldora no se leen a la vez', async () => {
+  const src = strip(await read('./FeedContainer.jsx'));
+  const block = src.slice(src.indexOf('function refreshFaceMotion('), src.indexOf('const SCROLL_IDLE_DELAY_MS'));
+  assert.ok(block.length > 0 && block.length < 2200, 'el relevo vive en una función suya');
+  const out = Number(/const FACE_OUT_S = ([\d.]+);/.exec(src)[1]);
+  const delay = Number(/const FACE_IN_DELAY_S = ([\d.]+);/.exec(src)[1]);
+  assert.ok(delay > 0, 'la que llega espera a la que se va: sin retardo se leen las dos');
+  assert.ok(delay < out,
+    `y arranca antes de que aquella termine (${delay}s < ${out}s), o queda un fotograma de píldora vacía`);
+  assert.equal((block.match(/delay: FACE_IN_DELAY_S/g) || []).length, 4,
+    'las cuatro entradas esperan: reducida, muelle, opacidad del muelle y las otras dos caras');
+  assert.doesNotMatch(block, /scale/,
+    'la cara viaja y la píldora escala: dos escalas anidadas sobre texto de 0.8rem es lo que emborronaba el momento');
+  assert.doesNotMatch(block, /\by: -?[\d.]/,
+    'el recorrido va en la cadena de transform, no en el atajo: esto corre mientras el feed se remonta');
+  assert.match(block, /transform: 'translateY\(-6px\)'/, 'la que se va sube');
+  assert.match(block, /transform: 'translateY\(8px\)'/, 'y la que llega viene de abajo: un relevo, no un cruce');
+  assert.doesNotMatch(src, /transition=\{faceMotion\.transition\}/,
+    'cada cara declara su reloj; uno compartido vuelve a atar la salida a la entrada');
 });
 
 test('SOURCE: el beat de Actualizado deja sitio al crossfade de salida', async () => {
@@ -303,6 +339,8 @@ test('SOURCE: el beat de Actualizado deja sitio al crossfade de salida', async (
   assert.ok(at > 0, 'el efecto del beat sigue ahí');
   const beat = src.slice(at, at + 350);
   assert.match(beat, /prefersReducedMotion \? 500 : 1000/, '1s en motion pleno; 500ms si reduced');
+  assert.match(beat, /setRefreshDone\(true\);\s*setDoneHold\(true\);/,
+    'el beat arma la cola en el mismo sitio: son el mismo aterrizaje');
   assert.match(src, /refreshDone && !isRefreshing \? ' is-done'/,
     'is-done no se mezcla con el spinner; no hace falta setState al empezar');
 });
@@ -329,7 +367,12 @@ test('SOURCE: la píldora trabaja sin halo, y el aterrizaje conserva su spring',
   const spin = css.slice(css.indexOf('.feed-refresh-icon--spinning {'), css.indexOf('}', css.indexOf('.feed-refresh-icon--spinning {')));
   assert.doesNotMatch(spin, /scale|zoom/, 'y nada de zoom por otra puerta');
   assert.match(spin, /animation: feedRefreshSpin [\d.]+s linear infinite;/, 'una sola animación, y lineal');
-  assert.match(css, /@keyframes feedRefreshDone[\s\S]*scale: 1\.12/, 'el done hace un pop claro');
+  const doneKf = css.slice(css.indexOf('@keyframes feedRefreshDone'), css.indexOf('100% { scale: 1; }', css.indexOf('@keyframes feedRefreshDone')));
+  const peak = Number(/scale: ([\d.]+);/.exec(doneKf.slice(doneKf.indexOf('0% { scale: 1; }') + 16))[1]);
+  assert.ok(peak > 1 && peak <= 1.06,
+    `el acuse es un respiro (${peak}): un pop grande multiplica con la entrada de la cara que corre debajo`);
+  assert.doesNotMatch(doneKf, /scale: 0\./,
+    'y sin rebote por debajo de 1: encoger el texto después de crecerlo lee como un tic');
   const dip = css.slice(css.indexOf('.feed-container--refreshing {'), css.indexOf('}', css.indexOf('.feed-container--refreshing {')));
   const back = [...css.matchAll(/\.feed-container \{([^}]*)\}/g)]
     .map((m) => m[1]).find((b) => /transition:\s*opacity \d+ms/.test(b));
@@ -338,7 +381,9 @@ test('SOURCE: la píldora trabaja sin halo, y el aterrizaje conserva su spring',
   assert.ok(outMs >= 300, `vuelta más suave (${outMs}ms)`);
   assert.ok(inMs <= 200, `ida más rápida (${inMs}ms)`);
   const src = strip(await read('./FeedContainer.jsx'));
-  assert.match(src, /refreshPhase === 'done'[\s\S]*type: 'spring'/, 'Actualizado entra con spring');
+  assert.match(src, /phase === 'done'[\s\S]*?type: 'spring'/, 'Actualizado entra con muelle: es la respuesta y se le deja aterrizar');
+  assert.match(src, /transform: \{ type: 'spring'[\s\S]*?opacity: \{ duration/,
+    'el muelle lleva el recorrido y la opacidad va aparte: un rebote en el fundido lee como parpadeo');
   const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
   assert.match(reduced, /\.feed-refresh-icon--spinning \{ animation: none; \}/, 'reduced para el spinner');
 });
@@ -372,4 +417,3 @@ test('SOURCE: el refresco salta arriba bajo el velo, no viaja a la vista', async
     'si el temporizador no llegó a disparar, el salto se cobra ahí');
   assert.match(owed, /refreshJumpOwedRef\.current = false;/, 'y se cobra una sola vez');
 });
-

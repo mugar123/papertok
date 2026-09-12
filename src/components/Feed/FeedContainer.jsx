@@ -66,9 +66,75 @@ const REFRESH_DIP_MS = 180;
 // sobra y quitarla no se ve, porque la pose es la misma con ella y sin ella.
 const PULL_LANDING_MS = 420;
 // Lo que tarda la píldora en meterse bajo la barra (`.feed-refresh`, 280ms de
-// recorrido). Con puntero grueso la cara se queda en «Actualizado» todo ese
-// rato y sólo vuelve a «Actualizar» cuando ya no se la ve.
+// recorrido). La cara se queda en «Actualizado» todo ese rato y sólo vuelve a
+// «Actualizar» cuando ya no se la ve.
 const PILL_EXIT_MS = 300;
+// El relevo de caras de la píldora, y una sola regla: las dos caras NO se
+// leen a la vez.
+//
+// Se cruzaban. `AnimatePresence` en modo `sync` con las caras apiladas en la
+// misma celda de rejilla, así que en mitad del cambio lo que había sobre esos
+// catorce píxeles eran dos textos distintos y dos iconos distintos
+// superpuestos: la misma doble exposición que la transición de página ya
+// aprendió a no hacer. Ahora la que se va sube y se apaga, y la que llega
+// arranca cuando aquella ya es ilegible. El retardo es algo MENOR que la
+// salida a propósito: solapan los últimos 40ms, con la saliente por debajo
+// del 15%, para que tampoco haya un fotograma de píldora vacía.
+//
+// Y el reparto de papeles: la CARA viaja, la PÍLDORA escala (`is-done`, en la
+// hoja). La cara llevaba además un `scale` de 0.84 a 1 con muelle mientras el
+// botón entero hacía su pop de 1.12 — dos escalas anidadas multiplicándose
+// sobre texto de 0.8rem, y tres relojes distintos justo en el instante que el
+// lector está mirando. Una caja, una escala.
+const FACE_OUT_S = 0.14;
+const FACE_IN_DELAY_S = 0.08;
+const EASE_OUT_QUAD = [0.25, 0.46, 0.45, 0.94];
+function refreshFaceMotion(phase, reduced) {
+  if (reduced) {
+    return {
+      initial: { opacity: 0 },
+      animate: { opacity: 1, transition: { duration: 0.12, delay: FACE_IN_DELAY_S, ease: 'linear' } },
+      exit: { opacity: 0, transition: { duration: FACE_OUT_S, ease: 'linear' } },
+    };
+  }
+  // `transform` entero y no el atajo `y`: esto corre en el mismo instante en
+  // que el feed se remonta —fotogramas de 90-173ms, medidos— y una cadena de
+  // transform es lo que el compositor puede llevarse fuera del hilo. Un atajo
+  // se recompone en JS en cada fotograma, que es justo lo que ahí no hay.
+  const exit = {
+    opacity: 0,
+    transform: 'translateY(-6px)',
+    transition: { duration: FACE_OUT_S, ease: EASE_OUT_QUAD },
+  };
+  // «Actualizado» es la única que llega con muelle: es la respuesta a lo que
+  // el lector pidió y se le deja aterrizar. El resorte lleva el recorrido y
+  // nada más — la opacidad va en su propio reloj, más corto, para que la cara
+  // sea legible antes de terminar de asentarse y el rebote no se lea como un
+  // parpadeo.
+  if (phase === 'done') {
+    return {
+      initial: { opacity: 0, transform: 'translateY(8px)' },
+      animate: {
+        opacity: 1,
+        transform: 'translateY(0px)',
+        transition: {
+          transform: { type: 'spring', duration: 0.32, bounce: 0.2, delay: FACE_IN_DELAY_S },
+          opacity: { duration: 0.16, delay: FACE_IN_DELAY_S, ease: EASE_OUT_QUAD },
+        },
+      },
+      exit,
+    };
+  }
+  return {
+    initial: { opacity: 0, transform: 'translateY(6px)' },
+    animate: {
+      opacity: 1,
+      transform: 'translateY(0px)',
+      transition: { duration: 0.2, delay: FACE_IN_DELAY_S, ease: EASE_OUT_QUAD },
+    },
+    exit,
+  };
+}
 const SCROLL_IDLE_DELAY_MS = 120;
 const SCROLL_INTERACTION_SETTLE_MS = 220;
 
@@ -217,21 +283,23 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   // flashing when the feed returns under a cursor that never left the band.
   const refreshHoverLockedRef = useRef(true);
   const [refreshDone, setRefreshDone] = useState(false);
-  // Con el dedo, la píldora se va diciendo «Actualizado».
+  // La píldora se va SIEMPRE diciendo «Actualizado».
   //
-  // En escritorio la vuelta de Actualizado a Actualizar es un cruce que se ve
-  // y está bien: la píldora se queda ahí mientras el ratón siga en la franja,
-  // y volver al verbo es volver a ofrecerse. Con el dedo no hay franja ni
-  // ratón: la píldora se esconde en cuanto el beat termina, así que ese cruce
-  // ocurre justo mientras se marcha — el lector ve cambiar el texto de algo
-  // que ya se está yendo, que es ruido y no información. Con puntero grueso la
-  // cara se queda en «Actualizado» hasta que la píldora está fuera de vista, y
-  // cambia a «Actualizar» donde no se ve.
-  const [coarsePointer] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches === true,
-  );
-  const [doneTail, setDoneTail] = useState(false);
-  const wasDoneRef = useRef(false);
+  // Al terminar el beat, la cara volvía al verbo. Ese cruce no informa de
+  // nada — no ha pasado nada entre uno y otro — y no tenía dónde ocurrir sin
+  // que se viera: con el dedo la píldora se esconde en cuanto el beat acaba,
+  // así que el texto cambiaba mientras se marchaba; con el ratón quieto en la
+  // franja cambiaba delante del lector, que veía deshacerse la respuesta a lo
+  // que acababa de pedir. Ahora la cara se queda puesta hasta que la píldora
+  // está fuera de vista y vuelve al verbo debajo de la barra: la próxima vez
+  // que asome ya viene ofreciéndose.
+  const [doneHold, setDoneHold] = useState(false);
+  // Si el botón tiene el foco de teclado, el CSS lo saca (`:focus-visible`)
+  // sin pasar por el estado — así que la cola tiene que contar con él o la
+  // cara volvería al verbo delante de quien refrescó con el teclado.
+  // `:focus-visible` y no `:focus` a secas: un clic con el ratón también deja
+  // el botón enfocado, y eso dejaría «Actualizado» clavado para siempre.
+  const [refreshPillFocused, setRefreshPillFocused] = useState(false);
   const wasRefreshingRef = useRef(false);
   const [showLoader, setShowLoader] = useState(false);
   const [initialFeedReady, setInitialFeedReady] = useState(false);
@@ -691,6 +759,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   useEffect(() => {
     if (wasRefreshingRef.current && !isRefreshing) {
       setRefreshDone(true);
+      setDoneHold(true);
       const holdMs = prefersReducedMotion ? 500 : 1000;
       const t = setTimeout(() => setRefreshDone(false), holdMs);
       wasRefreshingRef.current = false;
@@ -700,19 +769,20 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     return undefined;
   }, [isRefreshing, prefersReducedMotion]);
 
-  // La cola del «Actualizado» (ver `coarsePointer`). Mismo patrón que el beat
-  // de arriba: la referencia recuerda el flanco, el temporizador lo suelta.
+  // El otro extremo de la cola: «Actualizado» se suelta cuando la píldora ya
+  // no se ve, más lo que tarda en llegar debajo de la barra (`PILL_EXIT_MS`).
+  // No hay flanco que recordar aquí — la condición es un estado, no un
+  // instante: mientras el ratón siga en la franja la píldora sigue delante y
+  // la cara no tiene por qué cambiar, y si vuelve a la franja antes de que el
+  // temporizador dispare, el cleanup lo cancela y sigue siendo la misma
+  // visita. `pillOnScreen` lleva el foco de teclado además de las tres
+  // condiciones de `is-visible`, porque `:focus-visible` también la saca.
+  const pillOnScreen = refreshPillHover || refreshPillFocused || isRefreshing || refreshDone;
   useEffect(() => {
-    if (!coarsePointer) return undefined;
-    if (wasDoneRef.current && !refreshDone) {
-      setDoneTail(true);
-      const t = setTimeout(() => setDoneTail(false), PILL_EXIT_MS);
-      wasDoneRef.current = false;
-      return () => clearTimeout(t);
-    }
-    wasDoneRef.current = refreshDone;
-    return undefined;
-  }, [refreshDone, coarsePointer]);
+    if (!doneHold || pillOnScreen) return undefined;
+    const t = setTimeout(() => setDoneHold(false), PILL_EXIT_MS);
+    return () => clearTimeout(t);
+  }, [doneHold, pillOnScreen]);
 
   const handleOpenPdf = useCallback((paper) => {
     if (!publicMode) trackPdfOpened(paper);
@@ -898,40 +968,12 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   }
 
   if (displayState === FEED_DISPLAY_STATES.FEED || atomVeil) {
-  const refreshPhase = isRefreshing ? 'refreshing' : (refreshDone || doneTail) ? 'done' : 'idle';
+  const refreshPhase = isRefreshing ? 'refreshing' : (refreshDone || doneHold) ? 'done' : 'idle';
   const refreshLabels = isEnglish
     ? { refreshing: 'Refreshing…', done: 'Updated', idle: 'Refresh' }
     : { refreshing: 'Actualizando…', done: 'Actualizado', idle: 'Actualizar' };
   const refreshLabel = refreshLabels[refreshPhase];
-  // Done pops in (check + label); refreshing/idle crossfade softer so the
-  // handoff reads as one beat with the feed's opacity dip.
-  const refreshFaceMotion = prefersReducedMotion
-    ? {
-        initial: { opacity: 0 },
-        animate: { opacity: 1 },
-        exit: { opacity: 0 },
-        transition: { duration: 0.12, ease: 'linear' },
-      }
-    : refreshPhase === 'done'
-      ? {
-          initial: { opacity: 0, y: 6, scale: 0.84 },
-          animate: { opacity: 1, y: 0, scale: 1 },
-          exit: { opacity: 0, y: -5, scale: 0.94 },
-          transition: { type: 'spring', stiffness: 560, damping: 26, mass: 0.65 },
-        }
-      : refreshPhase === 'refreshing'
-        ? {
-            initial: { opacity: 0, y: 6 },
-            animate: { opacity: 1, y: 0 },
-            exit: { opacity: 0, y: -4, scale: 0.96 },
-            transition: { duration: 0.18, ease: [0.2, 0, 0, 1] },
-          }
-        : {
-            initial: { opacity: 0, y: 4 },
-            animate: { opacity: 1, y: 0 },
-            exit: { opacity: 0, y: -4 },
-            transition: { duration: 0.2, ease: [0.2, 0, 0, 1] },
-          };
+  const faceMotion = refreshFaceMotion(refreshPhase, prefersReducedMotion);
   return (
     <FeedLandmark landmark={landmark}>
       {!publicMode && papers.length > 0 && (
@@ -940,6 +982,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
           ref={refreshPillRef}
           className={`feed-refresh${refreshPillHover || isRefreshing || refreshDone ? ' is-visible' : ''}${isRefreshing ? ' is-refreshing' : ''}${refreshDone && !isRefreshing ? ' is-done' : ''}`}
           onClick={handleRefresh}
+          onFocus={(event) => setRefreshPillFocused(event.currentTarget.matches(':focus-visible'))}
+          onBlur={() => setRefreshPillFocused(false)}
           disabled={isRefreshing}
           aria-busy={isRefreshing || undefined}
         >
@@ -964,10 +1008,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
               <motion.span
                 key={refreshPhase}
                 className="feed-refresh-content"
-                initial={refreshFaceMotion.initial}
-                animate={refreshFaceMotion.animate}
-                exit={refreshFaceMotion.exit}
-                transition={refreshFaceMotion.transition}
+                initial={faceMotion.initial}
+                animate={faceMotion.animate}
+                exit={faceMotion.exit}
               >
                 {refreshPhase === 'done'
                   ? <Check size={14} aria-hidden="true" />

@@ -278,7 +278,18 @@
   translate: -50% 0;
   scale: 1;
 }
-.feed-refresh.is-done { animation: feedRefreshDone 520ms cubic-bezier(0.16, 1, 0.3, 1); }
+/* El acuse de recibo de la píldora: un respiro, no un pop.
+   Era 1 → 1.12 → 0.96 → 1 en 520ms de expo MIENTRAS la cara de dentro entraba
+   escalando de 0.84 a 1 con un muelle propio: dos escalas anidadas que se
+   multiplican sobre texto de 0.8rem, y tres relojes distintos en el único
+   instante de todo esto que el lector está mirando de verdad. El reparto
+   ahora es uno por caja — la cara viaja, la píldora escala — y esta escala
+   sola, sin rebote por debajo de 1.
+   El pico cae a los 180ms, que es cuando «Actualizado» acaba de hacerse
+   legible (0.1s de retardo + 0.16s de fundido, en FeedContainer.jsx): lo que
+   se ve es la píldora tomando aire al recibir la respuesta, no un botón
+   dando un salto por su cuenta. */
+.feed-refresh.is-done { animation: feedRefreshDone 360ms var(--ease-out-quad); }
 /* Face slot. Las tres caras se apilan en UNA celda de rejilla, y con ellas un
    medidor invisible que lleva las tres etiquetas: la celda mide siempre lo
    que la más ancha, así que la píldora no cambia de tamaño al cambiar de
@@ -325,8 +336,7 @@
 @keyframes feedRefreshSpin { to { rotate: 360deg; } }
 @keyframes feedRefreshDone {
   0% { scale: 1; }
-  35% { scale: 1.12; }
-  62% { scale: 0.96; }
+  50% { scale: 1.05; }
   100% { scale: 1; }
 }
 /* The environment being replaced. Measured 2026-09-12 with none of this: at
