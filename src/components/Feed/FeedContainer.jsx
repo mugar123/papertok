@@ -718,6 +718,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   const refreshLabel = isEnglish
     ? ({ refreshing: 'Refreshing…', done: 'Updated', idle: 'Refresh' }[refreshPhase])
     : ({ refreshing: 'Actualizando…', done: 'Actualizado', idle: 'Actualizar' }[refreshPhase]);
+  // Done pops in (check + label); refreshing/idle crossfade softer so the
+  // handoff reads as one beat with the feed's opacity dip.
   const refreshFaceMotion = prefersReducedMotion
     ? {
         initial: { opacity: 0 },
@@ -725,12 +727,26 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
         exit: { opacity: 0 },
         transition: { duration: 0.12, ease: 'linear' },
       }
-    : {
-        initial: { opacity: 0, y: 5 },
-        animate: { opacity: 1, y: 0 },
-        exit: { opacity: 0, y: -5 },
-        transition: { duration: 0.22, ease: [0.2, 0, 0, 1] },
-      };
+    : refreshPhase === 'done'
+      ? {
+          initial: { opacity: 0, y: 6, scale: 0.84 },
+          animate: { opacity: 1, y: 0, scale: 1 },
+          exit: { opacity: 0, y: -5, scale: 0.94 },
+          transition: { type: 'spring', stiffness: 560, damping: 26, mass: 0.65 },
+        }
+      : refreshPhase === 'refreshing'
+        ? {
+            initial: { opacity: 0, y: 6 },
+            animate: { opacity: 1, y: 0 },
+            exit: { opacity: 0, y: -4, scale: 0.96 },
+            transition: { duration: 0.18, ease: [0.2, 0, 0, 1] },
+          }
+        : {
+            initial: { opacity: 0, y: 4 },
+            animate: { opacity: 1, y: 0 },
+            exit: { opacity: 0, y: -4 },
+            transition: { duration: 0.2, ease: [0.2, 0, 0, 1] },
+          };
   return (
     <FeedLandmark landmark={landmark}>
       {!publicMode && papers.length > 0 && (

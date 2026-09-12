@@ -116,3 +116,23 @@ test('SOURCE: la píldora no asoma solo porque el cursor ya estaba en la franja'
   assert.match(hover, /refreshHoverLockedRef\.current = false/, 'sólo se abre al salir de la franja');
   assert.match(hover, /wrapper\.contains\(t\)\) return/, 'un pointerdown fuera del feed (sheet/modal) vuelve a cerrarlo');
 });
+
+test('SOURCE: el refresh tiene un beat de trabajo y un aterrizaje con spring', async () => {
+  const css = strip(await read('./FeedContainer.css'));
+  assert.match(css, /\.feed-refresh\.is-refreshing/, 'mientras corre, la píldora late');
+  assert.match(css, /@keyframes feedRefreshWorking/, 'glow de progreso');
+  assert.match(css, /@keyframes feedRefreshSpinBreath/, 'el spinner respira, no sólo gira');
+  assert.match(css, /@keyframes feedRefreshDone[\s\S]*scale: 1\.12/, 'el done hace un pop claro');
+  const dip = css.slice(css.indexOf('.feed-container--refreshing {'), css.indexOf('}', css.indexOf('.feed-container--refreshing {')));
+  const back = [...css.matchAll(/\.feed-container \{([^}]*)\}/g)]
+    .map((m) => m[1]).find((b) => /transition:\s*opacity \d+ms/.test(b));
+  const outMs = Number(/opacity (\d+)ms/.exec(back)[1]);
+  const inMs = Number(/opacity (\d+)ms/.exec(dip)[1]);
+  assert.ok(outMs >= 300, `vuelta más suave (${outMs}ms)`);
+  assert.ok(inMs <= 160, `ida más rápida (${inMs}ms)`);
+  const src = strip(await read('./FeedContainer.jsx'));
+  assert.match(src, /refreshPhase === 'done'[\s\S]*type: 'spring'/, 'Actualizado entra con spring');
+  const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
+  assert.match(reduced, /\.feed-refresh\.is-refreshing/, 'reduced apaga el latido');
+});
+

@@ -95,7 +95,15 @@
 }
 .feed-refresh:active:not(:disabled) { scale: 0.96; transition-duration: 80ms; }
 .feed-refresh:disabled { cursor: default; }
-.feed-refresh.is-done { animation: feedRefreshDone 420ms cubic-bezier(0.2, 0, 0, 1); }
+/* Working beat: planted under the bar with a soft glow so the refresh reads
+   as progress, not a frozen label. Opacity-only on the feed still owns the
+   handover; the pill carries the pulse. */
+.feed-refresh.is-refreshing {
+  translate: -50% 0;
+  scale: 1;
+  animation: feedRefreshWorking 1.35s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+.feed-refresh.is-done { animation: feedRefreshDone 520ms cubic-bezier(0.16, 1, 0.3, 1); }
 /* Face slot: icon+label crossfade together. `layout` on the face morphs the
    pill width across Refreshing → Updated → Refresh without a hard jump. */
 .feed-refresh-face {
@@ -110,11 +118,29 @@
   gap: 6px;
   white-space: nowrap;
 }
-.feed-refresh-icon--spinning { animation: feedRefreshSpin 0.8s linear infinite; }
+.feed-refresh-icon--spinning {
+  transform-origin: center;
+  animation:
+    feedRefreshSpin 0.72s linear infinite,
+    feedRefreshSpinBreath 0.72s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
 @keyframes feedRefreshSpin { to { rotate: 360deg; } }
+@keyframes feedRefreshSpinBreath {
+  0%, 100% { scale: 1; }
+  50% { scale: 0.86; }
+}
+@keyframes feedRefreshWorking {
+  0%, 100% {
+    box-shadow: var(--shadow-md), 0 0 0 0 color-mix(in srgb, var(--accent-primary) 0%, transparent);
+  }
+  50% {
+    box-shadow: var(--shadow-md), 0 0 0 7px color-mix(in srgb, var(--accent-primary) 18%, transparent);
+  }
+}
 @keyframes feedRefreshDone {
   0% { scale: 1; }
-  35% { scale: 1.08; }
+  35% { scale: 1.12; }
+  62% { scale: 0.96; }
   100% { scale: 1; }
 }
 /* The papers being replaced. Measured 2026-09-12 without this: at 498ms the
@@ -126,18 +152,20 @@
    arrives rather than snapping on, and the cards' own entrance
    (`cardSlideUp`, `pcArrive`) runs inside it. */
 .feed-container {
-  transition: opacity 260ms cubic-bezier(0.2, 0, 0, 1);
+  transition: opacity 320ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .feed-container--refreshing {
   opacity: 0.4;
-  transition: opacity 180ms ease-in;
+  transition: opacity 150ms ease-in;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .feed-container, .feed-container--refreshing { transition: none; opacity: 1; }
   .feed-refresh, .feed-refresh.is-visible { transition: opacity 120ms linear; translate: -50% 0; scale: 1; }
   .feed-refresh.is-pulling { translate: -50% 0; scale: 1; }
-  .feed-refresh.is-done, .feed-refresh-icon--spinning { animation: none; }
+  .feed-refresh.is-refreshing,
+  .feed-refresh.is-done,
+  .feed-refresh-icon--spinning { animation: none; }
 }
 
 /* No .feed-wrapper override at 768px: --nav-total already switches to
