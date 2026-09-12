@@ -1,4 +1,4 @@
-import { Fragment, useState, useRef, useCallback, useMemo, useEffect, useId, memo, lazy, Suspense } from 'react';
+import { Fragment, useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useId, memo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories';
 import {
@@ -11,6 +11,7 @@ import {
 import { canonicalPaperIdentity } from '../../utils/paperCanonicalKey.js';
 import { useCommentCount } from '../../hooks/useCommentCount.js';
 import { useOverlayHistory } from '../../hooks/useOverlayHistory.js';
+import { useIsPageArriving } from '../../hooks/usePageArrival.js';
 import ScientificText from '../ScientificText';
 import { Button } from '../ui/button.jsx';
 import { Toggle } from '../ui/toggle.jsx';
@@ -624,6 +625,47 @@ const PaperCard = memo(function PaperCard({
     setLoadedFigures(current => (current.has(url) ? current : new Set(current).add(url)));
   }, []);
 
+  // A clipping comes back WITH its page, not on a clock of its own.
+  //
+  // Coming back to the feed the card remounts, the pictures are cached, and
+  // `is-loaded` lands within a frame or two — so the full entrance replays while
+  // the page is still travelling. Measured 2026-09-12 (production build, real
+  // session, back from an author page onto a card with four clippings): it
+  // started on the FIRST frame of the return and was still running 450ms after
+  // the page had stopped; at the frame the page came to rest the four sat at
+  // 0.49, 0.33, 0.10 and 0.00 of their resting 0.62, the last finishing near
+  // 750ms — while the card's own words were already where they had been left.
+  //
+  // Same rule the entity hero's settle answers to: ONE OWNER PER ARRIVAL. Ask
+  // `useIsPageArriving` at the instant the clippings are handed the entrance,
+  // and if the page is travelling right then they RESUME instead — the stagger,
+  // the rise and the scale go, a plain fade on the page's clock stays
+  // (PaperCard.css). Taking the animation away altogether was tried the same
+  // night and reverted: the clippings then appeared in one frame, and a jump
+  // reads worse than a tail.
+  //
+  // It is not the page's arrival DIRECTION: that attribute stays on the root for
+  // the whole visit and would silence every card scrolled to afterwards, which
+  // is what 41cd627 fixed. This gate lasts exactly as long as the transition.
+  const isPageArriving = useIsPageArriving();
+  const [figuresResumed, setFiguresResumed] = useState(false);
+  const figuresVerdictRef = useRef(false);
+  const figuresShown = figuresLit && figures.some((item) => loadedFigures.has(item.url));
+
+  // A layout effect, so the verdict is in before the frame is painted: React
+  // flushes a state update made here before paint, and the entrance never gets
+  // a frame of its own to flash in.
+  useLayoutEffect(() => {
+    if (!figuresShown) {
+      figuresVerdictRef.current = false;
+      setFiguresResumed(false);
+      return;
+    }
+    if (figuresVerdictRef.current) return;
+    figuresVerdictRef.current = true;
+    if (isPageArriving()) setFiguresResumed(true);
+  }, [figuresShown, isPageArriving]);
+
   const [project, setProject] = useState(null);
   const prefersReducedMotion = useReducedMotion();
 
@@ -1196,7 +1238,7 @@ const PaperCard = memo(function PaperCard({
           {scatteredFigures.map(({ item, style }) => (
             <figure
               key={item.url}
-              className={`pc-figure${loadedFigures.has(item.url) && figuresLit ? ' is-loaded' : ''}`}
+              className={`pc-figure${loadedFigures.has(item.url) && figuresLit ? ' is-loaded' : ''}${figuresResumed ? ' is-resumed' : ''}`}
               style={style}
             >
               <img

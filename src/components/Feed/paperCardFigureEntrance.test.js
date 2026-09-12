@@ -174,3 +174,61 @@ test('a card that already has its clippings does not go asking for them again', 
     'the settle timer is only for a card that arrived without them',
   );
 });
+
+/**
+ * A clipping travels with its page: it leaves before the page does, and it
+ * comes back with it.
+ *
+ * The plates are white on both themes on purpose, which makes them the
+ * brightest thing on the page being replaced. Reproduced 2026-09-12 by frame
+ * (opening a topic from a card with clippings, coming back, opening it again):
+ * at 59ms the incoming page was at 0.43 and the two plates underneath were
+ * still fully legible through it, over the entity's own title.
+ *
+ * And on the way back the full entrance replayed from the first frame of the
+ * return, still running 450ms after the page had stopped. Dropping it outright
+ * was tried and reverted the same night — 0.00 to 0.62 in one frame reads worse
+ * than a tail — so what goes is the stagger, the rise and the scale, and what
+ * stays is a plain fade on the page's clock.
+ */
+test('SOURCE: a clipping leaves before its page and resumes with it, never in one frame', async () => {
+  const css = await readFile(new URL('./PaperCard.css', import.meta.url), 'utf8');
+  const jsx = await readFile(new URL('./PaperCard.jsx', import.meta.url), 'utf8');
+  const code = jsx.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
+
+  // Leaving: every motion of a page on its way out takes the clippings with it.
+  for (const motion of ['hold', 'hold-lateral', 'leave', 'fade']) {
+    // `.is-loaded` is specificity: without it this ties with the resumed rule
+    // and loses on source order, which is the normal case rather than the edge
+    // — a card resumed once keeps the class while it is on screen.
+    assert.match(css, new RegExp(`\\.page-transition\\[data-page-motion="${motion}"\\] \\.pc-figure\\.is-loaded`),
+      `${motion} clears the clippings before the page arriving covers`);
+  }
+  const out = css.match(/@keyframes figureClipOut \{([^}]*)\}/);
+  assert.ok(out, 'the clippings have a way out');
+  assert.match(out[1], /to \{ opacity: 0;/);
+  assert.doesNotMatch(out[1], /from/, 'no `from`: it leaves from wherever it is');
+  const outRule = css.match(/\.page-transition\[data-page-motion="fade"\] \.pc-figure\.is-loaded \{([^}]*)\}/);
+  assert.ok(outRule, 'the four leaving motions share one rule');
+  const outMs = Number(outRule[1].match(/figureClipOut (\d+)ms linear/)?.[1]);
+  assert.ok(outMs > 0 && outMs <= 100, `gone inside the window the held page is visible for: ${outMs}ms`);
+
+  // Coming back: a fade, not a jump and not an arrival.
+  const resumed = css.match(/\.pc-figure\.is-loaded\.is-resumed \{([^}]*)\}/);
+  assert.ok(resumed, 'the resumed pose has a rule of its own');
+  assert.doesNotMatch(resumed[1], /figureClipIn/, 'the entrance is what a resumed clipping drops');
+  assert.match(resumed[1], /figureClipResume (\d+)ms linear/, 'and a plain fade is what it keeps');
+  assert.match(resumed[1], /figureClipDrift/, 'the drift still takes over afterwards');
+  const resume = css.match(/@keyframes figureClipResume \{([^}]*)\}/);
+  assert.ok(resume, 'the resumed fade is declared');
+  assert.match(resume[1], /from \{ opacity: 0;/);
+  assert.doesNotMatch(resume[1], /translate|scale|rotate/, 'a resume is a fade: the travel is what says "arriving"');
+
+  assert.match(code, /import \{ useIsPageArriving \} from '\.\.\/\.\.\/hooks\/usePageArrival\.js';/);
+  assert.match(code, /const isPageArriving = useIsPageArriving\(\);/);
+  const effect = code.match(/useLayoutEffect\(\(\) => \{\s*if \(!figuresShown\)([\s\S]*?)\s+\}, \[figuresShown, isPageArriving\]\);/);
+  assert.ok(effect, 'the verdict is taken in a layout effect, before the frame is painted');
+  assert.match(effect[1], /if \(isPageArriving\(\)\) setFiguresResumed\(true\);/);
+  assert.match(effect[1], /figuresVerdictRef\.current = true;/, 'and only once per showing');
+  assert.match(code, /figuresResumed \? ' is-resumed' : ''/, 'the verdict reaches the element');
+});

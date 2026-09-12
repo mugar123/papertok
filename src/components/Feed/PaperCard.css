@@ -141,6 +141,72 @@
    runs once, on something that already has a picture in it.
    No fill mode here either, for the same reason as above: this only withholds
    the pose, it never holds one. */
+/* ── A clipping travels with its page ──
+   These plates are WHITE on both themes on purpose (`--bg-figure-plate`, see
+   its note: the ink in a figure does not follow the theme). That makes them the
+   brightest thing on a dark card — and during a route transition, the brightest
+   thing on the page being replaced. Reproduced 2026-09-12 by frame (production
+   build, real session, opening a topic from a card with clippings, coming back
+   and opening it again): at 59ms the incoming topic page was at 0.43 and the
+   two white plates underneath it were still fully legible THROUGH it, sitting
+   over the entity's own title. Everything else in the handover is dark type on
+   dark ground and crossfades invisibly; the clippings punch holes in it. The
+   second opening is the worst case because by then the pictures are cached and
+   at full strength from the first frame.
+
+   So a clipping leaves before its page does, and fast: 50ms, which is three
+   frames. The page underneath is only in sight for the ~78ms the page arriving
+   takes to cover (PageTransition.css) and the clipping's fade cannot start
+   until the motion attribute lands, around 20ms in — 80ms was measured still
+   leaving it at 0.36 over the entity's own title at 57ms. Fifty gets it to
+   nothing just as the cover completes, which is the whole budget there is. */
+/* `.is-loaded` is here for specificity, not for the reading: a clipping that is
+   not loaded is already invisible. Without it this ties with
+   `.pc-figure.is-loaded.is-resumed` below (three classes each) and loses on
+   source order — measured 2026-09-12 with `getComputedStyle().animationName`,
+   which answered `figureClipResume, figureClipDrift` on a held page while the
+   selector itself matched. A card that has been resumed once keeps the class
+   for as long as it is on screen, so the tie is the normal case, not the edge:
+   open a topic, come back, open it again, and the second opening is the one
+   with the white plates punched through it. */
+.page-transition[data-page-motion="hold"] .pc-figure.is-loaded,
+.page-transition[data-page-motion="hold-lateral"] .pc-figure.is-loaded,
+.page-transition[data-page-motion="leave"] .pc-figure.is-loaded,
+.page-transition[data-page-motion="fade"] .pc-figure.is-loaded {
+  animation: figureClipOut 50ms linear both;
+}
+
+@keyframes figureClipOut {
+  to { opacity: 0; }
+}
+
+/* And it comes back WITH its page, not on a clock of its own and not in one
+   frame. Measured 2026-09-12, pressing back onto a card with four clippings:
+   the full entrance replayed from the first frame of the return and was still
+   running 450ms after the page had stopped — at the frame the page came to rest
+   the four sat at 0.49, 0.33, 0.10 and 0.00 of their resting 0.62, the last
+   finishing near 750ms, while the card's words were already exactly where they
+   had been left (`pcArrive` is deliberately at rest on the way back).
+
+   Dropping the entrance outright was tried and reverted the same night: the
+   clippings then went 0.00 -> 0.62 in ONE frame, which trades a 450ms tail for
+   a jump, and a jump reads worse. So what is dropped is the stagger, the rise
+   and the scale — the parts that say "arriving" — and what is kept is a plain
+   fade on the page's own clock, so the pictures resolve as the page resolves.
+   Which clippings these are is `PaperCard.jsx`'s call, taken by asking
+   `useIsPageArriving` at the instant they are handed the entrance: only the
+   ones on screen during the transition itself, so a card scrolled to afterwards
+   still plays its entrance in full. */
+.pc-figure.is-loaded.is-resumed {
+  animation:
+    figureClipResume 220ms linear,
+    figureClipDrift var(--fig-drift-duration, 5s) ease-in-out 1.32s infinite;
+}
+
+@keyframes figureClipResume {
+  from { opacity: 0; }
+}
+
 .pc-figure:not(.is-loaded) {
   opacity: 0;
   animation: none;
