@@ -18,7 +18,32 @@
    clean (no void frames, bar in every frame) and felt like nothing — the
    expo curve did 80% of its change in the first 60ms, and the held page did
    not move. A page has to be seen travelling for the change to feel fluid:
-   32px over 300ms on a quad-out, with the page underneath giving way.
+   40px over 280ms, with the page underneath giving way.
+
+   ── The curve goes on the travel and the fade goes in a straight line ──
+   Measured 2026-09-12 by frame (production build, real session, a card to an
+   author page and back), with a single ease-out governing both:
+
+     opacity in    0 → 0.32 → 0.60 → 0.79 → 0.91 → 0.98 → 1
+     opacity out   1 → 0.71 → 0.45 → 0.26 → 0.13 → 0.05 → 0.01 → 0
+     travel in     3.3  3.3  3.3  3.1  2.9  2.6  2.3  2.0 … 0.4  0.2 px/frame
+
+   Half of each fade spent in two frames and then four or five frames going
+   from nearly opaque to opaque (or from nearly invisible to invisible), while
+   the travel it rode with left at a CONSTANT 3.3px for its first five frames
+   and then tapered into 100ms of sub-pixel creep. That is the wrong way round:
+   a curve that spends itself in two frames is right for something moving — you
+   see where it went — and wrong for something dimming, where all it does is
+   flash (the reader's popover was fixed for exactly this the same night,
+   40fe568). So opacity is `linear` here, every step the same size, and only the
+   travel keeps a curve — `--ease-out-cubic`, which decelerates from its first
+   frame (6.8px) instead of holding a flat speed and then dying out.
+
+   And on the way back the numbers said the animation outlived what could be
+   seen of it: the page leaving reached opacity 0 at 149ms and went on
+   travelling until 316ms — 167ms of movement nobody can see, with the settle
+   waiting on it. The way back now runs 240ms against the way in's 280: going
+   somewhere new is a bigger event than returning to what you just left.
    ============================================ */
 
 .page-transition {
@@ -30,11 +55,11 @@
      its stacking (below). One hold timed for the longest entrance was
      measured doing that under every tab switch: eight frames of the For you
      card at 60% over a Research page already at rest. */
-  --page-enter-ms: 300ms;
-  --page-leave-ms: 280ms;
+  --page-enter-ms: 280ms;
+  --page-leave-ms: 240ms;
   --page-lateral-ms: 240ms;
   --page-fade-ms: 150ms;
-  --page-reveal-ms: 280ms;
+  --page-reveal-ms: 240ms;
   --page-reduced-ms: 120ms;
   /* The box the motion.div used to set inline: without an explicit width a
      flex-column route root measures against its content and jumps on load. */
@@ -84,9 +109,12 @@
   z-index: 2;
 }
 
-/* `both`: a page whose animation starts a frame late must not flash opaque
-   before its fade; and the end state holds until the attribute goes. */
-/* ── Cover, do not dissolve ──
+/* Every rule below is the same pair: a TRAVEL, which owns the clock and rides
+   a curve, and a FADE on a straight line beside it. `both`: a page whose
+   animation starts a frame late must not flash opaque before its fade, and the
+   end state holds until the attribute goes.
+
+   ── Cover, do not dissolve ──
    Measured 2026-09-11 (production build, real session, feed -> project page):
    the travel was a clean 60fps with no dropped frames and no blank beat, and it
    still read as muddy, because for ~200ms BOTH pages were legible at once —
@@ -94,39 +122,60 @@
    fading up from 0 is a double exposure, and an opaque background does not help
    while the sheet on top is itself half-transparent.
 
-   So the fade is split off the travel and made shorter. The page arriving
-   reaches full opacity at 40% of its journey and COVERS what it replaces for
-   the rest of it; the remaining 60% is pure travel, on exactly the curve and
-   duration that were tuned per frame. Two animations, not one keyframe block
+   So the fade is shorter than the travel it rides with. The page arriving
+   reaches full opacity at 28% of its journey and COVERS what it replaces for
+   the rest of it; the remaining 72% is pure travel, on exactly the curve and
+   duration that were tuned per frame. That fraction is set by how long both
+   pages stay legible, not by the clock: a straight line spends the SAME time
+   at every opacity where the old curve jumped through the low ones, so an
+   evenly-paced fade of the same length would have held the double exposure
+   ~23ms longer. Measured by frame, 78ms linear crosses 0.5 at 36ms and 0.8 at
+   58ms — where the 96ms curve it replaces crossed them at 35ms and 60ms.
+
+   Two animations, not one keyframe block
    with a stop in the middle: an intermediate keyframe would re-ease the
-   transform across each interval and change that travel. */
+   transform across each interval and change that travel — and the two
+   properties want different timing functions anyway. */
 .page-transition[data-page-motion="enter"] {
   animation:
-    pageEnterTravel var(--page-enter-ms) var(--ease-out-quad) both,
-    pageCover calc(var(--page-enter-ms) * 0.32) var(--ease-out-quad) both;
+    pageEnterTravel var(--page-enter-ms) var(--ease-out-cubic) both,
+    pageCover calc(var(--page-enter-ms) * 0.28) linear both;
 }
 
+/* The lateral pair keeps `--ease-out-quad` and its 28px/12px: those were tuned
+   per frame on 2026-09-11 for a step along the bar, which is a different
+   movement from the push into a page and is not what this pass re-timed. Only
+   their opacity changed, to the straight line every fade in this file runs. */
 .page-transition[data-page-motion="enter-lateral"][data-nav-direction="1"] {
-  animation: pageEnterFromRight var(--page-lateral-ms) var(--ease-out-quad) both;
+  animation:
+    pageEnterFromRight var(--page-lateral-ms) var(--ease-out-quad) both,
+    pageCover var(--page-lateral-ms) linear both;
 }
 
 .page-transition[data-page-motion="enter-lateral"][data-nav-direction="-1"] {
-  animation: pageEnterFromLeft var(--page-lateral-ms) var(--ease-out-quad) both;
+  animation:
+    pageEnterFromLeft var(--page-lateral-ms) var(--ease-out-quad) both,
+    pageCover var(--page-lateral-ms) linear both;
 }
 
-/* Giving way: the page underneath shrinks by 2% and dims to 60% while the
+/* Giving way: the page underneath shrinks by 4% and dims to 55% while the
    page on top settles over it, and is removed in the same frame that page
    comes to rest — the same clock, so the two `animationend`s land in one
    React commit. A held page still here after the page on top has dropped
    its `z-index: 2` is a fixed, positioned sibling of a static one: it
-   paints over it. */
+   paints over it. Its recession rides the same curve as the entrance above,
+   so most of it happens in the ~98ms it is still visible for. */
 .page-transition[data-page-motion="hold"] {
-  animation: pageHold var(--page-enter-ms) var(--ease-out-quad) both;
+  animation:
+    pageHold var(--page-enter-ms) var(--ease-out-cubic) both,
+    pageDim var(--page-enter-ms) linear both;
 }
 
 /* The fallback, for a lateral hold that somehow has no direction. */
 .page-transition[data-page-motion="hold-lateral"] {
-  animation: pageHold var(--page-lateral-ms) var(--ease-out-quad) both;
+  animation:
+    pageHold var(--page-lateral-ms) var(--ease-out-quad) both,
+    pageDim var(--page-lateral-ms) linear both;
 }
 
 /* A tab change is a pass, not a dissolve: the page arriving travels and the one
@@ -134,56 +183,50 @@
    `data-leave-direction` — the navigation ejecting it — because
    `data-nav-direction` keeps the direction this page arrived with. */
 .page-transition[data-page-motion="hold-lateral"][data-leave-direction="1"] {
-  animation: pageHoldToLeft var(--page-lateral-ms) var(--ease-out-quad) both;
+  animation:
+    pageHoldToLeft var(--page-lateral-ms) var(--ease-out-quad) both,
+    pageYield var(--page-lateral-ms) linear both;
 }
 
 .page-transition[data-page-motion="hold-lateral"][data-leave-direction="-1"] {
-  animation: pageHoldToRight var(--page-lateral-ms) var(--ease-out-quad) both;
+  animation:
+    pageHoldToRight var(--page-lateral-ms) var(--ease-out-quad) both,
+    pageYield var(--page-lateral-ms) linear both;
 }
 
 /* Coming back: the page that gave way returns to size and brightness
-   under the page lifting off it. */
+   under the page lifting off it. This is the movement the reader actually
+   watches on the way back — the sheet on top is gone in 91ms — so it is the
+   one that has to be seen. 4% of the viewport's width, which on a 1440px
+   window is 28.8px per side: 5.6px on the first frame, then 4.8, 4.1, 3.4,
+   and more than a pixel in nine of its fourteen frames. */
 .page-transition[data-page-motion="reveal"] {
   animation:
-    pageRevealTravel var(--page-reveal-ms) var(--ease-out-quad) both,
-    pageUncover calc(var(--page-reveal-ms) * 0.4) var(--ease-out-quad) both;
+    pageRevealTravel var(--page-reveal-ms) var(--ease-out-cubic) both,
+    pageUncover calc(var(--page-reveal-ms) * 0.45) linear both;
 }
 
-/* Out the way it came in: the entity rose 32px on arrival, it drops 32px
-   on the way back. Ease-out — the page is gone before it looks slow. */
+/* Out the way it came in: the entity rose 40px on arrival, it drops 40px
+   on the way back. Ease-out — the page is gone before it looks slow — and 80%
+   of that drop happens inside the 91ms it is still visible for. Same reasoning
+   as the cover above for why 91 and not 101: the straight line would otherwise
+   keep the page leaving legible longer than the curve did. */
 .page-transition[data-page-motion="leave"] {
-  /* The other half of the same idea, coming back: the page lifting off stops
-     competing at half its travel instead of staying readable over the feed all
-     the way out. */
   animation:
-    pageLeaveTravel var(--page-leave-ms) var(--ease-out-quad) both,
-    pageLeaveFade calc(var(--page-leave-ms) * 0.38) var(--ease-out-quad) both;
+    pageLeaveTravel var(--page-leave-ms) var(--ease-out-cubic) both,
+    pageFadeOut calc(var(--page-leave-ms) * 0.38) linear both;
 }
 
 /* A replace, or a redirect: no step to animate, the old page dissolves. */
 .page-transition[data-page-motion="fade"] {
-  animation: pageFadeOut var(--page-fade-ms) var(--ease-out-quad) both;
+  animation: pageFadeOut var(--page-fade-ms) linear both;
 }
+
+/* ─── The travels: one curve each, no opacity ─── */
 
 @keyframes pageEnterTravel {
-  from { transform: translateY(32px); }
+  from { transform: translateY(40px); }
   to { transform: none; }
-}
-
-/* Shared by every page arriving over another. */
-@keyframes pageCover {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes pageUncover {
-  from { opacity: 0.55; }
-  to { opacity: 1; }
-}
-
-@keyframes pageLeaveFade {
-  from { opacity: 1; }
-  to { opacity: 0; }
 }
 
 /* 28px, not the 10px this started at. Per frame at 60Hz on `--ease-out-quad`,
@@ -191,36 +234,36 @@
    its 11 frames: a fade with a nudge in it. 28px/240ms moves 3.6px and has
    movement in 13 of 14 — the reader sees a page arrive from a side. */
 @keyframes pageEnterFromRight {
-  from { opacity: 0; transform: translateX(28px); }
-  to { opacity: 1; transform: none; }
+  from { transform: translateX(28px); }
+  to { transform: none; }
 }
 
 @keyframes pageEnterFromLeft {
-  from { opacity: 0; transform: translateX(-28px); }
-  to { opacity: 1; transform: none; }
+  from { transform: translateX(-28px); }
+  to { transform: none; }
 }
 
 /* The page underneath gives way along the same axis: 12px, which is 1.6px on
    its first frame — it yields, it does not race. No scale: shrinking is how
    the vertical push says "you went deeper", and a tab change has no depth. */
 @keyframes pageHoldToLeft {
-  from { opacity: 1; transform: none; }
-  to { opacity: 0.7; transform: translateX(-12px); }
+  from { transform: none; }
+  to { transform: translateX(-12px); }
 }
 
 @keyframes pageHoldToRight {
-  from { opacity: 1; transform: none; }
-  to { opacity: 0.7; transform: translateX(12px); }
+  from { transform: none; }
+  to { transform: translateX(12px); }
 }
 
 @keyframes pageLeaveTravel {
   from { transform: none; }
-  to { transform: translateY(32px); }
+  to { transform: translateY(40px); }
 }
 
 @keyframes pageHold {
-  from { opacity: 1; transform: none; }
-  to { opacity: 0.55; transform: scale(0.96); }
+  from { transform: none; }
+  to { transform: scale(0.96); }
 }
 
 @keyframes pageRevealTravel {
@@ -228,53 +271,62 @@
   to { transform: none; }
 }
 
+/* ─── The fades: a straight line, and never all the way to nothing ───
+   Four of them, shared by every rule above and by the reduced-motion block
+   below — the same fades, without the travel. */
+
+@keyframes pageCover {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 @keyframes pageFadeOut {
   from { opacity: 1; }
   to { opacity: 0; }
 }
 
-@keyframes pageFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
 @keyframes pageDim {
   from { opacity: 1; }
-  to { opacity: 0.6; }
+  to { opacity: 0.55; }
 }
 
-@keyframes pageBrighten {
-  from { opacity: 0.6; }
+@keyframes pageUncover {
+  from { opacity: 0.55; }
   to { opacity: 1; }
 }
 
-/* Fewer and gentler, not none: the fades stay (they are what keeps two
-   pages from teleporting), the movement goes, and everything is shorter.
-   The lateral selectors repeat both attributes to match the specificity
-   of the rules they override. */
+@keyframes pageYield {
+  from { opacity: 1; }
+  to { opacity: 0.7; }
+}
+
+/* Fewer and gentler, not none: the fades stay — literally the same four, which
+   are what keeps two pages from teleporting — the movement goes, and everything
+   is shorter. The lateral selectors repeat both attributes to match the
+   specificity of the rules they override. */
 @media (prefers-reduced-motion: reduce) {
   .page-transition[data-page-motion="enter"],
   .page-transition[data-page-motion="enter-lateral"][data-nav-direction="1"],
   .page-transition[data-page-motion="enter-lateral"][data-nav-direction="-1"] {
-    animation: pageFadeIn var(--page-reduced-ms) var(--ease-out-quad) both;
+    animation: pageCover var(--page-reduced-ms) linear both;
   }
 
   .page-transition[data-page-motion="leave"],
   .page-transition[data-page-motion="fade"] {
-    animation: pageFadeOut var(--page-reduced-ms) var(--ease-out-quad) both;
+    animation: pageFadeOut var(--page-reduced-ms) linear both;
   }
 
   .page-transition[data-page-motion="hold"],
   .page-transition[data-page-motion="hold-lateral"] {
-    animation: pageDim var(--page-reduced-ms) var(--ease-out-quad) both;
+    animation: pageDim var(--page-reduced-ms) linear both;
   }
 
   .page-transition[data-page-motion="hold-lateral"][data-leave-direction="1"],
   .page-transition[data-page-motion="hold-lateral"][data-leave-direction="-1"] {
-    animation: pageDim var(--page-reduced-ms) var(--ease-out-quad) both;
+    animation: pageYield var(--page-reduced-ms) linear both;
   }
 
   .page-transition[data-page-motion="reveal"] {
-    animation: pageBrighten var(--page-reduced-ms) var(--ease-out-quad) both;
+    animation: pageUncover var(--page-reduced-ms) linear both;
   }
 }

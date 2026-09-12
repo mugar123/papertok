@@ -257,8 +257,18 @@
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   /* A readable ease-out for a movement that has to be SEEN travel: the expo
      above does 80% of its change in the first quarter, which on a fast
-     machine reads as a cut. Quad spends the whole duration decelerating. */
+     machine reads as a cut. Quad spreads its change over the whole duration —
+     which is not the same thing as decelerating over it, see below. Still
+     what the step between navbar tabs rides, tuned per frame for it. */
   --ease-out-quad: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  /* Between the two, and what the route transition travels on. Quad above is
+     nearly LINEAR through its first third — measured on the page push, five
+     frames at a flat 3.3px before it began to slow at all — so the movement
+     reads as a drift rather than as something thrown into place. This
+     decelerates from its very first frame (6.8px of a 40px travel over 280ms,
+     then 5.9, 5.2, 4.4 …) and still spends eleven of its seventeen frames
+     moving more than a pixel, which is the property the expo lacks. */
+  --ease-out-cubic: cubic-bezier(0.33, 1, 0.68, 1);
 
   /* ── Z-index ── */
   --z-base: 1;
