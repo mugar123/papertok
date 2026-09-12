@@ -59,6 +59,15 @@ const REFRESH_HOVER_BAND_PX = 120;
 // feedRefresh.test.js holds the two together: everything this number is used
 // for here is about waiting until the cover is actually down.
 const REFRESH_DIP_MS = 180;
+// Cuánto se sostiene la pose de aterrizaje del tirón (`landPull`). Sólo tiene
+// que cubrir el fotograma o dos que React tarda en dar `is-visible` por
+// `isRefreshing`, más la transición que la lleva ahí; pasado eso la clase
+// sobra y quitarla no se ve, porque la pose es la misma con ella y sin ella.
+const PULL_LANDING_MS = 420;
+// Lo que tarda la píldora en meterse bajo la barra (`.feed-refresh`, 280ms de
+// recorrido). Con puntero grueso la cara se queda en «Actualizado» todo ese
+// rato y sólo vuelve a «Actualizar» cuando ya no se la ve.
+const PILL_EXIT_MS = 300;
 const SCROLL_IDLE_DELAY_MS = 120;
 const SCROLL_INTERACTION_SETTLE_MS = 220;
 
@@ -197,6 +206,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   const refreshPillRef = useRef(null);
   // Whether the scroll back to the top is still owed (see the effect below).
   const refreshJumpOwedRef = useRef(false);
+  // Temporizador que retira la pose de aterrizaje (ver `landPull`).
+  const pullLandingTimerRef = useRef(null);
   // Desktop: the pill lives hidden under the navbar and shows while the mouse
   // is in the band beneath it. Touch: it shows as the pull progresses.
   const [refreshPillHover, setRefreshPillHover] = useState(false);
@@ -204,6 +215,21 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   // flashing when the feed returns under a cursor that never left the band.
   const refreshHoverLockedRef = useRef(true);
   const [refreshDone, setRefreshDone] = useState(false);
+  // Con el dedo, la píldora se va diciendo «Actualizado».
+  //
+  // En escritorio la vuelta de Actualizado a Actualizar es un cruce que se ve
+  // y está bien: la píldora se queda ahí mientras el ratón siga en la franja,
+  // y volver al verbo es volver a ofrecerse. Con el dedo no hay franja ni
+  // ratón: la píldora se esconde en cuanto el beat termina, así que ese cruce
+  // ocurre justo mientras se marcha — el lector ve cambiar el texto de algo
+  // que ya se está yendo, que es ruido y no información. Con puntero grueso la
+  // cara se queda en «Actualizado» hasta que la píldora está fuera de vista, y
+  // cambia a «Actualizar» donde no se ve.
+  const [coarsePointer] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches === true,
+  );
+  const [doneTail, setDoneTail] = useState(false);
+  const wasDoneRef = useRef(false);
   const wasRefreshingRef = useRef(false);
   const [showLoader, setShowLoader] = useState(false);
   const [initialFeedReady, setInitialFeedReady] = useState(false);
@@ -498,8 +524,47 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     if (!wrapper) return;
     wrapper.style.setProperty('--pull', String(progress));
     wrapper.style.setProperty('--pull-y', `${travelPx.toFixed(1)}px`);
-    wrapper.classList.toggle('is-pulling', progress > 0);
+    // Un ATRIBUTO DE DATOS, no una clase. `className` en `.feed-wrapper` es un
+    // literal del JSX, así que React lo reescribe entero en cada commit y se
+    // lleva por delante cualquier clase puesta a mano — medido: `landPull`
+    // ponía la suya y la renderización que dispara el refresco la borraba en
+    // el mismo fotograma. Un atributo que el JSX no menciona sobrevive. (Los
+    // `--pull*` de arriba ya sobrevivían: `style` tampoco está en el JSX.)
+    // Escribir el estado entero en vez de alternarlo cancela de paso el
+    // aterrizaje del tirón anterior, siga vivo o no su temporizador.
+    wrapper.setAttribute('data-pull', progress > 0 ? 'pulling' : '');
   }, []);
+
+  // El tirón que SÍ refresca no suelta: aterriza.
+  //
+  // Soltar y poner el progreso a cero deja a la píldora sin ninguna clase
+  // durante el fotograma o dos que React tarda en darle `is-visible` por
+  // `isRefreshing` — y sin clase, su transición es la de MARCHARSE, así que
+  // arranca hacia debajo de la barra y la siguiente renderización la trae de
+  // vuelta. En un tirón lento se nota poco; en uno rápido la píldora ni
+  // siquiera había acabado de salir, así que el lector ve medio asomo, un
+  // retroceso y un tirón de vuelta, todo en 100ms.
+  //
+  // Con `is-pull-landing` la píldora va desde donde la dejó el pulgar hasta
+  // su pose de trabajo, que es exactamente la misma que le darán `is-visible`
+  // e `is-refreshing`: cuando React llega, no hay nada que corregir. Y los
+  // papers no vuelven a cero con el muelle de la goma, sino que entran en el
+  // hundimiento del velo con el reloj y la curva del velo — un tirón
+  // cancelado es un muelle, uno que aterriza es una entrega.
+  const landPull = useCallback(() => {
+    const wrapper = feedRef.current?.parentElement;
+    if (!wrapper) return;
+    wrapper.style.setProperty('--pull', '1');
+    wrapper.style.setProperty('--pull-y', '0px');
+    wrapper.setAttribute('data-pull', 'landing');
+    clearTimeout(pullLandingTimerRef.current);
+    // Se quita a ciegas: para entonces React ya es dueño de la píldora y la
+    // pose bajo la clase y sin ella es la misma, así que quitarla no se ve.
+    pullLandingTimerRef.current = setTimeout(() => {
+      if (wrapper.getAttribute('data-pull') === 'landing') wrapper.setAttribute('data-pull', '');
+    }, PULL_LANDING_MS);
+  }, []);
+  useEffect(() => () => clearTimeout(pullLandingTimerRef.current), []);
   useEffect(() => {
     pullDepsRef.current = { handleRefresh, loading, isRefreshing };
   });
@@ -571,6 +636,20 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     wasRefreshingRef.current = isRefreshing;
     return undefined;
   }, [isRefreshing, prefersReducedMotion]);
+
+  // La cola del «Actualizado» (ver `coarsePointer`). Mismo patrón que el beat
+  // de arriba: la referencia recuerda el flanco, el temporizador lo suelta.
+  useEffect(() => {
+    if (!coarsePointer) return undefined;
+    if (wasDoneRef.current && !refreshDone) {
+      setDoneTail(true);
+      const t = setTimeout(() => setDoneTail(false), PILL_EXIT_MS);
+      wasDoneRef.current = false;
+      return () => clearTimeout(t);
+    }
+    wasDoneRef.current = refreshDone;
+    return undefined;
+  }, [refreshDone, coarsePointer]);
 
   const handleOpenPdf = useCallback((paper) => {
     if (!publicMode) trackPdfOpened(paper);
@@ -673,19 +752,22 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
       const owning = state.phase === 'owning';
       state.phase = 'idle';
       if (!owning) return;
-      // Letting go drops the class, and losing the class is what hands the
-      // papers back to their own transition — the snap back is CSS, so it
-      // survives the re-render the refresh is about to cause.
-      setPull(0, 0);
       const touch = event.changedTouches[0];
-      if (!touch) return;
+      if (!touch) { setPull(0, 0); return; }
       const outcome = pullOutcome({
         startY: state.startY,
         endY: touch.clientY,
         elapsedMs: performance.now() - state.startedAt,
       });
       const { handleRefresh: refresh, loading: busy, isRefreshing: running } = pullDepsRef.current;
-      if (outcome === 'refresh' && !busy && !running) refresh?.();
+      // Soltar sin refrescar es un muelle: se devuelve todo y la goma vuelve.
+      // Soltar refrescando es una entrega: ver `landPull`.
+      if (outcome === 'refresh' && !busy && !running) {
+        landPull();
+        refresh?.();
+      } else {
+        setPull(0, 0);
+      }
     };
     const onCancel = () => {
       state.phase = 'idle';
@@ -701,7 +783,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
       el.removeEventListener('touchend', onEnd);
       el.removeEventListener('touchcancel', onCancel);
     };
-  }, [publicMode, setPull, displayState, atomVeil]);
+  }, [publicMode, setPull, landPull, displayState, atomVeil]);
 
 
   if (displayState === FEED_DISPLAY_STATES.ERROR) {
@@ -753,7 +835,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   }
 
   if (displayState === FEED_DISPLAY_STATES.FEED || atomVeil) {
-  const refreshPhase = isRefreshing ? 'refreshing' : refreshDone ? 'done' : 'idle';
+  const refreshPhase = isRefreshing ? 'refreshing' : (refreshDone || doneTail) ? 'done' : 'idle';
   const refreshLabels = isEnglish
     ? { refreshing: 'Refreshing…', done: 'Updated', idle: 'Refresh' }
     : { refreshing: 'Actualizando…', done: 'Actualizado', idle: 'Actualizar' };

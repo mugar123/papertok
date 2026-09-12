@@ -38,6 +38,15 @@ test('SOURCE: el tirón escribe su progreso en el elemento, no en el estado del 
   const pull = src.slice(src.indexOf('const setPull = useCallback('), src.indexOf('const handleMouseMove'));
   assert.match(pull, /style\.setProperty\('--pull'/);
   assert.match(pull, /style\.setProperty\('--pull-y'/);
+  // Un ATRIBUTO, no una clase: `className` en `.feed-wrapper` es un literal
+  // del JSX, así que React lo reescribe entero en cada commit. Medido: la
+  // clase de aterrizaje se ponía y la renderización que dispara el refresco
+  // la borraba en el mismo fotograma.
+  assert.match(pull, /wrapper\.setAttribute\('data-pull', progress > 0 \? 'pulling' : ''\);/);
+  assert.doesNotMatch(pull, /classList/, 'una clase aquí no sobrevive al primer render');
+  // `setAttribute`, no `dataset.x = …`: el lint del repo trata la asignación
+  // sobre algo derivado de un ref como una mutación prohibida.
+  assert.doesNotMatch(pull, /dataset\./);
   // Al envoltorio, no a la píldora: los papers también tienen que seguir al
   // dedo, y el envoltorio es el único ancestro que comparten.
   assert.match(pull, /const wrapper = feedRef\.current\?\.parentElement;/);
@@ -51,7 +60,7 @@ test('SOURCE: el tirón escribe su progreso en el elemento, no en el estado del 
  */
 test('SOURCE: al tirar, los papers vienen con el dedo y sin reloj de por medio', async () => {
   const css = strip(await read('./FeedContainer.css'));
-  const at = css.indexOf('.feed-wrapper.is-pulling .pc {');
+  const at = css.indexOf(".feed-wrapper[data-pull='pulling'] .pc {");
   assert.ok(at > 0, 'la regla que arrastra las tarjetas sigue ahí');
   const carry = css.slice(at, css.indexOf('}', at));
   assert.match(carry, /transform: translateY\(var\(--pull-y\)\)/,
@@ -62,14 +71,61 @@ test('SOURCE: al tirar, los papers vienen con el dedo y sin reloj de por medio',
   const card = strip(await read('./PaperCard.css'));
   assert.match(card, /transition:\s*opacity 0\.9s ease,\s*translate var\(--pc-travel\),\s*transform \d+ms var\(--ease-out-[a-z]+\)/,
     'la tarjeta sabe volver sola al soltar, y sin perder ni la opacidad ni el hundimiento');
-  const pill = css.slice(css.indexOf('.feed-wrapper.is-pulling .feed-refresh {'), css.indexOf('}', css.indexOf('.feed-wrapper.is-pulling .feed-refresh {')));
+  const pill = css.slice(css.indexOf(".feed-wrapper[data-pull='pulling'] .feed-refresh {"), css.indexOf('}', css.indexOf(".feed-wrapper[data-pull='pulling'] .feed-refresh {")));
   assert.match(pill, /translate: -50% calc\(-40px \+ [\d.]+ \* var\(--pull-y\)\)/,
     'la píldora va en el hueco que abren los papers, no en una distancia suya');
-  assert.match(css, /\.feed-wrapper\.is-pulling \.feed-refresh-icon \{\s*rotate: calc\(var\(--pull\) \* 180deg\)/,
+  assert.match(css, /\.feed-wrapper\[data-pull='pulling'\] \.feed-refresh-icon \{\s*rotate: calc\(var\(--pull\) \* 180deg\)/,
     'el icono gira con el tirón y entrega medio giro hecho al spinner');
   const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
-  assert.match(reduced, /\.feed-wrapper\.is-pulling \.pc \{ transform: none; \}/);
-  assert.match(reduced, /\.feed-wrapper\.is-pulling \.feed-refresh-icon \{ rotate: none; \}/);
+  assert.match(reduced, /\.feed-wrapper\[data-pull='pulling'\] \.pc \{ transform: none; \}/);
+  assert.match(reduced, /\.feed-wrapper\[data-pull='pulling'\] \.feed-refresh-icon \{ rotate: none; \}/);
+});
+
+/**
+ * Soltar no es una sola cosa. Un tirón que no llega al umbral se CANCELA y la
+ * goma devuelve todo con su muelle; uno que refresca ENTREGA, y lo que
+ * entrega tiene que llegar sin que se vea el relevo.
+ *
+ * Sin esto, entre soltar y el commit de React la píldora se queda sin estado,
+ * y sin estado su transición es la de marcharse: arranca hacia debajo de la
+ * barra y la renderización siguiente la trae de vuelta. En un tirón rápido,
+ * que suelta con la píldora a medio salir, eso es asomo + retroceso + tirón en
+ * menos de 100ms. Medido con el aterrizaje puesto: opacidad 0,71 → 0,81 →
+ * 0,98 → 1,00 y la y de 3,65 a 0, monótono, sin retroceso, y el fotograma en
+ * que el atributo se va no se nota porque la pose es la misma.
+ */
+test('SOURCE: el tirón que refresca aterriza; el que no, vuelve con la goma', async () => {
+  const src = strip(await read('./FeedContainer.jsx'));
+  const end = src.slice(src.indexOf('const onEnd = (event) => {'), src.indexOf('const onCancel ='));
+  assert.match(end, /if \(outcome === 'refresh' && !busy && !running\) \{\s*landPull\(\);\s*refresh\?\.\(\);\s*\} else \{\s*setPull\(0, 0\);\s*\}/,
+    'las dos salidas son distintas a propósito: entregar y cancelar no significan lo mismo');
+  const land = src.slice(src.indexOf('const landPull = useCallback('), src.indexOf('}, []);', src.indexOf('const landPull = useCallback(')));
+  assert.match(land, /wrapper\.setAttribute\('data-pull', 'landing'\);/);
+  assert.match(land, /clearTimeout\(pullLandingTimerRef\.current\);/, 'dos aterrizajes seguidos no se pisan el temporizador');
+  assert.match(src, /useEffect\(\(\) => \(\) => clearTimeout\(pullLandingTimerRef\.current\), \[\]\);/,
+    'ni queda vivo tras desmontar');
+
+  const css = strip(await read('./FeedContainer.css'));
+  const grab = (sel) => { const at = css.indexOf(sel); assert.ok(at > 0, `falta ${sel}`); return css.slice(at, css.indexOf('}', at)); };
+  const landing = grab(".feed-wrapper[data-pull='landing'] .feed-refresh {");
+  const visible = grab('.feed-refresh.is-visible,');
+  // La pose de aterrizaje TIENE que ser la de trabajo, o al llegar React se
+  // ve el salto que todo esto existe para quitar.
+  for (const decl of ['opacity: 1', 'translate: -50% 0', 'scale: 1']) {
+    assert.ok(landing.includes(decl), `el aterrizaje aterriza en la pose de trabajo (${decl})`);
+    assert.ok(visible.includes(decl), `y es la misma que la de is-visible (${decl})`);
+  }
+  // Y con el reloj del velo, para que del pulgar al velo haya un movimiento.
+  const dip = grab('.feed-container--refreshing {');
+  const dipMs = /opacity (\d+)ms/.exec(dip)[1];
+  assert.ok(landing.includes(`opacity ${dipMs}ms var(--ease-out-quad)`),
+    `el aterrizaje corre el reloj del velo (${dipMs}ms), no uno suyo`);
+  const cards = grab(".feed-wrapper[data-pull='landing'] .pc {");
+  assert.match(cards, /transform: none/, 'los papers entran en el hundimiento del velo');
+  assert.ok(cards.includes(`transform ${dipMs}ms var(--ease-out-quad)`),
+    'y en el mismo reloj: con el muelle de la goma serían dos movimientos');
+  const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
+  assert.match(reduced, /\.feed-wrapper\[data-pull='landing'\] \.pc \{ transform: none; transition: none; \}/);
 });
 
 test('SOURCE: el invitado ve el modal de intereses al montar, sin esperar al feed', async () => {
@@ -205,6 +261,40 @@ test('SOURCE: la píldora se retira bajo la barra, no se apaga en el aire', asyn
   const travelMs = Number(/translate (\d+)ms/.exec(rest)[1]);
   assert.ok(Number(opDelay) > 0, 'la opacidad espera: si se apaga a la vez que sube, no se ve meterse debajo');
   assert.ok(Number(opMs) + Number(opDelay) <= travelMs, 'y termina dentro del recorrido, no después');
+});
+
+/**
+ * Con el dedo, la píldora se va diciendo «Actualizado».
+ *
+ * En escritorio el cruce de Actualizado a Actualizar se ve y está bien: la
+ * píldora sigue ahí mientras el ratón no salga de la franja, y volver al verbo
+ * es volver a ofrecerse. Con el dedo no hay franja: la píldora se esconde en
+ * cuanto el beat acaba, así que ese cruce cae justo encima de la salida y el
+ * lector ve cambiar el texto de algo que ya se marcha. Reportado desde el
+ * móvil el 12-09.
+ */
+test('SOURCE: con puntero grueso la cara no vuelve al verbo mientras se ve', async () => {
+  const src = strip(await read('./FeedContainer.jsx'));
+  assert.match(src, /window\.matchMedia\?\.\('\(pointer: coarse\)'\)\.matches === true/,
+    'la distinción es el puntero, no el ancho: un ratón en una pantalla estrecha sigue teniendo franja');
+  assert.match(src, /const refreshPhase = isRefreshing \? 'refreshing' : \(refreshDone \|\| doneTail\) \? 'done' : 'idle';/,
+    'la cola sostiene la cara, y sólo la cara');
+  const tail = src.slice(src.indexOf('if (!coarsePointer) return undefined;'), src.indexOf('const handleOpenPdf'));
+  assert.match(tail, /if \(wasDoneRef\.current && !refreshDone\)/, 'se arma al terminar el beat, no al empezarlo');
+  assert.match(tail, /setTimeout\(\(\) => setDoneTail\(false\), PILL_EXIT_MS\)/);
+  assert.match(tail, /return \(\) => clearTimeout\(t\);/);
+  // La cola tiene que cubrir la salida entera, o el texto cambia todavía a la
+  // vista, que es exactamente lo reportado.
+  const exitMs = Number(/const PILL_EXIT_MS = (\d+);/.exec(src)[1]);
+  const css = strip(await read('./FeedContainer.css'));
+  const rest = css.slice(css.indexOf('.feed-refresh {'), css.indexOf('}', css.indexOf('.feed-refresh {')));
+  const travelMs = Number(/translate (\d+)ms/.exec(rest)[1]);
+  assert.ok(exitMs >= travelMs, `la cola (${exitMs}ms) cubre el recorrido de salida (${travelMs}ms)`);
+  // Y NO toca ni a `is-visible` ni a `is-done`: la píldora se va cuando se iba
+  // y el pop de Actualizado no se repite.
+  assert.match(src, /refreshPillHover \|\| isRefreshing \|\| refreshDone \? ' is-visible'/,
+    'la cola no retiene la píldora en pantalla');
+  assert.match(src, /refreshDone && !isRefreshing \? ' is-done'/, 'ni repite el pop');
 });
 
 test('SOURCE: el beat de Actualizado deja sitio al crossfade de salida', async () => {

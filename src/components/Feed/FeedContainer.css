@@ -116,16 +116,51 @@
    icon turns with the pull — half a revolution by the threshold — which is
    the one part of this that says "far enough" without a second state to
    arm: it hands over to the spin already part-way round. */
-.feed-wrapper.is-pulling .feed-refresh {
+.feed-wrapper[data-pull='pulling'] .feed-refresh {
   transition: none;
   opacity: var(--pull);
   translate: -50% calc(-40px + 0.9 * var(--pull-y));
   scale: calc(0.9 + 0.12 * var(--pull));
   pointer-events: none;
 }
-.feed-wrapper.is-pulling .feed-refresh-icon {
+.feed-wrapper[data-pull='pulling'] .feed-refresh-icon {
   rotate: calc(var(--pull) * 180deg);
 }
+/* El aterrizaje: el fotograma en que el pulgar suelta y el refresco empieza.
+   La píldora va desde donde la dejó el tirón hasta su pose de trabajo, que es
+   letra por letra la de `is-visible` — así que cuando React llega con
+   `is-visible` e `is-refreshing` no hay nada que corregir y el relevo no se
+   ve. Sin esto, entre soltar y el commit de React la píldora se queda sin
+   ninguna clase, y sin clase su transición es la de IRSE: arranca hacia
+   debajo de la barra y la renderización siguiente la trae de vuelta. En un
+   tirón rápido, que suelta con la píldora a medio salir, eso es un asomo, un
+   retroceso y un tirón, los tres en menos de 100 ms.
+
+   Y los papers no vuelven con el muelle de la goma: entran en el hundimiento
+   del velo con el reloj y la curva del velo (180 ms `--ease-out-quad`, los
+   mismos de `.feed-container--refreshing`), así que entre el pulgar y el velo
+   el lector ve UN movimiento y no tres relojes. Un tirón cancelado sigue
+   siendo un muelle — un `transform` que vuelve a `none` con la expo de `.pc`
+   — porque significa otra cosa. */
+.feed-wrapper[data-pull='landing'] .feed-refresh {
+  opacity: 1;
+  translate: -50% 0;
+  scale: 1;
+  pointer-events: none;
+  transition:
+    opacity 180ms var(--ease-out-quad),
+    translate 180ms var(--ease-out-quad),
+    scale 180ms var(--ease-out-quad);
+}
+.feed-wrapper[data-pull='landing'] .feed-refresh-icon {
+  rotate: 180deg;
+  transition: rotate 180ms var(--ease-out-quad);
+}
+.feed-wrapper[data-pull='landing'] .pc {
+  transform: none;
+  transition: transform 180ms var(--ease-out-quad);
+}
+
 /* The papers themselves. `transform`, not the `translate` the refresh veil
    uses on this same element: the two compose instead of overwriting one
    another, so the hand-over from "released" to "refreshing" is one movement
@@ -134,7 +169,7 @@
    the pill stop at the threshold must NOT be what the papers obey: going
    dead under the thumb at the moment the reader is deciding is the fault
    this whole rule exists to fix. */
-.feed-wrapper.is-pulling .pc {
+.feed-wrapper[data-pull='pulling'] .pc {
   transform: translateY(var(--pull-y));
   transition: none;
 }
@@ -257,9 +292,15 @@
   .feed-refresh, .feed-refresh.is-visible { transition: opacity 120ms linear; translate: -50% 0; scale: 1; }
   /* The pull keeps its only unambiguous signal — the pill fading up with the
      distance — and gives up everything that travels. The papers stay put. */
-  .feed-wrapper.is-pulling .feed-refresh { translate: -50% 0; scale: 1; }
-  .feed-wrapper.is-pulling .feed-refresh-icon { rotate: none; }
-  .feed-wrapper.is-pulling .pc { transform: none; }
+  .feed-wrapper[data-pull='pulling'] .feed-refresh { translate: -50% 0; scale: 1; }
+  .feed-wrapper[data-pull='pulling'] .feed-refresh-icon { rotate: none; }
+  .feed-wrapper[data-pull='pulling'] .pc { transform: none; }
+  /* El aterrizaje también: la píldora se queda, y lo que viaja se va. Estas
+     reglas ganan por especificidad a las de arriba, así que si no están, el
+     recorrido vuelve por la puerta de atrás con el movimiento rechazado. */
+  .feed-wrapper[data-pull='landing'] .feed-refresh { transition: opacity 120ms linear; translate: -50% 0; scale: 1; }
+  .feed-wrapper[data-pull='landing'] .feed-refresh-icon { rotate: none; transition: none; }
+  .feed-wrapper[data-pull='landing'] .pc { transform: none; transition: none; }
   .feed-refresh.is-done,
   .feed-refresh-icon--spinning { animation: none; }
 }
