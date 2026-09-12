@@ -62,8 +62,18 @@ test('SOURCE: Skip without an account is opt-in, per surface', async () => {
     'no default, or every surface would look guest-capable');
 
   const container = stripComments(await read('../components/Feed/FeedContainer.jsx'));
-  assert.match(container, /onGuestNotInterested=\{source\?\.onNotInterested\}/,
-    'the feed passes the guest handler straight from the surface that owns the list');
+  // The prop is the surface's own dismissal, now wrapped so the card runs out
+  // of the feed before it is dropped (utils/feedSkipExit.js). What must not
+  // change is that it is CONDITIONAL on the surface having a list of its own:
+  // handing one over unconditionally would offer Skip on every public surface,
+  // including the ones with nothing to remove it from.
+  assert.match(container, /const dismissFromSource = source\?\.onNotInterested;/,
+    'the guest handler still comes from the surface that owns the list');
+  assert.match(container, /onGuestNotInterested=\{dismissFromSource \? handleGuestNotInterested : undefined\}/,
+    'and a surface that supplies none is still handed nothing');
+  const wrapper = stripComments(container).match(/const handleGuestNotInterested = useCallback\([\s\S]{0,200}?\}, \[/)?.[0];
+  assert.ok(wrapper, 'expected the wrapper around the surface dismissal');
+  assert.match(wrapper, /dismissFromSource\?\.\(paperId\)/, 'which ends in the surface dropping the paper by id');
 
   const guest = stripComments(await read('../components/Public/GuestFeedPage.jsx'));
   assert.match(guest, /onNotInterested: guestFeed\.dismissPaper/,

@@ -36,7 +36,7 @@ test('SOURCE: the container keeps its place in a memory that survives a reload',
   assert.match(handler, /resumeMemory\.remember\(scrollKey, \{/, 'every scroll event updates the memory');
   assert.match(handler, /scrollIdleTimerRef\.current = setTimeout\(\(\) => \{[\s\S]*?resumeMemory\.persist\(scrollKey\);[\s\S]*?\}, SCROLL_IDLE_DELAY_MS\);/,
     'and the storage write waits for the scroll to settle');
-  assert.match(code, /return \(\) => \{[\s\S]{0,300}resumeMemory\.persist\(scrollKey\);[\s\S]{0,120}\}, \[scrollKey\]\);/, 'leaving the feed persists the place it was left at');
+  assert.match(code, /return \(\) => \{[\s\S]{0,300}resumeMemory\.persist\(scrollKey\);[\s\S]{0,120}\}, \[scrollKey[^\]]*\]\);/, 'leaving the feed persists the place it was left at');
 });
 
 test('SOURCE: the resumed card is looked up in the memory, for the mount window and for the restore', async () => {

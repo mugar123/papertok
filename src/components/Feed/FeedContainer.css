@@ -34,6 +34,20 @@
   /* Scroll anchoring fights the snap when infinite scroll appends a page,
      producing a one-frame teleport; snap already owns the position. */
   overflow-anchor: none;
+  /* The card leaving on a skip is pinned against this box and travels out to
+     the right, so the scroller must be the thing that clips it — declaring
+     one axis scrollable makes the other `auto`, and a card travelling out to
+     the right would otherwise be reachable sideways.
+
+     This is a belt, not the braces: the exit is clipped at the leaving card's
+     own box (below), so nothing ever overflows this one. Measured 2026-09-12,
+     which is why it is not the other way round — with `overflow-y: scroll`
+     here, `overflow-x: clip` computes to `hidden` (CSS Overflow 3: `clip`
+     against a scrolling axis becomes `hidden`), and `hidden` keeps a
+     scrollport: `scrollLeft = 600` stuck, and would have stayed stuck after
+     the card was gone. */
+  overflow-x: hidden;
+  position: relative;
 }
 
 .feed-container::-webkit-scrollbar {
@@ -48,6 +62,81 @@
   scroll-snap-stop: always;
   content-visibility: auto;
   contain-intrinsic-size: 0 100%;
+}
+
+/* ── Skip: the card passed over leaves sideways ──
+
+   It leaves by going OUT OF FLOW, not by being animated in its slot: the
+   frame it turns absolute, the list reflows and the next paper occupies the
+   slot exactly as it did when the card was simply deleted. So the reveal
+   stays instant, the scroll position and the snap points never take part,
+   and the exit itself is `transform` and `opacity` over a card that is no
+   longer laid out — nothing to reflow, nothing to repaint under it.
+
+   `top` and `height` are written inline by FeedContainer: the slot the card
+   occupied, which is its index times the container's height (see
+   utils/feedSkipExit.js for why that arithmetic is exact).
+
+   The slot stays put and CLIPS; what travels is the card inside it. Moving
+   the slot itself worked, but it hung 1300px of card off the right of a
+   scroller whose x axis cannot be `clip` (see `.feed-container` above), so
+   for the length of the exit the feed could be scrolled sideways and left
+   there. Clipping at the slot's own edge means the container never sees the
+   overflow at all.
+
+   Vertical is taken — up is the next paper — so a dismissal that used it
+   would read as the card falling behind its successor rather than being put
+   aside. Sideways is the free axis, and it is the one the app already uses
+   for coming and going: an entity arrives from the right and going back
+   sends it home the same way.
+
+   Two animations, because they want different curves. The travel runs on the
+   house expo, which spends most of the distance in the first third; the fade
+   is plain linear, because expo on an opacity is a flash with a tail and
+   never a fade.
+
+   The fade's window was measured, not guessed (2026-09-12). The travel alone
+   already clears the whole card — 105% of its own width — so a fade that ran
+   to the end of it was spending its last 100ms on empty air. It runs from
+   60ms to 200ms instead, which is the stretch where the card's trailing third
+   is still over its successor: it leaves faded rather than at full strength,
+   and the two are never both legible for long. */
+.feed-snap-item--leaving {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 4;
+  /* A card on its way out is not a place the scroll can stop. */
+  scroll-snap-align: none;
+  scroll-snap-stop: normal;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.feed-snap-item--leaving > .pc {
+  animation:
+    feedSkipExit 260ms var(--ease-out-expo) forwards,
+    feedSkipExitFade 140ms 60ms linear forwards;
+}
+
+@keyframes feedSkipExit {
+  from { transform: translateX(0) scale(1); }
+  to { transform: translateX(105%) scale(0.96); }
+}
+
+@keyframes feedSkipExitFade {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Reduced motion keeps the removal legible and gives up the travel. Not
+   nothing: a card that vanishes between two frames is the very thing this
+   exit was added to stop, and that is what this setting would otherwise be
+   left with. The fade alone still says the card went. */
+@media (prefers-reduced-motion: reduce) {
+  .feed-snap-item--leaving > .pc {
+    animation: feedSkipExitFade 140ms linear forwards;
+  }
 }
 
 /* A source's end slot (`source.endCard`) is deliberately a plain

@@ -22,6 +22,7 @@ import AnimatedAtom from './AnimatedAtom';
 import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feedLoadingState';
 import { createFeedResumeMemory } from '../../utils/feedResumeMemory.js';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feedPullToRefresh.js';
+import { SKIP_EXIT_MS, skipExitSlot } from '../../utils/feedSkipExit.js';
 import './FeedContainer.css';
 
 // Per-surface memory of the card each feed was left on: the Siguiendo feed
@@ -135,6 +136,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   const { language, isEnglish } = useLanguage();
   const publicMode = Boolean(source?.publicMode);
   const onAuthRequired = source?.onAuthRequired;
+  const dismissFromSource = source?.onNotInterested;
   const analyticsSurface = source?.surface || (scrollKey === 'following' ? 'following' : 'feed');
   const {
     trackPdfOpened,
@@ -300,6 +302,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   const scrollIdleTimerRef = useRef(null);
   const skipFlushTimerRef = useRef(null);
   const pendingSkippedPapersRef = useRef(new Map());
+  // The card on its way out of the feed, and the removal waiting for it to
+  // get there. Only ever one: a second skip lands the first one first.
+  const [skipExit, setSkipExit] = useState(null);
+  const skipExitRef = useRef(null);
+  const skipExitTimerRef = useRef(null);
   const getInteractionState = useCallback((paper) => publicMode ? {} : ({
     isLiked: likedPaperIds.has(interactionIdFor(paper)),
     isSaved: savedPaperIds.has(interactionIdFor(paper)),
@@ -326,6 +333,59 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     if (skipFlushTimerRef.current) clearTimeout(skipFlushTimerRef.current);
     skipFlushTimerRef.current = setTimeout(flushPendingSkips, SCROLL_INTERACTION_SETTLE_MS);
   }, [flushPendingSkips]);
+
+  // Lands the pending removal, whether the exit finished, was cut short by
+  // another skip, or never ran at all. Idempotent: the animation and the
+  // clock both call it, and whichever arrives second finds nothing to do.
+  const flushSkipExit = useCallback(() => {
+    const pending = skipExitRef.current;
+    if (!pending) return;
+    skipExitRef.current = null;
+    if (skipExitTimerRef.current) clearTimeout(skipExitTimerRef.current);
+    skipExitTimerRef.current = null;
+    setSkipExit(null);
+    pending.commit();
+  }, []);
+
+  // Runs the card out of the feed, then removes it. `commit` is the removal
+  // itself — it differs by surface, and by whether there is a session — so
+  // this only owns the going.
+  const beginSkipExit = useCallback((paperId, commit) => {
+    flushSkipExit();
+    const slot = skipExitSlot({
+      papers: papersRef.current,
+      paperId,
+      cardHeight: feedRef.current?.clientHeight ?? 0,
+    });
+    // Nothing to animate — a card the list does not have, or a container that
+    // has not been measured. The skip still happens, at once, as it always did.
+    if (!slot) {
+      commit();
+      return;
+    }
+    skipExitRef.current = { ...slot, commit };
+    setSkipExit(slot);
+    // The clock is the backstop, not the mechanism: `animationend` normally
+    // gets there first. Without it, an exit that never runs — a rule that
+    // turns the animation off, a browser that skips it — would strand the
+    // card in the feed with the skip never recorded.
+    skipExitTimerRef.current = setTimeout(flushSkipExit, SKIP_EXIT_MS + 120);
+  }, [flushSkipExit]);
+
+  const handleSkipExitEnd = useCallback((event) => {
+    // The card is full of animations of its own and they all bubble to here,
+    // so the exit has to name itself. Both halves of it start with this.
+    if (!String(event.animationName).startsWith('feedSkipExit')) return;
+    flushSkipExit();
+  }, [flushSkipExit]);
+
+  const handleNotInterested = useCallback((paper) => {
+    beginSkipExit(paper?.id, () => markNotInterested(paper));
+  }, [beginSkipExit, markNotInterested]);
+
+  const handleGuestNotInterested = useCallback((paperId) => {
+    beginSkipExit(paperId, () => dismissFromSource?.(paperId));
+  }, [beginSkipExit, dismissFromSource]);
 
   const handleSkip = useCallback((paper) => {
     if (publicMode) return;
@@ -419,11 +479,14 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     return () => {
       if (scrollIdleTimerRef.current) clearTimeout(scrollIdleTimerRef.current);
       if (skipFlushTimerRef.current) clearTimeout(skipFlushTimerRef.current);
+      // Leaving the feed while a card is still on its way out: the skip is
+      // the reader's, not the animation's, so it lands anyway.
+      flushSkipExit();
       // Leaving mid-settle (a tab switch right after a fling) must not lose
       // the place the settle timer was about to write.
       resumeMemory.persist(scrollKey);
     };
-  }, [scrollKey]);
+  }, [scrollKey, flushSkipExit]);
 
   // Infinite scroll: observe sentinel element
   useEffect(() => {
@@ -933,15 +996,20 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
             // feed. It becomes a card when the window reaches it.
             <div key={paper.id} className="feed-snap-item feed-snap-item--pending" aria-hidden="true" />
           ) : (
-          <div key={paper.id} className="feed-snap-item">
+          <div
+            key={paper.id}
+            className={`feed-snap-item${skipExit?.id === paper.id ? ' feed-snap-item--leaving' : ''}`}
+            style={skipExit?.id === paper.id ? { top: `${skipExit.top}px`, height: `${skipExit.height}px` } : undefined}
+            onAnimationEnd={skipExit?.id === paper.id ? handleSkipExitEnd : undefined}
+          >
             <PaperCard
               paper={paper}
               isLiked={!publicMode && likedPaperIds.has(interactionIdFor(paper))}
               isSaved={!publicMode && savedPaperIds.has(interactionIdFor(paper))}
               isRead={!publicMode && readPaperIds?.has(interactionIdFor(paper))}
               onLike={toggleLike}
-              onNotInterested={markNotInterested}
-              onGuestNotInterested={source?.onNotInterested}
+              onNotInterested={handleNotInterested}
+              onGuestNotInterested={dismissFromSource ? handleGuestNotInterested : undefined}
               onMarkAsRead={markAsRead}
               onUnmarkAsRead={unmarkAsRead}
               trackViewTime={handleViewTime}
