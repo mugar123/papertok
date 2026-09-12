@@ -229,7 +229,10 @@ test('the list mounts in idle chunks, rows below the fold are skipped, and the s
   assert.match(jsx, /const rowsSettled = rowBudget >= filteredPapers\.length;/);
   assert.match(jsx, /setRowBudget\(\(budget\) => nextExplorerRowBudget\(budget, filteredPapers\.length\)\)/);
   assert.match(jsx, /if \(page === 1\) \{\s*setIsLoadingPapers\(true\);\s*setPapersError\(null\);\s*setRowBudget\(EXPLORER_ROW_CHUNK\);/, 'a fresh page starts over at one chunk');
-  assert.match(jsx, /\{hasMore && rowsSettled && \(\s*<div ref=\{observerRef\} className="ehc-sentinel">/);
+  // `hasMore && rowsSettled` sigue abriendo la puerta; desde el 12-09 lleva
+  // además una guarda para no invitar a bajar por una lista vacía, así que
+  // aquí se fija el principio de la condición y el destino, no su literal.
+  assert.match(jsx, /\{hasMore && rowsSettled &&[\s\S]{0,80}<div ref=\{observerRef\} className="ehc-sentinel">/);
   assert.match(jsx, /mountedPapers\.map\(\(paper, idx\) => \(/);
   assert.match(jsx, /'--area-accent': rowAreas\[idx\]\.accent/, 'the field colour is derived once per list');
   const css = await read('./EntityExplorer.css');

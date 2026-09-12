@@ -2543,7 +2543,7 @@ export default function EntityExplorer({
                 </div>
               )}
 
-              {hasMore && rowsSettled && (
+              {hasMore && rowsSettled && (filteredPapers.length > 0 || isFetchingMore) && (
                 <div ref={observerRef} className="ehc-sentinel">
                   {isFetchingMore && <Loader2 className="ehc-spinner" size={24} />}
                   <span>{isFetchingMore
@@ -2554,7 +2554,15 @@ export default function EntityExplorer({
             </div>
             </TooltipProvider>
 
-            {!isLoadingPapers && filteredPapers.length === 0 && (
+            {/* `isFetchingMore` cuenta tanto como `isLoadingPapers`. El
+                primero sólo cubre la página 1; el segundo, de la 2 en
+                adelante. Con la lista vacía el centinela queda a la vista
+                desde el primer fotograma, así que el observador dispara la
+                página 2 en el acto — y entonces la página decía «Cargando
+                más artículos…» y, debajo, «No hay publicaciones». Una
+                promesa y su desmentido en la misma pantalla. Vacío es una
+                afirmación sobre algo terminado: se espera a que lo esté. */}
+            {!isLoadingPapers && !isFetchingMore && filteredPapers.length === 0 && (
               <ExplorerEmptyState
                 variant={pickEmptyVariant({
                   papersError,
@@ -2617,7 +2625,7 @@ export default function EntityExplorer({
               </div>
             )}
 
-            {hasMoreAuthors && (
+            {hasMoreAuthors && (entityAuthors.length > 0 || isFetchingMoreAuthors) && (
               <div ref={observerAuthorsRef} className="ehc-sentinel">
                 {isFetchingMoreAuthors && <Loader2 className="ehc-spinner" size={24} />}
                 <span>{isFetchingMoreAuthors
@@ -2625,7 +2633,7 @@ export default function EntityExplorer({
                   : (isEnglish ? 'Scroll for more' : 'Sigue bajando para ver más')}</span>
               </div>
             )}
-            {!isLoadingAuthors && entityAuthors.length === 0 && (
+            {!isLoadingAuthors && !isFetchingMoreAuthors && entityAuthors.length === 0 && (
               authorsError ? (
                 <div className="explorer-empty">
                   <p role="alert">{getUiErrorMessage(authorsError, language, 'AUTHORS_LOAD_FAILED')}</p>

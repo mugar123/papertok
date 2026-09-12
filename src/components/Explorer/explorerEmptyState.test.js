@@ -54,3 +54,62 @@ test('the authors tab blames the search only when there is one', async () => {
     'both author variants keep the people icon',
   );
 });
+
+const strip = (source) => source.replace(/\/\*[\s\S]*?\*\/|\{\/\*[\s\S]*?\*\/\}|\/\/.*$/gm, '');
+
+/**
+ * «No hay publicaciones» y «Cargando más artículos…» no pueden convivir.
+ * Visto en papertok.app el 12-09-2026, tema «Constant (computer
+ * programming)»: la lista vacía deja el centinela a la vista desde el primer
+ * fotograma, el observador dispara la página 2 en el acto, y como
+ * `isLoadingPapers` sólo cubre la página 1, la pantalla mostraba el spinner
+ * prometiendo más y, debajo, el vacío negando que hubiera nada.
+ */
+test('SOURCE: el vacío espera a que no quede ninguna página en vuelo', async () => {
+  const jsx = strip(await read('./EntityExplorer.jsx'));
+
+  for (const [tab, condicion] of [
+    ['publicaciones', /\{!isLoadingPapers && !isFetchingMore && filteredPapers\.length === 0 && \(/],
+    ['autores', /\{!isLoadingAuthors && !isFetchingMoreAuthors && entityAuthors\.length === 0 && \(/],
+  ]) {
+    assert.match(jsx, condicion,
+      `${tab}: el vacío tiene que descartar TAMBIÉN la carga de las páginas siguientes, no sólo la primera`);
+  }
+});
+
+/**
+ * La otra mitad: sin ninguna fila, «Sigue bajando para ver más» invita a
+ * recorrer una lista que no existe. Con la lista vacía el pie sólo aparece
+ * mientras de verdad está trayendo algo.
+ */
+test('SOURCE: el pie de la lista no invita a bajar por una lista vacía', async () => {
+  const jsx = strip(await read('./EntityExplorer.jsx'));
+  assert.match(jsx, /\{hasMore && rowsSettled && \(filteredPapers\.length > 0 \|\| isFetchingMore\) && \(/,
+    'publicaciones: con cero filas, sólo mientras se trae una página');
+  assert.match(jsx, /\{hasMoreAuthors && \(entityAuthors\.length > 0 \|\| isFetchingMoreAuthors\) && \(/,
+    'autores: lo mismo');
+});
+
+/**
+ * Y la propiedad que importa, por encima de cómo esté escrita: para cada
+ * combinación posible de banderas, el vacío y el pie cargando nunca son
+ * ciertos a la vez.
+ */
+test('vacío y «cargando más» se excluyen para toda combinación de banderas', () => {
+  const vacio = ({ isLoadingPapers, isFetchingMore, filas }) =>
+    !isLoadingPapers && !isFetchingMore && filas === 0;
+  const cargandoMas = ({ hasMore, rowsSettled, isFetchingMore, filas }) =>
+    hasMore && rowsSettled && (filas > 0 || isFetchingMore) && isFetchingMore;
+
+  const b = [false, true];
+  let combinaciones = 0;
+  for (const isLoadingPapers of b) for (const isFetchingMore of b) for (const hasMore of b) {
+    for (const rowsSettled of b) for (const filas of [0, 7]) {
+      const estado = { isLoadingPapers, isFetchingMore, hasMore, rowsSettled, filas };
+      combinaciones += 1;
+      assert.ok(!(vacio(estado) && cargandoMas(estado)),
+        `los dos a la vez con ${JSON.stringify(estado)}`);
+    }
+  }
+  assert.equal(combinaciones, 32, 'las treinta y dos combinaciones, sin saltarse ninguna');
+});

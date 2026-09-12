@@ -108,7 +108,10 @@ test('the background wash arrives with the photograph it is made of', async () =
 test('the sentinels spin only while something is actually loading, and stay mounted regardless', async () => {
   const jsx = await read('./EntityExplorer.jsx');
   // Still the observer's target, unconditionally within its gate.
-  assert.match(jsx, /\{hasMore && rowsSettled && \(\s*<div ref=\{observerRef\} className="ehc-sentinel">/);
+  // `hasMore && rowsSettled` sigue abriendo la puerta; desde el 12-09 lleva
+  // además una guarda para no invitar a bajar por una lista vacía, así que
+  // aquí se fija el principio de la condición y el destino, no su literal.
+  assert.match(jsx, /\{hasMore && rowsSettled &&[\s\S]{0,80}<div ref=\{observerRef\} className="ehc-sentinel">/);
   assert.match(jsx, /\{isFetchingMore && <Loader2 className="ehc-spinner" size=\{24\} \/>\}/);
   assert.match(jsx, /\{isFetchingMoreAuthors && <Loader2 className="ehc-spinner" size=\{24\} \/>\}/);
   // And it says something true while it waits.
