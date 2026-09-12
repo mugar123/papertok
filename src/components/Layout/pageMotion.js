@@ -14,13 +14,13 @@
  * arrived with.
  *
  *   present  lateral  direction  → motion
- *   true     false    1          → enter          rises 40px over the page it covers
+ *   true     false    1          → enter          slides in from the right over the page it covers
  *   true     true     ±1         → enter-lateral  slides 36px along the bar, covering as it lands
- *   true     false    -1         → reveal         back to size and brightness under the page leaving
+ *   true     false    -1         → reveal         slides back to its place under the page leaving
  *   true     any      0          → rest
  *   false    true     ±1         → hold-lateral   recedes under the new tab, for as long as the tab takes
  *   false    false    1          → hold           recedes under the deeper page, for as long as it takes
- *   false    false    -1         → leave          drops 40px and fades, on top
+ *   false    false    -1         → leave          slides out to the right and fades, on top
  *   false    any      0          → fade           opacity only, on top
  *
  * Precedence: `present`, then `direction === 0`, then `lateral`, then the

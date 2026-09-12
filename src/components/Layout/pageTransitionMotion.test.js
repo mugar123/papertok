@@ -49,7 +49,7 @@ function animationsBySelector(css) {
  *
  * The first cut — a 10px rise over 220ms on an expo-out, the held page
  * still — measured clean and felt like a cut. A page has to be seen
- * travelling: 40px over 280ms on a cubic-out, the page underneath giving way.
+ * travelling: a horizontal push over 280ms, the page underneath giving way.
  *
  * The way back is deliberately SHORTER than the way in. Measured 2026-09-12
  * before it was: the page leaving reached opacity 0 at 149ms and went on
@@ -183,7 +183,7 @@ test('pages move on opacity and transform only, travel far enough to be seen, an
     if (FADES.includes(name)) assert.doesNotMatch(body, /transform:/, `${name} is a fade; a transform in it would inherit linear`);
     else assert.doesNotMatch(body, /opacity:/, `${name} travels; an opacity in it would inherit the curve`);
   }
-  // The vertical push is split in two: the travel keeps the curve and the
+  // The detail push is split in two: the travel keeps the curve and the
   // duration that were tuned per frame, and the fade rides alongside it over a
   // fraction of the same clock, so the page arriving reaches full opacity while
   // it is still moving and COVERS the one underneath instead of blending with
@@ -192,28 +192,26 @@ test('pages move on opacity and transform only, travel far enough to be seen, an
   for (const name of ['pageEnterTravel', 'pageEnterFromRight', 'pageEnterFromLeft', 'pageRevealTravel']) {
     assert.match(keyframes(css, name), /to \{ (?:opacity: 1; )?transform: none; \}/, `${name} lands with no transform`);
   }
-  assert.match(keyframes(css, 'pageEnterTravel'), /from \{ transform: translateY\(40px\); \}/, 'far enough to be seen');
+  assert.match(keyframes(css, 'pageEnterTravel'), /from \{ transform: translateX\(56px\); \}/, 'far enough to be seen');
   assert.match(keyframes(css, 'pageCover'), /from \{ opacity: 0; \}\s*to \{ opacity: 1; \}/);
   assert.match(keyframes(css, 'pageEnterFromRight'), /from \{ transform: translateX\(36px\); \}/);
   assert.match(keyframes(css, 'pageEnterFromLeft'), /from \{ transform: translateX\(-36px\); \}/);
-  assert.match(keyframes(css, 'pageLeaveTravel'), /to \{ transform: translateY\(40px\); \}/, 'leaves the way it came');
+  assert.match(keyframes(css, 'pageLeaveTravel'), /to \{ transform: translateX\(56px\); \}/, 'leaves the way it came');
   assert.match(keyframes(css, 'pageFadeOut'), /from \{ opacity: 1; \}\s*to \{ opacity: 0; \}/);
   // The fade always ends BEFORE the travel it rides with: that is the whole
   // point, and a fraction of 1 or more would put the double exposure back.
   for (const [, fraction] of css.matchAll(/calc\(var\(--page-[a-z-]+-ms\) \* (0\.\d+)\)/g)) {
     assert.ok(Number(fraction) > 0 && Number(fraction) < 1, `a cover fade runs for ${fraction} of its travel`);
   }
-  // Both fractions are set by the overlap window, not by the clock: a straight
-  // line spends the same time at every opacity where the curve they replaced
-  // jumped through the low ones, so the same length would have held the double
-  // exposure ~23ms longer than 2026-09-11 tuned it to.
-  assert.match(css, /pageCover calc\(var\(--page-enter-ms\) \* 0\.28\)/, 'la entidad cubre pronto, sin doble exposición');
-  assert.match(css, /pageFadeOut calc\(var\(--page-leave-ms\) \* 0\.38\)/, 'al volver, la entidad se despeja antes de terminar el viaje');
+  // Around 100ms of opacity change keeps the handover readable, while the
+  // longer horizontal travel establishes the detail's direction and depth.
+  assert.match(css, /pageCover calc\(var\(--page-enter-ms\) \* 0\.36\)/, 'la entidad cubre pronto, sin doble exposición');
+  assert.match(css, /pageFadeOut calc\(var\(--page-leave-ms\) \* 0\.45\)/, 'al volver, la entidad se despeja antes de terminar el viaje');
   // The page underneath gives way, and comes back: never to 0, never to nothing.
-  assert.match(keyframes(css, 'pageHold'), /from \{ transform: none; \}\s*to \{ transform: scale\(0\.96\); \}/);
-  assert.match(keyframes(css, 'pageDim'), /from \{ opacity: 1; \}\s*to \{ opacity: 0\.55; \}/);
-  assert.match(keyframes(css, 'pageRevealTravel'), /from \{ transform: scale\(0\.96\); \}\s*to \{ transform: none; \}/);
-  assert.match(keyframes(css, 'pageUncover'), /from \{ opacity: 0\.55; \}\s*to \{ opacity: 1; \}/, 'the page revealed comes back from the same 0.55 it gave way to');
+  assert.match(keyframes(css, 'pageHold'), /from \{ transform: none; \}\s*to \{ transform: translateX\(-18px\); \}/);
+  assert.match(keyframes(css, 'pageDim'), /from \{ opacity: 1; \}\s*to \{ opacity: 0\.72; \}/);
+  assert.match(keyframes(css, 'pageRevealTravel'), /from \{ transform: translateX\(-18px\); \}\s*to \{ transform: none; \}/);
+  assert.match(keyframes(css, 'pageUncover'), /from \{ opacity: 0\.72; \}\s*to \{ opacity: 1; \}/, 'the page revealed comes back from the same 0.72 it gave way to');
   assert.match(keyframes(css, 'pageYield'), /from \{ opacity: 1; \}\s*to \{ opacity: 0\.6; \}/, 'a page stepped past dims, it does not go');
   for (const name of ['pageHoldToLeft', 'pageHoldToRight']) {
     assert.match(keyframes(css, name), /to \{ transform: translateX\(-?16px\); \}/, `${name} yields without disappearing`);
@@ -380,6 +378,6 @@ test('both pages of a tab change travel, on the same axis and in opposite direct
   }
 
   // `pageHold` stays as the fallback for a lateral hold with no direction,
-  // and keeps its scale: that is the vertical push's held page.
-  assert.match(keyframes(css, 'pageHold'), /scale\(0\.96\)/);
+  // and uses the same offset as the detail push's held page.
+  assert.match(keyframes(css, 'pageHold'), /translateX\(-18px\)/);
 });

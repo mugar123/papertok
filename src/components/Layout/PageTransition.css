@@ -1,50 +1,8 @@
-/* ============================================
-   PageTransition — one page settles over another under a fixed bar
-
-   Two pages share the screen during a navigation (AnimatePresence
-   mode="sync"): the deeper one on top, travelling; the one underneath
-   recedes a little — smaller and dimmer — instead of sitting still, so the
-   handover reads as a sheet settling over the page it came from, and the
-   way back as that sheet lifting off. Two pages never fade OUT at once, so
-   there is no dip in brightness and no frame without a page painted.
-   Which of the movements a page runs is `pageMotion.js`'s table, written
-   to `data-page-motion` by PageTransition.jsx; this file only moves.
-
-   Everything is CSS keyframes on opacity and transform: predetermined
-   motion that has to stay smooth while the arriving page mounts 1300px of
-   content, which JS-driven values do not.
-
-   The first cut of this was a 10px rise over 220ms on an expo-out: measured
-   clean (no void frames, bar in every frame) and felt like nothing — the
-   expo curve did 80% of its change in the first 60ms, and the held page did
-   not move. A page has to be seen travelling for the change to feel fluid:
-   40px over 280ms, with the page underneath giving way.
-
-   ── The curve goes on the travel and the fade goes in a straight line ──
-   Measured 2026-09-12 by frame (production build, real session, a card to an
-   author page and back), with a single ease-out governing both:
-
-     opacity in    0 → 0.32 → 0.60 → 0.79 → 0.91 → 0.98 → 1
-     opacity out   1 → 0.71 → 0.45 → 0.26 → 0.13 → 0.05 → 0.01 → 0
-     travel in     3.3  3.3  3.3  3.1  2.9  2.6  2.3  2.0 … 0.4  0.2 px/frame
-
-   Half of each fade spent in two frames and then four or five frames going
-   from nearly opaque to opaque (or from nearly invisible to invisible), while
-   the travel it rode with left at a CONSTANT 3.3px for its first five frames
-   and then tapered into 100ms of sub-pixel creep. That is the wrong way round:
-   a curve that spends itself in two frames is right for something moving — you
-   see where it went — and wrong for something dimming, where all it does is
-   flash (the reader's popover was fixed for exactly this the same night,
-   40fe568). So opacity is `linear` here, every step the same size, and only the
-   travel keeps a curve — `--ease-out-cubic`, which decelerates from its first
-   frame (6.8px) instead of holding a flat speed and then dying out.
-
-   And on the way back the numbers said the animation outlived what could be
-   seen of it: the page leaving reached opacity 0 at 149ms and went on
-   travelling until 316ms — 167ms of movement nobody can see, with the settle
-   waiting on it. The way back now runs 240ms against the way in's 280: going
-   somewhere new is a bigger event than returning to what you just left.
-   ============================================ */
+/* Route handover: the detail arrives from the right, and the back arrow
+   uncovers the feed by sending that detail back to the right. The page below
+   moves a shorter distance along the same axis, without scaling its text.
+   CSS owns transform and opacity; PageTransition owns presence and scroll.
+   A short linear fade covers overlapping text before the travel settles. */
 
 .page-transition {
   /* The only place a duration is written. A held page has no clock of its
@@ -109,54 +67,14 @@
   z-index: 2;
 }
 
-/* Every rule below is the same pair: a TRAVEL, which owns the clock and rides
-   a curve, and a FADE on a straight line beside it. `both`: a page whose
-   animation starts a frame late must not flash opaque before its fade, and the
-   end state holds until the attribute goes.
-
-   ── Cover, do not dissolve ──
-   Measured 2026-09-11 (production build, real session, feed -> project page):
-   the travel was a clean 60fps with no dropped frames and no blank beat, and it
-   still read as muddy, because for ~200ms BOTH pages were legible at once —
-   "QUANTUMLEAP" printed over a paper's title. A page held at 0.6 under a page
-   fading up from 0 is a double exposure, and an opaque background does not help
-   while the sheet on top is itself half-transparent.
-
-   So the fade is shorter than the travel it rides with. The page arriving
-   reaches full opacity at 28% of its journey and COVERS what it replaces for
-   the rest of it; the remaining 72% is pure travel, on exactly the curve and
-   duration that were tuned per frame. That fraction is set by how long both
-   pages stay legible, not by the clock: a straight line spends the SAME time
-   at every opacity where the old curve jumped through the low ones, so an
-   evenly-paced fade of the same length would have held the double exposure
-   ~23ms longer. Measured by frame, 78ms linear crosses 0.5 at 36ms and 0.8 at
-   58ms — where the 96ms curve it replaces crossed them at 35ms and 60ms.
-
-   Two animations, not one keyframe block
-   with a stop in the middle: an intermediate keyframe would re-ease the
-   transform across each interval and change that travel — and the two
-   properties want different timing functions anyway. */
+/* The detail covers early, then finishes its travel at full opacity. */
 .page-transition[data-page-motion="enter"] {
   animation:
     pageEnterTravel var(--page-enter-ms) var(--ease-out-cubic) both,
-    pageCover calc(var(--page-enter-ms) * 0.28) linear both;
+    pageCover calc(var(--page-enter-ms) * 0.36) linear both;
 }
 
-/* The step along the bar covers too, and for a better reason than the push
-   does. Measured by frame 2026-09-12, going BACK from Research to the feed:
-   the page arriving faded 0 -> 1 across the whole 240ms while the one it
-   replaced only dimmed to 0.70, so at 136ms Research sat at 0.85 under a feed
-   at 0.49 and BOTH were completely readable — for the entire transition, not
-   for a beat of it. The vertical push had this closed on 2026-09-11 and the
-   lateral kept it: it is the muddiest handover left in the app, and pressing
-   back out of a tab is where a reader meets it.
-
-   So the fade comes off the travel here as well, at the same ~30% of the clock
-   the push uses, and the page underneath yields further (16px, dimming to 0.6)
-   because it is only in sight for those 72ms. The travel moves to the push's
-   curve with it: quad is nearly linear through its first third, and 28px of it
-   left the page arriving still 6.8px out at 136ms. 36px on `--ease-out-cubic`
-   is 7.1px on the first frame and more than a pixel in eleven of fifteen. */
+/* Navbar tabs retain their own directional pass and shorter overlap. */
 .page-transition[data-page-motion="enter-lateral"][data-nav-direction="1"] {
   animation:
     pageEnterFromRight var(--page-lateral-ms) var(--ease-out-cubic) both,
@@ -169,13 +87,7 @@
     pageCover calc(var(--page-lateral-ms) * 0.3) linear both;
 }
 
-/* Giving way: the page underneath shrinks by 4% and dims to 55% while the
-   page on top settles over it, and is removed in the same frame that page
-   comes to rest — the same clock, so the two `animationend`s land in one
-   React commit. A held page still here after the page on top has dropped
-   its `z-index: 2` is a fixed, positioned sibling of a static one: it
-   paints over it. Its recession rides the same curve as the entrance above,
-   so most of it happens in the ~98ms it is still visible for. */
+/* The feed yields on the detail's clock, so both finish together. */
 .page-transition[data-page-motion="hold"] {
   animation:
     pageHold var(--page-enter-ms) var(--ease-out-cubic) both,
@@ -205,27 +117,19 @@
     pageYield var(--page-lateral-ms) linear both;
 }
 
-/* Coming back: the page that gave way returns to size and brightness
-   under the page lifting off it. This is the movement the reader actually
-   watches on the way back — the sheet on top is gone in 91ms — so it is the
-   one that has to be seen. 4% of the viewport's width, which on a 1440px
-   window is 28.8px per side: 5.6px on the first frame, then 4.8, 4.1, 3.4,
-   and more than a pixel in nine of its fourteen frames. */
+/* Back restores the feed from the exact offset and brightness it ceded.
+   Translation avoids zooming every letter and figure as the feed remounts. */
 .page-transition[data-page-motion="reveal"] {
   animation:
     pageRevealTravel var(--page-reveal-ms) var(--ease-out-cubic) both,
     pageUncover calc(var(--page-reveal-ms) * 0.45) linear both;
 }
 
-/* Out the way it came in: the entity rose 40px on arrival, it drops 40px
-   on the way back. Ease-out — the page is gone before it looks slow — and 80%
-   of that drop happens inside the 91ms it is still visible for. Same reasoning
-   as the cover above for why 91 and not 101: the straight line would otherwise
-   keep the page leaving legible longer than the curve did. */
+/* The detail retraces its entrance; its fade ends while it is still moving. */
 .page-transition[data-page-motion="leave"] {
   animation:
     pageLeaveTravel var(--page-leave-ms) var(--ease-out-cubic) both,
-    pageFadeOut calc(var(--page-leave-ms) * 0.38) linear both;
+    pageFadeOut calc(var(--page-leave-ms) * 0.45) linear both;
 }
 
 /* A replace, or a redirect: no step to animate, the old page dissolves. */
@@ -236,16 +140,10 @@
 /* ─── The travels: one curve each, no opacity ─── */
 
 @keyframes pageEnterTravel {
-  from { transform: translateY(40px); }
+  from { transform: translateX(56px); }
   to { transform: none; }
 }
 
-/* 36px, from the 10px this started at and the 28px in between. Per frame at
-   60Hz, 10px/180ms moved 1.7px on its first frame and had visible movement in
-   7 of its 11: a fade with a nudge in it. 28px/240ms on quad moved 3.6px and
-   kept that up almost unchanged for five frames — visible, but a drift, and it
-   was still 6.8px out at 136ms. 36px on the push's curve leaves at 7.1px and
-   decelerates from there, more than a pixel in eleven of its fifteen frames. */
 @keyframes pageEnterFromRight {
   from { transform: translateX(36px); }
   to { transform: none; }
@@ -256,12 +154,7 @@
   to { transform: none; }
 }
 
-/* The page underneath gives way along the same axis. 16px, not the 12px it
-   ceded back when it stayed legible the whole way across: now that the page
-   arriving covers at 72ms, this is only in sight for those 72ms, and on the
-   curve that is 11.6px of the 16 — a yield you can see, inside the window it
-   actually happens in. No scale: shrinking is how the vertical push says "you
-   went deeper", and a tab change has no depth. */
+/* Tabs yield in the opposite direction to the arriving sibling. */
 @keyframes pageHoldToLeft {
   from { transform: none; }
   to { transform: translateX(-16px); }
@@ -274,16 +167,16 @@
 
 @keyframes pageLeaveTravel {
   from { transform: none; }
-  to { transform: translateY(40px); }
+  to { transform: translateX(56px); }
 }
 
 @keyframes pageHold {
   from { transform: none; }
-  to { transform: scale(0.96); }
+  to { transform: translateX(-18px); }
 }
 
 @keyframes pageRevealTravel {
-  from { transform: scale(0.96); }
+  from { transform: translateX(-18px); }
   to { transform: none; }
 }
 
@@ -303,11 +196,11 @@
 
 @keyframes pageDim {
   from { opacity: 1; }
-  to { opacity: 0.55; }
+  to { opacity: 0.72; }
 }
 
 @keyframes pageUncover {
-  from { opacity: 0.55; }
+  from { opacity: 0.72; }
   to { opacity: 1; }
 }
 

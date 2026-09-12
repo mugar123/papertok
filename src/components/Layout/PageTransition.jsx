@@ -159,7 +159,13 @@ export default function PageTransition({ children }) {
       .some((animation) => animation.playState === 'running');
     if (stillMoving) return;
     if (present) setSettled(true);
-    else if (safeToRemove) safeToRemove();
+    else {
+      // Nested motion elements may keep this presence context mounted after
+      // the route finishes. Hide its held frame before the arriving page
+      // drops its stacking context, even if removal has to wait for them.
+      rootRef.current.style.visibility = 'hidden';
+      if (safeToRemove) safeToRemove();
+    }
   }, [present, safeToRemove]);
 
   // `data-nav-direction` is for the page's own content: coming back (-1) is a

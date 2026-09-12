@@ -65,7 +65,7 @@ test('the leaving page hands itself back when its own animation ends, or when th
   assert.ok(handler, 'one animationend handler, keyed on presence');
   assert.match(handler[1], /if \(event\.target !== rootRef\.current\) return;/, 'the cards\' and the hero\'s animationend bubble here too');
   assert.match(handler[1], /if \(present\) setSettled\(true\);/);
-  assert.match(handler[1], /else if \(safeToRemove\) safeToRemove\(\);/);
+  assert.match(handler[1], /else \{[\s\S]*?rootRef\.current\.style\.visibility = 'hidden';\s*if \(safeToRemove\) safeToRemove\(\);/, 'the held frame is hidden even while nested exits delay unmounting');
   const clock = jsx.match(/useEffect\(\(\) => \{\s*if \(present\) return undefined;([\s\S]*?)\}, \[present\]\);/);
   assert.ok(clock, 'the safety clock is keyed on presence alone');
   assert.match(clock[1], /const timer = window\.setTimeout\(\(\) => \{\s*if \(root\) root\.style\.visibility = 'hidden';\s*if \(safeToRemoveRef\.current\) safeToRemoveRef\.current\(\);\s*\}, EXIT_SAFETY_MS\);/, 'a page nobody removes is at least hidden');
