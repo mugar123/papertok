@@ -254,9 +254,21 @@
 }
 
 /* The transition is armed only once the rule has been placed: the first
-   measurement lands it under the current tab without a slide from x = 0. */
+   measurement lands it under the current tab without a slide from x = 0.
+
+   240ms on the route transition's curve, because this mark and the page it
+   marks are ONE gesture. Measured by frame 2026-09-12, pressing back from
+   Research to the feed while they were not: at 75ms the page had faded to 0.69
+   and travelled half its distance, and the rule had moved 9.5px of the 95 it
+   had to go — 10% — because `cubic-bezier(0.4, 0, 0.2, 1)` eases IN and spends
+   its first frames barely moving, and it ran 280ms against the page's 240. The
+   page snapped into place and the yellow mark trailed after it. `--page-lateral-ms`
+   is the number this has to equal; `navRule.test.js` reads both files and fails
+   if they drift. The fade keeps its own, shorter clock — it is what happens when
+   the rule has no tab to sit under at all — and goes in a straight line, like
+   every other fade in a route change. */
 .navbar-link-rule.is-measured {
-  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.16s ease-out;
+  transition: transform 240ms var(--ease-out-cubic), opacity 0.16s linear;
 }
 
 .navbar-link.active svg {

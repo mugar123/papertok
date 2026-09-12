@@ -396,8 +396,8 @@ test('the tab strip is marked by one rule that travels, not a border each tab pa
   assert.match(rule[1], /background: var\(--brand-yellow\);/);
   const armed = css.match(/\.ee-tab-rule\.is-measured \{([^}]*)\}/);
   assert.ok(armed, 'the transition lives behind the arming class');
-  assert.match(armed[1], /transition: transform 0\.28s cubic-bezier\(0\.4, 0, 0\.2, 1\), opacity 0\.16s ease-out;/,
-    'the navbar\'s curve and duration: one gesture, one clock');
+  assert.match(armed[1], /transition: transform 240ms var\(--ease-out-cubic\), opacity 0\.16s linear;/,
+    'the navbar\'s curve and duration: one gesture, one clock (navRule.test.js binds them to the page\'s)');
 });
 
 /**
