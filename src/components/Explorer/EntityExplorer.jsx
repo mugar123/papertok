@@ -2528,6 +2528,21 @@ export default function EntityExplorer({
                   foot of every list announcing a request that had not started.
                   A spinner that spins when nothing is loading is the one kind
                   of motion with no state to indicate. */}
+              {/* Before the sentinel, not after it. Measured 2026-09-12 on
+                  papertok.app: the strip rendered below the sentinel, so a
+                  reader at the foot of the list read "Loading more articles…"
+                  and, right under it, "Some publications could not be loaded" —
+                  two opposite claims stacked. In this order the page says what
+                  is missing from the list so far, and only then that more are
+                  on the way. Inside the grid as well, so it spans the rows
+                  rather than stopping 420px short of them. */}
+              {!isLoadingPapers && papersError && filteredPapers.length > 0 && (
+                <div className="explorer-inline-error" role="status">
+                  <span>{getUiErrorMessage('PARTIAL_PUBLICATIONS_LOAD_FAILED', language)}</span>
+                  <Button variant="ghost" size="sm" onClick={retryPapers}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
+                </div>
+              )}
+
               {hasMore && rowsSettled && (
                 <div ref={observerRef} className="ehc-sentinel">
                   {isFetchingMore && <Loader2 className="ehc-spinner" size={24} />}
@@ -2552,12 +2567,6 @@ export default function EntityExplorer({
                 onClearFilters={() => { setSearchQuery(''); setFilters({ category: '', peerReviewed: false, dateRange: '' }); }}
                 openAireUrl={entity?.openaireId ? `https://explore.openaire.eu/search/project?projectId=${encodeURIComponent(entity.openaireId)}` : null}
               />
-            )}
-            {!isLoadingPapers && papersError && filteredPapers.length > 0 && (
-              <div className="explorer-inline-error" role="alert">
-                <span>{getUiErrorMessage('PARTIAL_PUBLICATIONS_LOAD_FAILED', language)}</span>
-                <Button variant="ghost" size="sm" onClick={retryPapers}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
-              </div>
             )}
           </>
         ) : (
@@ -2600,6 +2609,14 @@ export default function EntityExplorer({
                 </div>
               ))}
             
+            {/* Same order as the publications strip above, for the same reason. */}
+            {!isLoadingAuthors && authorsError && entityAuthors.length > 0 && (
+              <div className="explorer-inline-error" role="status">
+                <span>{getUiErrorMessage('PARTIAL_AUTHORS_LOAD_FAILED', language)}</span>
+                <Button variant="ghost" size="sm" onClick={retryAuthors}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
+              </div>
+            )}
+
             {hasMoreAuthors && (
               <div ref={observerAuthorsRef} className="ehc-sentinel">
                 {isFetchingMoreAuthors && <Loader2 className="ehc-spinner" size={24} />}
@@ -2617,12 +2634,6 @@ export default function EntityExplorer({
               ) : (
                 <ExplorerEmptyState variant={debouncedSearch ? 'authors' : 'authors-none'} isEnglish={isEnglish} />
               )
-            )}
-            {!isLoadingAuthors && authorsError && entityAuthors.length > 0 && (
-              <div className="explorer-inline-error" role="alert">
-                <span>{getUiErrorMessage('PARTIAL_AUTHORS_LOAD_FAILED', language)}</span>
-                <Button variant="ghost" size="sm" onClick={retryAuthors}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
-              </div>
             )}
           </div>
         )}
