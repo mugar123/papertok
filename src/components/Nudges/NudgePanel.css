@@ -1,0 +1,150 @@
+/* The same corner, the same plate and the same grid as the analytics banner
+   (AnalyticsConsentBanner.css): icon, copy, action, dismiss — one row. The two
+   never share the screen (a nudge waits until consent has been answered), so
+   what matters is that they are recognisably the same object arriving twice. */
+.nudge {
+  position: fixed;
+  z-index: 1200;
+  right: 20px;
+  bottom: calc(20px + var(--inset-bottom));
+  display: grid;
+  width: min(520px, calc(100vw - 40px));
+  grid-template-columns: 40px minmax(0, 1fr) auto auto;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+  align-items: center;
+}
+
+.nudge-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+}
+
+.nudge-copy h2 {
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.nudge-copy p {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* Rides the title's line and never wraps alone: an orphaned count under a
+   heading reads as a stray element rather than as part of it. */
+.nudge-stars {
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border: 1px solid var(--tint-amber-line, var(--border-default));
+  border-radius: 999px;
+  color: var(--text-secondary);
+  vertical-align: baseline;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  vertical-align: middle;
+}
+
+
+
+.nudge-dismiss {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-tertiary);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .nudge-dismiss:hover {
+    color: var(--text-primary);
+    background: var(--bg-sunken);
+  }
+
+}
+
+/* The one accent in the panel, and it is the thing being asked for: the star
+   in the count chip. These are seen once per device in a lifetime, the single
+   tier where delight is affordable.
+
+   A CSS animation rather than the panel's own engine — it is predetermined and
+   one-shot, and keyframes keep running while the feed loads. It starts as the
+   panel finishes travelling (320ms), so the two never move at once.
+
+   `backwards` and not `both`: the fill only has to hold the first keyframe
+   during the delay. With `both` the final matrix stays welded to the element
+   afterwards, which is how an icon ends up unable to move again. The resting
+   style IS the last keyframe. */
+.nudge-stars svg {
+  fill: var(--brand-yellow);
+  color: var(--brand-yellow);
+  animation: nudgeStarPop 420ms cubic-bezier(0.34, 1.4, 0.64, 1) 320ms backwards;
+}
+
+@keyframes nudgeStarPop {
+  from { transform: scale(0.5) rotate(-20deg); }
+  to { transform: none; }
+}
+
+/* The mark is ink, like every other mark in the app: the brand yellow sits
+   beside ink, never as the shape itself (styles/variables.css). */
+.nudge-icon--github {
+  color: var(--text-primary);
+}
+
+/* The answer to pressing the button: one nod, then the panel leaves. */
+.nudge-icon.is-thanked {
+  animation: nudgeThanks 220ms cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+@keyframes nudgeThanks {
+  0% { transform: none; }
+  45% { transform: scale(1.12); }
+  100% { transform: none; }
+}
+
+@media (max-width: 560px) {
+  .nudge {
+    right: 12px;
+    bottom: calc(12px + var(--inset-bottom));
+    width: calc(100vw - 24px);
+    padding: 14px;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .nudge-icon {
+    display: none;
+  }
+}
+
+/* Fewer and gentler, not none: the panel still fades, and the accent — which
+   is pure decoration — goes. */
+@media (prefers-reduced-motion: reduce) {
+  .nudge-stars svg,
+  .nudge-icon.is-thanked {
+    animation: none;
+  }
+
+  .nudge-dismiss {
+    transition: none;
+  }
+}
