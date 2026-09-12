@@ -21,10 +21,17 @@ test('SOURCE: la píldora no existe para el invitado, y el tirón tampoco', asyn
   assert.match(src, /\{!publicMode && papers\.length > 0 && \(\s*<button/, 'sin cuenta no hay píldora');
   const attach = src.slice(src.indexOf('const el = feedRef.current;'), src.indexOf('const onStart ='));
   assert.match(attach, /if \(!el \|\| publicMode\) return undefined;/, 'sin cuenta el tirón ni se engancha');
-  const hover = src.slice(src.indexOf('const handleMouseMove = useCallback('), src.indexOf('}, [handleMouseMove, publicMode]);'));
+  // La captura NO se acota con el literal de las dependencias: cuando cambiaron
+  // (el nodo entró en la lista) ese `indexOf` pasó a valer -1 y el slice se
+  // comió medio fichero, con lo que estos asserts casaban contra código de otro
+  // sitio. Se acota con el enganche, y se comprueba que el corte existe.
+  const hoverFrom = src.indexOf('const handleMouseMove = useCallback(');
+  const hoverTo = src.indexOf("wrapper.addEventListener('mousemove', onMove");
+  assert.ok(hoverFrom > 0 && hoverTo > hoverFrom, 'el handler del hover y su enganche siguen ahí, en ese orden');
+  const hover = src.slice(hoverFrom, hoverTo);
   assert.match(hover, /if \(publicMode\) return;/);
   assert.match(hover, /pointer: fine/, 'el hover es solo de puntero fino');
-  assert.match(hover, /feedRef\.current\?\.parentElement/, 'se escucha en el envoltorio, padre del scroller y de la píldora');
+  assert.match(hover, /feedNode\?\.parentElement/, 'se escucha en el envoltorio, padre del scroller y de la píldora');
   assert.doesNotMatch(src, /onMouseMove=\{handleMouseMove\}|onMouseLeave=/, 'nunca en el scroller: la píldora es su hermano y entrar en ella era un mouseleave');
 });
 
@@ -416,4 +423,50 @@ test('SOURCE: el refresco salta arriba bajo el velo, no viaja a la vista', async
   assert.match(owed, /if \(refreshJumpOwedRef\.current\)[\s\S]{0,200}scrollTo\(\{ top: 0/,
     'si el temporizador no llegó a disparar, el salto se cobra ahí');
   assert.match(owed, /refreshJumpOwedRef\.current = false;/, 'y se cobra una sola vez');
+});
+
+
+/**
+ * El oyente del hover se ata al envoltorio VIVO.
+ *
+ * Sus dependencias eran `[handleMouseMove, publicMode]`, las dos estables, así
+ * que el efecto corría una sola vez por montaje — y `ref={feedRef}` sólo existe
+ * en la rama del feed: las de error, esqueleto, vacío-de-fuente y vacío retornan
+ * antes y no montan el scroller. Un montaje que cayera en una de ésas leía el
+ * ref en null, se iba por la puerta de arriba, y no volvía a correr cuando
+ * llegaban los papers, porque sus dependencias no cambiaban. En esa carga la
+ * franja de 120px bajo la barra no ofrecía la píldora en ningún momento.
+ *
+ * No era un caso raro: el feed de invitado no declara `initialLoadPending`, así
+ * que cargar sin papers lo lleva SIEMPRE al esqueleto. Medido el 12-09 con
+ * `scripts/diagnostics/refresh-face-probe.mjs`: 37 mousemove llegaban al
+ * envoltorio, con puntero fino y sobre el padre correcto de la píldora, y la
+ * píldora no asomaba ni una vez; CDP no le veía un solo oyente al envoltorio.
+ *
+ * Por eso el nodo se publica en un estado y es él la dependencia. `displayState`
+ * también habría re-disparado el efecto, pero describe la rama, no el nodo: el
+ * contenedor puede aparecer, desaparecer o cambiar de identidad sin que ese
+ * valor lo cuente. `papers.length` no sirve siquiera de aproximación — puede
+ * valer lo mismo antes y después de que el contenedor exista.
+ */
+test('SOURCE: el hover se engancha al envoltorio vivo, no al del primer commit', async () => {
+  const src = strip(await read('./FeedContainer.jsx'));
+  const attach = src.slice(src.indexOf('const feedRef = useRef(null);'), src.indexOf('const sentinelRef'));
+  assert.ok(attach.length > 0 && attach.length < 700, 'el ref del scroller y su publicación viven juntos');
+  assert.match(attach, /const \[feedNode, setFeedNode\] = useState\(null\);/,
+    'el nodo vive en un estado: un ref no avisa a nadie cuando cambia');
+  assert.match(attach, /feedRef\.current = node;\s*setFeedNode\(node\);/,
+    'y el ref se sigue poniendo, que es de donde leen el scroll, el resume y el tirón');
+
+  assert.match(src, /ref=\{attachFeed\}/, 'el scroller publica su nodo al montarse');
+  assert.doesNotMatch(src, /ref=\{feedRef\}/,
+    'un ref a secas no vuelve a despertar al efecto cuando el contenedor aparece tarde');
+
+  const at = src.indexOf('const wrapper = feedNode?.parentElement;');
+  assert.ok(at > 0, 'el efecto del hover parte del nodo publicado, no de una lectura del ref');
+  const deps = /\}, \[([^\]]*)\]\);/.exec(src.slice(at))[1];
+  assert.match(deps, /(^|[\s,])feedNode([\s,]|$)/,
+    'el nodo es la dependencia: cuando el contenedor aparece, el oyente se reengancha al que está vivo');
+  assert.doesNotMatch(deps, /papers\.length/,
+    'y no `papers.length`, que vale lo mismo antes y después de que el contenedor exista');
 });

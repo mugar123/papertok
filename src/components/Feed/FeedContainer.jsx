@@ -238,6 +238,16 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     trackViewTime(paper, seconds);
   }, [publicMode, source, trackViewTime]);
   const feedRef = useRef(null);
+  // El scroller, además de en el ref: el oyente del hover (más abajo) tiene
+  // que atarse al envoltorio VIVO, y un ref no despierta a nadie cuando
+  // cambia. `feedRef` se sigue poniendo aquí porque de él leen el scroll, el
+  // resume, el tirón y el salto del refresco, que corren con el nodo ya
+  // montado y no necesitan enterarse de nada.
+  const [feedNode, setFeedNode] = useState(null);
+  const attachFeed = useCallback((node) => {
+    feedRef.current = node;
+    setFeedNode(node);
+  }, []);
   const sentinelRef = useRef(null);
   // The card currently snapped into view, derived in handleScroll from the
   // same scrollTop/clientHeight math the keyboard-nav effect below already
@@ -726,8 +736,17 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     }
     setRefreshPillHover((prev) => (prev === inBand ? prev : inBand));
   }, [publicMode]);
+  // Enganchado al NODO, no a una lectura del ref en el primer commit. Las dos
+  // dependencias de antes —`handleMouseMove` y `publicMode`— eran estables, así
+  // que el efecto corría una sola vez por montaje; y el scroller sólo existe en
+  // la rama del feed, de modo que un montaje que empezara en el esqueleto leía
+  // el ref en null, salía por la puerta de arriba y no volvía a correr cuando
+  // llegaban los papers. El feed de invitado no declara `initialLoadPending`:
+  // cargar sin papers lo lleva siempre al esqueleto, y en esa carga la franja
+  // no ofrecía la píldora nunca. Medido el 12-09: 37 mousemove llegaban al
+  // envoltorio y CDP no le veía un solo oyente.
   useEffect(() => {
-    const wrapper = feedRef.current?.parentElement;
+    const wrapper = feedNode?.parentElement;
     if (!wrapper || publicMode) return undefined;
     const onMove = (e) => handleMouseMove(e, wrapper);
     const onLeave = () => {
@@ -749,7 +768,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
       wrapper.removeEventListener('mouseleave', onLeave);
       document.removeEventListener('pointerdown', onPointerDownCapture, true);
     };
-  }, [handleMouseMove, publicMode]);
+  }, [feedNode, handleMouseMove, publicMode]);
 
   // A short "done" beat once a refresh lands, before the pill hides again.
   // Long enough for the face crossfade to enter, hold, and leave — 600ms
@@ -1029,7 +1048,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
       )}
       <div
         className={`feed-container${isRefreshing ? ' feed-container--refreshing' : ''}`}
-        ref={feedRef}
+        ref={attachFeed}
         onScroll={handleScroll}
       >
         {papers.map((paper, index) => (

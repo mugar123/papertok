@@ -17,14 +17,16 @@
 //        useEffect(() => { window.__probeRefresh = (ms) => { setProbeRefreshing(true);
 //          window.setTimeout(() => setProbeRefreshing(false), ms); }; }, []);
 //        const isRefreshing = probeRefreshing || (source ? … : feed.isRefreshing);
-//   3. y, sólo para la pasada del ratón, `papers.length` en las dependencias
-//      del efecto que engancha el `mousemove` (`[handleMouseMove, publicMode]`).
-//      Las dos dependencias son estables, así que el efecto corre una vez: si
-//      en ese primer commit no hay `.feed-container` —y en el arranque de
-//      invitado NO lo hay: medido, dos de las cinco vueltas sin envoltorio—,
-//      `feedRef.current` es null, el efecto se va por la puerta de arriba y el
-//      oyente no se engancha nunca. Sin esto la pasada del ratón mide una
-//      píldora que no asoma y no dice por qué.
+// Hubo una tercera, y ya NO hace falta: había que meter `papers.length` en las
+// dependencias del efecto que engancha el `mousemove`, porque con
+// `[handleMouseMove, publicMode]` —las dos estables— el efecto corría una sola
+// vez por montaje, y si en ese commit no había `.feed-container`, `feedRef.current`
+// era null y el oyente no se enganchaba nunca. No era un apaño de la sonda: era
+// el fallo, y en el arranque de invitado ocurría siempre (`GuestFeedPage` no
+// declara `initialLoadPending`, así que cargar sin papers va al esqueleto). El
+// efecto depende ahora del NODO, publicado por un callback ref, y se reengancha
+// solo cuando el contenedor aparece. Si alguna vez vuelve a hacer falta tocar
+// esas dependencias para que esta sonda mida, es que la regresión ha vuelto.
 // Y hay que devolverlas después. Lo que se mide sigue siendo el código que se
 // envía: lo único falso es quién enciende el estado.
 //
