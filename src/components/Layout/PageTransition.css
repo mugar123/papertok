@@ -142,20 +142,31 @@
     pageCover calc(var(--page-enter-ms) * 0.28) linear both;
 }
 
-/* The lateral pair keeps `--ease-out-quad` and its 28px/12px: those were tuned
-   per frame on 2026-09-11 for a step along the bar, which is a different
-   movement from the push into a page and is not what this pass re-timed. Only
-   their opacity changed, to the straight line every fade in this file runs. */
+/* The step along the bar covers too, and for a better reason than the push
+   does. Measured by frame 2026-09-12, going BACK from Research to the feed:
+   the page arriving faded 0 -> 1 across the whole 240ms while the one it
+   replaced only dimmed to 0.70, so at 136ms Research sat at 0.85 under a feed
+   at 0.49 and BOTH were completely readable — for the entire transition, not
+   for a beat of it. The vertical push had this closed on 2026-09-11 and the
+   lateral kept it: it is the muddiest handover left in the app, and pressing
+   back out of a tab is where a reader meets it.
+
+   So the fade comes off the travel here as well, at the same ~30% of the clock
+   the push uses, and the page underneath yields further (16px, dimming to 0.6)
+   because it is only in sight for those 72ms. The travel moves to the push's
+   curve with it: quad is nearly linear through its first third, and 28px of it
+   left the page arriving still 6.8px out at 136ms. 36px on `--ease-out-cubic`
+   is 7.1px on the first frame and more than a pixel in eleven of fifteen. */
 .page-transition[data-page-motion="enter-lateral"][data-nav-direction="1"] {
   animation:
-    pageEnterFromRight var(--page-lateral-ms) var(--ease-out-quad) both,
-    pageCover var(--page-lateral-ms) linear both;
+    pageEnterFromRight var(--page-lateral-ms) var(--ease-out-cubic) both,
+    pageCover calc(var(--page-lateral-ms) * 0.3) linear both;
 }
 
 .page-transition[data-page-motion="enter-lateral"][data-nav-direction="-1"] {
   animation:
-    pageEnterFromLeft var(--page-lateral-ms) var(--ease-out-quad) both,
-    pageCover var(--page-lateral-ms) linear both;
+    pageEnterFromLeft var(--page-lateral-ms) var(--ease-out-cubic) both,
+    pageCover calc(var(--page-lateral-ms) * 0.3) linear both;
 }
 
 /* Giving way: the page underneath shrinks by 4% and dims to 55% while the
@@ -174,7 +185,7 @@
 /* The fallback, for a lateral hold that somehow has no direction. */
 .page-transition[data-page-motion="hold-lateral"] {
   animation:
-    pageHold var(--page-lateral-ms) var(--ease-out-quad) both,
+    pageHold var(--page-lateral-ms) var(--ease-out-cubic) both,
     pageDim var(--page-lateral-ms) linear both;
 }
 
@@ -184,13 +195,13 @@
    `data-nav-direction` keeps the direction this page arrived with. */
 .page-transition[data-page-motion="hold-lateral"][data-leave-direction="1"] {
   animation:
-    pageHoldToLeft var(--page-lateral-ms) var(--ease-out-quad) both,
+    pageHoldToLeft var(--page-lateral-ms) var(--ease-out-cubic) both,
     pageYield var(--page-lateral-ms) linear both;
 }
 
 .page-transition[data-page-motion="hold-lateral"][data-leave-direction="-1"] {
   animation:
-    pageHoldToRight var(--page-lateral-ms) var(--ease-out-quad) both,
+    pageHoldToRight var(--page-lateral-ms) var(--ease-out-cubic) both,
     pageYield var(--page-lateral-ms) linear both;
 }
 
@@ -229,31 +240,36 @@
   to { transform: none; }
 }
 
-/* 28px, not the 10px this started at. Per frame at 60Hz on `--ease-out-quad`,
-   10px/180ms moved 1.7px on the first frame and had visible movement in 7 of
-   its 11 frames: a fade with a nudge in it. 28px/240ms moves 3.6px and has
-   movement in 13 of 14 — the reader sees a page arrive from a side. */
+/* 36px, from the 10px this started at and the 28px in between. Per frame at
+   60Hz, 10px/180ms moved 1.7px on its first frame and had visible movement in
+   7 of its 11: a fade with a nudge in it. 28px/240ms on quad moved 3.6px and
+   kept that up almost unchanged for five frames — visible, but a drift, and it
+   was still 6.8px out at 136ms. 36px on the push's curve leaves at 7.1px and
+   decelerates from there, more than a pixel in eleven of its fifteen frames. */
 @keyframes pageEnterFromRight {
-  from { transform: translateX(28px); }
+  from { transform: translateX(36px); }
   to { transform: none; }
 }
 
 @keyframes pageEnterFromLeft {
-  from { transform: translateX(-28px); }
+  from { transform: translateX(-36px); }
   to { transform: none; }
 }
 
-/* The page underneath gives way along the same axis: 12px, which is 1.6px on
-   its first frame — it yields, it does not race. No scale: shrinking is how
-   the vertical push says "you went deeper", and a tab change has no depth. */
+/* The page underneath gives way along the same axis. 16px, not the 12px it
+   ceded back when it stayed legible the whole way across: now that the page
+   arriving covers at 72ms, this is only in sight for those 72ms, and on the
+   curve that is 11.6px of the 16 — a yield you can see, inside the window it
+   actually happens in. No scale: shrinking is how the vertical push says "you
+   went deeper", and a tab change has no depth. */
 @keyframes pageHoldToLeft {
   from { transform: none; }
-  to { transform: translateX(-12px); }
+  to { transform: translateX(-16px); }
 }
 
 @keyframes pageHoldToRight {
   from { transform: none; }
-  to { transform: translateX(12px); }
+  to { transform: translateX(16px); }
 }
 
 @keyframes pageLeaveTravel {
@@ -297,7 +313,7 @@
 
 @keyframes pageYield {
   from { opacity: 1; }
-  to { opacity: 0.7; }
+  to { opacity: 0.6; }
 }
 
 /* Fewer and gentler, not none: the fades stay — literally the same four, which

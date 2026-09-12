@@ -258,8 +258,9 @@
   /* A readable ease-out for a movement that has to be SEEN travel: the expo
      above does 80% of its change in the first quarter, which on a fast
      machine reads as a cut. Quad spreads its change over the whole duration —
-     which is not the same thing as decelerating over it, see below. Still
-     what the step between navbar tabs rides, tuned per frame for it. */
+     which is not the same thing as decelerating over it, see below. The route
+     transition moved off it on 2026-09-12; what still rides it is the feed's
+     own motion — PaperCard, the pull to refresh, the citation map's settle. */
   --ease-out-quad: cubic-bezier(0.25, 0.46, 0.45, 0.94);
   /* Between the two, and what the route transition travels on. Quad above is
      nearly LINEAR through its first third — measured on the page push, five

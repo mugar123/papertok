@@ -15,7 +15,7 @@
  *
  *   present  lateral  direction  → motion
  *   true     false    1          → enter          rises 40px over the page it covers
- *   true     true     ±1         → enter-lateral  slides 10px along the bar
+ *   true     true     ±1         → enter-lateral  slides 36px along the bar, covering as it lands
  *   true     false    -1         → reveal         back to size and brightness under the page leaving
  *   true     any      0          → rest
  *   false    true     ±1         → hold-lateral   recedes under the new tab, for as long as the tab takes

@@ -122,7 +122,7 @@ test('every motion has a rule, and everything rides a curve that can be seen tra
   // anything that moves rides a named ease-out.
   for (const [, name, easing] of animations) {
     if (FADES.includes(name)) assert.equal(easing, 'linear', `${name} is a fade and must not be curved`);
-    else assert.match(easing, /^var\(--ease-out-(cubic|quad)\)$/, `${name} travels, so it rides a curve — got ${easing}`);
+    else assert.equal(easing, 'var(--ease-out-cubic)', `${name} travels, so it rides the one curve this file has — got ${easing}`);
   }
   assert.equal(css.match(/animation:/g).length, 15, 'fifteen rules, no animation escaping the form above');
 });
@@ -194,8 +194,8 @@ test('pages move on opacity and transform only, travel far enough to be seen, an
   }
   assert.match(keyframes(css, 'pageEnterTravel'), /from \{ transform: translateY\(40px\); \}/, 'far enough to be seen');
   assert.match(keyframes(css, 'pageCover'), /from \{ opacity: 0; \}\s*to \{ opacity: 1; \}/);
-  assert.match(keyframes(css, 'pageEnterFromRight'), /from \{ transform: translateX\(28px\); \}/);
-  assert.match(keyframes(css, 'pageEnterFromLeft'), /from \{ transform: translateX\(-28px\); \}/);
+  assert.match(keyframes(css, 'pageEnterFromRight'), /from \{ transform: translateX\(36px\); \}/);
+  assert.match(keyframes(css, 'pageEnterFromLeft'), /from \{ transform: translateX\(-36px\); \}/);
   assert.match(keyframes(css, 'pageLeaveTravel'), /to \{ transform: translateY\(40px\); \}/, 'leaves the way it came');
   assert.match(keyframes(css, 'pageFadeOut'), /from \{ opacity: 1; \}\s*to \{ opacity: 0; \}/);
   // The fade always ends BEFORE the travel it rides with: that is the whole
@@ -214,9 +214,9 @@ test('pages move on opacity and transform only, travel far enough to be seen, an
   assert.match(keyframes(css, 'pageDim'), /from \{ opacity: 1; \}\s*to \{ opacity: 0\.55; \}/);
   assert.match(keyframes(css, 'pageRevealTravel'), /from \{ transform: scale\(0\.96\); \}\s*to \{ transform: none; \}/);
   assert.match(keyframes(css, 'pageUncover'), /from \{ opacity: 0\.55; \}\s*to \{ opacity: 1; \}/, 'the page revealed comes back from the same 0.55 it gave way to');
-  assert.match(keyframes(css, 'pageYield'), /from \{ opacity: 1; \}\s*to \{ opacity: 0\.7; \}/, 'a page stepped past dims, it does not go');
+  assert.match(keyframes(css, 'pageYield'), /from \{ opacity: 1; \}\s*to \{ opacity: 0\.6; \}/, 'a page stepped past dims, it does not go');
   for (const name of ['pageHoldToLeft', 'pageHoldToRight']) {
-    assert.match(keyframes(css, name), /to \{ transform: translateX\(-?12px\); \}/, `${name} yields without disappearing`);
+    assert.match(keyframes(css, name), /to \{ transform: translateX\(-?16px\); \}/, `${name} yields without disappearing`);
   }
 });
 
@@ -333,10 +333,10 @@ test('SOURCE: the arrival is a predicate read from the DOM, not a flag one commi
  *
  *                     1st frame   frames with visible movement
  *   10px / 180ms         1.7px          7 of 11
- *   28px / 240ms         3.6px         13 of 14
- *   12px / 240ms         1.6px          9 of 14   (the page underneath)
+ *   28px / 240ms         3.6px         13 of 14   (quad: five frames flat)
+ *   36px / 240ms         7.1px         11 of 15   (the curve it rides now)
  *
- * So the page arriving travels 28px and the one it replaces cedes 12px THE
+ * So the page arriving travels 36px and the one it replaces cedes 16px THE
  * OTHER WAY, on one clock. The page leaving cannot read its direction from
  * `data-nav-direction` — that attribute deliberately keeps the direction the
  * page ARRIVED with, so its own cards do not take the eject for a fresh
@@ -359,18 +359,20 @@ test('the page leaving declares the direction that is ejecting it', async () => 
 test('both pages of a tab change travel, on the same axis and in opposite directions', async () => {
   const css = await read('./PageTransition.css');
 
-  assert.match(keyframes(css, 'pageEnterFromRight'), /transform: translateX\(28px\)/);
-  assert.match(keyframes(css, 'pageEnterFromLeft'), /transform: translateX\(-28px\)/);
-  // The step along the bar keeps the curve and the distances tuned for it on
-  // 2026-09-11; the 2026-09-12 pass re-timed the push into a page, which is a
-  // different movement, and only took this one's opacity onto the straight line.
+  assert.match(keyframes(css, 'pageEnterFromRight'), /transform: translateX\(36px\)/);
+  assert.match(keyframes(css, 'pageEnterFromLeft'), /transform: translateX\(-36px\)/);
+  // And it COVERS, like the push. Measured 2026-09-12 while it did not: going
+  // BACK from Research to the feed, the page arriving faded up across the whole
+  // 240ms while the one it replaced only dimmed to 0.70, so at 136ms Research
+  // sat at 0.85 under a feed at 0.49 and both were completely readable. The
+  // whole transition was the double exposure the push had closed a day before.
   for (const selector of ['\\[data-nav-direction="1"\\]', '\\[data-nav-direction="-1"\\]']) {
-    assert.match(css, new RegExp(`enter-lateral"\\]${selector} \\{\\s*animation:\\s*pageEnterFrom(?:Right|Left) var\\(--page-lateral-ms\\) var\\(--ease-out-quad\\)`));
+    assert.match(css, new RegExp(`enter-lateral"\\]${selector} \\{\\s*animation:\\s*pageEnterFrom(?:Right|Left) var\\(--page-lateral-ms\\) var\\(--ease-out-cubic\\) both,\\s*pageCover calc\\(var\\(--page-lateral-ms\\) \\* 0\\.3\\) linear both;`));
   }
 
   // The page arriving from the right pushes the one below it to the LEFT.
-  assert.match(keyframes(css, 'pageHoldToLeft'), /to \{ transform: translateX\(-12px\); \}/);
-  assert.match(keyframes(css, 'pageHoldToRight'), /to \{ transform: translateX\(12px\); \}/);
+  assert.match(keyframes(css, 'pageHoldToLeft'), /to \{ transform: translateX\(-16px\); \}/);
+  assert.match(keyframes(css, 'pageHoldToRight'), /to \{ transform: translateX\(16px\); \}/);
 
   for (const name of ['pageHoldToLeft', 'pageHoldToRight']) {
     assert.doesNotMatch(keyframes(css, name), /scale/, `${name} is a lateral move; a scale is the push's language`);
