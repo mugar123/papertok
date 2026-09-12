@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 
 import {
   EXPLORER_ROW_CHUNK,
+  GUEST_PREVIEW_LIMIT,
+  guestGateTotal,
+  guestPreviewRows,
+  shouldShowGuestGate,
   nextExplorerRowBudget,
   entityPapersRequestKey,
   filterAndSortEntityPapers,
@@ -185,3 +189,51 @@ test('the list mounts eight rows at a time and never more than it has', () => {
   assert.equal(nextExplorerRowBudget(-1, 0), 0);
 });
 
+
+/**
+ * La vista previa del invitado (2026-09-12).
+ *
+ * Sin cuenta, el explorador enseña dos filas y pone una puerta debajo. La
+ * decisión vive aquí, fuera del componente, porque lo que importa son los
+ * bordes: una entidad con una sola publicación no tiene muro que poner, y una
+ * lista todavía cargando no puede afirmar que falte nada.
+ */
+
+test('sin sesión la lista se queda en dos filas; con sesión se entrega entera', () => {
+  const rows = ['a', 'b', 'c', 'd'];
+  assert.equal(GUEST_PREVIEW_LIMIT, 2);
+  assert.deepEqual(guestPreviewRows(rows, { publicMode: true }), ['a', 'b']);
+  assert.equal(guestPreviewRows(rows, { publicMode: false }), rows, 'con sesión debe devolverse la MISMA lista, sin copiarla');
+  assert.deepEqual(guestPreviewRows(['a'], { publicMode: true }), ['a']);
+  assert.deepEqual(guestPreviewRows([], { publicMode: true }), []);
+});
+
+test('la puerta se pone cuando queda algo detrás', () => {
+  const base = { publicMode: true, loaded: 30, hasMore: true, isLoading: false };
+  assert.equal(shouldShowGuestGate(base), true);
+  assert.equal(shouldShowGuestGate({ ...base, hasMore: false }), true, 'treinta cargadas y ninguna más en el servidor siguen siendo veintiocho detrás del muro');
+  assert.equal(shouldShowGuestGate({ ...base, loaded: 3, hasMore: false }), true);
+  assert.equal(shouldShowGuestGate({ ...base, loaded: 2, hasMore: true }), true, 'lo cargado cabe en la vista previa, pero el servidor tiene más');
+});
+
+test('no hay puerta cuando no hay nada detrás', () => {
+  const base = { publicMode: true, loaded: 2, hasMore: false, isLoading: false };
+  assert.equal(shouldShowGuestGate(base), false, 'dos publicaciones son el final de la lista, no un muro');
+  assert.equal(shouldShowGuestGate({ ...base, loaded: 1 }), false);
+  assert.equal(shouldShowGuestGate({ ...base, loaded: 0 }), false, 'una entidad vacía tiene su propio cartel');
+});
+
+test('con sesión nunca hay puerta, y mientras carga tampoco', () => {
+  assert.equal(shouldShowGuestGate({ publicMode: false, loaded: 30, hasMore: true, isLoading: false }), false);
+  assert.equal(shouldShowGuestGate({ publicMode: true, loaded: 0, hasMore: false, isLoading: true }), false);
+  assert.equal(shouldShowGuestGate({ publicMode: true, loaded: 30, hasMore: true, isLoading: true }), false, 'una lista a medio cargar no puede decir cuánto falta');
+});
+
+test('el número que promete la puerta sale de la entidad, y solo si es creíble', () => {
+  assert.equal(guestGateTotal({ works_count: 1234 }, 2), 1234);
+  assert.equal(guestGateTotal({ works_count: 2 }, 2), null, 'un total que no supera lo mostrado no explica el muro');
+  assert.equal(guestGateTotal({ works_count: 0 }, 2), null);
+  assert.equal(guestGateTotal({}, 2), null);
+  assert.equal(guestGateTotal(null, 2), null);
+  assert.equal(guestGateTotal({ works_count: '1234' }, 2), null, 'un total que no es un número no se enseña');
+});

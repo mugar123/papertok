@@ -252,8 +252,12 @@ test('the list mounts in idle chunks, rows below the fold are skipped, and the s
   // `hasMore && rowsSettled` sigue abriendo la puerta; desde el 12-09 lleva
   // además una guarda para no invitar a bajar por una lista vacía, así que
   // aquí se fija el principio de la condición y el destino, no su literal.
-  assert.match(jsx, /\{hasMore && rowsSettled &&[\s\S]{0,80}<div ref=\{observerRef\} className="ehc-sentinel">/);
-  assert.match(jsx, /mountedPapers\.map\(\(paper, idx\) => \(/);
+  assert.match(jsx, /hasMore && rowsSettled &&[\s\S]{0,80}<div ref=\{observerRef\} className="ehc-sentinel">/);
+  // `visiblePapers` es `mountedPapers` recortado para quien mira sin cuenta
+  // (dos filas); con sesión es la misma lista, así que el troceado en ralentí
+  // que este test defiende sigue siendo lo que decide qué se monta.
+  assert.match(jsx, /const visiblePapers = useMemo\(\(\) => guestPreviewRows\(mountedPapers, \{ publicMode \}\)/);
+  assert.match(jsx, /visiblePapers\.map\(\(paper, idx\) => \(/);
   assert.match(jsx, /'--area-accent': rowAreas\[idx\]\.accent/, 'the field colour is derived once per list');
   const css = await read('./EntityExplorer.css');
   assert.match(css, /\.explorer-list-item \{[^}]*content-visibility: auto;\s*contain-intrinsic-size: auto 200px;[^}]*\}/);

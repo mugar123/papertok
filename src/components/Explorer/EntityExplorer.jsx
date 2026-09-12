@@ -13,9 +13,12 @@ import {
   entityPapersRequestKey,
   filterAndSortEntityPapers,
   getPaperCitationCount,
+  guestGateTotal,
+  guestPreviewRows,
   hasKnownPaperCitationCount,
   nextExplorerRowBudget,
   pinSourcePaper,
+  shouldShowGuestGate,
 } from '../../utils/entityExplorer';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useHeightSettle } from '../../hooks/useHeightSettle';
@@ -44,6 +47,7 @@ import PDFViewer from '../PDF/PDFViewer';
 import ScientificText from '../ScientificText';
 import RecentImpactStat from './RecentImpactStat';
 import { ExplorerEmptyState } from './ExplorerEmptyState.jsx';
+import ExplorerGuestGate from './ExplorerGuestGate.jsx';
 import { pickEmptyVariant } from './explorerEmptyVariant.js';
 import { normalizeScientificMarkup } from '../../utils/latex';
 import { isOpaqueQueryTopicText, resolveQueryTopicRoute } from '../../utils/topicNavigation';
@@ -519,6 +523,15 @@ export default function EntityExplorer({
     viewedEntityRef.current = viewKey;
     trackEvent('select_content', { content_type: analyticsEntityType, surface: 'explorer' });
   }, [analyticsEntityType, entity, id, trackEvent, type]);
+
+  // Every control a visitor can push that needs an account goes through here:
+  // the follow button, the search box, the filters, and the wall at the foot of
+  // each list. One event, then the in-context prompt — the page stays where it
+  // is, so signing up returns to this entity rather than to a login screen.
+  const requestAccount = useCallback(() => {
+    trackEvent('select_content', { content_type: analyticsEntityType, surface: 'explorer' });
+    onAuthRequired();
+  }, [analyticsEntityType, onAuthRequired, trackEvent]);
 
   const measureExpandableDescriptions = useCallback(() => {
     const measure = (element, setHeight, setExpandable) => {
@@ -1238,6 +1251,24 @@ export default function EntityExplorer({
   // "load more" sentinel waits for the whole page to be in, or it would sit
   // right under the first chunk and ask for the next page at once.
   const mountedPapers = useMemo(() => filteredPapers.slice(0, rowBudget), [filteredPapers, rowBudget]);
+  // What a visitor without an account is shown of it: the first two rows, and
+  // the wall below. The cut is here rather than in the fetch because page 1
+  // arrives whole and is what the entity's own numbers are drawn from; what
+  // the cut does prevent is page 2, by taking the sentinel off the page.
+  const visiblePapers = useMemo(() => guestPreviewRows(mountedPapers, { publicMode }), [mountedPapers, publicMode]);
+  const visibleAuthors = useMemo(() => guestPreviewRows(entityAuthors, { publicMode }), [entityAuthors, publicMode]);
+  const papersGateOpen = shouldShowGuestGate({
+    publicMode,
+    loaded: filteredPapers.length,
+    hasMore,
+    isLoading: isLoadingPapers,
+  });
+  const authorsGateOpen = shouldShowGuestGate({
+    publicMode,
+    loaded: entityAuthors.length,
+    hasMore: hasMoreAuthors,
+    isLoading: isLoadingAuthors,
+  });
   const rowsSettled = rowBudget >= filteredPapers.length;
   useEffect(() => {
     if (rowsSettled) return undefined;
@@ -1253,10 +1284,10 @@ export default function EntityExplorer({
   // The field colour and label of each row, once per list rather than once
   // per row per render: `areaKeyForCategory` was 27 ms of a throttled page
   // load, re-derived every time the page re-rendered around the rows.
-  const rowAreas = useMemo(() => mountedPapers.map((paper) => ({
+  const rowAreas = useMemo(() => visiblePapers.map((paper) => ({
     accent: areaAccentForPaper(paper),
     label: areaLabelForPaper(paper, { english: isEnglish }) || (isEnglish ? 'Paper' : 'Artículo'),
-  })), [isEnglish, mountedPapers]);
+  })), [isEnglish, visiblePapers]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -1321,11 +1352,7 @@ export default function EntityExplorer({
     if (!followEntity) return;
 
     if (publicMode) {
-      trackEvent('select_content', {
-        content_type: analyticsEntityType,
-        surface: 'explorer',
-      });
-      onAuthRequired();
+      requestAccount();
       return;
     }
     toggleFollow(followEntity).catch(console.error);
@@ -2375,14 +2402,24 @@ export default function EntityExplorer({
         <div className="explorer-toolbar">
           <div className="explorer-search-box">
             <Search size={16} className="es-icon" />
+            {/* A visitor sees the field — it is part of what an account opens —
+                but it cannot be typed into: searching two rows would answer
+                "nothing matches" to almost everything. `readOnly` keeps the
+                field focusable and announced while refusing the text, and the
+                press opens the same door as the wall at the foot of the list.
+                `onMouseDown` rather than `onClick` so the prompt arrives on
+                the press, before the field has taken the caret. */}
             <Input
               type="text"
               className="explorer-search-input"
+              readOnly={publicMode}
               placeholder={isEnglish
                 ? `Search ${activeTab === 'papers' ? 'papers' : 'authors'} from ${type === 'institution' ? 'this institution' : type === 'concept' || type === 'topic' ? 'this topic' : type === 'project' ? 'this project' : 'this person'}...`
                 : `Buscar ${activeTab === 'papers' ? 'publicaciones' : 'autores'} de ${type === 'institution' ? 'esta universidad' : type === 'concept' || type === 'topic' ? 'este tema' : type === 'project' ? 'este proyecto' : 'esta persona'}...`}
               value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
+              onChange={e => { if (!publicMode) setSearchQuery(e.target.value); }}
+              onMouseDown={publicMode ? (event) => { event.preventDefault(); requestAccount(); } : undefined}
+              onKeyDown={publicMode ? (event) => handleActivationKey(event, requestAccount) : undefined}
               aria-label={isEnglish
                 ? `Search ${activeTab === 'papers' ? 'publications' : 'authors'} in this entity`
                 : `Buscar ${activeTab === 'papers' ? 'publicaciones' : 'autores'} en esta entidad`}
@@ -2397,7 +2434,7 @@ export default function EntityExplorer({
              <Button
                 variant={filters?.category || filters?.peerReviewed || filters?.dateRange ? 'default' : 'outline'}
                 size="icon"
-                onClick={() => setShowFilters(true)}
+                onClick={publicMode ? requestAccount : () => setShowFilters(true)}
                 aria-label={isEnglish ? 'Open filters' : 'Abrir filtros'}
                 title={isEnglish ? 'Filters' : 'Filtros'}
               >
@@ -2413,7 +2450,7 @@ export default function EntityExplorer({
 
             
             <div className="explorer-grid">
-              {(!isLoadingPapers || isFetchingMore) && mountedPapers.map((paper, idx) => (
+              {(!isLoadingPapers || isFetchingMore) && visiblePapers.map((paper, idx) => (
                 <div 
                   key={`${paper.id}-${idx}`} 
                   className="explorer-list-item"
@@ -2511,13 +2548,25 @@ export default function EntityExplorer({
                 </div>
               )}
 
-              {hasMore && rowsSettled && (filteredPapers.length > 0 || isFetchingMore) && (
+              {/* Not for a visitor: the sentinel IS the request for page 2, so
+                  leaving it on the page would make the two-row preview a coat
+                  of paint over a list that kept loading itself. The wall below
+                  takes its place. */}
+              {!publicMode && hasMore && rowsSettled && (filteredPapers.length > 0 || isFetchingMore) && (
                 <div ref={observerRef} className="ehc-sentinel">
                   {isFetchingMore && <Loader2 className="ehc-spinner" size={24} />}
                   <span>{isFetchingMore
                     ? (isEnglish ? 'Loading more articles...' : 'Cargando más artículos...')
                     : (isEnglish ? 'Scroll for more' : 'Sigue bajando para ver más')}</span>
                 </div>
+              )}
+
+              {papersGateOpen && (
+                <ExplorerGuestGate
+                  kind="papers"
+                  total={guestGateTotal(entity)}
+                  onSignUp={requestAccount}
+                />
               )}
             </div>
 
@@ -2546,7 +2595,7 @@ export default function EntityExplorer({
           </>
         ) : (
           <div className="ee-authors-grid">
-            {(!isLoadingAuthors || isFetchingMoreAuthors) && entityAuthors.map((author, idx) => (
+            {(!isLoadingAuthors || isFetchingMoreAuthors) && visibleAuthors.map((author, idx) => (
               <div 
                 key={author.id} 
                 className="ee-author-card staggerFadeUp" 
@@ -2592,13 +2641,18 @@ export default function EntityExplorer({
               </div>
             )}
 
-            {hasMoreAuthors && (entityAuthors.length > 0 || isFetchingMoreAuthors) && (
+            {/* Same reason as the publications sentinel above. */}
+            {!publicMode && hasMoreAuthors && (entityAuthors.length > 0 || isFetchingMoreAuthors) && (
               <div ref={observerAuthorsRef} className="ehc-sentinel">
                 {isFetchingMoreAuthors && <Loader2 className="ehc-spinner" size={24} />}
                 <span>{isFetchingMoreAuthors
                   ? (isEnglish ? 'Loading more authors...' : 'Cargando más autores...')
                   : (isEnglish ? 'Scroll for more' : 'Sigue bajando para ver más')}</span>
               </div>
+            )}
+
+            {authorsGateOpen && (
+              <ExplorerGuestGate kind="authors" onSignUp={requestAccount} />
             )}
             {!isLoadingAuthors && !isFetchingMoreAuthors && entityAuthors.length === 0 && (
               authorsError ? (

@@ -170,3 +170,39 @@ export function nextExplorerRowBudget(budget, total, chunk = EXPLORER_ROW_CHUNK)
   return Math.min(Math.max(0, total), Math.max(0, budget) + chunk);
 }
 
+/**
+ * What somebody without an account is shown of a list, and when to put a door
+ * under it. Two rows: enough to see what this entity publishes and how the
+ * list reads, short enough that the page is an invitation rather than the
+ * whole library.
+ */
+export const GUEST_PREVIEW_LIMIT = 2;
+
+/** The rows to mount. With a session, the list itself, untouched. */
+export function guestPreviewRows(rows, { publicMode } = {}) {
+  if (!publicMode) return rows;
+  return rows.slice(0, GUEST_PREVIEW_LIMIT);
+}
+
+/**
+ * Whether the door goes under those rows. Only when something is actually
+ * behind it: an entity with two publications has reached its end, not a wall,
+ * and a list still loading cannot claim anything is missing yet.
+ */
+export function shouldShowGuestGate({ publicMode, loaded, hasMore, isLoading } = {}) {
+  if (!publicMode || isLoading) return false;
+  if (!(loaded > 0)) return false;
+  return loaded > GUEST_PREVIEW_LIMIT || Boolean(hasMore);
+}
+
+/**
+ * The count the door is allowed to name — the entity's own publication total,
+ * the same number the stats box above already shows. Anything that is not a
+ * number, or that does not exceed what is on screen, is no explanation for a
+ * wall, so the copy falls back to naming none.
+ */
+export function guestGateTotal(entity, shown = GUEST_PREVIEW_LIMIT) {
+  const total = entity?.works_count;
+  return Number.isFinite(total) && total > shown ? total : null;
+}
+

@@ -84,9 +84,12 @@ test('SOURCE: el vacío espera a que no quede ninguna página en vuelo', async (
  */
 test('SOURCE: el pie de la lista no invita a bajar por una lista vacía', async () => {
   const jsx = strip(await read('./EntityExplorer.jsx'));
-  assert.match(jsx, /\{hasMore && rowsSettled && \(filteredPapers\.length > 0 \|\| isFetchingMore\) && \(/,
+  // Sin `\{` delante: desde el 12-09 la condición lleva además `!publicMode`
+  // (el invitado no tiene centinela, ver explorerGuestGate.test.js). Lo que se
+  // defiende aquí es la guarda de la lista vacía, no quién va delante de ella.
+  assert.match(jsx, /hasMore && rowsSettled && \(filteredPapers\.length > 0 \|\| isFetchingMore\) && \(/,
     'publicaciones: con cero filas, sólo mientras se trae una página');
-  assert.match(jsx, /\{hasMoreAuthors && \(entityAuthors\.length > 0 \|\| isFetchingMoreAuthors\) && \(/,
+  assert.match(jsx, /hasMoreAuthors && \(entityAuthors\.length > 0 \|\| isFetchingMoreAuthors\) && \(/,
     'autores: lo mismo');
 });
 
