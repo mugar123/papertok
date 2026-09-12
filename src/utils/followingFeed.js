@@ -251,3 +251,24 @@ export function orderFromKeys(items = [], keys = []) {
     return [paper];
   });
 }
+
+/**
+ * The ranked list minus the papers the reader has skipped.
+ *
+ * Skip writes the id into `notInterestedIds` (FeedContext), which is what For
+ * You filters its own candidates against and what a reload reads back from
+ * Firestore. This feed renders a list of its own, so nothing of that reached
+ * it: the card the reader skipped stayed exactly where it was, and the button
+ * read as dead. Applying the shared set here is also what makes the skip
+ * stick — `mergeOrderedPapers` would otherwise re-append the paper as "new"
+ * the moment a refresh landed.
+ *
+ * The same array comes back when nothing is dropped: an identity that changes
+ * for no reason rebuilds the source object and re-renders every card.
+ */
+export function withoutNotInterested(papers = [], notInterestedIds = null) {
+  if (!Array.isArray(papers)) return [];
+  if (typeof notInterestedIds?.has !== 'function') return papers;
+  const next = papers.filter(paper => !(paper?.id && notInterestedIds.has(paper.id)));
+  return next.length === papers.length ? papers : next;
+}

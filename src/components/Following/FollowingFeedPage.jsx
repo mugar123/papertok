@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BellRing, CheckCheck, Search } from 'lucide-react';
 import FeedContainer from '../Feed/FeedContainer';
+import { useFeed } from '../../context/FeedContext';
 import { useFollowing } from '../../context/FollowingContext';
 import { useFollowingUpdates } from '../../context/FollowingUpdatesContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -12,6 +13,7 @@ import {
   orderFollowingFeedPapers,
   orderKeysOf,
   resumeOrderedPapers,
+  withoutNotInterested,
 } from '../../utils/followingFeed';
 import './FollowingFeedPage.css';
 
@@ -59,6 +61,10 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList, onOpenComme
   const navigate = useNavigate();
   const { isEnglish } = useLanguage();
   const { followedEntities } = useFollowing();
+  // Skip writes into this set (`markNotInterested`), and For You gets its
+  // effect for free because that same call drops the paper from the list it
+  // renders. This page renders its own, so it has to read the set itself.
+  const { notInterestedIds } = useFeed();
   const { items, seenIds, loading, refreshing, error, lastUpdatedAt, refresh, markSeen } = useFollowingUpdates();
 
   // Ranked on the first render, not in an effect after it: the state used to
@@ -85,6 +91,15 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList, onOpenComme
     lastOrder.ordered = orderedPapers;
     writeStoredOrderKeys(orderKeysOf(orderedPapers));
   }, [items, orderedPapers]);
+
+  // What the reader actually sees: the ranked order minus what they skipped.
+  // Derived rather than removed from `orderedPapers`, so the ranking stays the
+  // one the page stores and resumes, and so a skip that arrives from anywhere
+  // — this feed, For You, a paper page — takes the card out of here too.
+  const shownPapers = useMemo(
+    () => withoutNotInterested(orderedPapers, notInterestedIds),
+    [orderedPapers, notInterestedIds],
+  );
 
   const hasFollows = followedEntities.length > 0;
 
@@ -120,13 +135,13 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList, onOpenComme
   ), [hasFollows, isEnglish, navigate, refresh]);
 
   const source = useMemo(() => ({
-    papers: orderedPapers,
+    papers: shownPapers,
     loading,
     // The first wait is For You's discovery screen, not a skeleton card: the
     // container reads this instead of guessing from `loading`, which is false
     // for the tick before the first refresh starts.
     initialLoadPending: followingFirstLoadPending({ items, loading, lastUpdatedAt, error }),
-    error: error && orderedPapers.length === 0 ? 'FOLLOWING_LOAD_FAILED' : null,
+    error: error && shownPapers.length === 0 ? 'FOLLOWING_LOAD_FAILED' : null,
     hasMore: false,
     loadMore: () => {},
     refresh,
@@ -134,7 +149,7 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList, onOpenComme
     emptyState,
     showFollowReason: true,
     onPaperViewed: markSeen,
-  }), [orderedPapers, items, loading, lastUpdatedAt, error, refresh, refreshing, emptyState, markSeen]);
+  }), [shownPapers, items, loading, lastUpdatedAt, error, refresh, refreshing, emptyState, markSeen]);
 
   return (
     <FeedContainer

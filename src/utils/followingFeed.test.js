@@ -275,3 +275,55 @@ test('after a reload the order the reader left is rebuilt from its keys over the
   const inMemory = resumeFromKeys({ items: null, ordered: [b, a], orderKeys: keys }, items, new Set());
   assert.deepEqual(inMemory.slice(0, 2).map(paper => paper.id), ['b', 'a'], 'the order still in memory wins over the stored keys');
 });
+
+/**
+ * Skip, in the Following feed. The card used to stay exactly where it was:
+ * `markNotInterested` drops the paper from For You's list (FeedContext), and
+ * this page renders a `source` list of its own, so nothing on screen changed.
+ * The set the skip writes is the one thing both feeds share, so this page
+ * applies it to its own list — and, being the persisted set, it also keeps
+ * the paper from coming back on the next refresh or the next visit.
+ */
+test('the Following feed drops what the reader skipped, and keeps the array when it drops nothing', async () => {
+  const { withoutNotInterested } = await import('./followingFeed.js');
+  const papers = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+
+  assert.deepEqual(
+    withoutNotInterested(papers, new Set(['b'])).map(paper => paper.id),
+    ['a', 'c'],
+  );
+  assert.equal(withoutNotInterested(papers, new Set(['zzz'])), papers,
+    'same reference for a set that touches nothing: no re-render, no reshuffle');
+  assert.equal(withoutNotInterested(papers, new Set()), papers);
+  assert.equal(withoutNotInterested(papers, null), papers,
+    'a profile that has not loaded yet hides nothing');
+  assert.deepEqual(withoutNotInterested(null, new Set(['a'])), []);
+  assert.deepEqual(
+    withoutNotInterested([null, { id: 'a' }], new Set(['a'])).map(Boolean),
+    [false],
+    'a hole in the list is not an id, and is not what the skip removed',
+  );
+});
+
+test('SOURCE: the Following page hands the container the list minus the skipped papers', async () => {
+  const code = (await readSource('../components/Following/FollowingFeedPage.jsx'))
+    .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+
+  assert.match(code, /const \{ notInterestedIds \} = useFeed\(\);/,
+    'the page reads the shared set the skip writes');
+  const memo = code.match(/const shownPapers = useMemo\([\s\S]{0,220}?\);/)?.[0];
+  assert.ok(memo, 'the page derives the shown list from the ranked one');
+  assert.match(memo, /withoutNotInterested\(orderedPapers, notInterestedIds\)/,
+    'filtering the ranked order, so the skip survives a refresh and a revisit');
+  assert.match(memo, /\[orderedPapers, notInterestedIds\]/,
+    'and it recomputes when either changes — a stale memo is the bug all over again');
+
+  // The container renders `source.papers` and nothing else, so this is the
+  // one line that decides what the reader sees. `orderedPapers` here would
+  // reinstate the dead button with every test above still passing.
+  const source = code.match(/const source = useMemo\(\(\) => \(\{[\s\S]*?\}\), \[[^\]]*\]\);/)?.[0];
+  assert.ok(source, 'expected the source object the container is given');
+  assert.match(source, /papers: shownPapers,/, 'the container is given the filtered list');
+  assert.doesNotMatch(source, /papers: orderedPapers,/);
+  assert.match(source, /\}\), \[shownPapers,/, 'and the source is rebuilt when that list changes');
+});
