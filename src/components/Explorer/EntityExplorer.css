@@ -1437,13 +1437,6 @@
 }
 
 /* The peer-review check keeps a meaning colour of its own. */
-.eli-verified {
-  display: inline-flex;
-  vertical-align: middle;
-  margin-left: 6px;
-  color: var(--accent-sky);
-}
-
 .eli-authors {
   margin: 0 0 8px 0;
   color: var(--text-secondary);

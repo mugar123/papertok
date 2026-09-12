@@ -21,7 +21,7 @@ import { CATEGORIES, getCategoryLabel } from '../../data/categories';
 import { resolvePaperTopic } from '../../utils/topicNavigation';
 import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.js';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.js';
-import { Calendar, Award, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink, FileText, BarChart3, TrendingUp, Flame, Database, Sparkles, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Calendar, Award, Share2, Check, Unlock, Lock, ExternalLink, FileText, BarChart3, TrendingUp, Flame, Database, Sparkles, ArrowRight, ArrowLeft } from 'lucide-react';
 import ScientificText from '../ScientificText';
 import 'katex/dist/katex.min.css';
 import './ScientificReport.css';
@@ -29,7 +29,6 @@ import './ScientificReport.css';
 /** The same glyph per status the feed card uses, keyed the same way. */
 const STATUS_TAG_ICONS = {
   preprint: FileText,
-  verified: BadgeCheck,
   open: Unlock,
   openCopy: Unlock,
   subscription: Lock,

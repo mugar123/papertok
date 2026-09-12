@@ -84,15 +84,12 @@ const REVIEW_TAGS = {
       en: 'Preprint: shared before peer review.',
     },
   },
-  verified: {
-    key: 'verified',
-    tone: 'blue',
-    label: { es: 'Verificado', en: 'Verified' },
-    hint: {
-      es: 'Publicado en una revista o congreso con revisión por pares.',
-      en: 'Published in a peer-reviewed journal or conference.',
-    },
-  },
+  /* Sin entrada para 'verified', a propósito. El distintivo azul se retiró el
+     12-09-2026: marcaba la norma, no la excepción. La mayoría de lo que se
+     lee aquí ha pasado por revisión, así que el sello no informaba de nada y
+     competía por la mirada con el título. `reviewStatusForPaper` sigue
+     devolviendo 'verified' —es un hecho del registro y los filtros lo usan—,
+     pero no hay distintivo que pintar: sólo la salvedad, el preprint. */
 };
 
 const ACCESS_TAGS = {
@@ -137,10 +134,11 @@ function localize(tag, english) {
   };
 }
 
-/** The peer-review chip for a paper, or null when the record cannot say. */
+/** The peer-review chip for a paper, or null when there is nothing to flag. */
 export function reviewTagForPaper(paper, { english = false } = {}) {
   const status = reviewStatusForPaper(paper);
-  return status ? localize(REVIEW_TAGS[status], english) : null;
+  const tag = status ? REVIEW_TAGS[status] : null;
+  return tag ? localize(tag, english) : null;
 }
 
 /** The availability chip for a paper, or null when the record cannot say. */

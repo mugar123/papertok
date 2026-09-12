@@ -35,7 +35,6 @@ import { Sheet, SheetClose, SheetContent, SheetTitle } from '../ui/sheet.jsx';
 import { Switch } from '../ui/switch.jsx';
 import { Toggle } from '../ui/toggle.jsx';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.jsx';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip.jsx';
 import { useFollowing } from '../../context/FollowingContext';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -2425,9 +2424,6 @@ export default function EntityExplorer({
           <>
 
             
-            {/* One tooltip provider over the list, so moving between verified
-                badges does not re-wait the delay on each. */}
-            <TooltipProvider>
             <div className="explorer-grid">
               {(!isLoadingPapers || isFetchingMore) && mountedPapers.map((paper, idx) => (
                 <div 
@@ -2468,22 +2464,6 @@ export default function EntityExplorer({
                   </div>
                   <h3 className="eli-title">
                     <ScientificText>{paper.title}</ScientificText>
-                    {paper.peerReviewed && (
-                      // The name is on the badge itself (the row is the focus
-                      // stop, so the badge is not made focusable); the tooltip
-                      // spells it out for a pointer.
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={<span className="eli-verified" role="img" />}
-                          aria-label={isEnglish ? 'Published in a peer-reviewed journal' : 'Publicado en revista (revisado por pares)'}
-                        >
-                          <BadgeCheck size={16} aria-hidden="true" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {isEnglish ? 'Published in a peer-reviewed journal' : 'Publicado en revista (revisado por pares)'}
-                        </TooltipContent>
-                      </Tooltip>
-                    )}
                   </h3>
                   <p className="eli-authors">{(paper.authors || []).map(a => a.name || a).join(', ')}</p>
                   <p className="eli-summary">
@@ -2552,7 +2532,6 @@ export default function EntityExplorer({
                 </div>
               )}
             </div>
-            </TooltipProvider>
 
             {/* `isFetchingMore` cuenta tanto como `isLoadingPapers`. El
                 primero sólo cubre la página 1; el segundo, de la 2 en
