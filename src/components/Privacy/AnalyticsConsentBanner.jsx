@@ -48,7 +48,7 @@ function facePosition(face, state) {
   return order === 0 ? 'is-current' : order < 0 ? 'is-past' : 'is-next';
 }
 
-export default function AnalyticsConsentBanner({ guestFeedReady = false }) {
+export default function AnalyticsConsentBanner() {
   const location = useLocation();
   const { language } = useLanguage();
   const { user, loading: authLoading, onboardingComplete } = useAuth();
@@ -59,10 +59,12 @@ export default function AnalyticsConsentBanner({ guestFeedReady = false }) {
   const [dismissed, setDismissed] = useState(false);
   const dismissalTimerRef = useRef(null);
   const prefersReducedMotion = useReducedMotion();
+  // Only with a session. A visitor arriving at the guest feed was asked this
+  // on top of their first card, right after the interests sheet: two panels
+  // over a feed they had not read a line of yet. The ask waits for an account.
   const feedIsVisible = location.pathname === '/'
     && !authLoading
-    && ((Boolean(user) && onboardingComplete && papers.length > 0)
-      || (!user && guestFeedReady));
+    && Boolean(user) && onboardingComplete && papers.length > 0;
 
   const copy = COPY[language];
   const currentLabel = acceptanceState === 'loading'

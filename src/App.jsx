@@ -104,10 +104,6 @@ function AppContent() {
   // nothing else, so no social service ever enters the feed's module graph
   // and a feed load keeps costing one read.
   const [commentsPaper, setCommentsPaper] = useState(null)
-  const [guestFeedReady, setGuestFeedReady] = useState(false)
-  // While the guest is being asked what they are into, the consent banner
-  // waits: two panels arriving on the same first paint would be a wall.
-  const [guestInterestsOpen, setGuestInterestsOpen] = useState(false)
   const [authPromptOpen, setAuthPromptOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   // The palette mounts on its first open and then stays mounted, closed or
@@ -275,8 +271,6 @@ function AppContent() {
               ) : (
                 <PageTransition>
                   <GuestFeedPage
-                    onReady={setGuestFeedReady}
-                    onInterestsPromptChange={setGuestInterestsOpen}
                     interestsPromptSuspended={authPromptOpen}
                     onAuthRequired={requestAuthentication}
                     onOpenPdf={openPdf}
@@ -480,7 +474,7 @@ function AppContent() {
         </Suspense>
       )}
 
-      <AnalyticsConsentBanner guestFeedReady={guestFeedReady && !guestInterestsOpen} />
+      <AnalyticsConsentBanner />
 
       <AnimatePresence>
         {authPromptOpen && (

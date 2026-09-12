@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { LogIn, Search, Sparkles } from 'lucide-react';
+import { LogIn, Sparkles } from 'lucide-react';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useGuestFeed } from '../../hooks/useGuestFeed.js';
@@ -22,11 +22,9 @@ const NO_AREAS = Object.freeze([]);
 // finish before anything else asks for the eye.
 
 export default function GuestFeedPage({
-  onReady,
   onAuthRequired,
   onOpenPdf,
   onOpenComments = null,
-  onInterestsPromptChange = null,
   interestsPromptSuspended = false,
 }) {
   const { isEnglish, language, setLanguage } = useLanguage();
@@ -40,17 +38,6 @@ export default function GuestFeedPage({
   const [interestsOpen, setInterestsOpen] = useState(false);
   const trackedDemoRef = useRef(false);
   const firstAsk = interests === null;
-  const feedReady = guestFeed.papers.length > 0 && !guestFeed.loading && !guestFeed.isRefreshing;
-
-  useEffect(() => {
-    onReady?.(feedReady);
-    return () => onReady?.(false);
-  }, [feedReady, onReady]);
-
-  useEffect(() => {
-    onInterestsPromptChange?.(interestsOpen);
-    return () => onInterestsPromptChange?.(false);
-  }, [interestsOpen, onInterestsPromptChange]);
 
   // The first ask, the moment the page is up — not once the feed has loaded,
   // and with no beat before it: a visitor who has just arrived is choosing
@@ -141,9 +128,6 @@ export default function GuestFeedPage({
             >
               <Sparkles size={15} aria-hidden="true" />
               <span className="guest-interests-label">{interestsChipLabel}</span>
-            </button>
-            <button type="button" className="guest-header-button" onClick={() => requestAccount('other')} aria-label={isEnglish ? 'Search' : 'Buscar'}>
-              <Search size={17} />
             </button>
             <button type="button" className="guest-sign-in-button" onClick={() => requestAccount('other')}>
               <LogIn size={15} /> {isEnglish ? 'Sign in' : 'Entrar'}

@@ -40,3 +40,21 @@ test('el feed de invitado conserva su propio refresh, el que usa FeedContainer',
   assert.match(container, /source\.refresh/, 'FeedContainer dejó de leer el refresh del source');
   assert.match(container, /source\.isRefreshing/, 'FeedContainer dejó de leer isRefreshing del source');
 });
+
+/**
+ * La lupa de la cabecera de invitado (2026-09-12).
+ *
+ * No buscaba: abría el diálogo de «entra o crea una cuenta», igual que el
+ * botón de al lado. Un icono que promete una cosa y hace otra es peor que no
+ * estar, así que se va; la puerta a la cuenta sigue siendo el botón de entrar.
+ */
+
+const stripAllComments = source => source
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^\s*\/\/.*$/gm, '');
+
+test('la cabecera de invitado ya no dibuja la lupa', async () => {
+  const jsx = stripAllComments(await guestJsx);
+  assert.ok(!/\bSearch\b/.test(jsx), 'el icono de la lupa sigue importado o dibujado en GuestFeedPage.jsx');
+  assert.ok(!/'Buscar'/.test(jsx), 'la etiqueta del botón de buscar sigue en la cabecera');
+});
