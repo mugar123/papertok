@@ -141,25 +141,6 @@
    runs once, on something that already has a picture in it.
    No fill mode here either, for the same reason as above: this only withholds
    the pose, it never holds one. */
-/* Resumed, not arrived. A clipping already in front of the reader when the page
-   ITSELF is travelling has nothing to arrive from: it was there before. The
-   entrance is dropped and only the drift is kept, on its own beat.
-
-   Measured 2026-09-12 (production build, real session, back from an author page
-   onto a card with four clippings): the entrance started on the first frame of
-   the return and was still running 450ms after the page had stopped. At the
-   frame the page came to rest the four sat at 0.49, 0.33, 0.10 and 0.00 of
-   their resting 0.62, the last finishing near 750ms — the card's words back
-   exactly where they were left, its photographs coming back from nothing.
-
-   Which clippings these are is decided in `PaperCard.jsx` by asking
-   `useIsPageArriving` at the instant they are handed the entrance, so this is
-   only ever the ones on screen during the transition itself: a card scrolled to
-   afterwards plays its entrance in full. */
-.pc-figure.is-loaded.is-resumed {
-  animation: figureClipDrift var(--fig-drift-duration, 5s) ease-in-out 1.1s infinite;
-}
-
 .pc-figure:not(.is-loaded) {
   opacity: 0;
   animation: none;
