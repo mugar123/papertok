@@ -22,10 +22,16 @@
 
 /**
  * How long the card takes to leave. The removal is deferred by this much, so
- * it is also the longest a skip can be pending; over 300ms a UI exit stops
- * reading as a response and starts reading as a wait.
+ * it is also the longest a skip can be pending.
+ *
+ * 300ms is the top of the range for a UI exit, and this one earns it: what is
+ * leaving is a card the height and width of the screen, which is drawer scale,
+ * not dropdown scale. The first cut was 260ms on the house expo and measured
+ * beautifully while being invisible — 74% of the distance inside three
+ * frames, and the rest a sliver creeping off-screen. Expo brakes at the end,
+ * and the end of a departure happens where nobody is looking.
  */
-export const SKIP_EXIT_MS = 260;
+export const SKIP_EXIT_MS = 300;
 
 /**
  * The slot to pin the leaving card in, or `null` when there is nothing to

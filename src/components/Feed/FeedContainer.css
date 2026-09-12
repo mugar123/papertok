@@ -90,17 +90,23 @@
    for coming and going: an entity arrives from the right and going back
    sends it home the same way.
 
-   Two animations, because they want different curves. The travel runs on the
-   house expo, which spends most of the distance in the first third; the fade
-   is plain linear, because expo on an opacity is a flash with a tail and
-   never a fade.
+   Two animations, because they want different curves. The fade is plain
+   linear — an expo on an opacity is a flash with a tail and never a fade —
+   and the travel is `--ease-out-quad`, which is the point of this rule.
 
-   The fade's window was measured, not guessed (2026-09-12). The travel alone
-   already clears the whole card — 105% of its own width — so a fade that ran
-   to the end of it was spending its last 100ms on empty air. It runs from
-   60ms to 200ms instead, which is the stretch where the card's trailing third
-   is still over its successor: it leaves faded rather than at full strength,
-   and the two are never both legible for long. */
+   The travel curve was measured twice (2026-09-12). The first cut used the
+   house expo, the curve every arrival on this card uses, and it was a
+   mistake: expo spends its distance up front and brakes at the end, so the
+   card was 74% gone inside three frames and the remaining 200ms were a
+   sliver crawling off-screen. Nothing to follow — it read as the card
+   vanishing, which is what this exit exists to stop. An arrival brakes where
+   you are looking; a departure brakes where nobody is. Quad spreads it:
+   roughly a third gone at 50ms, two thirds at 125ms, out at 300ms.
+
+   The fade runs from 120ms, which is about where the card stops being the
+   thing you are reading and starts being the thing that is going, and ends
+   with the travel. Earlier than that it erased the card mid-screen; later and
+   two cards stay legible on top of each other. */
 .feed-snap-item--leaving {
   position: absolute;
   left: 0;
@@ -115,8 +121,8 @@
 
 .feed-snap-item--leaving > .pc {
   animation:
-    feedSkipExit 260ms var(--ease-out-expo) forwards,
-    feedSkipExitFade 140ms 60ms linear forwards;
+    feedSkipExit 300ms var(--ease-out-quad) forwards,
+    feedSkipExitFade 180ms 120ms linear forwards;
 }
 
 @keyframes feedSkipExit {
@@ -135,7 +141,7 @@
    left with. The fade alone still says the card went. */
 @media (prefers-reduced-motion: reduce) {
   .feed-snap-item--leaving > .pc {
-    animation: feedSkipExitFade 140ms linear forwards;
+    animation: feedSkipExitFade 180ms linear forwards;
   }
 }
 

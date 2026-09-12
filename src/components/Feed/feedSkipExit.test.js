@@ -120,8 +120,13 @@ test('SOURCE: the exit moves nothing but transform and opacity', async () => {
   assert.doesNotMatch(leaving, /animation:/, 'and the slot itself does not move');
 
   const travelling = bounded(stripComments(css), '.feed-snap-item--leaving > .pc {', '}', 'the travelling card', 8);
-  assert.match(travelling, /var\(--ease-out-expo\)/,
-    'the house curve, not a fourth hand-rolled cubic-bezier');
+  assert.match(travelling, /var\(--ease-out-[a-z]+\)/,
+    'a house curve, not a fourth hand-rolled cubic-bezier');
+  // Measured: on `--ease-out-expo` the card was 74% gone inside three frames
+  // and invisible as motion. Expo brakes at the end, and the end of a
+  // departure is off-screen.
+  assert.doesNotMatch(travelling, /var\(--ease-out-expo\)/,
+    'expo front-loads the distance, which is what made the first cut a flash');
   assert.match(travelling, /feedSkipExitFade[^;]*linear/,
     'the fade is linear: an expo on an opacity is a flash, not a fade');
   // One duration, two files. A CSS that drifts from the constant would defer
