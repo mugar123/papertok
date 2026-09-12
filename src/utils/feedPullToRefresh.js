@@ -20,6 +20,13 @@
  * Two ways to finish, also like TikTok's: a slow drag past the threshold and
  * a release, during which the pill grows with the distance; or a fast fling
  * that refreshes at once without waiting for the pill to fill.
+ *
+ * And the feed comes with the finger. For as long as this only grew a pill,
+ * the reader dragged 110px and the world did not move: the one gesture on the
+ * whole app that is direct manipulation had nothing under the thumb but a
+ * badge. `pullTravelPx` is what the papers themselves follow, resisted rather
+ * than raw, so the pull has a floor you can feel instead of a number that
+ * stops counting.
  */
 export const PULL_REFRESH_THRESHOLD_PX = 110;
 /** A fling this fast, over at least `PULL_FLING_MIN_PX`, refreshes on release. */
@@ -68,6 +75,29 @@ export function pullTakesOver({ startY, startX = 0, currentY, currentX = 0 }) {
   const dy = currentY - startY;
   if (dy <= 0) return false;
   return dy > Math.abs(currentX - startX);
+}
+
+/**
+ * How far the feed itself follows the finger, in px.
+ *
+ * Resisted, not raw: `dy·MAX / (dy + MAX)` gives back the whole movement at
+ * the start (the first pixels track the thumb almost exactly) and less and
+ * less of it after, approaching `PULL_MAX_TRAVEL_PX` and never reaching it.
+ * That is what a pull is supposed to feel like, and it is also what keeps the
+ * gesture alive past the threshold: `pullProgress` clamps at 110px, so on a
+ * linear travel the feed would go dead under the thumb at the exact moment
+ * the reader is deciding whether to let go.
+ *
+ * At the threshold the feed has moved 59px — about half the finger — which is
+ * enough of a gap under the navbar for the pill to sit in.
+ */
+export const PULL_MAX_TRAVEL_PX = 128;
+
+export function pullTravelPx({ startY, currentY }) {
+  if (typeof startY !== 'number') return 0;
+  const dy = currentY - startY;
+  if (dy <= 0) return 0;
+  return (dy * PULL_MAX_TRAVEL_PX) / (dy + PULL_MAX_TRAVEL_PX);
 }
 
 /** How far along the pull is, 0..1, for the pill to grow with. */

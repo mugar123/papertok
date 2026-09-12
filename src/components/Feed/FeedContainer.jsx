@@ -21,7 +21,7 @@ import {
 import AnimatedAtom from './AnimatedAtom';
 import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feedLoadingState';
 import { createFeedResumeMemory } from '../../utils/feedResumeMemory.js';
-import { pullStartFrom, pullTakesOver, pullProgress, pullOutcome } from '../../utils/feedPullToRefresh.js';
+import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feedPullToRefresh.js';
 import './FeedContainer.css';
 
 // Per-surface memory of the card each feed was left on: the Siguiendo feed
@@ -489,11 +489,16 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   // replace the feed under the reader); touchend reads the distance and
   // clears it either way. Neither calls preventDefault, so native scrolling
   // and the CSS scroll-snap are untouched.
-  const setPull = useCallback((progress) => {
-    const pill = refreshPillRef.current;
-    if (!pill) return;
-    pill.style.setProperty('--pull', String(progress));
-    pill.classList.toggle('is-pulling', progress > 0);
+  // Written to the WRAPPER, not to the pill: the papers have to follow the
+  // finger too, and the wrapper is the one ancestor both they and the pill
+  // hang off. Still not a single setState per drag event — that is the whole
+  // point of writing it to an element.
+  const setPull = useCallback((progress, travelPx = 0) => {
+    const wrapper = feedRef.current?.parentElement;
+    if (!wrapper) return;
+    wrapper.style.setProperty('--pull', String(progress));
+    wrapper.style.setProperty('--pull-y', `${travelPx.toFixed(1)}px`);
+    wrapper.classList.toggle('is-pulling', progress > 0);
   }, []);
   useEffect(() => {
     pullDepsRef.current = { handleRefresh, loading, isRefreshing };
@@ -659,13 +664,19 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
         state.phase = 'owning';
       }
       if (event.cancelable) event.preventDefault();
-      setPull(pullProgress({ startY: state.startY, currentY: touch.clientY }));
+      setPull(
+        pullProgress({ startY: state.startY, currentY: touch.clientY }),
+        pullTravelPx({ startY: state.startY, currentY: touch.clientY }),
+      );
     };
     const onEnd = (event) => {
       const owning = state.phase === 'owning';
       state.phase = 'idle';
       if (!owning) return;
-      setPull(0);
+      // Letting go drops the class, and losing the class is what hands the
+      // papers back to their own transition — the snap back is CSS, so it
+      // survives the re-render the refresh is about to cause.
+      setPull(0, 0);
       const touch = event.changedTouches[0];
       if (!touch) return;
       const outcome = pullOutcome({
@@ -678,7 +689,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     };
     const onCancel = () => {
       state.phase = 'idle';
-      setPull(0);
+      setPull(0, 0);
     };
     el.addEventListener('touchstart', onStart, { passive: true });
     el.addEventListener('touchmove', onMove, { passive: false });
@@ -811,7 +822,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
                     <RefreshCw
                       size={14}
                       aria-hidden="true"
-                      className={refreshPhase === 'refreshing' ? 'feed-refresh-icon--spinning' : undefined}
+                      className={`feed-refresh-icon${refreshPhase === 'refreshing' ? ' feed-refresh-icon--spinning' : ''}`}
                     />
                   )}
                 <span className="feed-refresh-label">{refreshLabel}</span>

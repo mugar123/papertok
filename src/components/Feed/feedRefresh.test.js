@@ -31,10 +31,45 @@ test('SOURCE: la píldora no existe para el invitado, y el tirón tampoco', asyn
 test('SOURCE: el tirón escribe su progreso en el elemento, no en el estado del feed', async () => {
   const src = strip(await read('./FeedContainer.jsx'));
   const move = src.slice(src.indexOf('const onMove = (event) => {'), src.indexOf('const onEnd = (event) => {'));
-  assert.match(move, /setPull\(pullProgress\(/);
+  assert.match(move, /setPull\(\s*pullProgress\(/);
+  assert.match(move, /pullTravelPx\(\{ startY: state\.startY, currentY: touch\.clientY \}\)/,
+    'el recorrido resistido viaja con el progreso: es lo que siguen los papers');
   assert.doesNotMatch(move, /set(?!Pull\b)[A-Z]\w*\(/, 'ningún setState por evento de arrastre');
   const pull = src.slice(src.indexOf('const setPull = useCallback('), src.indexOf('const handleMouseMove'));
   assert.match(pull, /style\.setProperty\('--pull'/);
+  assert.match(pull, /style\.setProperty\('--pull-y'/);
+  // Al envoltorio, no a la píldora: los papers también tienen que seguir al
+  // dedo, y el envoltorio es el único ancestro que comparten.
+  assert.match(pull, /const wrapper = feedRef\.current\?\.parentElement;/);
+  assert.doesNotMatch(pull, /refreshPillRef/, 'escribirlo en la píldora no llega a las tarjetas');
+});
+
+/**
+ * El tirón en móvil. Mientras esto sólo hacía crecer una píldora, el lector
+ * arrastraba 110px y el mundo no se movía: el único gesto de manipulación
+ * directa de toda la app no tenía nada bajo el pulgar salvo una insignia.
+ */
+test('SOURCE: al tirar, los papers vienen con el dedo y sin reloj de por medio', async () => {
+  const css = strip(await read('./FeedContainer.css'));
+  const at = css.indexOf('.feed-wrapper.is-pulling .pc {');
+  assert.ok(at > 0, 'la regla que arrastra las tarjetas sigue ahí');
+  const carry = css.slice(at, css.indexOf('}', at));
+  assert.match(carry, /transform: translateY\(var\(--pull-y\)\)/,
+    '`transform`, no `translate`: el velo del refresco ya usa `translate` en este mismo elemento y los dos tienen que componerse');
+  assert.doesNotMatch(carry, /translate:/, 'si el tirón pisa `translate`, el hundimiento del velo deja de existir');
+  assert.match(carry, /transition: none/, 'un reloj entre el pulgar y el papel es retraso');
+  // El release es CSS, así que sobrevive al re-render que trae el refresco.
+  const card = strip(await read('./PaperCard.css'));
+  assert.match(card, /transition:\s*opacity 0\.9s ease,\s*translate var\(--pc-travel\),\s*transform \d+ms var\(--ease-out-[a-z]+\)/,
+    'la tarjeta sabe volver sola al soltar, y sin perder ni la opacidad ni el hundimiento');
+  const pill = css.slice(css.indexOf('.feed-wrapper.is-pulling .feed-refresh {'), css.indexOf('}', css.indexOf('.feed-wrapper.is-pulling .feed-refresh {')));
+  assert.match(pill, /translate: -50% calc\(-18px \+ [\d.]+ \* var\(--pull-y\)\)/,
+    'la píldora va en el hueco que abren los papers, no en una distancia suya');
+  assert.match(css, /\.feed-wrapper\.is-pulling \.feed-refresh-icon \{\s*rotate: calc\(var\(--pull\) \* 180deg\)/,
+    'el icono gira con el tirón y entrega medio giro hecho al spinner');
+  const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
+  assert.match(reduced, /\.feed-wrapper\.is-pulling \.pc \{ transform: none; \}/);
+  assert.match(reduced, /\.feed-wrapper\.is-pulling \.feed-refresh-icon \{ rotate: none; \}/);
 });
 
 test('SOURCE: el invitado ve el modal de intereses al montar, sin esperar al feed', async () => {
@@ -89,7 +124,7 @@ test('SOURCE: el feed se cubre mientras se refresca, y el scroller sigue quieto'
   const card = strip(await read('./PaperCard.css'));
   assert.match(card, /@keyframes cardSlideUp \{\s*0% \{ transform: translateY\(10px\); \}/,
     'y son los mismos 10px, o deja de ser su entrada al revés');
-  assert.match(card, /transition: opacity 0\.9s ease, translate var\(--pc-travel\)/,
+  assert.match(card, /transition:\s*opacity 0\.9s ease,\s*translate var\(--pc-travel\)/,
     'la tarjeta sabe deslizar, y sin perder su propia transición de opacidad');
   const back = [...css.matchAll(/\.feed-container \{([^}]*)\}/g)]
     .map((m) => m[1]).find((b) => /transition:\s*opacity \d+ms/.test(b));

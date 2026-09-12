@@ -27,7 +27,18 @@
      half of it that runs on the way back up (.feed-container--refreshing in
      FeedContainer.css holds the way down). */
   --pc-travel: 340ms 80ms var(--ease-out-quad);
-  transition: opacity 0.9s ease, translate var(--pc-travel);
+  /* And `transform` on top of it, for the one movement that is the reader's
+     own: the pull-to-refresh carrying the papers down with the thumb
+     (.feed-wrapper.is-pulling in FeedContainer.css, which kills this
+     transition while the finger is down — a clock between the thumb and the
+     paper is lag). This is the release, and it is the one place in the app
+     where the expo IS the right curve: it is a rubber band being let go, not
+     a travel anyone is meant to follow, so front-loading it is the physics
+     rather than a shortcut. */
+  transition:
+    opacity 0.9s ease,
+    translate var(--pc-travel),
+    transform 320ms var(--ease-out-expo);
 }
 
 /* ── The page ──

@@ -10,6 +10,8 @@ import {
   pullStartFrom,
   pullTakesOver,
   pullProgress,
+  PULL_MAX_TRAVEL_PX,
+  pullTravelPx,
   pullOutcome,
 } from './feedPullToRefresh.js';
 
@@ -61,6 +63,33 @@ test('progress grows with the distance and is clamped to 1', () => {
   assert.equal(pullProgress({ startY: 100, currentY: 100 + PULL_REFRESH_THRESHOLD_PX / 2 }), 0.5);
   assert.equal(pullProgress({ startY: 100, currentY: 100 + PULL_REFRESH_THRESHOLD_PX * 3 }), 1);
   assert.equal(pullProgress({ startY: null, currentY: 400 }), 0);
+});
+
+/**
+ * El recorrido que siguen los papers. Resistido, no crudo: el tirón devuelve
+ * casi todo el movimiento al principio y cada vez menos después. Y es a
+ * propósito que NO comparte el clamp de `pullProgress`: la píldora deja de
+ * crecer en el umbral, pero el feed tiene que seguir contestando al pulgar
+ * justo cuando el lector está decidiendo si soltar.
+ */
+test('the feed follows the finger with resistance, and never runs out of it', () => {
+  assert.equal(pullTravelPx({ startY: 100, currentY: 100 }), 0, 'quieto no viaja');
+  assert.equal(pullTravelPx({ startY: 100, currentY: 40 }), 0, 'hacia arriba tampoco');
+  assert.equal(pullTravelPx({ startY: undefined, currentY: 300 }), 0);
+  const at = (dy) => pullTravelPx({ startY: 0, currentY: dy });
+  // Resistencia: siempre menos que el dedo, y proporcionalmente menos cuanto
+  // más se tira. Un tirón lineal no es un tirón.
+  for (const dy of [10, 50, 110, 240, 600]) assert.ok(at(dy) < dy, `${dy}px de dedo mueven menos de ${dy}px`);
+  assert.ok(at(10) / 10 > at(110) / 110, 'los primeros píxeles siguen al pulgar mucho más de cerca que los últimos');
+  assert.ok(at(110) / 110 > at(600) / 600);
+  // Monótono y acotado: nunca retrocede, nunca llega al techo.
+  let last = 0;
+  for (let dy = 1; dy <= 900; dy += 7) { const v = at(dy); assert.ok(v > last, `monótono en ${dy}`); assert.ok(v < PULL_MAX_TRAVEL_PX); last = v; }
+  // En el umbral el feed ha abierto un hueco donde cabe la píldora.
+  assert.ok(Math.abs(at(PULL_REFRESH_THRESHOLD_PX) - 59) < 1.5, `~59px en el umbral (${at(PULL_REFRESH_THRESHOLD_PX).toFixed(1)})`);
+  // Y pasado el umbral SIGUE contestando, que es lo que `pullProgress` no hace.
+  assert.equal(pullProgress({ startY: 0, currentY: 200 }), pullProgress({ startY: 0, currentY: 400 }), 'el progreso sí se satura');
+  assert.ok(at(400) - at(200) > 8, 'el recorrido no: el feed sigue vivo bajo el pulgar');
 });
 
 test('a slow drag refreshes only past the threshold', () => {

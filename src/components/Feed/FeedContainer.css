@@ -16,6 +16,12 @@
   height: calc(100dvh - var(--nav-total));
   margin-top: var(--nav-total);
   background: var(--bg-secondary);
+  /* The pull writes both of these here rather than on the pill, because the
+     papers follow the finger too and this is the one ancestor they share
+     (FeedContainer's `setPull`). `--pull` is 0..1 and drives what grows;
+     `--pull-y` is the resisted distance in px and drives what travels. */
+  --pull: 0;
+  --pull-y: 0px;
 }
 
 .feed-container {
@@ -64,7 +70,6 @@
    `top: 12px`, not `--nav-total + 12px`: this is an absolutely-positioned
    child of .feed-wrapper, which already carries `margin-top: var(--nav-total)`. */
 .feed-refresh {
-  --pull: 0;
   position: absolute; top: 12px; left: 50%;
   z-index: 5;
   display: inline-flex; align-items: center;
@@ -86,12 +91,38 @@
   pointer-events: auto;
   transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1), translate 200ms cubic-bezier(0.2, 0, 0, 1), scale 200ms cubic-bezier(0.2, 0, 0, 1);
 }
-.feed-refresh.is-pulling {
+/* Under the finger. Three things move together and none of them is on a
+   clock: what the reader sees IS the gesture, so every value here is read
+   straight off `--pull` / `--pull-y` and `transition: none` keeps a clock
+   from lagging behind the thumb.
+
+   The pill rides the gap the papers open rather than a distance of its own
+   (it used to be a flat 30px however far you pulled), so it stays in the
+   space that appears under the bar instead of drifting out of it. And the
+   icon turns with the pull — half a revolution by the threshold — which is
+   the one part of this that says "far enough" without a second state to
+   arm: it hands over to the spin already part-way round. */
+.feed-wrapper.is-pulling .feed-refresh {
   transition: none;
   opacity: var(--pull);
-  translate: -50% calc(-18px + 30px * var(--pull));
+  translate: -50% calc(-18px + 0.55 * var(--pull-y));
   scale: calc(0.9 + 0.12 * var(--pull));
   pointer-events: none;
+}
+.feed-wrapper.is-pulling .feed-refresh-icon {
+  rotate: calc(var(--pull) * 180deg);
+}
+/* The papers themselves. `transform`, not the `translate` the refresh veil
+   uses on this same element: the two compose instead of overwriting one
+   another, so the hand-over from "released" to "refreshing" is one movement
+   — measured, monotonic upward, no bounce in the middle. The travel is
+   resisted in JS (`pullTravelPx`), not here, because the clamp that makes
+   the pill stop at the threshold must NOT be what the papers obey: going
+   dead under the thumb at the moment the reader is deciding is the fault
+   this whole rule exists to fix. */
+.feed-wrapper.is-pulling .pc {
+  transform: translateY(var(--pull-y));
+  transition: none;
 }
 .feed-refresh:active:not(:disabled) { scale: 0.96; transition-duration: 80ms; }
 .feed-refresh:disabled { cursor: default; }
@@ -191,7 +222,11 @@
   .feed-container--refreshing { transition: opacity 120ms linear; }
   .feed-container--refreshing .pc { translate: none; }
   .feed-refresh, .feed-refresh.is-visible { transition: opacity 120ms linear; translate: -50% 0; scale: 1; }
-  .feed-refresh.is-pulling { translate: -50% 0; scale: 1; }
+  /* The pull keeps its only unambiguous signal — the pill fading up with the
+     distance — and gives up everything that travels. The papers stay put. */
+  .feed-wrapper.is-pulling .feed-refresh { translate: -50% 0; scale: 1; }
+  .feed-wrapper.is-pulling .feed-refresh-icon { rotate: none; }
+  .feed-wrapper.is-pulling .pc { transform: none; }
   .feed-refresh.is-done,
   .feed-refresh-icon--spinning { animation: none; }
 }

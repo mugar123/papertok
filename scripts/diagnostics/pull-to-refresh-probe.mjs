@@ -59,7 +59,7 @@ try {
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   };
   const setCard = async (n) => { await cdp.eval(`(()=>{const f=document.querySelector('.feed-container'); f.scrollTop=${n}*f.clientHeight; return true;})()`); await sleep(900); };
-  const state = () => cdp.eval(`(()=>{const f=document.querySelector('.feed-container'); return {card: Math.round(f.scrollTop/f.clientHeight), scrollTop: Math.round(f.scrollTop), refreshes: window.__refreshes, top: Math.round(f.getBoundingClientRect().top), pull: Number(document.querySelector('.feed-refresh')?.style.getPropertyValue('--pull')||0)};})()`);
+  const state = () => cdp.eval(`(()=>{const f=document.querySelector('.feed-container'); return {card: Math.round(f.scrollTop/f.clientHeight), scrollTop: Math.round(f.scrollTop), refreshes: window.__refreshes, top: Math.round(f.getBoundingClientRect().top), pull: Number(document.querySelector('.feed-wrapper')?.style.getPropertyValue('--pull')||0)};})()`);
   const run = async (label, { card, fromBandOffset, dy, steps = 12, stepMs = 30 }) => {
     await setCard(card);
     await cdp.eval('window.__refreshes=0; window.__moves=[]; window.__gesture=null');
