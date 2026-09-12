@@ -76,7 +76,7 @@ test('the ORCID experience panel closes on a curve of its own, not the arrival r
   const jsx = await read('./EntityExplorer.jsx');
   const foldOut = jsx.match(/const EXPERIENCE_FOLD_OUT = \{[\s\S]*?\n\};/);
   assert.ok(foldOut, 'the panel has a closing transition');
-  assert.match(foldOut[0], /opacity: \{ duration: 0\.16, ease: \[0\.4, 0, 1, 1\] \}/);
+  assert.match(foldOut[0], /opacity: \{ duration: 0\.16, ease: 'linear' \}/);
   assert.match(foldOut[0], /height: \{ duration: 0\.3, ease: \[0\.4, 0, 0\.2, 1\] \}/);
   assert.doesNotMatch(foldOut[0], /\[0\.16, 1, 0\.3, 1\]/, 'the collapse must not ride the arrival curve');
   // And it is actually reached by the exit variant.
@@ -154,9 +154,8 @@ test('reduced motion drops the movement and keeps the colour', async () => {
 test('the ORCID experience panel mounts at full height on arrival and animates only for the toggle', async () => {
   const jsx = await read('./EntityExplorer.jsx');
   assert.match(jsx, /const \[experienceToggled, setExperienceToggled\] = useState\(false\);/);
-  // Both places a new entity re-opens the panel also forget the toggle.
-  assert.match(jsx, /setAuthorsOpened\(false\);\s*setIsExperienceOpen\(true\);\s*setExperienceToggled\(false\);/);
-  assert.match(jsx, /setIsLoadingOrcid\(false\);\s*setIsExperienceOpen\(true\);\s*setExperienceToggled\(false\);/);
+  // The load owns the reset; a deferred overlay reset must not erase it.
+  assert.match(jsx, /setIsLoadingOrcid\(type === 'author' && Boolean\(bornWith\?\.orcid \|\| extractOrcid\(id\)\)\);\s*setIsExperienceOpen\(true\);\s*setExperienceToggled\(false\);/);
   // The reader's own press is what earns the entrance.
   assert.match(jsx, /onClick=\{\(\) => \{ setExperienceToggled\(true\); setIsExperienceOpen\(open => !open\); \}\}/);
   // On arrival the panel mounts at full height (the settle carries the space)
@@ -242,6 +241,17 @@ test('the experience panel arrives open only when it is short', async () => {
   assert.match(jsx, /setOrcidInfo\(record\);\s*setIsExperienceOpen\(\(record\?\.employments\?\.length \?\? 0\) <= EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS\);/);
 });
 
+test('career organisations use native buttons and the row entrance has a bounded delay', async () => {
+  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  assert.equal([...jsx.matchAll(/<button\s+type="button"\s+className="orcid-item-org orcid-item-org--link"/g)].length, 2,
+    'employment and education are keyboard-operable without synthetic link handlers');
+  assert.doesNotMatch(jsx, /<div\s+className="orcid-item-org orcid-item-org--link"/);
+  assert.match(jsx, /'--author-row-delay': `\$\{Math\.min\(i, 4\) \* 40\}ms`/,
+    'a long career never creates a multi-second entrance queue');
+  const css = stripComments(await read('./EntityExplorer.css'));
+  assert.match(css, /\.orcid-item-org--link \{\s*min-height: 24px;/);
+});
+
 /**
  * The block's grey rows exist to hold the box at the paragraph's height until
  * the paragraph is known. A topic's local tagline ("From subatomic particles
@@ -304,8 +314,9 @@ test('the experience disclosure and its chevron share one clock, and it is under
   assert.ok(seconds <= 0.3, `a disclosure stays under the 300ms ceiling, got ${seconds}s`);
 
   const jsx = stripComments(await read('./EntityExplorer.jsx'));
-  const panel = jsx.match(/height: \{ duration: ([\d.]+), ease: \[0\.16, 1, 0\.3, 1\] \},/);
+  const panel = jsx.slice(jsx.indexOf('id="ehc-experience-panel"')).match(/height: \{ duration: ([\d.]+), ease: \[0\.4, 0, 0\.2, 1\] \},/);
   assert.ok(panel, 'the panel still opens on a height transition');
+  assert.equal(chevron[2], 'cubic-bezier(0.4, 0, 0.2, 1)', 'the chevron follows the same easing as the fold');
   assert.equal(
     Number(panel[1]),
     seconds,

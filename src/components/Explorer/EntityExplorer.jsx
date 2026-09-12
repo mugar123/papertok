@@ -73,7 +73,7 @@ const EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS = 4;
 
 // The ORCID experience panel's collapse. What travels is the page under
 // the panel, and it has to land, so the space rides a gentle ease-in-out
-// while the contents leave on the house exit curve. 300ms because this
+// while the contents fade evenly. 300ms because this
 // is a click's answer — the reader is waiting on it.
 //
 // The curve itself was chosen by measurement on the Wikipedia fold, back when
@@ -83,7 +83,7 @@ const EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS = 4;
 // ease-in-out given too few frames measured WORSE than the front-loaded curve
 // it replaced. Shortening this is no free way to make it feel quicker.
 const EXPERIENCE_FOLD_OUT = {
-  opacity: { duration: 0.16, ease: [0.4, 0, 1, 1] },
+  opacity: { duration: 0.16, ease: 'linear' },
   height: { duration: 0.3, ease: [0.4, 0, 0.2, 1] },
 };
 
@@ -262,7 +262,9 @@ export default function EntityExplorer({
   const [wikiFoldExits, setWikiFoldExits] = useState(0);
   const [loadedWikiImageUrl, setLoadedWikiImageUrl] = useState('');
   const [orcidInfo, setOrcidInfo] = useState(null);
-  const [isLoadingOrcid, setIsLoadingOrcid] = useState(false);
+  // A known ORCID reserves its slot on the very first live frame. Waiting for
+  // the entity refresh to raise this flag would remove and reinsert the slot.
+  const [isLoadingOrcid, setIsLoadingOrcid] = useState(() => type === 'author' && Boolean(entity?.orcid || extractOrcid(id)));
 
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
@@ -593,19 +595,19 @@ export default function EntityExplorer({
   const entityIsFollowing = Boolean(!publicMode && followEntity && isFollowing(followEntity));
   const entityFollowPending = Boolean(!publicMode && followEntity && isFollowPending(followEntity));
 
-  // Reset overlays when navigating to a different entity
+  // Only overlay state belongs to this deferred reset. The load below owns
+  // ORCID and the experience disclosure; clearing them here could overwrite
+  // a fast response after it has already committed.
   useEffect(() => {
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       setSelectedPaper(null);
       setPdfPaperToView(null);
-      setOrcidInfo(null);
       setActiveTab('papers');
       setAuthorsOpened(false);
-      setIsExperienceOpen(true);
-      setExperienceToggled(false);
       setExpandedSummary(false);
       setParticipantsExpanded(false);
     }, 0);
+    return () => clearTimeout(timer);
   }, [type, id]);
 
   useEffect(() => {
@@ -644,7 +646,7 @@ export default function EntityExplorer({
       setWikiInfo(null);
       setWikiBlockOpened(false);
       setOrcidInfo(null);
-      setIsLoadingOrcid(false);
+      setIsLoadingOrcid(type === 'author' && Boolean(bornWith?.orcid || extractOrcid(id)));
       setIsExperienceOpen(true);
       setExperienceToggled(false);
       setExpandedSummary(false);
@@ -795,7 +797,7 @@ export default function EntityExplorer({
         setIsLoadingRecentImpact(true);
         setRecentImpactError(null);
       }
-      if (wantsOrcid) setIsLoadingOrcid(true);
+      setIsLoadingOrcid(wantsOrcid);
 
       const loadRecentImpact = async () => {
         try {
@@ -857,6 +859,7 @@ export default function EntityExplorer({
       setEntity(handedEntity || cachedEntity || null);
       setEntityError('ENTITY_LOAD_FAILED');
       setIsLoadingEntity(false);
+      setIsLoadingOrcid(false);
     });
     return () => {
       isCancelled = true;
@@ -1974,14 +1977,9 @@ export default function EntityExplorer({
                   // 0 height is the reader's toggle, where the box is at rest.
                   initial={experienceToggled ? (prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }) : { opacity: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
-                  // Closing is not opening reversed, and framer would make it
-                  // so: without a transition of its own the exit inherits the
-                  // component's, which is the arrival's expo-out. That is the
-                  // same mistake the Wikipedia fold was measured making — the
-                  // curve is front-loaded, so everything below the panel leapt
-                  // and then crawled (-31.9px in one frame, there). This is the
-                  // taller of the hero's two folds AND the only one a click
-                  // closes, so it is the one a reader watches.
+                  // Clear the text before the fold finishes closing. The
+                  // height has the same gentle curve in both directions;
+                  // only the opacity gets a shorter clock on the way out.
                   exit={prefersReducedMotion
                     ? { opacity: 0 }
                     : { opacity: 0, height: 0, transition: EXPERIENCE_FOLD_OUT }}
@@ -1991,8 +1989,8 @@ export default function EntityExplorer({
                       // The contents clear a little before the box finishes
                       // closing, so the last thing seen is an empty fold
                       // rather than text being guillotined by the clip.
-                      opacity: { duration: 0.2, ease: [0.16, 1, 0.3, 1] },
-                      height: { duration: 0.26, ease: [0.16, 1, 0.3, 1] },
+                      opacity: { duration: experienceToggled ? 0.24 : 0.36, ease: 'linear' },
+                      height: { duration: 0.3, ease: [0.4, 0, 0.2, 1] },
                     }}
                 >
                   <div className="ehc-experience-inner">
@@ -2002,23 +2000,18 @@ export default function EntityExplorer({
                   </div>
                   <div className="orcid-timeline">
                     {orcidInfo.employments.map((emp, i) => (
-                      <div key={i} className="orcid-timeline-item">
-                        <div
+                      <div key={i} className="orcid-timeline-item" style={{ '--author-row-delay': `${Math.min(i, 4) * 40}ms` }}>
+                        <button
+                          type="button"
                           className="orcid-item-org orcid-item-org--link"
                           onClick={async () => {
                             const inst = await findInstitution({ rorUrl: emp.ror, name: emp.organization });
                             if (inst) navigateToEntity('institution', inst.id);
                           }}
-                          onKeyDown={(event) => handleActivationKey(event, async () => {
-                            const inst = await findInstitution({ rorUrl: emp.ror, name: emp.organization });
-                            if (inst) navigateToEntity('institution', inst.id);
-                          })}
-                          role="link"
-                          tabIndex={0}
                           title={`${isEnglish ? 'Find and view profile for' : 'Buscar y ver perfil de'} ${emp.organization}`}
                         >
                           {emp.organization}
-                        </div>
+                        </button>
                         {emp.role && <div className="orcid-item-role">{emp.role}</div>}
                         {emp.startDate && (
                           <div className="orcid-item-dates">
@@ -2325,22 +2318,17 @@ export default function EntityExplorer({
                   <div className="orcid-timeline">
                     {orcidInfo.educations.map((edu, i) => (
                       <div key={i} className="orcid-timeline-item orcid-timeline-item--edu">
-                        <div
+                        <button
+                          type="button"
                           className="orcid-item-org orcid-item-org--link"
                           onClick={async () => {
                             const inst = await findInstitution({ rorUrl: edu.ror, name: edu.organization });
                             if (inst) navigateToEntity('institution', inst.id);
                           }}
-                          onKeyDown={(event) => handleActivationKey(event, async () => {
-                            const inst = await findInstitution({ rorUrl: edu.ror, name: edu.organization });
-                            if (inst) navigateToEntity('institution', inst.id);
-                          })}
-                          role="link"
-                          tabIndex={0}
                           title={`${isEnglish ? 'Find and view profile for' : 'Buscar y ver perfil de'} ${edu.organization}`}
                         >
                           {edu.organization}
-                        </div>
+                        </button>
                         {edu.role && <div className="orcid-item-role">{edu.role}</div>}
                         {edu.startDate && (
                           <div className="orcid-item-dates">

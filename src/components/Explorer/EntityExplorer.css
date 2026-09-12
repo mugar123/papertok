@@ -259,6 +259,17 @@
   animation: none;
 }
 
+/* An author resolves in several batches. Fading the entire live column again
+   multiplies the badge and career fades and dims the waiting skeleton too.
+   Keep that column stable; only the identity and newly resolved blocks fade. */
+.explorer-container--author .explorer-hero-content {
+  animation: none;
+}
+
+.explorer-container--author .ehc-header {
+  animation: authorContentFade 0.24s linear backwards;
+}
+
 /* The header pairs the identity (icon + name) on the left with a right-hand
    aside holding the compact stats and the follow action. */
 .ehc-header {
@@ -409,6 +420,8 @@
 .ehc-name-toggle {
   display: inline-flex;
   align-items: center;
+  min-width: 32px;
+  min-height: 28px;
   gap: 3px;
   flex: 0 0 auto;
   margin-top: 6px;
@@ -439,15 +452,10 @@
   outline-offset: 2px;
 }
 
-/* The chevron turns on the panel's clock, not on the generic 120ms one. It is
-   the same gesture: the arrow finishing a fifth of the way through the fold
-   made them read as two separate events, one of them already over. The pair
-   was 0.34s, which put a disclosure over the 300ms ceiling for UI motion (the
-   band for one is 150-250ms); 0.26s keeps them paired inside it. The fold's
-   CLOSE keeps its own 0.3s and its own curve — EXPERIENCE_FOLD_OUT in the JSX
-   says why closing is not opening reversed. */
+/* The chevron and the fold share the same gentle height curve in both
+   directions, so opening a long career does not jump on the first frame. */
 .ehc-name-toggle > svg:last-child {
-  transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .ehc-name-toggle.is-open > svg:last-child {
@@ -2332,15 +2340,34 @@
   padding: var(--space-5) var(--space-5) 4px;
 }
 
-/* The card takes the place of its skeleton, so the section itself does not
-   fade — it used to, from nothing, which blanked the card's space for a frame
-   after the shapes had held it for the whole wait. What moves is inside: the
-   blocks settle one after another at the page's tempo, the rows' own 0.42 s
-   curve and 6 px of rise from part-way visible, where before each took four
-   seconds to finish arriving and the card was still fading in when the reader
-   had long since started on the list. */
+/* The badge resolves in the skeleton's place; the details settle underneath.
+   Opacity advances evenly, independent of the small displacement. Backwards
+   fill reserves only the delayed first frame and releases every transform
+   after the entrance, keeping text and interactive content at rest. */
 .orcid-career-section--animate > * {
-  animation: staggerFadeUp 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation:
+    authorContentFade 0.36s linear backwards,
+    authorContentTravel 0.42s var(--ease-out-quad) backwards;
+}
+
+.orcid-career-section--animate > .orcid-career-header {
+  animation: authorContentFade 0.36s linear backwards;
+}
+
+/* The panel already fades as a whole. Its rows only travel, avoiding a second
+   opacity ramp on the same text. Delays stop growing after the fifth row. */
+.ehc-experience-panel .orcid-timeline-item {
+  animation: authorContentTravel 0.42s var(--ease-out-quad) var(--author-row-delay, 0ms) backwards;
+}
+
+@keyframes authorContentFade {
+  from { opacity: 0.35; }
+  to { opacity: 1; }
+}
+
+@keyframes authorContentTravel {
+  from { transform: translateY(6px); }
+  to { transform: none; }
 }
 
 .orcid-career-section--animate > *:nth-child(1) { animation-delay: 0s; }
@@ -2550,6 +2577,12 @@
 }
 
 .orcid-item-org--link {
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
   cursor: pointer;
   transition: opacity var(--transition-fast);
 }
@@ -2770,6 +2803,9 @@
   .ex-skel::after,
   .ehc-stat-value.is-settled,
   .orcid-career-section--animate > *,
+  .orcid-career-section--animate > .orcid-career-header,
+  .ehc-experience-panel .orcid-timeline-item,
+  .explorer-container--author .ehc-header,
   .ehc-spinner,
   .explorer-loading-note,
   .explorer-empty,

@@ -92,7 +92,11 @@ test('the ORCID card lands at the page\'s tempo, not over four seconds from noth
   const css = await read('./EntityExplorer.css');
   assert.doesNotMatch(css, /orcidPremiumReveal/);
   assert.doesNotMatch(css, /@keyframes orcidReveal/);
-  assert.match(css, /\.orcid-career-section--animate > \* \{\s*animation: staggerFadeUp 0\.42s cubic-bezier\(0\.16, 1, 0\.3, 1\) both;\s*\}/);
+  assert.match(css, /\.orcid-career-section--animate > \* \{\s*animation:\s*authorContentFade 0\.36s linear backwards,\s*authorContentTravel 0\.42s var\(--ease-out-quad\) backwards;\s*\}/);
+  assert.match(css, /\.orcid-career-section--animate > \.orcid-career-header \{\s*animation: authorContentFade 0\.36s linear backwards;\s*\}/, 'the badge resolves in place');
+  const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
+  assert.match(reduced, /\.orcid-career-section--animate > \.orcid-career-header,/);
+  assert.match(reduced, /\.ehc-experience-panel \.orcid-timeline-item,/);
   assert.match(css, /\.orcid-career-section--animate > \*:nth-child\(7\) \{ animation-delay: 0\.24s; \}/);
 });
 
@@ -113,7 +117,23 @@ test('the list is loading from the first live frame, so the empty-state copy nev
 
 test('the ORCID record and the impact score are requested together, declared before either starts', async () => {
   const jsx = await read('./EntityExplorer.jsx');
-  assert.match(jsx, /setEntity\(data \|\| handedEntity \|\| cachedEntity\);\s*setIsLoadingEntity\(false\);[\s\S]*?if \(wantsOrcid\) setIsLoadingOrcid\(true\);[\s\S]*?await Promise\.all\(\[\s*wantsRecentImpact \? loadRecentImpact\(\) : null,\s*wantsOrcid \? loadOrcid\(\) : null,\s*\]\);/);
+  assert.match(jsx, /setEntity\(data \|\| handedEntity \|\| cachedEntity\);\s*setIsLoadingEntity\(false\);[\s\S]*?setIsLoadingOrcid\(wantsOrcid\);[\s\S]*?await Promise\.all\(\[\s*wantsRecentImpact \? loadRecentImpact\(\) : null,\s*wantsOrcid \? loadOrcid\(\) : null,\s*\]\);/);
+});
+
+test('a known ORCID keeps its loading slot and a deferred reset cannot clear its response', async () => {
+  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  assert.match(jsx, /useState\(\(\) => type === 'author' && Boolean\(entity\?\.orcid \|\| extractOrcid\(id\)\)\)/);
+  assert.match(jsx, /setIsLoadingOrcid\(type === 'author' && Boolean\(bornWith\?\.orcid \|\| extractOrcid\(id\)\)\);/);
+  const reset = jsx.match(/useEffect\(\(\) => \{\s*const timer = setTimeout\(\(\) => \{\s*setSelectedPaper\(null\);([\s\S]*?)\}, \[type, id\]\);/);
+  assert.ok(reset, 'the overlay reset is cancellable');
+  assert.doesNotMatch(reset[1], /setOrcidInfo|setIsLoadingOrcid|setIsExperienceOpen|setExperienceToggled/,
+    'a fast ORCID response survives the next timer task');
+  assert.match(reset[1], /return \(\) => clearTimeout\(timer\);/);
+  assert.match(jsx, /setEntityError\('ENTITY_LOAD_FAILED'\);\s*setIsLoadingEntity\(false\);\s*setIsLoadingOrcid\(false\);/,
+    'a failed entity refresh releases the waiting slot');
+  const css = stripComments(await read('./EntityExplorer.css'));
+  assert.match(css, /\.explorer-container--author \.explorer-hero-content \{\s*animation: none;\s*\}/,
+    'the column does not multiply the opacity of the arriving career blocks');
 });
 
 /**

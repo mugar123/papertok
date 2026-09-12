@@ -113,7 +113,7 @@ test('the explorer is born with the entity a link handed over, and treats its ow
  */
 test('a thrown fetch keeps the hero the palette already painted, instead of demolishing it', async () => {
   const jsx = (await read('./EntityExplorer.jsx')).replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
-  assert.match(jsx, /loadEntity\(\)\.catch\(error => \{\s*if \(isCancelled\) return;\s*console\.error\('Failed to load entity', error\);\s*setEntity\(handedEntity \|\| cachedEntity \|\| null\);\s*setEntityError\('ENTITY_LOAD_FAILED'\);\s*setIsLoadingEntity\(false\);\s*\}\);/);
+  assert.match(jsx, /loadEntity\(\)\.catch\(error => \{\s*if \(isCancelled\) return;\s*console\.error\('Failed to load entity', error\);\s*setEntity\(handedEntity \|\| cachedEntity \|\| null\);\s*setEntityError\('ENTITY_LOAD_FAILED'\);\s*setIsLoadingEntity\(false\);\s*setIsLoadingOrcid\(false\);\s*\}\);/);
 });
 
 test('an entity already in the persistent cache is born resolved, like one handed over from the palette', async () => {
