@@ -67,7 +67,7 @@
   --pull: 0;
   position: absolute; top: 12px; left: 50%;
   z-index: 5;
-  display: inline-flex; align-items: center; gap: 6px;
+  display: inline-flex; align-items: center;
   padding: 6px 12px; border-radius: 999px;
   background: var(--bg-card); color: var(--text-primary);
   border: 1px solid var(--border-default); box-shadow: var(--shadow-md);
@@ -96,6 +96,20 @@
 .feed-refresh:active:not(:disabled) { scale: 0.96; transition-duration: 80ms; }
 .feed-refresh:disabled { cursor: default; }
 .feed-refresh.is-done { animation: feedRefreshDone 420ms cubic-bezier(0.2, 0, 0, 1); }
+/* Face slot: icon+label crossfade together. `layout` on the face morphs the
+   pill width across Refreshing → Updated → Refresh without a hard jump. */
+.feed-refresh-face {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+}
+.feed-refresh-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
 .feed-refresh-icon--spinning { animation: feedRefreshSpin 0.8s linear infinite; }
 @keyframes feedRefreshSpin { to { rotate: 360deg; } }
 @keyframes feedRefreshDone {

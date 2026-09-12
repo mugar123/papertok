@@ -495,16 +495,23 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   }, [handleMouseMove, publicMode]);
 
   // A short "done" beat once a refresh lands, before the pill hides again.
+  // Long enough for the face crossfade to enter, hold, and leave — 600ms
+  // clipped the Updated → Refresh exit mid-fade.
   useEffect(() => {
-    if (wasRefreshingRef.current && !isRefreshing) {
+    if (isRefreshing) {
+      wasRefreshingRef.current = true;
+      setRefreshDone(false);
+      return undefined;
+    }
+    if (wasRefreshingRef.current) {
       setRefreshDone(true);
-      const t = setTimeout(() => setRefreshDone(false), 600);
+      const holdMs = prefersReducedMotion ? 500 : 1000;
+      const t = setTimeout(() => setRefreshDone(false), holdMs);
       wasRefreshingRef.current = false;
       return () => clearTimeout(t);
     }
-    wasRefreshingRef.current = isRefreshing;
     return undefined;
-  }, [isRefreshing]);
+  }, [isRefreshing, prefersReducedMotion]);
 
   const handleOpenPdf = useCallback((paper) => {
     if (!publicMode) trackPdfOpened(paper);
@@ -681,6 +688,23 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   }
 
   if (displayState === FEED_DISPLAY_STATES.FEED || atomVeil) {
+  const refreshPhase = isRefreshing ? 'refreshing' : refreshDone ? 'done' : 'idle';
+  const refreshLabel = isEnglish
+    ? ({ refreshing: 'Refreshing…', done: 'Updated', idle: 'Refresh' }[refreshPhase])
+    : ({ refreshing: 'Actualizando…', done: 'Actualizado', idle: 'Actualizar' }[refreshPhase]);
+  const refreshFaceMotion = prefersReducedMotion
+    ? {
+        initial: { opacity: 0 },
+        animate: { opacity: 1 },
+        exit: { opacity: 0 },
+        transition: { duration: 0.12, ease: 'linear' },
+      }
+    : {
+        initial: { opacity: 0, y: 5 },
+        animate: { opacity: 1, y: 0 },
+        exit: { opacity: 0, y: -5 },
+        transition: { duration: 0.22, ease: [0.2, 0, 0, 1] },
+      };
   return (
     <FeedLandmark landmark={landmark}>
       {!publicMode && papers.length > 0 && (
@@ -692,12 +716,38 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
           disabled={isRefreshing}
           aria-busy={isRefreshing || undefined}
         >
-          {refreshDone && !isRefreshing
-            ? <Check size={14} aria-hidden="true" />
-            : <RefreshCw size={14} aria-hidden="true" className={isRefreshing ? 'feed-refresh-icon--spinning' : undefined} />}
-          {isEnglish
-            ? (isRefreshing ? 'Refreshing…' : refreshDone ? 'Updated' : 'Refresh')
-            : (isRefreshing ? 'Actualizando…' : refreshDone ? 'Actualizado' : 'Actualizar')}
+          <motion.span
+            className="feed-refresh-face"
+            layout={!prefersReducedMotion}
+            transition={prefersReducedMotion ? undefined : { layout: { duration: 0.28, ease: [0.2, 0, 0, 1] } }}
+          >
+            <AnimatePresence initial={false}>
+              <motion.span
+                key={refreshPhase}
+                className="feed-refresh-content"
+                initial={refreshFaceMotion.initial}
+                animate={refreshFaceMotion.animate}
+                exit={{
+                  ...refreshFaceMotion.exit,
+                  position: 'absolute',
+                  left: 0,
+                  top: 0,
+                }}
+                transition={refreshFaceMotion.transition}
+              >
+                {refreshPhase === 'done'
+                  ? <Check size={14} aria-hidden="true" />
+                  : (
+                    <RefreshCw
+                      size={14}
+                      aria-hidden="true"
+                      className={refreshPhase === 'refreshing' ? 'feed-refresh-icon--spinning' : undefined}
+                    />
+                  )}
+                <span className="feed-refresh-label">{refreshLabel}</span>
+              </motion.span>
+            </AnimatePresence>
+          </motion.span>
         </button>
       )}
       <div

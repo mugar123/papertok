@@ -87,10 +87,23 @@ test('SOURCE: el feed se atenúa mientras se refresca, y sólo con opacidad', as
 
 test('SOURCE: la píldora dice qué está haciendo en cada uno de sus tres estados', async () => {
   const src = strip(await read('./FeedContainer.jsx'));
-  const at = src.indexOf('className={`feed-refresh');
-  assert.ok(at > 0, 'la píldora sigue ahí');
+  const at = src.indexOf("const refreshPhase = isRefreshing");
+  assert.ok(at > 0, 'la píldora sigue tipando sus tres caras');
   const body = src.slice(at, src.indexOf('</button>', at));
-  assert.match(body, /refreshDone && !isRefreshing\s*\?\s*<Check/, 'al terminar, una marca, no la flecha girando');
-  assert.match(body, /isRefreshing \? 'Refreshing…' : refreshDone \? 'Updated' : 'Refresh'/);
-  assert.match(body, /isRefreshing \? 'Actualizando…' : refreshDone \? 'Actualizado' : 'Actualizar'/);
+  assert.match(body, /AnimatePresence initial=\{false\}/, 'las caras se cruzan, no se cortan');
+  assert.match(body, /position: 'absolute'/, 'la cara que sale no colapsa el ancho de la píldora');
+  assert.match(body, /refreshPhase === 'done'\s*\?\s*<Check/, 'al terminar, una marca, no la flecha girando');
+  assert.match(body, /refreshing: 'Refreshing…', done: 'Updated', idle: 'Refresh'/);
+  assert.match(body, /refreshing: 'Actualizando…', done: 'Actualizado', idle: 'Actualizar'/);
+  assert.match(body, /layout=\{!prefersReducedMotion\}/, 'el ancho de la píldora morphéa con el texto');
+});
+
+test('SOURCE: el beat de Actualizado deja sitio al crossfade de salida', async () => {
+  const src = strip(await read('./FeedContainer.jsx'));
+  const at = src.indexOf('wasRefreshingRef.current = true');
+  assert.ok(at > 0, 'el efecto del beat sigue ahí');
+  const beat = src.slice(at - 80, at + 420);
+  assert.match(beat, /prefersReducedMotion \? 500 : 1000/, '1s en motion pleno; 500ms si reduced');
+  assert.match(beat, /if \(isRefreshing\) \{[\s\S]*setRefreshDone\(false\)/,
+    'un refresh nuevo limpia el done para no mezclar is-done con el spinner');
 });
