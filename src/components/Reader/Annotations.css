@@ -28,9 +28,18 @@
   /* The corner it grows from is the one nearest the passage, and Base UI
      says which. */
   transform-origin: var(--transform-origin, top left);
-  transition: opacity 150ms cubic-bezier(0.16, 1, 0.3, 1),
-    scale 150ms cubic-bezier(0.16, 1, 0.3, 1),
-    translate 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  /* Four properties, three jobs. The fade is a straight line — on the expo
+     curve the menu was at 79% opacity 60ms in, which is a flash rather than an
+     arrival (measured 2026-09-12, same defect as the export card's). The
+     arrival keeps the curve. And `width` is here because this box grows: the
+     composer is 348px against the list's 244, and until this line the menu
+     jumped between them with nothing animating at all — the one animation
+     Base UI could not carry over when this menu stopped being a framer
+     element (2026-09-05). */
+  transition: opacity 200ms linear,
+    scale 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    translate 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    width 220ms var(--ease-out-quad);
 }
 
 .rd-menu[data-composing] {

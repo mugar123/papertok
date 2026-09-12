@@ -26,6 +26,23 @@ import { annotatePassage, PaperAnnotationError } from '../services/paperAnnotati
  */
 
 const IDLE = 'idle';
+
+/**
+ * How long a newly created annotation keeps its `fresh` flag.
+ *
+ * The flag is one switch holding two animations: the pen stroke laying colour
+ * on the passage (`rdPenDown`, 420ms) and an AI note writing itself in the rail
+ * (`rdWriteIn`, 620ms). Taking it off does not end them, it *cancels* them
+ * wherever they happen to be — the CSS rules that draw them are keyed on the
+ * attribute, so the element drops to its resting state mid-sweep.
+ *
+ * It used to come off when the rail's own card had finished arriving, at 220ms:
+ * the stroke was cut at 52% of its travel and the note at 35%, which is why
+ * both read as not animating at all (measured 2026-09-12). This is the longer
+ * of the two with a couple of frames to spare, so whichever is running gets to
+ * finish — and it no longer depends on the rail being open to be correct.
+ */
+export const FRESH_SETTLE_MS = 700;
 /** One frozen empty list, so "nothing to show" is a stable identity. */
 const EMPTY = Object.freeze([]);
 
@@ -77,6 +94,35 @@ export function usePassageAnnotations({
    * they carry words, and nothing else. Returns the stored annotation so the
    * caller can decide what to do next.
    */
+  /** Takes the one-shot `fresh` flag back off once its animation has run. */
+  const settle = useCallback((annotationId) => {
+    setLoaded(current => current.map(item => (
+      item.id === annotationId && item.fresh ? { ...item, fresh: false } : item
+    )));
+  }, []);
+
+  /* One timer per annotation, because two can be created inside the same
+     window — ask for an explanation, mark another passage while it writes —
+     and a single timer would settle the first one's flag on the second one's
+     clock. */
+  const freshTimers = useRef(new Map());
+  const scheduleSettle = useCallback((annotationId) => {
+    if (!annotationId) return;
+    const timers = freshTimers.current;
+    clearTimeout(timers.get(annotationId));
+    timers.set(annotationId, setTimeout(() => {
+      timers.delete(annotationId);
+      settle(annotationId);
+    }, FRESH_SETTLE_MS));
+  }, [settle]);
+  useEffect(() => {
+    const timers = freshTimers.current;
+    return () => {
+      timers.forEach(timerId => clearTimeout(timerId));
+      timers.clear();
+    };
+  }, []);
+
   const store = useCallback(async ({ kind, note }) => {
     if (!uid || !pending) return null;
     const saved = await saveUserHighlight(uid, {
@@ -97,8 +143,9 @@ export function usePassageAnnotations({
       // pen can be seen laying the colour down on the passage that just got it.
       { ...saved, fresh: true },
     ]);
+    scheduleSettle(saved.id);
     return saved;
-  }, [language, level, paper?.title, paperId, pending, uid]);
+  }, [language, level, paper?.title, paperId, pending, scheduleSettle, uid]);
 
   const highlight = useCallback(async () => {
     const saved = await store({ kind: 'user' });
@@ -174,6 +221,7 @@ export function usePassageAnnotations({
           unsaved: true,
         };
       setLoaded(current => [...current.filter(item => item.id !== entry.id), entry]);
+      scheduleSettle(entry.id);
       return entry;
     } catch (caught) {
       if (caught instanceof PaperAnnotationError && caught.code === 'AI_CANCELLED') return null;
@@ -182,7 +230,7 @@ export function usePassageAnnotations({
     } finally {
       setBusy(IDLE);
     }
-  }, [language, level, onQuota, paper, paperId, pending, trackEvent, uid]);
+  }, [language, level, onQuota, paper, paperId, pending, scheduleSettle, trackEvent, uid]);
 
   const remove = useCallback(async (annotationId) => {
     if (!annotationId) return;
@@ -196,13 +244,6 @@ export function usePassageAnnotations({
     if (!ok && removed) setLoaded(current => [...current, removed]);
   }, [annotations, uid]);
 
-  /** Takes the one-shot `fresh` flag back off once its animation has run. */
-  const settle = useCallback((annotationId) => {
-    setLoaded(current => current.map(item => (
-      item.id === annotationId && item.fresh ? { ...item, fresh: false } : item
-    )));
-  }, []);
-
   return {
     annotations,
     pending,
@@ -214,7 +255,6 @@ export function usePassageAnnotations({
     saveNote,
     ask,
     remove,
-    settle,
     clearError: useCallback(() => setError(null), []),
   };
 }

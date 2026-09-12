@@ -39,7 +39,6 @@ export default function AnnotationRail({
   errorText,
   onFocus,
   onRemove,
-  onSettle,
   labelFor,
   copy,
 }) {
@@ -284,7 +283,6 @@ export default function AnnotationRail({
                 ? { opacity: 0, transition: { duration: 0.12 } }
                 : { opacity: 0, x: -8, height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, transition: { duration: 0.18, ease: 'easeIn' } }}
               transition={{ duration: prefersReducedMotion ? 0.12 : 0.22, ease: [0.16, 1, 0.3, 1] }}
-              onAnimationComplete={() => { if (annotation.fresh) onSettle(annotation.id); }}
             >
               <div className="rd-note-head">
                 <span className="rd-note-origin">

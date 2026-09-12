@@ -23,6 +23,14 @@
   overflow: hidden;
 }
 
+/* It rises out of the button it was opened from. The 12px it used to travel
+   were a framer `motion.div`, dropped when the card became a Base UI popover
+   (2026-09-05) and its entrance became a fade and a scale; a card this size
+   needs the distance to read as coming from somewhere. The property itself is
+   listed in the shared popup (ui/popover.jsx) — here is only how far. */
+.rd-export[data-starting-style] { translate: 0 12px; }
+.rd-export[data-ending-style] { translate: 0 6px; }
+
 .rd-export-head {
   display: flex;
   align-items: center;

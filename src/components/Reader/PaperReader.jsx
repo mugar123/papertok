@@ -1785,7 +1785,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             errorText={askErrorText || ANNOTATION_ERROR_COPY[isEnglish ? 'en' : 'es'].AI_UNAVAILABLE}
             onFocus={goToPassage}
             onRemove={annotations.remove}
-            onSettle={annotations.settle}
             labelFor={annotationLabel}
             copy={copy}
           />
