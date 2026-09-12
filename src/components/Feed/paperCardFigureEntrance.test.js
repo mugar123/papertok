@@ -59,7 +59,7 @@ test('the entrance is withheld by the same class the stylesheet gates it on', as
   assert.match(withheld, /opacity: 0;/);
   assert.match(withheld, /animation: none;/);
   // And the entrance itself is still the thing being withheld.
-  assert.match(css, /animation:\s*\n?\s*figureClipIn var\(--fig-in-duration, 420ms\)/);
+  assert.match(css, /animation:\s*\n?\s*figureClipIn var\(--fig-in-duration, 480ms\)/);
 });
 
 /**
@@ -90,17 +90,24 @@ test('the clippings stagger by delay and all travel at the same speed', async ()
 test('the entrance spends its run moving, and holds only its first frame', async () => {
   const css = strip(await read('./PaperCard.css'));
   const figure = css.slice(css.indexOf('.pc-figure {'), css.indexOf('}', css.indexOf('.pc-figure {')));
-  assert.match(figure, /figureClipIn var\(--fig-in-duration, 420ms\) var\(--ease-out-quad\)\s*\n?\s*var\(--fig-in-delay, 0ms\) backwards/,
+  assert.match(figure, /figureClipIn var\(--fig-in-duration, 480ms\) var\(--ease-out-quad\)\s*\n?\s*var\(--fig-in-delay, 0ms\) backwards/,
     'quad, no expo: el expo-out hace el 80 % del viaje en el primer quinto');
   assert.doesNotMatch(figure, /figureClipIn[^,]*cubic-bezier\(0\.16/, 'y el expo no vuelve por la puerta de atrás');
   assert.doesNotMatch(figure, /forwards|both/,
     'nada de fill hacia adelante: dentro de content-visibility: auto una pose retenida es una figura congelada');
-  assert.match(figure, /figureClipDrift[\s\S]{0,140}calc\(var\(--fig-in-delay, 0ms\) \+ var\(--fig-in-duration, 420ms\) \+ 1\.1s\)/,
+  assert.match(figure, /figureClipDrift[\s\S]{0,140}calc\(var\(--fig-in-delay, 0ms\) \+ var\(--fig-in-duration, 480ms\) \+ 1\.1s\)/,
     'la deriva espera a la entrada ENTERA, retardo incluido, o empieza encima de ella');
   const keyframes = css.slice(css.indexOf('@keyframes figureClipIn'), css.indexOf('}', css.indexOf('@keyframes figureClipIn') + 60));
   assert.doesNotMatch(keyframes, /0%, 20%/,
     'el hueco del 20 % era el escalonado viejo; con retardo de verdad sólo es tiempo muerto dentro de la carrera');
   assert.match(keyframes, /0% \{/);
+  assert.doesNotMatch(keyframes, /opacity:|rotate:/, 'the settle keeps the resting tilt and does not ease opacity');
+  assert.match(figure, /figureClipFade var\(--fig-in-duration, 480ms\) linear\s*var\(--fig-in-delay, 0ms\) backwards/,
+    'the fade uses the same duration and delay, but progresses evenly');
+  assert.match(css, /@keyframes figureClipFade \{\s*from \{ opacity: 0; \}/);
+  const reduced = css.split('@media (prefers-reduced-motion: reduce)').find((block, index) => index > 0 && block.includes('.pc-figure,'));
+  assert.match(reduced, /\.pc-figure,\s*\.pc-figure\.is-loaded\.is-resumed,[^{]*\{\s*animation: none;/,
+    'reduced motion also overrides the more specific resumed-figure rule and stops its drift');
 });
 
 /**

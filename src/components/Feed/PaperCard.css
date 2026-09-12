@@ -108,7 +108,7 @@
   rotate: calc(var(--fig-slot-tilt, 0deg) + var(--fig-tilt, 0deg));
   translate: var(--fig-shift-x, 0px) var(--fig-shift-y, 0px);
   /* Nothing here holds a pose AFTER it ends: the resting pose above is what
-     the browser paints once both animations are done, which is the defence
+     the browser paints once the entrance animations are done, which is the defence
      against the feed's `content-visibility: auto` — inside a skipped subtree
      animations do not run at all, and a `forwards` fill would leave a figure
      frozen wherever it happened to be.
@@ -127,10 +127,12 @@
      finished and then twitched. 1.1s hands over while the entrance is still
      the thing you are watching. */
   animation:
-    figureClipIn var(--fig-in-duration, 420ms) var(--ease-out-quad)
+    figureClipIn var(--fig-in-duration, 480ms) var(--ease-out-quad)
+      var(--fig-in-delay, 0ms) backwards,
+    figureClipFade var(--fig-in-duration, 480ms) linear
       var(--fig-in-delay, 0ms) backwards,
     figureClipDrift var(--fig-drift-duration, 5s) ease-in-out
-      calc(var(--fig-in-delay, 0ms) + var(--fig-in-duration, 420ms) + 1.1s) infinite;
+      calc(var(--fig-in-delay, 0ms) + var(--fig-in-duration, 480ms) + 1.1s) infinite;
 }
 
 /* Until the bytes are actually here, the clipping is not.
@@ -212,19 +214,19 @@
   animation: none;
 }
 
-/* Laid down rather than switched on: the clipping arrives flat and a touch
-   low, then settles into its slot. The first fifth of the run used to be a
-   hold, which is how the four were staggered before `--fig-in-delay` existed;
-   with a real delay it was only dead time inside the run. There is no closing
-   keyframe on purpose: the browser synthesises it from the resting pose, so
-   the animation cannot end anywhere else. */
+/* Opacity advances evenly while the movement eases into its slot. Keeping
+   the resting tilt throughout avoids turning the whole image as it appears;
+   the small scale change and rise give it a soft landing. Neither animation
+   retains its final frame: CSS supplies the resting pose after the entrance. */
 @keyframes figureClipIn {
   0% {
-    opacity: 0;
-    rotate: 0deg;
-    translate: var(--fig-shift-x, 0px) calc(var(--fig-shift-y, 0px) + 12px);
-    scale: 0.965;
+    translate: var(--fig-shift-x, 0px) calc(var(--fig-shift-y, 0px) + 16px);
+    scale: 0.985;
   }
+}
+
+@keyframes figureClipFade {
+  from { opacity: 0; }
 }
 
 /* One keyframe, at the top of the arc: the browser synthesises both ends from
@@ -350,12 +352,9 @@
   color: var(--area-accent, var(--accent-primary));
   opacity: 0.14;
   pointer-events: none;
-  /* The clipping's own entrance: `FIGURE_ENTRANCE_MS` (420ms) on the curve
-     `figureClipIn` runs. The glyph gives way over exactly as long as the first
-     clipping takes to arrive, so it reads as making room rather than as
-     something switching off. Both moved together on 2026-09-12; they are one
-     event and a stale number here is the two coming apart. */
-  transition: opacity 420ms var(--ease-out-quad);
+  /* Match the clipping's linear fade, rather than its movement curve, so the
+     glyph gives way at the same pace as the picture becomes visible. */
+  transition: opacity 480ms linear;
 }
 
 .pc-watermark svg {
@@ -2885,6 +2884,7 @@ a.pc-citations {
   .pc,
   .pc-sheet,
   .pc-figure,
+  .pc-figure.is-loaded.is-resumed,
   /* Beside `.pc-figure`, never without it: with movement refused a clipping
      appears in one frame, so the glyph has to make room in that same frame.
      A 620ms cross-fade next to an instant arrival is the two coming apart

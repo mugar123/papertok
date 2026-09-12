@@ -151,18 +151,11 @@ const FIGURE_DRIFT_MIN_PX = 8;
 const FIGURE_DRIFT_JITTER_PX = 6;
 const FIGURE_DRIFT_MIN_MS = 4_000;
 const FIGURE_DRIFT_JITTER_MS = 2_000;
-/* The entrance, retuned 2026-09-12. It was 620ms + 140ms per slot on
-   `cubic-bezier(0.16, 1, 0.3, 1)`, and both halves of that fought being seen.
-   The curve is an expo-out, which does ~80% of its travel in the first fifth:
-   a "620ms" arrival whose perceptible movement is about 100ms, so a clipping
-   popped and then crawled. And the step was a longer DURATION, not a delay —
-   with the hold at 20% of the run, the four starts came out 28ms apart while
-   the four durations were 140ms apart, so they began as one clump and each
-   one travelled slower than the last. Now: one duration for all four on
-   `--ease-out-quad`, which spends the whole run moving, and a real stagger
-   between the starts. The last clipping lands at 690ms instead of 1040ms. */
-const FIGURE_ENTRANCE_MS = 420;
-const FIGURE_ENTRANCE_STAGGER_MS = 90;
+/* Each clipping gets a gradual fade and a gentle settle on separate curves.
+   A tighter stagger keeps the four arrivals connected: the last settles at
+   660ms, while each image has 480ms to become visible. */
+const FIGURE_ENTRANCE_MS = 480;
+const FIGURE_ENTRANCE_STAGGER_MS = 60;
 
 /** FNV-1a, the same one `buildHighlightId` uses: short, stable, and enough to
  *  tell four slots of one paper apart. */
