@@ -18,7 +18,7 @@
    clean (no void frames, bar in every frame) and felt like nothing — the
    expo curve did 80% of its change in the first 60ms, and the held page did
    not move. A page has to be seen travelling for the change to feel fluid:
-   24px over 300ms on a quad-out, with the page underneath giving way.
+   32px over 300ms on a quad-out, with the page underneath giving way.
    ============================================ */
 
 .page-transition {
@@ -31,10 +31,10 @@
      measured doing that under every tab switch: eight frames of the For you
      card at 60% over a Research page already at rest. */
   --page-enter-ms: 300ms;
-  --page-leave-ms: 260ms;
+  --page-leave-ms: 280ms;
   --page-lateral-ms: 240ms;
   --page-fade-ms: 150ms;
-  --page-reveal-ms: 260ms;
+  --page-reveal-ms: 280ms;
   --page-reduced-ms: 120ms;
   /* The box the motion.div used to set inline: without an explicit width a
      flex-column route root measures against its content and jumps on load. */
@@ -103,7 +103,7 @@
 .page-transition[data-page-motion="enter"] {
   animation:
     pageEnterTravel var(--page-enter-ms) var(--ease-out-quad) both,
-    pageCover calc(var(--page-enter-ms) * 0.4) var(--ease-out-quad) both;
+    pageCover calc(var(--page-enter-ms) * 0.32) var(--ease-out-quad) both;
 }
 
 .page-transition[data-page-motion="enter-lateral"][data-nav-direction="1"] {
@@ -146,10 +146,10 @@
 .page-transition[data-page-motion="reveal"] {
   animation:
     pageRevealTravel var(--page-reveal-ms) var(--ease-out-quad) both,
-    pageUncover calc(var(--page-reveal-ms) * 0.45) var(--ease-out-quad) both;
+    pageUncover calc(var(--page-reveal-ms) * 0.4) var(--ease-out-quad) both;
 }
 
-/* Out the way it came in: the entity rose 24px on arrival, it drops 24px
+/* Out the way it came in: the entity rose 32px on arrival, it drops 32px
    on the way back. Ease-out — the page is gone before it looks slow. */
 .page-transition[data-page-motion="leave"] {
   /* The other half of the same idea, coming back: the page lifting off stops
@@ -157,7 +157,7 @@
      the way out. */
   animation:
     pageLeaveTravel var(--page-leave-ms) var(--ease-out-quad) both,
-    pageLeaveFade calc(var(--page-leave-ms) * 0.5) var(--ease-out-quad) both;
+    pageLeaveFade calc(var(--page-leave-ms) * 0.38) var(--ease-out-quad) both;
 }
 
 /* A replace, or a redirect: no step to animate, the old page dissolves. */
@@ -166,7 +166,7 @@
 }
 
 @keyframes pageEnterTravel {
-  from { transform: translateY(24px); }
+  from { transform: translateY(32px); }
   to { transform: none; }
 }
 
@@ -177,7 +177,7 @@
 }
 
 @keyframes pageUncover {
-  from { opacity: 0.6; }
+  from { opacity: 0.55; }
   to { opacity: 1; }
 }
 
@@ -215,16 +215,16 @@
 
 @keyframes pageLeaveTravel {
   from { transform: none; }
-  to { transform: translateY(24px); }
+  to { transform: translateY(32px); }
 }
 
 @keyframes pageHold {
   from { opacity: 1; transform: none; }
-  to { opacity: 0.6; transform: scale(0.98); }
+  to { opacity: 0.55; transform: scale(0.96); }
 }
 
 @keyframes pageRevealTravel {
-  from { transform: scale(0.98); }
+  from { transform: scale(0.96); }
   to { transform: none; }
 }
 
