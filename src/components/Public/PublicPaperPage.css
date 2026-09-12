@@ -214,8 +214,10 @@
     background: var(--bg-glass-hover);
   }
 
+  /* Same orphan as AnalyticsConsentBanner.css carried, same fix: the button
+     rests on --accent-primary, so it hovers on that accent's hover. */
   .public-paper-primary-action:hover {
-    background: rgba(139, 74, 242, 0.98);
+    background: var(--accent-primary-hover);
   }
 }
 

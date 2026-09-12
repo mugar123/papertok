@@ -175,8 +175,13 @@
     background: var(--bg-sunken);
   }
 
+  /* The accent's own hover token. This was the last place in the app still
+     naming the purple accent by hand: when e56a7ea took --accent-primary to
+     ink the resting button followed the token and this literal did not, so a
+     black button turned violet under the cursor for three weeks. Nothing
+     showed it, because only a pointer could. */
   .analytics-consent-actions .analytics-consent-accept:hover {
-    background: rgba(139, 74, 242, 0.9);
+    background: var(--accent-primary-hover);
   }
 }
 

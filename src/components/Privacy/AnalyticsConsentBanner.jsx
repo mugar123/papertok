@@ -117,14 +117,37 @@ export default function AnalyticsConsentBanner() {
           key="analytics-consent"
           className={`analytics-consent ${acceptanceState === 'success' ? 'is-success' : ''}`}
           aria-labelledby="analytics-consent-title"
-          initial={prefersReducedMotion ? false : { opacity: 0, y: 12, scale: 0.985 }}
+          // Two clocks, not one. Arrival and leave both used to run opacity,
+          // travel and scale off a single eased curve, and a curve on opacity
+          // is not a fade — it is a flash with a tail: the panel sat at 90%
+          // opacity 90ms in with 12px still to go. So the fade runs straight
+          // and lands first, and the movement keeps easing underneath it: the
+          // panel is legible while it is still settling into the corner,
+          // which is what "arriving" looks like.
+          initial={prefersReducedMotion ? false : { opacity: 0, y: 14, scale: 0.985 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
+          // Leaving, the order reverses: the fade leads and is over in 180ms,
+          // so the panel stops asking for the eye almost at once, and the
+          // sink finishes underneath a panel nobody is looking at any more.
           exit={prefersReducedMotion
             ? { opacity: 0 }
-            : { opacity: 0, y: 20, scale: 0.97, transition: { duration: 0.3, ease: [0.4, 0, 1, 1] } }}
+            : {
+              opacity: 0,
+              y: 18,
+              scale: 0.98,
+              transition: {
+                opacity: { duration: 0.18, ease: 'linear' },
+                y: { duration: 0.26, ease: [0.4, 0, 1, 1] },
+                scale: { duration: 0.26, ease: [0.4, 0, 1, 1] },
+              },
+            }}
           transition={prefersReducedMotion
             ? { duration: 0 }
-            : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+            : {
+              opacity: { duration: 0.26, ease: 'linear' },
+              y: { duration: 0.38, ease: [0.16, 1, 0.3, 1] },
+              scale: { duration: 0.38, ease: [0.16, 1, 0.3, 1] },
+            }}
         >
           <span className="analytics-consent-icon" aria-hidden="true"><BarChart3 size={19} /></span>
           <div className="analytics-consent-copy">

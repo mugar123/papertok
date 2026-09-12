@@ -82,7 +82,12 @@ test('«Activando…» dura un instante legible y la alerta se despide sin prisa
   assert.match(jsx, /const CONFIRMED_HOLD_MS = 800;/);
   assert.match(jsx, /await Promise\.all\(\[\s*updateConsent\(ANALYTICS_CONSENT\.GRANTED\),\s*new Promise\(resolve => window\.setTimeout\(resolve, prefersReducedMotion \? 0 : ACCEPT_BEAT_MS\)\),\s*\]\)/);
   assert.match(jsx, /prefersReducedMotion \? 0 : CONFIRMED_HOLD_MS/);
-  assert.match(jsx, /exit=\{prefersReducedMotion\s*\?\s*\{ opacity: 0 \}\s*:\s*\{ opacity: 0, y: 20, scale: 0\.97, transition: \{ duration: 0\.3, ease: \[0\.4, 0, 1, 1\] \} \}\}/);
+  // La FORMA del adiós la fijan los dos tests de relojes del final del fichero
+  // (12-09); aquí sobrevive lo que este test venía defendiendo: que sigue
+  // habiendo adiós, y que el panel se hunde en vez de evaporarse en el sitio.
+  const leave = jsx.slice(jsx.indexOf('exit={prefersReducedMotion'), jsx.indexOf('exit={prefersReducedMotion') + 520);
+  const sink = leave.match(/(?<![A-Za-z-])y: (\d+)/);
+  assert.ok(sink && Number(sink[1]) > 0, 'la alerta debe hundirse al irse, no desaparecer donde está');
 });
 
 test('al confirmar, el icono de la alerta se pone en verde y con movimiento reducido nada transiciona', async () => {
@@ -91,4 +96,68 @@ test('al confirmar, el icono de la alerta se pone en verde y con movimiento redu
   const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
   assert.match(reduced, /\.analytics-consent-accept-face,/);
   assert.match(reduced, /\.analytics-consent-accept-face svg,/);
+});
+
+/**
+ * La llegada y la marcha del panel (2026-09-12).
+ *
+ * Las dos corrían UNA transición para opacidad, desplazamiento y escala, con
+ * una `cubic-bezier(0.22, 1, 0.36, 1)`. Una expo sobre la opacidad no es un
+ * fundido: es un destello con cola — el panel estaba al 90 % de opacidad a los
+ * 90 ms y aún le quedaban 12 px por recorrer. Es el mismo fallo que ya se
+ * corrigió en la entrada de los recortes del feed (a6f1e76) y en la transición
+ * de ruta.
+ *
+ * Lo que se fija aquí no son los números, que se retocan, sino la propiedad:
+ * el fundido corre en su propio reloj, en recta, y termina ANTES que el
+ * movimiento. Un solo reloj para las tres cosas vuelve a fallar.
+ */
+
+// La mirilla hacia atrás no es adorno: sin ella, buscar `y:` casa dentro de
+// `opacit_y_: { duration ... }` y el test se cree que el viaje dura lo que el
+// fundido. Falló así a la primera.
+const motionClock = (block, property) => {
+  const match = block.match(new RegExp(`(?<![A-Za-z-])${property}: \\{ duration: ([\\d.]+), ease: ([^}]+?) \\}`));
+  return match && { duration: Number(match[1]), ease: match[2].trim() };
+};
+
+const motionBlock = (jsx, anchor) => {
+  const start = jsx.indexOf(anchor);
+  assert.notEqual(start, -1, `falta ${anchor} en el JSX`);
+  return jsx.slice(start, start + 520);
+};
+
+for (const [name, anchor] of [['la llegada', 'transition={prefersReducedMotion'], ['la marcha', 'exit={prefersReducedMotion']]) {
+  test(`${name} funde en su propio reloj, en recta y más corto que el movimiento`, async () => {
+    const block = motionBlock(await jsxPromise, anchor);
+    const fade = motionClock(block, 'opacity');
+    const travel = motionClock(block, 'y');
+    const scale = motionClock(block, 'scale');
+
+    assert.ok(fade, `${name}: la opacidad no declara reloj propio`);
+    assert.ok(travel, `${name}: el desplazamiento no declara reloj propio`);
+    assert.equal(fade.ease, "'linear'", `${name}: una curva sobre la opacidad es un destello, no un fundido`);
+    assert.ok(fade.duration < travel.duration, `${name}: el fundido (${fade.duration}s) debe terminar antes que el viaje (${travel.duration}s)`);
+    assert.ok(scale, `${name}: la escala no declara reloj propio`);
+    assert.equal(scale.duration, travel.duration, `${name}: escala y desplazamiento son un solo gesto y comparten reloj`);
+  });
+}
+
+test('el movimiento sigue teniendo su apagado para quien pide menos', async () => {
+  const jsx = await jsxPromise;
+  assert.match(jsx, /initial=\{prefersReducedMotion \? false :/, 'la entrada debe poder no animarse');
+  assert.match(jsx, /exit=\{prefersReducedMotion\s*\?\s*\{ opacity: 0 \}/, 'la salida sin movimiento debe seguir siendo solo opacidad');
+  assert.match(jsx, /transition=\{prefersReducedMotion\s*\?\s*\{ duration: 0 \}/, 'el reloj de la llegada debe anularse entero');
+});
+
+/**
+ * Y el hover del botón, que era el último sitio donde vivía el acento de
+ * antes: tinta en reposo y morado al pasar por encima. El token existe y lo
+ * usa el botón primario de toda la app (ui/button-variants.js).
+ */
+test('el hover del botón de aceptar usa el token de la casa, no un literal', async () => {
+  const css = await cssPromise;
+  const hover = css.match(/\.analytics-consent-accept:hover\s*\{([^}]*)\}/);
+  assert.ok(hover, 'falta la regla de hover del botón de aceptar');
+  assert.match(hover[1], /background:\s*var\(--accent-primary-hover\)/, 'el hover debe seguir al acento, sea cual sea');
 });
