@@ -60,15 +60,17 @@ export default function OnboardingFlow() {
   // What this visitor said they were into before they had an account
   // (GuestInterestsPrompt). Read once: the answer is the starting point, not
   // a live source, and the areas step below can change everything about it.
-  // With an answer, the flow opens on the receipt already filled in — every
-  // category of every area they picked — rather than asking the same
-  // question twice. AuthContext clears the answer once completeOnboarding
-  // has written it to the profile.
+  // With an answer, the interests are settled — every category of every
+  // area they picked — and the flow opens on the profile step, the only
+  // thing the guest has not been asked yet. The areas and categories steps
+  // and the receipt stay reachable through Back, for a reader who wants to
+  // narrow the pick before it is written. AuthContext clears the answer once
+  // completeOnboarding has written it to the profile.
   const [guestSeed] = useState(() => {
     const stored = readGuestInterests();
     return stored?.areas.length ? stored.areas : null;
   });
-  const [stepState, setStep] = useState(guestSeed ? 3 : 1);
+  const [stepState, setStep] = useState(guestSeed ? 4 : 1);
   const [selectedAreas, setSelectedAreas] = useState(() => new Set(guestSeed ?? []));
   const [selectedSubcategories, setSelectedSubcategories] = useState(() => new Set(guestCategoriesForAreas(guestSeed ?? [])));
   // Whether the receipt still shows the guest answer untouched. Once they
@@ -179,6 +181,8 @@ export default function OnboardingFlow() {
   };
 
   const handleBack = () => {
+    // Leaving the receipt backwards is the reader taking the pick into their
+    // own hands; going from the profile step back to the receipt is not.
     if (step === 3 && guestSeed) setSeedAdjusted(true);
     if (step > 1) setStep(step - 1);
   };
@@ -550,6 +554,19 @@ export default function OnboardingFlow() {
                     ? 'If you do, pick a handle. That is the name other people will see and the address of your page. You can stay private and skip this — Settings can create it later.'
                     : 'Si sí, elige un handle. Es el nombre que verán los demás y la dirección de tu página. Puedes quedarte en privado y saltártelo — Ajustes puede crearlo después.'}
                 </p>
+                {/* The interests were answered before the account existed, so
+                    this is where the reader hears they came along — and how
+                    to narrow them, now (Back opens the receipt) or later. */}
+                {guestSeed && !seedAdjusted && (
+                  <p className="onboarding-seed-note">
+                    <Check size={14} strokeWidth={2.5} aria-hidden="true" />
+                    <span>
+                      {isEnglish
+                        ? `Your interests are set: the ${selectedAreas.size} ${selectedAreas.size === 1 ? 'area' : 'areas'} you picked as a guest, ${selectedSubcategories.size} categories. Back lets you narrow them; so does Settings, any time.`
+                        : `Tus intereses ya están: ${selectedAreas.size === 1 ? 'el área que marcaste' : `las ${selectedAreas.size} áreas que marcaste`} como invitado, ${selectedSubcategories.size} categorías. Con «Atrás» puedes afinarlos, y también desde Ajustes cuando quieras.`}
+                    </span>
+                  </p>
+                )}
               </div>
             </div>
 

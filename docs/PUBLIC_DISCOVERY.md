@@ -15,21 +15,27 @@ contract for public discovery surfaces without changing the existing authenticat
 - The corresponding `*Url` helpers add the Vite base and the `#` required by `HashRouter`,
 producing URLs such as `https://papertok.app/#/public/paper/<key>`.
 
-Signed-out visitors can browse a bounded multi-provider sample feed and open public paper or
-entity pages. Actions that create personal state (likes, follows, saved papers, lists, or AI
+There is no sign-in page. Signed-out visitors land on the guest feed; the only door is the
+`AuthPrompt` dialog, which opens in place from any gated action, and also on arrival when a guest
+is bounced off a protected route (or follows an old `/login` link): `ProtectedRoute` sends them
+to `/` with `authRequired` and the route they asked for in the location state, and App takes
+them there once the session exists. Signed-out visitors can browse a bounded multi-provider
+sample feed and open public paper or entity pages. Actions that create personal state (likes, follows, saved papers, lists, or AI
 preferences) keep their visible controls but open the sign-in prompt instead of writing shared
 guest data.
 
-Once the first card of the sample feed is on screen, a guest is asked once which areas they are
-into (`GuestInterestsPrompt`). The answer — area keys, kept on the device in
+The moment the guest page is up, a sheet opens once (`GuestInterestsPrompt`): two lines on what
+PaperTok is, then which areas the visitor is into. The answer — area keys, kept on the device in
 `papertok_guestInterests` — rebuilds the guest feed through `buildGuestFeedPlan`
 (`src/utils/guestFeedPlan.js`): every source is asked for those areas instead of the fixed
 sample, with the same per-source caps the signed-in feed keeps (six arXiv categories, five
 OpenAlex labels, three PubMed labels, spread round-robin across the chosen areas so each one
-is represented). "Not now" is remembered and the prompt does not return on its own; the header
-chip reopens it, and names the answer once there is one. If the guest signs up, the onboarding
-opens on its receipt with those areas and all their categories pre-selected, and
-`completeOnboarding` writes them to the profile and clears the device copy.
+is represented). The first ask has to be answered — no close button, no Escape, no scrim
+dismissal — because the feed behind it is built from the answer; the header chip reopens it
+as an editable sheet (with Cancel) and names the answer once there is one. If the guest signs up, the onboarding
+skips the interests steps altogether and opens on the profile step, with those areas and all
+their categories pre-selected (Back reaches the receipt and the pickers for anyone who wants to
+narrow them); `completeOnboarding` writes them to the profile and clears the device copy.
 
 Custom lists can be published as deliberately reduced Firestore documents. They contain at
 most 50 sanitized papers and never include private notes, tags, preferences, or interaction

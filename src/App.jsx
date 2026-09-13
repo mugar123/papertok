@@ -1,5 +1,5 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import PageTransition from './components/Layout/PageTransition'
 import { PageTransitionCustomProvider, usePageTransitionCustom } from './hooks/usePageTransitionCustom'
@@ -44,10 +44,6 @@ import './App.css'
 // screens are preloadable (`lazyWithPreload`) so the ones prefetched below
 // never suspend at all.
 
-// The sign-in page rides in that same list rather than in the boot graph, as it
-// used to: a session that already exists never renders it, and a guest reaches
-// it by a redirect or a direct link — both can afford one chunk.
-const LoginPage = lazyWithPreload(() => import('./components/Auth/LoginPage'))
 const OnboardingFlow = lazyWithPreload(() => import('./components/Onboarding/OnboardingFlow'))
 const ListsPage = lazyWithPreload(() => import('./components/Lists/ListsPage'))
 const PDFViewer = lazyWithPreload(() => import('./components/PDF/PDFViewer'))
@@ -66,6 +62,28 @@ const PublicListPage = lazyWithPreload(() => import('./components/Lists/PublicLi
 const PublicProfilePage = lazyWithPreload(() => import('./components/Public/PublicProfilePage'))
 const ProfilePage = lazyWithPreload(() => import('./components/Profile/ProfilePage'))
 const SearchCommand = lazyWithPreload(() => import('./components/Search/SearchCommand'))
+
+// Only an in-app absolute path is honoured as a destination: `//evil.com` is
+// a protocol-relative URL the browser would follow off-site, and bouncing
+// back to /login or /onboarding would loop.
+function isInAppPath(path) {
+  return typeof path === 'string'
+    && path.startsWith('/')
+    && !path.startsWith('//')
+    && !['/login', '/onboarding'].includes(path.split('?')[0])
+}
+
+function LoginRedirect() {
+  const location = useLocation()
+  const requested = location.state?.returnTo || new URLSearchParams(location.search).get('returnTo')
+  return (
+    <Navigate
+      to="/"
+      replace
+      state={{ authRequired: true, returnTo: isInAppPath(requested) ? requested : '/' }}
+    />
+  )
+}
 
 function AppContent() {
   const [pdfPaper, setPdfPaper] = useState(null)
@@ -151,6 +169,37 @@ function AppContent() {
     setAuthPromptOpen(true)
   }, [])
 
+  // There is no sign-in page. A guest bounced off a protected route (or an
+  // old /login link) lands on the feed with `authRequired` in the location
+  // state: the sign-in dialog opens over the feed, and the route they asked
+  // for waits in `pendingReturnToRef` until a session exists. Each arrival is
+  // read once (keyed on the history entry, adjusted during render so the door
+  // is in the same paint as the feed), and the state is then cleared from the
+  // entry so a reload does not reopen it.
+  const navigate = useNavigate()
+  const authArrivalKey = location.state?.authRequired ? location.key : null
+  const [consumedAuthArrival, setConsumedAuthArrival] = useState(null)
+  // `{ to }` rather than the string: two arrivals asking for the same route
+  // are two trips, and the ref below tells them apart by identity.
+  const [pendingReturn, setPendingReturn] = useState(null)
+  if (authArrivalKey && authArrivalKey !== consumedAuthArrival) {
+    setConsumedAuthArrival(authArrivalKey)
+    if (!user) setAuthPromptOpen(true)
+    const requested = location.state?.returnTo
+    setPendingReturn(isInAppPath(requested) ? { to: requested } : null)
+  }
+  useEffect(() => {
+    if (!authArrivalKey) return
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null })
+  }, [authArrivalKey, navigate, location.pathname, location.search])
+  // Once the session exists, the trip ends where it began — once per trip.
+  const travelledReturnRef = useRef(null)
+  useEffect(() => {
+    if (!user || authLoading || !pendingReturn || travelledReturnRef.current === pendingReturn) return
+    travelledReturnRef.current = pendingReturn
+    navigate(pendingReturn.to, { replace: true })
+  }, [user, authLoading, pendingReturn, navigate])
+
   // Warm the chunks a session is most likely to need next — the overlays any
   // card can open, and the other navbar feeds — once the first screen has
   // had the network and the main thread to itself for a while. Skipped on a
@@ -159,8 +208,8 @@ function AppContent() {
   // unknown connection prefetches as before — guessing "slow" for every
   // iPhone would cost more than it saves.
   //
-  // Only with a session. A guest on /login has none of the taps these chunks
-  // are for: the avatar and the gear live in the Navbar, which renders only
+  // Only with a session. A guest has none of the taps these chunks are for:
+  // the avatar and the gear live in the Navbar, which renders only
   // for a signed-in user (`showNavbar` above), and the overlays open from
   // cards a guest does not see. The 2.5 s count from the session arriving,
   // which on a cold load is a few hundred ms after mount; a session that ends
@@ -243,7 +292,9 @@ function AppContent() {
       <PageTransitionCustomProvider value={pageTransitionCustom}>
       <AnimatePresence mode="sync" initial={false} custom={pageTransitionCustom}>
         <Routes location={location} key={location.pathname}>
-          <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
+          {/* The sign-in page is gone; the address still works for old links
+              and bookmarks: the feed, with the sign-in dialog open. */}
+          <Route path="/login" element={<LoginRedirect />} />
           <Route
             path="/onboarding"
             element={

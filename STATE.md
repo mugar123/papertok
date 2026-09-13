@@ -257,6 +257,36 @@ que ningún componente importaba. Quedan nativos, a propósito: el `<input
 type="file">` del avatar en Ajustes y las píldoras del periodo del informe
 que no son on/off.
 
+## La bienvenida abre el feed de invitado, y el registro ya no vuelve a preguntar los intereses (2026-09-13)
+
+**Petición de Samuel: al entrar, «bienvenido a PaperTok, esto es lo que
+hacemos» en un par de líneas; preguntar los intereses ahí; y al crear la
+cuenta relacionarlos sin repetir la pantalla.** La hoja `GuestInterestsPrompt`
+ya abría en la primera pintura del feed de invitado; ahora su primera
+pregunta empieza con la bienvenida («Esto es PaperTok»: un feed de papers
+para deslizar, explicados en claro, con recomendaciones que aprenden) y
+debajo, como pregunta propia, «¿Qué te interesa?» con las once áreas. La
+edición desde el chip de la cabecera sigue siendo solo la pregunta. En el
+onboarding, un invitado con respuesta entraba en el recibo (paso 3) y aún
+tenía que confirmar; ahora entra directamente en el perfil (paso 4, el único
+que no ha respondido), con una nota de que sus intereses vienen de la
+respuesta de invitado (N áreas, M categorías) y que «Atrás» abre el recibo y
+los selectores para afinarlos. `completeOnboarding` sigue siendo la única
+escritura. Test SOURCE actualizado en `OnboardingFlow.test.js`
+(`useState(guestSeed ? 4 : 1)` + la nota).
+
+Segunda ronda, misma tarde: la primera pregunta ya no se puede esquivar (sin
+X, sin «Ahora no», Escape y el scrim se ignoran hasta que hay respuesta:
+`requestOpenChange` en `GuestInterestsPrompt`; la edición desde el chip sigue
+teniendo Cancelar y X), y se fue la línea «Ninguna marcada · verás una muestra
+de todo». Y se borró la página `/login` (`LoginPage.jsx/.css`, la de «Explorar
+sin crear una cuenta»): la única puerta es el modal `AuthPrompt`. Un invitado
+que cae en una ruta protegida va a `/` con `authRequired` + `returnTo` en el
+estado de la location; App abre el modal en la misma pintura, limpia el estado
+de la entrada del historial y, cuando llega la sesión, navega al `returnTo`
+(una vez por viaje). `/login` sigue existiendo como redirect para enlaces
+viejos (`LoginRedirect`). Salir de la cuenta desde Ajustes lleva a `/`.
+
 ## El invitado elige sus intereses, y si se registra, van a su perfil (2026-09-04)
 
 **Un invitado veía siempre la misma muestra fija (seis categorías, las mismas

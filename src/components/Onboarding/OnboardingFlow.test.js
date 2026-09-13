@@ -13,10 +13,14 @@ test('SOURCE: first-run onboarding asks for a public handle after interests', as
   assert.doesNotMatch(source, /if \(existingProfile && step > 3\) setStep\(3\)/);
 });
 
-test('SOURCE: login does not send a failed profile load through onboarding', async () => {
-  const source = await readFile(new URL('../Auth/LoginPage.jsx', import.meta.url), 'utf8');
-  assert.match(source, /if \(profileLoadError\) return/);
-  assert.match(source, /navigate\('\/onboarding'/);
+test('SOURCE: there is no sign-in page; a guest off a protected route gets the feed with the door open', async () => {
+  const guard = await readFile(new URL('../Auth/ProtectedRoute.jsx', import.meta.url), 'utf8');
+  assert.match(guard, /<Navigate to="\/" replace state=\{\{ authRequired: true, returnTo:/);
+  assert.doesNotMatch(guard, /to="\/login"/);
+  const app = await readFile(new URL('../../App.jsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(app, /LoginPage/);
+  assert.match(app, /<Route path="\/login" element=\{<LoginRedirect \/>\} \/>/, 'old /login links still land somewhere');
+  assert.match(app, /if \(!user\) setAuthPromptOpen\(true\)/, 'the sign-in dialog opens for the bounced guest');
 });
 
 test('SOURCE: a retry after a failed completeOnboarding does not claim the handle twice', async () => {
@@ -68,11 +72,14 @@ test('SOURCE: a retry after a failed completeOnboarding does not claim the handl
  * account that was already onboarded must discard a stray answer rather than
  * leave it waiting for the next new account on the same device.
  */
-test('SOURCE: the onboarding opens on the receipt, pre-filled from the guest answer', async () => {
+test('SOURCE: the onboarding opens on the profile step, pre-filled from the guest answer', async () => {
   const source = await readFile(new URL('./OnboardingFlow.jsx', import.meta.url), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   assert.match(code, /readGuestInterests\(\)/);
-  assert.match(code, /useState\(guestSeed \? 3 : 1\)/, 'a guest with an answer starts on the receipt');
+  // The guest already answered the interests question; the only step left
+  // for them is the profile. Back still reaches the receipt and the pickers.
+  assert.match(code, /useState\(guestSeed \? 4 : 1\)/, 'a guest with an answer skips straight to the profile step');
+  assert.match(code, /guestSeed && !seedAdjusted && \([\s\S]*?onboarding-seed-note/, 'the profile step says the interests came along');
   assert.match(code, /new Set\(guestSeed \?\? \[\]\)/, 'the areas are pre-selected');
   assert.match(code, /new Set\(guestCategoriesForAreas\(guestSeed \?\? \[\]\)\)/, 'every category of those areas is pre-selected');
   // The receipt is still a receipt: `completeOnboarding` is the only write,

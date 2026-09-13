@@ -6,7 +6,6 @@ import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useGuestFeed } from '../../hooks/useGuestFeed.js';
 import { ANALYTICS_CONSENT } from '../../services/analyticsService.js';
 import {
-  dismissGuestInterests,
   readGuestInterests,
   saveGuestInterests,
 } from '../../utils/guestInterests.js';
@@ -42,11 +41,12 @@ export default function GuestFeedPage({
   // The first ask, the moment the page is up — not once the feed has loaded,
   // and with no beat before it: a visitor who has just arrived is choosing
   // what to read, and the cards can fill in behind the sheet. Not while the
-  // sign-in door is open — a guest who went straight for "Sign in" is about
-  // to answer this in the onboarding anyway.
+  // sign-in door is open — a guest sent here from a protected route is about
+  // to answer this in the onboarding anyway; if they close that door without
+  // signing in, the ask opens then.
   // Adjusted during render rather than in an effect so the sheet is in the
-  // first paint, not one commit behind it. Once per visit: "Not now" closes
-  // it, and `askedOnce` keeps this from asking again on the next render.
+  // first paint, not one commit behind it. `askedOnce` keeps this from
+  // re-opening the sheet on every render while it is up.
   const [askedOnce, setAskedOnce] = useState(false);
   if (firstAsk && !askedOnce && !interestsPromptSuspended) {
     setAskedOnce(true);
@@ -87,15 +87,11 @@ export default function GuestFeedPage({
     });
   }, [language, trackEvent]);
 
+  // Only an edit can be dismissed: the first ask has no way out but an
+  // answer (GuestInterestsPrompt refuses to close without one).
   const dismissInterests = useCallback(() => {
     setInterestsOpen(false);
-    if (!firstAsk) return;
-    // "Not now" is remembered: the prompt asked once and does not ask
-    // again on this device. The chip in the header stays.
-    dismissGuestInterests();
-    setInterests({ areas: [], dismissed: true });
-    trackEvent('guest_interests', { action: 'skip', areas: 0, language });
-  }, [firstAsk, language, trackEvent]);
+  }, []);
 
   const interestsChipLabel = areas.length > 0
     ? `${areas.length} ${isEnglish ? (areas.length === 1 ? 'area' : 'areas') : (areas.length === 1 ? 'área' : 'áreas')}`

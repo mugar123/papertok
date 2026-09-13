@@ -75,10 +75,11 @@ export default function ProtectedRoute({ children, requireOnboarding = true }) {
   }
 
   if (!user) {
-    // The route the guest asked for travels with them: the login page reads it
-    // back out of `location.state` and lands them there once a session exists,
+    // There is no sign-in page: a guest lands on the feed with the sign-in
+    // dialog open (App.jsx reads `authRequired`). The route they asked for
+    // travels with them, and App sends them there once a session exists,
     // instead of dropping everyone on the feed.
-    return <Navigate to="/login" replace state={{ returnTo: `${location.pathname}${location.search}` }} />;
+    return <Navigate to="/" replace state={{ authRequired: true, returnTo: `${location.pathname}${location.search}` }} />;
   }
 
   if (profileLoadError) {

@@ -232,6 +232,30 @@
   text-wrap: pretty;
 }
 
+/* The profile step, for a guest whose interests came along: one line that
+   says so, ticked, in the same mono voice as the receipt's note. */
+.onboarding-seed-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
+  max-width: 62ch;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+.onboarding-seed-note svg {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  color: var(--accent-primary);
+}
+
 /* El contador grande: la cifra que antes no estaba en ninguna parte. */
 .onboarding-meter {
   flex: 0 0 auto;

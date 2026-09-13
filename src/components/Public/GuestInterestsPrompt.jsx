@@ -8,10 +8,12 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dia
 import { Toggle } from '../ui/toggle.jsx';
 import './GuestInterestsPrompt.css';
 
-// The one question a guest is asked: which areas. It arrives after the sample
-// feed is on screen, never before it — a visitor who has not yet seen a single
-// card has no reason to answer anything — and it can be waved away in one
-// tap. The answer rebuilds the guest feed on the spot, and the onboarding
+// The first thing a guest sees, and the one question they are asked. The
+// first ask opens with two lines on what PaperTok is — a visitor who has just
+// landed has not read a single card yet, so the sheet has to say what the
+// cards behind it are — and then which areas. The first ask has to be
+// answered: no X, no Escape, no scrim — the feed behind it is built from the
+// answer. Editing later (from the header chip) can be cancelled. The answer rebuilds the guest feed on the spot, and the onboarding
 // picks it up if the guest ever signs up: that is the whole reason to ask.
 //
 // Areas rather than the 100-odd subcategories: a guest gets a question that
@@ -22,40 +24,44 @@ const AREA_ENTRIES = Object.entries(CATEGORIES);
 
 const COPY = {
   es: {
-    kicker: { first: 'Para empezar', edit: 'Tus intereses' },
-    title: '¿Qué te interesa?',
+    kicker: { first: 'Te damos la bienvenida', edit: 'Tus intereses' },
+    title: { first: 'Esto es PaperTok', edit: '¿Qué te interesa?' },
     lede: {
-      first: 'Marca las áreas que te llamen y armamos el feed con ellas. Si luego creas una cuenta, se guardan en tu perfil.',
+      first: 'Un feed de papers científicos para deslizar, con lo esencial de cada uno explicado en claro y recomendaciones que aprenden de lo que lees.',
       edit: 'Cambia las áreas y el feed se vuelve a armar con ellas.',
     },
+    question: '¿Qué te interesa?',
+    questionHint: 'Marca las áreas que te llamen y armamos el feed con ellas. Si luego creas una cuenta, se guardan en tu perfil.',
     areasLabel: 'Áreas de interés',
-    none: 'Ninguna marcada · verás una muestra de todo',
     picked: n => `${n} ${n === 1 ? 'área marcada' : 'áreas marcadas'}`,
     primary: { first: 'Ver mi feed', edit: 'Actualizar feed' },
-    secondary: { first: 'Ahora no', edit: 'Cancelar' },
-    close: { first: 'Ahora no', edit: 'Cerrar' },
+    secondary: 'Cancelar',
+    close: 'Cerrar',
   },
   en: {
-    kicker: { first: 'To begin', edit: 'Your interests' },
-    title: 'What are you into?',
+    kicker: { first: 'Welcome', edit: 'Your interests' },
+    title: { first: 'This is PaperTok', edit: 'What are you into?' },
     lede: {
-      first: 'Pick the areas that catch you and we build the feed from them. If you create an account later, they are saved to your profile.',
+      first: 'A scrollable feed of scientific papers, each one explained in plain words, with recommendations that learn from what you read.',
       edit: 'Change the areas and the feed is rebuilt from them.',
     },
+    question: 'What are you into?',
+    questionHint: 'Pick the areas that catch you and we build the feed from them. If you create an account later, they are saved to your profile.',
     areasLabel: 'Areas of interest',
-    none: 'None picked · you get a sample of everything',
     picked: n => `${n} ${n === 1 ? 'area picked' : 'areas picked'}`,
     primary: { first: 'Show my feed', edit: 'Update feed' },
-    secondary: { first: 'Not now', edit: 'Cancel' },
-    close: { first: 'Not now', edit: 'Close' },
+    secondary: 'Cancel',
+    close: 'Close',
   },
 };
 
 // GuestFeedPage mounts this only while it is open, so the dialog opens on
-// mount and owns its `open` flag. Every way out — an answer, "Not now", the
-// X, Escape, the scrim — flips it; Base UI plays the leave, and only then
-// `onOpenChangeComplete(false)` hands the outcome to the parent: the answer
-// through `onSubmit`, anything else through `onDismiss`. One call, once.
+// mount and owns its `open` flag. Every way out — an answer, or on an edit
+// "Cancel", the X, Escape, the scrim — flips it; Base UI plays the leave, and
+// only then `onOpenChangeComplete(false)` hands the outcome to the parent:
+// the answer through `onSubmit`, anything else through `onDismiss`. One
+// call, once. On the first ask the only way out is the answer:
+// `requestOpenChange` refuses every close that does not carry one.
 export default function GuestInterestsPrompt({ initialAreas = [], firstAsk = true, onSubmit, onDismiss }) {
   const { isEnglish } = useLanguage();
   const [open, setOpen] = useState(true);
@@ -88,6 +94,13 @@ export default function GuestInterestsPrompt({ initialAreas = [], firstAsk = tru
 
   const dismiss = () => setOpen(false);
 
+  // Base UI asks to close on Escape, an outside press or the X. A first ask
+  // with no answer stays open; the visitor has to pick.
+  const requestOpenChange = (nextOpen) => {
+    if (!nextOpen && firstAsk && !answerRef.current) return;
+    setOpen(nextOpen);
+  };
+
   const settle = (isOpen) => {
     if (isOpen) return;
     const answer = answerRef.current;
@@ -96,16 +109,26 @@ export default function GuestInterestsPrompt({ initialAreas = [], firstAsk = tru
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen} onOpenChangeComplete={settle} modal>
+    <Dialog open={open} onOpenChange={requestOpenChange} onOpenChangeComplete={settle} modal>
       <DialogContent
         className="gip"
         overlayClassName="gip-backdrop"
-        closeLabel={copy.close[mode]}
+        showClose={!firstAsk}
+        closeLabel={copy.close}
         initialFocus={titleRef}
       >
         <p className="gip-kicker">{copy.kicker[mode]}</p>
-        <DialogTitle className="gip-title" ref={titleRef} tabIndex={-1}>{copy.title}</DialogTitle>
+        <DialogTitle className="gip-title" ref={titleRef} tabIndex={-1}>{copy.title[mode]}</DialogTitle>
         <DialogDescription className="gip-lede">{copy.lede[mode]}</DialogDescription>
+
+        {/* The question itself, once the first ask has said what PaperTok
+            is. An edit already has the question as its title. */}
+        {firstAsk && (
+          <div className="gip-question">
+            <h3 className="gip-question-title">{copy.question}</h3>
+            <p className="gip-question-hint">{copy.questionHint}</p>
+          </div>
+        )}
 
         <div className="gip-areas" role="group" aria-label={copy.areasLabel}>
           {AREA_ENTRIES.map(([key, area]) => {
@@ -135,12 +158,14 @@ export default function GuestInterestsPrompt({ initialAreas = [], firstAsk = tru
 
         <footer className="gip-foot">
           <p className={`gip-tally ${selected.size > 0 ? 'is-on' : ''}`} aria-live="polite">
-            {selected.size > 0 ? copy.picked(selected.size) : copy.none}
+            {selected.size > 0 ? copy.picked(selected.size) : ''}
           </p>
           <div className="gip-actions">
-            <Button variant="ghost" onClick={dismiss}>
-              {copy.secondary[mode]}
-            </Button>
+            {!firstAsk && (
+              <Button variant="ghost" onClick={dismiss}>
+                {copy.secondary}
+              </Button>
+            )}
             <Button variant="default" className="gip-submit" onClick={submit} disabled={!canSubmit}>
               <span>{copy.primary[mode]}</span>
               <ArrowRight size={15} aria-hidden="true" />

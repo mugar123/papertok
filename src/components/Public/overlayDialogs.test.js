@@ -64,7 +64,12 @@ test('the sign-in sheet keeps its look and leaves the centring to the primitive'
 test('the interests prompt is a modal Dialog and settles into one parent callback', async () => {
   const jsx = await gipJsx;
   assert.match(jsx, /from '\.\.\/ui\/dialog\.jsx'/);
-  assert.match(jsx, /<Dialog open=\{open\} onOpenChange=\{setOpen\} onOpenChangeComplete=\{settle\} modal>/);
+  assert.match(jsx, /<Dialog open=\{open\} onOpenChange=\{requestOpenChange\} onOpenChangeComplete=\{settle\} modal>/);
+  // The first ask cannot be waved away: no X, and a close request without an
+  // answer is refused. An edit keeps every way out.
+  assert.match(jsx, /if \(!nextOpen && firstAsk && !answerRef\.current\) return;/);
+  assert.match(jsx, /showClose=\{!firstAsk\}/);
+  assert.match(jsx, /\{!firstAsk && \(\s*<Button variant="ghost" onClick=\{dismiss\}>/);
   assert.doesNotMatch(jsx, /useDialogFocus|framer-motion|aria-modal=/);
   // An answer and a dismissal both close the sheet first; the parent hears
   // one of them once the leave has played.
@@ -75,7 +80,7 @@ test('the interests prompt is a modal Dialog and settles into one parent callbac
   assert.equal((jsx.match(/onSubmit\?\.\(/g) ?? []).length, 1);
   // The close control is named in both languages. Initial focus lands on
   // the title, not the first area — see the dedicated SOURCE test below.
-  assert.match(jsx, /closeLabel=\{copy\.close\[mode\]\}/);
+  assert.match(jsx, /closeLabel=\{copy\.close\}/);
   // The chips are the shared Toggle: a native button on which Base UI
   // writes `aria-pressed` and `data-pressed`; the CSS reads the attribute.
   assert.match(jsx, /import \{ Toggle \} from '\.\.\/ui\/toggle\.jsx'/);

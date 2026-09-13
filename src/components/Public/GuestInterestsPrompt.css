@@ -77,6 +77,29 @@
   line-height: 1.6;
 }
 
+/* ── The question, under the welcome (first ask only) ── */
+.gip-question {
+  margin: 0 0 var(--space-3);
+}
+
+.gip-question-title {
+  margin: 0 0 var(--space-1);
+  font-family: var(--font-serif);
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.gip-question-hint {
+  margin: 0;
+  max-width: 48ch;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+}
+
 /* ── The areas ── */
 .gip-areas {
   display: grid;
