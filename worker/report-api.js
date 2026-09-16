@@ -50,7 +50,7 @@ import {
 } from './thread-anchor.js';
 import { isServiceAccountConfigured } from './firestore-admin.js';
 import { releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.js';
-import { awaitUpstreamSlot, PACE_RETRY_AFTER_SECONDS } from './upstream-pace.js';
+import { awaitUpstreamSlot, PACE_RETRY_AFTER_SECONDS, paceRetryAfterSeconds } from './upstream-pace.js';
 
 export { KimiBudgetLedger } from './kimi-budget-ledger.js';
 export { EmailDeliveryLedger } from './email-delivery-ledger.js';
@@ -73,13 +73,27 @@ const DEFAULT_ALLOWED_ORIGINS = [
 const UPSTREAM_TIMEOUT_MS = 8000;
 const SOURCE_UPSTREAM_TIMEOUT_MS = 6000;
 const ARXIV_UPSTREAM_TIMEOUT_MS = 5000;
+// arXiv's published policy: one request every three seconds, one connection.
+// The Worker is the one client arXiv sees, so the beat is app-wide, kept in
+// the same ledger as the Semantic Scholar one (`upstream-pace.js`). The wait
+// budget is set by the client: the browser leaves `/arxiv` at 6 s
+// (ARXIV_ROUTE_TIMEOUT_MS), so four seconds of waiting plus a healthy fetch
+// still answers in time, and a seat further away than that is refused at
+// once -- the caller has other sources, and a seat nobody will wait for is a
+// seat somebody else could have used.
+const ARXIV_PACE_PERIOD_MS = 3_000;
+const ARXIV_PACE_MAX_WAIT_MS = 4_000;
 
 const CACHE_SECONDS = 6 * 60 * 60;
 const RELATED_CACHE_SECONDS = 24 * 60 * 60;
 const RELATED_UPSTREAM_LIMIT = 20;
 const CITATION_GRAPH_CACHE_SECONDS = 7 * 24 * 60 * 60;
 const OA_CACHE_SECONDS = 7 * 24 * 60 * 60;
-const ARXIV_CACHE_SECONDS = 10 * 60;
+// An hour, up from ten minutes. arXiv's listings change once a day (the
+// announcement at 20:00 ET), so a page served from the edge for an hour is as
+// fresh as one fetched twice -- and with one upstream call every three seconds
+// for the whole app, every call the cache saves is a seat somebody else gets.
+const ARXIV_CACHE_SECONDS = 60 * 60;
 const EMAIL_HEALTH_CACHE_SECONDS = 5 * 60;
 const SCOPUS_HEALTH_CACHE_SECONDS = 10 * 60;
 const OPENALEX_HEALTH_CACHE_SECONDS = 10 * 60;
@@ -1043,13 +1057,39 @@ async function handleArxiv(request, env) {
   const cached = await caches.default.match(cacheKey);
   if (cached) return serveCached(cached, origin, env);
 
+  // A miss takes a seat on the beat before it goes upstream. No ledger, no
+  // beat: the seat is courtesy towards arXiv, not the protection of a key,
+  // and a ledger that is down must not take the source down with it.
+  if (env.REQUEST_QUOTA_LEDGER) {
+    const seat = await awaitUpstreamSlot(env.REQUEST_QUOTA_LEDGER, {
+      namespace: 'arxiv',
+      periodMs: ARXIV_PACE_PERIOD_MS,
+      maxWaitMs: ARXIV_PACE_MAX_WAIT_MS,
+    });
+    if (!seat.accepted && !seat.code) {
+      return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
+        ...corsHeaders(origin, env),
+        'cache-control': 'no-store',
+        'retry-after': paceRetryAfterSeconds(ARXIV_PACE_MAX_WAIT_MS),
+      });
+    }
+    if (seat.code) console.warn(`arXiv beat unavailable (${seat.code}); sending unpaced`);
+  }
+
   const response = await fetchWithDeadline(upstreamUrl.toString(), {
     headers: {
       accept: 'application/atom+xml, application/xml, text/xml;q=0.9',
       'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
     },
   }, ARXIV_UPSTREAM_TIMEOUT_MS);
-  if (!response.ok) throw new Error(`arXiv error: ${response.status}`);
+  if (!response.ok) {
+    // The status travels on the error so the router can tell arXiv's own 429
+    // from an outage -- they used to leave as the same 502.
+    const error = new Error(`arXiv error: ${response.status}`);
+    error.status = response.status;
+    error.retryAfter = response.headers.get('retry-after') || '';
+    throw error;
+  }
   // Read under the same deadline: arXiv is the one upstream that answers XML, and
   // a feed that stops mid-document is a stall, not a short answer.
   const xml = await response.text();
@@ -2568,8 +2608,9 @@ export default {
     if (url.pathname === '/arxiv') {
       try {
         return await handleArxiv(request, env);
-      } catch {
-        return json({ error: 'arXiv unavailable' }, 502, corsHeaders(origin, env));
+      } catch (error) {
+        console.error('arXiv route failed', error);
+        return upstreamFailureResponse('/arxiv', error, origin, env, 'arXiv unavailable');
       }
     }
     if (DOMAIN_SOURCE_HANDLERS[url.pathname]) {

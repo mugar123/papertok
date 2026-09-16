@@ -905,6 +905,94 @@ test('cuts an arXiv upstream that sends its headers and then stalls the body', a
   assert.equal(response.status, 502);
 });
 
+const ARXIV_URL = 'https://papertok-report-api.example/arxiv?search_query=all:malaria';
+const ATOM_FEED = '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"></feed>';
+const arxivThrough = (env, upstream) => withWorkerFetchMock(upstream, () => reportApi.fetch(new Request(
+  ARXIV_URL, { headers: { origin: 'https://mugar123.github.io' } },
+), env));
+const IS_ARXIV_PACE = key => key === 'arxiv:pace';
+
+// One request every three seconds is arXiv's published policy, and the Worker
+// is the one client arXiv sees. A miss takes a seat on the beat before it goes
+// upstream; a seat that is not free within the wait budget is refused here,
+// with no arXiv call spent.
+test('an arXiv miss takes a seat on the three-second beat before going upstream', async () => {
+  const state = { actions: [] };
+  let upstreamCalls = 0;
+  const response = await arxivThrough(
+    { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state) },
+    async () => { upstreamCalls += 1; return new Response(ATOM_FEED, { headers: { 'content-type': 'application/atom+xml' } }); },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(upstreamCalls, 1);
+  const seat = state.actions.find(a => a.action === 'reserve' && IS_ARXIV_PACE(a.periodKey));
+  assert.ok(seat, `no seat taken on the arXiv beat: ${JSON.stringify(state.actions)}`);
+});
+
+test('refuses an arXiv miss with 429 and retry-after when the beat has no seat, without calling arXiv', async () => {
+  const state = { actions: [] };
+  let upstreamCalls = 0;
+  const response = await arxivThrough(
+    { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_ARXIV_PACE }) },
+    async () => { upstreamCalls += 1; return new Response(ATOM_FEED); },
+  );
+
+  assert.equal(response.status, 429);
+  assert.equal((await response.json()).code, 'PROVIDER_RATE_LIMITED');
+  assert.equal(response.headers.get('retry-after'), '4');
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(upstreamCalls, 0);
+});
+
+// The beat is courtesy towards arXiv, not the protection of a key: a ledger
+// that is missing or down must not take the source down with it.
+test('an arXiv miss goes upstream unpaced when there is no ledger to keep the beat', async () => {
+  let upstreamCalls = 0;
+  const response = await arxivThrough(
+    {},
+    async () => { upstreamCalls += 1; return new Response(ATOM_FEED, { headers: { 'content-type': 'application/atom+xml' } }); },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(upstreamCalls, 1);
+});
+
+// A 429 from arXiv, a stall, and a bad answer used to leave as the same
+// `502 arXiv unavailable`. The client retries a 502 at once, which is the one
+// thing that makes a rate limit worse.
+test('relays an arXiv refusal as 429 UPSTREAM_RATE_LIMITED with the status that caused it', async () => {
+  const response = await arxivThrough(
+    { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger({ actions: [] }) },
+    async () => new Response('Rate exceeded.', { status: 429 }),
+  );
+
+  assert.equal(response.status, 429);
+  const body = await response.json();
+  assert.equal(body.code, 'UPSTREAM_RATE_LIMITED');
+  assert.equal(body.upstreamStatus, 429);
+  assert.match(response.headers.get('retry-after'), /^\d+$/);
+});
+
+test('names an arXiv stall as UPSTREAM_TIMEOUT', async () => {
+  const response = await withShortDeadlines(25, () => arxivThrough(
+    { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger({ actions: [] }) },
+    async (_url, options) => stalledBodyResponse(options?.signal, 'application/atom+xml'),
+  ));
+
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).code, 'UPSTREAM_TIMEOUT');
+});
+
+test('caches an arXiv answer for an hour at the edge', async () => {
+  const response = await arxivThrough(
+    { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger({ actions: [] }) },
+    async () => new Response(ATOM_FEED, { headers: { 'content-type': 'application/atom+xml' } }),
+  );
+
+  assert.match(response.headers.get('cache-control'), /s-maxage=3600\b/);
+});
+
 // Every specialist route, not just the one that happened to be covered when this
 // suite was written. `/sources/scopus` and `/sources/physics` do not go through
 // `fetchJsonUpstream`, and that is precisely how they kept their unbounded waits
