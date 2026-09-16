@@ -1,5 +1,36 @@
 # Estado / pendientes
 
+## El feed ya no falla en frío por respuestas que llegan un segundo tarde (2026-09-16)
+
+**«Al entrar en PaperTok cuando llevo mucho sin entrar, el feed está un rato
+cargando, luego da error, y al pulsar Try again carga bien.»** Medido con la
+sesión real (35 h sin abrir la app) contra el Worker y Firestore de
+producción, y reproducido de forma determinista con un arnés CDP que retiene
+cada fuente 4,3 s y contesta 502 en `/arxiv`: la secuencia era exacta —
+«Searching for discoveries…», «Error loading papers» a los 4,8 s, reintento
+automático a los 2,5 s, el mismo error a los 11,4 s, y Try again pinta en
+3 s—. Tres causas acumuladas, ninguna en el servidor. (1) El presupuesto de
+primer pintado de 4 s (`settleSourcesForFirstPaint`) hacía también de plazo
+de fallo: `all` era `Promise.all` de las mismas promesas acotadas, así que un
+primer pintado vacío no esperaba a nada y `shouldAbortFeedLoad` lanzaba con
+las peticiones aún en vuelo. (2) `loadPapers` creaba los candidatos
+opcionales (entidades seguidas, grafo) antes que las fuentes principales, y
+la cola del cliente de OpenAlex (FIFO, dos plazas, compartida con las
+novedades de Following y el enriquecimiento) dejaba la búsqueda del feed la
+última: salía 2,3 s tarde en una entrada natural y 10 s tarde en el control.
+(3) El plazo del cliente para `/arxiv` (4 s) era menor que el del Worker
+(5 s), así que un `sortBy=relevance` —la mitad de las cargas— no podía salir
+nunca. Ahora `all` se asienta bajo un techo propio de 12 s, las principales
+se piden antes que las opcionales y la búsqueda del feed va por un carril
+prioritario de la cola (`priority: true`), y el cliente de arXiv espera 6 s.
+Lo que no era: ni la puerta del perfil (`ProtectedRoute`) ni el service
+worker; en seis entradas medidas —fibra, 4G lento, 3G a 400 ms, con y sin
+localStorage— perfil, agregado y stream de Firestore contestaron a tiempo.
+Sigue abierto, de la auditoría del 15-09: arXiv devuelve 429 a todo lo que no
+acierta en Fastly y OpenAlex contesta medio megabyte por página. Auditoría en
+`docs/AUDITORIA-FEED-ENTRADA-FRIA-2026-09-16.md`, plan en
+`docs/superpowers/plans/2026-09-16-feed-entrada-fria-error.md`.
+
 ## El preámbulo LaTeX que JATS mete alrededor de cada fórmula ya no se imprime como prosa (2026-09-07)
 
 **«He encontrado este bug de renderizado del latex.»** La tarjeta de
