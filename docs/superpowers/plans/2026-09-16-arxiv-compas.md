@@ -659,3 +659,24 @@ git add STATE.md docs/AUDITORIA-ARXIV-COMPAS-2026-09-16.md docs/superpowers/plan
 git commit -m "docs(arxiv): auditoría y plan del compás de arXiv"
 git push origin main
 ```
+
+---
+
+## Ejecución (2026-09-16, noche)
+
+Las cuatro tareas ejecutadas en la sesión, con cada test en rojo antes del
+código; Worker desplegado (`c4ee773b`) antes de subir el frontend. Dos cosas
+que el plan no traía:
+
+1. `fetchArxivDataNow` envolvía el error del Worker en uno nuevo sin `status`,
+   y el carril (Task 3) lee `status` para pausar: en la entrada en frío contra
+   el Worker con compás, la pestaña mandó otra petición 420 ms después del
+   primer 429. `arxivUnreachableError` (arxivService.js) copia `status` y
+   `retryAfterMs` de la causa; test en `arxivService.test.js`.
+2. La expectativa de la Task 4 («espaciadas ≥3 s o rechazadas, nunca en
+   ráfaga») era del lado del Worker, no de la pestaña: con
+   `stale-while-revalidate` el navegador contesta al instante desde su caché y
+   revalida en segundo plano, y esas revalidaciones sí salen en ráfaga. Lo que
+   se verifica es que arXiv recibe una por periodo, y eso lo da la sonda del
+   compás (`arxiv-beat-probe.sh`), no la traza de la pestaña. Detalle en la
+   auditoría, § Verificación.

@@ -91,3 +91,44 @@ PROVIDER_RATE_LIMITED` si no lo hay, sus fallos llegan al navegador con el
 código que les corresponde, la caché del borde pasa a una hora, y la cola de
 cada pestaña deja caer lo que ya nadie espera y respeta el `retry-after` de un
 429 en vez de insistir.
+
+## Verificación en producción (Worker `c4ee773b`, 16-09 por la noche)
+
+Sonda `arxiv-beat-probe.sh` (scratchpad): seis consultas únicas a `/arxiv`
+en paralelo, dos veces, con cinco segundos entre ráfagas.
+
+| | Antes (sin compás) | Ráfaga 1 con compás | Ráfaga 2 con compás |
+|---|---|---|---|
+| 200 | 6, todas en 0,43–0,56 s | 2 (a los 1,0 s y 2,8 s) | 3 (a los 0,35 s, 0,98 s y 3,9 s) |
+| 429 `PROVIDER_RATE_LIMITED`, `retry-after: 4` | 0 | 4, en 0,68 s | 3, en 0,2 s |
+| Misma URL repetida | 200 en 0,12 s | — | 200 en 0,087 s (caché, sin asiento) |
+
+Antes, seis llamadas a arXiv en medio segundo; ahora, una por periodo de tres
+segundos y el resto rechazado en el Worker sin tocar a arXiv, con el mismo
+reparto (dos o tres por ráfaga según la fase) que dio la simulación.
+
+### Entrada en frío con sesión, build nuevo contra el Worker con compás
+
+Sonda `cold-entry-probe.mjs` (`nosnapshot`): el feed pinta a los **3,75 s sin
+error**. De las peticiones a `/arxiv` de la pestaña, ocho salieron a la red;
+tres tomaron asiento y cinco recibieron `429` del compás sin tocar a arXiv. En
+cuanto un 429 llegó a la página, el carril rechazó en local la siguiente
+(5,34 s) en vez de enviarla.
+
+**Un matiz que la sonda dejó claro.** Las peticiones de la pestaña al Worker
+pueden seguir saliendo en ráfaga de 350 ms aunque el carril las serialice:
+el Worker manda `stale-while-revalidate=3600`, así que para una URL que el
+navegador ya tiene de hace menos de una hora contesta **al instante con la
+copia caducada** (el carril avanza) y **revalida en segundo plano** por su
+cuenta, fuera de cualquier cola del cliente. Esas revalidaciones son las que
+chocan con el compás. No importa para arXiv —el Worker es la puerta, y ya
+está medido que deja pasar una cada tres segundos—, pero sí para leer una
+traza: en una pestaña con caché caliente, los 429 de `/arxiv` que se ven en
+la consola son casi siempre revalidaciones de páginas que el lector ya tiene,
+no consultas que le falten.
+
+**Un fallo que salió de esta verificación y no de los tests:**
+`fetchArxivDataNow` atrapaba el error del Worker y lanzaba uno nuevo sin
+`status`, así que el carril nunca veía el 429 y la pestaña enviaba otra
+petición 420 ms después del rechazo. `arxivUnreachableError` copia ahora
+`status` y `retryAfterMs` de la causa, con su test.
