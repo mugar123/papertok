@@ -28,6 +28,8 @@ export class OpenAlexAdapter extends BaseAdapter {
         cacheTtlMs: 10 * 60 * 1000,
         staleIfError: true,
         signal: filters.signal,
+        // The feed's main search: ahead of the entity lookups sharing the queue.
+        priority: filters.priority === true,
       });
       if (!response.ok) {
         throw new Error(`OpenAlex API error: ${response.status}`);

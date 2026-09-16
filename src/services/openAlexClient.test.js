@@ -253,6 +253,33 @@ test('limits concurrent OpenAlex requests', async () => {
   await Promise.all(requests);
 });
 
+test('a priority request jumps the queue instead of waiting behind it', async () => {
+  const started = [];
+  const resolvers = [];
+  const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+  const client = new OpenAlexClient({
+    maxConcurrent: 1,
+    fetchImpl: (url) => new Promise(resolve => {
+      started.push(new URL(url).pathname);
+      resolvers.push(() => resolve(new Response('{}', { status: 200 })));
+    }),
+  });
+
+  const requests = [1, 2, 3].map(id => client.json(`https://api.openalex.org/works/W${id}`));
+  await tick();
+  // The feed's own search arrives while three entity lookups are already
+  // queued; it must be the next request out, not the fourth.
+  requests.push(client.json('https://api.openalex.org/works/W4', { priority: true }));
+  while (started.length < 4) {
+    const next = resolvers.shift();
+    if (next) next();
+    await tick();
+  }
+  resolvers.splice(0).forEach(resolve => resolve());
+  await Promise.all(requests);
+  assert.deepEqual(started, ['/works/W1', '/works/W4', '/works/W2', '/works/W3']);
+});
+
 test('cancels an obsolete search request without retrying it', async () => {
   let calls = 0;
   const controller = new AbortController();

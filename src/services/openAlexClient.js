@@ -332,7 +332,7 @@ export class OpenAlexClient {
 
     let sharedRequest = method === 'GET' ? this.inFlight.get(requestKey) : null;
     if (!sharedRequest) {
-      sharedRequest = this.enqueue(() => this.performFetch(url, options));
+      sharedRequest = this.enqueue(() => this.performFetch(url, options), { priority: options.priority === true });
       if (method === 'GET') {
         this.inFlight.set(requestKey, sharedRequest);
         sharedRequest.finally(() => this.inFlight.delete(requestKey)).catch(() => {});
@@ -400,9 +400,16 @@ export class OpenAlexClient {
     }
   }
 
-  enqueue(task) {
+  // `priority` puts the task at the head of the queue. The queue is FIFO and
+  // two wide, and it is shared by everything that asks OpenAlex: the feed's
+  // one search used to enter it behind every followed-entity lookup and wait
+  // out their timeouts (measured 2026-09-16: 2.3 s late on a cold entry, 10 s
+  // in the control run) — past the feed's own first-paint budget.
+  enqueue(task, { priority = false } = {}) {
     return new Promise((resolve, reject) => {
-      this.queue.push({ task, resolve, reject });
+      const item = { task, resolve, reject };
+      if (priority) this.queue.unshift(item);
+      else this.queue.push(item);
       this.drainQueue();
     });
   }
@@ -488,7 +495,7 @@ export class OpenAlexClient {
     else externalSignal?.addEventListener('abort', abortFromExternalSignal, { once: true });
     const timeoutId = setTimeout(() => controller.abort(), options.timeoutMs);
     const fetchOptions = { ...options };
-    ['timeoutMs', 'cacheTtlMs', 'staleIfError', 'retries', 'persistentKey', 'persistentTtlMs', 'returnMeta']
+    ['timeoutMs', 'cacheTtlMs', 'staleIfError', 'retries', 'persistentKey', 'persistentTtlMs', 'returnMeta', 'priority']
       .forEach(key => delete fetchOptions[key]);
 
     try {
