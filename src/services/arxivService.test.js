@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
   ARXIV_ROUTE_TIMEOUT_MS,
+  arxivUnreachableError,
   assignRequestedCategories,
   buildAuthorQuery,
   buildSearchQuery,
@@ -81,4 +82,21 @@ test('the Worker route is given longer than the Worker gives arXiv', async () =>
   const upstream = Number(worker.match(/const ARXIV_UPSTREAM_TIMEOUT_MS = (\d+);/)?.[1]);
   assert.ok(Number.isFinite(upstream) && upstream > 0, 'the Worker declares its arXiv deadline');
   assert.ok(ARXIV_ROUTE_TIMEOUT_MS > upstream, `client ${ARXIV_ROUTE_TIMEOUT_MS} ms must exceed the Worker's ${upstream} ms`);
+});
+
+// The lane (arxivRequestQueue.js) pauses on a 429 by reading `status` off the
+// error the route threw. `fetchArxivDataNow` catches that error and throws a
+// fresh one -- measured 2026-09-16 on the paced Worker: the tab sent a second
+// request 420 ms after the first 429, because the fresh error carried nothing.
+test('the error the route ends in keeps the status and retry-after of the refusal behind it', () => {
+  const refusal = Object.assign(new Error('PaperTok arXiv API error: 429'), { status: 429, retryAfterMs: 4_000 });
+  const error = arxivUnreachableError(refusal);
+  assert.match(error.message, /No se pudo conectar con arXiv/);
+  assert.equal(error.status, 429);
+  assert.equal(error.retryAfterMs, 4_000);
+  assert.equal(error.cause, refusal);
+
+  const outage = arxivUnreachableError(new Error('PaperTok arXiv API error: 502'));
+  assert.equal(outage.status, undefined);
+  assert.equal(outage.retryAfterMs, undefined);
 });

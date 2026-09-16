@@ -231,7 +231,20 @@ async function fetchArxivDataNow(url) {
   const cause = lastError
     || new Error('No arXiv route available: VITE_PAPER_API_BASE_URL is unset');
   console.error('All arXiv routes failed', cause);
-  throw new Error('No se pudo conectar con arXiv. Inténtalo de nuevo en unos segundos.', { cause });
+  throw arxivUnreachableError(cause);
+}
+
+// The one error every arXiv caller sees, wrapped around whatever the route
+// actually said. The status and the retry-after of a refusal travel on it:
+// the lane (arxivRequestQueue.js) reads `status` off the error it is handed,
+// and a fresh error that carried nothing is how the tab sent a second
+// request 420 ms after the first 429 of the paced Worker (measured
+// 2026-09-16) instead of pausing.
+export function arxivUnreachableError(cause) {
+  const error = new Error('No se pudo conectar con arXiv. Inténtalo de nuevo en unos segundos.', { cause });
+  if (Number.isInteger(cause?.status)) error.status = cause.status;
+  if (Number.isFinite(cause?.retryAfterMs)) error.retryAfterMs = cause.retryAfterMs;
+  return error;
 }
 
 /**
