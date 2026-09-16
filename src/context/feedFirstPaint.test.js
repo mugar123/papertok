@@ -204,3 +204,34 @@ test('SOURCE: the topic table is prewarmed when a topic follow is known', async 
     'the 32 KB topic table loads off the critical path, so loadPapers meets it resident',
   );
 });
+
+/**
+ * Measured 2026-09-16: the optional candidates were created before the main
+ * sources, so the feed's OpenAlex search entered the client's two-wide FIFO
+ * queue behind every followed-entity lookup and left the browser 2.3 s late —
+ * past its own first-paint budget. The main sources are issued first now, and
+ * the feed's search takes the priority lane.
+ */
+test('SOURCE: the main sources are requested before the optional candidates, and the feed search has priority', async () => {
+  const code = stripComments(await read('./FeedContext.jsx'));
+  const block = bounded(
+    code,
+    "queryMode = Math.random() > 0.5 ? 'recent' : 'relevance';",
+    'let sourceResults = await first;',
+    'the source fan-out',
+    90,
+  );
+  const domainAt = block.indexOf('const domainProm = fetchDomainPapers(');
+  const settleAt = block.indexOf('const { first, all } = settleSourcesForFirstPaint(');
+  // The assignments that issue the requests, not the declarations above them.
+  const graphAt = block.indexOf('graphCandidatesPromise = resolveWithin(');
+  const followedAt = block.indexOf('followedCandidatesPromise = resolveWithin(');
+  assert.ok(domainAt >= 0 && settleAt > domainAt, 'the main sources are issued inside the block');
+  assert.ok(graphAt > domainAt && graphAt < settleAt, 'the graph candidates are asked for after the main sources have been issued');
+  assert.ok(followedAt > domainAt && followedAt < settleAt, 'the followed candidates are asked for after the main sources have been issued');
+  assert.match(
+    block,
+    /\.search\(openAlexQuery, currentPage \+ 1, \{ internalCategories: openAlexCats, priority: true \}\)/,
+    'the feed search takes the priority lane of the OpenAlex queue',
+  );
+});

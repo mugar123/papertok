@@ -1050,20 +1050,13 @@ export function FeedProvider({ children, feedRouteActive = true }) {
 
         // Optional recommendation signals run alongside the primary sources.
         // They enrich the mix when available without extending first paint.
-        const graphCandidatesPromise = relatedCandidates.current?.length > 0
-          ? resolveWithin(
-              fetchPapersByIds([...relatedCandidates.current].sort(() => 0.5 - Math.random()).slice(0, 5)),
-              OPTIONAL_SOURCE_RENDER_BUDGET_MS,
-              [],
-            )
-          : Promise.resolve([]);
-        const followedCandidatesPromise = followedEntities.length > 0
-          ? resolveWithin(
-              fetchFollowedEntityCandidates(followedEntities, queryMode),
-              OPTIONAL_SOURCE_RENDER_BUDGET_MS,
-              [],
-            )
-          : Promise.resolve([]);
+        // Declared here, ISSUED after the main sources below: the OpenAlex
+        // client queues two at a time in arrival order, and asking for the
+        // followed entities first put the feed's own search behind all of
+        // them (measured 2026-09-16: 2.3 s late on a cold entry, past the
+        // first-paint budget).
+        let graphCandidatesPromise = Promise.resolve([]);
+        let followedCandidatesPromise = Promise.resolve([]);
 
         // ─── STEP 3: Fetch from USER'S CATEGORIES ONLY ───
         let mainPapers = [];
@@ -1107,7 +1100,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
                 return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
              }).join(' OR ');
              openAlexProm = openAlexAdapter
-               .search(openAlexQuery, currentPage + 1, { internalCategories: openAlexCats })
+               .search(openAlexQuery, currentPage + 1, { internalCategories: openAlexCats, priority: true })
                .then(res => res.papers);
           }
           
@@ -1117,6 +1110,21 @@ export function FeedProvider({ children, feedRouteActive = true }) {
             8,
             queryMode,
           );
+
+          if (relatedCandidates.current?.length > 0) {
+            graphCandidatesPromise = resolveWithin(
+              fetchPapersByIds([...relatedCandidates.current].sort(() => 0.5 - Math.random()).slice(0, 5)),
+              OPTIONAL_SOURCE_RENDER_BUDGET_MS,
+              [],
+            );
+          }
+          if (followedEntities.length > 0) {
+            followedCandidatesPromise = resolveWithin(
+              fetchFollowedEntityCandidates(followedEntities, queryMode),
+              OPTIONAL_SOURCE_RENDER_BUDGET_MS,
+              [],
+            );
+          }
 
           const { first, all } = settleSourcesForFirstPaint(
             [arxivProm, pubmedProm, openAlexProm, domainProm],
