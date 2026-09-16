@@ -7,6 +7,7 @@ const isDev = import.meta.env?.DEV === true;
 import { PaperBuilder } from './PaperBuilder.js';
 import CATEGORIES from '../data/categories.js';
 import { withRequestDeadline } from '../utils/requestDeadline.js';
+import { createArxivRequestQueue } from './arxivRequestQueue.js';
 
 const ARXIV_DEV = '/api/arxiv';
 const ARXIV_PROD = 'https://export.arxiv.org/api/query';
@@ -57,7 +58,15 @@ export function assignRequestedCategories(papers, requestedCategories) {
 // answer, and the two timers this replaces both stopped at the headers.
 async function fetchXmlWithTimeout(url, timeoutMs, errorLabel) {
   const response = await fetch(url, withRequestDeadline({}, timeoutMs));
-  if (!response.ok) throw new Error(`${errorLabel}: ${response.status}`);
+  if (!response.ok) {
+    // The status and the provider's own backoff travel on the error: the
+    // tab's lane pauses on a 429 for exactly what it was told.
+    const error = new Error(`${errorLabel}: ${response.status}`);
+    error.status = response.status;
+    const retryAfter = Number(response.headers.get('retry-after'));
+    if (Number.isFinite(retryAfter) && retryAfter > 0) error.retryAfterMs = retryAfter * 1000;
+    throw error;
+  }
   return response.text();
 }
 
@@ -157,39 +166,24 @@ function safeDateISO(dateStr) {
 }
 
 
-// arXiv asks clients for roughly one request every three seconds and reacts to
-// bursts by stalling every connection from the caller, which is how a report
-// query firing alongside feed queries froze the whole source for 20+ seconds.
-// Serializing requests with a small gap keeps us under the radar, and the
-// in-flight map stops identical concurrent requests from being sent twice.
-const ARXIV_REQUEST_GAP_MS = 350;
-let arxivRequestChain = Promise.resolve();
-const inflightArxivRequests = new Map();
-
-function scheduleArxivRequest(task) {
-  const run = arxivRequestChain.then(task, task);
-  arxivRequestChain = run.then(
-    () => new Promise(resolve => setTimeout(resolve, ARXIV_REQUEST_GAP_MS)),
-    () => new Promise(resolve => setTimeout(resolve, ARXIV_REQUEST_GAP_MS)),
-  );
-  return run;
-}
-
-async function fetchArxivData(url) {
-  const existing = inflightArxivRequests.get(url);
-  if (existing) return existing;
-  const request = scheduleArxivRequest(() => fetchArxivDataNow(url))
-    .finally(() => inflightArxivRequests.delete(url));
-  inflightArxivRequests.set(url, request);
-  return request;
-}
-
 // The Worker holds arXiv to ARXIV_UPSTREAM_TIMEOUT_MS (5 s, worker/report-api.js)
 // and answers 502 when that passes. The client used to leave at 4 s, before the
 // Worker could say anything: a `sortBy=relevance` query, which arXiv takes 5 s+
 // to answer, could never succeed however healthy the route. One second above
 // the Worker's own deadline, and still under the report's per-source 10 s.
 export const ARXIV_ROUTE_TIMEOUT_MS = 6_000;
+
+// Every arXiv request of this tab goes through one lane (arxivRequestQueue.js):
+// serialized with a gap, deduplicated in flight, dropped when it has waited
+// longer than the route's deadline, and paused for the retry-after of a 429.
+// The Worker keeps arXiv's one-every-three-seconds beat for the whole app;
+// the lane is what keeps this tab from spending seats on answers nobody
+// waits for any more.
+const arxivQueue = createArxivRequestQueue({ maxQueueWaitMs: ARXIV_ROUTE_TIMEOUT_MS });
+
+function fetchArxivData(url) {
+  return arxivQueue.run(url, () => fetchArxivDataNow(url));
+}
 
 /**
  * Helper to fetch and parse arXiv XML through the Worker in production.
