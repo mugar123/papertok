@@ -1,5 +1,30 @@
 # Estado / pendientes
 
+## arXiv lleva compás: una petición cada tres segundos para toda la app (2026-09-16)
+
+**«¿Lo de arXiv está resuelto?»** No lo estaba: el plazo del cliente ya iba
+por encima del del Worker (a3eaa83), pero `/arxiv` salía a arXiv en cada MISS
+sin ningún ritmo global —el compás de 350 ms de `arxivService` es por
+pestaña—, y eso es lo que arXiv castiga con 429 cuando se pone estricto
+(auditoría del 15-09; hoy contestaba 200 en 0,35 s a consultas únicas, que
+es un régimen suyo, no nuestro). Ahora `awaitUpstreamSlot` late a cualquier
+periodo (`periodMs`), `handleArxiv` toma un asiento cada 3 s con hasta 4 s de
+espera y refusa con `429 PROVIDER_RATE_LIMITED` y `retry-after: 4` sin gastar
+la llamada; sin ledger sale sin compás (cortesía, no protección de clave).
+Sus fallos pasan por `upstreamFailureResponse`: un 429 de arXiv llega como
+`UPSTREAM_RATE_LIMITED` con `upstreamStatus`, un cuelgue como
+`UPSTREAM_TIMEOUT`; antes todo era el mismo 502. La caché del borde sube de
+10 min a una hora (las listas cambian una vez al día). En el cliente, la cola
+de la pestaña (`arxivRequestQueue.js`) descarta sin enviar lo que ha
+esperado más de 6 s —nadie lo escucha ya y gastaba un turno de todos— y tras
+un 429 rechaza al instante durante el `retry-after`. Lo que hay que asumir:
+con varias cargas a la vez, algunas peticiones a arXiv se rechazan en el
+Worker; el feed ya no falla por ello y Research lo marca en su tira de
+cobertura. Simulado (`beat-sim.mjs`): una ráfaga de seis deja pasar dos o
+tres según la fase del periodo. Auditoría en
+`docs/AUDITORIA-ARXIV-COMPAS-2026-09-16.md`, plan en
+`docs/superpowers/plans/2026-09-16-arxiv-compas.md`.
+
 ## El feed ya no falla en frío por respuestas que llegan un segundo tarde (2026-09-16)
 
 **«Al entrar en PaperTok cuando llevo mucho sin entrar, el feed está un rato
