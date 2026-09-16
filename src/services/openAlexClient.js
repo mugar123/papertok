@@ -407,15 +407,27 @@ export class OpenAlexClient {
   // in the control run) — past the feed's own first-paint budget.
   enqueue(task, { priority = false } = {}) {
     return new Promise((resolve, reject) => {
-      const item = { task, resolve, reject };
+      const item = { task, resolve, reject, priority };
       if (priority) this.queue.unshift(item);
       else this.queue.push(item);
       this.drainQueue();
     });
   }
 
+  // The priority lane is one slot wider than the queue. Jumping the queue is
+  // not enough when every slot is held by an optional lookup that is merely in
+  // flight: measured 2026-09-16 with two followed-entity lookups active, the
+  // feed's search still waited their whole 3.5 s budget for a slot. A request
+  // the screen is waiting on gets out at once; the extra slot only ever holds
+  // priority work, so the width the provider sees for everything else is
+  // unchanged.
+  hasRoomFor(item) {
+    const width = item.priority ? this.maxConcurrent + 1 : this.maxConcurrent;
+    return this.activeRequests < width;
+  }
+
   drainQueue() {
-    while (this.activeRequests < this.maxConcurrent && this.queue.length > 0) {
+    while (this.queue.length > 0 && this.hasRoomFor(this.queue[0])) {
       const item = this.queue.shift();
       this.activeRequests += 1;
       Promise.resolve()

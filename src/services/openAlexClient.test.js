@@ -280,6 +280,37 @@ test('a priority request jumps the queue instead of waiting behind it', async ()
   assert.deepEqual(started, ['/works/W1', '/works/W4', '/works/W2', '/works/W3']);
 });
 
+test('a priority request does not wait for a slot the optional lookups are holding', async () => {
+  const started = [];
+  const resolvers = [];
+  const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+  const client = new OpenAlexClient({
+    maxConcurrent: 1,
+    fetchImpl: (url) => new Promise(resolve => {
+      started.push(new URL(url).pathname);
+      resolvers.push(() => resolve(new Response('{}', { status: 200 })));
+    }),
+  });
+
+  const requests = [
+    client.json('https://api.openalex.org/works/W1'),
+    client.json('https://api.openalex.org/works/W2'),
+  ];
+  await tick();
+  assert.deepEqual(started, ['/works/W1'], 'the queue is full');
+  // The feed's search arrives with every slot busy: it must go out now, on a
+  // lane of its own, while the queued lookup keeps waiting for a slot.
+  requests.push(client.json('https://api.openalex.org/works/W3', { priority: true }));
+  await tick();
+  assert.deepEqual(started, ['/works/W1', '/works/W3']);
+  while (resolvers.length > 0 || started.length < 3) {
+    resolvers.splice(0).forEach(resolve => resolve());
+    await tick();
+  }
+  await Promise.all(requests);
+  assert.deepEqual(started, ['/works/W1', '/works/W3', '/works/W2']);
+});
+
 test('cancels an obsolete search request without retrying it', async () => {
   let calls = 0;
   const controller = new AbortController();
