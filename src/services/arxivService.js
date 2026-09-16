@@ -184,6 +184,13 @@ async function fetchArxivData(url) {
   return request;
 }
 
+// The Worker holds arXiv to ARXIV_UPSTREAM_TIMEOUT_MS (5 s, worker/report-api.js)
+// and answers 502 when that passes. The client used to leave at 4 s, before the
+// Worker could say anything: a `sortBy=relevance` query, which arXiv takes 5 s+
+// to answer, could never succeed however healthy the route. One second above
+// the Worker's own deadline, and still under the report's per-source 10 s.
+export const ARXIV_ROUTE_TIMEOUT_MS = 6_000;
+
 /**
  * Helper to fetch and parse arXiv XML through the Worker in production.
  */
@@ -193,8 +200,9 @@ async function fetchArxivDataNow(url) {
   // The Worker is the only browser-reachable route to arXiv in production:
   // export.arxiv.org answers without any access-control-allow-origin header, so a
   // direct fetch from the page is blocked however it is spelled. Measured latency
-  // of the route is ~0.3s, so 4s is generous headroom; staying under the report's
-  // per-source deadline is what makes the availability flag truthful.
+  // of the route is ~0.3s warm; the deadline is set by the Worker's own, above,
+  // and stays under the report's per-source deadline so the availability flag
+  // keeps telling the truth.
   if (PAPER_API_BASE) {
     try {
       const query = new URL(url, 'https://export.arxiv.org').search;
@@ -203,7 +211,7 @@ async function fetchArxivDataNow(url) {
       // failure: paging past the end of a category has to return [] rather than raise.
       return parseArxivXml(await fetchXmlWithTimeout(
         `${PAPER_API_BASE}/arxiv${query}`,
-        4_000,
+        ARXIV_ROUTE_TIMEOUT_MS,
         'PaperTok arXiv API error',
       ));
     } catch (error) {
