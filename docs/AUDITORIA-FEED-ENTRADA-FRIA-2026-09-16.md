@@ -31,14 +31,15 @@ capturas.
 |---|---|---|---|
 | arXiv (`sortBy=submittedDate`) | 0,53 s (HIT de Fastly) | 0,09 s | 50 KB |
 | arXiv (`sortBy=relevance`) | **502 a los 5,07 s** (plazo del Worker) | — | — |
-| OpenAlex `works?filter=default.search:…` | **2,0–3,2 s** | 0,11 s | **546 KB** |
+| OpenAlex `works?filter=default.search:…` | **2,0–3,2 s** | 0,11 s | **546 KB** sin comprimir (65–82 KB en el cable) |
 | PubMed (cadena en el Worker) | 2,7 s | 0,15 s | 256 KB |
 | OpenReview | 2,8 s | — | 15 KB |
 | Hugging Face | 0,5 s | — | 47 KB |
 | Europe PMC | 502 en 0,5 s | — | — |
 
-Un OpenAlex de medio megabyte en 2–3 s **desde un Mac con fibra**. En un móvil
-con 4G flojo (1,6 Mb/s) solo la descarga son 2,7 s más.
+Un OpenAlex de medio megabyte (sin comprimir) en 2–3 s **desde un Mac con
+fibra**. En el cable va comprimido a 65–82 KB, que en un 4G flojo (1,6 Mb/s)
+son 0,3–0,4 s más; lo que pesa es el tiempo de la búsqueda en OpenAlex.
 
 ### 2. La entrada en frío con sesión (red rápida)
 
@@ -162,9 +163,16 @@ fuente de `FeedContext`), y `npm test` completo antes de subir.
 - arXiv devuelve **429 a todo lo que no acierta en la caché de Fastly**
   (auditoría del 15-09, apartado 2a): la fuente sigue muerta para consultas
   únicas hasta que la ruta `/arxiv` entre en el compás de `upstream-pace.js`.
-- OpenAlex contesta **medio megabyte por página** de 25 obras; en un móvil
-  con 4G flojo solo la descarga son 2–3 s. Un `select=` de campos en la
-  ruta `/openalex/works` lo dejaría en una fracción.
+- ~~OpenAlex contesta medio megabyte por página~~ Hecho el mismo día: la
+  búsqueda del feed pide con `select=` los dieciséis campos que lee el
+  mapeador (`OPENALEX_WORK_SEARCH_FIELDS`, `OpenAlexAdapter.js`). Medido
+  por página de 25 obras: 455 KB → 326 KB sin comprimir, **65–82 KB → 45–49
+  KB en el cable**. El «medio megabyte» de arriba era el tamaño sin
+  comprimir; lo que viaja va comprimido, así que el ahorro real es un
+  tercio, y la latencia en frío la sigue marcando la búsqueda de OpenAlex
+  (1,8–2,2 s con o sin `select`), no la transferencia. Lo que queda pesa en
+  `authorships` (108 KB de los 455) y `locations`, que OpenAlex no permite
+  seleccionar por dentro.
 - El reintento automático sigue siendo uno, a los 2,5 s y a la página 0.
   Con `all` esperando a las respuestas reales ya solo se alcanza cuando
   todas las fuentes han fallado de verdad.

@@ -4,6 +4,34 @@ import { openAlexFetch } from '../openAlexClient.js';
 import { getArxivIdFromWork } from '../openAlexService.js';
 import { reconstructOpenAlexAbstract } from '../../utils/openAlexAbstract.js';
 
+// The top-level fields `mapToStandard` and `getArxivIdFromWork` read, and
+// the only ones a search asks for (`select=`). A works page used to arrive
+// whole: 455 KB uncompressed, 65–82 KB on the wire, most of it fields nothing
+// here reads (`referenced_works`, `keywords`, `counts_by_year`, the second
+// half of `authorships`). Measured 2026-09-16 with this list: 326 KB and
+// 45–49 KB. The Worker relays `select` untouched (OPENALEX_PARAMS). Nested
+// selection is not something OpenAlex offers, so `authorships` and
+// `locations` still travel whole. OpenAlexAdapter.test.js holds the guard:
+// a work stripped to these fields must map to the same paper as the full one.
+export const OPENALEX_WORK_SEARCH_FIELDS = Object.freeze([
+  'id',
+  'doi',
+  'ids',
+  'title',
+  'type',
+  'publication_date',
+  'publication_year',
+  'authorships',
+  'abstract_inverted_index',
+  'primary_location',
+  'locations',
+  'open_access',
+  'cited_by_count',
+  'concepts',
+  'topics',
+  'primary_topic',
+]);
+
 export class OpenAlexAdapter extends BaseAdapter {
   constructor() {
     super('openalex_search');
@@ -11,16 +39,20 @@ export class OpenAlexAdapter extends BaseAdapter {
     this.mailto = 'app@papertok.io';
   }
 
-  async search(query, page = 1, filters = {}) {
+  buildSearchUrl(query, page = 1) {
     const perPage = 25;
-    
+
     // Convert query to OpenAlex default.search format
     const searchParam = encodeURIComponent(query);
-    
+
     // We only want journal articles and proceedings (published papers)
     const typeFilter = 'type:article|proceedings-article';
-    
-    let url = `${this.baseUrl}?filter=default.search:${searchParam},${typeFilter}&page=${page}&per-page=${perPage}&mailto=${this.mailto}`;
+
+    return `${this.baseUrl}?filter=default.search:${searchParam},${typeFilter}&page=${page}&per-page=${perPage}&mailto=${this.mailto}&select=${OPENALEX_WORK_SEARCH_FIELDS.join(',')}`;
+  }
+
+  async search(query, page = 1, filters = {}) {
+    const url = this.buildSearchUrl(query, page);
 
     try {
       const response = await openAlexFetch(url, {

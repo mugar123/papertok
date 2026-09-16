@@ -26,8 +26,11 @@ prioritario de la cola (`priority: true`), y el cliente de arXiv espera 6 s.
 Lo que no era: ni la puerta del perfil (`ProtectedRoute`) ni el service
 worker; en seis entradas medidas —fibra, 4G lento, 3G a 400 ms, con y sin
 localStorage— perfil, agregado y stream de Firestore contestaron a tiempo.
-Sigue abierto, de la auditoría del 15-09: arXiv devuelve 429 a todo lo que no
-acierta en Fastly y OpenAlex contesta medio megabyte por página. Auditoría en
+Después, la búsqueda de OpenAlex del feed pide con `select=` los dieciséis
+campos que lee el mapeador: 65–82 KB → 45–49 KB en el cable por página, con
+un test que exige que un trabajo recortado a esos campos mapee igual que el
+completo. Sigue abierto, de la auditoría del 15-09: arXiv devuelve 429 a todo
+lo que no acierta en Fastly. Auditoría en
 `docs/AUDITORIA-FEED-ENTRADA-FRIA-2026-09-16.md`, plan en
 `docs/superpowers/plans/2026-09-16-feed-entrada-fria-error.md`.
 
