@@ -40,3 +40,20 @@ test('paints when the first source already has enough papers', async () => {
   const late = await all;
   assert.deepEqual(fulfilledPaperLists(late).map((paper) => paper.id), ['fast-1', 'fast-2', 'late']);
 });
+
+test('a source that answers after the first-paint budget still reaches `all`', async () => {
+  const late = new Promise((resolve) => setTimeout(() => resolve([{ id: 'late' }]), 60));
+  const { first, all } = settleSourcesForFirstPaint([late], 20, () => false, { allTimeoutMs: 500 });
+  const early = await first;
+  assert.equal(early[0].status, 'timed_out');
+  const settled = await all;
+  assert.equal(settled[0].status, 'fulfilled');
+  assert.deepEqual(fulfilledPaperLists(settled).map((paper) => paper.id), ['late']);
+});
+
+test('`all` still has a ceiling of its own', async () => {
+  const never = new Promise(() => {});
+  const { all } = settleSourcesForFirstPaint([never], 5, () => false, { allTimeoutMs: 30 });
+  const settled = await all;
+  assert.equal(settled[0].status, 'timed_out');
+});

@@ -27,13 +27,31 @@ export function fulfilledPaperLists(results) {
 }
 
 /**
- * Same per-source budget as settleWithin, but the caller can paint as soon as
- * `isReady` is true instead of waiting for the slowest source. `all` still
- * settles every source so late papers can append without replacing the first
- * cards.
+ * How long `all` below may wait for the sources after the first-paint budget
+ * has passed. Above the longest client deadline any main source carries (the
+ * Worker routes are read under 6–10 s), so a source that is still going to
+ * answer is waited for, and a source that never answers cannot hold the feed
+ * on its veil for longer than this.
  */
-export function settleSourcesForFirstPaint(promises, timeoutMs, isReady) {
-  const tracked = [...promises].map((promise) => settleWithin(promise, timeoutMs));
+export const DEFAULT_SOURCE_SETTLE_TIMEOUT_MS = 12_000;
+
+/**
+ * Same per-source budget as settleWithin for `first`, but the caller can paint
+ * as soon as `isReady` is true instead of waiting for the slowest source.
+ *
+ * `all` used to be `Promise.all` of the SAME budgeted promises, which made the
+ * first-paint budget double as a failure deadline: a first paint with nothing
+ * in it awaited `all`, got the same four `timed_out`, and the load was declared
+ * failed while every request was still in flight and about to answer
+ * (measured 2026-09-16: sources answering 300 ms past the budget produced
+ * "Error loading papers", and the reader's Try again met a warm edge). `all`
+ * now settles each source under its own, longer ceiling, so a first paint that
+ * has nothing to show waits for the real answers, and the success path's late
+ * pool receives them too.
+ */
+export function settleSourcesForFirstPaint(promises, timeoutMs, isReady, { allTimeoutMs = DEFAULT_SOURCE_SETTLE_TIMEOUT_MS } = {}) {
+  const sources = [...promises];
+  const tracked = sources.map((promise) => settleWithin(promise, timeoutMs));
   const results = Array.from({ length: tracked.length }, () => ({ status: 'pending' }));
   let resolved = false;
 
@@ -60,5 +78,6 @@ export function settleSourcesForFirstPaint(promises, timeoutMs, isReady) {
     });
   });
 
-  return { first, all: Promise.all(tracked) };
+  const all = Promise.all(sources.map((promise) => settleWithin(promise, Math.max(timeoutMs, allTimeoutMs))));
+  return { first, all };
 }
