@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Popover as PopoverPrimitive } from '@base-ui/react/popover';
 import { Highlighter, Loader2, PenLine, Sparkles } from 'lucide-react';
 import { MAX_NOTE_LENGTH } from '../../services/userHighlightService.js';
@@ -15,8 +15,8 @@ import { Textarea } from '../ui/textarea.jsx';
  * putting this over the selection instead of in a sidebar.
  *
  * A Base UI Popover anchored to the selection's own rectangle, handed over as
- * a virtual element: it sits under the passage, flips above when there is no
- * room, and is shifted back inside the viewport at the edges — what
+ * a virtual element re-anchored on every selection: it sits under the passage,
+ * flips above when there is no room, and is shifted back inside the viewport at the edges — what
  * `placeSelectionMenu` used to compute by hand. Outside press and Escape are
  * the primitive's; both arrive here as `onClose`. The Positioner is composed
  * from the primitive rather than through `PopoverContent` because only the
@@ -69,14 +69,23 @@ export default function SelectionMenu({
   // menu (Enter on a focused paragraph) leaves focus on the paragraph, so
   // without this the menu opened and the reader could not reach it.
   const firstActionRef = useRef(null);
-  // The last rectangle the menu opened on. Written from an effect, not during
-  // render (`react-hooks/refs`), and read only when Base UI asks where to put
-  // the popup — which it does on open and on every layout shift after.
-  const anchorRef = useRef(null);
-  useEffect(() => {
-    if (anchor) anchorRef.current = anchor;
-  }, [anchor]);
-  const resolveAnchor = useCallback(() => virtualAnchor(anchorRef.current), []);
+  // The rectangle the menu is anchored to, as a value Base UI re-reads. It
+  // was a stable function returning the latest rectangle, and Base UI only
+  // resolves a function anchor when the popup mounts: select another sentence
+  // while the menu is still leaving — a double-click, a short drag — and it
+  // reopened over the previous selection (measured 2026-09-17). Latched in
+  // render, the documented way to derive state from a prop: it changes with
+  // every selection, so Base UI re-anchors, and it is kept while `anchor` is
+  // gone, so the leave still points at the passage it was about. A new
+  // selection also puts the composer away — the draft was about the last one.
+  const [anchorSeen, setAnchorSeen] = useState(anchor);
+  const [anchorElement, setAnchorElement] = useState(() => virtualAnchor(anchor));
+  if (anchor && anchor !== anchorSeen) {
+    setAnchorSeen(anchor);
+    setAnchorElement(virtualAnchor(anchor));
+    setComposing(false);
+    setDraft('');
+  }
 
   useEffect(() => {
     if (composing) textareaRef.current?.focus();
@@ -103,7 +112,7 @@ export default function SelectionMenu({
     >
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Positioner
-          anchor={resolveAnchor}
+          anchor={anchorElement}
           side="bottom"
           align="start"
           sideOffset={8}

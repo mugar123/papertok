@@ -61,7 +61,7 @@ test('the selection menu and the export card are anchored popovers', async () =>
 
   // The menu sits on the selection's own rectangle — Base UI positions it,
   // flips it and keeps it on the page; nothing measures by hand any more.
-  assert.match(menu, /<PopoverPrimitive\.Positioner[\s\S]*?anchor=\{resolveAnchor\}/);
+  assert.match(menu, /<PopoverPrimitive\.Positioner[\s\S]*?anchor=\{anchorElement\}/);
   assert.match(menu, /onOpenChange=\{\(next\) => \{ if \(!next\) onClose\(\); \}\}/);
   assert.match(menu, /aria-label=\{copy\.selectionTitle\}/);
   assert.doesNotMatch(menu, /placeSelectionMenu|position:\s*'fixed'|role="dialog"/);
