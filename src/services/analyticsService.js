@@ -1,6 +1,7 @@
 // The transport is Vercel Web Analytics. What did NOT move with it is this
-// file's actual subject: the consent gate, the event registry, and the path
-// normalizer that keeps an identifier out of a report. `track` queues into
+// file's actual subject: the consent gate (an opt-out since 2026-09-17), the
+// event registry, and the path normalizer that keeps an identifier out of a
+// report. `track` queues into
 // `window.vaq` even before the script the <Analytics /> component injects has
 // loaded, so nothing here waits for -- or checks -- an instance the way the
 // Firebase `getAnalytics()` handle had to be checked.
@@ -204,6 +205,12 @@ function persistAnalyticsConsentCookie(value) {
   }
 }
 
+// Granted unless the reader has said otherwise. Nobody is asked any more
+// (2026-09-17): Vercel Web Analytics sets no cookies and identifies nobody, so
+// there is nothing to ask permission for, and the switch in Settings is the
+// way out. The default is never written down -- a stored "granted" means
+// somebody chose it, a stored "denied" is respected, and an empty store IS the
+// default.
 export function readAnalyticsConsent(storage) {
   const targetStorage = storage === undefined ? getBrowserStorage() : storage;
   try {
@@ -212,7 +219,8 @@ export function readAnalyticsConsent(storage) {
   } catch {
     // The cookie below preserves the choice when browser storage is unavailable.
   }
-  return storage === undefined ? readAnalyticsConsentCookie() : null;
+  const stored = storage === undefined ? readAnalyticsConsentCookie() : null;
+  return stored ?? ANALYTICS_CONSENT.GRANTED;
 }
 
 export function persistAnalyticsConsent(value, storage) {
@@ -334,9 +342,9 @@ function clearConsentScopedAnalyticsState(storage = getBrowserStorage()) {
 }
 
 // Granting no longer has to reach into a loaded SDK and turn collection on:
-// `AnalyticsProvider` renders <Analytics /> only while consent is granted, so
-// the script is not on the page at all until then, and unmounting stops the
-// page views. Kept `async` because every caller awaits it.
+// `AnalyticsProvider` renders <Analytics /> only while consent reads as
+// granted, so withdrawing it unmounts the script and stops the page views.
+// Kept `async` because every caller awaits it.
 export async function setAnalyticsConsent(value) {
   if (!persistAnalyticsConsent(value)) return false;
   if (value === ANALYTICS_CONSENT.GRANTED) return true;

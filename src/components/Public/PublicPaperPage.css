@@ -214,8 +214,9 @@
     background: var(--bg-glass-hover);
   }
 
-  /* Same orphan as AnalyticsConsentBanner.css carried, same fix: the button
-     rests on --accent-primary, so it hovers on that accent's hover. */
+  /* Same orphan the analytics banner's CSS carried (retired 2026-09-17), same
+     fix: the button rests on --accent-primary, so it hovers on that accent's
+     hover. */
   .public-paper-primary-action:hover {
     background: var(--accent-primary-hover);
   }

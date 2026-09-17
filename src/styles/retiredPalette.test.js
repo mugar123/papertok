@@ -9,7 +9,7 @@ import { readdir, readFile } from 'node:fs/promises';
  * Los sitios que lo nombraban a pelo no siguieron al token, y como los dos que
  * quedaban eran estados de HOVER, nada los delató hasta que un ratón se posó
  * encima: un botón negro que se volvía morado al pasar por él. El mismo
- * accidente que AnalyticsConsentBanner.css ya documenta para una sombra.
+ * accidente que tuvo una sombra del banner de analítica (retirado el 17-09).
  *
  * De ahí este barrido: un color retirado no se vigila leyendo pantallas, se
  * vigila leyendo ficheros. Si alguna vez vuelve a hacer falta un violeta, hay

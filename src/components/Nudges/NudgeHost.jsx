@@ -3,7 +3,6 @@ import { AnimatePresence } from 'framer-motion';
 import { MailWarning, Star } from 'lucide-react';
 import { GithubMark } from '../ui/GithubMark.jsx';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useAnalyticsConsent } from '../../context/AnalyticsContext';
 import { useAuth } from '../../context/AuthContext';
 import { useEmailNotifications } from '../../context/EmailNotificationsContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -26,8 +25,9 @@ import NudgePanel from './NudgePanel.jsx';
 //   · One per visit, and never two. The corner belongs to the reader.
 //   · Not until a minute in, and only on the feed — asking somebody something
 //     before they have read a line is asking a stranger for a favour.
-//   · Never over the consent banner, which owns this corner while it is up.
 // Guests are out entirely: they already have one thing being asked of them.
+// The analytics consent banner used to own this corner until it was answered;
+// it went on 2026-09-17, and the corner is this host's alone.
 
 export const REPO_URL = 'https://github.com/mugar123/papertok';
 const REPO_API_URL = 'https://api.github.com/repos/mugar123/papertok';
@@ -80,7 +80,6 @@ const COPY = {
 
 export default function NudgeHost() {
   const { user, loading: authLoading, onboardingComplete } = useAuth();
-  const { consent } = useAnalyticsConsent();
   const { isEnglish, locale } = useLanguage();
   const { health, loading: emailLoading } = useEmailNotifications();
   const location = useLocation();
@@ -114,10 +113,7 @@ export default function NudgeHost() {
 
   const openable = dwellDone
     && signedIn
-    && location.pathname === '/'
-    // `null` is "has not answered yet", and while that is true the consent
-    // banner is either up or about to be.
-    && consent !== null;
+    && location.pathname === '/';
 
   // Picked during render rather than in an effect: this derives state from
   // state, which an effect would turn into a second render pass — and the

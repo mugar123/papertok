@@ -27,13 +27,42 @@ function memoryStorage(initial = {}) {
   };
 }
 
-test('persists only an explicit analytics consent choice', () => {
+// Nobody is asked any more (2026-09-17): Vercel Web Analytics sets no cookies,
+// so measurement is on unless the reader turns it off in Settings. An empty
+// store therefore reads as granted, and only an explicit "denied" turns it off.
+// The default is not written down -- it is not a choice, and a store that
+// says "granted" must mean somebody said so.
+test('reads as granted until an explicit choice is stored', () => {
   const storage = memoryStorage();
-  assert.equal(readAnalyticsConsent(storage), null);
+  assert.equal(readAnalyticsConsent(storage), ANALYTICS_CONSENT.GRANTED);
+  assert.equal(storage.getItem(ANALYTICS_CONSENT_KEY), null, 'the default must not be persisted as a choice');
   assert.equal(persistAnalyticsConsent(ANALYTICS_CONSENT.GRANTED, storage), true);
   assert.equal(readAnalyticsConsent(storage), ANALYTICS_CONSENT.GRANTED);
   assert.equal(persistAnalyticsConsent('unknown', storage), false);
   assert.equal(storage.getItem(ANALYTICS_CONSENT_KEY), ANALYTICS_CONSENT.GRANTED);
+});
+
+test('with neither storage nor cookie, consent is granted by default', t => {
+  const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    get() { throw new Error('storage unavailable'); },
+  });
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    value: { cookie: '' },
+  });
+
+  t.after(() => {
+    if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
+    else delete globalThis.localStorage;
+    if (previousDocument) Object.defineProperty(globalThis, 'document', previousDocument);
+    else delete globalThis.document;
+  });
+
+  assert.equal(readAnalyticsConsent(), ANALYTICS_CONSENT.GRANTED);
 });
 
 test('remembers a denied analytics choice as an explicit decision', () => {

@@ -42,16 +42,18 @@ $0.10/day allowance.
 
 ## Analytics
 
-Measurement is **Vercel Web Analytics**, and it stays consent-gated: `AnalyticsProvider` renders
-`<Analytics />` only while consent is granted, so the script is not on the page at all until the
-reader opts in. It sets no cookies of its own.
+Measurement is **Vercel Web Analytics**. It sets no cookies of its own, so nobody is asked before
+it runs: it is on by default and the switch in Settings is the way out (the consent banner went on
+2026-09-17). `AnalyticsProvider` renders `<Analytics />` only while consent reads as granted, so
+turning it off unmounts the script and stops the page views.
 
 PaperTok records normalized application routes and a strict allowlist of coarse funnel events
 (acquisition channel, guest demo, search result count, follow/save/share, AI explanation status,
 onboarding, newsletter subscription, activation, and day-seven return). Entity identifiers, search
 text, paper titles, interests, account identifiers, URLs, and other free-form values are excluded.
-Consent is stored in local browser storage with a first-party cookie fallback, so either explicit
-choice survives reloads. It can be changed from Settings.
+An explicit choice is stored in local browser storage with a first-party cookie fallback, so it
+survives reloads; an empty store reads as granted, and the default is never written down. It can
+be changed from Settings.
 
 Two details are load-bearing and easy to undo by accident:
 

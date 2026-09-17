@@ -184,10 +184,11 @@ export function useGuestFeed({ areas = [] } = {}) {
   // reader's thumb.
   // The reset happens in render, not in the effect: between the plan
   // changing and an effect emptying the state there is one committed frame,
-  // and in that frame the page would report "ready" with the old cards and
-  // the consent banner would mount for it, only to leave again. Storing the
-  // key the papers belong to and comparing it here is React's own pattern
-  // for state that depends on the previous render.
+  // and in that frame the page would report "ready" with the old cards, and
+  // anything keyed on that (the analytics consent banner was, while it
+  // existed) would mount for it, only to leave again. Storing the key the
+  // papers belong to and comparing it here is React's own pattern for state
+  // that depends on the previous render.
   const [shownKey, setShownKey] = useState(planKey);
   if (shownKey !== planKey) {
     setShownKey(planKey);

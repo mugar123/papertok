@@ -8,9 +8,11 @@ import { readFile } from 'node:fs/promises';
  * Todo lo que se puede decidir sin navegador vive en utils/nudges.js y se
  * prueba allí. Lo que queda aquí es el cableado, que ningún test de unidad ve:
  * a quién se le enseña, cuándo, y que el panel siga siendo un aviso y no un
- * diálogo. Más la forma del movimiento, que es la misma que la del banner de
+ * diálogo. Más la forma del movimiento, que era la misma que la del banner de
  * analítica a propósito — dos paneles que aparecen en la misma esquina y se
- * mueven distinto se leen como dos sistemas hablándose encima.
+ * mueven distinto se leen como dos sistemas hablándose encima. El banner se
+ * fue el 2026-09-17 (la analítica de Vercel no lleva cookies y no hay nada
+ * que pedir); la forma se queda, y la esquina es ya solo de este aviso.
  */
 
 const stripComments = source => source
@@ -97,7 +99,7 @@ test('nadie es interrumpido antes de tiempo, ni sin sesión, ni fuera del feed',
   assert.match(jsx, /const signedIn = Boolean\(user\) && !authLoading && onboardingComplete;/, 'los invitados quedan fuera');
   assert.match(jsx, /setTimeout\(\(\) => setDwellDone\(true\), NUDGE_DWELL_MS\)/, 'hay que esperar el minuto');
   assert.match(jsx, /location\.pathname === '\/'/, 'solo en el feed');
-  assert.match(jsx, /consent !== null/, 'nunca encima del banner de consentimiento');
+  assert.ok(!/useAnalyticsConsent|consent !== null/.test(jsx), 'ya no hay banner de consentimiento al que ceder la esquina');
 });
 
 test('uno por visita, y el descarte se recuerda para siempre', async () => {
@@ -129,10 +131,8 @@ test('el botón es la única puerta al repo, y se abre fuera', async () => {
   assert.match(panel, /target="_blank" rel="noopener noreferrer"/, 'una pestaña nueva, sin prestarle el opener');
 });
 
-test('el host se monta después del banner de analítica', async () => {
+test('App monta el host y ya no la alerta de analítica', async () => {
   const app = await appJsx;
-  const banner = app.indexOf('<AnalyticsConsentBanner />');
-  const host = app.indexOf('<NudgeHost />');
-  assert.notEqual(host, -1, 'el host no está montado');
-  assert.ok(banner < host, 'el aviso va detrás del banner, que es el dueño de la esquina hasta que se responde');
+  assert.match(app, /<NudgeHost \/>/, 'el host no está montado');
+  assert.ok(!/AnalyticsConsentBanner/.test(app), 'la alerta de analítica sigue montada: desde el 17-09 no se pide permiso');
 });

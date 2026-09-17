@@ -1,7 +1,7 @@
-/* The same corner, the same plate and the same grid as the analytics banner
-   (AnalyticsConsentBanner.css): icon, copy, action, dismiss — one row. The two
-   never share the screen (a nudge waits until consent has been answered), so
-   what matters is that they are recognisably the same object arriving twice. */
+/* The same corner, the same plate and the same grid the analytics consent
+   banner had: icon, copy, action, dismiss — one row. That banner went on
+   2026-09-17 (nothing to ask permission for), and this is now the only panel
+   that arrives in this corner; the shape it inherited stays. */
 .nudge {
   position: fixed;
   z-index: 1200;

@@ -19,7 +19,6 @@ import { EmailNotificationsProvider } from './context/EmailNotificationsContext'
 import ProtectedRoute from './components/Auth/ProtectedRoute'
 import FeedContainer from './components/Feed/FeedContainer'
 import Navbar from './components/Layout/Navbar'
-import AnalyticsConsentBanner from './components/Privacy/AnalyticsConsentBanner'
 import NudgeHost from './components/Nudges/NudgeHost'
 import GuestFeedPage from './components/Public/GuestFeedPage'
 import AuthPrompt from './components/Public/AuthPrompt'
@@ -526,9 +525,6 @@ function AppContent() {
         </Suspense>
       )}
 
-      <AnalyticsConsentBanner />
-
-      {/* The same corner, after the consent banner has had its answer. */}
       <NudgeHost />
 
       <AnimatePresence>
