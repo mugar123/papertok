@@ -241,7 +241,11 @@ export function armPile() {
   frame.addEventListener('click', function () { flick(); });
 }
 
-function init() {
+/* Exported so a test can call it directly with the page's real globals
+   substituted, and prove `shouldAnimate()` actually gates `armPile()`
+   rather than trusting that the two are wired together correctly by
+   reading the source — see wheel.test.js. */
+export function init() {
   if (document.documentElement.getAttribute('data-motion') !== 'on' || !shouldAnimate()) return;
   armPile();
 }

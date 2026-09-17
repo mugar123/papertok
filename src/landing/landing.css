@@ -307,6 +307,34 @@
   .lp-pile__slot { position: static; transform: none; margin: 0; height: auto; padding: 10px 0; }
   .lp-pile__slot:nth-child(-n+3), .lp-pile__slot:nth-child(n+11) { display: none; }
   .lp-pile__slot:nth-child(7) { border-top: 1px solid var(--border-ink); border-bottom: 1px solid var(--border-ink); }
+  /* The desktop selection line is two 1px rules fixed at 50% ± 26px, sized
+     for the 520px/52px-row barrel — reset to `height: auto` here, they
+     resolve against the seven-row block instead of the wheel, which is only
+     right by coincidence of the row height. The phone fallback draws its
+     band with the centre row's own border (above) instead, so the desktop
+     hairlines are switched off rather than left to land wherever the new
+     height happens to put them. */
+  .lp-pile::before, .lp-pile::after { display: none; }
+  /* A picker's cells are one line each (see .lp-pile__title above) because
+     the barrel is a fixed-height cylinder; the flat list has no such limit,
+     but a phone-width column still can't afford PILE's longest titles
+     wrapping freely — seven of them unclamped ran to as much as the
+     viewport's height on their own. Two lines is enough to carry the
+     argument (there is more here than fits) without turning a glanceable
+     list into a wall of text; the desktop barrel already ellipsises rather
+     than wraps, so this keeps the component to one behaviour changed
+     (nowrap → clamp), not two (nowrap → free wrap). */
+  .lp-pile__title {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  /* Narrower than the desktop's 92px, same as the prototype's own phone
+     block — every PILE venue string is ≤9 characters, so this is spare
+     width handed back to the title rather than a visible change today. */
+  .lp-pile__venue { flex: 0 0 76px; }
 }
 
 /* ── Strip and close ── */
