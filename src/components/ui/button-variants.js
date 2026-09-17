@@ -12,7 +12,17 @@ export const buttonVariants = cva(
         // The brand yellow is a highlighter, so it marks the AI reading action.
         // The soft wash flips with the theme and the full yellow does not, so
         // each surface takes its own ink: on hover it is ink on both sides.
-        brand: 'bg-brand-soft text-[var(--text-on-brand-soft)] border border-[var(--tint-amber-line)] hover:bg-brand hover:text-[var(--text-on-brand)] hover:border-[var(--brand-orange)]',
+        //
+        // And it moves: the card's AI button lifted 2px under the pointer and
+        // gave 4% under the finger (`.pc-ai-btn`, until e56a7ea moved it onto
+        // this component with colours only, 2026-08-29), and the reader is
+        // reported to have lost exactly that. `translate` and `scale` are the
+        // individual properties in Tailwind 4, so the press does not undo the
+        // lift by overwriting one `transform`; `active:translate-y-0` puts the
+        // button back on the page while it is held, as the old rule did. 180ms
+        // on the expo-out curve, the card's own arrival curve. Reduced motion
+        // keeps the colours and gives up the movement (design.md, rule 7).
+        brand: 'bg-brand-soft text-[var(--text-on-brand-soft)] border border-[var(--tint-amber-line)] hover:bg-brand hover:text-[var(--text-on-brand)] hover:border-[var(--brand-orange)] transition-[color,background-color,border-color,translate,scale] duration-[180ms] ease-[var(--ease-out-expo)] hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.96] motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100',
         // Tinted variants: a coloured surface that still reads as a control,
         // for actions that carry a meaning of their own rather than rank.
         violet: 'bg-[var(--accent-violet-soft)] text-[var(--accent-violet)] border border-[var(--accent-violet-line)] hover:bg-[var(--accent-violet)] hover:text-white hover:border-[var(--accent-violet)]',
