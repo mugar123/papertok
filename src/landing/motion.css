@@ -1,0 +1,5 @@
+/* Motion for the landing. Every later task adds its own piece here and edits
+   the one reduced-motion block below rather than opening a second one. */
+@media (prefers-reduced-motion: reduce) {
+  .lp-deck__reel { transition: none !important; }
+}

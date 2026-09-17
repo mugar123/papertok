@@ -1,1 +1,103 @@
 @import '../legal/static-page.css';
+@import './motion.css';
+
+.lp-wrap { width: min(1200px, calc(100% - 40px)); margin: 0 auto; }
+.lp-main { display: block; }
+.lp-h1 { font-family: var(--font-serif); font-size: clamp(2.75rem, 6.4vw, 5.75rem); font-weight: var(--fw-regular); line-height: 0.98; letter-spacing: -0.03em; margin: 0; color: var(--text-on-brand); text-wrap: balance; }
+.lp-h2 { font-family: var(--font-serif); font-size: clamp(2rem, 3vw, 2.75rem); font-weight: var(--fw-regular); line-height: 1.08; letter-spacing: -0.02em; margin: 0; text-wrap: pretty; }
+.lp-body { font: var(--fw-regular) 1.0625rem/1.6 var(--font-body); color: var(--text-secondary); margin: 0; max-width: 40ch; }
+.lp-lede { font: var(--fw-regular) 1.1875rem/1.55 var(--font-body); color: var(--text-on-brand); margin: 0; max-width: 32ch; }
+
+/* The highlight: a band on paper, a thin rule on ink. */
+.lp-hl { box-shadow: inset 0 -0.42em 0 var(--brand-yellow); padding: 0 0.04em; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+[data-theme="dark"] .lp-hl, .lp-close .lp-hl { box-shadow: none; text-decoration: underline; text-decoration-color: var(--brand-yellow); text-decoration-thickness: 0.08em; text-underline-offset: 0.14em; text-decoration-skip-ink: auto; }
+
+/* ── Sections ── */
+.lp-sec { padding: 104px 0; }
+.lp-cols { display: grid; grid-template-columns: 420px minmax(0, 1fr); gap: 96px; align-items: start; }
+.lp-cols--centre { align-items: center; }
+.lp-head { display: flex; flex-direction: column; gap: 20px; }
+
+/* ── Hero ── */
+.lp-hero { background: var(--brand-yellow); padding: 72px 0 96px; }
+.lp-hero__grid { display: grid; grid-template-columns: 520px minmax(0, 1fr); gap: 72px; align-items: center; }
+.lp-hero__claim { display: flex; flex-direction: column; gap: 36px; }
+.lp-hero__cta { display: flex; align-items: center; gap: 18px; margin: 0; flex-wrap: wrap; }
+.lp-hero__note { font: var(--fw-regular) 0.9375rem/1.4 var(--font-body); color: var(--text-on-brand); opacity: 0.8; }
+.lp-sheet { background: var(--bg-figure-plate); color: var(--text-primary); padding: 44px 44px 28px; border-radius: 2px; box-shadow: 0 24px 60px rgba(17, 19, 24, 0.18), 0 2px 6px rgba(17, 19, 24, 0.08); display: flex; flex-direction: column; gap: 24px; width: min(560px, 100%); }
+[data-theme="dark"] .lp-sheet { color: #111318; }
+/* Deck stacking is armed-only (motion.js, task 10, adds .is-armed): unarmed,
+   slides stay in normal flow so the one unhidden slide sizes the sheet on
+   its own — an unconditional `position: absolute` here would collapse the
+   sheet to zero height before any script runs. */
+.lp-deck { position: relative; }
+.lp-deck__reel { margin: 0; padding: 0; list-style: none; position: relative; }
+.lp-sheet.is-armed .lp-deck { overflow: hidden; }
+.lp-sheet.is-armed .lp-hero__slide { position: absolute; inset: 0 0 auto 0; }
+/* An author rule that sets `display` always beats the user-agent's own
+   `[hidden] { display: none }`, regardless of selector specificity — origin
+   order, not the cascade, decides that fight. Both elements ship `hidden`
+   pre-JS (decision D), so both need their own `[hidden]` override or they
+   render anyway, `display` and all. */
+.lp-deck__foot { display: flex; align-items: center; justify-content: space-between; padding-top: 16px; border-top: 1px solid var(--border-subtle); }
+.lp-deck__foot[hidden] { display: none; }
+.lp-deck__skip { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border: 1px solid var(--border-default); border-radius: var(--radius-lg); background: #fff; color: #111318; font: var(--fw-medium) 0.875rem/1 var(--font-body); cursor: pointer; }
+.lp-deck__skip[hidden] { display: none; }
+.lp-deck__skip:hover { background: var(--bg-secondary); }
+.lp-deck__count { font: var(--fw-medium) 0.75rem/1 var(--font-mono); color: var(--text-tertiary); }
+
+/* ── A paper, as PaperCard sets it ── */
+.lp-paper { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.lp-paper__accent { width: 34px; height: 3px; background: var(--lp-accent); }
+.lp-paper__meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0; font: var(--mono-label); letter-spacing: var(--mono-track); text-transform: uppercase; color: var(--text-secondary); }
+.lp-paper__field { font-weight: var(--fw-semibold); color: var(--lp-accent); }
+.lp-paper__dot { color: var(--border-strong); }
+.lp-paper__title { font-family: var(--font-serif); font-weight: var(--fw-semibold); line-height: 1.16; letter-spacing: -0.015em; margin: 0; font-size: 1.875rem; text-wrap: pretty; }
+.lp-paper--sheet .lp-paper__title { font-size: clamp(1.5rem, 2.4vw, 2.125rem); }
+.lp-paper__authors { display: flex; align-items: center; gap: 12px; margin: 0; padding-bottom: 14px; border-bottom: 1px solid var(--border-subtle); font: var(--fw-medium) var(--fs-sm)/1.4 var(--font-body); color: var(--text-secondary); }
+.lp-avatars { display: flex; flex: none; }
+.lp-avatar { width: 24px; height: 24px; margin-right: -7px; border-radius: var(--radius-full); border: 1px solid #fff; background: var(--tint-neutral-bg); display: flex; align-items: center; justify-content: center; font: var(--fw-medium) 0.625rem/1 var(--font-mono); color: var(--text-tertiary); }
+.lp-paper__abstract { font-family: var(--font-serif); font-size: 1.0625rem; line-height: 1.6; color: var(--text-secondary); margin: 0; }
+.lp-paper__abstract::first-letter { float: left; margin: 0.06em 0.08em 0 0; font-size: 2.9em; line-height: 0.82; font-weight: var(--fw-semibold); color: var(--lp-accent); }
+.lp-paper__actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.lp-paper__spacer { flex: 1; }
+.lp-btn--md { min-height: 44px; padding: 0 18px; border-radius: var(--radius-lg); gap: 8px; }
+.lp-btn--ai { background: var(--brand-yellow-soft); border-color: var(--tint-amber-line); color: var(--text-on-brand-soft); }
+.lp-iconbtn { width: 40px; height: 40px; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); display: inline-flex; align-items: center; justify-content: center; color: var(--text-primary); }
+.lp-iconbtn--graph { border-color: var(--tint-blue-line); background: var(--tint-blue-bg); color: var(--gradient-physics); }
+.lp-chips { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.lp-chip { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 6px; border: 1px solid var(--tint-neutral-line); border-radius: var(--radius-sm); background: var(--tint-neutral-bg); color: var(--tint-neutral-fg); font: var(--fw-medium) 0.6875rem/1.35 var(--font-mono); white-space: nowrap; }
+.lp-chip--blue { border-color: var(--tint-blue-line); background: var(--tint-blue-bg); color: var(--tint-blue-fg); }
+.lp-chip--green { border-color: var(--tint-green-line); background: var(--tint-green-bg); color: var(--tint-green-fg); }
+.lp-chip--amber { border-color: var(--tint-amber-line); background: var(--tint-amber-bg); color: var(--tint-amber-fg); }
+.lp-chip--plain { background: transparent; }
+
+/* ── Strip and close ── */
+.lp-strip { padding: 64px 0; }
+.lp-strip__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 64px; }
+.lp-strip p { font-family: var(--font-serif); font-size: 1.1875rem; line-height: 1.5; margin: 0; }
+.lp-strip a { color: inherit; text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
+.lp-close { background: var(--accent-primary); color: var(--text-inverse); padding: 120px 0 72px; }
+[data-theme="dark"] .lp-close { background: var(--bg-secondary); color: var(--text-primary); }
+.lp-close__grid { display: flex; align-items: flex-end; justify-content: space-between; gap: 64px; }
+.lp-close__line { font-family: var(--font-serif); font-size: clamp(2.5rem, 4.4vw, 4rem); font-weight: var(--fw-regular); line-height: 1.04; letter-spacing: -0.02em; margin: 0; max-width: 14ch; text-wrap: balance; }
+.lp-close__action { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; margin: 0; flex: none; }
+.lp-close .lp-btn--yellow { background: var(--brand-yellow); }
+.lp-close__note { font: var(--fw-regular) 0.875rem/1 var(--font-body); opacity: 0.75; }
+.lp-close + .lp-footer { border-top: none; }
+
+/* ── Phones (390) and narrow laptops ── */
+@media (max-width: 1000px) {
+  .lp-hero__grid, .lp-cols { grid-template-columns: minmax(0, 1fr); gap: 40px; }
+  .lp-strip__grid { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .lp-close__grid { flex-direction: column; align-items: flex-start; }
+  .lp-close__action { align-items: flex-start; }
+}
+@media (max-width: 640px) {
+  .lp-sec { padding: 64px 0; }
+  .lp-hero { padding: 40px 0 56px; }
+  .lp-hero__cta .lp-btn { width: 100%; }
+  .lp-sheet { padding: 24px 20px 16px; }
+  .lp-paper__actions { flex-wrap: wrap; }
+  .lp-paper__spacer { display: none; }
+}
