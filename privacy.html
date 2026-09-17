@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Privacy policy — PaperTok</title>
+    <meta name="description" content="What data PaperTok collects, why, who it is shared with and how to exercise your rights." />
+    <link rel="canonical" href="https://papertok.app/privacy.html" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+
+    <meta name="theme-color" content="#ffffff" />
+    <!--
+      The theme, resolved before the first paint. Same mirror of
+      src/utils/theme.js that index.html carries: deciding it in script after
+      paint is a white flash on every load for anyone reading in the dark, and
+      deciding it from the OS alone would disagree with what the visitor chose
+      inside the app. If one changes, the other changes.
+    -->
+    <script>
+      (function () {
+        try {
+          var stored = window.localStorage.getItem('papertok_theme');
+          var prefersDark = window.matchMedia
+            && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var theme = stored === 'light' || stored === 'dark'
+            ? stored
+            : (prefersDark ? 'dark' : 'light');
+          document.documentElement.setAttribute('data-theme', theme);
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', theme === 'dark' ? '#111318' : '#ffffff');
+        } catch (error) {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      })();
+    </script>
+
+    <link rel="stylesheet" href="/src/legal/privacy.css" />
+  </head>
+  <body>
+    <header class="lp-bar">
+      <a class="lp-wordmark" href="/">Paper<span>Tok</span></a>
+      <nav class="lp-bar__right" aria-label="Site">
+        <a class="lp-bar__link" href="https://github.com/mugar123/papertok">Source</a>
+        <a class="lp-btn" href="/">Open the feed</a>
+      </nav>
+    </header>
+
+    <main class="lp-doc">
+      <h1>Privacy policy</h1>
+      <p class="lp-updated">Last updated 17 September 2026.</p>
+
+      <p class="lp-lede">
+        PaperTok is an application for discovering and reading scientific research. This
+        page describes what data is collected, why, where it is kept and who it is shared
+        with. It is written from what the code actually does, not from a template.
+      </p>
+
+      <section class="lp-short" aria-labelledby="in-short">
+        <h2 id="in-short">In short</h2>
+        <ul>
+          <li>You can use PaperTok without an account. The feed, search and the public pages work signed out, and nothing about you is stored.</li>
+          <li>Analytics uses no cookies and never records which paper you read or what you searched for. You can turn it off in Settings.</li>
+          <li>Nothing is sold and nothing is shared for advertising. Only the providers that make the app work handle your data.</li>
+          <li>You can delete your account, and everything in it, from Settings → Privacy → Delete account.</li>
+          <li>For anything else, write to <a href="mailto:nicomg60@gmail.com">nicomg60@gmail.com</a>.</li>
+        </ul>
+      </section>
+
+      <h2>Who is responsible</h2>
+      <p>
+        PaperTok is a personal project, not a company. The data controller is its author,
+        and the contact for anything to do with this data is
+        <a href="mailto:nicomg60@gmail.com">nicomg60@gmail.com</a>.
+      </p>
+
+      <h2>You can use PaperTok without an account</h2>
+      <p>
+        The paper feed, search and the public pages work without signing in. Without an
+        account no profile is created and no activity is stored about you.
+      </p>
+
+      <h2>What is collected if you create an account</h2>
+      <p>
+        Sign-in is with Google or GitHub. PaperTok never sees or stores your password:
+        Firebase Authentication handles the sign-in and only the result arrives here.
+      </p>
+
+      <div class="lp-wrap">
+        <table>
+          <thead>
+            <tr><th>Data</th><th>Where it comes from</th><th>What it is for</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>User identifier, email, name and profile picture</td>
+              <td>Google or GitHub, when you sign in</td>
+              <td>Recognising you between sessions and showing your profile</td>
+            </tr>
+            <tr>
+              <td>Public name, handle and bio</td>
+              <td>You write them</td>
+              <td>Your public profile, if you choose to have one</td>
+            </tr>
+            <tr>
+              <td>Lists, saved papers and highlights</td>
+              <td>Your use of the app</td>
+              <td>So your library is still there next time</td>
+            </tr>
+            <tr>
+              <td>Authors, institutions and topics you follow</td>
+              <td>Your use of the app</td>
+              <td>Building your feed and, if you turn them on, your email updates</td>
+            </tr>
+            <tr>
+              <td>Comments and content reports</td>
+              <td>You write them</td>
+              <td>Publishing the comment and moderating the conversation</td>
+            </tr>
+            <tr>
+              <td>Interactions with papers (likes, skips, reads)</td>
+              <td>Your use of the app</td>
+              <td>Not showing you the same paper twice, and ordering the feed</td>
+            </tr>
+            <tr>
+              <td>Language, theme and notification preferences</td>
+              <td>You choose them</td>
+              <td>So the app behaves the same on every device</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        This data is stored in <strong>Google Firestore</strong>. The legal basis is
+        performing the service you ask for when you create the account: without it there is
+        no library, no personalised feed and no profile.
+      </p>
+
+      <h2>What is public and what is not</h2>
+      <p>
+        By default your activity is private. It becomes public only when you decide: when
+        you publish a list, write a comment or turn on your public profile. What you publish
+        can be reached by anyone with the link, search engines included. You can reverse it
+        at any time from Settings; from then on it is no longer served, although a search
+        engine may take a while to update its copy.
+      </p>
+
+      <h2>Email updates</h2>
+      <p>
+        If you turn them on, PaperTok emails you what is new from what you follow. For that
+        it stores your email address, your sending preferences and an unsubscribe
+        identifier, in <strong>Cloudflare Workers KV</strong>. <strong>Brevo</strong> sends
+        the emails.
+      </p>
+      <p>
+        The legal basis is your consent, and you can withdraw it whenever you like: every
+        email carries a one-click unsubscribe link, and you can also turn updates off in
+        Settings. Unsubscribing deletes the subscription.
+      </p>
+
+      <h2>Analytics</h2>
+      <p>
+        PaperTok uses Vercel Web Analytics. <strong>It uses no cookies</strong>: to tell
+        visits apart, Vercel derives an identifier from the browser itself that expires every
+        day and cannot follow you from one day to the next or across sites. That is why you
+        are not asked for permission before measuring. You can
+        <strong>turn it off whenever you like</strong> from your account settings; if you do,
+        the library is not even loaded.
+      </p>
+      <p>
+        The only thing sent is page views, with the path stripped of identifiers: reading a
+        specific paper is recorded as <code>/public/paper/:id</code>, and visiting an
+        author's profile as <code>/explorer/author/:id</code>. Which one never travels.
+        Neither do your searches or anything from your account.
+      </p>
+
+      <h2>Scientific sources and AI features</h2>
+      <p>
+        Searches and papers come from public repositories: OpenAlex, arXiv, PubMed, Europe
+        PMC, bioRxiv, Semantic Scholar, CORE, OSTI, NASA ADS, INSPIRE, OpenReview, Hugging
+        Face, Unpaywall and OpenCitations, among others.
+      </p>
+      <p>
+        Those queries <strong>do not leave from your browser</strong>: they go through an
+        intermediate server on Cloudflare, so those repositories never receive your IP
+        address. That server logs the volume of requests, to respect each source's limits,
+        not who makes them.
+      </p>
+      <p>
+        Paper explanations and rewrites are generated by a language model (Google Gemini,
+        with DeepSeek and Kimi as fallbacks). Those models receive the paper's text and the
+        language and level you choose, never your identity or your email.
+      </p>
+
+      <h2>Who it is shared with</h2>
+      <p>
+        <span class="lp-hl">Nothing is sold and nothing is shared for advertising.</span>
+        Only the providers needed for the application to work are involved:
+      </p>
+      <ul>
+        <li><strong>Google</strong> (Firebase Authentication, Firestore) — accounts and app data.</li>
+        <li><strong>Vercel</strong> — hosting and page-view analytics.</li>
+        <li><strong>Cloudflare</strong> (Workers, KV) — the intermediate server and email-update storage.</li>
+        <li><strong>Brevo</strong> — sending the emails.</li>
+      </ul>
+
+      <h2>How long it is kept</h2>
+      <p>
+        Your account data is kept for as long as the account exists. You can delete it from
+        <strong>Settings → Privacy → Delete account</strong>. That deletes your profile,
+        your lists, your highlights, what you follow, your preferences, the email
+        subscription and the sign-in account. Comments you have published remain, detached
+        from your profile, so as not to break other people's threads; write to
+        <a href="mailto:nicomg60@gmail.com">nicomg60@gmail.com</a> if you want them deleted
+        too.
+      </p>
+
+      <h2>Your rights</h2>
+      <p>
+        You can access, correct and delete your data, object to its processing, ask for it
+        to be restricted and request a copy in a portable format. Much of this you can do
+        from within the app, in the profile and account settings. For everything else, write
+        to <a href="mailto:nicomg60@gmail.com">nicomg60@gmail.com</a>.
+      </p>
+      <p>
+        If you believe the processing is not correct, you can lodge a complaint with the
+        <a href="https://www.aepd.es/" rel="noopener">Agencia Española de Protección de Datos</a>,
+        Spain's data protection authority.
+      </p>
+
+      <h2>Storage in your browser</h2>
+      <p>
+        PaperTok keeps a few things in your own browser that are never sent to any server:
+        the light or dark theme, the language, your choice about analytics and a session
+        cache so the application does not reload from scratch when you come back. They are
+        cleared when you clear the site's data.
+      </p>
+
+      <h2>Changes</h2>
+      <p>
+        If this policy changes in a meaningful way, the date at the top will be updated and
+        the change will be announced in the application itself.
+      </p>
+    </main>
+
+    <footer class="lp-footer">
+      <a class="lp-wordmark" href="/">Paper<span>Tok</span></a>
+      <span class="lp-footer__links">
+        <a href="https://github.com/mugar123/papertok">GitHub</a>
+        <a href="/">papertok.app</a>
+      </span>
+    </footer>
+  </body>
+</html>

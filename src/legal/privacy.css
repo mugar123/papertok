@@ -1,0 +1,173 @@
+/*
+ * The privacy page.
+ *
+ * A static document set with the app's own materials: its tokens are imported,
+ * not copied, and its faces are the self-hosted ones — a privacy policy that
+ * fetched its typography from Google would hand every reader's IP address to
+ * a third party in the act of explaining that it does not.
+ *
+ * The theme comes from `data-theme` on <html>, set by the inline mirror in
+ * privacy.html before the first paint, exactly as the app does; there is no
+ * `prefers-color-scheme` block here so the page cannot disagree with what the
+ * visitor chose inside the app. variables.css carries both palettes.
+ *
+ * NOT global.css: that drags Tailwind and the app's base layer, which this
+ * page has no use for.
+ */
+@import '@fontsource-variable/newsreader/opsz.css';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '../styles/variables.css';
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── The bar, as the landing sets it ── */
+.lp-bar {
+  position: sticky; top: 0; z-index: var(--z-nav);
+  height: var(--nav-height);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 40px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.lp-wordmark {
+  font: var(--fw-bold) 0.9375rem/1 var(--font-heading);
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+/* The mark: the yellow band under "Tok", GuestFeedPage.css's own rule. */
+.lp-wordmark span { box-shadow: inset 0 -0.32em 0 var(--brand-yellow); }
+.lp-bar__right { display: flex; align-items: center; gap: 24px; }
+.lp-bar__link { font: var(--fw-medium) 0.875rem/1 var(--font-body); color: var(--text-secondary); text-decoration: none; }
+.lp-bar__link:hover { color: var(--text-primary); }
+.lp-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 34px; padding: 0 16px;
+  border: 1px solid var(--accent-primary);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  font: var(--fw-medium) 0.875rem/1 var(--font-body);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.lp-btn:hover { background: var(--accent-primary-hover); border-color: var(--accent-primary-hover); }
+
+/* ── The document ── */
+.lp-doc {
+  width: min(62ch, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 72px 0 96px;
+  font-size: 1.0625rem;
+  line-height: 1.6;
+}
+h1 {
+  font-family: var(--font-serif);
+  font-size: 2.75rem;
+  font-weight: var(--fw-regular);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  margin: 0 0 12px;
+  text-wrap: pretty;
+}
+.lp-updated { margin: 0 0 32px; font-size: 0.9375rem; color: var(--text-tertiary); }
+.lp-lede { margin: 0 0 40px; font-size: 1.1875rem; line-height: 1.55; }
+h2 {
+  font-family: var(--font-serif);
+  font-size: 1.75rem;
+  font-weight: var(--fw-medium);
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  margin: 56px 0 14px;
+  text-wrap: pretty;
+}
+p { margin: 0 0 16px; }
+ul { margin: 0 0 16px; padding-left: 20px; }
+li { margin: 6px 0; }
+strong { font-weight: var(--fw-semibold); }
+a { color: var(--text-primary); text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
+a:hover { text-decoration-color: currentColor; }
+code {
+  font: var(--fw-medium) 0.875em/1 var(--font-mono);
+  padding: 1px 5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+}
+
+/* The summary: a box because it is a different kind of text — the five
+   sentences that stand for the whole page. */
+.lp-short {
+  margin: 0 0 8px;
+  padding: 24px 28px 20px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+}
+.lp-short h2 { margin: 0 0 12px; font-size: 1.375rem; }
+.lp-short ul { margin: 0; }
+
+/* The one highlight on the page, on the one sentence that matters. On ink the
+   band would sit under white glyphs and eat their contrast, so in the dark
+   it becomes a thin rule below the baseline that skips descenders. */
+.lp-hl { box-shadow: inset 0 -0.42em 0 var(--brand-yellow); padding: 0 0.04em; }
+[data-theme="dark"] .lp-hl {
+  box-shadow: none;
+  text-decoration: underline;
+  text-decoration-color: var(--brand-yellow);
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.14em;
+  text-decoration-skip-ink: auto;
+}
+
+/* ── The table ── */
+.lp-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; margin: 20px 0 24px; font-size: 0.9375rem; line-height: 1.45; }
+th {
+  text-align: left;
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  padding: 0 12px 10px 0;
+  border-bottom: 1px solid var(--border-ink);
+}
+td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }
+th:last-child, td:last-child { padding-right: 0; }
+
+/* ── The foot ── */
+.lp-footer {
+  width: min(62ch, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 24px 0 48px;
+  border-top: 1px solid var(--border-subtle);
+  display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+.lp-footer__links { display: flex; gap: 24px; }
+.lp-footer a { color: inherit; text-decoration: none; }
+.lp-footer a:hover { color: var(--text-primary); }
+.lp-footer .lp-wordmark { color: var(--text-primary); }
+
+@media (max-width: 640px) {
+  .lp-bar { padding: 0 20px; }
+  .lp-doc { padding-top: 40px; }
+  h1 { font-size: 2.125rem; }
+  h2 { font-size: 1.5rem; margin-top: 44px; }
+  .lp-short { padding: 20px 20px 16px; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .lp-bar__link, .lp-btn, a { transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, text-decoration-color 150ms ease; }
+}

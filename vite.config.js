@@ -260,6 +260,23 @@ export default defineConfig(({ command, mode }) => {
         },
       }),
     ],
+    build: {
+      rollupOptions: {
+        // Two pages, one build: the app and the privacy policy, which stops
+        // being a loose file in public/ so that it can share the app's tokens
+        // and self-hosted faces instead of copying them.
+        //
+        // The app's key MUST stay `index`. Rollup names the entry chunk after
+        // it, and PRECACHE_GLOB_PATTERNS above asks the service worker to
+        // precache `assets/index-*.js` and `assets/index-*.css` by name.
+        // Calling it `app` builds fine and silently ships a service worker
+        // whose boot set is missing the app itself — workbox only warns.
+        input: {
+          index: fileURLToPath(new URL('./index.html', import.meta.url)),
+          privacy: fileURLToPath(new URL('./privacy.html', import.meta.url)),
+        },
+      },
+    },
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
