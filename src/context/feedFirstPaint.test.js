@@ -184,9 +184,10 @@ test('SOURCE: followed topics rank the main query again, inside a budget', async
   );
   assert.match(
     code,
-    /const rankedPreferences = \[\.\.\.new Set\(\[\.\.\.userPreferences, \.\.\.followedTopicIds\]\)\]/,
-    'and the ids actually widen the ranked preferences',
+    /const rankedPreferences = rankPreferences\(\[\.\.\.userPreferences, \.\.\.followedTopicIds\], categoryAffinities\.current\);/,
+    'and the ids actually widen the ranked preferences, ranked with ties spread across areas',
   );
+  assert.doesNotMatch(code, /const rankedPreferences = \[\.\.\.new Set\(/, 'the inline stable sort is gone: it kept taxonomy order on a flat profile');
 });
 
 test('SOURCE: the topic table is prewarmed when a topic follow is known', async () => {
