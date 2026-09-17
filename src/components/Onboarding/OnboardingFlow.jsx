@@ -16,6 +16,7 @@ import {
 } from '../../services/userProfileService.js';
 import { HANDLE_ERRORS, HANDLE_MAX_LENGTH, inspectHandle } from '../../utils/userHandle.js';
 import { guestSeedCategoriesForAreas, readGuestInterests } from '../../utils/guestInterests.js';
+import { USER_PREFERENCES_MAX } from '../../utils/accountOnboarding.js';
 import { Input } from '../ui/input.jsx';
 import { Label } from '../ui/label.jsx';
 import { Toggle } from '../ui/toggle.jsx';
@@ -146,6 +147,10 @@ export default function OnboardingFlow() {
     : '';
   const resolvedDisplayName = displayName.trim() || googleDisplayName;
 
+  // Más de esto lo rechazan las rules; el pie lo dice antes de que el botón
+  // se apague, y el paso del perfil no puede acabar con una lista así.
+  const overCap = selectedSubcategories.size > USER_PREFERENCES_MAX;
+
   useEffect(() => {
     if (onboardingComplete) navigate(returnTo, { replace: true });
   }, [onboardingComplete, navigate, returnTo]);
@@ -211,7 +216,7 @@ export default function OnboardingFlow() {
   const handleNext = () => {
     if (step === 1 && selectedAreas.size > 0) {
       setStep(2);
-    } else if (step === 2 && selectedSubcategories.size > 0) {
+    } else if (step === 2 && selectedSubcategories.size > 0 && !overCap) {
       setStep(3);
     } else if (step === 3 && !existingProfile) {
       setStep(4);
@@ -234,6 +239,7 @@ export default function OnboardingFlow() {
   };
 
   const handleFinish = async () => {
+    if (overCap) return;
     setSaving(true);
     setProfileError(null);
     try {
@@ -273,9 +279,9 @@ export default function OnboardingFlow() {
 
   const canProceed =
     (step === 1 && selectedAreas.size > 0) ||
-    (step === 2 && selectedSubcategories.size > 0) ||
+    (step === 2 && selectedSubcategories.size > 0 && !overCap) ||
     step === 3 ||
-    (step === 4 && (
+    (step === 4 && !overCap && (
       visibilityDraft === PROFILE_VISIBILITY.private
       || (visibilityDraft === PROFILE_VISIBILITY.public
         && handleCheck.valid
@@ -328,9 +334,13 @@ export default function OnboardingFlow() {
         ? 'Next you pick which of those categories make it into your feed.'
         : 'En el paso siguiente eliges cuáles de esas categorías entran en tu feed.')
       : (isEnglish ? 'Select at least one area to continue.' : 'Marca al menos un área para continuar.'))
-    : (selectedSubcategories.size > 0
-      ? (isEnglish ? 'That is enough to build your feed.' : 'Con esto ya podemos armar tu feed.')
-      : (isEnglish ? 'Select at least one category to continue.' : 'Marca al menos una categoría para continuar.'));
+    : overCap
+      ? (isEnglish
+        ? `At most ${USER_PREFERENCES_MAX} categories: drop ${selectedSubcategories.size - USER_PREFERENCES_MAX}.`
+        : `Como mucho ${USER_PREFERENCES_MAX} categorías: quita ${selectedSubcategories.size - USER_PREFERENCES_MAX}.`)
+      : (selectedSubcategories.size > 0
+        ? (isEnglish ? 'That is enough to build your feed.' : 'Con esto ya podemos armar tu feed.')
+        : (isEnglish ? 'Select at least one category to continue.' : 'Marca al menos una categoría para continuar.'));
 
   return (
     <div className="onboarding">
@@ -519,7 +529,7 @@ export default function OnboardingFlow() {
                     type="button"
                     className="onboarding-btn onboarding-btn--ink onboarding-btn--lg"
                     onClick={handleFinish}
-                    disabled={saving}
+                    disabled={saving || overCap}
                   >
                     {saving ? (
                       <span className="onboarding-spinner" />
