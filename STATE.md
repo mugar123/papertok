@@ -1,5 +1,49 @@
 # Estado / pendientes
 
+## El usuario nuevo ve sus intereses al registrarse, y el feed los reparte (2026-09-17)
+
+**«A nuevos usuarios no les carga la ventana pidiendo intereses.»** No era
+un fallo de carga: desde el 13-09 (92c01f8) el invitado responde
+obligatoriamente en el feed y el onboarding abre en el paso 4, con una nota
+de una línea que nadie relacionaba con elegir intereses. Se mantiene el
+salto (petición de Samuel) y cambia lo que se ve: el paso 4 enseña el
+recibo de áreas (`InterestsReceipt`, compartido con el paso 3) y «Ajustar
+intereses» abre el paso de categorías (1726027). Debajo había tres cosas
+más. (1) La respuesta del invitado se convertía en **todas** las
+subcategorías de cada área (3 áreas = 42) y el feed solo manda las cinco
+primeras, en orden de taxonomía: Física + Eléctrica + Mecánica arrancaba
+con cinco de Física. `guestSeedCategoriesForAreas` (a39a74d) ya siembra
+cinco por área intercaladas, así que para una cuenta nueva por esta vía la
+mezcla de empates de `rankPreferences` (0dcddf7) no cambia nada — medido:
+Física + Eléctrica + Mecánica con afinidad cero da las mismas cinco
+primeras antes y después. Su valor real es para (a) toda cuenta
+**existente**, cuyas `preferences` guardadas siguen en orden de taxonomía,
+(b) quien elige a mano con «Seleccionar todo» por área, y (c) lo que
+guarda el modal de Ajustes, que también lista por área. Medido sobre una
+lista de 42 categorías agrupada por área: antes, las cinco primeras del
+feed eran cinco de Física, una sola área; después, Física, Eléctrica,
+Mecánica, Física, Eléctrica, tres áreas — la afinidad sigue mandando sobre
+el área, una categoría con afinidad alta sale primero. Las cuentas creadas
+entre el 13-09 y el 17-09 conservan esa siembra de unión completa (42 a 95
+categorías en `preferences`): el reparto de empates de arriba ya las
+beneficia igual que a cualquier cuenta existente, pero Ajustes les sigue
+enseñando esa lista entera marcada y la exploración sigue teniendo pocas
+hermanas por área. No se migran a propósito — a esta escala no compensa.
+(2) Las rules rechazan más de 100 preferencias, seis áreas grandes las
+superan, y `completeOnboarding` marcaba el onboarding hecho **antes** de
+escribir: el rechazo caía en una página desmontada y la siguiente recarga
+volvía a preguntar. Ahora `USER_PREFERENCES_MAX` cierra el paso 2, el final
+y el modal de Ajustes (test contra `firestore.rules` y contra el emulador,
+a479320), y el flag se marca después del `setDoc` (e6fc573). (3)
+Registrarse desde una página pública no llevaba al onboarding (esas rutas
+no van en `ProtectedRoute`); un efecto en `App.jsx` navega a `/onboarding`
+con la página como `returnTo` (dde9ebd). Suite entera en verde (2826
+tests). Verificado en demo con Chrome headless: paso 04 con recibo de 3
+filas y 15 / 42, «Ajustar» abre el paso 02 con 15 fichas, sin solapes ni
+recortes a 1280 px; sin respuesta de invitado, paso 01 con las 12 áreas.
+Auditoría en `docs/AUDITORIA-ONBOARDING-INTERESES-2026-09-16.md`, plan en
+`docs/superpowers/plans/2026-09-17-onboarding-intereses.md`.
+
 ## arXiv lleva compás: una petición cada tres segundos para toda la app (2026-09-16)
 
 **«¿Lo de arXiv está resuelto?»** No lo estaba: el plazo del cliente ya iba
