@@ -274,14 +274,21 @@ export function AuthProvider({ children }) {
     }
   }, [user?.uid]);
 
+  // The flag flips only once the document holds it. Flipping first sent the
+  // onboarding on its way (its effect navigates the moment the flag is true)
+  // while the write was still in flight, so a refused write — a list over the
+  // rules' cap, a rule that changed under the client — failed against an
+  // unmounted page, left no local memory either, and the next reload asked
+  // the same questions again: an onboarding that never ended
+  // (docs/AUDITORIA-ONBOARDING-INTERESES-2026-09-16.md, hallazgo 4). Now the
+  // failure reaches handleFinish's catch, on screen, with the pick intact.
   const completeOnboarding = useCallback(async (preferences) => {
-    setUserPreferences(preferences);
-    setOnboardingComplete(true);
-
     if (IS_DEMO) {
       demoSet('selectedCategories', preferences);
       demoSet('onboardingComplete', true);
       clearGuestInterests();
+      setUserPreferences(preferences);
+      setOnboardingComplete(true);
       return;
     }
 
@@ -296,6 +303,8 @@ export function AuthProvider({ children }) {
       // profile (the onboarding pre-selects from them); the bridge is done.
       clearGuestInterests();
     }
+    setUserPreferences(preferences);
+    setOnboardingComplete(true);
   }, [user?.uid]);
 
   const updatePreferences = useCallback(async (newPreferences) => {
