@@ -142,6 +142,173 @@
 .lp-chip--amber { border-color: var(--tint-amber-line); background: var(--tint-amber-bg); color: var(--tint-amber-fg); }
 .lp-chip--plain { background: transparent; }
 
+/* ── The pile, as a picker wheel ──
+   A WINDOW with a barrel behind it, and the barrel holds SLOTS rather than
+   papers — that distinction is the whole thing. Put every paper on the
+   barrel and the arc it needs runs past ±90°, where rows turn edge-on, pass
+   behind, and fold back over the ones in front, mirrored. SLOTS with the
+   papers moving THROUGH them keeps the arc bounded no matter how long the
+   list is (WHEEL.SLOTS in papers.js: thirteen of them, ±54° at the two
+   outermost — the comment there explains why thirteen and not nine).
+
+   The curvature is positional, never per-row: each slot is pinned to the
+   surface at its own fixed angle and the barrel is what turns, so which row
+   faces you is just geometry. Nothing recalculates its own tilt — the
+   moment the papers started moving, anything keyed to WHICH row it is would
+   have become wrong.
+
+   The fading works the same way: a mask on the window, so a row is dim
+   because of where it is, not because of which row it is.
+
+   --lp-row-h/--lp-step/--lp-radius have to match WHEEL in papers.js exactly
+   — page.js writes a slot's angle from the same numbers and motion.js turns
+   the barrel by them. A value that disagreed would not throw, it would just
+   bend wrong. */
+.lp-pile {
+  --lp-row-h: 52px;
+  --lp-step: 9deg;
+  --lp-radius: 330px;
+
+  position: relative;
+  /* Taller than the slots span, and the margin is the whole point — see the
+     mask below. */
+  height: 520px;
+  perspective: 1100px;
+  /* The selection line is the middle of the window, so that is where the
+     viewer stands. */
+  perspective-origin: 50% 50%;
+
+  /* SIX stops, not four, and the flat transparent band at each end is what
+     was missing.
+
+     A row does not slide in from outside the window: it is HANDED to the
+     outermost slot the instant the wheel passes a detent. So whatever alpha
+     that slot sits at is the alpha the paper appears at. With four stops the
+     ramp started at the very top of the window and the outer slot sat at
+     0.20–0.56 — measured — which is why a title arrived already legible,
+     out of nothing.
+
+     The flat band holds the outermost slot at exactly zero. A paper is born
+     invisible, and the two slots after it are the ramp it climbs. */
+  --lp-veil: linear-gradient(
+    to bottom,
+    transparent 0%, transparent 6.5%,
+    black 19%, black 81%,
+    transparent 93.5%, transparent 100%
+  );
+  -webkit-mask-image: var(--lp-veil);
+  mask-image: var(--lp-veil);
+}
+
+.lp-pile-wrap { position: relative; }
+
+.lp-pile__barrel {
+  list-style: none; margin: 0; padding: 0;
+  position: absolute; inset: 0;
+  transform-style: preserve-3d;
+  /* Pushed back by exactly the radius, so the slot on the line sits at z = 0.
+     Without it the front row is shoved toward the viewer and perspective
+     MAGNIFIES it — measured at 1087px inside a 760px window, which threw the
+     venue column clean off the left edge. The wider the barrel the worse it
+     gets, so this stops being optional the moment the radius grows.
+
+     motion.js writes `rotate` here, and never more than one step's worth: the
+     long travel is the content advancing, not the cylinder spinning. */
+  translate: 0 0 calc(var(--lp-radius) * -1);
+}
+
+.lp-pile__slot {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: var(--lp-row-h);
+  margin-top: calc(var(--lp-row-h) / -2);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 4px;
+  /* Each slot at its own fixed angle on the surface. Fixed forever — the
+     barrel moves, the slots do not, and the papers move between them. */
+  transform: rotateX(calc(var(--k) * var(--lp-step))) translateZ(var(--lp-radius));
+
+  /* NO rule between the rows, and that is not a simplification — it is the
+     one thing that was making the spin fizz.
+
+     A 1px line is the worst case for resampling. Under perspective a row's
+     bottom edge lands on a whole device pixel almost never, so the line is
+     shared between two pixel rows, and the share CHANGES every frame while
+     the barrel turns. Measured over one spin: 67% of the edges fell between
+     two pixels, and 350 times across 90 frames a line flipped between crisp
+     and split — close to four lines strobing per frame, all thirteen of them
+     doing it at once. That reads as flicker, and it makes smooth movement
+     look rough.
+
+     It was also wrong as a picker. A real one has no rules between its cells;
+     it has a selection band, and this design has that below. The flat list on
+     a phone is a different object and keeps its rules, because nothing there
+     is transformed and nothing moves.
+
+     `backface-visibility` went with it: no slot comes within 36° of edge-on,
+     so it never had a back to hide, and it forced a rendering path for
+     nothing. */
+}
+
+.lp-pile__venue {
+  flex: 0 0 92px;
+  text-align: right;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+/* A picker's cells are uniform: one line each, no wrapping. A row that grew
+   to two lines would sit off the surface of the cylinder and the geometry
+   would stop being true. */
+.lp-pile__title {
+  font-family: var(--font-serif);
+  font-size: 1.125rem;
+  font-weight: var(--fw-medium);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* The selection line — two hairlines, the way this design marks anything.
+   Without them the front row is merely the sharpest one; with them it is the
+   CHOSEN one, which is what a picker is for. */
+.lp-pile::before,
+.lp-pile::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  height: 1px;
+  background: var(--border-strong, var(--border-default));
+  z-index: 2;
+  pointer-events: none;
+}
+.lp-pile::before { top: calc(50% - (var(--lp-row-h) / 2)); }
+.lp-pile::after { top: calc(50% + (var(--lp-row-h) / 2)); }
+
+/* ── Signals ── */
+.lp-signals__grid { list-style: none; margin: 0; padding: 8px 0 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px 32px; }
+.lp-signal { display: flex; flex-direction: column; gap: 8px; padding-top: 14px; border-top: 1px solid var(--border-subtle); }
+.lp-signal__name { font: var(--fw-medium) 0.9375rem/1.3 var(--font-body); color: var(--text-primary); }
+.lp-signal__what { font-family: var(--font-serif); font-size: 1.125rem; line-height: 1.4; color: var(--text-secondary); }
+@media (max-width: 1000px) { .lp-signals__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Phones: the barrel is a flat list of seven with the centre row between two rules. */
+@media (max-width: 767px) {
+  .lp-pile { height: auto; perspective: none; -webkit-mask-image: none; mask-image: none; }
+  .lp-pile__barrel { translate: none; transform-style: flat; position: static; }
+  .lp-pile__slot { position: static; transform: none; margin: 0; height: auto; padding: 10px 0; }
+  .lp-pile__slot:nth-child(-n+3), .lp-pile__slot:nth-child(n+11) { display: none; }
+  .lp-pile__slot:nth-child(7) { border-top: 1px solid var(--border-ink); border-bottom: 1px solid var(--border-ink); }
+}
+
 /* ── Strip and close ── */
 .lp-strip { padding: 64px 0; }
 .lp-strip__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 64px; }

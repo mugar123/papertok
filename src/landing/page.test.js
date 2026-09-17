@@ -86,7 +86,10 @@ test('no snap, no wheel capture, no figures, no eyebrows outside the card', () =
   assert.doesNotMatch(allCss, /scroll-snap/);
   assert.doesNotMatch(html, /<img|<figure class="lp-figure"|pc-figure/);
   const upper = [...css.matchAll(/([^{}]+)\{[^}]*text-transform:\s*uppercase[^}]*\}/g)].map((m) => m[1].trim());
-  for (const sel of upper) assert.match(sel, /^\.lp-(paper|plate|research|chip)/, sel);
+  // `pile` joins the allowlist here: `.lp-pile__venue` is the wheel's venue
+  // column, set uppercase for the same reason `.lp-paper__meta` is — it's
+  // the app's own mono metadata voice, not a fresh decision.
+  for (const sel of upper) assert.match(sel, /^\.lp-(paper|plate|research|chip|pile)/, sel);
 });
 
 test('chip tone and the paper accent are guarded against attribute-context injection', () => {
@@ -133,4 +136,30 @@ test('the sections that exist appear in the canonical order', () => {
   const positions = sections.map((s) => CANONICAL.indexOf(s));
   assert.deepEqual(positions, [...positions].sort((a, b) => a - b));
   assert.ok(sections.length >= 3);
+});
+
+test('the wheel is thirteen slots the screen reader never hears, next to a list it does', () => {
+  assert.equal((html.match(/class="lp-pile__slot"/g) || []).length, 13);
+  assert.match(html, /<div class="lp-pile" aria-hidden="true"/);
+  assert.match(html, /<ul class="lp-visually-hidden" id="lp-pile-list">/);
+  assert.equal((html.match(/<ul class="lp-visually-hidden" id="lp-pile-list">[\s\S]*?<\/ul>/)[0].match(/<li>/g) || []).length, 25);
+  assert.match(html, /<script type="application\/json" id="lp-pile-data">/);
+  assert.ok(html.lastIndexOf('lp-pile-data') > html.lastIndexOf('</main>'), 'the data lives outside main');
+});
+
+// `.lp-problem` reuses `.lp-sec` for its padding (the shared utility every
+// task 6-9 section draws on), so its class attribute is "lp-problem lp-sec",
+// not "lp-problem" alone — matching the `sections` array above, which
+// already splits on space for exactly this reason. `class="lp-problem"`
+// with nothing after it would never match, so this anchors on the prefix.
+test('the problem section carries the first of the three highlights', () => {
+  const sec = html.match(/<section class="lp-problem[^"]*"[\s\S]*?<\/section>/)[0];
+  assert.equal((sec.match(/class="lp-hl"/g) || []).length, 1);
+  assert.match(sec, /so I built one\./);
+});
+
+test('six signals, name and sentence each, no dl and no mono labels', () => {
+  const sec = html.match(/<section class="lp-signals[^"]*"[\s\S]*?<\/section>/)[0];
+  assert.equal((sec.match(/class="lp-signal"/g) || []).length, 6);
+  assert.doesNotMatch(sec, /<dl|lp-eyebrow/);
 });

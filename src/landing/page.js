@@ -1,4 +1,4 @@
-import { HERO_PAPERS, REPO, SOURCES, PEOPLE } from './papers.js';
+import { HERO_PAPERS, REPO, SOURCES, PEOPLE, PILE, WHEEL, SIGNALS } from './papers.js';
 
 const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -133,6 +133,84 @@ const hero = () => `<section class="lp-hero" aria-labelledby="lp-h1">
   </div>
 </section>`;
 
+/**
+ * The pile, as a picker wheel.
+ *
+ * What is written here is THIRTEEN SLOTS, not twenty-five papers — the barrel
+ * holds the slots and the papers move through them, which is how a wheel of
+ * thirteen cells shows a list of any length without its arc ever growing past
+ * the point where rows fold back on themselves (WHEEL in papers.js has the
+ * full geometry, and why thirteen and not nine).
+ *
+ * The slots are prerendered holding the papers they show at rest, so a
+ * visitor with no JavaScript gets a real, readable list of real papers rather
+ * than an empty frame; the driver in motion.js then rewrites those same
+ * spans as it turns.
+ *
+ * `aria-hidden`: decorative, not content. Thirteen slots cycling through
+ * twenty-five papers, some of them mid-turn, is not a list a screen reader
+ * could make sense of — and once motion.js takes over, the labels keep
+ * changing under it with no live region announcing any of it. The real
+ * list — all twenty-five, once, in reading order — is the plain
+ * `<ul class="lp-visually-hidden">` problem() places right beside this.
+ */
+const pile = () => `<div class="lp-pile" aria-hidden="true">
+  <ol class="lp-pile__barrel">
+    ${WHEEL.SLOTS.map((k) => {
+      /* At rest pos is 0, so slot k shows the paper k places along, wrapped —
+         exactly what the driver's own indexing produces on its first paint,
+         so nothing jumps the moment the script takes over. */
+      const row = PILE[((k % PILE.length) + PILE.length) % PILE.length];
+      return `<li class="lp-pile__slot" style="--k: ${k}">`
+        + `<span class="lp-pile__venue">${esc(row.venue)}</span>`
+        + `<span class="lp-pile__title">${esc(row.title)}</span>`
+        + `</li>`;
+    }).join('\n    ')}
+  </ol>
+</div>`;
+
+/**
+ * The pile's full list, shipped once as data at the very end of the
+ * document — past `</main>` and the footer, outside every layout rule that
+ * could reach a stray child and give it a `display` the browser's own
+ * `script { display: none }` would otherwise have won (the same fight
+ * `.lp-deck__foot[hidden]` has to win explicitly above, for the same
+ * reason: an author rule beats the user agent's regardless of specificity).
+ *
+ * A visitor with no JavaScript already has everything this page draws from
+ * PILE — paper() and pile() rendered it. This script exists for motion.js,
+ * which reads the JSON actually sitting in the page rather than importing
+ * PILE a second time, so the wheel can never turn up a paper the markup
+ * did not.
+ */
+const pileData = () => `<script type="application/json" id="lp-pile-data">${
+  JSON.stringify(PILE.map((row) => [row.venue, row.title])).replace(/</g, '\\u003c')
+}</script>`;
+
+const problem = () => `<section class="lp-problem lp-sec" aria-labelledby="lp-problem-h">
+  <div class="lp-wrap lp-cols lp-cols--centre">
+    <div class="lp-head">
+      <h2 id="lp-problem-h" class="lp-h2">Search works when you already know what you're looking for.</h2>
+      <p class="lp-body">Most of the research worth reading is ${hl("the research you didn't know to search for")}. A field next to yours. A method you've never used. A question you didn't know was still open.</p>
+      <p class="lp-body">More is published every day than anyone can get through, and none of it arrives unless you ask for it by name. There was no good way to run into any of it, so I built one.</p>
+    </div>
+    <div class="lp-pile-wrap">
+      ${pile()}
+      <ul class="lp-visually-hidden" id="lp-pile-list">${PILE.map((r) => `<li>${esc(r.title)} (${esc(r.venue)})</li>`).join('')}</ul>
+    </div>
+  </div>
+</section>`;
+
+const signals = () => `<section class="lp-signals lp-sec" aria-labelledby="lp-signals-h">
+  <div class="lp-wrap lp-cols">
+    <div class="lp-head">
+      <h2 id="lp-signals-h" class="lp-h2">One paper at a time.</h2>
+      <p class="lp-body">A paper arrives full screen. Skip it, save it, or open it, and the next one gets closer to what you care about. It is not trying to find the most popular paper. It is trying to leave room for the unexpected.</p>
+    </div>
+    <ul class="lp-signals__grid">${SIGNALS.map(([name, what]) => `<li class="lp-signal"><span class="lp-signal__name">${esc(name)}</span><span class="lp-signal__what">${esc(what)}</span></li>`).join('')}</ul>
+  </div>
+</section>`;
+
 const strip = () => `<section class="lp-strip" aria-labelledby="lp-strip-h">
   <h2 id="lp-strip-h" class="lp-visually-hidden">Where it comes from, and who makes it</h2>
   <div class="lp-wrap lp-strip__grid">
@@ -155,6 +233,6 @@ const foot = () => `<footer class="lp-footer">
 </footer>`;
 
 export function buildLandingHtml() {
-  const screens = [hero(), strip(), close()]; // tasks 6–9 insert their sections before strip()
-  return `${skip()}\n${bar()}\n<main id="main-content" class="lp-main">\n${screens.join('\n')}\n</main>\n${foot()}`;
+  const screens = [hero(), problem(), signals(), strip(), close()]; // tasks 7–9 insert their sections before strip()
+  return `${skip()}\n${bar()}\n<main id="main-content" class="lp-main">\n${screens.join('\n')}\n</main>\n${foot()}\n${pileData()}`;
 }
