@@ -23,12 +23,17 @@ guarda el modal de Ajustes, que también lista por área. Medido sobre una
 lista de 42 categorías agrupada por área: antes, las cinco primeras del
 feed eran cinco de Física, una sola área; después, Física, Eléctrica,
 Mecánica, Física, Eléctrica, tres áreas — la afinidad sigue mandando sobre
-el área, una categoría con afinidad alta sale primero. (2) Las rules
-rechazan más de 100 preferencias, seis áreas grandes las superan, y
-`completeOnboarding` marcaba el onboarding hecho **antes** de escribir: el
-rechazo caía en una página desmontada y la siguiente recarga volvía a
-preguntar. Ahora `USER_PREFERENCES_MAX` cierra el paso 2, el final y el
-modal de Ajustes (test contra `firestore.rules` y contra el emulador,
+el área, una categoría con afinidad alta sale primero. Las cuentas creadas
+entre el 13-09 y el 17-09 conservan esa siembra de unión completa (42 a 95
+categorías en `preferences`): el reparto de empates de arriba ya las
+beneficia igual que a cualquier cuenta existente, pero Ajustes les sigue
+enseñando esa lista entera marcada y la exploración sigue teniendo pocas
+hermanas por área. No se migran a propósito — a esta escala no compensa.
+(2) Las rules rechazan más de 100 preferencias, seis áreas grandes las
+superan, y `completeOnboarding` marcaba el onboarding hecho **antes** de
+escribir: el rechazo caía en una página desmontada y la siguiente recarga
+volvía a preguntar. Ahora `USER_PREFERENCES_MAX` cierra el paso 2, el final
+y el modal de Ajustes (test contra `firestore.rules` y contra el emulador,
 a479320), y el flag se marca después del `setDoc` (e6fc573). (3)
 Registrarse desde una página pública no llevaba al onboarding (esas rutas
 no van en `ProtectedRoute`); un efecto en `App.jsx` navega a `/onboarding`
