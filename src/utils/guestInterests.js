@@ -53,6 +53,39 @@ export function guestCategoriesForAreas(areas) {
 }
 
 /**
+ * What a guest answer becomes when it turns into an account's `preferences`.
+ *
+ * Not every category of every area: the signed-in feed only sends its first
+ * five preferences to arXiv and OpenAlex (three to PubMed), ranked by an
+ * affinity a new account does not have yet, and its exploration step draws
+ * from the siblings the preferences left out. Handing it all 26 physics
+ * categories gave a physics-only first page and nothing left to explore
+ * (docs/AUDITORIA-ONBOARDING-INTERESES-2026-09-16.md, hallazgo 3). So: the
+ * first GUEST_SEED_PER_AREA subcategories of each area, interleaved across
+ * areas — physics[0], eess[0], mech[0], physics[1], … — so that a ranking
+ * with nothing to go on still spreads its window over every area picked.
+ * All twelve areas make 58, well under the rules' cap of 100.
+ */
+export const GUEST_SEED_PER_AREA = 5;
+
+export function guestSeedCategoriesForAreas(areas, perArea = GUEST_SEED_PER_AREA) {
+  const lists = normalizeGuestAreas(areas)
+    .map(key => Object.keys(CATEGORIES[key].subcategories).slice(0, perArea));
+  const picked = [];
+  for (let index = 0; ; index += 1) {
+    let added = false;
+    for (const list of lists) {
+      if (index < list.length) {
+        picked.push(list[index]);
+        added = true;
+      }
+    }
+    if (!added) break;
+  }
+  return picked;
+}
+
+/**
  * `null` when the prompt has never been answered on this device. Otherwise
  * `{ areas, dismissed }`: `dismissed` is a "not now" (or a pick emptied out),
  * which the prompt honours by not asking again — the header chip stays as
