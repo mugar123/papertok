@@ -17,10 +17,38 @@ test('SOURCE: a new account that signed in from a public page is sent to the onb
     /useEffect\(\(\) => \{\s*if \(!user \|\| authLoading \|\| onboardingComplete \|\| profileLoadError\) return\s*if \(!isPublicRoute\(location\.pathname\)\) return\s*navigate\('\/onboarding', \{ replace: true, state: \{ returnTo: `\$\{location\.pathname\}\$\{location\.search\}` \} \}\)\s*\}, \[user, authLoading, onboardingComplete, profileLoadError, location\.pathname, location\.search, navigate\]\)/,
   );
   assert.ok(effect, 'the public-page arrival effect is missing or reshaped');
-  // Every public route the router declares is covered by the prefixes.
-  const publicPaths = [...code.matchAll(/path="(\/(?:public|explorer)\/[^"]*)"/g)].map(m => m[1]);
-  assert.ok(publicPaths.length >= 5, `expected the five public routes, found ${publicPaths.length}`);
-  for (const path of publicPaths) {
-    assert.ok(path.startsWith('/public/') || path.startsWith('/explorer/'), `${path} is not covered by PUBLIC_ROUTE_PREFIXES`);
+  // Every route the router declares, and whether it sits behind ProtectedRoute.
+  // Deriving the list from `path="/public/..."` — as this test first did — was
+  // circular: the extraction already guaranteed what the assertion checked. A
+  // guest-reachable route added later under some other prefix would have
+  // slipped through in silence, which is the very gap this task exists to
+  // close. Now every declared route justifies itself: behind the guard, a
+  // redirect with no page to strand anyone on, or covered by a prefix the
+  // effect actually reads.
+  const declaredPrefixes = code.match(/const PUBLIC_ROUTE_PREFIXES = \[([^\]]*)\]/);
+  assert.ok(declaredPrefixes, 'PUBLIC_ROUTE_PREFIXES is gone or reshaped');
+  const covered = [...declaredPrefixes[1].matchAll(/'([^']+)'/g)].map(match => match[1]);
+  assert.ok(covered.length > 0, 'no prefixes are declared, so nothing is covered');
+
+  const REDIRECT_ONLY = ['*', '/login', '/report'];
+  const declared = code.split(/<Route\b/).slice(1)
+    .map(chunk => ({
+      path: (chunk.match(/path="([^"]*)"/) || [])[1],
+      guarded: chunk.split(/<\/Route>|\/>/)[0].includes('ProtectedRoute'),
+    }))
+    .filter(route => route.path);
+  assert.equal(declared.length, 20, `expected the whole route table, found ${declared.length}`);
+
+  const guestReachable = declared.filter(route => !route.guarded && !REDIRECT_ONLY.includes(route.path));
+  assert.equal(
+    guestReachable.length,
+    5,
+    `expected the five public pages, found ${guestReachable.length}: ${guestReachable.map(route => route.path).join(', ')}`,
+  );
+  for (const route of guestReachable) {
+    assert.ok(
+      covered.some(prefix => route.path.startsWith(prefix)),
+      `${route.path} is guest-reachable but no PUBLIC_ROUTE_PREFIXES entry covers it: an account created there would never reach the onboarding`,
+    );
   }
 });

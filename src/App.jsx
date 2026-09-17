@@ -73,10 +73,11 @@ function isInAppPath(path) {
     && !['/login', '/onboarding'].includes(path.split('?')[0])
 }
 
-// The routes a guest can reach without a session. A sign-in from one of their
-// doors (like, save, follow) leaves the new account right there, and none of
-// them is behind ProtectedRoute, so App itself has to take it to the
-// onboarding (the effect below).
+// The standalone routes a guest can reach without a session — `/` is also
+// guest-reachable but excluded on purpose, since it handles onboarding
+// itself. A sign-in from one of these doors (like, save, follow) leaves the
+// new account right there, and none of them is behind ProtectedRoute, so App
+// itself has to take it to the onboarding (the effect below).
 const PUBLIC_ROUTE_PREFIXES = ['/public/', '/explorer/']
 function isPublicRoute(path) {
   return PUBLIC_ROUTE_PREFIXES.some(prefix => path.startsWith(prefix))
