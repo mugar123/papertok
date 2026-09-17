@@ -72,16 +72,27 @@ test('SOURCE: a retry after a failed completeOnboarding does not claim the handl
  * account that was already onboarded must discard a stray answer rather than
  * leave it waiting for the next new account on the same device.
  */
-test('SOURCE: the onboarding opens on the profile step, pre-filled from the guest answer', async () => {
+test('SOURCE: the onboarding opens on the profile step, seeded from the guest answer, with the receipt in view', async () => {
   const source = await readFile(new URL('./OnboardingFlow.jsx', import.meta.url), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   assert.match(code, /readGuestInterests\(\)/);
   // The guest already answered the interests question; the only step left
   // for them is the profile. Back still reaches the receipt and the pickers.
   assert.match(code, /useState\(guestSeed \? 4 : 1\)/, 'a guest with an answer skips straight to the profile step');
-  assert.match(code, /guestSeed && !seedAdjusted && \([\s\S]*?onboarding-seed-note/, 'the profile step says the interests came along');
   assert.match(code, /new Set\(guestSeed \?\? \[\]\)/, 'the areas are pre-selected');
-  assert.match(code, /new Set\(guestCategoriesForAreas\(guestSeed \?\? \[\]\)\)/, 'every category of those areas is pre-selected');
+  // A bounded seed per area, not every category of the area: the feed's
+  // window is five wide and its exploration needs siblings left over.
+  assert.match(code, /new Set\(guestSeedCategoriesForAreas\(guestSeed \?\? \[\]\)\)/, 'the seed is the bounded per-area pick');
+  assert.doesNotMatch(code, /guestCategoriesForAreas\(/, 'the full union belongs to the guest feed plan, not to the onboarding');
+  // The profile step shows what came along and names the way to change it.
+  assert.doesNotMatch(code, /onboarding-seed-note/, 'the one-line note is gone');
+  assert.match(code, /guestSeed && \(\s*<section className="onboarding-seed-receipt"[\s\S]*?<InterestsReceipt/, 'the profile step shows the receipt of the seeded interests');
+  assert.match(code, /const adjustInterests = \(\) => \{\s*setSeedAdjusted\(true\);\s*setStep\(2\);\s*\};/, 'Adjust interests opens the categories step with the areas kept');
+  assert.match(code, /onClick=\{adjustInterests\}/, 'and the button is wired to it');
+  // One receipt, drawn twice: the confirm step and the profile step render
+  // the same component, so what the profile gets is what both show.
+  assert.equal((code.match(/<InterestsReceipt/g) || []).length, 2, 'both steps use the shared receipt');
+  assert.doesNotMatch(code, /className="onboarding-receipt-row"[\s\S]*className="onboarding-receipt-row"/, 'the rows are rendered in one place only');
   // The receipt is still a receipt: `completeOnboarding` is the only write,
   // so what it shows is what the profile gets.
   assert.doesNotMatch(code, /saveGuestInterests|clearGuestInterests/, 'the onboarding reads the answer; AuthContext owns its end');

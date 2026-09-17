@@ -15,7 +15,7 @@ import {
   readOwnUserProfile,
 } from '../../services/userProfileService.js';
 import { HANDLE_ERRORS, HANDLE_MAX_LENGTH, inspectHandle } from '../../utils/userHandle.js';
-import { guestCategoriesForAreas, readGuestInterests } from '../../utils/guestInterests.js';
+import { guestSeedCategoriesForAreas, readGuestInterests } from '../../utils/guestInterests.js';
 import { Input } from '../ui/input.jsx';
 import { Label } from '../ui/label.jsx';
 import { Toggle } from '../ui/toggle.jsx';
@@ -56,23 +56,61 @@ const HANDLE_ERROR_COPY = {
   },
 };
 
+/**
+ * El recibo: una fila por área con cuántas categorías entran, y el total.
+ * Lo pintan el paso 3 (confirmación) y el paso 4 (perfil, cuando los
+ * intereses vinieron de la respuesta de invitado): un solo componente para
+ * que ambos enseñen exactamente lo que `completeOnboarding` va a escribir.
+ */
+function InterestsReceipt({ rows, total, available, isEnglish }) {
+  return (
+    <div className="onboarding-receipt">
+      <div className="onboarding-receipt-head">
+        <span>{isEnglish ? 'Area' : 'Área'}</span>
+        <span>{isEnglish ? 'Categories' : 'Categorías'}</span>
+      </div>
+      {rows.map(({ key, area, count, total: areaTotal, sample, rest }) => (
+        <div key={key} className="onboarding-receipt-row" style={{ '--area-accent': area.gradient }}>
+          <span className="onboarding-receipt-icon"><area.icon size={19} strokeWidth={1.75} /></span>
+          <div className="onboarding-receipt-main">
+            <div className="onboarding-receipt-name">{isEnglish ? area.labelEn : area.label}</div>
+            <div className="onboarding-receipt-sample">
+              {sample.join(' · ')}
+              {rest > 0 && ` · +${rest} ${isEnglish ? 'more' : 'más'}`}
+            </div>
+          </div>
+          <div className="onboarding-receipt-count">
+            {count}<small>{isEnglish ? `of ${areaTotal}` : `de ${areaTotal}`}</small>
+          </div>
+        </div>
+      ))}
+      <div className="onboarding-receipt-total">
+        <span>{isEnglish ? 'Total' : 'Total'}</span>
+        <span className="onboarding-receipt-total-n">
+          {total}<i> / {available}</i>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function OnboardingFlow() {
   // What this visitor said they were into before they had an account
-  // (GuestInterestsPrompt). Read once: the answer is the starting point, not
-  // a live source, and the areas step below can change everything about it.
-  // With an answer, the interests are settled — every category of every
-  // area they picked — and the flow opens on the profile step, the only
-  // thing the guest has not been asked yet. The areas and categories steps
-  // and the receipt stay reachable through Back, for a reader who wants to
-  // narrow the pick before it is written. AuthContext clears the answer once
-  // completeOnboarding has written it to the profile.
+  // (GuestInterestsPrompt). Read once: the answer is the starting point, not a
+  // live source, and the areas step below can change everything about it. With
+  // an answer, the interests are settled — the first five categories of every
+  // area they picked (`guestSeedCategoriesForAreas`) — and the flow opens on
+  // the profile step, the only thing the guest has not been asked yet. The
+  // areas and categories steps and the receipt stay reachable through Back, for
+  // a reader who wants to narrow the pick before it is written. AuthContext
+  // clears the answer once completeOnboarding has written it to the profile.
   const [guestSeed] = useState(() => {
     const stored = readGuestInterests();
     return stored?.areas.length ? stored.areas : null;
   });
   const [stepState, setStep] = useState(guestSeed ? 4 : 1);
   const [selectedAreas, setSelectedAreas] = useState(() => new Set(guestSeed ?? []));
-  const [selectedSubcategories, setSelectedSubcategories] = useState(() => new Set(guestCategoriesForAreas(guestSeed ?? [])));
+  const [selectedSubcategories, setSelectedSubcategories] = useState(() => new Set(guestSeedCategoriesForAreas(guestSeed ?? [])));
   // Whether the receipt still shows the guest answer untouched. Once they
   // go back and adjust, it is their selection, and the copy says so.
   const [seedAdjusted, setSeedAdjusted] = useState(false);
@@ -185,6 +223,14 @@ export default function OnboardingFlow() {
     // own hands; going from the profile step back to the receipt is not.
     if (step === 3 && guestSeed) setSeedAdjusted(true);
     if (step > 1) setStep(step - 1);
+  };
+
+  // «Ajustar intereses» desde el paso del perfil: la selección pasa a ser
+  // suya (la copia del recibo lo dice) y se abre el paso de categorías con
+  // las áreas de la respuesta de invitado ya marcadas.
+  const adjustInterests = () => {
+    setSeedAdjusted(true);
+    setStep(2);
   };
 
   const handleFinish = async () => {
@@ -507,33 +553,12 @@ export default function OnboardingFlow() {
             </div>
 
             <div className="onboarding-confirm-receipt">
-              <div className="onboarding-receipt">
-                <div className="onboarding-receipt-head">
-                  <span>{isEnglish ? 'Area' : 'Área'}</span>
-                  <span>{isEnglish ? 'Categories' : 'Categorías'}</span>
-                </div>
-                {receipt.map(({ key, area, count, total, sample, rest }) => (
-                  <div key={key} className="onboarding-receipt-row" style={{ '--area-accent': area.gradient }}>
-                    <span className="onboarding-receipt-icon"><area.icon size={19} strokeWidth={1.75} /></span>
-                    <div className="onboarding-receipt-main">
-                      <div className="onboarding-receipt-name">{isEnglish ? area.labelEn : area.label}</div>
-                      <div className="onboarding-receipt-sample">
-                        {sample.join(' · ')}
-                        {rest > 0 && ` · +${rest} ${isEnglish ? 'more' : 'más'}`}
-                      </div>
-                    </div>
-                    <div className="onboarding-receipt-count">
-                      {count}<small>{isEnglish ? `of ${total}` : `de ${total}`}</small>
-                    </div>
-                  </div>
-                ))}
-                <div className="onboarding-receipt-total">
-                  <span>{isEnglish ? 'Total' : 'Total'}</span>
-                  <span className="onboarding-receipt-total-n">
-                    {selectedSubcategories.size}<i> / {availableSubcategories || TOTAL_SUBCATEGORIES}</i>
-                  </span>
-                </div>
-              </div>
+              <InterestsReceipt
+                rows={receipt}
+                total={selectedSubcategories.size}
+                available={availableSubcategories || TOTAL_SUBCATEGORIES}
+                isEnglish={isEnglish}
+              />
               <span className="onboarding-receipt-note">
                 {isEnglish ? 'Saved to your profile' : 'Guardado en tu perfil'}
               </span>
@@ -554,21 +579,46 @@ export default function OnboardingFlow() {
                     ? 'If you do, pick a handle. That is the name other people will see and the address of your page. You can stay private and skip this — Settings can create it later.'
                     : 'Si sí, elige un handle. Es el nombre que verán los demás y la dirección de tu página. Puedes quedarte en privado y saltártelo — Ajustes puede crearlo después.'}
                 </p>
-                {/* The interests were answered before the account existed, so
-                    this is where the reader hears they came along — and how
-                    to narrow them, now (Back opens the receipt) or later. */}
-                {guestSeed && !seedAdjusted && (
-                  <p className="onboarding-seed-note">
-                    <Check size={14} strokeWidth={2.5} aria-hidden="true" />
-                    <span>
-                      {isEnglish
-                        ? `Your interests are set: the ${selectedAreas.size} ${selectedAreas.size === 1 ? 'area' : 'areas'} you picked as a guest, ${selectedSubcategories.size} categories. Back lets you narrow them; so does Settings, any time.`
-                        : `Tus intereses ya están: ${selectedAreas.size === 1 ? 'el área que marcaste' : `las ${selectedAreas.size} áreas que marcaste`} como invitado, ${selectedSubcategories.size} categorías. Con «Atrás» puedes afinarlos, y también desde Ajustes cuando quieras.`}
-                    </span>
-                  </p>
-                )}
               </div>
             </div>
+
+            {/* Lo que vino de la respuesta de invitado, a la vista y con su
+                botón: la nota de una línea que había aquí nadie la
+                relacionaba con «elige tus intereses» (auditoría del 16-09). */}
+            {guestSeed && (
+              <section className="onboarding-seed-receipt" aria-labelledby="onboarding-seed-title">
+                <div className="onboarding-seed-receipt-head">
+                  <div>
+                    <span className="onboarding-eyebrow" id="onboarding-seed-title">
+                      {isEnglish ? 'Your interests' : 'Tus intereses'}
+                    </span>
+                    <p className="onboarding-seed-receipt-lede">
+                      {seedAdjusted
+                        ? (isEnglish
+                          ? 'What you chose. Adjust it here, or any time from Settings.'
+                          : 'Lo que has elegido. Ajústalo aquí, o cuando quieras desde Ajustes.')
+                        : (isEnglish
+                          ? `From the ${selectedAreas.size} ${selectedAreas.size === 1 ? 'area' : 'areas'} you picked as a guest: the ${selectedSubcategories.size} categories your feed starts from. Adjust them here, or any time from Settings.`
+                          : `De ${selectedAreas.size === 1 ? 'el área que marcaste' : `las ${selectedAreas.size} áreas que marcaste`} como invitado: las ${selectedSubcategories.size} categorías con las que arranca tu feed. Ajústalas aquí, o cuando quieras desde Ajustes.`)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="onboarding-btn onboarding-btn--ghost"
+                    onClick={adjustInterests}
+                    disabled={saving}
+                  >
+                    {isEnglish ? 'Adjust interests' : 'Ajustar intereses'}
+                  </button>
+                </div>
+                <InterestsReceipt
+                  rows={receipt}
+                  total={selectedSubcategories.size}
+                  available={availableSubcategories}
+                  isEnglish={isEnglish}
+                />
+              </section>
+            )}
 
             <VisibilityChoice
               value={visibilityDraft}
