@@ -97,6 +97,10 @@ test('every section of the Spanish policy survives the translation', () => {
 test('the build knows the second page and keeps the app entry named index', () => {
   const config = read('vite.config.js').replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
   const input = config.match(/input:\s*\{([\s\S]*?)\}/)?.[1] || '';
-  assert.match(input, /\bindex:\s*fileURLToPath\(new URL\('\.\/index\.html'/);
+  // Since the landing took over `/`, the app's FILE is app.html — but the key
+  // stays `index`, which is the half of this contract that actually matters
+  // (PRECACHE_GLOB_PATTERNS asks the service worker for `assets/index-*` by
+  // name; see vite.config.js).
+  assert.match(input, /\bindex:\s*fileURLToPath\(new URL\('\.\/app\.html'/);
   assert.match(input, /\bprivacy:\s*fileURLToPath\(new URL\('\.\/privacy\.html'/);
 });
