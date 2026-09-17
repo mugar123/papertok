@@ -30,7 +30,7 @@ test('coming back to the feed resumes it at rest instead of replaying the arriva
   const transition = await read('../Layout/PageTransition.jsx');
   assert.match(transition, /data-nav-direction=\{present \? direction : arrivedWith\}/);
   const css = await read('../Feed/PaperCard.css');
-  assert.match(css, /\[data-nav-direction="-1"\] \.pc-sheet,[\s\S]*?\[data-nav-direction="-1"\] \.pc-side-actions \{\s*animation: none;\s*\}/);
+  assert.match(css, /:is\(\[data-nav-direction="-1"\], \[data-nav-lateral="true"\]\) \.pc-sheet,[\s\S]*?:is\(\[data-nav-direction="-1"\], \[data-nav-lateral="true"\]\) \.pc-side-actions \{\s*animation: none;\s*\}/);
 });
 
 test('the hero settles between its heights instead of snapping at the handover', async () => {

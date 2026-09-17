@@ -59,6 +59,17 @@ export default function PageTransition({ children }) {
   // opacity 0 under an entity page still near-transparent. State, so a page
   // re-entered while leaving takes the new arrival's direction.
   const [arrivedWith, setArrivedWith] = useState(direction);
+  // And whether it arrived by a STEP ALONG THE BAR, frozen the same way and
+  // for the same cards. A tab is the feed the reader left, resumed on the
+  // card they were on, whichever way along the bar it sits — but the bar's
+  // order gave For you -1 and Following +1, so one feed came back at rest
+  // and the other replayed its whole composition under a page already
+  // sliding in. Measured 2026-09-17 (production build, signed in): For you
+  // -> Following had the title at 0.29, the abstract at 0 and the actions at
+  // 0 while the page was at 29 px, and the actions were still at 0.41 when
+  // the page had settled at 300 ms; Following -> For you had every piece at
+  // 1 from the first frame. `PaperCard.css` reads this beside the direction.
+  const [arrivedLateral, setArrivedLateral] = useState(lateral);
 
   // A page re-entered while it was leaving — back, then forward, before its
   // exit finished — is a new arrival: it animates in again instead of
@@ -70,6 +81,7 @@ export default function PageTransition({ children }) {
     if (present) {
       setSettled(false);
       setArrivedWith(direction);
+      setArrivedLateral(lateral);
     }
   }
 
@@ -170,10 +182,11 @@ export default function PageTransition({ children }) {
 
   // `data-nav-direction` is for the page's own content: coming back (-1) is a
   // return to something that was there, so the feed's cards resume at rest
-  // instead of arriving again (PaperCard.css reads this). The leaving page
-  // keeps the direction it ARRIVED with, not the one that ejects it — `arrivedWith`,
-  // frozen above — or its own cards would read the eject as a fresh arrival
-  // and replay `pcArrive` under the page covering them. `inert` takes the
+  // instead of arriving again (PaperCard.css reads this). `data-nav-lateral`
+  // says the same of a step between tabs, in either direction. The leaving page
+  // keeps the direction it ARRIVED with, not the one that ejects it — `arrivedWith`
+  // and `arrivedLateral`, frozen above — or its own cards would read the eject
+  // as a fresh arrival and replay `pcArrive` under the page covering them. `inert` takes the
   // leaving page — two `<main>` landmarks and a duplicate heading for up to
   // 220ms otherwise — out of the accessibility tree and the tab order, the
   // way `pointer-events: none` (PageTransition.css) already takes it out of
@@ -183,6 +196,7 @@ export default function PageTransition({ children }) {
       ref={rootRef}
       className="page-transition"
       data-nav-direction={present ? direction : arrivedWith}
+      data-nav-lateral={(present ? lateral : arrivedLateral) || undefined}
       data-leave-direction={present ? undefined : direction}
       data-page-motion={motion}
       inert={!present || undefined}
