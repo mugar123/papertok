@@ -1,5 +1,7 @@
 # Auditoría: la ventana de intereses no aparece a los usuarios nuevos — 2026-09-16
 
+**Ejecutado el 2026-09-17** (rama `worktree-onboarding-intereses`); ver STATE.md.
+
 Síntoma reportado por Nicolás: «a nuevos usuarios no les carga la ventana
 pidiendo intereses (Física, Ingeniería, etc.)». Usuarios registrados, no el
 feed de invitado.
