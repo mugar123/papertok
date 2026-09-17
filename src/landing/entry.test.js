@@ -32,10 +32,25 @@ test('the prerender plugin targets index.html and serves /feed from app.html in 
   assert.match(config, /ctx\.filename\.endsWith\('index\.html'\)/);
   assert.match(config, /configureServer/);
   assert.match(config, /configurePreviewServer/);
+  // Pins the real pathname: without this, narrowing feedToApp's condition to
+  // (say) '/feeds' would still satisfy every other assertion here while vite
+  // dev/preview quietly served the LANDING at /feed instead of the app.
+  assert.match(config, /pathname === '\/feed'/);
   assert.match(config, /req\.url = '\/app\.html'/);
 });
 
-test('Vercel sends /feed and every SPA path to app.html, and never caches it', () => {
+test('the /feed middleware carries a query string over to app.html instead of dropping it', () => {
+  const config = noComments(read('vite.config.js'));
+  const middleware = config.match(/function feedToApp\([\s\S]*?\n\}/)?.[0] || '';
+  assert.ok(middleware, 'feedToApp is gone');
+  // The pathname/query split must keep the query half, not just the pathname
+  // (a `.split('?')[0]` would already have thrown it away here).
+  assert.match(middleware, /const \[pathname, \.\.\.query\] = \(req\.url \|\| ''\)\.split\('\?'\)/);
+  // And the query, once kept, has to actually be re-attached to req.url.
+  assert.match(middleware, /if \(query\.length\) req\.url \+= `\?\$\{query\.join\('\?'\)\}`/);
+});
+
+test('Vercel sends /feed and every SPA path to app.html; a direct request for app.html is never cached', () => {
   const vercel = JSON.parse(read('vercel.json'));
   const feed = vercel.rewrites.find((r) => r.source === '/feed');
   assert.equal(feed?.destination, '/app.html');
@@ -58,9 +73,10 @@ test('the app page is canonical at /feed', () => {
   const app = read('app.html');
   assert.match(app, /<link rel="canonical" href="https:\/\/papertok\.app\/feed" \/>/);
   assert.match(app, /<meta property="og:url" content="https:\/\/papertok\.app\/feed" \/>/);
+  assert.match(app, /<meta name="twitter:url" content="https:\/\/papertok\.app\/feed" \/>/);
 });
 
-test('every "Open the feed" link in the built pages points at /feed, not at the landing', () => {
+test('the "Open the feed" link in privacy.html points at /feed, not at the landing', () => {
   const privacy = read('privacy.html');
   const cta = privacy.match(/<a[^>]*class="lp-btn"[^>]*>[\s\S]*?<\/a>/)?.[0] || '';
   assert.match(cta, /href="\/feed"/, 'the privacy page CTA must reach the feed');

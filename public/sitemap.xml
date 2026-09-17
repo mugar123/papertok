@@ -3,4 +3,7 @@
   <url>
     <loc>https://papertok.app/</loc>
   </url>
+  <url>
+    <loc>https://papertok.app/feed</loc>
+  </url>
 </urlset>

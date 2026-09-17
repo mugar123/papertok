@@ -176,11 +176,15 @@ const LANDING_PAGE_MODULE = '/src/landing/page.js'
 // `/feed` has no file of its own: in production vercel.json rewrites it to
 // app.html, and this middleware does the same for `vite dev` and `vite
 // preview`, whose own SPA fallback would otherwise hand the LANDING to every
-// unknown path. Query strings and the hash never reach the server, so only
-// the pathname is looked at.
+// unknown path. The hash never reaches the server, so only the pathname
+// decides whether to rewrite -- but a query string, if present, is carried
+// over to app.html rather than dropped.
 function feedToApp(req, res, next) {
-  const pathname = (req.url || '').split('?')[0]
-  if (pathname === '/feed' || pathname.startsWith('/feed/')) req.url = '/app.html'
+  const [pathname, ...query] = (req.url || '').split('?')
+  if (pathname === '/feed' || pathname.startsWith('/feed/')) {
+    req.url = '/app.html'
+    if (query.length) req.url += `?${query.join('?')}`
+  }
   next()
 }
 

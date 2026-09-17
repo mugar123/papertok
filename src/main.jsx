@@ -72,7 +72,7 @@ import './styles/global.css'
 // runtimeCaching rule below is NetworkFirst, so an un-reloaded tab would
 // already be showing the new HTML; the reload is close to pure cost.
 // Left as-is anyway: without it, a tab that stays open across a deploy
-// keeps the OLD `index.html` in memory, and that page's own lazy
+// keeps the OLD `app.html` in memory, and that page's own lazy
 // `import()` calls still ask for chunks by their old content hash, which
 // the new deploy no longer serves -- a plain 404, and a route that simply
 // will not open until the tab reloads some other way.
@@ -95,7 +95,7 @@ import './styles/global.css'
 
 // A deploy replaces every hashed chunk. A tab that outlives one keeps asking
 // for chunks by their old hash; vercel.json keeps `/assets` out of the SPA
-// rewrite so that request is a 404 and not index.html served as JavaScript,
+// rewrite so that request is a 404 and not app.html served as JavaScript,
 // and Vite reports the failure here. One reload fetches the new graph. The
 // timestamp is what keeps a deploy that is genuinely broken from reloading
 // forever: a second failure inside a minute surfaces as the error it is.
