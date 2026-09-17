@@ -48,14 +48,17 @@ test('the theme is decided before first paint by the same mirror the app uses', 
 });
 
 test('the stylesheet shares the app tokens and self-hosted faces instead of forking them', () => {
-  const css = stripCssComments(read('src/legal/privacy.css'));
-  assert.match(css, /@import\s+'\.\.\/styles\/variables\.css'/);
-  assert.match(css, /@import\s+'@fontsource-variable\/newsreader\/opsz\.css'/);
-  assert.match(css, /@import\s+'@fontsource\/inter\/400\.css'/);
+  const privacyCss = stripCssComments(read('src/legal/privacy.css'));
+  assert.ok(privacyCss.includes("@import './static-page.css'"));
+  const staticPageCss = stripCssComments(read('src/legal/static-page.css'));
+  assert.match(staticPageCss, /@import\s+'\.\.\/styles\/variables\.css'/);
+  assert.match(staticPageCss, /@import\s+'@fontsource-variable\/newsreader\/opsz\.css'/);
+  assert.match(staticPageCss, /@import\s+'@fontsource\/inter\/400\.css'/);
   /* The old page's violet, which belongs to nobody. */
-  assert.doesNotMatch(css, /#7c5cff|#a893ff/i);
+  const combinedCss = privacyCss + staticPageCss;
+  assert.doesNotMatch(combinedCss, /#7c5cff|#a893ff/i);
   /* No uppercase-mono table headers: labels are sentences here. */
-  assert.doesNotMatch(css, /text-transform:\s*uppercase/);
+  assert.doesNotMatch(combinedCss, /text-transform:\s*uppercase/);
 });
 
 test('the summary up top says the five things a reader needs', () => {
