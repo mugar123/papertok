@@ -25,13 +25,74 @@
 .lp-hero__cta { display: flex; align-items: center; gap: 18px; margin: 0; flex-wrap: wrap; }
 .lp-hero__note { font: var(--fw-regular) 0.9375rem/1.4 var(--font-body); color: var(--text-on-brand); opacity: 0.8; }
 .lp-sheet { background: var(--bg-figure-plate); color: var(--text-primary); padding: 44px 44px 28px; border-radius: 2px; box-shadow: 0 24px 60px rgba(17, 19, 24, 0.18), 0 2px 6px rgba(17, 19, 24, 0.08); display: flex; flex-direction: column; gap: 24px; width: min(560px, 100%); }
-[data-theme="dark"] .lp-sheet { color: #111318; }
+/* The hero is paper and yellow in BOTH themes: --bg-figure-plate does not
+   flip (variables.css's own note: "theming the plate does not theme the ink
+   on it"), and neither does --brand-yellow. So the ink ON them — everything
+   paper(), chip(), .lp-btn, .lp-iconbtn, .lp-deck__skip and .lp-avatar name —
+   cannot flip either, or the sheet stays white while its text, borders,
+   chips and buttons quietly repaint for a dark page they are not on:
+   measured, the abstract fell to 2.4:1, the icon buttons to 1.1:1
+   (invisible), the chips became dark pills on paper, and the Skip button's
+   hover went ink-on-ink. Every value below is copied from :root, not from
+   :root[data-theme='dark'] — sheetPalette.test.js parses both and holds
+   this copy to that source, so a retuned token in variables.css fails here
+   instead of drifting silently. This supersedes the single `.lp-sheet`
+   color override the first pass shipped: that value is `--text-primary`,
+   pinned below, and every descendant that does not set its own color still
+   inherits it. */
+[data-theme="dark"] .lp-hero {
+  /* Ink */
+  --text-primary: #111318;
+  --text-secondary: #5b6270;
+  --text-tertiary: #6b7280;
+  --text-inverse: #ffffff;
+  /* Accents (the plain "Open the feed" button and its hover, and every
+     focus ring inside the hero) */
+  --accent-primary: #111318;
+  --accent-primary-hover: #2b2f38;
+  --focus-ring: #111318;
+  /* The AI button's soft-yellow surface, which DOES flip at :root even
+     though the plain yellow does not (variables.css: "on the dark wash it
+     becomes the brand yellow itself, so the control still says 'yellow'
+     where the surface alone reads as brown") — exactly backwards for a
+     button that is always on white paper, never on a dark wash. */
+  --brand-yellow-soft: #fff4c9;
+  --text-on-brand-soft: #111318;
+  /* Semantic status tints — the chips */
+  --tint-blue-bg: #eef4ff;
+  --tint-blue-fg: #1a4fb4;
+  --tint-blue-line: #cddffb;
+  --tint-green-bg: #ecfdf3;
+  --tint-green-fg: #067647;
+  --tint-green-line: #c3ecd5;
+  --tint-amber-bg: #fff8e6;
+  --tint-amber-fg: #96650a;
+  --tint-amber-line: #f6e3b0;
+  --tint-neutral-bg: #f4f4f5;
+  --tint-neutral-fg: #4a5160;
+  --tint-neutral-line: #e4e4e7;
+  /* Borders, and the Skip button's hover ground */
+  --border-subtle: #e6e7ea;
+  --border-default: #d3d5db;
+  --border-strong: #a9aeba;
+  --bg-secondary: #f7f7f8;
+  /* Category accents — only the three fields HERO_PAPERS actually uses;
+     `--lp-accent` is set inline per paper from one of these. */
+  --gradient-physics: #4f46e5;
+  --gradient-bio: #15803d;
+  --gradient-econ: #0f766e;
+}
 /* Deck stacking is armed-only (motion.js, task 10, adds .is-armed): unarmed,
    slides stay in normal flow so the one unhidden slide sizes the sheet on
-   its own — an unconditional `position: absolute` here would collapse the
-   sheet to zero height before any script runs. */
+   its own. That DEFERS the zero-height problem rather than solving it —
+   the moment task 10 adds `.is-armed`, all three slides become
+   `position: absolute` at once, none of them in flow, and `.lp-deck` has
+   nothing left to size itself on. Task 10 must give `.lp-deck` (or
+   `.lp-sheet`) an explicit height — measured from the tallest slide, set
+   before or in the same frame as adding `.is-armed` — or arming the
+   carousel collapses the sheet to nothing. */
 .lp-deck { position: relative; }
-.lp-deck__reel { margin: 0; padding: 0; list-style: none; position: relative; }
+.lp-deck__reel { position: relative; }
 .lp-sheet.is-armed .lp-deck { overflow: hidden; }
 .lp-sheet.is-armed .lp-hero__slide { position: absolute; inset: 0 0 auto 0; }
 /* An author rule that sets `display` always beats the user-agent's own
@@ -55,8 +116,17 @@
 .lp-paper__title { font-family: var(--font-serif); font-weight: var(--fw-semibold); line-height: 1.16; letter-spacing: -0.015em; margin: 0; font-size: 1.875rem; text-wrap: pretty; }
 .lp-paper--sheet .lp-paper__title { font-size: clamp(1.5rem, 2.4vw, 2.125rem); }
 .lp-paper__authors { display: flex; align-items: center; gap: 12px; margin: 0; padding-bottom: 14px; border-bottom: 1px solid var(--border-subtle); font: var(--fw-medium) var(--fs-sm)/1.4 var(--font-body); color: var(--text-secondary); }
+/* Truncates instead of wrapping, matching `.pc-author-names` — without
+   this a long byline (the LIGO sheet's "et al. (LIGO Scientific
+   Collaboration and Virgo Collaboration)") wraps to two lines. */
+.lp-paper__author-names { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
 .lp-avatars { display: flex; flex: none; }
-.lp-avatar { width: 24px; height: 24px; margin-right: -7px; border-radius: var(--radius-full); border: 1px solid #fff; background: var(--tint-neutral-bg); display: flex; align-items: center; justify-content: center; font: var(--fw-medium) 0.625rem/1 var(--font-mono); color: var(--text-tertiary); }
+/* `--i` (set inline per avatar, page.js) is the same stacking index
+   `.pc-author-avatar` uses: `margin-left` on every avatar but the first
+   overlaps it under its predecessor without eating into the gap to the
+   byline, and a DEscending z-index keeps the first avatar on top — the
+   app's own order, not last-on-top. */
+.lp-avatar { width: 24px; height: 24px; margin-left: calc(var(--i, 0) * -7px); position: relative; z-index: calc(3 - var(--i, 0)); border-radius: var(--radius-full); border: 1px solid #fff; background: var(--tint-neutral-bg); display: flex; align-items: center; justify-content: center; font: var(--fw-medium) 0.625rem/1 var(--font-mono); color: var(--text-tertiary); }
 .lp-paper__abstract { font-family: var(--font-serif); font-size: 1.0625rem; line-height: 1.6; color: var(--text-secondary); margin: 0; }
 .lp-paper__abstract::first-letter { float: left; margin: 0.06em 0.08em 0 0; font-size: 2.9em; line-height: 0.82; font-weight: var(--fw-semibold); color: var(--lp-accent); }
 .lp-paper__actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
@@ -84,7 +154,12 @@
 .lp-close__action { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; margin: 0; flex: none; }
 .lp-close .lp-btn--yellow { background: var(--brand-yellow); }
 .lp-close__note { font: var(--fw-regular) 0.875rem/1 var(--font-body); opacity: 0.75; }
-.lp-close + .lp-footer { border-top: none; }
+/* `.lp-close` is `<main>`'s child, not `.lp-footer`'s sibling (the footer
+   sits beside `<main>`, not inside it) — `.lp-close + .lp-footer` can never
+   match, and the hairline it was meant to drop never drops. `:has()` reaches
+   inside `<main>` to ask what its last section actually is, which a sibling
+   combinator cannot do from out here. */
+main:has(> .lp-close:last-child) + .lp-footer { border-top: none; }
 
 /* ── Phones (390) and narrow laptops ── */
 @media (max-width: 1000px) {

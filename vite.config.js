@@ -202,7 +202,14 @@ function landingPrerender() {
       const module = ctx.server
         ? await ctx.server.ssrLoadModule(LANDING_PAGE_MODULE)
         : await import(new URL(`.${LANDING_PAGE_MODULE}`, import.meta.url).href)
-      return html.replace(LANDING_PLACEHOLDER, module.buildLandingHtml())
+      // A function replacer, not a string one: `String.replace` still parses
+      // `$&`/`` $` ``/`$'`/`$$` out of a STRING replacement even when the
+      // search side is a plain string with no capture groups, and the Card &
+      // Krueger abstract (src/landing/papers.js) puts a literal `$4.25` and
+      // `$5.05` into this exact string — the first data this ever carried a
+      // `$` in. A function's return value is inserted verbatim.
+      const built = module.buildLandingHtml()
+      return html.replace(LANDING_PLACEHOLDER, () => built)
     },
   }
 }

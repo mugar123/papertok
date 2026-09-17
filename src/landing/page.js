@@ -2,6 +2,24 @@ import { HERO_PAPERS, REPO, SOURCES, PEOPLE } from './papers.js';
 
 const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+/**
+ * `esc()` is for text nodes and quoted attribute VALUES; it does nothing for
+ * a value that becomes part of a bare identifier — a class name spliced into
+ * a class list (`lp-chip--${tone}`) or a token spliced into `var(...)`
+ * (`var(${accent})`). A space there still opens a second class; a `)` or `;`
+ * there still escapes the `var()` call and starts writing arbitrary CSS.
+ * `esc()` would leave both untouched, so this checks the SHAPE instead and
+ * throws rather than emit either — this module only ever runs at prerender
+ * (vite.config.js's `transformIndexHtml`), never in the browser, so failing
+ * loudly here fails the BUILD, not a page already in front of a reader.
+ * Exported only so page.test.js can prove it throws; paper()/chip()'s own
+ * documented interface is unchanged by this.
+ */
+export function assertSafeToken(value, pattern, label) {
+  if (!pattern.test(value)) throw new Error(`unsafe ${label}: ${JSON.stringify(value)}`);
+  return value;
+}
+
 /* lucide's paths, byte for byte, so the landing's marks are the app's. */
 const ICON_PATHS = {
   ban: '<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>',
@@ -18,15 +36,33 @@ const ICON_PATHS = {
   folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
   octocat: null,
 };
-const icon = (name, size = 16) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${ICON_PATHS[name]}</svg>`;
+/* `ICON_PATHS[name]` silently stringifies to "undefined" (a typo'd name) or
+   "null" (`octocat`, a real placeholder task 9 fills in) as inert text
+   inside the <svg> — invisible, since a bare text node outside <text> does
+   not render, so nothing would ever say why an icon is blank. Loud instead:
+   both a missing name and an unfilled one throw at prerender time. */
+const icon = (name, size = 16) => {
+  const path = ICON_PATHS[name];
+  if (path == null) throw new Error(`icon(): no path for "${name}"`);
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${path}</svg>`;
+};
 
-const chip = ({ label, tone }) => `<span class="lp-chip lp-chip--${tone}">${esc(label)}</span>`;
+const chip = ({ label, tone }) => `<span class="lp-chip lp-chip--${assertSafeToken(tone, /^[a-z]+$/, 'chip tone')}">${esc(label)}</span>`;
 const chips = (list = []) => list.length ? `<div class="lp-chips">${list.map(chip).join('')}</div>` : '';
 const dot = '<span class="lp-paper__dot" aria-hidden="true">·</span>';
-const avatars = (initials = []) => initials.length ? `<span class="lp-avatars" aria-hidden="true">${initials.map((i) => `<span class="lp-avatar">${esc(i)}</span>`).join('')}</span>` : '';
+/* `--i` is the stacking index PaperCard.css itself uses (`.pc-author-avatar`):
+   `margin-left: calc(var(--i, 0) * -7px)` overlaps avatar N under avatar
+   N-1 without ever pulling the LAST one into the byline's own gap, and
+   `z-index: calc(3 - var(--i, 0))` keeps the first avatar on top — the same
+   two facts a flat `margin-right: -7px` on every avatar got backwards. */
+const avatars = (initials = []) => initials.length ? `<span class="lp-avatars" aria-hidden="true">${initials.map((i, idx) => `<span class="lp-avatar" style="--i: ${idx}">${esc(i)}</span>`).join('')}</span>` : '';
 
 /* The band on paper; the rule on ink (see landing.css) — same class, the
-   theme decides. */
+   theme decides. `hlRule()` does not exist: the dark/close form is a CSS
+   selector's job ([data-theme="dark"] .lp-hl, .lp-close .lp-hl), not a
+   second JS helper making the same call twice. Author-written literal text
+   ONLY — `hl()` does not escape, so a paper title or any other data-derived
+   string must never pass through it. */
 const hl = (text) => `<span class="lp-hl">${text}</span>`;
 
 /**
@@ -37,13 +73,13 @@ const hl = (text) => `<span class="lp-hl">${text}</span>`;
  */
 // eslint-disable-next-line no-unused-vars -- `tags` is documented above; task 6-9 code fills it in.
 function paper(p, { size = 'md', heading = 'h3', tags = false } = {}) {
-  const accent = p.fieldVar || '--gradient-physics';
+  const accent = assertSafeToken(p.fieldVar || '--gradient-physics', /^--[a-z0-9-]+$/, 'accent token');
   return `<article class="lp-paper lp-paper--${size}" style="--lp-accent: var(${accent})">
     <span class="lp-paper__accent" aria-hidden="true"></span>
     <p class="lp-paper__meta"><span class="lp-paper__field">${esc(p.field)}</span>${p.category ? `${dot}<span>${esc(p.category)}</span>` : ''}${dot}<span>${esc(p.year)}</span></p>
     ${chips(p.chips)}
     <${heading} class="lp-paper__title">${esc(p.title)}</${heading}>
-    ${p.authors ? `<p class="lp-paper__authors">${avatars(p.initials)}<span>${esc(p.authors)}</span></p>` : ''}
+    ${p.authors ? `<p class="lp-paper__authors">${avatars(p.initials)}<span class="lp-paper__author-names">${esc(p.authors)}</span></p>` : ''}
     ${p.abstract ? `<p class="lp-paper__abstract">${esc(p.abstract)}</p>` : ''}
     <div class="lp-paper__actions" aria-hidden="true">
       <span class="lp-btn lp-btn--md">${icon('file')}Read article</span>
@@ -71,7 +107,11 @@ const bar = () => `<header class="lp-bar lp-bar--yellow">
    `hidden` too, so a visit with no JavaScript is one readable paper and
    nothing a keyboard can reach and not see, not a three-tall stack waiting
    on a script that has not run. WAI-ARIA carousel: group + roledescription,
-   one slide visible at a time. */
+   one slide visible at a time — plain `<div>`s, not an `<ol>`/`<li>`: each
+   slide's own `role="group"` already overrides whatever `<li>` would have
+   told assistive tech (an item with a role replacing "listitem" is no
+   longer counted as one, so the list would report itself as having zero
+   items), so a semantic list here never bought anything real. */
 const hero = () => `<section class="lp-hero" aria-labelledby="lp-h1">
   <div class="lp-wrap lp-hero__grid">
     <div class="lp-hero__claim">
@@ -81,9 +121,9 @@ const hero = () => `<section class="lp-hero" aria-labelledby="lp-h1">
     </div>
     <div class="lp-sheet" data-deck tabindex="0" role="group" aria-roledescription="carousel" aria-label="Three papers from the feed">
       <div class="lp-deck">
-        <ol class="lp-deck__reel" data-deck-reel>
-          ${HERO_PAPERS.map((p, i) => `<li class="lp-hero__slide" role="group" aria-roledescription="slide" aria-label="${i + 1} of ${HERO_PAPERS.length}"${i ? ' hidden aria-hidden="true" inert' : ''}>${paper(p, { size: 'sheet', heading: 'h2' })}</li>`).join('\n')}
-        </ol>
+        <div class="lp-deck__reel" data-deck-reel>
+          ${HERO_PAPERS.map((p, i) => `<div class="lp-hero__slide" role="group" aria-roledescription="slide" aria-label="${i + 1} of ${HERO_PAPERS.length}"${i ? ' hidden aria-hidden="true" inert' : ''}>${paper(p, { size: 'sheet', heading: 'h2' })}</div>`).join('\n')}
+        </div>
       </div>
       <div class="lp-deck__foot" hidden>
         <button class="lp-deck__skip" type="button" data-deck-skip hidden aria-label="Skip to the next paper">${icon('ban', 15)}Skip</button>
