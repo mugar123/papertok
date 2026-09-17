@@ -12,7 +12,12 @@ test('SOURCE: the onboarding refuses to leave the categories step, or to finish,
   assert.match(code, /import \{ USER_PREFERENCES_MAX \} from '\.\.\/\.\.\/utils\/accountOnboarding\.js';/);
   assert.match(code, /const overCap = selectedSubcategories\.size > USER_PREFERENCES_MAX;/);
   assert.match(code, /else if \(step === 2 && selectedSubcategories\.size > 0 && !overCap\)/, 'Next on the categories step is gated');
-  assert.match(code, /\(step === 2 && selectedSubcategories\.size > 0 && !overCap\)/, 'and so is canProceed');
+  // Anchored on the preceding `||`: the same clause text also appears in the
+  // `handleNext` line asserted just above, preceded by `else if ` there
+  // instead. An unanchored match on `canProceed` alone would still pass with
+  // `!overCap` removed from `canProceed`, as long as `handleNext`'s own guard
+  // survived — the assertion would prove nothing about `canProceed` at all.
+  assert.match(code, /\|\|\s*\(step === 2 && selectedSubcategories\.size > 0 && !overCap\)/, 'and so is canProceed');
   assert.match(code, /\(step === 4 && !overCap && \(/, 'Start exploring is gated too');
   assert.match(code, /Como mucho \$\{USER_PREFERENCES_MAX\} categorías: quita \$\{selectedSubcategories\.size - USER_PREFERENCES_MAX\}\./, 'the hint says how many to drop');
   // Step 3 has its own finish button in the `existingProfile` branch, which

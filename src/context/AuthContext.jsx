@@ -294,10 +294,35 @@ export function AuthProvider({ children }) {
 
     const userId = user?.uid;
     if (userId) {
-      await setDoc(doc(db, 'users', userId), {
-        onboardingComplete: true,
-        preferences
-      }, { merge: true });
+      // Bounded like the profile reads below: Firestore's promise here never
+      // settles on its own against a stalled connection (memory cache,
+      // firebase.js), and an unbounded write would hang the onboarding
+      // screen's only button forever. `settleWithin` never throws for a
+      // timeout — it resolves to `{ status: 'timed_out' }` — so a
+      // non-fulfilled result is turned into a thrown error explicitly below,
+      // tagged with a stable code the caller can branch on instead of a
+      // message to match against.
+      const settled = await settleWithin(
+        setDoc(doc(db, 'users', userId), {
+          onboardingComplete: true,
+          preferences
+        }, { merge: true }),
+        PROFILE_NETWORK_TIMEOUT_MS,
+      );
+      // A retry is safe — this merge-sets the same fields — and
+      // OnboardingFlow's `profileCreated` ref already stops a retried
+      // handleFinish from creating the public-profile document twice, so
+      // there is nothing to do here but let the caller know and stop: the
+      // flag and the preferences must stay unflipped, same as the reorder
+      // above already guarantees for a rules refusal.
+      if (settled.status !== 'fulfilled') {
+        if (settled.status === 'timed_out') {
+          const timeoutError = new Error('completeOnboarding: the write did not settle in time');
+          timeoutError.code = 'ONBOARDING_WRITE_TIMEOUT';
+          throw timeoutError;
+        }
+        throw settled.reason;
+      }
       saveStoredOnboarding(userId, { complete: true, preferences });
       // The interests a guest picked before signing up have now reached the
       // profile (the onboarding pre-selects from them); the bridge is done.

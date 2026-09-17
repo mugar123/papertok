@@ -105,14 +105,39 @@ test('SOURCE: the guest answer is cleared where the profile takes over', async (
   assert.ok(complete, 'completeOnboarding is gone or reshaped');
   assert.match(
     complete[0],
-    /await setDoc\(doc\(db, 'users', userId\), \{\s*onboardingComplete: true,\s*preferences\s*\}, \{ merge: true \}\);[\s\S]*?clearGuestInterests\(\);/,
-    'the answer is cleared after the preferences are written, never before',
+    /await settleWithin\(\s*setDoc\(doc\(db, 'users', userId\), \{\s*onboardingComplete: true,\s*preferences\s*\}, \{ merge: true \}\),\s*PROFILE_NETWORK_TIMEOUT_MS,\s*\);[\s\S]*?clearGuestInterests\(\);/,
+    'the answer is cleared after the preferences write has settled, never before',
   );
   assert.match(
     code,
     /if \(onboarded\) \{[\s\S]*?clearGuestInterests\(\);[\s\S]*?\}\s*return true;/,
     'a profile that already chose its interests discards a waiting guest answer',
   );
+});
+
+/**
+ * The pessimistic write in `completeOnboarding` is now bounded
+ * (`settleWithin` + `PROFILE_NETWORK_TIMEOUT_MS`); a timeout throws an error
+ * with a stable `ONBOARDING_WRITE_TIMEOUT` code so handleFinish's catch can
+ * tell it apart from a rules refusal or any other failure, and say so rather
+ * than leaving "Start exploring" spinning with no message.
+ */
+test('SOURCE: handleFinish tells a write timeout apart from a generic save failure', async () => {
+  const source = await readFile(new URL('./OnboardingFlow.jsx', import.meta.url), 'utf8');
+  const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+  const handleFinish = code.match(/const handleFinish = async \(\) => \{[\s\S]*?\n {2}\};/);
+  assert.ok(handleFinish, 'handleFinish is gone or reshaped');
+  const catchBlock = handleFinish[0].match(/\} catch \(err\) \{[\s\S]*?\n {4}\}/);
+  assert.ok(catchBlock, 'handleFinish lost its catch block');
+  assert.match(
+    catchBlock[0],
+    /else if \(err\?\.code === 'ONBOARDING_WRITE_TIMEOUT'\) \{[\s\S]*?\}/,
+    'a write timeout is branched on its stable code, not on a message string',
+  );
+  assert.match(catchBlock[0], /Still saving\. Check your connection and try again\./);
+  assert.match(catchBlock[0], /Sigue guardando\. Comprueba tu conexión e inténtalo de nuevo\./);
+  // The generic branch is still the fallback for everything else.
+  assert.match(catchBlock[0], /\} else \{\s*console\.error\('Error saving preferences:', err\);/);
 });
 
 test('SOURCE: the profile fields are the shared Input under a Label, with their associations intact', async () => {

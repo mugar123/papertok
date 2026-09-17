@@ -267,6 +267,14 @@ export default function OnboardingFlow() {
         setProfileError(isEnglish
           ? 'That handle is already taken. Try another.'
           : 'Ese handle ya está cogido. Prueba otro.');
+      } else if (err?.code === 'ONBOARDING_WRITE_TIMEOUT') {
+        // completeOnboarding's write is a merge-set of the same fields, and
+        // profileCreated (above) already stops a second profile claim, so
+        // the reader's own retry is the whole recovery — nothing to do here
+        // but tell them why the button stopped spinning.
+        setProfileError(isEnglish
+          ? 'Still saving. Check your connection and try again.'
+          : 'Sigue guardando. Comprueba tu conexión e inténtalo de nuevo.');
       } else {
         console.error('Error saving preferences:', err);
         setProfileError(isEnglish
@@ -624,7 +632,7 @@ export default function OnboardingFlow() {
                 <InterestsReceipt
                   rows={receipt}
                   total={selectedSubcategories.size}
-                  available={availableSubcategories}
+                  available={availableSubcategories || TOTAL_SUBCATEGORIES}
                   isEnglish={isEnglish}
                 />
               </section>
