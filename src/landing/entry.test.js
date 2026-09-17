@@ -59,3 +59,10 @@ test('the app page is canonical at /feed', () => {
   assert.match(app, /<link rel="canonical" href="https:\/\/papertok\.app\/feed" \/>/);
   assert.match(app, /<meta property="og:url" content="https:\/\/papertok\.app\/feed" \/>/);
 });
+
+test('every "Open the feed" link in the built pages points at /feed, not at the landing', () => {
+  const privacy = read('privacy.html');
+  const cta = privacy.match(/<a[^>]*class="lp-btn"[^>]*>[\s\S]*?<\/a>/)?.[0] || '';
+  assert.match(cta, /href="\/feed"/, 'the privacy page CTA must reach the feed');
+  assert.doesNotMatch(cta, /href="\/"/);
+});
