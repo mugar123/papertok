@@ -62,6 +62,9 @@ export default function HighlightedScientificText({ children, highlights = [] })
           `rd-mark--${kind}`,
           `rd-mark--${item.source}`,
           item.pending ? 'rd-mark--pending' : '',
+          // The model's underline goes on running under the reader's own mark
+          // (utils/textHighlights.js keeps both and says which is beneath).
+          item.under?.includes('ai') && item.source !== 'ai' ? 'rd-mark--over-ai' : '',
         ].filter(Boolean).join(' ');
 
         if (item.type === 'math') {

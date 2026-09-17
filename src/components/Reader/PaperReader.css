@@ -469,6 +469,14 @@
   box-shadow: none;
 }
 
+/* The reader's mark over a passage the model underlined keeps that underline:
+   without it, selecting the one sentence the model found interesting — the
+   likeliest sentence to select — erased the model's mark on the spot. Doubled
+   for the specificity of the rule above that takes the reader's shadow off. */
+.rd-mark--over-ai.rd-mark--over-ai {
+  box-shadow: inset 0 -2px 0 var(--accent-primary);
+}
+
 /* ── Streaming and states ── */
 
 /* ── The ghost section ──
