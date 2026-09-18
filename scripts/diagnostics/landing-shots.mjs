@@ -15,6 +15,23 @@
 // prefers-color-scheme; a fresh profile has no stored value, so this is the
 // only lever available from outside the page. PORT=<n> picks another
 // debugging port, CHROME=<path> another Chromium binary.
+//
+// The settle wait after resizing to full height (below) used to be 150ms,
+// true when this was written (task 5: no client JS yet). Tasks 6-10 added
+// real one-shot arrival animations below the fold - the wheel's arrival
+// spin (armPile, rAF physics, TAU 380ms) and the citation map's draw
+// (armMap, staggered @keyframes, ~1.1s) - both gated on an
+// IntersectionObserver that only fires once this resize makes the whole
+// page "in view". 150ms is not enough for either to finish, and which
+// slices still show mid-animation is NOT just random jitter: the loop below
+// captures slices sequentially, and each PNG encode's own wall-clock time
+// (which runs longer for a lighter, noisier slice than a uniformly dark
+// one) changes how much extra time has elapsed by the time the loop reaches
+// the map's slice - caught it fully drawn in a light-theme run and mostly
+// at opacity 0 in a dark-theme run of the SAME build, confirmed
+// deterministic across repeat runs (task 12 diagnosis). 3000ms comfortably
+// clears both the map's draw and the wheel's settle regardless of theme or
+// which slice a given animation happens to land in.
 import { spawn } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -86,7 +103,7 @@ try {
   // Re-override with the full content height so every slice below is a
   // plain in-viewport clip - no captureBeyondViewport needed.
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: WIDTH, height: fullHeight, deviceScaleFactor: 1, mobile: WIDTH < 768 });
-  await sleep(150);
+  await sleep(3000); // let every IntersectionObserver-gated arrival (wheel, map) finish - see the file header
 
   let shot = 0;
   for (let y = 0; y < fullHeight; y += SLICE) {
