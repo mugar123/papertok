@@ -547,7 +547,7 @@
    pixels of extra scroll for a screen no wider than its neighbours. */
 .lp-window { margin: 0; position: relative; height: 880px; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 78%, rgba(0,0,0,0)); mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 78%, rgba(0,0,0,0)); }
 .lp-window__inner { border: 1px solid var(--border-subtle); border-bottom: none; border-radius: var(--radius-lg) var(--radius-lg) 0 0; background: var(--bg-card); padding: 36px 40px 0; }
-@media (max-width: 700px) { .lp-window { height: 720px; } .lp-window__inner { padding: 24px 20px 0; } }
+@media (max-width: 700px) { .lp-window__inner { padding: 24px 20px 0; } }
 
 /* The app's front page, reproduced. Scoped to `.lp-window` rather than a
    bare `.lp-research` selector: the SECTION itself also carries the class
@@ -578,7 +578,7 @@
 /* `.sr-lead-label` (ScientificReport.css) verbatim: the same padding,
    mono-uppercase voice and full `--brand-yellow` the real "Lead story"
    badge uses, not a softened landing-page substitute. */
-.lp-research__badge { align-self: flex-start; padding: 4px 8px; background: var(--brand-yellow); color: var(--text-on-brand); font: var(--mono-label); letter-spacing: var(--mono-track); text-transform: uppercase; }
+.lp-research__badge { align-self: flex-start; padding: 3px 8px; background: var(--brand-yellow); color: var(--text-on-brand); font: var(--mono-label); letter-spacing: var(--mono-track); text-transform: uppercase; }
 .lp-research__field { font-weight: var(--fw-semibold); color: var(--accent-rose); }
 .lp-research__spread { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr); gap: 28px; align-items: start; }
 .lp-research__spread > div { display: flex; flex-direction: column; gap: 14px; }
@@ -651,19 +651,22 @@
 @media (max-width: 700px) {
   .lp-window .lp-research { padding: 20px 18px; }
   .lp-research__title { font-size: 2.5rem; }
-  /* Measured, not guessed: at this width `.lp-research__body` and
-     `.lp-research__spread` (both `minmax(0, 1fr)`, above) already stack the
-     rail below the lead and the abstract below the headline, and a
-     full-size headline plus the abstract together ran to 634px on their
-     own — past the 720px window this block used to set, so the rail
-     (carrying the two "Growing topics" percentages, decision E's own
-     numbers) sat entirely below the hard `overflow: hidden` edge, not just
-     faded. Dropping the abstract and the headline's type size here is the
-     same move the citation map's compact plate already makes (drop detail,
-     keep the core figures), and the taller window is sized so the rail's
-     own last row clears the fade check up above the mask's 78% start, with
-     the forme's first row only just beginning to appear as the mask takes
-     over — a hint of "more edition here," same as the desktop capture. */
+  /* 1300px, measured rather than guessed, and the only height this window
+     uses at this width — no separate smaller value sits anywhere else in
+     this file for it to shadow. With `.lp-research__body` and
+     `.lp-research__spread` (both `minmax(0, 1fr)`, above) stacking the rail
+     below the lead and the abstract below the headline, a full-size
+     headline plus the abstract together ran to 634px on their own, deep
+     into where the mask's 78%-start fade would already be finishing —
+     which is what made the rail (carrying the two "Growing topics"
+     percentages, decision E's own numbers) land entirely below the hard
+     `overflow: hidden` edge, not just faded. Dropping the abstract and the
+     headline's type size below is the same move the citation map's compact
+     plate already makes (drop detail, keep the core figures); 1300px is
+     then sized so the rail's own last row clears the fade check well above
+     the mask's 78% start, with the forme's first row only just beginning
+     to appear as the mask takes over — a hint of "more edition here," same
+     as the desktop capture. */
   .lp-window { height: 1300px; }
   .lp-research__abstract { display: none; }
   .lp-research__headline { font-size: 1.5rem; line-height: 1.15; }

@@ -165,26 +165,34 @@ test('no snap, no wheel capture, no figures, no eyebrows outside the card, no li
   // which is what stops `brief` specifically from leaking.
   for (const sel of upper) assert.match(sel, /^\.lp-(paper|plate|research|chip|pile|eyebrow|list-card|brief)/, sel);
   // `.lp-eyebrow` is app UI that belongs INSIDE a reader's own window — the
-  // `.lp-rewrite` widget here, the research screen once task 9 lands it —
-  // never a label loose on the page. Scoped to `.lp-rewrite` itself, not the
-  // whole `lp-reader` SECTION: the section also holds the left column's
-  // prose (`.lp-head`), which is not the reader's window either, and
-  // stripping the entire section would have hidden an eyebrow added there
-  // by mistake. `.lp-rewrite` is the last element before the section closes
-  // (page.js), so matching through to the next `</section>` captures all of
-  // it without needing brace-balanced HTML parsing. `.lp-research` does not
-  // exist yet, so that `replace` is a no-op today and starts pulling its
-  // weight the day task 9 adds the section; either way this reads the
-  // CURRENT html, so a future section that copies the class without
-  // copying its containment shows up here as a leak, not silently.
-  const outside = html.replace(/<div class="lp-rewrite"[\s\S]*?<\/section>/, '').replace(/<section class="lp-research[^"]*"[\s\S]*?<\/section>/, '');
+  // `.lp-rewrite` widget here, the Research edition's own
+  // `<figure class="lp-window">` — never a label loose on the page. Scoped
+  // to `.lp-rewrite` and `.lp-window` THEMSELVES, not either section as a
+  // whole: both sections also hold the left column's prose (`.lp-head`),
+  // which is not either window, and stripping the entire section would
+  // hide an eyebrow added there by mistake. That is not hypothetical —
+  // task 9's first draft of this check stripped the whole
+  // `<section class="lp-research">` instead of `.lp-window`, which would
+  // have let a stray `.lp-eyebrow` in `.lp-head`'s own intro prose (inside
+  // the section, outside the window) pass silently; caught in review, not
+  // by this suite, which is exactly the gap fixed here.
+  // `.lp-rewrite` is the last element before its section closes (page.js),
+  // so matching through to the next `</section>` captures all of it
+  // without needing brace-balanced HTML parsing — `.lp-window` doesn't need
+  // that trick, since it closes with its own `</figure>` and is the ONLY
+  // `<figure class="lp-window">` in the document (unlike `.lp-figure-ui`,
+  // which task 8 had to prove two different ways because it repeats —
+  // once in follow(), once in library() — so a single strip could not name
+  // "the" one to remove).
+  const outside = html.replace(/<div class="lp-rewrite"[\s\S]*?<\/section>/, '').replace(/<figure class="lp-window">[\s\S]*?<\/figure>/, '');
   assert.doesNotMatch(outside, /lp-eyebrow/);
   // `.lp-brief` is the app UI for task 9's eleven research cards — it
-  // belongs INSIDE the Research window (`<figure class="lp-window">`
-  // inside `.lp-research`), never loose on the page. The same `outside`
-  // already has the whole `.lp-research` section removed (above), so this
-  // is the direct counterpart to the `eyebrow` check just above it: task
-  // 9's new allowance (`brief`) must not leak any more than task 7's did.
+  // belongs INSIDE the Research window (`<figure class="lp-window">`),
+  // never loose on the page and never in `.lp-head`'s own intro prose just
+  // outside that window. The same `outside` already has the window removed
+  // (above), so this is the direct counterpart to the `eyebrow` check just
+  // above it: task 9's new allowance (`brief`) must not leak any more than
+  // task 7's did.
   assert.doesNotMatch(outside, /lp-brief/);
   // `.lp-list-card` is app UI that belongs INSIDE the library's own
   // <figure> — the swatch legend and the left column's prose
