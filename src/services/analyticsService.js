@@ -72,12 +72,14 @@ const DAY_7_MS = 7 * 24 * 60 * 60 * 1000;
 // noise. The test 'every route the app declares is a named analytics path'
 // is what keeps this list from drifting behind the router again.
 const STATIC_ANALYTICS_PATHS = new Set([
+  // The landing, and the only entry here that is not a route of this app at
+  // all: `/` is served by index.html, which loads no analytics. It stays
+  // because it is still what a route-less or malformed read normalizes down to
+  // — `sanitizeAnalyticsEventUrl` falls back to it for a URL it cannot parse.
   '/',
-  // The app's own home since it moved off `/`: `location.pathname` is `/feed`
-  // there, and a page view that reaches this before HashRouter has written
-  // `#/` reported the app's busiest page as `/unknown`. `/` stays because it
-  // is still where a route-less read lands (and is now the landing, which
-  // reports nothing at all).
+  // The app's own home since it moved off `/`. Every entry below is now a real
+  // path the server sees, not a fragment: `location.pathname` IS the route
+  // (src/main.jsx), which is what this whole list has to keep pace with.
   '/feed',
   '/admin/moderation',
   '/following',
@@ -284,12 +286,22 @@ export function sanitizeAnalyticsLocation(pathname, browserLocation = globalThis
 /**
  * The second door, and the one that is easy to miss. `route`/`path` on the
  * <Analytics /> component are normalized before they are passed, but the Vercel
- * script builds its payload's `url` field from `location.href` on its own — and
- * under HashRouter the route lives in the fragment, so that string reads
- * `https://papertok.app/#/public/paper/<the real id>`. That is precisely the
+ * script builds its payload's `url` field from `location.href` on its own, and
+ * that string is whatever the address bar says: today
+ * `https://papertok.app/public/paper/<the real id>`, because the router moved
+ * off the fragment (src/main.jsx mounts a BrowserRouter). That is precisely the
  * value the privacy policy promises never leaves the browser. `beforeSend` is
- * where it gets replaced, so the fragment is read here and normalized like any
- * other path.
+ * where it gets replaced, and `pathname` is what gets normalized.
+ *
+ * The fragment branch below is the LEGACY case, and it stays because links
+ * minted before the migration are still out there: one arrives as
+ * `/#/public/paper/<id>`, and `utils/legacyHashRoute.js` translates it inside
+ * the app — so `location.href` can carry a fragment route for the length of one
+ * page view. Both doors read the same way and reach the same normalizer.
+ *
+ * Proven on a real request rather than only here:
+ * `scripts/diagnostics/landing-analytics-probe.mjs` loads five of these routes
+ * in a browser and reads what leaves for `/_vercel/insights/*`.
  */
 export function sanitizeAnalyticsEventUrl(url) {
   try {
@@ -360,10 +372,16 @@ export async function setAnalyticsConsent(value) {
 
 // There is no `trackPageView` any more. The <Analytics /> component takes
 // `route` and `path`, and passing `route` makes it set `disableAutoTrack` on the
-// injected script and emit each view itself -- which is the only reason page
-// views work here at all: the script's own tracking reads `location.pathname`,
-// and under HashRouter that is `/` for every route in the app. A manual emitter
-// on top of that component would double-count every visit.
+// injected script, so the views are emitted from `AnalyticsProvider` instead. A
+// manual emitter on top of that component would double-count every visit.
+//
+// Passing `route` used to be what made page views work AT ALL: the script's own
+// tracking reads `location.pathname`, which under HashRouter was one constant
+// for the whole app. Now that the route is the path, the same argument runs the
+// other way and matters more: the script's own tracking would read a pathname
+// with the paper id in it. `beforeSend` would still rewrite the `url` field,
+// but the route it filed the view under would be the concrete one. Keeping
+// `disableAutoTrack` on is a privacy guarantee now, not an enabling trick.
 
 // On the Hobby plan Vercel accepts page views but DISCARDS custom events, so
 // every call below is sent, billed as nothing, and never appears in the

@@ -13,6 +13,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="PaperTok is an application for exploring and discovering scientific papers from multiple sources." />
     <meta name="theme-color" content="#ffffff" />
+    <!-- The address of the page never leaves in a request header.
+
+         Measured, not assumed (scripts/diagnostics/landing-analytics-probe.mjs):
+         with the browser default, `strict-origin-when-cross-origin`, a
+         SAME-ORIGIN subresource request carries the full URL as `Referer` — so
+         a reader on /public/paper/<key> made the app's own
+         `<script src="/_vercel/insights/script.js">` announce that key to
+         Vercel's edge, on every page view, in a header. The analytics payload
+         itself has always been normalized (`sanitizeAnalyticsEventUrl`), and
+         under HashRouter the header was harmless too: a fragment is stripped
+         from `Referer`, so it read `https://papertok.app/` whatever route you
+         were on. Real paths (src/main.jsx) put the identifier back in it.
+
+         /privacy.html promises the opposite in as many words: "reading a
+         specific paper is recorded as /public/paper/:id [...] Which one never
+         travels." `strict-origin` caps every request this document makes — the
+         analytics script, the API calls, an outbound link to a publisher — at
+         the origin, so the promise does not depend on any one of them behaving.
+         Not `no-referrer`: an origin-restricted API key checks this header, and
+         `https://papertok.app/` still satisfies such a check. -->
+    <meta name="referrer" content="strict-origin" />
     <!-- El tema, resuelto antes del primer pintado. Decidirlo en React es
          decidirlo después de haber pintado la página en blanco: un fogonazo
          blanco en cada carga para quien lee a oscuras. Es el espejo de
