@@ -54,7 +54,7 @@ html { scroll-padding-top: var(--nav-height); }
 .lp-btn--yellow:hover { background: var(--brand-orange); border-color: var(--brand-orange); }
 
 .lp-footer { width: min(1200px, calc(100% - 40px)); margin: 0 auto; padding: 24px 0 48px; border-top: 1px solid var(--border-subtle); display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; font-size: 0.8125rem; color: var(--text-tertiary); }
-.lp-footer__links { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+.lp-footer__links { display: flex; align-items: center; gap: 0 24px; flex-wrap: wrap; }
 .lp-footer__links > * { display: inline-flex; align-items: center; min-height: 44px; }
 .lp-footer a { color: inherit; text-decoration: none; min-height: 44px; display: inline-flex; align-items: center; }
 .lp-footer a:hover { color: var(--text-primary); }
