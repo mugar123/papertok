@@ -48,7 +48,17 @@ export function routeFromLegacyHash({ search = '', hash = '' } = {}) {
   // origin. Collapsing the slashes makes it a path here that matches no route,
   // which is the whole of the defence: a fragment is attacker-supplied in the
   // only sense that matters, since anyone can hand anyone a link.
-  const pathname = `/${rawPathname.replace(/^\/+/, '').replace(/\/{2,}/g, '/')}`;
+  //
+  // Backslashes FIRST, and that order is the point: the URL parser treats `\`
+  // as `/` for http(s), so `#/\\evil.com` survives slash-collapsing untouched
+  // and then resolves to `https://evil.com` — measured, not reasoned about.
+  // `history.replaceState` would refuse a cross-origin URL and this module
+  // would decline in its catch, so the visitor was never actually sent
+  // anywhere; but that made the refusal the defence and this line a comment
+  // that was not true. A caller who used the returned route for anything other
+  // than replaceState would have had no defence at all. No route in this app
+  // contains a backslash: ids arrive percent-encoded.
+  const pathname = `/${rawPathname.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/{2,}/g, '/')}`;
   if (pathname === '/') return `${LEGACY_ROOT_ROUTE}${ownQuery || (typeof search === 'string' ? search : '')}`;
 
   const query = ownQuery || (typeof search === 'string' ? search : '');

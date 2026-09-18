@@ -49,6 +49,18 @@ test('a fragment can never send the visitor off-site', () => {
   // origin. Collapsed, it is a path on this site that matches no route.
   assert.equal(routeFromLegacyHash({ hash: '#//evil.com' }), '/evil.com');
   assert.equal(routeFromLegacyHash({ hash: '#///evil.com/x' }), '/evil.com/x');
+  // The same trick with backslashes, which the URL parser treats as slashes
+  // for http(s). Asserted as an ORIGIN rather than as a string, because the
+  // string is not what is dangerous: `/\\evil.com` looks like a path and
+  // resolves to `https://evil.com`.
+  for (const hash of ['#/\\\\evil.com', '#/\\\\/evil.com', '#//\\\\evil.com', '#/\\\\\\\\evil.com/x']) {
+    const route = routeFromLegacyHash({ hash });
+    assert.equal(
+      new URL(route, 'https://papertok.app').origin,
+      'https://papertok.app',
+      `${hash} translated to ${route}, which leaves the origin`,
+    );
+  }
   // A second `#` is a fragment of the route, not part of it.
   assert.equal(routeFromLegacyHash({ hash: '#/research#main-content' }), '/research');
 });
