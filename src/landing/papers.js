@@ -332,22 +332,6 @@ export const REWRITE = {
   ghostLines: ['100%', '97%', '99%', '93%', '61%'],
 };
 
-/** The nodes either side of the citation map's centre rule. */
-export const GRAPH = {
-  before: [
-    [8, 62, 6, 'var(--border-strong)'], [21, 30, 9, 'var(--text-tertiary)'],
-    [34, 70, 5, 'var(--border-strong)'], [46, 24, 13, 'var(--text-secondary)'],
-    [58, 55, 7, 'var(--border-strong)'], [69, 34, 10, 'var(--text-tertiary)'],
-    [81, 66, 5, 'var(--border-strong)'], [91, 42, 8, 'var(--text-tertiary)'],
-  ],
-  after: [
-    [12, 34, 7, 'var(--border-strong)'], [25, 66, 10, 'var(--text-tertiary)'],
-    [37, 28, 5, 'var(--border-strong)'], [50, 60, 8, 'var(--text-tertiary)'],
-    [63, 32, 15, 'var(--gradient-physics)'], [74, 70, 6, 'var(--border-strong)'],
-    [86, 44, 9, 'var(--text-tertiary)'],
-  ],
-};
-
 /** The Research edition, as the app lays it out. */
 export const RESEARCH = {
   periods: ['Today and yesterday', '7 days', '30 days', '1 year', '10 years', 'Custom'],
@@ -465,9 +449,14 @@ RESEARCH.topics = RESEARCH.topics.map((t) => ({
 /**
  * The repository, as the GitHub API reported it on 2026-09-12.
  *
- * Stars and forks are deliberately absent: two and one are numbers that cost
- * more than they pay on a landing page. Open issues stay, because a public
- * issue list is the thing this section is actually claiming.
+ * Only what the strip (§10 of the design) actually renders: the path for
+ * the GitHub link and the license. Stars, forks and an open-issue count
+ * were deliberately left off the page — two and one are numbers that cost
+ * more than they pay on a landing page — and a `reading` list of source
+ * files with hand-typed line counts went stale (it claimed
+ * `worker/report-api.js` was 2,589 lines; it is 2,630 as of this cleanup)
+ * without anything ever publishing it. Removed rather than fixed, since
+ * nothing rendered it.
  */
 export const REPO = {
   path: 'mugar123/papertok',
@@ -475,16 +464,6 @@ export const REPO = {
     'Open-source personalized scientific discovery feed powered by arXiv, '
     + 'OpenAlex, PubMed and more.',
   license: 'MIT',
-  stats: [
-    { label: 'First commit', value: 'June 2026' },
-    { label: 'Last commit', value: 'Today' },
-    { label: 'Open issues', value: '18, in public' },
-  ],
-  reading: [
-    { what: 'The ranking, weight by weight', path: 'src/utils/recommendationEngine.js', lines: '633 lines' },
-    { what: 'The worker that caches queries and holds the provider keys', path: 'worker/report-api.js', lines: '2,589 lines' },
-    { what: 'Every color, size and rule the interface is built from', path: 'src/styles/variables.css', lines: '627 lines' },
-  ],
 };
 
 export const SOURCES = [
