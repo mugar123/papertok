@@ -83,10 +83,29 @@ test('the leaving page is lifted by the scroll it had, tracked only while presen
   assert.match(jsx, /root\.style\.top = present \? '' : `\$\{-scrollYRef\.current\}px`;/);
 });
 
-test('a new page starts at the top, instantly, and only when it is a step somewhere', async () => {
+test('a new page starts at the top, a page come back to starts where it was left, both instantly', async () => {
   const jsx = await read('./PageTransition.jsx');
   assert.match(jsx, /const arrivalDirection = useRef\(direction\);/);
-  assert.match(jsx, /useLayoutEffect\(\(\) => \{\s*if \(arrivalDirection\.current !== 0\) window\.scrollTo\(\{ top: 0, behavior: 'instant' \}\);\s*\}, \[\]\);/);
+  assert.match(jsx, /useLayoutEffect\(\(\) => \{\s*if \(arrivalDirection\.current === 0\) return;\s*const top = arrivalDirection\.current < 0 \? \(scrollMemory\.get\(locationKeyRef\.current\) \?\? 0\) : 0;\s*window\.scrollTo\(\{ top, behavior: 'instant' \}\);\s*\}, \[\]\);/);
+});
+
+/**
+ * The browser restored the scroll on the way back by itself, smoothly (the
+ * page scrolls smoothly, global.css) and late: measured 2026-09-18, an
+ * institution left at 600px came back mounted at 0 and slid down from 58ms
+ * to 294ms — under the reveal's own travel, towards content that was still
+ * arriving. The scroll is remembered here per history entry when a page
+ * leaves, restored in the mount's layout effect, and the browser is told to
+ * keep its hands off.
+ */
+test('scroll restoration is the transition\'s own: remembered by entry on the way out, manual for the browser', async () => {
+  const jsx = await read('./PageTransition.jsx');
+  assert.match(jsx, /window\.history\.scrollRestoration = 'manual';/);
+  assert.match(jsx, /const scrollMemory = new Map\(\);/);
+  assert.match(jsx, /const \{ key: locationKey \} = useLocation\(\);\s*const locationKeyRef = useRef\(locationKey\);/);
+  assert.match(jsx, /else rememberScroll\(locationKeyRef\.current, scrollYRef\.current\);/);
+  // Bounded: a long session does not keep every entry it ever left.
+  assert.match(jsx, /if \(scrollMemory\.size > SCROLL_MEMORY_MAX\) scrollMemory\.delete\(scrollMemory\.keys\(\)\.next\(\)\.value\);/);
 });
 
 test('a cold chunk suspends inside the page arriving', async () => {

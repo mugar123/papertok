@@ -1,10 +1,39 @@
 import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { usePresence, usePresenceData } from 'framer-motion';
 import { usePageTransitionCustomValue } from '../../hooks/usePageTransitionCustom.js';
 import { PageArrivalProvider } from '../../hooks/usePageArrival.js';
 import RouteFallback from './RouteFallback.jsx';
 import { EXIT_SAFETY_MS, isArrivalMotion, pageMotionFor } from './pageMotion.js';
 import './PageTransition.css';
+
+/**
+ * Where each history entry was scrolled to when its page left, by the
+ * entry's own key, so the way back can put the page where the reader left it
+ * BEFORE its first frame.
+ *
+ * The browser used to do this by itself, and did it wrong for this app:
+ * `html { scroll-behavior: smooth }` (global.css) made its restoration a
+ * glide, and it ran late. Measured 2026-09-18, author -> back to an
+ * institution left at 600px: the page mounted at 0, and from 58ms to 294ms
+ * the browser slid it down 2, 11, 29 … 557, 600 — a vertical travel laid
+ * over the reveal's own horizontal one, with the content it was sliding
+ * towards only half there. So restoration is ours: instant, in the mount's
+ * layout effect, from this map. `manual` is what stops the browser from
+ * doing its own on top. A reload now starts at the top like a new tab does
+ * (the feed keeps its own place in sessionStorage regardless).
+ */
+if (typeof window !== 'undefined' && 'scrollRestoration' in window.history) {
+  window.history.scrollRestoration = 'manual';
+}
+const SCROLL_MEMORY_MAX = 32;
+const scrollMemory = new Map();
+function rememberScroll(key, top) {
+  if (!key) return;
+  scrollMemory.delete(key);
+  scrollMemory.set(key, top);
+  if (scrollMemory.size > SCROLL_MEMORY_MAX) scrollMemory.delete(scrollMemory.keys().next().value);
+}
 
 /**
  * One route page, and how it arrives or leaves.
@@ -39,6 +68,11 @@ export default function PageTransition({ children }) {
   const { direction, lateral } = presenceCustom ?? providerCustom;
 
   const rootRef = useRef(null);
+  // The history entry this page belongs to, frozen at mount: a replace can
+  // change the key under a mounted page, and the scroll it remembers on the
+  // way out has to be filed under the entry the reader will come back to.
+  const { key: locationKey } = useLocation();
+  const locationKeyRef = useRef(locationKey);
   // The window scroll this page had, kept while it is present. Read at the
   // moment it leaves it would already be the value the browser restored on a
   // popstate, and a page that left at 800px would jump to its top for its
@@ -99,13 +133,17 @@ export default function PageTransition({ children }) {
     return root.getAnimations().some((animation) => animation.playState === 'running');
   }, []);
 
-  // A new page starts at the top. It used to by accident: with the pages in
+  // A new page starts at the top, and a page come back to starts where it
+  // was left. The first used to happen by accident: with the pages in
   // sequence the document emptied between exit and entrance and the scroll
   // clamped to 0. With both mounted it never empties, and an entity's scroll
-  // would carry into the next. `instant`, because `html { scroll-behavior:
-  // smooth }` would turn the reset into a visible glide.
+  // would carry into the next. The second is `scrollMemory` above, read by
+  // the entry's key. `instant`, because `html { scroll-behavior: smooth }`
+  // would turn either into a visible glide.
   useLayoutEffect(() => {
-    if (arrivalDirection.current !== 0) window.scrollTo({ top: 0, behavior: 'instant' });
+    if (arrivalDirection.current === 0) return;
+    const top = arrivalDirection.current < 0 ? (scrollMemory.get(locationKeyRef.current) ?? 0) : 0;
+    window.scrollTo({ top, behavior: 'instant' });
   }, []);
 
   // Track the scroll only while present. A layout effect so the listener is
@@ -127,6 +165,8 @@ export default function PageTransition({ children }) {
     if (!root) return;
     root.style.top = present ? '' : `${-scrollYRef.current}px`;
     if (present) root.style.visibility = '';
+    // Filed under the entry the reader may step back to (`scrollMemory`).
+    else rememberScroll(locationKeyRef.current, scrollYRef.current);
   }, [present]);
 
   // `safeToRemove` is a new function on every AnimatePresence render, so an
