@@ -479,3 +479,36 @@ reached rest at 233ms and the four clippings only existed at 286ms — already
 `complete`, straight from `figureCache`, no request — and then played a 620-1040ms
 entrance over a page that had stopped moving. That is the whole "the images stay"
 glitch, and it reproduces WITHOUT opening the overlay.
+
+## `landing-axe.mjs` — la puerta de accesibilidad de la landing (2026-09-17)
+
+```bash
+npm run a11y:landing                                    # lo que corre `npm run check`
+node scripts/diagnostics/landing-axe.mjs http://localhost:4173/
+CHROME=/usr/bin/chromium node scripts/diagnostics/landing-axe.mjs http://localhost:4173/
+```
+
+axe-core (WCAG 2.0/2.1/2.2 A+AA y best-practice) sobre la landing **construida**, en
+seis escenas: axe a 390x844 con tacto en claro y en oscuro, axe a 1440x900 con
+`prefers-color-scheme` fijado a claro, reflow a 320x568 y a 390x844 (ni scroll
+horizontal ni texto de cuerpo por debajo de 16px) y el equivalente al zoom del 200 %
+a 720x450 con `deviceScaleFactor` 2. Sale con 1 si cualquier escena encuentra algo.
+
+Tres cosas que no son evidentes y que ya costaron un falso verde cada una:
+
+- **Fija el tema.** Chrome headless hereda la preferencia oscura de la máquina; sin
+  `setEmulatedMedia` la escena «de escritorio» prueba el tema que le toque al que la corre.
+- **Comprueba que cargó ESTA página.** Mira el `errorText` de `Page.navigate` y exige un
+  centinela (`#main-content .lp-hero`): antes daba «0 violaciones» contra la pantalla de
+  error de Chrome.
+- **`label-content-name-mismatch` va habilitada a mano.** axe la marca `wcag21a` *y*
+  `experimental`, y `runOnly` por etiquetas excluye toda regla experimental.
+
+Si no hay servidor en esa URL, levanta su propio `vite preview` desde `dist/` y lo mata
+al salir; si ya había uno, lo usa y no lo toca. Esta sonda, a diferencia del resto de
+este directorio, **también corre en Linux** (está dentro de `npm run check`, que es lo
+que ejecuta CI): busca el binario en `CHROME=`, luego en las rutas de siempre de cada
+plataforma, luego en el `PATH`, y si no encuentra ninguno falla — una puerta que se
+salta sola cuando no hay navegador es un verde que no significa nada. En Linux añade
+`--no-sandbox --disable-dev-shm-usage`: el sandbox de Chrome necesita espacios de
+nombres de usuario sin privilegios, que el Ubuntu del runner restringe.

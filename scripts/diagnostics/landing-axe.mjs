@@ -47,12 +47,56 @@
 // PORT=<n> picks another debugging port, CHROME=<path> another Chromium
 // binary — same env convention as this directory's other CDP scripts.
 import { spawn } from 'node:child_process';
-import { mkdirSync, rmSync, readFileSync } from 'node:fs';
+import { mkdirSync, rmSync, readFileSync, accessSync, constants } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+/** Is this path a file we are allowed to execute? */
+function runnable(candidate) {
+  try { accessSync(candidate, constants.X_OK); return true; } catch { return false; }
+}
+
+/** The browser to drive. This directory's other probes are run by hand on a
+ * Mac and hardcode the macOS bundle path; this one is different — it is wired
+ * into `npm run check`, so it also runs on Linux CI, where /Applications does
+ * not exist at all (measured: `spawn /Applications/Google Chrome.app/... =>
+ * ENOENT`, the failure that brought us here). CHROME= still wins, then the
+ * platform's usual install paths, then a PATH scan. */
+function resolveChrome() {
+  if (process.env.CHROME) return process.env.CHROME;
+  const fixed = process.platform === 'darwin'
+    ? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+       '/Applications/Chromium.app/Contents/MacOS/Chromium']
+    : ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/opt/google/chrome/chrome',
+       '/usr/bin/chromium', '/usr/bin/chromium-browser', '/snap/bin/chromium'];
+  for (const candidate of fixed) if (runnable(candidate)) return candidate;
+
+  const named = process.platform === 'darwin'
+    ? ['Google Chrome', 'Chromium']
+    : ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser'];
+  for (const dir of (process.env.PATH || '').split(delimiter)) {
+    if (!dir) continue;
+    for (const name of named) {
+      const candidate = join(dir, name);
+      if (runnable(candidate)) return candidate;
+    }
+  }
+
+  // Deliberately fatal rather than a skip: this gate lives in `npm run check`,
+  // and a gate that quietly reports success when it never opened a browser is
+  // the same failure mode as the dead-page run fixed above.
+  console.error('landing-axe: no Chrome or Chromium found. Install one, or point CHROME= at the binary.');
+  console.error(`  looked at: ${fixed.join(', ')} and ${named.join('/')} on PATH`);
+  process.exit(1);
+}
+
+const CHROME = resolveChrome();
+// Chrome's own sandbox needs unprivileged user namespaces, which the CI
+// runner's Ubuntu restricts; without these the browser dies before it opens
+// the debugging port. Linux only, a throwaway profile, and the only page it
+// ever loads is our own localhost preview.
+const PLATFORM_FLAGS = process.platform === 'darwin' ? [] : ['--no-sandbox', '--disable-dev-shm-usage'];
 const PORT = Number(process.env.PORT || 9242);
 const PROFILE = join(tmpdir(), `papertok-landing-axe-${process.pid}`);
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -241,7 +285,8 @@ mkdirSync(PROFILE, { recursive: true });
 // ever make the scrollWidth/innerWidth reflow checks MORE forgiving than a real
 // browser with a classic (non-overlay) scrollbar — the opposite of what a gate
 // should do (fix round 1, review finding).
-const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${PROFILE}`, '--no-first-run', '--no-default-browser-check', '--window-size=1440,900', 'about:blank'], { stdio: 'ignore' });
+console.log(`chrome: ${CHROME}`);
+const chrome = spawn(CHROME, ['--headless=new', ...PLATFORM_FLAGS, `--remote-debugging-port=${PORT}`, `--user-data-dir=${PROFILE}`, '--no-first-run', '--no-default-browser-check', '--window-size=1440,900', 'about:blank'], { stdio: 'ignore' });
 let ownServer = null;
 
 let failures = 0;
