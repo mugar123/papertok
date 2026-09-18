@@ -346,3 +346,211 @@ entrega lo amplíe en lugar de volver a descubrirlo:
   `/research`, `/search`, `/following` y Ajustes, que exige una sesión iniciada
   por el usuario; y un campo `language` en el modelo de paper que sustituya la
   heurística de `lang="en"`.
+
+## Entrega: Landing (2026-09)
+
+Cubre la landing de marketing (`src/landing/`, servida en `/`), no la app —
+esta entrega es independiente de la numeración de fases de arriba. Task 11 del
+plan de rediseño (`.superpowers/sdd/2026-09-17-landing-rediseno/`), pedida por
+nombre por el propietario del proyecto. Detalle completo, con las tres
+configuraciones de axe antes y después, el árbol de accesibilidad completo y
+la autorrevisión, en `.superpowers/sdd/2026-09-17-landing-rediseno/task-11-report.md`.
+
+### Cómo se comprobó
+
+- **Build servido, no dev server**: `vite build` con las variables de entorno
+  del Worker de producción, servido con `vite preview` en `:4173`. La
+  auditoría corre sobre lo que se despliega, no sobre HMR.
+- **axe-core 4.13.0**, sonda propia por CDP sin dependencias
+  (`scripts/diagnostics/landing-axe.mjs`, mismo esqueleto que
+  `landing-shots.mjs`): `wcag2a`, `wcag2aa`, `wcag21aa`, `wcag22aa` y
+  `best-practice`, en tres configuraciones — 390×844 con emulación táctil y
+  `prefers-color-scheme: light`; la misma a 390 con `dark`; y 1440×900.  El
+  run de 1440 fija el tema a `light` **explícitamente**: Chrome headless
+  hereda la preferencia oscura de esta máquina, así que sin fijarlo el run
+  "de escritorio" habría probado el tema que esta máquina prefiere, no uno
+  fijo y reproducible (la misma razón por la que `landing-shots.mjs` ya
+  acepta `THEME=`). Script añadido a `package.json` como `npm run a11y:landing`.
+- **Reflujo y zoom**, en la misma sonda: 320×568 y 390×844 comprobando
+  `document.documentElement.scrollWidth <= window.innerWidth` y que ningún
+  `p.lp-body`/`.lp-strip p` computa bajo 16px; 1440 con
+  `deviceScaleFactor: 2` y ancho 720 (equivalente a zoom 200%), mismo chequeo
+  de scroll horizontal. El script sale con código 1 si hay violaciones de axe
+  **o** si cualquier escena de reflujo/zoom encuentra scroll horizontal o
+  texto bajo 16px — "cero violaciones de axe" solo no basta como puerta si la
+  página igual se desborda a 320px.
+- **Teclado**: Chrome real del panel del agente (`mcp__Claude_Browser__*`),
+  conducido con la tecla `Tab` real, no con eventos sintéticos de CDP salvo
+  donde se declara abajo. Viewport real durante el recorrido: 1024×768.
+- **Lector de pantalla: NO se condujo VoiceOver.** Declarado, no evitado en
+  silencio. Esta sesión tiene acceso a `computer-use`, que controla el
+  escritorio **real** de este Mac, no una máquina aislada. Encender VoiceOver
+  cambia el comportamiento del teclado a nivel de sistema (las flechas pasan
+  a ser navegación de VoiceOver) de forma disruptiva para cualquier otra cosa
+  que el usuario esté haciendo en su propia sesión en paralelo, y no hay
+  forma fiable de "oír" lo que anuncia sin una lectura fragil del panel de
+  subtítulos por captura de pantalla. El propio encargo de esta tarea
+  autoriza expresamente esta alternativa cuando no se puede conducir
+  VoiceOver: se extrajo en su lugar el **árbol de accesibilidad completo de
+  CDP** (`Accessibility.getFullAXTree`, más `childIds` para bajar por cada
+  subárbol) para el hero, la sección de la rueda y el mapa — el mismo dato
+  que cualquier lector de pantalla real consume, aunque no confirma
+  pronunciación, verbosidad ni las teclas propias de VoiceOver.
+
+#### Artefactos del entorno que condicionan las lecturas
+
+1. **El `data-motion` de arranque se decide contra el viewport que había AL
+   NAVEGAR, no el actual.** El script inline de `index.html` corre antes del
+   primer pintado; cambiar el tamaño del panel después de una navegación ya
+   hecha no lo vuelve a ejecutar. La primera pasada del recorrido de teclado
+   se hizo tras un `resize_window` posterior a la navegación, y
+   `data-motion` salió `null` pese a que las mismas condiciones
+   (`hover:hover`, `pointer:fine`, `min-width:768px`) ya daban `true` en ese
+   momento — no es un defecto de la página (falla cerrado, tal como está
+   documentado en `motion.js`), es un artefacto de haber medido con el
+   viewport equivocado. Recargar con el viewport ya puesto lo corrigió; el
+   recorrido real que cuenta en la matriz de abajo es el de después.
+2. **Los eventos de teclado sintéticos de este panel no activan ni
+   `<button>` ni `<a>`.** Amplía el artefacto 2 de la entrega fase 1-2 (que
+   solo declaraba los `<button>` afectados y los `<a>` funcionando): aquí,
+   una `Return` real sobre el enlace de salto enfocado tampoco navegó
+   (`location.hash` se quedó vacío). La activación de ambos se verificó con
+   `.click()` sobre el elemento **enfocado mediante `Tab` real** — que
+   recorre el mismo `onClick`/`href` que una pulsación real — nunca con
+   `.focus()` puro: medido, un `.focus()` por script sin un `Tab` real
+   previo SÍ deja pasar la activación pero el foco resultante en el
+   siguiente elemento **no** obtiene `:focus-visible` (heurística de
+   Chromium sobre qué cuenta como "modalidad de teclado"), mientras que el
+   mismo `.click()` tras un `Tab` real sí lo obtiene. Declarado: la
+   pulsación real de `Enter` sobre botones y enlaces **no** está verificada
+   en esta entrega, igual que en la de fase 1-2.
+
+### Correcciones hechas durante esta verificación
+
+Las tres se encontraron con el recorrido de teclado en vivo, no con axe —
+axe-core no puede ver un movimiento de foco dinámico ni un `tabindex`
+ausente en un fragmento de URL.
+
+1. **Las iniciales del avatar (el paper de LIGO, hero) no llegaban a 4.5:1.**
+   axe-core midió 4,39:1 (`--text-tertiary` `#6b7280` sobre
+   `--tint-neutral-bg` `#f4f4f5`) en las tres configuraciones. Son
+   `aria-hidden` (decorativas, redundantes con el nombre real de al lado),
+   pero 1.4.3 es sobre lo que una persona vidente con baja visión puede
+   percibir, no sobre lo que un lector de pantalla anuncia, así que
+   `aria-hidden` no las exime. `.lp-avatar` pasa a `--text-secondary`
+   (`#5b6270`), que mide 5,58:1 sobre el mismo fondo. Reverificado: 0
+   violaciones de `color-contrast` en las tres configuraciones.
+2. **El enlace de salto cambiaba la URL pero nunca movía el foco.**
+   `#main-content` no tenía `tabindex="-1"` (a diferencia del `#main-content`
+   de la propia app, `App.jsx`). Esta página no monta `HashRouter` — no hay
+   el problema que obligó a la app a interceptar el clic — pero sin
+   `tabindex`, un `<main>` no es intrínsecamente enfocable, y la navegación
+   de fragmento del navegador cae a `<body>`. Verificado en vivo, antes de
+   corregir: tras activar el enlace de salto enfocado,
+   `document.activeElement.tagName === "BODY"` con
+   `location.hash === "#main-content"` — el enlace "saltaba" visualmente
+   (el scroll sí se movía) pero no dejaba nada que un `Tab` o un lector de
+   pantalla pudieran continuar desde ahí (WCAG 2.4.1). Corregido añadiendo
+   `tabindex="-1"` en `page.js`. Eso deja un `<main>` del tamaño de toda la
+   página como objetivo de foco: medido, un anillo de 2px alrededor de una
+   caja más alta que el viewport dibuja el borde superior bajo la barra fija
+   y el resto bajo el pliegue — invisible en la práctica, mismo
+   razonamiento que ya sostiene la excepción del `#main-content` de la app.
+   Se añadió `#main-content.lp-main:focus { outline: none; }` (landing.css,
+   con el mismo alcance que `#main-content` en `App.jsx`) y la excepción
+   correspondiente se documentó en **ambos** ficheros que vigilan la
+   supresión del anillo: `src/landing/a11y.test.js` (propio de esta tarea) y
+   `src/accessibilityStructure.test.js` (el de toda la app, que también
+   escanea `src/landing/landing.css` y lo marcó como no reconocido hasta
+   añadir la entrada).
+3. **La secuencia del lector soltaba el foco a `<body>` sin ningún
+   indicador visible.** `armRewrite()` (motion.js) pone `card.inert = true`
+   ~140ms después de pulsar "Read in plain words" (la transición
+   idle→source) — el navegador desenfoca lo que hubiera dentro de la
+   tarjeta hacia `<body>` en ese instante, sin ningún evento que lo avise.
+   Verificado en vivo: tras pulsar el botón y esperar a que la secuencia
+   terminara (`data-phase="done"`), `document.activeElement.tagName`
+   quedaba en `BODY` — una persona con teclado que acababa de abrir el
+   lector habría tenido que volver a tabular desde el principio de toda la
+   página para alcanzar el contenido que se acababa de abrir delante suyo.
+   Corregido: `setPhase()` ahora comprueba, justo antes de que
+   `card.inert` se ponga a `true`, si el foco estaba dentro de la tarjeta
+   (`card.contains(document.activeElement)`), y si es así mueve el foco a
+   `.lp-rewrite__status` (nuevo `tabindex="-1"` en `page.js`) — el único
+   elemento del lector que nunca se oculta a lo largo de `source`→
+   `reading`→`done` (a diferencia de `.lp-ghost`, que se desvanece a
+   `opacity:0` en `done` pero se queda en el DOM: enfocar algo dentro
+   habría cambiado un objetivo de foco invisible por otro). Verificado en
+   vivo con un `Tab` real hasta el botón (no `.focus()` — ver artefacto
+   2 arriba, la diferencia importa para si `:focus-visible` se pinta):
+   tras activar el botón, el foco aterriza en `.lp-rewrite__status` con
+   `outline: rgb(17, 19, 24) solid 2px` real y `:matches(':focus-visible')`
+   cierto; un `Tab` más desde ahí llega a la pestaña de nivel de lectura
+   seleccionada.
+
+### Lo que se investigó y se dejó tal cual, con su razón
+
+axe deja un **"incomplete"** (no una "violation" — no cuenta para la puerta
+de cero) en las tres configuraciones, después de las tres correcciones:
+`color-contrast` sobre `.lp-paper__dot[aria-hidden="true"]` (11 nodos en
+390px, 39 en 1440px — el separador "·" entre los campos del meta de cada
+paper). Investigado en vez de descartado: medido a mano,
+`--border-strong` (`#a9aeba`) sobre el papel blanco del sheet
+(`--bg-figure-plate`, `#ffffff`) da 2,22:1 — muy por debajo de 4,5:1. Pero:
+es `aria-hidden` (no aporta ninguna información que los spans de campo,
+categoría y año que separa no lleven ya cada uno por su cuenta), un único
+carácter de puntuación decorativa, y — la razón por la que axe lo deja como
+"incomplete" y no como "violation" — su propia regla reconoce que "el
+contenido es demasiado corto para determinar si es texto real". Es además
+**el mismo patrón que ya usa `.pc-meta-dot` en la app real**
+(`PaperCard.jsx`/`PaperCard.css`, `color: var(--border-strong)`) — de hecho
+la app ni siquiera lo marca `aria-hidden`, así que la landing ya es más
+estricta que el original que replica. Cambiar el color sería tocar un token
+compartido (`--border-strong`) o divergir del lenguaje visual ya revisado de
+la app, ambas cosas fuera del alcance de una tarea de accesibilidad sobre la
+landing. No se tocó. Es una línea si el propietario del proyecto lo quiere
+resuelto de todas formas.
+
+### Matriz
+
+| Página o flujo | Componente | Criterio WCAG | Resultado | Evidencia | Defecto o limitación | Reprueba |
+|---|---|---|---|---|---|---|
+| Landing, global | `lang` del documento y del nombre en español | 3.1.1, 3.1.2 | Cumple | `src/landing/a11y.test.js` | — | `npm test` |
+| Landing, global | Nombre accesible de cada `<a>`/`<button>` | 4.1.2, 2.4.4 | Cumple | `a11y.test.js` (recorre todo `<a>`/`<button>` del HTML construido) | — | `npm test` |
+| Landing, global | Cada `<svg>` decorativo o imagen con título | 1.1.1 | Cumple | `a11y.test.js` (2 svg `role="img"`, cada uno con su propio `<title>`, ids no compartidos) | — | `npm test` |
+| Landing, global | Anillo de foco nunca suprimido sin justificar | 2.4.7 | Cumple | `a11y.test.js` + `accessibilityStructure.test.js` comparten el mismo criterio; una excepción documentada en ambos | `#main-content.lp-main:focus` — ver corrección 2 | `npm test` |
+| Landing, móvil | Objetivos táctiles ≥44px (Skip, enlaces de barra/pie, las dos CTA, pestañas del lector) | 2.5.8 | Cumple | `a11y.test.js` | — | `npm test` |
+| `lp-follow`, `lp-library`, `lp-research` | Figuras decorativas con figcaption que las describe, sin controles reales dentro | 1.1.1, 4.1.2 | Cumple | `a11y.test.js` (3 figuras; `aria-hidden` en el envoltorio inmediato tras el figcaption; ningún `<button>`/`<a>` dentro) | — | `npm test` |
+| Landing, global | Jerarquía de encabezados sin saltos | 1.3.1 | Cumple | `a11y.test.js` (h1–h6, orden de documento; incluye los 11 `<h4>` de las fichas de Research que la propia plantilla del encargo no cubría) | — | `npm test` |
+| Landing, 390×844, claro | axe-core (wcag2a/aa, 21aa, 22aa, best-practice) | varios | Cumple **tras corrección** | `landing-axe.mjs`: 0 violaciones (antes: 1, `color-contrast`, 2 nodos — corrección 1) | 1 "incomplete" sin resolver, ver sección de arriba | `npm run a11y:landing` |
+| Landing, 390×844, oscuro | ídem | varios | Cumple **tras corrección** | ídem, 0 violaciones (antes: 1, mismo defecto, 2 nodos) | ídem | `npm run a11y:landing` |
+| Landing, 1440×900, claro (fijado) | ídem | varios | Cumple **tras corrección** | ídem, 0 violaciones (antes: 1, mismo defecto, 4 nodos — a este ancho también se ven los avatares del paper reutilizado en el lector) | ídem | `npm run a11y:landing` |
+| Landing, 320×568 y 390×844 | Reflujo sin scroll horizontal; texto de cuerpo ≥16px | 1.4.10, 1.4.4 | Cumple | `scrollWidth === innerWidth` en ambos anchos; 15 elementos `p.lp-body`/`.lp-strip p`, mínimo medido 17px | — | `npm run a11y:landing` |
+| Landing, 1440 a zoom 200% | Reflujo sin scroll horizontal | 1.4.10 | Cumple | `deviceScaleFactor:2`, ancho 720: `scrollWidth === innerWidth === 720px` | — | `npm run a11y:landing` |
+| Landing, barra→hero→deck→lector→strip→close→pie | Orden de foco de teclado completo | 2.4.3, 2.1.1 | Cumple **tras corrección** | Recorrido con `Tab` real (Chrome del panel, 1024×768): Skip → PaperTok (barra) → Source → Open the feed (barra) → Open the feed (hero) → hoja (`role=group`, carrusel) → Skip (mazo) → Read in plain words → [al activarlo] pestaña de nivel seleccionada → mugar123/papertok → Samuel Corsan → Open the feed (cierre) → PaperTok (pie) → GitHub → Privacy → vuelve a Skip. 16 paradas, ninguna repetida salvo el cierre del ciclo | El enlace de salto no funcionaba antes de esta tarea (corrección 2) | Recorrido manual |
+| Landing, hoja del hero | `↓`/`↑` mueven el mazo, no la página; anillo visible al enfocar | 2.1.1, 2.4.7 | Cumple | `data-deck-count` pasa de "1 / 3" a "2 / 3" con `ArrowDown` y `window.scrollY` sin cambiar (117 antes y después); `outline: rgb(17, 19, 24) solid 2px` en la hoja enfocada | — | Recorrido manual |
+| Landing, lector | Pestañas de nivel alcanzables y operables (tabindex progresivo, flechas mueven foco y panel) | 2.1.1, 4.1.2 | Cumple | `ArrowRight` desde "University" mueve el foco Y `aria-selected`/`data-active` a "Researcher" (`lp-level-panel-2`), en el mismo evento | Con `data-motion="on"` las pestañas solo se alcanzan por `Tab` una vez `data-phase="done"` (antes, están `inert` dentro del lector) — intencional: el lector está detrás de la tarjeta hasta ese momento. Sin motion (móvil, reduce-motion, o el viewport-al-navegar del artefacto 1), `armLevels()` las deja operables desde el primer pintado, sin esperar nada. Ambas rutas verificadas en vivo | Recorrido manual + `a11y.test.js` |
+| Landing, lector | La secuencia no suelta el foco a `<body>` al abrirse | 2.4.3, 2.4.7 | Cumple **tras corrección** | Ver corrección 3 | — | Recorrido manual + `a11y.test.js` |
+| Landing, `.lp-problem`/`.lp-follow`/`.lp-library`/`.lp-map`/`.lp-research` | Ningún foco cae en la rueda ni en las figuras decorativas | 2.1.1, 1.3.1 | Cumple | Las 16 paradas del recorrido completo no tocan ninguna de estas cinco secciones | — | Recorrido manual |
+| Landing, rueda (`.lp-problem`) | Oculta a tecnología de apoyo; la lista real de al lado sí se anuncia | 1.3.1, 4.1.2 | Cumple | Árbol de accesibilidad (CDP `Accessibility.getFullAXTree`): `.lp-pile` no genera NINGÚN nodo AX (ausente del árbol); `#lp-pile-list` aparece como `list` con sus 25 `listitem`, cada uno con venue y título reales | — | `a11y.test.js` + árbol AX (ver informe) |
+| Landing, mapa de citas | Se anuncia como imagen con su propio título | 1.1.1 | Cumple | Árbol de accesibilidad: `image "The citation map of the LIGO paper: five works it cites above the line, two that cite it below, placed by how many citations each received."`; lista visualmente oculta con los 7 vecinos y sus citas reales | El interior del SVG (marcas de eje, etiquetas de nodo) sigue generando nodos AX propios pese a `role="img"` en el contenedor — no es una "violation" de axe ni contradice el nombre accesible del `role="img"`, pero un lector de pantalla que deje "entrar" al usuario en la imagen podría exponerlos como paradas sueltas en vez de tratarla como una hoja atómica; comportamiento dependiente de la combinación navegador/AT, no confirmable sin VoiceOver real | VoiceOver real |
+| Landing, global | Rotor de encabezados (lo que listaría un lector de pantalla) | 1.3.1, 2.4.6 | Cumple, con una discrepancia señalada | Árbol de accesibilidad: 1×h1 + 10×h2 de sección + 1×h2 (título del paper 1 del hero, `heading:'h2'` en `paper()`) + 1×h3 (el mismo paper reutilizado en el lector, nivel por defecto) = 13 encabezados alcanzables por AT, ninguno salta de nivel | El encargo de esta tarea esperaba "h1 + once h2"; hay once SECCIONES pero solo diez llevan su propio `<h2>` (la del hero es `<h1>`) — la cuenta real y correcta (13, contando los títulos de paper anidados) no coincide con esa expectativa escrita. Señalado aquí, no alterado: la estructura real no tiene ningún salto y ya la sostiene `a11y.test.js` | árbol AX (ver informe) |
+| Landing, global | Lector de pantalla real | 1.3.1, 4.1.2, 4.1.3 y demás | **No verificado** | Ninguna | **No se condujo VoiceOver.** Ver "Cómo se comprobó" — el árbol de accesibilidad de CDP se usó como sustituto declarado (las cinco filas de arriba que lo citan), que es el mismo dato que cualquier lector de pantalla consume, pero no confirma pronunciación, verbosidad ni gestos propios de VoiceOver | VoiceOver real |
+| Landing, separador "·" del meta (`lp-paper__dot`) | Contraste del glifo decorativo | 1.4.3 | No aplicable (razonado) | Medido a mano: 2,22:1 (`--border-strong` sobre `--bg-figure-plate`) | Ver "Lo que se investigó y se dejó tal cual" — `aria-hidden`, un carácter, mismo patrón ya existente en `PaperCard.css` de la app (`.pc-meta-dot`), axe lo marca "incomplete" y no "violation" | — |
+
+### Lo que esta entrega no intentó
+
+- Ningún lector de pantalla real — declarado arriba, con su razón, no una
+  omisión silenciosa.
+- La pulsación real de `Enter` sobre botones y enlaces en el recorrido de
+  teclado (artefacto 2) — se usó `.click()` sobre el elemento enfocado por
+  `Tab` real, que recorre el mismo manejador, pero no es lo mismo que una
+  tecla real llegando al navegador.
+- El tema oscuro del recorrido de TECLADO (el `axe` sí cubrió oscuro; el
+  paso a paso de foco/anillo se hizo solo en claro).
+- Contraste de color fuera de lo que axe-core mide automáticamente y lo que
+  se investigó a mano para el "incomplete" — no se auditaron a mano el resto
+  de combinaciones de color de la landing más allá de lo que axe ya cubre.
+- Ningún dispositivo real (iPhone/Android físico, VoiceOver/TalkBack en
+  hardware); todo lo anterior es Chrome de escritorio con emulación táctil
+  y de métricas por CDP.

@@ -126,6 +126,11 @@ export function armRewrite(root) {
   function setPhase(phase) {
     root.setAttribute('data-phase', phase);
     var open = phase !== 'idle' && phase !== 'press';
+    /* Read BEFORE card.inert flips it: the instant an ancestor goes inert,
+       the browser blurs whatever inside it held focus straight to <body> —
+       there is no event for that, so this is the only moment that can still
+       tell whether the button (or anything else in the card) had it. */
+    var loseFocusToBody = open && card.contains(document.activeElement);
     flag(root, 'data-open', open);
     flag(root, 'data-busy', phase === 'source' || phase === 'reading');
     /* Four controls a keyboard reaches and cannot see: the button once the
@@ -136,6 +141,22 @@ export function armRewrite(root) {
     card.inert = open;
     reader.inert = !open;
     tabs.forEach(function (tab) { tab.disabled = phase !== 'done'; });
+    /* Caught by actually pressing the button and reading
+       document.activeElement afterwards, not by any numeric check: without
+       this, card.inert above silently drops focus to <body> ~140ms after the
+       press (the idle->source transition), with no visible ring anywhere for
+       the rest of the ~3.3s sequence — a keyboard user who just opened the
+       reader would have to Tab from the very top of the page again to reach
+       it. .lp-rewrite__status is the one element in the reader that is never
+       hidden across source/reading/done (unlike .lp-ghost, which fades to
+       opacity:0 on 'done' but stays in the DOM — focusing something inside
+       it would only trade one invisible focus target for a later one). Runs
+       once: after this call activeElement is inside the reader, not the
+       card, so the same check on every later phase stays false. */
+    if (loseFocusToBody) {
+      var status = root.querySelector('.lp-rewrite__status');
+      if (status) status.focus();
+    }
   }
 
   function start() {

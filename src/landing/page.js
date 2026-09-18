@@ -293,7 +293,7 @@ const plainWords = () => `<section class="lp-reader lp-sec" aria-labelledby="lp-
       </div>
 
       <div class="lp-rewrite__reader" data-rewrite-reader>
-        <p class="lp-rewrite__status">
+        <p class="lp-rewrite__status" tabindex="-1">
           <span class="lp-eyebrow lp-rewrite__kicker">${icon('sparkles', 11)}Read in plain words</span>
           <span class="lp-uses">
             <span class="lp-uses__meter" aria-hidden="true">${Array.from({ length: REWRITE.uses.total }, (_, i) => `<i class="lp-uses__seg"${i === REWRITE.uses.total - 1 ? ' data-spent' : ''}></i>`).join('')}</span>
@@ -609,5 +609,16 @@ const foot = () => `<footer class="lp-footer">
 
 export function buildLandingHtml() {
   const screens = [hero(), problem(), signals(), plainWords(), labels(), follow(), library(), citationMap(), research(), strip(), close()]; // the eleven canonical sections, complete as of task 9
-  return `${skip()}\n${bar()}\n<main id="main-content" class="lp-main">\n${screens.join('\n')}\n</main>\n${foot()}\n${pileData()}`;
+  /* tabindex="-1" on the skip link's own target — without it, activating
+     `skip()`'s href="#main-content" moves the URL hash and scrolls (this page
+     has no HashRouter to fight, unlike App.jsx), but a plain, non-focusable
+     `<main>` never actually becomes the document's focused element: the
+     browser falls back to <body>, and a keyboard user who just "skipped" is
+     scrolled to the right place with no change to what Tab does next — the
+     skip link (WCAG 2.4.1) has no effect a keyboard can act on. Verified live
+     (landing-axe.mjs does not catch this; it is dynamic, not structural):
+     before this, activating the link left document.activeElement === BODY
+     with location.hash === "#main-content". App.jsx's own #main-content
+     carries the identical tabIndex={-1} for the identical reason. */
+  return `${skip()}\n${bar()}\n<main id="main-content" class="lp-main" tabindex="-1">\n${screens.join('\n')}\n</main>\n${foot()}\n${pileData()}`;
 }

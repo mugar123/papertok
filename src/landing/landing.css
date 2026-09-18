@@ -3,6 +3,17 @@
 
 .lp-wrap { width: min(1200px, calc(100% - 40px)); margin: 0 auto; }
 .lp-main { display: block; }
+/* Not a control and never a tab stop — the skip link is what moves focus here
+   programmatically (via the browser's own fragment-navigation, now that
+   page.js gives it tabindex="-1"), and a keyboard user never lands here from
+   their own Tab press. The app's own #main-content (App.jsx) is the same
+   case for the same reason: measured live, a 2px ring around a box this
+   tall draws its top edge under the sticky bar and the rest of it below the
+   fold — invisible in practice, and indistinguishable from a rendering bug
+   if it ever were seen. Scoped to `.lp-main` (not a bare `#main-content`)
+   so this cannot reach a different page's own element of that id sharing
+   this stylesheet. */
+#main-content.lp-main:focus { outline: none; }
 .lp-h1 { font-family: var(--font-serif); font-size: clamp(2.75rem, 6.4vw, 5.75rem); font-weight: var(--fw-regular); line-height: 0.98; letter-spacing: -0.03em; margin: 0; color: var(--text-on-brand); text-wrap: balance; }
 .lp-h2 { font-family: var(--font-serif); font-size: clamp(2rem, 3vw, 2.75rem); font-weight: var(--fw-regular); line-height: 1.08; letter-spacing: -0.02em; margin: 0; text-wrap: pretty; }
 .lp-body { font: var(--fw-regular) 1.0625rem/1.6 var(--font-body); color: var(--text-secondary); margin: 0; max-width: 40ch; }
@@ -163,7 +174,16 @@
    overlaps it under its predecessor without eating into the gap to the
    byline, and a DEscending z-index keeps the first avatar on top — the
    app's own order, not last-on-top. */
-.lp-avatar { width: 24px; height: 24px; margin-left: calc(var(--i, 0) * -7px); position: relative; z-index: calc(3 - var(--i, 0)); border-radius: var(--radius-full); border: 1px solid #fff; background: var(--tint-neutral-bg); display: flex; align-items: center; justify-content: center; font: var(--fw-medium) 0.625rem/1 var(--font-mono); color: var(--text-tertiary); }
+/* `color: var(--text-secondary)`, not `--text-tertiary` — axe-core measured the
+   tertiary pairing on `--tint-neutral-bg` at 4.39:1 in light theme (both inside
+   `.lp-hero`, which pins the light tokens in both site themes, and outside it,
+   wherever the site theme itself is light), just under the 4.5:1 WCAG 1.4.3
+   floor. These initials are `aria-hidden` (decorative, redundant with the real
+   byline text next to them), but 1.4.3 is about what a sighted low-vision
+   reader can perceive, not about what a screen reader is told, so aria-hidden
+   does not exempt them. `--text-secondary` on the same background measures
+   5.58:1 (landing-axe.mjs re-run, 2026-09). */
+.lp-avatar { width: 24px; height: 24px; margin-left: calc(var(--i, 0) * -7px); position: relative; z-index: calc(3 - var(--i, 0)); border-radius: var(--radius-full); border: 1px solid #fff; background: var(--tint-neutral-bg); display: flex; align-items: center; justify-content: center; font: var(--fw-medium) 0.625rem/1 var(--font-mono); color: var(--text-secondary); }
 .lp-paper__abstract { font-family: var(--font-serif); font-size: 1.0625rem; line-height: 1.6; color: var(--text-secondary); margin: 0; }
 .lp-paper__abstract::first-letter { float: left; margin: 0.06em 0.08em 0 0; font-size: 2.9em; line-height: 0.82; font-weight: var(--fw-semibold); color: var(--lp-accent); }
 .lp-paper__actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
