@@ -57,6 +57,25 @@ test('the wheel turns on arrival by IntersectionObserver and on click, and never
   assert.doesNotMatch(js, /lp-scroller/);
 });
 
+// The event-name ban above has a gap the event name itself cannot close:
+// `document.addEventListener('keydown', e => { if (e.key === 'ArrowDown')
+// e.preventDefault(); })` names none of `wheel`/`touchmove`/`scroll` and
+// still captures the page's scroll for anyone reaching for the arrow keys
+// anywhere on the page — armLevels' own arrow-key handling is the reason
+// that example is not hypothetical trouble, it is one keystroke away from
+// where this file already calls preventDefault(), just on the wrong
+// receiver. So this asserts the shape everything on this page actually has:
+// every listener this module registers is scoped to an ELEMENT it queried
+// (`tab.`, `button.`, `frame.`), never to the whole `window` or `document`,
+// with the sole, load-bearing exception of the bootstrap itself —
+// `document.addEventListener('DOMContentLoaded', …)`, which fires once,
+// before there is any element to scope to yet, and touches nothing a
+// reader's own scroll or keyboard input could be mistaken for.
+test('every listener is scoped to an element it queried — window/document only ever hear DOMContentLoaded', () => {
+  const globalListeners = [...js.matchAll(/\b(?:window|document)\.addEventListener\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1]);
+  assert.deepEqual(globalListeners, ['DOMContentLoaded']);
+});
+
 test('neither stylesheet declares overscroll-behavior either', () => {
   assert.doesNotMatch(landingCss, /overscroll-behavior/);
   assert.doesNotMatch(motionCss, /overscroll-behavior/);

@@ -70,9 +70,17 @@ const hl = (text) => `<span class="lp-hl">${text}</span>`;
  * title: h2 inside the hero (the sheet is the section's content) and h3
  * inside a section that already has an h2. `tags` is part of this helper's
  * documented interface for a later task and unused until then.
+ *
+ * `actions` defaults to true — the decorative action row (Read article,
+ * Read in plain words, share, graph) PaperCard always shows. The reader
+ * section passes `actions: false`: it sits its OWN real "Read in plain
+ * words" button (with the cost line PaperCard's aria-hidden row never
+ * carries) directly under the card, and stacking the decoration on top of
+ * the control put two identical yellow buttons on screen for the same
+ * action — one dead, one real, indistinguishable at a glance.
  */
 // eslint-disable-next-line no-unused-vars -- `tags` is documented above; task 6-9 code fills it in.
-function paper(p, { size = 'md', heading = 'h3', tags = false } = {}) {
+function paper(p, { size = 'md', heading = 'h3', tags = false, actions = true } = {}) {
   const accent = assertSafeToken(p.fieldVar || '--gradient-physics', /^--[a-z0-9-]+$/, 'accent token');
   return `<article class="lp-paper lp-paper--${size}" style="--lp-accent: var(${accent})">
     <span class="lp-paper__accent" aria-hidden="true"></span>
@@ -81,12 +89,12 @@ function paper(p, { size = 'md', heading = 'h3', tags = false } = {}) {
     <${heading} class="lp-paper__title">${esc(p.title)}</${heading}>
     ${p.authors ? `<p class="lp-paper__authors">${avatars(p.initials)}<span class="lp-paper__author-names">${esc(p.authors)}</span></p>` : ''}
     ${p.abstract ? `<p class="lp-paper__abstract">${esc(p.abstract)}</p>` : ''}
-    <div class="lp-paper__actions" aria-hidden="true">
+    ${actions ? `<div class="lp-paper__actions" aria-hidden="true">
       <span class="lp-btn lp-btn--md">${icon('file')}Read article</span>
       <span class="lp-btn lp-btn--md lp-btn--ai">${icon('sparkles')}Read in plain words</span>
       <span class="lp-paper__spacer"></span>
       <span class="lp-iconbtn">${icon('share')}</span><span class="lp-iconbtn lp-iconbtn--graph">${icon('graph')}</span>
-    </div>
+    </div>` : ''}
   </article>`;
 }
 
@@ -217,12 +225,25 @@ const signals = () => `<section class="lp-signals lp-sec" aria-labelledby="lp-si
  * The markup rests on the finished passage — that is what the prerender is
  * for, and what a visitor without JavaScript, on a phone, or asking for less
  * motion reads: `.lp-rewrite__reader` ships live, with its tabs already
- * wired to real `<button>`s (armLevels runs before the motion gate, so the
+ * readable and reachable (armLevels runs before the motion gate, so the
  * tabs work even when nothing animates). The card and the loading skeleton
  * ship `hidden`; armRewrite (motion.js) is what turns the button into a
  * sequence, and it only runs behind the same gate as the rest of the page's
  * motion — nobody may be left with a button that does nothing, so until that
  * gate opens there is no button to leave broken, only the reader.
+ *
+ * The three tabs themselves ship `disabled`, not merely reachable: without
+ * JavaScript there is no click handler and no keydown handler behind them
+ * yet, and an ENABLED tab that does nothing on press is exactly the dead
+ * control this page may not leave anyone with. armLevels lifts `disabled`
+ * on all three the moment it arms — the same rule armRewrite already
+ * applies to these same buttons while the sequence streams
+ * (`tabs.forEach(tab => tab.disabled = phase !== 'done')`), just covering
+ * the no-JS half of their life instead of the mid-sequence half. The
+ * indicator agrees with them from the first paint too: `--lp-level` is set
+ * inline from `DEFAULT_LEVEL`, not left to the CSS fallback of `0` (which
+ * would point at Beginner while `aria-selected`/`data-active` already point
+ * at University).
  *
  * The one highlight in this section: the brief's own sentence — "felt the
  * same tiny stretch of space at the same moment" — is Beginner-level
@@ -243,9 +264,9 @@ const plainWords = () => `<section class="lp-reader lp-sec" aria-labelledby="lp-
       <p class="lp-body">What comes out is yours to keep — a <code class="lp-code">.tex</code> that compiles as it is, or a PDF, with your highlights and your notes numbered at the foot. The title, the authors, the link to the original and the line saying a model wrote it travel on every copy.</p>
     </div>
 
-    <div class="lp-rewrite" data-rewrite data-levels>
+    <div class="lp-rewrite" data-rewrite data-levels style="--lp-level: ${DEFAULT_LEVEL}">
       <div class="lp-rewrite__card" data-rewrite-card hidden>
-        ${paper(REWRITE.paper, { size: 'lg' })}
+        ${paper(REWRITE.paper, { size: 'lg', actions: false })}
         <div class="lp-rewrite__actions">
           <button class="lp-btn lp-btn--ai lp-btn--lg" type="button" data-rewrite-start aria-label="Read this paper in plain words">
             ${icon('sparkles', 20)}<span>Read in plain words</span>
@@ -265,7 +286,7 @@ const plainWords = () => `<section class="lp-reader lp-sec" aria-labelledby="lp-
 
         <div class="lp-levels-frame">
           <div class="lp-levels" role="tablist" aria-label="Rewrite level">
-            ${LEVELS.map((l, i) => `<button class="lp-levels__tab" type="button" role="tab" id="lp-level-tab-${i}" aria-controls="lp-level-panel-${i}" aria-selected="${i === DEFAULT_LEVEL}" tabindex="${i === DEFAULT_LEVEL ? '0' : '-1'}">${esc(l.name)}</button>`).join('')}
+            ${LEVELS.map((l, i) => `<button class="lp-levels__tab" type="button" role="tab" id="lp-level-tab-${i}" aria-controls="lp-level-panel-${i}" aria-selected="${i === DEFAULT_LEVEL}" tabindex="${i === DEFAULT_LEVEL ? '0' : '-1'}" disabled>${esc(l.name)}</button>`).join('')}
           </div>
         </div>
 
@@ -278,7 +299,7 @@ const plainWords = () => `<section class="lp-reader lp-sec" aria-labelledby="lp-
             </p>
             <div class="lp-ghost__body" aria-hidden="true">
               <div class="lp-ghost__title"></div>
-              <div class="lp-ghost__lines">${REWRITE.ghostLines.map((w, i) => `<i class="lp-ghost__line" style="--lp-w: ${w}; --lp-i: ${i}"></i>`).join('')}</div>
+              <div class="lp-ghost__lines">${REWRITE.ghostLines.map((w, i) => `<i class="lp-ghost__line" style="--lp-w: ${assertSafeToken(w, /^\d{1,3}%$/, 'ghost line width')}; --lp-i: ${i}"></i>`).join('')}</div>
             </div>
           </div>
 

@@ -35,7 +35,16 @@ export function shouldAnimate() {
 /* ── The rewrite levels ──────────────────────────────────────────────────
    Armed unconditionally, ahead of the motion gate: a tap works on a phone,
    under reduced motion, and with every arrival switched off — the tabs are
-   how a reader picks what to read, not a piece of motion. */
+   how a reader picks what to read, not a piece of motion.
+
+   The three tabs ship `disabled` in the prerendered markup (page.js): with
+   no JavaScript there is no click handler and no keydown handler behind
+   them, so an ENABLED button that does nothing on press is exactly the dead
+   control this page may not leave anyone with. Enabling them here, the
+   moment a click handler actually exists to answer them, is the same rule
+   armRewrite already applies to these same buttons while the sequence
+   streams (`tab.disabled = phase !== 'done'`) — this just covers the other
+   half of the button's life, before armLevels has run at all. */
 export function armLevels(root) {
   var tabs = [].slice.call(root.querySelectorAll('.lp-levels__tab'));
   var panels = [].slice.call(root.querySelectorAll('.lp-panel__level'));
@@ -53,6 +62,7 @@ export function armLevels(root) {
   }
 
   tabs.forEach(function (tab, i) {
+    tab.disabled = false;
     tab.addEventListener('click', function () { select(i); });
     /* A tab strip is one stop in the tab order; the arrows move within it —
        WAI-ARIA's roving-tabindex pattern. preventDefault here has nothing

@@ -15,6 +15,33 @@ const motionCss = readFileSync(fileURLToPath(new URL('./motion.css', import.meta
 const allCss = `${css}\n${staticCss}\n${motionCss}`;
 const sections = [...html.matchAll(/<section class="([^"]*)"/g)].map((m) => m[1].split(' ')[0]);
 
+/** Removes every `@keyframes name { ... }` block, brace-balanced. A naive
+ * non-greedy `@keyframes[^{]*\{[\s\S]*?\}` stops at the first `}` — a per-step
+ * block's OWN close, not the whole rule's — which is exactly the shape of
+ * mistake that let a keyframe's step selector (`38%`) read as if it were a
+ * CSS selector sharing the page with `.lp-hero`. Depth-counted, the same
+ * technique keyframeContrast.test.js uses to walk keyframes, aimed here at
+ * deleting them instead of collecting them. */
+function stripKeyframes(source) {
+  const re = /@keyframes\s+[A-Za-z0-9_-]+\s*\{/g;
+  let out = '';
+  let last = 0;
+  let m;
+  while ((m = re.exec(source))) {
+    out += source.slice(last, m.index);
+    let depth = 1;
+    let i = re.lastIndex;
+    while (i < source.length && depth > 0) {
+      if (source[i] === '{') depth += 1;
+      else if (source[i] === '}') depth -= 1;
+      i += 1;
+    }
+    last = i;
+    re.lastIndex = i;
+  }
+  return out + source.slice(last);
+}
+
 test('the skip link is the first thing in the document and points at main', () => {
   assert.ok(html.trimStart().startsWith('<a class="lp-skip" href="#main-content">'));
   assert.match(html, /<main id="main-content"/);
@@ -72,28 +99,29 @@ test('the hero deck ships three slides, the first visible, the others hidden and
   assert.match(css, /\.lp-deck__skip\[hidden\]\s*\{\s*display:\s*none;?\s*\}/);
 });
 
-test('yellow is a ground in four places, plus two small, non-persistent accents', () => {
+test('yellow is a ground in four places, plus one small travelling indicator', () => {
   // .lp-bar--yellow and .lp-btn--yellow live in static-page.css, and
   // motion.css is owned by tasks 7 and 10 from here — read all three, or a
   // fifth yellow ground added to either evades this test.
   //
-  // Task 7 forces two more matches, and both are pinned by tests copied
-  // verbatim from the working prototype (rewriteMotion.test.js,
-  // keyframeContrast.test.js) rather than invented here:
-  //   .lp-levels::after   the active reading-level tab's travelling
-  //                       indicator — a 1/3-width strip, not a field.
-  //   38%                 the peak step of the AI button's invitation
-  //                       keyframe (lpInvite) — five 2.8s breaths, only
-  //                       after the section has been seen and only until
-  //                       the button is found, never a resting state.
-  // Neither is a "ground" in the sense this test otherwise guards: a static
-  // surface a visitor's eye rests on. The AI button's OWN resting, hover,
-  // focus and press states stay on --brand-yellow-soft and never flip to
-  // the full colour (see .lp-btn--ai and its [data-phase='press'] rule) —
-  // that flip is exactly where a real fifth ground would have appeared, and
-  // it does not.
-  const grounds = [...allCss.matchAll(/([^{}]+)\{[^}]*background(?:-color)?:\s*var\(--brand-yellow\)[^}]*\}/g)].map((m) => m[1].trim());
-  assert.deepEqual(grounds.sort(), ['.lp-bar--yellow', '.lp-btn--yellow', '.lp-close .lp-btn--yellow', '.lp-hero', '.lp-levels::after', '38%']);
+  // Task 7 forces one more match, pinned by rewriteMotion.test.js (copied
+  // verbatim from the working prototype) rather than invented here:
+  // `.lp-levels::after`, the active reading-level tab's travelling
+  // indicator — a 1/3-width strip, not a field a visitor's eye rests on.
+  //
+  // @keyframes are stripped BEFORE the scan: a keyframe step's own selector
+  // (e.g. `38%`, where the AI button's invitation keyframe peaks at the
+  // full yellow — pinned separately by keyframeContrast.test.js, not
+  // counted as a page "ground" here) would otherwise read as if it shared
+  // the page with `.lp-hero`, and a second, unrelated keyframe with its own
+  // 38% yellow step would produce an indistinguishable match. The AI
+  // button's OWN resting, hover, focus and press states stay on
+  // --brand-yellow-soft and never flip to the full colour (see .lp-btn--ai
+  // and its [data-phase='press'] rule) — that flip is exactly where a real
+  // sixth ground would have appeared, and it does not.
+  const scanned = stripKeyframes(allCss);
+  const grounds = [...scanned.matchAll(/([^{}]+)\{[^}]*background(?:-color)?:\s*var\(--brand-yellow\)[^}]*\}/g)].map((m) => m[1].trim());
+  assert.deepEqual(grounds.sort(), ['.lp-bar--yellow', '.lp-btn--yellow', '.lp-close .lp-btn--yellow', '.lp-hero', '.lp-levels::after']);
 });
 
 test('no snap, no wheel capture, no figures, no eyebrows outside the card', () => {
@@ -111,13 +139,19 @@ test('no snap, no wheel capture, no figures, no eyebrows outside the card', () =
   // leaking to the rest of the page.
   for (const sel of upper) assert.match(sel, /^\.lp-(paper|plate|research|chip|pile|eyebrow)/, sel);
   // `.lp-eyebrow` is app UI that belongs INSIDE a reader's own window — the
-  // rewrite reader here, the research screen once task 9 lands it — never a
-  // label loose on the page. `.lp-research` does not exist yet, so that
-  // `replace` is a no-op today and starts pulling its weight the day task 9
-  // adds the section; either way this reads the CURRENT html, so a future
-  // section that copies the class without copying its containment shows up
-  // here as a leak, not silently.
-  const outside = html.replace(/<section class="lp-reader[^"]*"[\s\S]*?<\/section>/, '').replace(/<section class="lp-research[^"]*"[\s\S]*?<\/section>/, '');
+  // `.lp-rewrite` widget here, the research screen once task 9 lands it —
+  // never a label loose on the page. Scoped to `.lp-rewrite` itself, not the
+  // whole `lp-reader` SECTION: the section also holds the left column's
+  // prose (`.lp-head`), which is not the reader's window either, and
+  // stripping the entire section would have hidden an eyebrow added there
+  // by mistake. `.lp-rewrite` is the last element before the section closes
+  // (page.js), so matching through to the next `</section>` captures all of
+  // it without needing brace-balanced HTML parsing. `.lp-research` does not
+  // exist yet, so that `replace` is a no-op today and starts pulling its
+  // weight the day task 9 adds the section; either way this reads the
+  // CURRENT html, so a future section that copies the class without
+  // copying its containment shows up here as a leak, not silently.
+  const outside = html.replace(/<div class="lp-rewrite"[\s\S]*?<\/section>/, '').replace(/<section class="lp-research[^"]*"[\s\S]*?<\/section>/, '');
   assert.doesNotMatch(outside, /lp-eyebrow/);
 });
 
@@ -205,6 +239,49 @@ test('the reader ships at rest with the finished text, its tabs, a highlight and
   assert.equal((sec.match(/class="lp-hl"/g) || []).length, 1);
   assert.match(sec, /<aside class="lp-note" aria-label="Your note">/);
   assert.match(sec, /data-rewrite-card hidden/);
+  // Without JavaScript there is no click handler and no keydown handler
+  // behind these buttons — armLevels wires both. An ENABLED tab that does
+  // nothing on press is exactly the dead control this page may not leave
+  // anyone with, so all three ship `disabled` and armLevels lifts it.
+  assert.equal((sec.match(/class="lp-levels__tab"[^>]*disabled>/g) || []).length, 3);
+});
+
+// `.lp-levels::after` (the travelling indicator) positions itself from
+// `--lp-level`, which only armLevels ever writes — its CSS fallback of `0`
+// points at Beginner. Without an inline value matching DEFAULT_LEVEL, the
+// indicator would sit under Beginner on first paint while aria-selected and
+// data-active both already point at University: correct markup, wrong
+// picture, for every visit before armLevels runs (which is every no-JS,
+// phone or reduced-motion visit, and a flash of it for everyone else).
+test("the level indicator agrees with the selected tab before any JavaScript runs", () => {
+  const sec = html.match(/<section class="lp-reader[^"]*"[\s\S]*?<\/section>/)[0];
+  const inlineLevel = sec.match(/<div class="lp-rewrite" data-rewrite data-levels style="--lp-level: (\d+)">/);
+  assert.ok(inlineLevel, 'no inline --lp-level on .lp-rewrite');
+  const tabs = [...sec.matchAll(/<button class="lp-levels__tab"[^>]*aria-selected="(true|false)"/g)].map((m) => m[1]);
+  const selectedIndex = tabs.indexOf('true');
+  assert.equal(tabs.filter((v) => v === 'true').length, 1, 'more or less than one tab is aria-selected');
+  assert.equal(Number(inlineLevel[1]), selectedIndex, 'the inline --lp-level does not name the aria-selected tab');
+});
+
+// PaperCard's own action row (paper()'s default) says "Read in plain words"
+// on a yellow button too — right in the hero, where the card IS the app's
+// card and that row is the whole point. Stacked into the reader's card, that
+// same decorative row sat directly above the section's OWN AI button with
+// the same label, so a reader saw two identical yellow buttons for one
+// action: one an aria-hidden decoration, one the real, focusable control.
+// `lp-btn--ai` is the shared class both would carry, decoration or real —
+// counting it is direct proof of the fix and does not trip on the status
+// line's kicker (`Read in plain words` again, as a plain-text caption
+// naming what the button below it does — not a button, no `lp-btn` class,
+// never the thing this bug was about).
+test('the reader shows exactly one "Read in plain words" button, not the card\'s own decoration and the real one both', () => {
+  const sec = html.match(/<section class="lp-reader[^"]*"[\s\S]*?<\/section>/)[0];
+  assert.equal((sec.match(/lp-btn--ai/g) || []).length, 1);
+  assert.match(sec, /<button class="lp-btn lp-btn--ai lp-btn--lg" type="button" data-rewrite-start/);
+  // The hero's own card is a different context — it IS PaperCard's card,
+  // decoration included — and must keep its row. Three slides, three rows.
+  const hero = html.match(/<section class="lp-hero[^"]*"[\s\S]*?<\/section>/)[0];
+  assert.equal((hero.match(/lp-btn--ai/g) || []).length, 3);
 });
 
 test('five labels, each with its sentence, and no motion', () => {
