@@ -475,9 +475,40 @@ const sectionLine = (kind, text) => `${JSON.stringify({ kind, paragraphs: [text]
  * identity cache the way the Worker caches one in production, and a `fetch` that
  * separates the PDF download from the provider so a test can fail exactly one.
  */
+/**
+ * Every rewrite waits for its own summary line before the next test starts.
+ *
+ * The line is written by the stream's PRODUCER (ai-rewrite.js), which can
+ * still be finishing after the reader has seen the last chunk — so the test's
+ * `await` is not the moment the logging is over. A line left behind this way
+ * lands in the NEXT test's capture, and a test that asserts one line sees
+ * two. That is the flake that failed CI four times in the week to 2026-09-18
+ * (`a refund shows up…`, `a finished rewrite logs…`) on commits that touched
+ * none of this, and never once when this file ran alone: it takes a loaded
+ * machine to move the producer past the end of its own test. Measured with
+ * the file's own tests: 24 lines were emitted outside their run before this,
+ * none after.
+ *
+ * It waits here, in the harness EVERY run goes through — the capturing tests
+ * and the plain ones alike — because the line that breaks a capturing test is
+ * left behind by whatever ran before it. Turn-based rather than a fixed
+ * sleep: it stops as soon as the producer has been quiet for three turns, so
+ * the usual cost is microseconds, and the bound keeps a run that logs nothing
+ * from spinning. It chains onto whatever console is installed, so a capture
+ * set up around it still receives everything.
+ */
 async function withRewriteHarness({ pdf = readablePdf, provider }, callback) {
   const originalFetch = globalThis.fetch;
   const originalCaches = globalThis.caches;
+  const outerInfo = console.info;
+  const outerWarn = console.warn;
+  let logged = 0;
+  const watch = (prior) => (label, payload) => {
+    if (label === 'AI rewrite') logged += 1;
+    prior(label, payload);
+  };
+  console.info = watch(outerInfo);
+  console.warn = watch(outerWarn);
   globalThis.caches = {
     default: {
       match: async request => (String(request.url).includes('/auth/')
@@ -490,8 +521,17 @@ async function withRewriteHarness({ pdf = readablePdf, provider }, callback) {
     ? provider(url, options)
     : pdf(url, options));
   try {
-    return await callback();
+    const result = await callback();
+    let quiet = 0;
+    for (let turn = 0; turn < 25 && quiet < 3; turn += 1) {
+      const before = logged;
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
+      quiet = logged === before ? quiet + 1 : 0;
+    }
+    return result;
   } finally {
+    console.info = outerInfo;
+    console.warn = outerWarn;
     globalThis.fetch = originalFetch;
     if (originalCaches === undefined) delete globalThis.caches;
     else globalThis.caches = originalCaches;
@@ -1142,6 +1182,34 @@ async function runRewriteCapturingLogs(harnessOptions, env, requestOverrides) {
  * model, or writing, and the log said only how long the whole thing took. Task 8
  * measures the split in production; these are the fields it reads.
  */
+/**
+ * The guard for the flake itself, stated as the property the harness owes the
+ * file: when a run hands back, its summary line has already been written.
+ *
+ * A line that lands afterwards belongs to whatever capture is open next, and
+ * that is how `a refund shows up…` and `a finished rewrite logs…` came to see
+ * two lines and fail CI four times in the week to 2026-09-18 — on a loaded
+ * machine, where the producer finishes a turn or two later than it does here.
+ * This test does not need a loaded machine: it hands the harness a run whose
+ * line is written a turn late, on purpose.
+ */
+test('a run does not hand back while its summary line is still being written', async () => {
+  const seen = [];
+  const originalInfo = console.info;
+  console.info = (label, payload) => { if (label === 'AI rewrite') seen.push(payload); };
+  try {
+    await withRewriteHarness({ provider: async () => new Response('') }, async () => {
+      // The producer outliving the reader, which is what really happens: the
+      // last chunk is read, and the summary is written a turn later.
+      setTimeout(() => { console.info('AI rewrite', '{"late":true}'); }, 0);
+      return null;
+    });
+    assert.equal(seen.length, 1, 'the late line must be written before the harness hands back');
+  } finally {
+    console.info = originalInfo;
+  }
+});
+
 test('a finished rewrite logs where its time and its bytes went', async () => {
   const { lines } = await runRewriteCapturingLogs({
     provider: async () => sseResponse([
