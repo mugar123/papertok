@@ -1,4 +1,4 @@
-import { HERO_PAPERS, REPO, SOURCES, PEOPLE, PILE, WHEEL, SIGNALS, LEVELS, DEFAULT_LEVEL, REWRITE } from './papers.js';
+import { HERO_PAPERS, REPO, SOURCES, PEOPLE, PILE, WHEEL, SIGNALS, LEVELS, DEFAULT_LEVEL, REWRITE, FOLLOW_ROWS, LISTS } from './papers.js';
 
 const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -344,6 +344,87 @@ const labels = () => `<section class="lp-labels lp-sec" aria-labelledby="lp-labe
   </div>
 </section>`;
 
+/**
+ * Two screens of UI this page cannot make work: following something opens a
+ * second feed, and a list is a real place papers get saved — neither of
+ * which exists on a marketing page that ships no session. A "Follow" control
+ * here would follow nothing, and a save button would save nothing, so
+ * neither section carries a real `<button>` or `<a>` for either affordance.
+ *
+ * The pattern instead: `<figure>` around a picture that is `aria-hidden`,
+ * with a `<figcaption>` — visually hidden, read by everyone else — that says
+ * in one sentence what the picture shows. A screen reader gets the honest
+ * sentence; a sighted visitor gets the app's own real UI, right down to the
+ * class names `paper()`/`chip()`/`icon()` already draw the rest of the page
+ * with. The "buttons" inside (`Follow`, and PaperCard's own action row
+ * elsewhere on this page) are `<span class="lp-btn">`, never `<button>` —
+ * this page's one rule for anything that looks pressable: nothing may be
+ * focusable and do nothing.
+ *
+ * Neither section carries one of the page's three highlights: the count
+ * already sits at its ceiling (problem(), plainWords() and close() each
+ * carry one, and the suite caps the total at three), and neither of these
+ * two paragraphs turns on a single load-bearing phrase the way those three
+ * do. `hlRule()` does not exist either way (see hl()'s own comment) — this
+ * is a JS decision (call hl() or don't), not a CSS one.
+ */
+const follow = () => `<section class="lp-follow lp-sec" aria-labelledby="lp-follow-h">
+  <div class="lp-wrap lp-cols lp-cols--centre">
+    <div class="lp-head">
+      <h2 id="lp-follow-h" class="lp-h2">Follow the thread.</h2>
+      <p class="lp-body">Authors, topics, institutions and projects. Following any of them opens a second feed made only of what they publish, next to the one made for you.</p>
+    </div>
+    <figure class="lp-figure-ui">
+      <figcaption class="lp-visually-hidden">Three things you can follow: David Card, an author; Gravitational waves, a topic; Universidad de Salamanca, an institution.</figcaption>
+      <div class="lp-follow__rows" aria-hidden="true">${FOLLOW_ROWS.map((r) => `<div class="lp-follow__row"><span class="lp-follow__icon">${icon(r.kind, 22)}</span><span class="lp-follow__text"><span class="lp-follow__name">${r.lang ? `<span lang="${esc(r.lang)}">${esc(r.name)}</span>` : esc(r.name)}</span><span class="lp-follow__sub">${esc(r.sub)}</span></span><span class="lp-btn">Follow</span></div>`).join('')}</div>
+    </figure>
+  </div>
+</section>`;
+
+/* The eight list colours, `--list-*` in variables.css, byte for byte —
+   inventing a value here would drift from the token the app actually
+   themes with the moment either side is retuned. Spliced into `var(...)`
+   inside a style attribute, so `s` goes through assertSafeToken() like
+   paper()'s own `accent` does: this array is a local literal today, but the
+   guard is what keeps it that way if it ever stops being one. */
+const SWATCHES = ['ochre', 'olive', 'green', 'teal', 'blue', 'indigo', 'violet', 'crimson'];
+
+/**
+ * The library: four lists, the app's own colours on their rule, icon and
+ * name. Same figure/figcaption pattern as follow() above and the same
+ * reason — nothing here saves a paper anywhere.
+ *
+ * The eight swatches are NOT part of that figure and are not aria-hidden:
+ * they are the one piece of real, standalone content in this section — "one
+ * of eight" (the left column's own sentence) is a claim about a fixed set,
+ * and a sighted visitor seeing eight colours with no names for them would
+ * be trusting a claim a screen reader user has no way to check. The `<ul>`
+ * carries the set's own accessible name (`aria-label`) and every swatch
+ * carries its colour's name in a visually-hidden span, so the list reads
+ * the same information both ways: eight items, named.
+ *
+ * `l.color` is already a full `var(--token)` expression (LISTS in
+ * papers.js), not a bare token paper() would still need to wrap itself, but
+ * it lands in the same unquoted style-attribute context `--lp-accent` does,
+ * so it gets the same assertSafeToken() guard with a pattern shaped for
+ * "var(--x)" rather than "--x".
+ */
+const library = () => `<section class="lp-library lp-sec" aria-labelledby="lp-library-h">
+  <div class="lp-wrap lp-stack">
+    <div class="lp-library__head">
+      <div class="lp-head">
+        <h2 id="lp-library-h" class="lp-h2">Keep what matters.</h2>
+        <p class="lp-body">Save a paper into a list, and the list carries a colour: one of eight, built to sit next to each other and to stay legible as a rule, an icon or a name. Private by default; public if you say so, from your profile.</p>
+      </div>
+      <ul class="lp-swatches" aria-label="The eight list colours">${SWATCHES.map((s) => `<li class="lp-swatch" style="background: var(--list-${assertSafeToken(s, /^[a-z]+$/, 'swatch colour')})"><span class="lp-visually-hidden">${esc(s)}</span></li>`).join('')}</ul>
+    </div>
+    <figure class="lp-figure-ui">
+      <figcaption class="lp-visually-hidden">Four lists as the app shows them: Favorites, Read later, Reading history and Papers de sugar, which is public.</figcaption>
+      <div class="lp-lists" aria-hidden="true">${LISTS.map((l) => `<div class="lp-list-card" style="--lp-list: ${assertSafeToken(l.color, /^var\(--[a-z0-9-]+\)$/, 'list colour token')}"><span class="lp-list-card__icon">${icon(l.icon, 18)}</span><span class="lp-list-card__name">${esc(l.name)}</span><span class="lp-list-card__count">${esc(l.count)}${l.isPublic ? chip({ label: 'Public', tone: 'green' }) : ''}</span><span class="lp-list-card__titles">${l.titles.length ? l.titles.map((t) => `<span>${esc(t)}</span>`).join('') : '<span class="lp-list-card__empty">Nothing saved yet.</span>'}</span></div>`).join('')}</div>
+    </figure>
+  </div>
+</section>`;
+
 const strip = () => `<section class="lp-strip" aria-labelledby="lp-strip-h">
   <h2 id="lp-strip-h" class="lp-visually-hidden">Where it comes from, and who makes it</h2>
   <div class="lp-wrap lp-strip__grid">
@@ -366,6 +447,6 @@ const foot = () => `<footer class="lp-footer">
 </footer>`;
 
 export function buildLandingHtml() {
-  const screens = [hero(), problem(), signals(), plainWords(), labels(), strip(), close()]; // tasks 8–9 insert their sections before strip()
+  const screens = [hero(), problem(), signals(), plainWords(), labels(), follow(), library(), strip(), close()]; // task 9 inserts lp-map/lp-research before strip()
   return `${skip()}\n${bar()}\n<main id="main-content" class="lp-main">\n${screens.join('\n')}\n</main>\n${foot()}\n${pileData()}`;
 }

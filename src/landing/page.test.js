@@ -124,7 +124,7 @@ test('yellow is a ground in four places, plus one small travelling indicator', (
   assert.deepEqual(grounds.sort(), ['.lp-bar--yellow', '.lp-btn--yellow', '.lp-close .lp-btn--yellow', '.lp-hero', '.lp-levels::after']);
 });
 
-test('no snap, no wheel capture, no figures, no eyebrows outside the card', () => {
+test('no snap, no wheel capture, no figures, no eyebrows outside the card, no list-cards outside the library', () => {
   // All three sheets: a scroll-snap added in motion.css (task 7/10) is just
   // as much a violation as one added here.
   assert.doesNotMatch(allCss, /scroll-snap/);
@@ -136,8 +136,11 @@ test('no snap, no wheel capture, no figures, no eyebrows outside the card', () =
   // it in task 7: the reader's kicker and its uses counter reuse the app's
   // own mono-uppercase voice class rather than inventing a new rule — see
   // the counterpart assertion below, which is what stops the allowance from
-  // leaking to the rest of the page.
-  for (const sel of upper) assert.match(sel, /^\.lp-(paper|plate|research|chip|pile|eyebrow)/, sel);
+  // leaking to the rest of the page. `list-card` joins it in task 8, for the
+  // same reason: `.lp-list-card__count` is the paper-count line on a list
+  // card exactly as ListsPage.css sets its own rows, not a fresh decision —
+  // see the second counterpart assertion below.
+  for (const sel of upper) assert.match(sel, /^\.lp-(paper|plate|research|chip|pile|eyebrow|list-card)/, sel);
   // `.lp-eyebrow` is app UI that belongs INSIDE a reader's own window — the
   // `.lp-rewrite` widget here, the research screen once task 9 lands it —
   // never a label loose on the page. Scoped to `.lp-rewrite` itself, not the
@@ -153,6 +156,24 @@ test('no snap, no wheel capture, no figures, no eyebrows outside the card', () =
   // copying its containment shows up here as a leak, not silently.
   const outside = html.replace(/<div class="lp-rewrite"[\s\S]*?<\/section>/, '').replace(/<section class="lp-research[^"]*"[\s\S]*?<\/section>/, '');
   assert.doesNotMatch(outside, /lp-eyebrow/);
+  // `.lp-list-card` is app UI that belongs INSIDE the library's own
+  // <figure> — the swatch legend and the left column's prose
+  // (`.lp-library__head`) sit in the same SECTION but are not that figure,
+  // and stripping the whole `lp-library` section would have hidden a card
+  // rendered next to the swatches by mistake instead of inside the figure.
+  // First assertion: every occurrence of the class inside the section is
+  // also inside the section's own figure (a count match, not a containment
+  // parse — brace-balanced HTML parsing buys nothing here since neither
+  // element nests the other). Second: the class never appears anywhere
+  // outside the section at all.
+  const librarySection = html.match(/<section class="lp-library[^"]*"[\s\S]*?<\/section>/)[0];
+  const libraryFigure = librarySection.match(/<figure class="lp-figure-ui">[\s\S]*?<\/figure>/)[0];
+  assert.equal(
+    (librarySection.match(/lp-list-card/g) || []).length,
+    (libraryFigure.match(/lp-list-card/g) || []).length,
+    'lp-list-card appears in the library section outside its figure',
+  );
+  assert.doesNotMatch(html.replace(librarySection, ''), /lp-list-card/);
 });
 
 test('chip tone and the paper accent are guarded against attribute-context injection', () => {
@@ -287,4 +308,24 @@ test('the reader shows exactly one "Read in plain words" button, not the card\'s
 test('five labels, each with its sentence, and no motion', () => {
   const sec = html.match(/<section class="lp-labels[^"]*"[\s\S]*?<\/section>/)[0];
   assert.deepEqual([...sec.matchAll(/lp-chip lp-chip--\w+">([^<]+)</g)].map((m) => m[1]), ['Verified', 'Preprint', 'Open access', 'Open version', 'Subscription']);
+});
+
+// `.lp-follow` carries `lp-sec` too (`class="lp-follow lp-sec"`, same reason
+// as `.lp-problem`/`.lp-reader` above — the shared padding utility every
+// task 6-9 section draws on), so this needs the same `[^"]*` wildcard the
+// brief's own literal snippet omits.
+test('the Explorer rows are a figure with a caption, not fake controls', () => {
+  const sec = html.match(/<section class="lp-follow[^"]*"[\s\S]*?<\/section>/)[0];
+  assert.match(sec, /<figure class="lp-figure-ui">/);
+  assert.match(sec, /<figcaption class="lp-visually-hidden">Three things you can follow: David Card, an author; Gravitational waves, a topic; Universidad de Salamanca, an institution\.<\/figcaption>/);
+  assert.equal((sec.match(/<button/g) || []).length, 0);
+  assert.match(sec, /<span lang="es">Universidad de Salamanca<\/span>/);
+});
+
+test('the four lists are a figure too, with the eight colours as a list of names', () => {
+  const sec = html.match(/<section class="lp-library[^"]*"[\s\S]*?<\/section>/)[0];
+  assert.match(sec, /<figcaption class="lp-visually-hidden">Four lists as the app shows them: Favorites, Read later, Reading history and Papers de sugar, which is public\.<\/figcaption>/);
+  assert.equal((sec.match(/class="lp-list-card"/g) || []).length, 4);
+  assert.equal((sec.match(/class="lp-swatch"/g) || []).length, 8);
+  assert.match(sec, /<ul class="lp-swatches" aria-label="The eight list colours">/);
 });

@@ -491,6 +491,32 @@
 .lp-labels__row dt, .lp-labels__row dd { margin: 0; }
 .lp-labels__row dd { font-family: var(--font-serif); font-size: 1.25rem; line-height: 1.4; }
 
+/* ── Follow: a figure, not a control ── */
+.lp-figure-ui { margin: 0; }
+.lp-follow__rows { display: flex; flex-direction: column; }
+.lp-follow__row { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 20px; align-items: center; padding: 22px 0; border-top: 1px solid var(--border-subtle); }
+.lp-follow__row:last-child { border-bottom: 1px solid var(--border-subtle); }
+.lp-follow__icon { width: 56px; height: 56px; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--bg-sunken); display: flex; align-items: center; justify-content: center; }
+.lp-follow__text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.lp-follow__name { font-family: var(--font-serif); font-size: 1.5rem; font-weight: var(--fw-semibold); line-height: 1.15; }
+.lp-follow__sub { font: var(--fw-regular) 0.75rem/1.3 var(--font-mono); color: var(--text-secondary); }
+
+/* ── Library: four lists, eight colours ── */
+.lp-stack { display: flex; flex-direction: column; gap: 48px; }
+.lp-library__head { display: grid; grid-template-columns: 420px minmax(0, 1fr); gap: 96px; align-items: end; }
+.lp-swatches { list-style: none; margin: 0; padding: 0; display: flex; gap: 10px; justify-content: flex-end; }
+.lp-swatch { width: 28px; height: 28px; border-radius: var(--radius-lg); }
+.lp-lists { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
+.lp-list-card { border: 1px solid var(--border-subtle); border-left: 3px solid var(--lp-list); border-radius: var(--radius-lg); background: var(--bg-card); padding: 24px 22px 22px; display: flex; flex-direction: column; gap: 14px; min-height: 220px; }
+.lp-list-card__icon { width: 40px; height: 40px; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--bg-sunken); display: flex; align-items: center; justify-content: center; color: var(--lp-list); }
+.lp-list-card__name { font-family: var(--font-serif); font-size: 1.25rem; font-weight: var(--fw-semibold); line-height: 1.2; }
+.lp-list-card__count { display: flex; align-items: center; gap: 10px; font: var(--fw-medium) 0.6875rem/1 var(--font-mono); letter-spacing: var(--mono-track); text-transform: uppercase; color: var(--text-secondary); }
+.lp-list-card__titles { border-top: 1px solid var(--border-subtle); padding-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.lp-list-card__titles span { font-family: var(--font-serif); font-size: 0.9375rem; line-height: 1.35; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lp-list-card__empty { font-family: var(--font-body) !important; color: var(--text-tertiary) !important; }
+@media (max-width: 1000px) { .lp-library__head { grid-template-columns: minmax(0, 1fr); gap: 24px; } .lp-swatches { justify-content: flex-start; } .lp-lists { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .lp-follow__row { grid-template-columns: 44px minmax(0, 1fr); } .lp-follow__row .lp-btn { grid-column: 2; justify-self: start; } .lp-follow__icon { width: 44px; height: 44px; } }
+
 /* ── Strip and close ── */
 .lp-strip { padding: 64px 0; }
 .lp-strip__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 64px; }
