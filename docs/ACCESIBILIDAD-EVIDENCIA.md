@@ -834,14 +834,27 @@ landmark propio» había quedado vieja y se corrige aquí.
 
 **Lo que esta corrección sigue sin cubrir:**
 
-- **`color-contrast` ya no es sólo *incompleta*.** En una de las dos tiradas de
-  después salió como violación **seria con 18 nodos** en `/feed` a 390 oscuro
-  (`.pc-date`, `.pc-citations`, `.pc-chip`, `.pc-category-pill`, las píldoras de
-  temas); en la otra volvió a *incompleta*. Depende de qué papers traiga el feed
-  y de si la entrada de la tarjeta ha terminado de animar. No lo introduce este
-  cambio —ninguno de esos nodos se toca aquí, y el último commit sobre
-  `PaperCard.css` es ajeno— pero deja de ser una duda teórica: hay contraste que
-  revisar a mano en la tarjeta en oscuro, y no se ha hecho.
+- **`color-contrast`: revisado a mano, y la violación intermitente era la
+  animación.** Una tirada de axe dio violación **seria con 18 nodos** en `/feed`
+  a 390 oscuro (`.pc-date`, `.pc-citations`, `.pc-chip`, `.pc-category-pill`) y
+  la siguiente volvió a *incompleta*. Medido después elemento a elemento,
+  calculando el ratio contra el primer ancestro opaco: **346 textos del
+  documento, y los únicos 30 que no llegan son el mismo elemento**, el punto
+  separador `.pc-meta-dot`, a **1,99:1** sobre 11px (exige 4,5). Ninguno de los
+  cuatro que axe nombró falla en reposo.
+
+  La diferencia está en la entrada de la tarjeta: midiendo a 500 ms de la carga,
+  `.pc-meta`, `.pc-chips`, `.pc-topics`, `.pc-title` y `.pc-action-bar` —que es
+  donde viven esos cuatro— están a `opacity` entre 0,81 y 0,98. axe compone el
+  color efectivo y ve el contraste rebajado de un texto que todavía se está
+  pintando; `getComputedStyle` da el color declarado y no lo ve. Así que la
+  violación es un transitorio de la animación, no un estado en el que se lea.
+
+  **Lo que sí queda, y es una decisión de diseño, no un descuido que arreglar
+  por mi cuenta:** el punto separador de la tarjeta está a 1,99:1 en oscuro. Es
+  puntuación decorativa entre dos datos, así que se puede defender como
+  decoración pura (1.4.3 la exime), pero a ese contraste probablemente tampoco se
+  ve. Subirlo cambia el aspecto de la tarjeta y esa llamada no es mía.
 - `/following` se sigue auditando en vivo sólo en su **estado vacío**. Lo que
   cambia es que ahora las ramas restantes están sujetas por prueba de fuente, no
   por haberlas visto.
