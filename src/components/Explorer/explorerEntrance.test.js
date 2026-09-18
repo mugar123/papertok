@@ -90,7 +90,7 @@ test('the skeleton tab strip stands as tall as the live one', async () => {
 test('the explorer is born with the entity a link handed over, and treats its own fetch as an upgrade', async () => {
   const jsx = (await read('./EntityExplorer.jsx')).replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
   assert.match(jsx, /import \{ useParams, useNavigate, useSearchParams, useLocation \} from 'react-router-dom';/);
-  assert.match(jsx, /import \{ handedEntityFor \} from '\.\.\/\.\.\/utils\/explorerHandover\.js';/);
+  assert.match(jsx, /import \{ handedEntityFor, handoverFromSearchRow \} from '\.\.\/\.\.\/utils\/explorerHandover\.js';/);
   assert.match(jsx, /const handedEntity = useMemo\(\(\) => handedEntityFor\(type, id, location\.state\), \[id, location\.state, type\]\);/);
   assert.match(jsx, /const bornResolved = Boolean\(handedEntity\) \|\| Boolean\(localTopic\) \|\| Boolean\(cachedEntity\) \|\| \(type === 'topic' && isOpaqueQueryTopicText\(id\)\);/);
   assert.match(jsx, /useState\(\(\) => \(bornResolved \? \(handedEntity \|\| localTopic \|\| cachedEntity \|\| resolveQueryTopicRoute\(id, searchParams\)\) : null\)\)/);

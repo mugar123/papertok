@@ -28,7 +28,7 @@ import { useOverlayHistory } from '../../hooks/useOverlayHistory.js';
 import { CATEGORIES } from '../../data/categories';
 import { areaAccentForCategory as getAreaGradient, areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
 import { explorerSkeletonShape, hasAuthorsTab } from '../../utils/explorerSkeletonShape.js';
-import { handedEntityFor } from '../../utils/explorerHandover.js';
+import { handedEntityFor, handoverFromSearchRow } from '../../utils/explorerHandover.js';
 import { Menu as MenuPrimitive } from '@base-ui/react/menu';
 import { Button } from '../ui/button.jsx';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '../ui/dropdown-menu.jsx';
@@ -159,6 +159,28 @@ const ROR_RELATION_LABELS = {
   },
 };
 
+/**
+ * What a visit leaves behind for the next mount of the same entity, by
+ * `type:id`: the tab, the authors list it had opened, the Wikipedia block
+ * and the recent-impact figure. The route is keyed by pathname, so stepping
+ * back to an institution mounts it afresh — and, measured 2026-09-18
+ * (production build, signed in, author -> back): it came back on Papers
+ * when it had been left on Authors, with its hero at 148.8px because the
+ * Wikipedia block was being asked for again, and grew to 320.2 in a settle
+ * that started only once the reveal had finished — everything under the
+ * hero dropping 171px on a page the reader had just watched arrive. Seeded
+ * from here, the page paints as it was left in its first frame and nothing
+ * moves afterwards; the fetches still run and only upgrade. Bounded, so a
+ * long session does not keep every page it ever opened.
+ */
+const VISIT_MEMORY_MAX = 24;
+const visitMemory = new Map();
+function rememberVisit(key, record) {
+  visitMemory.delete(key);
+  visitMemory.set(key, record);
+  if (visitMemory.size > VISIT_MEMORY_MAX) visitMemory.delete(visitMemory.keys().next().value);
+}
+
 export default function EntityExplorer({
   onSaveToList = () => {},
   publicMode = false,
@@ -168,6 +190,14 @@ export default function EntityExplorer({
   appChrome = false,
 }) {
   const { type, id } = useParams();
+  // The visit this page resumes, if it was here before (`visitMemory`).
+  // Read once per mount: the seeds below take it into state, and the two
+  // refs let the effects that would otherwise clear or refetch that state
+  // stand down exactly once.
+  const visitKey = `${type}:${id}`;
+  const resumed = useMemo(() => visitMemory.get(visitKey) || null, [visitKey]);
+  const resumedEntityRef = useRef(Boolean(resumed));
+  const resumedAuthorsRef = useRef(Boolean(resumed?.authorsOpened && !resumed?.authorsSearch));
   const appChromeClass = appChrome ? ' explorer--app' : '';
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
@@ -252,8 +282,8 @@ export default function EntityExplorer({
     setShownPaper(selectedPaper);
   }
 
-  const [wikiInfo, setWikiInfo] = useState(null);
-  const [settledWikiRequestKey, setSettledWikiRequestKey] = useState('');
+  const [wikiInfo, setWikiInfo] = useState(() => resumed?.wikiInfo ?? null);
+  const [settledWikiRequestKey, setSettledWikiRequestKey] = useState(() => resumed?.settledWikiRequestKey ?? '');
   // Whether this entity's Wikipedia block has opened. Once it has, a re-lookup
   // (the language changed, a localized name landed) keeps it mounted on its
   // rows instead of folding it out and in — see `showWikiBlock`.
@@ -264,7 +294,7 @@ export default function EntityExplorer({
   // the settle the commit it needs: it remembered the height WITH the block on
   // the commit that started the exit, and animates from there to the short one.
   const [wikiFoldExits, setWikiFoldExits] = useState(0);
-  const [loadedWikiImageUrl, setLoadedWikiImageUrl] = useState('');
+  const [loadedWikiImageUrl, setLoadedWikiImageUrl] = useState(() => resumed?.loadedWikiImageUrl ?? '');
   const [orcidInfo, setOrcidInfo] = useState(null);
   // A known ORCID reserves its slot on the very first live frame. Waiting for
   // the entity refresh to raise this flag would remove and reinsert the slot.
@@ -285,12 +315,12 @@ export default function EntityExplorer({
   const observerRef = useRef(null);
   const papersRequestRef = useRef(null);
 
-  const [activeTab, setActiveTab] = useState('papers');
+  const [activeTab, setActiveTab] = useState(() => resumed?.activeTab ?? 'papers');
   // Whether the Authors tab has been opened on this entity. The list is
   // requested then and kept from then on; `activeTab` no longer drives the
   // fetch, so leaving the tab does not cancel it and coming back does not
   // repeat it.
-  const [authorsOpened, setAuthorsOpened] = useState(false);
+  const [authorsOpened, setAuthorsOpened] = useState(() => Boolean(resumed?.authorsOpened));
   // Open by default: the experience is the answer to "who is this person", which
   // is what the page is for. Hiding it behind the briefcase made the page open
   // on numbers alone and left the one human fact a click away. The toggle stays,
@@ -308,16 +338,16 @@ export default function EntityExplorer({
   const [experienceToggled, setExperienceToggled] = useState(false);
   const [expandedSummary, setExpandedSummary] = useState(false);
   const [participantsExpanded, setParticipantsExpanded] = useState(false);
-  const [isWikiDescriptionExpanded, setIsWikiDescriptionExpanded] = useState(false);
+  const [isWikiDescriptionExpanded, setIsWikiDescriptionExpanded] = useState(() => Boolean(resumed?.isWikiDescriptionExpanded));
   const [projectSummaryExpandedHeight, setProjectSummaryExpandedHeight] = useState(0);
-  const [wikiDescriptionExpandedHeight, setWikiDescriptionExpandedHeight] = useState(0);
+  const [wikiDescriptionExpandedHeight, setWikiDescriptionExpandedHeight] = useState(() => resumed?.wikiDescriptionExpandedHeight ?? 0);
   const [isProjectSummaryExpandable, setIsProjectSummaryExpandable] = useState(false);
-  const [isWikiDescriptionExpandable, setIsWikiDescriptionExpandable] = useState(false);
+  const [isWikiDescriptionExpandable, setIsWikiDescriptionExpandable] = useState(() => Boolean(resumed?.isWikiDescriptionExpandable));
   const [resolvingParticipant, setResolvingParticipant] = useState(null);
   const [participantNavigationError, setParticipantNavigationError] = useState('');
   const [isResolvingAuthorInstitution, setIsResolvingAuthorInstitution] = useState(false);
   const [authorInstitutionNavigationError, setAuthorInstitutionNavigationError] = useState('');
-  const [recentImpact, setRecentImpact] = useState(null);
+  const [recentImpact, setRecentImpact] = useState(() => resumed?.recentImpact ?? null);
   const [isLoadingRecentImpact, setIsLoadingRecentImpact] = useState(false);
   const [recentImpactError, setRecentImpactError] = useState(null);
   
@@ -328,13 +358,13 @@ export default function EntityExplorer({
     dateRange: ''
   });
 
-  const [entityAuthors, setEntityAuthors] = useState([]);
+  const [entityAuthors, setEntityAuthors] = useState(() => (resumed && !resumed.authorsSearch ? resumed.entityAuthors : []));
   const [isLoadingAuthors, setIsLoadingAuthors] = useState(false);
   const [authorsError, setAuthorsError] = useState(null);
   const [authorsReloadKey, setAuthorsReloadKey] = useState(0);
   const [isFetchingMoreAuthors, setIsFetchingMoreAuthors] = useState(false);
-  const [authorsPage, setAuthorsPage] = useState(1);
-  const [hasMoreAuthors, setHasMoreAuthors] = useState(false);
+  const [authorsPage, setAuthorsPage] = useState(() => (resumed && !resumed.authorsSearch ? resumed.authorsPage : 1));
+  const [hasMoreAuthors, setHasMoreAuthors] = useState(() => Boolean(resumed && !resumed.authorsSearch && resumed.hasMoreAuthors));
   const observerAuthorsRef = useRef(null);
   const viewedEntityRef = useRef('');
   const projectSummaryTextRef = useRef(null);
@@ -391,13 +421,24 @@ export default function EntityExplorer({
     : ['topic', 'concept'].includes(type)
       ? 'topic'
       : 'other';
-  const navigateToEntity = useCallback((nextType, nextId) => {
+  // `handover` is the record this page already holds for the entity it
+  // links to — an author card's row — handed over in router state the way a
+  // palette row is (`handoverFromSearchRow`), so the next page is born with
+  // its name and counts instead of as a skeleton. Measured 2026-09-18,
+  // institution -> author from the Authors tab, production build: the
+  // author page slid in as grey rows, its name landed at 600ms, and its hero
+  // settled twice, 131 -> 238 and then 238 -> 393.
+  const navigateToEntity = useCallback((nextType, nextId, handover = null) => {
     if (publicMode) {
       const publicPath = getPublicEntityPath(nextType, nextId);
       if (publicPath) navigate(publicPath);
       return;
     }
-    navigate(`/explorer/${nextType}/${encodeURIComponent(nextId)}`);
+    const entityForNext = handover ? handoverFromSearchRow(nextType, handover) : null;
+    navigate(
+      `/explorer/${nextType}/${encodeURIComponent(nextId)}`,
+      entityForNext ? { state: { entity: entityForNext, entityType: nextType } } : undefined,
+    );
   }, [navigate, publicMode]);
   // What the masthead can say before the entity answers: the `?name=` a link
   // hands over (an author opened by OpenAlex id, a project), or the name the
@@ -510,6 +551,27 @@ export default function EntityExplorer({
     { enabled: !prefersReducedMotion, suspended: isPageArriving, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' },
   );
 
+  // What the next mount of this entity resumes with (`visitMemory`).
+  useEffect(() => {
+    rememberVisit(visitKey, {
+      activeTab,
+      authorsOpened,
+      authorsSearch: debouncedSearch,
+      entityAuthors,
+      authorsPage,
+      hasMoreAuthors,
+      wikiInfo,
+      settledWikiRequestKey,
+      loadedWikiImageUrl,
+      // The "read more" toggle is a measurement taken a frame after mount;
+      // without these three the block came back 27px short for that frame.
+      isWikiDescriptionExpandable,
+      wikiDescriptionExpandedHeight,
+      isWikiDescriptionExpanded,
+      recentImpact,
+    });
+  }, [activeTab, authorsOpened, authorsPage, debouncedSearch, entityAuthors, hasMoreAuthors, isWikiDescriptionExpandable, isWikiDescriptionExpanded, loadedWikiImageUrl, recentImpact, settledWikiRequestKey, visitKey, wikiDescriptionExpandedHeight, wikiInfo]);
+
   const getInteractionState = useCallback((paper) => ({
     isLiked: likedPaperIds.has(paper.id),
     isSaved: savedPaperIds.has(paper.id),
@@ -611,7 +673,12 @@ export default function EntityExplorer({
   // Only overlay state belongs to this deferred reset. The load below owns
   // ORCID and the experience disclosure; clearing them here could overwrite
   // a fast response after it has already committed.
+  // Not on mount: the tab a resumed visit was left on is state already, and
+  // this reset is for an entity change under a page that stays mounted.
+  const resetForEntityRef = useRef(visitKey);
   useEffect(() => {
+    if (resetForEntityRef.current === visitKey) return undefined;
+    resetForEntityRef.current = visitKey;
     const timer = setTimeout(() => {
       setSelectedPaper(null);
       setPdfPaperToView(null);
@@ -621,7 +688,7 @@ export default function EntityExplorer({
       setParticipantsExpanded(false);
     }, 0);
     return () => clearTimeout(timer);
-  }, [type, id]);
+  }, [type, id, visitKey]);
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -654,21 +721,30 @@ export default function EntityExplorer({
       }
       setPapers([]);
       setIsLoadingPapers(true);
-      setEntityAuthors([]);
       setSearchQuery('');
-      setWikiInfo(null);
-      setWikiBlockOpened(false);
+      // A resumed visit keeps its authors, its Wikipedia block and its
+      // impact figure: they are what the reader left, and the fetches
+      // below only upgrade them. Once, for the mount that resumed.
+      const resuming = resumedEntityRef.current;
+      resumedEntityRef.current = false;
+      if (!resuming) {
+        setEntityAuthors([]);
+        setWikiInfo(null);
+        setWikiBlockOpened(false);
+      }
       setOrcidInfo(null);
       setIsLoadingOrcid(type === 'author' && Boolean(bornWith?.orcid || extractOrcid(id)));
       setIsExperienceOpen(true);
       setExperienceToggled(false);
       setExpandedSummary(false);
-      setIsWikiDescriptionExpanded(false);
       setIsProjectSummaryExpandable(false);
-      setIsWikiDescriptionExpandable(false);
+      if (!resuming) {
+        setIsWikiDescriptionExpanded(false);
+        setIsWikiDescriptionExpandable(false);
+      }
       setResolvingParticipant(null);
       setParticipantNavigationError('');
-      setRecentImpact(null);
+      if (!resuming) setRecentImpact(null);
       setIsLoadingRecentImpact(false);
       setRecentImpactError(null);
       setShowFilters(false);
@@ -1163,6 +1239,16 @@ export default function EntityExplorer({
         }
 
         if (page === 1) {
+          // A warm cache answers inside the frames the page is still
+          // travelling on, and thirty rows mounting there is the freeze the
+          // reader sees as the entrance sticking: measured 2026-09-18 on an
+          // author already in cache, no frame from 147 to 325ms while the
+          // list went up in five chunks. The rows wait out the arrival, the
+          // way the Wikipedia block already does; the skeleton rows are on
+          // screen meanwhile.
+          const arriving = afterPageArrival();
+          if (arriving) await arriving;
+          if (request.cancelled) return;
           setPapers(fetchedPapers);
         } else {
           setPapers(prev => {
@@ -1187,7 +1273,7 @@ export default function EntityExplorer({
     loadPapers();
     // No cleanup: a request is superseded by key, above, and cancelled on
     // unmount, below — not by the next render of the same request.
-  }, [type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, searchParams, papersReloadKey, entityReloadKey]);
+  }, [afterPageArrival, type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, searchParams, papersReloadKey, entityReloadKey]);
 
   useEffect(() => () => {
     if (papersRequestRef.current) papersRequestRef.current.cancelled = true;
@@ -1197,6 +1283,13 @@ export default function EntityExplorer({
     let isCancelled = false;
     async function loadAuthors() {
       if (!entity || type === 'author' || entity._localTopic || entity._queryTopic || !authorsOpened) return;
+      // The list a resumed visit came back with is the list: fetching it
+      // again would put the skeleton rows over it for the frames the cache
+      // takes to answer. Once, for the mount that resumed.
+      if (resumedAuthorsRef.current) {
+        resumedAuthorsRef.current = false;
+        return;
+      }
       if (authorsPage === 1) {
         setIsLoadingAuthors(true);
         setAuthorsError(null);
@@ -2600,8 +2693,8 @@ export default function EntityExplorer({
                 key={author.id} 
                 className="ee-author-card staggerFadeUp" 
                 style={{ '--i': idx }}
-                onClick={() => navigateToEntity('author', author.id)}
-                onKeyDown={(event) => handleActivationKey(event, () => navigateToEntity('author', author.id))}
+                onClick={() => navigateToEntity('author', author.id, author)}
+                onKeyDown={(event) => handleActivationKey(event, () => navigateToEntity('author', author.id, author))}
                 role="link"
                 tabIndex={0}
                 aria-label={`${isEnglish ? 'Open profile for' : 'Abrir perfil de'} ${author.display_name}`}

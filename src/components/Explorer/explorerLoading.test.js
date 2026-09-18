@@ -124,7 +124,9 @@ test('a known ORCID keeps its loading slot and a deferred reset cannot clear its
   const jsx = stripComments(await read('./EntityExplorer.jsx'));
   assert.match(jsx, /useState\(\(\) => type === 'author' && Boolean\(entity\?\.orcid \|\| extractOrcid\(id\)\)\)/);
   assert.match(jsx, /setIsLoadingOrcid\(type === 'author' && Boolean\(bornWith\?\.orcid \|\| extractOrcid\(id\)\)\);/);
-  const reset = jsx.match(/useEffect\(\(\) => \{\s*const timer = setTimeout\(\(\) => \{\s*setSelectedPaper\(null\);([\s\S]*?)\}, \[type, id\]\);/);
+  // Guarded against the mount since 2026-09-18 (a resumed visit keeps its
+  // tab); what it resets on an entity change is unchanged.
+  const reset = jsx.match(/useEffect\(\(\) => \{\s*if \(resetForEntityRef\.current === visitKey\) return undefined;\s*resetForEntityRef\.current = visitKey;\s*const timer = setTimeout\(\(\) => \{\s*setSelectedPaper\(null\);([\s\S]*?)\}, \[type, id, visitKey\]\);/);
   assert.ok(reset, 'the overlay reset is cancellable');
   assert.doesNotMatch(reset[1], /setOrcidInfo|setIsLoadingOrcid|setIsExperienceOpen|setExperienceToggled/,
     'a fast ORCID response survives the next timer task');
@@ -212,13 +214,15 @@ test('switching tabs neither cancels nor repeats a papers request', async () => 
   assert.match(jsx, /const papersRequestRef = useRef\(null\);/);
   assert.match(jsx, /const requestKey = entityPapersRequestKey\(\{/);
   assert.match(jsx, /if \(papersRequestRef\.current\?\.key === requestKey && !papersRequestRef\.current\.cancelled\) return;/);
-  const deps = jsx.match(/\n {2}\}, \[(type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, searchParams, papersReloadKey, entityReloadKey)\]\);/);
+  const deps = jsx.match(/\n {2}\}, \[(afterPageArrival, type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, searchParams, papersReloadKey, entityReloadKey)\]\);/);
   assert.ok(deps, 'the papers effect is keyed by its inputs, and activeTab is not one of them');
 });
 
 test('the authors list is requested on the first visit to its tab and kept from then on', async () => {
   const jsx = await read('./EntityExplorer.jsx');
-  assert.match(jsx, /const \[authorsOpened, setAuthorsOpened\] = useState\(false\);/);
+  // Seeded from the visit memory since 2026-09-18 (explorerResume.test.js); a
+  // first visit still starts closed.
+  assert.match(jsx, /const \[authorsOpened, setAuthorsOpened\] = useState\(\(\) => Boolean\(resumed\?\.authorsOpened\)\);/);
   assert.match(jsx, /entity\._queryTopic \|\| !authorsOpened\) return;/);
   assert.match(jsx, /\}, \[type, id, entity, authorsPage, debouncedSearch, authorsOpened, authorsReloadKey\]\);/);
   assert.match(jsx, /onClick=\{\(\) => openTab\('authors'\)\}/);
