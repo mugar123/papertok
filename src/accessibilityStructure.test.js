@@ -231,14 +231,14 @@ test('the feed landmark stays opt-in, or the guest route nests two <main> elemen
 
   assert.match(
     feed,
-    /function FeedLandmark\(\{ landmark, children \}\) \{\s*if \(!landmark\) \{\s*return <div className="feed-wrapper">\{children\}<\/div>;/,
-    'FeedLandmark no longer falls back to a plain `<div className="feed-wrapper">` '
-    + 'when no `landmark` prop is passed. This branch is not defensive coding: '
-    + 'GuestFeedPage renders its own `<main className="guest-feed-page">` around this '
-    + 'component, so an unconditional `<main>` here puts one landmark inside the '
-    + 'other on the public route — invalid HTML and two "main" regions. '
-    + 'FollowingFeedPage has no landmark of its own yet and must not inherit the '
-    + '"For you" heading, which is why the prop is opt-in rather than defaulted on.',
+    /function FeedLandmark\(\{ landmark, className = 'feed-wrapper', children \}\) \{\s*if \(!landmark\) \{\s*return <div className=\{className\}>\{children\}<\/div>;/,
+    'FeedLandmark no longer falls back to a plain `<div>` when no `landmark` prop is '
+    + 'passed. This branch is not defensive coding: GuestFeedPage renders its own '
+    + '`<main className="guest-feed-page">` around this component, so an unconditional '
+    + '`<main>` here puts one landmark inside the other on the public route — invalid '
+    + 'HTML and two "main" regions. FollowingFeedPage passes a landmark of its own '
+    + '("Following" / "Siguiendo") since 2026-09-18, which is why the prop is opt-in '
+    + 'per consumer rather than defaulted on.',
   );
   assert.match(
     feed,
@@ -246,6 +246,68 @@ test('the feed landmark stays opt-in, or the guest route nests two <main> elemen
     'the `landmark` prop lost its `null` default. Defaulting it to anything else '
     + 'turns the landmark on for every consumer, including the guest route that '
     + 'already has one.',
+  );
+});
+
+/**
+ * Un estado de la página sigue siendo la página.
+ *
+ * La auditoría del 18-09-2026 encontró `/following` sin `<main>` y sin `<h1>`
+ * en sus dos escenas, y la causa no era que la ruta no pasara landmark: era
+ * que el landmark vivía sólo en dos de las seis ramas de `return`. La cuenta
+ * de pruebas no sigue a nadie, así que la ruta se dibujaba siempre por
+ * `SOURCE_EMPTY`, que devolvía un `<div className="feed-empty">` pelado. Un
+ * feed que falla, que carga o que está vacío es la misma página que uno lleno.
+ *
+ * El `className` es la otra mitad: `.feed-empty` trae su propio
+ * `margin-top: var(--nav-total)`, así que envolverlo en un `.feed-wrapper`
+ * —que trae el mismo— sumaría el hueco de la barra dos veces. El landmark ES
+ * el contenedor de cada rama, no un nivel más.
+ */
+test('el landmark del feed está en TODAS las ramas, no sólo en la que tiene papers', async () => {
+  const feed = await readSource(FEED_CONTAINER_JSX);
+
+  const sueltos = feed.match(/return <div className="feed-empty">|return \(\s*<div className="feed-empty">/g) || [];
+  assert.deepEqual(
+    sueltos,
+    [],
+    'una rama de FeedContainer vuelve a devolver un `<div className="feed-empty">` sin '
+    + 'pasar por FeedLandmark. En la ruta que pase landmark, esa pantalla se queda sin '
+    + '`<main>` y sin `<h1>` — que es exactamente como `/following` falló '
+    + '`landmark-one-main` y `page-has-heading-one` el 18-09-2026, por estar siempre '
+    + 'en su estado vacío.',
+  );
+
+  const conClase = feed.match(/<FeedLandmark landmark=\{landmark\} className="feed-empty">/g) || [];
+  assert.equal(
+    conClase.length,
+    3,
+    'esperaba las tres ramas sin papers (ERROR, SOURCE_EMPTY y EMPTY) envueltas en '
+    + '`<FeedLandmark landmark={landmark} className="feed-empty">`. Sin el `className` '
+    + 'el landmark se dibuja como `.feed-wrapper` alrededor de un `.feed-empty`, y los '
+    + 'dos llevan `margin-top: var(--nav-total)`: la pantalla baja el alto de la barra '
+    + 'dos veces.',
+  );
+});
+
+test('`/following` pasa su propio landmark, con su propio encabezado', async () => {
+  const siguiendo = await readSource(new URL('./components/Following/FollowingFeedPage.jsx', import.meta.url));
+
+  const prop = siguiendo.match(/landmark=\{\{\s*label: ([^\n]+),\s*heading: ([^\n]+),\s*\}\}/);
+  assert.ok(
+    prop,
+    'FollowingFeedPage dejó de pasar `landmark` a FeedContainer. `/following` es su '
+    + 'propia ruta desde el 17-09-2026 y nadie más se lo pone: App.jsx sólo se lo pasa '
+    + 'a `/feed`. Sin él la página no tiene ni región principal ni encabezado de nivel 1.',
+  );
+  for (const [pos, trozo] of [['label', prop[1]], ['heading', prop[2]]]) {
+    assert.match(trozo, /isEnglish \?/, `el ${pos} del landmark de /following no está en los dos idiomas`);
+  }
+  assert.doesNotMatch(
+    prop[2],
+    /For you|Para ti/,
+    'el encabezado de `/following` se ha vuelto el de «Para ti». Son dos páginas: la '
+    + 'lista de encabezados de un lector de pantalla las anunciaría igual.',
   );
 });
 

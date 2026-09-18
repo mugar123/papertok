@@ -153,6 +153,14 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList, onOpenComme
 
   return (
     <FeedContainer
+      // Esta página ES la raíz de `/following`, así que es ella la que pone el
+      // `<main>` y el `<h1>`. Sin esto la ruta no tenía ninguno de los dos:
+      // `/feed` los pasa desde App.jsx y `/research` los escribe él mismo, y
+      // «Siguiendo» se quedó sin ambos por el camino.
+      landmark={{
+        label: isEnglish ? 'Papers from what you follow' : 'Papers de tus seguimientos',
+        heading: isEnglish ? 'Following' : 'Siguiendo',
+      }}
       onOpenPdf={onOpenPdf}
       onSaveToList={onSaveToList}
       onOpenComments={onOpenComments}

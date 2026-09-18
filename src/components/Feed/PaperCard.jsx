@@ -1611,7 +1611,11 @@ const PaperCard = memo(function PaperCard({
                   className="pc-authors-more"
                   aria-haspopup="dialog"
                   onClick={(e) => { e.stopPropagation(); setShowAuthorsModal(true); }}
-                  aria-label={isEnglish ? 'Show all authors' : 'Ver todos los autores'}
+                  // El nombre arranca por lo que se lee en el botón. «Ver todos
+                  // los autores» a secas dice mejor lo que hace, pero no
+                  // contiene «et al.», que es lo único escrito ahí: quien
+                  // navega por voz dice lo que ve y no acciona nada.
+                  aria-label={isEnglish ? 'et al., show all authors' : 'et al., ver todos los autores'}
                 >
                   et al.
                 </button>
@@ -1781,7 +1785,15 @@ const PaperCard = memo(function PaperCard({
             read is the decision, sharing and related work are afterthoughts. */}
         <div className="pc-action-bar">
           <div className="pc-action-primary">
-            <Button onClick={handleOpenPaper} disabled={isResolvingAccess}>
+            {/* El `aria-label` repite EL MISMO rótulo, no uno mejor. En móvil
+                `.pc-action-label` es `display: none` (PaperCard.css), y eso no
+                esconde el texto: lo saca del árbol de accesibilidad, así que el
+                botón se quedaba sin nombre — quince por pantalla. Repetirlo
+                literalmente es también lo que pide el criterio 2.5.3 en
+                escritorio, donde el rótulo sí se lee: el nombre accesible tiene
+                que CONTENER lo que se ve, o quien maneja la interfaz por voz no
+                puede pulsarlo diciendo lo que lee. */}
+            <Button onClick={handleOpenPaper} disabled={isResolvingAccess} aria-label={primaryActionLabel}>
               {isResolvingAccess ? <Loader2 className="spinning" size={16} /> : <FileText size={16} />}
               <span className="pc-action-label">{primaryActionLabel}</span>
             </Button>
@@ -1804,8 +1816,14 @@ const PaperCard = memo(function PaperCard({
                   });
                   setShowReader(true);
                 }}
-                aria-label={isEnglish ? 'Read this paper in plain words' : 'Leer este paper en simple'}
               >
+                {/* Sin `aria-label`. Este botón dibuja DOS rótulos y enseña uno
+                    u otro según el ancho, así que un `aria-label` fijo no puede
+                    contener a los dos: el que había («Leer este paper en
+                    simple») no contenía a ninguno, y fallaba 2.5.3 tanto a 1440
+                    como a 390. Sin él, el nombre lo pone el rótulo que de
+                    verdad está puesto — «Leer en simple» ancho, «Simple»
+                    estrecho — y no puede desviarse de lo que se lee. */}
                 <Sparkles size={16} />
                 <span className="pc-action-label">{isEnglish ? 'Read in plain words' : 'Leer en simple'}</span>
                 <span className="pc-action-label--short">{isEnglish ? 'Simple' : 'Simple'}</span>
