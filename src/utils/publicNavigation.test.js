@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import {
   decodePaperKey,
   getAbsoluteShareUrl,
@@ -208,4 +209,47 @@ test('every share URL the app mints is a real path, with no fragment anywhere in
     assert.ok(url, 'every one of these must still build a URL');
     assert.equal(new URL(url).hash, '', `${url} still carries a fragment`);
   }
+});
+
+test('SOURCE: nothing in this codebase mints a public URL with the fragment in it any more', async () => {
+  // Not a check on two files that were known to do it: a check on every file,
+  // because the next one to do it will be a file nobody listed. What is
+  // forbidden is MINTING — a literal that puts `papertok.app/#` into someone's
+  // hands — not parsing, which `utils/legacyHashRoute.js` exists to do and
+  // `services/analyticsService.js` still does for events that arrive carrying
+  // an old fragment.
+  //
+  // Comments are stripped first: four files explain the old shape in prose,
+  // and prose about a bug must not read as the bug.
+  const { readdir, readFile } = await import('node:fs/promises');
+  const roots = ['src', 'worker'];
+  const offenders = [];
+  const walk = async (dir) => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) { await walk(full); continue; }
+      if (!/\.(js|jsx)$/.test(entry.name) || /\.test\.jsx?$/.test(entry.name)) continue;
+      const code = (await readFile(full, 'utf8'))
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/(^|[^:])\/\/.*$/gm, '$1');
+      if (/papertok\.app\/#/.test(code)) offenders.push(full);
+    }
+  };
+  for (const root of roots) await walk(new URL(`../../${root}`, import.meta.url).pathname);
+  assert.deepEqual(offenders, [], `these still mint a fragment URL: ${offenders.join(', ')}`);
+});
+
+test('the landing gate hands the app the fragment, and the app turns it into the route', () => {
+  // Task 16 asked for the gate itself to emit the real path. It does not, on
+  // purpose: the gate is an inline script with no modules, so translating
+  // there means a second copy of the route logic in a different language of
+  // the same codebase, and the two would drift. It costs nothing to leave it
+  // — `location.replace('/feed#/research')` is one navigation, exactly as
+  // `location.replace('/research')` would be, and `utils/legacyHashRoute.js`
+  // rewrites the entry with `replaceState` before React renders, which is not
+  // a navigation at all. What the gate owes is only that the fragment SURVIVES
+  // the hop; the translating is the app's.
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  const gate = html.match(/<script>([\s\S]*?papertok_signed_in[\s\S]*?)<\/script>/)?.[1] || '';
+  assert.match(gate, /replace\('\/feed' \+ search \+ hash\)/, 'the gate drops the fragment on the way to the app');
 });
