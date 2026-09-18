@@ -261,6 +261,15 @@
   letter-spacing: var(--mono-track);
   text-transform: uppercase;
   color: var(--text-tertiary);
+  /* At ANY width: a venue string that doesn't fit its column must never
+     wrap. Wrapping is a vertical escape hatch a fixed-width column should
+     not have — on the desktop barrel a taller slot sits off the cylinder's
+     surface (see .lp-pile__slot above), and on the phone flat list it makes
+     one row taller than its neighbours for no reason a reader can see. The
+     guarantee has to live here, not in a character-count assumption about
+     PILE's current contents — see the phone override below for what that
+     assumption got wrong. */
+  white-space: nowrap;
 }
 
 /* A picker's cells are uniform: one line each, no wrapping. A row that grew
@@ -332,8 +341,17 @@
     overflow: hidden;
   }
   /* Narrower than the desktop's 92px, same as the prototype's own phone
-     block — every PILE venue string is ≤9 characters, so this is spare
-     width handed back to the title rather than a visible change today. */
+     block. This used to be justified by "every PILE venue string is ≤9
+     characters" — false: 'Science 04' and 'Science 12' are ten, the
+     longest in PILE (papers.test.js pins that length so a future entry
+     that outgrows it fails a test instead of silently wrapping a row).
+     What actually keeps a row from growing is the base rule's
+     white-space: nowrap above, not a character count. Measured at this
+     column width, in this font (600 11px IBM Plex Mono + the 0.06em
+     mono-track, phone-emulated Chrome, canvas measureText including
+     letter-spacing): both ten-character strings render at 72.6px, under
+     76px with ~3.4px to spare, so the width stays — nowrap is what makes
+     that margin load-bearing instead of coincidental. */
   .lp-pile__venue { flex: 0 0 76px; }
 }
 

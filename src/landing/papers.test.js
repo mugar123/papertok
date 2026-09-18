@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HERO_PAPERS, SIGNALS, FOLLOW_ROWS, LISTS, MAP, RESEARCH, SOURCES } from './papers.js';
+import { HERO_PAPERS, SIGNALS, FOLLOW_ROWS, LISTS, MAP, RESEARCH, SOURCES, PILE } from './papers.js';
 
 test('the deck opens with LIGO and closes with the paper that is not open access', () => {
   assert.equal(HERO_PAPERS.length, 3);
@@ -32,4 +32,20 @@ test('growing-topic percentages are the ones their own counts give', () => {
 });
 test('six core sources, and no claim that they are the only ones', () => {
   assert.equal(SOURCES.length, 6);
+});
+
+// landing.css's phone .lp-pile__venue column (76px) was sized by measuring
+// PILE's actual longest venue strings against the real mono-label font, not
+// by trusting a character count — see that rule's comment for the
+// measurement (72.6px natural width, canvas measureText, at this column's
+// font+letter-spacing). white-space: nowrap there is what stops a string
+// from ever wrapping a row regardless of length; this test is the other
+// half of that guarantee — it pins the length the width was measured for,
+// so a future PILE entry with a longer venue fails HERE, loudly, instead of
+// silently taking a row's height with it in a screenshot nobody diffs.
+// If this ever needs to grow past 10, re-measure the phone column's
+// natural-width headroom (see landing.css) before raising the number.
+test("no PILE venue string has grown past what the phone column was measured for", () => {
+  const longest = Math.max(...PILE.map((row) => row.venue.length));
+  assert.equal(longest, 10, 'PILE.venue length — widen .lp-pile__venue (landing.css, phone block) if this genuinely needs to grow');
 });
