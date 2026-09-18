@@ -9,14 +9,16 @@
       deep link — `papertok.app/#/paper/…` has always meant the app, and the
       hash never reaches the server, so only this page can honour it. Both are
       `replace`, so the landing never sits in the history of a visit that
-      never meant to see it. Mirror of src/utils/sessionMark.js.
+      never meant to see it, and the query travels with both (feedToApp in
+      vite.config.js does the same in dev). Mirror of src/utils/sessionMark.js.
     -->
     <script>
       (function () {
         try {
           var hash = window.location.hash;
-          if (hash.indexOf('#/') === 0) { window.location.replace('/feed' + hash); return; }
-          if (window.localStorage.getItem('papertok_signed_in') === '1') { window.location.replace('/feed'); }
+          var search = window.location.search;
+          if (hash.indexOf('#/') === 0) { window.location.replace('/feed' + search + hash); return; }
+          if (window.localStorage.getItem('papertok_signed_in') === '1') { window.location.replace('/feed' + search); }
         } catch (error) { /* a browser that refuses storage sees the landing */ }
       })();
     </script>
@@ -56,6 +58,8 @@
       prerendered, so anything hidden by a start state must be hidden before it
       paints or it flickers. Mirror of shouldAnimate() in src/landing/motion.js.
       Failing closed is the safe side: no attribute, no motion, nothing hidden.
+      The `load` handler withdraws the gate if motion.js never reported for
+      duty; init()'s own comment in motion.js says why it has to.
     -->
     <script>
       (function () {
@@ -63,7 +67,11 @@
           if (!('IntersectionObserver' in window) || !window.matchMedia) return;
           if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
           if (!window.matchMedia('(min-width: 768px) and (hover: hover) and (pointer: fine)').matches) return;
-          document.documentElement.setAttribute('data-motion', 'on');
+          var root = document.documentElement;
+          root.setAttribute('data-motion', 'on');
+          window.addEventListener('load', function () {
+            if (!root.hasAttribute('data-motion-ready')) root.removeAttribute('data-motion');
+          });
         } catch (error) { /* stays at rest */ }
       })();
     </script>

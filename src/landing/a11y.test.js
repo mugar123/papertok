@@ -427,7 +427,11 @@ test('init() arms the tabs and the deck BEFORE the data-motion gate, not merely 
   const body = functionBody(motionJs, 'export function init() {');
   const armLevelsAt = body.indexOf('armLevels(rewrite)');
   const armDeckAt = body.indexOf('armDeck();');
-  const gateAt = body.indexOf("data-motion') !== 'on' || !shouldAnimate()) return;");
+  // Located by the predicate, not by the `return` that used to follow it:
+  // declining now withdraws the gate before returning, so the early return
+  // sits a line further down. What this test is about is the ORDER, and the
+  // predicate is what marks the spot.
+  const gateAt = body.indexOf("data-motion') !== 'on' || !shouldAnimate())");
   assert.notEqual(armLevelsAt, -1, 'init() no longer calls armLevels(rewrite) at all.');
   assert.notEqual(armDeckAt, -1, 'init() no longer calls armDeck() at all.');
   assert.notEqual(gateAt, -1, 'init() no longer has the data-motion/shouldAnimate() early-return gate this test locates the two calls against.');

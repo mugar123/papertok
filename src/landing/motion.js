@@ -780,11 +780,32 @@ export function init() {
      motion — see armDeck's own comment. */
   armDeck();
 
-  if (document.documentElement.getAttribute('data-motion') !== 'on' || !shouldAnimate()) return;
+  /* The gate the head script opened is answered here, and the answer is
+     written down. (This reasoning lives here rather than beside the script it
+     describes because an HTML comment is shipped to every reader and a
+     comment in this module is not: the minifier eats it, and the landing has
+     a 30 KB budget to keep.) Under `[data-motion="on"]` the stylesheet hides the map's
+     nodes and labels and empties the highlight bands, and the ONLY thing that
+     ever shows them again is the `.is-in` added below. So the two ways this
+     function can decline have to withdraw the gate rather than walk away from
+     it: if the head script's predicate and this one disagree (they are the
+     same predicate, but the visit can change under them — a reader who turns
+     reduced motion on while the page loads), or if the page was hidden on a
+     visit this function was never going to animate, the attribute goes and
+     the page sits at rest, visible. `data-motion-ready` is the receipt: the
+     head script withdraws the gate on `load` if it is not there, which is
+     what covers the case this file cannot cover from the inside — never
+     having run at all. */
+  var root = document.documentElement;
+  if (root.getAttribute('data-motion') !== 'on' || !shouldAnimate()) {
+    root.removeAttribute('data-motion');
+    return;
+  }
   armPile();
   armMap();
   armReveals();
   if (rewrite) armRewrite(rewrite);
+  root.setAttribute('data-motion-ready', '1');
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });

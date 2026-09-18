@@ -133,6 +133,14 @@ test('shouldAnimate() actually gates armPile() — not just named beside it', as
   };
   const pileData = { textContent: JSON.stringify(Array.from({ length: 25 }, (_, i) => [`V${i}`, `T${i}`])) };
 
+  const bag = { 'data-motion': 'on' };
+  const attrs = {
+    getAttribute: (name) => (name in bag ? bag[name] : null),
+    setAttribute: (name, value) => { bag[name] = String(value); },
+    removeAttribute: (name) => { delete bag[name]; },
+    hasAttribute: (name) => name in bag,
+  };
+
   let allows = true; // flipped between the two calls below; everything else about the environment stays fixed
   const fakeWindow = {
     IntersectionObserver: FakeIntersectionObserver,
@@ -140,7 +148,11 @@ test('shouldAnimate() actually gates armPile() — not just named beside it', as
   };
   const fakeDocument = {
     readyState: 'loading',
-    documentElement: { getAttribute: (name) => (name === 'data-motion' ? 'on' : null) },
+    // A real attribute bag, not a fixed answer: init() now WITHDRAWS the
+    // gate when it declines (the stylesheet hides the map and the highlight
+    // marks under `[data-motion="on"]`, and init is the only thing that ever
+    // shows them again), so the fake has to be able to record that.
+    documentElement: attrs,
     querySelector: (sel) => (sel === '.lp-pile' ? frame : null),
     // Task 10's armReveals() (called from init(), same as armPile/armMap)
     // asks for every `.lp-hl` mark via querySelectorAll — plural, unlike
@@ -167,11 +179,18 @@ test('shouldAnimate() actually gates armPile() — not just named beside it', as
     assert.equal(mod.shouldAnimate(), false);
     mod.init();
     assert.equal(observerCount, 0, 'init() must not wire up the wheel while shouldAnimate() is false');
+    assert.equal(attrs.hasAttribute('data-motion'), false, 'declining must take the gate down, not leave the page hidden under it');
+    assert.equal(attrs.hasAttribute('data-motion-ready'), false);
 
+    // Each init() call here stands for its own page load, and the head script
+    // is what opens the gate on each of them.
+    bag['data-motion'] = 'on';
     allows = true;
     assert.equal(mod.shouldAnimate(), true);
     mod.init();
     assert.equal(observerCount, 1, 'init() must wire up the wheel once shouldAnimate() is true');
+    assert.equal(attrs.getAttribute('data-motion'), 'on');
+    assert.equal(attrs.hasAttribute('data-motion-ready'), true, 'the head script withdraws the gate on load unless init leaves this receipt');
   } finally {
     if (hadWindow) globalThis.window = savedWindow; else delete globalThis.window;
     if (hadDocument) globalThis.document = savedDocument; else delete globalThis.document;
