@@ -115,6 +115,10 @@
 .lp-paper__dot { color: var(--border-strong); }
 .lp-paper__title { font-family: var(--font-serif); font-weight: var(--fw-semibold); line-height: 1.16; letter-spacing: -0.015em; margin: 0; font-size: 1.875rem; text-wrap: pretty; }
 .lp-paper--sheet .lp-paper__title { font-size: clamp(1.5rem, 2.4vw, 2.125rem); }
+/* --lg matches the base size (the reader's card is the "full" paper size);
+   --sm is unused today but kept for the next size this pattern needs. */
+.lp-paper--lg .lp-paper__title { font-size: 1.875rem; }
+.lp-paper--sm .lp-paper__title { font-size: 1.25rem; }
 .lp-paper__authors { display: flex; align-items: center; gap: 12px; margin: 0; padding-bottom: 14px; border-bottom: 1px solid var(--border-subtle); font: var(--fw-medium) var(--fs-sm)/1.4 var(--font-body); color: var(--text-secondary); }
 /* Truncates instead of wrapping, matching `.pc-author-names` — without
    this a long byline (the LIGO sheet's "et al. (LIGO Scientific
@@ -132,7 +136,26 @@
 .lp-paper__actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
 .lp-paper__spacer { flex: 1; }
 .lp-btn--md { min-height: 44px; padding: 0 18px; border-radius: var(--radius-lg); gap: 8px; }
-.lp-btn--ai { background: var(--brand-yellow-soft); border-color: var(--tint-amber-line); color: var(--text-on-brand-soft); }
+/* Rest, hover and focus all stay on the soft wash: PaperReader's own
+   `variant="brand"` flips this to the full `--brand-yellow` on hover, but
+   that would be a fifth "ground" on this page (page.test.js counts them),
+   on top of the two the reader's own reused pieces already force — see
+   .lp-levels::after and @keyframes lpInvite below, both pinned by tests
+   copied verbatim from the app. Border and text carry the interaction
+   instead: warmer border, held colour, and — the one motion this page keeps
+   from the app's own button — a small scale swell on `:active`-equivalent
+   states, transitioned rather than snapped so it can hand off cleanly to
+   whatever state follows (see @keyframes lpInvite's own comment). */
+.lp-btn--ai {
+  background: var(--brand-yellow-soft);
+  border-color: var(--tint-amber-line);
+  color: var(--text-on-brand-soft);
+  transition: border-color 150ms cubic-bezier(0.4, 0, 0.2, 1), color 150ms cubic-bezier(0.4, 0, 0.2, 1), scale 260ms var(--ease-out-cubic);
+}
+.lp-btn--ai:hover,
+.lp-btn--ai:focus-visible {
+  border-color: var(--brand-orange);
+}
 .lp-iconbtn { width: 40px; height: 40px; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); display: inline-flex; align-items: center; justify-content: center; color: var(--text-primary); }
 .lp-iconbtn--graph { border-color: var(--tint-blue-line); background: var(--tint-blue-bg); color: var(--gradient-physics); }
 .lp-chips { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
@@ -355,6 +378,119 @@
   .lp-pile__venue { flex: 0 0 76px; }
 }
 
+/* ── The rewrite, as PaperReader sets it ──
+   One rectangle, three states: the paper with its button, the skeleton, and
+   the passage. They share a grid cell, so the box stands at its full height
+   from the first frame and the screen below it never learns that anything
+   happened. `min-height` rather than `height`: a line that wraps one more
+   time than it was measured for pushes the box out instead of being
+   clipped.
+
+   In the HTML only the reader exists — the card ships `hidden`, and the
+   prerendered page is the finished passage. motion.js (armRewrite) is what
+   turns this into a sequence, behind the same gate as the rest of the
+   page's motion; the tabs (armLevels) are wired unconditionally, ahead of
+   that gate, so they work even where nothing animates. */
+.lp-rewrite { display: grid; min-height: 460px; }
+.lp-rewrite > * { grid-area: 1 / 1; min-width: 0; }
+
+.lp-rewrite__card { display: flex; flex-direction: column; }
+.lp-rewrite__card[hidden] { display: none; }
+/* The action row sits 32px under the abstract and NOT pinned to the foot of
+   the box: the card is shorter than the reader, and `margin-top: auto`
+   threw the whole difference into the middle. The card has no container of
+   its own, so what is left over at the bottom is indistinguishable from the
+   section's own air. */
+.lp-rewrite__actions {
+  margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--border-subtle);
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+}
+
+.lp-rewrite__reader { display: flex; flex-direction: column; }
+.lp-rewrite__reader > * { flex: none; }
+
+/* The reader's own status line: what it is, and what it costs. */
+.lp-rewrite__status {
+  margin: 0 0 16px; min-height: 24px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.lp-rewrite__kicker { display: inline-flex; align-items: center; gap: 6px; }
+
+/* A meter rather than a number alone: "nine left" reads as plenty until you
+   see how short the row is. PaperReader.css draws one segment per use. */
+.lp-uses {
+  display: inline-flex; align-items: center; gap: 6px; padding: 2px 7px;
+  border: 1px solid var(--border-default); border-radius: var(--radius-sm);
+  background: var(--bg-primary); color: var(--text-tertiary);
+  font: var(--fw-medium) 0.625rem/1.5 var(--font-mono); white-space: nowrap;
+}
+.lp-uses__meter { display: inline-flex; gap: 2px; }
+.lp-uses__seg { width: 3px; height: 9px; border-radius: 1px; background: var(--accent-primary); }
+/* The page rests on the finished rewrite, so the spent segment ships grey.
+   Only the sequence hands it back, while the use has not been spent yet —
+   see motion.css. */
+.lp-uses__seg[data-spent] { background: var(--border-default); }
+
+.lp-levels-frame {
+  border: 1px solid var(--border-default); border-radius: var(--radius-md);
+  overflow: hidden; align-self: flex-start;
+  min-width: 340px; width: 462px; max-width: 100%;
+}
+.lp-panel {
+  flex: 1; margin-top: 20px;
+  background: var(--bg-primary); border: 1px solid var(--border-subtle);
+  padding: 28px 32px;
+}
+
+/* The skeleton, drawn before the text exists: a heading bar and five uneven
+   lines at the pitch of the real type, so the swap barely moves. */
+.lp-ghost { align-self: start; transform-origin: top center; }
+.lp-ghost[hidden] { display: none; }
+.lp-ghost__head {
+  margin: 0 0 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  color: var(--text-tertiary);
+}
+.lp-ghost__head small { font: 400 0.6875rem/1.5 var(--font-mono); color: var(--text-tertiary); }
+/* The stage label reuses .lp-eyebrow (the app's own mono metadata voice)
+   for its type instead of restating font/letter-spacing/uppercase/colour a
+   second time — this rule is left with only the visibility toggle motion.js
+   drives. */
+.lp-ghost__stage { display: none; }
+.lp-ghost__title { height: 20px; width: 44%; margin-bottom: 16px; border-radius: var(--radius-sm); }
+/* 12px bar + 17px gap = the 29px line pitch of the real passage. */
+.lp-ghost__lines { display: flex; flex-direction: column; gap: 17px; }
+.lp-ghost__line { display: block; height: 12px; width: var(--lp-w, 100%); border-radius: var(--radius-sm); }
+
+.lp-doc { display: flex; flex-direction: column; height: 100%; }
+/* An <h3>, not a <p>: as a paragraph `.lp-panel__level p` outranked it
+   (0,1,1 against 0,1,0) and the heading painted at body size. */
+.lp-doc__title {
+  font-family: var(--font-serif); font-size: 1.35rem; font-weight: var(--fw-semibold);
+  line-height: 1.25; color: var(--text-primary); margin: 0 0 16px;
+}
+.lp-doc__levels { display: grid; flex: 1; }
+.lp-doc__levels > * { grid-area: 1 / 1; }
+.lp-panel__level p { margin: 0 0 14px; font-size: 1.125rem; line-height: 1.75; color: var(--text-primary); }
+.lp-panel__level p:last-child { margin-bottom: 0; }
+/* The machine voice inside a sentence of prose, as the reader's own byline
+   sets it. */
+.lp-code { font: 0.8125rem/1.4 var(--font-mono); color: var(--text-primary); }
+
+/* A worked example of the rail the left column's copy describes, not a
+   disclaimer: one highlight, one note, so "write a note on it" is something
+   a reader can see rather than only read about. The rule is the one place
+   this section spends yellow as a LINE rather than a field or a chip. */
+.lp-note { display: flex; flex-direction: column; gap: 8px; margin: 18px 0 0; padding-left: 14px; border-left: 3px solid var(--brand-yellow); }
+.lp-note__kicker { font: var(--fw-medium) 0.75rem/1 var(--font-body); color: var(--text-secondary); }
+.lp-note p { font: var(--fw-regular) 0.875rem/1.5 var(--font-body); color: var(--text-primary); margin: 0; }
+
+/* ── Labels ── */
+.lp-labels__list { margin: 0; }
+.lp-labels__row { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 32px; align-items: center; padding: 18px 0; border-top: 1px solid var(--border-subtle); }
+.lp-labels__row:last-child { border-bottom: 1px solid var(--border-subtle); }
+.lp-labels__row dt, .lp-labels__row dd { margin: 0; }
+.lp-labels__row dd { font-family: var(--font-serif); font-size: 1.25rem; line-height: 1.4; }
+
 /* ── Strip and close ── */
 .lp-strip { padding: 64px 0; }
 .lp-strip__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 64px; }
@@ -388,4 +524,15 @@ main:has(> .lp-close:last-child) + .lp-footer { border-top: none; }
   .lp-sheet { padding: 24px 20px 16px; }
   .lp-paper__actions { flex-wrap: wrap; }
   .lp-paper__spacer { display: none; }
+  /* The reader's fixed 462px levels-frame and 460px min-height are sized for
+     the 420px-column desktop layout; at this width `.lp-cols` has already
+     stacked (the 1000px query above), so both give back the room a phone
+     does not have. */
+  .lp-rewrite { min-height: 0; }
+  .lp-levels-frame { min-width: 0; width: 100%; }
+  .lp-panel { padding: 20px 18px; }
+  .lp-panel__level p { font-size: 1rem; }
+  .lp-rewrite__actions { flex-direction: column; align-items: stretch; gap: 10px; }
+  .lp-rewrite__actions .lp-eyebrow { text-align: center; }
+  .lp-labels__row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
 }

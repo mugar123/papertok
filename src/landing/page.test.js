@@ -72,12 +72,28 @@ test('the hero deck ships three slides, the first visible, the others hidden and
   assert.match(css, /\.lp-deck__skip\[hidden\]\s*\{\s*display:\s*none;?\s*\}/);
 });
 
-test('yellow is a ground only in the hero and the closing button', () => {
+test('yellow is a ground in four places, plus two small, non-persistent accents', () => {
   // .lp-bar--yellow and .lp-btn--yellow live in static-page.css, and
   // motion.css is owned by tasks 7 and 10 from here — read all three, or a
   // fifth yellow ground added to either evades this test.
+  //
+  // Task 7 forces two more matches, and both are pinned by tests copied
+  // verbatim from the working prototype (rewriteMotion.test.js,
+  // keyframeContrast.test.js) rather than invented here:
+  //   .lp-levels::after   the active reading-level tab's travelling
+  //                       indicator — a 1/3-width strip, not a field.
+  //   38%                 the peak step of the AI button's invitation
+  //                       keyframe (lpInvite) — five 2.8s breaths, only
+  //                       after the section has been seen and only until
+  //                       the button is found, never a resting state.
+  // Neither is a "ground" in the sense this test otherwise guards: a static
+  // surface a visitor's eye rests on. The AI button's OWN resting, hover,
+  // focus and press states stay on --brand-yellow-soft and never flip to
+  // the full colour (see .lp-btn--ai and its [data-phase='press'] rule) —
+  // that flip is exactly where a real fifth ground would have appeared, and
+  // it does not.
   const grounds = [...allCss.matchAll(/([^{}]+)\{[^}]*background(?:-color)?:\s*var\(--brand-yellow\)[^}]*\}/g)].map((m) => m[1].trim());
-  assert.deepEqual(grounds.sort(), ['.lp-bar--yellow', '.lp-btn--yellow', '.lp-close .lp-btn--yellow', '.lp-hero']);
+  assert.deepEqual(grounds.sort(), ['.lp-bar--yellow', '.lp-btn--yellow', '.lp-close .lp-btn--yellow', '.lp-hero', '.lp-levels::after', '38%']);
 });
 
 test('no snap, no wheel capture, no figures, no eyebrows outside the card', () => {
@@ -88,8 +104,21 @@ test('no snap, no wheel capture, no figures, no eyebrows outside the card', () =
   const upper = [...css.matchAll(/([^{}]+)\{[^}]*text-transform:\s*uppercase[^}]*\}/g)].map((m) => m[1].trim());
   // `pile` joins the allowlist here: `.lp-pile__venue` is the wheel's venue
   // column, set uppercase for the same reason `.lp-paper__meta` is — it's
-  // the app's own mono metadata voice, not a fresh decision.
-  for (const sel of upper) assert.match(sel, /^\.lp-(paper|plate|research|chip|pile)/, sel);
+  // the app's own mono metadata voice, not a fresh decision. `eyebrow` joins
+  // it in task 7: the reader's kicker and its uses counter reuse the app's
+  // own mono-uppercase voice class rather than inventing a new rule — see
+  // the counterpart assertion below, which is what stops the allowance from
+  // leaking to the rest of the page.
+  for (const sel of upper) assert.match(sel, /^\.lp-(paper|plate|research|chip|pile|eyebrow)/, sel);
+  // `.lp-eyebrow` is app UI that belongs INSIDE a reader's own window — the
+  // rewrite reader here, the research screen once task 9 lands it — never a
+  // label loose on the page. `.lp-research` does not exist yet, so that
+  // `replace` is a no-op today and starts pulling its weight the day task 9
+  // adds the section; either way this reads the CURRENT html, so a future
+  // section that copies the class without copying its containment shows up
+  // here as a leak, not silently.
+  const outside = html.replace(/<section class="lp-reader[^"]*"[\s\S]*?<\/section>/, '').replace(/<section class="lp-research[^"]*"[\s\S]*?<\/section>/, '');
+  assert.doesNotMatch(outside, /lp-eyebrow/);
 });
 
 test('chip tone and the paper accent are guarded against attribute-context injection', () => {
@@ -162,4 +191,23 @@ test('six signals, name and sentence each, no dl and no mono labels', () => {
   const sec = html.match(/<section class="lp-signals[^"]*"[\s\S]*?<\/section>/)[0];
   assert.equal((sec.match(/class="lp-signal"/g) || []).length, 6);
   assert.doesNotMatch(sec, /<dl|lp-eyebrow/);
+});
+
+// `.lp-reader` carries `lp-sec` too (`class="lp-reader lp-sec"`, same reason
+// as `.lp-problem` above), so the match needs the same `[^"]*` wildcard —
+// without it this regex never matches the section this task actually
+// builds, brief text notwithstanding.
+test('the reader ships at rest with the finished text, its tabs, a highlight and a note', () => {
+  const sec = html.match(/<section class="lp-reader[^"]*"[\s\S]*?<\/section>/)[0];
+  assert.match(sec, /data-rewrite data-levels/);
+  assert.match(sec, /role="tablist" aria-label="Rewrite level"/);
+  assert.equal((sec.match(/role="tab"/g) || []).length, 3);
+  assert.equal((sec.match(/class="lp-hl"/g) || []).length, 1);
+  assert.match(sec, /<aside class="lp-note" aria-label="Your note">/);
+  assert.match(sec, /data-rewrite-card hidden/);
+});
+
+test('five labels, each with its sentence, and no motion', () => {
+  const sec = html.match(/<section class="lp-labels[^"]*"[\s\S]*?<\/section>/)[0];
+  assert.deepEqual([...sec.matchAll(/lp-chip lp-chip--\w+">([^<]+)</g)].map((m) => m[1]), ['Verified', 'Preprint', 'Open access', 'Open version', 'Subscription']);
 });

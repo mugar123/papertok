@@ -1,4 +1,4 @@
-import { HERO_PAPERS, REPO, SOURCES, PEOPLE, PILE, WHEEL, SIGNALS } from './papers.js';
+import { HERO_PAPERS, REPO, SOURCES, PEOPLE, PILE, WHEEL, SIGNALS, LEVELS, DEFAULT_LEVEL, REWRITE } from './papers.js';
 
 const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -211,6 +211,118 @@ const signals = () => `<section class="lp-signals lp-sec" aria-labelledby="lp-si
   </div>
 </section>`;
 
+/**
+ * The rewrite, as a sequence the reader triggers.
+ *
+ * The markup rests on the finished passage — that is what the prerender is
+ * for, and what a visitor without JavaScript, on a phone, or asking for less
+ * motion reads: `.lp-rewrite__reader` ships live, with its tabs already
+ * wired to real `<button>`s (armLevels runs before the motion gate, so the
+ * tabs work even when nothing animates). The card and the loading skeleton
+ * ship `hidden`; armRewrite (motion.js) is what turns the button into a
+ * sequence, and it only runs behind the same gate as the rest of the page's
+ * motion — nobody may be left with a button that does nothing, so until that
+ * gate opens there is no button to leave broken, only the reader.
+ *
+ * The one highlight in this section: the brief's own sentence — "felt the
+ * same tiny stretch of space at the same moment" — is Beginner-level
+ * phrasing and does not appear in LEVELS[DEFAULT_LEVEL] (University), which
+ * is where the page actually opens. The University paragraph's own sentence
+ * carrying the same beat — two places, one signal, the same moment — is
+ * "Two detectors 3,000 km apart recorded the same brief signal within
+ * milliseconds of each other.", so that is what `hl()` wraps here instead of
+ * inventing a sentence that was never reviewed as part of the paragraph.
+ */
+const plainWords = () => `<section class="lp-reader lp-sec" aria-labelledby="lp-reader-h">
+  <div class="lp-wrap lp-cols">
+    <div class="lp-head">
+      <h2 class="lp-h2" id="lp-reader-h">Read it in plain words.</h2>
+      <p class="lp-body">Any paper, rewritten at three levels. The abstract of a paper outside your field stops being a wall.</p>
+      <p class="lp-body">Select a passage and you can highlight it, write a note on it, or ask for that part alone. Everything collects in a rail beside the text, saved per paper.</p>
+      <p class="lp-body">It works on the whole paper, not on the abstract: the PDF is fetched and read end to end, which is why the wait is a minute rather than a second. When the full text cannot be opened, it says so instead of rewriting the summary and calling it the paper.</p>
+      <p class="lp-body">What comes out is yours to keep — a <code class="lp-code">.tex</code> that compiles as it is, or a PDF, with your highlights and your notes numbered at the foot. The title, the authors, the link to the original and the line saying a model wrote it travel on every copy.</p>
+    </div>
+
+    <div class="lp-rewrite" data-rewrite data-levels>
+      <div class="lp-rewrite__card" data-rewrite-card hidden>
+        ${paper(REWRITE.paper, { size: 'lg' })}
+        <div class="lp-rewrite__actions">
+          <button class="lp-btn lp-btn--ai lp-btn--lg" type="button" data-rewrite-start aria-label="Read this paper in plain words">
+            ${icon('sparkles', 20)}<span>Read in plain words</span>
+          </button>
+          <span class="lp-eyebrow">${esc(REWRITE.cost)}</span>
+        </div>
+      </div>
+
+      <div class="lp-rewrite__reader" data-rewrite-reader>
+        <p class="lp-rewrite__status">
+          <span class="lp-eyebrow lp-rewrite__kicker">${icon('sparkles', 11)}Read in plain words</span>
+          <span class="lp-uses">
+            <span class="lp-uses__meter" aria-hidden="true">${Array.from({ length: REWRITE.uses.total }, (_, i) => `<i class="lp-uses__seg"${i === REWRITE.uses.total - 1 ? ' data-spent' : ''}></i>`).join('')}</span>
+            <span>${REWRITE.uses.left}/${REWRITE.uses.total} today</span>
+          </span>
+        </p>
+
+        <div class="lp-levels-frame">
+          <div class="lp-levels" role="tablist" aria-label="Rewrite level">
+            ${LEVELS.map((l, i) => `<button class="lp-levels__tab" type="button" role="tab" id="lp-level-tab-${i}" aria-controls="lp-level-panel-${i}" aria-selected="${i === DEFAULT_LEVEL}" tabindex="${i === DEFAULT_LEVEL ? '0' : '-1'}">${esc(l.name)}</button>`).join('')}
+          </div>
+        </div>
+
+        <div class="lp-panel">
+          <div class="lp-ghost" data-rewrite-ghost hidden>
+            <p class="lp-ghost__head" role="status" aria-live="polite">
+              <span class="lp-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              ${REWRITE.stages.map((st) => `<span class="lp-ghost__stage lp-eyebrow" data-rewrite-stage="${st.id}">${esc(st.label)}</span>`).join('')}
+              <small>${esc(REWRITE.hint)}</small>
+            </p>
+            <div class="lp-ghost__body" aria-hidden="true">
+              <div class="lp-ghost__title"></div>
+              <div class="lp-ghost__lines">${REWRITE.ghostLines.map((w, i) => `<i class="lp-ghost__line" style="--lp-w: ${w}; --lp-i: ${i}"></i>`).join('')}</div>
+            </div>
+          </div>
+
+          <div class="lp-doc">
+            <h3 class="lp-doc__title">${esc(REWRITE.heading)}</h3>
+            <div class="lp-doc__levels">
+              ${LEVELS.map((l, i) => `<div class="lp-panel__level" id="lp-level-panel-${i}" role="tabpanel" aria-labelledby="lp-level-tab-${i}" data-active="${i === DEFAULT_LEVEL}">${l.paras.map((para, j) => `<p style="--lp-i: ${j}">${
+                i === DEFAULT_LEVEL && j === 0
+                  ? esc(para).replace('Two detectors 3,000 km apart recorded the same brief signal within milliseconds of each other.', hl('Two detectors 3,000 km apart recorded the same brief signal within milliseconds of each other.'))
+                  : esc(para)
+              }</p>`).join('')}</div>`).join('')}
+            </div>
+            <aside class="lp-note" aria-label="Your note">
+              <span class="lp-note__kicker">Your note</span>
+              <p>Why 200,000 years? That's the false-alarm rate — ask the model.</p>
+            </aside>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>`;
+
+const LABEL_ROWS = [
+  [{ label: 'Verified', tone: 'blue' }, "Passed peer review, according to the record."],
+  [{ label: 'Preprint', tone: 'amber' }, 'Posted before review. Read it as such.'],
+  [{ label: 'Open access', tone: 'green' }, 'You can read the whole thing right now.'],
+  [{ label: 'Open version', tone: 'green' }, 'The journal charges; a free copy exists elsewhere.'],
+  [{ label: 'Subscription', tone: 'amber' }, "Only the abstract is free. It says so before you click."],
+];
+
+/** Five honest-label chips, the app's own — each with the one sentence that
+ * says what it actually means, so a reader never has to guess what a chip
+ * is claiming. No motion: this is reference material, read once and kept. */
+const labels = () => `<section class="lp-labels lp-sec" aria-labelledby="lp-labels-h">
+  <div class="lp-wrap lp-cols">
+    <div class="lp-head">
+      <h2 id="lp-labels-h" class="lp-h2">Every card says what it is.</h2>
+      <p class="lp-body">Whether it passed peer review, and whether you can actually read it. When the record doesn't say, the card shows nothing rather than a guess.</p>
+    </div>
+    <dl class="lp-labels__list">${LABEL_ROWS.map(([c, why]) => `<div class="lp-labels__row"><dt>${chip(c)}</dt><dd>${esc(why)}</dd></div>`).join('')}</dl>
+  </div>
+</section>`;
+
 const strip = () => `<section class="lp-strip" aria-labelledby="lp-strip-h">
   <h2 id="lp-strip-h" class="lp-visually-hidden">Where it comes from, and who makes it</h2>
   <div class="lp-wrap lp-strip__grid">
@@ -233,6 +345,6 @@ const foot = () => `<footer class="lp-footer">
 </footer>`;
 
 export function buildLandingHtml() {
-  const screens = [hero(), problem(), signals(), strip(), close()]; // tasks 7–9 insert their sections before strip()
+  const screens = [hero(), problem(), signals(), plainWords(), labels(), strip(), close()]; // tasks 8–9 insert their sections before strip()
   return `${skip()}\n${bar()}\n<main id="main-content" class="lp-main">\n${screens.join('\n')}\n</main>\n${foot()}\n${pileData()}`;
 }

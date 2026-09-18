@@ -32,6 +32,174 @@ export function shouldAnimate() {
   return window.matchMedia('(min-width: 768px) and (hover: hover) and (pointer: fine)').matches;
 }
 
+/* ── The rewrite levels ──────────────────────────────────────────────────
+   Armed unconditionally, ahead of the motion gate: a tap works on a phone,
+   under reduced motion, and with every arrival switched off — the tabs are
+   how a reader picks what to read, not a piece of motion. */
+export function armLevels(root) {
+  var tabs = [].slice.call(root.querySelectorAll('.lp-levels__tab'));
+  var panels = [].slice.call(root.querySelectorAll('.lp-panel__level'));
+  if (!tabs.length) return;
+
+  function select(index) {
+    root.style.setProperty('--lp-level', String(index));
+    tabs.forEach(function (tab, i) {
+      tab.setAttribute('aria-selected', i === index ? 'true' : 'false');
+      tab.setAttribute('tabindex', i === index ? '0' : '-1');
+    });
+    panels.forEach(function (panel, i) {
+      panel.setAttribute('data-active', i === index ? 'true' : 'false');
+    });
+  }
+
+  tabs.forEach(function (tab, i) {
+    tab.addEventListener('click', function () { select(i); });
+    /* A tab strip is one stop in the tab order; the arrows move within it —
+       WAI-ARIA's roving-tabindex pattern. preventDefault here has nothing
+       to do with the page's scroll: it stops the arrow key's own default
+       (which, in some hosts, scrolls the page) so the key can move focus
+       between tabs instead. See wheel.test.js for why the file-wide
+       preventDefault ban was narrowed to make room for exactly this. */
+    tab.addEventListener('keydown', function (event) {
+      var next = event.key === 'ArrowRight' ? i + 1 : event.key === 'ArrowLeft' ? i - 1 : -1;
+      if (next < 0 || next >= tabs.length) return;
+      event.preventDefault();
+      select(next);
+      tabs[next].focus();
+    });
+  });
+
+  var initial = tabs.findIndex(function (t) { return t.getAttribute('aria-selected') === 'true'; });
+  select(initial < 0 ? 0 : initial);
+}
+
+/* ── The rewrite, as a sequence ──────────────────────────────────────────
+   The markup rests on the finished passage, which is what anyone without
+   JavaScript reads. This turns it into the sequence the section is about:
+   the paper and its button first, then the two labels of the wait, then the
+   text writing itself.
+
+   The timings are the DEMO's, not the product's — a real rewrite takes
+   between ten seconds and a minute, and a landing page gets about three.
+   The labels, their order and every animation are the app's.
+
+   IT ONLY RUNS WHEN SOMEBODY PRESSES. The section does not play itself: a
+   page that performs its own demo while you are reading it is talking over
+   you, and the whole point of the button is that pressing it is the thing
+   being shown. What the page does instead is ASK — see the invitation in
+   motion.css, which is why that breath matters more than it looks.
+
+   And it never goes back. Nothing un-rewrites a paper in the product. */
+var REWRITE_STEPS = [
+  ['press', 0], ['source', 140], ['reading', 1640], ['done', 3340],
+];
+var REWRITE_WRITE_MS = 1500;   /* how long the wipe's one-shot stays armed */
+
+export function armRewrite(root) {
+  var card = root.querySelector('[data-rewrite-card]');
+  var ghost = root.querySelector('[data-rewrite-ghost]');
+  var reader = root.querySelector('[data-rewrite-reader]');
+  var button = root.querySelector('[data-rewrite-start]');
+  var tabs = [].slice.call(root.querySelectorAll('.lp-levels__tab'));
+  if (!card || !ghost || !reader || !button) return;
+
+  var timers = [];
+  var started = false;
+
+  function at(ms, fn) { timers.push(window.setTimeout(fn, ms)); }
+
+  function flag(el, name, on) {
+    if (on) el.setAttribute(name, ''); else el.removeAttribute(name);
+  }
+
+  function setPhase(phase) {
+    root.setAttribute('data-phase', phase);
+    var open = phase !== 'idle' && phase !== 'press';
+    flag(root, 'data-open', open);
+    flag(root, 'data-busy', phase === 'source' || phase === 'reading');
+    /* Four controls a keyboard reaches and cannot see: the button once the
+       sheet is over it, and the three tabs while there is nothing to choose
+       between. The reader disables the other levels while it streams
+       (PaperReader.jsx), which is the same rule. */
+    button.disabled = open;
+    card.inert = open;
+    reader.inert = !open;
+    tabs.forEach(function (tab) { tab.disabled = phase !== 'done'; });
+  }
+
+  function start() {
+    if (started) return;
+    started = true;
+    timers.forEach(window.clearTimeout);
+    timers = [];
+    REWRITE_STEPS.forEach(function (step) {
+      at(step[1], function () { setPhase(step[0]); });
+    });
+    at(3340, function () { root.setAttribute('data-write', ''); });
+    at(3340 + REWRITE_WRITE_MS, function () { root.removeAttribute('data-write'); });
+  }
+
+  /* The card only exists once this has run: the prerendered page ships the
+     reader, and nothing here may leave a visitor with a button that does
+     nothing. armRewrite runs only behind the same gate as the rest of the
+     page's motion (see init() below), so a visit that never reaches this
+     point never has a card to begin with — only the reader, at rest. */
+  card.hidden = false;
+  ghost.hidden = false;
+  setPhase('idle');
+  root.setAttribute('data-found', '0');
+
+  button.addEventListener('click', start);
+
+  /* Found: the invitation does not come back for the rest of the visit —
+     and it LEAVES rather than being cut off.
+
+     Stopping a CSS animation drops its property to the underlying value in
+     a single frame, so a button caught mid-swell snapped from 1.05 to 1 the
+     instant the pointer arrived. The way out is to hand the swell to the
+     transition: freeze it where it is with an inline value, stop the rule,
+     and release the inline value on the next frame — that last step is a
+     computed-value change, which is the only thing a transition answers to.
+     (Which is also why :hover must NOT stop the animation in CSS: by the
+     time this runs, :hover is already applied, and there would be nothing
+     left to read.) */
+  function found() {
+    if (root.getAttribute('data-found') === '1') return;
+    var mid = window.getComputedStyle(button).scale;
+    if (mid && mid !== 'none') button.style.scale = mid;
+    root.setAttribute('data-found', '1');
+    window.requestAnimationFrame(function () { button.style.scale = ''; });
+  }
+
+  ['mouseenter', 'focus'].forEach(function (type) {
+    button.addEventListener(type, found);
+  });
+
+  /* The sheet grows out of the button's rectangle — the app reads it with
+     getBoundingClientRect (setReaderOrigin in PaperCard.jsx) and so does
+     this, once the card has been laid out. Guarded: a zero-width rect means
+     the section is still off-screen, and the default origin is fine. */
+  var box = root.getBoundingClientRect();
+  var rect = button.getBoundingClientRect();
+  if (rect.width) {
+    root.style.setProperty('--lp-origin-x', Math.round(rect.left - box.left + rect.width / 2) + 'px');
+    root.style.setProperty('--lp-origin-y', Math.round(box.bottom - (rect.top + rect.height / 2)) + 'px');
+  }
+
+  /* The invitation may only start once the screen is HERE. This is four
+     sections down the page: armed at load, the button would have breathed
+     its five breaths into an empty room and be silent by the time anyone
+     arrived. The observer does nothing else — there is no automatic press. */
+  var watch = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (!entry.isIntersecting) return;
+      watch.unobserve(entry.target);
+      root.setAttribute('data-seen', '1');
+    });
+  }, { threshold: 0.5 });
+  watch.observe(root);
+}
+
 /* ── The pile's picker wheel ─────────────────────────────────────────────
    Driven frame by frame from here rather than as a CSS arrival, for two
    reasons a stylesheet cannot meet: it has to ADD to whatever velocity the
@@ -246,8 +414,18 @@ export function armPile() {
    rather than trusting that the two are wired together correctly by
    reading the source — see wheel.test.js. */
 export function init() {
+  /* Unconditional, and ahead of the gate below: the tabs are how a reader
+     picks a reading level, not a piece of motion, so they have to work on a
+     phone, under reduced motion, and with data-motion never set — see
+     armLevels' own comment. `[data-levels]` and `[data-rewrite]` are the
+     same element in this page's markup (`.lp-rewrite`), so one query below
+     serves armRewrite too. */
+  var rewrite = document.querySelector('[data-levels]');
+  if (rewrite) armLevels(rewrite);
+
   if (document.documentElement.getAttribute('data-motion') !== 'on' || !shouldAnimate()) return;
   armPile();
+  if (rewrite) armRewrite(rewrite);
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });

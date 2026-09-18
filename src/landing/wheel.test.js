@@ -23,25 +23,36 @@ test('the wheel keeps its measured constants', () => {
   assert.match(js, /WHEEL_STOP_V = 0\.46/);
 });
 
-// A literal string check, not one tied to a call syntax: `preventDefault`
-// can't be invoked without that word appearing somewhere in the source, dot
-// call or bracket call alike (`x.preventDefault()` and
-// `x['preventDefault']()` both contain it), so the plain substring already
-// covers every way of writing the call. The same trick is what closes the
-// bracket-notation gap the old `/addEventListener\('wheel'/` had: instead of
-// pinning one call syntax, this pins the EVENT NAME, which has to appear as
-// a literal string for either `addEventListener('wheel', …)` or
-// `addEventListener['wheel', …]`-style indirection to reach the browser API
-// at all. touchmove is the other event a hand-rolled scroll-capture reaches
-// for, and `overscrollBehavior` is the non-event way to fight a scroll
-// gesture — checked here in its JS form, and against both stylesheets in
-// their CSS form (`overscroll-behavior`) right after.
+// A literal string check, not one tied to a call syntax: `wheel` can't name
+// an event without that word appearing somewhere in the source, dot call or
+// bracket call alike (`x.addEventListener('wheel', …)` and
+// `x['addEventListener']('wheel', …)` both contain the bare string), so the
+// plain substring already covers every way of registering the listener.
+// touchmove and scroll are the other events a hand-rolled scroll-capture
+// reaches for, and `overscrollBehavior` is the non-event way to fight a
+// scroll gesture — checked here in its JS form, and against both
+// stylesheets in their CSS form (`overscroll-behavior`) right after.
+//
+// The bare-word ban on `preventDefault` that used to sit here is gone: task
+// 7's armLevels() legitimately calls it, on the arrow-key event in the
+// tablist's keydown handler — WAI-ARIA's roving-tabindex pattern, so the
+// arrow keys move focus between tabs instead of the browser's own default
+// (which, in some hosts, is to scroll the page). That call has nothing to
+// do with the page's own scroll gesture. What this test actually guards is
+// narrower than "no preventDefault ever" and is still fully enforced
+// without the bare word: no `wheel`, `touchmove` or `scroll` EVENT NAME
+// anywhere (so no listener for any of them can exist, by whatever call
+// syntax), and no `overscroll-behavior` WRITE — with none of those three
+// events ever registered, there is nothing on this page for a
+// `preventDefault()` to withhold a scroll from. Add a
+// `frame.addEventListener('wheel', …)` back — or `frame['addEventListener'](
+// 'wheel', …)` — and this still fails, on the bare `['"]wheel['"]` line.
 test('the wheel turns on arrival by IntersectionObserver and on click, and never captures the scroll', () => {
   assert.match(js, /new IntersectionObserver\([\s\S]*?threshold: 0\.5/);
   assert.match(js, /frame\.addEventListener\('click'/);
-  assert.doesNotMatch(js, /preventDefault/);
   assert.doesNotMatch(js, /['"]wheel['"]/);
   assert.doesNotMatch(js, /['"]touchmove['"]/);
+  assert.doesNotMatch(js, /['"]scroll['"]/);
   assert.doesNotMatch(js, /overscrollBehavior/);
   assert.doesNotMatch(js, /lp-scroller/);
 });
