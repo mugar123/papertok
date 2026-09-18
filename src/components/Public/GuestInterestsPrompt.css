@@ -42,6 +42,42 @@
   overscroll-behavior: contain;
 }
 
+/* La entrada, en el telefono. El primitivo centra la hoja y la trae con
+   `dialogIn` -- opacidad y un 3 % de escala en 180 ms --, que es la llegada
+   correcta de un modal centrado. Aqui arriba la hoja NO esta centrada: se
+   acopla al borde inferior, y una hoja anclada abajo que aparece encogiendo en
+   el sitio no se lee como que entra, se lee como que ya estaba. Medido en
+   produccion con un perfil nuevo: opacidad 0 -> 1 y escala 0,97 -> 1 en ~120 ms
+   con `translate` clavado en `-50%`, o sea, ni un pixel de recorrido vertical.
+
+   Asi que por debajo de 640 px entra deslizando desde el borde, que es como
+   entran las otras hojas de este telefono: 400 ms y la curva son los del
+   `Drawer` del propio repo (`ui/drawer.css`), no numeros inventados. La salida
+   es mas corta a proposito: en la primera pregunta la unica forma de salir es
+   contestar, y lo que viene detras es el feed que se acaba de pedir.
+
+   El `-50%` del eje X va DENTRO del keyframe, y es justo la trampa que avisa el
+   comentario de `dialogIn` en variables.css: un keyframe que toque `translate`
+   se lleva por delante el centrado mientras dura. La forma de no llevarselo es
+   escribirlo en los dos extremos. */
+@keyframes gipSlideIn {
+  from { opacity: 0; translate: -50% 100%; }
+  to { opacity: 1; translate: -50% 0; }
+}
+
+@keyframes gipSlideOut {
+  from { opacity: 1; translate: -50% 0; }
+  to { opacity: 0; translate: -50% 100%; }
+}
+
+@media (max-width: 639.98px) and (prefers-reduced-motion: no-preference) {
+  /* Doble clase para ganarle en especificidad a la variante de Tailwind que
+     pinta `dialogIn` sobre este mismo elemento, sin depender de en que orden
+     acaben las dos hojas en el bundle. */
+  .gip.gip[data-open] { animation: gipSlideIn 400ms cubic-bezier(0.32, 0.72, 0, 1); }
+  .gip.gip[data-closed] { animation: gipSlideOut 240ms cubic-bezier(0.32, 0.72, 0, 1) both; }
+}
+
 /* ── Copy ── */
 .gip-kicker {
   margin: 0 0 var(--space-2);

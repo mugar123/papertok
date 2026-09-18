@@ -62,10 +62,21 @@
    animating layout; reserving the box costs nothing and cannot jump. */
 .lp-panel { display: grid; }
 .lp-panel > * { grid-area: 1 / 1; }
+/* El que sale se va en el mismo fotograma; el que entra hace el fundido. NO es
+   un cruce, y esa es toda la correccion: los tres pasajes comparten una celda
+   de rejilla, asi que fundirlos en los dos sentidos deja dos textos distintos
+   encima del mismo hueco y los dos legibles. Medido antes de tocarlo, a 390 px
+   y un rAF por muestra: 11 fotogramas, 168 ms, con el mas tenue al 50 %, y una
+   captura donde se leen las dos redacciones a la vez con el subrayado amarillo
+   de una cruzando las letras de la otra.
+   Es la regla que este proyecto ya tenia escrita para las transiciones de
+   pagina: cubre, no mezcles. Lo que se ve ahora es la caja vacia un instante y
+   el texto nuevo subiendo 6 px, que es un cambio de pagina y no una mancha.
+   `visibility` sigue con su retardo para que el que sale no desaparezca del
+   arbol antes de tiempo. */
 .lp-panel__level {
   opacity: 0; translate: 0 6px; visibility: hidden;
   transition:
-    opacity var(--lp-fade-ms) linear,
     translate var(--lp-fade-ms) var(--ease-out-cubic),
     visibility 0s linear var(--lp-fade-ms);
 }
