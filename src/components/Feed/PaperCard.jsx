@@ -26,6 +26,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 // of the drawer's box declarations for the two sheets and has to come later
 // in the cascade to win them.
 import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.jsx';
+import AbstractSheet from './AbstractSheet';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.jsx';
 import './PaperCard.css';
 const RelatedPapersSheet = lazy(() => import('./RelatedPapersSheet'));
@@ -318,6 +319,15 @@ const PaperCard = memo(function PaperCard({
   // were already painted clear. The toggle keeps treating anything but a firm
   // `true` as "nothing hidden", exactly as it did.
   const [abstractClipped, setAbstractClipped] = useState(null);
+  // On a phone a clipped abstract is read in a sheet rather than unfolded in
+  // place (AbstractSheet). Gated by pointer type, never by width, like the
+  // reader's selection route: shrinking a laptop window must not send a mouse
+  // user to the sheet.
+  const [showAbstractSheet, setShowAbstractSheet] = useState(false);
+  const closeAbstractSheet = useCallback(() => setShowAbstractSheet(false), []);
+  const coarsePointer = useMemo(() => {
+    try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
+  }, []);
   // Read by the measurement below, which must not re-run when the panel opens:
   // a reading taken while it travels between its two heights is of the height
   // the animation is passing through, not the one it rests at.
@@ -675,6 +685,11 @@ const PaperCard = memo(function PaperCard({
 
   const toggleExpanded = (e, newState) => {
     e.stopPropagation();
+    // A panel that hides nothing has nothing to open. Without this, tapping an
+    // abstract that fits whole flipped `expanded` on, and the toggle — reserved
+    // beneath it, invisible — came up saying "Show less" for a panel that had
+    // never been anything but open (measured 2026-09-18, guest feed, desktop).
+    if (newState && abstractClipped !== true) return;
     setExpanded(newState);
 
     // Whichever way this goes, the previous run stops first. Tapping twice
@@ -856,6 +871,18 @@ const PaperCard = memo(function PaperCard({
     backstop = setTimeout(settle, CARD_DURATION_MS + 120);
     settleAbstractResize.current = settle;
   }, [expanded, prefersReducedMotion]);
+
+  // The clipped abstract's door on a phone: the sheet, not the fold. Once the
+  // panel is open (a fine pointer got it there) the toggle closes it as ever.
+  const readsInSheet = coarsePointer && abstractClipped === true && !expanded;
+  const openAbstract = (e) => {
+    if (readsInSheet) {
+      e.stopPropagation();
+      setShowAbstractSheet(true);
+      return;
+    }
+    toggleExpanded(e, !expanded);
+  };
 
   const handleAbstractTransitionEnd = (event) => {
     // The panel has finished travelling between two abstracts: hand its height
@@ -1597,7 +1624,7 @@ const PaperCard = memo(function PaperCard({
           ref={abstractRef}
           id={abstractId}
           className={`pc-abstract ${expanded ? 'pc-abstract--open' : ''} ${abstractClipped === false ? 'pc-abstract--whole' : ''}`}
-          onClick={(e) => toggleExpanded(e, !expanded)}
+          onClick={openAbstract}
           onTransitionEnd={handleAbstractTransitionEnd}
         >
           {/* The words are replaced, not swapped. A stored copy of a paper
@@ -1647,9 +1674,10 @@ const PaperCard = memo(function PaperCard({
         <button
           type="button"
           className={`pc-abstract-toggle${abstractClipped === true || expanded ? '' : ' pc-abstract-toggle--reserved'}`}
-          aria-expanded={expanded}
-          aria-controls={abstractId}
-          onClick={(e) => toggleExpanded(e, !expanded)}
+          aria-expanded={readsInSheet ? undefined : expanded}
+          aria-haspopup={readsInSheet ? 'dialog' : undefined}
+          aria-controls={readsInSheet ? undefined : abstractId}
+          onClick={openAbstract}
         >
           {expanded
             ? (isEnglish ? 'Show less' : 'Mostrar menos')
@@ -1988,6 +2016,10 @@ const PaperCard = memo(function PaperCard({
       {/* A Base UI Drawer too, and it portals itself to the body; it is
           mounted here for as long as it is open and unmounted on `onClose`,
           which the sheet only calls once its exit has played. */}
+      {showAbstractSheet && (
+        <AbstractSheet paper={paper} onClose={closeAbstractSheet} />
+      )}
+
       {showRelated && (
         <Suspense fallback={null}>
           <RelatedPapersSheet

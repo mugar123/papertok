@@ -1,0 +1,75 @@
+/* The abstract read on a phone: a bottom sheet in the reader's measure.
+   The drawer's own box (ui/drawer.css) brings the bleed, the radius, the
+   shadow and the 85dvh cap; this only lays out what goes inside it. The
+   popup stops scrolling itself so that the body can — a region marked
+   `data-base-ui-swipe-ignore` scrolls without starting the dismiss swipe. */
+.abstract-sheet {
+  width: min(720px, 100%);
+  overflow: hidden;
+}
+
+.abstract-sheet-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-5) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.abstract-sheet-heading {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.abstract-sheet-kicker {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.abstract-sheet-title {
+  margin: 0;
+}
+
+.abstract-sheet-authors {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.abstract-sheet-close {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+/* The words, at the reader's own measure (.rd-p), scrolling inside the sheet
+   so a flick that reaches the end never carries into the feed behind. */
+.abstract-sheet-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--space-4) var(--space-5) var(--space-6);
+}
+
+.abstract-sheet-body p {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 1.0625rem;
+  line-height: 1.72;
+  color: var(--text-primary);
+}
