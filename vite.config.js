@@ -288,14 +288,21 @@ export default defineConfig(({ command, mode }) => {
           // gets the browser's offline error instead of the app. See
           // public/sw-html-warm.js.
           importScripts: ['sw-html-warm.js'],
-          // HashRouter never asks the server for any path other than the
-          // base URL itself -- '#/paper/123' never leaves the browser, so
-          // there are no alternate server routes for a fallback to rescue.
-          // The one real navigation target is covered by the `navigate`
-          // runtimeCaching rule below (network-first, offline-cached), so a
-          // navigateFallback here would do nothing for a legitimate route
-          // and would only give a mistyped or removed URL a fake 200 from a
-          // frozen cache instead of the real 404 GitHub Pages would return.
+          // Still null, but no longer for the reason it used to be. That
+          // reason was HashRouter: '#/paper/123' never left the browser, so
+          // there were no alternate server routes for a fallback to rescue.
+          // The router reads the path now and every route IS a server route.
+          //
+          // What keeps it null is the registration order, measured rather
+          // than assumed: generateSW writes its NavigationRoute BEFORE the
+          // runtimeCaching rules (built it and read dist/sw.js -- the
+          // NavigationRoute at offset 3588, the `papertok-html` rule at
+          // 3809), and workbox's router matches in registration order. A
+          // navigateFallback would therefore take EVERY navigation, leave the
+          // NetworkFirst rule below as dead code, and pin the served HTML to
+          // whatever the worker last precached -- the exact staleness that
+          // rule exists to avoid. The offline case it would have covered is
+          // handled below instead, as the last chance of that same rule.
           navigateFallback: null,
           runtimeCaching: [
             {
@@ -310,6 +317,35 @@ export default defineConfig(({ command, mode }) => {
                 cacheName: 'papertok-html',
                 networkTimeoutSeconds: 3,
                 expiration: { maxEntries: 5 },
+                plugins: [
+                  {
+                    // Both halves have failed: no network, and nothing in this
+                    // cache for the URL asked for. That is not exotic now that
+                    // the routes are real -- a reader offline on /research has
+                    // only ever had /feed put in here (public/sw-html-warm.js
+                    // warms it at install), and every route serves the same
+                    // document anyway. Answering with it beats the browser's
+                    // offline error: the app boots and its own router shows
+                    // the route from the address, which is still correct.
+                    //
+                    // `handlerDidError` and not navigateFallback on purpose --
+                    // see the comment on navigateFallback above.
+                    // The denylist navigateFallback would have carried, here
+                    // instead. `/` is the landing and `/privacy.html` is the
+                    // policy: neither is an app route, and answering them with
+                    // the app would replace a page the reader asked for with a
+                    // different one. `/__/auth/` is Firebase's sign-in handler,
+                    // proxied through this origin and navigated to for real --
+                    // answering it with the app would hand Google an HTML page
+                    // and hang every sign-in on a blank popup.
+                    handlerDidError: async ({ request }) => {
+                      const { pathname } = new URL(request.url)
+                      if (pathname === '/' || pathname === '/privacy.html' || pathname.startsWith('/__/auth/')) return undefined
+                      const cache = await caches.open('papertok-html')
+                      return cache.match(new URL('feed', self.registration.scope).href)
+                    },
+                  },
+                ],
               },
             },
             {

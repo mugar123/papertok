@@ -2,7 +2,7 @@
   "name": "PaperTok",
   "short_name": "PaperTok",
   "description": "PaperTok is an application for exploring and discovering scientific papers from multiple sources.",
-  "start_url": "./feed#/",
+  "start_url": "./feed",
   "scope": "./",
   "display": "standalone",
   "lang": "en",

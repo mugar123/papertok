@@ -134,10 +134,72 @@ test('Vercel sends /feed and every SPA path to app.html; a direct request for ap
 
 test('the PWA starts in the app and the service worker warms /feed, not the landing', () => {
   const manifest = JSON.parse(read('public/manifest.webmanifest'));
-  assert.equal(manifest.start_url, './feed#/');
+  // No fragment: it was `./feed#/` while the routes lived in the hash. A
+  // start_url that still carried one would open the installed app on a URL
+  // that now means "the feed, scrolled to nothing".
+  assert.equal(manifest.start_url, './feed');
   const warm = noComments(read('public/sw-html-warm.js'));
   assert.match(warm, /new URL\('feed', self\.registration\.scope\)/);
   assert.doesNotMatch(warm, /cache\.add\(self\.registration\.scope\)/);
+});
+
+test('offline, a route the cache has never seen falls back to the warmed feed', () => {
+  // The app reads the path now, so a reader can be offline on /research with
+  // nothing in `papertok-html` for that URL: NetworkFirst then has neither
+  // half and the browser's offline error is what they get.
+  //
+  // workbox's own `navigateFallback` is NOT the answer here, and that is
+  // measured rather than assumed: generateSW registers its NavigationRoute
+  // BEFORE the runtimeCaching rules (built it and read dist/sw.js: the
+  // NavigationRoute lands at offset 3588, the `papertok-html` rule at 3809),
+  // and the router matches in registration order. The fallback would take
+  // EVERY navigation, the NetworkFirst rule would become dead code, and the
+  // HTML would be pinned to whatever the service worker last precached --
+  // which is exactly what that rule's own comment says it exists to avoid.
+  //
+  // So the fallback hangs off the NetworkFirst rule instead, as the
+  // last-chance callback that only runs when both the network and the cache
+  // have failed.
+  const config = noComments(read('vite.config.js'));
+  assert.match(config, /navigateFallback: null/, 'navigateFallback would swallow every navigation');
+  // Recortado por la regla misma -- de su `urlPattern` al `urlPattern` de la
+  // siguiente -- y no por una ventana de N caracteres: la ventana pasa a ser
+  // demasiado corta en cuanto alguien escribe un comentario dentro.
+  const from = config.indexOf("request.mode === 'navigate'");
+  assert.ok(from > 0, 'the navigate runtimeCaching rule is gone');
+  const next = config.indexOf('urlPattern', from + 1);
+  const navigateRule = config.slice(from, next > 0 ? next : config.length);
+  assert.match(navigateRule, /handlerDidError/, 'the navigate rule has no offline last chance');
+  assert.match(navigateRule, /papertok-html/);
+  assert.match(navigateRule, /'feed'/, 'the last chance must answer with the warmed /feed');
+  // And it must decline for the three navigations that are not app routes:
+  // the landing, the policy, and Firebase's sign-in handler -- answering that
+  // last one with the app hands Google an HTML page and hangs the sign-in.
+  for (const path of ["'/'", "'/privacy.html'", "'/__/auth/'"]) {
+    assert.ok(navigateRule.includes(path), `the offline last chance does not exclude ${path}`);
+  }
+});
+
+test('the cache headers hang off the paths a browser actually asks for', () => {
+  // Vercel matches `headers` against the INCOMING path, not the destination of
+  // a rewrite, so a rule on `/app.html` or `/index.html` never fires: nobody
+  // navigates to those. It is inert today, because Vercel's own default for
+  // static HTML is this same value -- but it is the guarantee that stops a
+  // cached HTML from pointing at asset hashes that no longer exist, and it had
+  // quietly stopped applying to anything.
+  const vercel = JSON.parse(read('vercel.json'));
+  const matches = (path) => vercel.headers.filter((h) => {
+    if (h.source === path) return true;
+    const pattern = h.source.match(/^\/:path\((.+)\)$/)?.[1];
+    return pattern ? new RegExp(`^${pattern}$`).test(path.replace(/^\//, '')) : false;
+  });
+  for (const path of ['/', '/feed', '/following', '/research']) {
+    const revalidating = matches(path).some((h) => h.headers.some((x) => /must-revalidate/.test(x.value)));
+    assert.ok(revalidating, `no header rule with must-revalidate matches an incoming ${path}`);
+  }
+  // And the rule for the hashed assets is still the opposite one: immutable.
+  const assets = vercel.headers.find((h) => h.source === '/assets/(.*)');
+  assert.match(assets.headers[0].value, /immutable/);
 });
 
 test('the app page is canonical at /feed', () => {
