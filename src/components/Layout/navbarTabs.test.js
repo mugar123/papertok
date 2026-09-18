@@ -98,26 +98,36 @@ test('SOURCE: on a touch screen each tab is hit across the whole bar, not only i
   assert.match(base[1], /position: relative;/);
 });
 
-test('SOURCE: the mark moves to the tab under the finger on the press, and the press lapses once the route moves', async () => {
+/**
+ * One measurement per tab change, so the mark travels once.
+ *
+ * It used to take the mark to the pressed tab a frame after touchdown, which
+ * was worth it while the router waited for the click. Navigating on
+ * `pointerup` removed that wait, and the optimistic move then aimed the mark
+ * at the tab in normal weight while the router re-aimed it at the semibold
+ * word a moment later: measured 2026-09-18, two targets a tap
+ * (`scaleX(0.6709)` then `scaleX(0.6789)`), the second 108ms in with the mark
+ * already moving, which restarts a CSS transition's clock from wherever it
+ * is. That was the glitch the reader saw in the yellow bar.
+ */
+test('SOURCE: the mark is measured once per tab change, from the tab the router made current', async () => {
   const jsx = stripJsComments(await read('./Navbar.jsx'));
   const row = linksRow(jsx);
   for (const tab of ['home', 'research', 'following']) {
     assert.match(row, new RegExp(`data-tab="${tab}"`), `${tab} carries its data-tab`);
-    assert.match(row, new RegExp(`onPointerDown=\\{\\(event\\) => pressTab\\(event, '${tab}'\\)\\}`), `${tab} presses on pointerdown`);
+    assert.match(row, new RegExp(`onPointerDown=\\{\\(event\\) => pressTab\\(event, '${tab}'\\)\\}`), `${tab} records the press`);
   }
   assert.equal((row.match(/onPointerCancel=\{releasePress\}/g) || []).length, 3, 'a cancelled press is released on all three');
-  // The hook measures the tab it is told, by data-tab, not the router's .active.
+  // The hook measures the tab it is told, by data-tab.
   assert.match(jsx, /row\.querySelector\(`\.navbar-link\[data-tab="\$\{tab\}"\]`\)/);
   assert.doesNotMatch(jsx, /querySelector\('\.navbar-link\.active'\)/);
-  // Derived, not cleared in an effect: a press counts only while the route is
-  // still the one it was made on.
-  assert.match(jsx, /const shownTab = pressed && pressed\.on === activeTab \? pressed\.tab : activeTab;/);
-  assert.match(jsx, /useActiveTabRule\(linksRef, shownTab, `\$\{shownTab\}:\$\{isEnglish\}`\)/);
-  // A press on the tab already current is not a press; a right button is not
-  // a press; a press that never becomes a click lapses.
-  assert.match(jsx, /if \(event\.button !== 0\) return;/);
-  assert.match(jsx, /if \(tab === activeTab\) return;/);
-  assert.match(jsx, /setTimeout\(\(\) => setPressed\(\(current\) => \(current === entry \? null : current\)\), 1500\)/);
+  // And it is told the tab the ROUTER made current — no optimistic tab, or
+  // the mark is aimed twice and the second aim lands mid-flight.
+  assert.match(jsx, /useActiveTabRule\(linksRef, activeTab, `\$\{activeTab\}:\$\{isEnglish\}`\)/);
+  assert.doesNotMatch(jsx, /shownTab/, 'no optimistic tab for the mark');
+  assert.doesNotMatch(jsx, /setPressed/, 'no press state left over');
+  // The press is kept only to judge the lift, and only for a finger.
+  assert.match(jsx, /if \(event\.button !== 0 \|\| event\.pointerType !== 'touch'\) return;/);
 });
 
 /**

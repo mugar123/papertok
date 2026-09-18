@@ -163,3 +163,44 @@ En WebKit, los 21 toques de la batería completa siguen en verde y el `pushState
 esperar al clic.
 
 `npm test` 2.850 en verde, lint limpio, build correcto.
+
+---
+
+## Cuarta vuelta: el toque queda resuelto y el filete amarillo da un tirón
+
+El usuario confirma que las pestañas ya responden al primer toque, y reporta un glitch nuevo en la
+animación del filete amarillo. Es una consecuencia directa del arreglo anterior.
+
+### La causa, medida
+
+Leyendo a la vez el DESTINO del filete (su `transform` inline) y su posición real, fotograma a
+fotograma, cada toque le daba **dos destinos**:
+
+| | Destino | Cuándo | Filete en ese momento |
+|---|---|---|---|
+| 1 | `translateX(61.27px) scaleX(0.6709)` | al apoyar el dedo, 26 ms | en reposo |
+| 2 | `translateX(60.88px) scaleX(0.6789)` | al entrar la ruta, 108 ms | **viajando**, en x = 44,4 |
+
+El primero se mide con la pestaña todavía en peso normal; el segundo, cuando el router la marca
+activa y la palabra pasa a seminegrita, que es más ancha. Una transición CSS reapuntada a mitad de
+viaje reinicia su reloj de 240 ms desde donde esté: el filete frenaba, aceleraba y volvía a frenar.
+
+### El arreglo
+
+El movimiento optimista (llevar la marca a la pestaña pulsada un fotograma después de tocar) se
+añadió porque el filete esperaba ~200 ms a que el manejador del clic montara la página siguiente.
+Navegar en el `pointerup` eliminó esa espera —la ruta entra a los pocos milisegundos de levantar el
+dedo—, así que el movimiento optimista ya no compraba nada y costaba el segundo destino. Fuera: la
+marca se mide una vez, desde la pestaña que el router ha hecho actual.
+
+### Resultado (build de producción, iPhone emulado y ratón)
+
+| | Antes | Después |
+|---|---|---|
+| Destinos por toque | 2, el segundo a 108 ms con el filete ya en marcha | 1, recibido con el filete aún en reposo |
+| Curva | reiniciada a mitad, ~348 ms en total | una sola, 240 ms |
+| Cuándo arranca la marca (WebKit) | 86–133 ms | 53–109 ms |
+
+La batería completa sigue verde: 18 toques en WebKit, y en Chromium un toque navega con `history`
++1, dos toques seguidos en la misma pestaña siguen siendo +1, un arrastre de 40 px no navega y
+Atrás vuelve con una pulsación, igual con ratón. `npm test` 2.850, lint limpio.

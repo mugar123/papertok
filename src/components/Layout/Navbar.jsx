@@ -33,8 +33,9 @@ function useActiveTabRule(rowRef, tab, activeKey) {
     const row = rowRef.current;
     if (!row) return undefined;
     const measure = () => {
-      // By `data-tab`, not `.active`: the tab shown can be the one under the
-      // finger before the router has moved (see `pressedTab` below).
+      // By `data-tab` rather than `.active`: the hook is told which tab to
+      // measure, so the caller owns that decision and this cannot drift from
+      // the class the router appends.
       const link = tab ? row.querySelector(`.navbar-link[data-tab="${tab}"]`) : null;
       if (!link) {
         setRule(current => (current.transform ? { ...current, transform: '' } : current));
@@ -114,49 +115,30 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
   const activeTab = isHomeActive ? 'home' : isResearchActive ? 'research' : isFollowingActive ? 'following' : '';
   const linksRef = useRef(null);
   /**
-   * The mark moves on the press, not on the router.
+   * The press is remembered only to decide, on `pointerup`, whether the finger
+   * lifted on the tab it pressed.
    *
-   * Measured 2026-09-18 (Chromium, phone emulation, CPU ×6, signed in, the
-   * Following feed warm): after the finger lifted, the bar stayed exactly as
-   * it was for ~200ms — the click handler mounts the next page synchronously
-   * (a 159ms task) — and only then did the mark start its 240ms slide. The
-   * `:active` dip lasts as long as the finger is down and is gone by then.
-   * On a phone that is a tap with nothing to show for it, and a second tap
-   * inside iOS's double-tap window is a zoom gesture, not a click; the user
-   * reported having to tap the tabs several times (also 2026-09-05). Neither
-   * engine drops the tap itself: every touch dispatched through Chromium and
-   * WebKit's own pipelines clicked and pushed within 5ms, at the centre, at
-   * the edges and after scrolling.
-   *
-   * So the tab under the finger takes the mark at `pointerdown`, a frame
-   * later, while the main thread is still idle; the router catches up and
-   * the `active` class, `aria-current` and the semibold follow it. The press
-   * is remembered together with the tab it was made on: once the route has
-   * moved — to the pressed tab, or anywhere else — it no longer applies,
-   * derived rather than cleared in an effect. A press the browser cancels
-   * (the finger starts a scroll) is dropped on `pointercancel`, and one that
-   * never becomes a click (released off the link) lapses after 1.5s, so a
-   * mis-tap cannot leave the mark under the wrong word.
+   * It used to ALSO carry the mark to the pressed tab a frame after touchdown,
+   * because the mark otherwise waited ~200ms for the click handler to mount
+   * the next page (measured 2026-09-18 at CPU ×6). Navigating on `pointerup`
+   * removed that wait — the route commits within milliseconds of the finger
+   * lifting — and the optimistic move then cost more than it bought: it aimed
+   * the mark at the tab as it was, in normal weight, and the router re-aimed
+   * it a moment later at the semibold word, which is wider. Measured the same
+   * day: two targets per tap (`scaleX(0.6709)` then `scaleX(0.6789)`), the
+   * second arriving 108ms in, with the mark already travelling. A CSS
+   * transition re-aimed mid-flight restarts its 240ms clock from wherever it
+   * is, so the mark slowed, sped up and eased again — the glitch the reader
+   * saw. One measurement, one curve.
    */
-  const [pressed, setPressed] = useState(null);
-  const pressTimerRef = useRef(null);
   const touchRef = useRef(null);
   const handledRef = useRef(0);
-  useEffect(() => () => clearTimeout(pressTimerRef.current), []);
   const pressTab = (event, tab) => {
-    if (event.button !== 0) return;
-    if (event.pointerType === 'touch') {
-      touchRef.current = { tab, x: event.clientX, y: event.clientY, at: Date.now() };
-    }
-    if (tab === activeTab) return;
-    const entry = { tab, on: activeTab };
-    setPressed(entry);
-    clearTimeout(pressTimerRef.current);
-    pressTimerRef.current = setTimeout(() => setPressed((current) => (current === entry ? null : current)), 1500);
+    if (event.button !== 0 || event.pointerType !== 'touch') return;
+    touchRef.current = { tab, x: event.clientX, y: event.clientY, at: Date.now() };
   };
   const releasePress = () => {
     touchRef.current = null;
-    setPressed(null);
   };
   /**
    * A finger that lifts on the tab it pressed navigates there, without waiting
@@ -193,8 +175,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
     handledRef.current = 0;
     event.preventDefault();
   };
-  const shownTab = pressed && pressed.on === activeTab ? pressed.tab : activeTab;
-  const rule = useActiveTabRule(linksRef, shownTab, `${shownTab}:${isEnglish}`);
+  const rule = useActiveTabRule(linksRef, activeTab, `${activeTab}:${isEnglish}`);
 
   return (
     <nav
