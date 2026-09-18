@@ -751,3 +751,121 @@ derecha (Like, Comments, Save…) sí lleva sus rótulos.
   320 ni equivalente de zoom al 200 % para estas rutas, que la landing sí tiene.
 - Nada de esto corre en CI: `npm run a11y:landing` sigue cubriendo sólo `/`,
   porque auditar las rutas protegidas exige levantar el modo demo.
+
+## Corrección: las nueve violaciones de las rutas, cerradas (2026-09-18)
+
+Mismo arnés, mismas seis escenas, mismo modo demo. Dos tiradas antes de tocar
+nada y dos después.
+
+| Escena | Antes | Después |
+|---|---|---|
+| `/feed` 1440 claro | 1 regla (`label-content-name-mismatch`, 4 nodos) | **0** |
+| `/feed` 390 oscuro | 2 reglas (`button-name` **15 nodos**, `label-content-name-mismatch` 4) | **0** |
+| `/following` 1440 claro | 3 reglas (`label-content-name-mismatch`, `landmark-one-main`, `page-has-heading-one`) | **0** |
+| `/following` 390 oscuro | 2 reglas (`landmark-one-main`, `page-has-heading-one`) | **0** |
+| `/research` 1440 claro | 1 regla (`label-content-name-mismatch`) | **0** |
+| `/research` 390 oscuro | 0 | **0** |
+
+`/following` pasa de 28 reglas superadas a 32 en sus dos escenas; `/feed` a 1440
+se queda en 37 y `/research` en 35, ahora sin violaciones.
+
+**Primero, una corrección a la tabla de arriba.** Decía «`.navbar-brand` en las
+tres rutas, 6 + 1 + 1». No era así: el arnés sólo imprime el `target` del PRIMER
+nodo de cada violación, y quien leyó la salida tomó ese primero por todos. La
+regla disparaba en tres sitios distintos, y el conteo baila entre tiradas porque
+el feed no trae los mismos papers:
+
+- `.navbar-brand` — nombre «PaperTok», visible «PT PaperTok».
+- `.pc-authors-more` — nombre «Show all authors», visible «et al.».
+- el botón de reescritura — nombre «Read this paper in plain words», visible
+  «Read in plain words» a 1440 y «Simple» a 390. No contenía a ninguno de los
+  dos. La landing ya había cerrado este mismo defecto en su copia del botón
+  (`src/landing/a11y.test.js`), y se cierra aquí igual: quitándole el atributo.
+
+**`button-name`, crítico, 15 nodos.** El botón principal de la tarjeta lleva
+ahora `aria-label={primaryActionLabel}` — la MISMA expresión que dibuja el
+rótulo, no una mejorada, para que las dos no puedan separarse. Lo que anuncia
+Chrome, medido con `Accessibility.getPartialAXTree` sobre botones realmente
+pintados:
+
+| Botón | Dibuja a 1440 | Anuncia | Dibuja a 390 | Anuncia |
+|---|---|---|---|---|
+| Principal | «Source» | «Source» | sólo icono | «Source» |
+| Compartir | sólo icono | «Share» | sólo icono | «Share» |
+| Relacionados | sólo icono | «View related papers» | sólo icono | «View related papers» |
+| Reescritura | «Read in plain words» | «Read in plain words» | «Simple» | «Simple» |
+| Autores | «et al.» | «et al., show all authors» | «et al.» | «et al., show all authors» |
+
+Los tres botones de la barra inferior que la captura enseñaba como sólo icono
+estaban revisados uno a uno: compartir y relacionados ya tenían `aria-label` y
+no dibujan texto en ningún ancho, así que el 2.5.3 no les aplica; el único mudo
+era el principal. Donde hay texto visible, el nombre lo contiene — comprobado
+comparando las dos columnas, no razonado.
+
+**El tramo que la auditoría no mira.** El `aria-label="PaperTok"` de la marca
+sobraba: el botón ya dice «PaperTok» en texto. Pero quitarlo a secas habría
+abierto un agujero peor que el que cerraba. `.navbar-brand-word` era
+`display: none` por debajo de 768 px y `.navbar-brand` sólo desaparece a 480,
+así que **entre 481 y 768 px** el botón se habría quedado con la marca «PT»
+—`aria-hidden`— y sin nombre ninguno: `button-name`, crítico, en una anchura que
+ni 1440 ni 390 visitan. Por eso el rótulo ahora se recorta en vez de borrarse.
+Medido a 1440, 700, 520 y 390: la marca sigue midiendo 26,0 × 26,0 px en los dos
+anchos intermedios (100,2 × 26,0 a 1440), el rótulo recortado ocupa 1 × 1 en
+posición absoluta y Chrome sigue calculando «PaperTok» en los tres anchos donde
+el botón existe.
+
+**`landmark-one-main` y `page-has-heading-one`.** La causa no era que
+`/following` no pasara landmark: era que el landmark vivía en dos de las seis
+ramas de `return` de `FeedContainer`. La cuenta de pruebas no sigue a nadie, así
+que la ruta caía siempre en `SOURCE_EMPTY`, que devolvía un
+`<div className="feed-empty">` pelado. Ahora lo pasa `FollowingFeedPage` —es
+ella la raíz de la ruta— y lo llevan **todas** las ramas: feed, esqueleto,
+error, vacío y el vacío que trae la fuente. El landmark ES el contenedor de cada
+rama (`className`) en vez de un nivel más, porque `.feed-empty` y `.feed-wrapper`
+traen los dos `margin-top: var(--nav-total)` y anidarlos sumaría el hueco de la
+barra dos veces.
+
+**Red de regresión.** Ocho aserciones nuevas, todas comprobadas por mutación
+(se deshace el arreglo en el árbol, la prueba tiene que ponerse roja, y el
+fichero se restaura): `components/Feed/paperCardActionNames.test.js` (nueva),
+las dos de la marca en `components/Layout/navbarChrome.test.js` y las dos del
+landmark en `accessibilityStructure.test.js`, cuya prosa sobre `/following` «sin
+landmark propio» había quedado vieja y se corrige aquí.
+
+**Lo que esta corrección sigue sin cubrir:**
+
+- **`color-contrast`: revisado a mano, y la violación intermitente era la
+  animación.** Una tirada de axe dio violación **seria con 18 nodos** en `/feed`
+  a 390 oscuro (`.pc-date`, `.pc-citations`, `.pc-chip`, `.pc-category-pill`) y
+  la siguiente volvió a *incompleta*. Medido después elemento a elemento,
+  calculando el ratio contra el primer ancestro opaco: **346 textos del
+  documento, y los únicos 30 que no llegan son el mismo elemento**, el punto
+  separador `.pc-meta-dot`, a **1,99:1** sobre 11px (exige 4,5). Ninguno de los
+  cuatro que axe nombró falla en reposo.
+
+  La diferencia está en la entrada de la tarjeta: midiendo a 500 ms de la carga,
+  `.pc-meta`, `.pc-chips`, `.pc-topics`, `.pc-title` y `.pc-action-bar` —que es
+  donde viven esos cuatro— están a `opacity` entre 0,81 y 0,98. axe compone el
+  color efectivo y ve el contraste rebajado de un texto que todavía se está
+  pintando; `getComputedStyle` da el color declarado y no lo ve. Así que la
+  violación es un transitorio de la animación, no un estado en el que se lea.
+
+  **Lo que sí queda, y es una decisión de diseño, no un descuido que arreglar
+  por mi cuenta:** el punto separador de la tarjeta está a 1,99:1 en oscuro. Es
+  puntuación decorativa entre dos datos, así que se puede defender como
+  decoración pura (1.4.3 la exime), pero a ese contraste probablemente tampoco se
+  ve. Subirlo cambia el aspecto de la tarjeta y esa llamada no es mía.
+- `/following` se sigue auditando en vivo sólo en su **estado vacío**. Lo que
+  cambia es que ahora las ramas restantes están sujetas por prueba de fuente, no
+  por haberlas visto.
+- Siguen siendo **dos anchos** y una combinación de tema por ancho. El tramo
+  481–768 px se midió a mano para la marca, pero no hay pasada de axe ahí, ni de
+  reflow a 320, ni equivalente de zoom al 200 %.
+- Sigue **fuera de CI**, por la misma razón: auditar las rutas protegidas exige
+  levantar el modo demo.
+- El nombre del botón de reescritura en móvil es «Simple», que es exactamente lo
+  que dibuja. Cumple, pero dice menos que el `aria-label` que había: a quien usa
+  lector de pantalla en un teléfono ya no le adelanta que abre el lector en
+  palabras llanas. Es el precio de que un botón enseñe dos rótulos distintos
+  según el ancho y ninguno contenga al otro; si alguna vez el rótulo corto pasa
+  a ser parte del largo, esto se puede mejorar sin volver a romper el 2.5.3.

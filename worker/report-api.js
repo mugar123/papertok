@@ -58,7 +58,12 @@ export { RequestQuotaLedger } from './request-quota-ledger.js';
 
 // `mugar123.github.io` sigue en la lista: GitHub Pages redirige el sitio viejo
 // al dominio nuevo, pero un service worker ya instalado alli puede servir el
-// bundle cacheado una vez mas antes de ver la redireccion.
+// bundle cacheado una vez mas antes de ver la redireccion. El 18-09-2026 se
+// retiro el workflow que publicaba ahi, y el sitio se deja en pie justo por
+// esa redireccion; esta entrada se quita cuando se decida que ya no queda
+// nadie con ese worker instalado, que es una decision con fecha y no un
+// olvido. Mientras siga aqui, cualquier pagina publicada en ese origen puede
+// llamar a esta API: no publiques nada mas en el.
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://papertok.app',
   'https://www.papertok.app',

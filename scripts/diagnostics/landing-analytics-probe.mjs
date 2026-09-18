@@ -289,15 +289,22 @@ class CDP {
 }
 
 async function pageTarget() {
-  for (let i = 0; i < 150; i++) {
+  // 45 s and a diagnosis, for the same reason as landing-axe.mjs: this runs on
+  // every pull request, a cold runner has taken longer than 15 s to open its
+  // first page target, and "no page target" says nothing about whether the
+  // browser is slow, dead, or was never there.
+  for (let i = 0; i < 450; i++) {
     try {
       const list = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
       const page = list.find((t) => t.type === 'page');
       if (page) return page.webSocketDebuggerUrl;
     } catch { /* not up yet */ }
+    if (chrome.exitCode !== null) {
+      throw new Error(`the browser exited with code ${chrome.exitCode} before opening a page. Binary: ${CHROME}`);
+    }
     await sleep(100);
   }
-  throw new Error('no page target');
+  throw new Error(`no page target after 45s on the debugging port ${PORT}: the browser started and stayed silent. Binary: ${CHROME}`);
 }
 
 const isInsights = (url) => url.includes('/_vercel/insights/');

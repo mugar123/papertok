@@ -88,10 +88,11 @@ to Pro turns it on with no code change.
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every pull request and on every push to `main`: a `check` job
-(`npm ci` + `npm run check`, with the same repository variables the Pages build uses) and a `rules`
-job (Temurin 21, `firebase-tools@15.27.0`, `npm run test:rules`). `deploy.yml` is the GitHub Pages
-publish and keeps its own verify step; production is Vercel, which runs no tests, so what keeps
-`main` green is a branch protection rule requiring the `check` and `rules` checks before merge.
+(`npm ci` + `npm run check`) and a `rules` job (Temurin 21, `firebase-tools@15.27.0`,
+`npm run test:rules`). Production is Vercel, which builds from the repository and runs no tests,
+so what keeps `main` green is a branch protection rule requiring the `check` and `rules` checks
+before merge. There is no second publish workflow: `deploy.yml` published to GitHub Pages and was
+removed on 2026-09-18, and what it ran was a strict subset of `npm run check`.
 Every action is pinned to a commit SHA; Dependabot proposes the bumps weekly.
 
 ## Adding a Scientific Provider

@@ -172,15 +172,27 @@ class CDP {
 }
 
 async function pageTarget() {
-  for (let i = 0; i < 150; i++) {
+  // 45 s, not 15: this gate runs on every pull request, and a cold CI runner
+  // under load has taken longer than 15 s to open its first page target --
+  // measured, in the run that turned this branch red for a reason that had
+  // nothing to do with the branch.
+  //
+  // And when it does run out, it says WHY. "no page target" is the same
+  // message whether Chrome is merely slow, died on startup, or was never
+  // spawnable, and those want three different fixes. `chrome.exitCode` is not
+  // null only if the process is already gone, which is the diagnosis.
+  for (let i = 0; i < 450; i++) {
     try {
       const list = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
       const page = list.find((t) => t.type === 'page');
       if (page) return page.webSocketDebuggerUrl;
     } catch { /* not up yet */ }
+    if (chrome.exitCode !== null) {
+      throw new Error(`the browser exited with code ${chrome.exitCode} before opening a page. Binary: ${CHROME}`);
+    }
     await sleep(100);
   }
-  throw new Error('no page target');
+  throw new Error(`no page target after 45s on the debugging port ${PORT}: the browser started and stayed silent. Binary: ${CHROME}`);
 }
 
 /** Navigates fresh (so the theme-resolution inline script in index.html sees

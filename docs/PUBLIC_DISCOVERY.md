@@ -86,19 +86,27 @@ from `LanguageContext` and updates the title, description, canonical URL, Open G
 robots, and JSON-LD tags at runtime. Localized values can be passed as `{ es, en }` objects.
 The hook restores the previous head state when its page unmounts.
 
-## GitHub Pages Limitations
+## What the server sees, and what it still does not
 
-Hash fragments are never sent to the server. GitHub Pages therefore receives only
-`/papertok/`, not `/papertok/#/public/paper/...`. This has three consequences:
+This section used to describe a GitHub Pages deployment that received only `/papertok/`,
+because every route lived in a fragment and a fragment never reaches a server. Both halves
+of that are gone: the site is served by Vercel from the root of `papertok.app`, and since
+2026-09-18 the router reads the path, so every route IS a server route. Old `#/...` links
+still work — the landing's head script forwards them and `src/utils/legacyHashRoute.js`
+rewrites the entry before React renders — but nothing new is minted in that shape.
 
-1. A hash URL is navigable in a browser and works with `HashRouter`, but it cannot be a
-   distinct server-side URL for crawling or HTTP redirects.
-2. Social crawlers commonly inspect the initial HTML without running the application. They
-   will see the generic root title, description, and preview image rather than metadata loaded
-   later by the runtime hook. Per-entity, per-paper, and per-list previews require server-side
-   rendering, a crawler-aware redirect, or a host that supports non-hash routes.
-3. Sitemap entries cannot contain fragments. `public/sitemap.xml` intentionally lists only the
-   public project root; it does not pretend that hash routes are independently crawlable.
+What that fixed, and what it did not:
+
+1. A route is now a distinct server-side URL. It can be crawled, redirected to, and listed
+   in the sitemap; `public/sitemap.xml` lists `/`, `/feed`, `/following` and `/research`.
+2. **Per-entity previews are still generic.** Social crawlers read the initial HTML without
+   running the application, and `app.html` is one static document for every route, so a
+   shared paper still previews with the application's own title, description and image
+   rather than that paper's. Real per-paper previews need the HTML to differ per route:
+   server-side rendering, a crawler-aware rewrite, or prerendered pages. Having real paths
+   is the precondition for that work, not the work itself.
+3. `/` is the landing and has its own metadata; `app.html`'s canonical is
+   `https://papertok.app/feed`. A change meant for the application belongs in `app.html`.
 
 `public/robots.txt` points crawlers to that root-only sitemap. The shared URL helpers still
 produce absolute links with the project-site base so browser sharing remains correct on both

@@ -184,13 +184,19 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
       aria-label={isEnglish ? 'Main navigation' : 'Navegación principal'}
     >
       <div className="navbar-inner">
+        {/* Sin `aria-label`. El botón ya se llama a sí mismo: el nombre sale de
+            `.navbar-brand-word`, que dice «PaperTok» en texto. Con el
+            `aria-label` puesto, la regla de 2.5.3 comparaba «PaperTok» con lo
+            que se VE —la marca «PT» más la palabra— y la marca cuenta aunque
+            sea `aria-hidden`, porque quien maneja la interfaz por voz la ve
+            igual. Que el rótulo siga en el árbol por debajo de 768 px lo
+            sostiene Navbar.css: ahí se recorta, no se borra. */}
         <button
           type="button"
           className="navbar-brand"
           onClick={() => {
             if (location.pathname !== '/feed') navigate('/feed');
           }}
-          aria-label="PaperTok"
         >
           <span className="navbar-brand-mark" aria-hidden="true">PT</span>
           <span className="navbar-brand-word">Paper<span>Tok</span></span>

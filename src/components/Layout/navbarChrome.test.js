@@ -150,3 +150,58 @@ test('los tres enlaces de la navbar comparten line-height, o el filete viaja en 
     + 'pestañas son <a> y heredan el mismo 1.5, pero es lo que sujeta el filete si una '
     + 'deja de serlo o un padre cambia la suya');
 });
+
+/**
+ * La marca, y por qué su `aria-label` sobraba y encima estorbaba.
+ *
+ * El botón ya se llamaba a sí mismo: `.navbar-brand-word` dice «PaperTok» en
+ * texto. El `aria-label="PaperTok"` no añadía nada y rompía el criterio 2.5.3,
+ * porque lo que se VE en ese botón no es sólo la palabra: es la marca «PT» y
+ * la palabra. Que la marca sea `aria-hidden` no la borra de la pantalla, y la
+ * regla `label-content-name-mismatch` de axe cuenta el texto visible sin mirar
+ * `aria-hidden` justamente por eso — quien maneja la interfaz por voz lo lee
+ * igual. Medido el 18-09-2026: fallaba en las tres rutas a 1440.
+ *
+ * Quitar el atributo a secas abría un agujero peor, y en un tramo que la
+ * auditoría no mira: entre 481 y 768 px la barra escondía el rótulo con
+ * `display: none` y dejaba sólo la marca `aria-hidden`, así que el botón se
+ * habría quedado SIN NOMBRE. Por eso el rótulo ahora se recorta en vez de
+ * borrarse. Medido a 700 y a 520 px: el botón sigue midiendo 26x26 y Chrome
+ * sigue calculando «PaperTok».
+ */
+test('la marca se llama por su propio texto, no por un aria-label que lo contradiga', async () => {
+  const jsx = await navbarJsx;
+  const desde = jsx.indexOf('className="navbar-brand"');
+  assert.notEqual(desde, -1, 'no encuentro el botón de la marca en Navbar.jsx');
+  const boton = jsx.slice(desde, jsx.indexOf('</button>', desde));
+
+  assert.doesNotMatch(boton, /aria-label=/,
+    'volvió el `aria-label` al botón de la marca. Su nombre accesible sería «PaperTok» '
+    + 'mientras que lo visible es «PT PaperTok», y eso es `label-content-name-mismatch`: '
+    + 'el nombre tiene que CONTENER lo que se lee en pantalla (WCAG 2.5.3)');
+  assert.match(boton, /<span className="navbar-brand-word">Paper<span>Tok<\/span><\/span>/,
+    'el rótulo de la marca dejó de ser texto, que es de donde sale ahora el nombre del botón');
+  assert.match(boton, /<span className="navbar-brand-mark" aria-hidden="true">PT<\/span>/,
+    'la marca PT dejó de estar oculta al lector de pantalla; sin `aria-hidden` el botón '
+    + 'pasa a anunciarse «PT PaperTok»');
+});
+
+test('el rótulo de la marca se recorta en móvil, nunca se borra, o el botón se queda mudo', async () => {
+  const css = await navbarCss;
+  const tramo = css.slice(css.indexOf('@media (max-width: 768px)'), css.indexOf('@media (max-width: 480px)'));
+  assert.ok(tramo.includes('@media (max-width: 768px)'), 'no encuentro el bloque de 768 px en Navbar.css');
+
+  const regla = tramo.match(/\.navbar-brand-word \{[^}]*\}/)?.[0];
+  assert.ok(regla, 'el bloque de 768 px ya no toca `.navbar-brand-word`');
+  assert.doesNotMatch(regla, /display:\s*none/,
+    'el rótulo de la marca vuelve a ocultarse con `display: none` por debajo de 768 px. '
+    + '`.navbar-brand` sólo desaparece a 480, así que entre 481 y 768 px el botón se '
+    + 'queda con la «PT» —que es `aria-hidden`— y sin nombre ninguno: `button-name`, '
+    + 'crítico, en un tramo que una auditoría de 1440 y 390 no mira');
+  assert.match(regla, /clip: rect\(0, 0, 0, 0\)/,
+    'el rótulo dejó de recortarse; recortado no se ve, pero sigue en el árbol, que es '
+    + 'lo que da nombre al botón en ese tramo');
+  assert.match(regla, /position: absolute/,
+    'sin `position: absolute` el rótulo recortado seguiría ocupando su hueco en el flex '
+    + 'y la marca se movería');
+});

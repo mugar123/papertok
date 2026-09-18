@@ -141,10 +141,11 @@ const SCROLL_INTERACTION_SETTLE_MS = 220;
 // The `<main>` landmark is opt-in (via the `landmark` prop) rather than baked
 // into every return: GuestFeedPage already renders its own `<main>` around
 // this component, so an unconditional one here would nest two landmarks and
-// produce invalid HTML. Only the consumer that is the actual route root
-// (App.jsx's `/`) passes `landmark`. The skeleton and main-feed branches are
-// the only two states with real content worth landmark-and-heading, and they
-// share this wrapper instead of duplicating the conditional.
+// produce invalid HTML. Sólo lo pasa quien ES la raíz de una ruta: App.jsx
+// para `/feed` y FollowingFeedPage para `/following`. Todas las ramas —feed,
+// esqueleto, error, vacío y el vacío que trae la fuente— lo comparten, porque
+// una pantalla sin papers sigue siendo la página y necesita su landmark y su
+// encabezado igual que la que los tiene.
 /**
  * How the atom gives way to the paper.
  *
@@ -175,12 +176,16 @@ const ATOM_VEIL_REDUCED_VARIANTS = {
   gone: { opacity: 0, transition: { duration: 0.12 } },
 };
 
-function FeedLandmark({ landmark, children }) {
+// `className` porque los estados vacíos NO son `.feed-wrapper`: son
+// `.feed-empty`, con su propio `margin-top: var(--nav-total)`. Envolver uno
+// dentro del otro sumaría el hueco de la barra dos veces, así que el landmark
+// ES el contenedor en cada rama en vez de un nivel más.
+function FeedLandmark({ landmark, className = 'feed-wrapper', children }) {
   if (!landmark) {
-    return <div className="feed-wrapper">{children}</div>;
+    return <div className={className}>{children}</div>;
   }
   return (
-    <main className="feed-wrapper" aria-label={landmark.label}>
+    <main className={className} aria-label={landmark.label}>
       <h1 className="visually-hidden">{landmark.heading}</h1>
       {children}
     </main>
@@ -938,16 +943,20 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   }, [publicMode, setPull, landPull, displayState, atomVeil]);
 
 
+  // Las ramas de abajo también llevan el landmark. La auditoría vio
+  // `/following` en su estado VACÍO, que es el que la cuenta de pruebas
+  // alcanza, y ahí no había ni `<main>` ni `<h1>`: el landmark vivía sólo en
+  // la rama con papers. Un estado de la página sigue siendo la página.
   if (displayState === FEED_DISPLAY_STATES.ERROR) {
     return (
-      <div className="feed-empty">
+      <FeedLandmark landmark={landmark} className="feed-empty">
         <div className="feed-empty-icon">⚠️</div>
         <h2>{isEnglish ? 'Error loading papers' : 'Error cargando papers'}</h2>
         <p>{getUiErrorMessage(error, language, 'FEED_LOAD_FAILED')}</p>
         <button className="feed-retry-btn" onClick={handleRefresh}>
           {isEnglish ? 'Try again' : 'Reintentar'}
         </button>
-      </div>
+      </FeedLandmark>
     );
   }
 
@@ -964,12 +973,12 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   if (displayState === FEED_DISPLAY_STATES.SOURCE_EMPTY) {
     // Alternative sources bring their own empty state; Siguiendo must never
     // fall back to the generic For You copy that asks users to broaden their interests.
-    return <div className="feed-empty">{source.emptyState}</div>;
+    return <FeedLandmark landmark={landmark} className="feed-empty">{source.emptyState}</FeedLandmark>;
   }
 
   if (displayState === FEED_DISPLAY_STATES.EMPTY && !atomVeil) {
     return (
-      <div className="feed-empty">
+      <FeedLandmark landmark={landmark} className="feed-empty">
         <div className="atom-loader">
           <AnimatedAtom size={80} strokeWidth={1} className="atom-loader-icon" />
         </div>
@@ -982,7 +991,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
         <button className="feed-retry-btn" onClick={handleRefresh}>
           {isEnglish ? 'Explore again' : 'Explorar de nuevo'}
         </button>
-      </div>
+      </FeedLandmark>
     );
   }
 
