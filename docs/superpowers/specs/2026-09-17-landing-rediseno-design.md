@@ -26,10 +26,15 @@ plantilla h2-izquierda/demo-derecha. `page.js` y `landing.css` se reescriben.
 
 ## 2. Decisiones que siguen vigentes del 12-09
 
-Inglés; `papertok.app/` será la landing y con sesión `/` redirige a `/feed` (migración aparte,
-fuera de este alcance); primera persona para el origen y Samuel nombrado con enlace; prueba
-social sin números; marcado real prerenderizado, entrada de Vite aparte (`landing.html`), sin
-framer-motion; la clave `index` del input de Rollup no se toca.
+Inglés; `papertok.app/` es la landing y con sesión `/` redirige a `/feed` (**corregido tras la
+ejecución: esta migración sí entra en el alcance de esta tarea y está hecha** — la marca
+`papertok_signed_in` que escribe la app, la puerta en `index.html` resuelta antes del primer
+pintado, `/feed` como segunda entrada de Rollup/`vercel.json`, y un deep link `#/…` que conserva
+su hash; ver §9 y la tarea 12. Lo que sigue aparte, fuera de este alcance, es pasar las RUTAS
+DE LA APP del fragmento a caminos reales — `/following`, `/research` — que es el trabajo de las
+tareas 13 a 17 del plan, una PR distinta); primera persona para el origen y Samuel nombrado con
+enlace; prueba social sin números; marcado real prerenderizado, entrada de Vite aparte
+(`landing.html`), sin framer-motion; la clave `index` del input de Rollup no se toca.
 
 **Nuevas:** sin figuras en ninguna parte (pedido dos veces); scroll normal; once tramos; el
 amarillo con presupuesto; sin deslizar en táctil; el subrayado sobre tinta es un filete.
@@ -87,7 +92,11 @@ del paper más alto, medida en el build; 572 px a 34 px de título) con `overflo
 Controles: botón **Skip** (icono `ban` + palabra, la acción de la app) al pie de la hoja con
 indicador `1 / 3` en mono; con la hoja enfocada, ↓/↑ y j/k. **Sin deslizar en táctil.** Da la
 vuelta (clon del primero al final; salto sin transición al terminar). Sin JS: primer paper y
-Skip `hidden`. `createDeck` de `heroDeck.js` se reutiliza; nada de gestos de rueda.
+Skip `hidden`. **Corregido tras la ejecución:** `createDeck` no se reutiliza de
+`heroDeck.js` — ese módulo del prototipo era una máquina de gestos de rueda, ajena a este
+contrato. `createDeck` es un módulo **nuevo y puro** (`src/landing/deck.js`: solo el índice, sin
+DOM), con su propio `deck.test.js`; el driver del DOM (transición, teclado, foco) vive aparte en
+`armDeck` (`motion.js`).
 
 **Rueda.** Geometría y física del worktree (13 huecos, paso 9°, radio 330, `REACHES [14,16,18]`,
 `TAU 380`, nunca el mismo alcance dos veces, semilla aleatoria). Gira una vez al entrar ≥ 50 %
@@ -155,15 +164,21 @@ subrayado y la invitación.
   `c87be1f`, sin commitear) se **copia**: el plugin `papertok-landing-prerender` y el input de
   `vite.config.js`; la cabeza de `landing.html` (espejo de tema y puerta de movimiento);
   `papers.js` como datos (+ vecinos del mapa, señales, entidades del Explorer, listas); la
-  secuencia del rewrite con `rewriteMotion.test.js` y `keyframeContrast.test.js`; `createDeck`
-  + `heroDeck.test.js`; el driver de la rueda (`armPile`, `WHEEL`) + `landing-wheel-audit.mjs`;
-  `citationPlate` de `graphMap.js` + `graphMap.test.js`. Se **tira**: `graphHold.js`,
-  `handoff.test.js`, `researchAnchor.js` y su test, el scroller.
+  secuencia del rewrite con `rewriteMotion.test.js` y `keyframeContrast.test.js`; el driver de
+  la rueda (`armPile`, `WHEEL`) + `landing-wheel-audit.mjs`; `citationPlate` de `graphMap.js` +
+  `graphMap.test.js`. Se **tira**: `graphHold.js`, `handoff.test.js`, `researchAnchor.js` y su
+  test, el scroller, y `heroDeck.js` — el mazo del prototipo era una máquina de gestos de
+  rueda; nada de él sobrevive (ver **Corregido**, abajo, y §5).
 - **Reutiliza** `src/legal/privacy.css` (PR #38) para barra, botones y pie: una sola hoja de
   página estática compartida, no dos.
-- **Nuevo:** `page.js` (once tramos), `landing.css` (sin scroller ni capturas), driver del
-  mazo (clic/teclado/vuelta), dibujado del mapa (`is-in` por IntersectionObserver), plancha de
-  móvil, subrayado con trazado.
+- **Nuevo:** `page.js` (once tramos), `landing.css` (sin scroller ni capturas), `deck.js`
+  (`createDeck`, el índice del mazo, puro y sin DOM — **no** es el `heroDeck.js` del prototipo,
+  pese a lo que decía una versión anterior de este documento) con su driver del DOM en
+  `motion.js` (`armDeck`: clic/teclado/vuelta), dibujado del mapa (`is-in` por
+  IntersectionObserver), plancha de móvil, subrayado con trazado.
+- **Corregido tras la ejecución (tarea 12):** este documento decía que `createDeck` se
+  reutilizaba de `heroDeck.js`. Falso — se escribió desde cero como módulo puro; ver §5 y la
+  entrada de «Nuevo» arriba.
 - **Tests (`node --test`):** estructura (once tramos en orden; cero `scroll-snap`; el amarillo
   solo en hero, tres subrayados y ventanas; ningún `.lp-eyebrow` fuera de tarjeta; sin figuras);
   mazo (vuelta, teclado, *reduced motion*, hueco ≥ paper más alto); contraste de subrayado e
@@ -173,7 +188,11 @@ subrayado y la invitación.
   y oscuro — el `shots.mjs` del scratchpad), `landing-invite-contrast.mjs`,
   `landing-wheel-audit.mjs`. Verificar siempre a más de un viewport.
 - **Presupuesto:** prerenderizado; ≤ 30 KB gz (hoy 16).
-- **Fuera de alcance:** pasar `/` a la landing y la redirección a `/feed`; el vídeo; figuras.
+- **Fuera de alcance:** el vídeo; figuras; y, **distinto de lo que decía una versión anterior de
+  este documento**, pasar `/` a la landing y la redirección con sesión a `/feed` **sí entraron**
+  (ver §2 y la tarea 12) — lo que de verdad queda fuera es la migración de las RUTAS DE LA APP
+  del fragmento a caminos reales (`/following`, `/research`, …), que son las tareas 13 a 17 del
+  plan y una pull request distinta a la de esta landing.
 
 ## 10. Criterios de aceptación
 
