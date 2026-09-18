@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const CI = new URL('../../.github/workflows/ci.yml', import.meta.url);
-const DEPLOY = new URL('../../.github/workflows/deploy.yml', import.meta.url);
 const PACKAGE = new URL('../../package.json', import.meta.url);
 
 // A YAML comment runs from an unquoted `#` to the end of the line. The SHA
@@ -74,9 +73,25 @@ test('SOURCE: the rules job runs the Firestore suite against the emulator on a p
   assert.match(rules, /run: npm run test:rules\n/, 'the same script a developer runs');
 });
 
-test('SOURCE: deploy.yml is untouched — Pages keeps its own Verify and does not wait on CI', async () => {
-  const deploy = stripYamlComments(await readFile(DEPLOY, 'utf8'));
-  assert.match(deploy, /^on:\n {2}push:\n {4}branches: \['main'\]\n {2}workflow_dispatch:\n/m);
-  assert.doesNotMatch(deploy, /workflow_run|pull_request/, 'the gate for main is branch protection on the CI checks, not a chained deploy');
-  assert.match(deploy, /run: npm run security:secrets && npm run lint && npm test && npm run worker:deploy:dry-run\n/, 'Pages still verifies before it publishes');
+test('SOURCE: there is no second publish workflow, and nothing publishes to GitHub Pages', async () => {
+  // This used to assert that `deploy.yml` was untouched. It was removed on
+  // 2026-09-18: it published a build nothing could reach -- the only entrance,
+  // `mugar123.github.io/papertok/`, 301s to `papertok.app`, which is Vercel --
+  // and everything it ran (`security:secrets`, `lint`, `test`,
+  // `worker:deploy:dry-run`) is a strict subset of the `npm run check` the CI
+  // job above already runs on the same push.
+  //
+  // What replaces the old assertion is the shape of the claim, not the file:
+  // production has one publisher, and it is not a workflow in this repository.
+  // A second one reappearing is what this now catches.
+  const { readdir } = await import('node:fs/promises');
+  const dir = new URL('../../.github/workflows/', import.meta.url);
+  const files = await readdir(dir);
+  assert.deepEqual(files.sort(), ['ci.yml'], `unexpected workflow(s): ${files.join(', ')}`);
+
+  // And the Pages site itself stays up on purpose: it is what redirects the
+  // old origin to the new one, so an old link still lands somewhere. What was
+  // retired is publishing to it, not the redirect.
+  const worker = await readFile(new URL('../../worker/report-api.js', import.meta.url), 'utf8');
+  assert.match(worker, /https:\/\/mugar123\.github\.io/, 'the old origin left the allowlist without anyone saying so');
 });

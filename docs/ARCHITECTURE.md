@@ -2,7 +2,7 @@
 
 ## Overview
 
-PaperTok is a React single-page application deployed on GitHub Pages with a Cloudflare Worker
+PaperTok is a React single-page application deployed on Vercel with a Cloudflare Worker
 for secret-bearing and server-side integrations.
 
 ```mermaid
@@ -132,10 +132,12 @@ links are loaded only for papers whose normalized provenance includes Hugging Fa
 
 ## Deployment
 
-- A push to `main` runs `.github/workflows/deploy.yml` and publishes `dist/` to GitHub Pages.
+- A push to `main` is deployed by Vercel, which builds from the repository. GitHub Pages
+  was retired on 2026-09-18: its workflow published a build nothing could reach, because the
+  only way in (`mugar123.github.io/papertok/`) 301s to `papertok.app`, which is Vercel.
 - The locked Worker CLI is validated with `npm run worker:deploy:dry-run` and deployed separately
   with `npm run worker:deploy`.
-- For a contract change, deploy and verify GitHub Pages first, then deploy the Worker. Roll back
+- For a contract change, deploy and verify the front end first, then deploy the Worker. Roll back
   the Worker before the frontend if verification fails. This ordering keeps the currently deployed
   browser compatible while authenticated Worker routes are introduced.
 - A **new** route inverts that order: deploy the Worker first. The old bundle does not call a route
