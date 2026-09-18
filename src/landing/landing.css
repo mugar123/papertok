@@ -93,19 +93,37 @@
   --gradient-bio: #15803d;
   --gradient-econ: #0f766e;
 }
-/* Deck stacking is armed-only (motion.js, task 10, adds .is-armed): unarmed,
+/* Deck stacking is armed-only (motion.js's armDeck adds .is-armed): unarmed,
    slides stay in normal flow so the one unhidden slide sizes the sheet on
-   its own. That DEFERS the zero-height problem rather than solving it —
-   the moment task 10 adds `.is-armed`, all three slides become
-   `position: absolute` at once, none of them in flow, and `.lp-deck` has
-   nothing left to size itself on. Task 10 must give `.lp-deck` (or
-   `.lp-sheet`) an explicit height — measured from the tallest slide, set
-   before or in the same frame as adding `.is-armed` — or arming the
-   carousel collapses the sheet to nothing. */
+   its own. The moment `.is-armed` lands, all four slides (the three papers
+   plus the clone armDeck appends) become `position: absolute` at once —
+   none of them in flow any more, so `.lp-deck` has nothing left to size
+   itself on.
+   (C) armDeck's own `measure()` is what fills that gap: it reads the
+   tallest slide's `offsetHeight` and writes that PLAIN PIXEL VALUE (no
+   token involved) directly onto `.lp-deck__reel`'s `style.height`. The reel
+   is `.lp-deck`'s only in-flow child, so `.lp-deck` takes the reel's height
+   the same way any block parent takes the height of ordinary content — no
+   separate height rule is needed on `.lp-deck` itself, and nothing here
+   jumps: `measure()` runs before `.is-armed` is added and before the first
+   paint the browser commits after that, same as any other synchronous DOM
+   write. A ResizeObserver on the sheet (armDeck, not a window/document
+   listener — see motion.js's own comment on why) re-measures the same way
+   on layout changes. */
 .lp-deck { position: relative; }
 .lp-deck__reel { position: relative; }
 .lp-sheet.is-armed .lp-deck { overflow: hidden; }
 .lp-sheet.is-armed .lp-hero__slide { position: absolute; inset: 0 0 auto 0; }
+.lp-sheet.is-armed .lp-deck__reel { transition: transform 400ms var(--ease-out-cubic); will-change: transform; }
+/* The teleport's own escape hatch — and it has to OUTRANK the rule above,
+   not merely follow it: `.lp-deck__reel.is-jumping` alone is two classes,
+   one fewer than `.lp-sheet.is-armed .lp-deck__reel`'s three, so the armed
+   transition would otherwise win the cascade on specificity regardless of
+   source order and every "jump" (the wraparound settle, and the first leg
+   of prev() from the first paper) would visibly animate across the whole
+   reel instead of teleporting. Matching the armed rule's own ancestor
+   context here, plus `.is-jumping`, is what actually outranks it. */
+.lp-sheet.is-armed .lp-deck__reel.is-jumping { transition: none; }
 /* An author rule that sets `display` always beats the user-agent's own
    `[hidden] { display: none }`, regardless of selector specificity — origin
    order, not the cascade, decides that fight. Both elements ship `hidden`

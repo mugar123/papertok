@@ -142,6 +142,14 @@ test('shouldAnimate() actually gates armPile() — not just named beside it', as
     readyState: 'loading',
     documentElement: { getAttribute: (name) => (name === 'data-motion' ? 'on' : null) },
     querySelector: (sel) => (sel === '.lp-pile' ? frame : null),
+    // Task 10's armReveals() (called from init(), same as armPile/armMap)
+    // asks for every `.lp-hl` mark via querySelectorAll — plural, unlike
+    // every other query in this fake DOM. An empty list here is the same
+    // "nothing of that shape exists" answer querySelector already gives
+    // every selector but '.lp-pile': armReveals() reads `.length` and
+    // returns without creating an observer, so `observerCount` below still
+    // reflects armPile() alone.
+    querySelectorAll: () => [],
     getElementById: (id) => (id === 'lp-pile-data' ? pileData : null),
     addEventListener: () => {},
   };

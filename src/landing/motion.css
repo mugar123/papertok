@@ -327,6 +327,43 @@ html[data-theme='dark'] .lp-rewrite[data-seen='1'][data-found='0'][data-phase='i
 @keyframes lpMapPop { to { opacity: 1; transform: scale(1); } }
 @keyframes lpMapFade { to { opacity: 1; } }
 
+/* ── The highlight draws itself on ────────────────────────────────────────
+   Left to right, once its sentence is fully in view (armReveals, motion.js:
+   the same watch-and-disconnect IntersectionObserver shape armMap above
+   already uses — `.is-in` never comes off, so scrolling a highlight away
+   and back never replays it).
+
+   background-size is PAINT, not layout, and — unlike a pseudo-element —
+   survives a span broken across two lines (landing.css's own `.lp-hl`
+   already carries box-decoration-break: clone for exactly that). The
+   static band in landing.css is the un-animated rest state underneath
+   this; what is added here is only the growing 0%→100% step on top of it,
+   gated to visits that get any motion at all.
+
+   Excluded everywhere the RULE form applies instead of the band — dark
+   theme and .lp-close, both (decision F): the ink form is simply there,
+   never drawn on, because a 42%-tall band under a light glyph is the exact
+   collision the rule form exists to avoid, and animating toward that
+   collision one frame at a time does not avoid it. `:not(.lp-close .lp-hl)`
+   on the first two rules excludes .lp-close in BOTH themes — landing.css's
+   own base rule already gives .lp-close the rule form on paper too, not
+   only in the dark.
+
+   The dark exclusion below is its OWN rule rather than folded into that
+   same `:not()`, because it has to be: `:not(.lp-close .lp-hl)`'s own
+   specificity (two classes) already outranks two bare attribute selectors,
+   so `[data-motion="on"][data-theme="dark"] .lp-hl` alone would LOSE the
+   cascade to the rule immediately above it for every .lp-hl outside
+   .lp-close — which is most of them — and the override would silently
+   never apply, leaving the band drawing across white glyphs in the dark
+   theme exactly as decision F warns against. Repeating
+   `:not(.lp-close .lp-hl)` in the override matches that specificity
+   term-for-term and adds the two attribute selectors on top of it, so it
+   wins outright rather than by accident of source order. */
+[data-motion="on"] .lp-hl:not(.lp-close .lp-hl) { box-shadow: none; background-image: linear-gradient(var(--brand-yellow), var(--brand-yellow)); background-repeat: no-repeat; background-position: 0 100%; background-size: 0% 42%; transition: background-size 480ms var(--ease-out-cubic); }
+[data-motion="on"] .lp-hl.is-in:not(.lp-close .lp-hl) { background-size: 100% 42%; }
+[data-motion="on"][data-theme="dark"] .lp-hl:not(.lp-close .lp-hl) { background-image: none; transition: none; }
+
 /* ── Reduced motion ───────────────────────────────────────────────────────
    Fewer and gentler, not nothing. data-motion is never set, so no arrival and
    no drift exist at all; the level switch keeps its fade, because without it
@@ -340,6 +377,11 @@ html[data-theme='dark'] .lp-rewrite[data-seen='1'][data-found='0'][data-phase='i
    someone who asked for less. */
 @media (prefers-reduced-motion: reduce) {
   .lp-deck__reel { transition: none !important; }
+  /* Belt for the braces, same as the rest of this block: index.html's own
+     gate means data-motion is never "on" under reduced motion in the first
+     place, so this never actually has anything to override — but if it
+     ever did, the band would be fully drawn already rather than drawing. */
+  [data-motion="on"] .lp-hl { transition: none; background-size: 100% 42%; }
   .lp-levels::after,
   .lp-panel__level { transition-property: opacity, visibility; }
   .lp-panel__level { translate: none; }

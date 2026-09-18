@@ -10,6 +10,7 @@
  * Nothing in this file is load-bearing for reading: the landing is
  * prerendered, so every word of it is in the HTML whether or not this runs.
  */
+import { createDeck } from './deck.js';
 
 /**
  * Whether this visit gets any of it. Four gates, all of which have to hold:
@@ -438,6 +439,172 @@ export function armMap() {
   io.observe(plate);
 }
 
+/* ── The hero deck ───────────────────────────────────────────────────────
+   The reel is a stack of four slides — three papers and a clone of the
+   first — laid out by translateY; Skip and the arrow keys move it one
+   slide, the CSS transition (landing.css, `.lp-sheet.is-armed
+   .lp-deck__reel`) carries it, and when the clone lands the reel jumps back
+   to the first without a frame of travel. Slides not on the sheet are
+   inert and aria-hidden so a keyboard cannot reach what a sighted reader
+   cannot see (page.js ships slides 2 and 3 `hidden aria-hidden="true"
+   inert` for exactly that reason, before this ever runs).
+
+   Armed UNCONDITIONALLY, ahead of the `data-motion` gate in init() below
+   (like armLevels): the deck answers Skip and the arrow keys on a phone and
+   under reduced motion too, not only when the page's scroll-triggered
+   motion is switched on. */
+function armDeck() {
+  var sheet = document.querySelector('[data-deck]');
+  var reel = sheet && sheet.querySelector('[data-deck-reel]');
+  var skip = sheet && sheet.querySelector('[data-deck-skip]');
+  var count = sheet && sheet.querySelector('[data-deck-count]');
+  /* The FOOT ships `hidden` in page.js too, separately from the Skip button's
+     own `hidden` — both need clearing, or the foot's `display: none` (its own
+     `[hidden]` override, landing.css) hides the button regardless of the
+     button's own attribute: a parent that is not rendered has no box, so
+     `getBoundingClientRect()` on the button inside it returns all-zero and a
+     press aimed at its centre lands at the viewport's origin instead. Found
+     by actually driving a click at that computed rect (the probe below) and
+     watching it land nowhere — not by reading the brief's own snippet, which
+     never queries this element at all. */
+  var foot = sheet && sheet.querySelector('.lp-deck__foot');
+  if (!sheet || !reel || !skip || !count || !foot) return;
+
+  var slides = [].slice.call(reel.children);
+  var deck = createDeck({ count: slides.length });
+  var clone = slides[0].cloneNode(true);
+  clone.setAttribute('aria-hidden', 'true');
+  clone.inert = true;
+  clone.classList.add('lp-hero__slide--clone');
+  reel.appendChild(clone);
+  var all = slides.concat([clone]);
+  var h = 0;
+
+  /* (C) The armed deck's own height. `.lp-hero__slide` becomes `position:
+     absolute` the moment `.is-armed` lands (landing.css), so none of the
+     four slides contributes to the reel's intrinsic height any more — an
+     absolutely positioned box never does, and `.lp-deck` would collapse to
+     nothing. Measuring the tallest slide's `offsetHeight` and writing that
+     PLAIN PIXEL VALUE onto the reel's own `style.height` is what gives the
+     box something to be: `.lp-deck` needs no height rule of its own
+     because the reel is its only in-flow child, so `.lp-deck` takes the
+     reel's height the same way any block parent takes the height of
+     ordinary content. Chosen over measuring `.lp-deck` itself because the
+     reel is the element whose height this function already needs for
+     `paint()`/`jump()`'s own translateY math — one measurement serves
+     both. */
+  function measure() {
+    h = 0;
+    all.forEach(function (s) { h = Math.max(h, s.offsetHeight); });
+    reel.style.height = h + 'px';
+    all.forEach(function (s, k) { s.style.transform = 'translateY(' + (k * 100) + '%)'; });
+  }
+
+  function show(k) {
+    all.forEach(function (s, j) {
+      var on = j === k;
+      s.inert = !on;
+      if (on) s.removeAttribute('aria-hidden'); else s.setAttribute('aria-hidden', 'true');
+    });
+    count.textContent = deck.label();
+  }
+
+  function paint() { reel.style.transform = 'translateY(' + (-deck.index() * h) + 'px)'; }
+
+  /* A teleport: disable the transition, jump straight to slide k's
+     position, force a synchronous reflow so the browser actually commits
+     that as a style (not merely queues it), then hand the transition back.
+     Whatever position is set AFTER this returns is what actually
+     animates — see prev(), which jumps here and then calls paint(). */
+  function jump(k) {
+    reel.classList.add('is-jumping');
+    reel.style.transform = 'translateY(' + (-k * h) + 'px)';
+    void reel.offsetHeight;
+    reel.classList.remove('is-jumping');
+  }
+
+  function reduced() { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+
+  /* The clone's own arrival. Under reduced motion there is no transition to
+     end (landing.css sets `transition: none` on `.is-jumping`, and the
+     reduced-motion block in motion.css disables the armed transition
+     outright), so this event never fires there — next() below settles
+     immediately in that case instead of waiting on it. */
+  reel.addEventListener('transitionend', function (e) {
+    if (e.target !== reel || !deck.atClone()) return;
+    deck.settle(); jump(0); show(0);
+  });
+
+  function next() {
+    var r = deck.next();
+    paint();
+    if (deck.atClone()) {
+      show(slides.length);
+      if (reduced()) { deck.settle(); jump(0); show(0); }
+    } else {
+      show(r.index);
+    }
+  }
+
+  function prev() {
+    var r = deck.prev();
+    if (r.jumpTo !== null) jump(r.jumpTo);
+    paint();
+    show(r.index);
+  }
+
+  foot.hidden = false;
+  skip.hidden = false;
+  skip.addEventListener('click', function () { next(); sheet.focus({ preventScroll: true }); });
+  sheet.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); next(); }
+    if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); prev(); }
+  });
+
+  /* Remeasure when the sheet's own box changes — a narrower viewport can
+     wrap a slide's title onto an extra line and change its height. NOT a
+     `window.addEventListener('resize', …)`: this file's only window/document
+     listener is the DOMContentLoaded bootstrap at the very bottom
+     (wheel.test.js pins that as an invariant, and for the same reason a
+     page-scoped `keydown` listener is banned — see that file's own
+     comment). A ResizeObserver is scoped to the element it watches, the
+     same discipline every other listener in this function already follows,
+     so it needs no exception to that rule. Watching the sheet rather than
+     the reel: the reel's own height is what THIS function writes, and
+     watching the thing you are about to resize invites a feedback loop;
+     the sheet's WIDTH is the actual trigger; and the sheet's PADDING and
+     border are inert during this element's own lifetime, so its size only
+     ever moves because a real content change (a width breakpoint, a font
+     load) needs a remeasure. Guarded the same way shouldAnimate() guards
+     IntersectionObserver: a browser without ResizeObserver keeps the
+     deck's first measurement rather than throwing. */
+  if (window.ResizeObserver) {
+    var ro = new ResizeObserver(function () { measure(); jump(deck.index()); });
+    ro.observe(sheet);
+  }
+
+  measure();
+  show(0);
+  paint();
+  sheet.classList.add('is-armed');
+}
+
+/* ── The highlight draws itself on ───────────────────────────────────────
+   Watch-and-disconnect, the same shape armMap() above already uses: `.is-in`
+   never comes off, so scrolling a highlight away and back never replays it.
+   `threshold: 1` — the whole mark, not merely a sliver of it — because this
+   is a short phrase, not a section; a reader should have all of it in view
+   before it starts drawing. motion.css is what actually animates the band;
+   this only ever adds one class, once, per mark. */
+function armReveals() {
+  var marks = [].slice.call(document.querySelectorAll('.lp-hl'));
+  if (!marks.length) return;
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('is-in'); io.unobserve(e.target); } });
+  }, { threshold: 1 });
+  marks.forEach(function (m) { io.observe(m); });
+}
+
 /* Exported so a test can call it directly with the page's real globals
    substituted, and prove `shouldAnimate()` actually gates `armPile()`
    rather than trusting that the two are wired together correctly by
@@ -452,9 +619,15 @@ export function init() {
   var rewrite = document.querySelector('[data-levels]');
   if (rewrite) armLevels(rewrite);
 
+  /* Unconditional too, and for the same reason: the deck is how a reader
+     moves through the hero's three papers, not a piece of scroll-triggered
+     motion — see armDeck's own comment. */
+  armDeck();
+
   if (document.documentElement.getAttribute('data-motion') !== 'on' || !shouldAnimate()) return;
   armPile();
   armMap();
+  armReveals();
   if (rewrite) armRewrite(rewrite);
 }
 
