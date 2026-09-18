@@ -449,7 +449,29 @@ async function runScene(cdp, scene) {
     }
   }
 
-  if (!failures) console.log(`  PASS — ${posts.length} analytics request(s), none carrying ${scene.secrets.map((s) => JSON.stringify(s)).join(' / ')}`);
+  // ── And the Referer, which is the half `beforeSend` cannot reach. ──
+  // A same-origin subresource request carries the FULL page URL in this header
+  // under the browser default, so the app's own insights script announced the
+  // paper key to the edge on every view. Under HashRouter that was safe for
+  // free (a fragment is stripped from `Referer`); real paths put the id back
+  // in it. `app.html`'s `<meta name="referrer" content="strict-origin">` is
+  // what cuts it to the origin — and this is the assertion that keeps it
+  // there. Measured by mutation: with the meta taken out of the built page,
+  // this header came back reading
+  // `/public/paper/b3BlbmFsZXg6VzI3NDE4MDk4MDc`, and also the author's id AND
+  // their name from the query string.
+  for (const hit of all) {
+    const referer = hit.headers?.Referer || hit.headers?.referer;
+    if (!referer) continue;
+    let path = null;
+    try { path = new URL(referer).pathname + new URL(referer).search; } catch { path = referer; }
+    if (path !== '/') {
+      console.log(`  [FAIL] the Referer of this ${hit.method} ${hit.url} carries ${JSON.stringify(path)}, not just the origin`);
+      failures += 1;
+    }
+  }
+
+  if (!failures) console.log(`  PASS — ${posts.length} analytics request(s), none carrying ${scene.secrets.map((s) => JSON.stringify(s)).join(' / ')}, none with a path in Referer`);
   return failures;
 }
 
