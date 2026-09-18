@@ -590,31 +590,74 @@ function armDeck() {
     if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); prev(); }
   });
 
-  /* Remeasure when the sheet's own box changes — a narrower viewport can
-     wrap a slide's title onto an extra line and change its height. NOT a
-     `window.addEventListener('resize', …)`: this file's only window/document
-     listener is the DOMContentLoaded bootstrap at the very bottom
-     (wheel.test.js pins that as an invariant, and for the same reason a
-     page-scoped `keydown` listener is banned — see that file's own
-     comment). A ResizeObserver is scoped to the element it watches, the
-     same discipline every other listener in this function already follows,
-     so it needs no exception to that rule. Watching the sheet rather than
-     the reel: the reel's own height is what THIS function writes, and
-     watching the thing you are about to resize invites a feedback loop;
-     the sheet's WIDTH is the actual trigger; and the sheet's PADDING and
-     border are inert during this element's own lifetime, so its size only
-     ever moves because a real content change (a width breakpoint, a font
-     load) needs a remeasure. Guarded the same way shouldAnimate() guards
-     IntersectionObserver: a browser without ResizeObserver keeps the
-     deck's first measurement rather than throwing. */
+  /* A remeasure that is also a correction: re-reads every slide's height
+     AND re-teleports the reel to whatever paper is CURRENTLY showing
+     (deck.index(), never a hardcoded 0) via jump(), not paint() — this is
+     a correction, not a navigation, so it must not animate and must not
+     move a reader who has already skipped off the paper they are looking
+     at by the time either trigger below fires. */
+  function remeasure() { measure(); jump(deck.index()); }
+
+  /* Remeasure when a SLIDE's own box changes — not the sheet's. Once armed,
+     every slide is `position: absolute` inside a fixed-height reel, so a
+     slide's internal reflow does not change `.lp-sheet`'s own box at all:
+     `.lp-sheet`'s height comes from the reel's fixed inline height, which
+     does not depend on which slide is tallest, and neither a viewport-width
+     rewrap nor a font swap touches that box. Watching the SLIDES themselves
+     catches both triggers instead: each one is `inset: 0 0 auto 0` with an
+     `auto` height, so its own border box genuinely grows or shrinks with
+     its content — the exact property this function already reads via
+     `offsetHeight`, from the one place that actually changes.
+
+     NOT a `window.addEventListener('resize', …)`: this file's only
+     window/document listener is the DOMContentLoaded bootstrap at the very
+     bottom (wheel.test.js pins that as an invariant, and for the same
+     reason a page-scoped `keydown` listener is banned — see that file's
+     own comment). A ResizeObserver is scoped to the elements it watches,
+     the same discipline every other listener in this function already
+     follows, so it needs no exception to that rule.
+
+     No feedback loop: `measure()` only ever writes `transform` (paint, not
+     layout) and the reel's own height — never a slide's own width, height,
+     padding or margin — so recomputing it from inside the observer's own
+     callback cannot itself trigger another observation. Guarded the same
+     way shouldAnimate() guards IntersectionObserver: a browser without
+     ResizeObserver keeps whatever the last synchronous measurement
+     produced rather than throwing. */
   if (window.ResizeObserver) {
-    var ro = new ResizeObserver(function () { measure(); jump(deck.index()); });
-    ro.observe(sheet);
+    var ro = new ResizeObserver(remeasure);
+    all.forEach(function (s) { ro.observe(s); });
+  }
+
+  /* The synchronous measure() below runs against FALLBACK metrics: the
+     serif and mono faces are self-hosted with no preload, so nothing
+     guarantees either has painted a single glyph yet at DOMContentLoaded —
+     that measurement is provisional, taken so the deck is usable from the
+     first frame rather than blocked on a font. document.fonts.ready is the
+     browser's own signal that every font this page uses has either loaded
+     or permanently failed, which is the authoritative moment to measure
+     again; remeasure() (not a bare measure()) is what makes doing so late
+     safe, for the reason in its own comment above. Guarded the same way —
+     a browser without the Font Loading API simply keeps the first
+     measurement, the same fallback state it would have painted anyway. */
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(remeasure);
   }
 
   measure();
   show(0);
   paint();
+
+  /* All four together, atomically, with `.is-armed`: before this line the
+     sheet was a plain, honestly-neutral `<div>` (hero()'s own comment,
+     page.js) — none of this may be true a moment before the keydown
+     handler above is actually listening, or a keyboard could reach a
+     control announcing itself as an operable carousel with no operation
+     bound to it yet. */
+  sheet.setAttribute('tabindex', '0');
+  sheet.setAttribute('role', 'group');
+  sheet.setAttribute('aria-roledescription', 'carousel');
+  sheet.setAttribute('aria-label', 'Three papers from the feed');
   sheet.classList.add('is-armed');
 }
 

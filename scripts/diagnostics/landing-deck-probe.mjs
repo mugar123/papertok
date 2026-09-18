@@ -49,18 +49,24 @@ async function pageTarget() {
 
 class CDP {
   constructor(ws) {
-    this.ws = ws; this.id = 0; this.pending = new Map();
+    this.ws = ws; this.id = 0; this.pending = new Map(); this.listeners = new Map();
     ws.addEventListener('message', (e) => {
       const m = JSON.parse(e.data);
       if (m.id) {
         const p = this.pending.get(m.id); this.pending.delete(m.id);
         if (m.error) p.reject(new Error(JSON.stringify(m.error))); else p.resolve(m.result);
+      } else if (m.method) {
+        (this.listeners.get(m.method) || []).forEach((fn) => fn(m.params));
       }
     });
   }
   send(method, params = {}) {
     const id = ++this.id;
     return new Promise((resolve, reject) => { this.pending.set(id, { resolve, reject }); this.ws.send(JSON.stringify({ id, method, params })); });
+  }
+  on(method, fn) {
+    if (!this.listeners.has(method)) this.listeners.set(method, []);
+    this.listeners.get(method).push(fn);
   }
 }
 
@@ -172,6 +178,47 @@ try {
   console.log('deck moved back on ArrowUp:', afterDown.count !== afterUp.count);
   console.log('page scroll unchanged throughout:', beforeArrow.scrollY === afterDown.scrollY && afterDown.scrollY === afterUp.scrollY);
 
+  // ── Tab from the very top of the page, through the hero ────────────────
+  // A fresh navigation: every phase above has already moved focus and deck
+  // state around, and this needs to start from document.activeElement ===
+  // document.body, the same as a real visitor's first keypress.
+  await cdp.send('Page.navigate', { url: URL_ });
+  await sleep(1200);
+  const focusOrder = [];
+  let enteredHero = false;
+  let leftHeroAt = -1;
+  for (let i = 0; i < 20; i++) {
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 });
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 });
+    await sleep(60);
+    const stop = JSON.parse(await ev(`JSON.stringify((() => {
+      const el = document.activeElement;
+      if (!el || el === document.body) return { tag: 'BODY' };
+      const inHero = !!el.closest('.lp-hero');
+      return {
+        tag: el.tagName,
+        cls: el.className || null,
+        role: el.getAttribute('role'),
+        text: (el.textContent || '').trim().slice(0, 40),
+        href: el.getAttribute('href'),
+        inHero,
+      };
+    })())`));
+    focusOrder.push(stop);
+    if (stop.inHero) enteredHero = true;
+    // Stop one stop after LEAVING the hero, having actually entered it —
+    // enough to show what comes right after without walking the rest of
+    // the page. `leftHeroAt` guards against the pre-hero header stops
+    // (skip link, wordmark, nav) ever looking like an "exit".
+    if (enteredHero && !stop.inHero) {
+      if (leftHeroAt === -1) leftHeroAt = focusOrder.length;
+      else if (focusOrder.length > leftHeroAt) break;
+    }
+    if (stop.tag === 'BODY' && focusOrder.length > 1) break; // Tab cycled off the document
+  }
+  console.log('\n══════ TAB FROM THE TOP, THROUGH THE HERO ══════');
+  focusOrder.forEach((s, i) => console.log(`  ${i + 1}. ${s.tag}${s.cls ? '.' + String(s.cls).split(' ').join('.') : ''}${s.role ? ` role=${s.role}` : ''}${s.href ? ` href=${s.href}` : ''} "${s.text}"${s.inHero ? '  [in .lp-hero]' : ''}`));
+
   // ── Reduced motion: the change is instant, live, no reload ─────────────
   const normalDuration = await ev(`getComputedStyle(document.querySelector('[data-deck-reel]')).transitionDuration`);
   await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
@@ -200,6 +247,51 @@ try {
   console.log('\n══════ NO JAVASCRIPT (Emulation.setScriptExecutionDisabled) ══════');
   console.log(JSON.stringify(noJs, null, 2));
 
+  // ── The font-loading race: fallback metrics vs. the authoritative remeasure ──
+  // Re-enable scripts (left off by the phase above). Rather than a
+  // connection-wide throttle — which would also slow the HTML/CSS/JS the
+  // FIRST measure() itself waits on, muddying which delay produced which
+  // number — the Fetch domain intercepts ONLY the woff2 requests and holds
+  // each one open for a fixed delay before letting it complete. That keeps
+  // the race isolated to exactly the thing decision (font race) is about:
+  // armDeck's first, synchronous measure() runs at DOMContentLoaded against
+  // whatever metrics are available RIGHT THEN (fallback, since the fonts
+  // are still being held), and document.fonts.ready only resolves once
+  // this interception actually lets them through.
+  await cdp.send('Emulation.setScriptExecutionDisabled', { value: false });
+  const FONT_DELAY_MS = 2500;
+  await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*.woff2', requestStage: 'Request' }] });
+  let interceptedFonts = 0;
+  cdp.on('Fetch.requestPaused', async (p) => {
+    interceptedFonts += 1;
+    await sleep(FONT_DELAY_MS);
+    await cdp.send('Fetch.continueRequest', { requestId: p.requestId });
+  });
+
+  await cdp.send('Page.navigate', { url: URL_ });
+  await sleep(600); // DOMContentLoaded + armDeck's synchronous first measure() — the woff2 files are still held by the interceptor above
+  const fallback = JSON.parse(await ev(`JSON.stringify({
+    height: document.querySelector('[data-deck-reel]').getBoundingClientRect().height,
+    fontsStatus: document.fonts.status,
+    armed: document.querySelector('.lp-sheet').classList.contains('is-armed'),
+  })`));
+
+  const afterFontsResult = await cdp.send('Runtime.evaluate', {
+    expression: `document.fonts.ready.then(() => JSON.stringify({ height: document.querySelector('[data-deck-reel]').getBoundingClientRect().height, fontsStatus: document.fonts.status }))`,
+    awaitPromise: true,
+    returnByValue: true,
+  });
+  if (afterFontsResult.exceptionDetails) throw new Error(afterFontsResult.exceptionDetails.exception?.description);
+  const afterFonts = JSON.parse(afterFontsResult.result.value);
+
+  console.log('\n══════ FONT-LOADING RACE (woff2 requests held ' + FONT_DELAY_MS + 'ms each via Fetch interception) ══════');
+  console.log('fonts intercepted:', interceptedFonts);
+  console.log('fallback measurement (armed:', fallback.armed, ', fonts:', fallback.fontsStatus, '):', fallback.height, 'px');
+  console.log('authoritative measurement (fonts.ready resolved, fonts:', afterFonts.fontsStatus, '):', afterFonts.height, 'px');
+  console.log('delta (px):', afterFonts.height - fallback.height);
+
+  await cdp.send('Fetch.disable');
+
   console.log('\n══════ SUMMARY ══════');
   console.log([
     `counters=${JSON.stringify(counters)}`,
@@ -211,6 +303,7 @@ try {
     `noPageScroll=${beforeArrow.scrollY === afterDown.scrollY && afterDown.scrollY === afterUp.scrollY}`,
     `reducedInstant=${reducedDuration === '0s'}`,
     `noJsOnePaper=${noJs.visibleSlides === 1 && !noJs.armed && noJs.skipHidden === true && noJs.footHidden === true}`,
+    `fontRaceDelta=${afterFonts.height - fallback.height}px(${fallback.height}->${afterFonts.height})`,
   ].join(' '));
 
   ws.close();

@@ -115,10 +115,26 @@ const bar = () => `<header class="lp-bar lp-bar--yellow">
    well as `aria-hidden="true" inert`, and the foot (Skip + count) ships
    `hidden` too, so a visit with no JavaScript is one readable paper and
    nothing a keyboard can reach and not see, not a three-tall stack waiting
-   on a script that has not run. WAI-ARIA carousel: group + roledescription,
-   one slide visible at a time — plain `<div>`s, not an `<ol>`/`<li>`: each
-   slide's own `role="group"` already overrides whatever `<li>` would have
-   told assistive tech (an item with a role replacing "listitem" is no
+   on a script that has not run.
+
+   The sheet itself ships as a PLAIN `<div>` — no `tabindex`, no `role`, no
+   `aria-roledescription`, no `aria-label`. A carousel that cannot be
+   operated is not a carousel: `tabindex="0"` on a group with no keydown
+   handler behind it (armDeck wires that) would have let a keyboard reach a
+   stop that does nothing on the arrow keys, and `role="group"
+   aria-roledescription="carousel"` would have announced an operable
+   carousel to a screen reader that has no way to operate it — worse than
+   not naming it one, the same "nothing focusable may do nothing" argument
+   page.test.js already holds the tabs and Skip button to, extended to what
+   an AT user is TOLD as well as what they can reach. armDeck adds all four
+   attributes together, atomically, with `.is-armed`, the moment the deck
+   actually becomes a carousel a keyboard can drive — see its own comment.
+
+   WAI-ARIA carousel: group + roledescription once armed, one slide visible
+   at a time — plain `<div>`s, not an `<ol>`/`<li>`: each SLIDE's own
+   `role="group"` (unconditional — "slide 2 of 3" is true whether or not
+   the carousel is operable yet) already overrides whatever `<li>` would
+   have told assistive tech (an item with a role replacing "listitem" is no
    longer counted as one, so the list would report itself as having zero
    items), so a semantic list here never bought anything real. */
 const hero = () => `<section class="lp-hero" aria-labelledby="lp-h1">
@@ -128,7 +144,7 @@ const hero = () => `<section class="lp-hero" aria-labelledby="lp-h1">
       <p class="lp-lede">A feed of scientific papers from open, public sources. Scroll it the way you scroll anything else.</p>
       <p class="lp-hero__cta"><a class="lp-btn lp-btn--lg" href="/feed">Open the feed</a><span class="lp-hero__note">No account needed to look.</span></p>
     </div>
-    <div class="lp-sheet" data-deck tabindex="0" role="group" aria-roledescription="carousel" aria-label="Three papers from the feed">
+    <div class="lp-sheet" data-deck>
       <div class="lp-deck">
         <div class="lp-deck__reel" data-deck-reel>
           ${HERO_PAPERS.map((p, i) => `<div class="lp-hero__slide" role="group" aria-roledescription="slide" aria-label="${i + 1} of ${HERO_PAPERS.length}"${i ? ' hidden aria-hidden="true" inert' : ''}>${paper(p, { size: 'sheet', heading: 'h2' })}</div>`).join('\n')}

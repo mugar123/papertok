@@ -99,6 +99,22 @@ test('the hero deck ships three slides, the first visible, the others hidden and
   assert.match(css, /\.lp-deck__skip\[hidden\]\s*\{\s*display:\s*none;?\s*\}/);
 });
 
+// A carousel that cannot be operated is not a carousel: role="group"
+// aria-roledescription="carousel" would tell a screen reader this IS one,
+// and tabindex="0" would let a keyboard reach it, while no keydown handler
+// exists to answer either key until motion.js's armDeck() has run — the
+// same "nothing focusable may do nothing" argument the tests above already
+// hold the Skip button and foot to, extended to what an AT user is TOLD.
+// armDeck adds all four attributes together, atomically, with .is-armed —
+// see its own comment there and hero()'s in page.js.
+test('the sheet ships as a plain div — no tabindex, no carousel role, until armDeck arms it', () => {
+  assert.match(html, /<div class="lp-sheet" data-deck>/);
+  assert.doesNotMatch(html, /<div class="lp-sheet"[^>]*tabindex/);
+  assert.doesNotMatch(html, /<div class="lp-sheet"[^>]*role=/);
+  assert.doesNotMatch(html, /<div class="lp-sheet"[^>]*aria-roledescription/);
+  assert.doesNotMatch(html, /<div class="lp-sheet"[^>]*aria-label/);
+});
+
 test('yellow is a ground in four places, a travelling indicator, and one badge inside a window', () => {
   // .lp-bar--yellow and .lp-btn--yellow live in static-page.css, and
   // motion.css is owned by tasks 7 and 10 from here — read all three, or a
