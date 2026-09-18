@@ -553,3 +553,25 @@ parte el CSS de la landing en dos, las dos mitades viajan de verdad al visitante
 Acepta un directorio como argumento, que es como se ensayan esos fallos sin romper el
 build de verdad primero — una puerta cuyos modos de fallo no se pueden ensayar es una
 puerta en la que nadie confía.
+
+## `offline-routes-probe.mjs` — qué sirve cada ruta sin red (2026-09-18)
+
+```bash
+npm run build
+node scripts/diagnostics/offline-routes-probe.mjs http://localhost:4175
+```
+
+Levanta su propio `vite preview` sobre `dist/`, espera a que el service worker se
+instale y tome el control, **apaga el servidor** y pide cuatro caminos: `/research`
+y `/lists`, que son rutas de la app y tienen que salir de la caché por la última
+oportunidad de la regla `NetworkFirst` (`handlerDidError` en `vite.config.js`, que
+responde con el `/feed` que calienta `public/sw-html-warm.js`); y `/` y
+`/privacy.html`, que no son rutas de la app y tienen que quedarse **sin respuesta**
+— sustituirlas por la app sería cambiarle la página al lector, y en el caso de
+`/__/auth/` colgaría todos los inicios de sesión.
+
+La trampa que costó una pasada entera: `Network.emulateNetworkConditions` con
+`offline: true` se aplica al target de la **pestaña**, y el service worker es otro
+target. Con el servidor vivo el worker conserva la red, así que la sonda mide lo
+que responde el servidor y da todo verde sin que la última oportunidad corra nunca.
+Por eso apaga el servidor en vez de emular.

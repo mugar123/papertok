@@ -59,7 +59,7 @@ function AuthCta({ user, onAuthRequired, label }) {
   if (onAuthRequired) {
     return <button type="button" className="public-list-auth-cta" onClick={onAuthRequired}>{label}</button>;
   }
-  return <Link className="public-list-auth-cta" to="/" state={{ authRequired: true, returnTo: '/lists' }}>{label}</Link>;
+  return <Link className="public-list-auth-cta" to="/feed" state={{ authRequired: true, returnTo: '/lists' }}>{label}</Link>;
 }
 
 export default function PublicListPage({ shareId: shareIdProp, onAuthRequired }) {
@@ -267,7 +267,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
       <main className={pageClass}>
         {!hasAppChrome && (
           <header className="public-list-brand">
-            <Link to="/">{copy.brand}</Link>
+            <Link to="/feed">{copy.brand}</Link>
             <AuthCta user={user} onAuthRequired={onAuthRequired} label={copy.authCta} />
           </header>
         )}
@@ -292,7 +292,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
     <main className={pageClass}>
       {!hasAppChrome && (
         <header className="public-list-brand">
-          <Link to="/">{copy.brand}</Link>
+          <Link to="/feed">{copy.brand}</Link>
           <div className="public-list-brand-actions">
             <span>{copy.publicList}</span>
             <AuthCta user={user} onAuthRequired={onAuthRequired} label={copy.authCta} />

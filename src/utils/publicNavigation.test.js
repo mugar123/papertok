@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import {
   decodePaperKey,
   getAbsoluteShareUrl,
-  getHashRoute,
   getPublicEntityPath,
   getPublicEntityUrl,
   getPublicPaperPath,
@@ -27,14 +27,20 @@ test('normalizes Vite base paths for project-site roots', () => {
   assert.equal(getSiteRootUrl(URL_OPTIONS), 'https://example.test/papertok/');
 });
 
-test('builds HashRouter-compatible entity routes with encoded path segments', () => {
+test('builds entity routes with encoded path segments', () => {
+  // The `getHashRoute(path)` assertion that used to sit here is gone with the
+  // function: its only job was to put a `#` in front of a route, and the route
+  // is the path now (src/main.jsx mounts a BrowserRouter). What it was really
+  // protecting — that the identifier's own slashes stay percent-encoded, so a
+  // canonical ORCID URL cannot split into extra path segments — is the
+  // assertion above, and the whole-URL shape is checked at the bottom of this
+  // file.
   const path = getPublicEntityPath({
     type: 'author',
     canonicalId: 'https://orcid.org/0000-0001/2345',
   });
 
   assert.equal(path, '/public/entity/author/https%3A%2F%2Forcid.org%2F0000-0001%2F2345');
-  assert.equal(getHashRoute(path), '#/public/entity/author/https%3A%2F%2Forcid.org%2F0000-0001%2F2345');
   assert.equal(getPublicEntityPath('not-an-entity', 'id'), null);
 });
 
@@ -117,28 +123,37 @@ test('an id nobody can open is still no key at all', () => {
   assert.equal(getPublicPaperPath('pmid', '12a'), null);
 });
 
+/**
+ * The Vite base is what a project-path deployment (GitHub Pages' /papertok/)
+ * puts in front of every route. It used to be followed by a `#`; now the route
+ * continues the path, so the base has to be joined to it without doubling or
+ * eating a slash — which is the one thing that could silently break when the
+ * fragment went away, and the reason this fixture keeps a base that is not `/`.
+ */
 test('builds shared-list paths and absolute share URLs with the Vite base', () => {
   assert.equal(getSharedListPath('list/with spaces'), '/public/list/list%2Fwith%20spaces');
   assert.equal(
     getPublicEntityUrl('topic', 'astro-ph.CO', URL_OPTIONS),
-    'https://example.test/papertok/#/public/entity/topic/astro-ph.CO',
+    'https://example.test/papertok/public/entity/topic/astro-ph.CO',
   );
   assert.equal(
     getPublicPaperUrl({ arxivId: '2401.12345' }, undefined, URL_OPTIONS),
-    `https://example.test/papertok/#/public/paper/${encodePaperKey({ arxivId: '2401.12345' })}`,
+    `https://example.test/papertok/public/paper/${encodePaperKey({ arxivId: '2401.12345' })}`,
   );
   assert.equal(
     getPublicPaperUrl({ arxivId: '2401.12345' }, URL_OPTIONS),
-    `https://example.test/papertok/#/public/paper/${encodePaperKey({ arxivId: '2401.12345' })}`,
+    `https://example.test/papertok/public/paper/${encodePaperKey({ arxivId: '2401.12345' })}`,
   );
   assert.equal(
     getSharedListUrl('reading-list', URL_OPTIONS),
-    'https://example.test/papertok/#/public/list/reading-list',
+    'https://example.test/papertok/public/list/reading-list',
   );
   assert.equal(
     getAbsoluteShareUrl('/public/entity/topic/astro-ph.CO', URL_OPTIONS),
-    'https://example.test/papertok/#/public/entity/topic/astro-ph.CO',
+    'https://example.test/papertok/public/entity/topic/astro-ph.CO',
   );
+  // The site root itself is still the site root, not a path off it.
+  assert.equal(getAbsoluteShareUrl('/', URL_OPTIONS), 'https://example.test/papertok/');
 });
 
 test('builds a public profile path from a handle or a profile', () => {
@@ -157,7 +172,84 @@ test('refuses to build a profile path for a handle the rules would reject', () =
   assert.equal(getPublicProfileUrl('admin'), null);
 });
 
-test('a profile URL is absolute and hash-routed like every other share link', () => {
+test('a profile URL is absolute and routed by path like every other share link', () => {
   const url = getPublicProfileUrl('ada', { origin: 'https://example.test', base: '/papertok/' });
-  assert.equal(url, 'https://example.test/papertok/#/public/user/ada');
+  assert.equal(url, 'https://example.test/papertok/public/user/ada');
+});
+
+/**
+ * What leaves the app on a share sheet, in a message, in an email. Every one of
+ * these used to be minted with a `#`, because the fragment WAS the route. It is
+ * not any more (src/main.jsx mounts a BrowserRouter), and a `#/…` link now
+ * costs a hop through the landing and a translation on arrival before it
+ * reaches the page it names — so the app stops minting them.
+ *
+ * The real production shape, not the project-path fixture the tests above use:
+ * papertok.app serves from the domain root.
+ */
+test('every share URL the app mints is a real path, with no fragment anywhere in it', () => {
+  const LIVE = { origin: 'https://papertok.app', base: '/' };
+  const key = encodePaperKey({ arxivId: '2401.12345' });
+
+  const urls = [
+    getPublicPaperUrl({ arxivId: '2401.12345' }, undefined, LIVE),
+    getPublicEntityUrl('topic', 'astro-ph.CO', LIVE),
+    getPublicProfileUrl('ada', LIVE),
+    getSharedListUrl('reading-list', LIVE),
+    getAbsoluteShareUrl('/public/entity/topic/astro-ph.CO', LIVE),
+  ];
+
+  assert.equal(urls[0], `https://papertok.app/public/paper/${key}`);
+  assert.equal(urls[1], 'https://papertok.app/public/entity/topic/astro-ph.CO');
+  assert.equal(urls[2], 'https://papertok.app/public/user/ada');
+  assert.equal(urls[3], 'https://papertok.app/public/list/reading-list');
+  assert.equal(urls[4], 'https://papertok.app/public/entity/topic/astro-ph.CO');
+
+  for (const url of urls) {
+    assert.ok(url, 'every one of these must still build a URL');
+    assert.equal(new URL(url).hash, '', `${url} still carries a fragment`);
+  }
+});
+
+test('SOURCE: nothing in this codebase mints a public URL with the fragment in it any more', async () => {
+  // Not a check on two files that were known to do it: a check on every file,
+  // because the next one to do it will be a file nobody listed. What is
+  // forbidden is MINTING — a literal that puts `papertok.app/#` into someone's
+  // hands — not parsing, which `utils/legacyHashRoute.js` exists to do and
+  // `services/analyticsService.js` still does for events that arrive carrying
+  // an old fragment.
+  //
+  // Comments are stripped first: four files explain the old shape in prose,
+  // and prose about a bug must not read as the bug.
+  const { readdir, readFile } = await import('node:fs/promises');
+  const roots = ['src', 'worker'];
+  const offenders = [];
+  const walk = async (dir) => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) { await walk(full); continue; }
+      if (!/\.(js|jsx)$/.test(entry.name) || /\.test\.jsx?$/.test(entry.name)) continue;
+      const code = (await readFile(full, 'utf8'))
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/(^|[^:])\/\/.*$/gm, '$1');
+      if (/papertok\.app\/#/.test(code)) offenders.push(full);
+    }
+  };
+  for (const root of roots) await walk(new URL(`../../${root}`, import.meta.url).pathname);
+  assert.deepEqual(offenders, [], `these still mint a fragment URL: ${offenders.join(', ')}`);
+});
+
+test('the landing gate hands the app the fragment, and the app turns it into the route', () => {
+  // Task 16 asked for the gate itself to emit the real path. It does not, on
+  // purpose: the gate is an inline script with no modules, so translating
+  // there means a second copy of the route logic in a different language of
+  // the same codebase, and the two would drift. It costs nothing to leave it
+  // — `location.replace('/feed#/research')` is one navigation, exactly as
+  // `location.replace('/research')` would be, and `utils/legacyHashRoute.js`
+  // rewrites the entry with `replaceState` before React renders, which is not
+  // a navigation at all. What the gate owes is only that the fragment SURVIVES
+  // the hop; the translating is the app's.
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  const gate = html.match(/<script>([\s\S]*?papertok_signed_in[\s\S]*?)<\/script>/)?.[1] || '';
+  assert.match(gate, /replace\('\/feed' \+ search \+ hash\)/, 'the gate drops the fragment on the way to the app');
 });

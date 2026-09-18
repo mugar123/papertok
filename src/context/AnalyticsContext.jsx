@@ -76,11 +76,14 @@ export function AnalyticsProvider({ children }) {
     [consent, updateConsent, trackEvent, markActivation],
   );
 
-  // Passing `route` is what makes this work under HashRouter: it flips
-  // `disableAutoTrack` on the injected script, whose own tracking reads
-  // `window.location.pathname` — `/feed` for every route in this app, since
-  // that is where the app is served and the route lives in the fragment. The
-  // views themselves are emitted above.
+  // Passing `route` flips `disableAutoTrack` on the injected script, whose own
+  // tracking reads `window.location.pathname`. That used to be a constant —
+  // under HashRouter the route lived in the fragment and the pathname was just
+  // where the app was served — so `route` was what made page views work at all.
+  // Since the router moved to real paths (src/main.jsx), the pathname IS the
+  // route, identifier and all, so this prop is now what keeps the script from
+  // filing a view under `/public/paper/<the real id>`. The views themselves are
+  // emitted above, already normalized.
   const analyticsPath = normalizeAnalyticsPath(location.pathname);
 
   return (

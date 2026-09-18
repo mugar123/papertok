@@ -89,7 +89,7 @@ test('App.jsx renders a skip link that targets #main-content', async () => {
   );
 });
 
-test('the skip link handles its own click instead of letting HashRouter see the fragment', async () => {
+test('the skip link handles its own click instead of leaving the jump to the browser', async () => {
   const rawApp = await readFile(APP_JSX, 'utf8');
   const app = stripComments(rawApp);
 
@@ -99,13 +99,11 @@ test('the skip link handles its own click instead of letting HashRouter see the 
   const handlerName = link[0].match(/onClick=\{(\w+)\}/);
   assert.ok(
     handlerName,
-    'the skip link lost its onClick handler. src/main.jsx mounts <HashRouter>, so the '
-    + 'route IS the URL fragment: without an onClick that intercepts the click, '
-    + 'following href="#main-content" rewrites the whole hash, react-router reads it '
-    + 'as the pathname "/main-content", matches nothing, and the catch-all '
-    + '`<Route path="*">` (App.jsx) redirects to "/" — ejecting a keyboard user from '
-    + 'whatever route they were on. Verified live from #/login: the hash became '
-    + '#main-content, then #/, and the login page was gone.',
+    'the skip link lost its onClick handler. A fragment jump scrolls reliably but '
+    + 'does NOT reliably move KEYBOARD focus — Safari leaves focus behind — and a '
+    + 'skip link that scrolls without moving focus has skipped nothing for the one '
+    + 'person using it. The handler is also what keeps #main-content out of the '
+    + 'address the reader might copy.',
   );
 
   const handlerDeclAt = app.indexOf(`const ${handlerName[1]}`);
@@ -119,26 +117,36 @@ test('the skip link handles its own click instead of letting HashRouter see the 
   assert.match(
     handlerBody,
     /preventDefault\(\)/,
-    `${handlerName[1]} no longer calls preventDefault(). Without it the browser still `
-    + 'follows the href and HashRouter still rewrites the hash and redirects away '
-    + '(see above).',
+    `${handlerName[1]} no longer calls preventDefault(). Without it the browser `
+    + 'follows the href as well, which puts #main-content in the address on top of '
+    + 'whatever the handler did.',
   );
   assert.match(
     handlerBody,
     /getElementById\(['"]main-content['"]\)/,
     `${handlerName[1]} no longer focuses #main-content directly. preventDefault() `
-    + 'alone stops the redirect but leaves the skip link with nothing to skip to — '
-    + 'focus has to be moved by hand once the browser is prevented from following the '
-    + 'href itself.',
+    + 'alone leaves the skip link with nothing to skip to — focus has to be moved by '
+    + 'hand once the browser is prevented from following the href itself.',
   );
 
+  // The assertion that used to sit here required App.jsx to NAME `HashRouter`
+  // in a comment, because the handler then existed to stop the fragment from
+  // being read as a route: following href="#main-content" rewrote the whole
+  // hash, react-router read "/main-content" as the pathname, matched nothing,
+  // and the catch-all ejected a keyboard user from the page they were on
+  // (verified live from #/login at the time: the hash became #main-content,
+  // then #/, and the login page was gone). src/main.jsx mounts a BrowserRouter
+  // since 2026-09-18, so that hazard is gone and the comment must NOT name it
+  // as a live reason. What replaces the assertion is the one below: the
+  // comment has to give a reason that is true now, and the two reasons that
+  // are true now are focus and the address.
+  const explanation = rawApp.slice(0, rawApp.indexOf(`const ${handlerName[1]}`));
   assert.match(
-    rawApp,
-    /HashRouter/,
-    'the comment explaining why the skip link needs its own click handler (naming '
-    + 'HashRouter as the router that turns the fragment into a route) is gone from '
-    + 'App.jsx. The plain-fragment version of this link looks completely correct to '
-    + 'anyone who does not know the router treats the URL fragment as the route.',
+    explanation,
+    /focus/i,
+    'the comment above the skip link handler no longer explains that the handler is '
+    + 'there to MOVE FOCUS. Without that, an ordinary fragment link looks completely '
+    + 'correct and the handler looks like dead ceremony worth deleting.',
   );
 });
 

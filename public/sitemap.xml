@@ -6,4 +6,10 @@
   <url>
     <loc>https://papertok.app/feed</loc>
   </url>
+  <url>
+    <loc>https://papertok.app/following</loc>
+  </url>
+  <url>
+    <loc>https://papertok.app/research</loc>
+  </url>
 </urlset>

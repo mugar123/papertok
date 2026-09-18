@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { shareOrCopyLink } from './shareLink.js';
 
-const URL_UNDER_TEST = 'https://example.test/#/public/list/abc';
+// The shape publicNavigation.js mints: a real path, no fragment. This helper
+// never parses the URL — it hands it to the sheet or the clipboard whole — but
+// a fixture that still said `#/` would read as if it did.
+const URL_UNDER_TEST = 'https://example.test/public/list/abc';
 
 test('prefers the native sheet and never touches the clipboard when it works', async () => {
   const calls = [];

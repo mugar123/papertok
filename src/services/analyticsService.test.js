@@ -261,10 +261,58 @@ test('builds page locations from the sanitized path and origin only', () => {
 
 /**
  * The payload Vercel's own script builds, not the one this app hands it. It
- * reads `location.href`, and under HashRouter that URL carries the real entity
- * id in the fragment -- so this is the function standing between a paper id and
- * a request leaving the browser. The policy published at /privacy.html promises
- * it never does.
+ * reads `location.href`, and since the router moved off the fragment that URL
+ * carries the real entity id in the PATH -- so this is the function standing
+ * between a paper id and a request leaving the browser. The policy published at
+ * /privacy.html promises it never does: "reading a specific paper is recorded
+ * as /public/paper/:id [...] Which one never travels. Neither do your searches
+ * or anything from your account."
+ *
+ * Every route on this origin that carries something belonging to a reader is
+ * here: the paper, the author, the list, the handle (a person, not an id) and
+ * the search query (what they typed). None of them has a fragment any more.
+ */
+test('strips the identifier out of the real path before the page-view URL is sent', () => {
+  assert.equal(
+    sanitizeAnalyticsEventUrl('https://papertok.app/public/paper/W2741809807'),
+    'https://papertok.app/public/paper/:id',
+  );
+  assert.equal(
+    sanitizeAnalyticsEventUrl('https://papertok.app/explorer/author/a5023888391'),
+    'https://papertok.app/explorer/author/:id',
+  );
+  assert.equal(
+    sanitizeAnalyticsEventUrl('https://papertok.app/public/list/private-list-key'),
+    'https://papertok.app/public/list/:id',
+  );
+  assert.equal(
+    sanitizeAnalyticsEventUrl('https://papertok.app/public/user/nicolas'),
+    'https://papertok.app/public/user/:handle',
+  );
+  assert.equal(
+    sanitizeAnalyticsEventUrl('https://papertok.app/search?q=private+query'),
+    'https://papertok.app/search',
+  );
+  // No fragment anywhere in the inputs above, and none in the outputs: an `#`
+  // in a returned value would mean the id survived somewhere this reads past.
+  for (const url of [
+    'https://papertok.app/public/paper/W2741809807',
+    'https://papertok.app/explorer/author/a5023888391',
+    'https://papertok.app/public/list/private-list-key',
+    'https://papertok.app/public/user/nicolas',
+    'https://papertok.app/search?q=private+query',
+  ]) {
+    assert.ok(!url.includes('#'), `the input ${url} must be a real path, not a fragment route`);
+    assert.ok(!sanitizeAnalyticsEventUrl(url).includes('#'), `no fragment may survive ${url}`);
+  }
+});
+
+/**
+ * The fragment form is the legacy one, kept because it still arrives: a link
+ * minted before the router moved lands as `/#/public/paper/<id>`, and the
+ * translation that turns it into a real route runs inside the app -- so
+ * `location.href` can carry the fragment for the length of one page view.
+ * Until no such link exists in the wild, this door stays shut too.
  */
 test('strips the identifier out of the hash before the page-view URL is sent', () => {
   assert.equal(
@@ -283,8 +331,9 @@ test('strips the identifier out of the hash before the page-view URL is sent', (
 });
 
 test('falls back to the real path when there is no hash route, and never returns the input', () => {
-  // Non-hash URLs still exist on this origin: /privacy.html, and any deep link
-  // the SPA fallback serves. Neither should arrive as a raw string.
+  // The ordinary case since the router moved off the fragment, plus the pages
+  // that were never routes at all (/privacy.html). None may arrive as a raw
+  // string, and a path nobody named is `/unknown`, not itself.
   assert.equal(sanitizeAnalyticsEventUrl('https://papertok.app/'), 'https://papertok.app/');
   assert.equal(sanitizeAnalyticsEventUrl('https://papertok.app/lists'), 'https://papertok.app/lists');
   assert.equal(sanitizeAnalyticsEventUrl('https://papertok.app/some/private/path'), 'https://papertok.app/unknown');

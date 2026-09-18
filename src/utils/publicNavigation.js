@@ -83,10 +83,25 @@ export function getSiteRootUrl({ origin = getRuntimeOrigin(), base = VITE_BASE_U
   return new URL(getViteBasePath(base), `${normalizeOrigin(origin)}/`).href;
 }
 
-export function getHashRoute(path) {
-  return `#${normalizeRouterPath(path)}`;
-}
-
+/**
+ * The absolute address of an in-app path, for a share sheet, a clipboard, an
+ * `og:url` or an email.
+ *
+ * This used to mint `https://papertok.app/#/public/paper/<key>`, because the
+ * fragment WAS the route: the app was a HashRouter, `/` was the only path the
+ * server knew, and everything after the `#` never left the browser. Neither
+ * half holds any more — `src/main.jsx` mounts a BrowserRouter, and vercel.json
+ * rewrites every non-file path to the app — so the route goes where a route
+ * goes. A `#/…` link still reaches the same page (index.html's gate forwards
+ * it and `utils/legacyHashRoute.js` translates it), but it pays a hop through
+ * the marketing page to get there, and it is not what this app should be
+ * minting for anyone from here on.
+ *
+ * `rootUrl` always ends in a slash (`getViteBasePath`) and the normalized route
+ * always starts with one, so exactly one of the two is dropped — which is also
+ * what keeps a project-path deployment (`base: '/papertok/'`) building
+ * `/papertok/public/...` rather than a path off its own root.
+ */
 export function getAbsoluteShareUrl(path, options = {}) {
   const value = cleanText(path);
   if (/^https?:\/\//i.test(value)) {
@@ -98,7 +113,7 @@ export function getAbsoluteShareUrl(path, options = {}) {
   }
 
   const rootUrl = getSiteRootUrl(options);
-  return `${rootUrl}${getHashRoute(value)}`;
+  return `${rootUrl}${normalizeRouterPath(value).slice(1)}`;
 }
 
 function normalizeEntityType(type) {

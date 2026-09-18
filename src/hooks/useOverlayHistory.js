@@ -5,9 +5,13 @@ import { useEffect, useRef } from 'react';
  * portal, not a route — it pushes nothing onto session history. Pressing
  * Back while one is open therefore does not close it; it leaves PaperTok
  * entirely, straight to whatever the visitor had open before (the tester's
- * report). HashRouter cannot help on its own: it reads the URL, and none of
- * these four overlays (PaperCard's reader, and App's, EntityExplorer's and
- * SearchPage's independently-mounted PDF viewers) change it.
+ * report). The router cannot help on its own, whichever router it is: it reads
+ * the URL, and none of these four overlays (PaperCard's reader, and App's,
+ * EntityExplorer's and SearchPage's independently-mounted PDF viewers) change
+ * it. Nothing below reads a URL either — the entry is cloned from
+ * `history.state` and pushed at `location.href`, whatever that happens to be —
+ * which is why the move off HashRouter (2026-09-18) went through this file
+ * without a line changing.
  *
  * The fix borrows a history entry instead of a route. `arm()` clones
  * react-router's own `history.state` — keeping `usr`, `key` and, deliberately,

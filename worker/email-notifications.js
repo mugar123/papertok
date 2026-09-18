@@ -9,7 +9,12 @@ const UNSUBSCRIBE_PREFIX = 'notification:unsubscribe:';
 const BREVO_API = 'https://api.brevo.com/v3';
 const RESEND_API = 'https://api.resend.com';
 const ARXIV_API = 'https://export.arxiv.org/api/query';
-const PAPER_TOK_URL = 'https://papertok.app/#/following';
+// Ruta real desde el 18-09-2026: la app dejo de vivir en el fragmento. Los
+// correos ya enviados llevan `/#/following` y siguen llegando a su sitio --
+// la puerta de index.html y utils/legacyHashRoute.js los traducen -- pero
+// este Worker se despliega por su cuenta, asi que lo que acuna a partir de
+// ahora es la ruta, no el fragmento.
+const PAPER_TOK_URL = 'https://papertok.app/following';
 const MAX_FOLLOWS = 40;
 const MAX_QUERIED_FOLLOWS = 24;
 const MAX_PREVIEW_ITEMS = 20;

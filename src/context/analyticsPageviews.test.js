@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const SOURCE = new URL('./AnalyticsContext.jsx', import.meta.url);
+const APP_HTML = new URL('../../app.html', import.meta.url);
 
 test('SOURCE: a page view is sent on every pathname change, not only when the pattern changes', async () => {
   const source = await readFile(SOURCE, 'utf8');
@@ -33,5 +34,38 @@ test('SOURCE: a page view is sent on every pathname change, not only when the pa
     code,
     /const viewPath = normalizeAnalyticsPath\(location\.pathname\);\s*pageview\(\{ route: viewPath, path: viewPath \}\);\s*\}, \[consent, location\.pathname\]\);/,
     'the page view must be keyed on the pathname and report only its normalized pattern',
+  );
+});
+
+/**
+ * The other half of the same promise, and the half a sanitizer cannot keep.
+ *
+ * `beforeSend` owns the analytics PAYLOAD. It owns nothing about the request's
+ * headers, and the browser's default referrer policy
+ * (`strict-origin-when-cross-origin`) puts the full URL in `Referer` on every
+ * SAME-ORIGIN subresource request — which is what the analytics script is, on
+ * the deployment. Measured in a browser
+ * (scripts/diagnostics/landing-analytics-probe.mjs): reading a paper made the
+ * app's own `<script src="/_vercel/insights/script.js">` carry
+ * `Referer: <origin>/public/paper/<the real key>`.
+ *
+ * Under HashRouter this was safe for free — a fragment is stripped out of
+ * `Referer` — so nothing in the app ever had to say so. Real paths
+ * (src/main.jsx) ended that, and `/privacy.html` still promises "Which one
+ * never travels". `strict-origin` is the one line that keeps it, for the
+ * analytics script and for every other request the app makes.
+ */
+test('SOURCE: the app document never puts a path in a Referer header', async () => {
+  const html = await readFile(APP_HTML, 'utf8');
+  const meta = html.replace(/<!--[\s\S]*?-->/g, '').match(/<meta\s+name="referrer"[^>]*>/i);
+  assert.ok(meta, 'app.html declares no referrer policy, so the browser default sends the full path');
+
+  const policy = meta[0].match(/content="([^"]*)"/i)?.[1];
+  // Only the policies that never reveal a path. `origin-when-cross-origin` and
+  // `strict-origin-when-cross-origin` both send the full URL same-origin, which
+  // is exactly the case that leaked, so neither is acceptable here.
+  assert.ok(
+    ['strict-origin', 'origin', 'no-referrer'].includes(policy),
+    `referrer policy ${JSON.stringify(policy)} still sends the full path to our own origin`,
   );
 });

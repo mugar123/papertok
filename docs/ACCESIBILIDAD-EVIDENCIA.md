@@ -706,3 +706,48 @@ está hoy.
   `sheet.focus({ preventScroll: true })` (línea 639, la hoja del mazo tras
   pulsar Skip). Ninguno de los dos tiene una fila propia que declare esta
   brecha; queda declarada aquí.
+
+## Entrega: las rutas de la app dejan de vivir en el fragmento (2026-09-18)
+
+`/feed`, `/following` y `/research` pasan a ser URLs de primera clase. La
+auditoría de la landing (2026-09) sólo cubría `/`, así que esta pasada es la
+primera que audita las tres pantallas de la aplicación **como páginas**.
+
+**Cómo.** axe-core con `wcag2a`, `wcag2aa`, `wcag21aa`, `wcag22aa` y
+`best-practice`, con `label-content-name-mismatch` habilitada a mano (axe la
+marca también `experimental`, y `runOnly` por etiquetas excluye toda regla
+experimental). Seis escenas: las tres rutas a 1440 en claro y a 390 con tacto en
+oscuro. `/following` y `/research` están tras `ProtectedRoute`, así que la pasada
+corre contra el servidor de **modo demo** —la bandera `IS_DEMO` volteada por un
+plugin de Vite desde un fichero de fuera del repo, sin tocar el árbol— con una
+cuenta sembrada en `localStorage`. En ningún momento se entra en una cuenta real
+ni se escribe una credencial.
+
+**Resultado: 9 violaciones, todas anteriores a esta entrega.** Ninguna la
+introduce el cambio de rutas; lo que cambia es que ahora se miran.
+
+| Regla | Impacto | Dónde | Nodos |
+|---|---|---|---|
+| `button-name` | crítico | `/feed` a 390 | 15 |
+| `label-content-name-mismatch` | serio | `.navbar-brand` en las tres rutas | 6 + 1 + 1 |
+| `landmark-one-main` | moderado | `/following` (las dos escenas) | 1 + 1 |
+| `page-has-heading-one` | moderado | `/following` (las dos escenas) | 1 + 1 |
+
+`button-name` está diagnosticada: `components/Feed/PaperCard.jsx:1783` pinta el
+botón con un icono y un `<span class="pc-action-label">`, y
+`components/Feed/PaperCard.css:2826` le da `display: none` a esa clase en móvil.
+`display: none` saca el texto del árbol de accesibilidad, así que el botón se
+queda sin nombre: quince por pantalla. Se ve en la captura — la barra inferior
+de la tarjeta en móvil son tres botones de solo icono, mientras el carril de la
+derecha (Like, Comments, Save…) sí lleva sus rótulos.
+
+**Lo que esta pasada NO cubre, y hay que decirlo:**
+
+- `/following` se auditó en su **estado vacío**: la cuenta demo no sigue a nadie.
+  Una lista poblada es otra pantalla y queda sin verificar.
+- `color-contrast` sale como *incompleta* en cuatro de las seis escenas (axe no
+  decide sobre texto muy corto ni sobre fondos compuestos). Sin revisar a mano.
+- Sólo dos anchos y una combinación de tema por ancho. No hay pasada de reflow a
+  320 ni equivalente de zoom al 200 % para estas rutas, que la landing sí tiene.
+- Nada de esto corre en CI: `npm run a11y:landing` sigue cubriendo sólo `/`,
+  porque auditar las rutas protegidas exige levantar el modo demo.

@@ -36,13 +36,19 @@ export function directionForNavigationType(navigationType, { historyIndex = null
 /**
  * The direction of the current entry, from the history index alone.
  *
- * React Router 7.18's HashRouter reports POP for every navigation here —
- * measured on the tab bar: a NavLink push and a `navigate('/')` both arrived
- * as POP with `history.state.idx` at 1 and 2. Read through the type, every
- * page entered from the left as a return and the feed's cards sat at rest,
- * on the very tab switch they were choreographed for. The index cannot be
- * misreported: it grows on a push, shrinks on a step back, holds on a
- * replace. `memory` keeps the last index and the direction it produced, so
+ * React Router 7.18 reported POP for every navigation here — measured on the
+ * tab bar under the HashRouter this app mounted until 2026-09-18: a NavLink
+ * push and a `navigate('/')` both arrived as POP with `history.state.idx` at
+ * 1 and 2. Read through the type, every page entered from the left as a
+ * return and the feed's cards sat at rest, on the very tab switch they were
+ * choreographed for.
+ *
+ * The router is a BrowserRouter now, and that measurement has not been
+ * repeated on it — it does not need to be, which is the point of reading the
+ * index instead of the type. Both routers are the same `getUrlBasedHistory`
+ * underneath, differing only in how they write and read the URL, and neither
+ * can misreport the index: it grows on a push, shrinks on a step back, holds
+ * on a replace. `memory` keeps the last index and the direction it produced, so
  * the many renders of one navigation (the leaving page re-rendered inside
  * AnimatePresence, the arriving page mounting, both animating) all read the
  * same answer. The first index this memory sees is an arrival — the first

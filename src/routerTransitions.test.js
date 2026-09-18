@@ -18,8 +18,59 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '
  */
 test('SOURCE: the router updates its location synchronously, so a tab tap is acknowledged on the next frame', async () => {
   const code = stripComments(await read('./main.jsx'));
-  assert.match(code, /<HashRouter useTransitions=\{false\}>/, 'navigation must not be a React transition');
-  assert.doesNotMatch(code, /<HashRouter>/, 'a bare <HashRouter> falls back to transitions');
+  assert.match(code, /<BrowserRouter useTransitions=\{false\}>/, 'navigation must not be a React transition');
+  assert.doesNotMatch(code, /<BrowserRouter>/, 'a bare <BrowserRouter> falls back to transitions');
+});
+
+/**
+ * SOURCE test: the router is mounted in main.jsx, which node cannot run.
+ *
+ * Every route in this app used to live in the URL fragment, because the app
+ * was the only thing served at `/` and nothing on the server knew about
+ * `/following`. Both halves of that stopped being true: `/` is the marketing
+ * landing (index.html), the app is app.html, and vercel.json rewrites `/feed`
+ * and every other non-file path to it — so a real path now reaches the app and
+ * the fragment is free to go back to meaning "a place on this page".
+ *
+ * The router therefore reads `window.location.pathname`. No `basename`: the
+ * site is served from the domain root (`BASE_PATH` in vite.config.js), and a
+ * basename that disagreed with the server would match nothing at all.
+ */
+test('SOURCE: the router reads the path, not the fragment', async () => {
+  const code = stripComments(await read('./main.jsx'));
+  assert.match(
+    code,
+    /import \{ BrowserRouter \} from 'react-router-dom'/,
+    'main.jsx must mount the router that reads the pathname',
+  );
+  assert.doesNotMatch(code, /HashRouter/, 'no HashRouter may be left mounted or imported');
+  assert.doesNotMatch(code, /basename=/, 'the site is served from the domain root');
+});
+
+/**
+ * SOURCE test: `App` mounts the routes, which node cannot run.
+ *
+ * The feed is `/feed`, because `/` is the landing's address and is served from
+ * a different HTML file entirely. The catch-all has to agree: sending an
+ * unmatched path to `/` would hand a signed-in reader back to the server's
+ * landing on the next reload, and in the SPA it would match no route and bounce
+ * again.
+ */
+test('SOURCE: the feed lives at /feed, and the catch-all sends unmatched paths there', async () => {
+  const code = stripComments(await read('./App.jsx'));
+
+  assert.match(code, /path="\/feed"/, 'the feed route must be /feed');
+  assert.doesNotMatch(code, /\n\s*path="\/"\n/, 'nothing may still be routed at "/"');
+  assert.match(
+    code,
+    /<Route path="\*" element=\{<Navigate to="\/feed" replace \/>\} \/>/,
+    'the catch-all must land on the feed, not on the landing',
+  );
+  assert.doesNotMatch(
+    code,
+    /<Navigate\s+to="\/"/,
+    'no redirect inside the app may target "/", which the server answers with the landing',
+  );
 });
 
 /**

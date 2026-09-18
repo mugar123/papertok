@@ -124,7 +124,7 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList, onOpenComme
         ? 'Follow anything from a paper or its page and its publications will appear here.'
         : 'Sigue cualquier entidad desde un paper o desde su página y sus publicaciones aparecerán aquí.'}</p>
       <div className="ff-empty-actions">
-        <button className="feed-retry-btn" onClick={() => navigate('/')}>
+        <button className="feed-retry-btn" onClick={() => navigate('/feed')}>
           {isEnglish ? 'Discover papers' : 'Descubrir papers'}
         </button>
         <button className="feed-retry-btn ff-empty-secondary" onClick={() => navigate('/search')}>

@@ -194,7 +194,7 @@ test('un pushState que revienta no arma nada (SecurityError de Safari)', () => {
 
 test('el marcador que sobrevive a una recarga se limpia al arrancar', () => {
   const f = fakeHistory({ idx: 3, key: 'k', overlay: 'reader' });
-  const cleared = clearStaleOverlayMarker({ history: f.history, location: { href: 'https://papertok.app/#/' } });
+  const cleared = clearStaleOverlayMarker({ history: f.history, location: { href: 'https://papertok.app/feed' } });
 
   assert.equal(cleared, true);
   assert.deepEqual(f.stack.at(-1), { idx: 3, key: 'k' }, 'el idx y la key de react-router se quedan; solo se va el marcador');
@@ -212,7 +212,7 @@ test('un arranque normal no toca el historial', () => {
   let replaced = 0;
   f.history.replaceState = () => { replaced += 1; };
 
-  assert.equal(clearStaleOverlayMarker({ history: f.history, location: { href: 'https://papertok.app/#/' } }), false);
+  assert.equal(clearStaleOverlayMarker({ history: f.history, location: { href: 'https://papertok.app/feed' } }), false);
   assert.equal(replaced, 0, 'sin marcador no se reescribe nada');
   assert.deepEqual(f.stack, [{ idx: 3, key: 'k' }]);
   assert.equal(clearStaleOverlayMarker({ history: { state: null }, location: null }), false, 'ni con un state vacío');

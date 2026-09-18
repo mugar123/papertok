@@ -197,9 +197,12 @@ subrayado y la invitación.
 - **Presupuesto:** prerenderizado; ≤ 30 KB gz (hoy 16).
 - **Fuera de alcance:** el vídeo; figuras; y, **distinto de lo que decía una versión anterior de
   este documento**, pasar `/` a la landing y la redirección con sesión a `/feed` **sí entraron**
-  (ver §2 y la tarea 12) — lo que de verdad queda fuera es la migración de las RUTAS DE LA APP
-  del fragmento a caminos reales (`/following`, `/research`, …), que son las tareas 13 a 17 del
-  plan y una pull request distinta a la de esta landing.
+  (ver §2 y la tarea 12). La migración de las RUTAS DE LA APP del fragmento a caminos reales
+  (`/following`, `/research`, …) también entró, en las tareas 13 a 17 y en una pull request
+  distinta de la de esta landing: el router pasa a `BrowserRouter`, `utils/legacyHashRoute.js`
+  traduce los enlaces viejos, y el único módulo que seguía acuñando `#/` —el Worker de
+  correos— deja de hacerlo. Fuera de alcance se queda, de todo aquello, sólo el vídeo y las
+  figuras.
 
 ## 10. Criterios de aceptación
 

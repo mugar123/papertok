@@ -288,7 +288,7 @@ export default function PublicPaperPage({
   const goBack = useCallback(() => {
     const historyIndex = typeof window !== 'undefined' ? window.history.state?.idx : null;
     if (Number.isInteger(historyIndex) && historyIndex > 0) navigate(-1);
-    else navigate('/');
+    else navigate('/feed');
   }, [navigate]);
 
   const retry = useCallback(() => setAttempt(current => current + 1), []);
@@ -324,7 +324,7 @@ export default function PublicPaperPage({
             <ArrowLeft size={20} />
           </button>
           <div className="public-paper-wordmark" aria-label="PaperTok">Paper<span>Tok</span></div>
-          <button type="button" className="public-paper-nav-button" onClick={() => navigate('/')} aria-label={text(COPY.home)} title={text(COPY.home)}>
+          <button type="button" className="public-paper-nav-button" onClick={() => navigate('/feed')} aria-label={text(COPY.home)} title={text(COPY.home)}>
             <Home size={19} />
           </button>
         </nav>
@@ -410,7 +410,7 @@ export default function PublicPaperPage({
             <button type="button" className="public-paper-secondary-action" onClick={goBack}>
               <ArrowLeft size={17} /> {text(COPY.back)}
             </button>
-            <button type="button" className="public-paper-secondary-action" onClick={() => navigate('/')}>
+            <button type="button" className="public-paper-secondary-action" onClick={() => navigate('/feed')}>
               <Home size={17} /> {text(COPY.home)}
             </button>
           </div>

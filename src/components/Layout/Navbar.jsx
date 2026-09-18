@@ -98,7 +98,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
 
   const isFollowingActive = pathname === '/following';
   const isResearchActive = pathname === '/research' || pathname === '/report';
-  const isHomeActive = pathname === '/';
+  const isHomeActive = pathname === '/feed';
   // Which tab is current is the pathname, and nothing else. This used to also
   // require `feedMode === 'top'`, from a time when this feed had more than one
   // mode; `feedMode` has had exactly one reachable value since — FeedContext
@@ -188,7 +188,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
           type="button"
           className="navbar-brand"
           onClick={() => {
-            if (location.pathname !== '/') navigate('/');
+            if (location.pathname !== '/feed') navigate('/feed');
           }}
           aria-label="PaperTok"
         >
@@ -219,30 +219,30 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
             style={{ transform: rule.transform || undefined, opacity: rule.transform ? 1 : 0 }}
           />
           {/* A NavLink like its two siblings, not a <button> that calls
-              navigate('/'). On the phone (2026-09-05) the tap from Following
+              navigate('/feed'). On the phone (2026-09-05) the tap from Following
               to here needed several tries while the other way took one, and
               the element was the only asymmetry in the bar: an anchor still
-              navigates when React's click never runs — the browser follows
-              the href, which is a same-document history navigation and fires
-              `popstate`, the one event react-router's history listens to
-              (chunk-HHGH3NKS.js; it has no `hashchange` listener at all) — a
-              button does nothing. That fallback entry carries no
-              `history.state`, so `usePageTransitionCustom` reads no index and
-              leaves its memory untouched; the tab transition is unaffected
-              (it comes from TAB_ORDER, utils/tabDirection.js), but the next
-              non-tab navigation may animate as a return. It only happens on a
-              path that does nothing today, so it is strictly better than the
-              button. `end`, or "/" would match every route. React Router runs
-              this onClick before its own and navigates unless it was
+              navigates when React's click never runs — the browser follows the
+              href — and a button does nothing at all. What that fallback COSTS
+              changed with the router: under the old HashRouter it was a
+              same-document hop that fired `popstate` (the one event
+              react-router's history listens to), and now `/feed` is a real
+              path, so the browser leaves the document and the app boots cold.
+              The reader still lands on the feed, which is the whole point of
+              the fallback, and it is still strictly better than a button that
+              swallows the tap — but it is a reload, so the primary path stays
+              the pointerup below and this is only the belt to it. `end` so
+              nothing nested under /feed could ever mark this tab. React Router
+              runs this onClick before its own and navigates unless it was
               defaultPrevented, so the mode reset rides along unchanged. */}
           <NavLink
-            to="/"
+            to="/feed"
             end
             data-tab="home"
             className={`navbar-link ${isHomeActive ? 'active' : ''}`}
             onClick={(event) => { swallowSynthesisedClick(event); setFeedMode('top'); }}
             onPointerDown={(event) => pressTab(event, 'home')}
-            onPointerUp={(event) => liftTab(event, 'home', '/')}
+            onPointerUp={(event) => liftTab(event, 'home', '/feed')}
             onPointerCancel={releasePress}
           >
             <Layers size={15} aria-hidden="true" />

@@ -72,8 +72,8 @@ function isInAppPath(path) {
     && !['/login', '/onboarding'].includes(path.split('?')[0])
 }
 
-// The standalone routes a guest can reach without a session — `/` is also
-// guest-reachable but excluded on purpose, since it handles onboarding
+// The standalone routes a guest can reach without a session — `/feed` is
+// also guest-reachable but excluded on purpose, since it handles onboarding
 // itself. A sign-in from one of these doors (like, save, follow) leaves the
 // new account right there, and none of them is behind ProtectedRoute, so App
 // itself has to take it to the onboarding (the effect below).
@@ -87,9 +87,9 @@ function LoginRedirect() {
   const requested = location.state?.returnTo || new URLSearchParams(location.search).get('returnTo')
   return (
     <Navigate
-      to="/"
+      to="/feed"
       replace
-      state={{ authRequired: true, returnTo: isInAppPath(requested) ? requested : '/' }}
+      state={{ authRequired: true, returnTo: isInAppPath(requested) ? requested : '/feed' }}
     />
   )
 }
@@ -156,7 +156,7 @@ function AppContent() {
   const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth()
   const { isEnglish } = useLanguage()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
-  const navbarRoutes = ['/', '/lists', '/research', '/following', '/profile', '/settings', '/settings/following', '/settings/profile', '/settings/comments']
+  const navbarRoutes = ['/feed', '/lists', '/research', '/following', '/profile', '/settings', '/settings/following', '/settings/profile', '/settings/comments']
   // The paper, profile, list and entity pages keep the app chrome for a
   // signed-in user — reaching a paper from Liked, a profile from the follow
   // sheet, a list from someone's shared link, or an author from a card, must
@@ -281,20 +281,32 @@ function AppContent() {
     return () => clearTimeout(timer)
   }, [sessionUid])
 
-  // HashRouter (src/main.jsx) treats the URL fragment as the route. Letting
-  // href="#main-content" reach the browser would rewrite the whole hash, so
-  // react-router would read "/main-content" as the pathname, match no route,
-  // and the catch-all `<Route path="*">` below would redirect to "/" —
-  // ejecting a keyboard user from whatever route they were actually on (e.g.
-  // /login). The href stays for assistive technology; the click is handled
-  // here instead of letting the fragment reach the router.
+  // The href stays for assistive technology; the click is handled here rather
+  // than left to the browser, for two reasons that outlived the one this
+  // handler was written for.
+  //
+  // The original: the router read the URL fragment, so letting
+  // href="#main-content" through rewrote the whole route — react-router saw
+  // "/main-content", matched nothing, and the catch-all below ejected a
+  // keyboard user from whatever page they were on. Verified live from #/login
+  // at the time: the hash became #main-content, then #/, and the login page
+  // was gone. That hazard is gone with the router (src/main.jsx mounts a
+  // BrowserRouter now; the path is the route and a fragment is just a place on
+  // the page), and the handler stays anyway because:
+  //
+  //   - a fragment jump scrolls reliably but does NOT reliably move KEYBOARD
+  //     focus — Safari in particular leaves focus behind — and a skip link
+  //     that scrolls without moving focus has skipped nothing for the one
+  //     person using it. `focus()` is the guarantee, not a nicety;
+  //   - and it keeps `#main-content` out of the address, so nothing the reader
+  //     copies or shares carries it.
   const handleSkipLinkClick = (event) => {
     event.preventDefault()
     document.getElementById('main-content')?.focus()
   }
 
   return (
-    <FeedProvider feedRouteActive={normalizedPathname === '/'}>
+    <FeedProvider feedRouteActive={normalizedPathname === '/feed'}>
       <a className="skip-link" href="#main-content" onClick={handleSkipLinkClick}>
         {isEnglish ? 'Skip to content' : 'Saltar al contenido'}
       </a>
@@ -326,7 +338,7 @@ function AppContent() {
             }
           />
           <Route
-            path="/"
+            path="/feed"
             element={
               authLoading || user ? (
                 <ProtectedRoute>
@@ -535,7 +547,7 @@ function AppContent() {
               </PageTransition>
             }
           />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to="/feed" replace />} />
         </Routes>
       </AnimatePresence>
       </PageTransitionCustomProvider>

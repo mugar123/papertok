@@ -173,15 +173,47 @@ function bootSetManifestTransform(distDir) {
 const LANDING_PLACEHOLDER = '<!--landing-html-->'
 const LANDING_PAGE_MODULE = '/src/landing/page.js'
 
-// `/feed` has no file of its own: in production vercel.json rewrites it to
-// app.html, and this middleware does the same for `vite dev` and `vite
-// preview`, whose own SPA fallback would otherwise hand the LANDING to every
-// unknown path. The hash never reaches the server, so only the pathname
-// decides whether to rewrite -- but a query string, if present, is carried
-// over to app.html rather than dropped.
+// The first segment of every route src/App.jsx declares.
+//
+// This used to be the single path `/feed`, because the app was a HashRouter
+// and `#/research` never left the browser: one address to rewrite, and the
+// pathname was always that one. The routes are real paths now
+// (src/main.jsx), so there are as many server-visible addresses as there are
+// routes, and every one of them needs app.html.
+//
+// An explicit list rather than production's catch-all, and that is deliberate:
+// `configureServer`/`configurePreviewServer` install this middleware BEFORE
+// Vite's own, so a catch-all here would swallow `/@vite/client`, `/src/*`,
+// `/node_modules/*` and the HMR endpoints and break `vite dev` outright.
+// `src/landing/entry.test.js` checks this list still covers every `<Route
+// path>` in App.jsx, because a root missing from it does not error — it
+// quietly serves the LANDING where the app should be.
+const APP_ROUTE_ROOTS = [
+  'feed',
+  'lists',
+  'research',
+  'report',
+  'following',
+  'search',
+  'profile',
+  'settings',
+  'admin',
+  'explorer',
+  'public',
+  'login',
+  'onboarding',
+]
+
+// In production vercel.json rewrites all of these to app.html (its catch-all
+// sends every non-file path there, and the filesystem answers `/` with the
+// landing first). This is the same rule for `vite dev` and `vite preview`,
+// whose own SPA fallback would otherwise hand the LANDING to every unknown
+// path. Matched on the first segment exactly, so `/feeds` is not `/feed`; the
+// fragment never reaches a server either way, and a query string, if present,
+// is carried over to app.html rather than dropped.
 function feedToApp(req, res, next) {
   const [pathname, ...query] = (req.url || '').split('?')
-  if (pathname === '/feed' || pathname.startsWith('/feed/')) {
+  if (APP_ROUTE_ROOTS.includes(pathname.split('/')[1])) {
     req.url = '/app.html'
     if (query.length) req.url += `?${query.join('?')}`
   }
@@ -256,14 +288,21 @@ export default defineConfig(({ command, mode }) => {
           // gets the browser's offline error instead of the app. See
           // public/sw-html-warm.js.
           importScripts: ['sw-html-warm.js'],
-          // HashRouter never asks the server for any path other than the
-          // base URL itself -- '#/paper/123' never leaves the browser, so
-          // there are no alternate server routes for a fallback to rescue.
-          // The one real navigation target is covered by the `navigate`
-          // runtimeCaching rule below (network-first, offline-cached), so a
-          // navigateFallback here would do nothing for a legitimate route
-          // and would only give a mistyped or removed URL a fake 200 from a
-          // frozen cache instead of the real 404 GitHub Pages would return.
+          // Still null, but no longer for the reason it used to be. That
+          // reason was HashRouter: '#/paper/123' never left the browser, so
+          // there were no alternate server routes for a fallback to rescue.
+          // The router reads the path now and every route IS a server route.
+          //
+          // What keeps it null is the registration order, measured rather
+          // than assumed: generateSW writes its NavigationRoute BEFORE the
+          // runtimeCaching rules (built it and read dist/sw.js -- the
+          // NavigationRoute at offset 3588, the `papertok-html` rule at
+          // 3809), and workbox's router matches in registration order. A
+          // navigateFallback would therefore take EVERY navigation, leave the
+          // NetworkFirst rule below as dead code, and pin the served HTML to
+          // whatever the worker last precached -- the exact staleness that
+          // rule exists to avoid. The offline case it would have covered is
+          // handled below instead, as the last chance of that same rule.
           navigateFallback: null,
           runtimeCaching: [
             {
@@ -278,6 +317,35 @@ export default defineConfig(({ command, mode }) => {
                 cacheName: 'papertok-html',
                 networkTimeoutSeconds: 3,
                 expiration: { maxEntries: 5 },
+                plugins: [
+                  {
+                    // Both halves have failed: no network, and nothing in this
+                    // cache for the URL asked for. That is not exotic now that
+                    // the routes are real -- a reader offline on /research has
+                    // only ever had /feed put in here (public/sw-html-warm.js
+                    // warms it at install), and every route serves the same
+                    // document anyway. Answering with it beats the browser's
+                    // offline error: the app boots and its own router shows
+                    // the route from the address, which is still correct.
+                    //
+                    // `handlerDidError` and not navigateFallback on purpose --
+                    // see the comment on navigateFallback above.
+                    // The denylist navigateFallback would have carried, here
+                    // instead. `/` is the landing and `/privacy.html` is the
+                    // policy: neither is an app route, and answering them with
+                    // the app would replace a page the reader asked for with a
+                    // different one. `/__/auth/` is Firebase's sign-in handler,
+                    // proxied through this origin and navigated to for real --
+                    // answering it with the app would hand Google an HTML page
+                    // and hang every sign-in on a blank popup.
+                    handlerDidError: async ({ request }) => {
+                      const { pathname } = new URL(request.url)
+                      if (pathname === '/' || pathname === '/privacy.html' || pathname.startsWith('/__/auth/')) return undefined
+                      const cache = await caches.open('papertok-html')
+                      return cache.match(new URL('feed', self.registration.scope).href)
+                    },
+                  },
+                ],
               },
             },
             {

@@ -27,27 +27,98 @@ test('the boot-set transform reads the built app page, not the landing', () => {
   assert.match(config, /readFileSync\(join\(distDir, 'app\.html'\)/);
 });
 
-test('the prerender plugin targets index.html and serves /feed from app.html in dev and preview', () => {
+test('the prerender plugin targets index.html and serves the app from app.html in dev and preview', () => {
   const config = noComments(read('vite.config.js'));
   assert.match(config, /ctx\.filename\.endsWith\('index\.html'\)/);
   assert.match(config, /configureServer/);
   assert.match(config, /configurePreviewServer/);
-  // Pins the real pathname: without this, narrowing feedToApp's condition to
-  // (say) '/feeds' would still satisfy every other assertion here while vite
-  // dev/preview quietly served the LANDING at /feed instead of the app.
-  assert.match(config, /pathname === '\/feed'/);
   assert.match(config, /req\.url = '\/app\.html'/);
 });
 
-test('the /feed middleware carries a query string over to app.html instead of dropping it', () => {
+/* The middleware is RUN, not read. A regex over its text can pin a literal
+   `'/feed'` and still miss the thing that matters — which paths come out as
+   app.html and which are left alone — and the routes stopped being one path
+   the day they left the fragment. `new Function` gives it exactly the module
+   scope it touches, the way landingHead.test.js runs index.html's gate. */
+const runMiddleware = () => {
   const config = noComments(read('vite.config.js'));
-  const middleware = config.match(/function feedToApp\([\s\S]*?\n\}/)?.[0] || '';
-  assert.ok(middleware, 'feedToApp is gone');
-  // The pathname/query split must keep the query half, not just the pathname
-  // (a `.split('?')[0]` would already have thrown it away here).
-  assert.match(middleware, /const \[pathname, \.\.\.query\] = \(req\.url \|\| ''\)\.split\('\?'\)/);
-  // And the query, once kept, has to actually be re-attached to req.url.
-  assert.match(middleware, /if \(query\.length\) req\.url \+= `\?\$\{query\.join\('\?'\)\}`/);
+  const roots = config.match(/const APP_ROUTE_ROOTS = \[[\s\S]*?\n\]/)?.[0];
+  assert.ok(roots, 'APP_ROUTE_ROOTS is gone from vite.config.js');
+  const fn = config.match(/function feedToApp\([\s\S]*?\n\}/)?.[0];
+  assert.ok(fn, 'feedToApp is gone');
+  const feedToApp = new Function(`${roots}\n${fn}\nreturn feedToApp;`)();
+  return (url) => {
+    const req = { url };
+    let nexted = false;
+    feedToApp(req, {}, () => { nexted = true; });
+    assert.ok(nexted, `feedToApp swallowed ${url} instead of calling next()`);
+    return req.url;
+  };
+};
+
+test('dev and preview serve EVERY app route from app.html, not just /feed', () => {
+  // Production settles this with vercel.json's catch-all. `vite dev` and `vite
+  // preview` have no such rule, and their own SPA fallback hands index.html —
+  // the LANDING — to anything it does not recognise. While the app lived
+  // entirely in the fragment there was one path to rewrite; now there are as
+  // many as there are routes, and a miss does not error, it quietly shows the
+  // marketing page where the app should be.
+  const rewrite = runMiddleware();
+  for (const url of [
+    '/feed', '/feed/', '/following', '/research', '/report', '/lists', '/search',
+    '/profile', '/settings', '/settings/profile', '/onboarding', '/login',
+    '/admin/moderation', '/explorer/author/A5023888391',
+    '/public/paper/YXJ4aXY6MjQwMS4xMjM0NQ', '/public/user/ada', '/public/list/abc',
+  ]) {
+    assert.equal(rewrite(url), '/app.html', `${url} must be served by the app`);
+  }
+});
+
+test('the middleware leaves the landing, the policy and every real file alone', () => {
+  const rewrite = runMiddleware();
+  for (const url of [
+    '/',                       // the landing, which is the whole point of index.html
+    '/privacy.html',           // its own page
+    '/assets/index-DToPZZZM.js',
+    '/favicon.svg', '/sw.js', '/manifest.webmanifest', '/og/papertok-share-0.2.png',
+    '/@vite/client', '/src/main.jsx', '/node_modules/.vite/deps/react.js',
+    '/feeds',                  // not a route: an exact root, not a prefix
+    '/researchers',
+  ]) {
+    assert.equal(rewrite(url), url, `${url} must not be rewritten to the app`);
+  }
+});
+
+test('the middleware carries a query string over to app.html instead of dropping it', () => {
+  // Every `?probe=` cache-buster in scripts/diagnostics depends on this, and so
+  // does the query half of index.html's own gate.
+  const rewrite = runMiddleware();
+  assert.equal(rewrite('/feed?probe=7'), '/app.html?probe=7');
+  assert.equal(rewrite('/research?a=1&b=2'), '/app.html?a=1&b=2');
+  assert.equal(rewrite('/search?q=a?b'), '/app.html?q=a?b', 'a question mark inside the query survives');
+});
+
+test('the middleware knows every route root App.jsx declares', () => {
+  // The list is explicit because this middleware runs BEFORE Vite's own
+  // (/@vite/, /src/, /node_modules/, HMR), so it cannot be a catch-all. That
+  // makes it the kind of list that rots: a route added to App.jsx and not here
+  // serves the landing in preview, silently. This is the reminder.
+  const config = noComments(read('vite.config.js'));
+  const roots = new Set(
+    (config.match(/const APP_ROUTE_ROOTS = \[[\s\S]*?\n\]/)?.[0] || '')
+      .matchAll(/'([^']+)'/g),
+  );
+  const declared = new Set(
+    [...noComments(read('src/App.jsx')).matchAll(/<Route\s+path="([^"]+)"/g)]
+      .map((m) => m[1])
+      .filter((path) => path !== '*')
+      .map((path) => path.split('/')[1]),
+  );
+  assert.ok(declared.size > 5, 'no routes found in App.jsx — the regex stopped matching');
+  const known = new Set([...roots].map((m) => m[1]));
+  for (const root of declared) {
+    assert.ok(known.has(root), `App.jsx routes /${root}/… but vite.config.js does not serve it`);
+  }
 });
 
 test('Vercel sends /feed and every SPA path to app.html; a direct request for app.html is never cached', () => {
@@ -63,10 +134,72 @@ test('Vercel sends /feed and every SPA path to app.html; a direct request for ap
 
 test('the PWA starts in the app and the service worker warms /feed, not the landing', () => {
   const manifest = JSON.parse(read('public/manifest.webmanifest'));
-  assert.equal(manifest.start_url, './feed#/');
+  // No fragment: it was `./feed#/` while the routes lived in the hash. A
+  // start_url that still carried one would open the installed app on a URL
+  // that now means "the feed, scrolled to nothing".
+  assert.equal(manifest.start_url, './feed');
   const warm = noComments(read('public/sw-html-warm.js'));
   assert.match(warm, /new URL\('feed', self\.registration\.scope\)/);
   assert.doesNotMatch(warm, /cache\.add\(self\.registration\.scope\)/);
+});
+
+test('offline, a route the cache has never seen falls back to the warmed feed', () => {
+  // The app reads the path now, so a reader can be offline on /research with
+  // nothing in `papertok-html` for that URL: NetworkFirst then has neither
+  // half and the browser's offline error is what they get.
+  //
+  // workbox's own `navigateFallback` is NOT the answer here, and that is
+  // measured rather than assumed: generateSW registers its NavigationRoute
+  // BEFORE the runtimeCaching rules (built it and read dist/sw.js: the
+  // NavigationRoute lands at offset 3588, the `papertok-html` rule at 3809),
+  // and the router matches in registration order. The fallback would take
+  // EVERY navigation, the NetworkFirst rule would become dead code, and the
+  // HTML would be pinned to whatever the service worker last precached --
+  // which is exactly what that rule's own comment says it exists to avoid.
+  //
+  // So the fallback hangs off the NetworkFirst rule instead, as the
+  // last-chance callback that only runs when both the network and the cache
+  // have failed.
+  const config = noComments(read('vite.config.js'));
+  assert.match(config, /navigateFallback: null/, 'navigateFallback would swallow every navigation');
+  // Recortado por la regla misma -- de su `urlPattern` al `urlPattern` de la
+  // siguiente -- y no por una ventana de N caracteres: la ventana pasa a ser
+  // demasiado corta en cuanto alguien escribe un comentario dentro.
+  const from = config.indexOf("request.mode === 'navigate'");
+  assert.ok(from > 0, 'the navigate runtimeCaching rule is gone');
+  const next = config.indexOf('urlPattern', from + 1);
+  const navigateRule = config.slice(from, next > 0 ? next : config.length);
+  assert.match(navigateRule, /handlerDidError/, 'the navigate rule has no offline last chance');
+  assert.match(navigateRule, /papertok-html/);
+  assert.match(navigateRule, /'feed'/, 'the last chance must answer with the warmed /feed');
+  // And it must decline for the three navigations that are not app routes:
+  // the landing, the policy, and Firebase's sign-in handler -- answering that
+  // last one with the app hands Google an HTML page and hangs the sign-in.
+  for (const path of ["'/'", "'/privacy.html'", "'/__/auth/'"]) {
+    assert.ok(navigateRule.includes(path), `the offline last chance does not exclude ${path}`);
+  }
+});
+
+test('the cache headers hang off the paths a browser actually asks for', () => {
+  // Vercel matches `headers` against the INCOMING path, not the destination of
+  // a rewrite, so a rule on `/app.html` or `/index.html` never fires: nobody
+  // navigates to those. It is inert today, because Vercel's own default for
+  // static HTML is this same value -- but it is the guarantee that stops a
+  // cached HTML from pointing at asset hashes that no longer exist, and it had
+  // quietly stopped applying to anything.
+  const vercel = JSON.parse(read('vercel.json'));
+  const matches = (path) => vercel.headers.filter((h) => {
+    if (h.source === path) return true;
+    const pattern = h.source.match(/^\/:path\((.+)\)$/)?.[1];
+    return pattern ? new RegExp(`^${pattern}$`).test(path.replace(/^\//, '')) : false;
+  });
+  for (const path of ['/', '/feed', '/following', '/research']) {
+    const revalidating = matches(path).some((h) => h.headers.some((x) => /must-revalidate/.test(x.value)));
+    assert.ok(revalidating, `no header rule with must-revalidate matches an incoming ${path}`);
+  }
+  // And the rule for the hashed assets is still the opposite one: immutable.
+  const assets = vercel.headers.find((h) => h.source === '/assets/(.*)');
+  assert.match(assets.headers[0].value, /immutable/);
 });
 
 test('the app page is canonical at /feed', () => {
