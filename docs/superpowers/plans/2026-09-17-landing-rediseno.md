@@ -1794,3 +1794,159 @@ test('heading levels never skip: h1, then h2 per section, h3 only under an h2', 
 - **Cobertura de la spec:** §3 tramos → tareas 5–9; §4 sistema → 5; §5 contratos → 6 (rueda), 7 (lector), 9 (mapa, Research), 10 (mazo); §6 movimiento → 6, 9, 10; §7 móvil → CSS de cada tarea + 11; §8 tema oscuro → 5 (`.lp-hl`, `.lp-close`), 10 (test de contraste), 11 (axe en oscuro); §9 construcción → 1–3, 12; §10 criterios → `page.test.js` (1, 2, 3, 8), `deck.test.js`/sonda (4), `wheel.test.js` (5), `graphMap.test.js` (6), `highlightContrast.test.js` + `keyframeContrast.test.js` (7), tarea 12 (9, 10). **Lo que la spec decía y el plan cambia:** `createDeck` viejo no se reutiliza (era gestos de rueda); la migración de `/` entra (tareas 2–3); el subrayado en oscuro dentro del lector también es filete (spec §4 ya lo decía para «todo el tema oscuro»).
 - **Placeholders:** ninguno; los «copia las líneas N–M» llevan el `grep -n` con el que localizarlas.
 - **Consistencia de nombres:** `data-deck`, `data-deck-reel`, `data-deck-skip`, `data-deck-count` (5 y 10); `.lp-hl` (5, 7, 10); `mp-spoke/mp-node/mp-label/mp-rule/mp-tick` (9); `armPile/armMap/armReveals/armDeck` (6, 9, 10); `SIGNALS/FOLLOW_ROWS/LISTS/MAP` (4, 6, 8, 9); `papertok_signed_in` (2, 3).
+
+---
+
+# Añadido (2026-09-18): las rutas de la app dejan de vivir en el fragmento
+
+**Pedido por Nicolás a mitad de ejecución:** que el feed pase de `papertok.app/#/` a
+`papertok.app/feed`, y que Siguiendo y Research vivan en `papertok.app/following` y
+`papertok.app/research`. Y: «el landing ponlo donde consideres».
+
+**Dónde va la landing — decidido:** se queda en `papertok.app/`. Todo el rediseño parte de que un
+desconocido escribe papertok.app y ve la landing; quien tiene sesión ya sale rebotado a `/feed` por
+la puerta de `index.html`. Mover la landing a `/about` daría al visitante nuevo la app en frío, que
+es exactamente lo que el rediseño existe para evitar.
+
+**Esto NO es un retoque.** La app es un `HashRouter` desde su primer commit, y esa elección está
+horneada en sitios que no se parecen a rutas: el service worker declara `navigateFallback: null`
+razonando por escrito que «HashRouter nunca pide al servidor otra ruta que la base»; la analítica
+deriva la ruta del fragmento; los enlaces para compartir se construyen con `#/`; y hay enlaces
+`papertok.app/#/public/paper/…` ya repartidos por ahí que no pueden romperse. Diez ficheros de test
+dan el hash por supuesto.
+
+**La pieza de más riesgo, y va primero en la cabeza de quien lo ejecute:** `sanitizeAnalyticsEventUrl`
+(`src/services/analyticsService.js`) existe porque bajo HashRouter el identificador real del paper
+viaja en `location.href`, y la **política de privacidad publicada** promete que leer un paper se
+registra como `/public/paper/:id` y que «cuál nunca viaja». La función ya cae a `parsed.pathname`
+cuando no hay fragmento, así que probablemente sigue siendo correcta — pero eso hay que
+**demostrarlo**, no suponerlo. Si se rompe, la página contradice su propia política de privacidad.
+
+## Restricciones globales del añadido
+
+- **Ninguna URL que exista hoy puede morir.** `papertok.app/#/public/paper/x` sigue llevando al
+  mismo sitio, con una redirección, para siempre.
+- La analítica sigue enviando rutas despojadas. Se demuestra con un test y con una captura de la
+  petición real, no con un razonamiento.
+- La clave `index` del input de Rollup no se mueve (el SW precachea `assets/index-*` por nombre).
+- La landing se queda en `/`; `app.html` sigue sirviendo la app.
+- Cada tarea acaba con la suite en verde, `npm run build` sin errores y un commit.
+
+---
+
+### Task 13: El router deja de usar el fragmento
+
+**Files:**
+- Modify: `src/main.jsx` (`HashRouter` → `BrowserRouter`)
+- Modify: `src/App.jsx` (`path="/"` → `path="/feed"`; el catch-all apunta a `/feed`)
+- Modify: `src/utils/publicNavigation.js` (los enlaces públicos se construyen sin `#`)
+- Modify: los tests que dan el hash por supuesto — `routerTransitions.test.js`,
+  `utils/routeDirection.test.js`, `utils/publicNavigation.test.js`, `utils/shareLink.test.js`,
+  `components/Layout/navbarTabs.test.js`, `hooks/overlayHistory.test.js`,
+  `components/Feed/feedAtomVeil.test.js`, `accessibilityStructure.test.js`
+- Test: `src/utils/publicNavigation.test.js`, `src/routerTransitions.test.js`
+
+**Interfaces:**
+- Produces: toda ruta de la app es una ruta real. `/feed` es el feed; `/following`, `/research`,
+  `/lists`, `/settings…`, `/explorer/:type/:id`, `/public/…` dejan de llevar `#`.
+- Consume: el rewrite de Vercel que ya manda todo lo que no es fichero a `app.html`.
+
+- [ ] **Step 1: Escribe los tests que fallan.** En `publicNavigation.test.js`, que
+  `getPublicPaperUrl` devuelva `https://papertok.app/public/paper/<id>` sin `#`. En
+  `routerTransitions.test.js`, que el router montado sea `BrowserRouter`. Que el catch-all de
+  `App.jsx` navegue a `/feed` y no a `/`.
+- [ ] **Step 2: Córrelos.** Deben fallar. Cita cuáles y por qué.
+- [ ] **Step 3: Implementa.** `BrowserRouter` sin `basename` (las rutas son absolutas). La ruta del
+  feed pasa de `/` a `/feed`. **Lee antes `src/utils/routeDirection.js`, `src/hooks/useOverlayHistory.js`
+  y `src/utils/appReload.js`**: el signo de la barra y la memoria de superposiciones dependen de
+  `history.state.idx`, no del hash, así que deberían sobrevivir — pero compruébalo y di qué encontraste.
+- [ ] **Step 4: Recorre cada test del listado** y adáptalo a rutas reales. Ninguno se borra: si uno
+  ya no tiene sentido, explica por qué en su lugar.
+- [ ] **Step 5: Suite completa y build.** `node --test --test-reporter=tap 'src/**/*.test.js' 2>&1 | tail -5`.
+- [ ] **Step 6: Commit** — `feat(router): las rutas de la app dejan de vivir en el fragmento`
+
+---
+
+### Task 14: La analítica sigue sin ver qué paper lees
+
+**Files:**
+- Modify: `src/services/analyticsService.js` (el comentario que explica el fragmento; la lógica solo si hace falta)
+- Test: `src/services/analyticsService.test.js`
+- Create: `scripts/diagnostics/landing-analytics-probe.mjs`
+
+**Interfaces:**
+- Produces: la garantía, demostrada, de que la petición que sale hacia Vercel lleva
+  `/public/paper/:id` y no el identificador.
+
+- [ ] **Step 1: Test primero.** Que `sanitizeAnalyticsEventUrl('https://papertok.app/public/paper/W123')`
+  devuelva la ruta con `:id`, sin el identificador, **sin** que haya fragmento. Añade el caso simétrico
+  para `/explorer/author/A456`. Córrelo: si ya pasa, dilo — significa que el fallback a `pathname`
+  ya era correcto, y el trabajo es demostrarlo y arreglar el comentario, no cambiar la lógica.
+- [ ] **Step 2: Demuéstralo en el navegador, no en el test.** `landing-analytics-probe.mjs`, sobre el
+  arnés CDP de `scripts/diagnostics/landing-shots.mjs`: carga `/public/paper/<un id real>` con
+  `Network.enable`, captura la petición que sale hacia el endpoint de Vercel Analytics, e imprime su
+  cuerpo. **El identificador no puede aparecer en él.** Si la analítica está desactivada en el build
+  local, actívala por el camino que use la app y dilo.
+- [ ] **Step 3: Arregla el comentario** de `sanitizeAnalyticsEventUrl`, que hoy explica el fragmento
+  como si fuera el caso vivo.
+- [ ] **Step 4: Suite, build, commit** — `fix(analytics): la ruta se despoja del pathname, y se demuestra`
+
+---
+
+### Task 15: El servidor, el service worker y el PWA siguen al router
+
+**Files:**
+- Modify: `vite.config.js` (`navigateFallback` y el comentario largo que razona sobre HashRouter)
+- Modify: `public/manifest.webmanifest` (`start_url`)
+- Modify: `vercel.json` si el catch-all no cubre ya todas las rutas nuevas
+- Test: `src/utils/spaDeploy.test.js`, `src/landing/entry.test.js`
+
+- [ ] **Step 1: Tests primero.** Que `navigateFallback` sea `/app.html` y que su denylist excluya
+  `/`, `/privacy.html`, `/assets/`, `/__/auth/` y `/sw.js`. Que `start_url` sea `./feed`. Que el
+  catch-all de `vercel.json` lleve `/following` y `/research` a `app.html` y **no** `/`.
+- [ ] **Step 2: Fallan; impleméntalo.** El comentario de `navigateFallback: null` argumenta por
+  escrito que «HashRouter nunca pide al servidor otra ruta que la base». Eso ha dejado de ser cierto:
+  reescríbelo diciendo lo que ahora pasa — sin fallback, un lector sin red que abra `/research`
+  directamente recibe el error del navegador en vez de la app.
+- [ ] **Step 3: Compruébalo offline.** Con CDP: carga la app, ponla `Network.emulateNetworkConditions`
+  offline, navega a `/research` y confirma que sale la app y no el error del navegador. Y que `/` y
+  `/privacy.html` siguen siendo sus propias páginas y no se las traga el fallback.
+- [ ] **Step 4: Suite, build, commit** — `fix(pwa): el fallback de navegación cubre las rutas reales`
+
+---
+
+### Task 16: Los enlaces viejos no mueren
+
+**Files:**
+- Modify: `index.html` (la puerta de sesión traduce el fragmento)
+- Modify: `src/main.jsx` o un módulo propio (la app traduce un fragmento residual en cualquier ruta)
+- Modify: `public/sitemap.xml`
+- Test: `src/landing/landingHead.test.js`, más un test nuevo para la traducción
+
+- [ ] **Step 1: Tests primero.** Que la puerta de `index.html` mande `#/` a `/feed`, `#/research` a
+  `/research`, `#/public/paper/x` a `/public/paper/x`, y que lo haga con `location.replace` para no
+  dejar la landing en el historial. Que la app, cargada en cualquier ruta con un `#/loquesea`
+  residual, navegue a la ruta real una sola vez y limpie el fragmento.
+- [ ] **Step 2: Fallan; impleméntalo.** Cuidado con `#main-content`: el enlace de salto usa un
+  fragmento que NO es una ruta, y la traducción no debe tocarlo. Solo un fragmento que empiece por
+  `#/` es una ruta vieja.
+- [ ] **Step 3: El sitemap** lista `/`, `/feed`, `/following`, `/research`. Las canónicas y `og:url`
+  de `app.html` siguen apuntando a `/feed`.
+- [ ] **Step 4: Compruébalo por CDP** — las cinco puertas: `/` sin marca (landing), `/` con marca
+  (`/feed`), `/#/research` (→ `/research`), `/research` directo, `/privacy.html`. Y que `#main-content`
+  sigue funcionando.
+- [ ] **Step 5: Suite, build, commit** — `feat(rutas): los enlaces con fragmento siguen llevando al mismo sitio`
+
+---
+
+### Task 17: Verificación del añadido
+
+- [ ] Suite completa; `npm run build`; presupuesto de la landing sin cambios (≤ 30 KB gz).
+- [ ] Las cinco puertas de la tarea 16, otra vez, sobre el build.
+- [ ] La sonda de analítica de la tarea 14, otra vez: el identificador no sale.
+- [ ] Offline en una ruta profunda (tarea 15).
+- [ ] `axe` sobre `/feed`, `/following` y `/research` — la auditoría de la tarea 11 solo cubrió la
+  landing, y estas rutas ahora son URLs de primera clase.
+- [ ] Capturas de las tres rutas a 1440 y 390 en ambos temas; mirarlas.
+- [ ] Actualizar `docs/ACCESIBILIDAD-EVIDENCIA.md` con lo que cubra esta pasada.
+- [ ] Actualizar la spec: el §2 decía que la migración de `/` quedaba fuera de alcance; ya no.
