@@ -147,6 +147,21 @@ clearStaleOverlayMarker({ history: window.history, location: window.location })
 
 registerSW()
 
+// The phone-side record of the tab bar's taps (diagnostics/tapDiagnostics.js):
+// behind `?tapdiag=1`, remembered for the tab's session so the app's own
+// reloads keep it, `?tapdiag=0` to stop. A separate chunk that never loads
+// otherwise. The flag is read from the search AND the hash: with a HashRouter
+// the address the user types can carry it on either side of the `#`.
+try {
+  const flag = /[?&]tapdiag=([01])\b/.exec(`${window.location.search} ${window.location.hash}`)
+  if (flag) sessionStorage.setItem('papertok_tapdiag', flag[1])
+  if (sessionStorage.getItem('papertok_tapdiag') === '1') {
+    import('./diagnostics/tapDiagnostics.js').then((m) => m.start()).catch(() => {})
+  }
+} catch {
+  // No session storage: no diagnostics either.
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     {/* Not a React transition. React Router 7 wraps each navigation's state

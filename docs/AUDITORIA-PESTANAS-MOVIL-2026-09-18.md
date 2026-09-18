@@ -62,3 +62,64 @@ está abajo. Y el enlace mide 30 px de alto en una barra de 52 (55×30, 66×30, 
 `npm test` y eslint en verde. **Sin verificar en un iPhone**: si vuelve a pasar, lo que distingue
 los candidatos es si el filete amarillo salta a la pestaña en el primer toque (ahora debería) y si
 ocurre justo después de deslizar el feed.
+
+---
+
+## Segunda vuelta: «va mejor, pero sigue pasando» (mismo día)
+
+Tras desplegar lo anterior el usuario informa de mejora sin cierre. Se descartaron por medida dos
+mecanismos más y apareció uno nuevo, este sí reproducible.
+
+### Descartado: el toque mientras el feed se mueve
+
+WebKit, iPhone emulado: tocar una pestaña 60, 150, 400 y 900 ms después de lanzar un scroll del
+feed entrega `pointerdown`, `touchstart`, `touchend`, `mousedown` y `click` en el enlace, y navega,
+esté el contenedor en movimiento o quieto. Una primera versión de la sonda dio «NO CLICK»: era
+artefacto suyo —tocaba una tarjeta antes de tocar la pestaña, y eso abre una hoja— y es lo que
+llevó al hallazgo de abajo.
+
+### Hallazgo: más de la mitad de la tarjeta abre una hoja modal, y esa hoja se come el primer toque
+
+Muestreo de la tarjeta a x = 195, de y = 90 a y = 620 en pasos de 38 px (14 alturas):
+
+| Franja | Qué hay | Un toque abre |
+|---|---|---|
+| 90–242 | cabecera, chips, tema, título | nada |
+| 280–318 | fila de autores | `pc-authors-modal-sheet` |
+| 356–546 | el abstracto | `abstract-sheet` |
+| 584 | pie de la tarjeta | nada |
+
+**8 de 14 alturas abren una hoja modal.** Con una hoja abierta, el primer toque en una pestaña la
+cierra y no navega; el segundo navega (verificado con 120, 250, 450 y 900 ms entre uno y otro: los
+dos toques siempre acaban en `#/research`, pero hacen falta dos). Sin hoja abierta, dos toques
+seguidos en pestañas distintas a 120 ms navegan a la segunda.
+
+La franja del abstracto es de hoy (`07c68bf`, pedida por el usuario: «al pulsar en el abstract o
+en read more, accederás a dicha vista expandida»). Antes de hoy ese toque desplegaba el abstracto
+en la tarjeta, sin modal, y la pestaña siguiente respondía al primer toque. La fila de autores ya
+era modal.
+
+### El instrumento que falta: el propio iPhone
+
+`src/diagnostics/tapDiagnostics.js`, detrás de `?tapdiag=1` (se recuerda en la sesión de la
+pestaña; `?tapdiag=0` lo apaga). Chunk aparte que no se descarga sin la bandera. Registra en fase
+de captura, antes de que nada pueda cancelarlos, cada `touch*`, `pointer*`, `mouse*` y `click` que
+llega a la barra, con qué hay bajo el dedo según `elementFromPoint`; los `pushState`/`replaceState`,
+`hashchange` y `popstate`; los scroll en vuelo; el viewport visual (escala, desplazamiento, alto) y
+el `padding-top` real de la barra; y una foto de la ruta 300, 1.000 y 2.500 ms después de cada
+clic. Un panel abajo lo enseña, con Copy y Share.
+
+Verificado en WebKit sobre un iPhone emulado: no monta ni se descarga sin la bandera, monta con
+ella, registra el toque completo con su objetivo y su push, sobrevive a una recarga y se apaga con
+`?tapdiag=0`.
+
+**Lo que hay que leer en la captura del móvil:**
+
+- **No hay `touchstart` en la barra** → el dedo no llegó al enlace (¿la barra de Safari
+  reexpandiéndose junto al borde superior? `standalone` y `vv=` en la cabecera lo dicen).
+- **Hay `touchstart` y `touchend` pero no `click`** → el sistema se comió el toque (gesto,
+  momentum, doble toque).
+- **Hay `click` y `pushState` pero `after+300` sigue en la ruta vieja** → navegó y algo lo devolvió.
+- **Hay `click`, `pushState` y `after+300` en la ruta nueva** → navegó al primer toque y lo que
+  falla es lo que se ve, no lo que se toca.
+- **`snap … modal=` con una hoja** → es el hallazgo de arriba: el primer toque cierra la hoja.
