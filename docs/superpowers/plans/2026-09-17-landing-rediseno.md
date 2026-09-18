@@ -1944,6 +1944,16 @@ cuando no hay fragmento, así que probablemente sigue siendo correcta — pero e
   `#/` es una ruta vieja.
 - [ ] **Step 3: El sitemap** lista `/`, `/feed`, `/following`, `/research`. Las canónicas y `og:url`
   de `app.html` siguen apuntando a `/feed`.
+- [ ] **Step 3b: Deja de acuñar enlaces viejos.** Traducir el fragmento entrante arregla los
+  enlaces que ya están ahí fuera; esto arregla los que seguimos emitiendo. `publicNavigation.js`
+  y `worker/email-notifications.js:12` componen `papertok.app/#/…` para lo que se comparte y
+  para lo que se manda por correo: desde la migración cada uno de esos enlaces cuesta un salto
+  por la página de marketing antes de llegar al sitio, y cuando el fragmento deje de ser la ruta
+  serán enlaces a traducir en vez de enlaces correctos. Que emitan la ruta real, y un test que
+  compruebe que **ningún módulo de la app compone una URL pública con `#/`** — no que estos dos
+  ficheros concretos no lo hagan. Cuidado: el correo lo manda el Worker, que despliega aparte,
+  así que sus enlaces tienen que seguir funcionando durante la ventana en la que el Worker viejo
+  sigue vivo (la puerta del Step 2 es justo lo que lo garantiza).
 - [ ] **Step 4: Compruébalo por CDP** — las cinco puertas: `/` sin marca (landing), `/` con marca
   (`/feed`), `/#/research` (→ `/research`), `/research` directo, `/privacy.html`. Y que `#main-content`
   sigue funcionando.

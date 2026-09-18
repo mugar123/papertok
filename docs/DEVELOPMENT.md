@@ -57,10 +57,11 @@ be changed from Settings.
 
 Two details are load-bearing and easy to undo by accident:
 
-- The app uses `HashRouter`, so every route lives in the fragment and `location.pathname` is `/`
+- The app uses `HashRouter`, so every route lives in the fragment, and the app itself is served
+  at `/feed` (`vercel.json` rewrites that path to `app.html`), so `location.pathname` is `/feed`
   for all of them. Passing `route` to `<Analytics />` disables the script's own pathname-based
   tracking and makes the component emit each view instead. Remove it and the whole site collapses
-  into a single `/` row.
+  into a single `/feed` row.
 - `route`, `path` and the `beforeSend` rewrite all carry the *normalized* path, never the real one.
   The published privacy policy promises that reading a paper is reported as `/public/paper/:id`
   and never says which; `sanitizeAnalyticsEventUrl` is what keeps that true, because the script

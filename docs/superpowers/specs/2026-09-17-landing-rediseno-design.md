@@ -109,14 +109,21 @@ con movimiento, la tarjeta con el botón de IA y su coste, y al pulsar *Download
 Nuevo: un subrayado dentro del texto («felt the same tiny stretch of space at the same moment»)
 y una nota «Your note» con regla amarilla. La invitación del botón sigue apagada en oscuro.
 
-**Mapa.** Plancha SVG de 1200×520 generada en el build desde datos congelados en `papers.js`
-(vecinos reales de LIGO, tomados a mano de OpenAlex/OpenCitations y anotados con fecha): cinco
-citados (Einstein ’16, Hulse & Taylor ’75, Thorne ’87, Pretorius ’05, Blanchet ’14), dos que
-citan (GW170817 ’17, GWTC-1 ’19); `x = min(1150, 300 + log10(c)·220)`; centro en `x=220` con
-el rótulo a la izquierda y la regla cortada 16 px a cada lado del par; rótulos de esquina en
-mono («BEFORE · WHAT IT CITES», «5 MOST CITED OF 99», «AFTER · WHAT CITES IT», «2 MOST RECENT
-OF 14,536»). Bajo 700 px, una segunda plancha compuesta en el build con menos nodos y eje de
-tres marcas, no un SVG escalado.
+**Mapa.** Plancha SVG de 1200×520 generada en el build desde datos congelados en `papers.js`,
+y **congelados de una consulta real, no compuestos**: los primeros cinco de arriba y los dos de
+abajo que esta spec listaba eran plausibles e inventados, y la página entera discute que
+PaperTok no se inventa posiciones — se sustituyeron el 18-09 por lo que devuelve OpenAlex para
+W2252795400. Cada lado se elige como lo elige la app, que **no es la misma regla dos veces**:
+arriba, los cinco más **citados** de las 99 que cita (Acernese ’14 · Advanced Virgo, Kerr ’63,
+Aasi ’15 · Advanced LIGO, Blanchet ’14, Abramovici ’92); abajo, los dos más **recientes** de las
+14 526 que la citan, que el día de la consulta tenían cero citas propias (Eiroa ’26, Makihara
+’26) — `worker/report-api.js` pide las citantes por `desc(creation)` y `publication_date:desc`,
+y `RelatedPapersSheet.jsx` rotula las dos bandas exactamente así. Que los nodos nuevos caigan a
+la izquierda del eje no es un hueco en los datos: es para lo que está el eje.
+`x = min(1150, 300 + log10(c)·220)`; centro en `x=220` con el rótulo a la izquierda y la regla
+cortada 16 px a cada lado del par; rótulos de esquina en mono («BEFORE · WHAT IT CITES»,
+«5 MOST CITED OF 99», «AFTER · WHAT CITES IT», «2 MOST RECENT OF 14,526»). Bajo 700 px, una
+segunda plancha compuesta en el build con menos nodos y eje de tres marcas, no un SVG escalado.
 
 **Research.** Marcado de la edición reutilizado (`RESEARCH` de `papers.js`) dentro de una
 ventana de 880 px con `overflow: hidden` y máscara al 78 %; porcentajes recalculados a partir
@@ -199,11 +206,11 @@ subrayado y la invitación.
 1. `landing.html` construido: 0 apariciones de `scroll-snap`; 11 `<section>` en el orden del §3.
 2. Amarillo: `--brand-yellow` como fondo solo en `.lp-hero` y el botón del cierre; `.lp-hl`
    exactamente tres veces; ningún otro uso fuera de `.lp-reader`/`.lp-research`.
-3. Sin `<img>`, `<figure>` ni placas de figura.
+3. Sin `<img>` ni placas de figura. **Enmendado en la tarea 8:** sí hay tres `<figure>`, que son ventanas de la app con su `<figcaption>` — la decisión de Nico fue «quita las imágenes», y un `<figure>` sin imagen es marcado, no una imagen.
 4. Mazo: tres slides + clon; Skip avanza y da la vuelta; ↓/↑ con foco; `hidden` sin JS.
 5. Rueda: gira al entrar y al pulsar; nunca `preventDefault` sobre `wheel`.
 6. Mapa: 5 + 2 nodos, rótulo del centro a la izquierda, regla cortada; dibujado una vez.
 7. Contraste ≥ 4,5:1 en el subrayado y en el pico de la invitación, en claro y en oscuro.
-8. Sin `text-transform: uppercase` fuera de `.lp-paper`, `.lp-plate`, `.lp-research`.
-9. ≤ 30 KB gz; 0 peticiones a hosts externos.
+8. Sin `text-transform: uppercase` fuera de la lista blanca de `page.test.js`, que nació con tres nombres (`.lp-paper`, `.lp-plate`, `.lp-research`) y terminó con ocho: cada añadido queda razonado en el comentario del propio test, y la comprobación cubre las tres hojas.
+9. ≤ 30 KB gz; 0 peticiones a hosts externos. Lo mide `npm run budget:landing`, dentro de `npm run check`: medido a mano una vez, el siguiente retoque de texto se lo come sin que nada se ponga rojo.
 10. Capturas a 1440, 1280 y 390 en los dos temas revisadas antes de dar nada por bueno.

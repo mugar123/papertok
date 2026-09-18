@@ -10,11 +10,14 @@
  * hangs the whole dark palette off that one attribute. The same three lines
  * run inline in `app.html` before the first paint: a theme decided in React
  * is a theme decided after the page has already been painted white, which is a
- * white flash on every load for anyone reading in the dark. `index.html` (the
- * landing, which never imports this module) carries its own independent copy
- * of the same three lines for the same reason. Keep all three in step — this
- * module is the one that must be right, but the inline copies are the ones
- * seen first.
+ * white flash on every load for anyone reading in the dark. Two further pages
+ * that never import this module carry their own independent copy for the same
+ * reason: `index.html` (the landing) and `privacy.html` (the privacy policy).
+ * `app.html` and `privacy.html` also repaint the `theme-color` meta; the
+ * landing only sets the attribute. Four copies in all — this module plus
+ * those three inline scripts, which `grep -rl papertok_theme` lists. Keep them
+ * in step: this module is the one that must be right, but the inline copies
+ * are the ones seen first.
  */
 
 export const THEME_STORAGE_KEY = 'papertok_theme';
