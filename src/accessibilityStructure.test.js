@@ -263,6 +263,17 @@ const OUTLINE_OFF_ON_PURPOSE = new Map([
     + 'rendering bug rather than as focus',
   ],
   [
+    '#main-content.lp-main:focus',
+    'the landing\'s own #main-content (src/landing/page.js), same case as the app\'s '
+    + 'above and for the same reason: only the skip link\'s fragment navigation ever '
+    + 'focuses it (page.js gives it tabindex="-1" precisely so that navigation actually '
+    + 'moves focus, task 11), never a normal tab stop. Measured live: a 2px ring around '
+    + 'a box taller than the viewport draws its top edge under the sticky bar and the '
+    + 'rest below the fold — invisible in practice. Scoped to `.lp-main` rather than the '
+    + 'bare id so this exception cannot reach a different static page\'s own element of '
+    + 'that id sharing static-page.css',
+  ],
+  [
     '.gip-title:focus-visible',
     'GuestInterestsPrompt moves initialFocus to the sheet’s h2 (tabIndex={-1}) so the '
     + 'browser does not scroll the sheet to the first chip instead. Like #main-content '

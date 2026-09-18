@@ -1,0 +1,72 @@
+/* src/legal/static-page.css
+ * Everything a static page of the site shares: the self-hosted faces, the
+ * app's tokens, the bar, the buttons, the foot, focus, and two utilities.
+ * Imported by privacy.css and landing.css; imports nothing from global.css. */
+@import '@fontsource-variable/newsreader/opsz.css';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
+@import '../styles/variables.css';
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg-primary); color: var(--text-primary); font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
+
+/* WCAG 2.4.11 Focus Not Obscured (Minimum): .lp-bar is `position: sticky;
+   top: 0` with an opaque background over every static page that imports
+   this file — once stuck, it sits over whatever scrolls underneath it, the
+   same as a fixed header would. Without this, the browser's own "scroll the
+   newly-focused element into view" (a Tab press, or activating the skip
+   link) can stop the moment the element's top edge merely clears y=0, which
+   is still UNDER the bar rather than below it — a keyboard user's focus
+   would be genuinely there, just invisible. `scroll-padding-top` matching
+   the bar's own height is what every major browser already honours for
+   exactly this "scroll into view, but leave room for a sticky header" case,
+   not only for scroll-snap. */
+html { scroll-padding-top: var(--nav-height); }
+
+/* Focus: ink, the app's own ring (variables.css --focus-ring), never hidden. */
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+/* First in the DOM, invisible until it has focus, above every fixed bar. */
+.lp-skip { position: absolute; top: -100px; left: 16px; z-index: 1100; padding: 10px 14px; border-radius: var(--radius-md); background: var(--accent-primary); color: var(--text-inverse); font: var(--fw-medium) 0.9375rem/1 var(--font-body); text-decoration: none; }
+.lp-skip:focus-visible { top: 8px; z-index: 1100; }
+
+.lp-visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+.lp-bar { position: sticky; top: 0; z-index: var(--z-nav); height: var(--nav-height); display: flex; align-items: center; justify-content: space-between; padding: 0 40px; background: var(--bg-primary); border-bottom: 1px solid var(--border-subtle); }
+.lp-bar--yellow { background: var(--brand-yellow); border-bottom-color: transparent; }
+.lp-wordmark { font: var(--fw-bold) 0.9375rem/1 var(--font-heading); letter-spacing: -0.02em; color: var(--text-primary); text-decoration: none; }
+.lp-wordmark span { box-shadow: inset 0 -0.32em 0 var(--brand-yellow); }
+.lp-bar--yellow .lp-wordmark { color: var(--text-on-brand); }
+.lp-bar__right { display: flex; align-items: center; gap: 24px; }
+.lp-bar__link { font: var(--fw-medium) 0.875rem/1 var(--font-body); color: var(--text-secondary); text-decoration: none; min-height: 44px; display: inline-flex; align-items: center; }
+.lp-bar--yellow .lp-bar__link { color: var(--text-on-brand); opacity: 0.8; }
+.lp-bar__link:hover { color: var(--text-primary); opacity: 1; }
+
+.lp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 34px; padding: 0 16px; border: 1px solid var(--accent-primary); background: var(--accent-primary); color: var(--text-inverse); font: var(--fw-medium) 0.875rem/1 var(--font-body); border-radius: var(--radius-md); text-decoration: none; white-space: nowrap; cursor: pointer; }
+.lp-btn:hover { background: var(--accent-primary-hover); border-color: var(--accent-primary-hover); }
+.lp-btn--lg { min-height: 52px; padding: 0 28px; font-size: 1rem; border-radius: var(--radius-lg); }
+.lp-btn--yellow { background: var(--brand-yellow); border-color: var(--brand-yellow); color: var(--text-on-brand); }
+.lp-btn--yellow:hover { background: var(--brand-orange); border-color: var(--brand-orange); }
+
+.lp-footer { width: min(1200px, calc(100% - 40px)); margin: 0 auto; padding: 24px 0 48px; border-top: 1px solid var(--border-subtle); display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; font-size: 0.8125rem; color: var(--text-tertiary); }
+.lp-footer__links { display: flex; align-items: center; gap: 0 24px; flex-wrap: wrap; }
+.lp-footer__links > * { display: inline-flex; align-items: center; min-height: 44px; }
+.lp-footer a { color: inherit; text-decoration: none; min-height: 44px; display: inline-flex; align-items: center; }
+.lp-footer a:hover { color: var(--text-primary); }
+.lp-footer .lp-wordmark { color: var(--text-primary); }
+
+@media (max-width: 640px) {
+  .lp-bar { padding: 0 20px; }
+  .lp-bar__right { gap: 16px; }
+  /* WCAG 2.5.8 and this project's own 44px floor. Desktop keeps 34px: the bar
+     is a dense row there and the pointer is precise. */
+  .lp-btn { min-height: 44px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .lp-bar__link, .lp-btn, a { transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, text-decoration-color 150ms ease, opacity 150ms ease; }
+}

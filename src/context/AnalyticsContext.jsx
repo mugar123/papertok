@@ -78,8 +78,9 @@ export function AnalyticsProvider({ children }) {
 
   // Passing `route` is what makes this work under HashRouter: it flips
   // `disableAutoTrack` on the injected script, whose own tracking reads
-  // `location.pathname` — `/` for every route in this app, since the route
-  // lives in the fragment. The views themselves are emitted above.
+  // `window.location.pathname` — `/feed` for every route in this app, since
+  // that is where the app is served and the route lives in the fragment. The
+  // views themselves are emitted above.
   const analyticsPath = normalizeAnalyticsPath(location.pathname);
 
   return (

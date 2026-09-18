@@ -2,84 +2,83 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
-    <link rel="icon" type="image/png" sizes="192x192" href="%BASE_URL%icons/icon-192.png" />
-    <link rel="apple-touch-icon" href="%BASE_URL%icons/apple-touch-icon.png" />
-    <link rel="manifest" href="%BASE_URL%manifest.webmanifest" />
-    <!-- iOS < 16.4 ignora display:standalone del manifest; estos meta son el equivalente legacy. -->
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="PaperTok" />
+    <!--
+      Who this page is for, decided before anything else runs: a signed-in
+      reader (AuthContext writes `papertok_signed_in` on sign-in and clears it
+      on sign-out) goes straight to the app, and so does anyone arriving on a
+      deep link — `papertok.app/#/paper/…` has always meant the app, and the
+      hash never reaches the server, so only this page can honour it. Both are
+      `replace`, so the landing never sits in the history of a visit that
+      never meant to see it, and the query travels with both (feedToApp in
+      vite.config.js does the same in dev). Mirror of src/utils/sessionMark.js.
+    -->
+    <script>
+      (function () {
+        try {
+          var hash = window.location.hash;
+          var search = window.location.search;
+          if (hash.indexOf('#/') === 0) { window.location.replace('/feed' + search + hash); return; }
+          if (window.localStorage.getItem('papertok_signed_in') === '1') { window.location.replace('/feed' + search); }
+        } catch (error) { /* a browser that refuses storage sees the landing */ }
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="description" content="PaperTok is an application for exploring and discovering scientific papers from multiple sources." />
-    <meta name="theme-color" content="#ffffff" />
-    <!-- El tema, resuelto antes del primer pintado. Decidirlo en React es
-         decidirlo después de haber pintado la página en blanco: un fogonazo
-         blanco en cada carga para quien lee a oscuras. Es el espejo de
-         src/utils/theme.js — si cambia uno, cambia el otro. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <title>PaperTok — Research you weren't looking for</title>
+    <meta name="description" content="A feed of scientific papers from open, public sources. Open source, built by two people, free to read without an account." />
+    <link rel="canonical" href="https://papertok.app/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="PaperTok" />
+    <meta property="og:title" content="PaperTok — Research you weren't looking for" />
+    <meta property="og:description" content="A feed of scientific papers from open, public sources. Open source, built by two people, free to read without an account." />
+    <meta property="og:url" content="https://papertok.app/" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:image" content="https://papertok.app/og/papertok-share-0.2.png" />
+    <meta property="og:image:width" content="2400" />
+    <meta property="og:image:height" content="1260" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="PaperTok — Research you weren't looking for" />
+    <meta name="twitter:description" content="A feed of scientific papers from open, public sources." />
+    <meta name="twitter:image" content="https://papertok.app/og/papertok-share-0.2.png" />
+    <meta name="theme-color" content="#ffd21e" />
+    <!-- The theme, resolved before the first paint: mirror of src/utils/theme.js and app.html. -->
     <script>
       (function () {
         try {
           var stored = window.localStorage.getItem('papertok_theme');
-          var prefersDark = window.matchMedia
-            && window.matchMedia('(prefers-color-scheme: dark)').matches;
-          var theme = stored === 'light' || stored === 'dark'
-            ? stored
-            : (prefersDark ? 'dark' : 'light');
+          var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var theme = stored === 'light' || stored === 'dark' ? stored : (prefersDark ? 'dark' : 'light');
           document.documentElement.setAttribute('data-theme', theme);
-          var meta = document.querySelector('meta[name="theme-color"]');
-          if (meta) meta.setAttribute('content', theme === 'dark' ? '#111318' : '#ffffff');
-        } catch (error) {
-          document.documentElement.setAttribute('data-theme', 'light');
-        }
+        } catch (error) { document.documentElement.setAttribute('data-theme', 'light'); }
       })();
     </script>
-    <link rel="canonical" href="https://papertok.app/" />
-    <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="PaperTok" />
-    <meta property="og:title" content="PaperTok — Discover scientific research" />
-    <meta property="og:description" content="PaperTok is an application for exploring and discovering scientific papers from multiple sources." />
-    <meta property="og:url" content="https://papertok.app/" />
-    <meta property="og:locale" content="en_US" />
-    <meta property="og:locale:alternate" content="es_ES" />
-    <meta property="og:image" content="https://papertok.app/og/papertok-share-0.2.png" />
-    <meta property="og:image:alt" content="A scientific paper view in PaperTok" />
-    <meta property="og:image:width" content="2400" />
-    <meta property="og:image:height" content="1260" />
-    <meta property="og:image:type" content="image/png" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="PaperTok — Discover scientific research" />
-    <meta name="twitter:description" content="PaperTok is an application for exploring and discovering scientific papers from multiple sources." />
-    <meta name="twitter:url" content="https://papertok.app/" />
-    <meta name="twitter:image" content="https://papertok.app/og/papertok-share-0.2.png" />
-    <meta name="twitter:image:alt" content="A scientific paper view in PaperTok" />
-    <!-- Just the name. This is the string a browser saves as the bookmark
-         title and prints under a Favourites tile, where a tagline only gets
-         truncated. The descriptive version still travels with shared links,
-         in `og:title` and `twitter:title` below. -->
-    <title>PaperTok</title>
-    <script id="papertok-jsonld" type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@type": "WebSite",
-        "name": "PaperTok",
-        "url": "https://papertok.app/",
-        "description": "PaperTok is an application for exploring and discovering scientific papers from multiple sources.",
-        "inLanguage": ["en-US", "es-ES"]
-      }
+    <!--
+      Whether this visit animates, decided before the first paint. The page is
+      prerendered, so anything hidden by a start state must be hidden before it
+      paints or it flickers. Mirror of shouldAnimate() in src/landing/motion.js.
+      Failing closed is the safe side: no attribute, no motion, nothing hidden.
+      The `load` handler withdraws the gate if motion.js never reported for
+      duty; init()'s own comment in motion.js says why it has to.
+    -->
+    <script>
+      (function () {
+        try {
+          if (!('IntersectionObserver' in window) || !window.matchMedia) return;
+          if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+          if (!window.matchMedia('(min-width: 768px) and (hover: hover) and (pointer: fine)').matches) return;
+          var root = document.documentElement;
+          root.setAttribute('data-motion', 'on');
+          window.addEventListener('load', function () {
+            if (!root.hasAttribute('data-motion-ready')) root.removeAttribute('data-motion');
+          });
+        } catch (error) { /* stays at rest */ }
+      })();
     </script>
-    <!-- Fonts are self-hosted (see src/main.jsx) — no more Google Fonts
-         preconnect or render-blocking cross-origin stylesheet here. -->
-    <!-- The first three requests of every session, in order: the auth gate
-         (identitytoolkit), the Firestore listens behind it, and the Worker.
-         Warming DNS+TLS here overlaps the handshakes with the JS download
-         instead of paying them serially once the bundle boots. -->
-    <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
-    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
-    <link rel="preconnect" href="https://api.papertok.app" crossorigin>
+    <link rel="stylesheet" href="/src/landing/landing.css" />
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <!--landing-html-->
+    <script type="module" src="/src/landing/motion.js"></script>
   </body>
 </html>

@@ -73,6 +73,12 @@ const DAY_7_MS = 7 * 24 * 60 * 60 * 1000;
 // is what keeps this list from drifting behind the router again.
 const STATIC_ANALYTICS_PATHS = new Set([
   '/',
+  // The app's own home since it moved off `/`: `location.pathname` is `/feed`
+  // there, and a page view that reaches this before HashRouter has written
+  // `#/` reported the app's busiest page as `/unknown`. `/` stays because it
+  // is still where a route-less read lands (and is now the landing, which
+  // reports nothing at all).
+  '/feed',
   '/admin/moderation',
   '/following',
   '/lists',

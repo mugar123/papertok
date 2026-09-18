@@ -47,7 +47,7 @@ export function ThemeProvider({ children }) {
 
   const theme = chosen || (systemDark ? 'dark' : 'light');
 
-  // The inline script in index.html has already painted the right side before
+  // The inline script in app.html has already painted the right side before
   // React ran; this keeps the attribute honest for every change after that,
   // including a system flip while the tab is open.
   useEffect(() => {

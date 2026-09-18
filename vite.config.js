@@ -9,7 +9,7 @@ import { describeDeployFlagDrift, findDeployFlagDrift } from './src/utils/deploy
 
 // Shared with the `base` field below and with the service-worker precache
 // derivation, which needs to strip this same prefix off every asset URL
-// dist/index.html references. Since papertok.app the site is served from the
+// dist/app.html references. Since papertok.app the site is served from the
 // domain root, not from the /papertok/ project path GitHub Pages imposed.
 const BASE_PATH = '/'
 // build.outDir is not overridden anywhere in this config, so it is Vite's
@@ -73,7 +73,7 @@ function verifyProductionEnv(mode) {
 // pay well over a megabyte to make the second one fast, which is exactly
 // the mobile cost this branch's audit calls dominant.
 //
-// But "the entry JS/CSS" undersold the boot set: dist/index.html also
+// But "the entry JS/CSS" undersold the boot set: dist/app.html also
 // modulepreloads ~24 further chunks (firebase, the Scopus proxy client,
 // every context provider, ...) that a first visit fetches unconditionally
 // too, before the service worker has even claimed the page -- so on visit 2
@@ -83,10 +83,10 @@ function verifyProductionEnv(mode) {
 // (`firebase-DkzlGfZ-.js` doesn't glob the way `index-*.js` does), so listing
 // them by hand would silently rot the next time the chunk graph reshuffles.
 // `bootSetManifestTransform` below reads the actual <script>/modulepreload/
-// stylesheet references out of the built dist/index.html and adds whichever
+// stylesheet references out of the built dist/app.html and adds whichever
 // of them the glob patterns here didn't already catch -- the boot set, by
 // construction, without re-admitting katex or ScientificReport (neither is
-// referenced from index.html) and without hardcoding chunk names that
+// referenced from app.html) and without hardcoding chunk names that
 // change on every content-hash rebuild.
 //
 // The icons, the manifest, and just 7 of the ~49 font files (Inter 400/500/
@@ -95,7 +95,7 @@ function verifyProductionEnv(mode) {
 // files, every lazy route chunk -- is left to the CacheFirst runtime rule
 // below, cached only once a reader's session actually asks for it.
 //
-// index.html is deliberately NOT in this list. It is not immutable the way
+// app.html is deliberately NOT in this list. It is not immutable the way
 // a hashed asset is -- a new deploy means new content at the same URL -- so
 // precaching it would freeze it until the whole service worker updates.
 // Instead it is handled by the `navigate` runtimeCaching rule below, which
@@ -112,12 +112,12 @@ const PRECACHE_GLOB_PATTERNS = [
 
 // workbox-build calls `manifestTransforms` functions after its own glob
 // walk -- which only happens once the build has already written dist/ --
-// so this can read the real, just-built dist/index.html instead of
+// so this can read the real, just-built dist/app.html instead of
 // re-deriving its reference list as a second glob. It adds whichever
 // script/modulepreload/stylesheet targets PRECACHE_GLOB_PATTERNS above
 // didn't already catch (the ~24 further boot-set chunks -- see the comment
 // above), and leaves everything else (katex, ScientificReport, every lazy
-// route chunk: none of them referenced from index.html) alone.
+// route chunk: none of them referenced from app.html) alone.
 function bootSetManifestTransform(distDir) {
   // The one <script type="module"> is the entry chunk; used below only to
   // assert it survived into the final manifest, independent of whatever
@@ -126,12 +126,12 @@ function bootSetManifestTransform(distDir) {
   const referencePattern = new RegExp(`(?:src|href)="${BASE_PATH}(assets/[^"]+\\.(?:js|css))"`, 'g')
 
   return async (manifestEntries) => {
-    const html = readFileSync(join(distDir, 'index.html'), 'utf8')
+    const html = readFileSync(join(distDir, 'app.html'), 'utf8')
 
     const entryMatch = html.match(entryScriptPattern)
     if (!entryMatch) {
       throw new Error(
-        'dist/index.html has no <script type="module" src="..."> -- cannot find the entry '
+        'dist/app.html has no <script type="module" src="..."> -- cannot find the entry '
         + 'chunk to precache. The build output shape changed; update vite.config.js.',
       )
     }
@@ -156,17 +156,61 @@ function bootSetManifestTransform(distDir) {
     // A future chunking or globPatterns change could silently drop the
     // entry chunk from the precache -- green build, no warning, a service
     // worker that installs everything except what actually boots the app.
-    // Prove the one file index.html itself designates as the entry point
+    // Prove the one file app.html itself designates as the entry point
     // made it into the final manifest, rather than trust every step above
     // did its job.
     if (!manifest.some((entry) => entry.url === entryUrl)) {
       throw new Error(
         `Service worker precache manifest is missing the entry chunk (${entryUrl}), which `
-        + 'dist/index.html references directly. Update vite.config.js.',
+        + 'dist/app.html references directly. Update vite.config.js.',
       )
     }
 
     return { manifest }
+  }
+}
+
+const LANDING_PLACEHOLDER = '<!--landing-html-->'
+const LANDING_PAGE_MODULE = '/src/landing/page.js'
+
+// `/feed` has no file of its own: in production vercel.json rewrites it to
+// app.html, and this middleware does the same for `vite dev` and `vite
+// preview`, whose own SPA fallback would otherwise hand the LANDING to every
+// unknown path. The hash never reaches the server, so only the pathname
+// decides whether to rewrite -- but a query string, if present, is carried
+// over to app.html rather than dropped.
+function feedToApp(req, res, next) {
+  const [pathname, ...query] = (req.url || '').split('?')
+  if (pathname === '/feed' || pathname.startsWith('/feed/')) {
+    req.url = '/app.html'
+    if (query.length) req.url += `?${query.join('?')}`
+  }
+  next()
+}
+
+function landingPrerender() {
+  return {
+    name: 'papertok-landing-prerender',
+    configureServer(server) { server.middlewares.use(feedToApp) },
+    configurePreviewServer(server) { server.middlewares.use(feedToApp) },
+    async transformIndexHtml(html, ctx) {
+      // The landing is index.html; app.html must pass through untouched.
+      if (!ctx.filename.endsWith('index.html')) return html
+      if (!html.includes(LANDING_PLACEHOLDER)) {
+        throw new Error(`index.html is missing ${LANDING_PLACEHOLDER}`)
+      }
+      const module = ctx.server
+        ? await ctx.server.ssrLoadModule(LANDING_PAGE_MODULE)
+        : await import(new URL(`.${LANDING_PAGE_MODULE}`, import.meta.url).href)
+      // A function replacer, not a string one: `String.replace` still parses
+      // `$&`/`` $` ``/`$'`/`$$` out of a STRING replacement even when the
+      // search side is a plain string with no capture groups, and the Card &
+      // Krueger abstract (src/landing/papers.js) puts a literal `$4.25` and
+      // `$5.05` into this exact string — the first data this ever carried a
+      // `$` in. A function's return value is inserted verbatim.
+      const built = module.buildLandingHtml()
+      return html.replace(LANDING_PLACEHOLDER, () => built)
+    },
   }
 }
 
@@ -176,6 +220,7 @@ export default defineConfig(({ command, mode }) => {
   return {
     base: BASE_PATH,
     plugins: [
+      landingPrerender(),
       react(),
       tailwindcss(),
       VitePWA({
@@ -185,7 +230,7 @@ export default defineConfig(({ command, mode }) => {
         // registration script would double-register.
         injectRegister: false,
         // public/manifest.webmanifest already exists and is already linked
-        // from index.html -- the plugin must not generate a second one.
+        // from app.html -- the plugin must not generate a second one.
         manifest: false,
         workbox: {
           // The plugin only wires `skipWaiting`/`clientsClaim` on for us when
@@ -262,17 +307,21 @@ export default defineConfig(({ command, mode }) => {
     ],
     build: {
       rollupOptions: {
-        // Two pages, one build: the app and the privacy policy, which stops
-        // being a loose file in public/ so that it can share the app's tokens
-        // and self-hosted faces instead of copying them.
+        // Three pages, one build: the app, the landing, and the privacy
+        // policy (which stops being a loose file in public/ so that it can
+        // share the app's tokens and self-hosted faces instead of copying
+        // them).
         //
-        // The app's key MUST stay `index`. Rollup names the entry chunk after
-        // it, and PRECACHE_GLOB_PATTERNS above asks the service worker to
-        // precache `assets/index-*.js` and `assets/index-*.css` by name.
-        // Calling it `app` builds fine and silently ships a service worker
-        // whose boot set is missing the app itself — workbox only warns.
+        // The app's key MUST stay `index`: Rollup names the entry chunk after
+        // it, and PRECACHE_GLOB_PATTERNS above asks the service worker for
+        // `assets/index-*.js` and `assets/index-*.css` by name. Calling it
+        // `app` builds fine and silently ships a service worker whose boot
+        // set is missing the app itself — workbox only warns. The FILE is
+        // now app.html because `/` belongs to the landing, which is what the
+        // filesystem serves for index.html without any rewrite.
         input: {
-          index: fileURLToPath(new URL('./index.html', import.meta.url)),
+          index: fileURLToPath(new URL('./app.html', import.meta.url)),
+          landing: fileURLToPath(new URL('./index.html', import.meta.url)),
           privacy: fileURLToPath(new URL('./privacy.html', import.meta.url)),
         },
       },

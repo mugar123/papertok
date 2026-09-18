@@ -1,0 +1,769 @@
+@import '../legal/static-page.css';
+@import './motion.css';
+
+.lp-wrap { width: min(1200px, calc(100% - 40px)); margin: 0 auto; }
+.lp-main { display: block; }
+/* Not a control and never a tab stop — the skip link is what moves focus here
+   programmatically (via the browser's own fragment-navigation, now that
+   page.js gives it tabindex="-1"), and a keyboard user never lands here from
+   their own Tab press. The app's own #main-content (App.jsx) is the same
+   case for the same reason: measured live, a 2px ring around a box this
+   tall draws its top edge under the sticky bar and the rest of it below the
+   fold — invisible in practice, and indistinguishable from a rendering bug
+   if it ever were seen. Scoped to `.lp-main` (not a bare `#main-content`)
+   so this cannot reach a different page's own element of that id sharing
+   this stylesheet. */
+#main-content.lp-main:focus { outline: none; }
+.lp-h1 { font-family: var(--font-serif); font-size: clamp(2.75rem, 6.4vw, 5.75rem); font-weight: var(--fw-regular); line-height: 0.98; letter-spacing: -0.03em; margin: 0; color: var(--text-on-brand); text-wrap: balance; }
+.lp-h2 { font-family: var(--font-serif); font-size: clamp(2rem, 3vw, 2.75rem); font-weight: var(--fw-regular); line-height: 1.08; letter-spacing: -0.02em; margin: 0; text-wrap: pretty; }
+.lp-body { font: var(--fw-regular) 1.0625rem/1.6 var(--font-body); color: var(--text-secondary); margin: 0; max-width: 40ch; }
+.lp-lede { font: var(--fw-regular) 1.1875rem/1.55 var(--font-body); color: var(--text-on-brand); margin: 0; max-width: 32ch; }
+
+/* The highlight: a band on paper, a thin rule on ink. */
+.lp-hl { box-shadow: inset 0 -0.42em 0 var(--brand-yellow); padding: 0 0.04em; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+/* On ink the band is the wordmark's own, to the declaration: `inset 0
+   -0.32em` is what draws the yellow behind "Tok" in .lp-wordmark
+   (static-page.css). It is not the light theme's 0.42em, and the
+   difference is the whole point: at 42% the band climbs into white
+   letters and eats half of them, which is what got it replaced by a
+   hairline rule in the first place. At the wordmark's 32% it sits under
+   the baseline, where only the descenders cross it, and the mark reads as
+   the same mark the logo makes. */
+[data-theme="dark"] .lp-hl, .lp-close .lp-hl { box-shadow: inset 0 -0.32em 0 var(--brand-yellow); text-decoration: none; }
+
+/* The app's machine voice: ids, counts, categories, timestamps, source
+   names. Used since task 6 (the reader's kicker and its uses counter,
+   REWRITE.cost) but never actually defined until now — both rendered in
+   whatever the surrounding element's own font was, not the mono-uppercase
+   voice the class name promises. Task 9's Research window leans on it
+   heavily (the running head, every stat label, the topics note, the forme
+   label), which is what surfaced the gap. */
+.lp-eyebrow { font: var(--mono-label); letter-spacing: var(--mono-track); text-transform: uppercase; color: var(--text-tertiary); }
+.lp-eyebrow--ink { color: var(--text-primary); }
+.lp-eyebrow--oa { border-bottom: 2px solid var(--tint-green-fg); padding-bottom: 2px; }
+
+/* ── Sections ── */
+.lp-sec { padding: 104px 0; }
+.lp-cols { display: grid; grid-template-columns: 420px minmax(0, 1fr); gap: 96px; align-items: start; }
+.lp-cols--centre { align-items: center; }
+.lp-head { display: flex; flex-direction: column; gap: 20px; }
+
+/* ── Hero ── */
+.lp-hero { background: var(--brand-yellow); padding: 72px 0 96px; }
+.lp-hero__grid { display: grid; grid-template-columns: 520px minmax(0, 1fr); gap: 72px; align-items: center; }
+.lp-hero__claim { display: flex; flex-direction: column; gap: 36px; }
+.lp-hero__cta { display: flex; align-items: center; gap: 18px; margin: 0; flex-wrap: wrap; }
+.lp-hero__note { font: var(--fw-regular) 0.9375rem/1.4 var(--font-body); color: var(--text-on-brand); opacity: 0.8; }
+.lp-sheet { background: var(--bg-figure-plate); color: var(--text-primary); padding: 44px 44px 28px; border-radius: 2px; box-shadow: 0 24px 60px rgba(17, 19, 24, 0.18), 0 2px 6px rgba(17, 19, 24, 0.08); display: flex; flex-direction: column; gap: 24px; width: min(560px, 100%); }
+/* The hero is paper and yellow in BOTH themes: --bg-figure-plate does not
+   flip (variables.css's own note: "theming the plate does not theme the ink
+   on it"), and neither does --brand-yellow. So the ink ON them — everything
+   paper(), chip(), .lp-btn, .lp-iconbtn, .lp-deck__skip and .lp-avatar name —
+   cannot flip either, or the sheet stays white while its text, borders,
+   chips and buttons quietly repaint for a dark page they are not on:
+   measured, the abstract fell to 2.4:1, the icon buttons to 1.1:1
+   (invisible), the chips became dark pills on paper, and the Skip button's
+   hover went ink-on-ink. Every value below is copied from :root, not from
+   :root[data-theme='dark'] — sheetPalette.test.js parses both and holds
+   this copy to that source, so a retuned token in variables.css fails here
+   instead of drifting silently. This supersedes the single `.lp-sheet`
+   color override the first pass shipped: that value is `--text-primary`,
+   pinned below, and every descendant that does not set its own color still
+   inherits it. */
+[data-theme="dark"] .lp-hero {
+  /* Ink */
+  --text-primary: #111318;
+  --text-secondary: #5b6270;
+  --text-tertiary: #6b7280;
+  --text-inverse: #ffffff;
+  /* Accents (the plain "Open the feed" button and its hover, and every
+     focus ring inside the hero) */
+  --accent-primary: #111318;
+  --accent-primary-hover: #2b2f38;
+  --focus-ring: #111318;
+  /* The AI button's soft-yellow surface, which DOES flip at :root even
+     though the plain yellow does not (variables.css: "on the dark wash it
+     becomes the brand yellow itself, so the control still says 'yellow'
+     where the surface alone reads as brown") — exactly backwards for a
+     button that is always on white paper, never on a dark wash. */
+  --brand-yellow-soft: #fff4c9;
+  --text-on-brand-soft: #111318;
+  /* Semantic status tints — the chips */
+  --tint-blue-bg: #eef4ff;
+  --tint-blue-fg: #1a4fb4;
+  --tint-blue-line: #cddffb;
+  --tint-green-bg: #ecfdf3;
+  --tint-green-fg: #067647;
+  --tint-green-line: #c3ecd5;
+  --tint-amber-bg: #fff8e6;
+  --tint-amber-fg: #96650a;
+  --tint-amber-line: #f6e3b0;
+  --tint-neutral-bg: #f4f4f5;
+  --tint-neutral-fg: #4a5160;
+  --tint-neutral-line: #e4e4e7;
+  /* Borders, and the Skip button's hover ground */
+  --border-subtle: #e6e7ea;
+  --border-default: #d3d5db;
+  --border-strong: #a9aeba;
+  --bg-secondary: #f7f7f8;
+  /* Category accents — only the three fields HERO_PAPERS actually uses;
+     `--lp-accent` is set inline per paper from one of these. */
+  --gradient-physics: #4f46e5;
+  --gradient-bio: #15803d;
+  --gradient-econ: #0f766e;
+}
+/* Deck stacking is armed-only (motion.js's armDeck adds .is-armed): unarmed,
+   slides stay in normal flow so the one unhidden slide sizes the sheet on
+   its own. The moment `.is-armed` lands, all four slides (the three papers
+   plus the clone armDeck appends) become `position: absolute` at once —
+   none of them in flow any more, so `.lp-deck` has nothing left to size
+   itself on.
+   (C) armDeck's own `measure()` is what fills that gap: it reads the
+   tallest slide's `offsetHeight` and writes that PLAIN PIXEL VALUE (no
+   token involved) directly onto `.lp-deck__reel`'s `style.height`. The reel
+   is `.lp-deck`'s only in-flow child, so `.lp-deck` takes the reel's height
+   the same way any block parent takes the height of ordinary content — no
+   separate height rule is needed on `.lp-deck` itself, and nothing here
+   jumps: `measure()` runs before `.is-armed` is added and before the first
+   paint the browser commits after that, same as any other synchronous DOM
+   write. Two later triggers re-measure the same way: a ResizeObserver on
+   the SLIDES themselves (armDeck, not a window/document listener — see
+   motion.js's own comment on why it isn't the sheet), and
+   `document.fonts.ready`, since the first measurement above runs against
+   whatever fallback metrics are available at DOMContentLoaded — the
+   self-hosted serif/mono faces have no preload and may not have painted a
+   glyph yet. */
+.lp-deck { position: relative; }
+.lp-deck__reel { position: relative; }
+.lp-sheet.is-armed .lp-deck { overflow: hidden; }
+.lp-sheet.is-armed .lp-hero__slide { position: absolute; inset: 0 0 auto 0; }
+.lp-sheet.is-armed .lp-deck__reel { transition: transform 400ms var(--ease-out-cubic); will-change: transform; }
+/* The teleport's own escape hatch — and it has to OUTRANK the rule above,
+   not merely follow it: `.lp-deck__reel.is-jumping` alone is two classes,
+   one fewer than `.lp-sheet.is-armed .lp-deck__reel`'s three, so the armed
+   transition would otherwise win the cascade on specificity regardless of
+   source order and every "jump" (the wraparound settle, and the first leg
+   of prev() from the first paper) would visibly animate across the whole
+   reel instead of teleporting. Matching the armed rule's own ancestor
+   context here, plus `.is-jumping`, is what actually outranks it. */
+.lp-sheet.is-armed .lp-deck__reel.is-jumping { transition: none; }
+/* An author rule that sets `display` always beats the user-agent's own
+   `[hidden] { display: none }`, regardless of selector specificity — origin
+   order, not the cascade, decides that fight. Both elements ship `hidden`
+   pre-JS (decision D), so both need their own `[hidden]` override or they
+   render anyway, `display` and all. */
+.lp-deck__foot { display: flex; align-items: center; justify-content: space-between; padding-top: 16px; border-top: 1px solid var(--border-subtle); }
+.lp-deck__foot[hidden] { display: none; }
+.lp-deck__skip { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border: 1px solid var(--border-default); border-radius: var(--radius-lg); background: #fff; color: #111318; font: var(--fw-medium) 0.875rem/1 var(--font-body); cursor: pointer; }
+.lp-deck__skip[hidden] { display: none; }
+.lp-deck__skip:hover { background: var(--bg-secondary); }
+.lp-deck__count { font: var(--fw-medium) 0.75rem/1 var(--font-mono); color: var(--text-tertiary); }
+
+/* ── A paper, as PaperCard sets it ── */
+.lp-paper { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.lp-paper__accent { width: 34px; height: 3px; background: var(--lp-accent); }
+.lp-paper__meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0; font: var(--mono-label); letter-spacing: var(--mono-track); text-transform: uppercase; color: var(--text-secondary); }
+.lp-paper__field { font-weight: var(--fw-semibold); color: var(--lp-accent); }
+.lp-paper__dot { color: var(--border-strong); }
+.lp-paper__title { font-family: var(--font-serif); font-weight: var(--fw-semibold); line-height: 1.16; letter-spacing: -0.015em; margin: 0; font-size: 1.875rem; text-wrap: pretty; }
+.lp-paper--sheet .lp-paper__title { font-size: clamp(1.5rem, 2.4vw, 2.125rem); }
+/* --lg matches the base size (the reader's card is the "full" paper size);
+   --sm is unused today but kept for the next size this pattern needs. */
+.lp-paper--lg .lp-paper__title { font-size: 1.875rem; }
+.lp-paper--sm .lp-paper__title { font-size: 1.25rem; }
+.lp-paper__authors { display: flex; align-items: center; gap: 12px; margin: 0; padding-bottom: 14px; border-bottom: 1px solid var(--border-subtle); font: var(--fw-medium) var(--fs-sm)/1.4 var(--font-body); color: var(--text-secondary); }
+/* Truncates instead of wrapping, matching `.pc-author-names` — without
+   this a long byline (the LIGO sheet's "et al. (LIGO Scientific
+   Collaboration and Virgo Collaboration)") wraps to two lines. */
+.lp-paper__author-names { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.lp-avatars { display: flex; flex: none; }
+/* `--i` (set inline per avatar, page.js) is the same stacking index
+   `.pc-author-avatar` uses: `margin-left` on every avatar but the first
+   overlaps it under its predecessor without eating into the gap to the
+   byline, and a DEscending z-index keeps the first avatar on top — the
+   app's own order, not last-on-top. */
+/* `color: var(--text-secondary)`, not `--text-tertiary` — axe-core measured the
+   tertiary pairing on `--tint-neutral-bg` at 4.39:1 in light theme (both inside
+   `.lp-hero`, which pins the light tokens in both site themes, and outside it,
+   wherever the site theme itself is light), just under the 4.5:1 WCAG 1.4.3
+   floor. These initials are `aria-hidden` (decorative, redundant with the real
+   byline text next to them), but 1.4.3 is about what a sighted low-vision
+   reader can perceive, not about what a screen reader is told, so aria-hidden
+   does not exempt them. `--text-secondary` on the same background measures
+   5.58:1 (landing-axe.mjs re-run, 2026-09). */
+.lp-avatar { width: 24px; height: 24px; margin-left: calc(var(--i, 0) * -7px); position: relative; z-index: calc(3 - var(--i, 0)); border-radius: var(--radius-full); border: 1px solid #fff; background: var(--tint-neutral-bg); display: flex; align-items: center; justify-content: center; font: var(--fw-medium) 0.625rem/1 var(--font-mono); color: var(--text-secondary); }
+.lp-paper__abstract { font-family: var(--font-serif); font-size: 1.0625rem; line-height: 1.6; color: var(--text-secondary); margin: 0; }
+.lp-paper__abstract::first-letter { float: left; margin: 0.06em 0.08em 0 0; font-size: 2.9em; line-height: 0.82; font-weight: var(--fw-semibold); color: var(--lp-accent); }
+.lp-paper__actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.lp-paper__spacer { flex: 1; }
+.lp-btn--md { min-height: 44px; padding: 0 18px; border-radius: var(--radius-lg); }
+/* Rest, hover and focus all stay on the soft wash: PaperReader's own
+   `variant="brand"` flips this to the full `--brand-yellow` on hover, but
+   that would be a fifth "ground" on this page (page.test.js counts them),
+   on top of the two the reader's own reused pieces already force — see
+   .lp-levels::after and @keyframes lpInvite below, both pinned by tests
+   copied verbatim from the app. Border and text carry the interaction
+   instead: warmer border, held colour, and — the one motion this page keeps
+   from the app's own button — a small scale swell on `:active`-equivalent
+   states, transitioned rather than snapped so it can hand off cleanly to
+   whatever state follows (see @keyframes lpInvite's own comment). */
+.lp-btn--ai {
+  background: var(--brand-yellow-soft);
+  border-color: var(--tint-amber-line);
+  color: var(--text-on-brand-soft);
+  transition: border-color 150ms cubic-bezier(0.4, 0, 0.2, 1), color 150ms cubic-bezier(0.4, 0, 0.2, 1), scale 260ms var(--ease-out-cubic);
+}
+.lp-btn--ai:hover,
+.lp-btn--ai:focus-visible {
+  border-color: var(--brand-orange);
+}
+.lp-iconbtn { width: 40px; height: 40px; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); display: inline-flex; align-items: center; justify-content: center; color: var(--text-primary); }
+.lp-iconbtn--graph { border-color: var(--tint-blue-line); background: var(--tint-blue-bg); color: var(--gradient-physics); }
+.lp-chips { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.lp-chip { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 6px; border: 1px solid var(--tint-neutral-line); border-radius: var(--radius-sm); background: var(--tint-neutral-bg); color: var(--tint-neutral-fg); font: var(--fw-medium) 0.6875rem/1.35 var(--font-mono); white-space: nowrap; }
+.lp-chip--blue { border-color: var(--tint-blue-line); background: var(--tint-blue-bg); color: var(--tint-blue-fg); }
+.lp-chip--green { border-color: var(--tint-green-line); background: var(--tint-green-bg); color: var(--tint-green-fg); }
+.lp-chip--amber { border-color: var(--tint-amber-line); background: var(--tint-amber-bg); color: var(--tint-amber-fg); }
+.lp-chip--plain { background: transparent; }
+
+/* ── The pile, as a picker wheel ──
+   A WINDOW with a barrel behind it, and the barrel holds SLOTS rather than
+   papers — that distinction is the whole thing. Put every paper on the
+   barrel and the arc it needs runs past ±90°, where rows turn edge-on, pass
+   behind, and fold back over the ones in front, mirrored. SLOTS with the
+   papers moving THROUGH them keeps the arc bounded no matter how long the
+   list is (WHEEL.SLOTS in papers.js: thirteen of them, ±54° at the two
+   outermost — the comment there explains why thirteen and not nine).
+
+   The curvature is positional, never per-row: each slot is pinned to the
+   surface at its own fixed angle and the barrel is what turns, so which row
+   faces you is just geometry. Nothing recalculates its own tilt — the
+   moment the papers started moving, anything keyed to WHICH row it is would
+   have become wrong.
+
+   The fading works the same way: a mask on the window, so a row is dim
+   because of where it is, not because of which row it is.
+
+   --lp-row-h/--lp-step/--lp-radius have to match WHEEL in papers.js exactly
+   — page.js writes a slot's angle from the same numbers and motion.js turns
+   the barrel by them. A value that disagreed would not throw, it would just
+   bend wrong. */
+.lp-pile {
+  --lp-row-h: 52px;
+  --lp-step: 9deg;
+  --lp-radius: 330px;
+
+  position: relative;
+  /* Taller than the slots span, and the margin is the whole point — see the
+     mask below. */
+  height: 520px;
+  perspective: 1100px;
+  /* The selection line is the middle of the window, so that is where the
+     viewer stands. */
+  perspective-origin: 50% 50%;
+
+  /* SIX stops, not four, and the flat transparent band at each end is what
+     was missing.
+
+     A row does not slide in from outside the window: it is HANDED to the
+     outermost slot the instant the wheel passes a detent. So whatever alpha
+     that slot sits at is the alpha the paper appears at. With four stops the
+     ramp started at the very top of the window and the outer slot sat at
+     0.20–0.56 — measured — which is why a title arrived already legible,
+     out of nothing.
+
+     The flat band holds the outermost slot at exactly zero. A paper is born
+     invisible, and the two slots after it are the ramp it climbs. */
+  --lp-veil: linear-gradient(
+    to bottom,
+    transparent 0%, transparent 6.5%,
+    black 19%, black 81%,
+    transparent 93.5%, transparent 100%
+  );
+  -webkit-mask-image: var(--lp-veil);
+  mask-image: var(--lp-veil);
+}
+
+.lp-pile-wrap { position: relative; }
+
+.lp-pile__barrel {
+  list-style: none; margin: 0; padding: 0;
+  position: absolute; inset: 0;
+  transform-style: preserve-3d;
+  /* Pushed back by exactly the radius, so the slot on the line sits at z = 0.
+     Without it the front row is shoved toward the viewer and perspective
+     MAGNIFIES it — measured at 1087px inside a 760px window, which threw the
+     venue column clean off the left edge. The wider the barrel the worse it
+     gets, so this stops being optional the moment the radius grows.
+
+     motion.js writes `rotate` here, and never more than one step's worth: the
+     long travel is the content advancing, not the cylinder spinning. */
+  translate: 0 0 calc(var(--lp-radius) * -1);
+}
+
+.lp-pile__slot {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: var(--lp-row-h);
+  margin-top: calc(var(--lp-row-h) / -2);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 4px;
+  /* Each slot at its own fixed angle on the surface. Fixed forever — the
+     barrel moves, the slots do not, and the papers move between them. */
+  transform: rotateX(calc(var(--k) * var(--lp-step))) translateZ(var(--lp-radius));
+
+  /* NO rule between the rows, and that is not a simplification — it is the
+     one thing that was making the spin fizz.
+
+     A 1px line is the worst case for resampling. Under perspective a row's
+     bottom edge lands on a whole device pixel almost never, so the line is
+     shared between two pixel rows, and the share CHANGES every frame while
+     the barrel turns. Measured over one spin: 67% of the edges fell between
+     two pixels, and 350 times across 90 frames a line flipped between crisp
+     and split — close to four lines strobing per frame, all thirteen of them
+     doing it at once. That reads as flicker, and it makes smooth movement
+     look rough.
+
+     It was also wrong as a picker. A real one has no rules between its cells;
+     it has a selection band, and this design has that below. The flat list on
+     a phone is a different object and keeps its rules, because nothing there
+     is transformed and nothing moves.
+
+     `backface-visibility` went with it: no slot comes within 36° of edge-on,
+     so it never had a back to hide, and it forced a rendering path for
+     nothing. */
+}
+
+.lp-pile__venue {
+  flex: 0 0 92px;
+  text-align: right;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  /* At ANY width: a venue string that doesn't fit its column must never
+     wrap. Wrapping is a vertical escape hatch a fixed-width column should
+     not have — on the desktop barrel a taller slot sits off the cylinder's
+     surface (see .lp-pile__slot above), and on the phone flat list it makes
+     one row taller than its neighbours for no reason a reader can see. The
+     guarantee has to live here, not in a character-count assumption about
+     PILE's current contents — see the phone override below for what that
+     assumption got wrong. */
+  white-space: nowrap;
+}
+
+/* A picker's cells are uniform: one line each, no wrapping. A row that grew
+   to two lines would sit off the surface of the cylinder and the geometry
+   would stop being true. */
+.lp-pile__title {
+  font-family: var(--font-serif);
+  font-size: 1.125rem;
+  font-weight: var(--fw-medium);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* The selection line — two hairlines, the way this design marks anything.
+   Without them the front row is merely the sharpest one; with them it is the
+   CHOSEN one, which is what a picker is for. */
+.lp-pile::before,
+.lp-pile::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  height: 1px;
+  background: var(--border-strong, var(--border-default));
+  z-index: 2;
+  pointer-events: none;
+}
+.lp-pile::before { top: calc(50% - (var(--lp-row-h) / 2)); }
+.lp-pile::after { top: calc(50% + (var(--lp-row-h) / 2)); }
+
+/* ── Signals ── */
+.lp-signals__grid { list-style: none; margin: 0; padding: 8px 0 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px 32px; }
+.lp-signal { display: flex; flex-direction: column; gap: 8px; padding-top: 14px; border-top: 1px solid var(--border-subtle); }
+.lp-signal__name { font: var(--fw-medium) 0.9375rem/1.3 var(--font-body); color: var(--text-primary); }
+.lp-signal__what { font-family: var(--font-serif); font-size: 1.125rem; line-height: 1.4; color: var(--text-secondary); }
+@media (max-width: 1000px) { .lp-signals__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Phones: the barrel is a flat list of seven with the centre row between two rules. */
+@media (max-width: 767px) {
+  .lp-pile { height: auto; perspective: none; -webkit-mask-image: none; mask-image: none; }
+  .lp-pile__barrel { translate: none; transform-style: flat; position: static; }
+  .lp-pile__slot { position: static; transform: none; margin: 0; height: auto; padding: 10px 0; }
+  .lp-pile__slot:nth-child(-n+3), .lp-pile__slot:nth-child(n+11) { display: none; }
+  .lp-pile__slot:nth-child(7) { border-top: 1px solid var(--border-ink); border-bottom: 1px solid var(--border-ink); }
+  /* The desktop selection line is two 1px rules fixed at 50% ± 26px, sized
+     for the 520px/52px-row barrel — reset to `height: auto` here, they
+     resolve against the seven-row block instead of the wheel, which is only
+     right by coincidence of the row height. The phone fallback draws its
+     band with the centre row's own border (above) instead, so the desktop
+     hairlines are switched off rather than left to land wherever the new
+     height happens to put them. */
+  .lp-pile::before, .lp-pile::after { display: none; }
+  /* A picker's cells are one line each (see .lp-pile__title above) because
+     the barrel is a fixed-height cylinder; the flat list has no such limit,
+     but a phone-width column still can't afford PILE's longest titles
+     wrapping freely — seven of them unclamped ran to as much as the
+     viewport's height on their own. Two lines is enough to carry the
+     argument (there is more here than fits) without turning a glanceable
+     list into a wall of text; the desktop barrel already ellipsises rather
+     than wraps, so this keeps the component to one behaviour changed
+     (nowrap → clamp), not two (nowrap → free wrap). */
+  .lp-pile__title {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  /* Narrower than the desktop's 92px, same as the prototype's own phone
+     block. This used to be justified by "every PILE venue string is ≤9
+     characters" — false: 'Science 04' and 'Science 12' are ten, the
+     longest in PILE (papers.test.js pins that length so a future entry
+     that outgrows it fails a test instead of silently wrapping a row).
+     What actually keeps a row from growing is the base rule's
+     white-space: nowrap above, not a character count. Measured at this
+     column width, in this font (600 11px IBM Plex Mono + the 0.06em
+     mono-track, phone-emulated Chrome, canvas measureText including
+     letter-spacing): both ten-character strings render at 72.6px, under
+     76px with ~3.4px to spare, so the width stays — nowrap is what makes
+     that margin load-bearing instead of coincidental. */
+  .lp-pile__venue { flex: 0 0 76px; }
+}
+
+/* ── The rewrite, as PaperReader sets it ──
+   One rectangle, three states: the paper with its button, the skeleton, and
+   the passage. They share a grid cell, so the box stands at its full height
+   from the first frame and the screen below it never learns that anything
+   happened. `min-height` rather than `height`: a line that wraps one more
+   time than it was measured for pushes the box out instead of being
+   clipped.
+
+   In the HTML only the reader exists — the card ships `hidden`, and the
+   prerendered page is the finished passage. motion.js (armRewrite) is what
+   turns this into a sequence, behind the same gate as the rest of the
+   page's motion; the tabs (armLevels) are wired unconditionally, ahead of
+   that gate, so they work even where nothing animates. */
+.lp-rewrite { display: grid; min-height: 460px; }
+.lp-rewrite > * { grid-area: 1 / 1; min-width: 0; }
+
+.lp-rewrite__card { display: flex; flex-direction: column; }
+.lp-rewrite__card[hidden] { display: none; }
+/* The action row sits 32px under the abstract and NOT pinned to the foot of
+   the box: the card is shorter than the reader, and `margin-top: auto`
+   threw the whole difference into the middle. The card has no container of
+   its own, so what is left over at the bottom is indistinguishable from the
+   section's own air. */
+.lp-rewrite__actions {
+  margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--border-subtle);
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+}
+
+.lp-rewrite__reader { display: flex; flex-direction: column; }
+.lp-rewrite__reader > * { flex: none; }
+
+/* The reader's own status line: what it is, and what it costs. */
+.lp-rewrite__status {
+  margin: 0 0 16px; min-height: 24px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.lp-rewrite__kicker { display: inline-flex; align-items: center; gap: 6px; }
+
+/* A meter rather than a number alone: "nine left" reads as plenty until you
+   see how short the row is. PaperReader.css draws one segment per use. */
+.lp-uses {
+  display: inline-flex; align-items: center; gap: 6px; padding: 2px 7px;
+  border: 1px solid var(--border-default); border-radius: var(--radius-sm);
+  background: var(--bg-primary); color: var(--text-tertiary);
+  font: var(--fw-medium) 0.625rem/1.5 var(--font-mono); white-space: nowrap;
+}
+.lp-uses__meter { display: inline-flex; gap: 2px; }
+.lp-uses__seg { width: 3px; height: 9px; border-radius: 1px; background: var(--accent-primary); }
+/* The page rests on the finished rewrite, so the spent segment ships grey.
+   Only the sequence hands it back, while the use has not been spent yet —
+   see motion.css. */
+.lp-uses__seg[data-spent] { background: var(--border-default); }
+
+.lp-levels-frame {
+  border: 1px solid var(--border-default); border-radius: var(--radius-md);
+  overflow: hidden; align-self: flex-start;
+  min-width: 340px; width: 462px; max-width: 100%;
+}
+.lp-panel {
+  flex: 1; margin-top: 20px;
+  background: var(--bg-primary); border: 1px solid var(--border-subtle);
+  padding: 28px 32px;
+}
+
+/* The skeleton, drawn before the text exists: a heading bar and five uneven
+   lines at the pitch of the real type, so the swap barely moves. */
+.lp-ghost { align-self: start; transform-origin: top center; }
+.lp-ghost[hidden] { display: none; }
+.lp-ghost__head {
+  margin: 0 0 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  color: var(--text-tertiary);
+}
+.lp-ghost__head small { font: 400 0.6875rem/1.5 var(--font-mono); color: var(--text-tertiary); }
+/* The stage label reuses .lp-eyebrow (the app's own mono metadata voice)
+   for its type instead of restating font/letter-spacing/uppercase/colour a
+   second time — this rule is left with only the visibility toggle motion.js
+   drives. */
+.lp-ghost__stage { display: none; }
+.lp-ghost__title { height: 20px; width: 44%; margin-bottom: 16px; border-radius: var(--radius-sm); }
+/* 12px bar + 17px gap = the 29px line pitch of the real passage. */
+.lp-ghost__lines { display: flex; flex-direction: column; gap: 17px; }
+.lp-ghost__line { display: block; height: 12px; width: var(--lp-w, 100%); border-radius: var(--radius-sm); }
+
+.lp-doc { display: flex; flex-direction: column; height: 100%; }
+/* An <h3>, not a <p>: as a paragraph `.lp-panel__level p` outranked it
+   (0,1,1 against 0,1,0) and the heading painted at body size. */
+.lp-doc__title {
+  font-family: var(--font-serif); font-size: 1.35rem; font-weight: var(--fw-semibold);
+  line-height: 1.25; color: var(--text-primary); margin: 0 0 16px;
+}
+.lp-doc__levels { display: grid; flex: 1; }
+.lp-doc__levels > * { grid-area: 1 / 1; }
+.lp-panel__level p { margin: 0 0 14px; font-size: 1.125rem; line-height: 1.75; color: var(--text-primary); }
+.lp-panel__level p:last-child { margin-bottom: 0; }
+/* The machine voice inside a sentence of prose, as the reader's own byline
+   sets it. */
+.lp-code { font: 0.8125rem/1.4 var(--font-mono); color: var(--text-primary); }
+
+/* A worked example of the rail the left column's copy describes, not a
+   disclaimer: one highlight, one note, so "write a note on it" is something
+   a reader can see rather than only read about. The rule is the one place
+   this section spends yellow as a LINE rather than a field or a chip. */
+.lp-note { display: flex; flex-direction: column; gap: 8px; margin: 18px 0 0; padding-left: 14px; border-left: 3px solid var(--brand-yellow); }
+.lp-note__kicker { font: var(--fw-medium) 0.75rem/1 var(--font-body); color: var(--text-secondary); }
+.lp-note p { font: var(--fw-regular) 0.875rem/1.5 var(--font-body); color: var(--text-primary); margin: 0; }
+
+/* ── Labels ── */
+.lp-labels__list { margin: 0; }
+.lp-labels__row { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 32px; align-items: center; padding: 18px 0; border-top: 1px solid var(--border-subtle); }
+.lp-labels__row:last-child { border-bottom: 1px solid var(--border-subtle); }
+.lp-labels__row dt, .lp-labels__row dd { margin: 0; }
+.lp-labels__row dd { font-family: var(--font-serif); font-size: 1.25rem; line-height: 1.4; }
+
+/* ── Follow: a figure, not a control ── */
+.lp-figure-ui { margin: 0; }
+.lp-follow__rows { display: flex; flex-direction: column; }
+.lp-follow__row { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 20px; align-items: center; padding: 22px 0; border-top: 1px solid var(--border-subtle); }
+.lp-follow__row:last-child { border-bottom: 1px solid var(--border-subtle); }
+.lp-follow__icon { width: 56px; height: 56px; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--bg-sunken); display: flex; align-items: center; justify-content: center; }
+.lp-follow__text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.lp-follow__name { font-family: var(--font-serif); font-size: 1.5rem; font-weight: var(--fw-semibold); line-height: 1.15; }
+.lp-follow__sub { font: var(--fw-regular) 0.75rem/1.3 var(--font-mono); color: var(--text-secondary); }
+
+/* ── Library: four lists, eight colours ── */
+.lp-stack { display: flex; flex-direction: column; gap: 48px; }
+.lp-library__head { display: grid; grid-template-columns: 420px minmax(0, 1fr); gap: 96px; align-items: end; }
+.lp-swatches { list-style: none; margin: 0; padding: 0; display: flex; gap: 10px; justify-content: flex-end; }
+.lp-swatch { width: 28px; height: 28px; border-radius: var(--radius-lg); }
+.lp-lists { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
+.lp-list-card { border: 1px solid var(--border-subtle); border-left: 3px solid var(--lp-list); border-radius: var(--radius-lg); background: var(--bg-card); padding: 24px 22px 22px; display: flex; flex-direction: column; gap: 14px; min-height: 220px; }
+.lp-list-card__icon { width: 40px; height: 40px; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--bg-sunken); display: flex; align-items: center; justify-content: center; color: var(--lp-list); }
+.lp-list-card__name { font-family: var(--font-serif); font-size: 1.25rem; font-weight: var(--fw-semibold); line-height: 1.2; }
+.lp-list-card__count { display: flex; align-items: center; gap: 10px; font: var(--fw-medium) 0.6875rem/1 var(--font-mono); letter-spacing: var(--mono-track); text-transform: uppercase; color: var(--text-secondary); }
+.lp-list-card__titles { border-top: 1px solid var(--border-subtle); padding-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.lp-list-card__titles span { font-family: var(--font-serif); font-size: 0.9375rem; line-height: 1.35; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lp-list-card__empty { font-family: var(--font-body) !important; color: var(--text-tertiary) !important; }
+@media (max-width: 1000px) { .lp-library__head { grid-template-columns: minmax(0, 1fr); gap: 24px; } .lp-swatches { justify-content: flex-start; } .lp-lists { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .lp-follow__row { grid-template-columns: 44px minmax(0, 1fr); } .lp-follow__row .lp-btn { grid-column: 2; justify-self: start; } .lp-follow__icon { width: 44px; height: 44px; } }
+
+/* ── The citation map ──
+   One SVG, drawn once on arrival (motion.css) rather than pinned to the
+   scroll. `.lp-plate--compact` is a second, separately-composed SVG
+   (graphMap.js) for phones — not the wide one scaled down — so the two are
+   swapped by `display`, never both visible at once. */
+.lp-map__head { display: grid; grid-template-columns: 560px minmax(0, 1fr); gap: 96px; align-items: end; }
+.lp-body--wide { max-width: 46ch; }
+.lp-plate { display: block; width: 100%; height: auto; }
+.lp-plate--compact { display: none; }
+@media (max-width: 1000px) { .lp-map__head { grid-template-columns: minmax(0, 1fr); gap: 20px; } }
+@media (max-width: 700px) { .lp-plate { display: none; } .lp-plate--compact { display: block; } }
+
+/* ── The Research edition, as a window onto the app ──
+   A fixed-height figure with its bottom cut by a mask — it does NOT capture
+   the scroll (no `.lp-pin`, no scroll-driven translate): the edition simply
+   ends, the way any other screen does, rather than costing 847 measured
+   pixels of extra scroll for a screen no wider than its neighbours. */
+.lp-window { margin: 0; position: relative; height: 880px; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 78%, rgba(0,0,0,0)); mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 78%, rgba(0,0,0,0)); }
+.lp-window__inner { border: 1px solid var(--border-subtle); border-bottom: none; border-radius: var(--radius-lg) var(--radius-lg) 0 0; background: var(--bg-card); padding: 36px 40px 0; }
+@media (max-width: 700px) { .lp-window__inner { padding: 24px 20px 0; } }
+
+/* The app's front page, reproduced. Scoped to `.lp-window` rather than a
+   bare `.lp-research` selector: the SECTION itself also carries the class
+   `lp-research` (every section in this file is named after its own class,
+   for the page.test.js order check), and an unscoped rule here would also
+   paint a border, a card background and this flex layout onto the whole
+   full-bleed section — not just the picture inside it. */
+.lp-window .lp-research { border: 1px solid var(--border-default); background: var(--bg-primary); padding: 24px 28px 28px; display: flex; flex-direction: column; gap: 18px; }
+.lp-research__masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+.lp-research__masthead > div { display: flex; flex-direction: column; gap: 10px; }
+.lp-research__title { font-family: var(--font-serif); font-size: 2.875rem; font-weight: var(--fw-bold); line-height: 0.95; letter-spacing: -0.03em; }
+.lp-research__pill { display: inline-flex; align-items: center; padding: 8px 12px; border: 1px solid var(--border-default); border-radius: var(--radius-md); font: 0.75rem/1 var(--font-mono); color: var(--text-secondary); white-space: nowrap; }
+.lp-research__periods { display: flex; align-items: baseline; gap: 20px; flex-wrap: wrap; }
+.lp-period { font-size: 1rem; line-height: 1.2; color: var(--text-secondary); }
+/* The one place the brand yellow lives in the reproduced app UI (see the
+   Lead story badge below, the other). Both are inside the aria-hidden
+   window, never a page-level ground. */
+.lp-period.is-active { color: var(--text-primary); border-bottom: 3px solid var(--brand-yellow); padding-bottom: 3px; }
+.lp-research__rule { height: 2px; background: var(--text-primary); margin-top: -6px; }
+/* The rule's own animated fill only mattered while the edition was pinned
+   to the scroll (removed, decision C) — the rule above is already solid,
+   so the fill span stays permanently hidden rather than carrying dead
+   scroll-progress CSS forward. */
+.lp-research__fill { display: none; }
+.lp-research__body { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 36px; align-items: start; }
+.lp-research__lead { display: flex; flex-direction: column; gap: 14px; }
+.lp-research__kicker { width: 48px; height: 3px; background: var(--accent-rose); }
+/* `.sr-lead-label` (ScientificReport.css) verbatim: the same padding,
+   mono-uppercase voice and full `--brand-yellow` the real "Lead story"
+   badge uses, not a softened landing-page substitute. */
+.lp-research__badge { align-self: flex-start; padding: 3px 8px; background: var(--brand-yellow); color: var(--text-on-brand); font: var(--mono-label); letter-spacing: var(--mono-track); text-transform: uppercase; }
+.lp-research__field { font-weight: var(--fw-semibold); color: var(--accent-rose); }
+.lp-research__spread { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr); gap: 28px; align-items: start; }
+.lp-research__spread > div { display: flex; flex-direction: column; gap: 14px; }
+.lp-research__headline { font-family: var(--font-serif); font-size: 2rem; font-weight: var(--fw-semibold); line-height: 1.1; letter-spacing: -0.02em; margin: 0; }
+.lp-research__authors { margin: 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--text-secondary); }
+.lp-research__abstract { margin: 0; padding-left: 28px; border-left: 1px solid var(--border-subtle); font-family: var(--font-serif); font-size: 0.9375rem; line-height: 1.6; color: var(--text-secondary); }
+.lp-research__rail { display: flex; flex-direction: column; }
+.lp-stat { display: flex; align-items: flex-start; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--border-subtle); }
+.lp-stat__icon { width: 26px; height: 26px; border: 1px solid var(--border-subtle); background: var(--tint-neutral-bg); flex: none; }
+.lp-stat > span:last-child { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+.lp-stat__value { font: var(--fw-semibold) var(--fs-2xl)/1 var(--font-body); letter-spacing: -0.02em; }
+.lp-topics__head { display: flex; flex-direction: column; gap: 4px; padding-top: 16px; }
+.lp-topics__note { font: 0.75rem/1.5 var(--font-mono); color: var(--text-tertiary); }
+.lp-topic { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; }
+.lp-topic__row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.lp-topic__name { font-size: var(--fs-sm); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lp-topic__pct { font: var(--fw-medium) var(--fs-sm)/1 var(--font-body); color: var(--tint-green-fg); flex: none; }
+.lp-topic__bar { height: 3px; background: var(--border-subtle); display: block; }
+.lp-topic__bar span { height: 3px; background: var(--tint-green-fg); display: block; }
+.lp-topic__works { font: 0.75rem/1.4 var(--font-mono); color: var(--text-tertiary); }
+/* There is no pinned/scrolled state any more (decision C), so the running
+   head only ever shows its first line — the second exists in the markup
+   (its own sentence, read once by a screen reader) but never on screen. */
+.lp-runhead { display: block; }
+.lp-runhead__b { display: none; }
+
+/* The forme: six columns, every row closing on the measure. Anatomy copied
+   from src/components/Report/ScientificReport.css. */
+.lp-forme__label { padding-bottom: 12px; margin: 36px 0 0; border-bottom: 1px solid var(--text-primary); display: block; }
+.lp-forme { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0; }
+.lp-brief { position: relative; display: flex; flex-direction: column; min-width: 0; padding: 20px 20px 24px; border-bottom: 1px solid var(--border-default); }
+.lp-brief--s2 { grid-column: span 2; }
+.lp-brief--s3 { grid-column: span 3; }
+.lp-brief--s4 { grid-column: span 4; }
+.lp-brief--s6 { grid-column: span 6; }
+.lp-brief:not(.is-row-end) { border-right: 1px solid var(--border-default); }
+.lp-brief.is-row-start { padding-left: 0; }
+.lp-brief.is-row-end { padding-right: 0; }
+.lp-brief__rule { display: block; width: 28px; height: 3px; margin-bottom: 12px; background: var(--lp-field, var(--text-primary)); }
+.lp-brief__heavy { display: block; height: 1px; margin-bottom: 12px; background: var(--text-primary); }
+.lp-brief__kicker { display: flex; align-items: baseline; gap: 8px; margin-bottom: 9px; min-width: 0; font: var(--mono-label); letter-spacing: var(--mono-track); text-transform: uppercase; }
+.lp-brief__field { color: var(--lp-field, var(--text-primary)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lp-brief__year { margin-left: auto; flex: 0 0 auto; color: var(--text-tertiary); }
+/* The app's own areas, resolved the way areaAccent.js resolves them. */
+.lp-brief[data-field='bio'] { --lp-field: var(--gradient-bio, #15803d); }
+.lp-brief[data-field='med'] { --lp-field: var(--accent-rose, #be123c); }
+.lp-brief[data-field='physics'] { --lp-field: var(--gradient-physics, #4f46e5); }
+.lp-brief[data-field='cs'] { --lp-field: var(--gradient-cs, #c2410c); }
+.lp-brief[data-field='math'] { --lp-field: var(--gradient-math, #7e22ce); }
+.lp-brief__title { font-family: var(--font-serif); font-weight: var(--fw-semibold); line-height: 1.15; letter-spacing: -0.015em; color: var(--text-primary); margin: 0 0 12px; text-wrap: pretty; }
+.lp-brief__title--xl { font-size: 1.5rem; line-height: 1.08; letter-spacing: -0.022em; }
+.lp-brief__title--lg { font-size: 1.25rem; line-height: 1.12; }
+.lp-brief__title--md { font-size: 1.1rem; line-height: 1.18; }
+.lp-brief__title--sm { font-size: 0.975rem; line-height: 1.24; }
+.lp-brief__dek { font-family: var(--font-serif); font-size: 0.9375rem; line-height: 1.6; color: var(--text-secondary); margin: 0 0 16px; display: -webkit-box; -webkit-line-clamp: var(--dek-lines, 3); -webkit-box-orient: vertical; overflow: hidden; }
+.lp-brief__dek--split { display: block; column-count: 2; column-gap: 32px; column-rule: 1px solid var(--border-subtle); max-height: 8.1em; overflow: hidden; }
+.lp-brief__foot { margin-top: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.lp-micro { font: 0.6875rem/1.4 var(--font-mono); color: var(--text-tertiary); }
+.lp-micro--oa { color: var(--tint-green-fg); }
+.lp-micro + .lp-micro::before { content: '·'; margin-right: 5px; color: var(--border-strong); }
+/* One column once the six-column measure no longer fits — same breakpoint
+   as the rest of this file's tablet/phone rules (unlike the prototype's own
+   900px, which this window has no other reason to introduce). */
+@media (max-width: 1000px) {
+  .lp-forme { grid-template-columns: minmax(0, 1fr); }
+  .lp-brief--s2, .lp-brief--s3, .lp-brief--s4, .lp-brief--s6 { grid-column: span 1; }
+  .lp-brief { padding: 18px 0; border-right: 0 !important; }
+  .lp-brief__dek--split { column-count: 1; max-height: none; }
+}
+@media (max-width: 700px) {
+  .lp-window .lp-research { padding: 20px 18px; }
+  .lp-research__title { font-size: 2.5rem; }
+  /* 1300px, measured rather than guessed, and the only height this window
+     uses at this width — no separate smaller value sits anywhere else in
+     this file for it to shadow. With `.lp-research__body` and
+     `.lp-research__spread` (both `minmax(0, 1fr)`, above) stacking the rail
+     below the lead and the abstract below the headline, a full-size
+     headline plus the abstract together ran to 634px on their own, deep
+     into where the mask's 78%-start fade would already be finishing —
+     which is what made the rail (carrying the two "Growing topics"
+     percentages, decision E's own numbers) land entirely below the hard
+     `overflow: hidden` edge, not just faded. Dropping the abstract and the
+     headline's type size below is the same move the citation map's compact
+     plate already makes (drop detail, keep the core figures); 1300px is
+     then sized so the rail's own last row clears the fade check well above
+     the mask's 78% start, with the forme's first row only just beginning
+     to appear as the mask takes over — a hint of "more edition here," same
+     as the desktop capture. */
+  .lp-window { height: 1300px; }
+  .lp-research__abstract { display: none; }
+  .lp-research__headline { font-size: 1.5rem; line-height: 1.15; }
+}
+
+/* ── Strip and close ── */
+.lp-strip { padding: 64px 0; }
+.lp-strip__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 64px; }
+.lp-strip p { font-family: var(--font-serif); font-size: 1.1875rem; line-height: 1.5; margin: 0; }
+.lp-strip a { color: inherit; text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
+.lp-close { background: var(--accent-primary); color: var(--text-inverse); padding: 120px 0 72px; }
+[data-theme="dark"] .lp-close { background: var(--bg-secondary); color: var(--text-primary); }
+.lp-close__grid { display: flex; align-items: flex-end; justify-content: space-between; gap: 64px; }
+.lp-close__line { font-family: var(--font-serif); font-size: clamp(2.5rem, 4.4vw, 4rem); font-weight: var(--fw-regular); line-height: 1.04; letter-spacing: -0.02em; margin: 0; max-width: 14ch; text-wrap: balance; }
+.lp-close__action { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; margin: 0; flex: none; }
+.lp-close .lp-btn--yellow { background: var(--brand-yellow); }
+.lp-close__note { font: var(--fw-regular) 0.875rem/1 var(--font-body); opacity: 0.75; }
+/* `.lp-close` is `<main>`'s child, not `.lp-footer`'s sibling (the footer
+   sits beside `<main>`, not inside it) — `.lp-close + .lp-footer` can never
+   match, and the hairline it was meant to drop never drops. `:has()` reaches
+   inside `<main>` to ask what its last section actually is, which a sibling
+   combinator cannot do from out here. */
+main:has(> .lp-close:last-child) + .lp-footer { border-top: none; }
+
+/* ── Phones (390) and narrow laptops ── */
+@media (max-width: 1000px) {
+  .lp-hero__grid, .lp-cols, .lp-research__body, .lp-research__spread { grid-template-columns: minmax(0, 1fr); gap: 40px; }
+  .lp-strip__grid { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .lp-close__grid { flex-direction: column; align-items: flex-start; }
+  .lp-close__action { align-items: flex-start; }
+}
+@media (max-width: 640px) {
+  .lp-sec { padding: 64px 0; }
+  .lp-hero { padding: 40px 0 56px; }
+  .lp-hero__cta .lp-btn { width: 100%; }
+  .lp-sheet { padding: 24px 20px 16px; }
+  .lp-paper__actions { flex-wrap: wrap; }
+  .lp-paper__spacer { display: none; }
+  /* The reader's fixed 462px levels-frame and 460px min-height are sized for
+     the 420px-column desktop layout; at this width `.lp-cols` has already
+     stacked (the 1000px query above), so both give back the room a phone
+     does not have. */
+  .lp-rewrite { min-height: 0; }
+  .lp-levels-frame { min-width: 0; width: 100%; }
+  .lp-panel { padding: 20px 18px; }
+  .lp-panel__level p { font-size: 1rem; }
+  .lp-rewrite__actions { flex-direction: column; align-items: stretch; gap: 10px; }
+  .lp-rewrite__actions .lp-eyebrow { text-align: center; }
+  .lp-labels__row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+}

@@ -2,10 +2,10 @@
 
 **A personalized way to discover scientific research.**
 
-[Open PaperTok](https://papertok.app/#/) · [Latest release: 0.2](https://github.com/mugar123/papertok/releases/tag/v0.2.0)
+[Open PaperTok](https://papertok.app/feed) · [Latest release: 0.2](https://github.com/mugar123/papertok/releases/tag/v0.2.0)
 
 <p align="center">
-  <a href="https://papertok.app/#/">
+  <a href="https://papertok.app/feed">
     <img src="docs/assets/release-0.2/feed-light.png" alt="PaperTok personalized scientific paper feed" width="100%">
   </a>
 </p>

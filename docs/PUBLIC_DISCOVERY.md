@@ -1,8 +1,9 @@
 # Public Discovery
 
-PaperTok is deployed as a Vite single-page application on the GitHub Pages project
-site `https://papertok.app/`. This document records the URL and metadata
-contract for public discovery surfaces without changing the existing authenticated routes.
+PaperTok is a Vite build served from the root of `https://papertok.app/`: the landing page at
+`/` (`index.html`) and the single-page application at `/feed`, which `vercel.json` rewrites to
+`app.html`. This document records the URL and metadata contract for public discovery surfaces
+without changing the existing authenticated routes.
 
 ## URL Contract
 
@@ -13,7 +14,9 @@ contract for public discovery surfaces without changing the existing authenticat
 - `getPublicPaperPath(paper)` returns `/public/paper/<key>` for a DOI or arXiv paper.
 - `getSharedListPath(listId)` returns `/public/list/<id>`.
 - The corresponding `*Url` helpers add the Vite base and the `#` required by `HashRouter`,
-producing URLs such as `https://papertok.app/#/public/paper/<key>`.
+producing URLs such as `https://papertok.app/#/public/paper/<key>`. That URL lands on the
+landing page, not on the app: `/` is now `index.html`, whose head script forwards any `#/…`
+hash to `/feed` with the same hash attached, so a shared link still opens the route it names.
 
 There is no sign-in page. Signed-out visitors land on the guest feed; the only door is the
 `AuthPrompt` dialog, which opens in place from any gated action, and also on arrival when a guest
@@ -55,19 +58,28 @@ exist because a paper liked or saved from an OpenAlex or PubMed card is remember
 `openalex:W…` or `pmid:…`; the public paper page resolves both through OpenAlex's
 `GET /works/{id}`.
 
-The Vite base comes from `import.meta.env.BASE_URL`, so the same helpers work at `/` during
-local development and at `/papertok/` on the project site. A runtime origin is used in the
-browser; the production GitHub Pages origin is the deterministic fallback outside a browser.
+The Vite base comes from `import.meta.env.BASE_URL`, and in this repository it is `/`:
+`vite.config.js` sets `BASE_PATH = '/'` because the site is served from the domain root, not
+from the `/papertok/` project path. A runtime origin is used in the browser;
+`DEFAULT_PUBLIC_ORIGIN` (`https://papertok.app`) is the deterministic fallback outside a
+browser.
 
 ## Metadata
 
-`index.html` contains honest, generic root metadata for the application itself:
+`app.html` is the application shell and holds the honest, generic metadata for the application
+itself. `index.html` is the landing page and holds its own, separate metadata — a change meant
+for the app belongs in `app.html`:
 
-- canonical URL and Open Graph/Twitter URLs point to the fragment-free project root;
-- the preview is a 1200x630 PNG derived from `docs/assets/papertok-feed.png` and contains no
-  user profile photo;
-- JSON-LD describes PaperTok as a `WebSite`, without inventing a public paper, author, or list;
-- Spanish is the initial document language, with English represented as an alternate locale.
+- the shell's canonical URL and its Open Graph/Twitter URLs are `https://papertok.app/feed`,
+  the fragment-free URL `vercel.json` rewrites to `app.html`; the landing keeps
+  `https://papertok.app/` as its own canonical and OG URL;
+- the preview is `public/og/papertok-share-0.2.png`, a 2400x1260 PNG that both pages declare and
+  that `DEFAULT_SHARE_IMAGE_PATH` points at; it shows a paper in the feed and contains no user
+  profile photo;
+- JSON-LD in `app.html` describes PaperTok as a `WebSite`, without inventing a public paper,
+  author, or list;
+- English is the initial document language (`<html lang="en">`), with Spanish represented as an
+  alternate locale.
 
 `src/hooks/usePublicPageMetadata.js` is for public page consumers. It reads the active language
 from `LanguageContext` and updates the title, description, canonical URL, Open Graph, Twitter,
