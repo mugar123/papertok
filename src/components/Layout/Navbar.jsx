@@ -140,15 +140,59 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
    */
   const [pressed, setPressed] = useState(null);
   const pressTimerRef = useRef(null);
+  const touchRef = useRef(null);
+  const handledRef = useRef(0);
   useEffect(() => () => clearTimeout(pressTimerRef.current), []);
   const pressTab = (event, tab) => {
-    if (event.button !== 0 || tab === activeTab) return;
+    if (event.button !== 0) return;
+    if (event.pointerType === 'touch') {
+      touchRef.current = { tab, x: event.clientX, y: event.clientY, at: Date.now() };
+    }
+    if (tab === activeTab) return;
     const entry = { tab, on: activeTab };
     setPressed(entry);
     clearTimeout(pressTimerRef.current);
     pressTimerRef.current = setTimeout(() => setPressed((current) => (current === entry ? null : current)), 1500);
   };
-  const releasePress = () => setPressed(null);
+  const releasePress = () => {
+    touchRef.current = null;
+    setPressed(null);
+  };
+  /**
+   * A finger that lifts on the tab it pressed navigates there, without waiting
+   * for the click.
+   *
+   * On a phone the `click` is SYNTHESISED after the finger lifts, and the
+   * system is free never to synthesise it: a gesture recogniser that decides
+   * late, a double-tap window, a scroll it was still settling. The touch pair
+   * arrives either way. Everything measured on this Mac delivers the click
+   * (Chromium and WebKit, centre, edges, mid-scroll, 2026-09-18), and the bug
+   * survived three fixes built on that assumption, so this stops assuming it:
+   * the navigation rides the `pointerup`, which is the last event the page is
+   * guaranteed to see.
+   *
+   * Touch only — a mouse keeps the anchor's own click, and so does the
+   * keyboard. It navigates only when the finger lifts on the tab it pressed,
+   * within 12px and 1.5s of pressing it, so a drag that starts on the bar is
+   * not a navigation. `handledRef` then swallows the click if the system does
+   * synthesise one, or react-router would push the same route twice and Back
+   * would need two presses.
+   */
+  const liftTab = (event, tab, to) => {
+    const start = touchRef.current;
+    touchRef.current = null;
+    if (event.pointerType !== 'touch' || !start || start.tab !== tab) return;
+    if (Date.now() - start.at > 1500) return;
+    if (Math.abs(event.clientX - start.x) > 12 || Math.abs(event.clientY - start.y) > 12) return;
+    handledRef.current = Date.now();
+    if (tab === 'home') setFeedMode('top');
+    if (pathname !== to) navigate(to);
+  };
+  const swallowSynthesisedClick = (event) => {
+    if (Date.now() - handledRef.current > 1500) return;
+    handledRef.current = 0;
+    event.preventDefault();
+  };
   const shownTab = pressed && pressed.on === activeTab ? pressed.tab : activeTab;
   const rule = useActiveTabRule(linksRef, shownTab, `${shownTab}:${isEnglish}`);
 
@@ -215,8 +259,9 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
             end
             data-tab="home"
             className={`navbar-link ${isHomeActive ? 'active' : ''}`}
-            onClick={() => setFeedMode('top')}
+            onClick={(event) => { swallowSynthesisedClick(event); setFeedMode('top'); }}
             onPointerDown={(event) => pressTab(event, 'home')}
+            onPointerUp={(event) => liftTab(event, 'home', '/')}
             onPointerCancel={releasePress}
           >
             <Layers size={15} aria-hidden="true" />
@@ -227,7 +272,9 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
             to="/research"
             data-tab="research"
             className={`navbar-link ${isResearchActive ? 'active' : ''}`}
+            onClick={swallowSynthesisedClick}
             onPointerDown={(event) => pressTab(event, 'research')}
+            onPointerUp={(event) => liftTab(event, 'research', '/research')}
             onPointerCancel={releasePress}
           >
             <Newspaper size={15} aria-hidden="true" />
@@ -238,7 +285,9 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
             to="/following"
             data-tab="following"
             className={`navbar-link ${isFollowingActive ? 'active' : ''}`}
+            onClick={swallowSynthesisedClick}
             onPointerDown={(event) => pressTab(event, 'following')}
+            onPointerUp={(event) => liftTab(event, 'following', '/following')}
             onPointerCancel={releasePress}
           >
             <UserCheck size={15} aria-hidden="true" />

@@ -41,7 +41,12 @@ test('SOURCE: For you still keeps the feed in its default mode when tapped', asy
   const row = linksRow(stripJsComments(await read('./Navbar.jsx')));
   const forYou = row.match(/<NavLink\s+to="\/"[\s\S]*?<\/NavLink>/);
   assert.ok(forYou, 'the For you NavLink is present');
-  assert.match(forYou[0], /onClick=\{\(\) => setFeedMode\('top'\)\}/, 'the mode reset rides on the NavLink onClick (React Router runs it before its own)');
+  assert.match(forYou[0], /setFeedMode\('top'\)/, 'the mode reset rides on the NavLink onClick (React Router runs it before its own)');
+  // And on the touch route, where the navigation happens on pointerup and the
+  // click that may follow is swallowed: the reset has to happen there too, or
+  // a finger would switch tab without it.
+  const jsx = stripJsComments(await read('./Navbar.jsx'));
+  assert.match(jsx, /if \(tab === 'home'\) setFeedMode\('top'\);/);
 });
 
 /**
@@ -110,7 +115,38 @@ test('SOURCE: the mark moves to the tab under the finger on the press, and the p
   assert.match(jsx, /useActiveTabRule\(linksRef, shownTab, `\$\{shownTab\}:\$\{isEnglish\}`\)/);
   // A press on the tab already current is not a press; a right button is not
   // a press; a press that never becomes a click lapses.
-  assert.match(jsx, /if \(event\.button !== 0 \|\| tab === activeTab\) return;/);
+  assert.match(jsx, /if \(event\.button !== 0\) return;/);
+  assert.match(jsx, /if \(tab === activeTab\) return;/);
   assert.match(jsx, /setTimeout\(\(\) => setPressed\(\(current\) => \(current === entry \? null : current\)\), 1500\)/);
 });
 
+/**
+ * The last answer to "the tabs need several taps", after three fixes built on
+ * the assumption that the click always arrives.
+ *
+ * On a phone the click is SYNTHESISED once the finger lifts, and the system
+ * may never synthesise it — a gesture recogniser deciding late, a double-tap
+ * window, a scroll still settling. The touch pair arrives either way, so the
+ * navigation rides `pointerup`. Touch only; a mouse and the keyboard keep the
+ * anchor's own click. Guarded so a drag off the bar is not a navigation, and
+ * the click that may follow is swallowed or the same route is pushed twice.
+ */
+test('SOURCE: a finger that lifts on the tab it pressed navigates without waiting for the click', async () => {
+  const jsx = stripJsComments(await read('./Navbar.jsx'));
+  const row = linksRow(jsx);
+  for (const [tab, to] of [['home', '/'], ['research', '/research'], ['following', '/following']]) {
+    assert.match(row, new RegExp(`onPointerUp=\\{\\(event\\) => liftTab\\(event, '${tab}', '${to}'\\)\\}`), `${tab} navigates on pointerup`);
+  }
+  assert.equal((row.match(/swallowSynthesisedClick/g) || []).length, 3, 'all three swallow the click that may follow');
+  // Touch only: a mouse keeps the anchor's click, so desktop is untouched.
+  assert.match(jsx, /if \(event\.pointerType !== 'touch' \|\| !start \|\| start\.tab !== tab\) return;/);
+  // A drag that starts on the bar is not a navigation.
+  assert.match(jsx, /Math\.abs\(event\.clientX - start\.x\) > 12 \|\| Math\.abs\(event\.clientY - start\.y\) > 12/);
+  assert.match(jsx, /Date\.now\(\) - start\.at > 1500/);
+  // And the click that the system may still synthesise is swallowed, or
+  // react-router pushes the same route twice and Back needs two presses.
+  assert.match(jsx, /handledRef\.current = Date\.now\(\);/);
+  assert.match(jsx, /const swallowSynthesisedClick = \(event\) => \{[\s\S]*?event\.preventDefault\(\);/);
+  // The pressed tab is only navigated when it is not the one already current.
+  assert.match(jsx, /if \(pathname !== to\) navigate\(to\);/);
+});

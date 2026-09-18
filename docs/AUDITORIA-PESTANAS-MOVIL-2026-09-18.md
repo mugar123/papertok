@@ -123,3 +123,43 @@ ella, registra el toque completo con su objetivo y su push, sobrevive a una reca
 - **Hay `click`, `pushState` y `after+300` en la ruta nueva** → navegó al primer toque y lo que
   falla es lo que se ve, no lo que se toca.
 - **`snap … modal=` con una hoja** → es el hallazgo de arriba: el primer toque cierra la hoja.
+
+---
+
+## Tercera vuelta: dejar de depender del clic
+
+El usuario confirma que el fallo sigue. Los tres arreglos anteriores y el diagnóstico daban por
+supuesto lo mismo: que el `click` llega. Todo lo medible en este Mac lo confirma —Chromium y
+WebKit entregan el clic en el centro, en los bordes, en la barra muerta, con el feed en
+movimiento y tras un scroll— y aun así el fallo sobrevive a tres arreglos construidos sobre esa
+suposición. Así que se deja de suponer.
+
+### El cambio
+
+En un teléfono el `click` se SINTETIZA cuando el dedo se levanta, y el sistema es libre de no
+sintetizarlo nunca: un reconocedor de gestos que decide tarde, la ventana del doble toque, un
+scroll que aún se estaba asentando. El par `pointerdown`/`pointerup` llega igualmente. La
+navegación pasa a montar en el `pointerup`, que es el último evento que la página tiene
+garantizado.
+
+- **Solo táctil.** Con ratón y con teclado el enlace conserva su propio clic, así que el
+  escritorio no cambia.
+- **Solo si el dedo se levanta donde se apoyó**, dentro de 12 px y 1,5 s: un arrastre que empieza
+  en la barra no es una navegación.
+- **El clic que el sistema sí sintetice se traga**, o react-router empujaría la misma ruta dos
+  veces y Atrás necesitaría dos pulsaciones.
+
+### Medido (build de producción, iPhone emulado)
+
+| Comprobación | Táctil | Ratón |
+|---|---|---|
+| Un toque limpio en cada pestaña | navega, `history` +1 | navega, `history` +1 |
+| Dos toques seguidos en la misma pestaña | `history` +1 (el segundo ya está en la ruta) | +1 |
+| Arrastre de 40 px empezando en la barra | no navega, `history` +0 | no navega |
+| Research y un solo Atrás | `#/research` → `#/` | ídem |
+
+En WebKit, los 21 toques de la batería completa siguen en verde y el `pushState` ahora aparece
+**antes** del `touchend`: 2–7 ms desde el inicio del toque, frente a los 34–87 ms que costaba
+esperar al clic.
+
+`npm test` 2.850 en verde, lint limpio, build correcto.
