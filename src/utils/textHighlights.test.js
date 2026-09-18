@@ -124,3 +124,73 @@ test('a range too short to anchor is refused like any other', () => {
   assert.equal(buildRangeAnchor('some paragraph text', 0, 3), null);
   assert.equal(buildRangeAnchor('', 0, 20), null);
 });
+
+test('a quote whose only mention lies under a mark of another source is kept, not dropped', () => {
+  const text = 'La idea central es sencilla: quien convive más comparte más microbios, y el mapa se parece.';
+  const ranges = resolveHighlightRanges(text, [
+    { quote: 'sencilla: quien convive más', kind: 'user', source: 'user' },
+    { quote: 'quien convive más comparte más microbios', kind: 'finding', source: 'ai' },
+  ]);
+  assert.equal(ranges.length, 2, 'both survive: they belong to different sources');
+  assert.deepEqual(ranges.map(range => range.source), ['user', 'ai']);
+});
+
+test('a repeated quote of the same source still moves on to the next mention, and is dropped when none is free', () => {
+  const text = 'the control group improved and the control group persisted';
+  const ranges = resolveHighlightRanges(text, [
+    { quote: 'the control group', source: 'ai' },
+    { quote: 'the control group', source: 'ai' },
+    { quote: 'the control group', source: 'ai' },
+  ]);
+  assert.equal(ranges.length, 2);
+});
+
+test('a pending selection may sit on top of anything, including the reader\'s own saved mark', () => {
+  const text = 'quien convive más comparte más microbios, y el mapa de amistades se parece';
+  const ranges = resolveHighlightRanges(text, [
+    { quote: 'quien convive más comparte más', kind: 'user', source: 'user', id: 'saved' },
+    { quote: 'quien convive más comparte más', kind: 'user', source: 'user', id: 'pending', pending: true },
+  ]);
+  assert.equal(ranges.length, 2);
+});
+
+test('overlapping marks are cut at every boundary, the reader\'s on top and the model\'s remembered underneath', () => {
+  // user: 4..14, ai: 10..20 over 'abcdefghijklmnopqrstuv'
+  const segments = segmentTextChunk(0, 'abcdefghijklmnopqrstuv', [
+    { start: 4, end: 14, kind: 'user', source: 'user', id: 'u' },
+    { start: 10, end: 20, kind: 'finding', source: 'ai', id: 'a' },
+  ]);
+  assert.deepEqual(segments.map(s => [s.type, s.value, s.source || null, s.under || null]), [
+    ['text', 'abcd', null, null],
+    ['mark', 'efghij', 'user', []],
+    ['mark', 'klmn', 'user', ['ai']],
+    ['mark', 'opqrst', 'ai', []],
+    ['text', 'uv', null, null],
+  ]);
+  // The reader's mark wins the top even when the model's range started first.
+  const reversed = segmentTextChunk(0, 'abcdefghijklmnopqrstuv', [
+    { start: 4, end: 14, kind: 'finding', source: 'ai', id: 'a' },
+    { start: 10, end: 20, kind: 'user', source: 'user', id: 'u' },
+  ]);
+  assert.deepEqual(reversed.map(s => [s.value, s.source, s.under]), [
+    ['abcd', undefined, undefined],
+    ['efghij', 'ai', []],
+    ['klmn', 'user', ['ai']],
+    ['opqrst', 'user', []],
+    ['uv', undefined, undefined],
+  ]);
+});
+
+test('a plan with overlapping marks still concatenates back to the text and carries `under` on maths', () => {
+  const text = 'usan una fórmula $S = 1$ entre pares y la comparan';
+  const plan = buildHighlightPlan(text, [
+    { quote: 'una fórmula $S = 1$ entre', kind: 'finding', source: 'ai' },
+    { quote: 'fórmula $S = 1$ entre pares', kind: 'user', source: 'user', pending: true },
+  ]);
+  const rebuilt = plan.map(item => item.type === 'math' ? item.raw : item.value).join('');
+  assert.equal(rebuilt, 'usan una fórmula $S = 1$ entre pares y la comparan');
+  const math = plan.find(item => item.type === 'math');
+  assert.equal(math.source, 'user', 'the pending selection paints the formula');
+  assert.deepEqual(math.under, ['ai']);
+  assert.ok(plan.every(item => item.type === 'text' || Array.isArray(item.under)));
+});

@@ -26,14 +26,17 @@ import './Navbar.css';
  * measurement is applied without a transition, so the rule does not slide in
  * from the row's left edge on load.
  */
-function useActiveTabRule(rowRef, activeKey) {
+function useActiveTabRule(rowRef, tab, activeKey) {
   const [rule, setRule] = useState({ transform: '', measured: false });
 
   useLayoutEffect(() => {
     const row = rowRef.current;
     if (!row) return undefined;
     const measure = () => {
-      const link = row.querySelector('.navbar-link.active');
+      // By `data-tab` rather than `.active`: the hook is told which tab to
+      // measure, so the caller owns that decision and this cannot drift from
+      // the class the router appends.
+      const link = tab ? row.querySelector(`.navbar-link[data-tab="${tab}"]`) : null;
       if (!link) {
         setRule(current => (current.transform ? { ...current, transform: '' } : current));
         return;
@@ -48,7 +51,7 @@ function useActiveTabRule(rowRef, activeKey) {
     observer.observe(row);
     row.querySelectorAll('.navbar-link').forEach(link => observer.observe(link));
     return () => observer.disconnect();
-  }, [rowRef, activeKey]);
+  }, [rowRef, tab, activeKey]);
 
   return rule;
 }
@@ -111,7 +114,68 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
   // in NavLink's plain API gates `aria-current`.
   const activeTab = isHomeActive ? 'home' : isResearchActive ? 'research' : isFollowingActive ? 'following' : '';
   const linksRef = useRef(null);
-  const rule = useActiveTabRule(linksRef, `${activeTab}:${isEnglish}`);
+  /**
+   * The press is remembered only to decide, on `pointerup`, whether the finger
+   * lifted on the tab it pressed.
+   *
+   * It used to ALSO carry the mark to the pressed tab a frame after touchdown,
+   * because the mark otherwise waited ~200ms for the click handler to mount
+   * the next page (measured 2026-09-18 at CPU ×6). Navigating on `pointerup`
+   * removed that wait — the route commits within milliseconds of the finger
+   * lifting — and the optimistic move then cost more than it bought: it aimed
+   * the mark at the tab as it was, in normal weight, and the router re-aimed
+   * it a moment later at the semibold word, which is wider. Measured the same
+   * day: two targets per tap (`scaleX(0.6709)` then `scaleX(0.6789)`), the
+   * second arriving 108ms in, with the mark already travelling. A CSS
+   * transition re-aimed mid-flight restarts its 240ms clock from wherever it
+   * is, so the mark slowed, sped up and eased again — the glitch the reader
+   * saw. One measurement, one curve.
+   */
+  const touchRef = useRef(null);
+  const handledRef = useRef(0);
+  const pressTab = (event, tab) => {
+    if (event.button !== 0 || event.pointerType !== 'touch') return;
+    touchRef.current = { tab, x: event.clientX, y: event.clientY, at: Date.now() };
+  };
+  const releasePress = () => {
+    touchRef.current = null;
+  };
+  /**
+   * A finger that lifts on the tab it pressed navigates there, without waiting
+   * for the click.
+   *
+   * On a phone the `click` is SYNTHESISED after the finger lifts, and the
+   * system is free never to synthesise it: a gesture recogniser that decides
+   * late, a double-tap window, a scroll it was still settling. The touch pair
+   * arrives either way. Everything measured on this Mac delivers the click
+   * (Chromium and WebKit, centre, edges, mid-scroll, 2026-09-18), and the bug
+   * survived three fixes built on that assumption, so this stops assuming it:
+   * the navigation rides the `pointerup`, which is the last event the page is
+   * guaranteed to see.
+   *
+   * Touch only — a mouse keeps the anchor's own click, and so does the
+   * keyboard. It navigates only when the finger lifts on the tab it pressed,
+   * within 12px and 1.5s of pressing it, so a drag that starts on the bar is
+   * not a navigation. `handledRef` then swallows the click if the system does
+   * synthesise one, or react-router would push the same route twice and Back
+   * would need two presses.
+   */
+  const liftTab = (event, tab, to) => {
+    const start = touchRef.current;
+    touchRef.current = null;
+    if (event.pointerType !== 'touch' || !start || start.tab !== tab) return;
+    if (Date.now() - start.at > 1500) return;
+    if (Math.abs(event.clientX - start.x) > 12 || Math.abs(event.clientY - start.y) > 12) return;
+    handledRef.current = Date.now();
+    if (tab === 'home') setFeedMode('top');
+    if (pathname !== to) navigate(to);
+  };
+  const swallowSynthesisedClick = (event) => {
+    if (Date.now() - handledRef.current > 1500) return;
+    handledRef.current = 0;
+    event.preventDefault();
+  };
+  const rule = useActiveTabRule(linksRef, activeTab, `${activeTab}:${isEnglish}`);
 
   return (
     <nav
@@ -174,8 +238,12 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
           <NavLink
             to="/"
             end
+            data-tab="home"
             className={`navbar-link ${isHomeActive ? 'active' : ''}`}
-            onClick={() => setFeedMode('top')}
+            onClick={(event) => { swallowSynthesisedClick(event); setFeedMode('top'); }}
+            onPointerDown={(event) => pressTab(event, 'home')}
+            onPointerUp={(event) => liftTab(event, 'home', '/')}
+            onPointerCancel={releasePress}
           >
             <Layers size={15} aria-hidden="true" />
             {isEnglish ? 'For you' : 'Para ti'}
@@ -183,7 +251,12 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
 
           <NavLink
             to="/research"
+            data-tab="research"
             className={`navbar-link ${isResearchActive ? 'active' : ''}`}
+            onClick={swallowSynthesisedClick}
+            onPointerDown={(event) => pressTab(event, 'research')}
+            onPointerUp={(event) => liftTab(event, 'research', '/research')}
+            onPointerCancel={releasePress}
           >
             <Newspaper size={15} aria-hidden="true" />
             Research
@@ -191,7 +264,12 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
 
           <NavLink
             to="/following"
+            data-tab="following"
             className={`navbar-link ${isFollowingActive ? 'active' : ''}`}
+            onClick={swallowSynthesisedClick}
+            onPointerDown={(event) => pressTab(event, 'following')}
+            onPointerUp={(event) => liftTab(event, 'following', '/following')}
+            onPointerCancel={releasePress}
           >
             <UserCheck size={15} aria-hidden="true" />
             {isEnglish ? 'Following' : 'Siguiendo'}

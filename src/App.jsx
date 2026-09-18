@@ -72,6 +72,16 @@ function isInAppPath(path) {
     && !['/login', '/onboarding'].includes(path.split('?')[0])
 }
 
+// The standalone routes a guest can reach without a session — `/` is also
+// guest-reachable but excluded on purpose, since it handles onboarding
+// itself. A sign-in from one of these doors (like, save, follow) leaves the
+// new account right there, and none of them is behind ProtectedRoute, so App
+// itself has to take it to the onboarding (the effect below).
+const PUBLIC_ROUTE_PREFIXES = ['/public/', '/explorer/']
+function isPublicRoute(path) {
+  return PUBLIC_ROUTE_PREFIXES.some(prefix => path.startsWith(prefix))
+}
+
 function LoginRedirect() {
   const location = useLocation()
   const requested = location.state?.returnTo || new URLSearchParams(location.search).get('returnTo')
@@ -198,6 +208,19 @@ function AppContent() {
     travelledReturnRef.current = pendingReturn
     navigate(pendingReturn.to, { replace: true })
   }, [user, authLoading, pendingReturn, navigate])
+
+  // A new account created from a public page's door has nowhere to go: those
+  // routes are not behind ProtectedRoute, so nothing asked it to choose its
+  // interests, and the bar (which needs `onboardingComplete`) never came. The
+  // onboarding opens with this page as the way back. `replace`, because a
+  // Back into an un-onboarded public page would only bring the account here
+  // again. Not while the profile is loading or failed to: the route's own
+  // handling covers those, and a redirect on a guess would be wrong.
+  useEffect(() => {
+    if (!user || authLoading || onboardingComplete || profileLoadError) return
+    if (!isPublicRoute(location.pathname)) return
+    navigate('/onboarding', { replace: true, state: { returnTo: `${location.pathname}${location.search}` } })
+  }, [user, authLoading, onboardingComplete, profileLoadError, location.pathname, location.search, navigate])
 
   // Warm the chunks a session is most likely to need next — the overlays any
   // card can open, and the other navbar feeds — once the first screen has

@@ -295,14 +295,18 @@ test('ReaderBar.css never lets a rule stand outside (pointer: coarse)', async ()
  * enough (one class, one JS condition), to be a single line nobody would
  * notice regress without a test naming it.
  */
-test('el camino de escritorio sigue intacto: onMouseUp en el párrafo', async () => {
+test('el camino de escritorio sigue intacto: el mouse-up del documento llama a handleSelection', async () => {
   const jsx = await readFile(READER_JSX, 'utf8');
-  // Whitespace-tolerant on purpose: a reformat that wraps this prop onto its
-  // own lines (Prettier does this once a line gets long enough) must not turn
-  // this test red for a reason that has nothing to do with desktop selection
-  // breaking. What has to hold is the fact, not the byte layout — `onMouseUp`
-  // still wires straight to `handleSelection`, not through some other path.
-  assert.match(jsx, /onMouseUp=\{\s*\(event\)\s*=>\s*handleSelection\(/);
+  // The desktop route is a mouse-up wired straight to `handleSelection`. It
+  // lived on each paragraph until 2026-09-17, when a release outside the
+  // paragraph — the gap, the margin, the heading — turned out to reach no
+  // handler at all; it is one document listener now, and the paragraph is
+  // read off the selection (readerMouseSelection.test.js holds the shape).
+  // What has to hold here is the fact, not the byte layout: the mouse-up
+  // still hands the selection to `handleSelection`, not to some other path.
+  assert.match(jsx, /document\.addEventListener\('mouseup', handleDocumentMouseUp\)/);
+  assert.match(jsx, /handleSelection\(paragraph\.dataset\.section, paragraphIndex, text, paragraph\)/);
+  assert.doesNotMatch(jsx, /onMouseUp=\{\s*\(event\)\s*=>\s*handleSelection\(/);
 });
 
 test('el kicker que se muda al documento vive solo bajo pointer: coarse', async () => {

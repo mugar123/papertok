@@ -30,6 +30,25 @@ export function normalizeHighlightQuote(quote) {
 }
 
 /**
+ * Which of two ranges covering the same characters paints them.
+ *
+ * The reader's own marks sit over the model's: a selection still deciding
+ * what it wants to become is the topmost thing on the page, then a highlight
+ * the reader made, then a passage the model proposed. Ties keep document
+ * order. Whatever is underneath is not lost: the segment remembers it in
+ * `under`, and the renderer keeps the model's underline running beneath the
+ * reader's wash.
+ */
+function layerRank(range) {
+  if (range.pending) return 0;
+  return range.source === 'user' ? 1 : 2;
+}
+
+function byLayer(a, b) {
+  return layerRank(a) - layerRank(b) || a.start - b.start;
+}
+
+/**
  * Maps quotes onto character ranges of the normalized text.
  *
  * A quote the model mangled simply fails to match and is dropped: a missing
@@ -43,16 +62,24 @@ export function resolveHighlightRanges(text, highlights = []) {
   for (const highlight of highlights) {
     const quote = normalizeHighlightQuote(highlight?.quote);
     if (quote.length < MIN_QUOTE_LENGTH) continue;
+    const source = highlight?.source || 'ai';
+    const pending = Boolean(highlight?.pending);
 
-    // Prefer the first occurrence that is not already highlighted, so repeated
-    // phrasing marks each mention rather than piling onto the first.
+    // Prefer the first occurrence not already marked BY THE SAME SOURCE, so
+    // repeated phrasing marks each mention rather than piling onto the first.
+    // A mark of the other source does not claim the text: a reader may well
+    // select the sentence the model proposed, and both then have to show —
+    // dropping the second one, whichever it was, took the model's underline
+    // away the moment the reader's selection touched it (2026-09-17). A
+    // pending selection sits on anything, its own saved mark included.
+    const claimed = range => !pending && !range.pending && range.source === source;
     let searchFrom = 0;
     let start = -1;
     for (;;) {
       const candidate = normalized.indexOf(quote, searchFrom);
       if (candidate === -1) break;
       const end = candidate + quote.length;
-      const overlaps = ranges.some(range => candidate < range.end && end > range.start);
+      const overlaps = ranges.some(range => claimed(range) && candidate < range.end && end > range.start);
       if (!overlaps) {
         start = candidate;
         break;
@@ -65,13 +92,13 @@ export function resolveHighlightRanges(text, highlights = []) {
       start,
       end: start + quote.length,
       kind: highlight?.kind || 'finding',
-      source: highlight?.source || 'ai',
+      source,
       id: highlight?.id || null,
       // Transient render states, carried rather than stored: the pen laying its
       // colour down on a mark that was just made, and the provisional wash on a
       // selection still deciding what it wants to become.
       fresh: Boolean(highlight?.fresh),
-      pending: Boolean(highlight?.pending),
+      pending,
       // The model's own suggestions, which the reader can switch off. Carried
       // rather than filtered out up front so switching them off can be a change
       // of colour instead of a change of document.
@@ -85,48 +112,52 @@ export function resolveHighlightRanges(text, highlights = []) {
 /**
  * Cuts one text chunk into plain and marked segments.
  * `chunkStart` is the chunk's offset within the normalized text.
+ *
+ * Cut at every boundary any range draws inside the chunk, so two ranges that
+ * overlap yield three segments — one for each, one for the shared stretch —
+ * and the shared stretch is painted by the topmost (`byLayer`) with the rest
+ * remembered in `under`. Ranges spanning maths are clipped to the chunk; the
+ * maths between stays intact (see `buildHighlightPlan`).
  */
 export function segmentTextChunk(chunkStart, value, ranges) {
   const chunkEnd = chunkStart + value.length;
-  const overlapping = ranges
-    .filter(range => range.start < chunkEnd && range.end > chunkStart)
-    .sort((a, b) => a.start - b.start);
+  const overlapping = ranges.filter(range => range.start < chunkEnd && range.end > chunkStart);
   if (overlapping.length === 0) {
     return [{ type: 'text', value, start: chunkStart, end: chunkEnd }];
   }
 
-  const segments = [];
-  let cursor = chunkStart;
+  const cuts = new Set([chunkStart, chunkEnd]);
   for (const range of overlapping) {
-    // Clip to the chunk: a range spanning maths is split across the text
-    // chunks on either side, and the maths between them stays intact.
-    const start = Math.max(range.start, cursor);
-    const end = Math.min(range.end, chunkEnd);
+    cuts.add(Math.max(range.start, chunkStart));
+    cuts.add(Math.min(range.end, chunkEnd));
+  }
+  const points = [...cuts].sort((a, b) => a - b);
+
+  const segments = [];
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const start = points[index];
+    const end = points[index + 1];
     if (end <= start) continue;
-    if (start > cursor) {
-      segments.push({
-        type: 'text',
-        value: value.slice(cursor - chunkStart, start - chunkStart),
-        start: cursor,
-        end: start,
-      });
+    const slice = value.slice(start - chunkStart, end - chunkStart);
+    const covering = overlapping.filter(range => range.start <= start && range.end >= end).sort(byLayer);
+    if (covering.length === 0) {
+      segments.push({ type: 'text', value: slice, start, end });
+      continue;
     }
+    const [top, ...rest] = covering;
     segments.push({
       type: 'mark',
-      value: value.slice(start - chunkStart, end - chunkStart),
+      value: slice,
       start,
       end,
-      kind: range.kind,
-      source: range.source,
-      id: range.id,
-      fresh: range.fresh,
-      pending: range.pending,
-      proposed: range.proposed,
+      kind: top.kind,
+      source: top.source,
+      id: top.id,
+      fresh: top.fresh,
+      pending: top.pending,
+      proposed: top.proposed,
+      under: rest.map(range => range.source),
     });
-    cursor = end;
-  }
-  if (cursor < chunkEnd) {
-    segments.push({ type: 'text', value: value.slice(cursor - chunkStart), start: cursor, end: chunkEnd });
   }
   return segments;
 }
@@ -152,8 +183,10 @@ export function buildHighlightPlan(text, highlights = []) {
     const mathEnd = offset + chunk.raw.length;
     // Whole or not at all. A formula cannot be marked in half — there is no
     // character in `x²` that corresponds to the middle of `$x^2$` — so only a
-    // range that swallows the entire chunk paints it.
-    const covering = ranges.find(range => range.start <= offset && range.end >= mathEnd);
+    // range that swallows the entire chunk paints it; the topmost of them does.
+    const [covering, ...beneath] = ranges
+      .filter(range => range.start <= offset && range.end >= mathEnd)
+      .sort(byLayer);
     plan.push({
       type: 'math',
       value: chunk.value,
@@ -167,6 +200,7 @@ export function buildHighlightPlan(text, highlights = []) {
       fresh: Boolean(covering?.fresh),
       pending: Boolean(covering?.pending),
       proposed: Boolean(covering?.proposed),
+      under: beneath.map(range => range.source),
     });
     offset = mathEnd;
   }

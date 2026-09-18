@@ -63,6 +63,7 @@ import { resolveWithin, settleWithin, settleSourcesForFirstPaint, fulfilledPaper
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard';
 import { lateSourceCandidates } from '../utils/feedLateCandidates';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feedInteractions';
+import { rankPreferences } from '../utils/preferenceRanking.js';
 import { fetchICiteMetrics, mergeICiteEnrichment } from '../services/iCiteService';
 import { enrichPubmedIds, mergeEuropePmcEnrichment } from '../services/europePmcService';
 // topicRetrievalService carries a ~32 KB gzip topic table and only matters
@@ -1031,11 +1032,10 @@ export function FeedProvider({ children, feedRouteActive = true }) {
             [],
           )
           : [];
-        const rankedPreferences = [...new Set([...userPreferences, ...followedTopicIds])].sort((a, b) => {
-          const affA = categoryAffinities.current[a] || 0;
-          const affB = categoryAffinities.current[b] || 0;
-          return affB - affA;
-        });
+        // Ties are spread across areas (preferenceRanking.js): on a flat
+        // profile the five slots below used to go to the first five of the
+        // first area, whatever else the account had picked.
+        const rankedPreferences = rankPreferences([...userPreferences, ...followedTopicIds], categoryAffinities.current);
 
         // ─── STEP 2: Choose query mode based on temporal preference ───
         const pref = temporalPreference.current || 0;

@@ -77,14 +77,14 @@ test('a focused paragraph opens the annotation menu on Enter', async () => {
   );
 });
 
-test('the mouse route is unchanged: paragraphs still wire onMouseUp to handleSelection', async () => {
+test('the mouse route is unchanged in shape: handleSelection keeps its signature and the paragraph no longer owns the mouse-up', async () => {
   const jsx = await read('./PaperReader.jsx');
 
-  assert.match(
+  assert.doesNotMatch(
     jsx,
-    /onMouseUp=\{\(event\) => handleSelection\(section\.id, paragraphIndex, paragraph, event\.currentTarget\)\}/,
-    'the mouse-up handler on the paragraph changed shape or was removed -- the keyboard fix must '
-    + 'not touch the mouse route.',
+    /onMouseUp=\{\(event\) => handleSelection\(/,
+    'the mouse-up moved to the document (readerMouseSelection.test.js); a paragraph handler would '
+    + 'bring back the release-outside-the-paragraph gap.',
   );
 
   assert.match(

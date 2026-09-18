@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import { CATEGORIES } from '../data/categories.js';
 import {
   GUEST_INTERESTS_STORAGE_KEY,
+  GUEST_SEED_PER_AREA,
   clearGuestInterests,
   dismissGuestInterests,
   guestCategoriesForAreas,
+  guestSeedCategoriesForAreas,
   normalizeGuestAreas,
   readGuestInterests,
   saveGuestInterests,
@@ -83,4 +85,26 @@ test('a storage that throws never reaches the caller', () => {
   assert.deepEqual(saveGuestInterests(['cs'], broken), ['cs']);
   assert.doesNotThrow(() => dismissGuestInterests(broken));
   assert.doesNotThrow(() => clearGuestInterests(broken));
+});
+
+test('the seed takes the first five of each area, interleaved across areas', () => {
+  const firstN = (area, n) => Object.keys(CATEGORIES[area].subcategories).slice(0, n);
+  const seed = guestSeedCategoriesForAreas(['mech', 'physics', 'eess']);
+  assert.equal(GUEST_SEED_PER_AREA, 5);
+  assert.equal(seed.length, 15);
+  // Taxonomy order for the areas (physics before eess before mech), and the
+  // first of every area before any area's second.
+  assert.deepEqual(seed.slice(0, 3), [firstN('physics', 1)[0], firstN('eess', 1)[0], firstN('mech', 1)[0]]);
+  assert.deepEqual(seed.slice(3, 6), [firstN('physics', 2)[1], firstN('eess', 2)[1], firstN('mech', 2)[1]]);
+  assert.deepEqual(seed.filter(id => id in CATEGORIES.physics.subcategories), firstN('physics', 5));
+  assert.equal(new Set(seed).size, 15);
+});
+
+test('a small area contributes what it has, and the seed never reaches the rules cap', () => {
+  assert.deepEqual(guestSeedCategoriesForAreas(['econ']), Object.keys(CATEGORIES.econ.subcategories));
+  const everything = guestSeedCategoriesForAreas(Object.keys(CATEGORIES));
+  assert.ok(everything.length <= 100, `${everything.length} preferences would be refused by firestore.rules`);
+  assert.deepEqual(guestSeedCategoriesForAreas(['nope']), []);
+  assert.deepEqual(guestSeedCategoriesForAreas(null), []);
+  assert.deepEqual(guestSeedCategoriesForAreas(['cs'], 2), Object.keys(CATEGORIES.cs.subcategories).slice(0, 2));
 });

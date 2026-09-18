@@ -29,7 +29,24 @@
    needs the distance to read as coming from somewhere. The property itself is
    listed in the shared popup (ui/popover.jsx) — here is only how far. */
 .rd-export[data-starting-style] { translate: 0 12px; }
-.rd-export[data-ending-style] { translate: 0 6px; }
+.rd-export[data-ending-style] { translate: 0 10px; scale: 0.97; }
+
+/* And it goes back the way it came, on a departure's curve. The shared popup
+   closes everything on the arrival's expo-out at 120ms, and on a card this
+   size that read as a blink: measured 2026-09-18, 5.1 of its 6px travelled
+   in the first two frames and the remaining 90ms were a card fading in
+   place. An arrival brakes where you are looking; a departure brakes where
+   nobody is. Quad spreads the 10px over the fade, so the card is seen going
+   back down into the button. Unlayered, so it wins over the utility on the
+   shared popup; and only where motion is wanted, like that utility. */
+@media (prefers-reduced-motion: no-preference) {
+  .rd-export[data-ending-style] {
+    transition:
+      opacity 160ms linear,
+      scale 200ms var(--ease-out-quad),
+      translate 200ms var(--ease-out-quad);
+  }
+}
 
 .rd-export-head {
   display: flex;

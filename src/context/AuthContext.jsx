@@ -276,28 +276,62 @@ export function AuthProvider({ children }) {
     }
   }, [user?.uid]);
 
+  // The flag flips only once the document holds it. Flipping first sent the
+  // onboarding on its way (its effect navigates the moment the flag is true)
+  // while the write was still in flight, so a refused write — a list over the
+  // rules' cap, a rule that changed under the client — failed against an
+  // unmounted page, left no local memory either, and the next reload asked
+  // the same questions again: an onboarding that never ended
+  // (docs/AUDITORIA-ONBOARDING-INTERESES-2026-09-16.md, hallazgo 4). Now the
+  // failure reaches handleFinish's catch, on screen, with the pick intact.
   const completeOnboarding = useCallback(async (preferences) => {
-    setUserPreferences(preferences);
-    setOnboardingComplete(true);
-
     if (IS_DEMO) {
       demoSet('selectedCategories', preferences);
       demoSet('onboardingComplete', true);
       clearGuestInterests();
+      setUserPreferences(preferences);
+      setOnboardingComplete(true);
       return;
     }
 
     const userId = user?.uid;
     if (userId) {
-      await setDoc(doc(db, 'users', userId), {
-        onboardingComplete: true,
-        preferences
-      }, { merge: true });
+      // Bounded like the profile reads below: Firestore's promise here never
+      // settles on its own against a stalled connection (memory cache,
+      // firebase.js), and an unbounded write would hang the onboarding
+      // screen's only button forever. `settleWithin` never throws for a
+      // timeout — it resolves to `{ status: 'timed_out' }` — so a
+      // non-fulfilled result is turned into a thrown error explicitly below,
+      // tagged with a stable code the caller can branch on instead of a
+      // message to match against.
+      const settled = await settleWithin(
+        setDoc(doc(db, 'users', userId), {
+          onboardingComplete: true,
+          preferences
+        }, { merge: true }),
+        PROFILE_NETWORK_TIMEOUT_MS,
+      );
+      // A retry is safe — this merge-sets the same fields — and
+      // OnboardingFlow's `profileCreated` ref already stops a retried
+      // handleFinish from creating the public-profile document twice, so
+      // there is nothing to do here but let the caller know and stop: the
+      // flag and the preferences must stay unflipped, same as the reorder
+      // above already guarantees for a rules refusal.
+      if (settled.status !== 'fulfilled') {
+        if (settled.status === 'timed_out') {
+          const timeoutError = new Error('completeOnboarding: the write did not settle in time');
+          timeoutError.code = 'ONBOARDING_WRITE_TIMEOUT';
+          throw timeoutError;
+        }
+        throw settled.reason;
+      }
       saveStoredOnboarding(userId, { complete: true, preferences });
       // The interests a guest picked before signing up have now reached the
       // profile (the onboarding pre-selects from them); the bridge is done.
       clearGuestInterests();
     }
+    setUserPreferences(preferences);
+    setOnboardingComplete(true);
   }, [user?.uid]);
 
   const updatePreferences = useCallback(async (newPreferences) => {

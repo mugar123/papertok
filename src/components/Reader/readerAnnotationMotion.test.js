@@ -108,3 +108,46 @@ test('the export card arrives from below again', async () => {
   assert.ok(transition, 'expected an explicit transition on the popup');
   assert.match(transition[1], /translate_\d+ms/);
 });
+
+/**
+ * The rail's hide and show never animated: `var(--transition-slow)` is
+ * `320ms ease` — a duration AND a curve — and each line of the transition
+ * added a second curve after it, which makes the whole declaration invalid.
+ * Measured 2026-09-18: the rail sat at its hidden end state in the first
+ * frame of the hide and back in place in the first frame of the show, the
+ * paper's column jumping 176px each way. Plain durations now, and a guard
+ * over every stylesheet so the pattern cannot come back elsewhere.
+ */
+test('the rail slides on valid transitions, and no stylesheet gives a duration token a second curve', async () => {
+  const css = stripComments(await read(ANNOTATIONS_CSS));
+  const rail = css.match(/\.rd-rail\[data-surface='rail'\] \{([^}]*)\}/)?.[1] || '';
+  assert.match(rail, /margin-right 320ms var\(--ease-out-quad\)/);
+  assert.match(rail, /transform 320ms var\(--ease-out-quad\)/);
+  assert.match(rail, /visibility 0s/);
+  const hidden = css.match(/\.rd-rail\[data-surface='rail'\]\[data-hidden\] \{([^}]*)\}/)?.[1] || '';
+  assert.match(hidden, /transition-delay: 0s, 0s, 0s, 320ms;/, 'visibility waits for the slide, with a plain delay');
+  assert.match(css, /prefers-reduced-motion: reduce\) \{\s*\.rd-rail\[data-surface='sheet'\],\s*\.rd-rail\[data-surface='rail'\],/);
+  const { readdirSync, statSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const root = new URL('../../', import.meta.url).pathname;
+  const walk = (dir) => readdirSync(dir).flatMap((name) => { const full = join(dir, name); return statSync(full).isDirectory() ? walk(full) : full.endsWith('.css') ? [full] : []; });
+  for (const file of walk(root)) {
+    const source = stripComments(await readFile(file, 'utf8'));
+    assert.doesNotMatch(source, /var\(--transition-(?:fast|base|slow|spring)\)\s+(?:cubic-bezier|ease|linear|steps)/, `${file}: a transition token already carries its curve`);
+  }
+});
+
+/**
+ * The export card closed on the arrival's curve: 5.1 of its 6px in the first
+ * two frames, then 90ms of a card fading in place (measured 2026-09-18). A
+ * departure brakes where nobody is looking, so it goes back down into the
+ * button on the quad, 10px over 200ms, with the fade a straight line.
+ */
+test('the export card leaves on a departure\'s curve, back down into the button', async () => {
+  const css = stripComments(await read(EXPORT_CSS));
+  assert.match(css, /\.rd-export\[data-ending-style\] \{ translate: 0 10px; scale: 0\.97; \}/);
+  const leave = css.match(/@media \(prefers-reduced-motion: no-preference\) \{\s*\.rd-export\[data-ending-style\] \{([^}]*)\}/)?.[1] || '';
+  assert.match(leave, /opacity 160ms linear/);
+  assert.match(leave, /scale 200ms var\(--ease-out-quad\)/);
+  assert.match(leave, /translate 200ms var\(--ease-out-quad\)/);
+});

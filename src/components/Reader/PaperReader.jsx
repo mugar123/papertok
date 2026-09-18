@@ -1040,8 +1040,9 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    * A selection stops being a selection and becomes a decision.
    *
    * Everything the three outcomes could need is captured here, in one go, at
-   * the moment the selection is decided (mouse-up on the desktop route,
-   * `selectionchange` settling on the touch route): the quote, where it is
+   * the moment the selection is decided (mouse-up on the desktop route, raised
+   * by the document listener below; `selectionchange` settling on the touch
+   * route): the quote, where it is
    * anchored, the paragraph around it (the model cannot explain "that
    * quantity" without the sentence that named it), and the rectangle to hang
    * the menu off. Capturing it all up front is what lets the browser's own
@@ -1116,6 +1117,50 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       },
     });
   }, [beginAnnotation, uid]);
+
+  /** The source text of a paragraph, by the ids its `<p>` carries. */
+  const paragraphTextFor = useCallback((sectionId, paragraphIndex) => {
+    const section = sections.find(item => String(item.id) === String(sectionId));
+    const text = section?.paragraphs?.[paragraphIndex];
+    return typeof text === 'string' ? text : null;
+  }, [sections]);
+
+  /**
+   * The mouse-up that decides a selection, on the document rather than on the
+   * paragraph. It lived on each `<p>`, so a drag released on the section
+   * title, in the margin or in the gap between paragraphs — where a drag to
+   * the end of a sentence usually ends — reached no handler: no menu, no
+   * provisional mark, and the browser's own selection left on the page
+   * (measured 2026-09-17). The paragraph is read off the selection itself:
+   * the one holding where it STARTS, so a selection that crosses into the
+   * next paragraph quotes from where the reader began and is clipped to that
+   * paragraph's end (`anchorFromSelection` only walks the paragraph it is
+   * given) — or, when the start itself is outside every paragraph (a drag
+   * upwards that overshot into the gap above), the one holding where it
+   * ENDS. Releases over the menu, the rail or a text field find no
+   * paragraph and do nothing, as before. Fine pointers only, like the menu.
+   */
+  useEffect(() => {
+    if (selectionRoute !== 'menu') return undefined;
+    const paragraphAround = (node) => {
+      const element = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
+      return element?.closest('.rd-p[data-section]') || null;
+    };
+    const handleDocumentMouseUp = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+      const range = selection.getRangeAt(0);
+      const start = range.startContainer;
+      const paragraph = paragraphAround(start) || paragraphAround(range.endContainer);
+      if (!paragraph || !scrollRef.current?.contains(paragraph)) return;
+      const paragraphIndex = Number(paragraph.dataset.paragraph);
+      const text = paragraphTextFor(paragraph.dataset.section, paragraphIndex);
+      if (text === null) return;
+      handleSelection(paragraph.dataset.section, paragraphIndex, text, paragraph);
+    };
+    document.addEventListener('mouseup', handleDocumentMouseUp);
+    return () => document.removeEventListener('mouseup', handleDocumentMouseUp);
+  }, [handleSelection, paragraphTextFor, selectionRoute]);
 
   const sectionOrder = useMemo(() => buildSectionOrder(sections), [sections]);
   const orderedAnnotations = useMemo(
@@ -1677,7 +1722,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                           // mouse-up (WCAG 2.1.1) -- see `handleParagraphKeyDown`.
                           tabIndex={selectionRoute === 'menu' ? 0 : undefined}
                           aria-describedby={selectionRoute === 'menu' ? paragraphHintId : undefined}
-                          onMouseUp={(event) => handleSelection(section.id, paragraphIndex, paragraph, event.currentTarget)}
                           onKeyDown={selectionRoute === 'menu'
                             ? (event) => handleParagraphKeyDown(event, section.id, paragraphIndex, paragraph)
                             : undefined}

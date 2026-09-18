@@ -20,6 +20,14 @@
   z-index: var(--z-nav);
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-default);
+  /* No double-tap-to-zoom on the bar, so a second tap on a tab is a second
+     click and not a zoom gesture. On a phone the mark used to answer ~200ms
+     after the finger lifted (measured 2026-09-18, CPU ×6: the click handler
+     mounts the next page first), which is inside the double-tap window; a
+     user who taps again there had the second tap swallowed. Applies to the
+     descendants too: the effective touch-action is the intersection along
+     the ancestor chain. */
+  touch-action: manipulation;
 }
 
 /* The first mount of the session (Navbar.jsx): the bar fades in over the
@@ -228,6 +236,25 @@
    keeps it from snapping. */
 .navbar-link:active {
   opacity: 0.55;
+}
+
+/* On a touch screen the whole height of the bar belongs to the tab under it.
+   The link's own box is 30px tall in a 52px bar (measured 2026-09-18 at
+   390px: 55×30, 66×30 and 67×30 at y 11–41), below the 44pt Apple asks for
+   and with 11px of dead bar above and below each word. A thumb that lands
+   there tapped nothing, which reads as a tab that needs several tries. The
+   pseudo-element is the anchor's own hit area, invisible and out of layout,
+   so nothing moves; the pointer is coarse, so the hover background this bar
+   never draws on a phone does not grow with it. */
+@media (pointer: coarse) {
+  .navbar-link::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -11px;
+    bottom: -11px;
+  }
 }
 
 /* The travelling rule: one element at the left of the links row, carried to

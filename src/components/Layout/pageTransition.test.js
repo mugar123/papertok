@@ -36,7 +36,7 @@ test('a page is a plain element the stylesheet moves, not a motion component', a
   for (const gone of [/\bmotion\./, /useReducedMotion/, /variants/, /\bx:/, /ease/, /TRAVEL_PX/, /duration/]) {
     assert.doesNotMatch(jsx, gone, `${gone} left with the old transition`);
   }
-  assert.match(jsx, /<div\s+ref=\{rootRef\}\s+className="page-transition"\s+data-nav-direction=\{present \? direction : arrivedWith\}\s+data-leave-direction=\{present \? undefined : direction\}\s+data-page-motion=\{motion\}\s+inert=\{!present \|\| undefined\}\s+onAnimationEnd=\{handleAnimationEnd\}\s*>/);
+  assert.match(jsx, /<div\s+ref=\{rootRef\}\s+className="page-transition"\s+data-nav-direction=\{present \? direction : arrivedWith\}\s+data-nav-lateral=\{\(present \? lateral : arrivedLateral\) \|\| undefined\}\s+data-leave-direction=\{present \? undefined : direction\}\s+data-page-motion=\{motion\}\s+inert=\{!present \|\| undefined\}\s+onAnimationEnd=\{handleAnimationEnd\}\s*>/);
   assert.match(jsx, /const motion = present && settled \? 'rest' : pageMotionFor\(\{ direction, lateral, present \}\);/);
 });
 
@@ -83,10 +83,29 @@ test('the leaving page is lifted by the scroll it had, tracked only while presen
   assert.match(jsx, /root\.style\.top = present \? '' : `\$\{-scrollYRef\.current\}px`;/);
 });
 
-test('a new page starts at the top, instantly, and only when it is a step somewhere', async () => {
+test('a new page starts at the top, a page come back to starts where it was left, both instantly', async () => {
   const jsx = await read('./PageTransition.jsx');
   assert.match(jsx, /const arrivalDirection = useRef\(direction\);/);
-  assert.match(jsx, /useLayoutEffect\(\(\) => \{\s*if \(arrivalDirection\.current !== 0\) window\.scrollTo\(\{ top: 0, behavior: 'instant' \}\);\s*\}, \[\]\);/);
+  assert.match(jsx, /useLayoutEffect\(\(\) => \{\s*if \(arrivalDirection\.current === 0\) return;\s*const top = arrivalDirection\.current < 0 \? \(scrollMemory\.get\(locationKeyRef\.current\) \?\? 0\) : 0;\s*window\.scrollTo\(\{ top, behavior: 'instant' \}\);\s*\}, \[\]\);/);
+});
+
+/**
+ * The browser restored the scroll on the way back by itself, smoothly (the
+ * page scrolls smoothly, global.css) and late: measured 2026-09-18, an
+ * institution left at 600px came back mounted at 0 and slid down from 58ms
+ * to 294ms — under the reveal's own travel, towards content that was still
+ * arriving. The scroll is remembered here per history entry when a page
+ * leaves, restored in the mount's layout effect, and the browser is told to
+ * keep its hands off.
+ */
+test('scroll restoration is the transition\'s own: remembered by entry on the way out, manual for the browser', async () => {
+  const jsx = await read('./PageTransition.jsx');
+  assert.match(jsx, /window\.history\.scrollRestoration = 'manual';/);
+  assert.match(jsx, /const scrollMemory = new Map\(\);/);
+  assert.match(jsx, /const \{ key: locationKey \} = useLocation\(\);\s*const locationKeyRef = useRef\(locationKey\);/);
+  assert.match(jsx, /else rememberScroll\(locationKeyRef\.current, scrollYRef\.current\);/);
+  // Bounded: a long session does not keep every entry it ever left.
+  assert.match(jsx, /if \(scrollMemory\.size > SCROLL_MEMORY_MAX\) scrollMemory\.delete\(scrollMemory\.keys\(\)\.next\(\)\.value\);/);
 });
 
 test('a cold chunk suspends inside the page arriving', async () => {
@@ -100,7 +119,7 @@ test('a cold chunk suspends inside the page arriving', async () => {
 
 test('a page re-entered while leaving arrives again instead of snapping to rest', async () => {
   const jsx = await read('./PageTransition.jsx');
-  assert.match(jsx, /const \[wasPresent, setWasPresent\] = useState\(present\);\s*if \(present !== wasPresent\) \{\s*setWasPresent\(present\);\s*if \(present\) \{\s*setSettled\(false\);\s*setArrivedWith\(direction\);\s*\}\s*\}/);
+  assert.match(jsx, /const \[wasPresent, setWasPresent\] = useState\(present\);\s*if \(present !== wasPresent\) \{\s*setWasPresent\(present\);\s*if \(present\) \{\s*setSettled\(false\);\s*setArrivedWith\(direction\);\s*setArrivedLateral\(lateral\);\s*\}\s*\}/);
   assert.match(jsx, /const \[arrivedWith, setArrivedWith\] = useState\(direction\);/);
   // Before the reset: the motion formula still keys on `settled`.
   assert.match(jsx, /const motion = present && settled \? 'rest' : pageMotionFor\(\{ direction, lateral, present \}\);/);
@@ -112,5 +131,43 @@ test('the leaving page keeps the direction it arrived with, so the held feed\'s 
   assert.doesNotMatch(jsx, /data-nav-direction=\{direction\}/);
   const css = await read('../Feed/PaperCard.css');
   // The rule this protects: cards at rest under a page reached by the back arrow.
-  assert.match(css, /\[data-nav-direction="-1"\] \.pc-title,/);
+  assert.match(css, /:is\(\[data-nav-direction="-1"\], \[data-nav-lateral="true"\]\) \.pc-title,/);
+});
+
+/**
+ * A step along the bar is a return too, whichever way it goes.
+ *
+ * The cards' at-rest rule keyed on the direction alone, and the bar's order
+ * gave For you -1 and Following +1: coming to For you the cards sat still
+ * under the slide, coming to Following every piece composed from opacity 0
+ * under a page that was itself sliding 36px and covering. Measured
+ * 2026-09-17, production build, signed in: For you -> Following had the
+ * title at 0.29 while the page was still at 29px, the actions at 0.41 and
+ * the follow reason at 0.78 in the frame the page settled (300ms), the last
+ * landing near 500ms; Following -> For you had every piece at 1 from the
+ * first frame. The page writes whether it arrived laterally, frozen on the
+ * way out exactly as the direction is (a flip on eject would hand the held
+ * feed's pieces a fresh `pcArrive` under the tab covering them), and the
+ * stylesheet reads it beside the direction for every piece, the sheet
+ * included. The first entry of a session carries neither, so the card still
+ * composes under the atom veil at boot.
+ */
+test('a step between tabs resumes the cards at rest in both directions, like the way back', async () => {
+  const jsx = await read('./PageTransition.jsx');
+  assert.match(jsx, /const \[arrivedLateral, setArrivedLateral\] = useState\(lateral\);/);
+  assert.match(jsx, /data-nav-lateral=\{\(present \? lateral : arrivedLateral\) \|\| undefined\}/);
+  assert.doesNotMatch(jsx, /data-nav-lateral=\{lateral/);
+  const css = await read('../Feed/PaperCard.css');
+  const rule = css.match(/\n((?::is\(\[data-nav-direction="-1"\], \[data-nav-lateral="true"\]\) \.pc-[\w-]+,\n)+:is\(\[data-nav-direction="-1"\], \[data-nav-lateral="true"\]\) \.pc-[\w-]+) \{\s*animation: none;\s*\}/);
+  assert.ok(rule, 'one rule keeps the pieces at rest under both a return and a tab step');
+  const pieces = [...rule[1].matchAll(/\.pc-([\w-]+)/g)].map((m) => m[1]);
+  for (const piece of ['sheet', 'follow-reason', 'meta', 'chips', 'topics', 'title', 'authors', 'abstract', 'action-bar', 'side-actions']) {
+    assert.ok(pieces.includes(piece), `.pc-${piece} sits at rest too`);
+  }
+  // Every piece the arrival animates is in that list.
+  const arriving = css.match(/\n((?:\.pc-[\w-]+,\n)+\.pc-[\w-]+) \{\s*animation: pcArrive/);
+  assert.ok(arriving, 'the arrival rule is still one list of pieces');
+  for (const m of arriving[1].matchAll(/\.pc-([\w-]+)/g)) {
+    assert.ok(pieces.includes(m[1]), `.pc-${m[1]} arrives, so it must also know how to sit still`);
+  }
 });

@@ -12,7 +12,18 @@
   height: 100%;
   width: 100%;
   display: flex;
-  align-items: flex-end;
+  /* Centred, not `flex-end`. The sheet is capped at the card's height and
+     the abstract at 30em (`.pc-abstract`), so on a laptop it fills the card
+     and where it sits is moot — but on a tall screen it cannot fill it, and
+     anchored to the bottom it left the top half of the card empty. Measured
+     2026-09-17 on a 2000×1462 viewport: a 743px sheet sat at 679–1422 with
+     620px of nothing above it, and the title 780px down the page, while the
+     action rail (`align-self: center` below) was centred on 759. Centred,
+     the sheet and the rail share a middle at every height, and the 1440×900
+     case is pixel-for-pixel what it was (the sheet is at its max height
+     there). Below 900px the sheet is the whole card (the responsive block at
+     the end) and this does not apply. */
+  align-items: center;
   justify-content: center;
   gap: clamp(8px, 1.5vw, 24px);
   padding: clamp(16px, 3vh, 40px);
@@ -42,8 +53,10 @@
 }
 
 /* ── The page ──
-   No card, no border, no shadow: the paper is set directly on the background,
-   bottom-left, and the type does the work a container used to do. */
+   No card, no border, no shadow: the paper is set directly on the background
+   and the type does the work a container used to do. Within the sheet the
+   column is bottom-justified, so what yields when the card is short is the
+   abstract at the top of its box, never the actions at the foot. */
 .pc-sheet {
   position: relative;
   flex: 0 1 min(820px, calc(100% - 560px));
@@ -410,17 +423,31 @@
 /* Coming back is not arriving. A feed reached by the back arrow — from an
    author, a paper, a list — is the feed the reader left, resumed on the card
    they were on (FeedContainer); replaying the arrival on top of that read as
-   the feed reloading. Under a page that slides back in, the cards sit at rest. */
-[data-nav-direction="-1"] .pc-sheet,
-[data-nav-direction="-1"] .pc-follow-reason,
-[data-nav-direction="-1"] .pc-meta,
-[data-nav-direction="-1"] .pc-chips,
-[data-nav-direction="-1"] .pc-topics,
-[data-nav-direction="-1"] .pc-title,
-[data-nav-direction="-1"] .pc-authors,
-[data-nav-direction="-1"] .pc-abstract,
-[data-nav-direction="-1"] .pc-action-bar,
-[data-nav-direction="-1"] .pc-side-actions {
+   the feed reloading. Under a page that slides back in, the cards sit at rest.
+
+   Neither is a step along the bar. For you and Following are both feeds the
+   reader left, resumed on the card they were on, and the tab that arrives
+   already slides 36px and covers on its own clock (PageTransition.css): the
+   page owns that movement, and the pieces composing inside it at the same
+   time were a second owner. It only ever happened one way — the bar's order
+   made Following +1 and For you -1, so one feed came back whole and the
+   other arrived in bits, which is what read as two different entrances.
+   Measured 2026-09-17 (production build, signed in): For you -> Following
+   had the actions at 0.41 and the follow reason at 0.78 in the frame the
+   page settled, at 300 ms, the last of them landing near 500 ms; the way
+   back had every piece at 1 from the first frame. Both directions of the
+   bar now read as the way back does. The first entry of a session
+   (direction 0, no lateral flag) still composes under the atom veil. */
+:is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-sheet,
+:is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-follow-reason,
+:is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-meta,
+:is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-chips,
+:is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-topics,
+:is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-title,
+:is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-authors,
+:is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-abstract,
+:is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-action-bar,
+:is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-side-actions {
   animation: none;
 }
 

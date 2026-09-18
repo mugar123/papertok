@@ -221,10 +221,19 @@
    so the rail leaves the tab order and the reader's reach only once it is
    actually gone. */
 .rd-rail[data-surface='rail'] {
+  /* Plain durations, on purpose. This used to read `var(--transition-slow)
+     cubic-bezier(…)`, and that token is `320ms ease` — a duration AND a
+     curve — so every line carried two timing functions, the whole
+     declaration was invalid, and the margin never animated at all: measured
+     2026-09-18, the rail sat at its hidden end state in the first frame of
+     the hide, and back in place in the first frame of the show, the paper
+     jumping 176px each way. The quad curve because the paper's column is
+     what the reader watches travel (the house rule since the page
+     transition: quad for what should be seen moving). */
   transition:
-    margin-right var(--transition-slow) cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 180ms ease-out,
-    transform var(--transition-slow) cubic-bezier(0.16, 1, 0.3, 1),
+    margin-right 320ms var(--ease-out-quad),
+    opacity 180ms linear,
+    transform 320ms var(--ease-out-quad),
     visibility 0s;
 }
 
@@ -235,7 +244,7 @@
   transform: translateX(28px);
   opacity: 0;
   visibility: hidden;
-  transition-delay: 0s, 0s, 0s, var(--transition-slow);
+  transition-delay: 0s, 0s, 0s, 320ms;
 }
 
 .rd-rail-head {
@@ -646,6 +655,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .rd-rail[data-surface='sheet'],
+  .rd-rail[data-surface='rail'],
   .rd-rail-chevron {
     transition: none;
   }

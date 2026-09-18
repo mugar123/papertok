@@ -12,7 +12,26 @@ export const buttonVariants = cva(
         // The brand yellow is a highlighter, so it marks the AI reading action.
         // The soft wash flips with the theme and the full yellow does not, so
         // each surface takes its own ink: on hover it is ink on both sides.
-        brand: 'bg-brand-soft text-[var(--text-on-brand-soft)] border border-[var(--tint-amber-line)] hover:bg-brand hover:text-[var(--text-on-brand)] hover:border-[var(--brand-orange)]',
+        //
+        // And it moves: the card's AI button lifted 2px under the pointer and
+        // gave 4% under the finger (`.pc-ai-btn`, until e56a7ea moved it onto
+        // this component with colours only, 2026-08-29), and the reader is
+        // reported to have lost exactly that. `translate` and `scale` are the
+        // individual properties in Tailwind 4, so the press does not undo the
+        // lift by overwriting one `transform`; `active:translate-y-0` puts the
+        // button back on the page while it is held, as the old rule did. 180ms
+        // on the expo-out curve, the card's own arrival curve. Reduced motion
+        // keeps the colours and gives up the movement (design.md, rule 7).
+        //
+        // Polished 2026-09-18: one clock for everything read as a snap, so
+        // each property has its own. The colours cross on a straight line
+        // (160ms: an expo on a colour is a flash); the lift arrives on the
+        // expo curve (180ms, it lands where the eye is) and goes back on the
+        // quad (220ms, it is seen settling); the press is the quickest thing
+        // here (120ms) and flattens the shadow the lift raised; the sparkles
+        // turn and grow a touch with the lift. Reduced motion keeps the
+        // colours and gives up every movement.
+        brand: 'bg-brand-soft text-[var(--text-on-brand-soft)] border border-[var(--tint-amber-line)] hover:bg-brand hover:text-[var(--text-on-brand)] hover:border-[var(--brand-orange)] [transition:color_160ms_linear,background-color_160ms_linear,border-color_160ms_linear,box-shadow_220ms_var(--ease-out-quad),translate_220ms_var(--ease-out-quad),scale_120ms_var(--ease-out-expo)] hover:[transition:color_160ms_linear,background-color_160ms_linear,border-color_160ms_linear,box-shadow_180ms_var(--ease-out-expo),translate_180ms_var(--ease-out-expo),scale_120ms_var(--ease-out-expo)] hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)] active:translate-y-0 active:scale-[0.96] active:shadow-none [&_svg]:[transition:scale_220ms_var(--ease-out-quad),rotate_220ms_var(--ease-out-quad)] [&:hover_svg]:scale-110 [&:hover_svg]:rotate-[8deg] motion-reduce:hover:translate-y-0 motion-reduce:hover:shadow-none motion-reduce:active:scale-100 motion-reduce:[&:hover_svg]:scale-100 motion-reduce:[&:hover_svg]:rotate-0',
         // Tinted variants: a coloured surface that still reads as a control,
         // for actions that carry a meaning of their own rather than rank.
         violet: 'bg-[var(--accent-violet-soft)] text-[var(--accent-violet)] border border-[var(--accent-violet-line)] hover:bg-[var(--accent-violet)] hover:text-white hover:border-[var(--accent-violet)]',

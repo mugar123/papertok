@@ -30,7 +30,7 @@ test('coming back to the feed resumes it at rest instead of replaying the arriva
   const transition = await read('../Layout/PageTransition.jsx');
   assert.match(transition, /data-nav-direction=\{present \? direction : arrivedWith\}/);
   const css = await read('../Feed/PaperCard.css');
-  assert.match(css, /\[data-nav-direction="-1"\] \.pc-sheet,[\s\S]*?\[data-nav-direction="-1"\] \.pc-side-actions \{\s*animation: none;\s*\}/);
+  assert.match(css, /:is\(\[data-nav-direction="-1"\], \[data-nav-lateral="true"\]\) \.pc-sheet,[\s\S]*?:is\(\[data-nav-direction="-1"\], \[data-nav-lateral="true"\]\) \.pc-side-actions \{\s*animation: none;\s*\}/);
 });
 
 test('the hero settles between its heights instead of snapping at the handover', async () => {
@@ -90,7 +90,7 @@ test('the skeleton tab strip stands as tall as the live one', async () => {
 test('the explorer is born with the entity a link handed over, and treats its own fetch as an upgrade', async () => {
   const jsx = (await read('./EntityExplorer.jsx')).replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
   assert.match(jsx, /import \{ useParams, useNavigate, useSearchParams, useLocation \} from 'react-router-dom';/);
-  assert.match(jsx, /import \{ handedEntityFor \} from '\.\.\/\.\.\/utils\/explorerHandover\.js';/);
+  assert.match(jsx, /import \{ handedEntityFor, handoverFromSearchRow \} from '\.\.\/\.\.\/utils\/explorerHandover\.js';/);
   assert.match(jsx, /const handedEntity = useMemo\(\(\) => handedEntityFor\(type, id, location\.state\), \[id, location\.state, type\]\);/);
   assert.match(jsx, /const bornResolved = Boolean\(handedEntity\) \|\| Boolean\(localTopic\) \|\| Boolean\(cachedEntity\) \|\| \(type === 'topic' && isOpaqueQueryTopicText\(id\)\);/);
   assert.match(jsx, /useState\(\(\) => \(bornResolved \? \(handedEntity \|\| localTopic \|\| cachedEntity \|\| resolveQueryTopicRoute\(id, searchParams\)\) : null\)\)/);

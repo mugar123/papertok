@@ -3,6 +3,7 @@ import { Check } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { CATEGORIES } from '../../data/categories';
+import { USER_PREFERENCES_MAX } from '../../utils/accountOnboarding.js';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.jsx';
 import { Toggle } from '../ui/toggle.jsx';
 import './EditInterestsModal.css';
@@ -81,6 +82,17 @@ export default function EditInterestsModal({ isOpen, onClose }) {
         setFormError(isEnglish
           ? 'Select at least one research area.'
           : 'Selecciona al menos un área de investigación.');
+      }, 0);
+      return;
+    }
+    if (selected.size > USER_PREFERENCES_MAX) {
+      // Same tick-deferral as the empty case above, for the same reason: a
+      // repeat click must re-announce the error, not be swallowed by the diff.
+      setFormError('');
+      setTimeout(() => {
+        setFormError(isEnglish
+          ? `At most ${USER_PREFERENCES_MAX} interests: drop ${selected.size - USER_PREFERENCES_MAX}.`
+          : `Como mucho ${USER_PREFERENCES_MAX} intereses: quita ${selected.size - USER_PREFERENCES_MAX}.`);
       }, 0);
       return;
     }
