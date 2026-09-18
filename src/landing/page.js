@@ -273,7 +273,7 @@ const plainWords = () => `<section class="lp-reader lp-sec" aria-labelledby="lp-
           <div class="lp-ghost" data-rewrite-ghost hidden>
             <p class="lp-ghost__head" role="status" aria-live="polite">
               <span class="lp-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-              ${REWRITE.stages.map((st) => `<span class="lp-ghost__stage lp-eyebrow" data-rewrite-stage="${st.id}">${esc(st.label)}</span>`).join('')}
+              ${REWRITE.stages.map((st) => `<span class="lp-ghost__stage lp-eyebrow" data-rewrite-stage="${esc(st.id)}">${esc(st.label)}</span>`).join('')}
               <small>${esc(REWRITE.hint)}</small>
             </p>
             <div class="lp-ghost__body" aria-hidden="true">
