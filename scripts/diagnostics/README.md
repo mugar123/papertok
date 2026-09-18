@@ -512,3 +512,44 @@ plataforma, luego en el `PATH`, y si no encuentra ninguno falla — una puerta q
 salta sola cuando no hay navegador es un verde que no significa nada. En Linux añade
 `--no-sandbox --disable-dev-shm-usage`: el sandbox de Chrome necesita espacios de
 nombres de usuario sin privilegios, que el Ubuntu del runner restringe.
+
+## `landing-budget.mjs` — el presupuesto de transferencia de la landing (2026-09-18)
+
+```bash
+npm run budget:landing                                  # lo que corre `npm run check`
+node scripts/diagnostics/landing-budget.mjs             # dist/ en la raíz del repo
+node scripts/diagnostics/landing-budget.mjs /tmp/fakedist
+```
+
+El criterio §10.9 de la spec: `dist/index.html` más el trozo de CSS de la landing
+(`dist/assets/landing-*.css`) más el suyo de JS (`dist/assets/landing-*.js`), en gzip,
+no pasan de **30 720 bytes**. Imprime los tres números, el total y el margen que queda,
+y sale con 1 si se pasa. Va en `npm run check` justo después de `npm run build` y antes
+de la puerta de axe — mide bytes construidos, así que sin build no hay nada que medir.
+
+Hasta hoy ese número se midió **a mano una vez**, como paso del plan de tareas: era
+cierto el día que alguien escribió el comando y no lo comprobaba nadie desde entonces.
+Medido el 18-09: 15 423 + 11 601 + 2 923 = **29 947 B, 773 B de margen (2,5 %)**. Con
+ese colchón, la siguiente corrección de texto se lo lleva con todos los tests en verde.
+
+Tres cosas que no son evidentes:
+
+- **Un glob que no casa con nada es fatal, no un cero.** Los nombres de los trozos los
+  pone Vite; un cambio de configuración que renombre `landing-*` dejaría el glob sin
+  coincidencias, sumaría 0 bytes y el script diría PASS con un total cómodo para una
+  página cuyo JS no encontró. Sale con 1 nombrando el glob que falló, para que el
+  arreglo sea «enséñale el nombre nuevo» y no «por qué adelgazó la landing de noche».
+- **`dist/` que no existe tiene su propio mensaje.** Separado del trozo que falta: lo
+  primero quiere decir que nadie construyó, lo segundo que el build cambió de forma.
+  Juntarlos mandaba al lector a `vite.config.js` cuando bastaba con `npm run build`.
+- **`gzipSync`, no `gzip -c`.** La herramienta de línea de órdenes mete el nombre del
+  fichero y su mtime en la cabecera gzip (el campo `FNAME`), una docena larga de bytes
+  por fichero que ningún servidor envía — comprimir en el borde no tiene nombre que
+  apuntar. Por eso estos números quedan algo **por debajo** de los medidos a mano en el
+  plan; el nivel (6, el de siempre) es el mismo y el presupuesto no se ha movido.
+
+Si un glob casa con varios ficheros los suma todos y lo dice en voz alta: si Vite
+parte el CSS de la landing en dos, las dos mitades viajan de verdad al visitante.
+Acepta un directorio como argumento, que es como se ensayan esos fallos sin romper el
+build de verdad primero — una puerta cuyos modos de fallo no se pueden ensayar es una
+puerta en la que nadie confía.

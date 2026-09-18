@@ -158,7 +158,17 @@ test('no snap, no wheel capture, no figures, no eyebrows outside the card, no li
   // as much a violation as one added here.
   assert.doesNotMatch(allCss, /scroll-snap/);
   assert.doesNotMatch(html, /<img|<figure class="lp-figure"|pc-figure/);
-  const upper = [...css.matchAll(/([^{}]+)\{[^}]*text-transform:\s*uppercase[^}]*\}/g)].map((m) => m[1].trim());
+  // `allCss`, not `css` — the same three sheets the scroll-snap ban two lines
+  // up already reads. This scanned `css` alone until the whole-branch review
+  // caught it: the two bans sat three lines apart and disagreed about what
+  // "the landing's CSS" means, so a `text-transform: uppercase` added to
+  // motion.css or static-page.css (neither of which this file owns, and
+  // neither of which has one today — the escape was latent, not live) would
+  // have walked straight past an allowlist that is the page's whole defence
+  // against a second uppercase voice. Verified by mutation: dropping an
+  // uppercase rule into static-page.css fails this line; with `css` it did
+  // not.
+  const upper = [...allCss.matchAll(/([^{}]+)\{[^}]*text-transform:\s*uppercase[^}]*\}/g)].map((m) => m[1].trim());
   // `pile` joins the allowlist here: `.lp-pile__venue` is the wheel's venue
   // column, set uppercase for the same reason `.lp-paper__meta` is — it's
   // the app's own mono metadata voice, not a fresh decision. `eyebrow` joins

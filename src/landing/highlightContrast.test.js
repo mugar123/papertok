@@ -39,4 +39,40 @@ test('on ink the highlight is a rule below the baseline, not a band: the glyphs 
   assert.match(rule, /text-decoration-thickness: 0\.08em/);
   assert.match(rule, /text-decoration-skip-ink: auto/);
   assert.ok(ratio(token(dark, '--text-primary'), token(dark, '--bg-primary')) >= 4.5);
+
+  // The glyphs were the only thing measured here until the whole-branch
+  // review noticed the filete itself was unasserted. It is the highlight —
+  // take the yellow away and nothing marks the phrase — so on this side it is
+  // a non-text graphical object carrying meaning next to text: WCAG 1.4.11,
+  // 3:1 against what it is drawn on, not the 4.5:1 the glyphs answer to.
+  //
+  // Pinned first, because the ratios below are worth nothing if the rule
+  // stops drawing the filete in this token: a recolour to, say,
+  // `--brand-yellow-soft` (#35290b on this side — a dark amber wash, 1.35:1
+  // on the page) would leave every assertion in this file green while the
+  // underline vanished into the background.
+  assert.match(rule, /text-decoration-color: var\(--brand-yellow\)/);
+
+  // Read out of `light`, not `dark`, and that is not a slip. variables.css
+  // deliberately does NOT redefine `--brand-yellow` in the dark block ("Brand
+  // yellow, brand orange and `--text-on-brand` are not redefined: they are
+  // the same mark on both sides") — only `--brand-yellow-soft` flips. So
+  // `token(dark, '--brand-yellow')` is `undefined`, and an assertion written
+  // the obvious way would not fail loudly; it would throw inside lum() on a
+  // slice of undefined, which reads as a broken test rather than a contrast
+  // finding. `:root`'s own declaration is the value the dark page actually
+  // resolves.
+  const yellow = token(light, '--brand-yellow');
+
+  // One comma-separated rule, two grounds, because `.lp-close` overrides the
+  // page: `[data-theme="dark"] .lp-hl` sits on the body (static-page.css:16,
+  // `background: var(--bg-primary)`) wherever `.lp-problem` and `.lp-reader`
+  // put a highlight, while `[data-theme="dark"] .lp-close` repaints the
+  // closing screen `--bg-secondary` (landing.css:723). The second is the
+  // LIGHTER of the two on this side (#1a1d24 against #111318), so it is the
+  // one that gates — measured 11.64:1 there and 12.82:1 on the page. Both
+  // assertions are kept rather than only the worst: if a future task
+  // repaints either surface, the failure should name which screen moved.
+  assert.ok(ratio(yellow, token(dark, '--bg-primary')) >= 3);
+  assert.ok(ratio(yellow, token(dark, '--bg-secondary')) >= 3);
 });
