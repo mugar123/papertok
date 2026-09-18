@@ -305,6 +305,28 @@ html[data-theme='dark'] .lp-rewrite[data-seen='1'][data-found='0'][data-phase='i
   38% { scale: 1.05; border-color: var(--brand-orange); }
 }
 
+/* ── The citation map draws itself once ───────────────────────────────────
+   Spokes from the centre out, nodes popping in behind them, labels last;
+   the order is chronological (centre first, then the seven neighbours
+   oldest to newest — MAP's own `order`, papers.js) and `--i` is set on each
+   element itself (graphMap.js), so this file never has to know how many
+   nodes there are or which one is which.
+
+   Armed by `armMap()` (motion.js) via an IntersectionObserver that fires
+   once and disconnects — `.is-in` never comes off, so scrolling the map out
+   of view and back never replays it. Both classes only ever exist behind
+   the same `[data-motion="on"]` gate every other arrival on this page uses. */
+[data-motion="on"] .mp-spoke { stroke-dasharray: 1; stroke-dashoffset: 1; }
+[data-motion="on"] .mp-node { opacity: 0; transform: scale(0.6); transform-box: fill-box; transform-origin: center; }
+[data-motion="on"] .mp-label { opacity: 0; }
+[data-motion="on"] .is-in .mp-spoke { animation: lpMapDraw 320ms var(--ease-out-cubic) both; animation-delay: calc(var(--i) * 70ms); }
+[data-motion="on"] .is-in .mp-node { animation: lpMapPop 320ms var(--ease-out-cubic) both; animation-delay: calc(var(--i) * 70ms + 120ms); }
+[data-motion="on"] .is-in .mp-node--centre { animation-delay: 0ms; }
+[data-motion="on"] .is-in .mp-label { animation: lpMapFade 240ms linear both; animation-delay: calc(var(--i) * 70ms + 200ms); }
+@keyframes lpMapDraw { to { stroke-dashoffset: 0; } }
+@keyframes lpMapPop { to { opacity: 1; transform: scale(1); } }
+@keyframes lpMapFade { to { opacity: 1; } }
+
 /* ── Reduced motion ───────────────────────────────────────────────────────
    Fewer and gentler, not nothing. data-motion is never set, so no arrival and
    no drift exist at all; the level switch keeps its fade, because without it
@@ -326,4 +348,16 @@ html[data-theme='dark'] .lp-rewrite[data-seen='1'][data-found='0'][data-phase='i
   .lp-spark { animation: none !important; }
   .lp-rewrite[data-open] .lp-rewrite__card { display: none; }
   .lp-rewrite .lp-doc { opacity: 1 !important; visibility: visible !important; }
+  /* The map, everything present and nothing moving from the first frame.
+     Belt for the braces, same as the rest of this block: index.html's own
+     gate means `data-motion` is never "on" under reduced motion in the
+     first place, so `.mp-spoke`/`.mp-node`/`.mp-label` never actually reach
+     their hidden start state either — but if a phase ever got set anyway,
+     nothing here would move or stay hidden. */
+  .mp-spoke,
+  .mp-node,
+  .mp-label { animation: none !important; }
+  .mp-spoke { stroke-dashoffset: 0 !important; }
+  .mp-node { opacity: 1 !important; transform: none !important; }
+  .mp-label { opacity: 1 !important; }
 }

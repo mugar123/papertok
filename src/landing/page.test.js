@@ -99,7 +99,7 @@ test('the hero deck ships three slides, the first visible, the others hidden and
   assert.match(css, /\.lp-deck__skip\[hidden\]\s*\{\s*display:\s*none;?\s*\}/);
 });
 
-test('yellow is a ground in four places, plus one small travelling indicator', () => {
+test('yellow is a ground in four places, a travelling indicator, and one badge inside a window', () => {
   // .lp-bar--yellow and .lp-btn--yellow live in static-page.css, and
   // motion.css is owned by tasks 7 and 10 from here — read all three, or a
   // fifth yellow ground added to either evades this test.
@@ -108,6 +108,19 @@ test('yellow is a ground in four places, plus one small travelling indicator', (
   // verbatim from the working prototype) rather than invented here:
   // `.lp-levels::after`, the active reading-level tab's travelling
   // indicator — a 1/3-width strip, not a field a visitor's eye rests on.
+  //
+  // Task 9 forces a sixth: `.lp-research__badge`, the Research edition's
+  // "Lead story" badge. This is `.sr-lead-label` in the real app
+  // (src/components/Report/ScientificReport.css:620-627) copied verbatim,
+  // padding and all — the brief explicitly asked for the badge to "use
+  // yellow as the app does," and the app's own badge is full
+  // `--brand-yellow`, not a softened landing-page substitute. Unlike the
+  // other five, it never sits on the page directly: it is one small badge
+  // inside `.lp-window__inner`, itself `aria-hidden` and boxed inside a
+  // `<figure>` — the picture-of-the-app pattern task 8 established, not a
+  // field a visitor's eye rests on while reading the page. Flagged in the
+  // task 9 report rather than widened here without comment, per this task's
+  // own instruction to say so rather than quietly grow the number.
   //
   // @keyframes are stripped BEFORE the scan: a keyframe step's own selector
   // (e.g. `38%`, where the AI button's invitation keyframe peaks at the
@@ -118,10 +131,10 @@ test('yellow is a ground in four places, plus one small travelling indicator', (
   // button's OWN resting, hover, focus and press states stay on
   // --brand-yellow-soft and never flip to the full colour (see .lp-btn--ai
   // and its [data-phase='press'] rule) — that flip is exactly where a real
-  // sixth ground would have appeared, and it does not.
+  // seventh ground would have appeared, and it does not.
   const scanned = stripKeyframes(allCss);
   const grounds = [...scanned.matchAll(/([^{}]+)\{[^}]*background(?:-color)?:\s*var\(--brand-yellow\)[^}]*\}/g)].map((m) => m[1].trim());
-  assert.deepEqual(grounds.sort(), ['.lp-bar--yellow', '.lp-btn--yellow', '.lp-close .lp-btn--yellow', '.lp-hero', '.lp-levels::after']);
+  assert.deepEqual(grounds.sort(), ['.lp-bar--yellow', '.lp-btn--yellow', '.lp-close .lp-btn--yellow', '.lp-hero', '.lp-levels::after', '.lp-research__badge']);
 });
 
 test('no snap, no wheel capture, no figures, no eyebrows outside the card, no list-cards outside the library', () => {
@@ -140,7 +153,17 @@ test('no snap, no wheel capture, no figures, no eyebrows outside the card, no li
   // same reason: `.lp-list-card__count` is the paper-count line on a list
   // card exactly as ListsPage.css sets its own rows, not a fresh decision —
   // see the second counterpart assertion below.
-  for (const sel of upper) assert.match(sel, /^\.lp-(paper|plate|research|chip|pile|eyebrow|list-card)/, sel);
+  // `brief` joins it in task 9: `.lp-brief__kicker` is the field+year row on
+  // each of the eleven research cards, set uppercase the same mono way
+  // `.lp-paper__meta` already is — not a fresh decision. `plate` and
+  // `research` were already in this list before task 9 touched it; of the
+  // two, only `.lp-research__badge` (the "Lead story" badge, matching the
+  // app's own `.sr-lead-label`) actually declares `text-transform:
+  // uppercase` — `plate`'s own rules never do (graphMap.js's SVG corner
+  // labels are typed in caps as literal text, not transformed by CSS), so
+  // it stays allowed but unused by this task. See the counterpart below,
+  // which is what stops `brief` specifically from leaking.
+  for (const sel of upper) assert.match(sel, /^\.lp-(paper|plate|research|chip|pile|eyebrow|list-card|brief)/, sel);
   // `.lp-eyebrow` is app UI that belongs INSIDE a reader's own window — the
   // `.lp-rewrite` widget here, the research screen once task 9 lands it —
   // never a label loose on the page. Scoped to `.lp-rewrite` itself, not the
@@ -156,6 +179,13 @@ test('no snap, no wheel capture, no figures, no eyebrows outside the card, no li
   // copying its containment shows up here as a leak, not silently.
   const outside = html.replace(/<div class="lp-rewrite"[\s\S]*?<\/section>/, '').replace(/<section class="lp-research[^"]*"[\s\S]*?<\/section>/, '');
   assert.doesNotMatch(outside, /lp-eyebrow/);
+  // `.lp-brief` is the app UI for task 9's eleven research cards — it
+  // belongs INSIDE the Research window (`<figure class="lp-window">`
+  // inside `.lp-research`), never loose on the page. The same `outside`
+  // already has the whole `.lp-research` section removed (above), so this
+  // is the direct counterpart to the `eyebrow` check just above it: task
+  // 9's new allowance (`brief`) must not leak any more than task 7's did.
+  assert.doesNotMatch(outside, /lp-brief/);
   // `.lp-list-card` is app UI that belongs INSIDE the library's own
   // <figure> — the swatch legend and the left column's prose
   // (`.lp-library__head`) sit in the same SECTION but are not that figure,
@@ -205,21 +235,21 @@ test('the highlight appears at least once and at most three times, and never as 
   assert.match(css, /\.lp-close \.lp-hl[^{]*\{[^}]*text-decoration: underline/);
 });
 
-// The brief's own test asserts the eleven sections exactly; only three exist
-// after this task, so it would sit red for four tasks. This checks instead
-// that the sections which DO exist are a subsequence of the spec's canonical
-// order — passes now, and still gates the order once tasks 6-9 land theirs.
+// Tasks 6-9 each inserted a section into this array; until task 9 the check
+// here only asked the sections that already existed to be a subsequence of
+// the canonical order, since the other eight/nine were still missing and a
+// literal-equality check would have sat red for four tasks running. Task 9
+// is the last of them — `lp-map` and `lp-research` complete the set — so
+// this now pins the page's shape exactly: eleven sections, this order,
+// nothing more and nothing missing. Any future task that reorders, drops or
+// duplicates a section fails here first.
 const CANONICAL = ['lp-hero', 'lp-problem', 'lp-signals', 'lp-reader', 'lp-labels', 'lp-follow', 'lp-library', 'lp-map', 'lp-research', 'lp-strip', 'lp-close'];
-test('the sections that exist appear in the canonical order', () => {
-  for (const s of sections) assert.ok(CANONICAL.includes(s), `unknown section ${s}`);
-  // A subsequence check alone passes on a repeat (e.g. two `lp-strip`s: the
-  // second's position is still >= the first's), which is exactly the shape
-  // of mistake four tasks inserting sections into the same array are about
-  // to have a chance to make.
+test('the eleven sections render in exactly the canonical order', () => {
+  // Checked before the equality below so a duplicate reports as exactly
+  // that ("a section appears more than once") rather than as an opaque
+  // array-length mismatch against CANONICAL.
   assert.equal(new Set(sections).size, sections.length, 'a section appears more than once');
-  const positions = sections.map((s) => CANONICAL.indexOf(s));
-  assert.deepEqual(positions, [...positions].sort((a, b) => a - b));
-  assert.ok(sections.length >= 3);
+  assert.deepEqual(sections, CANONICAL);
 });
 
 test('the wheel is thirteen slots the screen reader never hears, next to a list it does', () => {
@@ -328,4 +358,20 @@ test('the four lists are a figure too, with the eight colours as a list of names
   assert.equal((sec.match(/class="lp-list-card"/g) || []).length, 4);
   assert.equal((sec.match(/class="lp-swatch"/g) || []).length, 8);
   assert.match(sec, /<ul class="lp-swatches" aria-label="The eight list colours">/);
+});
+
+// `.lp-map` carries `lp-sec` too, same reason as every section above.
+test('the map is an svg with a text alternative list beside it', () => {
+  const sec = html.match(/<section class="lp-map[^"]*"[\s\S]*?<\/section>/)[0];
+  assert.equal((sec.match(/<svg/g) || []).length, 2, 'the wide and the compact plate');
+  assert.match(sec, /<ul class="lp-visually-hidden" id="lp-map-list">/);
+  assert.equal((sec.match(/<ul class="lp-visually-hidden" id="lp-map-list">[\s\S]*?<\/ul>/)[0].match(/<li>/g) || []).length, 7);
+});
+
+test('the edition is a window with a caption, cut with a fade, its percentages the real ones', () => {
+  const sec = html.match(/<section class="lp-research[^"]*"[\s\S]*?<\/section>/)[0];
+  assert.match(sec, /<figure class="lp-window">/);
+  assert.match(sec, /\+69%/); assert.match(sec, /\+47%/);
+  assert.doesNotMatch(sec, /\+115%|\+87%/);
+  assert.doesNotMatch(sec, /data-research-anchor|lp-pin/);
 });

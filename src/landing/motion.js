@@ -419,6 +419,25 @@ export function armPile() {
   frame.addEventListener('click', function () { flick(); });
 }
 
+/* The citation map draws itself once, the same watch-and-disconnect shape
+   as armPile above: `.is-in` is added the first time the plate is 40%
+   in view and never removed, so motion.css's draw-on animation (spokes,
+   then nodes, then labels — staggered by each element's own `--i`) runs
+   exactly once per visit. Scrolling the map away and back does not replay
+   it — there is no listener left to fire a second time, and a CSS
+   animation that already finished does not restart on its own just
+   because its element leaves and re-enters the viewport. */
+export function armMap() {
+  var plate = document.querySelector('[data-map]');
+  if (!plate) return;
+  var io = new IntersectionObserver(function (entries) {
+    if (!entries.some(function (e) { return e.isIntersecting; })) return;
+    plate.classList.add('is-in');
+    io.disconnect();
+  }, { threshold: 0.4 });
+  io.observe(plate);
+}
+
 /* Exported so a test can call it directly with the page's real globals
    substituted, and prove `shouldAnimate()` actually gates `armPile()`
    rather than trusting that the two are wired together correctly by
@@ -435,6 +454,7 @@ export function init() {
 
   if (document.documentElement.getAttribute('data-motion') !== 'on' || !shouldAnimate()) return;
   armPile();
+  armMap();
   if (rewrite) armRewrite(rewrite);
 }
 

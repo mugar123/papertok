@@ -12,6 +12,17 @@
 .lp-hl { box-shadow: inset 0 -0.42em 0 var(--brand-yellow); padding: 0 0.04em; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 [data-theme="dark"] .lp-hl, .lp-close .lp-hl { box-shadow: none; text-decoration: underline; text-decoration-color: var(--brand-yellow); text-decoration-thickness: 0.08em; text-underline-offset: 0.14em; text-decoration-skip-ink: auto; }
 
+/* The app's machine voice: ids, counts, categories, timestamps, source
+   names. Used since task 6 (the reader's kicker and its uses counter,
+   REWRITE.cost) but never actually defined until now — both rendered in
+   whatever the surrounding element's own font was, not the mono-uppercase
+   voice the class name promises. Task 9's Research window leans on it
+   heavily (the running head, every stat label, the topics note, the forme
+   label), which is what surfaced the gap. */
+.lp-eyebrow { font: var(--mono-label); letter-spacing: var(--mono-track); text-transform: uppercase; color: var(--text-tertiary); }
+.lp-eyebrow--ink { color: var(--text-primary); }
+.lp-eyebrow--oa { border-bottom: 2px solid var(--tint-green-fg); padding-bottom: 2px; }
+
 /* ── Sections ── */
 .lp-sec { padding: 104px 0; }
 .lp-cols { display: grid; grid-template-columns: 420px minmax(0, 1fr); gap: 96px; align-items: start; }
@@ -517,6 +528,147 @@
 @media (max-width: 1000px) { .lp-library__head { grid-template-columns: minmax(0, 1fr); gap: 24px; } .lp-swatches { justify-content: flex-start; } .lp-lists { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .lp-follow__row { grid-template-columns: 44px minmax(0, 1fr); } .lp-follow__row .lp-btn { grid-column: 2; justify-self: start; } .lp-follow__icon { width: 44px; height: 44px; } }
 
+/* ── The citation map ──
+   One SVG, drawn once on arrival (motion.css) rather than pinned to the
+   scroll. `.lp-plate--compact` is a second, separately-composed SVG
+   (graphMap.js) for phones — not the wide one scaled down — so the two are
+   swapped by `display`, never both visible at once. */
+.lp-map__head { display: grid; grid-template-columns: 560px minmax(0, 1fr); gap: 96px; align-items: end; }
+.lp-body--wide { max-width: 46ch; }
+.lp-plate { display: block; width: 100%; height: auto; }
+.lp-plate--compact { display: none; }
+@media (max-width: 1000px) { .lp-map__head { grid-template-columns: minmax(0, 1fr); gap: 20px; } }
+@media (max-width: 700px) { .lp-plate { display: none; } .lp-plate--compact { display: block; } }
+
+/* ── The Research edition, as a window onto the app ──
+   A fixed-height figure with its bottom cut by a mask — it does NOT capture
+   the scroll (no `.lp-pin`, no scroll-driven translate): the edition simply
+   ends, the way any other screen does, rather than costing 847 measured
+   pixels of extra scroll for a screen no wider than its neighbours. */
+.lp-window { margin: 0; position: relative; height: 880px; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 78%, rgba(0,0,0,0)); mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 78%, rgba(0,0,0,0)); }
+.lp-window__inner { border: 1px solid var(--border-subtle); border-bottom: none; border-radius: var(--radius-lg) var(--radius-lg) 0 0; background: var(--bg-card); padding: 36px 40px 0; }
+@media (max-width: 700px) { .lp-window { height: 720px; } .lp-window__inner { padding: 24px 20px 0; } }
+
+/* The app's front page, reproduced. Scoped to `.lp-window` rather than a
+   bare `.lp-research` selector: the SECTION itself also carries the class
+   `lp-research` (every section in this file is named after its own class,
+   for the page.test.js order check), and an unscoped rule here would also
+   paint a border, a card background and this flex layout onto the whole
+   full-bleed section — not just the picture inside it. */
+.lp-window .lp-research { border: 1px solid var(--border-default); background: var(--bg-primary); padding: 24px 28px 28px; display: flex; flex-direction: column; gap: 18px; }
+.lp-research__masthead { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+.lp-research__masthead > div { display: flex; flex-direction: column; gap: 10px; }
+.lp-research__title { font-family: var(--font-serif); font-size: 2.875rem; font-weight: var(--fw-bold); line-height: 0.95; letter-spacing: -0.03em; }
+.lp-research__pill { display: inline-flex; align-items: center; padding: 8px 12px; border: 1px solid var(--border-default); border-radius: var(--radius-md); font: 0.75rem/1 var(--font-mono); color: var(--text-secondary); white-space: nowrap; }
+.lp-research__periods { display: flex; align-items: baseline; gap: 20px; flex-wrap: wrap; }
+.lp-period { font-size: 1rem; line-height: 1.2; color: var(--text-secondary); }
+/* The one place the brand yellow lives in the reproduced app UI (see the
+   Lead story badge below, the other). Both are inside the aria-hidden
+   window, never a page-level ground. */
+.lp-period.is-active { color: var(--text-primary); border-bottom: 3px solid var(--brand-yellow); padding-bottom: 3px; }
+.lp-research__rule { height: 2px; background: var(--text-primary); margin-top: -6px; }
+/* The rule's own animated fill only mattered while the edition was pinned
+   to the scroll (removed, decision C) — the rule above is already solid,
+   so the fill span stays permanently hidden rather than carrying dead
+   scroll-progress CSS forward. */
+.lp-research__fill { display: none; }
+.lp-research__body { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 36px; align-items: start; }
+.lp-research__lead { display: flex; flex-direction: column; gap: 14px; }
+.lp-research__kicker { width: 48px; height: 3px; background: var(--accent-rose); }
+/* `.sr-lead-label` (ScientificReport.css) verbatim: the same padding,
+   mono-uppercase voice and full `--brand-yellow` the real "Lead story"
+   badge uses, not a softened landing-page substitute. */
+.lp-research__badge { align-self: flex-start; padding: 4px 8px; background: var(--brand-yellow); color: var(--text-on-brand); font: var(--mono-label); letter-spacing: var(--mono-track); text-transform: uppercase; }
+.lp-research__field { font-weight: var(--fw-semibold); color: var(--accent-rose); }
+.lp-research__spread { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr); gap: 28px; align-items: start; }
+.lp-research__spread > div { display: flex; flex-direction: column; gap: 14px; }
+.lp-research__headline { font-family: var(--font-serif); font-size: 2rem; font-weight: var(--fw-semibold); line-height: 1.1; letter-spacing: -0.02em; margin: 0; }
+.lp-research__authors { margin: 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--text-secondary); }
+.lp-research__abstract { margin: 0; padding-left: 28px; border-left: 1px solid var(--border-subtle); font-family: var(--font-serif); font-size: 0.9375rem; line-height: 1.6; color: var(--text-secondary); }
+.lp-research__rail { display: flex; flex-direction: column; }
+.lp-stat { display: flex; align-items: flex-start; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--border-subtle); }
+.lp-stat__icon { width: 26px; height: 26px; border: 1px solid var(--border-subtle); background: var(--tint-neutral-bg); flex: none; }
+.lp-stat > span:last-child { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+.lp-stat__value { font: var(--fw-semibold) var(--fs-2xl)/1 var(--font-body); letter-spacing: -0.02em; }
+.lp-topics__head { display: flex; flex-direction: column; gap: 4px; padding-top: 16px; }
+.lp-topics__note { font: 0.75rem/1.5 var(--font-mono); color: var(--text-tertiary); }
+.lp-topic { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; }
+.lp-topic__row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.lp-topic__name { font-size: var(--fs-sm); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lp-topic__pct { font: var(--fw-medium) var(--fs-sm)/1 var(--font-body); color: var(--tint-green-fg); flex: none; }
+.lp-topic__bar { height: 3px; background: var(--border-subtle); display: block; }
+.lp-topic__bar span { height: 3px; background: var(--tint-green-fg); display: block; }
+.lp-topic__works { font: 0.75rem/1.4 var(--font-mono); color: var(--text-tertiary); }
+/* There is no pinned/scrolled state any more (decision C), so the running
+   head only ever shows its first line — the second exists in the markup
+   (its own sentence, read once by a screen reader) but never on screen. */
+.lp-runhead { display: block; }
+.lp-runhead__b { display: none; }
+
+/* The forme: six columns, every row closing on the measure. Anatomy copied
+   from src/components/Report/ScientificReport.css. */
+.lp-forme__label { padding-bottom: 12px; margin: 36px 0 0; border-bottom: 1px solid var(--text-primary); display: block; }
+.lp-forme { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0; }
+.lp-brief { position: relative; display: flex; flex-direction: column; min-width: 0; padding: 20px 20px 24px; border-bottom: 1px solid var(--border-default); }
+.lp-brief--s2 { grid-column: span 2; }
+.lp-brief--s3 { grid-column: span 3; }
+.lp-brief--s4 { grid-column: span 4; }
+.lp-brief--s6 { grid-column: span 6; }
+.lp-brief:not(.is-row-end) { border-right: 1px solid var(--border-default); }
+.lp-brief.is-row-start { padding-left: 0; }
+.lp-brief.is-row-end { padding-right: 0; }
+.lp-brief__rule { display: block; width: 28px; height: 3px; margin-bottom: 12px; background: var(--lp-field, var(--text-primary)); }
+.lp-brief__heavy { display: block; height: 1px; margin-bottom: 12px; background: var(--text-primary); }
+.lp-brief__kicker { display: flex; align-items: baseline; gap: 8px; margin-bottom: 9px; min-width: 0; font: var(--mono-label); letter-spacing: var(--mono-track); text-transform: uppercase; }
+.lp-brief__field { color: var(--lp-field, var(--text-primary)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lp-brief__year { margin-left: auto; flex: 0 0 auto; color: var(--text-tertiary); }
+/* The app's own areas, resolved the way areaAccent.js resolves them. */
+.lp-brief[data-field='bio'] { --lp-field: var(--gradient-bio, #15803d); }
+.lp-brief[data-field='med'] { --lp-field: var(--accent-rose, #be123c); }
+.lp-brief[data-field='physics'] { --lp-field: var(--gradient-physics, #4f46e5); }
+.lp-brief[data-field='cs'] { --lp-field: var(--gradient-cs, #c2410c); }
+.lp-brief[data-field='math'] { --lp-field: var(--gradient-math, #7e22ce); }
+.lp-brief__title { font-family: var(--font-serif); font-weight: var(--fw-semibold); line-height: 1.15; letter-spacing: -0.015em; color: var(--text-primary); margin: 0 0 12px; text-wrap: pretty; }
+.lp-brief__title--xl { font-size: 1.5rem; line-height: 1.08; letter-spacing: -0.022em; }
+.lp-brief__title--lg { font-size: 1.25rem; line-height: 1.12; }
+.lp-brief__title--md { font-size: 1.1rem; line-height: 1.18; }
+.lp-brief__title--sm { font-size: 0.975rem; line-height: 1.24; }
+.lp-brief__dek { font-family: var(--font-serif); font-size: 0.9375rem; line-height: 1.6; color: var(--text-secondary); margin: 0 0 16px; display: -webkit-box; -webkit-line-clamp: var(--dek-lines, 3); -webkit-box-orient: vertical; overflow: hidden; }
+.lp-brief__dek--split { display: block; column-count: 2; column-gap: 32px; column-rule: 1px solid var(--border-subtle); max-height: 8.1em; overflow: hidden; }
+.lp-brief__foot { margin-top: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.lp-micro { font: 0.6875rem/1.4 var(--font-mono); color: var(--text-tertiary); }
+.lp-micro--oa { color: var(--tint-green-fg); }
+.lp-micro + .lp-micro::before { content: '·'; margin-right: 5px; color: var(--border-strong); }
+/* One column once the six-column measure no longer fits — same breakpoint
+   as the rest of this file's tablet/phone rules (unlike the prototype's own
+   900px, which this window has no other reason to introduce). */
+@media (max-width: 1000px) {
+  .lp-forme { grid-template-columns: minmax(0, 1fr); }
+  .lp-brief--s2, .lp-brief--s3, .lp-brief--s4, .lp-brief--s6 { grid-column: span 1; }
+  .lp-brief { padding: 18px 0; border-right: 0 !important; }
+  .lp-brief__dek--split { column-count: 1; max-height: none; }
+}
+@media (max-width: 700px) {
+  .lp-window .lp-research { padding: 20px 18px; }
+  .lp-research__title { font-size: 2.5rem; }
+  /* Measured, not guessed: at this width `.lp-research__body` and
+     `.lp-research__spread` (both `minmax(0, 1fr)`, above) already stack the
+     rail below the lead and the abstract below the headline, and a
+     full-size headline plus the abstract together ran to 634px on their
+     own — past the 720px window this block used to set, so the rail
+     (carrying the two "Growing topics" percentages, decision E's own
+     numbers) sat entirely below the hard `overflow: hidden` edge, not just
+     faded. Dropping the abstract and the headline's type size here is the
+     same move the citation map's compact plate already makes (drop detail,
+     keep the core figures), and the taller window is sized so the rail's
+     own last row clears the fade check up above the mask's 78% start, with
+     the forme's first row only just beginning to appear as the mask takes
+     over — a hint of "more edition here," same as the desktop capture. */
+  .lp-window { height: 1300px; }
+  .lp-research__abstract { display: none; }
+  .lp-research__headline { font-size: 1.5rem; line-height: 1.15; }
+}
+
 /* ── Strip and close ── */
 .lp-strip { padding: 64px 0; }
 .lp-strip__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 64px; }
@@ -538,7 +690,7 @@ main:has(> .lp-close:last-child) + .lp-footer { border-top: none; }
 
 /* ── Phones (390) and narrow laptops ── */
 @media (max-width: 1000px) {
-  .lp-hero__grid, .lp-cols { grid-template-columns: minmax(0, 1fr); gap: 40px; }
+  .lp-hero__grid, .lp-cols, .lp-research__body, .lp-research__spread { grid-template-columns: minmax(0, 1fr); gap: 40px; }
   .lp-strip__grid { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .lp-close__grid { flex-direction: column; align-items: flex-start; }
   .lp-close__action { align-items: flex-start; }

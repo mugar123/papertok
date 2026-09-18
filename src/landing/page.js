@@ -1,4 +1,5 @@
-import { HERO_PAPERS, REPO, SOURCES, PEOPLE, PILE, WHEEL, SIGNALS, LEVELS, DEFAULT_LEVEL, REWRITE, FOLLOW_ROWS, LISTS } from './papers.js';
+import { HERO_PAPERS, REPO, SOURCES, PEOPLE, PILE, WHEEL, SIGNALS, LEVELS, DEFAULT_LEVEL, REWRITE, FOLLOW_ROWS, LISTS, MAP, RESEARCH } from './papers.js';
+import { citationPlate } from './graphMap.js';
 
 const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -425,6 +426,150 @@ const library = () => `<section class="lp-library lp-sec" aria-labelledby="lp-li
   </div>
 </section>`;
 
+/**
+ * The citation map: what the LIGO paper cites above the rule, what cites it
+ * below, on a log axis of citations received. `citationPlate()` (graphMap.js)
+ * builds two separately-composed SVGs from the same frozen `MAP` data — the
+ * wide plate and a compact one with fewer nodes for a phone-width screen —
+ * and landing.css shows exactly one of the two per viewport width.
+ *
+ * Both plates are `role="img"` with their own `<title>`: a picture, not a
+ * table, so the shape is what a sighted visitor gets. The
+ * `<ul class="lp-visually-hidden">` beside them is the actual data every
+ * screen reader gets instead — all seven neighbours, named, with their real
+ * citation counts — rather than two redundant descriptions of the same
+ * picture. `n.citations.toLocaleString('en-US')` is a `Number` method: it
+ * can only ever produce digits, commas and (for other locales) periods, so
+ * unlike `n.name` this needs no `esc()` to land safely in text content.
+ */
+const citationMap = () => `<section class="lp-map lp-sec" aria-labelledby="lp-map-h">
+  <div class="lp-wrap lp-stack">
+    <div class="lp-map__head">
+      <h2 id="lp-map-h" class="lp-h2">Every paper, on the map of what it came from.</h2>
+      <p class="lp-body lp-body--wide">What it cites above the line, what cites it below, and how far each one travelled. Walk the graph node by node; a work with unknown data is counted as such, not invented into a position.</p>
+    </div>
+    <div class="lp-map__plate" data-map>${citationPlate(MAP)}${citationPlate(MAP, { compact: true })}</div>
+    <ul class="lp-visually-hidden" id="lp-map-list">${[...MAP.above.map((n) => `<li>Cites ${esc(n.name)}, ${n.citations.toLocaleString('en-US')} citations</li>`), ...MAP.below.map((n) => `<li>Cited by ${esc(n.name)}, ${n.citations.toLocaleString('en-US')} citations</li>`)].join('')}</ul>
+  </div>
+</section>`;
+
+/**
+ * One cell of the Research edition's "forme" — the six-column grid of
+ * eleven briefs below the lead story. `cell.span` (2/3/4/6, a `Number`) sets
+ * how many of the six columns it takes; `cell.size` (a data-derived string:
+ * 'xl'/'lg'/'md'/'sm') picks the title's type step and is spliced into a
+ * class-name suffix, so — like `chip()`'s own `tone` — it goes through
+ * `assertSafeToken()` rather than `esc()`: this is a bare-identifier
+ * context (`lp-brief__title--${…}`), not a quoted attribute value.
+ * `cell.tone` (the field, for the accent rule and colour) lands in a normal
+ * quoted attribute (`data-field="…"`) instead, so `esc()` is what it needs.
+ *
+ * "Open access" is not a per-cell flag: `RESEARCH.stats`'s own "11/11
+ * Selection OA" already claims all eleven are, so stating it on every card
+ * is the data, not a decoration invented here.
+ */
+const brief = (cell, first, last) => `<article class="lp-brief lp-brief--s${cell.span}${first ? ' is-row-start' : ''}${last ? ' is-row-end' : ''}" data-field="${esc(cell.tone)}">
+  ${cell.heavy ? '<span class="lp-brief__heavy" aria-hidden="true"></span>' : '<span class="lp-brief__rule" aria-hidden="true"></span>'}
+  <span class="lp-brief__kicker"><span class="lp-brief__field">${esc(cell.field)}</span><span class="lp-brief__year">${esc(cell.year)}</span></span>
+  <h4 class="lp-brief__title lp-brief__title--${assertSafeToken(cell.size, /^[a-z]+$/, 'brief title size')}">${esc(cell.title)}</h4>
+  <p class="lp-brief__dek${cell.split ? ' lp-brief__dek--split' : ''}"${cell.lines ? ` style="--dek-lines:${cell.lines}"` : ''}>${esc(cell.dek)}</p>
+  <span class="lp-brief__foot"><span class="lp-micro lp-micro--oa">Open access</span><span class="lp-micro">${esc(cell.cites)}</span><span class="lp-micro">${esc(cell.venue)}</span></span>
+</article>`;
+
+/**
+ * The Research edition: the app's own front page, shown as a picture — same
+ * figure/figcaption discipline as follow()/library() (task 8), because
+ * nothing in it is real UI a visitor could act on. Unlike the prototype this
+ * page's tests were written against, the window does NOT capture the
+ * scroll: no `.lp-pin`, no `data-research-anchor`, no scroll-driven
+ * translate. It is a fixed-height `<figure class="lp-window">` whose bottom
+ * is cut by a CSS mask (landing.css) — the edition simply ends, rather than
+ * costing every reader 847px of scroll to pass a screen no wider than any
+ * other on the page.
+ *
+ * `t.pct` and `t.worksLabel` (papers.js — derived from `works`/`previous`)
+ * are what render in the rail, never a hand-typed percentage: the data says
+ * +69% and +47% because 882/523 and 641/436 do.
+ *
+ * `RESEARCH.window` is the one piece of data on this whole page that is
+ * itself markup — `'…Sep 11<br>compared with…'`, an intentional line break
+ * baked into the string. Escaping the whole string would print the `<br>`
+ * as text; not escaping it at all would let a future edit of that string
+ * carry HTML metacharacters straight into the page unescaped. Splitting on
+ * the one literal (code-authored, not data-derived) `<br>` and escaping
+ * each half keeps both: the line break renders, and the data on either
+ * side of it is escaped like every other string on this page.
+ */
+const research = () => `<section class="lp-research lp-sec" aria-labelledby="lp-research-h">
+  <div class="lp-wrap lp-stack">
+    <div class="lp-head">
+      <h2 id="lp-research-h" class="lp-h2">Research: the week, set like a front page.</h2>
+      <p class="lp-body">A different question from the feed: not what you might like, but what is worth paying attention to right now. Today and yesterday, seven days, thirty, a year, ten years — or drag your own range back to 1950.</p>
+    </div>
+
+    <figure class="lp-window">
+      <figcaption class="lp-visually-hidden">The Research edition for the last seven days: a lead story, eleven selected papers, and the topics growing fastest.</figcaption>
+      <div class="lp-window__inner" aria-hidden="true">
+        <div class="lp-research">
+          <div class="lp-research__masthead">
+            <div>
+              <span class="lp-eyebrow lp-runhead">
+                <span class="lp-runhead__a">Scientific edition for this period · <span class="lp-eyebrow--ink">Selection 1 of 26</span></span>
+                <span class="lp-runhead__b">Selection 1 of 26 · <span class="lp-eyebrow--ink">Other highlighted research</span></span>
+              </span>
+              <span class="lp-research__title">Research</span>
+            </div>
+            <span class="lp-research__pill">Last 7 days</span>
+          </div>
+
+          <div class="lp-research__periods">
+            <span class="lp-eyebrow">Edition</span>
+            ${RESEARCH.periods.map((p) => `<span class="lp-period${p === RESEARCH.active ? ' is-active' : ''}">${esc(p)}</span>`).join('')}
+          </div>
+          <div class="lp-research__rule" aria-hidden="true"><span class="lp-research__fill"></span></div>
+
+          <div class="lp-research__body">
+            <div class="lp-research__lead">
+              <span class="lp-research__kicker" aria-hidden="true"></span>
+              <span class="lp-research__badge">Lead story</span>
+              <p class="lp-paper__meta"><span class="lp-research__field">${esc(RESEARCH.lead.field)}</span>${dot}<span>${esc(RESEARCH.lead.venue)}</span>${dot}<span>${esc(RESEARCH.lead.year)}</span></p>
+              <div class="lp-research__spread">
+                <div>
+                  <h3 class="lp-research__headline">${esc(RESEARCH.lead.title)}</h3>
+                  <p class="lp-research__authors">${esc(RESEARCH.lead.authors)}</p>
+                  ${chips(RESEARCH.lead.chips)}
+                </div>
+                <p class="lp-research__abstract">${esc(RESEARCH.lead.abstract)}</p>
+              </div>
+            </div>
+
+            <aside class="lp-research__rail">
+              ${RESEARCH.stats.map((s) => `<div class="lp-stat">
+                <span class="lp-stat__icon" aria-hidden="true"></span>
+                <span><span class="lp-stat__value">${esc(s.value)}</span><span class="lp-eyebrow${s.underline ? ' lp-eyebrow--oa' : ''}">${esc(s.label)}</span></span>
+              </div>`).join('')}
+              <div class="lp-topics__head">
+                <span class="lp-eyebrow">Growing topics</span>
+                <span class="lp-topics__note">${RESEARCH.window.split('<br>').map(esc).join('<br>')}</span>
+              </div>
+              ${RESEARCH.topics.map((t) => `<div class="lp-topic">
+                <span class="lp-topic__row"><span class="lp-topic__name">${esc(t.name)}</span><span class="lp-topic__pct">+${t.pct}%</span></span>
+                <span class="lp-topic__bar"><span style="width:${Math.min(100, t.pct)}%"></span></span>
+                <span class="lp-topic__works">${esc(t.worksLabel)}</span>
+              </div>`).join('')}
+            </aside>
+          </div>
+
+          <h3 class="lp-eyebrow lp-forme__label">Other highlighted research</h3>
+          <div class="lp-forme">
+            ${RESEARCH.highlights.map((row) => row.map((cell, i) => brief(cell, i === 0, i === row.length - 1)).join('')).join('')}
+          </div>
+        </div>
+      </div>
+    </figure>
+  </div>
+</section>`;
+
 const strip = () => `<section class="lp-strip" aria-labelledby="lp-strip-h">
   <h2 id="lp-strip-h" class="lp-visually-hidden">Where it comes from, and who makes it</h2>
   <div class="lp-wrap lp-strip__grid">
@@ -447,6 +592,6 @@ const foot = () => `<footer class="lp-footer">
 </footer>`;
 
 export function buildLandingHtml() {
-  const screens = [hero(), problem(), signals(), plainWords(), labels(), follow(), library(), strip(), close()]; // task 9 inserts lp-map/lp-research before strip()
+  const screens = [hero(), problem(), signals(), plainWords(), labels(), follow(), library(), citationMap(), research(), strip(), close()]; // the eleven canonical sections, complete as of task 9
   return `${skip()}\n${bar()}\n<main id="main-content" class="lp-main">\n${screens.join('\n')}\n</main>\n${foot()}\n${pileData()}`;
 }
