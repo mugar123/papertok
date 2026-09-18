@@ -1,5 +1,59 @@
 # Estado / pendientes
 
+## Las rutas de la app dejan de vivir en el fragmento (2026-09-18)
+
+**`papertok.app/following` es ahora esa página, no el feed ignorando el camino.**
+El router pasa a `BrowserRouter`, así que `/feed`, `/following`, `/research`,
+`/lists`, `/public/…` y `/explorer/…` son caminos de verdad. Ningún enlace de los
+que ya están ahí fuera muere: la puerta de `index.html` sigue mandando un `#/…`
+a `/feed` con el fragmento intacto y `src/utils/legacyHashRoute.js` reescribe la
+entrada con `replaceState` antes de que React pinte. Comprobado en producción con
+la puerta que lo distingue —un paper público, que no está tras `ProtectedRoute`—:
+`/#/public/paper/…` acaba en `/public/paper/…` sin fragmento. Con `/following` o
+`/research` no se distingue nada, porque el rebote del invitado deja `/feed` haya
+traducción o no.
+
+**El identificador del paper viajaba, y no por donde se miraba.** La política
+publicada promete que leer un paper se anota como `/public/paper/:id` y que cuál
+nunca viaja. El cuerpo del evento lo cumplía. La cabecera `Referer` no: una
+petición a un subrecurso del mismo origen lleva la URL COMPLETA de la página, así
+que el propio script de analítica le anunciaba la clave del paper al edge en cada
+visita. Con el router en el fragmento salía gratis, porque un fragmento se
+despoja de `Referer`; las rutas reales lo devolvían ahí. `beforeSend` no llega a
+una cabecera, así que lo corta el documento: `<meta name="referrer"
+content="strict-origin">` en `app.html`, y no `no-referrer` porque una clave de
+API restringida por origen lee esa cabecera. Medido en las dos direcciones —
+quitando la meta del build, la cabecera vuelve a leer la clave del paper, el id
+del autor y además su nombre desde la query. `npm run privacy:analytics` entra en
+`npm run check`, porque una promesa que no vigila nadie no es una promesa.
+
+**El `navigateFallback` del plan estaba mal.** generateSW registra su
+`NavigationRoute` ANTES que las reglas de `runtimeCaching` (leído en el `sw.js`
+generado: byte 3588 contra 3809) y workbox casa por orden de registro, así que se
+habría quedado con todas las navegaciones y dejado el HTML clavado a lo último
+precacheado. La última oportunidad sin red cuelga ahora de la propia regla
+`NetworkFirst`, con su lista de exclusión: `/` es la landing, `/privacy.html` la
+política y `/__/auth/` el manejador de sesión de Firebase, que servido como app
+cuelga todos los inicios de sesión. Comprobado con el servidor APAGADO, que es la
+única forma: `Network.emulateNetworkConditions` se aplica al target de la pestaña
+y el service worker es otro, así que con el servidor vivo la sonda mide el
+servidor y da verde sin que el fallback corra nunca
+(`scripts/diagnostics/offline-routes-probe.mjs`).
+
+Y una redirección abierta que se coló en el traductor de enlaces viejos:
+colapsaba `//` para que `#//evil.com` fuera una ruta de casa, pero el parser de
+URLs trata `\` como `/`, así que `#/\\evil.com` resolvía a otro origen. No
+llevaba a nadie a ningún sitio —`replaceState` rechaza otro origen— pero eso
+dejaba la defensa en manos del navegador. El test lo comprueba por ORIGEN, no por
+cadena.
+
+**Deuda que esto deja escrita, no arreglada:** nueve violaciones de
+accesibilidad en `/feed`, `/following` y `/research`, todas anteriores, en
+`docs/ACCESIBILIDAD-EVIDENCIA.md`. La grave: en móvil,
+`components/Feed/PaperCard.css:2826` le da `display: none` a la única etiqueta
+del botón, que lo saca del árbol de accesibilidad y deja quince botones sin
+nombre por pantalla.
+
 ## La landing vive en `/` y la aplicación en `/feed` (2026-09-18)
 
 **Quien no tiene sesión ya no cae en el feed, cae en una página que explica qué
