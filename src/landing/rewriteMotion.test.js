@@ -107,6 +107,29 @@ test('the invitation leaves rather than being cut off', () => {
   assert.doesNotMatch(css, /\.lp-btn--ai:hover[^{]*\{[^}]*animation:\s*none/);
 });
 
+test('a reading level replaces the one before it: no frame has two passages legible at once', () => {
+  // Los tres pasajes comparten una celda de rejilla
+  // (`.lp-doc__levels > * { grid-area: 1 / 1 }`), así que fundirlos en los dos
+  // sentidos a la vez deja dos textos distintos encima del mismo hueco. Medido
+  // antes de corregirlo, a 390 px y un rAF por muestra: 11 fotogramas, 168 ms,
+  // con el panel más tenue al 50 %; en la captura se leían las dos redacciones
+  // y el subrayado amarillo de una cruzaba las letras de la otra.
+  //
+  // El que ENTRA conserva su fundido -- si se le quita también, esto deja de
+  // ser una corrección y pasa a ser quitar la animación.
+  const reposo = css.match(/^\.lp-panel__level \{([^}]*)\}/m);
+  assert.ok(reposo, 'la regla de reposo de .lp-panel__level ha desaparecido');
+  assert.doesNotMatch(
+    reposo[1],
+    /opacity [^,;]*(linear|ease|cubic-bezier)/,
+    'el panel que sale vuelve a fundirse: durante ese fundido se leen dos textos a la vez',
+  );
+
+  const activo = css.match(/\.lp-panel__level\[data-active='true'\] \{([^}]*)\}/);
+  assert.ok(activo, 'la regla del panel activo ha desaparecido');
+  assert.match(activo[1], /opacity var\(--lp-fade-ms\) linear/, 'el panel que entra ya no funde');
+});
+
 test('reduced motion leaves the section exactly as it ships', () => {
   const at = css.indexOf('@media (prefers-reduced-motion: reduce)');
   assert.notEqual(at, -1);
