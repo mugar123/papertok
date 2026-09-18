@@ -1904,6 +1904,18 @@ cuando no hay fragmento, así que probablemente sigue siendo correcta — pero e
 - [ ] **Step 1: Tests primero.** Que `navigateFallback` sea `/app.html` y que su denylist excluya
   `/`, `/privacy.html`, `/assets/`, `/__/auth/` y `/sw.js`. Que `start_url` sea `./feed`. Que el
   catch-all de `vercel.json` lleve `/following` y `/research` a `app.html` y **no** `/`.
+- [ ] **Step 1b: La cabecera del HTML de la app cuelga de una ruta que ya nadie pide.**
+  `vercel.json` pone `Cache-Control: public, max-age=0, must-revalidate` en `/app.html` y en
+  `/index.html`, y las cabeceras de Vercel casan con la ruta que ENTRA, no con el destino de la
+  reescritura: ninguna navegación real pide esos dos caminos: se piden `/`, `/feed`, y ahora
+  `/following` y `/research`. Hoy es inocuo, porque el valor por defecto de Vercel para HTML
+  estático es exactamente ese, pero la garantía explícita se ha quedado sin efecto, y es la que
+  impide que una pestaña reciba un HTML cacheado que apunta a hashes de assets ya borrados (el
+  404 de chunk que el listener de `vite:preloadError` de `main.jsx` tapa recargando). Añade a
+  `headers` las fuentes que se piden de verdad (`/`, `/feed` y el mismo
+  `/:path((?!_vercel/|assets/|__/auth/).*)` del catch-all) y un test que compruebe que **una
+  petición a `/feed` y otra a `/` casan con alguna regla de `headers` con `must-revalidate`**, no
+  que exista la regla de `/app.html`. Viene de un minor aplazado de la tarea 2.
 - [ ] **Step 2: Fallan; impleméntalo.** El comentario de `navigateFallback: null` argumenta por
   escrito que «HashRouter nunca pide al servidor otra ruta que la base». Eso ha dejado de ser cierto:
   reescríbelo diciendo lo que ahora pasa — sin fallback, un lector sin red que abra `/research`
