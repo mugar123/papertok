@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "security:secrets": "node scripts/check-secrets.mjs",
     "test": "node --test $(find src worker proxy -name '*.test.js')",
-    "check": "npm run security:secrets && npm run lint && npm test && npm run build && npm run worker:deploy:dry-run",
+    "check": "npm run security:secrets && npm run lint && npm test && npm run build && npm run a11y:landing && npm run worker:deploy:dry-run",
     "preview": "vite preview",
     "a11y:landing": "node scripts/diagnostics/landing-axe.mjs http://localhost:4173/",
     "worker:deploy": "wrangler deploy",

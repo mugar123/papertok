@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { buildLandingHtml } from './page.js';
+import { PILE } from './papers.js';
 
 /**
  * The landing's structural a11y net — source-level, in the style of
@@ -57,19 +58,43 @@ test('language is declared on the document and on the Spanish name inside it', (
   );
 });
 
-// ── Every interactive element is named ──────────────────────────────────────
+// ── Every interactive element is named, and the name doesn't fight the label ─
 
-test('every interactive element has an accessible name and no icon-only control goes unnamed', () => {
+/** Case/whitespace-insensitive, matching how axe-core's own
+ * label-content-name-mismatch rule and a speech-input engine both normalize
+ * before comparing — this is deliberately looser than a raw string compare,
+ * or "Read in plain words." (trailing period, a hypothetical) would fail a
+ * containment check it should pass. */
+const normalize = (s) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+
+test('every interactive element has an accessible name, and an aria-label never fights the visible text (WCAG 4.1.2, 2.4.4, 2.5.3)', () => {
   const matches = [...html.matchAll(/<(a|button)\b([^>]*)>([\s\S]*?)<\/\1>/g)];
   assert.ok(matches.length > 10, 'the <a>/<button> scan found suspiciously few controls — check the regex still matches the built markup.');
   for (const m of matches) {
     const attrs = m[2];
     const inner = m[3].replace(/<svg[\s\S]*?<\/svg>/g, '').replace(/<[^>]+>/g, '').trim();
+    const ariaLabel = attrs.match(/aria-label="([^"]+)"/);
     assert.ok(
-      inner.length > 0 || /aria-label="[^"]+"/.test(attrs),
+      inner.length > 0 || ariaLabel,
       `an interactive element has neither visible text nor an aria-label, so it has no `
       + `accessible name at all (WCAG 4.1.2, 2.4.4): ${m[0].slice(0, 100)}`,
     );
+    // WCAG 2.5.3 Label in Name: when a control has BOTH visible text and an
+    // aria-label, the aria-label (the accessible name) must CONTAIN the
+    // visible text — not merely exist. A speech-input user says the visible
+    // label out loud ("click Read in plain words"); if the accessible name
+    // is a different string that happens not to contain it as a substring,
+    // that command has nothing to match against. This does not fire for an
+    // icon-only control (no visible text at all) — 2.5.3 has nothing to
+    // compare an aria-label against there, and that case is legitimate.
+    if (inner.length > 0 && ariaLabel) {
+      assert.ok(
+        normalize(ariaLabel[1]).includes(normalize(inner)),
+        `WCAG 2.5.3 Label in Name: the accessible name (aria-label="${ariaLabel[1]}") does not `
+        + `contain the visible text ("${inner}") as a substring — someone using speech input `
+        + `who says the visible label cannot activate this control: ${m[0].slice(0, 100)}`,
+      );
+    }
   }
 });
 
@@ -145,7 +170,14 @@ const OUTLINE_OFF_ON_PURPOSE = new Map([
 test('no focus outline is ever removed without a documented reason, anywhere in the landing\'s own styles or markup', () => {
   const haystack = [cssNoComments, motionCssNoComments, sharedNoComments].join('\n');
   const offenders = [];
-  const pattern = /([^{}]+)\{[^}]*outline\s*:\s*(?:none|0)\b[^}]*\}/g;
+  // Every shape that suppresses the ring, not just the bare `outline: none`
+  // form — `outline: 0`/`0px`, `outline-style: none`, `outline-width: 0`,
+  // and `outline-color: transparent` (a fully transparent ring is exactly as
+  // invisible as no ring) all switch it off just as effectively, and none of
+  // them mention "none" for a `/outline\s*:\s*(?:none|0)\b/`-shaped pattern
+  // to catch. `outline-offset` is deliberately NOT matched: offset 0 does
+  // not hide anything.
+  const pattern = /([^{}]+)\{[^}]*\b(?:outline(?:-style)?\s*:\s*(?:none|0(?:px)?)\b|outline-width\s*:\s*0(?:px)?\b|outline-color\s*:\s*transparent\b)[^}]*\}/g;
   let m;
   while ((m = pattern.exec(haystack)) !== null) {
     const selector = m[1].trim().replace(/\s+/g, ' ');
@@ -361,6 +393,61 @@ test('armLevels enables the tabs the moment their handlers actually exist', () =
   );
 });
 
+/** The full body of a named function, brace-balanced — not "the rest of the
+ * file", which a single-`}` search would grab and which would make a call
+ * ANYWHERE after the function's own closing brace look like it were still
+ * inside it. */
+function functionBody(source, signature) {
+  const at = source.indexOf(signature);
+  assert.notEqual(at, -1, `could not find "${signature}" in motion.js — has init() been renamed or restructured?`);
+  const open = source.indexOf('{', at);
+  assert.notEqual(open, -1, `found "${signature}" but no opening brace after it.`);
+  let depth = 0;
+  let i = open;
+  for (; i < source.length; i += 1) {
+    if (source[i] === '{') depth += 1;
+    else if (source[i] === '}') { depth -= 1; if (depth === 0) break; }
+  }
+  assert.ok(depth === 0 && i < source.length, `"${signature}"'s opening brace never closes — unbalanced braces in motion.js?`);
+  return source.slice(open + 1, i);
+}
+
+test('init() arms the tabs and the deck BEFORE the data-motion gate, not merely somewhere in the file', () => {
+  // The previous version of this file only checked that `tab.disabled =
+  // false;` existed SOMEWHERE in motion.js — true even if armLevels(rewrite)
+  // were moved below the `data-motion` gate below, which would leave every
+  // reading-level tab `disabled` forever on a phone or under reduced motion
+  // (the gate never opens there) while this assertion stayed green. Same
+  // hole for the unconditional armDeck() call, which is what un-hides the
+  // deck's Skip button — the phone's only control over the hero deck. This
+  // reads init()'s own body and asserts the two calls sit BEFORE the gate
+  // line in source order, which is also execution order here: nothing
+  // between the top of the function and the gate can return early on its
+  // own (no other conditional wraps either call).
+  const body = functionBody(motionJs, 'export function init() {');
+  const armLevelsAt = body.indexOf('armLevels(rewrite)');
+  const armDeckAt = body.indexOf('armDeck();');
+  const gateAt = body.indexOf("data-motion') !== 'on' || !shouldAnimate()) return;");
+  assert.notEqual(armLevelsAt, -1, 'init() no longer calls armLevels(rewrite) at all.');
+  assert.notEqual(armDeckAt, -1, 'init() no longer calls armDeck() at all.');
+  assert.notEqual(gateAt, -1, 'init() no longer has the data-motion/shouldAnimate() early-return gate this test locates the two calls against.');
+  assert.ok(
+    armLevelsAt < gateAt,
+    'armLevels(rewrite) is called AFTER the data-motion gate instead of before it — on a '
+    + 'phone, under reduced motion, or on any visit the gate never opens for, the tabs '
+    + 'would stay `disabled` forever (armRewrite, which is what re-enables them once the '
+    + 'sequence finishes, is itself behind the same gate and would also never run).',
+  );
+  assert.ok(
+    armDeckAt < gateAt,
+    'armDeck() is called AFTER the data-motion gate instead of before it — on a phone, '
+    + 'under reduced motion, or on any visit the gate never opens for, the deck\'s Skip '
+    + 'button would stay `hidden` forever (page.js\'s own no-JS fallback), leaving the '
+    + 'hero deck with no control at all on the one class of visit this page promises it '
+    + 'to.',
+  );
+});
+
 test('the picker wheel is aria-hidden, with a real, complete list of its papers beside it', () => {
   assert.match(
     html,
@@ -378,7 +465,16 @@ test('the picker wheel is aria-hidden, with a real, complete list of its papers 
   const listMatch = html.match(/<ul class="lp-visually-hidden" id="lp-pile-list">([\s\S]*?)<\/ul>/);
   assert.ok(listMatch, 'could not find the wheel\'s companion list to count its items.');
   const items = [...listMatch[1].matchAll(/<li>/g)];
-  assert.ok(items.length >= 20, `expected the wheel's companion list to carry the full paper set (25); found ${items.length}.`);
+  // Derived from PILE itself, not a hardcoded "25" — a hand-typed number
+  // would happily let PILE grow or shrink by a few rows and never notice
+  // that the wheel's only accessible equivalent silently dropped some of
+  // them (`>= 20` used to let up to 5 vanish without failing).
+  assert.equal(
+    items.length,
+    PILE.length,
+    `expected the wheel's companion list to carry the full paper set (PILE.length === `
+    + `${PILE.length}); found ${items.length}.`,
+  );
 });
 
 test('reduced motion turns off the deck transition, the rewrite sequence and the map draw-on', () => {
@@ -449,10 +545,66 @@ test('the rewrite sequence hands focus to the reader instead of dropping it to <
   );
   assert.match(
     motionJs,
-    /if \(loseFocusToBody\) \{\s*\n\s*var status = root\.querySelector\('\.lp-rewrite__status'\);\s*\n\s*if \(status\) status\.focus\(\);\s*\n\s*\}/,
+    /var status = root\.querySelector\('\.lp-rewrite__status'\);\s*\n\s*if \(loseFocusToBody && status\) \{\s*\n[\s\S]*?status\.focus\(\{ preventScroll: true \}\);\s*\n\s*status\.scrollIntoView\(\{ block: 'nearest' \}\);\s*\n\s*\}/,
     'armRewrite() no longer moves focus to .lp-rewrite__status once the card goes '
-    + 'inert. Verified live (real Tab to the button, then activate): '
-    + 'document.activeElement lands on the status line with a visible '
-    + ':focus-visible ring, and Tab from there reaches the reading-level tabs next.',
+    + 'inert, or lost the explicit scrollIntoView() call (fix round 1 — WCAG 2.4.11). '
+    + 'Verified live (real Tab to the button, then activate), at 1440x900: '
+    + 'document.activeElement lands on the status line; `.focus()` alone landed it at '
+    + 'viewport y=44, 12px INSIDE the sticky bar\'s 56px, despite '
+    + '`scroll-padding-top: var(--nav-height)` being set — `.focus()`\'s own implicit '
+    + 'scroll and scrollIntoView() are not the same algorithm in this engine, and only '
+    + 'the explicit scrollIntoView({ block: \'nearest\' }) call respects the padding, '
+    + 'landing it at exactly y=56.',
+  );
+  assert.match(
+    motionJs,
+    /if \(phase === 'done' && status && document\.activeElement === status\) \{\s*\n\s*status\.scrollIntoView\(\{ block: 'nearest' \}\);\s*\n\s*\}/,
+    'armRewrite() no longer re-corrects the scroll position at the \'done\' phase. '
+    + 'Verified live: the FIRST correction above (fired at the idle→source transition, '
+    + '~140ms in, the only moment card.contains(document.activeElement) can still be '
+    + 'tested) gets silently undone by the time the sequence actually finishes — '
+    + 'measured back at y=44 under the bar by \'done\', with nothing else in this file '
+    + 'touching scroll position in between (scroll anchoring reacting to the grid '
+    + 'cell\'s own height changing as the card fades and the reader/ghost/passage swap '
+    + 'is the likely cause). Only re-asserting the position once more, after everything '
+    + 'has finished animating, actually holds — confirmed live back at y=56.',
+  );
+});
+
+// ── Fix round 1 (code review) ────────────────────────────────────────────
+
+test('the "Read in plain words" button has no aria-label fighting its visible text (WCAG 2.5.3, defect found by axe)', () => {
+  assert.doesNotMatch(
+    html,
+    /data-rewrite-start aria-label="Read this paper in plain words"/,
+    'the rewrite trigger button carries `aria-label="Read this paper in plain words"` '
+    + 'again. Its accessible name (the aria-label) does not CONTAIN its visible text '
+    + '("Read in plain words") as a substring — "Read this paper in plain words" has '
+    + '"this paper" inserted in the middle, breaking the match. axe-core\'s '
+    + '`label-content-name-mismatch` rule (enabled explicitly in landing-axe.mjs — it '
+    + 'is tagged `experimental` and excluded by tag-only `runOnly`) flags this: someone '
+    + 'using speech input who says "click Read in plain words" has no accessible name '
+    + 'containing that phrase to match against. The visible text alone is already a '
+    + 'perfectly good accessible name; no aria-label is needed here at all.',
+  );
+  assert.match(
+    html,
+    /<button class="lp-btn lp-btn--ai lp-btn--lg" type="button" data-rewrite-start>/,
+    'the rewrite trigger button\'s opening tag changed shape unexpectedly — expected no '
+    + 'aria-label attribute on it at all.',
+  );
+});
+
+test('scroll-padding-top keeps the sticky bar from covering a freshly-scrolled-to focus target (WCAG 2.4.11)', () => {
+  assert.match(
+    sharedNoComments,
+    /html \{ scroll-padding-top: var\(--nav-height\); \}/,
+    '`html` lost its `scroll-padding-top: var(--nav-height)`. `.lp-bar` is `position: '
+    + 'sticky; top: 0` with an opaque background on every static page that imports this '
+    + 'stylesheet — once stuck it sits over whatever scrolls underneath it. Without '
+    + 'scroll-padding reserving room for it, the browser\'s own "scroll the newly-focused '
+    + 'element into view" can stop with the element\'s top edge merely at y=0 — still '
+    + 'UNDER the bar, not below it. Verified live (Chrome, real Tab, 390 and 1440): see '
+    + '`docs/ACCESIBILIDAD-EVIDENCIA.md`, "Landing (2026-09)", the 2.4.11 row.',
   );
 });

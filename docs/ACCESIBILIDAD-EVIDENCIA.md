@@ -352,9 +352,14 @@ entrega lo amplíe en lugar de volver a descubrirlo:
 Cubre la landing de marketing (`src/landing/`, servida en `/`), no la app —
 esta entrega es independiente de la numeración de fases de arriba. Task 11 del
 plan de rediseño (`.superpowers/sdd/2026-09-17-landing-rediseno/`), pedida por
-nombre por el propietario del proyecto. Detalle completo, con las tres
-configuraciones de axe antes y después, el árbol de accesibilidad completo y
-la autorrevisión, en `.superpowers/sdd/2026-09-17-landing-rediseno/task-11-report.md`.
+nombre por el propietario del proyecto. Esta entrada ya incorpora las
+correcciones y los hallazgos de una revisión de código posterior ("fix round
+1", marcados como tales abajo); no queda como una sección aparte porque
+corrigen y afinan la misma entrega, no añaden una nueva. Detalle completo,
+con las tres configuraciones de axe antes y después de AMBAS rondas, el
+árbol de accesibilidad completo, la prueba de página muerta y la
+autorrevisión, en
+`.superpowers/sdd/2026-09-17-landing-rediseno/task-11-report.md`.
 
 ### Cómo se comprobó
 
@@ -371,6 +376,35 @@ la autorrevisión, en `.superpowers/sdd/2026-09-17-landing-rediseno/task-11-repo
   "de escritorio" habría probado el tema que esta máquina prefiere, no uno
   fijo y reproducible (la misma razón por la que `landing-shots.mjs` ya
   acepta `THEME=`). Script añadido a `package.json` como `npm run a11y:landing`.
+- **`label-content-name-mismatch` (WCAG 2.5.3) habilitada explícitamente
+  (fix round 1)**: axe-core la etiqueta a la vez `wcag21a` y `experimental`,
+  y `runOnly` por etiquetas excluye cualquier regla también `experimental`
+  sin importar sus otras etiquetas — el conjunto de etiquetas de arriba
+  nunca la habría corrido. Se añadió `rules: { 'label-content-name-mismatch':
+  { enabled: true } }` junto a `runOnly`. Sin silenciar ninguna otra regla:
+  ni antes ni ahora hay un `disableRules` en el script.
+- **La sonda ya no puede confundir una página muerta con una limpia (fix
+  round 1)**: antes, `Page.navigate`'s `errorText` se ignoraba y no había
+  ninguna comprobación de que la página cargada fuera realmente esta — contra
+  un `vite preview` parado, la sonda leía la página de error del propio
+  Chrome, encontraba cero violaciones (nada que auditar) y salía en `PASS`.
+  Ahora cada escena comprueba `errorText` y exige que exista un centinela en
+  el DOM (`#main-content .lp-hero`), fallando en voz alta si no. Demostrado
+  deliberadamente rompiendo cada comprobación por separado (no simplemente
+  parando el servidor, que la propia sonda ahora arregla sola — ver el punto
+  siguiente): apuntar a un host que no resuelve DNS dispara el chequeo de
+  `errorText` (`net::ERR_NAME_NOT_RESOLVED`); apuntar a `/privacy.html` (una
+  página real, que carga sin error) dispara el chequeo del centinela. Ambas
+  pruebas, con su salida completa, en
+  `.superpowers/sdd/2026-09-17-landing-rediseno/task-11-report.md`, "Fix
+  round 1".
+- **La sonda arranca su propio `vite preview` si nadie responde en la URL
+  (fix round 1)**, sin tocar nunca un servidor que ya estuviera respondiendo:
+  esto es lo que permite encadenar `npm run a11y:landing` justo después de
+  `npm run build` en `npm run check` sin que nadie tenga que acordarse de
+  levantar un preview a mano. Verificado: con el puerto libre, `npm run
+  a11y:landing` arranca, audita y limpia solo (el proceso propio se mata en
+  el `finally`, confirmado con `lsof` antes y después).
 - **Reflujo y zoom**, en la misma sonda: 320×568 y 390×844 comprobando
   `document.documentElement.scrollWidth <= window.innerWidth` y que ningún
   `p.lp-body`/`.lp-strip p` computa bajo 16px; 1440 con
@@ -389,13 +423,20 @@ la autorrevisión, en `.superpowers/sdd/2026-09-17-landing-rediseno/task-11-repo
   a ser navegación de VoiceOver) de forma disruptiva para cualquier otra cosa
   que el usuario esté haciendo en su propia sesión en paralelo, y no hay
   forma fiable de "oír" lo que anuncia sin una lectura fragil del panel de
-  subtítulos por captura de pantalla. El propio encargo de esta tarea
-  autoriza expresamente esta alternativa cuando no se puede conducir
-  VoiceOver: se extrajo en su lugar el **árbol de accesibilidad completo de
-  CDP** (`Accessibility.getFullAXTree`, más `childIds` para bajar por cada
-  subárbol) para el hero, la sección de la rueda y el mapa — el mismo dato
-  que cualquier lector de pantalla real consume, aunque no confirma
-  pronunciación, verbosidad ni las teclas propias de VoiceOver.
+  subtítulos por captura de pantalla. **Corrección de procedencia (fix round
+  1)**: esta entrada decía antes que "el propio encargo de esta tarea
+  autoriza expresamente esta alternativa" — falso. El fichero de encargo
+  (`task-11-brief.md:68`) solo dice "Con VoiceOver en iOS (o el simulador)"
+  y no lleva ninguna cláusula de reserva. La autorización para extraer el
+  árbol de accesibilidad en su lugar vino del despacho del coordinador de
+  esta tarea en el chat, no del encargo escrito. La limitación en sí —no se
+  condujo VoiceOver— es cierta y se declaró en ambos casos; lo que estaba
+  mal era a qué documento se le atribuía el permiso. Se extrajo el **árbol
+  de accesibilidad completo de CDP** (`Accessibility.getFullAXTree`, más
+  `childIds` para bajar por cada subárbol) para el hero, la sección de la
+  rueda y el mapa — el mismo dato que cualquier lector de pantalla real
+  consume, aunque no confirma pronunciación, verbosidad ni las teclas
+  propias de VoiceOver.
 
 #### Artefactos del entorno que condicionan las lecturas
 
@@ -424,12 +465,28 @@ la autorrevisión, en `.superpowers/sdd/2026-09-17-landing-rediseno/task-11-repo
    mismo `.click()` tras un `Tab` real sí lo obtiene. Declarado: la
    pulsación real de `Enter` sobre botones y enlaces **no** está verificada
    en esta entrega, igual que en la de fase 1-2.
+3. **El panel oculto vuelve inútil una `scrollIntoView()` recién llamada**
+   (fix round 1). Ya documentado como patrón general en
+   `papertok-hidden-pane-freezes-transitions.md` y en el artefacto 3 de la
+   entrega fase 1-2 ("`scrollIntoView` tampoco mueve nada mientras tanto") —
+   esta entrega lo volvió a pisar de primera mano, no por lectura: con
+   `document.hidden === true`, una llamada a `status.scrollIntoView(...)`
+   ejecutada dentro del propio código de la página (no por este script) leyó
+   como si no hubiera movido nada al comprobarla unos segundos después, y
+   solo una SEGUNDA llamada, invocada a mano en ese mismo instante desde la
+   consola, sí movía el elemento. Esto se descubrió persiguiendo lo que
+   parecía un defecto de producto (ver corrección 5) y hay que declararlo
+   aparte: la propia medición pudo estar contaminada por el panel oculto en
+   más de un punto de este recorrido, no solo en el que se acabó
+   identificando y corrigiendo.
 
 ### Correcciones hechas durante esta verificación
 
-Las tres se encontraron con el recorrido de teclado en vivo, no con axe —
-axe-core no puede ver un movimiento de foco dinámico ni un `tabindex`
-ausente en un fragmento de URL.
+Las dos primeras (de la entrega original) se encontraron con el recorrido de
+teclado en vivo, no con axe — axe-core no puede ver un movimiento de foco
+dinámico ni un `tabindex` ausente en un fragmento de URL. Las tres restantes
+son de esta revisión (fix round 1): una la encontró axe con la regla nueva
+habilitada, dos las encontró de nuevo el recorrido de teclado en vivo.
 
 1. **Las iniciales del avatar (el paper de LIGO, hero) no llegaban a 4.5:1.**
    axe-core midió 4,39:1 (`--text-tertiary` `#6b7280` sobre
@@ -487,29 +544,97 @@ ausente en un fragmento de URL.
    `outline: rgb(17, 19, 24) solid 2px` real y `:matches(':focus-visible')`
    cierto; un `Tab` más desde ahí llega a la pestaña de nivel de lectura
    seleccionada.
+4. **(fix round 1) El botón "Read in plain words" tenía una etiqueta
+   accesible que no contenía su texto visible (WCAG 2.5.3 Label in Name).**
+   `page.js:288` ponía `aria-label="Read this paper in plain words"` sobre
+   un botón cuyo texto visible es "Read in plain words" — "this paper" se
+   inserta en medio y rompe la subcadena, así que alguien usando entrada por
+   voz que diga "click Read in plain words" no tiene nada que coincida.
+   Encontrado leyendo `docs/ACCESIBILIDAD.md:108` a mano y confirmado
+   habilitando `label-content-name-mismatch` en axe (ver "Cómo se
+   comprobó"). Corregido borrando el `aria-label`: el texto visible ya es un
+   nombre accesible perfectamente bueno por sí solo. Reverificado con la
+   regla habilitada en las tres configuraciones: **cero** instancias en toda
+   la página (47/47/45 reglas pasadas según el ancho, una más que antes en
+   cada una — la regla nueva corriendo y sin encontrar nada). Regresión:
+   `src/landing/a11y.test.js`, el test de nombre accesible ahora compara la
+   etiqueta contra el texto visible cuando existen ambos, no solo que exista
+   uno de los dos.
+5. **(fix round 1) WCAG 2.4.11 Focus Not Obscured — nunca comprobado, y al
+   comprobarlo con `Tab` real a 1440×900 el foco SÍ acababa bajo la barra.**
+   `.lp-bar` es `position: sticky; top: 0` opaca; sin `scroll-padding-top`
+   en ningún sitio de `src/`, el navegador puede dejar el borde superior de
+   un elemento recién enfocado justo en `y=0`, que sigue estando DEBAJO de
+   la barra. Se añadió `html { scroll-padding-top: var(--nav-height); }` en
+   `static-page.css` (compartido por landing y privacy). Con eso, las 15
+   paradas normales de `Tab` (390 y 1440) ya no se obscurecen nunca — el
+   propio scroll-al-enfocar nativo del navegador respeta el padding. Pero
+   quedaba UN caso que no: el foco programático que la corrección 3 mueve a
+   `.lp-rewrite__status` seguía apareciendo a `y=44` (12px dentro de la
+   barra de 56px) pese al `scroll-padding-top` correcto. Medido: `.focus()`
+   por sí solo NO usa el mismo algoritmo que `scrollIntoView()` en este
+   motor — una llamada explícita a `status.scrollIntoView({ block:
+   'nearest' })` justo después SÍ lo corregía, a `y=56` exacto, en la MISMA
+   medición. Se cambió `motion.js` a `status.focus({ preventScroll: true
+   })` seguido de `status.scrollIntoView({ block: 'nearest' })`. Eso
+   tampoco bastaba por sí solo: medido de nuevo más tarde (fase `done`), la
+   posición había vuelto a `y=44` sin que ningún código de este fichero
+   tocara el scroll entre medias — el sospechoso es el "scroll anchoring"
+   del navegador reaccionando a que la celda de grid que comparten
+   `.lp-rewrite__card` y `.lp-rewrite__reader` cambia de altura efectiva
+   mientras la tarjeta se desvanece y el lector/ghost/pasaje se intercambian,
+   y recolocando el scroll para compensarlo por encima de lo que este
+   código acababa de fijar. Se añadió una SEGUNDA corrección, en la
+   transición a `phase === 'done'`: si `.lp-rewrite__status` sigue siendo
+   `document.activeElement`, se vuelve a llamar
+   `scrollIntoView({ block: 'nearest' })` — vuelve a `y=56` y esta vez se
+   mantiene, verificado con una espera adicional tras `done` y con capturas.
+   Regresión: `a11y.test.js` fija tanto el `scroll-padding-top` en la hoja
+   de estilos como las dos llamadas de `scrollIntoView` en `motion.js`.
 
 ### Lo que se investigó y se dejó tal cual, con su razón
 
-axe deja un **"incomplete"** (no una "violation" — no cuenta para la puerta
-de cero) en las tres configuraciones, después de las tres correcciones:
-`color-contrast` sobre `.lp-paper__dot[aria-hidden="true"]` (11 nodos en
-390px, 39 en 1440px — el separador "·" entre los campos del meta de cada
-paper). Investigado en vez de descartado: medido a mano,
+**El separador "·" del meta (`.lp-paper__dot[aria-hidden="true"]`), a
+2,22:1.** axe deja esto como **"incomplete"** (no "violation") en las tres
+configuraciones — 11 nodos en 390px, 39 en 1440px. Medido a mano:
 `--border-strong` (`#a9aeba`) sobre el papel blanco del sheet
-(`--bg-figure-plate`, `#ffffff`) da 2,22:1 — muy por debajo de 4,5:1. Pero:
-es `aria-hidden` (no aporta ninguna información que los spans de campo,
-categoría y año que separa no lleven ya cada uno por su cuenta), un único
-carácter de puntuación decorativa, y — la razón por la que axe lo deja como
-"incomplete" y no como "violation" — su propia regla reconoce que "el
-contenido es demasiado corto para determinar si es texto real". Es además
-**el mismo patrón que ya usa `.pc-meta-dot` en la app real**
-(`PaperCard.jsx`/`PaperCard.css`, `color: var(--border-strong)`) — de hecho
-la app ni siquiera lo marca `aria-hidden`, así que la landing ya es más
-estricta que el original que replica. Cambiar el color sería tocar un token
-compartido (`--border-strong`) o divergir del lenguaje visual ya revisado de
-la app, ambas cosas fuera del alcance de una tarea de accesibilidad sobre la
-landing. No se tocó. Es una línea si el propietario del proyecto lo quiere
-resuelto de todas formas.
+(`--bg-figure-plate`, `#ffffff`) da 2,22:1, muy por debajo de 4,5:1.
+
+**Dictamen (revisado en fix round 1 — la razón correcta, no la que había
+antes):**
+
+- **1.4.11 (Non-text Contrast) no aplica.** 1.4.11 exige 3:1 para
+  componentes de interfaz y gráficos que aportan información — un carácter
+  "·" es *texto*, no un componente de interfaz ni un gráfico, así que 1.4.11
+  no es el criterio que le corresponde en absoluto, gane o pierda el 2,22:1.
+- **1.4.3 (Contrast (Minimum)) no aplica, por la excepción de texto
+  incidental.** WCAG 1.4.3 exceptúa "texto incidental": el que es
+  decorativo, no visible a nadie, o cuya presentación es incidental y no
+  transmite información. Aquí se cumplen las dos condiciones que hacen
+  válida esa excepción, no solo una: los spans de campo, categoría y año que
+  separa ya llevan esa información cada uno por su cuenta, y la maquetación
+  (el espaciado de `.lp-paper__meta`) ya los distingue sin depender del
+  punto. El punto no transmite nada que el resto de la fila no transmita
+  ya, así que 1.4.3 tampoco lo alcanza.
+- **Lo que NO son argumentos de WCAG, y esta entrega los tenía antes por
+  error:** que axe lo marque "incomplete" en vez de "violation" es una
+  propiedad de la herramienta, no del criterio — no decide nada por sí
+  sola. Que la app real use el mismo patrón (`.pc-meta-dot`,
+  `PaperCard.css`) tampoco decide nada — un patrón compartido puede estar
+  igual de mal en los dos sitios. Ninguna de las dos frases debía estar en
+  esta entrada, y se han quitado; el resultado ("no aplicable") es el
+  mismo, pero ahora está sostenido por los criterios, no por la herramienta
+  ni por el precedente.
+- **Qué cambiaría la respuesta**: si el punto llegara a ser alguna vez la
+  ÚNICA frontera entre dos valores (sin espacio ni ningún otro separador
+  visual), si empezara a llevar algún estado (por ejemplo, un color que
+  significara algo), o si ganara un título o una interacción propia — en
+  cualquiera de esos casos dejaría de ser texto incidental y esta entrada
+  tendría que reabrirse.
+
+No se tocó el color. Es una línea si el propietario del proyecto lo quiere
+cambiado de todas formas, pero no lo pide ningún criterio de WCAG tal como
+está hoy.
 
 ### Matriz
 
@@ -522,21 +647,23 @@ resuelto de todas formas.
 | Landing, móvil | Objetivos táctiles ≥44px (Skip, enlaces de barra/pie, las dos CTA, pestañas del lector) | 2.5.8 | Cumple | `a11y.test.js` | — | `npm test` |
 | `lp-follow`, `lp-library`, `lp-research` | Figuras decorativas con figcaption que las describe, sin controles reales dentro | 1.1.1, 4.1.2 | Cumple | `a11y.test.js` (3 figuras; `aria-hidden` en el envoltorio inmediato tras el figcaption; ningún `<button>`/`<a>` dentro) | — | `npm test` |
 | Landing, global | Jerarquía de encabezados sin saltos | 1.3.1 | Cumple | `a11y.test.js` (h1–h6, orden de documento; incluye los 11 `<h4>` de las fichas de Research que la propia plantilla del encargo no cubría) | — | `npm test` |
-| Landing, 390×844, claro | axe-core (wcag2a/aa, 21aa, 22aa, best-practice) | varios | Cumple **tras corrección** | `landing-axe.mjs`: 0 violaciones (antes: 1, `color-contrast`, 2 nodos — corrección 1) | 1 "incomplete" sin resolver, ver sección de arriba | `npm run a11y:landing` |
-| Landing, 390×844, oscuro | ídem | varios | Cumple **tras corrección** | ídem, 0 violaciones (antes: 1, mismo defecto, 2 nodos) | ídem | `npm run a11y:landing` |
-| Landing, 1440×900, claro (fijado) | ídem | varios | Cumple **tras corrección** | ídem, 0 violaciones (antes: 1, mismo defecto, 4 nodos — a este ancho también se ven los avatares del paper reutilizado en el lector) | ídem | `npm run a11y:landing` |
-| Landing, 320×568 y 390×844 | Reflujo sin scroll horizontal; texto de cuerpo ≥16px | 1.4.10, 1.4.4 | Cumple | `scrollWidth === innerWidth` en ambos anchos; 15 elementos `p.lp-body`/`.lp-strip p`, mínimo medido 17px | — | `npm run a11y:landing` |
-| Landing, 1440 a zoom 200% | Reflujo sin scroll horizontal | 1.4.10 | Cumple | `deviceScaleFactor:2`, ancho 720: `scrollWidth === innerWidth === 720px` | — | `npm run a11y:landing` |
+| Landing, 390×844, claro | axe-core (wcag2a/aa, 21aa, 22aa, best-practice + `label-content-name-mismatch` habilitada a mano) | varios, incl. 2.5.3 | Cumple **tras corrección** | `landing-axe.mjs`: 0 violaciones, **47** reglas pasadas. Dos comparaciones distintas, no una: (a) la entrega original — antes de la corrección 1 — medía 1 violación `color-contrast`/2 nodos con 46 reglas corriendo; (b) fix round 1 en concreto sube de 46 a **47** reglas corridas al habilitar `label-content-name-mismatch` (antes ni corría, tagged `experimental`), y esa regla nueva no encuentra nada tras la corrección 4 | 1 "incomplete" sin resolver, ver sección de arriba; contra un servidor muerto la sonda ahora falla en voz alta en vez de dar 0 violaciones (ver "Cómo se comprobó") | `npm run a11y:landing` |
+| Landing, 390×844, oscuro | ídem | varios, incl. 2.5.3 | Cumple **tras corrección** | ídem, 0 violaciones, 46→**47** reglas pasadas con la misma regla nueva | ídem | `npm run a11y:landing` |
+| Landing, 1440×900, claro (fijado) | ídem | varios, incl. 2.5.3 | Cumple **tras corrección** | ídem, 0 violaciones, 44→**45** reglas pasadas (la original: 1 violación/4 nodos — a este ancho también se ven los avatares del paper reutilizado en el lector) | ídem | `npm run a11y:landing` |
+| Landing, global | Etiqueta accesible contiene el texto visible (Label in Name) | 2.5.3 | Cumple **tras corrección** | `label-content-name-mismatch` habilitada: 0 instancias en toda la página tras la corrección 4; `a11y.test.js` compara `aria-label` contra el texto visible cuando existen ambos | Antes de corregir: el botón "Read in plain words" (ver corrección 4) | `npm run a11y:landing` + `npm test` |
+| Landing, 320×568 y 390×844 | Reflujo sin scroll horizontal | 1.4.10 | Cumple | `scrollWidth === innerWidth` en ambos anchos | El chequeo de texto de cuerpo ≥16px que vive en la misma escena no es evidencia de 1.4.10 ni de 1.4.4 por sí solo — ver la fila de zoom, debajo, para 1.4.4 | `npm run a11y:landing` |
+| Landing, 1440 a zoom 200% (720×450, deviceScaleFactor 2) | Texto redimensionable a 200% sin pérdida de contenido ni funcionalidad; reflujo sin scroll horizontal | 1.4.4, 1.4.10 | Cumple | `scrollWidth === innerWidth === 720px` a una escena que simula honestamente 200% de zoom (720×450 es la mitad exacta de 1440×900, no 720×900 — corregido en fix round 1) | Antes de fix round 1 la escena usaba 720×900, una proporción que no era realmente "zoom 200%" de nada | `npm run a11y:landing` |
 | Landing, barra→hero→deck→lector→strip→close→pie | Orden de foco de teclado completo | 2.4.3, 2.1.1 | Cumple **tras corrección** | Recorrido con `Tab` real (Chrome del panel, 1024×768): Skip → PaperTok (barra) → Source → Open the feed (barra) → Open the feed (hero) → hoja (`role=group`, carrusel) → Skip (mazo) → Read in plain words → [al activarlo] pestaña de nivel seleccionada → mugar123/papertok → Samuel Corsan → Open the feed (cierre) → PaperTok (pie) → GitHub → Privacy → vuelve a Skip. 16 paradas, ninguna repetida salvo el cierre del ciclo | El enlace de salto no funcionaba antes de esta tarea (corrección 2) | Recorrido manual |
 | Landing, hoja del hero | `↓`/`↑` mueven el mazo, no la página; anillo visible al enfocar | 2.1.1, 2.4.7 | Cumple | `data-deck-count` pasa de "1 / 3" a "2 / 3" con `ArrowDown` y `window.scrollY` sin cambiar (117 antes y después); `outline: rgb(17, 19, 24) solid 2px` en la hoja enfocada | — | Recorrido manual |
 | Landing, lector | Pestañas de nivel alcanzables y operables (tabindex progresivo, flechas mueven foco y panel) | 2.1.1, 4.1.2 | Cumple | `ArrowRight` desde "University" mueve el foco Y `aria-selected`/`data-active` a "Researcher" (`lp-level-panel-2`), en el mismo evento | Con `data-motion="on"` las pestañas solo se alcanzan por `Tab` una vez `data-phase="done"` (antes, están `inert` dentro del lector) — intencional: el lector está detrás de la tarjeta hasta ese momento. Sin motion (móvil, reduce-motion, o el viewport-al-navegar del artefacto 1), `armLevels()` las deja operables desde el primer pintado, sin esperar nada. Ambas rutas verificadas en vivo | Recorrido manual + `a11y.test.js` |
 | Landing, lector | La secuencia no suelta el foco a `<body>` al abrirse | 2.4.3, 2.4.7 | Cumple **tras corrección** | Ver corrección 3 | — | Recorrido manual + `a11y.test.js` |
+| Landing, global (`.lp-bar` fija) | El foco recién enfocado no queda bajo la barra (Focus Not Obscured) | 2.4.11 | Cumple **tras corrección** | `html { scroll-padding-top: var(--nav-height) }` (corrección 5); recorrido de teclado completo repetido a 390 y a 1440 tras la corrección — las 15/16 paradas normales de `Tab` en ambos anchos, `obscured: false` en todas (comprobado con `elementFromPoint` en el borde superior-izquierdo de cada elemento enfocado) | Un caso adicional, solo alcanzable programáticamente (el foco que la corrección 3 mueve a `.lp-rewrite__status`), necesitó una segunda corrección aparte — ver corrección 5 completa | Recorrido manual (ver informe) |
 | Landing, `.lp-problem`/`.lp-follow`/`.lp-library`/`.lp-map`/`.lp-research` | Ningún foco cae en la rueda ni en las figuras decorativas | 2.1.1, 1.3.1 | Cumple | Las 16 paradas del recorrido completo no tocan ninguna de estas cinco secciones | — | Recorrido manual |
 | Landing, rueda (`.lp-problem`) | Oculta a tecnología de apoyo; la lista real de al lado sí se anuncia | 1.3.1, 4.1.2 | Cumple | Árbol de accesibilidad (CDP `Accessibility.getFullAXTree`): `.lp-pile` no genera NINGÚN nodo AX (ausente del árbol); `#lp-pile-list` aparece como `list` con sus 25 `listitem`, cada uno con venue y título reales | — | `a11y.test.js` + árbol AX (ver informe) |
 | Landing, mapa de citas | Se anuncia como imagen con su propio título | 1.1.1 | Cumple | Árbol de accesibilidad: `image "The citation map of the LIGO paper: five works it cites above the line, two that cite it below, placed by how many citations each received."`; lista visualmente oculta con los 7 vecinos y sus citas reales | El interior del SVG (marcas de eje, etiquetas de nodo) sigue generando nodos AX propios pese a `role="img"` en el contenedor — no es una "violation" de axe ni contradice el nombre accesible del `role="img"`, pero un lector de pantalla que deje "entrar" al usuario en la imagen podría exponerlos como paradas sueltas en vez de tratarla como una hoja atómica; comportamiento dependiente de la combinación navegador/AT, no confirmable sin VoiceOver real | VoiceOver real |
 | Landing, global | Rotor de encabezados (lo que listaría un lector de pantalla) | 1.3.1, 2.4.6 | Cumple, con una discrepancia señalada | Árbol de accesibilidad: 1×h1 + 10×h2 de sección + 1×h2 (título del paper 1 del hero, `heading:'h2'` en `paper()`) + 1×h3 (el mismo paper reutilizado en el lector, nivel por defecto) = 13 encabezados alcanzables por AT, ninguno salta de nivel | El encargo de esta tarea esperaba "h1 + once h2"; hay once SECCIONES pero solo diez llevan su propio `<h2>` (la del hero es `<h1>`) — la cuenta real y correcta (13, contando los títulos de paper anidados) no coincide con esa expectativa escrita. Señalado aquí, no alterado: la estructura real no tiene ningún salto y ya la sostiene `a11y.test.js` | árbol AX (ver informe) |
 | Landing, global | Lector de pantalla real | 1.3.1, 4.1.2, 4.1.3 y demás | **No verificado** | Ninguna | **No se condujo VoiceOver.** Ver "Cómo se comprobó" — el árbol de accesibilidad de CDP se usó como sustituto declarado (las cinco filas de arriba que lo citan), que es el mismo dato que cualquier lector de pantalla consume, pero no confirma pronunciación, verbosidad ni gestos propios de VoiceOver | VoiceOver real |
-| Landing, separador "·" del meta (`lp-paper__dot`) | Contraste del glifo decorativo | 1.4.3 | No aplicable (razonado) | Medido a mano: 2,22:1 (`--border-strong` sobre `--bg-figure-plate`) | Ver "Lo que se investigó y se dejó tal cual" — `aria-hidden`, un carácter, mismo patrón ya existente en `PaperCard.css` de la app (`.pc-meta-dot`), axe lo marca "incomplete" y no "violation" | — |
+| Landing, separador "·" del meta (`lp-paper__dot`) | Contraste del glifo decorativo | 1.4.3, 1.4.11 | No aplicable (razonado; dictamen revisado en fix round 1) | Medido a mano: 2,22:1 (`--border-strong` sobre `--bg-figure-plate`). 1.4.11 no aplica porque un "·" es texto, no un componente de interfaz. 1.4.3 no aplica por la excepción de texto incidental: los spans de campo/categoría/año llevan la información por su cuenta y la maquetación ya los separa | Ver "Lo que se investigó y se dejó tal cual" para el dictamen completo y qué lo reabriría | — |
 
 ### Lo que esta entrega no intentó
 
@@ -554,3 +681,17 @@ resuelto de todas formas.
 - Ningún dispositivo real (iPhone/Android físico, VoiceOver/TalkBack en
   hardware); todo lo anterior es Chrome de escritorio con emulación táctil
   y de métricas por CDP.
+- **(fix round 1)** `npm run a11y:landing` se añadió a `npm run check`
+  (después de `npm run build`, antes de `worker:deploy:dry-run`) porque la
+  sonda pasó a arrancar su propio `vite preview` cuando nadie responde en el
+  puerto — ver "Cómo se comprobó". No se probó `npm run check` completo de
+  principio a fin en esta tarea (incluye `worker:deploy:dry-run`, fuera de
+  alcance); solo se probó `npm run a11y:landing` de forma aislada, con y sin
+  un servidor ya arrancado.
+- **(fix round 1)** El recorrido de 2.4.11 se hizo con el panel del
+  navegador oculto la mayor parte del tiempo (ver artefacto 3) — las
+  lecturas que cuentan en la matriz son las que se repitieron o confirmaron
+  tras forzar el estado a mano (animaciones terminadas, `scrollIntoView()`
+  repetido), no las primeras lecturas en bruto, que resultaron contaminadas
+  al menos una vez. No se repitió el recorrido completo con el panel
+  realmente visible en primer plano.

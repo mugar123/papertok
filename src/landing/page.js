@@ -285,7 +285,7 @@ const plainWords = () => `<section class="lp-reader lp-sec" aria-labelledby="lp-
       <div class="lp-rewrite__card" data-rewrite-card hidden>
         ${paper(REWRITE.paper, { size: 'lg', actions: false })}
         <div class="lp-rewrite__actions">
-          <button class="lp-btn lp-btn--ai lp-btn--lg" type="button" data-rewrite-start aria-label="Read this paper in plain words">
+          <button class="lp-btn lp-btn--ai lp-btn--lg" type="button" data-rewrite-start>
             ${icon('sparkles', 20)}<span>Read in plain words</span>
           </button>
           <span class="lp-eyebrow">${esc(REWRITE.cost)}</span>

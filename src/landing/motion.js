@@ -153,9 +153,40 @@ export function armRewrite(root) {
        it would only trade one invisible focus target for a later one). Runs
        once: after this call activeElement is inside the reader, not the
        card, so the same check on every later phase stays false. */
-    if (loseFocusToBody) {
-      var status = root.querySelector('.lp-rewrite__status');
-      if (status) status.focus();
+    var status = root.querySelector('.lp-rewrite__status');
+    if (loseFocusToBody && status) {
+      /* `.focus()` alone, not just `.focus({ preventScroll: true })`:
+         measured live at 1440x900, `.focus()`'s own implicit "scroll the
+         newly-focused element into view" landed .lp-rewrite__status at
+         viewport y=44 — 12px INSIDE the sticky bar's 56px, which
+         static-page.css's `scroll-padding-top: var(--nav-height)` exists to
+         prevent (WCAG 2.4.11). An explicit `status.scrollIntoView({ block:
+         'nearest' })` right after DOES respect that padding, landing it at
+         exactly y=56 in the same measurement — `.focus()`'s own automatic
+         scroll and the CSSOM `scrollIntoView()` it superficially resembles
+         are not the same algorithm in this engine. preventScroll on the
+         focus() call itself would only remove the first, wrong adjustment;
+         scrollIntoView() after it is what supplies the correct one. */
+      status.focus({ preventScroll: true });
+      status.scrollIntoView({ block: 'nearest' });
+    }
+    /* A second correction, at 'done' specifically: measured, the FIRST one
+       above (fired at the idle->source transition, ~140ms in — the only
+       moment card.contains(document.activeElement) can still be tested) got
+       silently undone by the time the sequence actually finished, landing
+       back at y=44 under the bar with no further code touching scroll
+       position in between. The likely cause is scroll anchoring: the grid
+       cell .lp-rewrite__card and .lp-rewrite__reader share (`grid-area: 1 /
+       1`) keeps changing effective height as the card fades out and the
+       reader's own entrance animation and ghost/passage swap run, and the
+       browser re-anchors the scroll position to compensate for layout shifts
+       above the fold while doing so — fighting the position this file just
+       set. Only re-asserting it once more, after everything has finished
+       animating, actually holds: guarded on the status line still being
+       focused, so a user who has since tabbed elsewhere on their own is left
+       alone. */
+    if (phase === 'done' && status && document.activeElement === status) {
+      status.scrollIntoView({ block: 'nearest' });
     }
   }
 

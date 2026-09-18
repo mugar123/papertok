@@ -15,6 +15,19 @@
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg-primary); color: var(--text-primary); font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
 
+/* WCAG 2.4.11 Focus Not Obscured (Minimum): .lp-bar is `position: sticky;
+   top: 0` with an opaque background over every static page that imports
+   this file — once stuck, it sits over whatever scrolls underneath it, the
+   same as a fixed header would. Without this, the browser's own "scroll the
+   newly-focused element into view" (a Tab press, or activating the skip
+   link) can stop the moment the element's top edge merely clears y=0, which
+   is still UNDER the bar rather than below it — a keyboard user's focus
+   would be genuinely there, just invisible. `scroll-padding-top` matching
+   the bar's own height is what every major browser already honours for
+   exactly this "scroll into view, but leave room for a sticky header" case,
+   not only for scroll-snap. */
+html { scroll-padding-top: var(--nav-height); }
+
 /* Focus: ink, the app's own ring (variables.css --focus-ring), never hidden. */
 :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
