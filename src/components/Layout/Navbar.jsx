@@ -26,14 +26,16 @@ import './Navbar.css';
  * measurement is applied without a transition, so the rule does not slide in
  * from the row's left edge on load.
  */
-function useActiveTabRule(rowRef, activeKey) {
+function useActiveTabRule(rowRef, tab, activeKey) {
   const [rule, setRule] = useState({ transform: '', measured: false });
 
   useLayoutEffect(() => {
     const row = rowRef.current;
     if (!row) return undefined;
     const measure = () => {
-      const link = row.querySelector('.navbar-link.active');
+      // By `data-tab`, not `.active`: the tab shown can be the one under the
+      // finger before the router has moved (see `pressedTab` below).
+      const link = tab ? row.querySelector(`.navbar-link[data-tab="${tab}"]`) : null;
       if (!link) {
         setRule(current => (current.transform ? { ...current, transform: '' } : current));
         return;
@@ -48,7 +50,7 @@ function useActiveTabRule(rowRef, activeKey) {
     observer.observe(row);
     row.querySelectorAll('.navbar-link').forEach(link => observer.observe(link));
     return () => observer.disconnect();
-  }, [rowRef, activeKey]);
+  }, [rowRef, tab, activeKey]);
 
   return rule;
 }
@@ -111,7 +113,44 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
   // in NavLink's plain API gates `aria-current`.
   const activeTab = isHomeActive ? 'home' : isResearchActive ? 'research' : isFollowingActive ? 'following' : '';
   const linksRef = useRef(null);
-  const rule = useActiveTabRule(linksRef, `${activeTab}:${isEnglish}`);
+  /**
+   * The mark moves on the press, not on the router.
+   *
+   * Measured 2026-09-18 (Chromium, phone emulation, CPU ×6, signed in, the
+   * Following feed warm): after the finger lifted, the bar stayed exactly as
+   * it was for ~200ms — the click handler mounts the next page synchronously
+   * (a 159ms task) — and only then did the mark start its 240ms slide. The
+   * `:active` dip lasts as long as the finger is down and is gone by then.
+   * On a phone that is a tap with nothing to show for it, and a second tap
+   * inside iOS's double-tap window is a zoom gesture, not a click; the user
+   * reported having to tap the tabs several times (also 2026-09-05). Neither
+   * engine drops the tap itself: every touch dispatched through Chromium and
+   * WebKit's own pipelines clicked and pushed within 5ms, at the centre, at
+   * the edges and after scrolling.
+   *
+   * So the tab under the finger takes the mark at `pointerdown`, a frame
+   * later, while the main thread is still idle; the router catches up and
+   * the `active` class, `aria-current` and the semibold follow it. The press
+   * is remembered together with the tab it was made on: once the route has
+   * moved — to the pressed tab, or anywhere else — it no longer applies,
+   * derived rather than cleared in an effect. A press the browser cancels
+   * (the finger starts a scroll) is dropped on `pointercancel`, and one that
+   * never becomes a click (released off the link) lapses after 1.5s, so a
+   * mis-tap cannot leave the mark under the wrong word.
+   */
+  const [pressed, setPressed] = useState(null);
+  const pressTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(pressTimerRef.current), []);
+  const pressTab = (event, tab) => {
+    if (event.button !== 0 || tab === activeTab) return;
+    const entry = { tab, on: activeTab };
+    setPressed(entry);
+    clearTimeout(pressTimerRef.current);
+    pressTimerRef.current = setTimeout(() => setPressed((current) => (current === entry ? null : current)), 1500);
+  };
+  const releasePress = () => setPressed(null);
+  const shownTab = pressed && pressed.on === activeTab ? pressed.tab : activeTab;
+  const rule = useActiveTabRule(linksRef, shownTab, `${shownTab}:${isEnglish}`);
 
   return (
     <nav
@@ -174,8 +213,11 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
           <NavLink
             to="/"
             end
+            data-tab="home"
             className={`navbar-link ${isHomeActive ? 'active' : ''}`}
             onClick={() => setFeedMode('top')}
+            onPointerDown={(event) => pressTab(event, 'home')}
+            onPointerCancel={releasePress}
           >
             <Layers size={15} aria-hidden="true" />
             {isEnglish ? 'For you' : 'Para ti'}
@@ -183,7 +225,10 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
 
           <NavLink
             to="/research"
+            data-tab="research"
             className={`navbar-link ${isResearchActive ? 'active' : ''}`}
+            onPointerDown={(event) => pressTab(event, 'research')}
+            onPointerCancel={releasePress}
           >
             <Newspaper size={15} aria-hidden="true" />
             Research
@@ -191,7 +236,10 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
 
           <NavLink
             to="/following"
+            data-tab="following"
             className={`navbar-link ${isFollowingActive ? 'active' : ''}`}
+            onPointerDown={(event) => pressTab(event, 'following')}
+            onPointerCancel={releasePress}
           >
             <UserCheck size={15} aria-hidden="true" />
             {isEnglish ? 'Following' : 'Siguiendo'}
