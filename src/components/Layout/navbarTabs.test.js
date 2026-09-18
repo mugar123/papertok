@@ -11,13 +11,18 @@ const stripCssComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '');
  *
  * On the phone, going from Following to For you took several taps (2026-09-05)
  * while the other way took one. The only asymmetry in the bar was the
- * element: Research and Following were NavLinks — an <a href="#/…"> — and
- * For you was a <button> calling navigate('/'). When React's click does not
- * run, an anchor still navigates: the browser follows the href, which is a
- * same-document history navigation and fires `popstate` — the one event
- * react-router's history listens to (it has no `hashchange` listener). A
- * button does nothing. The three tabs are the same element now, so the
- * fallback is the same for all of them.
+ * element: Research and Following were NavLinks — an <a href> — and For you
+ * was a <button> calling navigate(). When React's click does not run, an
+ * anchor still navigates: the browser follows the href. A button does
+ * nothing. The three tabs are the same element now, so the fallback is the
+ * same for all of them.
+ *
+ * What the fallback COSTS changed when the routes left the fragment: the href
+ * was `#/…` then, so following it was a same-document hop that fired
+ * `popstate` (the one event react-router's history listens to — it has no
+ * `hashchange` listener). The hrefs are real paths now, so the browser leaves
+ * the document and the app boots cold. Still the feed, still better than a tap
+ * that does nothing, and still only the belt to the pointerup navigation.
  */
 function linksRow(jsx) {
   const start = jsx.indexOf('className="navbar-links"');
@@ -30,7 +35,7 @@ test('SOURCE: the three tabs are NavLinks, For you included, so a lost click sti
   const row = linksRow(stripJsComments(await read('./Navbar.jsx')));
   const navLinks = row.match(/<NavLink\b/g) || [];
   assert.equal(navLinks.length, 3, 'exactly three NavLinks in the links row');
-  assert.match(row, /<NavLink\s+to="\/"\s+end\b/, 'For you must be a NavLink to "/" with `end`, or it would match every route');
+  assert.match(row, /<NavLink\s+to="\/feed"\s+end\b/, 'For you must be a NavLink to "/feed" with `end`');
   assert.match(row, /<NavLink\s+to="\/research"/, 'Research stays a NavLink');
   assert.match(row, /<NavLink\s+to="\/following"/, 'Following stays a NavLink');
   assert.doesNotMatch(row, /<button\b/, 'no <button> in the links row: a button has no href to fall back on');
@@ -39,7 +44,7 @@ test('SOURCE: the three tabs are NavLinks, For you included, so a lost click sti
 
 test('SOURCE: For you still keeps the feed in its default mode when tapped', async () => {
   const row = linksRow(stripJsComments(await read('./Navbar.jsx')));
-  const forYou = row.match(/<NavLink\s+to="\/"[\s\S]*?<\/NavLink>/);
+  const forYou = row.match(/<NavLink\s+to="\/feed"[\s\S]*?<\/NavLink>/);
   assert.ok(forYou, 'the For you NavLink is present');
   assert.match(forYou[0], /setFeedMode\('top'\)/, 'the mode reset rides on the NavLink onClick (React Router runs it before its own)');
   // And on the touch route, where the navigation happens on pointerup and the
@@ -144,7 +149,7 @@ test('SOURCE: the mark is measured once per tab change, from the tab the router 
 test('SOURCE: a finger that lifts on the tab it pressed navigates without waiting for the click', async () => {
   const jsx = stripJsComments(await read('./Navbar.jsx'));
   const row = linksRow(jsx);
-  for (const [tab, to] of [['home', '/'], ['research', '/research'], ['following', '/following']]) {
+  for (const [tab, to] of [['home', '/feed'], ['research', '/research'], ['following', '/following']]) {
     assert.match(row, new RegExp(`onPointerUp=\\{\\(event\\) => liftTab\\(event, '${tab}', '${to}'\\)\\}`), `${tab} navigates on pointerup`);
   }
   assert.equal((row.match(/swallowSynthesisedClick/g) || []).length, 3, 'all three swallow the click that may follow');

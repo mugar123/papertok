@@ -40,12 +40,17 @@ test('the first entry in history is an arrival, not a return', () => {
 import { directionForHistoryIndex } from './routeDirection.js';
 
 /**
- * React Router 7.18's HashRouter reports POP for every navigation here —
- * measured on the tab bar: a NavLink push and a `navigate('/')` both arrived
- * as POP with the history index at 1 and 2. Read through the type, every
- * page entered as a return and the cards never composed. The index is the
- * signal the router cannot get wrong: it grows on a push, shrinks on a step
- * back, and holds on a replace.
+ * React Router 7.18 reported POP for every navigation here — measured on the
+ * tab bar under the HashRouter the app mounted until 2026-09-18: a NavLink
+ * push and a `navigate('/')` both arrived as POP with the history index at 1
+ * and 2. Read through the type, every page entered as a return and the cards
+ * never composed.
+ *
+ * The index is the signal the router cannot get wrong: it grows on a push,
+ * shrinks on a step back, and holds on a replace. That is why swapping the
+ * HashRouter for a BrowserRouter left every assertion below standing — the
+ * two are the same `getUrlBasedHistory` underneath, and this function has
+ * never read a URL at all.
  */
 test('the history index decides: up is forward, down is back, level is a replace', () => {
   const memory = {};

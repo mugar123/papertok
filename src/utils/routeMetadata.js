@@ -3,7 +3,7 @@
 // announcement for screen readers (all mapped routes).
 
 const LABELS = {
-  '/': ['For you', 'Para ti'],
+  '/feed': ['For you', 'Para ti'],
   '/lists': ['My lists', 'Mis listas'],
   '/research': ['Research', 'Research'],
   '/following': ['Following', 'Siguiendo'],

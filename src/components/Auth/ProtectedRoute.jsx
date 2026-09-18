@@ -27,7 +27,7 @@ export default function ProtectedRoute({ children, requireOnboarding = true }) {
     // entering on the first render, nothing between the two. Nothing under
     // the veil can act before the session is known: the feed only loads once
     // it has preferences and a profile (FeedContext's loadPapers).
-    if (location.pathname === '/') {
+    if (location.pathname === '/feed') {
       return children;
     }
 
@@ -79,7 +79,7 @@ export default function ProtectedRoute({ children, requireOnboarding = true }) {
     // dialog open (App.jsx reads `authRequired`). The route they asked for
     // travels with them, and App sends them there once a session exists,
     // instead of dropping everyone on the feed.
-    return <Navigate to="/" replace state={{ authRequired: true, returnTo: `${location.pathname}${location.search}` }} />;
+    return <Navigate to="/feed" replace state={{ authRequired: true, returnTo: `${location.pathname}${location.search}` }} />;
   }
 
   if (profileLoadError) {

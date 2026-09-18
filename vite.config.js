@@ -173,15 +173,47 @@ function bootSetManifestTransform(distDir) {
 const LANDING_PLACEHOLDER = '<!--landing-html-->'
 const LANDING_PAGE_MODULE = '/src/landing/page.js'
 
-// `/feed` has no file of its own: in production vercel.json rewrites it to
-// app.html, and this middleware does the same for `vite dev` and `vite
-// preview`, whose own SPA fallback would otherwise hand the LANDING to every
-// unknown path. The hash never reaches the server, so only the pathname
-// decides whether to rewrite -- but a query string, if present, is carried
-// over to app.html rather than dropped.
+// The first segment of every route src/App.jsx declares.
+//
+// This used to be the single path `/feed`, because the app was a HashRouter
+// and `#/research` never left the browser: one address to rewrite, and the
+// pathname was always that one. The routes are real paths now
+// (src/main.jsx), so there are as many server-visible addresses as there are
+// routes, and every one of them needs app.html.
+//
+// An explicit list rather than production's catch-all, and that is deliberate:
+// `configureServer`/`configurePreviewServer` install this middleware BEFORE
+// Vite's own, so a catch-all here would swallow `/@vite/client`, `/src/*`,
+// `/node_modules/*` and the HMR endpoints and break `vite dev` outright.
+// `src/landing/entry.test.js` checks this list still covers every `<Route
+// path>` in App.jsx, because a root missing from it does not error — it
+// quietly serves the LANDING where the app should be.
+const APP_ROUTE_ROOTS = [
+  'feed',
+  'lists',
+  'research',
+  'report',
+  'following',
+  'search',
+  'profile',
+  'settings',
+  'admin',
+  'explorer',
+  'public',
+  'login',
+  'onboarding',
+]
+
+// In production vercel.json rewrites all of these to app.html (its catch-all
+// sends every non-file path there, and the filesystem answers `/` with the
+// landing first). This is the same rule for `vite dev` and `vite preview`,
+// whose own SPA fallback would otherwise hand the LANDING to every unknown
+// path. Matched on the first segment exactly, so `/feeds` is not `/feed`; the
+// fragment never reaches a server either way, and a query string, if present,
+// is carried over to app.html rather than dropped.
 function feedToApp(req, res, next) {
   const [pathname, ...query] = (req.url || '').split('?')
-  if (pathname === '/feed' || pathname.startsWith('/feed/')) {
+  if (APP_ROUTE_ROOTS.includes(pathname.split('/')[1])) {
     req.url = '/app.html'
     if (query.length) req.url += `?${query.join('?')}`
   }

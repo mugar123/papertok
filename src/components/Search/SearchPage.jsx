@@ -857,7 +857,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
           <button
             type="button"
             className="search-back-btn"
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/feed')}
             aria-label={isEnglish ? 'Back' : 'Volver'}
           >
             <ArrowLeft size={22} />

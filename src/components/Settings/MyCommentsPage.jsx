@@ -217,7 +217,7 @@ export default function MyCommentsPage() {
             <span className="my-comments-state-icon" aria-hidden="true"><MessageCircle size={20} /></span>
             <h2 className="my-comments-state-title">{text(COPY.emptyTitle)}</h2>
             <p>{text(COPY.empty)}</p>
-            <Link className="my-comments-cta" to="/">{text(COPY.emptyCta)}</Link>
+            <Link className="my-comments-cta" to="/feed">{text(COPY.emptyCta)}</Link>
           </div>
         )}
 

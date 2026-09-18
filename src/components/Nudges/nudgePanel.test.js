@@ -98,7 +98,7 @@ test('nadie es interrumpido antes de tiempo, ni sin sesión, ni fuera del feed',
   const jsx = await hostJsx;
   assert.match(jsx, /const signedIn = Boolean\(user\) && !authLoading && onboardingComplete;/, 'los invitados quedan fuera');
   assert.match(jsx, /setTimeout\(\(\) => setDwellDone\(true\), NUDGE_DWELL_MS\)/, 'hay que esperar el minuto');
-  assert.match(jsx, /location\.pathname === '\/'/, 'solo en el feed');
+  assert.match(jsx, /location\.pathname === '\/feed'/, 'solo en el feed');
   assert.ok(!/useAnalyticsConsent|consent !== null/.test(jsx), 'ya no hay banner de consentimiento al que ceder la esquina');
 });
 

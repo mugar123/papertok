@@ -454,7 +454,7 @@ export default function EntityExplorer({
   const handleBack = useCallback(() => {
     const historyIndex = typeof window !== 'undefined' ? window.history.state?.idx : null;
     if (Number.isInteger(historyIndex) && historyIndex > 0) navigate(-1);
-    else navigate('/');
+    else navigate('/feed');
   }, [navigate]);
   // The first visit to Authors requests the list and keeps it from then on, so
   // a return to the tab finds the rows rather than a second skeleton. The

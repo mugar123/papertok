@@ -597,7 +597,7 @@ export default function SettingsPage() {
 
   const handleSignOut = async () => {
     await signOut();
-    navigate('/');
+    navigate('/feed');
   };
 
   const handleAccountDeleted = async () => {
@@ -606,7 +606,7 @@ export default function SettingsPage() {
     } catch {
       // The Auth user may already be gone; the tab still has to leave.
     }
-    navigate('/');
+    navigate('/feed');
   };
 
   const handleLanguageChange = async (nextLanguage) => {

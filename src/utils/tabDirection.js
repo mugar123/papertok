@@ -14,7 +14,7 @@
  */
 
 /** In the order `Navbar.jsx` renders them. */
-export const TAB_ORDER = ['/', '/research', '/following'];
+export const TAB_ORDER = ['/feed', '/research', '/following'];
 
 /**
  * The last tab we were on, module scope for the same reason `routeDirection`'s

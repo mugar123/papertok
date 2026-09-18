@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import { routeTitle, routeLabel } from './routeMetadata.js'
 
 test('titles the main authenticated routes in both languages', () => {
-  assert.equal(routeTitle('/', false), 'Para ti | PaperTok')
-  assert.equal(routeTitle('/', true), 'For you | PaperTok')
+  assert.equal(routeTitle('/feed', false), 'Para ti | PaperTok')
+  assert.equal(routeTitle('/feed', true), 'For you | PaperTok')
   assert.equal(routeTitle('/lists', false), 'Mis listas | PaperTok')
   assert.equal(routeTitle('/research', true), 'Research | PaperTok')
   assert.equal(routeTitle('/following', false), 'Siguiendo | PaperTok')

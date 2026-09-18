@@ -67,7 +67,7 @@ test('on the first entry the card composes under the veil instead of sitting at 
  */
 test('the auth gate hands the feed route to the veil instead of drawing an atom of its own', async () => {
   const gate = await read('../Auth/ProtectedRoute.jsx');
-  assert.match(gate, /if \(loading\) \{\s*(?:\/\/[^\n]*\n\s*)*if \(location\.pathname === '\/'\) \{\s*return children;\s*\}/);
+  assert.match(gate, /if \(loading\) \{\s*(?:\/\/[^\n]*\n\s*)*if \(location\.pathname === '\/feed'\) \{\s*return children;\s*\}/);
   assert.doesNotMatch(gate, /InitialFeedLoading/);
   assert.doesNotMatch(gate, /feed-empty--initial-loading/);
   assert.doesNotMatch(gate, /FeedContainer\.css/);
@@ -98,7 +98,8 @@ test('the navbar fades in on its first mount of the session, and only then', asy
 });
 
 /**
- * Measured on the bar (React Router 7.18, HashRouter): every navigation
+ * Measured on the bar (React Router 7.18, back when it was a HashRouter):
+ * every navigation
  * reports POP, with the history index climbing 1, 2 — so read through the
  * type, both feeds entered from the left as a return and their cards sat at
  * rest. The page reads the index now (utils/routeDirection.js).

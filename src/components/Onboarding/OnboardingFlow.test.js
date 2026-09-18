@@ -15,7 +15,7 @@ test('SOURCE: first-run onboarding asks for a public handle after interests', as
 
 test('SOURCE: there is no sign-in page; a guest off a protected route gets the feed with the door open', async () => {
   const guard = await readFile(new URL('../Auth/ProtectedRoute.jsx', import.meta.url), 'utf8');
-  assert.match(guard, /<Navigate to="\/" replace state=\{\{ authRequired: true, returnTo:/);
+  assert.match(guard, /<Navigate to="\/feed" replace state=\{\{ authRequired: true, returnTo:/);
   assert.doesNotMatch(guard, /to="\/login"/);
   const app = await readFile(new URL('../../App.jsx', import.meta.url), 'utf8');
   assert.doesNotMatch(app, /LoginPage/);

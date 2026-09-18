@@ -1,8 +1,9 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { HashRouter } from 'react-router-dom'
+import { BrowserRouter } from 'react-router-dom'
 import { registerSW } from 'virtual:pwa-register'
 import { applyReloadPolicy, markAppForcedReload } from './utils/appReload.js'
+import { applyLegacyHashRoute } from './utils/legacyHashRoute.js'
 import { clearStaleOverlayMarker } from './hooks/useOverlayHistory.js'
 import App from './App.jsx'
 import GlobalErrorBoundary from './GlobalErrorBoundary.jsx'
@@ -132,6 +133,15 @@ try {
   // No service worker (vite dev, or a browser without one): nothing to mark.
 }
 
+// First of the pre-React gestures, because it settles the URL that every one
+// of them — and then the router — reads. The app was a HashRouter until this
+// commit, so `papertok.app/#/public/paper/<key>` is the shape of every link
+// ever shared out of it and every link its notification emails carry; the gate
+// in index.html forwards those to `/feed` with the fragment intact, and this
+// turns the fragment back into the route it always named, in place, before
+// anything can paint a feed nobody asked for (utils/legacyHashRoute.js).
+applyLegacyHashRoute({ history: window.history, location: window.location })
+
 // Before React renders, because the feed reads both stores on its first
 // render: a reload the READER asked for starts fresh, one the app forced does
 // not.
@@ -150,8 +160,10 @@ registerSW()
 // The phone-side record of the tab bar's taps (diagnostics/tapDiagnostics.js):
 // behind `?tapdiag=1`, remembered for the tab's session so the app's own
 // reloads keep it, `?tapdiag=0` to stop. A separate chunk that never loads
-// otherwise. The flag is read from the search AND the hash: with a HashRouter
-// the address the user types can carry it on either side of the `#`.
+// otherwise. The flag is read from the search AND the hash: the routes live in
+// the path now, but a `#/feed?tapdiag=1` typed from memory or pasted from an
+// old note still has to work, and by this line the translation above has
+// already moved any such query into the search anyway.
 try {
   const flag = /[?&]tapdiag=([01])\b/.exec(`${window.location.search} ${window.location.hash}`)
   if (flag) sessionStorage.setItem('papertok_tapdiag', flag[1])
@@ -175,10 +187,10 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         starts 3 ms / 11 ms after the tap. Lazy routes are unaffected:
         AnimatePresence mode="wait" mounts the incoming page after the exit,
         outside the router's update either way (utils/lazyPreload.js). */}
-    <HashRouter useTransitions={false}>
+    <BrowserRouter useTransitions={false}>
       <GlobalErrorBoundary>
         <App />
       </GlobalErrorBoundary>
-    </HashRouter>
+    </BrowserRouter>
   </React.StrictMode>,
 )

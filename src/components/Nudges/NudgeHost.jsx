@@ -113,7 +113,7 @@ export default function NudgeHost() {
 
   const openable = dwellDone
     && signedIn
-    && location.pathname === '/';
+    && location.pathname === '/feed';
 
   // Picked during render rather than in an effect: this derives state from
   // state, which an effect would turn into a second render pass — and the

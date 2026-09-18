@@ -134,7 +134,7 @@ export default function OnboardingFlow() {
     && location.state.returnTo.startsWith('/')
     && !location.state.returnTo.startsWith('//')
     ? location.state.returnTo
-    : '/';
+    : '/feed';
 
   const step = existingProfile && stepState > 3 ? 3 : stepState;
   const visibleSteps = existingProfile ? STEPS.slice(0, 3) : STEPS;
