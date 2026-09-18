@@ -1,5 +1,50 @@
 # Estado / pendientes
 
+## La landing vive en `/` y la aplicación en `/feed` (2026-09-18)
+
+**Quien no tiene sesión ya no cae en el feed, cae en una página que explica qué
+es esto.** Once tramos prerenderizados, sin React y sin una sola petición a un
+host externo, en la dirección «Highlighter» que eligió Nico viendo tableros: el
+amarillo como suelo del hero, la hoja blanca encima, y el subrayado como único
+recurso decorativo. La aplicación pasa a `app.html`, servida en `/feed` por una
+reescritura de `vercel.json`, y `index.html` es ahora la landing. Quién ve qué
+lo decide un script de cabecera antes de que nada más corra: con la marca
+`papertok_signed_in` (que escribe `AuthContext` al entrar y borra al salir) se
+va derecho a `/feed`, y un `#/…` —que nunca llega al servidor, así que sólo esa
+página puede honrarlo— se reenvía con su fragmento y su query intactos.
+
+Comprobadas en producción las cinco puertas, con CDP y perfil desechable: `/`
+sin marca sirve la landing, `/#/public/paper/…` acaba en
+`/feed#/public/paper/…`, `/` con la marca redirige, `/feed` sirve la aplicación
+y `/privacy.html` sigue siendo la política. Ojo al comprobarlo a mano: ir de `/`
+a `/#/algo` en la misma pestaña es una navegación dentro del mismo documento y
+el script no vuelve a correr — hay que llegar en frío.
+
+Lo que se mide y ahora vigila alguien: el peso de la landing son 30.206 bytes gz
+de un techo de 30.720 (`npm run budget:landing`, dentro de `npm run check`; un
+glob que no encuentre su chunk falla en vez de medir cero), y la accesibilidad
+son 0 violaciones de axe en seis escenas —390 claro, 390 oscuro, 1440, reflow a
+320 y a 390, y el equivalente al zoom del 200 %— que también corre CI, para lo
+cual `landing-axe.mjs` resuelve el binario de Chrome por plataforma en vez de
+dar por hecho el `/Applications` de un Mac.
+
+Dos cosas que la revisión de la rama encontró y conviene no repetir. El mapa de
+citas llevaba **vecinos inventados** bajo un comentario que afirmaba haberlos
+medido: Einstein '16 con 14.200 citas no está siquiera entre las 99 referencias
+del paper de LIGO. Ahora son los que devuelve OpenAlex para W2252795400, y cada
+lado se elige con la regla que usa la aplicación, que no es la misma dos veces:
+arriba las cinco más citadas de las que cita, abajo las dos más recientes de las
+que la citan (`report-api.js` pide esas por `desc(creation)`). Y como las
+recientes tienen cero citas propias, el nodo caía justo en el origen del eje,
+que en la plancha de móvil era la misma x que el centro: dos puntos uno sobre
+otro. Al refrescar esos datos hay que mirar la plancha compacta, no sólo la
+ancha.
+
+Pendiente, en su propio PR: llevar el fragmento a rutas reales (`/following` y
+`/research` en vez de `#/`), con lo que arrastra — la cabecera de caché que
+cuelga de rutas que ya nadie pide, y dejar de acuñar enlaces con `#/` en lo que
+se comparte y en lo que manda el Worker por correo.
+
 ## El usuario nuevo ve sus intereses al registrarse, y el feed los reparte (2026-09-17)
 
 **«A nuevos usuarios no les carga la ventana pidiendo intereses.»** No era
