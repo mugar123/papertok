@@ -28,22 +28,31 @@ test('the brand button lifts under the pointer, gives under the finger, and stan
     'hover:-translate-y-0.5',
     'active:scale-[0.96]',
     'active:translate-y-0',
+    'hover:shadow-[var(--shadow-md)]',
+    'active:shadow-none',
     'motion-reduce:hover:translate-y-0',
     'motion-reduce:active:scale-100',
-    'duration-[180ms]',
-    'ease-[var(--ease-out-expo)]',
+    'motion-reduce:hover:shadow-none',
+    '[&:hover_svg]:scale-110',
+    'motion-reduce:[&:hover_svg]:scale-100',
   ]) {
     assert.ok(classes.includes(cls), `${cls} is on the brand variant`);
   }
-  // The transition has to name the two properties that move, or the lift
-  // and the press snap instead of travelling; the colours stay on it too.
-  const transition = classes.find((cls) => cls.startsWith('transition-['));
-  assert.ok(transition, 'the variant names its transition properties');
-  for (const prop of ['translate', 'scale', 'color', 'background-color', 'border-color']) {
-    assert.ok(transition.includes(prop), `${prop} transitions`);
+  // Each property on its own clock (polished 2026-09-18): the colours cross
+  // on a straight line, the lift arrives on the expo curve and settles back
+  // on the quad, and the press is the quickest thing here. Two shorthands:
+  // the base one is the way back, the hover one the way in.
+  const base = classes.find((cls) => cls.startsWith('[transition:'));
+  const enter = classes.find((cls) => cls.startsWith('hover:[transition:'));
+  assert.ok(base && enter, 'the variant names its transition properties, in and out');
+  for (const prop of ['color_160ms_linear', 'background-color_160ms_linear', 'border-color_160ms_linear', 'translate_220ms_var(--ease-out-quad)', 'scale_120ms_var(--ease-out-expo)', 'box-shadow_220ms']) {
+    assert.ok(base.includes(prop), `${prop} on the way back`);
+  }
+  for (const prop of ['translate_180ms_var(--ease-out-expo)', 'color_160ms_linear', 'box-shadow_180ms']) {
+    assert.ok(enter.includes(prop), `${prop} on the way in`);
   }
   // Nothing in it animates `transform` itself: the card's arrival animates
   // that on the row above, and a transform here would be the second owner
   // paperCardArrival.test.js already had to fight on the side rail.
-  assert.ok(!classes.some((cls) => /(^|:)(transform|-?translate-x|rotate)/.test(cls) && !cls.startsWith('transition-')));
+  assert.ok(!classes.some((cls) => /(^|:)(transform|-?translate-x)/.test(cls) && !cls.includes('[transition:')));
 });
