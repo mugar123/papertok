@@ -695,3 +695,14 @@ está hoy.
   repetido), no las primeras lecturas en bruto, que resultaron contaminadas
   al menos una vez. No se repitió el recorrido completo con el panel
   realmente visible en primer plano.
+- **(tarea 12)** La fila de 2.4.11 de arriba («El foco recién enfocado no
+  queda bajo la barra») da a entender que todo movimiento de foco
+  programático quedó comprobado, pero solo se examinó uno en vivo: el que la
+  corrección 3 mueve a `.lp-rewrite__status`. Hay otros dos movimientos de
+  foco programáticos en `src/landing/motion.js` que **no** se midieron con
+  `elementFromPoint`/`obscured` de la misma forma — se razonó sobre ellos por
+  lectura de código, no se verificaron: `tabs[next].focus()` (línea 79, las
+  pestañas de nivel del lector al moverse con las flechas) y
+  `sheet.focus({ preventScroll: true })` (línea 639, la hoja del mazo tras
+  pulsar Skip). Ninguno de los dos tiene una fila propia que declare esta
+  brecha; queda declarada aquí.
