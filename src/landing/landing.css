@@ -107,9 +107,13 @@
    separate height rule is needed on `.lp-deck` itself, and nothing here
    jumps: `measure()` runs before `.is-armed` is added and before the first
    paint the browser commits after that, same as any other synchronous DOM
-   write. A ResizeObserver on the sheet (armDeck, not a window/document
-   listener — see motion.js's own comment on why) re-measures the same way
-   on layout changes. */
+   write. Two later triggers re-measure the same way: a ResizeObserver on
+   the SLIDES themselves (armDeck, not a window/document listener — see
+   motion.js's own comment on why it isn't the sheet), and
+   `document.fonts.ready`, since the first measurement above runs against
+   whatever fallback metrics are available at DOMContentLoaded — the
+   self-hosted serif/mono faces have no preload and may not have painted a
+   glyph yet. */
 .lp-deck { position: relative; }
 .lp-deck__reel { position: relative; }
 .lp-sheet.is-armed .lp-deck { overflow: hidden; }

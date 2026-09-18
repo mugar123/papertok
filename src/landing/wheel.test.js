@@ -178,3 +178,33 @@ test('shouldAnimate() actually gates armPile() — not just named beside it', as
     if (hadIO) globalThis.IntersectionObserver = savedIO; else delete globalThis.IntersectionObserver;
   }
 });
+
+// Fix round 2: remeasure() (a font load, or a resize, mid-Skip) can land
+// while the deck is still travelling toward the wraparound clone. jump()
+// — which remeasure() calls to re-teleport to the current paper — always
+// suppresses the CSS transition, and an INTERRUPTED transition never
+// fires transitionend, so the handler that would normally settle the
+// clone back to the real first paper (deck.settle(); jump(0); show(0),
+// a few lines above this file's own copy of remeasure()) never runs:
+// deck.index() stays pinned at `count`, and next()'s own `i < count`
+// guard then makes every further Skip silently do nothing — nothing
+// LOOKS wrong, since the clone mirrors paper 1, which is what makes it
+// worth pinning here rather than trusting it stays fixed by inspection.
+//
+// A real reproduction lives in the CDP probe (landing-deck-probe.mjs),
+// which can actually cancel a real CSS transition and watch a real
+// transitionend not fire — deck.test.js's own new cases pin the pure
+// contract (settle() is idempotent, and next() resumes once it has run);
+// this is the one check that would have failed against the ACTUAL
+// pre-fix source, since the bug never lived in createDeck() at all
+// (settle() was already idempotent) — it lived entirely in remeasure()
+// never asking deck.atClone() before handing deck.index() to jump().
+test('remeasure() settles the deck before jump() if it would land on the clone', () => {
+  const body = js.slice(js.indexOf('function remeasure()'), js.indexOf('function remeasure()') + 400);
+  assert.match(body, /if\s*\(\s*deck\.atClone\(\)\s*\)\s*\{\s*deck\.settle\(\);\s*show\(0\);\s*\}/);
+  // The settle has to come BEFORE jump() reads the index, not after —
+  // otherwise jump() would already have read the stale `count`.
+  const settleAt = body.search(/deck\.settle\(\)/);
+  const jumpAt = body.search(/jump\(deck\.index\(\)\)/);
+  assert.ok(settleAt >= 0 && jumpAt > settleAt, 'deck.settle() must run before jump(deck.index()) inside remeasure()');
+});

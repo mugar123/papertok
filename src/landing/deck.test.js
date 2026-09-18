@@ -59,3 +59,36 @@ test('the counter never says 4 of 3', () => {
   d.next(); d.next(); d.next();
   assert.equal(d.label(), '1 / 3');
 });
+
+// Fix round 2's own contract: motion.js's remeasure() (armDeck) can now
+// run WHILE a Skip is still travelling toward the wraparound clone — a
+// font load or a resize can land in that 400ms window — and has to
+// settle() the deck itself before treating deck.index() as a resting
+// position, because an interrupted CSS transition never fires
+// transitionend, so the handler that would normally call settle() never
+// runs. That fix only works if settle() is safe to call speculatively
+// (harmless when the deck was never at the clone) AND genuinely
+// idempotent (harmless to call twice, in case the interrupted
+// transition's own transitionend somehow still landed) AND actually
+// unsticks next() afterwards — all three are this module's own contract,
+// pinned here so a future change to createDeck cannot quietly break the
+// assumption the driver now depends on.
+test('settle() is safe to call speculatively — it does nothing to a deck that was never at the clone', () => {
+  const d = createDeck({ count: 3 });
+  d.next(); // index 1, a real paper
+  assert.equal(d.settle(), 1);
+  assert.equal(d.index(), 1);
+});
+
+test('settling while on the clone is idempotent, and next() can advance again afterwards', () => {
+  const d = createDeck({ count: 3 });
+  d.next(); d.next(); d.next(); // walks onto the clone
+  assert.equal(d.atClone(), true);
+  assert.equal(d.settle(), 0);
+  assert.equal(d.settle(), 0, 'a second settle() (e.g. a transitionend that still landed after an external settle already ran) must be a no-op, not a second reset');
+  assert.equal(d.index(), 0);
+  // The actual failure this guards: without settling first, deck.index()
+  // stays pinned at `count` forever, and next()'s own `if (i < count)`
+  // guard then makes every further Skip silently do nothing.
+  assert.deepEqual(d.next(), { jumpTo: null, index: 1 });
+});

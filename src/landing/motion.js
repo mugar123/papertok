@@ -595,8 +595,40 @@ function armDeck() {
      (deck.index(), never a hardcoded 0) via jump(), not paint() — this is
      a correction, not a navigation, so it must not animate and must not
      move a reader who has already skipped off the paper they are looking
-     at by the time either trigger below fires. */
-  function remeasure() { measure(); jump(deck.index()); }
+     at by the time either trigger below fires.
+
+     One more case this has to reconcile itself, before calling jump():
+     deck.atClone(). If this runs while a Skip is still travelling toward
+     the wraparound clone — deck.next() already set the index to `count`,
+     the 400ms transition is in flight, its own transitionend has not
+     fired yet — jump() below would otherwise cancel that transition
+     (suppressing it is jump()'s entire job) without ever firing
+     transitionend, since an interrupted CSS transition never does. The
+     handler that turns the clone back into the real first paper
+     (deck.settle(); jump(0); show(0), below) would then never run: the
+     index stays pinned at `count` for the rest of the visit, and next()'s
+     own `i < count` guard silently turns every further Skip into a no-op.
+     Nothing LOOKS wrong — the clone mirrors paper 1 — which is what makes
+     it worth catching here rather than by looking at it.
+
+     Settled HERE, not taught to jump() itself: jump() is a dumb geometry
+     primitive with two other call sites that both depend on it staying
+     exactly that dumb. The transitionend handler below calls it with an
+     ALREADY-settled index (0); prev() deliberately jumps TO the clone's
+     own position (count) as the first step of travelling away from it
+     with paint() right after — landing on `count` there is the intended
+     outcome, not a bug, and must not be silently rewritten out from under
+     it. remeasure() is the one call site where deck.index() is about to
+     be trusted as a STABLE resting position instead of a mid-flight
+     waypoint, so it is the one place that has to ask first — settling
+     (and re-syncing show(), since the earlier show(slides.length) had
+     marked the CLONE reachable, not the real first slide) before jump()
+     ever sees `count`. */
+  function remeasure() {
+    measure();
+    if (deck.atClone()) { deck.settle(); show(0); }
+    jump(deck.index());
+  }
 
   /* Remeasure when a SLIDE's own box changes — not the sheet's. Once armed,
      every slide is `position: absolute` inside a fixed-height reel, so a

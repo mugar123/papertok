@@ -56,7 +56,8 @@ class CDP {
         const p = this.pending.get(m.id); this.pending.delete(m.id);
         if (m.error) p.reject(new Error(JSON.stringify(m.error))); else p.resolve(m.result);
       } else if (m.method) {
-        (this.listeners.get(m.method) || []).forEach((fn) => fn(m.params));
+        const fn = this.listeners.get(m.method);
+        if (fn) fn(m.params);
       }
     });
   }
@@ -64,10 +65,13 @@ class CDP {
     const id = ++this.id;
     return new Promise((resolve, reject) => { this.pending.set(id, { resolve, reject }); this.ws.send(JSON.stringify({ id, method, params })); });
   }
-  on(method, fn) {
-    if (!this.listeners.has(method)) this.listeners.set(method, []);
-    this.listeners.get(method).push(fn);
-  }
+  // Single active handler per method, REPLACING whatever was there —
+  // every phase in this script that calls this registers its own handler
+  // for the SAME event ('Fetch.requestPaused') as an earlier phase, and
+  // an earlier phase's stale handler firing again during a later one is
+  // exactly the bug this fixed (two handlers both trying to
+  // Fetch.continueRequest the same, already-continued requestId).
+  on(method, fn) { this.listeners.set(method, fn); }
 }
 
 try {
@@ -292,8 +296,102 @@ try {
 
   await cdp.send('Fetch.disable');
 
+  // ── Fix round 2: fonts landing mid-transition must not strand the deck ──
+  // Reproduces the actual race, not a proxy for it: hold every woff2
+  // request open (this time indefinitely, under my own control) through
+  // Skip #1 and #2, click Skip a 3rd time (the deck starts travelling
+  // toward the wraparound clone, a real 400ms CSS transition in flight),
+  // release the held fonts ~120ms into that transition — well before it
+  // would finish on its own — then confirm a 4th Skip still advances. Pre
+  // fix, jump()'s cancellation of that in-flight transition (from
+  // remeasure(), fired by the now-resolved document.fonts.ready) would
+  // have suppressed transitionend, left deck.index() pinned at 3, and
+  // made this 4th Skip a silent no-op.
+  //
+  // AT 1440px THIS DOES NOT REPRODUCE THE BUG — found by testing the
+  // reproduction itself against the reverted code and watching it stay
+  // green. jump(deck.index()) only actually CANCELS the in-flight
+  // transition if it writes a DIFFERENT pixel target than paint() already
+  // set when the transition started; a same-value write is not a change,
+  // and a transition that was never redirected completes and fires
+  // transitionend normally regardless of how many times .is-jumping was
+  // toggled around it. The target only differs if measure() (called by
+  // remeasure(), just before jump()) produces a different `h` than the
+  // one paint() used — i.e. only if the font swap actually changes the
+  // tallest slide's height, which the FONT-LOADING RACE phase above
+  // already established is 0px at 1440 on this machine and -27px at
+  // 390px. So this phase runs at 390px, where the race is real.
+  //
+  // The FONT-LOADING RACE phase just above already loaded (and cached)
+  // every font this page uses in this same long-lived browser profile —
+  // without disabling the cache here, the fonts resolve from disk, no
+  // network request is even made, and there is nothing for Fetch to hold.
+  //
+  // And the REDUCED MOTION phase earlier in this SAME script left
+  // prefers-reduced-motion: reduce active — found by writing this
+  // reproduction, running it, and getting a clean "not stranded" against
+  // deliberately-reverted code, which should be impossible. Under reduced
+  // motion .lp-deck__reel has `transition: none !important;`, so Skip #3
+  // has no transition to interrupt in the first place: next()'s own
+  // reduced() branch settles synchronously, inside the SAME click
+  // handler, before this phase's font release ever runs — a real
+  // reproduction needs a real, active transition to land inside.
+  await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  await cdp.send('Network.enable');
+  await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
+  // height:1300, not 900 — at 390px the hero stacks to one column and the
+  // Skip button sits around y=1200 (measured earlier, this same session);
+  // Input.dispatchMouseEvent is viewport-relative, so a click computed
+  // from getBoundingClientRect() at a Y past the emulated viewport height
+  // lands nowhere, which would silently make every click in this phase a
+  // no-op regardless of which build is running — a false "stranded" that
+  // has nothing to do with the fix. Tall enough here that the whole hero
+  // is in view without needing to scroll it first.
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 1300, deviceScaleFactor: 1, mobile: false }); // mobile:false — real mouse clicks, not touch emulation (see the round-1 report's own note on that quirk)
+  await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*.woff2', requestStage: 'Request' }] });
+  const held = [];
+  cdp.on('Fetch.requestPaused', (p) => { held.push(p.requestId); });
+  await cdp.send('Page.navigate', { url: URL_ });
+  await sleep(1200);
+
+  const clickSkip = async () => {
+    const r = JSON.parse(await ev(`JSON.stringify((() => { const r = document.querySelector('[data-deck-skip]').getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; })())`));
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: r.x, y: r.y });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: r.x, y: r.y, button: 'left', clickCount: 1 });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x, y: r.y, button: 'left', clickCount: 1 });
+  };
+
+  await clickSkip(); await sleep(450); // 1/3 -> 2/3, fully settled
+  const afterFirst = await ev(`document.querySelector('[data-deck-count]').textContent`);
+  await clickSkip(); await sleep(450); // 2/3 -> 3/3, fully settled
+  const afterSecond = await ev(`document.querySelector('[data-deck-count]').textContent`);
+  console.log('sanity — counter after clicks 1 and 2 (must be "2 / 3" then "3 / 3", or the clicks are not landing):', afterFirst, afterSecond);
+  await clickSkip(); // 3/3 -> onto the clone; 400ms transition starts now
+  await sleep(120); // well inside the transition
+  const heldCount = held.length;
+  await Promise.all(held.map((id) => cdp.send('Fetch.continueRequest', { requestId: id })));
+  const fontsReadyStart = Date.now();
+  await cdp.send('Runtime.evaluate', { expression: 'document.fonts.ready', awaitPromise: true });
+  const fontsReadyMs = Date.now() - fontsReadyStart;
+  await sleep(300); // let remeasure()'s reconciliation (or, pre-fix, nothing) settle
+
+  const afterRelease = JSON.parse(await ev(`JSON.stringify({ count: document.querySelector('[data-deck-count]').textContent, reelTransform: document.querySelector('[data-deck-reel]').style.transform })`));
+  await clickSkip(); // the 4th Skip — must advance, not be a no-op
+  await sleep(500);
+  const afterFourth = JSON.parse(await ev(`JSON.stringify({ count: document.querySelector('[data-deck-count]').textContent, reelTransform: document.querySelector('[data-deck-reel]').style.transform })`));
+
+  console.log('\n══════ FIX ROUND 2: FONTS RESOLVING MID-TRANSITION MUST NOT STRAND THE DECK ══════');
+  console.log('woff2 requests held then released:', heldCount, ` (document.fonts.ready resolved ${fontsReadyMs}ms after release)`);
+  console.log('after release, before the 4th Skip:', afterRelease, ' (fix: reconciled back to "1 / 3" already; bug: still "1 / 3" too, since the clone mirrors paper 1 — the counter alone cannot tell them apart)');
+  console.log('after the 4th Skip:', afterFourth);
+  const notStranded = afterRelease.count !== afterFourth.count;
+  console.log('4th Skip actually advanced the counter (not stranded on the clone):', notStranded);
+
+  await cdp.send('Fetch.disable');
+
   console.log('\n══════ SUMMARY ══════');
   console.log([
+    `strandedFix=${notStranded ? 'OK-not-stranded' : 'STRANDED'}`,
     `counters=${JSON.stringify(counters)}`,
     `wrapsTo1/3=${counters[2] === '1 / 3'}`,
     `transformHomeAfter3rd=${after3.reelTransform === 'translateY(0px)'}`,
