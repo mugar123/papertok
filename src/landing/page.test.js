@@ -258,15 +258,18 @@ test('chip tone and the paper accent are guarded against attribute-context injec
 // so the count is 1 here, not the spec's eventual 3 — same reasoning as the
 // order test below: bounded so a regression (0) or an overshoot (>3) still
 // fails, without this test sitting red for four tasks.
-test('the highlight appears at least once and at most three times, and never as a band on ink', () => {
+test('the highlight appears at least once and at most three times, and on ink it is the wordmark band', () => {
   const count = (html.match(/class="lp-hl"/g) || []).length;
   assert.ok(count >= 1 && count <= 3, `expected 1-3 highlights, found ${count}`);
   // Both contexts share one declaration block via a comma-separated selector
   // (`[data-theme="dark"] .lp-hl, .lp-close .lp-hl { … }`) rather than two
-  // rules repeating the same five declarations, so `[^{]*` stands in for the
-  // rest of the selector list between each selector and the opening brace.
-  assert.match(css, /\[data-theme="dark"\] \.lp-hl[^{]*\{[^}]*text-decoration: underline/);
-  assert.match(css, /\.lp-close \.lp-hl[^{]*\{[^}]*text-decoration: underline/);
+  // rules repeating the same declarations, so `[^{]*` stands in for the rest
+  // of the selector list between each selector and the opening brace. What is
+  // pinned here is that ink gets a SMALLER band than the light theme's 0.42em
+  // — the size is checked against the wordmark's own in highlightContrast —
+  // because at 0.42em it climbs into white letters.
+  assert.match(css, /\[data-theme="dark"\] \.lp-hl[^{]*\{[^}]*box-shadow: inset 0 -0\.32em/);
+  assert.match(css, /\.lp-close \.lp-hl[^{]*\{[^}]*box-shadow: inset 0 -0\.32em/);
 });
 
 // Tasks 6-9 each inserted a section into this array; until task 9 the check
@@ -400,6 +403,52 @@ test('the map is an svg with a text alternative list beside it', () => {
   assert.equal((sec.match(/<svg/g) || []).length, 2, 'the wide and the compact plate');
   assert.match(sec, /<ul class="lp-visually-hidden" id="lp-map-list">/);
   assert.equal((sec.match(/<ul class="lp-visually-hidden" id="lp-map-list">[\s\S]*?<\/ul>/)[0].match(/<li>/g) || []).length, 7);
+});
+
+test('every button that carries an icon separates it from its label', () => {
+  // The gap used to live on `.lp-btn--md` alone, so the one AI button that is
+  // `--lg` instead rendered its sparkle glued to the R of "Read in plain
+  // words" — visible at 1440 and 1280, and invisible to every test here.
+  // Two halves, because either one alone goes green while the page is wrong:
+  // the base rule has to declare the gap...
+  // Anchored at the start of a line, or it reads `.lp-hero__cta .lp-btn`
+  // instead — the same trap the privacy page's footer test fell into.
+  const base = allCss.match(/^\.lp-btn\s*\{([^}]*)\}/m);
+  assert.ok(base, 'the base .lp-btn rule is gone');
+  assert.match(base[1], /gap:\s*[1-9]/, '.lp-btn draws icon and label with no gap between them');
+  // ...and every element in the page that actually sets an icon beside text
+  // has to resolve a gap from one of its own classes. Checked by resolution,
+  // not by an allowlist of class names: a new icon button on a new class
+  // would walk straight past a list, which is how the `--lg` one got here.
+  const declaresGap = (className) => {
+    const rule = allCss.match(new RegExp(`^\\.${className.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}\\s*\\{([^}]*)\\}`, 'm'));
+    return !!rule && /gap:\s*[1-9]/.test(rule[1]);
+  };
+  // An icon-ONLY control (the share and graph buttons are `.lp-iconbtn`) has
+  // nothing to separate, so what is collected here is elements that set an
+  // icon AND a label: an <svg> right after the opening tag, followed by words
+  // — bare, or wrapped in a span, which is how the two AI buttons differ.
+  // Found by looking just past each icon rather than by matching an element
+  // and its closing tag: nested spans make that second reading unreliable.
+  const iconated = [];
+  for (const m of html.matchAll(/class="([^"]*)"[^>]*>\s*<svg[\s\S]*?<\/svg>\s*([^<]*)(?:<span[^>]*>([^<]*)<\/span>)?/g)) {
+    const words = `${m[2] || ''}${m[3] || ''}`.trim();
+    if (words) iconated.push([m[1], words]);
+  }
+  assert.ok(iconated.length >= 4, `only ${iconated.length} elements set an icon beside a label - has the markup changed?`);
+  for (const [classList, words] of iconated) {
+    assert.ok(
+      classList.split(/\s+/).filter(Boolean).some(declaresGap),
+      `"${words}" has its icon glued to it: no class of "${classList}" declares a gap`,
+    );
+  }
+  assert.ok(iconated.length >= 4, `only ${iconated.length} elements set an icon beside a label - has the markup changed?`);
+  for (const [classList, words] of iconated) {
+    assert.ok(
+      classList.split(/\s+/).filter(Boolean).some(declaresGap),
+      `"${words}" has its icon glued to it: no class of "${classList}" declares a gap`,
+    );
+  }
 });
 
 test('the edition is a window with a caption, cut with a fade, its percentages the real ones', () => {

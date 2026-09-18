@@ -47,14 +47,15 @@ html { scroll-padding-top: var(--nav-height); }
 .lp-bar--yellow .lp-bar__link { color: var(--text-on-brand); opacity: 0.8; }
 .lp-bar__link:hover { color: var(--text-primary); opacity: 1; }
 
-.lp-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 34px; padding: 0 16px; border: 1px solid var(--accent-primary); background: var(--accent-primary); color: var(--text-inverse); font: var(--fw-medium) 0.875rem/1 var(--font-body); border-radius: var(--radius-md); text-decoration: none; white-space: nowrap; cursor: pointer; }
+.lp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 34px; padding: 0 16px; border: 1px solid var(--accent-primary); background: var(--accent-primary); color: var(--text-inverse); font: var(--fw-medium) 0.875rem/1 var(--font-body); border-radius: var(--radius-md); text-decoration: none; white-space: nowrap; cursor: pointer; }
 .lp-btn:hover { background: var(--accent-primary-hover); border-color: var(--accent-primary-hover); }
 .lp-btn--lg { min-height: 52px; padding: 0 28px; font-size: 1rem; border-radius: var(--radius-lg); }
 .lp-btn--yellow { background: var(--brand-yellow); border-color: var(--brand-yellow); color: var(--text-on-brand); }
 .lp-btn--yellow:hover { background: var(--brand-orange); border-color: var(--brand-orange); }
 
 .lp-footer { width: min(1200px, calc(100% - 40px)); margin: 0 auto; padding: 24px 0 48px; border-top: 1px solid var(--border-subtle); display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; font-size: 0.8125rem; color: var(--text-tertiary); }
-.lp-footer__links { display: flex; gap: 24px; flex-wrap: wrap; }
+.lp-footer__links { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+.lp-footer__links > * { display: inline-flex; align-items: center; min-height: 44px; }
 .lp-footer a { color: inherit; text-decoration: none; min-height: 44px; display: inline-flex; align-items: center; }
 .lp-footer a:hover { color: var(--text-primary); }
 .lp-footer .lp-wordmark { color: var(--text-primary); }

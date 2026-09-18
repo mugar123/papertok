@@ -15,6 +15,9 @@ import { fileURLToPath } from 'node:url';
 
 const vars = readFileSync(fileURLToPath(new URL('../styles/variables.css', import.meta.url)), 'utf8');
 const css = readFileSync(fileURLToPath(new URL('./landing.css', import.meta.url)), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+// The shared sheet, for the one number this file refuses to repeat: the
+// wordmark's band, which the closing screen has to match.
+const staticCss = readFileSync(fileURLToPath(new URL('../legal/static-page.css', import.meta.url)), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 const token = (block, name) => block.match(new RegExp(`${name}:\\s*(#[0-9a-f]{6})`, 'i'))?.[1];
 const lum = (hex) => { const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
 const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
@@ -32,13 +35,20 @@ test('on paper the band sits under ink: ink on yellow clears 4.5:1 by a mile', (
   assert.ok(ratio(token(light, '--text-primary'), token(light, '--brand-yellow')) >= 4.5);
   assert.match(css, /\.lp-hl \{[^}]*box-shadow: inset 0 -0\.42em 0 var\(--brand-yellow\)/);
 });
-test('on ink the highlight is a rule below the baseline, not a band: the glyphs keep their own contrast', () => {
+test('on ink the band is the wordmark\'s, and it sits under the baseline where the glyphs keep their own contrast', () => {
   const rule = css.match(/\[data-theme="dark"\] \.lp-hl, \.lp-close \.lp-hl \{([^}]*)\}/)?.[1] || '';
-  assert.match(rule, /box-shadow: none/);
-  assert.match(rule, /text-decoration: underline/);
-  assert.match(rule, /text-decoration-thickness: 0\.08em/);
-  assert.match(rule, /text-decoration-skip-ink: auto/);
+  assert.match(rule, /box-shadow: inset 0 -0\.32em 0 var\(--brand-yellow\)/);
+  assert.match(rule, /text-decoration: none/);
   assert.ok(ratio(token(dark, '--text-primary'), token(dark, '--bg-primary')) >= 4.5);
+
+  // 0.32em, and the number is not free: it is the wordmark's, read out of the
+  // shared sheet rather than repeated here, so the day one moves the other
+  // fails. Above ~0.36em the band starts climbing into the x-height of white
+  // letters, which is the defect this whole rule exists to avoid.
+  const wordmark = staticCss.match(/\.lp-wordmark span \{([^}]*)\}/)?.[1] || '';
+  const band = (decl) => decl.match(/inset 0 -([\d.]+)em/)?.[1];
+  assert.equal(band(rule), band(wordmark), 'the closing screen no longer draws the wordmark\'s own band');
+  assert.ok(Number(band(rule)) <= 0.36, `a ${band(rule)}em band reaches into the letters`);
 
   // The glyphs were the only thing measured here until the whole-branch
   // review noticed the filete itself was unasserted. It is the highlight —
@@ -47,11 +57,11 @@ test('on ink the highlight is a rule below the baseline, not a band: the glyphs 
   // 3:1 against what it is drawn on, not the 4.5:1 the glyphs answer to.
   //
   // Pinned first, because the ratios below are worth nothing if the rule
-  // stops drawing the filete in this token: a recolour to, say,
+  // stops drawing the band in this token: a recolour to, say,
   // `--brand-yellow-soft` (#35290b on this side — a dark amber wash, 1.35:1
   // on the page) would leave every assertion in this file green while the
-  // underline vanished into the background.
-  assert.match(rule, /text-decoration-color: var\(--brand-yellow\)/);
+  // mark vanished into the background.
+  assert.match(rule, /inset 0 -[\d.]+em 0 var\(--brand-yellow\)/);
 
   // Read out of `light`, not `dark`, and that is not a slip. variables.css
   // deliberately does NOT redefine `--brand-yellow` in the dark block ("Brand
