@@ -108,8 +108,20 @@ try {
   // from measure()'s one-time max — set before any slide is shown — so it
   // must read identical at all three stops, not just "visually about the
   // same" in a screenshot.
+  // The read-after-each-click helper below checks more than the counter:
+  // WHICH slide is currently reachable (not `inert`), whether it is really
+  // painted (`offsetParent`, null for display:none on itself or an
+  // ancestor — this is what would have caught the `hidden` bug below), and
+  // its title — a repeated or blank title would mean the counter is
+  // advancing over content that never actually changed.
+  const readSlide = () => ev(`JSON.stringify((() => {
+    const on = [].find.call(document.querySelectorAll('.lp-hero__slide, .lp-hero__slide--clone'), (s) => !s.inert);
+    return { title: on ? on.querySelector('.lp-paper__title').textContent.slice(0, 40) : null, painted: on ? on.offsetParent !== null : false, hiddenAttr: on ? on.hidden : null, isClone: on ? on.classList.contains('lp-hero__slide--clone') : null };
+  })())`).then(JSON.parse);
+
   const counters = [];
   const deckHeights = [];
+  const slideReads = [];
   for (let n = 0; n < 3; n++) {
     const rect = JSON.parse(await ev(`JSON.stringify((() => { const r = document.querySelector('[data-deck-skip]').getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; })())`));
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
@@ -120,11 +132,16 @@ try {
     counters.push(text);
     const deckH = await ev(`document.querySelector('.lp-deck').getBoundingClientRect().height`);
     deckHeights.push(deckH);
+    slideReads.push(await readSlide());
     await sleep(520); // ~600ms since the press, well past the 400ms transition + settle
   }
   console.log('\n══════ SKIP × 3 (~600ms apart) ══════');
   console.log('counter after each click:', counters);
   console.log('.lp-deck height at each stop (px):', deckHeights, ' constant:', new Set(deckHeights).size === 1);
+  console.log('reachable slide after each click:', JSON.stringify(slideReads, null, 2));
+  const titles = slideReads.map((s) => s.title);
+  console.log('distinct real titles across the 3 stops:', new Set(titles).size, titles);
+  console.log('all painted (offsetParent !== null):', slideReads.every((s) => s.painted));
 
   const after3 = JSON.parse(await ev(`JSON.stringify({
     reelTransform: document.querySelector('[data-deck-reel]').style.transform,
@@ -134,6 +151,8 @@ try {
   })`));
   console.log('reel transform after the 3rd click:', after3.reelTransform);
   console.log('document.activeElement is the sheet:', after3.activeIsSheet, `(tag=${after3.activeTag}, data-deck=${after3.activeHasDataDeck})`);
+  const settledSlide = await readSlide();
+  console.log('reachable slide once fully settled (should be the REAL first paper, not the clone):', settledSlide);
 
   // ── Arrow keys: move the deck, do NOT move the page ─────────────────────
   await ev(`document.querySelector('[data-deck]').focus({ preventScroll: true }); 'focused'`);

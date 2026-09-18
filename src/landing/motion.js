@@ -480,6 +480,21 @@ function armDeck() {
   var all = slides.concat([clone]);
   var h = 0;
 
+  /* Slides 2 and 3 ship `hidden` in page.js too (alongside `aria-hidden` and
+     `inert`) — the no-JS fallback that keeps the deck one paper tall without
+     a script. `hidden` (native `display: none`) has to come off ALL FOUR
+     slides right now, once, not per-show(): once armed, a sliding
+     transition needs every slide actually rendered throughout — geometry
+     (`overflow: hidden` on `.lp-deck`, each slide `position: absolute`, the
+     reel's own translateY) is what confines what is SEEN to one at a time,
+     the same way it already does for the clone, which never had `hidden` to
+     begin with. show() below still owns `inert`/`aria-hidden` — the
+     ACCESSIBILITY show/hide, orthogonal to this. Doing this before the
+     first `measure()` call matters too: a still-hidden slide reports
+     `offsetHeight: 0`, which would silently under-measure the reel whenever
+     paper 2 or 3 is the tallest of the three. */
+  all.forEach(function (s) { s.hidden = false; });
+
   /* (C) The armed deck's own height. `.lp-hero__slide` becomes `position:
      absolute` the moment `.is-armed` lands (landing.css), so none of the
      four slides contributes to the reel's intrinsic height any more — an
@@ -497,7 +512,21 @@ function armDeck() {
     h = 0;
     all.forEach(function (s) { h = Math.max(h, s.offsetHeight); });
     reel.style.height = h + 'px';
-    all.forEach(function (s, k) { s.style.transform = 'translateY(' + (k * 100) + '%)'; });
+    /* Each slide's OWN offset within the reel has to be a pixel multiple of
+       the SAME shared `h` the reel's own scroll (`paint()`/`jump()`, both
+       `-k * h` px) already uses — not `translateY(k * 100%)`. A CSS percent
+       translateY is relative to the element's OWN box, not the reel's, so
+       `k * 100%` only happens to line up with `k * h` px when every slide
+       is exactly the same height. HERO_PAPERS are not: three real papers
+       with different abstracts and byline lengths, so the percent form
+       staggered each slide by ITS OWN height instead of the shared one,
+       and slide 3 landed short of a full `h` below slide 2 — behind it,
+       not below the fold, so the two visibly overlapped the moment slide 2
+       actually rendered (see the `hidden` fix above; before it this was
+       already wrong, just invisible, since a display:none slide has
+       nothing to overlap with). Caught by actually looking at a screenshot
+       after Skip, not by any of the numeric checks in the probe below. */
+    all.forEach(function (s, k) { s.style.transform = 'translateY(' + (k * h) + 'px)'; });
   }
 
   function show(k) {
