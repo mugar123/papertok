@@ -458,21 +458,32 @@ RESEARCH.topics = RESEARCH.topics.map((t) => ({
  * without anything ever publishing it. Removed rather than fixed, since
  * nothing rendered it.
  */
+/* Only what the page renders: `description` was the last survivor of the
+   dead fields removed in 25cfbc3 and nothing ever read it either. */
 export const REPO = {
   path: 'mugar123/papertok',
-  description:
-    'Open-source personalized scientific discovery feed powered by arXiv, '
-    + 'OpenAlex, PubMed and more.',
   license: 'MIT',
 };
 
+/* Two lists, because the sentence that renders them makes two different
+   claims. SOURCES is where a paper in the feed actually came FROM; ENRICHERS
+   never put a paper in front of anyone, they answer questions about one that
+   is already there. NIH iCite sat in the first list and was read as a place
+   papers come from, which its own description two lines away contradicted
+   (`worker/report-api.js` calls it for citation metrics on PubMed records).
+   Everything named here is called by name in `worker/report-api.js` or
+   `src/services/`; nothing aspirational goes in either list. */
 export const SOURCES = [
   ['arXiv', 'Preprints across physics, mathematics and computer science'],
   ['OpenAlex', 'Metadata, citations, concepts, institutions, open access'],
   ['PubMed', 'Biomedical and life-science literature'],
   ['OpenReview', 'Machine learning and CS submissions under review'],
-  ['NIH iCite', 'Citation and translation metrics for PubMed papers'],
   ['Hugging Face', 'AI papers with their models, datasets and code'],
+];
+
+export const ENRICHERS = [
+  ['Unpaywall', 'Where a legal free copy of a paywalled paper lives'],
+  ['NIH iCite', 'Citation and translation metrics for PubMed papers'],
 ];
 
 export const PEOPLE = [
@@ -518,21 +529,33 @@ export const LISTS = [
   { color: 'var(--list-indigo)', icon: 'folder', name: 'Papers de sugar', count: '14 papers', isPublic: true, titles: ['State–Generator Geometry of Open…', 'Observation of perfect absorption in…'] },
 ];
 
-/* Real neighbours of the LIGO paper, read off OpenAlex/OpenCitations on
-   2026-09-17 and frozen here; citation counts are OpenAlex's that day.
-   `order` is the draw-on order: the paper itself is 0. */
+/* The real neighbourhood of the LIGO paper (OpenAlex W2252795400), read on
+   2026-09-18 and frozen. Each side is selected the way the app itself selects
+   it, which is not the same rule twice: above are the five most CITED of the
+   99 works it references (`cited_by:W2252795400` sorted by `cited_by_count`),
+   below are the two most RECENT of the works that cite it
+   (`cites:W2252795400` sorted by `publication_date`) — `worker/report-api.js`
+   asks OpenCitations with `sort=desc(creation)` and OpenAlex with
+   `publication_date:desc`, and `RelatedPapersSheet.jsx` captions the two bands
+   "N most cited of M" and "N most recent of M" for exactly that reason. The
+   totals come from the same two fields the app's own counts derive from
+   (`report-api.js`: `referenced_works` and `cited_by_count`), so the page
+   shows the number the app would show. The newest citing works having no
+   citations of their own is not a gap in the data — it is what the axis is
+   for, and what a reader sees in the app the day they open it.
+   `order` is the draw-on order, chronological; the paper itself is 0. */
 export const MAP = {
   centre: { label: 'THIS PAPER · 2016' },
-  totals: { cited: 99, citing: 14536 },
+  totals: { cited: 99, citing: 14526 },
   above: [
-    { name: "Einstein '16", citations: 14200, y: 64, order: 1 },
-    { name: "Hulse & Taylor '75", citations: 2100, y: 124, order: 2 },
-    { name: "Thorne '87", citations: 1900, y: 176, order: 3 },
-    { name: "Pretorius '05", citations: 1650, y: 104, order: 4 },
-    { name: "Blanchet '14", citations: 1500, y: 228, order: 5 },
+    { name: "Acernese '14 · Advanced Virgo", citations: 4220, y: 62, order: 4 },
+    { name: "Kerr '63", citations: 3593, y: 112, order: 1 },
+    { name: "Aasi '15 · Advanced LIGO", citations: 3506, y: 196, order: 5 },
+    { name: "Blanchet '14", citations: 2282, y: 150, order: 3 },
+    { name: "Abramovici '92", citations: 2278, y: 240, order: 2 },
   ],
   below: [
-    { name: "Abbott '17 · GW170817", citations: 6500, y: 360, order: 6 },
-    { name: "GWTC-1 '19", citations: 2400, y: 440, order: 7 },
+    { name: "Eiroa '26", citations: 0, y: 360, order: 6 },
+    { name: "Makihara '26", citations: 0, y: 440, order: 7 },
   ],
 };

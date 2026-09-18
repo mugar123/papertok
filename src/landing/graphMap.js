@@ -13,9 +13,10 @@
  * one list that actually has to carry every neighbour for assistive tech —
  * neither plate is it, both are `role="img"` pictures of the same data.
  */
+import { esc } from './esc.js';
+
 const MONO = "'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace";
 
-const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 export function citationPlate(map, { compact = false } = {}) {
   const W = compact ? 360 : 1200, H = compact ? 380 : 520, R = compact ? 190 : 276;

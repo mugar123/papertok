@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HERO_PAPERS, SIGNALS, FOLLOW_ROWS, LISTS, MAP, RESEARCH, SOURCES, PILE } from './papers.js';
+import { HERO_PAPERS, SIGNALS, FOLLOW_ROWS, LISTS, MAP, RESEARCH, SOURCES, ENRICHERS, PILE } from './papers.js';
 
 test('the deck opens with LIGO and closes with the paper that is not open access', () => {
   assert.equal(HERO_PAPERS.length, 3);
@@ -31,7 +31,12 @@ test('growing-topic percentages are the ones their own counts give', () => {
   assert.equal(RESEARCH.topics[1].pct, 47);
 });
 test('six core sources, and no claim that they are the only ones', () => {
-  assert.equal(SOURCES.length, 6);
+  assert.equal(SOURCES.length, 5);
+  // The split is the claim: a name in SOURCES is rendered as a place papers
+  // come FROM, so anything that only annotates a paper already in the feed
+  // belongs in ENRICHERS. iCite was on the wrong side of that comma.
+  assert.ok(!SOURCES.some(([name]) => /iCite|Unpaywall/i.test(name)), 'an enricher is being sold as a source of papers');
+  assert.equal(ENRICHERS.length, 2);
 });
 
 // landing.css's phone .lp-pile__venue column (76px) was sized by measuring

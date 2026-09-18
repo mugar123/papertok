@@ -1,7 +1,7 @@
-import { HERO_PAPERS, REPO, SOURCES, PEOPLE, PILE, WHEEL, SIGNALS, LEVELS, DEFAULT_LEVEL, REWRITE, FOLLOW_ROWS, LISTS, MAP, RESEARCH } from './papers.js';
+import { HERO_PAPERS, REPO, SOURCES, ENRICHERS, PEOPLE, PILE, WHEEL, SIGNALS, LEVELS, DEFAULT_LEVEL, REWRITE, FOLLOW_ROWS, LISTS, MAP, RESEARCH } from './papers.js';
 import { citationPlate } from './graphMap.js';
+import { esc } from './esc.js';
 
-const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 /**
  * `esc()` is for text nodes and quoted attribute VALUES; it does nothing for
@@ -589,7 +589,7 @@ const research = () => `<section class="lp-research lp-sec" aria-labelledby="lp-
 const strip = () => `<section class="lp-strip" aria-labelledby="lp-strip-h">
   <h2 id="lp-strip-h" class="lp-visually-hidden">Where it comes from, and who makes it</h2>
   <div class="lp-wrap lp-strip__grid">
-    <p>The papers come from <strong>${SOURCES.map(([n]) => esc(n)).join(', ').replace(/, ([^,]*)$/, ' and $1')}</strong>, with others filling in access links, funding and citations. PaperTok hosts nothing and is affiliated with none of them.</p>
+    <p>The papers come from <strong>${SOURCES.map(([n]) => esc(n)).join(', ').replace(/, ([^,]*)$/, ' and $1')}</strong>, with ${ENRICHERS.map(([n]) => esc(n)).join(', ')} and others filling in access links, funding and citations. PaperTok hosts nothing and is affiliated with none of them.</p>
     <p>The ranking is experimental, so it's readable: <a href="https://github.com/${esc(REPO.path)}">${esc(REPO.path)}</a>, ${esc(REPO.license)}. The weights, the worker and the argument behind every change are in the open.</p>
     <p>I started it in June 2026 as a physics student who kept missing the papers next door. <a href="https://github.com/${esc(PEOPLE[1].github)}">${esc(PEOPLE[1].name)}</a> joined in August and shaped how it looks.</p>
   </div>
