@@ -300,7 +300,8 @@ export function sanitizeAnalyticsLocation(pathname, browserLocation = globalThis
  * page view. Both doors read the same way and reach the same normalizer.
  *
  * Proven on a real request rather than only here:
- * `scripts/diagnostics/landing-analytics-probe.mjs` loads five of these routes
+ * The probe that measured this (it lived in `scripts/diagnostics/` and went
+ * with the landing it also checked) loaded five of these routes
  * in a browser and reads what leaves for `/_vercel/insights/*`.
  */
 export function sanitizeAnalyticsEventUrl(url) {

@@ -24,7 +24,6 @@ import { forgetOwnProfile } from '../utils/profileSessionCaches.js';
 import { accountLooksOnboarded } from '../utils/accountOnboarding.js';
 import { clearGuestInterests } from '../utils/guestInterests.js';
 import { toggleFollowedAuthor } from '../utils/followedAuthors.js';
-import { markSignedIn, clearSignedIn } from '../utils/sessionMark.js';
 
 const PROFILE_CACHE_TIMEOUT_MS = 800;
 const PROFILE_NETWORK_TIMEOUT_MS = 7000;
@@ -79,7 +78,6 @@ export function AuthProvider({ children }) {
     let authChangeId = 0;
     let disposed = false;
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      currentUser ? markSignedIn() : clearSignedIn();
       const changeId = ++authChangeId;
       setLoading(true);
       setProfileLoadError(null);

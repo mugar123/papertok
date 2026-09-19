@@ -1,5 +1,35 @@
 # Estado / pendientes
 
+## La landing se retira y `/` vuelve a ser la app (2026-09-19)
+
+**Decisión de Nico, tomada delante de la página.** La landing de la dirección B
+(PR #39, once tramos) sale entera: `index.html` vuelve a ser el documento de la
+app —lo era `app.html` desde la migración de rutas— y con ella se van
+`src/landing/` completo, las siete sondas `landing-*.mjs` y las tres puertas que
+metían en `npm run check` (`budget:landing`, `a11y:landing`,
+`privacy:analytics`). La clave `index` de `rollupOptions.input` NO se toca: es lo
+que hace que el chunk de arranque se llame `assets/index-*` y que
+`PRECACHE_GLOB_PATTERNS` lo encuentre; renombrarla construye bien y despliega en
+silencio un service worker sin la app dentro, y workbox sólo avisa. Comprobado
+sobre el build: `dist/index.html` pide `assets/index-GXn4K9ix.js` y el `sw.js`
+precachea ese mismo fichero.
+
+**Con la landing se va su puerta, y el enlace viejo sigue vivo.** El script
+inline que leía `papertok_signed_in` y mandaba a `/feed` ya no existe, ni la
+marca que lo alimentaba (`src/utils/sessionMark.js`, que sólo servía para eso;
+`AuthContext` deja de escribirla). Un `#/…` no necesitaba esa puerta para nada
+más que cruzar de documento: la traducción siempre la hizo
+`src/utils/legacyHashRoute.js` antes de que React pinte. Comprobado sobre el
+build servido: `/#/public/paper/abc123` acaba en `/public/paper/abc123`, y `/` a
+secas acaba en el feed por el catch-all de `App.jsx`.
+
+**Un cambio de comportamiento que no es cosmético:** `/` sale de la lista de
+exclusión del `handlerDidError` de la regla `NetworkFirst` (`vite.config.js`).
+Era la dirección de la landing, un documento distinto al que no se podía
+responder con la app; ahora es la app, así que sin red tiene que salir de caché
+como cualquier otra ruta. `scripts/diagnostics/offline-routes-probe.mjs` pasa a
+esperar eso.
+
 ## Las rutas de la app dejan de vivir en el fragmento (2026-09-18)
 
 **`papertok.app/following` es ahora esa página, no el feed ignorando el camino.**

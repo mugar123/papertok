@@ -18,12 +18,11 @@
     }
   ],
   "rewrites": [
-    { "source": "/feed", "destination": "/app.html" },
     {
       "source": "/__/auth/:path*",
       "destination": "https://papertok-168df.firebaseapp.com/__/auth/:path*"
     },
-    { "source": "/:path((?!_vercel/|assets/|__/auth/).*)", "destination": "/app.html" }
+    { "source": "/:path((?!_vercel/|assets/|__/auth/).*)", "destination": "/index.html" }
   ],
   "headers": [
     {
@@ -52,12 +51,6 @@
     },
     {
       "source": "/index.html",
-      "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
-      ]
-    },
-    {
-      "source": "/app.html",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
       ]

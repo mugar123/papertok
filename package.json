@@ -9,11 +9,8 @@
     "lint": "eslint .",
     "security:secrets": "node scripts/check-secrets.mjs",
     "test": "node --test $(find src worker proxy -name '*.test.js')",
-    "check": "npm run security:secrets && npm run lint && npm test && npm run build && npm run budget:landing && npm run a11y:landing && npm run privacy:analytics && npm run worker:deploy:dry-run",
+    "check": "npm run security:secrets && npm run lint && npm test && npm run build && npm run worker:deploy:dry-run",
     "preview": "vite preview",
-    "a11y:landing": "node scripts/diagnostics/landing-axe.mjs http://localhost:4173/",
-    "budget:landing": "node scripts/diagnostics/landing-budget.mjs",
-    "privacy:analytics": "node scripts/diagnostics/landing-analytics-probe.mjs http://localhost:4173",
     "worker:deploy": "wrangler deploy",
     "worker:deploy:dry-run": "wrangler deploy --dry-run",
     "test:rules": "firebase emulators:exec --only firestore --project papertok-rules-test \"node --test tests/firestore.rules.test.js\""

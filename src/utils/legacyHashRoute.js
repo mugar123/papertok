@@ -8,23 +8,27 @@
  * back to meaning a place on the page. Nothing changed about the links, and the
  * plan's first constraint is that none of them may die.
  *
- * Two hops bring one home. The gate at the top of `index.html` forwards any
- * `#/…` arriving at `/` to `/feed`, fragment intact, because the fragment never
- * reaches the server and only that page can honour it. This module is the
- * second hop: the app, booting at whatever path it was served, finds the
- * fragment still sitting there and turns it into the route it always named.
+ * One hop brings one home. A fragment never reaches the server, so no rewrite
+ * can read it; the app, booting at whatever path it was served — `/` included,
+ * now that index.html is the app again — finds the fragment still sitting
+ * there and turns it into the route it always named. (A second hop existed
+ * while `/` was a marketing landing served from its own document: its inline
+ * gate forwarded `#/…` to `/feed` with the fragment intact. The landing was
+ * withdrawn; the translation below was always the half that did the work.)
  *
  * It runs once, before React, and rewrites the entry in place — see
  * `applyLegacyHashRoute`. The alternative, letting the app mount at `/feed` and
  * then navigating, would paint a feed the visitor did not ask for and leave
  * that feed in the history behind the page they did.
  *
- * NOT every fragment is a route. `#main-content` is the skip link's target on
- * both pages; `#/` is the only prefix that ever meant a route, and it is the
- * only one this module answers to.
+ * NOT every fragment is a route. `#main-content` is the skip link's target;
+ * `#/` is the only prefix that ever meant a route, and it is the only one this
+ * module answers to.
  */
 
-/** Where `#/` itself used to go. `/` is the landing's address now. */
+/** Where `#/` itself used to go. Named rather than left as `/`: the app's own
+    catch-all would bounce `/` here anyway, and doing it in the rewrite keeps
+    the feed to the single address every share link and canonical tag uses. */
 export const LEGACY_ROOT_ROUTE = '/feed';
 
 /**

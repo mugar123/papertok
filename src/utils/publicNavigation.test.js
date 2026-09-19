@@ -181,8 +181,8 @@ test('a profile URL is absolute and routed by path like every other share link',
  * What leaves the app on a share sheet, in a message, in an email. Every one of
  * these used to be minted with a `#`, because the fragment WAS the route. It is
  * not any more (src/main.jsx mounts a BrowserRouter), and a `#/…` link now
- * costs a hop through the landing and a translation on arrival before it
- * reaches the page it names — so the app stops minting them.
+ * costs a translation on arrival (utils/legacyHashRoute.js) before it reaches
+ * the page it names — so the app stops minting them.
  *
  * The real production shape, not the project-path fixture the tests above use:
  * papertok.app serves from the domain root.
@@ -239,17 +239,17 @@ test('SOURCE: nothing in this codebase mints a public URL with the fragment in i
   assert.deepEqual(offenders, [], `these still mint a fragment URL: ${offenders.join(', ')}`);
 });
 
-test('the landing gate hands the app the fragment, and the app turns it into the route', () => {
-  // Task 16 asked for the gate itself to emit the real path. It does not, on
-  // purpose: the gate is an inline script with no modules, so translating
-  // there means a second copy of the route logic in a different language of
-  // the same codebase, and the two would drift. It costs nothing to leave it
-  // — `location.replace('/feed#/research')` is one navigation, exactly as
-  // `location.replace('/research')` would be, and `utils/legacyHashRoute.js`
-  // rewrites the entry with `replaceState` before React renders, which is not
-  // a navigation at all. What the gate owes is only that the fragment SURVIVES
-  // the hop; the translating is the app's.
+test('the root document is the app itself, with no gate left to hop through', () => {
+  // While `/` was a marketing landing, an inline gate at the top of its
+  // index.html forwarded `#/…` to /feed with the fragment intact, and the app
+  // translated it on arrival. The landing was withdrawn: index.html IS the
+  // app, so the hop is gone and the translation — the half that always did
+  // the work — happens where the reader already landed. What this pins is
+  // that no half-removed gate is left behind: a redirect still sitting in
+  // index.html would fire before React and bounce every legacy link to a
+  // second address for no reason.
   const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
-  const gate = html.match(/<script>([\s\S]*?papertok_signed_in[\s\S]*?)<\/script>/)?.[1] || '';
-  assert.match(gate, /replace\('\/feed' \+ search \+ hash\)/, 'the gate drops the fragment on the way to the app');
+  assert.match(html, /<script type="module" src="\/src\/main\.jsx"><\/script>/, 'index.html must boot the app');
+  assert.doesNotMatch(html, /papertok_signed_in/, 'the landing gate is gone; nothing may read the session mark before the app boots');
+  assert.doesNotMatch(html, /location\.replace/, 'no pre-React redirect may sit in the app\'s own document');
 });

@@ -112,10 +112,12 @@ try {
 
   // Ninguna de las cuatro se ha visitado todavia, asi que la cache no las
   // tiene: lo que se mide es la ultima oportunidad, no un acierto de cache.
-  // Las dos primeras son rutas de la app y tienen que salir; las dos ultimas
-  // NO son rutas de la app, y que se queden sin pagina es la respuesta
-  // correcta -- sustituirlas por la app seria cambiarle la pagina al lector.
-  for (const [ruta, esApp] of [['/research', true], ['/lists', true], ['/', false], ['/privacy.html', false]]) {
+  // Las tres primeras son rutas de la app y tienen que salir. `/` lo es desde
+  // que se retiro la landing que lo ocupaba: index.html ES la app, y el
+  // catch-all de App.jsx lo manda al feed. `/privacy.html` NO es ruta de la
+  // app, y que se quede sin pagina es la respuesta correcta -- sustituirla
+  // por la app seria cambiarle la pagina al lector.
+  for (const [ruta, esApp] of [['/research', true], ['/lists', true], ['/', true], ['/privacy.html', false]]) {
     await cdp.send('Page.navigate', { url: 'about:blank' });
     await sleep(200);
     const nav = await cdp.send('Page.navigate', { url: ORIGIN + ruta });

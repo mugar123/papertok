@@ -6,14 +6,15 @@ const VERCEL = new URL('../../vercel.json', import.meta.url);
 const MAIN = new URL('../main.jsx', import.meta.url);
 const FIREBASE = new URL('../services/firebase.js', import.meta.url);
 
-test('the SPA rewrite never answers a missing chunk with app.html', async () => {
+test('the SPA rewrite never answers a missing chunk with the app document', async () => {
   const config = JSON.parse(await readFile(VERCEL, 'utf8'));
-  // Matched by its `/:path(...)` source, not by destination alone: the
-  // `/feed` rewrite answers with app.html too, and destination-only lookup
-  // would silently grab that one instead of the catch-all this test means.
+  // Matched by its `/:path(...)` source, not by destination alone: a second
+  // rule sharing this destination has existed before (the `/feed` one, while
+  // the app lived at app.html), and destination-only lookup would silently
+  // grab that one instead of the catch-all this test means.
   const spa = config.rewrites.find(rule => rule.source.startsWith('/:path('));
   assert.ok(spa, 'the SPA rewrite is gone');
-  assert.equal(spa.destination, '/app.html');
+  assert.equal(spa.destination, '/index.html');
   // Vercel compiles `/:path(<pattern>)` with path-to-regexp; the custom
   // pattern inside the parentheses is a plain regex, which is what this runs.
   const pattern = spa.source.match(/^\/:path\((.+)\)$/)?.[1];
@@ -27,8 +28,8 @@ test('the SPA rewrite never answers a missing chunk with app.html', async () => 
   assert.ok(!matches('assets/index-DToPZZZM.js'));
   assert.ok(!matches('assets/CommentsSheet-Da9L05_h.css'));
   // Firebase's sign-in handler is proxied, not part of the SPA: answered with
-  // app.html it would hand Google an HTML page instead of the handler and
-  // every sign-in would hang on a blank popup.
+  // the app document it would hand Google an HTML page instead of the handler
+  // and every sign-in would hang on a blank popup.
   assert.ok(!matches('__/auth/handler'));
 });
 
@@ -45,8 +46,8 @@ test('sign-in redirects to our own domain, and its handler reaches Firebase', as
   );
   // Vercel takes the first rewrite that matches. Behind the SPA catch-all this
   // rule would never run, and the exclusion above would be the only guard.
-  // Matched by source, not destination: the `/feed` rewrite shares the SPA
-  // catch-all's `/app.html` destination and sits before it on purpose.
+  // Matched by source, not destination: a rule sharing the SPA catch-all's
+  // own destination has sat before it before, and would be found first.
   const spa = config.rewrites.findIndex(rule => rule.source.startsWith('/:path('));
   assert.ok(
     config.rewrites.indexOf(proxy) < spa,

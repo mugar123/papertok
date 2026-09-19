@@ -25,12 +25,13 @@ test('SOURCE: the router updates its location synchronously, so a tab tap is ack
 /**
  * SOURCE test: the router is mounted in main.jsx, which node cannot run.
  *
- * Every route in this app used to live in the URL fragment, because the app
- * was the only thing served at `/` and nothing on the server knew about
- * `/following`. Both halves of that stopped being true: `/` is the marketing
- * landing (index.html), the app is app.html, and vercel.json rewrites `/feed`
- * and every other non-file path to it — so a real path now reaches the app and
- * the fragment is free to go back to meaning "a place on this page".
+ * Every route in this app used to live in the URL fragment, because nothing
+ * on the server knew about `/following`. vercel.json rewrites `/feed` and
+ * every other non-file path to index.html now — so a real path reaches the
+ * app and the fragment is free to go back to meaning "a place on this page".
+ * (`/` briefly belonged to a marketing landing served from its own document;
+ * the landing was withdrawn and index.html is the app again, so `/` reaches
+ * the same bundle as every other path.)
  *
  * The router therefore reads `window.location.pathname`. No `basename`: the
  * site is served from the domain root (`BASE_PATH` in vite.config.js), and a
@@ -50,11 +51,11 @@ test('SOURCE: the router reads the path, not the fragment', async () => {
 /**
  * SOURCE test: `App` mounts the routes, which node cannot run.
  *
- * The feed is `/feed`, because `/` is the landing's address and is served from
- * a different HTML file entirely. The catch-all has to agree: sending an
- * unmatched path to `/` would hand a signed-in reader back to the server's
- * landing on the next reload, and in the SPA it would match no route and bounce
- * again.
+ * The feed is `/feed`, and `/` is not a route of its own: the catch-all is
+ * what answers it, so the bare domain lands on the feed. Routing anything AT
+ * `/` — or redirecting to it from inside the app — would give the feed two
+ * addresses, one of which is the one every share link, canonical tag and
+ * service-worker warm-up (public/sw-html-warm.js) does not use.
  */
 test('SOURCE: the feed lives at /feed, and the catch-all sends unmatched paths there', async () => {
   const code = stripComments(await read('./App.jsx'));
@@ -64,12 +65,12 @@ test('SOURCE: the feed lives at /feed, and the catch-all sends unmatched paths t
   assert.match(
     code,
     /<Route path="\*" element=\{<Navigate to="\/feed" replace \/>\} \/>/,
-    'the catch-all must land on the feed, not on the landing',
+    'the catch-all must land on the feed',
   );
   assert.doesNotMatch(
     code,
     /<Navigate\s+to="\/"/,
-    'no redirect inside the app may target "/", which the server answers with the landing',
+    'no redirect inside the app may target "/": the feed has one address, /feed',
   );
 });
 

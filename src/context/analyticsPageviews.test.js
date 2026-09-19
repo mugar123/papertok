@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const SOURCE = new URL('./AnalyticsContext.jsx', import.meta.url);
-const APP_HTML = new URL('../../app.html', import.meta.url);
+const APP_HTML = new URL('../../index.html', import.meta.url);
 
 test('SOURCE: a page view is sent on every pathname change, not only when the pattern changes', async () => {
   const source = await readFile(SOURCE, 'utf8');
@@ -44,9 +44,9 @@ test('SOURCE: a page view is sent on every pathname change, not only when the pa
  * headers, and the browser's default referrer policy
  * (`strict-origin-when-cross-origin`) puts the full URL in `Referer` on every
  * SAME-ORIGIN subresource request — which is what the analytics script is, on
- * the deployment. Measured in a browser
- * (scripts/diagnostics/landing-analytics-probe.mjs): reading a paper made the
- * app's own `<script src="/_vercel/insights/script.js">` carry
+ * the deployment. Measured in a browser (the probe lived in
+ * scripts/diagnostics/ and went with the landing it also checked): reading a
+ * paper made the app's own `<script src="/_vercel/insights/script.js">` carry
  * `Referer: <origin>/public/paper/<the real key>`.
  *
  * Under HashRouter this was safe for free — a fragment is stripped out of
@@ -58,7 +58,7 @@ test('SOURCE: a page view is sent on every pathname change, not only when the pa
 test('SOURCE: the app document never puts a path in a Referer header', async () => {
   const html = await readFile(APP_HTML, 'utf8');
   const meta = html.replace(/<!--[\s\S]*?-->/g, '').match(/<meta\s+name="referrer"[^>]*>/i);
-  assert.ok(meta, 'app.html declares no referrer policy, so the browser default sends the full path');
+  assert.ok(meta, 'the app document declares no referrer policy, so the browser default sends the full path');
 
   const policy = meta[0].match(/content="([^"]*)"/i)?.[1];
   // Only the policies that never reveal a path. `origin-when-cross-origin` and
