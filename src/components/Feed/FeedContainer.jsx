@@ -818,23 +818,27 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   }, [onSaveToList]);
 
   /**
-   * El `setActiveIndex` de aquí va EN TRANSICIÓN, y es lo único que separa un
-   * scroll de 60fps de uno que da un tirón en cada aterrizaje.
+   * El `setActiveIndex` de aquí va en transición, y conviene saber exactamente
+   * cuánto compra eso: en este Mac, NADA. Medido sobre el bundle de producción
+   * y contra control en el mismo árbol, con y sin la transición, el scroll mide
+   * igual — mediana 16,7ms, p95 16,8ms, cero fotogramas largos y CERO bloqueo
+   * en ambos. Se queda como seguro para aparatos lentos, no como arreglo.
    *
-   * Cruzar un límite de tarjeta re-renderiza exactamente dos `PaperCard` —la
-   * que deja de ser activa y la que lo pasa a ser; medido, 2 de 15 montadas, y
-   * el memo esquiva el resto— pero es un componente grande y esos dos renders
-   * caían DENTRO del fotograma en que la tarjeta se posa. En transición React
-   * los trocea y cede al scroll, igual que hace `reRankFeed` con su
-   * `setPapers` por la misma razón.
+   * La medida que lo motivó estaba hecha sobre el servidor de DESARROLLO, y ahí
+   * cada cambio de tarjeta metía un fotograma largo de 50 a 94ms atribuido a
+   * `performWorkUntilDeadline`. Eso era sobrecoste de React en modo dev, que
+   * infla el coste de render varias veces: en producción no existe. **No vuelvas
+   * a medir fluidez del feed en dev.** El coste de render de `PaperCard` es real
+   * pero el hilo principal lo absorbe de sobra en un aparato de escritorio; en
+   * un móvil de gama media podría acercarse al perfil de dev, y es para ese caso
+   * para el que esto está aquí.
    *
-   * Es seguro porque `activeIndex` sólo alimenta `isActive`, y dentro de la
-   * tarjeta eso gobierna UNA cosa: si se pide la cuenta de comentarios. Nada
-   * visual depende de él —la entrada de los recortes va por
+   * Lo que sí es cierto y sostiene que sea seguro: `activeIndex` sólo alimenta
+   * `isActive`, y dentro de la tarjeta eso gobierna UNA cosa, si se pide la
+   * cuenta de comentarios. Nada visual depende de él —los recortes entran por
    * IntersectionObserver al 15% y `pcArrive` no tiene condición—, así que un
    * valor que aterriza uno o dos fotogramas más tarde no hace parpadear nada.
-   * Los números y las dos condiciones que lo sostienen están en
-   * feedScrollPriority.test.js.
+   * feedScrollPriority.test.js fija esas dos condiciones.
    *
    * El `setActiveIndex` del efecto de resume NO va en transición: allí el valor
    * tiene que estar puesto antes de que la ventana de montaje decida, o la

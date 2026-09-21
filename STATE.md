@@ -26,26 +26,26 @@ hay que buscarla, se busca en los fotogramas, no en la curva. Y el precedente
 apunta ahí: la vez anterior que Nico dijo «no fluido» la causa fueron
 re-renders de React a 42fps, no ninguna animación.
 
-**La fluidez estaba en los fotogramas, no en la curva.** Medido con
-`Input.synthesizeScrollGesture` (el único que scrollea de verdad: un
-`new WheelEvent` no scrollea nunca y un `Input.dispatchMouseEvent` de tipo
-mouseWheel llega como evento pero en headless no mueve el scroller), el fondo
-del scroll nativo ya iba a 16,7ms de mediana — pero cada cambio de tarjeta
-metía un `long-animation-frame` de 50 a 94ms, todos atribuidos a
-`performWorkUntilDeadline`. Suave, y un tropiezo de tres a cinco fotogramas
-justo donde el lector mira.
+**La fluidez: medida en dev, corregida en producción.** Con el scroll nativo y
+`Input.synthesizeScrollGesture` (el único que scrollea de verdad), el servidor de
+DESARROLLO daba 16,7ms de mediana pero un `long-animation-frame` de 50 a 94ms en
+cada cambio de tarjeta, atribuido a `performWorkUntilDeadline`. El memo está
+sano —un cambio re-renderiza 2 de 15 montadas, cero objetos `paper` nuevos, y el
+re-rank de lectura no re-renderiza nada—, así que se atribuyó a los dos renders
+de `PaperCard` y el `setActiveIndex` de `handleScroll` pasó a `startTransition`.
 
-El memo está sano: con la receta de fibras, un cambio de tarjeta re-renderiza
-**2 de 15** montadas —la que deja de ser activa y la que lo pasa a ser—, cero
-objetos `paper` nuevos, y el re-rank de lectura no re-renderiza nada. O sea que
-el coste no es fan-out: son esos dos renders de `PaperCard` cayendo dentro del
-fotograma del aterrizaje. Así que el `setActiveIndex` de `handleScroll` pasa a
-`startTransition`, que es lo que ya hace `reRankFeed` con su `setPapers`.
-Seguro porque `activeIndex` sólo alimenta `isActive` y dentro de la tarjeta eso
-gobierna una sola cosa: si se pide la cuenta de comentarios. **Medido contra
-control en el mismo árbol:** fotogramas que bloquean más de 10ms, 3 y 5 -> 2 y
-2; bloqueo total, 81ms y 148ms -> 51ms y 117ms. Modesto y real; lo que queda es
-el coste de renderizar `PaperCard`, que son 2123 líneas y ya sería un refactor.
+**Y sobre el bundle de producción eso no compra nada medible.** Control en el
+mismo árbol, con y sin la transición: idénticos, mediana 16,7ms, p95 16,8ms,
+cero fotogramas largos y CERO bloqueo en ambos; en una tirada, ni un solo
+fotograma perdido de 391. Los 8-11 fotogramas largos por tirada eran sobrecoste
+de React en modo dev, que infla el render varias veces. **No se mide fluidez del
+feed en dev.** Lo que arregló el scroll que Nico llamaba horrible fue el revert
+de la toma de la rueda, no la transición.
+
+La transición se queda como seguro para aparatos lentos, no como arreglo: el
+coste de render de `PaperCard` es real y el hilo principal de un móvil de gama
+media está más cerca del perfil de dev que del de un Mac. Y con esto cae la
+propuesta de partir `PaperCard`: en producción no hay nada que ganar ahí.
 
 **El chip `N Citas` ya no aterriza sobre una fila que el lector está mirando.**
 El feed pintaba antes de su enriquecimiento a propósito y las tres fuentes que

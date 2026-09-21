@@ -19,16 +19,23 @@ function block(code, from, to, label) {
  * the memo skipping the rest and no new paper objects, so the fan-out this
  * file's sibling fixed in September has stayed fixed.
  *
- * But `PaperCard` is a big component, and those two renders landed INSIDE the
- * frame the card settles on: seven long animation frames over six passes, all
- * attributed to `performWorkUntilDeadline`, the worst 94ms with 44ms of it
- * unyielded, against a 16.7ms median. Smooth, and then a three-to-five frame
- * stumble exactly where the reader is looking.
+ * WHAT THE TRANSITION IS WORTH, honestly: on a desktop production build,
+ * nothing measurable. Measured against a control on the same tree, with and
+ * without it, the scroll is identical — 16.7ms median, 16.8ms p95, zero long
+ * animation frames and ZERO blocking either way.
  *
- * In a transition React slices that work and yields to the scroll. Measured
- * against a control on the same tree: frames that block for more than 10ms
- * went 3 and 5 -> 2 and 2, and total blocking 81ms and 148ms -> 51ms and
- * 117ms.
+ * The measurement that motivated it was taken against the DEV server, where
+ * every card change produced a 50-94ms long animation frame attributed to
+ * `performWorkUntilDeadline`. That was React's dev-mode render overhead, which
+ * does not exist in the shipped bundle. Do not measure feed fluidity in dev.
+ *
+ * It stays as insurance, not as a fix: `PaperCard`'s render cost is real, and a
+ * mid-range phone's main thread is closer to the dev profile than to a Mac's.
+ * A transition can only help there and cannot hurt here.
+ *
+ * So this file does NOT pin a performance number. It pins the two conditions
+ * that make the transition safe to keep, which are the part that can silently
+ * stop being true.
  */
 test('SOURCE: the scroll hands the active-card render to a transition', async () => {
   const code = stripComments(await read('./FeedContainer.jsx'));
