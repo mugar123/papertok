@@ -1,4 +1,4 @@
-import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState } from 'react';
+import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState, startTransition } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { RefreshCw, Check } from 'lucide-react';
 import { useFeed } from '../../context/FeedContext';
@@ -817,6 +817,33 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     onSaveToList(paper);
   }, [onSaveToList]);
 
+  /**
+   * El `setActiveIndex` de aquí va EN TRANSICIÓN, y es lo único que separa un
+   * scroll de 60fps de uno que da un tirón en cada aterrizaje.
+   *
+   * Cruzar un límite de tarjeta re-renderiza exactamente dos `PaperCard` —la
+   * que deja de ser activa y la que lo pasa a ser; medido, 2 de 15 montadas, y
+   * el memo esquiva el resto— pero es un componente grande y esos dos renders
+   * caían DENTRO del fotograma en que la tarjeta se posa. En transición React
+   * los trocea y cede al scroll, igual que hace `reRankFeed` con su
+   * `setPapers` por la misma razón.
+   *
+   * Es seguro porque `activeIndex` sólo alimenta `isActive`, y dentro de la
+   * tarjeta eso gobierna UNA cosa: si se pide la cuenta de comentarios. Nada
+   * visual depende de él —la entrada de los recortes va por
+   * IntersectionObserver al 15% y `pcArrive` no tiene condición—, así que un
+   * valor que aterriza uno o dos fotogramas más tarde no hace parpadear nada.
+   * Los números y las dos condiciones que lo sostienen están en
+   * feedScrollPriority.test.js.
+   *
+   * El `setActiveIndex` del efecto de resume NO va en transición: allí el valor
+   * tiene que estar puesto antes de que la ventana de montaje decida, o la
+   * tarjeta a la que se vuelve monta sola y refunde su cuerpo entero.
+   *
+   * El comentario vive aquí arriba, y no dentro, porque feedResume.test.js
+   * acota el cuerpo de este handler a 32 líneas y `stripComments` deja las
+   * líneas en blanco: el handler ya estaba justo en ese tope.
+   */
   const handleScroll = useCallback((event) => {
     const container = event.currentTarget;
     const index = container.clientHeight > 0
@@ -825,7 +852,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     // Fires on every scroll event, but useState bails out of re-rendering
     // when the value is unchanged (Object.is), so every tick that doesn't
     // cross a card boundary is a no-op here.
-    setActiveIndex(index);
+    //
+    startTransition(() => setActiveIndex(index));
     const paperId = papersRef.current[index]?.id || resumeMemory.get(scrollKey).paperId;
     resumeMemory.remember(scrollKey, {
       scrollTop: container.scrollTop,

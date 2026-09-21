@@ -26,6 +26,27 @@ hay que buscarla, se busca en los fotogramas, no en la curva. Y el precedente
 apunta ahí: la vez anterior que Nico dijo «no fluido» la causa fueron
 re-renders de React a 42fps, no ninguna animación.
 
+**La fluidez estaba en los fotogramas, no en la curva.** Medido con
+`Input.synthesizeScrollGesture` (el único que scrollea de verdad: un
+`new WheelEvent` no scrollea nunca y un `Input.dispatchMouseEvent` de tipo
+mouseWheel llega como evento pero en headless no mueve el scroller), el fondo
+del scroll nativo ya iba a 16,7ms de mediana — pero cada cambio de tarjeta
+metía un `long-animation-frame` de 50 a 94ms, todos atribuidos a
+`performWorkUntilDeadline`. Suave, y un tropiezo de tres a cinco fotogramas
+justo donde el lector mira.
+
+El memo está sano: con la receta de fibras, un cambio de tarjeta re-renderiza
+**2 de 15** montadas —la que deja de ser activa y la que lo pasa a ser—, cero
+objetos `paper` nuevos, y el re-rank de lectura no re-renderiza nada. O sea que
+el coste no es fan-out: son esos dos renders de `PaperCard` cayendo dentro del
+fotograma del aterrizaje. Así que el `setActiveIndex` de `handleScroll` pasa a
+`startTransition`, que es lo que ya hace `reRankFeed` con su `setPapers`.
+Seguro porque `activeIndex` sólo alimenta `isActive` y dentro de la tarjeta eso
+gobierna una sola cosa: si se pide la cuenta de comentarios. **Medido contra
+control en el mismo árbol:** fotogramas que bloquean más de 10ms, 3 y 5 -> 2 y
+2; bloqueo total, 81ms y 148ms -> 51ms y 117ms. Modesto y real; lo que queda es
+el coste de renderizar `PaperCard`, que son 2123 líneas y ya sería un refactor.
+
 **El chip `N Citas` ya no aterriza sobre una fila que el lector está mirando.**
 El feed pintaba antes de su enriquecimiento a propósito y las tres fuentes que
 traen `citationCount` —OpenAlex, iCite y Europe PMC— llegaban después; en móvil,
