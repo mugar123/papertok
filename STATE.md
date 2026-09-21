@@ -1,30 +1,30 @@
 # Estado / pendientes
 
-## La rueda del feed es nuestra, y las citas llegan con la tarjeta (2026-09-21)
+## Las citas llegan con la tarjeta, y tomar la rueda queda DESCARTADO (2026-09-21)
 
-**En escritorio el scroll ya no lo curva el motor.** No había palanca CSS para
-esto: el aterrizaje de un `scroll-snap` nativo lo cronometra el navegador y
-`scroll-behavior` no lo alcanza — esa propiedad sólo afecta al scroll
-programático. Y una muesca de rueda de ratón son ~100px contra una tarjeta de
-757, así que el snap la devolvía siempre y el ratón no podía mover el feed. Bajo
-`pointer: fine`, `src/utils/feedWheelStep.js` decide el paso (un gesto es una
-ráfaga sin huecos de más de 140ms y gasta UNO, con suelo de 12px para que una
-mano en reposo no cuente) y `travelToIndex` lo viaja en 380ms con `1-(1-t)²`,
-la quad que `--ease-out-quad` aproxima en bézier. Las flechas del teclado pasan
-por el mismo viaje. **El táctil no se toca**: sigue nativo, con su inercia, su
-snap y el tirón de refresco encima de los tres.
+**Tomar la rueda se probó y se revirtió el mismo día.** Bajo `pointer: fine` el
+feed llegó a decidir el paso en JS (`feedWheelStep.js`: un gesto es una ráfaga
+sin huecos de más de 140ms y gasta UNO) y a viajar la tarjeta en 380ms con la
+quad, apagando el snap durante el viaje. Medía bien todo lo que se propuso
+medir —una muesca de ratón movía una tarjeta clavada, una ráfaga de 1184px
+movía una, 12 de 12 eventos prevenidos, la curva pegada a la quad— y **se
+sentía peor**. Nico lo probó y lo dijo: «el scroll ahora es horrible».
 
-**Tres detalles sostienen eso y ninguno se ve en el diff.** El snap tiene que
-salir mientras dura el viaje, porque `mandatory` re-resuelve un `scrollTop`
-animado en cada fotograma; la cola del gesto hay que prevenirla *y* seguir
-dándosela al reductor, porque una cola nativa mueve `scrollTop` por debajo del
-viaje y una cola que no llega al reductor se lee como pasada nueva en cuanto el
-viaje acaba; y un paso en pleno vuelo cuenta desde el destino, no de
-`scrollTop`, que leído en vivo contesta el destino pasada la mitad y el origen
-antes. Medido con Chrome propio por CDP a 1280x900: una muesca de 100px lleva
-`scrollTop` de 0 a 757 clavado, una ráfaga de 1184px mueve una sola tarjeta, 12
-de 12 eventos con `preventDefault`, y el progreso a los 100ms es 0,440 contra
-0,457 de la quad ideal — una expo estaría en 0,835.
+La medida no vio lo que importaba. Un gesto, un paper con 380ms de animación
+durante los cuales TODO se ignora convierte el scroll libre con inercia —dos
+dedos arrastrando, manipulación directa— en saltos discretos con freno; y una
+muesca de rueda pasó de no mover nada a saltar una tarjeta entera. Lo que se
+pedía era pulir, no cambiar el modelo de entrada.
+
+**Lo que queda descartado, concretamente:** `preventDefault` sobre la rueda
+vertical del feed y cualquier viaje propio de `scrollTop` por gesto. La rueda y
+el trackpad vuelven a ser enteramente nativos, con su inercia y su
+`scroll-snap-type: y mandatory` más `scroll-snap-stop: always`. Lo que sigue en
+pie del análisis: no hay palanca CSS para el aterrizaje de un snap nativo
+—`scroll-behavior` sólo afecta al scroll programático—, así que si la fluidez
+hay que buscarla, se busca en los fotogramas, no en la curva. Y el precedente
+apunta ahí: la vez anterior que Nico dijo «no fluido» la causa fueron
+re-renders de React a 42fps, no ninguna animación.
 
 **El chip `N Citas` ya no aterriza sobre una fila que el lector está mirando.**
 El feed pintaba antes de su enriquecimiento a propósito y las tres fuentes que
