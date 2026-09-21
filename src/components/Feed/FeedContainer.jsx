@@ -21,7 +21,8 @@ import {
 import AnimatedAtom from './AnimatedAtom';
 import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feedLoadingState';
 import { createFeedResumeMemory } from '../../utils/feedResumeMemory.js';
-import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feedPullToRefresh.js';
+import { PULL_BLOCKING_SCROLLERS, pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feedPullToRefresh.js';
+import { initialWheelGesture, wheelEventIsOurs, wheelStep } from '../../utils/feedWheelStep.js';
 import { SKIP_EXIT_MS, skipExitSlot } from '../../utils/feedSkipExit.js';
 import './FeedContainer.css';
 
@@ -53,6 +54,12 @@ function resumeAnchor(papers, scrollKey) {
   const saved = resumeMemory.get(scrollKey);
   return { saved, index: resumeIndex({ papers, savedPaperId: saved.paperId, savedIndex: saved.index }) };
 }
+// Lo que tarda una tarjeta en viajar cuando la rueda o una flecha piden el
+// siguiente paper. 380ms sobre los ~757px de una tarjeta: por debajo de 300 el
+// relevo deja de leerse como un movimiento y vuelve a ser un corte, y por
+// encima de 450 la segunda pasada de un lector rápido llega a una tarjeta que
+// todavía va de camino. La curva está en `travelToIndex`.
+const FEED_CARD_TRAVEL_MS = 380;
 /** Depth of the band under the navbar in which the mouse asks for the pill. */
 const REFRESH_HOVER_BAND_PX = 120;
 // How long the feed takes to dip out of sight when a refresh starts. The same
@@ -601,11 +608,145 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   }, [hasMore, loading, loadMore]);
 
   const isScrollingRef = useRef(false);
+  // A dónde va el viaje de abajo, mientras va. Una segunda pasada en pleno
+  // vuelo tiene que contar desde el DESTINO, no desde `scrollTop`: leído en
+  // vivo, `Math.round(scrollTop / cardHeight)` contesta el destino pasada la
+  // mitad del recorrido y el origen antes de ella, así que la misma segunda
+  // pasada avanzaría una tarjeta o se perdería en silencio según en qué
+  // momento de los 380ms llegase. Null mientras el feed está quieto.
+  const travelTargetRef = useRef(null);
+  const travelFrameRef = useRef(0);
+  const wheelGestureRef = useRef(initialWheelGesture());
 
-  // Wheel and trackpad input stay entirely native. CSS scroll snapping keeps
-  // cards aligned without a non-passive listener blocking momentum scrolling.
+  /**
+   * Una tarjeta de viaje, curvada por nosotros.
+   *
+   * La tarjeta aterriza donde habría aterrizado el snap nativo; lo que esto
+   * gobierna es el llegar. `1-(1-t)^2` es la quad de verdad, la que
+   * `--ease-out-quad` (variables.css) aproxima en bézier, así que el feed se
+   * mueve como el resto de la app. No la expo de la casa: una expo gasta cerca
+   * del 80% de su distancia en el primer quinto y se arrastra por el resto, que
+   * es justo de lo que está hecho un aterrizaje que se lee como «seco» — el
+   * mismo error, medido dos veces, en la entrada de los recortes y en la salida
+   * del skip.
+   *
+   * El snap obligatorio tiene que salir mientras dura. El motor re-resuelve un
+   * `scrollTop` animado al punto de anclaje más cercano en cada fotograma, lo
+   * que entrecorta el viaje y puede teletransportarlo; vuelve al final, en un
+   * fotograma en el que `scrollTop` está exactamente sobre un anclaje, así que
+   * devolverlo no se ve. La cadena vacía es lo que le devuelve la propiedad a
+   * la hoja de estilos.
+   */
+  const travelToIndex = useCallback((container, index) => {
+    const cardHeight = container.clientHeight;
+    if (cardHeight <= 0) return;
+    const targetTop = index * cardHeight;
+    cancelAnimationFrame(travelFrameRef.current);
+    travelFrameRef.current = 0;
 
-  // Implement keyboard arrow navigation on desktop
+    if (prefersReducedMotion) {
+      travelTargetRef.current = null;
+      isScrollingRef.current = false;
+      container.scrollTop = targetTop;
+      return;
+    }
+
+    const from = container.scrollTop;
+    const distance = targetTop - from;
+    if (distance === 0) {
+      travelTargetRef.current = null;
+      isScrollingRef.current = false;
+      return;
+    }
+
+    const snapType = container.style.scrollSnapType;
+    container.style.scrollSnapType = 'none';
+    travelTargetRef.current = index;
+    isScrollingRef.current = true;
+
+    const startedAt = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - startedAt) / FEED_CARD_TRAVEL_MS);
+      container.scrollTop = from + distance * (1 - (1 - t) * (1 - t));
+      if (t < 1) {
+        travelFrameRef.current = requestAnimationFrame(step);
+        return;
+      }
+      container.scrollTop = targetTop;
+      container.style.scrollSnapType = snapType;
+      travelFrameRef.current = 0;
+      travelTargetRef.current = null;
+      isScrollingRef.current = false;
+    };
+    travelFrameRef.current = requestAnimationFrame(step);
+  }, [prefersReducedMotion]);
+
+  // Un viaje a medias en un desmontaje deja el snap apagado en un nodo que se
+  // va, y el fotograma siguiente escribe `scrollTop` sobre él.
+  useEffect(() => () => cancelAnimationFrame(travelFrameRef.current), []);
+
+  /** El índice a un paso, o null cuando ahí no hay paper. */
+  const stepTarget = useCallback((container, direction) => {
+    const cardHeight = container.clientHeight;
+    if (cardHeight <= 0) return null;
+    const from = travelTargetRef.current ?? Math.round(container.scrollTop / cardHeight);
+    const next = from + direction;
+    const itemCount = papers.length + (loading ? 1 : 0) + (showEndCard ? 1 : 0);
+    return next >= 0 && next < itemCount ? next : null;
+  }, [loading, papers.length, showEndCard]);
+
+  /**
+   * La rueda y el trackpad. El por qué de que esto exista, y la regla del
+   * gesto, están en utils/feedWheelStep.js; aquí sólo está el cableado.
+   *
+   * Sólo `pointer: fine` — un dedo conserva el scroll nativo, su inercia, su
+   * snap y el tirón de refresco construido sobre los tres. No pasivo, porque
+   * quedarse el gesto es impedirlo.
+   *
+   * Atado al NODO, no a una lectura del ref en el primer commit: un montaje que
+   * empieza en el esqueleto (el feed de invitado siempre lo hace) leería
+   * `null`, saldría por la puerta de arriba y no volvería a correr cuando
+   * llegasen los papers. La franja del hover, unas líneas más abajo, aprendió
+   * esto caro.
+   *
+   * TODOS los eventos que son nuestros van al reductor, incluidos los que
+   * llegan mientras nuestro propio viaje corre. La cola de inercia de la pasada
+   * que arrancó el viaje tiene que caer sobre un gesto ya gastado, o en el
+   * instante en que el viaje acabe se leería como una pasada nueva y se
+   * saltaría un paper.
+   */
+  useEffect(() => {
+    const container = feedNode;
+    if (!container) return undefined;
+    if (typeof window.matchMedia !== 'function') return undefined;
+    if (!window.matchMedia('(pointer: fine)').matches) return undefined;
+
+    const onWheel = (event) => {
+      if (!wheelEventIsOurs(event)) return;
+      // Un scroller propio de la tarjeta contesta su propia rueda, igual que
+      // se queda su propio arrastre frente al tirón (feedPullToRefresh.js).
+      if (event.target?.closest?.(PULL_BLOCKING_SCROLLERS)) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
+
+      // De aquí en adelante el gesto es nuestro, cola incluida: una cola
+      // dejada al scroll nativo movería `scrollTop` por debajo del viaje.
+      event.preventDefault();
+      const { gesture, step } = wheelStep(wheelGestureRef.current, event);
+      wheelGestureRef.current = gesture;
+      if (step === 0) return;
+
+      const target = stepTarget(container, step);
+      if (target === null) return;
+      travelToIndex(container, target);
+    };
+
+    container.addEventListener('wheel', onWheel, { passive: false });
+    return () => container.removeEventListener('wheel', onWheel);
+  }, [feedNode, stepTarget, travelToIndex]);
+
+  // Las flechas del teclado, viajando igual que la rueda. Conservan su propia
+  // puerta: una flecha mantenida se repite unas treinta veces por segundo, y
+  // dejar que encadenen como encadena una pasada sería volar por el feed.
   useEffect(() => {
     const handleKeyDown = (e) => {
       const container = feedRef.current;
@@ -622,24 +763,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
         e.preventDefault();
         if (isScrollingRef.current) return;
 
-        const direction = e.key === 'ArrowDown' ? 1 : -1;
-        const cardHeight = container.clientHeight;
-        const currentScroll = container.scrollTop;
-        const currentIndex = Math.round(currentScroll / cardHeight);
-        const nextIndex = currentIndex + direction;
-
-        const itemCount = papers.length + (loading ? 1 : 0) + (showEndCard ? 1 : 0);
-        if (nextIndex >= 0 && nextIndex < itemCount) {
-          isScrollingRef.current = true;
-          container.scrollTo({
-            top: nextIndex * cardHeight,
-            behavior: prefersReducedMotion ? 'auto' : 'smooth'
-          });
-
-          setTimeout(() => {
-            isScrollingRef.current = false;
-          }, prefersReducedMotion ? 0 : 700);
-        }
+        const target = stepTarget(container, e.key === 'ArrowDown' ? 1 : -1);
+        if (target === null) return;
+        travelToIndex(container, target);
       }
     };
 
@@ -647,7 +773,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [papers.length, loading, prefersReducedMotion, showEndCard]);
+  }, [stepTarget, travelToIndex]);
 
   const handleRefresh = useCallback(() => {
     refreshFeed();

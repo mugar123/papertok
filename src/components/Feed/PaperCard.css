@@ -567,6 +567,45 @@ a.pc-citations {
   }
 }
 
+/* ── Las citas, cuando llegan tarde ──
+
+   El chip `N Citas` sale de `citationCountKnown`, que llega con el
+   enriquecimiento (OpenAlex, iCite, Europe PMC). El primer pintado de un feed
+   espera ahora a los tres bajo un techo de 1200ms (utils/feedCitationGate.js),
+   así que lo normal es que el chip esté desde el principio y este fundido
+   corra solapado con el `pcArrive` de su fila, que también arranca en opacidad
+   0: no se ve y no cuesta nada.
+
+   Lo que cubre es el caso que el techo deja pasar. Un enriquecimiento de más
+   de 1200ms mete el chip en una fila que ya está en pantalla, y no se le puede
+   reservar el hueco: el ancho depende de un número que todavía no tenemos, y
+   un hueco fijo desplazaría la fila igual, sólo que antes. Así que lo que hace
+   este fundido es que ese aterrizaje se LEA en vez de encajarse en un
+   fotograma.
+
+   220ms lisos, que es el fundido común con el que acabó la entrada de los
+   recortes. Lineal a propósito: una expo sobre una opacidad no es un fundido,
+   es un destello con cola.
+
+   Va también en el punto que lo precede, que monta en el mismo fragmento del
+   JSX. Un chip que se funde al lado de un `·` que aparece de golpe deja el
+   parpadeo entero en el separador. */
+.pc-citations,
+.pc-meta-dot--citations {
+  animation: pcCitationsIn 220ms linear;
+}
+
+@keyframes pcCitationsIn {
+  from { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-citations,
+  .pc-meta-dot--citations {
+    animation: none;
+  }
+}
+
 .pc-followed-badge {
   display: inline-flex;
   align-items: center;

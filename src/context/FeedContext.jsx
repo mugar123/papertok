@@ -65,6 +65,7 @@ import { lateSourceCandidates } from '../utils/feedLateCandidates';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feedInteractions';
 import { rankPreferences } from '../utils/preferenceRanking.js';
 import { fetchICiteMetrics, mergeICiteEnrichment } from '../services/iCiteService';
+import { awaitWithinGate } from '../utils/feedCitationGate.js';
 import { enrichPubmedIds, mergeEuropePmcEnrichment } from '../services/europePmcService';
 // topicRetrievalService carries a ~32 KB gzip topic table and only matters
 // once a feed load actually ranks followed topics, so it loads on first use
@@ -1463,6 +1464,51 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         return new Map();
       });
       if (requestId !== feedRequestId.current) return;
+
+      // El velo se sostiene hasta que las citas están, con techo.
+      //
+      // Las tres fuentes de abajo traen `citationCount`, y hasta aquí las tres
+      // llegaban DESPUÉS del pintado: el chip `N Citas` de la fila de metadatos
+      // (PaperCard) se insertaba en una fila que ya estaba en pantalla, y en un
+      // móvil, donde esa fila envuelve, eso no es un chip que aparece — es una
+      // línea que aparece y empuja lo de debajo. Reportado el 20-09-2026.
+      //
+      // La condición es «no hay nada en pantalla todavía», que es exactamente
+      // cuando hay un velo que sostener. NO es `reset`, y la diferencia se
+      // midió: cuando la primera página trae papers que el lector ya ha visto,
+      // esta función REENTRA con `reset` en falso (`loadPapersRef.current(false,
+      // …)`, unas 130 líneas más arriba) y es esa llamada la que pinta. Con la
+      // puerta detrás de `reset` esa carga se colaba entera: medido el
+      // 20-09-2026, feed pintado a 2872ms con 1 chip de 2 y los chips saltando
+      // de 9 a 14 a los 3571ms, con el lector ya mirando.
+      //
+      // Lo que queda fuera queda fuera a propósito. `keepThroughVisible` es el
+      // cambio de seguimiento: el lector conserva su sitio y sigue mirando una
+      // tarjeta, así que esperar sería congelarle la pantalla. La paginación y
+      // el refresco tienen `papers.length > 0` por definición — hay cartas
+      // delante, no hay velo, y esperar sólo atascaría el scroll infinito.
+      //
+      // El techo vive en utils/feedCitationGate.js, y lo que no llegue a tiempo
+      // se fusiona tarde igual que antes, unas líneas más abajo, con el fundido
+      // de PaperCard.css debajo.
+      if (papers.length === 0 && !keepThroughVisible) {
+        const [gatedOpenAlex, gatedICite, gatedEuropePmc] = await awaitWithinGate([
+          enrichmentIds.length > 0 ? enrichmentPromise : null,
+          iCitePmids.length > 0 ? iCitePromise : null,
+          iCitePmids.length > 0 ? europePmcPromise : null,
+        ]);
+        // La petición puede haber sido reemplazada mientras esperábamos.
+        if (requestId !== feedRequestId.current) return;
+        if (gatedOpenAlex && Object.keys(gatedOpenAlex).length > 0) {
+          filtered = mergeOpenAlexEnrichment(filtered, gatedOpenAlex);
+        }
+        if (gatedICite && Object.keys(gatedICite).length > 0) {
+          filtered = mergeICiteEnrichment(filtered, gatedICite);
+        }
+        if (gatedEuropePmc && gatedEuropePmc.size > 0) {
+          filtered = mergeEuropePmcEnrichment(filtered, gatedEuropePmc);
+        }
+      }
 
       // Paint now. A second shuffle after enrichment used to reorder the
       // cards the reader had just started looking at; late merge keeps order

@@ -1341,7 +1341,10 @@ const PaperCard = memo(function PaperCard({
 
           {(paper.citationCountKnown || paper.citationCount > 0) && (
             <>
-              <span className="pc-meta-dot">·</span>
+              {/* El modificador es lo que le da a este punto el mismo fundido
+                  que al chip: los dos montan juntos, y cuando el
+                  enriquecimiento se pasa del techo montan tarde juntos. */}
+              <span className="pc-meta-dot pc-meta-dot--citations">·</span>
               {paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
                 <a
                   className="pc-citations"

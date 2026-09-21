@@ -1,5 +1,63 @@
 # Estado / pendientes
 
+## La rueda del feed es nuestra, y las citas llegan con la tarjeta (2026-09-21)
+
+**En escritorio el scroll ya no lo curva el motor.** No había palanca CSS para
+esto: el aterrizaje de un `scroll-snap` nativo lo cronometra el navegador y
+`scroll-behavior` no lo alcanza — esa propiedad sólo afecta al scroll
+programático. Y una muesca de rueda de ratón son ~100px contra una tarjeta de
+757, así que el snap la devolvía siempre y el ratón no podía mover el feed. Bajo
+`pointer: fine`, `src/utils/feedWheelStep.js` decide el paso (un gesto es una
+ráfaga sin huecos de más de 140ms y gasta UNO, con suelo de 12px para que una
+mano en reposo no cuente) y `travelToIndex` lo viaja en 380ms con `1-(1-t)²`,
+la quad que `--ease-out-quad` aproxima en bézier. Las flechas del teclado pasan
+por el mismo viaje. **El táctil no se toca**: sigue nativo, con su inercia, su
+snap y el tirón de refresco encima de los tres.
+
+**Tres detalles sostienen eso y ninguno se ve en el diff.** El snap tiene que
+salir mientras dura el viaje, porque `mandatory` re-resuelve un `scrollTop`
+animado en cada fotograma; la cola del gesto hay que prevenirla *y* seguir
+dándosela al reductor, porque una cola nativa mueve `scrollTop` por debajo del
+viaje y una cola que no llega al reductor se lee como pasada nueva en cuanto el
+viaje acaba; y un paso en pleno vuelo cuenta desde el destino, no de
+`scrollTop`, que leído en vivo contesta el destino pasada la mitad y el origen
+antes. Medido con Chrome propio por CDP a 1280x900: una muesca de 100px lleva
+`scrollTop` de 0 a 757 clavado, una ráfaga de 1184px mueve una sola tarjeta, 12
+de 12 eventos con `preventDefault`, y el progreso a los 100ms es 0,440 contra
+0,457 de la quad ideal — una expo estaría en 0,835.
+
+**El chip `N Citas` ya no aterriza sobre una fila que el lector está mirando.**
+El feed pintaba antes de su enriquecimiento a propósito y las tres fuentes que
+traen `citationCount` —OpenAlex, iCite y Europe PMC— llegaban después; en móvil,
+donde la fila de metadatos envuelve, eso no es un chip que aparece sino una
+línea que aparece y empuja. Ahora el primer pintado las espera bajo un techo de
+1200ms (`src/utils/feedCitationGate.js`). El techo es lo que impide que esto sea
+latencia: OpenAlex tiene 6500ms de presupuesto propio, así que sin tope un día
+malo serían seis segundos de velo.
+
+**La guarda es lo delicado, y `reset` era la respuesta equivocada.** Cuando la
+primera página trae papers que el lector ya vio, `loadPapers` reentra consigo
+misma con `reset` en falso y es esa llamada la que pinta: detrás de `reset`, esa
+carga se colaba entera — medido, feed pintado a 2872ms con 1 chip de 2 y los
+chips saltando de 9 a 14 a los 3571ms. La condición es
+`papers.length === 0 && !keepThroughVisible`, o sea «no hay nada en pantalla»,
+que es exactamente cuando hay velo que sostener; paginación y refresco tienen
+cartas delante por definición.
+
+**Medido contra un control** (el mismo árbol con la puerta anulada por un
+transform de Vite, Chrome por CDP a 390x844): con el enriquecimiento
+ralentizado a 30s la puerta entra a 722ms y sale a 1923ms, 1201ms exactos;
+con enriquecimiento normal espera 512-673ms y sale sola. Cuatro de cinco
+tiradas del control saltan —la más clara pinta el feed a 877ms sin una sola
+cita y a los 2273ms mete catorce de golpe— y cero de cuatro con la puerta.
+
+**Lo que queda fuera, a propósito y sabiéndolo.** La puerta cubre For You. El
+feed de invitado (`useGuestFeed.js`) y Siguiendo (`followingUpdates.js`) tienen
+su propia entrega progresiva, y ahí lo único que actúa es el fundido lineal de
+220ms de `.pc-citations` y `.pc-meta-dot--citations`. **El hueco del chip no se
+puede reservar**: su ancho depende de un número que todavía no existe, y un
+hueco fijo desplazaría la fila igual, sólo antes.
+
 ## La landing se retira y `/` vuelve a ser la app (2026-09-19)
 
 **Decisión de Nico, tomada delante de la página.** La landing de la dirección B
