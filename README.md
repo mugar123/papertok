@@ -268,6 +268,26 @@ Since PaperTok is still evolving quickly, opening an issue before working on a l
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, verification and security guidance.
 
+## Donors
+
+PaperTok is a personal open-source project, and some people have chosen to support it with their own money. Thank you.
+
+<p align="center">
+  <a href="https://github.com/ConvenIA-RLT-bot">
+    <img src="https://github.com/ConvenIA-RLT-bot.png?size=88" width="88" alt="ConvenIA-RLT-bot">
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://github.com/XMihura">
+    <img src="https://github.com/XMihura.png?size=88" width="88" alt="XMihura">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/ConvenIA-RLT-bot"><strong>@ConvenIA-RLT-bot</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/XMihura"><strong>@XMihura</strong></a>
+</p>
+
 ## Acknowledgements
 
 PaperTok relies on the work of open scientific infrastructure projects and research databases that make scholarly metadata accessible to developers and researchers.
