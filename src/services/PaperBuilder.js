@@ -1,6 +1,11 @@
 import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.js';
 import { matchesAuthorName } from '../utils/authorNameMatch.js';
 
+// Below this many alphanumeric characters a title is not a fingerprint of a
+// paper -- "editorial", "introduction", "lettertotheeditor" (17) -- and the
+// order-blind author keys in `deduplicate` are not issued for it.
+const HEURISTIC_LOOSE_TITLE_MIN_LENGTH = 20;
+
 /**
  * Builder class for creating unified Paper objects from various adapters
  * and merging metadata from multiple sources.
@@ -344,8 +349,31 @@ export class PaperBuilder {
 
       // Heuristic key: Alphanumeric title + first author's last name
       const cleanTitle = (paper.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      const firstAuthor = paper.authors && paper.authors.length > 0 ? (paper.authors[0].name || '').toLowerCase().split(' ').pop() : '';
+      const firstAuthorName = paper.authors && paper.authors.length > 0
+        ? String(paper.authors[0]?.name ?? paper.authors[0] ?? '')
+        : '';
+      const firstAuthor = firstAuthorName.toLowerCase().split(' ').pop();
       const heuristicKey = cleanTitle && firstAuthor ? `${cleanTitle}_${firstAuthor}` : null;
+      // The same paper under two records of one provider, with the first
+      // author's name in two orders: OpenAlex carries HQ-SAM (arXiv
+      // 2306.01567) as a preprint by "Ke Jian Lei" and as a NeurIPS paper by
+      // "Lei Ke", each under its own DOI, so neither the DOI nor the last
+      // token of the name ("lei" / "ke") could join them, and the search
+      // showed the paper twice (2026-09-22). One key per token of the name is
+      // order-blind: any shared token on an identical title is a match, and
+      // the bridging below folds the groups. Only for a title long enough to
+      // be a fingerprint on its own -- "Editorial" or "Introduction" with a
+      // shared "Wei" is not the same paper -- and never for a lone initial.
+      const looseTitleKeys = cleanTitle.length >= HEURISTIC_LOOSE_TITLE_MIN_LENGTH
+        ? [...new Set(
+          firstAuthorName
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .split(/[^a-z]+/)
+            .filter(token => token.length >= 2),
+        )].map(token => `${cleanTitle}~${token}`)
+        : [];
       const idValue = String(paper.id || '');
       const normalizedArxivId = String(
         paper.arxivId
@@ -369,7 +397,7 @@ export class PaperBuilder {
         paper.adsBibcode ? `ads:${String(paper.adsBibcode).toLowerCase()}` : null,
         paper.inspireId ? `inspire:${String(paper.inspireId).toLowerCase()}` : null,
       ].filter(Boolean);
-      const allKeys = [...stableKeys, heuristicKey].filter(Boolean);
+      const allKeys = [...stableKeys, heuristicKey, ...looseTitleKeys].filter(Boolean);
 
       // 2. Every group any of our keys already points at.
       //

@@ -399,3 +399,92 @@ test('enrichment without authors leaves the list alone', () => {
   const merged = PaperBuilder.merge(base, { citationCount: 4 }, 'openalex');
   assert.deepEqual(merged.authors, [{ name: 'Ada Lovelace', id: null }]);
 });
+
+/**
+ * The same paper under two OpenAlex records with the first author's name in
+ * two orders. Cut from what OpenAlex answered on 2026-09-22 for "segment
+ * anything in high quality": the preprint W4379474533 by "Ke Jian Lei" under
+ * the arXiv DOI and the NeurIPS paper W7133191568 by "Lei Ke" under the
+ * proceedings DOI. Different DOIs, different last name token, one paper --
+ * and the search showed it twice.
+ */
+test('one paper, two records, the first author\'s name in two orders: one result', () => {
+  const preprint = {
+    id: 'openalex:W4379474533',
+    doi: '10.48550/arxiv.2306.01567',
+    arxivId: '2306.01567',
+    title: 'Segment Anything in High Quality',
+    authors: [{ name: 'Ke Jian Lei' }, { name: 'Mingqiao Ye' }, { name: 'Martin Danelljan' }],
+    year: 2023,
+    publicationStatus: 'preprint',
+    publicationType: 'preprint',
+    citationsCount: 110,
+    provider: 'openalex_search',
+    sources: { primary: 'openalex', enrichedBy: [] },
+  };
+  const conference = {
+    id: 'openalex:W7133191568',
+    doi: '10.52202/075280-1303',
+    title: 'Segment Anything in High Quality',
+    authors: [{ name: 'Lei Ke' }, { name: 'Mingqiao Ye' }, { name: 'Martin Danelljan' }],
+    year: 2023,
+    publicationStatus: 'published',
+    publicationType: 'conference-paper',
+    citationsCount: 85,
+    provider: 'openalex_search',
+    sources: { primary: 'openalex', enrichedBy: [] },
+  };
+
+  const out = PaperBuilder.deduplicate([preprint, conference]);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].arxivId, '2306.01567', 'keeps the arXiv id of the preprint');
+  assert.equal(out[0].publicationStatus, 'published', 'and the published status of the conference paper');
+  assert.equal(out[0].citationCount, 110, 'the larger count wins');
+});
+
+test('the order-blind author key is not issued for a title too short to be a fingerprint', () => {
+  // Two editorials by two people who share a given name are two papers.
+  const out = PaperBuilder.deduplicate([
+    { id: 'a', title: 'Editorial', authors: [{ name: 'Wei Zhang' }], provider: 'openalex' },
+    { id: 'b', title: 'Editorial', authors: [{ name: 'Li Wei' }], provider: 'openalex' },
+  ]);
+  assert.equal(out.length, 2);
+});
+
+test('a shared token is required: an identical long title by unrelated authors stays two papers', () => {
+  const out = PaperBuilder.deduplicate([
+    { id: 'a', title: 'A Comprehensive Survey of Graph Neural Networks', authors: [{ name: 'Ada Lovelace' }], provider: 'openalex' },
+    { id: 'b', title: 'A Comprehensive Survey of Graph Neural Networks', authors: [{ name: 'Grace Hopper' }], provider: 'pubmed' },
+  ]);
+  assert.equal(out.length, 2);
+});
+
+test('initials never bridge: "J. Smith" and "Smith J." meet on the surname, not on the letter', () => {
+  const out = PaperBuilder.deduplicate([
+    { id: 'a', title: 'A Comprehensive Survey of Graph Neural Networks', authors: [{ name: 'J. Smith' }], provider: 'openalex' },
+    { id: 'b', title: 'A Comprehensive Survey of Graph Neural Networks', authors: [{ name: 'Smith J.' }], provider: 'pubmed' },
+    { id: 'c', title: 'A Comprehensive Survey of Graph Neural Networks', authors: [{ name: 'J. Doe' }], provider: 'pubmed' },
+  ]);
+  assert.equal(out.length, 2);
+  assert.ok(out.some(paper => paper.id === 'c'));
+});
+
+test('authors given as plain strings still take part in the heuristic keys', () => {
+  const out = PaperBuilder.deduplicate([
+    { id: 'a', title: 'Segment Anything in High Quality', authors: ['Ke Jian Lei'], provider: 'openalex' },
+    { id: 'b', title: 'Segment Anything in High Quality', authors: ['Lei Ke'], provider: 'arxiv' },
+  ]);
+  assert.equal(out.length, 1);
+});
+
+// Also seen live the same day: OpenAlex's "A Comprehensive Survey on Graph
+// Neural Networks" once by "Zonghan Wu" with its DOI and once by "Wu, Z" with
+// none. The initial is dropped (one letter), the surname joins them.
+test('"Zonghan Wu" and "Wu, Z" on one long title are one paper', () => {
+  const out = PaperBuilder.deduplicate([
+    { id: 'openalex:W2907492528', doi: '10.1109/tnnls.2020.2978386', title: 'A Comprehensive Survey on Graph Neural Networks', authors: [{ name: 'Zonghan Wu' }], provider: 'openalex' },
+    { id: 'openalex:W4210257598', title: 'A Comprehensive Survey on Graph Neural Networks', authors: [{ name: 'Wu, Z' }], provider: 'openalex' },
+  ]);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].doi, '10.1109/tnnls.2020.2978386');
+});
