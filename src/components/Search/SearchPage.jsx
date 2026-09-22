@@ -26,8 +26,7 @@ import {
   enrichAuthorInstitutionLocalization,
 } from '../../services/openAlexService';
 import { searchProjects } from '../../services/openAireService';
-import { OpenAlexAdapter } from '../../services/adapters/OpenAlexAdapter';
-import { PaperBuilder } from '../../services/PaperBuilder';
+import { searchPapersAcrossSources } from '../../services/paperSearchService';
 import { useFollowing } from '../../context/FollowingContext';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -72,7 +71,6 @@ import {
 
 import './SearchPage.css';
 
-const paperSearchAdapter = new OpenAlexAdapter();
 const SEARCH_DEBOUNCE_MS = 320;
 const SEARCH_TIMEOUT_MS = 6000;
 const SEARCH_MIN_LOADING_MS = 180;
@@ -316,9 +314,10 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
     const track = (section, promise) => promise.then(outcome => ({ ...outcome, section }));
 
     const tasks = [
+      // OpenAlex and arXiv, merged and ranked by title match
+      // (paperSearchService.js): OpenAlex alone could not answer "llama 2".
       track('papers', settleSearch(
-        paperSearchAdapter.search(searchTerm, 1, { signal: requestController.signal })
-          .then(result => PaperBuilder.deduplicate(result.papers || []).slice(0, 10)),
+        searchPapersAcrossSources(searchTerm, { signal: requestController.signal }),
       )),
       track('authors', settleSearch(
         searchAuthors(searchTerm, {

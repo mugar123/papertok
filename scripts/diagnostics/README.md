@@ -26,6 +26,22 @@ node scripts/diagnostics/test-openalex.js
 When a diagnostic becomes a stable regression check, replace its live request with a fixture
 and move the behavior into a colocated `*.test.js` file under `src/` or `worker/`.
 
+## Paper search coverage (2026-09-22)
+
+`search-coverage-check.mjs` runs the paper search the way `src/services/paperSearchService.js`
+composes it — OpenAlex plus arXiv through the Worker, merged and ranked by title — for the
+searches that used to miss papers that exist upstream ("FC-CLIP", its full title, "segment
+anything", "llama 2"), and prints where the expected paper lands. It also runs each query once
+with the retired `type:article|proceedings-article` filter to show what the old search saw.
+Consumes quota (up to seven OpenAlex calls and three paced arXiv calls); `--no-before` skips the
+comparison. `PAPER_API_BASE` and `ORIGIN` override the Worker and the allowed origin. The offline
+pin of the same behavior is `src/services/paperSearchService.test.js`.
+
+Two upstream facts the script documents, both probed live on 2026-09-22: OpenAlex no longer has a
+`proceedings-article` type (`type:conference-paper` is the name; the old filter matched zero
+conference papers), and OpenAlex's record for arXiv 2307.09288 (W4384918448) carries a title that
+is not "Llama 2: Open Foundation and Fine-Tuned Chat Models", so no OpenAlex query can find it.
+
 ## Measuring a page that only exists for a signed-in reader (2026-09-07)
 
 Three of these probes can drive a page behind the session, and there are two
