@@ -22,6 +22,7 @@ import {
   readRecommendationWeights,
 } from '../utils/recommendationEngine';
 import { mergeFreshFeedPage, splitFeedForReRank } from '../utils/feedReRankSplit.js';
+import { reRankHoldMs } from '../utils/feedReRankTiming.js';
 import {
   readProfileDriftCheckedAt,
   readSeenPaperIds,
@@ -544,8 +545,14 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   // scrolling to top, so it can name a paper no longer in papers — then
   // reRankFeed and the merge lock only the top few cards. Not enforced.
   const visiblePaperIdRef = useRef(null);
+  // When the feed last moved. FeedContainer reports the visible paper from
+  // its scroll handler, so this doubles as the scroll heartbeat the deferred
+  // re-rank below waits out: a re-rank landing inside the snap animation is
+  // what it exists to avoid.
+  const feedScrolledAtRef = useRef(0);
   const reportVisiblePaper = useCallback((paperId) => {
     visiblePaperIdRef.current = paperId || null;
+    feedScrolledAtRef.current = Date.now();
   }, []);
 
   const reRankFeed = useCallback((sourcePaperId = null) => {
@@ -597,14 +604,31 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   // queued just updates which paper it should split around, rather than
   // resetting the timer — a stream of calls inside the timeout window must
   // not be able to push the deadline out indefinitely.
+  //
+  // Idle is not enough on its own. The main thread IS idle while the
+  // compositor runs the snap to the next card, so an idle callback armed by
+  // the card that just left (its view time lands as it crosses the half-way
+  // mark) fired ~400 ms later — inside that animation, or on the frame it
+  // settled. Measured 2026-09-22 on the production bundle: one reorder per
+  // swipe, ~20 snap items re-attached and re-laid out, plus the render of
+  // every card whose position moved. The reorder is held while the feed is
+  // still moving and released once the scroll report has been quiet for a
+  // beat, bounded so a reader who never pauses still gets it
+  // (utils/feedReRankTiming.js has the two clocks and why).
   const pendingReRankRef = useRef(null);
   const scheduleReRank = useCallback((sourcePaperId) => {
     if (pendingReRankRef.current) {
       pendingReRankRef.current.sourcePaperId = sourcePaperId;
       return;
     }
-    const pending = { sourcePaperId, handle: null, isTimeout: false };
+    const pending = { sourcePaperId, handle: null, isTimeout: false, requestedAt: Date.now() };
     const run = () => {
+      const hold = reRankHoldMs({ now: Date.now(), scrolledAt: feedScrolledAtRef.current, requestedAt: pending.requestedAt });
+      if (hold > 0) {
+        pending.isTimeout = true;
+        pending.handle = setTimeout(run, hold);
+        return;
+      }
       pendingReRankRef.current = null;
       reRankFeedRef.current(pending.sourcePaperId);
     };

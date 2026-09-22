@@ -373,11 +373,28 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
       : (id) => clearTimeout(id);
     const sinceMount = mountedAtRef.current === null ? 0 : performance.now() - mountedAtRef.current;
     let handle = null;
+    let retry = null;
+    // Not while the feed is moving. The main thread is idle for exactly as
+    // long as the compositor is running the snap to the next card, so an
+    // idle chunk armed by a page arriving mid-swipe mounted two cards inside
+    // the animation (measured 2026-09-22: 125-150 ms commits at 4x CPU, on
+    // the frames the snap was landing). `feed-container--scrolling` is the
+    // scroll handler's own signal; it clears SCROLL_IDLE_DELAY_MS after the
+    // last scroll event, which is when the chunk is asked for again.
+    const grow = () => {
+      handle = null;
+      if (feedRef.current?.classList.contains('feed-container--scrolling')) {
+        retry = setTimeout(() => { handle = schedule(grow); }, SCROLL_IDLE_DELAY_MS);
+        return;
+      }
+      setMountWindow(growMountWindow(anchoredWindow, papers.length));
+    };
     const timer = setTimeout(() => {
-      handle = schedule(() => setMountWindow(growMountWindow(anchoredWindow, papers.length)));
+      handle = schedule(grow);
     }, Math.max(0, MOUNT_WINDOW_SETTLE_MS - sinceMount));
     return () => {
       clearTimeout(timer);
+      clearTimeout(retry);
       if (handle !== null) cancel(handle);
     };
   }, [anchoredWindow, papers.length]);
