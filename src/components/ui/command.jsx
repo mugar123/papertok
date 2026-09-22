@@ -22,6 +22,9 @@ function Command({ className, ...props }) {
  * `cubic-bezier(...)` is a lot of escaping for something a `.css` file says
  * plainly — and this module has no stylesheet of its own to put it in.
  *
+ * `finalFocus` reaches the popup: a palette opened by a button that is not a
+ * Base UI Trigger has to be told where focus goes back to when it closes.
+ *
  * The top offset is set in `dvh`, not the large-viewport `vh`: this is a
  * `position: fixed` sheet, so its offset should track the visible viewport as
  * the URL bar hides and reveals, the same as every other fixed sheet in this
@@ -33,12 +36,13 @@ function Command({ className, ...props }) {
  * elsewhere in this codebase (`FollowSheet.css:190`) and has near-universal
  * support, so going bare here matches that precedent.
  */
-function CommandDialog({ children, className, overlayClassName, title = 'Search', ...props }) {
+function CommandDialog({ children, className, overlayClassName, finalFocus, title = 'Search', ...props }) {
   return (
     <Dialog {...props}>
       <DialogContent
         showClose={false}
         overlayClassName={overlayClassName}
+        finalFocus={finalFocus}
         className={cn('top-[8dvh] max-w-2xl translate-y-0 overflow-hidden p-0', className)}
       >
         <DialogTitle className="sr-only">{title}</DialogTitle>
@@ -82,8 +86,13 @@ function CommandDialog({ children, className, overlayClassName, title = 'Search'
  * what a caller has to be able to move if the field is to take part in the
  * palette's entrance. Styling `className` instead would animate the `input`
  * inside a row that stayed put, which is the opposite of the point.
+ *
+ * `children` land after the field, in the same row: the one place a control
+ * that belongs to the field — the palette's Cancel on a phone, where there is
+ * no Escape key and the full-screen sheet leaves no scrim to tap — can sit
+ * without becoming a second row.
  */
-function CommandInput({ className, wrapperClassName, wrapperStyle, ...props }) {
+function CommandInput({ className, wrapperClassName, wrapperStyle, children, ...props }) {
   return (
     <div
       className={cn('flex items-center gap-1.5 border-b border-border px-4 py-2', wrapperClassName)}
@@ -102,6 +111,7 @@ function CommandInput({ className, wrapperClassName, wrapperStyle, ...props }) {
         )}
         {...props}
       />
+      {children}
     </div>
   );
 }
