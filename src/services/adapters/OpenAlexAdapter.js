@@ -32,6 +32,23 @@ export const OPENALEX_WORK_SEARCH_FIELDS = Object.freeze([
   'primary_topic',
 ]);
 
+// OpenAlex work types, in OpenAlex's current vocabulary. The filter used to ask
+// for `proceedings-article`, Crossref's name for a conference paper, which
+// OpenAlex no longer uses: `type:proceedings-article` matches zero works
+// (probed 2026-09-22 through the Worker relay; `conference-paper` matched 16.2
+// million). So the filter that meant "articles and conference papers" had been
+// silently returning journal articles alone -- "Segment Anything" (ICCV 2023)
+// and every other NeurIPS/CVPR/ICCV paper was invisible to the feed and to the
+// search. `scripts/diagnostics/search-coverage-check.mjs` re-runs the probe.
+export const OPENALEX_PUBLISHED_TYPES = Object.freeze(['article', 'conference-paper']);
+
+// What a paper SEARCH accepts. A reader looking up a specific paper expects the
+// arXiv preprint when that is the record OpenAlex carries -- FC-CLIP's most
+// cited record is the preprint (W4385645314) -- and a survey when the title is
+// a survey. The feed keeps the narrower list: preprints reach it from arXiv
+// directly, and datasets, theses, and paratext are still left out here.
+export const OPENALEX_SEARCH_TYPES = Object.freeze([...OPENALEX_PUBLISHED_TYPES, 'preprint', 'review']);
+
 export class OpenAlexAdapter extends BaseAdapter {
   constructor() {
     super('openalex_search');
@@ -39,20 +56,19 @@ export class OpenAlexAdapter extends BaseAdapter {
     this.mailto = 'app@papertok.io';
   }
 
-  buildSearchUrl(query, page = 1) {
+  buildSearchUrl(query, page = 1, { types = OPENALEX_PUBLISHED_TYPES } = {}) {
     const perPage = 25;
 
     // Convert query to OpenAlex default.search format
     const searchParam = encodeURIComponent(query);
 
-    // We only want journal articles and proceedings (published papers)
-    const typeFilter = 'type:article|proceedings-article';
+    const typeFilter = `type:${types.join('|')}`;
 
     return `${this.baseUrl}?filter=default.search:${searchParam},${typeFilter}&page=${page}&per-page=${perPage}&mailto=${this.mailto}&select=${OPENALEX_WORK_SEARCH_FIELDS.join(',')}`;
   }
 
   async search(query, page = 1, filters = {}) {
-    const url = this.buildSearchUrl(query, page);
+    const url = this.buildSearchUrl(query, page, { types: filters.types || OPENALEX_PUBLISHED_TYPES });
 
     try {
       const response = await openAlexFetch(url, {
@@ -153,7 +169,7 @@ export class OpenAlexAdapter extends BaseAdapter {
       publishedDate: work.publication_date,
       year: work.publication_year,
       sourceName,
-      sourceType: work.type === 'proceedings-article' ? 'conference' : 'journal',
+      sourceType: work.type === 'conference-paper' || work.type === 'proceedings-article' ? 'conference' : 'journal',
       publicationType,
       publicationStatus,
       openAccess: isOpenAccess,
