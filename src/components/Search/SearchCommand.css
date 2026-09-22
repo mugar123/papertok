@@ -110,15 +110,156 @@
   font-size: var(--fs-xs);
 }
 
+/* The way out on a phone (SearchCommand.jsx). Off everywhere else: on a wide
+   viewport the scrim and Escape close the palette, and the field's row is the
+   field's alone. */
+.sc-cancel {
+  display: none;
+}
+
+/* ─── The phone ───
+   Measured 2026-09-22 on a 390×844 viewport: the sheet sat 68px from the top
+   as a 473px window over the feed, its list clamped at 60svh, ten rows of
+   36px with the year and the citations hidden, titles cut with an ellipsis
+   at 40 characters. A window floating over the page is the desktop's idea of
+   a palette; on a phone the search IS the screen. So below 640px the sheet
+   takes the whole viewport, the field stays at the top with a Cancel beside
+   it, the list gets everything underneath, and each row is two lines — the
+   title allowed to wrap once, the mono meta under it — at 52px, comfortably
+   over the 24px WCAG 2.5.8 floor and Apple's 44pt.
+
+   These rules beat the Tailwind utilities on the same elements without
+   `!important`: this stylesheet is unlayered and `global.css` puts every
+   utility in `@layer utilities`, so an unlayered declaration wins whatever
+   its specificity — the same footing `.sc-sheet { transform-origin }` above
+   already stands on. `translate: 0` matters: the shared dialog centres the
+   sheet with the `translate` property, and `inset: 0` alone would leave it
+   shifted half a screen to the left.
+
+   `100dvh`, not `100vh`: a fixed sheet should track the visible viewport as
+   the URL bar hides and shows. The list is the scroll container, so the
+   field never leaves the top and the software keyboard covers only rows the
+   reader can scroll to. Safe-area insets keep the field out of the notch and
+   the last row above the home indicator. */
 @media (max-width: 640px) {
-  .sc-meta {
+  .sc-sheet {
+    inset: 0;
+    translate: 0;
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .sc-sheet [cmdk-root] {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .sc-sheet [cmdk-list] {
+    flex: 1 1 auto;
+    max-height: none;
+    padding-bottom: calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* The field's row: the field, then Cancel. The button is a ui Button in
+     its ghost variant; what is set here is only that it exists on this
+     viewport and that it is a finger's width tall. */
+  .sc-cancel {
+    display: inline-flex;
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding-inline: var(--space-3);
+    margin-right: calc(-1 * var(--space-2));
+  }
+
+  /* A row with two lines: the icon, the label and the follow action on the
+     first, the meta under the label on the second. Nothing spans the two
+     rows on purpose, so that a row with no meta line — a suggestion, a
+     project with no funder — is one centred line, and a row with one is two;
+     the icon and the action sit on the title's line either way. */
+  .sc-sheet [cmdk-item] {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    /* Two content-sized rows, the pair centred in the 52px: a row with no
+       meta line then has an empty second track and its label sits in the
+       middle, instead of in the top half with nothing under it. */
+    grid-template-rows: auto auto;
+    align-content: center;
+    column-gap: var(--space-3);
+    /* Explicitly, because the utility `gap-3` on the row sets both axes and a
+       12px row gap is paid even into an empty second track. */
+    row-gap: 0;
+    align-items: center;
+    min-height: 52px;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--fs-sm);
+  }
+
+  .sc-sheet [cmdk-item] > .sc-icon,
+  .sc-sheet [cmdk-item] > .sc-avatar {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .sc-sheet [cmdk-item] > .sc-avatar {
+    width: 24px;
+    height: 24px;
+    font-size: 0.6875rem;
+  }
+
+  /* Two lines of title rather than forty characters and an ellipsis: on a
+     phone the ellipsis fell exactly where two derivative papers stop being
+     distinguishable ("Segment anything model for medical image ana…", twice). */
+  .sc-sheet [cmdk-item] > .sc-label {
+    grid-column: 2;
+    grid-row: 1;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    overflow: hidden;
+    line-height: 1.35;
+  }
+
+  /* The gap between the two lines lives on the meta, not on the grid: a
+     `row-gap` is paid even when the second track is empty, which pushed a
+     meta-less label above the middle of its row (measured). */
+  .sc-sheet [cmdk-item] > .sc-meta {
+    grid-column: 2;
+    grid-row: 2;
+    max-width: none;
+    margin-top: 2px;
+  }
+
+  /* An empty meta span — a topic with no works count, a project with no
+     funder — takes no row, so the label sits centred on its own. */
+  .sc-sheet [cmdk-item] > .sc-meta:empty {
     display: none;
   }
 
-  /* Except a handle: a year or a country code is decoration on a narrow
-     screen, but "@nico" is half of how you tell two people apart. */
-  .sc-meta--handle {
-    display: block;
+  .sc-sheet [cmdk-item] > .sc-follow {
+    grid-column: 3;
+    grid-row: 1;
+    min-height: 32px;
+    padding: 6px 10px;
+    font-size: 0.6875rem;
+  }
+
+  /* The wait, at the height of the rows it stands in for. */
+  .sc-skeleton-row {
+    min-height: 52px;
+  }
+
+  /* Empty state and footnote: the same inset the rows have, so nothing on
+     the sheet starts at a different x. */
+  .sc-status {
+    padding-inline: var(--space-3);
   }
 }
 
@@ -387,6 +528,47 @@
 
 .sc-scrim.sc-scrim.sc-scrim--select[data-closed] {
   animation: fadeOut 100ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+/* On a phone the sheet is the screen, and a screen does not drop 24px from
+   above and shrink 3% into place — that is the motion of a window. It rises
+   from just below its resting place, the way a search screen slides up under
+   the thumb, and leaves the same way, shorter. Same curves as the window's;
+   the picked exit (`--select`, above) is opacity-only on every viewport and
+   is untouched here. The reduced-motion block below comes last and still
+   wins: it names the same selectors at the same specificity. */
+@media (max-width: 640px) {
+  @keyframes scSheetInPhone {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes scSheetOutPhone {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    to {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+  }
+
+  .sc-sheet[data-open] {
+    animation: scSheetInPhone 280ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .sc-sheet[data-closed] {
+    animation: scSheetOutPhone 180ms cubic-bezier(0.4, 0, 1, 1) both;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
