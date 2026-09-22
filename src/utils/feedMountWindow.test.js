@@ -65,8 +65,14 @@ test('SOURCE: the container mounts a window and grows it off the critical path',
     'the window seed reads the helper, not a copy of it');
   assert.match(code, /growMountWindow\(anchoredWindow, papers\.length\)/, 'and grows in idle chunks');
   assert.match(code, /radius: saved\.paperId \? MOUNT_WINDOW_RESUME_RADIUS : MOUNT_WINDOW_RADIUS,/, 'one card when resuming, a neighbour when fresh');
-  assert.match(code, /setTimeout\(\(\) => \{\s*handle = schedule\(\(\) => setMountWindow\(growMountWindow\(anchoredWindow, papers\.length\)\)\);\s*\}, Math\.max\(0, MOUNT_WINDOW_SETTLE_MS - sinceMount\)\);/,
+  assert.match(code, /setTimeout\(\(\) => \{\s*handle = schedule\(grow\);\s*\}, Math\.max\(0, MOUNT_WINDOW_SETTLE_MS - sinceMount\)\);/,
     'the first growth waits out the transition, measured from the mount');
+  // And no chunk lands while the feed is moving: the main thread is idle for
+  // exactly as long as the compositor runs the snap, so an idle callback is
+  // not, by itself, a quiet feed. The scroll handler's own class is the gate,
+  // and a chunk that finds it set asks again once it clears.
+  assert.match(code, /const grow = \(\) => \{\s*handle = null;\s*if \(feedRef\.current\?\.classList\.contains\('feed-container--scrolling'\)\) \{\s*retry = setTimeout\(\(\) => \{ handle = schedule\(grow\); \}, SCROLL_IDLE_DELAY_MS\);\s*return;\s*\}\s*setMountWindow\(growMountWindow\(anchoredWindow, papers\.length\)\);\s*\};/,
+    'a chunk waits for the scroll to settle before it mounts anything');
   assert.match(code, /requestIdleCallback\(fn, \{ timeout: MOUNT_WINDOW_IDLE_TIMEOUT_MS \}\)/);
   assert.match(code, /inMountWindow\(anchoredWindow, index\)[\s\S]*?feed-snap-item--pending/, 'cards outside it are full-height placeholders');
 });
