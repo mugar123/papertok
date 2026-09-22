@@ -280,12 +280,18 @@ PaperTok is a personal open-source project, and some people have chosen to suppo
   <a href="https://github.com/XMihura">
     <img src="https://github.com/XMihura.png?size=88" width="88" alt="XMihura">
   </a>
+  &nbsp;&nbsp;
+  <a href="https://github.com/felipebasurto">
+    <img src="https://github.com/felipebasurto.png?size=88" width="88" alt="felipebasurto">
+  </a>
 </p>
 
 <p align="center">
   <a href="https://github.com/ConvenIA-RLT-bot"><strong>@ConvenIA-RLT-bot</strong></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/XMihura"><strong>@XMihura</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/felipebasurto"><strong>@felipebasurto</strong></a>
 </p>
 
 ## Acknowledgements
