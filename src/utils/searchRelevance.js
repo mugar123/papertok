@@ -154,6 +154,80 @@ export function scoreSearchMatch(query, values = []) {
   return bestScore;
 }
 
+/** Whole-word containment on already-normalised text: "sam" does not find "samples". */
+function containsPhrase(normalizedText, normalizedPhrase) {
+  return ` ${normalizedText} `.includes(` ${normalizedPhrase} `);
+}
+
+/**
+ * How well a paper answers a query, title first.
+ *
+ * The providers already rank by their own relevance and the merged list keeps
+ * that order for ties; what this adds is the one signal a reader typing a
+ * title cares about and a full-text score keeps burying: whether the TITLE is
+ * what was typed. "segment anything" used to answer with ten derivative
+ * papers because "Segment anything in medical images" scores well on the
+ * abstract too, and the paper called exactly that sat outside the slice.
+ *
+ * Runs on `normalizeSearchText`, so hyphens and case are gone before comparing:
+ * "FC-CLIP", "fc clip" and "FC CLIP" are one query, "Llama-2" and "Llama 2"
+ * one title, and a lone digit like the "2" is an ordinary token, matched as a
+ * whole word rather than dropped as too short.
+ *
+ *   100  the title IS the query
+ * 94-99  the title starts with the query ("Llama 2: Open Foundation...")
+ * 88-93  the title contains the query as a phrase, whole words
+ *    60  the abstract contains the query as a phrase -- how a paper known by
+ *        an acronym its title never uses (FC-CLIP) still beats a title that
+ *        shares one word with the query
+ *  0-70  the share of query tokens the title has, as words
+ *
+ * Inside the two phrase tiers the score rises with the share of the title the
+ * query covers, so "near-exact" means what it says: of two titles that both
+ * start with "Llama 2", the eight-word one is nearer the query than the
+ * thirteen-word one. Measured live 2026-09-22: with a flat 94 the order fell
+ * to whichever the provider sent first, and that was "Llama 2: Early Adopters'
+ * Utilization of Meta's New Open-Source Pretrained Model" over the Llama 2
+ * paper itself.
+ */
+export function scorePaperSearchMatch(query, paper = {}) {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) return 0;
+  const title = normalizeSearchText(paper?.title);
+  if (title === normalizedQuery) return 100;
+
+  const queryTokens = normalizedQuery.split(' ').filter(Boolean);
+  const titleTokenList = title.split(' ').filter(Boolean);
+  // Strictly below 1 for any title longer than the query, so a tier never
+  // reaches the one above it.
+  const coveredShare = titleTokenList.length > queryTokens.length
+    ? queryTokens.length / titleTokenList.length
+    : 0;
+  if (title.startsWith(`${normalizedQuery} `)) return 94 + 5 * coveredShare;
+  if (containsPhrase(title, normalizedQuery)) return 88 + 5 * coveredShare;
+
+  const titleTokens = new Set(titleTokenList);
+  const coverage = queryTokens.filter(token => titleTokens.has(token)).length / queryTokens.length;
+  const tokenScore = Math.round(coverage * 70);
+
+  const abstract = normalizeSearchText(paper?.abstract);
+  if (abstract && containsPhrase(abstract, normalizedQuery)) return Math.max(tokenScore, 60);
+  return tokenScore;
+}
+
+/**
+ * Papers in the order a reader looking for one expects: the title match
+ * first, and among equals the order the providers sent, so a source's own
+ * relevance still decides between two titles that match alike. Nothing is
+ * dropped here -- a paper found only through its abstract is still a result.
+ */
+export function rankPaperSearchResults(query, papers = []) {
+  return (papers || [])
+    .map((paper, index) => ({ paper, index, score: scorePaperSearchMatch(query, paper) }))
+    .sort((a, b) => (b.score - a.score) || (a.index - b.index))
+    .map(match => match.paper);
+}
+
 /**
  * `getWeight` breaks ties, it does not create them: the text score decides
  * first and always. Without it `Array.prototype.sort` is stable, so every
