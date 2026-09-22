@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { OPENALEX_WORK_SEARCH_FIELDS, OpenAlexAdapter } from './adapters/OpenAlexAdapter.js';
+import { OPENALEX_SEARCH_TYPES, OPENALEX_WORK_SEARCH_FIELDS, OpenAlexAdapter } from './adapters/OpenAlexAdapter.js';
 
 test('keeps OpenAlex citations and semantic concepts on discovered papers', () => {
   const paper = new OpenAlexAdapter().mapToStandard({
@@ -100,7 +100,35 @@ test('the search asks OpenAlex for the fields the mapper reads, and nothing else
   assert.equal(url.searchParams.get('select'), OPENALEX_WORK_SEARCH_FIELDS.join(','));
   assert.equal(url.searchParams.get('page'), '3');
   assert.equal(url.searchParams.get('per-page'), '25');
-  assert.match(url.searchParams.get('filter'), /^default\.search:"Quantum Physics" OR "Cosmology",type:article\|proceedings-article$/);
+  assert.match(url.searchParams.get('filter'), /^default\.search:"Quantum Physics" OR "Cosmology",type:article\|conference-paper$/);
+});
+
+// OpenAlex renamed the type: `proceedings-article` matches nothing there any
+// more, so a filter carrying it dropped every conference paper without an
+// error. The feed's default asks for articles and conference papers; the paper
+// search widens to preprints and reviews, which is where an arXiv-only paper
+// or a survey lives.
+test('the type filter speaks OpenAlex\'s current vocabulary and never the retired one', () => {
+  const adapter = new OpenAlexAdapter();
+  const feedFilter = new URL(adapter.buildSearchUrl('segment anything')).searchParams.get('filter');
+  assert.equal(feedFilter, 'default.search:segment anything,type:article|conference-paper');
+  assert.doesNotMatch(feedFilter, /proceedings-article/);
+
+  const searchFilter = new URL(adapter.buildSearchUrl('segment anything', 1, { types: OPENALEX_SEARCH_TYPES }))
+    .searchParams.get('filter');
+  assert.equal(searchFilter, 'default.search:segment anything,type:article|conference-paper|preprint|review');
+});
+
+test('a conference paper maps to the conference source type', () => {
+  const paper = new OpenAlexAdapter().mapToStandard({
+    id: 'https://openalex.org/W4390874575',
+    title: 'Segment Anything',
+    type: 'conference-paper',
+    cited_by_count: 10567,
+    authorships: [],
+  });
+  assert.equal(paper.sourceType, 'conference');
+  assert.equal(paper.publicationStatus, 'published');
 });
 
 // The guard against drift: a work stripped to the selected fields must map to

@@ -7,8 +7,7 @@ import {
   searchLocalTopics,
 } from '../services/openAlexService';
 import { searchProjects } from '../services/openAireService';
-import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter';
-import { PaperBuilder } from '../services/PaperBuilder';
+import { searchPapersAcrossSources } from '../services/paperSearchService';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useAnalyticsConsent } from '../context/AnalyticsContext';
@@ -46,7 +45,6 @@ import {
  * three, for this file and for the page that did it first.
  */
 
-const paperSearchAdapter = new OpenAlexAdapter();
 const SEARCH_DEBOUNCE_MS = 320;
 const SEARCH_TIMEOUT_MS = 6_000;
 const SEARCH_MIN_LOADING_MS = 180;
@@ -147,9 +145,10 @@ export function useEntitySearch({ usersRequested = false } = {}) {
     const track = (section, promise) => promise.then(outcome => ({ ...outcome, section }));
 
     const tasks = [
+      // OpenAlex and arXiv, merged and ranked by title match
+      // (paperSearchService.js), the same call the page makes.
       track('papers', settleSearch(
-        paperSearchAdapter.search(searchTerm, 1, { signal: requestController.signal })
-          .then(result => PaperBuilder.deduplicate(result.papers || []).slice(0, 10)),
+        searchPapersAcrossSources(searchTerm, { signal: requestController.signal }),
       )),
       track('authors', settleSearch(
         searchAuthors(searchTerm, {

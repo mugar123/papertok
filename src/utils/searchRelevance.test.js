@@ -17,7 +17,9 @@ import {
   getSearchSectionOrder,
   institutionProminenceWeight,
   isOrganisationAuthorRecord,
+  rankPaperSearchResults,
   resolvePreferredSearchSection,
+  scorePaperSearchMatch,
   scoreSearchMatch,
 } from './searchRelevance.js';
 
@@ -493,4 +495,112 @@ test('the section values drop the holes the sources leave', () => {
   assert.deepEqual(values.topics, ['Cosmology']);
   assert.deepEqual(values.projects, ['A funded thing']);
   assert.deepEqual(values.users, ['nick']);
+});
+
+// --- paper ranking: the title a reader typed goes first ----------------------
+
+test('a paper whose title is the query outranks the derivative papers that quote it', () => {
+  // The order OpenAlex sent for "segment anything" once conference papers are
+  // allowed back in, with the original deliberately placed last so the sort,
+  // not the provider, has to lift it.
+  const ranked = rankPaperSearchResults('segment anything', [
+    { title: 'Segment anything in medical images', abstract: 'We adapt the Segment Anything Model...' },
+    { title: 'Segment anything model for medical image analysis: An experimental study' },
+    { title: 'The Segment Anything Model (SAM) for remote sensing applications' },
+    { title: 'RingMo-SAM: A Foundation Model for Segment Anything in Multimodal Remote-Sensing' },
+    { title: 'Segment Anything' },
+  ]).map(paper => paper.title);
+  assert.equal(ranked[0], 'Segment Anything');
+  // Prefix matches keep their place above the phrase-somewhere matches, and
+  // the provider's order still decides between equals.
+  assert.deepEqual(ranked.slice(1, 3), [
+    'Segment anything in medical images',
+    'Segment anything model for medical image analysis: An experimental study',
+  ]);
+});
+
+test('a title that starts with the query beats one that merely contains it', () => {
+  const ranked = rankPaperSearchResults('llama 2', [
+    { title: 'Systematic analysis of ChatGPT, Google search and Llama 2 for clinical decision support' },
+    { title: 'Nanobodies from camelid mice and llamas neutralize SARS-CoV-2 variants' },
+    { title: 'LLaMA-VID: An Image is Worth 2 Tokens in Large Language Models' },
+    { title: 'Llama 2: Open Foundation and Fine-Tuned Chat Models' },
+  ]).map(paper => paper.title);
+  assert.equal(ranked[0], 'Llama 2: Open Foundation and Fine-Tuned Chat Models');
+  assert.equal(ranked[1], 'Systematic analysis of ChatGPT, Google search and Llama 2 for clinical decision support');
+  // Both query tokens as words, but not the phrase: below the phrase matches.
+  assert.equal(ranked[2], 'LLaMA-VID: An Image is Worth 2 Tokens in Large Language Models');
+  // "llamas" is not "llama" and "cov 2" only lends the digit: last.
+  assert.equal(ranked[3], 'Nanobodies from camelid mice and llamas neutralize SARS-CoV-2 variants');
+});
+
+test('hyphens, case and the digit are not what decides a title match', () => {
+  const title = 'Llama 2: Open Foundation and Fine-Tuned Chat Models';
+  const prefix = scorePaperSearchMatch('llama 2', { title });
+  assert.ok(prefix >= 94 && prefix < 100, `a prefix match, got ${prefix}`);
+  assert.equal(scorePaperSearchMatch('Llama-2', { title }), prefix);
+  assert.equal(scorePaperSearchMatch('LLAMA 2', { title }), prefix);
+  assert.equal(scorePaperSearchMatch('llama-2 open foundation and fine tuned chat models', { title }), 100);
+  const steering = scorePaperSearchMatch('Steering Llama-2', { title: 'Steering Llama 2 via Contrastive Activation Addition' });
+  assert.ok(steering >= 94 && steering < 100, `a prefix match, got ${steering}`);
+});
+
+test('of two titles that start with the query, the one the query covers more is nearer', () => {
+  // The live order on 2026-09-22: OpenAlex sent the preprints.org note first
+  // and arXiv the Llama 2 paper last, and both start with "Llama 2".
+  const adopters = { title: "Llama 2: Early Adopters' Utilization of Meta's New Open-Source Pretrained Model" };
+  const llama2 = { title: 'Llama 2: Open Foundation and Fine-Tuned Chat Models' };
+  assert.ok(scorePaperSearchMatch('llama 2', llama2) > scorePaperSearchMatch('llama 2', adopters));
+  assert.deepEqual(rankPaperSearchResults('llama 2', [adopters, llama2]), [llama2, adopters]);
+  // Never enough to climb a tier: a long exact-prefix title still beats a
+  // short title that only contains the phrase, and nothing reaches 100.
+  const contains = { title: 'Steering Llama 2' };
+  assert.ok(scorePaperSearchMatch('llama 2', adopters) > scorePaperSearchMatch('llama 2', contains));
+  assert.ok(scorePaperSearchMatch('llama 2', { title: 'Llama 2 X' }) < 100);
+  assert.ok(scorePaperSearchMatch('llama 2', { title: 'X Llama 2' }) < 94);
+});
+
+test('a paper known by an acronym its title never uses is found through the abstract', () => {
+  const fcClip = {
+    title: 'Convolutions Die Hard: Open-Vocabulary Segmentation with Single Frozen Convolutional CLIP',
+    abstract: 'We propose FC-CLIP, a single-stage framework built on a shared frozen convolutional CLIP backbone.',
+  };
+  const textToClip = { title: 'Multilevel Language and Vision Integration for Text-to-Clip Retrieval', abstract: 'Text-to-clip retrieval.' };
+  const unrelated = { title: 'Respiratory sinus arrhythmia in humans', abstract: 'Breathing modulates heart rate.' };
+
+  assert.equal(scorePaperSearchMatch('FC-CLIP', fcClip), 60);
+  assert.equal(scorePaperSearchMatch('fc clip', fcClip), 60);
+  // One of two query words in the title, no phrase anywhere.
+  assert.equal(scorePaperSearchMatch('FC-CLIP', textToClip), 35);
+  assert.equal(scorePaperSearchMatch('FC-CLIP', unrelated), 0);
+
+  const ranked = rankPaperSearchResults('FC-CLIP', [unrelated, textToClip, fcClip]);
+  assert.equal(ranked[0], fcClip);
+});
+
+test('the near-exact title ranks first even when the provider sent it last', () => {
+  const exact = { title: 'Convolutions Die Hard: Open-Vocabulary Segmentation with Single Frozen Convolutional CLIP' };
+  const ranked = rankPaperSearchResults(
+    'Convolutions Die Hard: Open-Vocabulary Segmentation with Single Frozen Convolutional CLIP',
+    [
+      { title: 'Towards Open Vocabulary Learning: A Survey' },
+      { title: 'Open-Vocabulary Camouflaged Object Segmentation with Cascaded Vision Language Models' },
+      exact,
+    ],
+  );
+  assert.equal(ranked[0], exact);
+  assert.equal(scorePaperSearchMatch('convolutions die hard open vocabulary segmentation with single frozen convolutional clip', exact), 100);
+});
+
+test('phrase matches are whole words: "sam" is not inside "samples"', () => {
+  assert.equal(scorePaperSearchMatch('sam', { title: 'Sampling strategies for samples', abstract: 'Many samples.' }), 0);
+  const contains = scorePaperSearchMatch('sam', { title: 'Medical SAM adapter' });
+  assert.ok(contains >= 88 && contains < 94, `a phrase-inside match, got ${contains}`);
+});
+
+test('the paper ranking drops nothing and survives holes', () => {
+  const papers = [{ title: null }, {}, { title: 'Segment Anything', abstract: undefined }];
+  assert.equal(rankPaperSearchResults('segment anything', papers).length, 3);
+  assert.deepEqual(rankPaperSearchResults('', papers), papers);
+  assert.equal(scorePaperSearchMatch('anything', null), 0);
 });

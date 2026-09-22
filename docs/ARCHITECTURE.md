@@ -24,7 +24,13 @@ flowchart LR
 - `/`: personalized For You feed
 - `/research`: scientific report and trends
 - `/following`: ranked feed from followed entities
-- `/search`: cross-entity search
+- `/search`: cross-entity search. The papers section (`services/paperSearchService.js`, shared
+  by the page and the palette) asks OpenAlex (`type:article|conference-paper|preprint|review`)
+  and arXiv (`all:"<query>"`) together, merges through `PaperBuilder.deduplicate`, and ranks by
+  title match (`utils/searchRelevance.js`, `rankPaperSearchResults`) before the ten-result slice.
+  arXiv is needed, not decorative: OpenAlex's record for arXiv 2307.09288 carries the wrong
+  title, so "llama 2" can only be answered from arXiv. `scripts/diagnostics/search-coverage-check.mjs`
+  runs the three searches that motivated this against the live Worker.
 - `/lists`: personal reading library
 - `/settings`: account and recommendation preferences
 - `/explorer/:type/:id`: authors, institutions, projects, topics, and concepts
