@@ -143,7 +143,17 @@ function AppContent() {
   // played once. The lazy chunk still waits for the first open, which is
   // what the conditional mount was for; a closed palette costs one idle hook.
   const [searchMounted, setSearchMounted] = useState(false)
+  // Whoever opened the palette gets the focus back when it closes. The
+  // palette has no Base UI Trigger — the navbar's two buttons and the `/`
+  // shortcut all call this — so the dialog has nothing to return focus to on
+  // its own; measured 2026-09-22, Escape left the focus on `body`. A ref,
+  // read at close time, so a button that re-rendered meanwhile still counts.
+  const searchOpenerRef = useRef(null)
   const openSearch = useCallback(() => {
+    searchOpenerRef.current = document.activeElement instanceof HTMLElement
+      && document.activeElement !== document.body
+      ? document.activeElement
+      : null
     setSearchMounted(true)
     setSearchOpen(true)
   }, [])
@@ -556,7 +566,7 @@ function AppContent() {
 
       {user && searchMounted && (
         <Suspense fallback={null}>
-          <SearchCommand open={searchOpen} onOpenChange={setSearchOpen} />
+          <SearchCommand open={searchOpen} onOpenChange={setSearchOpen} finalFocus={searchOpenerRef} />
         </Suspense>
       )}
 

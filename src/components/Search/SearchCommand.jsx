@@ -20,6 +20,8 @@ import {
   CommandItem,
   CommandList,
 } from '../ui/command.jsx';
+import { DialogClose } from '../ui/dialog.jsx';
+import { Button } from '../ui/button.jsx';
 import { useEntitySearch } from '../../hooks/useEntitySearch.js';
 import { useFollowing } from '../../context/FollowingContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -54,6 +56,7 @@ const COPY = {
     following: 'Siguiendo',
     citations: 'citas',
     works: 'trabajos',
+    cancel: 'Cancelar',
   },
   en: {
     placeholder: 'Search papers, people, authors, topics, institutions...',
@@ -74,6 +77,7 @@ const COPY = {
     following: 'Following',
     citations: 'citations',
     works: 'works',
+    cancel: 'Cancel',
   },
 };
 
@@ -128,7 +132,7 @@ function initialOf(name, handle) {
  * same grouping and destinations; what changes is that searching no longer
  * costs you your place in the feed.
  */
-export default function SearchCommand({ open, onOpenChange }) {
+export default function SearchCommand({ open, onOpenChange, finalFocus }) {
   const navigate = useNavigate();
   // Whether the palette is closing because a row was picked. Picking is not
   // dismissing: the reader is being answered, not getting out of the way, so
@@ -414,7 +418,7 @@ export default function SearchCommand({ open, onOpenChange }) {
   });
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange} title={copy.placeholder} className={`sc-sheet${leavingBySelect ? ' sc-sheet--select' : ''}`} overlayClassName={`sc-scrim${leavingBySelect ? ' sc-scrim--select' : ''}`}>
+    <CommandDialog open={open} onOpenChange={onOpenChange} finalFocus={finalFocus} title={copy.placeholder} className={`sc-sheet${leavingBySelect ? ' sc-sheet--select' : ''}`} overlayClassName={`sc-scrim${leavingBySelect ? ' sc-scrim--select' : ''}`}>
       {/* The field leads the entrance rather than sitting it out.
           Everything in the list below already rose into place while the one
           element the palette exists for — the field you are about to type in —
@@ -429,7 +433,27 @@ export default function SearchCommand({ open, onOpenChange }) {
         autoFocus
         wrapperClassName="sc-enter"
         wrapperStyle={{ '--sc-enter-index': 0 }}
-      />
+      >
+        {/* The way out on a phone. There the sheet is the whole screen
+            (SearchCommand.css): no scrim to tap and no Escape key, so without
+            this the only exit is Back. A `DialogClose`, so Base UI closes and
+            restores focus exactly as it does for the other two. Hidden on
+            wider viewports, where the scrim and Escape already do the job
+            and the row belongs to the field alone. */}
+        <DialogClose
+          render={<Button variant="ghost" size="sm" className="sc-cancel" />}
+          // cmdk listens for Enter on the whole palette and answers it by
+          // picking the highlighted row, so Enter on this button — Tab from
+          // the field, then Enter — used to select "Cosmology" instead of
+          // cancelling. The button still gets its native activation; only the
+          // palette stops hearing the key.
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') event.stopPropagation();
+          }}
+        >
+          {copy.cancel}
+        </DialogClose>
+      </CommandInput>
 
       <CommandList>
         {/* The suggestions ride the same cascade the results do.
