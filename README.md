@@ -272,27 +272,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, verification and security guid
 
 PaperTok is a personal open-source project, and some people have chosen to support it with their own money. Thank you.
 
+<!-- donors:start -->
 <p align="center">
-  <a href="https://github.com/ConvenIA-RLT-bot">
-    <img src="https://github.com/ConvenIA-RLT-bot.png?size=88" width="88" alt="ConvenIA-RLT-bot">
-  </a>
-  &nbsp;&nbsp;
-  <a href="https://github.com/XMihura">
-    <img src="https://github.com/XMihura.png?size=88" width="88" alt="XMihura">
-  </a>
-  &nbsp;&nbsp;
-  <a href="https://github.com/felipebasurto">
-    <img src="https://github.com/felipebasurto.png?size=88" width="88" alt="felipebasurto">
-  </a>
+  <a href="https://github.com/ConvenIA-RLT-bot" title="ConvenIA-RLT-bot"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/donors/convenia-rlt-bot-dark.svg"><img src="docs/assets/donors/convenia-rlt-bot-light.svg" width="146" height="96" alt="ConvenIA-RLT-bot"></picture></a>
+  <a href="https://github.com/XMihura" title="XMihura"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/donors/xmihura-dark.svg"><img src="docs/assets/donors/xmihura-light.svg" width="146" height="96" alt="XMihura"></picture></a>
+  <a href="https://github.com/felipebasurto" title="felipebasurto"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/donors/felipebasurto-dark.svg"><img src="docs/assets/donors/felipebasurto-light.svg" width="146" height="96" alt="felipebasurto"></picture></a>
+  <a href="https://github.com/sponsors/mugar123" title="Support PaperTok on GitHub Sponsors"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/donors/become-a-donor-dark.svg"><img src="docs/assets/donors/become-a-donor-light.svg" width="146" height="96" alt="Become a donor on GitHub Sponsors"></picture></a>
 </p>
-
-<p align="center">
-  <a href="https://github.com/ConvenIA-RLT-bot"><strong>@ConvenIA-RLT-bot</strong></a>
-  &nbsp;·&nbsp;
-  <a href="https://github.com/XMihura"><strong>@XMihura</strong></a>
-  &nbsp;·&nbsp;
-  <a href="https://github.com/felipebasurto"><strong>@felipebasurto</strong></a>
-</p>
+<!-- donors:end -->
 
 ## Acknowledgements
 
