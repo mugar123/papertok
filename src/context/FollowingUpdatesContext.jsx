@@ -14,6 +14,11 @@ import {
 } from '../utils/followingUpdates';
 
 const CACHE_TTL_MS = 15 * 60 * 1000;
+// How long a seen mark waits before it is written to storage and Firestore.
+// Longer than any snap plus the settle the card takes after it, so the write
+// lands on a still feed; short enough that a reader leaving the page a
+// moment later still finds the write done (and pagehide flushes anyway).
+const SEEN_PERSIST_DELAY_MS = 1500;
 const requestsInFlight = new Map();
 
 function readLocalState(userId) {
@@ -211,19 +216,52 @@ export function FollowingUpdatesProvider({ children }) {
     }
   }, [userId]);
 
+  // The persisted write, off the scroll path. `persistSeenIds` re-reads and
+  // re-serialises the whole local state — the items with their abstracts
+  // included — and it used to run in the same task as the card leaving the
+  // screen, which is the middle of the snap to the next one. It now waits
+  // for the reader to be still (SEEN_PERSIST_DELAY_MS) and always writes the
+  // freshest set, so a fling across several cards is one write, taken after
+  // the feed has come to rest. A tab hidden or closed inside that window
+  // flushes first, the way FeedContext flushes its own debounced writes.
+  const pendingSeenPersistRef = useRef(null);
+  const flushSeenPersist = useCallback(() => {
+    const pending = pendingSeenPersistRef.current;
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    pendingSeenPersistRef.current = null;
+    void persistSeenIds([...seenIdsRef.current]);
+  }, [persistSeenIds]);
+  const scheduleSeenPersist = useCallback(() => {
+    if (pendingSeenPersistRef.current) return;
+    pendingSeenPersistRef.current = { timer: setTimeout(flushSeenPersist, SEEN_PERSIST_DELAY_MS) };
+  }, [flushSeenPersist]);
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') flushSeenPersist();
+    };
+    window.addEventListener('pagehide', flushSeenPersist);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('pagehide', flushSeenPersist);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      flushSeenPersist();
+    };
+  }, [flushSeenPersist]);
+
   // A fast scroll or a fling across several cards calls this once per card,
   // and each call used to run its own JSON parse-plus-stringify of the whole
   // seen list through `persistSeenIds`. Accumulating in this ref and flushing
   // once per microtask coalesces however many cards were marked in the same
-  // tick into a single read-modify-write — the state update and the persisted
-  // write both still happen, just once for the batch instead of once per
-  // card. Nothing reads `seenIds` synchronously right after calling this: the
+  // tick into a single state update; the persisted write is scheduled from
+  // here and taken later, once the feed is still (`scheduleSeenPersist`).
+  // Nothing reads `seenIds` synchronously right after calling this: the
   // one place that keys off it (the ranking effect in FollowingFeedPage) only
   // recomputes when `items` itself changes, by design, so the microtask delay
   // is invisible to it.
   //
   // The merge reads `seenIdsRef.current` rather than going through
-  // `setSeenIds`'s functional-updater form, and `persistSeenIds` is called
+  // `setSeenIds`'s functional-updater form, and the persist is scheduled
   // here, outside any updater. A functional updater is not a safe place for
   // this: React Router v7 navigations run inside `startTransition`
   // (App.jsx) under a `<Suspense>` boundary, so a transition render that
@@ -240,10 +278,22 @@ export function FollowingUpdatesProvider({ children }) {
   // an effect, so it is never stale when this microtask reads it, and
   // reading it here doesn't re-run on a discarded/rebased render the way an
   // updater body would.
+  //
+  // The early return reads the ref too, not `seenIds` state, and that is
+  // what keeps this callback's identity stable across a session. With
+  // `seenIds` in the dependency list, every card marked seen minted a new
+  // `markSeen`; FollowingFeedPage folds it into the `source` it hands
+  // FeedContainer, whose per-card callbacks derive from `source`, so every
+  // mounted PaperCard lost its memo and re-rendered — and re-subscribed its
+  // IntersectionObserver — on the very frame the outgoing card crossed the
+  // half-way mark. Measured 2026-09-22 (production bundle, 23 cards, 4x CPU
+  // throttle): two full-feed renders per swipe, 100-135 ms each, inside the
+  // snap animation. The state update below still happens, once per batch;
+  // what no longer happens is the function changing under its consumers.
   const pendingSeenRef = useRef(null);
   const markSeen = useCallback((paper) => {
     const key = typeof paper === 'string' ? paper : getFollowingUpdatePaperKey(paper);
-    if (!key || seenIds.has(key)) return;
+    if (!key || seenIdsRef.current.has(key)) return;
     if (!pendingSeenRef.current) {
       pendingSeenRef.current = new Set();
       queueMicrotask(() => {
@@ -260,11 +310,11 @@ export function FollowingUpdatesProvider({ children }) {
         if (!changed) return;
         seenIdsRef.current = next;
         setSeenIds(next);
-        persistSeenIds([...next]);
+        scheduleSeenPersist();
       });
     }
     pendingSeenRef.current.add(key);
-  }, [persistSeenIds, seenIds]);
+  }, [scheduleSeenPersist]);
 
   const value = useMemo(() => ({
     items,
