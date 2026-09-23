@@ -909,9 +909,17 @@ a.pc-citations {
   color: var(--area-accent, var(--text-secondary));
   background: color-mix(in srgb, var(--area-accent, #888) 10%, var(--bg-card));
   border: 1px solid color-mix(in srgb, var(--area-accent, #888) 24%, var(--bg-card));
-  margin-left: calc(var(--i, 0) * -7px);
   position: relative;
   z-index: calc(3 - var(--i, 0));
+}
+
+/* The same 7px tuck under the one before, for every avatar after the first.
+   A flex margin is relative to the previous sibling, so the old
+   `index × -7px` compounded: the third tucked 14px of its 24 under the
+   second, which paints above it, and its initial vanished (measured
+   2026-09-23: 10px of it left showing). */
+.pc-author-avatar + .pc-author-avatar {
+  margin-left: -7px;
 }
 
 .pc-author-names {
@@ -2870,6 +2878,33 @@ a.pc-citations {
     display: inline;
   }
 
+  /* On a phone the word is the Read button, and the document glyph goes: it
+     said the same thing twice, it was the part that could not tell reading
+     here from leaving for the source, and the row cannot fit both at 360px. */
+  .pc-action-read > svg:not(.spinning) {
+    display: none;
+  }
+
+  .pc-action-primary > button {
+    padding-inline: 12px;
+  }
+
+  /* Looking up access keeps the button's width: the spinner takes the word's
+     place instead of a wider word pushing the row onto two lines. */
+  .pc-action-read.is-resolving {
+    position: relative;
+  }
+
+  .pc-action-read.is-resolving .pc-action-label--short {
+    visibility: hidden;
+  }
+
+  .pc-action-read.is-resolving > .spinning {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+  }
+
   .pc-linked-resources {
     align-items: flex-start;
     flex-direction: column;
@@ -2896,6 +2931,22 @@ a.pc-citations {
 
   .pc-action-utilities {
     padding-left: var(--space-3);
+  }
+}
+
+/* The narrowest phones: "Fuente" and "Source" (the widest resting words) fit
+   one row at 360px only with these few pixels back from the padding and gaps. */
+@media (max-width: 380px) {
+  .pc-action-bar {
+    gap: var(--space-2);
+  }
+
+  .pc-action-primary > button {
+    padding-inline: 10px;
+  }
+
+  .pc-action-utilities {
+    padding-left: var(--space-2);
   }
 }
 

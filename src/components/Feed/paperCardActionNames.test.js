@@ -47,7 +47,8 @@ const idiomas = (expresion) => {
 
 test('SOURCE: el botón principal se llama como su rótulo, que en móvil no se ve', async () => {
   const card = stripComments(await read('./PaperCard.jsx'));
-  const boton = bloque(card, '<Button onClick={handleOpenPaper}');
+  const boton = bloque(card, 'className={`pc-action-read');
+  assert.match(boton, /onClick=\{handleOpenPaper\}/, 'el ancla ya no cae en el botón que abre el paper');
 
   assert.match(
     boton,
@@ -74,6 +75,39 @@ test('SOURCE: el botón principal se llama como su rótulo, que en móvil no se 
     + 'misma expresión. En cuanto se separan pueden decir cosas distintas, y en '
     + 'escritorio —donde el rótulo se ve— eso es un fallo de 2.5.3: el nombre tiene '
     + 'que CONTENER lo que se lee.',
+  );
+});
+
+/**
+ * En móvil el botón principal enseña una palabra (23-09-2026): era la única
+ * acción de la barra sin rótulo, y el mismo icono servía para leer aquí y para
+ * salir a la fuente. El 2.5.3 exige que el nombre contenga esa palabra, y se
+ * cumple por construcción: la palabra es la primera del rótulo en reposo, que
+ * es el nombre salvo mientras se busca acceso — y entonces la palabra se
+ * esconde bajo el spinner, porque «Leer» no está en «Buscando acceso...».
+ */
+test('SOURCE: la palabra que el botón principal enseña en móvil está en su nombre', async () => {
+  const card = stripComments(await read('./PaperCard.jsx'));
+  const boton = bloque(card, 'className={`pc-action-read');
+  assert.match(
+    boton,
+    /<span className="pc-action-label--short">\{primaryActionShortLabel\}<\/span>/,
+    'el botón principal dejó de dibujar su rótulo corto en móvil',
+  );
+  assert.match(
+    card,
+    /const primaryActionLabel = isResolvingAccess\s*\?\s*\(isEnglish \? '[^']*' : '[^']*'\)\s*:\s*restingActionLabel;\s*const primaryActionShortLabel = restingActionLabel\.split\(' '\)\[0\];/,
+    'la palabra corta ya no es la primera del rótulo en reposo, así que el nombre '
+    + 'accesible puede dejar de contenerla (2.5.3)',
+  );
+
+  const css = stripComments(await read('./PaperCard.css'));
+  const movil = css.slice(css.indexOf('@media (max-width: 640px)'), css.indexOf('@media (max-width: 420px)'));
+  assert.match(
+    movil,
+    /\.pc-action-read\.is-resolving \.pc-action-label--short \{\s*visibility: hidden;\s*\}/,
+    'mientras se busca acceso la palabra en reposo queda a la vista, y el nombre '
+    + '(«Buscando acceso...») ya no la contiene',
   );
 });
 

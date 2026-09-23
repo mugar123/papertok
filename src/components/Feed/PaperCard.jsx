@@ -1218,15 +1218,23 @@ const PaperCard = memo(function PaperCard({
       console.error('Could not copy paper link', error);
     }
   };
+  const restingActionLabel = resolvedOpenCopy
+    ? (isEnglish ? 'Read open version' : 'Leer versión abierta')
+    : paper.openAccessPdfUrl
+      ? (isEnglish ? 'Read full text' : 'Leer texto completo')
+      : (!paper.pdfUrl && !paper.arxivId)
+        ? (isEnglish ? 'Source' : 'Fuente')
+        : (isEnglish ? 'Read article' : 'Leer artículo');
   const primaryActionLabel = isResolvingAccess
     ? (isEnglish ? 'Finding access...' : 'Buscando acceso...')
-    : resolvedOpenCopy
-      ? (isEnglish ? 'Read open version' : 'Leer versión abierta')
-      : paper.openAccessPdfUrl
-        ? (isEnglish ? 'Read full text' : 'Leer texto completo')
-        : (!paper.pdfUrl && !paper.arxivId)
-          ? (isEnglish ? 'Source' : 'Fuente')
-          : (isEnglish ? 'Read article' : 'Leer artículo');
+    : restingActionLabel;
+  // What the phone shows, where the full label does not fit: its first word
+  // ("Leer", "Fuente"). Derived rather than written twice, so it cannot drift
+  // from the full label, which is the accessible name and so always contains
+  // the word on screen (WCAG 2.5.3). While access is being looked up the word
+  // is hidden under the spinner (PaperCard.css), so the resting one keeps the
+  // button's width: "Buscando" would not fit the row at 360px.
+  const primaryActionShortLabel = restingActionLabel.split(' ')[0];
   return (
     <div ref={cardRef} className={`pc ${isCardVisible ? 'pc--visible' : ''}`} onClick={handleDoubleTap}>
       {/* DEBUG PANEL */}
@@ -1554,7 +1562,9 @@ const PaperCard = memo(function PaperCard({
             }
           }}
         >
-          <div className="pc-author-avatars">
+          {/* Initials of the names printed right beside them: decoration. Read
+              aloud they were three loose letters before every author list. */}
+          <div className="pc-author-avatars" aria-hidden="true">
             {(paper.authors || []).slice(0, 3).map((author, i) => (
               <div key={i} className="pc-author-avatar" style={{ '--i': i }}>
                 {(author.name || author).charAt(0).toUpperCase()}
@@ -1795,10 +1805,19 @@ const PaperCard = memo(function PaperCard({
                 literalmente es también lo que pide el criterio 2.5.3 en
                 escritorio, donde el rótulo sí se lee: el nombre accesible tiene
                 que CONTENER lo que se ve, o quien maneja la interfaz por voz no
-                puede pulsarlo diciendo lo que lee. */}
-            <Button onClick={handleOpenPaper} disabled={isResolvingAccess} aria-label={primaryActionLabel}>
+                puede pulsarlo diciendo lo que lee. En móvil se ve la primera
+                palabra (`--short`), que el nombre contiene por construcción: la
+                acción principal era la única de la barra sin rótulo, y el mismo
+                icono servía para leer aquí y para salir a la fuente. */}
+            <Button
+              className={`pc-action-read${isResolvingAccess ? ' is-resolving' : ''}`}
+              onClick={handleOpenPaper}
+              disabled={isResolvingAccess}
+              aria-label={primaryActionLabel}
+            >
               {isResolvingAccess ? <Loader2 className="spinning" size={16} /> : <FileText size={16} />}
               <span className="pc-action-label">{primaryActionLabel}</span>
+              <span className="pc-action-label--short">{primaryActionShortLabel}</span>
             </Button>
 
             {canRequestRewrite && (
