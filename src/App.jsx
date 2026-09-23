@@ -6,6 +6,7 @@ import { PageTransitionCustomProvider, usePageTransitionCustom } from './hooks/u
 import { useOverlayHistory } from './hooks/useOverlayHistory.js'
 import { safeExternalUrl } from './utils/externalUrl.js'
 import { INITIAL_ACCOUNT_SCOPE, accountScopeKey, nextAccountScope } from './utils/accountScope.js'
+import { clearAuthReturn, isInAppPath, offerAuthReturn, takeAuthReturn } from './utils/authReturn.js'
 import RouteFallback from './components/Layout/RouteFallback'
 import RouteAnnouncer from './components/Layout/RouteAnnouncer'
 import { AuthProvider, useAuth } from './context/AuthContext'
@@ -61,16 +62,6 @@ const PublicListPage = lazyWithPreload(() => import('./components/Lists/PublicLi
 const PublicProfilePage = lazyWithPreload(() => import('./components/Public/PublicProfilePage'))
 const ProfilePage = lazyWithPreload(() => import('./components/Profile/ProfilePage'))
 const SearchCommand = lazyWithPreload(() => import('./components/Search/SearchCommand'))
-
-// Only an in-app absolute path is honoured as a destination: `//evil.com` is
-// a protocol-relative URL the browser would follow off-site, and bouncing
-// back to /login or /onboarding would loop.
-function isInAppPath(path) {
-  return typeof path === 'string'
-    && path.startsWith('/')
-    && !path.startsWith('//')
-    && !['/login', '/onboarding'].includes(path.split('?')[0])
-}
 
 // The standalone routes a guest can reach without a session — `/feed` is
 // also guest-reachable but excluded on purpose, since it handles onboarding
@@ -184,40 +175,40 @@ function AppContent() {
     && onboardingComplete
     && !profileLoadError
 
+  // A door opened from the page itself (Save, Like, the header's Sign in)
+  // means "stay here": it drops any trip an earlier bounce left waiting.
   const requestAuthentication = useCallback(() => {
+    clearAuthReturn()
     setAuthPromptOpen(true)
   }, [])
 
   // There is no sign-in page. A guest bounced off a protected route (or an
   // old /login link) lands on the feed with `authRequired` in the location
   // state: the sign-in dialog opens over the feed, and the route they asked
-  // for waits in `pendingReturnToRef` until a session exists. Each arrival is
-  // read once (keyed on the history entry, adjusted during render so the door
-  // is in the same paint as the feed), and the state is then cleared from the
-  // entry so a reload does not reopen it.
+  // for waits in `utils/authReturn.js` until a session exists — outside this
+  // component, because signing in remounts it (see that file). Each arrival
+  // is read once (keyed on the history entry, adjusted during render so the
+  // door is in the same paint as the feed), and the state is then cleared from
+  // the entry so a reload does not reopen it.
   const navigate = useNavigate()
   const authArrivalKey = location.state?.authRequired ? location.key : null
+  const arrivalReturnTo = authArrivalKey ? location.state?.returnTo : undefined
   const [consumedAuthArrival, setConsumedAuthArrival] = useState(null)
-  // `{ to }` rather than the string: two arrivals asking for the same route
-  // are two trips, and the ref below tells them apart by identity.
-  const [pendingReturn, setPendingReturn] = useState(null)
   if (authArrivalKey && authArrivalKey !== consumedAuthArrival) {
     setConsumedAuthArrival(authArrivalKey)
     if (!user) setAuthPromptOpen(true)
-    const requested = location.state?.returnTo
-    setPendingReturn(isInAppPath(requested) ? { to: requested } : null)
   }
   useEffect(() => {
     if (!authArrivalKey) return
+    offerAuthReturn(arrivalReturnTo)
     navigate(`${location.pathname}${location.search}`, { replace: true, state: null })
-  }, [authArrivalKey, navigate, location.pathname, location.search])
+  }, [authArrivalKey, arrivalReturnTo, navigate, location.pathname, location.search])
   // Once the session exists, the trip ends where it began — once per trip.
-  const travelledReturnRef = useRef(null)
   useEffect(() => {
-    if (!user || authLoading || !pendingReturn || travelledReturnRef.current === pendingReturn) return
-    travelledReturnRef.current = pendingReturn
-    navigate(pendingReturn.to, { replace: true })
-  }, [user, authLoading, pendingReturn, navigate])
+    if (!user || authLoading) return
+    const destination = takeAuthReturn()
+    if (destination) navigate(destination, { replace: true })
+  }, [user, authLoading, navigate])
 
   // A new account created from a public page's door has nowhere to go: those
   // routes are not behind ProtectedRoute, so nothing asked it to choose its

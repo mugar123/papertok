@@ -1,5 +1,7 @@
+import { useMemo, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { peekAuthReturn } from '../../utils/authReturn.js';
 import { useLanguage } from '../../context/LanguageContext';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import AnimatedAtom from '../Feed/AnimatedAtom';
@@ -14,6 +16,21 @@ export default function ProtectedRoute({ children, requireOnboarding = true }) {
     profileLoadError,
     retryProfileLoad,
   } = useAuth();
+
+  // One `state` object per destination, not per render. `<Navigate>` navigates
+  // again whenever its `state` prop changes, so a fresh literal re-issued the
+  // redirect on every auth update — three times per bounce — and a route
+  // already leaving under AnimatePresence kept sending the new account to the
+  // onboarding "to return to /feed", over the destination it had just reached.
+  const requestedPath = `${location.pathname}${location.search}`;
+  const signInState = useMemo(() => ({ authRequired: true, returnTo: requestedPath }), [requestedPath]);
+  // A new account signing in from a bounce reaches the onboarding from the
+  // feed it was bounced to, so "return to this route" would mean the feed. The
+  // destination the sign-in is carrying wins, read once at mount: taking it
+  // later would change the state and re-issue the redirect.
+  const [carriedDestination] = useState(peekAuthReturn);
+  const onboardingReturnTo = carriedDestination ?? requestedPath;
+  const onboardingState = useMemo(() => ({ returnTo: onboardingReturnTo }), [onboardingReturnTo]);
 
   if (loading) {
     // The feed route brings its own wait. FeedContainer lays an atom veil over
@@ -79,7 +96,7 @@ export default function ProtectedRoute({ children, requireOnboarding = true }) {
     // dialog open (App.jsx reads `authRequired`). The route they asked for
     // travels with them, and App sends them there once a session exists,
     // instead of dropping everyone on the feed.
-    return <Navigate to="/feed" replace state={{ authRequired: true, returnTo: `${location.pathname}${location.search}` }} />;
+    return <Navigate to="/feed" replace state={signInState} />;
   }
 
   if (profileLoadError) {
@@ -140,7 +157,7 @@ export default function ProtectedRoute({ children, requireOnboarding = true }) {
   }
 
   if (requireOnboarding && !onboardingComplete) {
-    return <Navigate to="/onboarding" replace state={{ returnTo: `${location.pathname}${location.search}` }} />;
+    return <Navigate to="/onboarding" replace state={onboardingState} />;
   }
 
   return children;

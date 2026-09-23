@@ -14,8 +14,13 @@ test('SOURCE: first-run onboarding asks for a public handle after interests', as
 });
 
 test('SOURCE: there is no sign-in page; a guest off a protected route gets the feed with the door open', async () => {
-  const guard = await readFile(new URL('../Auth/ProtectedRoute.jsx', import.meta.url), 'utf8');
-  assert.match(guard, /<Navigate to="\/feed" replace state=\{\{ authRequired: true, returnTo:/);
+  const guard = (await readFile(new URL('../Auth/ProtectedRoute.jsx', import.meta.url), 'utf8'))
+    .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+  // The state is one object per destination (a literal re-issued the redirect
+  // on every render), and it still carries the full requested path.
+  assert.match(guard, /const requestedPath = `\$\{location\.pathname\}\$\{location\.search\}`;/);
+  assert.match(guard, /const signInState = useMemo\(\(\) => \(\{ authRequired: true, returnTo: requestedPath \}\), \[requestedPath\]\);/);
+  assert.match(guard, /<Navigate to="\/feed" replace state=\{signInState\} \/>/);
   assert.doesNotMatch(guard, /to="\/login"/);
   const app = await readFile(new URL('../../App.jsx', import.meta.url), 'utf8');
   assert.doesNotMatch(app, /LoginPage/);
