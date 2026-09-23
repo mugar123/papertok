@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowRight, BadgeCheck, Bookmark, FolderOpen, Globe2, Heart, Lock, RefreshCw, Rss,
-  Settings2, UserCheck, UserPlus, UserX,
+  Settings2,
 } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -60,7 +60,7 @@ import { getIcon } from '../../utils/icons.js';
 import { normalizeHandle } from '../../utils/userHandle.js';
 import ScientificText from '../ScientificText.js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.jsx';
-import { Toggle } from '../ui/toggle.jsx';
+import { FollowToggle } from '../ui/follow-toggle.jsx';
 import FollowSheet from './FollowSheet.jsx';
 import { prefetchFollowList } from './followListLoad.js';
 import { loadProfileFonts } from '../../utils/loadDisplayFonts.js';
@@ -219,7 +219,8 @@ function PaperRow({ row, index = 0, isEnglish, libraryReady }) {
  * vouch for. Month and year only: the day is noise on a profile.
  */
 function joinedLabel(createdAt, isEnglish) {
-  const millis = createdAt?.toMillis?.()
+  // A Timestamp from the SDK, a Date from a REST read (utils/firestoreRest.js).
+  const millis = createdAt?.toMillis?.() ?? createdAt?.getTime?.()
     ?? (typeof createdAt?.seconds === 'number' ? createdAt.seconds * 1000 : Date.parse(createdAt));
   if (!Number.isFinite(millis)) return '';
   return new Date(millis).toLocaleDateString(isEnglish ? 'en' : 'es', {
@@ -365,7 +366,6 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   const [following, setFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [followError, setFollowError] = useState(false);
-  const [followHover, setFollowHover] = useState(false);
   const [followSheet, setFollowSheet] = useState(null);
   const [promptDismissed, setPromptDismissed] = useState(false);
   // The showcase (F12): the visitor's Listas tab reads `profileLists/{uid}`,
@@ -403,16 +403,17 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     };
 
     if (!selfMode) {
-      // A visitor's read used to be bare: against a listen stream that had
-      // died under the client it never answered, and the page sat on its
-      // skeleton for good. `patientRead` kicks the stream at DEFAULT_STALL_MS
-      // and asks again on the rebuilt one (utils/streamRecovery.js).
-      // `readUserProfileByHandle` already turns a cache-served miss into a
-      // retryable rejection, so a `null` here is the server's own not-found.
-      patientRead(() => readUserProfileByHandle(handle), {
+      // A visitor's read used to ride the SDK's listen stream, and against a
+      // stream that had died under the client it waited for the stall kick:
+      // 4.2 s of skeleton, measured. It is REST now (readUserProfileByHandle),
+      // so there is no stream to kick; a request that cannot get through
+      // rejects as `unavailable`, which `patientRead` retries, and a `null`
+      // is the server's own not-found.
+      patientRead(() => readUserProfileByHandle(handle, { signal: visitorRead.signal }), {
         attempts: 3,
         label: 'public profile',
         signal: visitorRead.signal,
+        onStall: null,
       })
         .then(result => {
           // A visitor's not-found is not cached: the profile could be created
@@ -511,16 +512,18 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     const uid = profile?.uid;
     if (!uid || view.isOwner) return undefined;
     let active = true;
-    readProfileLists(uid)
+    const controller = new AbortController();
+    readProfileLists(uid, { signal: controller.signal })
       .then(cards => {
         const settled = cards ?? [];
         showcaseCache.set(uid, settled);
         if (active) setShowcase(settled);
       })
       .catch(error => {
+        if (!active) return;
         console.warn('The showcase could not be read:', error);
       });
-    return () => { active = false; };
+    return () => { active = false; controller.abort(); };
   }, [profile?.uid, view.isOwner, reloadToken]);
 
   // Owner data. Each effect is gated on `view.isOwner`, which is the privacy
@@ -638,9 +641,6 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     setFollowBusy(true);
     setFollowError(false);
     setFollowing(!wasFollowing);
-    // The label must land on its resting state ("Following", quiet), not on
-    // the hover state ("Unfollow", danger) the pointer happens to be over.
-    setFollowHover(false);
     // The ±1 is written through to the cache as well, so leaving the page and
     // coming back shows the number you just changed rather than the one before.
     const shift = (stats, delta) => (stats
@@ -865,7 +865,6 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     openFollowers: 'See followers',
     openLiked: 'Open your liked papers',
     follow: 'Follow',
-    unfollow: 'Unfollow',
     followingState: 'Following',
     followFailed: 'That did not go through. Try again.',
     pinnedHeading: 'Lists',
@@ -918,7 +917,6 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     openFollowers: 'Ver seguidores',
     openLiked: 'Abrir tus me gusta',
     follow: 'Seguir',
-    unfollow: 'Dejar de seguir',
     followingState: 'Siguiendo',
     followFailed: 'No se pudo completar. Inténtalo de nuevo.',
     pinnedHeading: 'Listas',
@@ -1058,15 +1056,6 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   const savedTruncated = view.isOwner
     && Object.values(personalLibrary).filter(record => record.readLater).length > PROFILE_TAB_ROW_LIMIT;
   const likedTruncated = likesCount > PROFILE_TAB_ROW_LIMIT;
-
-  // While following, hovering (or focusing) the button is the unfollow
-  // affordance — it says so, instead of turning red under an unchanged label.
-  const followButtonLabel = following
-    ? (followHover && !followBusy ? copy.unfollow : copy.followingState)
-    : copy.follow;
-  const FollowButtonIcon = following
-    ? (followHover && !followBusy ? UserX : UserCheck)
-    : UserPlus;
 
   // What the visitor tab paints (F12): the Worker-written showcase merged
   // with any legacy pinned cards still embedded in an unmigrated profile,
@@ -1309,22 +1298,16 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                   </button>
                 </>
               ) : profile && (
-                /* An on/off state, so a `ui/toggle` (`aria-pressed`): pressed
-                   is "following". The label and the colour still cycle with
-                   the hover-to-unfollow intent above. */
-                <Toggle
-                  className={`profile-follow-button${following ? ' profile-follow-button--following' : ''}${following && followHover && !followBusy ? ' is-unfollow-intent' : ''}`}
+                /* The shared Follow control, the one the Explorer uses for
+                   authors, institutions and projects: one look for following
+                   anything. Pressed (`aria-pressed`) is "following". */
+                <FollowToggle
                   pressed={following}
                   onPressedChange={() => { toggleFollow(); }}
-                  onMouseEnter={() => setFollowHover(true)}
-                  onMouseLeave={() => setFollowHover(false)}
-                  onFocus={() => setFollowHover(true)}
-                  onBlur={() => setFollowHover(false)}
                   disabled={followBusy}
-                >
-                  <FollowButtonIcon size={16} />
-                  {followButtonLabel}
-                </Toggle>
+                  followLabel={copy.follow}
+                  followingLabel={copy.followingState}
+                />
               )}
             </div>
             {followError && <p className="profile-follow-error">{copy.followFailed}</p>}

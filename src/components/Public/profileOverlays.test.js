@@ -59,8 +59,9 @@ test('the owner\'s profile sections are ui Tabs and the follow button a Toggle',
   assert.match(jsx, /<TabsContent[\s\S]*?value=\{activeTab\}[\s\S]*?className="profile-panel"/);
   assert.doesNotMatch(jsx, /role="tablist"|role="tab"|role="tabpanel"|aria-selected|layoutId="profile-tab-indicator"|is-active/);
 
-  // Following is an on/off state: `aria-pressed` through the primitive.
-  assert.match(jsx, /<Toggle\s[\s\S]*?pressed=\{following\}/);
+  // Following is an on/off state: `aria-pressed` through the primitive, by
+  // way of the shared Follow control (ui/follow-toggle.jsx is the Toggle).
+  assert.match(jsx, /<FollowToggle\s[\s\S]*?pressed=\{following\}/);
   assert.doesNotMatch(jsx, /aria-pressed=/);
 
   assert.match(css, /\.profile-tab\[data-active\]\s*\{/);

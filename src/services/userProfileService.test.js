@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { InvalidHandleError } from '../utils/userHandle.js';
 import { isTransientReadError } from '../utils/boundedRead.js';
+import { createFirestoreRest } from '../utils/firestoreRest.js';
 import { PUBLIC_LIST_LIMITS } from './publicListPayload.js';
 import {
   HandleUnavailableError,
@@ -372,6 +373,27 @@ test('profile writes require a session and a non-demo project', async () => {
 
 // --- reads -----------------------------------------------------------------
 
+/**
+ * REST documents the way utils/firestoreRest.js hands them back. A missing
+ * path is the server's 404, which that helper turns into `exists: false`.
+ */
+function fakeRestDocuments(documents, { deny = [] } = {}) {
+  const reads = [];
+  return {
+    reads,
+    rest: {
+      async getDocument(path, options = {}) {
+        reads.push({ path, signal: options.signal ?? null });
+        if (deny.includes(path)) {
+          throw Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied', status: 403 });
+        }
+        const data = documents[path];
+        return data ? { exists: true, id: path.split('/').pop(), data } : { exists: false, id: path.split('/').pop(), data: null };
+      },
+    },
+  };
+}
+
 test('a profile visit is one read, and a handle visit is two', async () => {
   const reads = [];
   const documents = {
@@ -390,41 +412,80 @@ test('a profile visit is one read, and a handle visit is two', async () => {
   await readUserProfile('user-1', api);
   assert.equal(reads.length, 1, 'the pinned lists are embedded, so the profile is one read');
 
+  const { reads: restReads, rest } = fakeRestDocuments({
+    'handles/ada': { uid: 'user-1' },
+    'userProfiles/user-1': { handle: 'ada', displayName: 'Ada', pinnedLists: [] },
+  });
+  const controller = new AbortController();
   reads.length = 0;
-  const profile = await readUserProfileByHandle('  @ADA ', api);
-  assert.deepEqual(reads, ['db/handles/ada', 'db/userProfiles/user-1']);
+  const profile = await readUserProfileByHandle('  @ADA ', { signal: controller.signal }, { ...api, rest });
+  assert.deepEqual(restReads, [
+    { path: 'handles/ada', signal: controller.signal },
+    { path: 'userProfiles/user-1', signal: controller.signal },
+  ]);
+  assert.equal(reads.length, 0, 'a handle visit never touches the SDK listen stream');
   assert.equal(profile.uid, 'user-1');
 });
 
-test('a handle the cache merely failed to find is not a free handle: the read asks again', async () => {
-  // The flush behind a stream kick (utils/streamRecovery.js) answers a
-  // pending read from the local cache. For a document the session never
-  // fetched that answer is "does not exist, fromCache" — and painting
-  // "this profile is not available" on it would be the lie the follow sheet
-  // told before it moved to REST.
-  const fromCache = { exists: () => false, id: 'ada', data: () => undefined, metadata: { fromCache: true } };
-  const api = fakeApi({ currentUser: null, getDocument: async () => fromCache }).api;
-  await assert.rejects(readUserProfileByHandle('ada', api), (error) => error.code === 'unavailable' && error.retryable === true);
+test('a handle visit over a dead network asks again instead of saying "not found"', async () => {
+  // The stall this read moved to REST for: against a stream that died under
+  // a live tab, the SDK read sat unanswered until the three-second kick. A
+  // REST request that cannot reach the server rejects, and the rejection has
+  // to be one `patientRead` retries — never a null, which would paint "this
+  // profile is not available" for a profile that is fine.
+  const rest = createFirestoreRest({
+    projectId: 'papertok-test',
+    fetchImpl: async () => { throw new TypeError('Failed to fetch'); },
+  });
+  const api = fakeApi({ currentUser: null }).api;
+  await assert.rejects(readUserProfileByHandle('ada', {}, { ...api, rest }), (error) => {
+    assert.equal(error.code, 'unavailable');
+    assert.equal(isTransientReadError(error), true);
+    return true;
+  });
 
   // The server's own miss is still a miss.
-  const fromServer = { exists: () => false, id: 'ada', data: () => undefined, metadata: { fromCache: false } };
-  const confirmed = fakeApi({ currentUser: null, getDocument: async () => fromServer }).api;
-  assert.equal(await readUserProfileByHandle('ada', confirmed), null);
+  const { rest: empty } = fakeRestDocuments({});
+  assert.equal(await readUserProfileByHandle('ada', {}, { ...api, rest: empty }), null);
+});
+
+test('a private profile reads as a free handle to anyone but its owner', async () => {
+  const documents = {
+    'handles/ada': { uid: 'user-1' },
+    'userProfiles/user-1': { handle: 'ada', displayName: 'Ada', visibility: 'private' },
+  };
+  const deny = ['userProfiles/user-1'];
+
+  // A visitor, signed in or not: the denial is indistinguishable from no handle.
+  const sdkReads = [];
+  const visitor = fakeApi({
+    currentUser: { uid: 'someone-else' },
+    getDocument: async (path) => { sdkReads.push(path); throw new Error('must not be asked'); },
+  }).api;
+  assert.equal(await readUserProfileByHandle('ada', {}, { ...visitor, ...fakeRestDocuments(documents, { deny }) }), null);
+  assert.deepEqual(sdkReads, []);
+
+  // The owner opening their own private profile by its handle: anonymity
+  // cannot read it, the session can.
+  const owner = fakeApi({
+    currentUser: { uid: 'user-1' },
+    getDocument: async (path) => {
+      sdkReads.push(path);
+      return { exists: () => true, id: 'user-1', data: () => documents['userProfiles/user-1'], metadata: { fromCache: false } };
+    },
+  }).api;
+  const profile = await readUserProfileByHandle('ada', {}, { ...owner, ...fakeRestDocuments(documents, { deny }) });
+  assert.deepEqual(sdkReads, ['db/userProfiles/user-1']);
+  assert.equal(profile.uid, 'user-1');
 });
 
 test('a reservation pointing at a profile that moved on resolves to nothing', async () => {
-  const documents = {
-    'db/handles/ada': { uid: 'user-1' },
-    'db/userProfiles/user-1': { handle: 'grace', displayName: 'Grace', pinnedLists: [] },
-  };
-  const api = fakeApi({
-    currentUser: null,
-    getDocument: async (path) => {
-      const data = documents[path];
-      return { exists: () => Boolean(data), id: path.split('/').pop(), data: () => data };
-    },
-  }).api;
-  assert.equal(await readUserProfileByHandle('ada', api), null);
+  const { rest } = fakeRestDocuments({
+    'handles/ada': { uid: 'user-1' },
+    'userProfiles/user-1': { handle: 'grace', displayName: 'Grace', pinnedLists: [] },
+  });
+  const api = fakeApi({ currentUser: null }).api;
+  assert.equal(await readUserProfileByHandle('ada', {}, { ...api, rest }), null);
 });
 
 test('reading a profile never requires a signed-in user', async () => {
@@ -1107,29 +1168,41 @@ test('mergeShowcaseCards: the showcase card wins a duplicate — the Worker keep
 
 test('readProfileLists renders a denial as absence, never as an error', async () => {
   const denied = Object.assign(new Error('denied'), { code: 'permission-denied' });
-  const { api } = fakeApi({ getDocument: async () => { throw denied; } });
-  assert.equal(await readProfileLists('someone', api), null);
+  const { api } = fakeApi({ rest: { getDocument: async () => { throw denied; } } });
+  assert.equal(await readProfileLists('someone', {}, api), null);
 
-  const { api: broken } = fakeApi({ getDocument: async () => { throw new Error('offline'); } });
-  await assert.rejects(() => readProfileLists('someone', broken), /offline/);
+  const { api: broken } = fakeApi({ rest: { getDocument: async () => { throw new Error('offline'); } } });
+  await assert.rejects(() => readProfileLists('someone', {}, broken), /offline/);
 });
 
 test('readProfileLists sanitizes the cards it hands to the renderer', async () => {
+  const reads = [];
   const { api } = fakeApi({
-    getDocument: async () => ({
-      exists: () => true,
-      data: () => ({
-        lists: [
-          { shareId: SHARE_ID, title: 'Buena', paperCount: 3, publishedAt: 2000 },
-          { shareId: 'not-a-share', title: 'Rota', paperCount: 1 },
-        ],
-      }),
-    }),
+    getDocument: async () => { throw new Error('the showcase must not ride the SDK stream'); },
+    rest: {
+      getDocument: async (path) => {
+        reads.push(path);
+        return {
+          exists: true,
+          id: 'someone',
+          data: {
+            lists: [
+              { shareId: SHARE_ID, title: 'Buena', paperCount: 3, publishedAt: new Date(2000) },
+              { shareId: OTHER_SHARE_ID, title: 'Vieja', paperCount: 1, publishedAt: 1000 },
+              { shareId: 'not-a-share', title: 'Rota', paperCount: 1 },
+            ],
+          },
+        };
+      },
+    },
   });
-  const cards = await readProfileLists('someone', api);
-  assert.equal(cards.length, 1);
+  const cards = await readProfileLists('someone', {}, api);
+  assert.deepEqual(reads, ['profileLists/someone']);
+  assert.equal(cards.length, 2);
   assert.equal(cards[0].shareId, SHARE_ID);
+  // REST decodes a timestamp into a Date; the order depends on reading it.
   assert.equal(cards[0].publishedAtMillis, 2000);
+  assert.equal(cards[1].publishedAtMillis, 1000);
 });
 
 test('needsLegacyPinMigration fires on cards or on the retired flag, not on a clean profile', () => {

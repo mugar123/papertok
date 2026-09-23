@@ -11,10 +11,9 @@
  * document fetched with one read, straight from Firestore, with no session and
  * no round trip through the Worker.
  */
-import { doc, getDoc } from 'firebase/firestore';
-import { db, IS_DEMO } from './firebase.js';
+import { IS_DEMO } from './firebase.js';
 import { authenticatedWorkerFetch } from './workerApiClient.js';
-import { documentIsAuthoritative } from '../utils/cacheAuthority.js';
+import { firestoreRest } from './firestoreRestClient.js';
 import {
   PUBLIC_LIST_LIMITS,
   sanitizePublicList,
@@ -33,24 +32,6 @@ export class PublicListUnsupportedError extends Error {
     super('Public lists are unavailable in demo mode.');
     this.name = 'PublicListUnsupportedError';
     this.code = 'PUBLIC_LISTS_UNSUPPORTED_IN_DEMO';
-  }
-}
-
-/**
- * The read reached the local cache and nothing else, so "this list does not
- * exist" is a guess, not an answer.
- *
- * Distinct from a plain failure because it is retryable and because the list
- * on the other end is almost certainly fine — telling a visitor that somebody's
- * shared list does not exist, when the truth is that this tab could not reach
- * the backend, is the worst of the three things this page can say.
- */
-export class PublicListUnavailableError extends Error {
-  constructor() {
-    super('The public list could not be read from the server.');
-    this.name = 'PublicListUnavailableError';
-    this.code = 'PUBLIC_LIST_UNAVAILABLE';
-    this.retryable = true;
   }
 }
 
@@ -76,10 +57,8 @@ function cleanString(value, maximum) {
 
 function operations(overrides = {}) {
   return {
-    database: overrides.database || db,
     isDemo: overrides.isDemo === undefined ? IS_DEMO : overrides.isDemo,
-    document: overrides.document || doc,
-    getDocument: overrides.getDocument || getDoc,
+    rest: overrides.rest || firestoreRest,
     request: overrides.request || authenticatedWorkerFetch,
     apiBase: overrides.apiBase === undefined
       ? import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '')
@@ -230,15 +209,17 @@ export async function unpublishPublicList(shareId, listId, overrides) {
   });
 }
 
-export async function readPublicList(shareId, overrides) {
+export async function readPublicList(shareId, { signal } = {}, overrides) {
   const api = operations(overrides);
   requireSupported(api);
   const normalizedShareId = validateShareId(shareId);
-  const snapshot = await api.getDocument(api.document(api.database, 'publicLists', normalizedShareId));
-  // `getDoc` resolves against the in-memory cache when the backend is
-  // unreachable, so a missing document is only really missing if the server is
-  // the one saying so. Without this, a shared list that exists rendered as
-  // "this list is not available" for anyone whose connection had stalled.
-  if (!documentIsAuthoritative(snapshot)) throw new PublicListUnavailableError();
-  return snapshot.exists() ? { shareId: snapshot.id, ...snapshot.data() } : null;
+  // Over REST, anonymous (`allow get: if true`): one request with no listen
+  // stream behind it and no cache to answer from. On the SDK the read rode the
+  // client's one stream, and a stream that had died under a live tab kept a
+  // shared link on its spinner until the stall kick; and `getDoc` answered a
+  // stalled read from the in-memory cache, where a list that exists came back
+  // as "not available". Here a 404 is the server's own answer, and a request
+  // that never arrives rejects as `unavailable`, which `patientRead` retries.
+  const document = await api.rest.getDocument(`publicLists/${normalizedShareId}`, { signal });
+  return document?.exists ? { shareId: document.id, ...document.data } : null;
 }

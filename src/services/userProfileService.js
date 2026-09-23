@@ -663,10 +663,6 @@ export async function savePinnedShareIds(shareIds, overrides) {
   return payload;
 }
 
-function profileListsReference(api, uid) {
-  return api.document(api.database, 'profileLists', uid);
-}
-
 /**
  * The showcase (F12): the cards of an account's published-and-attributed
  * lists, one world-gated read. The document is written only by the Worker;
@@ -674,20 +670,23 @@ function profileListsReference(api, uid) {
  * as "no lists" rather than an error — a private profile's tab was already
  * unreachable, so the only caller who can hit the denial is a stale one.
  */
-export async function readProfileLists(uid, overrides) {
+export async function readProfileLists(uid, { signal } = {}, overrides) {
   const api = operations(overrides);
   requireSupported(api);
   const normalized = cleanString(uid, 128);
   if (!normalized) return null;
-  let snapshot;
+  // Over REST, like the profile it sits under (readUserProfileByHandle): the
+  // card of a public list is what a visitor came for, and on the SDK it waited
+  // on the same listen stream that left the profile on its skeleton.
+  let document;
   try {
-    snapshot = await api.getDocument(profileListsReference(api, normalized));
+    document = await api.rest.getDocument(`profileLists/${encodeURIComponent(normalized)}`, { signal });
   } catch (error) {
     if (error?.code === 'permission-denied') return null;
     throw error;
   }
-  if (!snapshot?.exists()) return null;
-  const cards = Array.isArray(snapshot.data()?.lists) ? snapshot.data().lists : [];
+  if (!document?.exists) return null;
+  const cards = Array.isArray(document.data?.lists) ? document.data.lists : [];
   return cards.map(sanitizeShowcaseCard).filter(Boolean);
 }
 
@@ -884,40 +883,58 @@ export async function readUserProfileOverRest(uid, { signal } = {}, overrides) {
   return readProfileSnapshot({ id: document.id, exists: () => true, data: () => document.data });
 }
 
-/** Two reads: the handle reservation, then the profile it points at. */
-export async function readUserProfileByHandle(handle, overrides) {
+/**
+ * Two reads: the handle reservation, then the profile it points at.
+ *
+ * Both over REST (src/utils/firestoreRest.js), anonymous, because both
+ * documents are open to `request.auth == null` for a public profile. On the
+ * SDK they rode the one listen stream the client keeps open, and against a
+ * stream that had died under a live tab — a laptop waking up, a network
+ * change — the page sat on its skeleton until `patientRead` kicked the stream
+ * at three seconds: measured 2026-09-23 on papertok.app, 4.2 s to paint, where
+ * a healthy visit paints in 0.3–1 s. A REST read has no stream to inherit and
+ * no cache to answer from, so a failure is an `unavailable` that
+ * `patientRead` retries, and a 404 is the server's own "no such handle".
+ *
+ * The one reader anonymity cannot serve is an owner opening their own
+ * private profile by its handle: that denial is retried on the SDK, with the
+ * session, where the rules let the owner through.
+ */
+export async function readUserProfileByHandle(handle, { signal } = {}, overrides) {
   const api = operations(overrides);
   requireSupported(api);
   const normalized = normalizeHandle(handle);
   if (!normalized) return null;
 
-  const reservation = await api.getDocument(handleReference(api, normalized));
-  // A miss the local cache answered is not a free handle: with the stream
-  // rebuilt under a stalled read (utils/streamRecovery.js) the SDK flushes
-  // the read from the cache, and "nobody has this handle" must come from the
-  // server. Thrown as the "not now" `patientRead` retries.
-  if (!documentIsAuthoritative(reservation)) throw new ProfileReadUnconfirmedError();
-  if (!reservation?.exists()) return null;
-  const uid = cleanString(reservation.data()?.uid, 128);
+  const reservation = await api.rest.getDocument(`handles/${encodeURIComponent(normalized)}`, { signal });
+  if (!reservation?.exists) return null;
+  const uid = cleanString(reservation.data?.uid, 128);
   if (!uid) return null;
 
   // A private profile denies this read, and that denial must look exactly like
   // a handle nobody registered. Letting it surface as an error would make the
   // page say "could not load" for private profiles and "not available" for
   // free handles, which is a two-state oracle the rules were written to avoid.
-  // The owner reading their own private profile is allowed, so this only
-  // swallows denials for people who genuinely may not see it.
-  let snapshot;
+  let profile;
   try {
-    snapshot = await api.getDocument(profileReference(api, uid));
+    const document = await api.rest.getDocument(`userProfiles/${encodeURIComponent(uid)}`, { signal });
+    profile = document?.exists
+      ? readProfileSnapshot({ id: document.id, exists: () => true, data: () => document.data })
+      : null;
   } catch (error) {
-    if (error?.code === 'permission-denied') return null;
-    throw error;
+    if (error?.code !== 'permission-denied') throw error;
+    if (cleanString(api.currentUser?.uid, 128) !== uid) return null;
+    profile = await readOwnPrivateProfile(api, uid);
   }
-  if (!documentIsAuthoritative(snapshot)) throw new ProfileReadUnconfirmedError();
-  const profile = readProfileSnapshot(snapshot);
   // A reservation whose profile moved on is stale, not a redirect.
   return profile && normalizeHandle(profile.handle) === normalized ? profile : null;
+}
+
+/** The owner's own private profile, which only a session may read. */
+async function readOwnPrivateProfile(api, uid) {
+  const snapshot = await api.getDocument(profileReference(api, uid));
+  if (!documentIsAuthoritative(snapshot)) throw new ProfileReadUnconfirmedError();
+  return readProfileSnapshot(snapshot);
 }
 
 /**
@@ -1032,6 +1049,8 @@ export async function deleteOwnUserProfile(overrides) {
  */
 function createdAtMillis(value) {
   if (typeof value?.toMillis === 'function') return value.toMillis();
+  // What a REST read decodes a timestamp into (utils/firestoreRest.js).
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? 0 : value.getTime();
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
     const parsed = Date.parse(value);

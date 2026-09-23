@@ -109,7 +109,7 @@ export function isTransientReadError(error) {
   if (!error) return false;
   if (error.timedOut === true) return true;
   // A service that knows its own error is a "not now" says so on the error
-  // itself (PublicListUnavailableError): the cache answered instead of the
+  // itself (ProfileReadUnconfirmedError): the cache answered instead of the
   // server, and asking again is the right response, not a verdict.
   if (error.retryable === true) return true;
   return TRANSIENT_READ_CODES.includes(error.code);

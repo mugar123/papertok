@@ -13,6 +13,8 @@ import {
   syncPublicList,
   unpublishPublicList,
 } from './publicListService.js';
+import { createFirestoreRest } from '../utils/firestoreRest.js';
+import { isTransientReadError } from '../utils/boundedRead.js';
 
 const privatePaper = {
   id: 'provider-secret-id',
@@ -45,15 +47,15 @@ function fakeApi(overrides = {}) {
   return {
     requests,
     api: {
-      database: 'db',
       isDemo: false,
       apiBase: 'https://worker.test',
-      document: (...parts) => parts.join('/'),
-      getDocument: async () => ({
-        exists: () => true,
-        id: '07070707070707070707070707070707',
-        data: () => ({ title: 'Shared', papers: [] }),
-      }),
+      rest: {
+        getDocument: async () => ({
+          exists: true,
+          id: '07070707070707070707070707070707',
+          data: { title: 'Shared', papers: [] },
+        }),
+      },
       request: async (url, init) => {
         requests.push({ url, init, body: JSON.parse(init.body) });
         const next = responses.shift();
@@ -304,7 +306,7 @@ test('an unconfigured Worker origin is reported, not silently swallowed', async 
 test('reading a share link is still one Firestore document, with no session', async () => {
   const { api, requests } = fakeApi();
   const shareId = '07070707070707070707070707070707';
-  assert.deepEqual(await readPublicList(shareId, api), {
+  assert.deepEqual(await readPublicList(shareId, {}, api), {
     shareId,
     title: 'Shared',
     papers: [],
@@ -325,7 +327,7 @@ test('returns a clear unsupported error in demo mode, on every path', async () =
     && error.code === 'PUBLIC_LISTS_UNSUPPORTED_IN_DEMO';
   const { api, requests } = fakeApi({ api: { isDemo: true } });
 
-  await assert.rejects(() => readPublicList(shareId, api), isUnsupported);
+  await assert.rejects(() => readPublicList(shareId, {}, api), isUnsupported);
   await assert.rejects(
     () => publishPublicList({ listId: 'l1', title: 'T', papers: [] }, api), isUnsupported,
   );
@@ -366,55 +368,65 @@ test('Firestore rules keep public lists readable and shut to every client', asyn
 /**
  * A share link is somebody else's list. Telling a visitor it does not exist,
  * when the truth is that this tab never reached the backend, is the worst of
- * the three things the page can say — and it is what happened: `getDoc`
- * resolves against the in-memory cache instead of rejecting, so a missing
- * document and an unreachable backend were the same value.
+ * the three things the page can say — and it is what `getDoc` did: it
+ * resolved a stalled read against the in-memory cache, so a missing document
+ * and an unreachable backend were the same value. The read is REST now
+ * (src/utils/firestoreRest.js): a 404 is the only absence, and a request that
+ * never arrives is a retryable rejection.
  */
-function readerReturning(snapshot) {
-  return {
-    database: 'db',
-    isDemo: false,
-    apiBase: 'https://worker.test',
-    document: (...parts) => parts.join('/'),
-    getDocument: async () => snapshot,
-  };
+function restReader(fetchImpl) {
+  const requests = [];
+  const rest = createFirestoreRest({
+    projectId: 'papertok-test',
+    fetchImpl: async (url, init) => {
+      requests.push({ url, init });
+      return fetchImpl(url, init);
+    },
+  });
+  return { requests, api: { isDemo: false, apiBase: 'https://worker.test', rest } };
 }
 
 const SHARE_ID = '07070707070707070707070707070707';
 
-test('a public list the server confirmed is missing really is not found', async () => {
-  const result = await readPublicList(SHARE_ID, readerReturning({
-    exists: () => false,
-    metadata: { fromCache: false },
-  }));
+test('a share link is one anonymous REST read of its document, with the caller\'s signal', async () => {
+  const { api, requests } = restReader(async () => new Response(JSON.stringify({
+    name: `projects/papertok-test/databases/(default)/documents/publicLists/${SHARE_ID}`,
+    fields: {
+      title: { stringValue: 'Shared' },
+      paperCount: { integerValue: '2' },
+      updatedAt: { timestampValue: '2026-08-21T10:00:00Z' },
+    },
+  }), { status: 200 }));
+  const controller = new AbortController();
 
-  assert.equal(result, null, 'the server said so, so null is the answer');
+  const result = await readPublicList(SHARE_ID, { signal: controller.signal }, api);
+
+  assert.equal(requests.length, 1);
+  assert.match(requests[0].url, new RegExp(`/documents/publicLists/${SHARE_ID}$`));
+  assert.equal(requests[0].init.signal, controller.signal);
+  assert.equal(requests[0].init.headers.Authorization, undefined, 'no token: no CORS preflight');
+  assert.equal(result.shareId, SHARE_ID);
+  assert.equal(result.title, 'Shared');
+  assert.equal(result.paperCount, 2);
+  assert.equal(result.updatedAt.toISOString(), '2026-08-21T10:00:00.000Z');
 });
 
-test('THE BUG: a cache-served miss is not a missing list', async () => {
+test('a public list the server confirmed is missing really is not found', async () => {
+  const { api } = restReader(async () => new Response(JSON.stringify({ error: { message: 'not found' } }), { status: 404 }));
+  assert.equal(await readPublicList(SHARE_ID, {}, api), null, 'the server said so, so null is the answer');
+});
+
+test('THE BUG: an unreachable backend is not a missing list', async () => {
+  const { api } = restReader(async () => { throw new TypeError('Failed to fetch'); });
   await assert.rejects(
-    () => readPublicList(SHARE_ID, readerReturning({
-      exists: () => false,
-      metadata: { fromCache: true },
-    })),
+    () => readPublicList(SHARE_ID, {}, api),
     (error) => {
-      assert.equal(error.code, 'PUBLIC_LIST_UNAVAILABLE');
-      assert.equal(error.retryable, true);
+      assert.equal(error.code, 'unavailable');
+      assert.equal(isTransientReadError(error), true, 'patientRead must keep asking');
       return true;
     },
     'nobody confirmed this list is gone — the backend never answered',
   );
-});
-
-test('a list served from the cache is still a list', async () => {
-  const result = await readPublicList(SHARE_ID, readerReturning({
-    exists: () => true,
-    id: SHARE_ID,
-    metadata: { fromCache: true },
-    data: () => ({ title: 'Shared', papers: [] }),
-  }));
-
-  assert.equal(result.title, 'Shared', 'data in hand is data, cached or not');
 });
 
 test('F12: attribution posts the share and the boolean, nothing else', async () => {

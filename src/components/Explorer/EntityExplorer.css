@@ -383,38 +383,9 @@
 }
 
 .ehc-title-row .ehc-name { flex: 1 1 auto; }
-.ehc-title-row .entity-follow-btn { flex: 0 0 auto; }
+.ehc-title-row .follow-toggle { flex: 0 0 auto; }
 
-/* The follow control is a ui Toggle. Off, it invites in ink; on
-   (`data-pressed`, written by Base UI with `aria-pressed`), it is the
-   bordered chip that says the relationship exists. The fixed min-width keeps
-   it from jumping between its two labels. */
-.entity-follow-btn {
-  min-width: 96px;
-  gap: 8px;
-  border: 1px solid var(--text-primary);
-  background: var(--accent-primary);
-  color: var(--text-inverse);
-  font-weight: var(--fw-semibold);
-  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
-}
-
-.entity-follow-btn[data-pressed] {
-  border-color: var(--border-default);
-  background: var(--bg-card);
-  color: var(--text-primary);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .entity-follow-btn:hover {
-    background: var(--accent-primary-hover);
-  }
-
-  .entity-follow-btn[data-pressed]:hover {
-    border-color: var(--border-strong);
-    background: var(--bg-secondary);
-  }
-}
+/* The follow control is the shared ui/follow-toggle (its own stylesheet). */
 
 /* Chevron by the name that discloses the professional-experience panel. */
 .ehc-name-toggle {
@@ -2735,7 +2706,6 @@
    lifted out of the pointer gate — a 776px serif row scaled by 3% re-rasters
    two lines of type for a tap, which is the cost `PageTransition.jsx` argues
    at length about for a page. */
-.entity-follow-btn:active:not(:disabled),
 .ehc-name-toggle:active:not(:disabled),
 .ehc-wiki-toggle:active:not(:disabled),
 .ehc-ror-relations button:active:not(:disabled),
@@ -2754,7 +2724,6 @@
    naming only `transform` would silently drop their colour fades. That trap is
    documented in `Layout/ThemeToggle.css`. Only the controls that declare no
    transition at all get one of their own, below. */
-.entity-follow-btn,
 .ehc-wiki-toggle,
 .ehc-ror-relations button,
 .project-summary-toggle,
@@ -2831,7 +2800,6 @@
   /* The press stays as a colour change; the squeeze is movement and goes.
      The rows' `:active` background is untouched — it is the whole point of
      keeping feedback here. */
-  .entity-follow-btn:active:not(:disabled),
   .ehc-name-toggle:active:not(:disabled),
   .ehc-wiki-toggle:active:not(:disabled),
   .ehc-ror-relations button:active:not(:disabled),

@@ -276,6 +276,10 @@ function AppContent() {
       // the forced reload in main.jsx, and the feed coming back from the top
       // — which read as the whole feed reloading.
       PublicProfilePage.preload().catch(() => {})
+      // A profile's list cards open here. Measured 2026-09-23: unpreloaded,
+      // the first list of a session started its Firestore read ~370 ms after
+      // the tap, the chunk and the fallback throttle in front of it.
+      PublicListPage.preload().catch(() => {})
       SettingsPage.preload().catch(() => {})
       // One row inside Settings; small chunk, and the first visit used to pay
       // it on top of the cold Firestore read the page then makes.

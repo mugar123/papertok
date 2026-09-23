@@ -139,7 +139,7 @@ const FIRST = process.env.HANDLE || 'mugar';
 const SECOND = process.env.HANDLE2 || 'nick_mugar';
 console.log(`origin ${ORIGIN}`);
 // 1. a healthy visit: establishes the stream and gives us its SID
-await cdp.send('Page.navigate', { url: `${ORIGIN}/#/public/user/${FIRST}` });
+await cdp.send('Page.navigate', { url: `${ORIGIN}/public/user/${FIRST}` });
 const healthy = await watchPage(30, FIRST);
 console.log(`${stamp()} healthy visit to @${FIRST}: ${healthy.loadedAt == null ? 'NOT loaded' : `painted in ${healthy.loadedAt} ms`}; ${JSON.stringify(healthy.timeline.at(-1))}`);
 await sleep(800);
@@ -155,7 +155,9 @@ if (!deadSid) {
 
 // 2. the stream is dead now. Visit the second profile (an in-app navigation: same client, same stream).
 console.log(`${stamp()} --- the stream is now dead at the network (held, never answered); the network itself is fine ---`);
-await cdp.evaluate(`location.hash = '#/public/user/${SECOND}'`);
+// The app uses real paths since 2026-09-18: an in-app navigation is a history
+// push the BrowserRouter hears through popstate.
+await cdp.evaluate(`history.pushState({ usr: null, key: 'stall', idx: (history.state?.idx || 0) + 1 }, '', '/public/user/${SECOND}'); dispatchEvent(new PopStateEvent('popstate', { state: history.state }))`);
 const stalled = await watchPage(HOLD_S, SECOND);
 console.log(`${stamp()} visit to @${SECOND} over the dead stream: ${stalled.loadedAt == null ? `NOT painted after ${HOLD_S} s` : `painted in ${stalled.loadedAt} ms`}`);
 stalled.timeline.forEach((s) => console.log(`   ${String(s.at).padStart(6)} ms  ${JSON.stringify(s)}`));

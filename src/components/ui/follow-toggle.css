@@ -1,0 +1,43 @@
+/* The Follow control (follow-toggle.jsx), one look wherever something can be
+   followed. Off, it invites in ink; on (`data-pressed`, written by Base UI
+   with `aria-pressed`), it is the bordered chip that says the relationship
+   exists. The fixed min-width keeps it from jumping between its two labels. */
+.follow-toggle {
+  min-width: 96px;
+  gap: 8px;
+  border: 1px solid var(--text-primary);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  font-weight: var(--fw-semibold);
+  transition: background var(--transition-fast), border-color var(--transition-fast),
+    color var(--transition-fast), transform 0.16s ease-out;
+}
+
+.follow-toggle[data-pressed] {
+  border-color: var(--border-default);
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .follow-toggle:hover {
+    background: var(--accent-primary-hover);
+  }
+
+  .follow-toggle[data-pressed]:hover {
+    border-color: var(--border-strong);
+    background: var(--bg-secondary);
+  }
+}
+
+/* Press feedback: the catalog's squeeze, cheap on a 32px box. */
+.follow-toggle:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The press stays as a colour change; the squeeze is movement and goes. */
+  .follow-toggle:active:not(:disabled) {
+    transform: none;
+  }
+}

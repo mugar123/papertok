@@ -10,7 +10,7 @@ import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.js';
 import { readPublicList } from '../../services/publicListService.js';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.js';
 import { getPublicListPath, getPublicListUrl, getPublicPaperPath } from '../../utils/publicNavigation.js';
-import { isReadTimeout, patientRead } from '../../utils/boundedRead.js';
+import { isReadTimeout, patientRead, slowNoticeStatus } from '../../utils/boundedRead.js';
 import { shareOrCopyLink } from '../../utils/shareLink.js';
 import { copyText } from '../../utils/clipboard.js';
 import './PublicListPage.css';
@@ -99,12 +99,19 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
     // is not enough — a mute connection comes back as a rejection, not as a
     // silence, so "the list could not be loaded" used to appear for a list
     // that was perfectly fine. It stays a wait until an error says otherwise.
-    patientRead(() => readPublicList(shareId), {
+    //
+    // The read is REST (publicListService.js), so it has no SDK stream for the
+    // stall kick to rebuild, and a dead network rejects in milliseconds: the
+    // slow notice waits until the wait has actually been felt.
+    const startedAt = Date.now();
+    patientRead(() => readPublicList(shareId, { signal: controller.signal }), {
       attempts: 3,
       label: 'public list',
       signal: controller.signal,
+      onStall: null,
       onSlow: (attemptNumber, info) => {
-        if (active) setStatus(info?.offline ? 'offline' : 'slow');
+        const notice = slowNoticeStatus(Date.now() - startedAt, info);
+        if (active && notice) setStatus(notice);
       },
       onLateResult: apply,
     })

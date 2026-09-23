@@ -255,49 +255,6 @@
   color: var(--text-primary);
 }
 
-/* The one primary action on a visitor's page, so the one filled surface.
-   The min-width keeps it from resizing as the label cycles. */
-.profile-follow-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  min-width: 148px;
-  height: 40px;
-  padding: 0 var(--space-5);
-  border: 1px solid var(--accent-primary);
-  border-radius: var(--radius-md);
-  background: var(--accent-primary);
-  color: var(--text-inverse);
-  font-family: var(--font-body);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast),
-    color var(--transition-fast), opacity var(--transition-fast);
-}
-
-/* Already following: the button rests quiet, like "Edit profile". Hovering it
-   is the unfollow affordance — label and colour change together (the class
-   comes from the same state as the label, NOT from :hover, so that right after
-   clicking Follow the button rests quiet even under the pointer). */
-.profile-follow-button--following {
-  border-color: var(--border-default);
-  background: var(--bg-card);
-  color: var(--text-primary);
-}
-
-.profile-follow-button--following.is-unfollow-intent:not(:disabled) {
-  border-color: var(--tint-red-line);
-  background: var(--tint-red-bg);
-  color: var(--tint-red-fg);
-}
-
-.profile-follow-button:disabled {
-  cursor: default;
-  opacity: 0.65;
-}
-
 .profile-follow-error {
   margin: var(--space-2) 0 0;
   color: var(--accent-danger);
@@ -969,25 +926,6 @@ button.profile-stat:disabled {
     color: var(--text-primary);
   }
 
-  .profile-follow-button:hover:not(:disabled),
-  .profile-follow-button:focus-visible:not(:disabled) {
-    background: var(--accent-primary-hover);
-    border-color: var(--accent-primary-hover);
-  }
-
-  .profile-follow-button--following:hover:not(:disabled),
-  .profile-follow-button--following:focus-visible:not(:disabled) {
-    background: var(--bg-secondary);
-    border-color: var(--border-strong);
-    color: var(--text-primary);
-  }
-
-  .profile-follow-button--following.is-unfollow-intent:hover:not(:disabled) {
-    border-color: var(--tint-red-line);
-    background: var(--tint-red-bg);
-    color: var(--tint-red-fg);
-  }
-
   button.profile-stat:hover:not(:disabled),
   button.profile-stat:focus-visible:not(:disabled) {
     background: var(--bg-sunken);
@@ -1083,7 +1021,6 @@ button.profile-stat:disabled {
 
   /* 44px: the floor for anything a thumb has to hit. */
   .profile-edit-button,
-  .profile-follow-button,
   .profile-content-chip {
     height: 44px;
   }

@@ -59,9 +59,10 @@ test('the drawer\'s sort, category and date rows are single-select ToggleGroups 
 test('follow is a Toggle, peer-review a Switch in a Label, search an Input', async () => {
   const jsx = await jsxFile;
   const css = await cssFile;
-  assert.match(jsx, /<Toggle\s+variant="outline"\s+className="entity-follow-btn"\s+pressed=\{entityIsFollowing\}/);
+  // The shared Follow control (ui/follow-toggle.jsx, pinned in its own test).
+  assert.match(jsx, /<FollowToggle\s+pressed=\{entityIsFollowing\}/);
   assert.doesNotMatch(jsx, /aria-pressed=/);
-  assert.match(css, /\.entity-follow-btn\[data-pressed\]/);
+  assert.doesNotMatch(css, /\.entity-follow-btn/, 'the follow look lives in one stylesheet');
   assert.match(jsx, /<Label className="ee-toggle-label">\s*(?:\{\/\*[\s\S]*?\*\/\}\s*)?<Switch\s+checked=\{filters\.peerReviewed\}/);
   assert.doesNotMatch(css, /\.ee-toggle-switch/);
   assert.match(jsx, /<Input\s+type="text"\s+className="explorer-search-input"/);

@@ -21,7 +21,7 @@ test('the Explorer acknowledges a press, and on a thumb rather than only a point
   assert.ok(/:active/.test(css), 'the Explorer has press feedback at all');
 
   // Compact controls take the catalog's scale.
-  const squeeze = css.match(/\.entity-follow-btn:active:not\(:disabled\)[\s\S]*?\{([^}]*)\}/);
+  const squeeze = css.match(/\.ehc-name-toggle:active:not\(:disabled\)[\s\S]*?\{([^}]*)\}/);
   assert.ok(squeeze, 'the compact controls share one press rule');
   assert.match(squeeze[1], /transform: scale\(0\.97\);/);
 

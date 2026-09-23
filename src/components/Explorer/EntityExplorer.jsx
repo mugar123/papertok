@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
-import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, BadgeCheck, Check, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
+import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, BadgeCheck, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
 import { getEntityById, peekEntity, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution, getEntityRecentImpact, getLocalTopicEntity, enrichAuthorInstitutionLocalization } from '../../services/openAlexService';
 import { isOpenAlexRateLimitError } from '../../services/openAlexClient';
 import { fetchPapersByIds, getAuthorPapers } from '../../services/arxivService';
@@ -36,7 +36,7 @@ import { Input } from '../ui/input.jsx';
 import { Label } from '../ui/label.jsx';
 import { Sheet, SheetClose, SheetContent, SheetTitle } from '../ui/sheet.jsx';
 import { Switch } from '../ui/switch.jsx';
-import { Toggle } from '../ui/toggle.jsx';
+import { FollowToggle } from '../ui/follow-toggle.jsx';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.jsx';
 import { useFollowing } from '../../context/FollowingContext';
 import { useFeed } from '../../context/FeedContext';
@@ -2052,20 +2052,15 @@ export default function EntityExplorer({
             )}
           </div>
           {followEntity && (
-            // A pressed button, not a command: ink while it invites, a bordered
-            // chip once the relationship exists (`.entity-follow-btn` in the
-            // stylesheet keys the two looks off the `data-pressed` Base UI sets).
-            <Toggle
-              variant="outline"
-              className="entity-follow-btn"
+            // A pressed button, not a command: the shared Follow control, the
+            // same one a public profile uses for people.
+            <FollowToggle
               pressed={entityIsFollowing}
               onClick={handleFollow}
               disabled={entityFollowPending}
-            >
-              {entityIsFollowing
-                  ? <><Check size={14} /> <span>{isEnglish ? 'Following' : 'Siguiendo'}</span></>
-                  : <span>{isEnglish ? 'Follow' : 'Seguir'}</span>}
-            </Toggle>
+              followLabel={isEnglish ? 'Follow' : 'Seguir'}
+              followingLabel={isEnglish ? 'Following' : 'Siguiendo'}
+            />
           )}
           </div>
           </div>
