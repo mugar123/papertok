@@ -2223,6 +2223,53 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     }
   }, [withInteractionId, papers, reRankFeed, recordProfileEvent, traverseAndExpandNetwork, user?.uid]);
 
+  /**
+   * The way back from markSaved: the paper has left every list and Read later,
+   * so the Save button must go dark again. The saved-paper document stays —
+   * it is the metadata copy the lists hydrate from, and a later save simply
+   * merges over it. The interaction keeps `saved: false` rather than losing
+   * the field, the same flag a rebuild of the aggregate reads.
+   */
+  const unmarkSaved = useCallback(async (paperOrIdInput) => {
+    const paperOrId = paperOrIdInput && typeof paperOrIdInput === 'object' ? withInteractionId(paperOrIdInput) : paperOrIdInput;
+    const userId = user?.uid;
+    const paperId = typeof paperOrId === 'string' ? paperOrId : paperOrId?.id;
+    if (!paperId || !savedPaperIdsRef.current.has(paperId)) return;
+
+    const paper = typeof paperOrId === 'object'
+      ? paperOrId
+      : papers.find(p => p.id === paperId);
+    // Gives back exactly what markSaved lent the category.
+    if (paper) applyCategoryAffinityDelta(categoryAffinities.current, paper, -8);
+
+    const nextSaved = new Set(savedPaperIdsRef.current);
+    nextSaved.delete(paperId);
+    savedPaperIdsRef.current = nextSaved;
+    setSavedPaperIds(nextSaved);
+    reRankFeed(paperId);
+
+    if (IS_DEMO) {
+      demoSet('savedPaperIds', Array.from(nextSaved));
+      return;
+    }
+
+    if (userId) {
+      try {
+        recordProfileEvent({
+          paperId,
+          kind: 'unsave',
+          category: paper?.primaryCategory,
+        });
+        await setDoc(interactionDocRef(userId, paperId), {
+          saved: false,
+          timestamp: new Date().toISOString(),
+        }, { merge: true });
+      } catch (err) {
+        console.error('Error removing the saved mark:', err);
+      }
+    }
+  }, [withInteractionId, papers, reRankFeed, recordProfileEvent, user?.uid]);
+
   const unmarkAsRead = useCallback(async (paperId) => {
     const userId = user?.uid;
     if (!userId) return;
@@ -2403,7 +2450,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     loadPapers, loadMore, refreshFeed,
     getRecommendationProfileSnapshot,
     reportVisiblePaper,
-    toggleLike, markNotInterested, markSaved, markAsRead, unmarkAsRead,
+    toggleLike, markNotInterested, markSaved, unmarkSaved, markAsRead, unmarkAsRead,
     toggleReadLater, saveReadingMetadata,
     trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce
   }), [
@@ -2416,7 +2463,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     loadPapers, loadMore, refreshFeed,
     getRecommendationProfileSnapshot,
     reportVisiblePaper,
-    toggleLike, markNotInterested, markSaved, markAsRead, unmarkAsRead,
+    toggleLike, markNotInterested, markSaved, unmarkSaved, markAsRead, unmarkAsRead,
     toggleReadLater, saveReadingMetadata,
     trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce,
   ]);

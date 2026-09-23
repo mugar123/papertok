@@ -291,7 +291,7 @@ function isPaperAccountedFor(profile, paperId) {
  * @param {object} profile
  * @param {object} event
  * @param {string} event.paperId
- * @param {string} event.kind one of like, unlike, save, read, unread, readLater,
+ * @param {string} event.kind one of like, unlike, save, unsave, read, unread, readLater,
  *   notInterested, openedPdf, pdfBounce, skip, viewTime, metadata
  * @param {string} [event.category] the paper's primary category
  * @param {number|string} [event.timestamp]
@@ -318,6 +318,10 @@ export function recordInteractionEvent(profile, event, now = Date.now()) {
     case 'save':
       addCurated(profile, 'saved', event.paperId);
       addImpact(profile, category, IMPACT_SAVED, timestampMs);
+      break;
+    case 'unsave':
+      removeCurated(profile, 'saved', event.paperId);
+      addImpact(profile, category, -IMPACT_SAVED, timestampMs);
       break;
     case 'read':
       addCurated(profile, 'read', event.paperId);

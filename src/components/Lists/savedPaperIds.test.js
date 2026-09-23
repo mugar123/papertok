@@ -44,6 +44,20 @@ test('SOURCE: Read later alone saves the paper, so the Save button lights up for
   assert.doesNotMatch(code, /if \(toAdd\.length > 0\) \{\s*(await setDoc|markSaved)/, 'no save path is left gated on lists alone');
 });
 
+test('SOURCE: leaving the last list and Read later unsaves the paper, but only on a membership read in full', async () => {
+  const code = stripComments(await read('./SaveToListModal.jsx'));
+  const rule = bounded(code, 'const unsavesPaper =', ';', 'the unsave rule', 6);
+  for (const guard of [
+    /alreadySaved && !savesPaper/,
+    /!pendingReadLater && pendingListIds\.size === 0/,
+    /listsStatus === 'ready'/,
+    /lists\.length < OWN_LISTS_PAGE_SIZE/,
+  ]) {
+    assert.match(rule, guard);
+  }
+  assert.match(code, /if \(unsavesPaper\) await unmarkSaved\(paper\);/);
+});
+
 test('SOURCE: the lists screen asks by encoded name and keys what comes back by paper id', async () => {
   const code = stripComments(await read('./ListsPage.jsx'));
   assert.match(code, /where\(documentId\(\), 'in', requestDefinition\.paperIds\.map\(encodeFirestoreDocId\)\)/);

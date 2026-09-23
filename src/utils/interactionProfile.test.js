@@ -159,6 +159,17 @@ test('undoing an interaction removes it from the curated set and the affinity', 
   assert.deepEqual(curatedIds(profile, 'read'), []);
 });
 
+test('unsaving takes the paper out of the saved set and gives the affinity back', () => {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, { paperId: 's', kind: 'save', category: 'cs.AI' }, NOW);
+  assert.deepEqual(curatedIds(profile, 'saved'), ['s']);
+  assert.ok(readCategorySignals(profile, NOW).affinities['cs.AI'] > 7.9);
+
+  recordInteractionEvent(profile, { paperId: 's', kind: 'unsave', category: 'cs.AI' }, NOW);
+  assert.deepEqual(curatedIds(profile, 'saved'), []);
+  assert.ok(Math.abs(readCategorySignals(profile, NOW).affinities['cs.AI']) < 1e-9);
+});
+
 test('not interested spreads a penalty across the same research area only', () => {
   const profile = createEmptyInteractionProfile();
   recordInteractionEvent(profile, { paperId: 'p', kind: 'notInterested', category: 'cs.AI' }, NOW);

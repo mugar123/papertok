@@ -91,8 +91,8 @@ export default function SaveToListModal({ paper, onClose }) {
   const { language, isEnglish } = useLanguage();
   const { trackEvent, markActivation } = useAnalyticsConsent();
   const {
-    markSaved, personalLibrary, ensurePersonalLibrary, toggleReadLater, saveReadingMetadata,
-    savedPaperIds, interactionIdFor,
+    markSaved, unmarkSaved, personalLibrary, ensurePersonalLibrary, toggleReadLater,
+    saveReadingMetadata, savedPaperIds, interactionIdFor,
   } = useFeed();
 
   // The note and tags for this paper live in the reading library, which is
@@ -480,6 +480,16 @@ export default function SaveToListModal({ paper, onClose }) {
     // does for any list. Without this the paper sat in Read later with the
     // button still off, and the next open proposed Read later all over again.
     const savesPaper = toAdd.length > 0 || (readLaterChanged && pendingReadLater);
+    // And the way back: once this save takes the paper out of the last place
+    // holding it, it is no longer a saved paper and the button goes dark. Only
+    // on a membership the modal has actually read in full — a page of lists
+    // that is still loading, failed, or filled to its cap could be hiding a
+    // list that still holds the paper, and unsaving on that guess is the
+    // worse error.
+    const unsavesPaper = alreadySaved && !savesPaper
+      && (toRemove.length > 0 || readLaterChanged)
+      && !pendingReadLater && pendingListIds.size === 0
+      && listsStatus === 'ready' && lists.length < OWN_LISTS_PAGE_SIZE;
 
     setSaving(true);
     setSaveError(false);
@@ -605,6 +615,7 @@ export default function SaveToListModal({ paper, onClose }) {
 
       if (readLaterChanged) await toggleReadLater(paper);
       if (metadataChanged) await saveReadingMetadata(paper, { note, tags: finalTags });
+      if (unsavesPaper) await unmarkSaved(paper);
 
       toAdd.forEach(() => trackEvent('save_change', { action: 'add', surface: 'lists' }));
       toRemove.forEach(() => trackEvent('save_change', { action: 'remove', surface: 'lists' }));
