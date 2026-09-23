@@ -14,6 +14,7 @@ import {
   diffListSelection,
   EMPTY_LIST_INTENT,
   hasUnsavedChanges,
+  readLaterState,
   removeTag,
   resolveSelection,
   toggleListIntent,
@@ -91,6 +92,7 @@ export default function SaveToListModal({ paper, onClose }) {
   const { trackEvent, markActivation } = useAnalyticsConsent();
   const {
     markSaved, personalLibrary, ensurePersonalLibrary, toggleReadLater, saveReadingMetadata,
+    savedPaperIds, interactionIdFor,
   } = useFeed();
 
   // The note and tags for this paper live in the reading library, which is
@@ -182,7 +184,13 @@ export default function SaveToListModal({ paper, onClose }) {
 
   const note = noteDraft ?? baseline.note;
   const tags = tagsDraft ?? baseline.tags;
-  const pendingReadLater = readLaterDraft ?? baseline.readLater;
+  // A first save proposes Read later; an already saved paper keeps its own.
+  // `editedReadLater` is the same value with an untouched proposal counted as
+  // the stored one, which is all the close guard may see (saveOrganizeModel.js).
+  const alreadySaved = Boolean(savedPaperIds?.has(interactionIdFor?.(paper) ?? paper.id));
+  const { pending: pendingReadLater, edited: editedReadLater } = readLaterState({
+    stored: baseline.readLater, draft: readLaterDraft, alreadySaved,
+  });
 
   // The ticks on screen: never stored, always derived. `known` bounds the
   // user's own ticks to lists that still exist — a list deleted on another
@@ -361,20 +369,23 @@ export default function SaveToListModal({ paper, onClose }) {
   // save, and it counts as a change worth warning about.
   const effectiveTags = useMemo(() => commitTagInput(tags, tagInput), [tags, tagInput]);
 
-  const dirty = useMemo(() => hasUnsavedChanges({
-    initial: {
+  // Two questions, one comparison each. `hasWrites` is whether Save has
+  // anything to commit, the proposed Read later included. `dirty` is whether
+  // closing would lose something the user did, so an untouched proposal does
+  // not count: dismissing a fresh modal must not ask about unsaved changes.
+  const [hasWrites, dirty] = useMemo(() => {
+    const initial = {
       listIds: [...initialListIds],
       note: baseline.note,
       tags: baseline.tags,
       readLater: baseline.readLater,
-    },
-    pending: {
-      listIds: [...pendingListIds],
-      note,
-      tags: effectiveTags,
-      readLater: pendingReadLater,
-    },
-  }), [initialListIds, pendingListIds, baseline, note, effectiveTags, pendingReadLater]);
+    };
+    const pending = { listIds: [...pendingListIds], note, tags: effectiveTags };
+    return [
+      hasUnsavedChanges({ initial, pending: { ...pending, readLater: pendingReadLater } }),
+      hasUnsavedChanges({ initial, pending: { ...pending, readLater: editedReadLater } }),
+    ];
+  }, [initialListIds, pendingListIds, baseline, note, effectiveTags, pendingReadLater, editedReadLater]);
 
   /* --- Close paths, all through the guard -------------------------------- */
 
@@ -453,7 +464,7 @@ export default function SaveToListModal({ paper, onClose }) {
   };
 
   const handleSave = async () => {
-    if (savingRef.current || saving || !dirty) return;
+    if (savingRef.current || saving || !hasWrites) return;
     savingRef.current = true;
     const finalTags = effectiveTags;
     const { toAdd, toRemove } = diffListSelection([...initialListIds], [...pendingListIds]);
@@ -879,7 +890,7 @@ export default function SaveToListModal({ paper, onClose }) {
             <Button
               className="w-full"
               onClick={handleSave}
-              disabled={!dirty || saving}
+              disabled={!hasWrites || saving}
             >
               {saving ? copy.saving : copy.save}
             </Button>

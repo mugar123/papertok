@@ -61,6 +61,27 @@ export function hasUnsavedChanges({ initial, pending }) {
 }
 
 /**
+ * Read later, as the modal shows it and as the close guard sees it.
+ *
+ * Saving a paper for the first time proposes Read later: the row opens ticked,
+ * so one press of Save queues the paper. A paper that is already saved keeps
+ * what the account says — reopening it to move it between lists must not tick
+ * a box its owner once cleared.
+ *
+ * The proposal is not an edit. `pending` is what Save commits and what the row
+ * shows; `edited` is what the close guard compares, and in it an untouched
+ * proposal counts as the stored value. Otherwise opening the modal and closing
+ * it straight away would ask about "unsaved changes" nobody made.
+ */
+export function readLaterState({ stored, draft, alreadySaved }) {
+  const proposed = Boolean(stored) || !alreadySaved;
+  return {
+    pending: draft ?? proposed,
+    edited: draft ?? Boolean(stored),
+  };
+}
+
+/**
  * What the user actually did to the checkboxes, kept apart from what the
  * account says.
  *

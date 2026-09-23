@@ -5,6 +5,7 @@ import {
   commitTagInput,
   diffListSelection,
   hasUnsavedChanges,
+  readLaterState,
   resolveSelection,
   toggleListIntent,
   removeTag,
@@ -75,6 +76,40 @@ test('tags with spaces cannot fake equality across boundaries', () => {
     initial: { ...CLEAN, tags: ['a b', 'c'] },
     pending: { ...CLEAN, tags: ['a', 'b c'] },
   }), true);
+});
+
+/* --- Read later is proposed on the first save -------------------------------
+   Saving a paper for the first time opens with Read later already ticked. The
+   tick is a proposal, not an edit: Save can commit it, but closing without
+   touching anything must not ask about "unsaved changes". A paper that is
+   already saved keeps whatever the account says. */
+
+test('a paper saved for the first time proposes Read later', () => {
+  const state = readLaterState({ stored: false, draft: null, alreadySaved: false });
+  assert.equal(state.pending, true, 'the row opens ticked');
+  assert.equal(state.edited, false, 'and the untouched proposal is not an edit');
+});
+
+test('an already saved paper keeps its stored Read later', () => {
+  assert.equal(readLaterState({ stored: false, draft: null, alreadySaved: true }).pending, false);
+  assert.equal(readLaterState({ stored: true, draft: null, alreadySaved: true }).pending, true);
+});
+
+test('what the user does to the row wins over the proposal', () => {
+  const unticked = readLaterState({ stored: false, draft: false, alreadySaved: false });
+  assert.equal(unticked.pending, false);
+  assert.equal(unticked.edited, false, 'unticking the proposal leaves nothing to lose');
+
+  const ticked = readLaterState({ stored: false, draft: true, alreadySaved: true });
+  assert.equal(ticked.pending, true);
+  assert.equal(ticked.edited, true);
+});
+
+test('the proposal enables Save without arming the close guard', () => {
+  const { pending, edited } = readLaterState({ stored: false, draft: null, alreadySaved: false });
+  const initial = { ...CLEAN, readLater: false };
+  assert.equal(hasUnsavedChanges({ initial, pending: { ...CLEAN, readLater: pending } }), true);
+  assert.equal(hasUnsavedChanges({ initial, pending: { ...CLEAN, readLater: edited } }), false);
 });
 
 /* --- SOURCE: nothing writes outside the save path ---------------------------
