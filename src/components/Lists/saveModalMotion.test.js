@@ -74,12 +74,14 @@ test('every close path still funnels through the unsaved-changes guard, and a cl
   assert.match(code, /onOpenChange=\{\(nextOpen, eventDetails\) => \{ if \(!nextOpen\) onCancel\(eventDetails\); \}\}/);
   assert.match(
     code,
-    /const onCancel = \(eventDetails\) => \{\s*eventDetails\.cancel\(\);\s*requestClose\(\);\s*\};/,
+    /const onCancel = \(eventDetails\) => \{\s*eventDetails\.cancel\(\);\s*requestClose\(\{ explicit: eventDetails\.reason === 'close-press' \}\);\s*\};/,
   );
   assert.match(code, /if \(saving \|\| !open\) return/, 'a close while saving, or while already leaving, is refused');
-  const guard = code.match(/const requestClose = \(\) => \{[\s\S]*?\n {2}\};/);
+  const guard = code.match(/const requestClose = \(\{ explicit = false \} = \{\}\) => \{[\s\S]*?\n {2}\};/);
   assert.ok(guard, 'requestClose is gone');
-  assert.match(guard[0], /if \(dirty\) \{\s*setConfirmingDiscard\(true\);\s*return;\s*\}/);
+  // Only the X, and only once the prompt is showing, answers it by closing:
+  // Escape and the scrim keep asking, so a stray press cannot drop a note.
+  assert.match(guard[0], /if \(dirty && !\(explicit && confirmingDiscard\)\) \{\s*setConfirmingDiscard\(true\);\s*return;\s*\}/);
   assert.match(guard[0], /closeDialog\(\);/);
   // The X is a DialogClose, so touch screen readers can leave the popup
   // (dialog.md, `modal`), and it goes through the same request as Escape.

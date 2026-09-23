@@ -65,11 +65,15 @@
 
 /* The new-list window opens nested inside this one, and a nested Base UI
    dialog draws no scrim of its own (dialog.md, "Nested dialogs"): the parent
-   is asked to dim itself instead, which is what this veil is. */
+   is asked to dim itself instead, which is what this veil is.
+   `inset: -1px` because an absolute box starts inside the border: at 0 the
+   window's light 1px border stayed undimmed and read as a white rim around
+   the veil. At -1px the veil and the border share the outer edge, so the
+   inherited radius matches the window's own corners too. */
 .save-modal[data-nested-dialog-open]::after {
   content: '';
   position: absolute;
-  inset: 0;
+  inset: -1px;
   border-radius: inherit;
   background: rgba(17, 19, 24, 0.4);
   pointer-events: none;

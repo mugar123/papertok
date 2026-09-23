@@ -400,9 +400,13 @@ export default function SaveToListModal({ paper, onClose }) {
    */
   const closeDialog = () => setOpen(false);
 
-  const requestClose = () => {
+  // `explicit` is the X. Once the discard prompt is on screen, pressing it
+  // again is the answer to that prompt, not a second question: it closes and
+  // drops the changes, as Discard would. Escape and the scrim stay guarded — a
+  // stray press outside the window must not cost somebody their note.
+  const requestClose = ({ explicit = false } = {}) => {
     if (saving || !open) return;
-    if (dirty) {
+    if (dirty && !(explicit && confirmingDiscard)) {
       setConfirmingDiscard(true);
       return;
     }
@@ -415,7 +419,7 @@ export default function SaveToListModal({ paper, onClose }) {
   // way the native dialog's `onCancel` was intercepted before.
   const onCancel = (eventDetails) => {
     eventDetails.cancel();
-    requestClose();
+    requestClose({ explicit: eventDetails.reason === 'close-press' });
   };
 
   // Once the exit has played. `onClose` unmounts this component (App.jsx), so
@@ -471,6 +475,11 @@ export default function SaveToListModal({ paper, onClose }) {
     const metadataChanged = note !== baseline.note
       || JSON.stringify(finalTags) !== JSON.stringify(baseline.tags);
     const readLaterChanged = pendingReadLater !== baseline.readLater;
+    // Read later is one of the destinations, so a paper sent there alone is a
+    // saved paper: the card's Save button has to light up for it the way it
+    // does for any list. Without this the paper sat in Read later with the
+    // button still off, and the next open proposed Read later all over again.
+    const savesPaper = toAdd.length > 0 || (readLaterChanged && pendingReadLater);
 
     setSaving(true);
     setSaveError(false);
@@ -486,7 +495,7 @@ export default function SaveToListModal({ paper, onClose }) {
           }
         }
         demoSet('lists', allLists);
-        if (toAdd.length > 0) {
+        if (savesPaper) {
           markSaved(paper);
           const allSaved = demoGet('savedPapersData', {});
           allSaved[paper.id] = {
@@ -512,7 +521,7 @@ export default function SaveToListModal({ paper, onClose }) {
          * of a present id and `arrayRemove` of an absent one are no-ops, so
          * pressing Save again redoes only what is missing.
          */
-        if (toAdd.length > 0) {
+        if (savesPaper) {
           await setDoc(
             savedPaperDocRef(user.uid, paper.id),
             buildSavedPaperPayload(paper, new Date().toISOString()),
@@ -599,7 +608,7 @@ export default function SaveToListModal({ paper, onClose }) {
 
       toAdd.forEach(() => trackEvent('save_change', { action: 'add', surface: 'lists' }));
       toRemove.forEach(() => trackEvent('save_change', { action: 'remove', surface: 'lists' }));
-      if (toAdd.length > 0) markActivation();
+      if (savesPaper) markActivation();
 
       closeDialog();
     } catch (err) {

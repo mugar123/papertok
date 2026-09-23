@@ -26,12 +26,22 @@ function bounded(code, from, to, label, maxLines) {
 test('SOURCE: the saved-paper document is addressed by its encoded name, after which the aggregate learns of it', async () => {
   const code = stripComments(await read('./SaveToListModal.jsx'));
   assert.doesNotMatch(code, /doc\(db, 'users', user\.uid, 'savedPapers'/);
-  const save = bounded(code, 'if (toAdd.length > 0) {\n          await setDoc(', 'for (const listId of toAdd)', 'the saved-paper write', 20);
+  const save = bounded(code, 'if (savesPaper) {\n          await setDoc(', 'for (const listId of toAdd)', 'the saved-paper write', 20);
   assert.match(
     save,
     /await setDoc\(\s*savedPaperDocRef\(user\.uid, paper\.id\),[\s\S]*?\);\s*markSaved\(paper\);/,
     'the aggregate is told AFTER the document is written, so a refused write leaves no orphan',
   );
+});
+
+test('SOURCE: Read later alone saves the paper, so the Save button lights up for it', async () => {
+  const code = stripComments(await read('./SaveToListModal.jsx'));
+  assert.match(
+    code,
+    /const savesPaper = toAdd\.length > 0 \|\| \(readLaterChanged && pendingReadLater\);/,
+    'a paper sent only to Read later is a saved paper',
+  );
+  assert.doesNotMatch(code, /if \(toAdd\.length > 0\) \{\s*(await setDoc|markSaved)/, 'no save path is left gated on lists alone');
 });
 
 test('SOURCE: the lists screen asks by encoded name and keys what comes back by paper id', async () => {
