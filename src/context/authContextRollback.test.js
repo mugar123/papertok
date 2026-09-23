@@ -97,3 +97,15 @@ test('completeOnboarding gives a write timeout a stable code, and leaves a rejec
   );
   assert.match(fn[0], /throw settled\.reason;/, 'a real rejection (a rules refusal, say) is rethrown as itself, not relabelled');
 });
+
+test('updateProfilePhoto bounds its write and names the timeout', async () => {
+  // The settings screen holds its photo spinner until this settles, and a
+  // Firestore write against a stalled connection never settles on its own.
+  const src = stripComments(await readFile(new URL('./AuthContext.jsx', import.meta.url), 'utf8'));
+  const fn = src.match(/const updateProfilePhoto = useCallback\(async \(value\) => \{[\s\S]*?\n {2}\}, \[profilePhoto, user\?\.uid\]\);/);
+  assert.ok(fn, 'updateProfilePhoto is gone or reshaped');
+  assert.match(fn[0], /await settleWithin\(\s*setDoc\(doc\(db, 'users', userId\)/);
+  assert.doesNotMatch(fn[0], /await setDoc\(/, 'no unbounded write left behind');
+  assert.match(fn[0], /if \(settled\.status === 'timed_out'\) \{[\s\S]*?\.code = 'PROFILE_PHOTO_WRITE_TIMEOUT';[\s\S]*?throw /);
+  assert.match(fn[0], /throw settled\.reason;/);
+});

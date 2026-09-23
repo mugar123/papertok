@@ -41,6 +41,7 @@ import { profileIsPublic, savePublicProfilePhoto } from '../../services/userProf
 import { ownProfileCache, ownProfileKey } from '../../utils/profileSessionCaches.js';
 import { SIGN_IN_PROVIDERS } from '../../services/authIdentityService';
 import { getUiErrorMessage } from '../../utils/errorMessages';
+import { settleWithin } from '../../utils/asyncTiming';
 import EditInterestsModal from './EditInterestsModal';
 import DeleteAccountDialog from './DeleteAccountDialog';
 import EmailNotificationModal from '../Following/EmailNotificationModal';
@@ -154,6 +155,12 @@ function useSectionSpy(sectionIds) {
   return activeId;
 }
 
+/**
+ * The public copy's whole budget: the patient read (PUBLIC_PHOTO_READ_TIMEOUT_MS,
+ * 8 s, with the stream kick at 3 s), the second compression and the commit.
+ */
+const PUBLIC_PHOTO_MIRROR_TIMEOUT_MS = 12_000;
+
 const SETTINGS_COPY = {
   es: {
     eyebrow: 'Ajustes de usuario',
@@ -176,6 +183,7 @@ const SETTINGS_COPY = {
     photoRemoved: 'Foto de perfil eliminada.',
     photoSaveError: 'No se pudo guardar la foto de perfil.',
     photoRestoreError: 'No se pudo restaurar la foto de perfil.',
+    photoPublicPending: 'El cambio se ha guardado, pero tu perfil público todavía no lo refleja. Vuelve a intentarlo.',
     discovery: 'Descubrimiento',
     discoveryDescription: 'Señales que PaperTok utiliza para construir tus feeds.',
     followedContent: 'Lo que sigues',
@@ -269,6 +277,7 @@ const SETTINGS_COPY = {
     photoRemoved: 'Profile photo removed.',
     photoSaveError: 'The profile photo could not be saved.',
     photoRestoreError: 'The profile photo could not be restored.',
+    photoPublicPending: 'The change is saved, but your public profile does not reflect it yet. Try again.',
     discovery: 'Discovery',
     discoveryDescription: 'Signals PaperTok uses to build your feeds.',
     followedContent: 'Following',
@@ -535,6 +544,27 @@ export default function SettingsPage() {
     }
   };
 
+  // The public profile keeps its own copy: `users/{uid}` is owner-only, so a
+  // signed-out visitor could never see the private one. The copy is
+  // best-effort — a failure is not worth losing the photo the user just set —
+  // but it is neither unbounded nor silent: the spinner waits on it, and a
+  // public page left on the old picture is exactly what the user would check
+  // next (reported 2026-09-23, when this waited forever on a dead stream).
+  // Pinned to the account that chose the file: compressions and reads happen
+  // between the click and the write, and `auth.currentUser` may be somebody
+  // else by then.
+  const mirrorPublicPhoto = async (makePhoto) => {
+    const settled = await settleWithin(
+      Promise.resolve()
+        .then(makePhoto)
+        .then(photo => savePublicProfilePhoto(photo, { currentUser: user })),
+      PUBLIC_PHOTO_MIRROR_TIMEOUT_MS,
+    );
+    if (settled.status === 'fulfilled') return true;
+    console.error('Could not mirror the photo to the public profile:', settled.reason || 'timed out');
+    return false;
+  };
+
   const handlePhotoSelect = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -545,22 +575,11 @@ export default function SettingsPage() {
     try {
       const preparedPhoto = await prepareProfileImage(file);
       await updateProfilePhoto(preparedPhoto);
-      // The public profile keeps its own copy: `users/{uid}` is owner-only, so
-      // a signed-out visitor could never see this one. Recompressed again
-      // because the public budget is 60 KB against 280 KB here. A failure is
-      // not worth losing the photo the user just set, so it only warns.
-      try {
-        // Pinned to the account that chose the file: two compressions happen
-        // between the click and this write, and `auth.currentUser` may be
-        // somebody else by then.
-        await savePublicProfilePhoto(
-          await prepareProfileImage(file, PUBLIC_AVATAR_PRESET),
-          { currentUser: user },
-        );
-      } catch (mirrorError) {
-        console.error('Could not mirror the photo to the public profile:', mirrorError);
-      }
-      setPhotoFeedback({ tone: 'success', text: copy.photoUpdated });
+      // Recompressed again because the public budget is 60 KB against 280 KB here.
+      const mirrored = await mirrorPublicPhoto(() => prepareProfileImage(file, PUBLIC_AVATAR_PRESET));
+      setPhotoFeedback(mirrored
+        ? { tone: 'success', text: copy.photoUpdated }
+        : { tone: 'error', text: copy.photoPublicPending });
     } catch (error) {
       setPhotoFeedback({
         tone: 'error',
@@ -579,15 +598,10 @@ export default function SettingsPage() {
       await updateProfilePhoto(null);
       // Removing the upload falls back to the account picture, so the public
       // profile follows it there rather than being left on the old one.
-      try {
-        await savePublicProfilePhoto(user?.photoURL || null);
-      } catch (mirrorError) {
-        console.error('Could not mirror the photo to the public profile:', mirrorError);
-      }
-      setPhotoFeedback({
-        tone: 'success',
-        text: user?.photoURL ? copy.googlePhotoRestored : copy.photoRemoved,
-      });
+      const mirrored = await mirrorPublicPhoto(() => user?.photoURL || null);
+      setPhotoFeedback(mirrored
+        ? { tone: 'success', text: user?.photoURL ? copy.googlePhotoRestored : copy.photoRemoved }
+        : { tone: 'error', text: copy.photoPublicPending });
     } catch {
       setPhotoFeedback({ tone: 'error', text: copy.photoRestoreError });
     } finally {

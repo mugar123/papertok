@@ -886,6 +886,58 @@ test('changing a photo never creates a public profile', async () => {
   assert.deepEqual(calls, []);
 });
 
+test('mirroring the avatar on a dead listen stream kicks it and writes on the rebuilt one', async () => {
+  // Reported 2026-09-23: "Change photo" spun forever in a long-lived tab and
+  // the public profile kept its old picture. The existence check was a bare
+  // `getDoc`, which against a stream that died under the tab never settles
+  // (utils/streamRecovery.js). The kick flushes the hostage as `unavailable`,
+  // exactly as the SDK does, and the retry is the first read on the new stream.
+  let attempts = 0;
+  let flushHostage;
+  let kicks = 0;
+  const { api, calls } = fakeApi({
+    getDocument: () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return new Promise((_, reject) => {
+          flushHostage = () => reject(Object.assign(new Error('flushed'), { code: 'unavailable' }));
+        });
+      }
+      return Promise.resolve({ exists: () => true, id: 'user-1', data: () => ({ handle: 'ada' }) });
+    },
+    readOptions: {
+      stallMs: 5,
+      retryDelayMs: 1,
+      checkOffline: () => false,
+      subscribeOnline: () => () => {},
+      onStall: () => { kicks += 1; flushHostage(); },
+    },
+  });
+  assert.equal(await savePublicProfilePhoto(GOOGLE_AVATAR, api), GOOGLE_AVATAR);
+  assert.equal(kicks, 1, 'the stalled read asked for the stream to be rebuilt');
+  assert.deepEqual(writtenPaths(calls), ['db/userProfiles/user-1']);
+});
+
+test('a cache-served absence is not taken as "no public profile"', async () => {
+  // The kick above answers a flushed read from the cache, and for a profile the
+  // cache never held that is an empty snapshot. Treating it as the server's
+  // word would skip the mirror in silence and show "Profile photo updated."
+  // over a public page that still has the old picture.
+  let attempts = 0;
+  const { api, calls } = fakeApi({
+    getDocument: async () => {
+      attempts += 1;
+      return attempts === 1
+        ? { exists: () => false, metadata: { fromCache: true } }
+        : { exists: () => true, id: 'user-1', data: () => ({ handle: 'ada' }) };
+    },
+    readOptions: { retryDelayMs: 1, checkOffline: () => false, subscribeOnline: () => () => {} },
+  });
+  assert.equal(await savePublicProfilePhoto(GOOGLE_AVATAR, api), GOOGLE_AVATAR);
+  assert.equal(attempts, 2);
+  assert.deepEqual(writtenPaths(calls), ['db/userProfiles/user-1']);
+});
+
 // --- unpublishing the profile ------------------------------------------------
 
 test('deleting the profile frees the handle in the same batch', async () => {

@@ -410,9 +410,23 @@ export function AuthProvider({ children }) {
       }
 
       if (userId) {
-        await setDoc(doc(db, 'users', userId), {
-          profilePhoto: next || deleteField(),
-        }, { merge: true });
+        // Bounded like completeOnboarding: against a stalled connection this
+        // promise never settles on its own, and the settings screen holds its
+        // photo spinner until it does. `settleWithin` never throws, so the
+        // timeout becomes an error with a stable code here, and the catch
+        // below rolls the optimistic photo back as for any other failure.
+        const settled = await settleWithin(
+          setDoc(doc(db, 'users', userId), {
+            profilePhoto: next || deleteField(),
+          }, { merge: true }),
+          PROFILE_NETWORK_TIMEOUT_MS,
+        );
+        if (settled.status === 'timed_out') {
+          const timeoutError = new Error('updateProfilePhoto: the write did not settle in time');
+          timeoutError.code = 'PROFILE_PHOTO_WRITE_TIMEOUT';
+          throw timeoutError;
+        }
+        if (settled.status === 'rejected') throw settled.reason;
       }
       return next;
     } catch (updateError) {

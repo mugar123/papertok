@@ -33,6 +33,7 @@ import { auth, db, IS_DEMO } from './firebase.js';
 import { firestoreRest } from './firestoreRestClient.js';
 import { PUBLIC_LIST_LIMITS } from './publicListPayload.js';
 import { userSearchEntry, userSearchReference } from './userSearchService.js';
+import { patientRead } from '../utils/boundedRead.js';
 import { documentIsAuthoritative } from '../utils/cacheAuthority.js';
 import { normalizeHandle, requireHandle } from '../utils/userHandle.js';
 
@@ -419,6 +420,8 @@ function operations(overrides = {}) {
     getDocument: overrides.getDocument || getDoc,
     now: overrides.now || serverTimestamp,
     rest: overrides.rest || firestoreRest,
+    // Timers, stall recovery and online probe for `patientRead`; tests only.
+    readOptions: overrides.readOptions || {},
   };
 }
 
@@ -787,6 +790,9 @@ export async function migrateHiddenPins({ attribute, showOnProfile }, overrides)
   };
 }
 
+/** Healthy is under half a second; past the stall kick and one retry is enough. */
+export const PUBLIC_PHOTO_READ_TIMEOUT_MS = 8000;
+
 /**
  * Mirrors the app avatar into the public profile. One document, one field.
  *
@@ -799,7 +805,20 @@ export async function savePublicProfilePhoto(photo, overrides) {
   const api = operations(overrides);
   requireSupported(api);
   const uid = requireOwner(api);
-  const existing = await api.getDocument(profileReference(api, uid));
+  // Patient, not bare: the settings screen waits on this read with its photo
+  // spinner up, and a bare `getDoc` on a listen stream that died under a
+  // long-lived tab never settles — the spinner span forever and the public
+  // page kept its old picture (reported 2026-09-23). `patientRead` kicks the
+  // stream at DEFAULT_STALL_MS and re-asks on the rebuilt one, and
+  // `isAnswer` refuses the cache-served absence that kick flushes: only the
+  // server may say there is no public profile to mirror into.
+  const existing = await patientRead(() => api.getDocument(profileReference(api, uid)), {
+    attempts: 1,
+    ms: PUBLIC_PHOTO_READ_TIMEOUT_MS,
+    label: 'public profile',
+    isAnswer: documentIsAuthoritative,
+    ...api.readOptions,
+  });
   if (!existing?.exists()) return null;
 
   const value = cleanPhoto(photo);
