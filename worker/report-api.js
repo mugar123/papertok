@@ -27,6 +27,7 @@ import {
   normalizeCitationDoi,
   normalizeCitationRows,
 } from '../src/utils/citationGraph.js';
+import { openLicenseFromCrossref } from '../src/utils/crossrefLicense.js';
 import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.js';
 import {
   handlePublicListRequest,
@@ -94,6 +95,10 @@ const RELATED_CACHE_SECONDS = 24 * 60 * 60;
 const RELATED_UPSTREAM_LIMIT = 20;
 const CITATION_GRAPH_CACHE_SECONDS = 7 * 24 * 60 * 60;
 const OA_CACHE_SECONDS = 7 * 24 * 60 * 60;
+// A DOI neither Unpaywall nor Crossref can speak for yet. Uncached, every card
+// that showed it asked again on every visit; a week would hide the paper's
+// access for days after Unpaywall indexes it, which is usually within one or two.
+const OA_UNRESOLVED_CACHE_SECONDS = 6 * 60 * 60;
 // An hour, up from ten minutes. arXiv's listings change once a day (the
 // announcement at 20:00 ET), so a page served from the edge for an hour is as
 // fresh as one fetched twice -- and with one upstream call every three seconds
@@ -1015,14 +1020,52 @@ async function handleOpenAccess(request, env) {
   if (!/^10\.\d{4,9}\/.+/.test(doi) || doi.length > 300) {
     return json({ error: 'Invalid DOI' }, 400, corsHeaders(origin, env));
   }
-  return cacheResponse(request, origin, env, OA_CACHE_SECONDS, async () => {
+  const ttl = payload => (payload?.source === 'unresolved' ? OA_UNRESOLVED_CACHE_SECONDS : OA_CACHE_SECONDS);
+  return cacheResponse(request, origin, env, ttl, async () => {
     const email = env.UNPAYWALL_EMAIL || 'app@papertok.io';
-    const response = await fetchWithDeadline(`https://api.unpaywall.org/v2/${encodeURIComponent(doi)}?email=${encodeURIComponent(email)}`, {
-      headers: { accept: 'application/json' },
-    }, SOURCE_UPSTREAM_TIMEOUT_MS);
-    if (!response.ok) throw new Error(`Unpaywall error: ${response.status}`);
-    return response.json();
+    try {
+      return await fetchJsonWithTimeout(`https://api.unpaywall.org/v2/${encodeURIComponent(doi)}?email=${encodeURIComponent(email)}`, {
+        headers: { accept: 'application/json' },
+      }, SOURCE_UPSTREAM_TIMEOUT_MS);
+    } catch (error) {
+      // Only "Unpaywall has not indexed this DOI" goes on to Crossref. It used
+      // to leave as a 502 that nothing cached, for every paper a day old; an
+      // outage still does, because caching "no copy" for it would be wrong for
+      // a week.
+      if (error?.status !== 404) throw error;
+    }
+    return openAccessFromCrossref(doi);
   }, { canonicalParams: { doi } });
+}
+
+// Unpaywall's shape, so every client already reads it: a Crossref licence on
+// the version of record is a copy at the publisher. No PDF link, because
+// Crossref's are text-mining links that often need a token to open.
+async function openAccessFromCrossref(doi) {
+  let work = null;
+  try {
+    const payload = await fetchJsonUpstream(`https://api.crossref.org/works/${encodeURIComponent(doi)}?mailto=app@papertok.io`);
+    work = payload?.message || null;
+  } catch (error) {
+    // A DOI registered with DataCite or mEDRA is simply not in Crossref.
+    if (error?.status !== 404) throw error;
+  }
+  const doiUrl = `https://doi.org/${doi}`;
+  const license = openLicenseFromCrossref(work);
+  if (!license) {
+    return { doi, doi_url: doiUrl, is_oa: null, best_oa_location: null, oa_locations: [], source: 'unresolved' };
+  }
+  const location = {
+    host_type: 'publisher',
+    version: 'publishedVersion',
+    license: license.slug,
+    url: doiUrl,
+    url_for_landing_page: doiUrl,
+    url_for_pdf: null,
+    evidence: 'crossref license',
+    is_best: true,
+  };
+  return { doi, doi_url: doiUrl, is_oa: true, best_oa_location: location, oa_locations: [location], source: 'crossref' };
 }
 
 function safeArxivParam(name, rawValue) {
@@ -2606,8 +2649,8 @@ export default {
     if (url.pathname === '/oa') {
       try {
         return await handleOpenAccess(request, env);
-      } catch {
-        return json({ error: 'Open-access lookup unavailable' }, 502, corsHeaders(origin, env));
+      } catch (error) {
+        return upstreamFailureResponse('/oa', error, origin, env, 'Open-access lookup unavailable');
       }
     }
     if (url.pathname === '/arxiv') {

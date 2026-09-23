@@ -1,3 +1,5 @@
+import { openLicenseFromCrossref } from '../utils/crossrefLicense.js';
+
 const CROSSREF_WORKS_LIMIT = 30;
 const CROSSREF_AUTHORS_WORKS_LIMIT = 100;
 
@@ -48,7 +50,9 @@ export function mapCrossrefInstitutionWork(work) {
   if (!doi || !title) return null;
   const published = getCrossrefPublishedDate(work);
   const year = Number(published.slice(0, 4)) || new Date().getFullYear();
-  const licenseUrl = work.license?.find(license => /^https?:\/\//i.test(license?.URL || ''))?.URL || '';
+  // Not the first licence with a URL: Elsevier lists its text-mining licence
+  // first, and that read every subscription article as open access.
+  const openLicense = openLicenseFromCrossref(work);
   const { publicationType, publicationStatus, peerReviewed } = publicationFactsForCrossrefType(work.type);
 
   return {
@@ -66,8 +70,10 @@ export function mapCrossrefInstitutionWork(work) {
     publicationType,
     publicationStatus,
     peerReviewed,
-    openAccess: Boolean(licenseUrl),
-    license: licenseUrl || undefined,
+    // No open licence is not a paywall either: unknown stays unknown, and the
+    // card asks for a free copy itself.
+    openAccess: openLicense ? true : undefined,
+    license: openLicense?.url,
     landingPageUrl: work.URL || `https://doi.org/${doi}`,
     citationCount: Number(work['is-referenced-by-count']) || 0,
     sourceType: work.type || 'article',

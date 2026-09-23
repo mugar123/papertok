@@ -106,6 +106,41 @@ test('derives the canonical peerReviewed field from the Crossref work type', () 
   assert.equal(peerReviewedFor('dataset'), false);
 });
 
+// Licence arrays as Crossref served them on 2026-09-23.
+const SUBSCRIPTION_LICENCES = [
+  { start: { 'date-parts': [[2026, 9, 1]], 'date-time': '2026-09-01T00:00:00Z', timestamp: 1788220800000 }, 'content-version': 'tdm', 'delay-in-days': 0, URL: 'https://www.elsevier.com/tdm/userlicense/1.0/' },
+  { start: { 'date-parts': [[2026, 9, 1]], 'date-time': '2026-09-01T00:00:00Z', timestamp: 1788220800000 }, 'content-version': 'stm-asf', 'delay-in-days': 0, URL: 'https://doi.org/10.15223/policy-017' },
+];
+const OPEN_AFTER_TDM_LICENCES = [
+  { start: { 'date-parts': [[2026, 1, 1]], 'date-time': '2026-01-01T00:00:00Z', timestamp: 1767225600000 }, 'content-version': 'tdm', 'delay-in-days': 0, URL: 'https://www.elsevier.com/tdm/userlicense/1.0/' },
+  { start: { 'date-parts': [[2026, 9, 10]], 'date-time': '2026-09-10T00:00:00Z', timestamp: 1788998400000 }, 'content-version': 'vor', 'delay-in-days': 252, URL: 'http://creativecommons.org/licenses/by/4.0/' },
+];
+
+test('a subscription article is not open access because its text-mining licence has a URL', () => {
+  const paper = mapCrossrefInstitutionWork({
+    DOI: '10.1016/j.jmb.2026.170030',
+    title: ['A Journal of Molecular Biology article'],
+    type: 'journal-article',
+    license: SUBSCRIPTION_LICENCES,
+  });
+
+  // Unknown, not closed: Crossref has no open licence, which is not a paywall.
+  assert.equal(paper.openAccess, undefined);
+  assert.equal(paper.license, undefined);
+});
+
+test('an open version of record keeps its Creative Commons licence, not the one listed first', () => {
+  const paper = mapCrossrefInstitutionWork({
+    DOI: '10.1016/j.clinsp.2026.101156',
+    title: ['A Clinics article'],
+    type: 'journal-article',
+    license: OPEN_AFTER_TDM_LICENCES,
+  });
+
+  assert.equal(paper.openAccess, true);
+  assert.equal(paper.license, 'http://creativecommons.org/licenses/by/4.0/');
+});
+
 test('does not record a Crossref preprint as published', () => {
   const preprint = mapCrossrefInstitutionWork({
     DOI: '10.1000/posted',

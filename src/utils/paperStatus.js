@@ -54,17 +54,17 @@ export function reviewStatusForPaper(paper) {
  * is not a locked door, so a paper with nothing to go on gets no chip rather
  * than a wrong one. Only an explicit `false` is a paywall.
  *
- * `openCopyFound` is the Unpaywall lookup landing: a free copy of a paper whose
- * published version is behind a subscription.
+ * `openCopy` is what the open-access lookup found (`mapUnpaywallResult`): a free
+ * copy of a paper whose own record did not show one.
  */
-export function accessStatusForPaper(paper, { openCopyFound = false } = {}) {
+export function accessStatusForPaper(paper, { openCopy = null } = {}) {
   if (!paper) return null;
   // An arXiv id is evidence in its own right, and it outranks an explicit
   // `false`: OpenAlex reports `is_oa` for the *published* version, so a paper
   // that ran in a subscription journal reads as closed even while its arXiv
   // copy sits there free. The card links that copy; the chip should not
   // contradict the button underneath it.
-  if (openCopyFound || paper.openAccess === true || paper.openAccessPdfUrl || paper.arxivId) {
+  if (openCopy || paper.openAccess === true || paper.openAccessPdfUrl || paper.arxivId) {
     return 'open';
   }
   if (paper.openAccess === false) return 'subscription';
@@ -141,10 +141,23 @@ export function reviewTagForPaper(paper, { english = false } = {}) {
   return tag ? localize(tag, english) : null;
 }
 
+/**
+ * Whether a found copy is the published article itself, free at the publisher
+ * (gold, hybrid or bronze), rather than some other version of it. Unpaywall
+ * leaves `version` out for bronze copies, and the publisher's page is still
+ * the article.
+ */
+export function isPublishedVersionCopy(copy) {
+  return copy?.hostType === 'publisher' && (!copy.version || copy.version === 'publishedVersion');
+}
+
 /** The availability chip for a paper, or null when the record cannot say. */
-export function accessTagForPaper(paper, { english = false, openCopyFound = false } = {}) {
-  const status = accessStatusForPaper(paper, { openCopyFound });
+export function accessTagForPaper(paper, { english = false, openCopy = null } = {}) {
+  const status = accessStatusForPaper(paper, { openCopy });
   if (!status) return null;
-  const tag = status === 'open' && openCopyFound ? ACCESS_TAGS.openCopy : ACCESS_TAGS[status];
+  // "Open version" says the published one is paid, which is false for a copy
+  // that IS the published one.
+  const weakerCopy = status === 'open' && openCopy && !isPublishedVersionCopy(openCopy);
+  const tag = weakerCopy ? ACCESS_TAGS.openCopy : ACCESS_TAGS[status];
   return localize(tag, english);
 }

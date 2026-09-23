@@ -1169,14 +1169,14 @@ const PaperCard = memo(function PaperCard({
   };
 
   // What the status row is allowed to claim. `resolvedOpenCopy` is only ever
-  // set by the Unpaywall lookup, and that lookup only runs for a paper with no
-  // readable copy of its own, so its presence means exactly "the published
-  // version is closed and we found a free one elsewhere" — a weaker claim than
-  // open access, and the tag says so.
+  // set by the open-access lookup, which only runs for a paper with no
+  // readable copy of its own. The copy decides the word: the published version
+  // free at the publisher is open access, anything else is a weaker "open
+  // version" (`paperStatus.js`).
   const reviewTag = reviewTagForPaper(paper, { english: isEnglish });
   const accessTag = accessTagForPaper(paper, {
     english: isEnglish,
-    openCopyFound: Boolean(resolvedOpenCopy),
+    openCopy: resolvedOpenCopy,
   });
   const researchResources = linkedResources.paperId === paper.id ? linkedResources.items : [];
   const readablePaper = useMemo(() => resolvedOpenCopy ? {

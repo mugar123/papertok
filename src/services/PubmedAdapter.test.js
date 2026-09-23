@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PubmedAdapter, classifyPubmedCategory } from './adapters/PubmedAdapter.js';
+import { accessTagForPaper } from '../utils/paperStatus.js';
 
 test('classifies PubMed papers using title, abstract, and MeSH-style subjects', () => {
   const category = classifyPubmedCategory({
@@ -27,18 +28,38 @@ test('trusts the query category when PubMed was searched for one subcategory', (
   assert.equal(category, 'bio.micro');
 });
 
-test('maps PubMed access using the canonical openAccess field', () => {
+test('a PMC copy makes a PubMed paper open, through the canonical openAccess field', () => {
   const adapter = new PubmedAdapter();
-  const closedPaper = adapter.mapToStandard({ uid: '1', title: 'Closed', articleids: [] });
   const pmcPaper = adapter.mapToStandard({
     uid: '2',
     title: 'Open',
     articleids: [{ idtype: 'pmc', value: 'PMC2' }],
   });
 
-  assert.equal(closedPaper.openAccess, false);
   assert.equal(pmcPaper.openAccess, true);
-  assert.equal(closedPaper.isOpenAccess, undefined);
+  assert.equal(pmcPaper.isOpenAccess, undefined);
+});
+
+test('a PubMed record with no PMC copy yet says nothing about access', () => {
+  // PMID 42773801 as esummary served it on 2026-09-23, a day after it came out:
+  // CC BY in Annals of Medicine, fully open, and not deposited in PMC yet. The
+  // deposit takes days to months, so "no PMC" is not a paywall, and the card
+  // used to tag this paper "Suscripción".
+  const paper = new PubmedAdapter().mapToStandard({
+    uid: '42773801',
+    pubdate: '2026 Dec',
+    epubdate: '2026 Sep 22',
+    source: 'Ann Med',
+    title: 'An Annals of Medicine article',
+    pubtype: ['Journal Article'],
+    articleids: [
+      { idtype: 'pubmed', idtypen: 1, value: '42773801' },
+      { idtype: 'doi', idtypen: 3, value: '10.1080/07853890.2026.2726635' },
+    ],
+  });
+
+  assert.equal(paper.openAccess, undefined);
+  assert.equal(accessTagForPaper(paper), null);
 });
 
 // The three E-utilities requests this adapter used to make left the browser

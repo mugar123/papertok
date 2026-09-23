@@ -64,17 +64,39 @@ test('only an explicit false is a paywall', () => {
   assert.equal(accessTagForPaper({}), null);
 });
 
+// Copies as `mapUnpaywallResult` hands them over.
+const REPOSITORY_COPY = { landingPageUrl: 'https://repository.example/paper', hostType: 'repository', version: 'acceptedVersion', accessSource: 'unpaywall' };
+const PUBLISHER_COPY = { landingPageUrl: 'https://doi.org/10.1371/journal.pone.0358652', hostType: 'publisher', version: 'publishedVersion', license: 'cc-by', accessSource: 'unpaywall' };
+
 test('a located free copy opens a paper the record called closed', () => {
-  assert.equal(accessStatusForPaper({ openAccess: false }, { openCopyFound: true }), 'open');
+  assert.equal(accessStatusForPaper({ openAccess: false }, { openCopy: REPOSITORY_COPY }), 'open');
 });
 
-test('a found copy is a weaker claim than open access, and says so', () => {
-  const found = accessTagForPaper({ openAccess: false }, { openCopyFound: true, english: true });
+test('a copy found in a repository is a weaker claim than open access, and says so', () => {
+  const found = accessTagForPaper({ openAccess: false }, { openCopy: REPOSITORY_COPY, english: true });
   const native = accessTagForPaper({ openAccess: true }, { english: true });
   assert.equal(found.label, 'Open version');
   assert.equal(native.label, 'Open access');
   assert.notEqual(found.key, native.key);
   assert.equal(found.tone, native.tone);
+});
+
+test('the published version free at the publisher is open access, not a copy of it', () => {
+  // A gold paper PubMed had no PMC for yet: Unpaywall found it at the
+  // publisher, and "Open version" told the reader the published one was paid.
+  for (const english of [true, false]) {
+    const tag = accessTagForPaper({ openAccess: false }, { openCopy: PUBLISHER_COPY, english });
+    assert.equal(tag.key, 'open');
+    assert.equal(tag.label, english ? 'Open access' : 'Acceso abierto');
+  }
+  // Bronze copies come without a version; the publisher's page is still the article.
+  const bronze = { ...PUBLISHER_COPY, version: undefined, license: undefined };
+  assert.equal(accessTagForPaper({}, { openCopy: bronze }).key, 'open');
+});
+
+test('an accepted manuscript at the publisher is still only a version of the paper', () => {
+  const manuscript = { ...PUBLISHER_COPY, version: 'acceptedVersion' };
+  assert.equal(accessTagForPaper({ openAccess: false }, { openCopy: manuscript }).key, 'openCopy');
 });
 
 test('a downloadable pdf counts as open', () => {

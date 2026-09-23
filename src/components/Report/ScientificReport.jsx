@@ -834,7 +834,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                 <div className="sr-hero-tags">
                   {[
                     reviewTagForPaper(hero, { english: isEnglish }),
-                    accessTagForPaper(hero, { english: isEnglish, openCopyFound: Boolean(heroOpenCopy) }),
+                    accessTagForPaper(hero, { english: isEnglish, openCopy: heroOpenCopy }),
                   ].filter(Boolean).map(tag => {
                     const Glyph = STATUS_TAG_ICONS[tag.key];
                     return (

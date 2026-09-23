@@ -275,8 +275,13 @@ export class PubmedAdapter extends BaseAdapter {
     }
 
     let pdfUrl = '';
-    let isOpenAccess = false;
-    
+    // A PMC copy is proof of access; its absence is not proof of a paywall.
+    // Deposit takes days to months, so a CC BY paper a day old has none, and a
+    // `false` here was painted "Suscripción" (`paperStatus.js` reads an explicit
+    // false as a paywall). Unknown lets OpenAlex, Europe PMC or the card's
+    // open-access lookup say what it is.
+    let isOpenAccess;
+
     if (pmc) {
       isOpenAccess = true;
       // We don't set pdfUrl because PMC PDFs block iframes (X-Frame-Options: SAMEORIGIN)
