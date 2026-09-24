@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { encodePaperKey } from '../src/utils/publicNavigation.js';
 import reportApi, { fetchWithDeadline } from './report-api.js';
 import { PACE_RETRY_AFTER_SECONDS } from './upstream-pace.js';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.js';
@@ -2813,4 +2815,131 @@ test('a healthy bioRxiv answer keeps its ten minutes and says nothing is degrade
   assert.equal(payload.collection.length, 1);
   assert.equal(payload._papertok?.degraded, undefined);
   assert.equal(maxAgeSeconds(response), 600);
+});
+
+/**
+ * The share pages (worker/share-pages.js) as the router serves them: public,
+ * GET and HEAD, and with no Origin, because the caller is Vercel relaying a
+ * crawler. What a miss may spend goes through the same ledgers as everything
+ * else here: its own ceiling first, then OpenAlex's shared budget.
+ */
+const APP_SHELL = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+const SHARED_DOI_KEY = encodePaperKey('doi', '10.1145/3555174');
+const SHARED_WORK = {
+  id: 'https://openalex.org/W4304195660',
+  doi: 'https://doi.org/10.1145/3555174',
+  title: 'Characterizing Alternative Monetization Strategies on YouTube',
+  publication_year: 2022,
+  publication_date: '2022-11-07',
+  type: 'article',
+  authorships: [{ author: { display_name: 'Yiqing Hua' } }],
+};
+
+function crawlerRequest(path, { method = 'GET' } = {}) {
+  return new Request(`https://papertok-report-api.example${path}`, {
+    method,
+    headers: { 'user-agent': 'facebookexternalhit/1.1', 'accept-language': 'es-ES,es;q=0.9' },
+  });
+}
+
+function shareUpstream(urls, { work = SHARED_WORK } = {}) {
+  return async (url, init = {}) => {
+    const address = String(url);
+    urls.push({ address, authorization: new Headers(init.headers).get('authorization') });
+    if (address === 'https://papertok.app/index.html') {
+      return new Response(APP_SHELL, { status: 200, headers: { 'content-type': 'text/html' } });
+    }
+    if (address.startsWith('https://api.openalex.org/works/doi:10.1145/3555174')) {
+      return new Response(JSON.stringify(work), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    throw new Error(`unexpected upstream ${address}`);
+  };
+}
+
+test('a crawler gets a paper page with no Origin, from OpenAlex under the Worker key', async () => {
+  const urls = [];
+  const response = await withWorkerFetchMock(
+    shareUpstream(urls),
+    () => reportApi.fetch(crawlerRequest(`/share/paper/${SHARED_DOI_KEY}`), openAlexEnv()),
+  );
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /^text\/html/);
+  assert.match(html, /<title>Characterizing Alternative Monetization Strategies on YouTube<\/title>/);
+  assert.match(html, /<html lang="es">/);
+  const openAlex = urls.find(entry => entry.address.startsWith('https://api.openalex.org/'));
+  assert.ok(openAlex, 'the paper came from OpenAlex');
+  assert.match(openAlex.address, /[?&]api_key=worker-key(&|$)/, 'under the key the browser cannot hold');
+  assert.match(openAlex.address, /[?&]mailto=app%40papertok\.io(&|$)/);
+});
+
+test('a share page answers HEAD without a body and refuses anything but GET and HEAD', async () => {
+  const urls = [];
+  const head = await withWorkerFetchMock(
+    shareUpstream(urls),
+    () => reportApi.fetch(crawlerRequest(`/share/paper/${SHARED_DOI_KEY}`, { method: 'HEAD' }), openAlexEnv()),
+  );
+  const post = await withWorkerFetchMock(
+    shareUpstream(urls),
+    () => reportApi.fetch(crawlerRequest(`/share/paper/${SHARED_DOI_KEY}`, { method: 'POST' }), openAlexEnv()),
+  );
+  assert.equal(head.status, 200);
+  assert.equal(await head.text(), '');
+  assert.equal(post.status, 405);
+  assert.equal(post.headers.get('allow'), 'GET, HEAD');
+});
+
+test('a share lookup its ceiling refuses spends nothing upstream and answers the generic head', async () => {
+  const urls = [];
+  const state = { actions: [] };
+  const response = await withWorkerFetchMock(
+    shareUpstream(urls),
+    () => reportApi.fetch(crawlerRequest(`/share/paper/${SHARED_DOI_KEY}`), {
+      ...openAlexEnv(),
+      REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: key => key.startsWith('share:') }),
+    }),
+  );
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /<title>PaperTok — Descubre investigación científica<\/title>/);
+  assert.equal(urls.some(entry => entry.address.startsWith('https://api.openalex.org/')), false);
+  assert.equal(
+    state.actions.some(action => action.periodKey.startsWith('openalex:')),
+    false,
+    'OpenAlex budget untouched',
+  );
+});
+
+test('a profile page reads the public documents anonymously, as a visitor would', async () => {
+  const urls = [];
+  const documents = {
+    'handles/ada_l': { uid: { stringValue: 'u1' } },
+    'userProfiles/u1': {
+      handle: { stringValue: 'ada_l' },
+      displayName: { stringValue: 'Ada Lovelace' },
+      bio: { stringValue: 'Analytical engines.' },
+      visibility: { stringValue: 'public' },
+    },
+  };
+  const upstream = shareUpstream(urls);
+  const response = await withWorkerFetchMock(
+    async (url, init) => {
+      const address = String(url);
+      const prefix = 'https://firestore.googleapis.com/v1/projects/papertok-test/databases/(default)/documents/';
+      if (address.startsWith(prefix)) {
+        urls.push({ address, authorization: new Headers(init?.headers).get('authorization') });
+        const fields = documents[address.slice(prefix.length)];
+        return fields
+          ? new Response(JSON.stringify({ name: address, fields }), { status: 200 })
+          : new Response(JSON.stringify({ error: { code: 404 } }), { status: 404 });
+      }
+      return upstream(url, init);
+    },
+    () => reportApi.fetch(crawlerRequest('/share/user/ada_l'), openAlexEnv({ FIREBASE_PROJECT_ID: 'papertok-test' })),
+  );
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /<title>Ada Lovelace \(@ada_l\) \| PaperTok<\/title>/);
+  const reads = urls.filter(entry => entry.address.includes('firestore.googleapis.com'));
+  assert.equal(reads.length, 2);
+  assert.equal(reads.every(entry => entry.authorization === null), true, 'no credential: the rules decide as for anyone');
 });
