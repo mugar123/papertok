@@ -6,6 +6,7 @@ import { PaperBuilder } from '../services/PaperBuilder.js';
 import { fetchDomainPapers } from '../services/domainSourceService.js';
 import { settleSourcesForFirstPaint, fulfilledPaperLists } from '../utils/asyncTiming.js';
 import { buildGuestFeedPlan } from '../utils/guestFeedPlan.js';
+import { composeGuestPage, extendGuestPage, guestPageReady } from '../utils/guestFeedComposition.js';
 import { enrichPapersBatch } from '../services/openAlexService.js';
 import { enrichPubmedIds, mergeEuropePmcEnrichment } from '../services/europePmcService.js';
 import {
@@ -14,7 +15,6 @@ import {
 } from '../utils/feedEnrichment.js';
 
 const GUEST_PAGE_SIZE = 12;
-const GUEST_EARLY_PAINT_COUNT = 4;
 // Per-source cap. The slowest healthy source measured 2.4 s (OpenAlex, cold
 // edge); the only thing ever seen above 4 s is OpenReview's cold upstream at
 // 5.2 s, which no realistic budget saves. Waiting 5 s for it bought nothing.
@@ -59,17 +59,6 @@ function dedupePapers(papers) {
   });
 }
 
-function mergeKeepingShownOrder(shown, incoming, pageSize) {
-  const seen = new Set(shown.map((paper) => String(paper?.doi || paper?.arxivId || paper?.id || '').toLowerCase()).filter(Boolean));
-  const extra = incoming.filter((paper) => {
-    const key = String(paper?.doi || paper?.arxivId || paper?.id || '').toLowerCase();
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-  return [...shown, ...extra].slice(0, pageSize);
-}
-
 /**
  * The guest feed, built for `areas` — the interests a visitor picked, or the
  * fixed sample when they picked none. The plan is derived here so the caller
@@ -106,10 +95,13 @@ export function useGuestFeed({ areas = [] } = {}) {
     setError(null);
 
     try {
+      // The first paint waits until every chosen area has answered (or the
+      // per-source budget runs out), so the first page already shows the
+      // choice instead of whichever branch a cache made fastest.
       const { first, all } = settleSourcesForFirstPaint(
         startGuestCandidateRequests(requestedPlan, { refresh: forceRefresh }),
         GUEST_SOURCE_BUDGET_MS,
-        (papers) => PaperBuilder.deduplicate(papers).length >= GUEST_EARLY_PAINT_COUNT,
+        (papers) => guestPageReady(PaperBuilder.deduplicate(papers), requestedPlan, GUEST_PAGE_SIZE),
       );
 
       // Europe PMC has no in-flight map, and the early and late batches
@@ -136,9 +128,11 @@ export function useGuestFeed({ areas = [] } = {}) {
         }
       };
 
-      const early = dedupePapers(
-        PaperBuilder.deduplicate(fulfilledPaperLists(await first)),
-      ).slice(0, GUEST_PAGE_SIZE);
+      const early = composeGuestPage(
+        dedupePapers(PaperBuilder.deduplicate(fulfilledPaperLists(await first))),
+        requestedPlan,
+        GUEST_PAGE_SIZE,
+      );
       if (requestId !== requestIdRef.current) return;
 
       if (early.length > 0) {
@@ -156,10 +150,10 @@ export function useGuestFeed({ areas = [] } = {}) {
         throw new Error('Guest discovery returned no papers.');
       }
       if (early.length === 0) {
-        setPapers(late.slice(0, GUEST_PAGE_SIZE));
+        setPapers(extendGuestPage([], late, requestedPlan, GUEST_PAGE_SIZE));
         enrichVisible(late);
       } else {
-        setPapers((current) => mergeKeepingShownOrder(current, late, GUEST_PAGE_SIZE));
+        setPapers((current) => extendGuestPage(current, late, requestedPlan, GUEST_PAGE_SIZE));
         enrichVisible(late);
       }
     } catch (loadError) {
