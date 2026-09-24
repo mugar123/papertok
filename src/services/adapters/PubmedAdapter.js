@@ -1,6 +1,7 @@
 import { CATEGORIES } from '../../data/categories.js';
 import { BaseAdapter } from './BaseAdapter.js';
 import { readSourceCache, writeSourceCache } from '../../utils/sourceCache.js';
+import { readPubmedEfetch } from '../../utils/pubmedEfetch.js';
 import { fetchWorkerSourceJson } from '../workerApiClient.js';
 
 // E-utilities answer as three serial requests (esearch → esummary → efetch).
@@ -212,20 +213,7 @@ export class PubmedAdapter extends BaseAdapter {
       try {
         const xmlText = pubmedData?.efetch || '';
         if (xmlText && typeof DOMParser === 'function') {
-          const enrichmentMap = {};
-          const parser = new DOMParser();
-          const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
-          const articles = xmlDoc.querySelectorAll('PubmedArticle');
-          articles.forEach((article) => {
-            const pmidEl = article.querySelector('PMID');
-            if (!pmidEl) return;
-            const pmid = pmidEl.textContent;
-            const abstractTexts = article.querySelectorAll('AbstractText');
-            const abstract = Array.from(abstractTexts).map(el => el.textContent).join(' ');
-            const meshHeadings = article.querySelectorAll('MeshHeading > DescriptorName');
-            const categories = Array.from(meshHeadings).map(el => el.textContent);
-            enrichmentMap[`pmid:${pmid}`] = { abstract, categories };
-          });
+          const enrichmentMap = readPubmedEfetch(new DOMParser().parseFromString(xmlText, 'text/xml'));
           mappedPapers = mappedPapers.map((paper) => {
             const enrichment = enrichmentMap[paper.id];
             if (!enrichment) return paper;
