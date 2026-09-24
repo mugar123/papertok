@@ -33,7 +33,10 @@
       ],
       "destination": "https://api.papertok.app/share/:kind/:rest*"
     },
-    { "source": "/:path((?!_vercel/|assets/|__/auth/).*)", "destination": "/index.html" }
+    {
+      "source": "/:path((?:login|onboarding|feed|lists|research|report|following|search|profile|settings|admin|explorer|public)(?:/.*)?)",
+      "destination": "/index.html"
+    }
   ],
   "headers": [
     {

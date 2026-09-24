@@ -9,6 +9,7 @@ import { INITIAL_ACCOUNT_SCOPE, accountScopeKey, nextAccountScope } from './util
 import { clearAuthReturn, isInAppPath, offerAuthReturn, takeAuthReturn } from './utils/authReturn.js'
 import RouteFallback from './components/Layout/RouteFallback'
 import RouteAnnouncer from './components/Layout/RouteAnnouncer'
+import NotFoundPage from './components/Layout/NotFoundPage'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { LanguageProvider, useLanguage } from './context/LanguageContext'
 import { ThemeProvider } from './context/ThemeContext'
@@ -339,6 +340,9 @@ function AppContent() {
         <Routes location={location} key={location.pathname}>
           {/* The sign-in page is gone; the address still works for old links
               and bookmarks: the feed, with the sign-in dialog open. */}
+          {/* The root is the feed by its own route now, not by the wildcard:
+              the wildcard answers an undeclared address with NotFoundPage. */}
+          <Route path="/" element={<Navigate to="/feed" replace />} />
           <Route path="/login" element={<LoginRedirect />} />
           <Route
             path="/onboarding"
@@ -558,7 +562,14 @@ function AppContent() {
               </PageTransition>
             }
           />
-          <Route path="*" element={<Navigate to="/feed" replace />} />
+          <Route
+            path="*"
+            element={
+              <PageTransition>
+                <NotFoundPage />
+              </PageTransition>
+            }
+          />
         </Routes>
       </AnimatePresence>
       </PageTransitionCustomProvider>

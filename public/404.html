@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <meta name="referrer" content="strict-origin" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Página no encontrada · Page not found — PaperTok</title>
+    <!-- What Vercel answers, with a 404, for an address the app does not
+         declare (vercel.json names the app's route prefixes). Standalone on
+         purpose: no app bundle, system fonts, both languages at once because
+         there is no language choice to read here. -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --text: #111318;
+        --muted: #4b5160;
+        --rule: #d9dce3;
+        --action-bg: #111318;
+        --action-text: #ffffff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #111318;
+          --text: #f2f3f5;
+          --muted: #b7bcc8;
+          --rule: #2c303a;
+          --action-bg: #f2f3f5;
+          --action-text: #111318;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: var(--text);
+        background: var(--bg);
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        line-height: 1.6;
+      }
+      main {
+        display: flex;
+        min-height: 100vh;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 28px;
+        padding: 32px 20px;
+        text-align: center;
+      }
+      .brand { margin: 0; font-weight: 800; font-size: 18px; letter-spacing: 0; }
+      section { max-width: 440px; }
+      section + section { padding-top: 24px; border-top: 1px solid var(--rule); }
+      h1, h2 { margin: 0 0 8px; line-height: 1.15; letter-spacing: 0; }
+      h1 { font-size: clamp(24px, 4vw, 34px); }
+      h2 { font-size: 20px; }
+      p { margin: 0 0 16px; color: var(--muted); }
+      a {
+        display: inline-flex;
+        min-height: 42px;
+        align-items: center;
+        padding: 0 15px;
+        border-radius: 10px;
+        color: var(--action-text);
+        background: var(--action-bg);
+        font-size: 14px;
+        font-weight: 700;
+        text-decoration: none;
+      }
+      a:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="brand">PaperTok</p>
+      <section>
+        <h1>No encontramos esta página</h1>
+        <p>Puede que el enlace ya no exista o que esté mal escrito.</p>
+        <a href="/feed">Ir al feed</a>
+      </section>
+      <section lang="en">
+        <h2>We could not find this page</h2>
+        <p>The link may no longer exist, or it may be mistyped.</p>
+        <a href="/feed">Go to the feed</a>
+      </section>
+    </main>
+  </body>
+</html>

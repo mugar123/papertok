@@ -51,21 +51,30 @@ test('SOURCE: the router reads the path, not the fragment', async () => {
 /**
  * SOURCE test: `App` mounts the routes, which node cannot run.
  *
- * The feed is `/feed`, and `/` is not a route of its own: the catch-all is
- * what answers it, so the bare domain lands on the feed. Routing anything AT
- * `/` — or redirecting to it from inside the app — would give the feed two
+ * The feed is `/feed`, and `/` only redirects there. A page routed AT `/` —
+ * or a redirect to it from inside the app — would give the feed two
  * addresses, one of which is the one every share link, canonical tag and
  * service-worker warm-up (public/sw-html-warm.js) does not use.
+ *
+ * `/` used to reach the feed through the catch-all, which sent every
+ * unmatched path there too, so a broken link landed on a working page without
+ * a word (audit 2026-09-23, issue 12). The redirect is its own route now, and
+ * the catch-all is the not-found page.
  */
-test('SOURCE: the feed lives at /feed, and the catch-all sends unmatched paths there', async () => {
+test('SOURCE: the feed lives at /feed, / redirects there, and the catch-all is the not-found page', async () => {
   const code = stripComments(await read('./App.jsx'));
 
   assert.match(code, /path="\/feed"/, 'the feed route must be /feed');
-  assert.doesNotMatch(code, /\n\s*path="\/"\n/, 'nothing may still be routed at "/"');
+  assert.doesNotMatch(code, /\n\s*path="\/"\n/, 'no page may be routed at "/"');
   assert.match(
     code,
-    /<Route path="\*" element=\{<Navigate to="\/feed" replace \/>\} \/>/,
-    'the catch-all must land on the feed',
+    /<Route path="\/" element=\{<Navigate to="\/feed" replace \/>\} \/>/,
+    'the bare domain must land on the feed',
+  );
+  assert.match(
+    code,
+    /<Route\s+path="\*"\s+element=\{\s*<PageTransition>\s*<NotFoundPage \/>/,
+    'an undeclared path must say it does not exist',
   );
   assert.doesNotMatch(
     code,

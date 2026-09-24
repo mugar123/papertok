@@ -30,16 +30,21 @@ test('SOURCE: a new account that signed in from a public page is sent to the onb
   const covered = [...declaredPrefixes[1].matchAll(/'([^']+)'/g)].map(match => match[1]);
   assert.ok(covered.length > 0, 'no prefixes are declared, so nothing is covered');
 
-  const REDIRECT_ONLY = ['*', '/login', '/report'];
+  const REDIRECT_ONLY = ['/', '/login', '/report'];
+  // The not-found page (`*`) has no door to sign in from: its one action is
+  // the link to /feed, which runs the onboarding itself.
+  const NO_DOOR = ['*'];
   const declared = code.split(/<Route\b/).slice(1)
     .map(chunk => ({
       path: (chunk.match(/path="([^"]*)"/) || [])[1],
       guarded: chunk.split(/<\/Route>|\/>/)[0].includes('ProtectedRoute'),
     }))
     .filter(route => route.path);
-  assert.equal(declared.length, 20, `expected the whole route table, found ${declared.length}`);
+  assert.equal(declared.length, 21, `expected the whole route table, found ${declared.length}`);
 
-  const guestReachable = declared.filter(route => !route.guarded && !REDIRECT_ONLY.includes(route.path));
+  const guestReachable = declared.filter(route => (
+    !route.guarded && !REDIRECT_ONLY.includes(route.path) && !NO_DOOR.includes(route.path)
+  ));
   assert.equal(
     guestReachable.length,
     5,
