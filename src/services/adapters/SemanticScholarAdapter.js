@@ -1,5 +1,6 @@
 import { BaseAdapter } from './BaseAdapter.js';
 import { fetchWorkerSourceJson } from '../workerApiClient.js';
+import { semanticScholarIsPreprint } from '../../utils/publicationStatus.js';
 
 const SEMANTIC_SCHOLAR_PAGE_SIZE = 25;
 
@@ -65,7 +66,7 @@ export class SemanticScholarAdapter extends BaseAdapter {
   }
 
   mapToStandard(raw) {
-    const isPreprint = raw.publicationTypes?.some(t => t.toLowerCase().includes('review') || t === 'preprint');
+    const isPreprint = semanticScholarIsPreprint(raw.publicationTypes);
     // The DOI and the arXiv id ride in `externalIds` (the Worker asks for
     // them). They used to be dropped — `doi: null` — so a paper saved from a
     // Semantic Scholar card was remembered under its S2 hash alone, an id no

@@ -5,6 +5,7 @@
 
 import { CATEGORIES } from '../data/categories.js';
 import { usableOpenAlexAbstract } from '../utils/openAlexAbstract.js';
+import { openAlexPublicationStatus } from '../utils/publicationStatus.js';
 import { usableOpenAlexConcepts } from '../utils/openAlexConcepts.js';
 import { matchesAuthorName } from '../utils/authorNameMatch.js';
 import { paperReferenceFor } from '../utils/explorerPaths.js';
@@ -164,11 +165,7 @@ export function mapOpenAlexEnrichmentWork(work) {
       citationCountKnown: Number.isFinite(work.cited_by_count),
       related_works: work.related_works || [],
       publicationType: work.type || work.primary_location?.source?.type || 'preprint',
-      publicationStatus: (
-        work.primary_location?.is_published
-        || (work.locations || []).some(location => location?.is_published)
-        || (work.type && work.type !== 'preprint')
-      ) ? 'published' : 'preprint',
+      publicationStatus: openAlexPublicationStatus(work),
       doi: arxivId
         ? getReliableEnrichmentDoi(work, arxivId)
         : (normalizeDoi(work.doi || work.ids?.doi) || undefined),
@@ -1781,7 +1778,7 @@ function formatOpenAlexWorkAsPaper(work) {
     institutions,
     year: work.publication_date ? new Date(work.publication_date).getFullYear() : new Date().getFullYear(),
     publicationType: work.primary_location?.source?.type || 'journal',
-    publicationStatus: work.primary_location?.is_published ? 'published' : 'preprint',
+    publicationStatus: openAlexPublicationStatus(work),
     openAccess: work.open_access?.is_oa,
     pdfUrl: work.open_access?.oa_url,
     landingPageUrl: work.primary_location?.landing_page_url || work.id,

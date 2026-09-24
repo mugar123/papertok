@@ -4,6 +4,7 @@ import { openAlexFetch } from '../openAlexClient.js';
 import { getArxivIdFromWork } from '../openAlexService.js';
 import { usableOpenAlexAbstract } from '../../utils/openAlexAbstract.js';
 import { usableOpenAlexConcepts } from '../../utils/openAlexConcepts.js';
+import { openAlexPublicationStatus } from '../../utils/publicationStatus.js';
 
 // The top-level fields `mapToStandard` and `getArxivIdFromWork` read, and
 // the only ones a search asks for (`select=`). A works page used to arrive
@@ -154,9 +155,7 @@ export class OpenAlexAdapter extends BaseAdapter {
     const conceptObjects = usableOpenAlexConcepts(semanticEntries);
     const concepts = conceptObjects.map(concept => concept.display_name);
     const publicationType = work.type || work.primary_location?.source?.type || 'article';
-    const publicationStatus = publicationType === 'preprint' || work.primary_location?.source?.type === 'repository'
-      ? 'preprint'
-      : 'published';
+    const publicationStatus = openAlexPublicationStatus(work);
 
     return {
       id: work.id.replace('https://openalex.org/', 'openalex:'),

@@ -7,6 +7,7 @@ const isDev = import.meta.env?.DEV === true;
 import { PaperBuilder } from './PaperBuilder.js';
 import CATEGORIES from '../data/categories.js';
 import { withRequestDeadline } from '../utils/requestDeadline.js';
+import { arxivCommentSaysPublished } from '../utils/publicationStatus.js';
 import { createArxivRequestQueue } from './arxivRequestQueue.js';
 
 const ARXIV_DEV = '/api/arxiv';
@@ -119,7 +120,7 @@ function parseArxivXml(xmlText) {
     const publishedRaw = entry.querySelector('published')?.textContent || entry.getElementsByTagNameNS('*', 'published')[0]?.textContent || '';
     const published = safeDateISO(publishedRaw);
 
-    const isPublishedInArxiv = !!(doi || journalRef || (comment && comment.match(/(accepted|published|appears|to appear) in/i)));
+    const isPublishedInArxiv = !!(doi || journalRef || arxivCommentSaysPublished(comment));
 
     papers.push(PaperBuilder.create({
       id: arxivId,
