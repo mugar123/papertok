@@ -18,6 +18,7 @@
  */
 
 import { safeCatalogUrl } from './externalUrl.js';
+import { orderMeshDescriptors } from './meshCheckTags.js';
 
 // `OA` is open access; `F` is free full text. Both mean the reader can open it,
 // which is the only question either caller is asking.
@@ -75,14 +76,21 @@ function uniqueTerms(values) {
 // `{ value }` from the payloads converted out of XML. Each caller supported a
 // different subset, which is exactly how the same article ended up with terms
 // in one view and none in the other.
+// Major topics first and without check tags ("Humans", "Mice"), as the
+// PubMed reader orders them (utils/meshCheckTags.js).
 function meshDescriptors(raw) {
   const headings = raw?.meshHeadingList?.meshHeading || [];
-  return headings.flatMap((heading) => {
+  return orderMeshDescriptors(headings.flatMap((heading) => {
     const descriptor = typeof heading?.descriptorName === 'string'
       ? heading.descriptorName
       : heading?.descriptorName?.$ || heading?.descriptorName?.value;
-    return descriptor ? [descriptor] : [];
-  });
+    if (!descriptor) return [];
+    const qualifiers = heading?.meshQualifierList?.meshQualifier || [];
+    return [{
+      name: descriptor,
+      major: isYes(heading?.majorTopic_YN) || qualifiers.some(qualifier => isYes(qualifier?.majorTopic_YN)),
+    }];
+  }));
 }
 
 function isOpenFullTextUrl(item) {

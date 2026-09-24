@@ -5,6 +5,8 @@
  * same selectors.
  */
 
+import { orderMeshDescriptors } from './meshCheckTags.js';
+
 function collapseWhitespace(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
@@ -30,6 +32,24 @@ export function pubmedAbstractText(article) {
 }
 
 /**
+ * The article's MeSH subjects for the card: its major topics first (a heading
+ * is major when its descriptor or any of its qualifiers says MajorTopicYN="Y"),
+ * without the check tags every record carries.
+ */
+export function pubmedSubjects(article) {
+  const headings = Array.from(article?.querySelectorAll?.('MeshHeadingList > MeshHeading') || []);
+  return orderMeshDescriptors(headings.map((heading) => {
+    const descriptor = heading.querySelector('DescriptorName');
+    const qualifiers = Array.from(heading.querySelectorAll('QualifierName'));
+    return {
+      name: collapseWhitespace(descriptor?.textContent),
+      major: descriptor?.getAttribute('MajorTopicYN') === 'Y'
+        || qualifiers.some(qualifier => qualifier.getAttribute('MajorTopicYN') === 'Y'),
+    };
+  }));
+}
+
+/**
  * What the adapter merges into each mapped paper, keyed as the adapter keys
  * papers (`pmid:<id>`). The first PMID in an article is its own; the ones in
  * CommentsCorrections come after it.
@@ -39,10 +59,9 @@ export function readPubmedEfetch(xmlDoc) {
   for (const article of Array.from(xmlDoc?.querySelectorAll?.('PubmedArticle') || [])) {
     const pmid = collapseWhitespace(article.querySelector('PMID')?.textContent);
     if (!pmid) continue;
-    const descriptors = Array.from(article.querySelectorAll('MeshHeading > DescriptorName'));
     records[`pmid:${pmid}`] = {
       abstract: pubmedAbstractText(article),
-      categories: descriptors.map((descriptor) => collapseWhitespace(descriptor.textContent)).filter(Boolean),
+      categories: pubmedSubjects(article),
     };
   }
   return records;

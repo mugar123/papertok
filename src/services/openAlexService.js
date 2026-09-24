@@ -5,6 +5,7 @@
 
 import { CATEGORIES } from '../data/categories.js';
 import { usableOpenAlexAbstract } from '../utils/openAlexAbstract.js';
+import { usableOpenAlexConcepts } from '../utils/openAlexConcepts.js';
 import { matchesAuthorName } from '../utils/authorNameMatch.js';
 import { withRequestDeadline } from '../utils/requestDeadline.js';
 import {
@@ -134,9 +135,9 @@ export function mapOpenAlexEnrichmentWork(work) {
   const openAlexId = String(openAlexUrl).split('/').pop();
   const arxivId = getArxivIdFromWork(work);
   if (!openAlexId) return null;
-  const semanticTopics = Array.isArray(work.concepts) && work.concepts.length > 0
+  const semanticTopics = usableOpenAlexConcepts(Array.isArray(work.concepts) && work.concepts.length > 0
     ? work.concepts
-    : (work.topics || []);
+    : (work.topics || []));
 
   // Absent rather than empty when the work has no authorships: `merge` fills a
   // gap with this list, and an empty one would erase the authors a card is
@@ -1741,7 +1742,7 @@ function formatOpenAlexWorkAsPaper(work) {
       ror: institution.ror,
       displayName: institution.display_name,
     }])).values()];
-  const categories = work.concepts?.map(c => c.display_name) || [];
+  const categories = usableOpenAlexConcepts(work.concepts).map(c => c.display_name);
   const openAlexId = work.id.split('/').pop();
   
   return PaperBuilder.create({

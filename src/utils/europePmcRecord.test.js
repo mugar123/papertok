@@ -66,6 +66,24 @@ test('only known tags are markup: comparisons survive, inline tags keep their te
   );
 });
 
+test('MeSH terms come without check tags, major topics first, before the keywords', () => {
+  const record = mapEuropePmcRecord({
+    id: '1',
+    meshHeadingList: {
+      meshHeading: [
+        { majorTopic_YN: 'N', descriptorName: 'Humans' },
+        { majorTopic_YN: 'N', descriptorName: 'Neurons' },
+        { majorTopic_YN: 'Y', descriptorName: 'Hippocampus' },
+        { majorTopic_YN: 'N', descriptorName: 'Mice' },
+        { majorTopic_YN: 'N', descriptorName: 'Memory', meshQualifierList: { meshQualifier: [{ qualifierName: 'physiology', majorTopic_YN: 'Y' }] } },
+      ],
+    },
+    keywordList: { keyword: ['place cells'] },
+  });
+
+  assert.deepEqual(record.terms, ['Hippocampus', 'Memory', 'Neurons', 'place cells']);
+});
+
 test('decodes HTML entities in the abstract on both paths', () => {
   const record = mapEuropePmcRecord({ id: '1', abstractText: 'Sodium &amp; potassium &lt;i&gt;in vivo&lt;/i&gt;' });
   assert.equal(record.abstract, 'Sodium & potassium <i>in vivo</i>');

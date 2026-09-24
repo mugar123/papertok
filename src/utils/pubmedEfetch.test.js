@@ -62,6 +62,26 @@ test('an unlabelled abstract is its text, and a missing one stays missing', () =
   assert.equal(pubmedAbstractText(articles()[2]), '');
 });
 
+// "Humans", "Female", "Aged" are the NLM check tags indexed on almost every
+// record; they were the first chips of most PubMed cards (47 of 57 records
+// with MeSH led with one; audit 2026-09-23, issue 7).
+test('MeSH subjects come without check tags, major topics first', () => {
+  const xml = `<PubmedArticleSet><PubmedArticle><MedlineCitation Status="MEDLINE" Owner="NLM">
+    <PMID Version="1">333</PMID>
+    <Article PubModel="Print"><Abstract><AbstractText>Text.</AbstractText></Abstract></Article>
+    <MeshHeadingList>
+      <MeshHeading><DescriptorName UI="D006801" MajorTopicYN="N">Humans</DescriptorName></MeshHeading>
+      <MeshHeading><DescriptorName UI="D000368" MajorTopicYN="N">Aged</DescriptorName></MeshHeading>
+      <MeshHeading><DescriptorName UI="D019210" MajorTopicYN="N">Troponin I</DescriptorName></MeshHeading>
+      <MeshHeading><DescriptorName UI="D006333" MajorTopicYN="N">Heart Failure</DescriptorName><QualifierName UI="Q000097" MajorTopicYN="Y">blood</QualifierName></MeshHeading>
+      <MeshHeading><DescriptorName UI="D005260" MajorTopicYN="N">Female</DescriptorName></MeshHeading>
+      <MeshHeading><DescriptorName UI="D015415" MajorTopicYN="Y">Biomarkers</DescriptorName></MeshHeading>
+    </MeshHeadingList>
+  </MedlineCitation></PubmedArticle></PubmedArticleSet>`;
+
+  assert.deepEqual(readPubmedEfetch(parseXmlDocument(xml))['pmid:333'].categories, ['Heart Failure', 'Biomarkers', 'Troponin I']);
+});
+
 test('the efetch reader keys each article by its own PMID', () => {
   const records = readPubmedEfetch(parseXmlDocument(STRUCTURED_WITH_TRANSLATION));
 
