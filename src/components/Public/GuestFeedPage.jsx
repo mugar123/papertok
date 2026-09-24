@@ -33,7 +33,11 @@ export default function GuestFeedPage({
   // header chip is the way back into it.
   const [interests, setInterests] = useState(() => readGuestInterests());
   const areas = interests?.areas?.length ? interests.areas : NO_AREAS;
-  const guestFeed = useGuestFeed({ areas });
+  // Off until this device has answered the interests question: the first
+  // ask cannot be dismissed, so a feed loaded behind it was six fields the
+  // visitor never chose, thrown away on the answer. The loading veil waits
+  // behind the sheet instead.
+  const guestFeed = useGuestFeed({ areas, enabled: interests !== null });
   const [interestsOpen, setInterestsOpen] = useState(false);
   const trackedDemoRef = useRef(false);
   const firstAsk = interests === null;

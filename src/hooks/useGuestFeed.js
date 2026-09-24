@@ -76,7 +76,20 @@ export function dropPaperById(papers, paperId) {
   return next.length === papers.length ? papers : next;
 }
 
-export function useGuestFeed({ areas = [] } = {}) {
+/**
+ * Whether the feed loads now, and how. Nothing loads while the feed is not
+ * enabled — the guest page keeps it off behind the mandatory welcome sheet,
+ * where it used to load six fields the visitor never chose (audit 2026-09-23,
+ * issue 11a). The first load is a first load even when it follows a change of
+ * plan, because nothing was on screen to refresh; a later change of plan is a
+ * rebuild of what was shown. The same plan twice loads nothing.
+ */
+export function guestFeedLoadDecision({ enabled, previousKey, planKey }) {
+  if (!enabled || previousKey === planKey) return null;
+  return { refresh: previousKey !== null };
+}
+
+export function useGuestFeed({ areas = [], enabled = true } = {}) {
   const [papers, setPapers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -195,14 +208,15 @@ export function useGuestFeed({ areas = [] } = {}) {
   const loadedKeyRef = useRef(null);
   useEffect(() => {
     const previousKey = loadedKeyRef.current;
-    if (previousKey === plan.key) return undefined;
+    const decision = guestFeedLoadDecision({ enabled, previousKey, planKey: plan.key });
+    if (!decision) return undefined;
     let active = true;
     let started = false;
     loadedKeyRef.current = plan.key;
     queueMicrotask(() => {
       if (!active) return;
       started = true;
-      load(plan, previousKey !== null ? { refresh: true, forceRefresh: false } : {});
+      load(plan, decision.refresh ? { refresh: true, forceRefresh: false } : {});
     });
     return () => {
       active = false;
@@ -212,7 +226,7 @@ export function useGuestFeed({ areas = [] } = {}) {
       // asks a single source.
       if (!started) loadedKeyRef.current = previousKey;
     };
-  }, [load, plan]);
+  }, [enabled, load, plan]);
 
   // Skip, for a reader with no account. The guest feed's papers only ever live
   // in this state, so dropping one is the whole action: nothing to write, no
