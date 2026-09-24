@@ -98,6 +98,152 @@ async function searchWikipedia(title, language, signal, { strictTitleMatch = fal
   return result;
 }
 
+const WIKIDATA_ID_PATTERN = /^Q[1-9]\d*$/;
+const WIKIDATA_URL_PATTERN = /^https?:\/\/(?:www\.)?wikidata\.org\/(?:wiki|entity)\/(Q[1-9]\d*)$/i;
+const ENWIKI_URL_PATTERN = /^https?:\/\/en\.wikipedia\.org\/wiki\/([^?#]+)$/i;
+
+/**
+ * The QID behind OpenAlex's `ids.wikidata`, which comes as a `/wiki/` URL, an
+ * `/entity/` URL or a bare `Q…` depending on the entity type. Anything else is
+ * no identity at all.
+ */
+export function wikidataIdFromOpenAlexIds(ids) {
+  const raw = String(ids?.wikidata || '').trim();
+  if (WIKIDATA_ID_PATTERN.test(raw)) return raw;
+  return raw.match(WIKIDATA_URL_PATTERN)?.[1]?.toUpperCase() || '';
+}
+
+function enwikiTitleFromUrl(value) {
+  const path = String(value || '').trim().match(ENWIKI_URL_PATTERN)?.[1];
+  if (!path) return '';
+  try {
+    return normalizeWikiTitle(decodeURIComponent(path).replace(/_/g, ' '));
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * What an OpenAlex entity says it is on Wikipedia: its Wikidata id, or for a
+ * topic (which only carries an English article) that article's title. `null`
+ * when the entity names neither, and then there is nothing to show: a search
+ * by name is exactly what put a cancer researcher's portrait on "Tumor
+ * progression" and a Shakira single on "Medicine" (audit of 2026-09-23).
+ */
+export function resolveEntityWikiIdentity(entity) {
+  if (!entity || typeof entity !== 'object') return null;
+  const qid = wikidataIdFromOpenAlexIds(entity.ids);
+  if (qid) return { qid, enwikiTitle: '' };
+  const enwikiTitle = enwikiTitleFromUrl(entity.ids?.wikipedia);
+  if (enwikiTitle) return { qid: '', enwikiTitle };
+  return null;
+}
+
+async function fetchJson(url, signal) {
+  const response = await fetch(url, { signal });
+  if (!response.ok) return null;
+  return response.json();
+}
+
+async function fetchWikidataSitelinks({ qid, enwikiTitle, signal }) {
+  const url = new URL('https://www.wikidata.org/w/api.php');
+  url.searchParams.set('action', 'wbgetentities');
+  if (qid) {
+    url.searchParams.set('ids', qid);
+  } else {
+    url.searchParams.set('sites', 'enwiki');
+    url.searchParams.set('titles', enwikiTitle);
+  }
+  url.searchParams.set('props', 'sitelinks');
+  url.searchParams.set('sitefilter', 'eswiki|enwiki');
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('origin', '*');
+
+  const data = await fetchJson(url, signal);
+  const entity = Object.values(data?.entities || {})
+    .find(candidate => candidate && !Object.hasOwn(candidate, 'missing') && WIKIDATA_ID_PATTERN.test(candidate.id || ''));
+  if (!entity || (qid && entity.id !== qid)) return null;
+  const titles = Object.fromEntries(Object.entries(entity.sitelinks || {})
+    .map(([site, link]) => [site, normalizeWikiTitle(link?.title)]));
+  return { qid: entity.id, titles };
+}
+
+async function fetchWikipediaPageByTitle({ title, language, qid, signal }) {
+  const url = new URL(`https://${language}.wikipedia.org/w/api.php`);
+  url.searchParams.set('action', 'query');
+  url.searchParams.set('titles', title);
+  url.searchParams.set('prop', 'extracts|pageimages|info|pageprops');
+  url.searchParams.set('exintro', '1');
+  url.searchParams.set('explaintext', '1');
+  url.searchParams.set('piprop', 'thumbnail');
+  url.searchParams.set('pithumbsize', '480');
+  url.searchParams.set('inprop', 'url');
+  url.searchParams.set('redirects', '1');
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('origin', '*');
+
+  const data = await fetchJson(url, signal);
+  const page = Object.values(data?.query?.pages || {}).find(candidate => candidate && !Object.hasOwn(candidate, 'missing'));
+  // The title came from the item itself, but a page can have been moved or
+  // turned into a redirect since: only the item it describes today counts.
+  if (!page || page.pageprops?.wikibase_item !== qid) return null;
+  if (Object.hasOwn(page.pageprops || {}, 'disambiguation')) return null;
+  const extract = normalizeWikiTitle(page.extract);
+  if (!extract) return null;
+  return {
+    title: normalizeWikiTitle(page.title),
+    extract,
+    thumbnail: page.thumbnail?.source || null,
+    url: page.fullurl || '',
+    language,
+  };
+}
+
+/**
+ * The Wikipedia article of an entity known by identity: the reader's language
+ * when the item has an article there, English otherwise (`language: 'en'`
+ * tells the page to mark it). Never a search.
+ */
+export async function getEntityWikiInfoByIdentity({ qid = '', enwikiTitle = '', language = 'es', signal } = {}) {
+  const requestedLanguage = language === 'en' ? 'en' : 'es';
+  const normalizedTitle = normalizeWikiTitle(enwikiTitle);
+  if (!qid && !normalizedTitle) return null;
+
+  const cacheKey = `identity:${requestedLanguage}:${qid || `enwiki:${normalizedTitle}`}`;
+  if (entityWikiCache.has(cacheKey)) return entityWikiCache.get(cacheKey);
+
+  const item = await fetchWikidataSitelinks({ qid, enwikiTitle: normalizedTitle, signal });
+  if (!item) return null;
+  const pageLanguage = item.titles[`${requestedLanguage}wiki`] ? requestedLanguage : 'en';
+  const title = item.titles[`${pageLanguage}wiki`];
+  if (!title) return null;
+
+  const result = await fetchWikipediaPageByTitle({ title, language: pageLanguage, qid: item.qid, signal });
+  if (result) entityWikiCache.set(cacheKey, result);
+  return result;
+}
+
+/**
+ * What the Explorer's Wikipedia block loads for an entity. Topics of the
+ * app's own taxonomy and free-text topics have no identity to follow and keep
+ * the title search (exact-title for free text, as before); every OpenAlex
+ * entity is resolved by identity or shows no Wikipedia block.
+ */
+export async function loadEntityWikiInfo({ entity, title, alternateTitle = '', language = 'es', signal } = {}) {
+  if (entity?._queryTopic || entity?._localTopic) {
+    return getEntityWikiInfo({
+      title,
+      alternateTitle,
+      language,
+      signal,
+      strictTitleMatch: Boolean(entity._queryTopic),
+    });
+  }
+  const identity = resolveEntityWikiIdentity(entity);
+  if (!identity) return null;
+  return getEntityWikiInfoByIdentity({ ...identity, language, signal });
+}
+
 export async function getEntityWikiInfo({
   title,
   alternateTitle = '',

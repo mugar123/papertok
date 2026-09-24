@@ -55,7 +55,7 @@ import { scoreQueryTopicPaper } from '../../utils/queryTopicSearch.js';
 import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.js';
 import { settleWithin } from '../../utils/asyncTiming';
 import { fetchTopicPapers } from '../../services/topicRetrievalService.js';
-import { getEntityWikiInfo } from '../../services/wikiService';
+import { loadEntityWikiInfo } from '../../services/wikiService';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
 import { getProjectDisplayName } from '../../utils/entityMetadata.js';
 import { getUiErrorMessage } from '../../utils/errorMessages';
@@ -481,6 +481,18 @@ export default function EntityExplorer({
   const canLoadWikiInfo = Boolean(
     entityDisplayName && ['institution', 'concept', 'topic', 'source'].includes(type),
   );
+  // Only what the Wikipedia block is looked up by. The entity object is
+  // replaced whenever a later answer is folded into it, and the lookup must
+  // not start again (and settle the hero twice) for those.
+  const entityIsQueryTopic = Boolean(entity?._queryTopic);
+  const entityIsLocalTopic = Boolean(entity?._localTopic);
+  const entityWikidataId = entity?.ids?.wikidata || '';
+  const entityWikipediaUrl = entity?.ids?.wikipedia || '';
+  const wikiEntity = useMemo(() => ({
+    _queryTopic: entityIsQueryTopic,
+    _localTopic: entityIsLocalTopic,
+    ids: { wikidata: entityWikidataId, wikipedia: entityWikipediaUrl },
+  }), [entityIsLocalTopic, entityIsQueryTopic, entityWikidataId, entityWikipediaUrl]);
   const isWikiRequestPending = canLoadWikiInfo && settledWikiRequestKey !== wikiRequestKey;
   const topicFallbackDescription = ['concept', 'topic'].includes(type)
     ? localizedTopicEntity?.description
@@ -498,6 +510,12 @@ export default function EntityExplorer({
   // once, and by 9px (146 → 155): the rows are measured to the paragraph's
   // own line box for exactly this.
   const wikiDescription = isWikiRequestPending ? '' : (visibleWikiInfo?.extract || topicFallbackDescription);
+  // An item with no article in the reader's language falls back to English,
+  // and OpenAlex's own description is English too: either way the paragraph
+  // says so, so a screen reader in the Spanish UI does not read it as Spanish.
+  const wikiDescriptionLanguage = visibleWikiInfo?.extract
+    ? visibleWikiInfo.language
+    : (localizedTopicEntity?.description ? language : 'en');
 
   // The block opens the first time its lookup settles WITH content — never on
   // `homepage_url` alone while the prose is still out, which would settle the
@@ -967,12 +985,12 @@ export default function EntityExplorer({
       ? localizedTopicEntity?.labelEs
       : localizedTopicEntity?.labelEn;
 
-    getEntityWikiInfo({
+    loadEntityWikiInfo({
+      entity: wikiEntity,
       title: entityDisplayName,
       alternateTitle,
       language,
       signal: controller.signal,
-      strictTitleMatch: Boolean(entity?._queryTopic),
     }).then(async info => {
       /* Wikipedia answers on its own clock, and when it answers fast — a warm
          HTTP cache, a short article — it lands inside the frames the page is
@@ -1006,11 +1024,11 @@ export default function EntityExplorer({
     afterPageArrival,
     canLoadWikiInfo,
     entityDisplayName,
-    entity?._queryTopic,
     language,
     localizedTopicEntity?.labelEn,
     localizedTopicEntity?.labelEs,
     type,
+    wikiEntity,
     wikiRequestKey,
   ]);
 
@@ -2343,6 +2361,7 @@ export default function EntityExplorer({
                 ) : wikiDescription ? (
                   <p
                     key={visibleWikiInfo?.extract ? 'wiki' : 'fallback'}
+                    lang={wikiDescriptionLanguage !== language ? wikiDescriptionLanguage : undefined}
                     ref={wikiDescriptionTextRef}
                     className={isWikiDescriptionExpanded ? 'expanded' : 'collapsed'}
                     style={wikiDescriptionExpandedHeight ? { '--wiki-description-expanded-height': `${wikiDescriptionExpandedHeight}px` } : undefined}
