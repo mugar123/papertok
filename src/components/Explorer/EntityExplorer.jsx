@@ -1753,9 +1753,9 @@ export default function EntityExplorer({
         <Button variant="outline" size="icon" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
           <ArrowLeft size={24} />
         </Button>
-        <h2>{entityError
+        <h1>{entityError
           ? (isEnglish ? 'The entity could not be loaded' : 'No se pudo cargar la entidad')
-          : (isEnglish ? 'Entity not found' : 'Entidad no encontrada')}</h2>
+          : (isEnglish ? 'Entity not found' : 'Entidad no encontrada')}</h1>
         {entityError && (
           <>
             <p role="alert">{getUiErrorMessage(entityError, language, 'ENTITY_LOAD_FAILED')}</p>

@@ -410,6 +410,7 @@ export default function PublicPaperPage({
             publicMode={!isAuthenticated}
             analyticsSurface="other"
             hideScrollHint
+            titleAs="h1"
           />
         </motion.section>
       ) : status === 'loading' ? null : (

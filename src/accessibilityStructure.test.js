@@ -615,3 +615,54 @@ test('no component outranks the global focus ring from JSX', async () => {
     + 'Draw the replacement ring first, then say here why the suppression is needed.',
   );
 });
+
+// ── The h1 of the public doors (audit 2026-09-23, issue 12) ─────────────────
+//
+// The two routes a visitor meets first had no h1 at all: the guest feed (which
+// is also `/` and every protected route without a session) and a public paper,
+// whose title was the card's h2. `/search` had neither an h1 nor a <main>, and
+// the Explorer's error and not-found states only an h2. The rule
+// `page-has-heading-one` was closed for the signed-in routes on 2026-09-18;
+// these are the routes that pass went round.
+
+test('the guest feed names itself with a visually hidden h1 inside its own <main>', async () => {
+  // A JSX comment leaves its braces behind once the comment is stripped.
+  const guest = (await readSource(new URL('./components/Public/GuestFeedPage.jsx', import.meta.url)))
+    .replace(/\{\s*\}/g, '');
+  assert.match(
+    guest,
+    /<main className="guest-feed-page">\s*<h1 className="visually-hidden">\{isEnglish \? '[^']+' : '[^']+'\}<\/h1>\s*<header className="guest-feed-header"/,
+    'the guest route has no h1 above the paper titles, or it sits outside its <main>.',
+  );
+  assert.equal((guest.match(/<main\b/g) || []).length, 1, 'one main, no nesting');
+  assert.equal((guest.match(/<h1\b/g) || []).length, 1);
+});
+
+test('a public paper is headed by its own title, as the page h1', async () => {
+  const card = await readSource(new URL('./components/Feed/PaperCard.jsx', import.meta.url));
+  assert.match(card, /\n\s*titleAs = 'h2',\n/, 'the card keeps its h2 wherever it is one card of many');
+  assert.match(
+    card,
+    /const TitleTag = titleAs === 'h1' \? 'h1' : 'h2';[\s\S]{0,40000}?<TitleTag className="pc-title" lang="en">\s*<ScientificText>\{paper\.title\}<\/ScientificText>\s*<\/TitleTag>/,
+  );
+  const page = await readSource(new URL('./components/Public/PublicPaperPage.jsx', import.meta.url));
+  const cardCall = page.slice(page.indexOf('<PaperCard'), page.indexOf('/>', page.indexOf('<PaperCard')));
+  assert.match(cardCall, /\btitleAs="h1"/, 'the paper page passes its title up to h1');
+});
+
+test('/search is a <main> with an h1', async () => {
+  const search = await readSource(new URL('./components/Search/SearchPage.jsx', import.meta.url));
+  assert.match(
+    search,
+    /<Tabs\s+render=\{<main \/>\}\s+className="search-page-container"[\s\S]{0,300}?>\s*<h1 className="visually-hidden">\{isEnglish \? '[^']+' : '[^']+'\}<\/h1>\s*<div className="search-header">/,
+  );
+});
+
+test('the Explorer\'s error and not-found states say so in an h1', async () => {
+  const explorer = await readSource(new URL('./components/Explorer/EntityExplorer.jsx', import.meta.url));
+  const branch = explorer.slice(explorer.indexOf('if (!entity) {'), explorer.indexOf('if (!entity) {') + 1400);
+  assert.match(branch, /<h1>\{entityError\s*\?/);
+  assert.doesNotMatch(branch, /<h2>/);
+  const css = await readFile(new URL('./components/Explorer/EntityExplorer.css', import.meta.url), 'utf8');
+  assert.match(css, /\.explorer-error h1 \{/, 'the heading keeps the look the h2 had');
+});

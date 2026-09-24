@@ -16,7 +16,8 @@ const cssFile = readFile(new URL('./SearchPage.css', import.meta.url), 'utf8');
 test('the filter bar is a Tabs root with a line list, and the results are its panel', async () => {
   const jsx = await jsxFile;
   const css = await cssFile;
-  assert.match(jsx, /<Tabs\s+className="search-page-container"\s+value=\{activeSearchFilter\}\s+onValueChange=\{handleSearchFilterChange\}/);
+  // Rendered as the page's <main> (accessibilityStructure.test.js).
+  assert.match(jsx, /<Tabs\s+render=\{<main \/>\}\s+className="search-page-container"\s+value=\{activeSearchFilter\}\s+onValueChange=\{handleSearchFilterChange\}/);
   assert.match(jsx, /<TabsList\s+variant="line"\s+className="search-filter-bar"\s+aria-label=\{isEnglish \? 'Filter search results' : 'Filtrar resultados de búsqueda'\}/);
   assert.match(jsx, /<TabsTrigger[\s\S]*?value=\{id\}\s+className="search-filter-pill"/);
   assert.match(jsx, /<TabsContent\s+value=\{activeSearchFilter\}\s+id="search-results-panel"/);

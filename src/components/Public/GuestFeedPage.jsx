@@ -109,6 +109,9 @@ export default function GuestFeedPage({
   return (
     <>
       <main className="guest-feed-page">
+        {/* The page's h1, above the paper titles (h2): this route is also `/`
+            and every protected route without a session, and it had none. */}
+        <h1 className="visually-hidden">{isEnglish ? 'PaperTok: scientific papers for you' : 'PaperTok: papers científicos para ti'}</h1>
         <header className="guest-feed-header" aria-label={isEnglish ? 'PaperTok guest navigation' : 'Navegación de invitado de PaperTok'}>
           <div className="guest-wordmark" aria-label="PaperTok">Paper<span>Tok</span></div>
           <div className="guest-header-actions">

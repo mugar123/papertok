@@ -288,6 +288,9 @@ const PaperCard = memo(function PaperCard({
   getInteractionState = () => ({}),
   hideScrollHint = false,
   showFollowReason = false,
+  // The title's level: an h2 wherever the card is one of many, the page's h1
+  // where it is the page (PublicPaperPage).
+  titleAs = 'h2',
   publicMode = false,
   onAuthRequired,
   analyticsSurface = 'feed',
@@ -983,6 +986,7 @@ const PaperCard = memo(function PaperCard({
   // description, not part of the name, so the name stays what the button
   // shows (WCAG 2.5.3, see the button).
   const rewriteHintId = useId();
+  const TitleTag = titleAs === 'h1' ? 'h1' : 'h2';
 
   // Marking a paper read used to fade the whole card out and, 1.5 s later,
   // pull it from the feed — the paper the reader had just finished with
@@ -1555,9 +1559,9 @@ const PaperCard = memo(function PaperCard({
           )}
         </AnimatePresence>
 
-        <h2 className="pc-title" lang="en">
+        <TitleTag className="pc-title" lang="en">
           <ScientificText>{paper.title}</ScientificText>
-        </h2>
+        </TitleTag>
 
         <div 
           className="pc-authors pc-authors--mobile-clickable"

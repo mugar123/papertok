@@ -846,11 +846,14 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
     // The page is the Tabs root: the filter bar is its list and the results
     // its one panel, so Base UI can wire `aria-controls` / `aria-labelledby`
     // between them and give the pills arrow-key navigation.
+    // Rendered as the page's <main>, with its h1: the route had neither.
     <Tabs
+      render={<main />}
       className="search-page-container"
       value={activeSearchFilter}
       onValueChange={handleSearchFilterChange}
     >
+      <h1 className="visually-hidden">{isEnglish ? 'Search PaperTok' : 'Buscar en PaperTok'}</h1>
       <div className="search-header">
         <div className="search-header-main">
           <button

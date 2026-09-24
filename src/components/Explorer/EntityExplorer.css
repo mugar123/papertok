@@ -106,7 +106,7 @@
   animation: slideUpFade 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.explorer-error h2 {
+.explorer-error h1 {
   font-family: var(--font-serif);
   font-size: var(--fs-2xl);
   font-weight: 600;
