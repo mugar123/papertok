@@ -41,6 +41,6 @@ test('the lookup is keyed on the identity fields, not on the entity object', () 
 test('a paragraph in another language than the interface says which one', () => {
   assert.match(
     source,
-    /<p\s+key=\{visibleWikiInfo\?\.extract \? 'wiki' : 'fallback'\}\s+lang=\{wikiDescriptionLanguage !== language \? wikiDescriptionLanguage : undefined\}/,
+    /<p\s+key=\{visibleWikiInfo\?\.extract \? 'wiki' : 'fallback'\}\s+ref=\{wikiDescriptionTextRef\}\s+lang=\{wikiDescriptionLanguage !== language \? wikiDescriptionLanguage : undefined\}/,
   );
 });
