@@ -14,6 +14,7 @@ import {
 import { useReducedMotion } from 'framer-motion';
 import { getCitationGraph, getCitationGraphDoi } from '../../services/citationGraphService';
 import { getRelatedPapers } from '../../services/relatedPapersService';
+import { isSignInRequiredError } from '../../utils/signInRequired.js';
 import { buildCitationMapLayout } from '../../utils/citationMap.js';
 import { areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
 import {
@@ -54,7 +55,9 @@ const WALK = { SETTLE: 40, LEAVE: 440, REVEAL: 1200, PLACEHOLDER: 320 };
  * loop against a Worker route that reserves nine OpenAlex calls a time. The
  * retry is closing the sheet and opening it again.
  */
-const SETTLED = new Set(['ready', 'empty', 'error']);
+// `signin`: the Worker routes behind both views are session-only, and a
+// missing or expired session is not a provider failure worth an «ahora».
+const SETTLED = new Set(['ready', 'empty', 'error', 'signin']);
 
 function formatCount(value, locale = 'es-ES') {
   return new Intl.NumberFormat(locale).format(Math.max(0, Number(value) || 0));
@@ -218,7 +221,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     }).catch(error => {
       if (cancelled || !mountedRef.current) return;
       console.error('No se pudo cargar el grafo de citas', error);
-      setGraphs(previous => ({ ...previous, [centerDoi]: { status: 'error' } }));
+      setGraphs(previous => ({ ...previous, [centerDoi]: { status: isSignInRequiredError(error) ? 'signin' : 'error' } }));
     });
     return () => { cancelled = true; };
   }, [center, centerDoi, graphs]);
@@ -249,7 +252,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     }).catch(error => {
       if (cancelled) return;
       console.error('No se pudieron cargar papers relacionados', error);
-      setRelatedStatus('error');
+      setRelatedStatus(isSignInRequiredError(error) ? 'signin' : 'error');
     });
     return () => { cancelled = true; };
   }, [mode, paper]);
@@ -264,7 +267,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     }).catch(error => {
       if (cancelled) return;
       console.error('No se pudieron cargar papers relacionados', error);
-      setRelatedStatus('error');
+      setRelatedStatus(isSignInRequiredError(error) ? 'signin' : 'error');
     });
     return () => { cancelled = true; };
   }, [hasGraphIdentifier, paper]);
@@ -850,10 +853,17 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
           </div>
         )}
         {visibleStatus === 'error' && (
-          <div className="related-state">
+          <div className="related-state" role="status">
             {isEnglish
               ? 'These connections could not be loaded right now. The rest of PaperTok will continue to work normally.'
               : 'No se pudieron cargar estas conexiones ahora. El resto de PaperTok seguirá funcionando con normalidad.'}
+          </div>
+        )}
+        {visibleStatus === 'signin' && (
+          <div className="related-state" role="status">
+            {isEnglish
+              ? 'A paper’s connections need an account. Sign in to see its citation graph and similar papers.'
+              : 'Las conexiones de un paper necesitan una cuenta. Inicia sesión para ver su grafo de citas y los papers similares.'}
           </div>
         )}
 

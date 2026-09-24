@@ -73,7 +73,9 @@ export default function GuestFeedPage({
   const requestAccount = useCallback((action = 'other') => {
     const contentType = action === 'list' ? 'list' : action === 'other' ? 'other' : 'paper';
     trackEvent('select_content', { content_type: contentType, surface: 'feed' });
-    onAuthRequired?.();
+    // The action is also the dialog's reason: «Leer en simple» and
+    // «Conexiones» open it saying what an account unlocks for them.
+    onAuthRequired?.(action);
   }, [onAuthRequired, trackEvent]);
 
   const submitInterests = useCallback((nextAreas) => {

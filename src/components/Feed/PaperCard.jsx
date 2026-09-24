@@ -1870,7 +1870,17 @@ const PaperCard = memo(function PaperCard({
               <Button
                 variant="sky"
                 size="icon"
-                onClick={(event) => { event.stopPropagation(); setShowRelated(true); }}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  // The graph and the similar list are session-only in the
+                  // Worker: a guest used to get a sheet that could only say
+                  // «No se pudieron cargar» (audit 2026-09-23, issue 2).
+                  if (publicMode) {
+                    requireAuthentication('related');
+                    return;
+                  }
+                  setShowRelated(true);
+                }}
                 aria-label={isEnglish ? 'View related papers' : 'Ver papers relacionados'}
                 title={isEnglish ? 'Related papers' : 'Papers relacionados'}
               >

@@ -23,6 +23,7 @@ import Navbar from './components/Layout/Navbar'
 import NudgeHost from './components/Nudges/NudgeHost'
 import GuestFeedPage from './components/Public/GuestFeedPage'
 import AuthPrompt from './components/Public/AuthPrompt'
+import { normalizeAuthReason } from './components/Public/authPromptCopy.js'
 import { getPublicPaperPath } from './utils/publicNavigation'
 import { lazyWithPreload } from './utils/lazyPreload'
 import './App.css'
@@ -124,6 +125,7 @@ function AppContent() {
   // and a feed load keeps costing one read.
   const [commentsPaper, setCommentsPaper] = useState(null)
   const [authPromptOpen, setAuthPromptOpen] = useState(false)
+  const [authPromptReason, setAuthPromptReason] = useState('default')
   const [searchOpen, setSearchOpen] = useState(false)
   // The palette mounts on its first open and then stays mounted, closed or
   // not. Its exit is Base UI's dialog keeping the sheet on screen while
@@ -177,9 +179,13 @@ function AppContent() {
 
   // A door opened from the page itself (Save, Like, the header's Sign in)
   // means "stay here": it drops any trip an earlier bounce left waiting.
-  const requestAuthentication = useCallback(() => {
+  // The door says why it opened: `reason` is one of authPromptCopy's keys,
+  // and anything else — the click event of an `onClick={requestAuthentication}`,
+  // the paper of an `onSaveToList` — is the general door.
+  const requestAuthentication = useCallback((reason) => {
     clearAuthReturn()
     setAuthPromptOpen(true)
+    setAuthPromptReason(normalizeAuthReason(reason))
   }, [])
 
   // There is no sign-in page. A guest bounced off a protected route (or an
@@ -570,7 +576,13 @@ function AppContent() {
       <AnimatePresence>
         {authPromptOpen && (
           <AuthPrompt
-            onClose={() => setAuthPromptOpen(false)}
+            reason={authPromptReason}
+            onClose={() => {
+              setAuthPromptOpen(false)
+              // The next door — a bounce off a protected route opens this
+              // without a reason — must not inherit this one's.
+              setAuthPromptReason('default')
+            }}
           />
         )}
       </AnimatePresence>

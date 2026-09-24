@@ -1535,6 +1535,7 @@ a.pc-citations {
 .related-sheet--loading { height: calc(min(430px, 58vh) + var(--bleed)); height: calc(min(430px, 58dvh) + var(--bleed)); }
 .related-sheet--empty,
 .related-sheet--error,
+.related-sheet--signin,
 .related-sheet--unavailable { height: calc(min(350px, 52vh) + var(--bleed)); height: calc(min(350px, 52dvh) + var(--bleed)); }
 
 .related-grabber {
@@ -2920,6 +2921,7 @@ a.pc-citations {
   .related-sheet--loading { height: calc(min(410px, 58dvh) + var(--bleed)); }
   .related-sheet--empty,
   .related-sheet--error,
+  .related-sheet--signin,
   .related-sheet--unavailable { height: calc(min(330px, 48dvh) + var(--bleed)); }
 }
 

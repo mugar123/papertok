@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
 import { getUiErrorMessage } from '../../utils/errorMessages';
+import { authPromptCopy } from './authPromptCopy.js';
 import { Button } from '../ui/button.jsx';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.jsx';
 import './AuthPrompt.css';
@@ -19,9 +20,11 @@ import './AuthPrompt.css';
 // Escape, the scrim, or a session appearing — flips it, Base UI plays the
 // leave, and only then `onOpenChangeComplete(false)` tells the parent to
 // unmount. That is the one place `onClose` is called, so it reaches App once.
-export default function AuthPrompt({ onClose }) {
+export default function AuthPrompt({ onClose, reason = 'default' }) {
   const { signInWithGoogle, signInWithGitHub, error, user } = useAuth();
   const { language, isEnglish } = useLanguage();
+  // What opened the door decides what it says (authPromptCopy.js).
+  const copy = authPromptCopy(reason, isEnglish ? 'en' : 'es');
   const { trackEvent } = useAnalyticsConsent();
   const [open, setOpen] = useState(true);
   const [pendingProvider, setPendingProvider] = useState(null);
@@ -88,12 +91,10 @@ export default function AuthPrompt({ onClose }) {
         </div>
 
         <DialogTitle className="auth-modal-title">
-          {isEnglish ? 'Make PaperTok yours' : 'Haz que PaperTok sea tuyo'}
+          {copy.title}
         </DialogTitle>
         <DialogDescription className="auth-modal-lede">
-          {isEnglish
-            ? 'Like, save and follow research, and train a feed that learns what you read.'
-            : 'Da me gusta, guarda y sigue investigación, y entrena un feed que aprende lo que lees.'}
+          {copy.lede}
         </DialogDescription>
 
         <div className="auth-modal-methods">
