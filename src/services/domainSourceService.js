@@ -195,7 +195,9 @@ export function mapEuropePmcSearchResult(raw, requestedCategories = []) {
     sources: { primary: 'europepmc', enrichedBy: [] },
     title: normalizeText(raw.title),
     abstract: record.abstract,
-    authors: authorObjects(raw.authorList?.author || String(raw.authorString || '').split(',')),
+    authors: record.authors.length > 0
+      ? record.authors
+      : authorObjects(String(raw.authorString || '').split(',')),
     journal: normalizeText(raw.journalInfo?.journal?.title),
     year: safeYear(published || `${raw.journalInfo?.yearOfPublication || ''}-01-01`),
     published,

@@ -1,7 +1,7 @@
 import { CATEGORIES } from '../../data/categories.js';
 import { BaseAdapter } from './BaseAdapter.js';
 import { readSourceCache, writeSourceCache } from '../../utils/sourceCache.js';
-import { readPubmedEfetch } from '../../utils/pubmedEfetch.js';
+import { mergePubmedAuthors, readPubmedEfetch } from '../../utils/pubmedEfetch.js';
 import { fetchWorkerSourceJson } from '../workerApiClient.js';
 
 // E-utilities answer as three serial requests (esearch → esummary → efetch).
@@ -218,6 +218,9 @@ export class PubmedAdapter extends BaseAdapter {
             const enrichment = enrichmentMap[paper.id];
             if (!enrichment) return paper;
             if (enrichment.abstract) paper.abstract = enrichment.abstract;
+            // Full names, ORCIDs and affiliations ride with the card's
+            // authors (names unchanged) so an author link can say who.
+            if (enrichment.authors?.length > 0) paper.authors = mergePubmedAuthors(paper.authors, enrichment.authors);
             if (enrichment.categories?.length > 0) {
               paper.categories = enrichment.categories;
               paper.keywords = enrichment.categories;

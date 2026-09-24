@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseXmlDocument } from '../test-support/xmlDomShim.js';
-import { pubmedAbstractText, readPubmedEfetch } from './pubmedEfetch.js';
+import { mergePubmedAuthors, pubmedAbstractText, pubmedAuthors, readPubmedEfetch } from './pubmedEfetch.js';
 
 // Trimmed from efetch for PMID 42775314 (2026-09-24): the English abstract is
 // four labelled sections under Article/Abstract, and the publisher's Serbian
@@ -89,4 +89,51 @@ test('the efetch reader keys each article by its own PMID', () => {
   assert.match(records['pmid:42775314'].abstract, /^BACKGROUND: Heart failure is common\./);
   assert.doesNotMatch(records['pmid:42775314'].abstract, /Cilj je bio/);
   assert.equal(records['pmid:222'].abstract, '');
+});
+
+// The efetch record names every author in full, with an affiliation and
+// sometimes an ORCID; the adapter kept esummary's "Li WN" and threw the rest
+// away, which left the explorer only a name to guess from (203 of 203
+// authors in a 25-record sample had a first name and an affiliation, 15 an
+// ORCID; audit 2026-09-23, issue 4).
+const AUTHORS = `<PubmedArticleSet><PubmedArticle><MedlineCitation Status="MEDLINE" Owner="NLM">
+  <PMID Version="1">42774036</PMID>
+  <Article PubModel="Electronic-eCollection">
+    <AuthorList CompleteYN="Y">
+      <Author ValidYN="Y"><LastName>Pidugu</LastName><ForeName>Vijaya Kumar</ForeName><Initials>VK</Initials>
+        <AffiliationInfo><Affiliation>Department of Surgery, Houston Methodist, Houston, TX, United States.</Affiliation></AffiliationInfo></Author>
+      <Author ValidYN="Y"><LastName>Huang</LastName><ForeName>Hsiang-Ching</ForeName><Initials>HC</Initials></Author>
+      <Author ValidYN="Y"><LastName>Li</LastName><ForeName>Wan-Ning</ForeName><Initials>WN</Initials>
+        <Identifier Source="ORCID">https://orcid.org/0000-0002-1825-0097</Identifier>
+        <AffiliationInfo><Affiliation>National Cancer Institute, Bethesda, MD, United States.</Affiliation></AffiliationInfo>
+        <AffiliationInfo><Affiliation>Second affiliation.</Affiliation></AffiliationInfo></Author>
+      <Author ValidYN="Y"><CollectiveName>The Endocrine Consortium</CollectiveName></Author>
+    </AuthorList>
+  </Article>
+</MedlineCitation></PubmedArticle></PubmedArticleSet>`;
+
+test('the efetch record keeps each author\'s full name, first affiliation and ORCID', () => {
+  const [article] = parseXmlDocument(AUTHORS).querySelectorAll('PubmedArticle');
+
+  assert.deepEqual(pubmedAuthors(article), [
+    { name: 'Pidugu VK', fullName: 'Vijaya Kumar Pidugu', affiliation: 'Department of Surgery, Houston Methodist, Houston, TX, United States.' },
+    { name: 'Huang HC', fullName: 'Hsiang-Ching Huang' },
+    { name: 'Li WN', fullName: 'Wan-Ning Li', orcid: '0000-0002-1825-0097', affiliation: 'National Cancer Institute, Bethesda, MD, United States.' },
+    { name: 'The Endocrine Consortium', fullName: 'The Endocrine Consortium' },
+  ]);
+});
+
+test('the card\'s authors get those identifiers, by position or by name, and keep their names', () => {
+  const [article] = parseXmlDocument(AUTHORS).querySelectorAll('PubmedArticle');
+  const fromEfetch = pubmedAuthors(article);
+
+  const merged = mergePubmedAuthors([{ name: 'Pidugu VK' }, { name: 'Huang HC' }, { name: 'Li WN' }, { name: 'The Endocrine Consortium' }], fromEfetch);
+  assert.equal(merged[2].name, 'Li WN');
+  assert.equal(merged[2].orcid, '0000-0002-1825-0097');
+  assert.equal(merged[2].fullName, 'Wan-Ning Li');
+
+  // esummary sometimes drops the collective author: then names decide.
+  const byName = mergePubmedAuthors([{ name: 'Li WN' }, { name: 'Pidugu VK' }], fromEfetch);
+  assert.deepEqual(byName.map(author => author.fullName), ['Wan-Ning Li', 'Vijaya Kumar Pidugu']);
+  assert.deepEqual(mergePubmedAuthors([{ name: 'Someone Else' }], fromEfetch), [{ name: 'Someone Else' }]);
 });

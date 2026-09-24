@@ -93,6 +93,29 @@ function meshDescriptors(raw) {
   }));
 }
 
+// The core record names each author in full, with an ORCID and affiliations
+// when it has them; `name` stays Europe PMC's own "Surname INITIALS", which is
+// what the card has always shown.
+function recordAuthors(raw) {
+  const authors = raw?.authorList?.author || [];
+  return authors.flatMap((author) => {
+    const collective = stripMarkup(author?.collectiveName);
+    const name = collective || stripMarkup(author?.fullName);
+    if (!name) return [];
+    const fullName = collective || [stripMarkup(author?.firstName), stripMarkup(author?.lastName)].filter(Boolean).join(' ') || name;
+    const orcid = String(author?.authorId?.type || '').toUpperCase() === 'ORCID'
+      ? String(author.authorId.value || '').trim().match(/(\d{4}-\d{4}-\d{4}-\d{3}[\dX])$/i)?.[1]?.toUpperCase()
+      : '';
+    const affiliation = stripMarkup(author?.authorAffiliationDetailsList?.authorAffiliation?.[0]?.affiliation || author?.affiliation);
+    return [{
+      name,
+      fullName,
+      ...(orcid ? { orcid } : {}),
+      ...(affiliation ? { affiliation } : {}),
+    }];
+  });
+}
+
 function isOpenFullTextUrl(item) {
   return OPEN_AVAILABILITY_CODES.has(String(item?.availabilityCode || '').toUpperCase())
     || /open access/i.test(String(item?.availability || ''));
@@ -112,6 +135,7 @@ export function mapEuropePmcRecord(raw) {
     providerId: String(raw?.id || '').trim(),
     pmcid,
     abstract: stripMarkup(raw?.abstractText),
+    authors: recordAuthors(raw),
     terms,
     openAccess: declaredOpen || openUrls.length > 0,
     htmlUrl,

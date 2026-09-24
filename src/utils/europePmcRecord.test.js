@@ -138,3 +138,22 @@ test('gives the enrichment patch and the feed paper the same verdict', () => {
   assert.deepEqual(patch.biomedicalTerms, paper.biomedicalTerms);
   assert.deepEqual(patch.biomedicalTerms, ['Cardiology']);
 });
+
+test('the record keeps each author\'s ORCID and first affiliation', () => {
+  const record = mapEuropePmcRecord({
+    id: '1',
+    authorList: {
+      author: [
+        { fullName: 'Li WN', firstName: 'Wan-Ning', lastName: 'Li', initials: 'WN', authorId: { type: 'ORCID', value: '0000-0002-1825-0097' }, authorAffiliationDetailsList: { authorAffiliation: [{ affiliation: 'National Cancer Institute.' }, { affiliation: 'Elsewhere.' }] } },
+        { fullName: 'Huang HC', firstName: 'Hsiang-Ching', lastName: 'Huang' },
+        { collectiveName: 'The Endocrine Consortium' },
+      ],
+    },
+  });
+
+  assert.deepEqual(record.authors, [
+    { name: 'Li WN', fullName: 'Wan-Ning Li', orcid: '0000-0002-1825-0097', affiliation: 'National Cancer Institute.' },
+    { name: 'Huang HC', fullName: 'Hsiang-Ching Huang' },
+    { name: 'The Endocrine Consortium', fullName: 'The Endocrine Consortium' },
+  ]);
+});

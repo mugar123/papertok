@@ -1590,7 +1590,7 @@ const PaperCard = memo(function PaperCard({
                // did.
                // By OpenAlex id when the author carries one (one request on the
                // other side), by name with the arXiv id otherwise.
-               const path = authorExplorerPath(author, paper.arxivId || paper.id, { publicMode });
+               const path = authorExplorerPath(author, paper, { publicMode });
                return (
                  <Fragment key={index}>
                    {path ? (
@@ -2053,7 +2053,7 @@ const PaperCard = memo(function PaperCard({
                 type="button"
                 className="pc-authors-modal-item"
                 onClick={() => {
-                  const path = authorExplorerPath(author, paper.arxivId || paper.id, { publicMode });
+                  const path = authorExplorerPath(author, paper, { publicMode });
                   // With somewhere to go the sheet leaves with the page, in
                   // its leaving pose; without, it is dismissed as if by the
                   // scrim.
