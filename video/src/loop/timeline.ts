@@ -43,17 +43,20 @@ export const T = {
   highlight: 708,
 
   // Act 5: the card folds back into the mark.
-  fold: 750,
-  tileLand: 790,
-  wordmark: 800,
-  tagline: 822,
-  outro: 862,
-  rest: 894,
+  fold: 744,
+  tileLand: 784,
+  wordmark: 794,
+  tagline: 806,
+  outro: 872,
+  rest: 896,
 } as const;
 
 // Duration of each swipe, paired with `T.swipes`. The last one is longer so
 // the final card settles instead of stopping.
 export const SWIPE_DURATIONS = [28, 28, 22, 22, 14, 40] as const;
+
+// Frames a caption takes to leave; the next one enters only after.
+export const CAPTION_EXIT = 16;
 
 export type Caption = {
   id: string;
@@ -77,22 +80,22 @@ export const CAPTIONS: Caption[] = [
     kicker: "01 · Discover",
     lines: ["Here\u2019s one", "worth your time."],
     in: T.caption2,
-    out: T.caption3 - 6,
+    out: T.caption3 - CAPTION_EXIT,
     layout: "left",
   },
   {
     id: "swipe",
     kicker: "02 · Swipe",
     lines: ["Science,", "one swipe at a time."],
-    in: T.caption3 + 6,
-    out: T.caption4 - 6,
+    in: T.caption3,
+    out: T.caption4 - CAPTION_EXIT,
     layout: "left",
   },
   {
     id: "plain",
     kicker: "03 · Understand",
     lines: ["Read it in", "plain words."],
-    in: T.caption4 + 6,
+    in: T.caption4,
     out: T.fold - 4,
     layout: "left",
   },

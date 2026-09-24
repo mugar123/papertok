@@ -1,10 +1,9 @@
 import React from "react";
 import { useCurrentFrame } from "remotion";
+import { CAPTION_EXIT as EXIT } from "./timeline.ts";
 import type { Caption as CaptionSpec } from "./timeline.ts";
 import { easeInCubic, progress, rise } from "./motion.ts";
 import { FONT, INK, monoLabel } from "./style";
-
-const EXIT = 16;
 
 export const Caption: React.FC<{ spec: CaptionSpec }> = ({ spec }) => {
   const frame = useCurrentFrame();
@@ -14,7 +13,7 @@ export const Caption: React.FC<{ spec: CaptionSpec }> = ({ spec }) => {
   const centered = spec.layout === "center";
 
   const lineStyle = (i: number): React.CSSProperties => {
-    const r = rise(frame, spec.in + 6 + i * 9, { duration: 26, distance: 26, blur: 12 });
+    const r = rise(frame, spec.in + 6 + i * 9, { duration: 26, distance: 26, blur: 8 });
     return {
       display: "block",
       opacity: r.opacity * (1 - exit),

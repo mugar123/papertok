@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BEAT, CAPTIONS, FPS, SWIPE_DURATIONS, T, TOTAL } from "./timeline.ts";
+import { BEAT, CAPTION_EXIT, CAPTIONS, FPS, SWIPE_DURATIONS, T, TOTAL } from "./timeline.ts";
 import { trackPosition } from "./motion.ts";
 import { PAPERS } from "./papers.ts";
 
@@ -35,7 +35,10 @@ test("captions never overlap and each stays on screen long enough to read", () =
   const sorted = [...CAPTIONS].sort((a, b) => a.in - b.in);
   sorted.forEach((c, i) => {
     assert.ok(c.out - c.in >= 1.5 * FPS, `${c.id} is on screen for ${c.out - c.in} frames`);
-    if (i > 0) assert.ok(c.in >= sorted[i - 1].out, `${c.id} starts before ${sorted[i - 1].id} ends`);
+    if (i > 0) {
+      const prev = sorted[i - 1];
+      assert.ok(c.in >= prev.out + CAPTION_EXIT, `${c.id} starts before ${prev.id} has left`);
+    }
   });
 });
 
