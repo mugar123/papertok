@@ -15,7 +15,23 @@ import {
   mapInspirePaper,
   mapNasaRecord,
   mapOstiRecord,
+  readBioRxivResponse,
 } from './domainSourceService.js';
+
+// The Worker answers a bioRxiv outage with an empty collection marked
+// `_papertok.degraded` (cached briefly). Read as papers it would be "bioRxiv has
+// nothing", and the source's health log would stay silent through an outage.
+test('a degraded bioRxiv answer is a source failure, not an empty result', () => {
+  assert.throws(
+    () => readBioRxivResponse({ collection: [], _papertok: { degraded: 'UPSTREAM_TIMEOUT' } }, ['bio.neuro'], 10),
+    (error) => error.code === 'UPSTREAM_TIMEOUT',
+  );
+  assert.deepEqual(readBioRxivResponse({ messages: [{ status: 'no posts found' }], collection: [] }, ['bio.neuro'], 10), []);
+  const papers = readBioRxivResponse({
+    collection: [{ doi: '10.1101/2026.09.01.000001', title: 'A preprint', authors: 'Doe, J.', date: '2026-09-01', category: 'neuroscience', version: '1' }],
+  }, ['bio.neuro'], 10);
+  assert.equal(papers.length, 1);
+});
 // Shared with `fetchWorkerSourceJson`, so it lives in the module both source
 // entry points can import without closing a cycle.
 import { sourceResponseError } from './workerApiClient.js';

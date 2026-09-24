@@ -1220,6 +1220,14 @@ function fetchJsonUpstream(url, headers = {}) {
   }, SOURCE_UPSTREAM_TIMEOUT_MS);
 }
 
+function bioRxivDegradedCode(error) {
+  if (error?.name === 'TimeoutError' || error?.name === 'AbortError') return 'UPSTREAM_TIMEOUT';
+  if (error?.status === 429) return 'UPSTREAM_RATE_LIMITED';
+  if (error?.status) return `UPSTREAM_${error.status}`;
+  // An empty or non-JSON body fails `response.json()` with a SyntaxError.
+  return 'UPSTREAM_INVALID';
+}
+
 async function handleBioRxiv(request, env) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
@@ -1228,13 +1236,25 @@ async function handleBioRxiv(request, env) {
     return json({ error: 'Invalid bioRxiv category' }, 400, corsHeaders(context.origin, env));
   }
 
-  return cacheResponse(request, context.origin, env, SOURCE_CACHE_SECONDS.biorxiv, async () => {
+  // A degraded answer holds its entry for two minutes, not ten.
+  const ttl = payload => (payload?._papertok?.degraded ? DEGRADED_CACHE_SECONDS : SOURCE_CACHE_SECONDS.biorxiv);
+
+  return cacheResponse(request, context.origin, env, ttl, async () => {
     // bioRxiv pages in fixed groups of 30, so request the matching cursor and trim client-side.
     const cursor = (context.page - 1) * 30;
     const encodedCategory = encodeURIComponent(category.replace(/\s+/g, '_'));
     const url = `https://api.biorxiv.org/details/biorxiv/${utcDateOffset(-180)}/${utcDateOffset(0)}/${cursor}/json?category=${encodedCategory}`;
-    const data = await fetchJsonUpstream(url);
-    return { ...data, collection: (data?.collection || []).slice(0, context.limit) };
+    try {
+      const data = await fetchJsonUpstream(url);
+      return { ...data, collection: (data?.collection || []).slice(0, context.limit) };
+    } catch (error) {
+      // bioRxiv hangs on some calls (4 of 6 over 20 s on 2026-09-23) and on
+      // 2026-09-24 answered every call with an empty 200. As an uncached 502
+      // every cold visit paid the six-second deadline again; as a degraded
+      // answer, cached briefly, one call per two minutes pays it. The code
+      // tells the client this is a failure, not an empty category.
+      return { collection: [], _papertok: { degraded: bioRxivDegradedCode(error) } };
+    }
   }, { canonicalParams: sourceCacheParams(context, { category }) });
 }
 

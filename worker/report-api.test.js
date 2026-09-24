@@ -2767,3 +2767,50 @@ test('closes the API host to crawlers with its own robots.txt', async () => {
   assert.match(body, /^Disallow: \/$/m);
   assert.doesNotMatch(body, /^Allow: \//m);
 });
+
+// --- bioRxiv outages are answered once per two minutes, not once per visit ---
+// api.biorxiv.org hangs on some calls (4 of 6 over 20 s on 2026-09-23) and on
+// 2026-09-24 answered every call with an empty 200. A failure used to go out
+// as an uncached 502, so each cold visit paid the six-second deadline again
+// (audit 2026-09-23, issue 11b). It is now a degraded, briefly cached answer.
+
+async function bioRxivAnswer(upstream) {
+  return withWorkerFetchMock(upstream, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/biorxiv?category=neuroscience&page=1&limit=10',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), {}));
+}
+
+test('a bioRxiv timeout is a degraded empty answer, cached for two minutes', async () => {
+  const response = await bioRxivAnswer(async () => {
+    throw Object.assign(new Error('The operation timed out'), { name: 'TimeoutError' });
+  });
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.deepEqual(payload.collection, []);
+  assert.equal(payload._papertok.degraded, 'UPSTREAM_TIMEOUT');
+  assert.equal(maxAgeSeconds(response), 120);
+  assert.doesNotMatch(response.headers.get('cache-control'), /stale-while-revalidate/);
+});
+
+test('an empty or non-JSON bioRxiv body and a bioRxiv 5xx are degraded too', async () => {
+  const empty = await bioRxivAnswer(async () => new Response('', { status: 200, headers: { 'content-type': 'application/json' } }));
+  assert.equal((await empty.json())._papertok.degraded, 'UPSTREAM_INVALID');
+  assert.equal(maxAgeSeconds(empty), 120);
+
+  const outage = await bioRxivAnswer(async () => new Response('down', { status: 503 }));
+  assert.equal((await outage.json())._papertok.degraded, 'UPSTREAM_503');
+});
+
+test('a healthy bioRxiv answer keeps its ten minutes and says nothing is degraded', async () => {
+  const response = await bioRxivAnswer(async () => new Response(JSON.stringify({
+    messages: [{ status: 'ok' }],
+    collection: [{ doi: '10.1101/2026.09.01.000001', title: 'A preprint', category: 'neuroscience' }],
+  }), { headers: { 'content-type': 'application/json' } }));
+
+  const payload = await response.json();
+  assert.equal(payload.collection.length, 1);
+  assert.equal(payload._papertok?.degraded, undefined);
+  assert.equal(maxAgeSeconds(response), 600);
+});

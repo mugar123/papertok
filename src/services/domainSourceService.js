@@ -180,6 +180,20 @@ export function mapBioRxivPaper(raw, requestedCategories = []) {
 
 // The payload is read by `mapEuropePmcRecord`, shared with the enrichment path;
 // what belongs here is the Paper built on top of it.
+/**
+ * The papers of a `/sources/biorxiv` answer. The Worker answers a bioRxiv
+ * outage with an empty collection marked `_papertok.degraded` and caches it
+ * briefly; that is a failure of the source, thrown so the feed's source-health
+ * log reports it, never an honest "no preprints".
+ */
+export function readBioRxivResponse(data, requestedCategories = [], limit = 8) {
+  const degraded = data?._papertok?.degraded;
+  if (degraded) {
+    throw Object.assign(new Error(`Specialist source degraded: ${degraded}`), { code: degraded });
+  }
+  return (data?.collection || []).slice(0, limit).map(item => mapBioRxivPaper(item, requestedCategories));
+}
+
 export function mapEuropePmcSearchResult(raw, requestedCategories = []) {
   const record = mapEuropePmcRecord(raw);
   const { pmid, providerId } = record;
@@ -588,7 +602,7 @@ export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMo
       category: plan.biorxivCategory,
       page: safePage,
       limit: safeLimit,
-    }).then(data => (data?.collection || []).slice(0, safeLimit).map(item => mapBioRxivPaper(item, plan.biology))));
+    }).then(data => readBioRxivResponse(data, plan.biology, safeLimit)));
   }
 
   if (eligible.europepmc) {
