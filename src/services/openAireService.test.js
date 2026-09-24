@@ -5,7 +5,14 @@ import {
   settleWithin,
   withStubbedFetch,
 } from '../test-support/deadlineHarness.js';
-import { CACHE, fetchWithTimeout, getProjectDetails, getPapersByProject, searchProjects } from './openAireService.js';
+import {
+  CACHE,
+  fetchWithTimeout,
+  getPapersByProject,
+  getProjectDetails,
+  getProjectForPaper,
+  searchProjects,
+} from './openAireService.js';
 
 test('the deadline covers an OpenAIRE body that never finishes', async () => {
   // The worst shape of the family: the response comes back unread and
@@ -201,4 +208,172 @@ test('searchProjects falls back to the grant code only when OpenAIRE sends no ob
 
   assert.equal(projects[0].id, '100010', 'a row with no OpenAIRE id is still routable');
   assert.equal(projects[0].code, '100010');
+});
+
+/**
+ * The project badge on a card (issue 11c of the 2026-09-23 audit). OpenAIRE
+ * has no `pid` parameter: every arXiv-only card spent a request on a 400
+ * «Parameter pid is not supported», uncached, so the badge could never appear
+ * for a paper with no DOI and the failure was paid again on every render. The
+ * record is filed under its OAI identifier, without the version suffix
+ * (`…v1` answers nothing, measured 2026-09-24).
+ */
+const TAILOR_RELATION = {
+  to: {
+    '@class': 'isProducedBy',
+    '@scheme': 'dnet:result_project_relations',
+    '@type': 'project',
+    $: 'corda__h2020::b9871e3e08a9db98aaa42bf321ed0f1a',
+  },
+  code: { $: '952215' },
+  acronym: { $: 'TAILOR' },
+  title: { $: 'Foundations of Trustworthy AI - Integrating Reasoning, Learning and Optimization' },
+  funding: {
+    funder: { '@id': 'ec__________::EC', '@shortname': 'EC', '@name': 'European Commission', '@jurisdiction': 'EU' },
+    funding_level_0: { '@name': 'H2020', $: 'ec__________::EC::H2020' },
+  },
+};
+
+function publicationAnswer(rels) {
+  return new Response(JSON.stringify({
+    response: {
+      header: { total: { $: 1 } },
+      results: { result: [{ metadata: { 'oaf:entity': { 'oaf:result': { rels: { rel: rels } } } } }] },
+    },
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+}
+
+// The shape OpenAIRE sends when nothing matches: `results` is null.
+function emptyPublicationAnswer() {
+  return new Response(JSON.stringify({ response: { header: { total: { $: '0' } }, results: null } }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function recordingFetch(urls, answer) {
+  return async (url) => {
+    urls.push(String(url));
+    return answer(String(url));
+  };
+}
+
+test('an arXiv-only paper is looked up by its OAI identifier, without the version', async () => {
+  const urls = [];
+  CACHE.clear();
+  try {
+    const project = await withStubbedFetch(
+      recordingFetch(urls, () => publicationAnswer([TAILOR_RELATION])),
+      () => getProjectForPaper('2208.08241v2', null),
+    );
+    assert.equal(urls.length, 1);
+    assert.match(urls[0], /[?&]originalId=oai%3AarXiv\.org%3A2208\.08241(&|$)/);
+    assert.doesNotMatch(urls[0], /[?&]pid=/);
+    assert.equal(project?.acronym, 'TAILOR', 'the badge can now appear for a paper with no DOI');
+    assert.equal(project?.funder, 'EC');
+  } finally {
+    CACHE.clear();
+  }
+});
+
+test('a paper with a DOI is looked up by the DOI first, and falls back to the OAI identifier', async () => {
+  const urls = [];
+  CACHE.clear();
+  try {
+    const project = await withStubbedFetch(
+      recordingFetch(urls, (url) => (url.includes('doi=') ? emptyPublicationAnswer() : publicationAnswer([TAILOR_RELATION]))),
+      () => getProjectForPaper('2203.10143', '10.1145/3555174'),
+    );
+    assert.equal(urls.length, 2);
+    assert.match(urls[0], /[?&]doi=10\.1145%2F3555174(&|$)/);
+    assert.doesNotMatch(urls[0], /originalId=/);
+    assert.match(urls[1], /[?&]originalId=oai%3AarXiv\.org%3A2203\.10143(&|$)/);
+    assert.equal(project?.acronym, 'TAILOR');
+  } finally {
+    CACHE.clear();
+  }
+});
+
+test('a DOI record with no project is the answer: its arXiv copy is not asked for', async () => {
+  // OpenAIRE deduplicates the two into one record (10.1145/3555174 and
+  // 2203.10143 answer the same doi_dedup___ id), so a second lookup would
+  // return the same projectless publication.
+  const urls = [];
+  CACHE.clear();
+  try {
+    const project = await withStubbedFetch(
+      recordingFetch(urls, () => publicationAnswer([])),
+      () => getProjectForPaper('2203.10143', '10.1145/3555174'),
+    );
+    assert.equal(project, null);
+    assert.equal(urls.length, 1);
+    assert.match(urls[0], /[?&]doi=/);
+  } finally {
+    CACHE.clear();
+  }
+});
+
+test('an old-style arXiv id keeps its archive prefix in the OAI identifier', async () => {
+  const urls = [];
+  CACHE.clear();
+  try {
+    await withStubbedFetch(
+      recordingFetch(urls, () => emptyPublicationAnswer()),
+      () => getProjectForPaper('hep-th/9901001', null),
+    );
+    assert.match(urls[0], /[?&]originalId=oai%3AarXiv\.org%3Ahep-th%2F9901001(&|$)/);
+  } finally {
+    CACHE.clear();
+  }
+});
+
+test('a card does not ask OpenAIRE twice after a refusal', async () => {
+  const urls = [];
+  CACHE.clear();
+  try {
+    await withStubbedFetch(
+      recordingFetch(urls, () => new Response('{"status":"error","code":"400"}', { status: 400 })),
+      async () => {
+        assert.equal(await getProjectForPaper('2301.00001', null), null);
+        assert.equal(await getProjectForPaper('2301.00001', null), null);
+      },
+    );
+    assert.equal(urls.length, 1, 'the refusal is remembered for the session');
+  } finally {
+    CACHE.clear();
+  }
+});
+
+test('a card does not ask OpenAIRE twice after an empty answer', async () => {
+  const urls = [];
+  CACHE.clear();
+  try {
+    await withStubbedFetch(
+      recordingFetch(urls, () => emptyPublicationAnswer()),
+      async () => {
+        assert.equal(await getProjectForPaper('2203.10143', '10.1145/3555174'), null);
+        assert.equal(await getProjectForPaper('2203.10143', '10.1145/3555174'), null);
+      },
+    );
+    assert.equal(urls.length, 2, 'one DOI lookup and one arXiv lookup, for both calls');
+  } finally {
+    CACHE.clear();
+  }
+});
+
+test('a card does not ask OpenAIRE twice after a network failure', async () => {
+  let calls = 0;
+  CACHE.clear();
+  try {
+    await withStubbedFetch(
+      async () => { calls++; throw new TypeError('Failed to fetch'); },
+      async () => {
+        assert.equal(await getProjectForPaper(null, '10.1145/3555174'), null);
+        assert.equal(await getProjectForPaper(null, '10.1145/3555174'), null);
+      },
+    );
+    assert.equal(calls, 1);
+  } finally {
+    CACHE.clear();
+  }
 });

@@ -155,56 +155,59 @@ export async function getProjectDetails(projectId, { funder = '' } = {}) {
 }
 
 /**
- * Get project info from OpenAIRE using arXiv ID or DOI
+ * OpenAIRE files an arXiv record under its OAI identifier, and only without the
+ * version suffix: `oai:arXiv.org:2208.08241` answers, `…v2` answers nothing.
+ * There is no `pid` parameter at all — it is a 400 «Parameter pid is not
+ * supported» (measured 2026-09-24).
+ */
+function arxivOriginalId(arxivId) {
+  const bare = String(arxivId).trim().replace(/^arxiv:/i, '').replace(/v\d+$/i, '');
+  return `oai:arXiv.org:${bare}`;
+}
+
+const PUBLICATION_LOOKUP = 'https://api.openaire.eu/search/publications?format=json&size=1';
+
+/** The first publication a lookup finds, and whether OpenAIRE answered at all. */
+async function lookUpPublication(lookup) {
+  const response = await fetchWithTimeout(`${PUBLICATION_LOOKUP}&${lookup}`);
+  if (!response.ok) return { answered: false, publication: null };
+  const data = await response.json();
+  const result = data?.response?.results?.result;
+  return { answered: true, publication: (Array.isArray(result) ? result[0] : result) || null };
+}
+
+/**
+ * Get project info from OpenAIRE using arXiv ID or DOI.
+ *
+ * Every answer is kept for the session, a miss or a failure included: the card
+ * asks when it settles, and asking again on each render only paid the same
+ * empty answer again.
  */
 export async function getProjectForPaper(arxivId, doi) {
   if (!arxivId && !doi) return null;
-  
+
   const cacheKey = `project_${arxivId || doi}`;
   if (CACHE.has(cacheKey)) {
     const cached = CACHE.get(cacheKey);
     if (Date.now() - cached.timestamp < CACHE_TTL) return cached.data;
   }
 
+  let project = null;
   try {
-    let url = 'https://api.openaire.eu/search/publications?format=json&size=1';
-    if (doi) {
-      url += `&doi=${encodeURIComponent(doi)}`;
-    } else {
-      url += `&pid=${encodeURIComponent(arxivId)}`;
+    let lookup = doi ? await lookUpPublication(`doi=${encodeURIComponent(doi)}`) : null;
+    // The arXiv record only when the DOI finds no publication at all. A
+    // publication with no project is the usual answer, and its arXiv copy is
+    // the same deduplicated record (10.1145/3555174 and 2203.10143 are one,
+    // 2026-09-24), so asking again for it would only spend a request.
+    if (arxivId && (!lookup || (lookup.answered && !lookup.publication))) {
+      lookup = await lookUpPublication(`originalId=${encodeURIComponent(arxivOriginalId(arxivId))}`);
     }
-
-    const response = await fetchWithTimeout(url);
-    if (!response.ok) return null;
-
-    const data = await response.json();
-    if (!data?.response?.results?.result || data.response.results.result.length === 0) {
-        if (doi && arxivId) {
-             const urlArxiv = `https://api.openaire.eu/search/publications?format=json&size=1&pid=${encodeURIComponent(arxivId)}`;
-             const resArxiv = await fetchWithTimeout(urlArxiv);
-             if (resArxiv.ok) {
-                 const dataArxiv = await resArxiv.json();
-                 if (dataArxiv?.response?.results?.result?.length > 0) {
-                     const proj = parseProjectFromResult(dataArxiv.response.results.result[0]);
-                     if (proj) {
-                        CACHE.set(cacheKey, { data: proj, timestamp: Date.now() });
-                        return proj;
-                     }
-                 }
-             }
-        }
-        return null;
-    }
-
-    const project = parseProjectFromResult(data.response.results.result[0]);
-    if (project) {
-        CACHE.set(cacheKey, { data: project, timestamp: Date.now() });
-    }
-    return project;
+    if (lookup?.publication) project = parseProjectFromResult(lookup.publication);
   } catch (err) {
     console.error("Error fetching OpenAIRE project:", err);
-    return null;
   }
+  CACHE.set(cacheKey, { data: project, timestamp: Date.now() });
+  return project;
 }
 
 function parseProjectFromResult(result) {
