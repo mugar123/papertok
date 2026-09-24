@@ -1,5 +1,56 @@
 # Estado / pendientes
 
+## Doce fallos auditados, arreglados en su rama (2026-09-24)
+
+La auditoría (`docs/AUDITORIA-12-FALLOS-2026-09-23.md`) confirmó los doce, y el diseño
+(`docs/superpowers/specs/2026-09-24-auditoria-12-fallos-design.md`) los arregla en el orden
+propuesto. Todo en la rama `worktree-auditoria-12-fallos`, **sin fusionar ni desplegar**
+al escribir esto; el Worker lo despliega Nico.
+
+- **Wikipedia por identidad (3).** La caja de un tema se busca por su QID de Wikidata o su
+  título de enwiki, no por el primer resultado de búsqueda: «Tumor progression» ya no
+  enseña a Allan Balmain (`c3d2f17`).
+- **Abstracts íntegros (6).** Europe PMC quita solo las etiquetas conocidas; PubMed lee
+  solo el abstract del artículo, con sus secciones; el cuerpo indexado de un editorial no
+  es su abstract (`fb9cd01`, `bfee443`, `be92f9e`).
+- **La vista previa del invitado mezcla las áreas (1).** Se reparte entre las áreas
+  elegidas en vez de entregarse a la fuente más rápida (`5cf4208`).
+- **Puertas de cuenta con motivo (2, 9, 10).** El diálogo dice por qué se abrió;
+  Conexiones lo pide en vez de fallar; «Leer en simple» avisa antes de pulsarlo y en la
+  bienvenida; el buscador del Explorer de invitado es un botón que dice que necesita
+  cuenta (`38ea95a`, `d77a95e`, `f56e7a0`).
+- **Etiquetas (7, 8).** Fuera las etiquetas de control de MeSH y los conceptos de bases de
+  datos; los temas propios salen en el idioma de la interfaz y el texto en inglés lleva
+  `lang="en"` (`b2e7661`, `39217bc`).
+- **Autores por identidad (4).** El nombre se compara por apellido y nombres en orden; se
+  guardan los identificadores que mandan las fuentes; un autor sin id se busca en el paper
+  del que viene y la página avisa cuando es solo un nombre (`fbdaf28`, `9e9c970`,
+  `4a0607a`).
+- **Rendimiento (11).** Nada se carga detrás de la bienvenida hasta que el visitante
+  responde; una caída de bioRxiv se contesta una vez cada dos minutos, no una por visita;
+  OpenAIRE se consulta por el identificador OAI y una sola vez por sesión (`36d1476`,
+  `cef4722`, `47ef535`).
+- **Compartir e indexar (5).** Rutas nuevas del Worker `/share/{paper,list,user,entity}/…`
+  que responden la carcasa con la cabecera propia de cada página, una copia estática en
+  `#root` y, para un paper, el paper como semilla; `vercel.json` manda ahí a los
+  rastreadores; la página del paper pinta la semilla (Googlebot no puede llegar a la API);
+  compartir manda el título como texto; sitemap y robots solo con lo canónico
+  (`942385b`, `4f46f6c`; el flujo entero en `docs/PUBLIC_DISCOVERY.md`).
+- **Menores (12).** Página de «no encontrado» y un 404 HTTP de verdad (`public/404.html`);
+  h1 en el feed de invitado, el paper público, `/search` y los errores del Explorer;
+  capítulos, aceptados y revisiones dejan de salir como «Preprint» (`a4b1936`, `7d097e5`,
+  `736f32b`).
+
+**Orden de despliegue: el Worker primero.** Trae rutas nuevas (`/share/*`) y la respuesta
+degradada de bioRxiv que el cliente nuevo lee. Después, comprobar con un agente de
+rastreador, p. ej. `curl -A 'facebookexternalhit/1.1'
+https://api.papertok.app/share/paper/<clave>`, y que la protección de bots de Cloudflare
+deja pasar a un rastreador que llega desde las IPs de Vercel. Luego el frontend.
+
+**Sin verificar todavía:** las páginas de compartir a través de Vercel (necesitan el
+despliegue); cómo las pinta Googlebot de verdad; `/search` con sesión (solo test de
+fuente); lector de pantalla. Lo verificado está en `docs/ACCESIBILIDAD-EVIDENCIA.md`.
+
 ## Las citas llegan con la tarjeta, y tomar la rueda queda DESCARTADO (2026-09-21)
 
 **Tomar la rueda se probó y se revirtió el mismo día.** Bajo `pointer: fine` el

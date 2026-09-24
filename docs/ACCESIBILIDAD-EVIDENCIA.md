@@ -869,3 +869,53 @@ landmark propio» había quedado vieja y se corrige aquí.
   palabras llanas. Es el precio de que un botón enseñe dos rótulos distintos
   según el ancho y ninguno contenga al otro; si alguna vez el rótulo corto pasa
   a ser parte del largo, esto se puede mejorar sin volver a romper el 2.5.3.
+
+## Entrega: auditoría de doce fallos (verificación ejecutada el 2026-09-24)
+
+Los arreglos de `docs/AUDITORIA-12-FALLOS-2026-09-23.md` que tocan la interfaz, en la
+rama `worktree-auditoria-12-fallos`.
+
+### Cómo se comprobó
+
+- El Vite del worktree (`:5173`) contra datos de producción, como **invitado**, en el
+  panel de navegador de la app: interfaz en español y en inglés, tema oscuro, teclado real
+  (`Tab`, `Shift+Tab`, `Enter`, `Escape`). Los recorridos que necesitan sesión no se
+  hicieron: la sesión la abre Nico.
+- `scripts/diagnostics/guest-feed-composition-probe.mjs` contra `:5173`, con un Chrome
+  headless de perfil limpio (Informática + Medicina).
+- Las páginas para rastreadores (`worker/share-pages.js`), dentro de workerd con
+  `workerd test` sobre el bundle de `wrangler deploy --dry-run`, contra la carcasa real y
+  los proveedores reales, sin desplegar.
+
+**Artefacto del entorno:** en esta pasada, la captura de pantalla del panel pintó dos veces
+un fotograma viejo y desplazado. La geometría se leyó con `getBoundingClientRect`, y ninguna
+fila se apoya en una captura.
+
+### Matriz
+
+| Página o flujo | Componente | Criterio WCAG | Resultado | Evidencia | Defecto o limitación | Reprueba |
+|---|---|---|---|---|---|---|
+| `/feed` (invitado) | «Ver papers relacionados» → `AuthPrompt` con motivo | 2.4.3, 3.3.2, 4.1.2 | Cumple | `Enter` abre un `role="dialog"` con `aria-modal="true"`, nombre «Las conexiones necesitan una cuenta» (`aria-labelledby`) y el motivo como descripción (`aria-describedby`); no se abre el panel de relacionados ni aparece «No se pudieron cargar» | El foco se puso por script antes del `Enter` real | `authPromptCopy.test.js`, `authPromptReasonWiring.test.js` + recorrido manual |
+| `/feed` (invitado) | «Leer en simple»: aviso antes de pulsar | 1.3.1, 3.3.2 | Cumple | El botón lleva el candado (`aria-hidden`) y `aria-describedby` → «Necesita una cuenta gratuita»; `Enter` abre «Leer en simple necesita una cuenta» con su motivo y no abre el lector | — | `rewriteGuestCue.test.js` + recorrido manual |
+| Bienvenida | `GuestInterestsPrompt`: lo que promete | 3.3.2 | Cumple | La descripción del diálogo dice «Con una cuenta gratuita, muchos se pueden leer además explicados en claro.»; detrás no hay tarjetas cargadas (la sonda: cero peticiones de datos en 15 s con la hoja abierta) | — | `rewriteGuestCue.test.js`, `guestFeedBackdrop.test.js` + sonda |
+| Explorer (invitado) | El buscador como botón que avisa | 2.1.1, 2.4.3, 2.4.7, 4.1.2 | Cumple | `<button type="button">` «Buscar en este tema · necesita cuenta»; con `Tab` real casa `:focus-visible` y pinta un anillo sólido de 2 px; `Enter` abre «Buscar y filtrar necesita una cuenta»; el foco entra, `Escape` cierra y el foco vuelve al botón | — | `explorerGuestGate.test.js` + recorrido manual |
+| Explorer | Caja de Wikipedia: idioma del texto | 3.1.2 | Cumple | En `/explorer/concept/C2779256057` con la interfaz en español, el párrafo del artículo inglés («Tumor progression is the third and last phase…») lleva `lang="en"`; ya no sale Allan Balmain | — | `explorerWikiIdentity.test.js` + recorrido manual |
+| Tarjeta | Chips de tema: idioma | 3.1.2 | Cumple | Los temas propios salen en el idioma de la interfaz («Visión por Computador»); el texto del proveedor lleva `lang="en"` | En vivo solo se vieron chips propios; el `lang` del texto del proveedor está fijado por test | `paperTopicTags.test.js` |
+| Explorer (autor por nombre) | Aviso «Encontrado por el nombre» | 1.3.1 | No verificado | Fijado por test de fuente | No se abrió un autor sin id en vivo | `explorerAuthorIdentity.test.js` |
+| Ruta desconocida | `NotFoundPage` | 1.3.1, 2.1.1, 2.4.2, 2.4.7 | Cumple | `/esto-no-existe` se queda en su dirección, con un `<main>`, un h1, título «Página no encontrada \| PaperTok» y `robots noindex`; `Tab` pasa por el enlace de salto y llega a la acción con anillo de 2 px; `Enter` lleva a `/feed` y el `noindex` se va con la página; `/` sigue llegando a `/feed` | — | `notFoundPage.test.js`, `spaRouteCoverage.test.js` + recorrido manual |
+| 404 HTTP | `public/404.html` | 1.3.1, 1.4.3, 2.4.7, 3.1.2 | No verificado | Estático: un `<main>`, un h1, la parte inglesa en una sección con `lang="en"`, enlaces de 42 px de alto y ratios calculados por encima de 7:1 en los dos temas | Solo lo sirve Vercel después del despliegue | `spaRouteCoverage.test.js` |
+| `/feed` (invitado) | h1 visualmente oculto | 1.3.1, 2.4.6 | Cumple | En el DOM: un `<main>` y, dentro, un h1 «PaperTok: scientific papers for you» / «PaperTok: papers científicos para ti» | — | `accessibilityStructure.test.js` + DOM en vivo |
+| `/public/paper/:key` | El título como h1 | 1.3.1 | Cumple | Un `<main>`; el h1 es el título (`.pc-title`) con el mismo tamaño que tenía el h2 (25,6 px); `robots index, follow` | — | `accessibilityStructure.test.js` + DOM en vivo |
+| `/public/paper/:key` (rastreador) | Semilla del Worker | 1.3.1 | Cumple | Con una semilla inyectada para `arxiv:2609.99999`, la página se pinta desde ella con el título en texto plano y sin `noindex` desde el primer render, y sigue ahí cuando la carga no encuentra nada (8 s) | Semilla inyectada a mano; el documento real del Worker solo lo recibe un rastreador a través de Vercel | `shareSeed.test.js`, `publicPaperShareSeed.test.js` + recorrido manual |
+| `/search` | `<main>` y h1 | 1.3.1, 2.4.1 | No verificado | Fijado por test de fuente (`Tabs` pintado como `<main>` y un h1 oculto) | **Justificación**: `/search` exige sesión | `accessibilityStructure.test.js` + verificación con sesión |
+| Explorer (error y no encontrado) | h1 | 1.3.1 | Cumple | `/public/entity/author/A9999999999`: h1 «Entity not found», con la serif que tenía el h2 | El Explorer no tiene `<main>` en ningún estado, tampoco cargado; aplazado | `accessibilityStructure.test.js` + recorrido manual |
+| Páginas para rastreadores | Copia estática en `#root` | 1.3.1, 3.1.2 | Cumple (en workerd) | Un h1 con el título y, en un paper, `lang` en el artículo cuando el proveedor da el idioma; la app la sustituye al montar | La ve un rastreador que no ejecuta JavaScript; no se probó a través de Vercel | `worker/share-pages.test.js` + workerd |
+| Global | Experiencia con lector de pantalla | 1.3.1, 4.1.2, 4.1.3 y demás | **No verificado** | Ninguna | **No se ha ejecutado ningún lector de pantalla real** en esta entrega | Fase 6 |
+
+### Red de regresión
+
+`src/accessibilityStructure.test.js` suma los cuatro h1 (feed de invitado, paper público,
+`/search` y los errores del Explorer). `src/components/Layout/notFoundPage.test.js` y
+`src/utils/spaRouteCoverage.test.js` cubren el «no encontrado» y el 404. Los avisos con
+motivo tienen sus propios tests (tabla de arriba). `npm run check` pasa, y la suite pasa
+también en Node 22.
