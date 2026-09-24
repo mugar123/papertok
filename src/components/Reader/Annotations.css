@@ -221,15 +221,6 @@
    so the rail leaves the tab order and the reader's reach only once it is
    actually gone. */
 .rd-rail[data-surface='rail'] {
-  /* The rail is sticky inside `.rd-scroll`, so a list taller than the
-     viewport used to pin its header and leave every note below the fold
-     unreachable: the page scroll moved the paper, not the notes. Cap it to
-     the scrollport and let `.rd-rail-list` scroll. `min-height: 0` is what
-     lets that cap win — a flex item's automatic minimum is its content, and
-     that minimum outranks `max-height`. */
-  min-height: 0;
-  max-height: 100%;
-  overflow: hidden;
   /* Plain durations, on purpose. This used to read `var(--transition-slow)
      cubic-bezier(…)`, and that token is `320ms ease` — a duration AND a
      curve — so every line carried two timing functions, the whole
@@ -258,7 +249,6 @@
 
 .rd-rail-head {
   display: flex;
-  flex-shrink: 0;
   align-items: center;
   gap: var(--space-2);
   padding-bottom: 10px;
@@ -282,7 +272,6 @@
 
 .rd-rail-filters {
   display: flex;
-  flex-shrink: 0;
   gap: 4px;
   margin: var(--space-3) 0;
 }
@@ -333,7 +322,6 @@
 
 .rd-rail-list {
   display: flex;
-  flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
   overflow-y: auto;
@@ -561,10 +549,6 @@
      to the true bottom edge. Zero with no home indicator, so nothing moves
      there. */
   padding-bottom: var(--inset-bottom);
-  /* The sheet is capped at 72vh. Without a clip, the list grew past that cap
-     and the extra notes were painted into nothing: the sheet never became
-     the scroller, and the page behind it did. */
-  overflow: hidden;
   border-left: none;
   border-top: 1px solid var(--border-default);
   border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
