@@ -978,6 +978,10 @@ const PaperCard = memo(function PaperCard({
   const requireAuthentication = useCallback((action) => {
     onAuthRequired?.(action);
   }, [onAuthRequired]);
+  // Describes «Leer en simple» to a guest: it needs an account. A
+  // description, not part of the name, so the name stays what the button
+  // shows (WCAG 2.5.3, see the button).
+  const rewriteHintId = useId();
 
   // Marking a paper read used to fade the whole card out and, 1.5 s later,
   // pull it from the feed — the paper the reader had just finished with
@@ -1823,6 +1827,7 @@ const PaperCard = memo(function PaperCard({
             {canRequestRewrite && (
               <Button
                 variant="brand"
+                aria-describedby={publicMode ? rewriteHintId : undefined}
                 onClick={(event) => {
                   event.stopPropagation();
                   if (publicMode) {
@@ -1849,7 +1854,13 @@ const PaperCard = memo(function PaperCard({
                 <Sparkles size={16} />
                 <span className="pc-action-label">{isEnglish ? 'Read in plain words' : 'Leer en simple'}</span>
                 <span className="pc-action-label--short">{isEnglish ? 'Simple' : 'Simple'}</span>
+                {publicMode && <Lock size={13} className="pc-action-lock" aria-hidden="true" />}
               </Button>
+            )}
+            {canRequestRewrite && publicMode && (
+              <span id={rewriteHintId} className="visually-hidden">
+                {isEnglish ? 'Needs a free account' : 'Necesita una cuenta gratuita'}
+              </span>
             )}
           </div>
 

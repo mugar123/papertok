@@ -27,7 +27,7 @@ const COPY = {
     kicker: { first: 'Te damos la bienvenida', edit: 'Tus intereses' },
     title: { first: 'Esto es PaperTok', edit: '¿Qué te interesa?' },
     lede: {
-      first: 'Un feed de papers científicos para deslizar, con lo esencial de cada uno explicado en claro y recomendaciones que aprenden de lo que lees.',
+      first: 'Un feed de papers científicos para deslizar, con recomendaciones que aprenden de lo que lees. Con una cuenta gratuita, muchos se pueden leer además explicados en claro.',
       edit: 'Cambia las áreas y el feed se vuelve a armar con ellas.',
     },
     question: '¿Qué te interesa?',
@@ -42,7 +42,7 @@ const COPY = {
     kicker: { first: 'Welcome', edit: 'Your interests' },
     title: { first: 'This is PaperTok', edit: 'What are you into?' },
     lede: {
-      first: 'A scrollable feed of scientific papers, each one explained in plain words, with recommendations that learn from what you read.',
+      first: 'A scrollable feed of scientific papers, with recommendations that learn from what you read. With a free account, many of them can also be read in plain words.',
       edit: 'Change the areas and the feed is rebuilt from them.',
     },
     question: 'What are you into?',

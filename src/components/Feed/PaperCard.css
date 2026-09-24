@@ -1173,6 +1173,14 @@ a.pc-citations {
   display: none;
 }
 
+/* A guest's «Leer en simple» needs an account; the lock says so before the
+   press (the button also carries an aria-describedby hint). Decorative for
+   assistive tech, which hears the hint instead. */
+.pc-action-lock {
+  flex: none;
+  opacity: 0.8;
+}
+
 /* ── Side rail ──
    On wide screens it sits in flow beside the sheet, so the pair stays
    optically centred. Narrow screens overlay it on the card edge, the way
