@@ -10,6 +10,35 @@ test('the same person written two ways still matches', () => {
   assert.ok(matchesAuthorName('Ada Lovelace', 'Lovelace'), 'a subset of the parts is enough');
 });
 
+// PubMed writes "Surname INITIALS". The old matcher never split "WN" and
+// did not anchor the surname, so "Li WN" matched "Po-Wn Li" (1 work) and not
+// "Wan-Ning Li" (the author of PMID 42774036), and "Chen YC" matched
+// "Y. C. Pan" (audit 2026-09-23, issue 4).
+test('a PubMed "Surname INITIALS" name matches by surname and initials, in order', () => {
+  assert.equal(matchesAuthorName('Li WN', 'Wan-Ning Li'), true);
+  assert.equal(matchesAuthorName('Li WN', 'W. N. Li'), true);
+  assert.equal(matchesAuthorName('Li WN', 'WN Li'), true);
+  assert.equal(matchesAuthorName('Li WN', 'Po-Wn Li'), false);
+  assert.equal(matchesAuthorName('Li WN', 'Lin Li-Wn'), false);
+  assert.equal(matchesAuthorName('Chen YC', 'Y. C. Pan'), false);
+  assert.equal(matchesAuthorName('Pidugu VK', 'Vijaya Kumar Pidugu'), true);
+  assert.equal(matchesAuthorName('Smith J', 'John Smith'), true);
+  assert.equal(matchesAuthorName('Smith J', 'Mary Smith'), false);
+});
+
+test('the surname is the anchor: the same given name on another surname is another person', () => {
+  assert.equal(matchesAuthorName('Wei Zhang', 'Wei Chen'), false);
+  assert.equal(matchesAuthorName('Ada Lovelace', 'Ada Byron'), false);
+  assert.equal(matchesAuthorName('Wei Zhang', 'Yong-Wei Zhang'), false);
+});
+
+test('a "Surname, Given" name and a two-word name in either order are the same person', () => {
+  assert.equal(matchesAuthorName('Nicolás Cuello', 'Cuello, N.'), true);
+  assert.equal(matchesAuthorName('Wei Zhang', 'Zhang Wei'), true);
+  assert.equal(matchesAuthorName('W. Zhang', 'Zhang Wei'), true);
+  assert.equal(matchesAuthorName('Lei Ke', 'Ke Lei'), true);
+});
+
 test('two different people do not match', () => {
   assert.equal(matchesAuthorName('Ada Lovelace', 'Grace Hopper'), false);
   assert.equal(matchesAuthorName('Ada Lovelace', ''), false);
