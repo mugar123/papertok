@@ -1452,6 +1452,7 @@ const PaperCard = memo(function PaperCard({
                   key={tag.key}
                   type="button"
                   className={`pc-semantic-tag pc-topic-link ${tag.source === 'concept' && !topic.reliable ? 'pc-topic-link--external' : ''}`}
+                  lang={tag.lang}
                   onClick={(event) => openTopic(event, topic)}
                   title={`${isEnglish ? 'Explore' : 'Explorar'} ${topic.label}`}
                 >
@@ -1662,6 +1663,7 @@ const PaperCard = memo(function PaperCard({
             <motion.p
               key={abstractKey}
               ref={attachAbstractBody}
+              lang={abstractText ? 'en' : undefined}
               initial={{ opacity: 0 }}
               animate={{
                 opacity: 1,

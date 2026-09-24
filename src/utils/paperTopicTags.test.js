@@ -18,10 +18,12 @@ test('keeps original arXiv categories ahead of later OpenAlex concepts', () => {
   });
 
   assert.deepEqual(after.slice(0, before.length), before);
+  // "Cosmology" is the paper's own primary category, already on the pill as
+  // «Cosmología»: since the chips read in the interface language it is the
+  // same topic twice, so it is not repeated (2026-09-24).
   assert.deepEqual(after.map(tag => tag.label), [
     'Relatividad General',
     'Altas Energías (Fenomenología)',
-    'Cosmology',
     'Dark matter',
   ]);
 });
@@ -111,4 +113,51 @@ test('recognizes every supported semantic label field', () => {
     'Quantum sensing',
     'Gene regulation',
   ]);
+});
+
+// A chip whose English label is one of our own topics was resolved to the
+// Spanish topic for its link and tooltip, and still printed in English
+// ("Oncology" with the title "Explorar Oncología"): 42 of 91 chips on the
+// guest's OpenAlex cards (audit 2026-09-23, issue 8).
+test('a chip that is one of our topics reads in the interface language', () => {
+  const tags = buildPaperTopicTags({
+    primaryCategory: 'med.cardio',
+    categories: ['med.cardio', 'Oncology'],
+    concepts: [{ id: 'https://openalex.org/C41008148', display_name: 'Computer science' }],
+  }, 4, 'es');
+
+  assert.deepEqual(tags.map(tag => tag.label), ['Oncología', 'Ciencias de la Computación']);
+  assert.deepEqual(tags.map(tag => tag.lang), [undefined, undefined]);
+});
+
+test('provider text keeps its words and says they are English', () => {
+  const tags = buildPaperTopicTags({
+    primaryCategory: 'med.onco',
+    categories: ['med.onco', 'Tumor Microenvironment'],
+    concepts: [{ id: 'C1', display_name: 'Dark matter' }],
+  }, 4, 'es');
+
+  assert.deepEqual(tags.map(tag => [tag.label, tag.lang]), [
+    ['Tumor Microenvironment', 'en'],
+    ['Dark matter', 'en'],
+  ]);
+});
+
+test('our translation of an arXiv code is ours, not English', () => {
+  const tags = buildPaperTopicTags({
+    primaryCategory: 'quant-ph',
+    categories: ['quant-ph', 'nlin.CD'],
+  }, 4, 'es');
+
+  assert.deepEqual(tags.map(tag => [tag.label, tag.lang]), [['Física', undefined]]);
+});
+
+test('two chips that are the same topic show once, and never repeat the category pill', () => {
+  const tags = buildPaperTopicTags({
+    primaryCategory: 'astro-ph.CO',
+    categories: ['astro-ph.CO', 'med.onco', 'Oncology'],
+    concepts: [{ id: 'C1', display_name: 'Cosmology' }, { id: 'C2', display_name: 'Oncology' }],
+  }, 4, 'es');
+
+  assert.deepEqual(tags.map(tag => tag.label), ['Oncología']);
 });

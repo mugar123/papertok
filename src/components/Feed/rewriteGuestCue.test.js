@@ -39,3 +39,14 @@ test('the welcome sheet no longer promises every paper in plain words', () => {
   assert.match(copy, /Con una cuenta gratuita, muchos se pueden leer además explicados en claro\./);
   assert.match(copy, /With a free account, many of them can also be read in plain words\./);
 });
+
+// English content in the Spanish UI says so (AGENTS.md, accessibility rule 8):
+// the provider's topic chips carry the `lang` their builder gives them, and the
+// abstract is marked like the title already was.
+test('provider chips and the abstract are marked as English', () => {
+  assert.match(
+    card,
+    /className=\{`pc-semantic-tag pc-topic-link [^`]*`\}\s*lang=\{tag\.lang\}\s*onClick=\{\(event\) => openTopic\(event, topic\)\}/,
+  );
+  assert.match(card, /<motion\.p\s+key=\{abstractKey\}\s+ref=\{attachAbstractBody\}\s+lang=\{abstractText \? 'en' : undefined\}/);
+});
