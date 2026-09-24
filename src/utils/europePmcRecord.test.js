@@ -30,6 +30,42 @@ test('counts free full text as readable, not just the open-access flag', () => {
   assert.equal(closed.htmlUrl, '');
 });
 
+// Europe PMC writes the section headings of a structured abstract as <h4> and
+// leaves comparison signs unescaped. Deleting "<" to the next ">" as markup
+// erased a p-value and a comparison from PMID 42629277 and glued the next
+// heading onto the text ("… P ConclusionsPretransplant …", audit 2026-09-23).
+test('a literal "<" in an abstract is text, and section headings become labels', () => {
+  const record = mapEuropePmcRecord({
+    id: '42629277',
+    abstractText: '<h4>Background</h4>Acute renal allograft rejection remains a leading cause of graft loss.'
+      + '<h4>Results</h4>Lower CALLY values were associated with rejection (AUC = 0.968, 95% CI 0.925-1.000, '
+      + 'P < .001) compared with PNI and GPS.<h4>Conclusions</h4>Pretransplant CALLY index is a simple predictor.',
+  });
+
+  assert.equal(
+    record.abstract,
+    'Background: Acute renal allograft rejection remains a leading cause of graft loss. '
+      + 'Results: Lower CALLY values were associated with rejection (AUC = 0.968, 95% CI 0.925-1.000, '
+      + 'P < .001) compared with PNI and GPS. Conclusions: Pretransplant CALLY index is a simple predictor.',
+  );
+});
+
+test('only known tags are markup: comparisons survive, inline tags keep their text', () => {
+  assert.equal(
+    mapEuropePmcRecord({ id: '1', abstractText: 'IC50 values x<y and y>z were seen <i>in vitro</i> and <sup>2</sup>H.' }).abstract,
+    'IC50 values x<y and y>z were seen in vitro and 2H.',
+  );
+  assert.equal(
+    mapEuropePmcRecord({ id: '2', abstractText: '<p>First paragraph.</p><p>Second paragraph.</p>' }).abstract,
+    'First paragraph. Second paragraph.',
+  );
+  // A heading that already ends in its own punctuation keeps it.
+  assert.equal(
+    mapEuropePmcRecord({ id: '3', abstractText: '<h4>Objective:</h4>To test.' }).abstract,
+    'Objective: To test.',
+  );
+});
+
 test('decodes HTML entities in the abstract on both paths', () => {
   const record = mapEuropePmcRecord({ id: '1', abstractText: 'Sodium &amp; potassium &lt;i&gt;in vivo&lt;/i&gt;' });
   assert.equal(record.abstract, 'Sodium & potassium <i>in vivo</i>');

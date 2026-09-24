@@ -27,9 +27,28 @@ function isYes(value) {
   return String(value || '').toUpperCase() === 'Y';
 }
 
+// Europe PMC writes a structured abstract's section headings as <h4> and does
+// NOT escape a comparison sign, so only these tags are markup. Deleting
+// anything from "<" to the next ">" erased "< .001) compared with PNI and
+// GPS." from PMID 42629277 and glued the next heading on to the text
+// (audit 2026-09-23). Block tags part the text; inline tags only lose their
+// brackets. Entities are decoded afterwards, so an escaped `&lt;i&gt;` stays
+// the text it was written as.
+const HEADING_TAG = /<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1\s*>/gi;
+const BLOCK_TAG = /<\/?(?:p|div|br|li|ul|ol|section|title)\b[^>]*>/gi;
+const INLINE_TAG = /<\/?(?:i|b|em|strong|sup|sub|span|a|u|small|abbr|italic|bold|sc)\b[^>]*>/gi;
+
+function headingLabel(_match, _level, text) {
+  const label = String(text || '').replace(INLINE_TAG, '').replace(/\s+/g, ' ').trim();
+  if (!label) return ' ';
+  return /[:.]$/.test(label) ? ` ${label} ` : ` ${label}: `;
+}
+
 function stripMarkup(value) {
   return String(value || '')
-    .replace(/<[^>]*>/g, '')
+    .replace(HEADING_TAG, headingLabel)
+    .replace(BLOCK_TAG, ' ')
+    .replace(INLINE_TAG, '')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
     .replace(/&lt;/gi, '<')
