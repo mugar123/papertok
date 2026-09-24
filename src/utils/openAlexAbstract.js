@@ -26,3 +26,26 @@ export function reconstructOpenAlexAbstract(invertedIndex) {
   // index readable instead of ragged.
   return words.join(' ').replace(/\s+/g, ' ').trim();
 }
+
+// For these OpenAlex work types the inverted index holds the text itself, not
+// a summary of it: W7211952859, an editorial, carried 9137 characters of its
+// own body with the paragraph breaks lost ("response.A particularly"), and the
+// card showed all of it as the abstract (audit 2026-09-23).
+const TYPES_WITHOUT_ABSTRACT = new Set(['editorial', 'letter', 'erratum', 'paratext']);
+// Structured abstracts run to about 3000 characters; above 6000 the index is
+// a body leaking through. Under 40 it is a fragment ("Lettre", "in volume 57,
+// e8.") that would read as an abstract and unlock what a real one unlocks.
+const MAX_ABSTRACT_LENGTH = 6000;
+const MIN_ABSTRACT_LENGTH = 40;
+
+/**
+ * The abstract a mapper may show for an OpenAlex work: the rebuilt text, or an
+ * empty string when the work type has none or the text cannot be one. An
+ * empty answer means "missing", which every caller already renders as such.
+ */
+export function usableOpenAlexAbstract(work) {
+  if (!work || TYPES_WITHOUT_ABSTRACT.has(String(work.type || '').toLowerCase())) return '';
+  const text = reconstructOpenAlexAbstract(work.abstract_inverted_index);
+  if (text.length < MIN_ABSTRACT_LENGTH || text.length > MAX_ABSTRACT_LENGTH) return '';
+  return text;
+}

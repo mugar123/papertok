@@ -10,7 +10,7 @@ import { PaperBuilder } from './PaperBuilder.js';
 import { CATEGORIES, getCategoryArea } from '../data/categories.js';
 import { openAlexJson } from './openAlexClient.js';
 import { enrichPapersBatch } from './openAlexService.js';
-import { reconstructOpenAlexAbstract } from '../utils/openAlexAbstract.js';
+import { usableOpenAlexAbstract } from '../utils/openAlexAbstract.js';
 import { REPORT_OPENALEX_FIELDS } from './openAlexReportQuery.js';
 import { normalizeScientificMarkup } from '../utils/latex.js';
 import { getDateThresholds } from '../utils/scientificReportPeriods.js';
@@ -222,7 +222,7 @@ function cacheCorpus(cacheKey, entry) {
 }
 
 export function formatOpenAlexWork(work) {
-  const summary = reconstructOpenAlexAbstract(work.abstract_inverted_index) || 'Resumen no disponible.';
+  const summary = usableOpenAlexAbstract(work) || 'Resumen no disponible.';
   
   const authors = work.authorships?.map(a => ({ name: a.author?.display_name || 'Unknown Author', id: a.author?.id })) || [{ name: 'Unknown Author' }];
   const topics = work.topics || [];

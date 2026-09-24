@@ -4,7 +4,7 @@
  */
 
 import { CATEGORIES } from '../data/categories.js';
-import { reconstructOpenAlexAbstract } from '../utils/openAlexAbstract.js';
+import { usableOpenAlexAbstract } from '../utils/openAlexAbstract.js';
 import { matchesAuthorName } from '../utils/authorNameMatch.js';
 import { withRequestDeadline } from '../utils/requestDeadline.js';
 import {
@@ -154,7 +154,7 @@ export function mapOpenAlexEnrichmentWork(work) {
     arxivId,
     enrichment: {
       ...(authors ? { authors } : {}),
-      abstract: reconstructOpenAlexAbstract(work.abstract_inverted_index),
+      abstract: usableOpenAlexAbstract(work),
       concepts: semanticTopics,
       topics: work.topics || [],
       primaryTopic: work.primary_topic || null,
@@ -1730,7 +1730,7 @@ export function slimAuthorsPage(data) {
 }
 
 function formatOpenAlexWorkAsPaper(work) {
-  const summary = reconstructOpenAlexAbstract(work.abstract_inverted_index) || 'Resumen no disponible.';
+  const summary = usableOpenAlexAbstract(work) || 'Resumen no disponible.';
   
   const authors = work.authorships?.map(a => ({ name: a.author?.display_name || 'Unknown Author', id: a.author?.id })) || [{ name: 'Unknown Author' }];
   const institutions = [...new Map((work.authorships || [])

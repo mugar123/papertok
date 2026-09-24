@@ -484,7 +484,7 @@ const WORK_FIXTURE = {
   publication_date: '2018-02-13',
   cited_by_count: 12,
   authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Heather Piwowar' }, institutions: [] }],
-  abstract_inverted_index: { Open: [0], access: [1] },
+  abstract_inverted_index: { Open: [0], access: [1], to: [2], research: [3], articles: [4], keeps: [5], growing: [6], every: [7], year: [8] },
   primary_location: { landing_page_url: 'https://peerj.com/articles/4375', source: { display_name: 'PeerJ', type: 'journal' } },
   open_access: { is_oa: true, oa_url: 'https://peerj.com/articles/4375.pdf' },
   concepts: [],
@@ -498,7 +498,7 @@ test('opens an OpenAlex work id or a PubMed id through /works/{id}, keyed as the
   assert.equal(byWork.id, 'openalex:W2741809807');
   assert.equal(byWork.title, 'The state of OA');
   assert.equal(byWork.doi, '10.7717/peerj.4375');
-  assert.equal(byWork.abstract, 'Open access');
+  assert.equal(byWork.abstract, 'Open access to research articles keeps growing every year');
 
   const byPmid = await fetchPaperByWorkId('pmid', '31234567', { openAlexJson });
   assert.equal(byPmid.id, 'pmid:31234567');
@@ -533,7 +533,7 @@ test('a works page and an authors page persist as what the Explorer shows, not a
   const { slimWorksPage, slimAuthorsPage } = await import('./openAlexService.js');
   const work = {
     id: 'https://openalex.org/W1', title: 'A paper', publication_date: '2024-02-01', cited_by_count: 3,
-    abstract_inverted_index: { Two: [0], words: [1] },
+    abstract_inverted_index: { This: [0], abstract: [1], describes: [2], a: [3], paper: [4], about: [5], experimental: [6], physics: [7], results: [8] },
     authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Ada' }, institutions: [{ id: 'I1', display_name: 'Uni' }] }],
     concepts: [{ display_name: 'Physics' }], primary_location: { source: { type: 'journal', display_name: 'J' }, is_published: true },
   };
@@ -541,7 +541,7 @@ test('a works page and an authors page persist as what the Explorer shows, not a
   assert.equal(page.total, 42);
   assert.equal(page.papers.length, 1);
   assert.equal(page.papers[0].title, 'A paper');
-  assert.equal(page.papers[0].abstract, 'Two words');
+  assert.equal(page.papers[0].abstract, 'This abstract describes a paper about experimental physics results');
   assert.ok(!('abstract_inverted_index' in page.papers[0]));
   assert.deepEqual(slimWorksPage(null), { papers: [], total: 0 });
 

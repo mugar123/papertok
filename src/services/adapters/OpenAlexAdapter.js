@@ -2,7 +2,7 @@ import { BaseAdapter } from './BaseAdapter.js';
 import { assignRequestedCategories } from '../arxivService.js';
 import { openAlexFetch } from '../openAlexClient.js';
 import { getArxivIdFromWork } from '../openAlexService.js';
-import { reconstructOpenAlexAbstract } from '../../utils/openAlexAbstract.js';
+import { usableOpenAlexAbstract } from '../../utils/openAlexAbstract.js';
 
 // The top-level fields `mapToStandard` and `getArxivIdFromWork` read, and
 // the only ones a search asks for (`select=`). A works page used to arrive
@@ -141,7 +141,7 @@ export class OpenAlexAdapter extends BaseAdapter {
         displayName: institution.display_name,
       }])).values()];
 
-    const abstract = reconstructOpenAlexAbstract(work.abstract_inverted_index) || 'No abstract available.';
+    const abstract = usableOpenAlexAbstract(work) || 'No abstract available.';
 
     const isOpenAccess = work.open_access?.is_oa || false;
     const pdfUrl = work.open_access?.oa_url || null;

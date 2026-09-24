@@ -151,7 +151,7 @@ test('dropping every unselected field changes nothing the mapper produces', () =
       raw_affiliation_strings: ['Google Brain'],
       countries: ['US'],
     }],
-    abstract_inverted_index: { Attention: [0], is: [1], all: [2], you: [3], need: [4] },
+    abstract_inverted_index: { The: [0], dominant: [1], sequence: [2], transduction: [3], models: [4], are: [5], based: [6], on: [7], recurrent: [8], networks: [9] },
     primary_location: { is_published: false, landing_page_url: 'http://arxiv.org/abs/1706.03762', source: { display_name: 'arXiv (Cornell University)', type: 'repository' } },
     locations: [{ landing_page_url: 'http://arxiv.org/abs/1706.03762', pdf_url: 'http://arxiv.org/pdf/1706.03762', source: { type: 'repository' } }],
     best_oa_location: { pdf_url: 'http://arxiv.org/pdf/1706.03762' },
@@ -176,5 +176,5 @@ test('dropping every unselected field changes nothing the mapper produces', () =
   assert.deepEqual(fromSelected, fromFull);
   assert.equal(fromSelected.arxivId, '1706.03762');
   assert.equal(fromSelected.authors[0].affiliation, 'Google (United States)');
-  assert.equal(fromSelected.abstract, 'Attention is all you need');
+  assert.equal(fromSelected.abstract, 'The dominant sequence transduction models are based on recurrent networks');
 });
