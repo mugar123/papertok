@@ -13,7 +13,31 @@ import {
   getPaperCitationCount,
   hasKnownPaperCitationCount,
   pinSourcePaper,
+  authorIdentityVerified,
+  sourceArxivIdFrom,
 } from './entityExplorer.js';
+
+// A name is shared ("Wei Zhang" is 11,284 OpenAlex entities): a page reached
+// by a name alone is only this person when an id or the paper confirms it
+// (audit 2026-09-23, issue 4).
+test('an author page is verified by an OpenAlex id, an ORCID, or the paper, never by the name alone', () => {
+  assert.equal(authorIdentityVerified({ type: 'author', routeId: 'A5075361382', entity: {} }), true);
+  assert.equal(authorIdentityVerified({ type: 'author', routeId: 'https://openalex.org/A5075361382', entity: {} }), true);
+  assert.equal(authorIdentityVerified({ type: 'author', routeId: '0000-0002-1825-0097', entity: {} }), true);
+  assert.equal(authorIdentityVerified({ type: 'author', routeId: 'Li WN', entity: { id: 'https://openalex.org/A5075361382', verified: true } }), true);
+  assert.equal(authorIdentityVerified({ type: 'author', routeId: 'Li WN', entity: { id: 'https://openalex.org/A5024723812' } }), false);
+  assert.equal(authorIdentityVerified({ type: 'author', routeId: 'Li WN', entity: { id: 'stub-Li-WN' } }), false);
+  assert.equal(authorIdentityVerified({ type: 'institution', routeId: 'I1', entity: {} }), true);
+});
+
+// Old links carried a PubMed paper's `pmid:` id as "arxivId", and the
+// "source paper first" fallback sent it to arXiv as `id_list=pmid:…`.
+test('only a real arXiv id is pinned as the source paper', () => {
+  assert.equal(sourceArxivIdFrom('2401.12345v2'), '2401.12345');
+  assert.equal(sourceArxivIdFrom('hep-th/9901001'), 'hep-th/9901001');
+  assert.equal(sourceArxivIdFrom('pmid:42774036'), '');
+  assert.equal(sourceArxivIdFrom(null), '');
+});
 
 const papers = [
   {

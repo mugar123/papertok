@@ -758,6 +758,80 @@ test('an authorship without an id falls back to a search from the spelling the w
   }
 });
 
+// A PubMed card's author used to reach this with the paper's `pmid:` id as an
+// "arXiv id", which became `works/doi:10.48550/arxiv.pmid:42774036` and 404'd,
+// and the name search behind it opened "Po-Wn Li" (1 work) for "Li WN". The
+// paper is on OpenAlex under its PMID, and it says who wrote it: Wan-Ning Li,
+// A5075361382 (audit 2026-09-23, issue 4).
+test('a PubMed paper is looked up by its PMID, and the author it names is the verified one', async () => {
+  const realFetch = openAlexClient.fetchImpl;
+  const { urls, impl } = recordingFetch([
+    ['works/pmid:42774036', () => new Response(JSON.stringify({
+      id: 'https://openalex.org/W7211952859',
+      authorships: [
+        { author: { id: 'https://openalex.org/A1', display_name: 'Vijaya Kumar Pidugu' }, raw_author_name: 'Pidugu VK' },
+        { author: { id: 'https://openalex.org/A5075361382', display_name: 'Wan-Ning Li' }, raw_author_name: 'Li WN' },
+      ],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })],
+    ['authors/A5075361382', () => new Response(JSON.stringify({
+      id: 'https://openalex.org/A5075361382', display_name: 'Wan-Ning Li', works_count: 40, summary_stats: { h_index: 12 },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })],
+    ['authors?search=', () => new Response(JSON.stringify({
+      results: [{ id: 'https://openalex.org/A5050248117', display_name: 'Po-Wn Li', works_count: 1, summary_stats: { h_index: 0 } }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })],
+  ]);
+  openAlexClient.fetchImpl = impl;
+  try {
+    const profile = await getAuthorProfileExact('Li WN', 'pmid:42774036');
+    assert.equal(profile.id, 'https://openalex.org/A5075361382');
+    assert.equal(profile.verified, true);
+    assert.ok(!urls.some(url => url.includes('arxiv.pmid')), `no arXiv DOI built from a PMID: ${urls.join(' ')}`);
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+  }
+});
+
+test('a paper with a DOI is looked up by that DOI', async () => {
+  const realFetch = openAlexClient.fetchImpl;
+  const { urls, impl } = recordingFetch([
+    ['works/doi:10.3389/fendo.2026.1980821', () => new Response(JSON.stringify({
+      id: 'https://openalex.org/W7211952859',
+      authorships: [{ author: { id: 'https://openalex.org/A5075361382', display_name: 'Wan-Ning Li' } }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })],
+    ['authors/A5075361382', () => new Response(JSON.stringify({
+      id: 'https://openalex.org/A5075361382', display_name: 'Wan-Ning Li', works_count: 40,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })],
+    ['authors?search=', () => new Response(JSON.stringify({ results: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })],
+  ]);
+  openAlexClient.fetchImpl = impl;
+  try {
+    const profile = await getAuthorProfileExact('Li WN', 'doi:10.3389/fendo.2026.1980821');
+    assert.equal(profile.verified, true);
+    assert.ok(urls.some(url => url.includes('works/doi:10.3389/fendo.2026.1980821')));
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+  }
+});
+
+test('a profile found only by the name is not verified', async () => {
+  const realFetch = openAlexClient.fetchImpl;
+  const { impl } = recordingFetch([
+    ['works/doi:', () => new Response('{}', { status: 404 })],
+    ['authors?search=', () => new Response(JSON.stringify({
+      results: [{ id: 'https://openalex.org/A5024723899', display_name: 'XY Zhou', works_count: 7, summary_stats: { h_index: 2 } }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })],
+  ]);
+  openAlexClient.fetchImpl = impl;
+  try {
+    // Another name than the tests above: the client caches searches by URL.
+    const profile = await getAuthorProfileExact('Zhou XY', '2609.05199');
+    assert.equal(profile.id, 'https://openalex.org/A5024723899');
+    assert.notEqual(profile.verified, true);
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+  }
+});
+
 /**
  * Measured 2026-09-09 on a warm institution: the skeleton stood for 30 ms —
  * two frames — before the hero replaced it, and the four numbers landed at

@@ -10,6 +10,7 @@ import { PaperBuilder } from '../../services/PaperBuilder';
 import { extractOrcid, getOrcidRecord } from '../../services/orcidService';
 import {
   EXPLORER_ROW_CHUNK,
+  authorIdentityVerified,
   entityPapersRequestKey,
   filterAndSortEntityPapers,
   getPaperCitationCount,
@@ -19,6 +20,7 @@ import {
   nextExplorerRowBudget,
   pinSourcePaper,
   shouldShowGuestGate,
+  sourceArxivIdFrom,
 } from '../../utils/entityExplorer';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useHeightSettle } from '../../hooks/useHeightSettle';
@@ -665,8 +667,13 @@ export default function EntityExplorer({
     };
   }, [measureExpandableDescriptions]);
 
+  // An author page reached by a name that neither an id nor the paper could
+  // confirm (utils/entityExplorer.js): its results may be several people's.
+  const authorIdentityUnverified = Boolean(entity) && !authorIdentityVerified({ type, routeId: id, entity });
   const followEntity = useMemo(() => {
-    if (!entity || !['author', 'institution', 'project', 'concept', 'topic'].includes(type)) return null;
+    // A name-only author may be several people; following "them" would follow
+    // whichever one the search returned.
+    if (!entity || authorIdentityUnverified || !['author', 'institution', 'project', 'concept', 'topic'].includes(type)) return null;
     // An entity we cannot name cannot be followed. A follow is compared by id
     // and then by name, so any word standing in for a missing name becomes a
     // key shared with every other entity the page could not name — and the
@@ -697,7 +704,7 @@ export default function EntityExplorer({
       },
       metadata,
     };
-  }, [entity, entityDisplayName, entityOfficialName, id, type]);
+  }, [authorIdentityUnverified, entity, entityDisplayName, entityOfficialName, id, type]);
   const entityIsFollowing = Boolean(!publicMode && followEntity && isFollowing(followEntity));
   const entityFollowPending = Boolean(!publicMode && followEntity && isFollowPending(followEntity));
 
@@ -888,8 +895,10 @@ export default function EntityExplorer({
           }
         }
       } else if (type === 'author' && !isOpenAlexId) {
-        const arxivId = searchParams.get('arxivId');
-        data = await getAuthorProfileExact(id, arxivId);
+        // The paper the link came from says which of the people with this
+        // name is meant: `?paper=doi:…|pmid:…`, or the `?arxivId=` of arXiv
+        // papers and older links.
+        data = await getAuthorProfileExact(id, searchParams.get('paper') || searchParams.get('arxivId'));
       } else {
         data = await getEntityById(type, id);
       }
@@ -1112,15 +1121,21 @@ export default function EntityExplorer({
             let papersFromOA = [];
             let arxPapersFromNative = [];
             let primaryError = null;
-            const semanticScholarAdapter = new SemanticScholarAdapter();
-            const pubmedAdapter = new PubmedAdapter();
-            const supplementalPromises = [
-              semanticScholarAdapter.search(`"${entity.display_name}"`, page, { type: 'author' }),
-              pubmedAdapter.search(`"${entity.display_name}"`, page, { type: 'author' }),
-              isScopusEnabled()
-                ? new ScopusAdapter().search(entity.display_name, page, { type: 'author', limit: 8 })
-                : Promise.resolve({ papers: [] }),
-            ];
+            // Semantic Scholar, PubMed and Scopus are searched by the NAME,
+            // so what they return is anyone who shares it. A person the id or
+            // the paper confirmed gets their own works only; the name
+            // searches stay for a name that could not be resolved, under the
+            // notice that says so (audit 2026-09-23, issue 4).
+            const nameOnly = !authorIdentityVerified({ type, routeId: id, entity });
+            const supplementalPromises = nameOnly
+              ? [
+                new SemanticScholarAdapter().search(`"${entity.display_name}"`, page, { type: 'author' }),
+                new PubmedAdapter().search(`"${entity.display_name}"`, page, { type: 'author' }),
+                isScopusEnabled()
+                  ? new ScopusAdapter().search(entity.display_name, page, { type: 'author', limit: 8 })
+                  : Promise.resolve({ papers: [] }),
+              ]
+              : [Promise.resolve({ papers: [] }), Promise.resolve({ papers: [] }), Promise.resolve({ papers: [] })];
             const primaryPromise = !resolvedId.startsWith('stub-')
               ? getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters, entity.display_name)
               : getAuthorPapers(entity.display_name, 30);
@@ -1212,9 +1227,9 @@ export default function EntityExplorer({
         fetchedPapers = PaperBuilder.deduplicate(fetchedPapers);
         // 3. Guarantee source paper is ALWAYS first in the list
         if (page === 1) {
-           const sourceArxivId = searchParams.get('arxivId');
+           const sourceArxivId = sourceArxivIdFrom(searchParams.get('arxivId'));
            if (sourceArxivId) {
-             const cleanSourceId = sourceArxivId.replace(/v\d+$/, '');
+             const cleanSourceId = sourceArxivId;
              const sourceIndex = fetchedPapers.findIndex(p => {
                if (!p.id) return false;
                const pClean = p.id.startsWith('arxiv:') ? p.id.split(':')[1] : p.id;
@@ -2082,7 +2097,13 @@ export default function EntityExplorer({
               </div>
             )}
           </div>
-          {followEntity && (
+          {authorIdentityUnverified ? (
+            <p className="ehc-identity-note">
+              {isEnglish
+                ? 'Found by name: these results may mix people who share it.'
+                : 'Encontrado por el nombre: los resultados pueden mezclar a personas que se llaman igual.'}
+            </p>
+          ) : followEntity && (
             // A pressed button, not a command: the shared Follow control, the
             // same one a public profile uses for people.
             <FollowToggle

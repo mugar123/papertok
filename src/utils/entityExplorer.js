@@ -80,6 +80,35 @@ function normalizePaperId(paperId) {
   return id.replace(/v\d+$/, '');
 }
 
+const OPENALEX_AUTHOR_ROUTE = /(?:^|openalex\.org\/)A\d+$/i;
+const ORCID_ROUTE = /\d{4}-\d{4}-\d{4}-\d{3}[\dX]/i;
+const ARXIV_SOURCE = /^(?:\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?\/\d{7})(?:v\d+)?$/i;
+
+/**
+ * Whether an author page is this person rather than whoever the name search
+ * returned first: the route names them by OpenAlex id or ORCID, or the paper
+ * the link came from confirmed the author (`entity.verified`, set by
+ * `getAuthorProfileExact`). A name alone is shared by many people — "Wei
+ * Zhang" is 11,284 OpenAlex entities (audit 2026-09-23). Other entity types
+ * are identified by their route and always count.
+ */
+export function authorIdentityVerified({ type, routeId, entity } = {}) {
+  if (type !== 'author') return true;
+  const raw = String(routeId || '').trim();
+  if (OPENALEX_AUTHOR_ROUTE.test(raw) || ORCID_ROUTE.test(raw)) return true;
+  return entity?.verified === true;
+}
+
+/**
+ * The arXiv id of the paper an author was opened from, or '' when the link
+ * carried something else. Old links put a PubMed paper's `pmid:` id in
+ * `?arxivId=`, and pinning it sent `id_list=pmid:…` to arXiv.
+ */
+export function sourceArxivIdFrom(value) {
+  const raw = String(value || '').trim();
+  return ARXIV_SOURCE.test(raw) ? raw.replace(/v\d+$/i, '') : '';
+}
+
 export function pinSourcePaper(papers, sourcePaperId) {
   const sourceId = normalizePaperId(sourcePaperId);
   if (!sourceId) return papers;

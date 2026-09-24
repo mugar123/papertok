@@ -7,6 +7,7 @@ import { CATEGORIES } from '../data/categories.js';
 import { usableOpenAlexAbstract } from '../utils/openAlexAbstract.js';
 import { usableOpenAlexConcepts } from '../utils/openAlexConcepts.js';
 import { matchesAuthorName } from '../utils/authorNameMatch.js';
+import { paperReferenceFor } from '../utils/explorerPaths.js';
 import { withRequestDeadline } from '../utils/requestDeadline.js';
 import {
   applyInstitutionWorksFallback,
@@ -480,17 +481,35 @@ export async function getAuthorProfileByOrcid(orcidId) {
   }
 }
 
+// The OpenAlex work a paper reference names: the DOI or PMID as OpenAlex
+// indexes them, an arXiv id through its DataCite DOI. A PubMed paper's
+// `pmid:` id used to be glued onto the arXiv prefix
+// (`works/doi:10.48550/arxiv.pmid:42774036`), which can only 404.
+function workUrlForReference(reference) {
+  if (!reference) return '';
+  if (reference.type === 'doi') return `https://api.openalex.org/works/doi:${reference.value}`;
+  if (reference.type === 'pmid') return `https://api.openalex.org/works/pmid:${reference.value}`;
+  return `https://api.openalex.org/works/doi:10.48550/arxiv.${reference.value.replace(/v\d+$/, '')}`;
+}
+
 /**
- * Fetch author profile EXACT match from OpenAlex using a specific paper (arxivId) to disambiguate.
- * @param {string} authorName 
- * @param {string} arxivId 
+ * The author a name names on a given paper, found through that paper's own
+ * authorships on OpenAlex. `paperRef` is a paper reference
+ * (`doi:…`, `pmid:…`, `arxiv:…`, or a bare arXiv id for older links).
+ *
+ * A profile the paper confirms comes back `verified: true`; one found only by
+ * the name (or the stub when nothing matched) does not, because a name is
+ * shared: "Wei Zhang" is 11,284 OpenAlex entities (audit 2026-09-23).
+ * @param {string} authorName
+ * @param {string} paperRef
  * @returns {Promise<Object|null>}
  */
-export async function getAuthorProfileExact(authorName, arxivId) {
+export async function getAuthorProfileExact(authorName, paperRef) {
   if (!authorName) return null;
 
-  // If no arxivId, fallback to standard search
-  if (!arxivId) return getAuthorProfile(authorName);
+  const reference = paperReferenceFor(paperRef);
+  // Without a paper, the name search is all there is.
+  if (!reference) return getAuthorProfile(authorName);
 
   // The name search starts NOW rather than third in line. For a paper OpenAlex
   // has not indexed -- 51 of 56 slow author links on a feed page measured
@@ -506,29 +525,36 @@ export async function getAuthorProfileExact(authorName, arxivId) {
     // in 2 it was strictly worse -- the direct lookup found the work and the
     // filter returned nothing -- so it was pure latency in front of the search
     // that could actually answer.
-    const cleanArxivId = arxivId.replace(/v\d+$/, '');
-    const workUrl = `https://api.openalex.org/works/doi:10.48550/arxiv.${cleanArxivId}`;
+    const workUrl = workUrlForReference(reference);
     const workResponse = await fetchWithTimeout(workUrl, 8000).catch(() => null);
 
     if (workResponse && workResponse.ok) {
       const workData = await workResponse.json();
 
       if (workData.authorships) {
-        // Find the author in the paper's authors list that matches the requested name
+        // The authorship the requested name is: by OpenAlex's spelling of the
+        // author, or by the byline as the paper printed it (`raw_author_name`,
+        // which for a PubMed record is the same "Li WN" the card shows).
         let bestMatch = null;
         for (const authorship of workData.authorships) {
            const authorDisplayName = authorship.author?.display_name;
            if (!authorDisplayName) continue;
 
-           if (matchesAuthorName(authorName, authorDisplayName)) {
+           if (matchesAuthorName(authorName, authorDisplayName)
+             || (authorship.raw_author_name && matchesAuthorName(authorName, authorship.raw_author_name))) {
               bestMatch = authorship.author;
               break;
            }
         }
 
         // With the exact author ID, fetch their profile for H-index etc.
-        if (bestMatch && bestMatch.id) {
-           const profileResponse = await fetchWithTimeout(bestMatch.id, 10000);
+        // An authorship names its author as `https://openalex.org/A…`, the
+        // website, not the API: fetched as given it went around the relay to a
+        // page that is not JSON, and every "exact" match fell through to the
+        // name search. The API address of the same author is built instead.
+        const authorKey = String(bestMatch?.id || '').match(/A\d+$/i)?.[0]?.toUpperCase();
+        if (bestMatch && authorKey) {
+           const profileResponse = await fetchWithTimeout(`https://api.openalex.org/authors/${authorKey}`, 10000);
            if (profileResponse.ok) {
               const author = await profileResponse.json();
               return {
@@ -541,7 +567,8 @@ export async function getAuthorProfileExact(authorName, arxivId) {
                 institution: (author.last_known_institutions && author.last_known_institutions.length > 0)
                     ? author.last_known_institutions[0].display_name
                     : null,
-                concepts: author.x_concepts ? author.x_concepts.slice(0, 5) : []
+                concepts: author.x_concepts ? author.x_concepts.slice(0, 5) : [],
+                verified: true,
               };
            }
         }

@@ -387,6 +387,17 @@
 
 /* The follow control is the shared ui/follow-toggle (its own stylesheet). */
 
+/* In the follow control's place when an author was found by name only: the
+   page may mix people who share it, so there is nothing to follow. */
+.ehc-identity-note {
+  flex: 0 1 18rem;
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
 /* Chevron by the name that discloses the professional-experience panel. */
 .ehc-name-toggle {
   display: inline-flex;
