@@ -53,13 +53,39 @@ test('la puerta se dibuja en las dos pestañas, y solo cuando queda algo detrás
   }
 });
 
-test('la barra de búsqueda del invitado no acepta texto, abre la puerta', async () => {
+// Hasta el 24-09 el invitado veía un campo de texto en solo lectura: el
+// teclado escribía y no pasaba nada, y nada decía por qué (auditoría del
+// 23-09, fallo 10). Ahora es un botón con la forma del buscador, que dice que
+// necesita cuenta y abre la puerta con ese motivo: lo que se ve, lo que se
+// anuncia y lo que hace son la misma cosa (WCAG 4.1.2).
+test('el buscador del invitado es un botón que dice que necesita cuenta y abre la puerta', async () => {
   const jsx = await explorerJsx;
-  const input = jsx.slice(jsx.indexOf('explorer-search-input'), jsx.indexOf('explorer-search-input') + 900);
-  assert.match(input, /readOnly=\{publicMode\}/, 'el campo sigue aceptando texto sin sesión');
-  assert.match(input, /publicMode/, 'el campo no distingue al invitado');
+  const gate = jsx.slice(jsx.indexOf('explorer-search-gate'), jsx.indexOf('explorer-search-gate') + 500);
+  assert.match(
+    jsx,
+    /\{publicMode \? \(\s*<button\s+type="button"\s+className="explorer-search-box explorer-search-gate"\s+onClick=\{\(\) => requestAccount\('explorer_search'\)\}\s*>/,
+    'el invitado ya no recibe un botón con la forma del buscador',
+  );
+  assert.match(gate, /\{guestSearchLabel\}/, 'el botón no dice qué hace');
+  assert.doesNotMatch(jsx, /readOnly=\{publicMode\}/, 'volvió el campo de solo lectura para el invitado');
+  assert.match(
+    jsx,
+    /const guestSearchLabel = isEnglish\s*\? `Search \$\{guestSearchScope\.en\} · needs an account`\s*: `Buscar en \$\{guestSearchScope\.es\} · necesita cuenta`;/,
+    'el rótulo del botón dejó de estar en los dos idiomas',
+  );
   const filters = jsx.slice(jsx.indexOf('Open filters') - 700, jsx.indexOf('Open filters'));
-  assert.match(filters, /publicMode \?[\s\S]{0,80}setShowFilters\(true\)/, 'el botón de filtros sigue abriendo la hoja sin sesión');
+  assert.match(
+    filters,
+    /onClick=\{publicMode \? \(\) => requestAccount\('explorer_search'\) : \(\) => setShowFilters\(true\)\}/,
+    'el botón de filtros sin sesión no abre la puerta con su motivo',
+  );
+});
+
+test('la puerta del Explorer pasa su motivo al diálogo', async () => {
+  const jsx = await explorerJsx;
+  const start = jsx.indexOf('const requestAccount = useCallback(');
+  const block = jsx.slice(start, jsx.indexOf('}, [', start));
+  assert.match(block, /\(reason\) => \{\s*trackEvent\([^)]*\);\s*onAuthRequired\(reason\);/);
 });
 
 test('la puerta dice lo mismo en los dos idiomas y para las dos listas', async () => {

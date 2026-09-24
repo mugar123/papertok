@@ -981,6 +981,33 @@
   background: var(--bg-primary);
 }
 
+/* A guest's search: the same box, as a button that says it needs an account. */
+.explorer-search-gate {
+  font: inherit;
+  text-align: left;
+  /* Real text, not a placeholder: secondary ink for 4.5:1 on the box. */
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.explorer-search-gate:hover {
+  border-color: var(--border-strong);
+}
+
+.explorer-search-gate:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.explorer-search-gate-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+}
+
 .es-icon {
   color: var(--text-tertiary);
   margin-right: 10px;

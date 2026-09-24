@@ -608,10 +608,23 @@ export default function EntityExplorer({
   // the follow button, the search box, the filters, and the wall at the foot of
   // each list. One event, then the in-context prompt — the page stays where it
   // is, so signing up returns to this entity rather than to a login screen.
-  const requestAccount = useCallback(() => {
+  // `reason` tells the sign-in dialog why it opened (authPromptCopy.js); the
+  // wall at the foot of the list passes none and gets the general door.
+  const requestAccount = useCallback((reason) => {
     trackEvent('select_content', { content_type: analyticsEntityType, surface: 'explorer' });
-    onAuthRequired();
+    onAuthRequired(reason);
   }, [analyticsEntityType, onAuthRequired, trackEvent]);
+  // What a guest's search button covers, in the placeholder's own words.
+  const guestSearchScope = type === 'institution'
+    ? { es: 'esta universidad', en: 'this institution' }
+    : type === 'concept' || type === 'topic'
+      ? { es: 'este tema', en: 'this topic' }
+      : type === 'project'
+        ? { es: 'este proyecto', en: 'this project' }
+        : { es: 'esta persona', en: 'this person' };
+  const guestSearchLabel = isEnglish
+    ? `Search ${guestSearchScope.en} · needs an account`
+    : `Buscar en ${guestSearchScope.es} · necesita cuenta`;
 
   const measureExpandableDescriptions = useCallback(() => {
     const measure = (element, setHeight, setExpandable) => {
@@ -2507,41 +2520,48 @@ export default function EntityExplorer({
       {/* Sticky Toolbar Wrapper */}
       <div className="explorer-toolbar-wrapper">
         <div className="explorer-toolbar">
-          <div className="explorer-search-box">
-            <Search size={16} className="es-icon" />
-            {/* A visitor sees the field — it is part of what an account opens —
-                but it cannot be typed into: searching two rows would answer
-                "nothing matches" to almost everything. `readOnly` keeps the
-                field focusable and announced while refusing the text, and the
-                press opens the same door as the wall at the foot of the list.
-                `onMouseDown` rather than `onClick` so the prompt arrives on
-                the press, before the field has taken the caret. */}
-            <Input
-              type="text"
-              className="explorer-search-input"
-              readOnly={publicMode}
-              placeholder={isEnglish
-                ? `Search ${activeTab === 'papers' ? 'papers' : 'authors'} from ${type === 'institution' ? 'this institution' : type === 'concept' || type === 'topic' ? 'this topic' : type === 'project' ? 'this project' : 'this person'}...`
-                : `Buscar ${activeTab === 'papers' ? 'publicaciones' : 'autores'} de ${type === 'institution' ? 'esta universidad' : type === 'concept' || type === 'topic' ? 'este tema' : type === 'project' ? 'este proyecto' : 'esta persona'}...`}
-              value={searchQuery}
-              onChange={e => { if (!publicMode) setSearchQuery(e.target.value); }}
-              onMouseDown={publicMode ? (event) => { event.preventDefault(); requestAccount(); } : undefined}
-              onKeyDown={publicMode ? (event) => handleActivationKey(event, requestAccount) : undefined}
-              aria-label={isEnglish
-                ? `Search ${activeTab === 'papers' ? 'publications' : 'authors'} in this entity`
-                : `Buscar ${activeTab === 'papers' ? 'publicaciones' : 'autores'} en esta entidad`}
-            />
-            {searchQuery && (
-              <Button variant="ghost" size="icon-sm" className="es-clear" onClick={() => setSearchQuery('')} aria-label={isEnglish ? 'Clear search' : 'Limpiar búsqueda'} title={isEnglish ? 'Clear search' : 'Limpiar búsqueda'}>
-                <X size={14} />
-              </Button>
-            )}
-          </div>
+          {/* A visitor sees the search — it is part of what an account opens —
+              but searching two preview rows would answer "nothing matches" to
+              almost everything. It used to be a read-only text field that
+              swallowed typing in silence (audit 2026-09-23, issue 10): now it
+              is what it does, a button shaped like the field that says it
+              needs an account and opens the door with that reason. */}
+          {publicMode ? (
+            <button
+              type="button"
+              className="explorer-search-box explorer-search-gate"
+              onClick={() => requestAccount('explorer_search')}
+            >
+              <Search size={16} className="es-icon" aria-hidden="true" />
+              <span className="explorer-search-gate-label">{guestSearchLabel}</span>
+            </button>
+          ) : (
+            <div className="explorer-search-box">
+              <Search size={16} className="es-icon" />
+              <Input
+                type="text"
+                className="explorer-search-input"
+                placeholder={isEnglish
+                  ? `Search ${activeTab === 'papers' ? 'papers' : 'authors'} from ${type === 'institution' ? 'this institution' : type === 'concept' || type === 'topic' ? 'this topic' : type === 'project' ? 'this project' : 'this person'}...`
+                  : `Buscar ${activeTab === 'papers' ? 'publicaciones' : 'autores'} de ${type === 'institution' ? 'esta universidad' : type === 'concept' || type === 'topic' ? 'este tema' : type === 'project' ? 'este proyecto' : 'esta persona'}...`}
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                aria-label={isEnglish
+                  ? `Search ${activeTab === 'papers' ? 'publications' : 'authors'} in this entity`
+                  : `Buscar ${activeTab === 'papers' ? 'publicaciones' : 'autores'} en esta entidad`}
+              />
+              {searchQuery && (
+                <Button variant="ghost" size="icon-sm" className="es-clear" onClick={() => setSearchQuery('')} aria-label={isEnglish ? 'Clear search' : 'Limpiar búsqueda'} title={isEnglish ? 'Clear search' : 'Limpiar búsqueda'}>
+                  <X size={14} />
+                </Button>
+              )}
+            </div>
+          )}
           {activeTab === 'papers' && (
              <Button
                 variant={filters?.category || filters?.peerReviewed || filters?.dateRange ? 'default' : 'outline'}
                 size="icon"
-                onClick={publicMode ? requestAccount : () => setShowFilters(true)}
+                onClick={publicMode ? () => requestAccount('explorer_search') : () => setShowFilters(true)}
                 aria-label={isEnglish ? 'Open filters' : 'Abrir filtros'}
                 title={isEnglish ? 'Filters' : 'Filtros'}
               >
