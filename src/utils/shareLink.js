@@ -1,3 +1,5 @@
+import { plainScientificText } from './plainScientificText.js';
+
 /**
  * Share a link through the platform share sheet when there is one, falling
  * back to the clipboard when there is not — or when the sheet refuses, which
@@ -23,13 +25,13 @@ function defaultNativeShare() {
  *               native sheet. A clipboard failure propagates to the caller,
  *               which already knows how to render that.
  */
-export async function shareOrCopyLink({ url, title, copy, share }) {
+export async function shareOrCopyLink({ url, title, text, copy, share }) {
   if (typeof copy !== 'function') throw new TypeError('A copy fallback is required.');
   const nativeShare = share === undefined ? defaultNativeShare() : share;
 
   if (nativeShare) {
     try {
-      await nativeShare(title ? { title, url } : { url });
+      await nativeShare({ ...(title ? { title } : {}), ...(text ? { text } : {}), url });
       return 'shared';
     } catch (error) {
       if (error?.name === 'AbortError') return 'aborted';
@@ -39,4 +41,15 @@ export async function shareOrCopyLink({ url, title, copy, share }) {
 
   await copy(url);
   return 'copied';
+}
+
+/**
+ * What a paper leaves the app with: its title as plain text in `text` too,
+ * because most share targets print `text` and the link and ignore `title` —
+ * a message used to arrive as a bare link whose key nobody can read (audit
+ * 2026-09-23, issue 5). Plain, because no target renders LaTeX.
+ */
+export function paperShareData({ title, url }) {
+  const plain = plainScientificText(title);
+  return plain ? { title: plain, text: plain, url } : { url };
 }

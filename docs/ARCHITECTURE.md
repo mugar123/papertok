@@ -113,6 +113,8 @@ diversity.
 
 The Worker entry point is `worker/report-api.js`. Its route groups include:
 
+- share pages: `/share/{paper,list,user,entity}/…` (HTML for crawlers, which `vercel.json` sends
+  from `/public/…`; public, GET and HEAD, no `Origin`; see `docs/PUBLIC_DISCOVERY.md`)
 - health and locale: `/health`, `/health/email`, `/health/ai`, `/locale`
 - comment threads: `/thread-anchor` (KV-cached stub + first page at the edge; HTTP `no-store` so a write's KV delete is the invalidation; `POST /thread-anchor/invalidate` after a create, edit or delete)
 - account deletion: `/account/delete` (Firebase identity, service-account Firestore walk, newsletter KV, Auth last; retryable 202 slices)

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { shareOrCopyLink } from './shareLink.js';
+import { paperShareData, shareOrCopyLink } from './shareLink.js';
 
 // The shape publicNavigation.js mints: a real path, no fragment. This helper
 // never parses the URL — it hands it to the sheet or the clipboard whole — but
@@ -69,4 +69,32 @@ test('a clipboard failure propagates to the caller that knows how to render it',
 
 test('requires the copy fallback up front', async () => {
   await assert.rejects(shareOrCopyLink({ url: URL_UNDER_TEST, share: null }), TypeError);
+});
+
+// A shared paper used to leave as `{ title, url }`, and most share targets
+// print only `text` and `url`: the message arrived as a bare link whose key
+// nobody can read (audit 2026-09-23, issue 5). The title rides as `text`, as
+// plain text, because no share target renders LaTeX.
+test('a paper leaves with its title as plain text, for the target to print beside the link', () => {
+  assert.deepEqual(
+    paperShareData({ title: 'On commensurations of pro-$\\mathcal{C}$ groups', url: URL_UNDER_TEST }),
+    {
+      title: 'On commensurations of pro-C groups',
+      text: 'On commensurations of pro-C groups',
+      url: URL_UNDER_TEST,
+    },
+  );
+  assert.deepEqual(paperShareData({ title: '   ', url: URL_UNDER_TEST }), { url: URL_UNDER_TEST });
+});
+
+test('the text reaches the native sheet with the title and the link', async () => {
+  const calls = [];
+  await shareOrCopyLink({
+    url: URL_UNDER_TEST,
+    title: 'Attention Is All You Need',
+    text: 'Attention Is All You Need',
+    share: async payload => calls.push(payload),
+    copy: async () => {},
+  });
+  assert.deepEqual(calls, [{ title: 'Attention Is All You Need', text: 'Attention Is All You Need', url: URL_UNDER_TEST }]);
 });

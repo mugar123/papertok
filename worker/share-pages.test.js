@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { paperLegacyAdapter } from '../src/models/Paper.js';
 import { seedPaintsWhole } from '../src/utils/paperSeed.js';
 import { encodePaperKey } from '../src/utils/publicNavigation.js';
+import { publicPaperMetadata, readShareSeed } from '../src/utils/shareSeed.js';
 import {
   createShareLoader,
   createShellLoader,
@@ -365,6 +367,21 @@ test('a paper page embeds a seed that parses, names its key and can paint the pa
   // seed is part of the document, beside the root the app mounts on.
   const seedAt = html.indexOf('id="papertok-share-seed"');
   assert.ok(seedAt > html.indexOf('<div id="root">') && seedAt < html.indexOf('</body>'));
+});
+
+test('the page reads back the seed the Worker writes, paints from it and indexes it', async () => {
+  // Both sides of the contract at once: the element and the key the Worker
+  // writes are the ones src/utils/shareSeed.js reads, and what it reads goes
+  // through the same adapter and paint rule as a seed handed over in-app.
+  const outcome = await foundPaper();
+  const html = renderSharePage(SHELL, sharePageModel(paperRoute(), outcome, 'en'));
+  const text = html.match(/<script type="application\/json" id="papertok-share-seed">([\s\S]*?)<\/script>/)[1];
+  const documentStub = { getElementById: id => (id === 'papertok-share-seed' ? { textContent: text } : null) };
+  const paper = readShareSeed(DOI_KEY, documentStub);
+  assert.ok(paper, 'read for its own key');
+  assert.equal(readShareSeed(ARXIV_KEY, documentStub), null, 'and for no other');
+  assert.equal(seedPaintsWhole(paperLegacyAdapter(paper)), true);
+  assert.equal(publicPaperMetadata(paperLegacyAdapter(paper), `/public/paper/${DOI_KEY}`).noIndex, undefined);
 });
 
 test('only a paper page carries a seed', async () => {

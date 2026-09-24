@@ -22,6 +22,17 @@
       "source": "/__/auth/:path*",
       "destination": "https://papertok-168df.firebaseapp.com/__/auth/:path*"
     },
+    {
+      "source": "/public/:kind(paper|list|user|entity)/:rest*",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(?:Googlebot|Google-InspectionTool|GoogleOther|Storebot-Google|AdsBot-Google|bingbot|BingPreview|DuckDuckBot|YandexBot|Baiduspider|Applebot|Qwantbot|SeznamBot|facebookexternalhit|Facebot|meta-externalagent|Twitterbot|LinkedInBot|Slackbot|Discordbot|TelegramBot|WhatsApp|SkypeUriPreview|redditbot|Pinterestbot|Embedly|Iframely|Mastodon|Bluesky|vkShare).*"
+        }
+      ],
+      "destination": "https://api.papertok.app/share/:kind/:rest*"
+    },
     { "source": "/:path((?!_vercel/|assets/|__/auth/).*)", "destination": "/index.html" }
   ],
   "headers": [

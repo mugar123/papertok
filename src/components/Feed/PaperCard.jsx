@@ -75,6 +75,7 @@ import {
 import { openFirstTarget, openTargetsForPaper } from '../../utils/paperOpenTargets.js';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
 import { getPublicEntityPath, getPublicPaperUrl } from '../../utils/publicNavigation.js';
+import { paperShareData } from '../../utils/shareLink.js';
 
 // The reader drags in the annotations layer, LaTeX export and their CSS
 // (PaperReader.css, Annotations.css, Export.css — ~53 KB raw source, ~28 KB
@@ -1205,7 +1206,7 @@ const PaperCard = memo(function PaperCard({
 
     if (navigator.share) {
       try {
-        await navigator.share({ title: paper.title, url: shareUrl });
+        await navigator.share(paperShareData({ title: paper.title, url: shareUrl }));
         trackEvent('share', { method: 'native', content_type: 'paper', surface: analyticsSurface });
       } catch (error) {
         if (error?.name !== 'AbortError') console.error('Paper share failed', error);

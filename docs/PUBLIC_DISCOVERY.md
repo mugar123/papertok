@@ -1,9 +1,9 @@
 # Public Discovery
 
-PaperTok is a Vite build served from the root of `https://papertok.app/`: the landing page at
-`/` (`index.html`) and the single-page application at `/feed`, which `vercel.json` rewrites to
-`app.html`. This document records the URL and metadata contract for public discovery surfaces
-without changing the existing authenticated routes.
+PaperTok is a Vite build served from the root of `https://papertok.app/`. The single-page
+application is `index.html`, and `vercel.json` rewrites every page path to it; the landing page
+that used to sit at `/` was retired on 2026-09-19. This document records the URL and metadata
+contract for public discovery surfaces without changing the existing authenticated routes.
 
 ## URL Contract
 
@@ -13,10 +13,10 @@ without changing the existing authenticated routes.
   `/public/entity/author/A123`.
 - `getPublicPaperPath(paper)` returns `/public/paper/<key>` for a DOI or arXiv paper.
 - `getSharedListPath(listId)` returns `/public/list/<id>`.
-- The corresponding `*Url` helpers add the Vite base and the `#` required by `HashRouter`,
-producing URLs such as `https://papertok.app/#/public/paper/<key>`. That URL lands on the
-landing page, not on the app: `/` is now `index.html`, whose head script forwards any `#/…`
-hash to `/feed` with the same hash attached, so a shared link still opens the route it names.
+- The corresponding `*Url` helpers add the origin and the Vite base, producing real paths such as
+  `https://papertok.app/public/paper/<key>`. The router reads the path since 2026-09-18. An old
+  `#/…` link still reaches the same page — `index.html`'s head script forwards it and
+  `src/utils/legacyHashRoute.js` translates it — but nothing new is minted in that shape.
 
 There is no sign-in page. Signed-out visitors land on the guest feed; the only door is the
 `AuthPrompt` dialog, which opens in place from any gated action, and also on arrival when a guest
@@ -66,48 +66,102 @@ browser.
 
 ## Metadata
 
-`app.html` is the application shell and holds the honest, generic metadata for the application
-itself. `index.html` is the landing page and holds its own, separate metadata — a change meant
-for the app belongs in `app.html`:
+`index.html` is the application shell and holds the honest, generic metadata for the application
+itself:
 
-- the shell's canonical URL and its Open Graph/Twitter URLs are `https://papertok.app/feed`,
-  the fragment-free URL `vercel.json` rewrites to `app.html`; the landing keeps
-  `https://papertok.app/` as its own canonical and OG URL;
-- the preview is `public/og/papertok-share-0.2.png`, a 2400x1260 PNG that both pages declare and
-  that `DEFAULT_SHARE_IMAGE_PATH` points at; it shows a paper in the feed and contains no user
+- its canonical URL and its Open Graph/Twitter URLs are `https://papertok.app/feed`;
+- the preview is `public/og/papertok-share-0.2.png`, a 2400x1260 PNG that
+  `DEFAULT_SHARE_IMAGE_PATH` points at; it shows a paper in the feed and contains no user
   profile photo;
-- JSON-LD in `app.html` describes PaperTok as a `WebSite`, without inventing a public paper,
-  author, or list;
+- its JSON-LD describes PaperTok as a `WebSite`, without inventing a public paper, author, or
+  list;
 - English is the initial document language (`<html lang="en">`), with Spanish represented as an
   alternate locale.
 
 `src/hooks/usePublicPageMetadata.js` is for public page consumers. It reads the active language
 from `LanguageContext` and updates the title, description, canonical URL, Open Graph, Twitter,
 robots, and JSON-LD tags at runtime. Localized values can be passed as `{ es, en }` objects.
-The hook restores the previous head state when its page unmounts.
+The hook restores the previous head state when its page unmounts. The paper page builds its
+values with `publicPaperMetadata` (`src/utils/shareSeed.js`): title and summary as plain text,
+and `noindex` only while there is no paper on screen.
 
-## What the server sees, and what it still does not
+## Crawlers and shared links
 
-This section used to describe a GitHub Pages deployment that received only `/papertok/`,
-because every route lived in a fragment and a fragment never reaches a server. Both halves
-of that are gone: the site is served by Vercel from the root of `papertok.app`, and since
-2026-09-18 the router reads the path, so every route IS a server route. Old `#/...` links
-still work — the landing's head script forwards them and `src/utils/legacyHashRoute.js`
-rewrites the entry before React renders — but nothing new is minted in that shape.
+A crawler reads the HTML a URL answers; no preview bot runs the application. Until 2026-09-24
+every public page answered the same static `index.html`: WhatsApp, Twitterbot,
+facebookexternalhit and Googlebot all received «PaperTok», with og:url and canonical at `/feed`
+and an empty `#root` (audit of 2026-09-23, issue 5).
 
-What that fixed, and what it did not:
+**Routing.** `vercel.json` rewrites `/public/{paper,list,user,entity}/…` to the Worker's
+`https://api.papertok.app/share/…` when the `user-agent` names a crawler: search engines
+(Googlebot, bingbot, Applebot, DuckDuckBot, YandexBot…) and link-preview bots (WhatsApp,
+facebookexternalhit, Twitterbot, LinkedInBot, Slackbot, Discordbot, TelegramBot, Bluesky,
+Mastodon…). The rule sits before the SPA catch-all, and `src/utils/shareCrawlerRouting.test.js`
+holds the pattern against measured crawler and browser user agents. People are not rewritten. A
+browser matched by mistake still gets the application: the Worker answers the same shell.
 
-1. A route is now a distinct server-side URL. It can be crawled, redirected to, and listed
-   in the sitemap; `public/sitemap.xml` lists `/`, `/feed`, `/following` and `/research`.
-2. **Per-entity previews are still generic.** Social crawlers read the initial HTML without
-   running the application, and `app.html` is one static document for every route, so a
-   shared paper still previews with the application's own title, description and image
-   rather than that paper's. Real per-paper previews need the HTML to differ per route:
-   server-side rendering, a crawler-aware rewrite, or prerendered pages. Having real paths
-   is the precondition for that work, not the work itself.
-3. `/` is the landing and has its own metadata; `app.html`'s canonical is
-   `https://papertok.app/feed`. A change meant for the application belongs in `app.html`.
+**What the Worker answers** (`worker/share-pages.js`). The deployed shell, fetched from
+`https://papertok.app/index.html`, with the page's own head and body:
 
-`public/robots.txt` points crawlers to that root-only sitemap. The shared URL helpers still
-produce absolute links with the project-site base so browser sharing remains correct on both
-GitHub Pages and local deployments.
+- title, description, canonical, `og:*`, `twitter:*` and JSON-LD (`ScholarlyArticle`,
+  `CollectionPage`, `ProfilePage`, or a `WebPage` about the entity), in the reader's language
+  (`Accept-Language`: Spanish when asked for, English otherwise; `Vary: Accept-Language`);
+- a static copy of the page inside `#root` (title as h1, authors, abstract and links for a paper;
+  the papers of a list, each linked to its own page), which the application replaces when it
+  mounts;
+- for a paper, the paper itself as JSON in `<script id="papertok-share-seed">`, keyed by the paper
+  key it was written for.
+
+Everything from a provider or a user is HTML-escaped; LaTeX in titles and abstracts becomes plain
+text (`src/utils/plainScientificText.js`). A page that does not exist answers `404` with
+`noindex`. A provider failure answers `200` with PaperTok's generic head at the page's own
+address: a preview bot shows nothing for an error status, and an outage is not a reason to drop a
+page from an index. An author known only by a name (no OpenAlex id or ORCID), a PaperTok topic and
+a search turned into a topic get a head with their name and `noindex`, and cost no lookup: a name
+is not an identity, and the same name can be several people.
+
+**Where the data comes from, and what it may spend.** Papers from OpenAlex under the Worker's key
+and its shared daily budget; a preprint OpenAlex has not indexed yet (most of what the feed shows
+is days old) from arXiv, on the same one-call-every-three-seconds beat as `/arxiv`. Projects from
+OpenAIRE. Lists and profiles from their public Firestore documents, read anonymously, so the rules
+decide exactly as they do for a visitor and a private profile is a 404. Because the route is
+public and carries no `Origin`, a random key misses every cache, so misses have their own
+ceilings: 30 a minute and 1000 a day in all, and 30 arXiv calls an hour.
+
+**Caches.** The shell is kept five minutes: it names the hashed assets of the current deployment,
+and a stale one points at files Vercel no longer serves. A page's record is kept 24 hours, a
+missing page one hour, a failure two minutes. The page is composed per request from the two, so
+one record serves both languages and a deploy reaches every shared page within minutes.
+
+**Googlebot.** Googlebot renders JavaScript, but `https://api.papertok.app/robots.txt` is
+`Disallow: /`, so the application's own requests fail for it. The paper page therefore paints the
+seed (`src/utils/shareSeed.js`, read only for the key in the URL) from its first render, marks
+nothing `noindex` while it does, and keeps the seed on screen when its own load fails.
+
+**Sharing.** The card and Research share the PaperTok page, with the plain-text title as the
+share `text`: most share targets print `text` and the link and ignore `title`.
+
+**Deploying.** The Worker first — the routes are new — checked with crawler user agents, for
+example `curl -A 'facebookexternalhit/1.1' https://api.papertok.app/share/paper/<key>`; then the
+frontend, whose `vercel.json` starts sending crawlers there. Cloudflare's bot protection on the
+zone must let a crawler user agent arriving from Vercel's addresses through.
+
+**Known limits.**
+
+- A link of the old `/#/public/…` shape can never have its own preview: the fragment never
+  reaches a server.
+- A PaperTok topic page previews with its id (`quant-ph`), and is not indexed: the taxonomy labels
+  live in `src/data/categories.js`, next to React icons the Worker should not bundle.
+
+## Sitemap and robots
+
+`public/sitemap.xml` lists canonical pages only: `/feed` and `/privacy.html`. `/` is not canonical
+(the shell names `/feed`), and pages that need an account send a crawler back to `/feed`. There is
+no sitemap of papers: the only public collection that names papers, `publicLists`, is readable by
+id and deliberately not listable (`allow list: if false`, a directory the product never offers).
+Public lists and profiles link their papers from their own share pages instead.
+
+`public/robots.txt` points crawlers to the sitemap and disallows the pages that need an account
+(`/lists`, `/research`, `/following`, `/search`, `/profile`, `/settings`, `/admin`, `/onboarding`,
+`/login`, `/report`); `src/utils/staticDiscoveryFiles.test.js` holds both files against the routes
+`App.jsx` guards.

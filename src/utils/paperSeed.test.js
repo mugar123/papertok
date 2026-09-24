@@ -26,13 +26,17 @@ test('SOURCE: the paper page paints an incomplete copy as a skeleton, not as "Ab
   const code = stripComments(await read('../components/Public/PublicPaperPage.jsx'));
   assert.match(code, /const seedPainted = seedPaintsWhole\(seededPaper\) && !location\.state\?\.stored/,
     'a stored copy from a list or a profile row opens on the skeleton, whole or not');
-  assert.match(code, /const loadedPaper = hasCurrentResult \? result\.paper : \(seedPainted \? seededPaper : null\)/,
+  // The share seed of a crawler's document (utils/shareSeed.js) is the one
+  // other copy that can paint, and by the same rule: only when it is whole.
+  assert.match(code, /const sharePainted = !seedPainted && seedPaintsWhole\(shareSeed\)/);
+  assert.match(code, /const loadedPaper = hasCurrentResult \? result\.paper : \(seedPainted \? seededPaper : \(sharePainted \? shareSeed : null\)\)/,
     'nothing is painted from a copy that lacks its abstract');
-  assert.match(code, /: \(seedPainted \? 'ready' : \(identity \? 'loading' : 'not-found'\)\)/,
+  assert.match(code, /: \(seedPainted \|\| sharePainted \? 'ready' : \(identity \? 'loading' : 'not-found'\)\)/,
     'the page waits on the providers instead, skeleton up');
-  assert.match(code, /useState\(\(\) => seedPainted\)/,
+  assert.match(code, /useState\(\(\) => seedPainted \|\| sharePainted\)/,
     'the cover on arrival follows what was actually painted');
-  const failures = code.match(/paper: seededPaper, status: seededPaper \? 'ready'/g) || [];
+  assert.match(code, /const fallback = seededPaper \|\| shareSeed;/);
+  const failures = code.match(/paper: fallback, status: fallback \? 'ready'/g) || [];
   assert.equal(failures.length, 2, 'both failure paths still fall back to the copy, whole or not');
 });
 

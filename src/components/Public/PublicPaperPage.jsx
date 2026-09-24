@@ -23,6 +23,7 @@ import {
 } from '../../utils/publicNavigation.js';
 import { paperLegacyAdapter } from '../../models/Paper.js';
 import { hydrateSeededPaper, seedPaintsWhole } from '../../utils/paperSeed.js';
+import { publicPaperMetadata, readShareSeed } from '../../utils/shareSeed.js';
 import PaperCard from '../Feed/PaperCard.jsx';
 import SkeletonCard from '../Feed/SkeletonCard.jsx';
 import { Button } from '../ui/button.jsx';
@@ -165,9 +166,24 @@ export default function PublicPaperPage({
   // answered. Those open on the skeleton, the way Liked rows always did, and
   // keep the copy only for the failure paths below.
   const seedPainted = seedPaintsWhole(seededPaper) && !location.state?.stored;
+  // A shared link opened by a crawler that runs JavaScript: its document came
+  // from the Worker with the paper written in (utils/shareSeed.js). It is the
+  // page until the providers answer, and what stays when they cannot be
+  // reached — for Googlebot they cannot: api.papertok.app's robots.txt closes
+  // them. A copy an in-app link handed over still comes first.
+  const shareSeed = useMemo(() => {
+    const candidate = readShareSeed(paperKey);
+    if (!candidate) return null;
+    try {
+      return paperLegacyAdapter(candidate);
+    } catch {
+      return null;
+    }
+  }, [paperKey]);
+  const sharePainted = !seedPainted && seedPaintsWhole(shareSeed);
   const requestKey = `${paperKey}:${attempt}`;
   const hasCurrentResult = result.requestKey === requestKey;
-  const loadedPaper = hasCurrentResult ? result.paper : (seedPainted ? seededPaper : null);
+  const loadedPaper = hasCurrentResult ? result.paper : (seedPainted ? seededPaper : (sharePainted ? shareSeed : null));
   // A link that brought no copy of its own — a shared link, a bookmark — is
   // answered by the provider under the provider's id, and the reader's own
   // marks are keyed by the id the feed gave the paper. If the reader's
@@ -189,7 +205,7 @@ export default function PublicPaperPage({
   }, [isAuthenticated, ensurePersonalLibrary]);
   const status = hasCurrentResult
     ? result.status
-    : (seedPainted ? 'ready' : (identity ? 'loading' : 'not-found'));
+    : (seedPainted || sharePainted ? 'ready' : (identity ? 'loading' : 'not-found'));
   const isEnglish = language === 'en';
   const text = useCallback((entry) => entry[isEnglish ? 'en' : 'es'], [isEnglish]);
 
@@ -201,7 +217,7 @@ export default function PublicPaperPage({
   const prefersReducedMotion = useReducedMotion();
   // Purely derived: a seed was on screen and the network has now answered, so
   // this render is the upgrade. Without a seed the card is simply entering.
-  const cardPhase = hasCurrentResult && seedPainted ? 'dissolve' : 'shown';
+  const cardPhase = hasCurrentResult && (seedPainted || sharePainted) ? 'dissolve' : 'shown';
 
   const cardVariants = useMemo(() => ({
     hidden: { opacity: 0, y: prefersReducedMotion ? 0 : 10 },
@@ -231,7 +247,7 @@ export default function PublicPaperPage({
   // the cover to bridge. Without this it went up anyway and sat over a finished
   // page until the card's own animation reported in: a skeleton on top of the
   // paper it was standing in for.
-  const [seededOnArrival] = useState(() => seedPainted);
+  const [seededOnArrival] = useState(() => seedPainted || sharePainted);
   useEffect(() => {
     if (status !== 'ready' || cardRevealed) return undefined;
     // Belt and braces: if the animation's completion callback never lands,
@@ -243,28 +259,25 @@ export default function PublicPaperPage({
   const canonicalRoute = identity
     ? getPublicPaperPath(identity.type, identity.value)
     : `/public/paper/${encodeURIComponent(paperKey)}`;
-  const metadata = useMemo(() => {
-    if (!paper) return { route: canonicalRoute, noIndex: true };
-    return {
-      title: { es: paper.title, en: paper.title },
-      description: { es: paper.abstract, en: paper.abstract },
-      route: canonicalRoute,
-      ogType: 'article',
-    };
-  }, [canonicalRoute, paper]);
+  // Built from the paper on screen, seed included: a page painted from a seed
+  // is the paper from its first render, never a noindex «loading».
+  const metadata = useMemo(() => publicPaperMetadata(paper, canonicalRoute), [canonicalRoute, paper]);
   usePublicPageMetadata(metadata);
 
   useEffect(() => {
     const requestId = ++requestIdRef.current;
     if (!identity) return undefined;
+    // What stays on screen when the providers find nothing or fail: the copy
+    // an in-app link handed over, or the seed a shared link's document
+    // carried. With either on screen, an empty or failed response reads as a
+    // hiccup, not as proof the paper stopped existing.
+    const fallback = seededPaper || shareSeed;
 
     loadPaper(identity)
       .then((loadedPaper) => {
         if (requestId !== requestIdRef.current) return;
         if (!loadedPaper) {
-          // With a seeded copy on screen, an empty provider response reads as
-          // a hiccup, not as proof the paper stopped existing.
-          setResult({ requestKey, paper: seededPaper, status: seededPaper ? 'ready' : 'not-found' });
+          setResult({ requestKey, paper: fallback, status: fallback ? 'ready' : 'not-found' });
           return;
         }
         // The provider's paper, with the copy the link handed over laid on
@@ -277,13 +290,13 @@ export default function PublicPaperPage({
       .catch((error) => {
         if (requestId !== requestIdRef.current) return;
         console.error('Public paper could not be loaded', error);
-        setResult({ requestKey, paper: seededPaper, status: seededPaper ? 'ready' : 'error' });
+        setResult({ requestKey, paper: fallback, status: fallback ? 'ready' : 'error' });
       });
 
     return () => {
       requestIdRef.current += 1;
     };
-  }, [identity, requestKey, seededPaper]);
+  }, [identity, requestKey, seededPaper, shareSeed]);
 
   const goBack = useCallback(() => {
     const historyIndex = typeof window !== 'undefined' ? window.history.state?.idx : null;

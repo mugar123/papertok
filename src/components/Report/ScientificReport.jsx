@@ -21,6 +21,8 @@ import { CATEGORIES, getCategoryLabel } from '../../data/categories';
 import { resolvePaperTopic } from '../../utils/topicNavigation';
 import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.js';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.js';
+import { getPublicPaperUrl } from '../../utils/publicNavigation.js';
+import { paperShareData, shareOrCopyLink } from '../../utils/shareLink.js';
 import { Calendar, Award, Share2, Check, Unlock, Lock, ExternalLink, FileText, BarChart3, TrendingUp, Flame, Database, Sparkles, ArrowRight, ArrowLeft } from 'lucide-react';
 import ScientificText from '../ScientificText';
 import 'katex/dist/katex.min.css';
@@ -462,12 +464,27 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
     return labels[timeframe] || labels['7d'];
   };
 
-  const handleShare = (paper) => {
-    const url = safeExternalUrl(paper.pdfUrl)
+  // The paper's own page first, as the card shares it: a link to the PDF left
+  // PaperTok out of the message altogether. The provider's address is what a
+  // paper with no public identity can still offer.
+  const handleShare = async (paper) => {
+    const url = getPublicPaperUrl(paper)
+      || safeExternalUrl(paper.pdfUrl)
       || safeExternalUrl(paper.landingPageUrl)
       || (paper.arxivId ? `https://arxiv.org/abs/${encodeURIComponent(paper.arxivId)}` : '');
-    if (navigator.share) { navigator.share({ title: paper.title, url }); }
-    else { navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000); }
+    if (!url) return;
+    try {
+      const outcome = await shareOrCopyLink({
+        ...paperShareData({ title: paper.title, url }),
+        copy: link => navigator.clipboard.writeText(link),
+      });
+      if (outcome === 'copied') {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    } catch (error) {
+      console.error('Paper link could not be shared', error);
+    }
   };
 
   const allPapers = [report.mainDiscovery, ...(report.highlights || [])].filter(Boolean);
