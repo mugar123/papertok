@@ -1,5 +1,33 @@
 # Estado / pendientes
 
+## El lector: el margen scrollea, el PDF deja ver lo marcado, y «explicar» se ve (2026-09-25)
+
+Reportado el 24-09: «en la barra lateral de anotaciones no puedo hacer scroll down» y, en el
+PDF exportado, «no se muestra el texto de debajo del subrayado». Medido en el lector real
+montado sin sesión ni cuota (arnés con los servicios envueltos) y con rueda real por CDP.
+Solo frontend: no hay nada que desplegar en el Worker.
+
+- **El margen scrollea (`23fe8dd`).** Sin tope de alto, diez notas medían 2720 px en una
+  pantalla de 800, y la lista —un contenedor de scroll sin nada que scrollear— se tragaba la
+  rueda por su `overscroll-behavior: contain`: sobre el margen no se movía nada. El arreglo de
+  Cursor (`4912b14`) se revirtió (`570fa0c`) porque solo ponía el tope: `.rd-note` es
+  `overflow: hidden`, así que en una columna con tope cada tarjeta encogía (145 → 38 px) en vez
+  de desbordar. Ahora `max-height: 100%` en el margen y `flex-shrink: 0` en la nota; la hoja
+  estrecha (<1100 px), que aplastaba igual, queda arreglada con lo mismo.
+- **El PDF ya no tapa texto (`5f4a495`).** html2canvas pinta cada elemento una vez, sobre su
+  caja envolvente y después del texto del párrafo: una marca que saltaba de línea era una losa
+  de margen a margen sobre las palabras vecinas, y la de la IA subrayaba solo su última línea.
+  `renderPdfPages` corta cada marca por línea antes de capturar. A/B contra el módulo anterior:
+  las 47 líneas quedan idénticas; 10 de 14 marcas saltaban de línea antes y ninguna después.
+- **La respuesta de «explicar» se ve (`494349f`).** Pedida en la última sección caía a
+  y≈2966 con la lista visible hasta 744. La tarjeta «leyendo» espera ahora en el hueco donde se
+  archivará la respuesta, la lista va allí sin mover el paper, y preguntar abre el margen o la
+  hoja y devuelve el filtro «tuyas» a «todas». Con pocas notas la rueda vuelve a mover el
+  paper: `contain` solo mientras la lista desborda.
+- **Las fórmulas de una cita se ven como fórmulas (`1731269`).** La cita del margen pasa por
+  `ScientificText` (KaTeX, con su MathML para lectores de pantalla) y lleva el `lang` de la
+  anotación, igual que la respuesta de la IA.
+
 ## Doce fallos auditados, arreglados en su rama (2026-09-24)
 
 La auditoría (`docs/AUDITORIA-12-FALLOS-2026-09-23.md`) confirmó los doce, y el diseño
