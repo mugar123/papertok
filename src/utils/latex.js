@@ -33,8 +33,9 @@ function decodeHtmlEntity(entity) {
  * JATS does not deposit a formula: it deposits one COMPLETE compilable
  * document per formula, preamble and all, inside a `<tex-math>` — and next to
  * it, in an `<alternatives>`, a MathML spelling of that same formula. Verified
- * against PMC12824388 (`fullTextXML`), the paper whose card printed
- * `\documentclass[12pt]{minimal} \usepackage{amsmath} …` as prose.
+ * against PMC12824388 (`fullTextXML`). The card that printed
+ * `\documentclass[12pt]{minimal} \usepackage{amsmath} …` as prose was served by
+ * NASA ADS, which relays the same document in a shape of its own (below).
  *
  * None of it was being removed. `SCIENTIFIC_MARKUP_TAG` wants a letter after
  * the `<`, so the CDATA markers and PMC's `<?equation-image-name …?>` outlived
@@ -43,13 +44,61 @@ function decodeHtmlEntity(entity) {
  */
 const XML_COMMENT = /<!--[\s\S]*?-->/g;
 const XML_PROCESSING_INSTRUCTION = /<\?[\s\S]*?\?>/g;
+// ADS escapes the markers (`&lt;![CDATA[ … ]]&gt;`). Entities are decoded
+// last, so an escaped marker used to slip past every pass here and only then
+// turn into the `<![CDATA[` the card printed.
+const CDATA_SECTION = /(?:<|&lt;)!\[CDATA\[([\s\S]*?)\]\](?:>|&gt;)/gi;
 // Dropping both markers keeps the section's content and also survives the
 // truncated abstract that arrives cut mid-section, with its opener orphaned.
-const CDATA_MARKER = /<!\[CDATA\[|\]\]>/g;
+const CDATA_MARKER = /(?:<|&lt;)!\[CDATA\[|\]\](?:>|&gt;)/gi;
 const NAMESPACE = '(?:[a-z][\\w.-]*:)?';
 const ALTERNATIVES = new RegExp(`<${NAMESPACE}alternatives(?:\\s[^<>]*)?>([\\s\\S]*?)</${NAMESPACE}alternatives\\s*>`, 'gi');
 const TEX_MATH = new RegExp(`<${NAMESPACE}tex-math(?:\\s[^<>]*)?>([\\s\\S]*?)</${NAMESPACE}tex-math\\s*>`, 'i');
 const STANDALONE_DOCUMENT = /\\documentclass[\s\S]*?\\begin\{document\}([\s\S]*?)\\end\{document\}/g;
+// ADS rewrites some `_{…}` and `^{…}` inside the TeX as HTML
+// (`{T}_{{{{{c}}}}}<SUP>0</SUP>`).
+const HTML_SCRIPT = /<(sub|sup)>([^<]*)<\/\1>/gi;
+const TRAILING_TAG = /<\/?[a-z][\w.:-]*(?:\s[^<>]*)?\/?>$/i;
+
+/**
+ * ADS also drops `\end{document}`, so the only thing left bounding the formula
+ * is the CDATA section that carried it. The end is written back at that
+ * boundary — never at the end of the text, which would take the rest of the
+ * abstract for the formula.
+ */
+function closeDocument(content) {
+  return content.includes('\\begin{document}') && !content.includes('\\end{document}')
+    ? `${content}\\end{document}`
+    : content;
+}
+
+function translateScripts(formula) {
+  return formula.replace(HTML_SCRIPT, (match, tag, content) => (
+    `${tag.toLowerCase() === 'sup' ? '^' : '_'}{${content}}`
+  ));
+}
+
+/**
+ * Where a glued copy of `twin` starts at the end of `head`, reading through
+ * any markup between its characters — ADS renders the MathML twin as HTML,
+ * `T<SUB>c</SUB><SUP>0</SUP>` — or -1. Glued means glued: the twin is never
+ * looked for across whitespace, which is what keeps `the ` from losing its `e`
+ * to a one-letter formula that came with no twin at all.
+ */
+function gluedTwinStart(head, twin) {
+  let end = head.length;
+  for (let position = twin.length - 1; position >= 0; position -= 1) {
+    while (head[end - 1] === '>') {
+      const tail = head.slice(Math.max(0, end - 256), end);
+      const tag = TRAILING_TAG.exec(tail);
+      if (!tag) break;
+      end -= tail.length - tag.index;
+    }
+    if (head[end - 1] !== twin[position]) return -1;
+    end -= 1;
+  }
+  return end;
+}
 
 function stripOuterDollars(body) {
   const display = /^\$\$([\s\S]*)\$\$$/.exec(body);
@@ -90,9 +139,10 @@ function unwrapStandaloneDocuments(text) {
   STANDALONE_DOCUMENT.lastIndex = 0;
   while ((match = STANDALONE_DOCUMENT.exec(text)) !== null) {
     let head = output + text.slice(cursor, match.index);
-    const formula = stripOuterDollars(match[1].trim());
+    const formula = translateScripts(stripOuterDollars(match[1].trim()).trim());
     const twin = flattenFormula(formula);
-    if (twin && head.endsWith(twin)) head = head.slice(0, -twin.length);
+    const twinStart = twin ? gluedTwinStart(head, twin) : -1;
+    if (twinStart !== -1) head = head.slice(0, twinStart);
     output = `${head}\\(${formula}\\)`;
     cursor = match.index + match[0].length;
   }
@@ -109,6 +159,7 @@ export function normalizeScientificMarkup(text) {
   const chosen = String(text)
     .replace(XML_COMMENT, '')
     .replace(XML_PROCESSING_INSTRUCTION, '')
+    .replace(CDATA_SECTION, (section, content) => closeDocument(content))
     .replace(CDATA_MARKER, '')
     .replace(ALTERNATIVES, (block, body) => TEX_MATH.exec(body)?.[1] ?? body);
 

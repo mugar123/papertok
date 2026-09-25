@@ -363,3 +363,84 @@ test('the unwrapped formula reaches the renderer as one math chunk', async () =>
     }
   }
 });
+
+// NASA ADS (`/sources/physics`) relays the same per-formula documents in a
+// shape of its own, measured 2026-09-23 on every formula of a ten-record
+// sample: a bare `<tex-math>` with no `<alternatives>` and no MathML, the CDATA
+// markers escaped as entities, NO `\end{document}`, the `$$` dropped in
+// titles, and `_{…}`/`^{…}` partly rewritten as `<SUB>`/`<SUP>` inside the TeX.
+// The MathML twin, when there is one, rides in front as glued HTML. Real
+// records: 2026NatSR..16.2819Z (10.1038/s41598-025-32723-2) and
+// 2026NatCo..17..805T (10.1038/s41467-025-67503-z, the cuprate card above,
+// which was served by ADS all along).
+const ADS_PREAMBLE = '\\documentclass[12pt]{minimal} \\usepackage{amsmath} \\usepackage{wasysym} '
+  + '\\usepackage{amsfonts} \\usepackage{amssymb} \\usepackage{amsbsy} \\usepackage{mathrsfs} '
+  + '\\usepackage{upgreek} \\setlength{\\oddsidemargin}{-69pt} \\begin{document}';
+const ADS_TITLE = `Quantum avalanches in <tex-math id="IEq1_TeX">&lt;![CDATA[${ADS_PREAMBLE}{Z}_2]]&gt;</tex-math>`
+  + '-preserving interacting Ising Majorana chain';
+const ADS_ABSTRACT = `Here, we consider the <tex-math id="IEq2_TeX">&lt;![CDATA[${ADS_PREAMBLE}$\${Z}_2$$]]&gt;</tex-math>`
+  + '-preserving interacting Ising Majorana chain,';
+const ADS_CUPRATE = 'The mechanism controlling the superconducting transition temperature T<SUB>c</SUB><SUP>0</SUP>'
+  + `<tex-math id="IEq1_TeX">&lt;![CDATA[${ADS_PREAMBLE}$\${T}_{{{{{c}}}}}<SUP>0</SUP>$$]]&gt;</tex-math>`
+  + ' as a function of doping';
+// What the ADS mapper stored while it flattened every tag to a space: only the
+// escaped CDATA closer still bounds the formula. Liked and saved papers keep
+// this copy.
+const ADS_STORED = `transition temperature T c 0 &lt;![CDATA[${ADS_PREAMBLE}$\${T}_{{{{{c}}}}} 0 $$]]&gt; as a function of doping`;
+
+test('unwraps the per-formula document NASA ADS relays with escaped CDATA and no end', () => {
+  assert.equal(
+    normalizeScientificMarkup(ADS_TITLE),
+    'Quantum avalanches in \\({Z}_2\\)-preserving interacting Ising Majorana chain',
+  );
+  assert.equal(
+    normalizeScientificMarkup(ADS_ABSTRACT),
+    'Here, we consider the \\({Z}_2\\)-preserving interacting Ising Majorana chain,',
+  );
+});
+
+test('reads the scripts ADS rewrote inside the TeX as the TeX they replaced', () => {
+  // `<SUP>0</SUP>` inside the formula is ADS's spelling of `^{0}`.
+  assert.match(normalizeScientificMarkup(ADS_CUPRATE), /\\\(\{T\}_\{\{\{\{\{c\}\}\}\}\}\^\{0\}\\\)/);
+});
+
+test('drops the HTML twin ADS glues in front of the formula', () => {
+  // `T<SUB>c</SUB><SUP>0</SUP>` is the MathML spelling of the same formula.
+  assert.equal(
+    normalizeScientificMarkup(ADS_CUPRATE),
+    'The mechanism controlling the superconducting transition temperature \\({T}_{{{{{c}}}}}^{0}\\) as a function of doping',
+  );
+});
+
+test('an ADS copy stored with its tags already flattened still loses the preamble', () => {
+  const normalized = normalizeScientificMarkup(ADS_STORED);
+
+  assert.doesNotMatch(normalized, /CDATA|\]\]>|&lt;|&gt;/);
+  assert.doesNotMatch(normalized, /\\(?:documentclass|usepackage|setlength|begin|end)\b/);
+  assert.match(normalized, /\\\(\{T\}_\{\{\{\{\{c\}\}\}\}\} 0\\\) as a function/);
+});
+
+test('an ADS formula reaches the renderer inline, not as a centred display', async () => {
+  await loadKatex();
+
+  for (const raw of [ADS_TITLE, ADS_ABSTRACT, ADS_CUPRATE, ADS_STORED]) {
+    const math = splitLatexText(raw).filter(chunk => chunk.type === 'math');
+    assert.equal(math.length, 1);
+    assert.equal(math[0].display, false);
+    assert.doesNotThrow(() => katex.renderToString(math[0].value, { throwOnError: true }));
+  }
+});
+
+test('a formula with no twin in front never eats the prose before it', () => {
+  // `we consider the ` ends in `e`; a one-letter formula `e` must not take it.
+  const raw = `we consider the <tex-math id="x">&lt;![CDATA[${ADS_PREAMBLE}$$e$$]]&gt;</tex-math> constant`;
+  assert.equal(normalizeScientificMarkup(raw), 'we consider the \\(e\\) constant');
+});
+
+test('an ADS summary cut inside its formula leaves no CDATA marker behind', () => {
+  // Lists store `abstract.substring(0, 500)` (SaveToListModal), and the first
+  // formula of 2026NatSR..16.2819Z starts past character 390: the cut lands
+  // inside the preamble and orphans the escaped opener.
+  const stored = `Here, we consider the &lt;![CDATA[${ADS_PREAMBLE}`.slice(0, 80);
+  assert.doesNotMatch(normalizeScientificMarkup(stored), /CDATA|&lt;|</);
+});

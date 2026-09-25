@@ -1,5 +1,7 @@
 # El preámbulo LaTeX de JATS se imprime como prosa — Auditoría y plan
 
+> **Corrección (2026-09-23):** la tarjeta de este plan la servía **NASA ADS**, que no está en la tabla de fuentes de abajo. El `<![CDATA[` y el `T c 0` son la forma de ADS: CDATA escapado, sin `\end{document}` y el gemelo en HTML aplanado a espacios por `mapAdsPaper`. Este arreglo no la cubría. Ver `2026-09-23-latex-ads-preambulo.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Que un abstract que llega envuelto en el `<tex-math>` de JATS se lea como prosa con su fórmula, y no como el documento LaTeX autónomo que el editor mete alrededor de cada fórmula.

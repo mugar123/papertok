@@ -8,6 +8,7 @@ import { authenticatedWorkerFetch, hasWorkerSession, sourceResponseError } from 
 import { withRequestDeadline } from '../utils/requestDeadline.js';
 import { settleWithin } from '../utils/asyncTiming.js';
 import { mapEuropePmcRecord } from '../utils/europePmcRecord.js';
+import { normalizeScientificMarkup } from '../utils/latex.js';
 
 const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -342,7 +343,12 @@ function extractAdsArxivId(raw) {
 
 export function mapAdsPaper(raw, requestedCategories = []) {
   const bibcode = normalizeText(raw?.bibcode);
-  const title = normalizeText(Array.isArray(raw?.title) ? raw.title[0] : raw?.title);
+  // ADS markup means something: `<tex-math>` carries a formula and
+  // `<SUB>`/`<SUP>` are scripts, some of them inside that formula. Flattening
+  // every tag to a space erased them before anything could read them
+  // (`T<SUB>c</SUB>` became `T c`), so title and abstract go through the
+  // markup-aware normalizer instead.
+  const title = normalizeScientificMarkup(Array.isArray(raw?.title) ? raw.title[0] : raw?.title);
   if (!bibcode || !title) return null;
   const doi = normalizeDoi(Array.isArray(raw.doi) ? raw.doi[0] : raw.doi);
   const arxivId = extractAdsArxivId(raw);
@@ -373,7 +379,7 @@ export function mapAdsPaper(raw, requestedCategories = []) {
     adsUrl: `https://ui.adsabs.harvard.edu/abs/${encodeURIComponent(bibcode)}/abstract`,
     sources: { primary: 'nasa-ads', enrichedBy: [] },
     title,
-    abstract: normalizeText(raw.abstract),
+    abstract: normalizeScientificMarkup(raw.abstract),
     authors: authorObjects(raw.author),
     year: Number(raw.year) || safeYear(published),
     published,

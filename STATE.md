@@ -51,6 +51,51 @@ deja pasar a un rastreador que llega desde las IPs de Vercel. Luego el frontend.
 despliegue); cómo las pinta Googlebot de verdad; `/search` con sesión (solo test de
 fuente); lector de pantalla. Lo verificado está en `docs/ACCESIBILIDAD-EVIDENCIA.md`.
 
+## El preámbulo LaTeX que relaya NASA ADS ya no se imprime como prosa, y el arreglo del 07-09 no lo cubría (2026-09-23)
+
+**«Audita este error de renderizado de latex.»** La tarjeta de «Quantum
+avalanches in ℤ₂-preserving interacting Ising Majorana chain»
+(10.1038/s41598-025-32723-2) imprimía `<![CDATA[\documentclass[12pt]{minimal}
+… \begin{document}` en el título y en el abstract, con la fórmula centrada en
+mitad del párrafo. **Esa tarjeta la sirve NASA ADS** (`/sources/physics`,
+`2026NatSR..16.2819Z`): el año 2026, la cita y los autores «Zhang, Lv» sólo
+cuadran con ADS. ADS relaya el documento por fórmula de Springer en una forma
+propia, medida en 29 de 29 fórmulas: un `<tex-math>` suelto, los marcadores
+CDATA **escapados** (`&lt;![CDATA[ … ]]&gt;`), **sin `\end{document}`**, sin
+`$$` en los títulos, `_{…}`/`^{…}` reescritos a veces como `<SUB>`/`<SUP>`
+dentro de la TeX y el gemelo MathML delante como HTML pegado
+(`T<SUB>c</SUB><SUP>0</SUP>`). Fallaban dos capas: `mapAdsPaper` aplanaba cada
+etiqueta a un espacio (`normalizeText`), y el embudo sólo reconocía el CDATA
+literal y el documento completo, y decodificaba las entidades al final, que es
+justo cuando aparecía el `<![CDATA[`.
+
+**`e1bef41` (07-09) nunca cubrió la tarjeta para la que se escribió.** Se
+validó contra Semantic Scholar y PMC, fuentes reales pero que no servían esa
+tarjeta, y su test de CDATA usaba marcadores literales. La tarjeta de cupratos
+de aquel día, relayada por ADS, seguía imprimiendo el mismo síntoma carácter
+por carácter, y su «T c 0» no era el MathML de PubMed sino el gemelo HTML de
+ADS aplanado a espacios. Ahora `normalizeScientificMarkup` reconoce el CDATA
+escapado, cierra el documento en el cierre del CDATA (nunca al final del
+texto), lee los `<SUB>`/`<SUP>` de dentro de la fórmula como `_{}`/`^{}` y busca
+el gemelo a través de etiquetas, pero sólo pegado. `mapAdsPaper` pasa título y
+abstract por ese embudo. Sobre 20 registros reales de ADS, los campos con el
+preámbulo visible pasan de 12 a 0 y las fórmulas centradas de 30 de 30 a 0 de
+31. Cerrado de paso: el `.tex` exportado imprimía
+`\textless{}![CDATA[\textbackslash{}documentclass…`, y el mapper convertía
+`La2<SUB>-x</SUB>Sr<SUB>x</SUB>CuO<SUB>4</SUB>` en «La2 -x Sr x CuO 4». ADS da
+2.373 registros con el preámbulo.
+
+**Queda abierto:**
+- ADS perdió el `\mathbb`, así que sale Z₂ y no ℤ₂.
+- Las copias ya guardadas pierden el preámbulo, pero conservan el «T c 0» y
+  los superíndices ya aplanados.
+- `SaveToListModal` recorta el abstract crudo a 500 caracteres antes de
+  normalizarlo.
+- `navigator.share` usa el título crudo.
+- Los demás mappers de dominio usan el mismo `normalizeText`, sin medir.
+
+Auditoría en `docs/superpowers/plans/2026-09-23-latex-ads-preambulo.md`.
+
 ## Las citas llegan con la tarjeta, y tomar la rueda queda DESCARTADO (2026-09-21)
 
 **Tomar la rueda se probó y se revirtió el mismo día.** Bajo `pointer: fine` el

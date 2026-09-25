@@ -148,6 +148,34 @@ test('maps NASA ADS records with citations, references and physics concepts', ()
   assert.ok(paper.keywords.includes('11.25.Tq'));
 });
 
+// Real record, 2026NatSR..16.2819Z as ADS served it on 2026-09-23: the title
+// verbatim; the abstract cut to its formulas and scripts, and the `<P />` ADS
+// writes between paragraphs.
+const ADS_PREAMBLE = '\\documentclass[12pt]{minimal} \\usepackage{amsmath} \\usepackage{wasysym} '
+  + '\\usepackage{amsfonts} \\usepackage{amssymb} \\usepackage{amsbsy} \\usepackage{mathrsfs} '
+  + '\\usepackage{upgreek} \\setlength{\\oddsidemargin}{-69pt} \\begin{document}';
+
+test('reads the markup of an ADS title and abstract instead of flattening it to spaces', () => {
+  const paper = mapAdsPaper({
+    bibcode: '2026NatSR..16.2819Z',
+    title: [`Quantum avalanches in <tex-math id="IEq1_TeX">&lt;![CDATA[${ADS_PREAMBLE}{Z}_2]]&gt;</tex-math>`
+      + '-preserving interacting Ising Majorana chain'],
+    author: ['Zhang, Lv', 'Xu, Kai', 'Fan, Heng'],
+    abstract: 'Here, we consider the transition temperature T<SUB>c</SUB><SUP>0</SUP>'
+      + `<tex-math id="IEq2_TeX">&lt;![CDATA[${ADS_PREAMBLE}$\${T}_{{{{{c}}}}}<SUP>0</SUP>$$]]&gt;</tex-math>`
+      + ' of La<SUB>2-x</SUB>Sr<SUB>x</SUB>CuO<SUB>4</SUB>. <P />Supported by NSF.',
+    year: 2026,
+    pubdate: '2026-12-00',
+    doi: ['10.1038/s41598-025-32723-2'],
+  }, ['quant-ph']);
+
+  assert.equal(paper.title, 'Quantum avalanches in \\({Z}_2\\)-preserving interacting Ising Majorana chain');
+  assert.equal(
+    paper.abstract,
+    'Here, we consider the transition temperature \\({T}_{{{{{c}}}}}^{0}\\) of La2-xSrxCuO4. Supported by NSF.',
+  );
+});
+
 test('maps INSPIRE papers as a keyless high-energy physics fallback', () => {
   const paper = mapInspirePaper({
     id: '12345',
