@@ -2,10 +2,10 @@ import { useEffect, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { AlertCircle, ChevronUp, PenLine, Sparkles, Trash2 } from 'lucide-react';
 import { ANNOTATION_FILTERS } from '../../utils/annotationOrder.js';
-import { displayProse } from '../../utils/latex.js';
 import { revealScrollDelta } from '../../utils/railReveal.js';
 import { SHEET_DRAG_SLOP, sheetDragOffset, shouldSettleOpen } from '../../utils/sheetDrag.js';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.jsx';
+import ScientificText from '../ScientificText.js';
 import ThinkingDots from './ThinkingDots.jsx';
 
 /**
@@ -264,9 +264,22 @@ export default function AnnotationRail({
           <Trash2 size={13} />
         </button>
       </div>
-      <p className="rd-note-quote">{displayProse(annotation.quote)}</p>
+      {/* The passage as the paper sets it: a quote is stored as source text,
+          so a highlight across a formula keeps its `$…$`, and printed as prose
+          that LaTeX showed raw in the margin. It is in the language the
+          rewrite was in when it was marked, which is not always the page's —
+          the margin keeps notes from both. */}
+      <p className="rd-note-quote" lang={annotation.language}>
+        <ScientificText>{annotation.quote}</ScientificText>
+      </p>
       {annotation.note && (
-        <p className="rd-note-body" data-fresh={annotation.fresh && annotation.kind === 'ai' ? '' : undefined}>
+        /* The model answers in the rewrite's language; your own note is in
+           whatever you typed, so it claims none. */
+        <p
+          className="rd-note-body"
+          data-fresh={annotation.fresh && annotation.kind === 'ai' ? '' : undefined}
+          lang={annotation.kind === 'ai' ? annotation.language : undefined}
+        >
           {annotation.note}
         </p>
       )}
