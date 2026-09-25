@@ -532,17 +532,16 @@ export async function getAuthorProfileExact(authorName, paperRef) {
         // The authorship the requested name is: by OpenAlex's spelling of the
         // author, or by the byline as the paper printed it (`raw_author_name`,
         // which for a PubMed record is the same "Li WN" the card shows).
-        let bestMatch = null;
-        for (const authorship of workData.authorships) {
-           const authorDisplayName = authorship.author?.display_name;
-           if (!authorDisplayName) continue;
-
-           if (matchesAuthorName(authorName, authorDisplayName)
-             || (authorship.raw_author_name && matchesAuthorName(authorName, authorship.raw_author_name))) {
-              bestMatch = authorship.author;
-              break;
-           }
-        }
+        // Only one may match: a short byline can fit two authors of the same
+        // paper ("Zhang W" is both Wei and Wen Zhang), and then the paper does
+        // not say which one was clicked (review of 2026-09-25).
+        const matching = workData.authorships.filter((authorship) => {
+          const authorDisplayName = authorship.author?.display_name;
+          if (!authorDisplayName) return false;
+          return matchesAuthorName(authorName, authorDisplayName)
+            || Boolean(authorship.raw_author_name && matchesAuthorName(authorName, authorship.raw_author_name));
+        });
+        const bestMatch = matching.length === 1 ? matching[0].author : null;
 
         // With the exact author ID, fetch their profile for H-index etc.
         // An authorship names its author as `https://openalex.org/A…`, the

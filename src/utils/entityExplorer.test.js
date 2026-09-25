@@ -30,6 +30,15 @@ test('an author page is verified by an OpenAlex id, an ORCID, or the paper, neve
   assert.equal(authorIdentityVerified({ type: 'institution', routeId: 'I1', entity: {} }), true);
 });
 
+// An ORCID route whose person OpenAlex does not know renders a stub, and the
+// stub's list is an arXiv search by name: the ORCID says who the person is,
+// not whose papers those are (review of 2026-09-25).
+test('an ORCID page that fell back to a stub is not verified', () => {
+  assert.equal(authorIdentityVerified({ type: 'author', routeId: '0000-0002-1825-0097', entity: { id: 'stub-0000-0002-1825-0097' } }), false);
+  assert.equal(authorIdentityVerified({ type: 'author', routeId: '0000-0002-1825-0097', entity: { id: 'https://openalex.org/A5075361382' } }), true);
+  assert.equal(authorIdentityVerified({ type: 'author', routeId: '0000-0002-1825-0097', entity: null }), true);
+});
+
 // Old links carried a PubMed paper's `pmid:` id as "arxivId", and the
 // "source paper first" fallback sent it to arXiv as `id_list=pmid:…`.
 test('only a real arXiv id is pinned as the source paper', () => {

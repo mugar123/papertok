@@ -813,6 +813,37 @@ test('a paper with a DOI is looked up by that DOI', async () => {
   }
 });
 
+// A card's short byline can fit two authors of the same paper: PubMed's
+// "Zhang W" is both Wei Zhang and Wen Zhang on a paper that lists both. The
+// first authorship that matched was taken and marked verified, so whoever
+// clicked Wen got Wei's page as a confirmed profile (review of 2026-09-25).
+test('a byline two authorships of the paper share is not a verified identity', async () => {
+  const realFetch = openAlexClient.fetchImpl;
+  const { urls, impl } = recordingFetch([
+    ['works/doi:10.1000/two-zhangs', () => new Response(JSON.stringify({
+      id: 'https://openalex.org/W9',
+      authorships: [
+        { author: { id: 'https://openalex.org/A9001', display_name: 'Wei Zhang' }, raw_author_name: 'Zhang W' },
+        { author: { id: 'https://openalex.org/A9002', display_name: 'Wen Zhang' }, raw_author_name: 'Zhang W' },
+      ],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })],
+    ['authors/A900', () => new Response(JSON.stringify({
+      id: 'https://openalex.org/A9001', display_name: 'Wei Zhang', works_count: 10,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })],
+    ['authors?search=', () => new Response(JSON.stringify({
+      results: [{ id: 'https://openalex.org/A7', display_name: 'W. Zhang', works_count: 3, summary_stats: { h_index: 1 } }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })],
+  ]);
+  openAlexClient.fetchImpl = impl;
+  try {
+    const profile = await getAuthorProfileExact('Zhang W', 'doi:10.1000/two-zhangs');
+    assert.notEqual(profile.verified, true, 'the paper cannot say which of the two was meant');
+    assert.ok(!urls.some(url => /authors\/A900[12]/.test(url)), `neither author was opened as the one: ${urls.join(' ')}`);
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+  }
+});
+
 test('a profile found only by the name is not verified', async () => {
   const realFetch = openAlexClient.fetchImpl;
   const { impl } = recordingFetch([

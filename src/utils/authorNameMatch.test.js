@@ -39,6 +39,27 @@ test('a "Surname, Given" name and a two-word name in either order are the same p
   assert.equal(matchesAuthorName('Lei Ke', 'Ke Lei'), true);
 });
 
+// A Spanish or Portuguese name carries two surnames and is often indexed with
+// one, and a first initial is often dropped in front of the name a person goes
+// by. This matcher lost both, where the one before it matched them, so the
+// fast author link and the name search both refused these (review of
+// 2026-09-25).
+test('a double surname and a leading initial written on one side only still match', () => {
+  assert.equal(matchesAuthorName('Nicolás Muñoz García', 'Nicolás Muñoz'), true);
+  assert.equal(matchesAuthorName('Gabriel García Márquez', 'Gabriel García'), true);
+  assert.equal(matchesAuthorName('Ana Pérez Gómez', 'Ana Pérez'), true);
+  assert.equal(matchesAuthorName('J. Robert Oppenheimer', 'Robert Oppenheimer'), true);
+  assert.equal(matchesAuthorName('S. Mohammad Hosseini', 'Mohammad Hosseini'), true);
+});
+
+test('the double-surname and initial readings do not let another person through', () => {
+  assert.equal(matchesAuthorName('Juan Carlos Pérez', 'Carlos Pérez'), false);
+  assert.equal(matchesAuthorName('Ana Pérez Gómez', 'Luis Pérez'), false);
+  assert.equal(matchesAuthorName('Nicolás Muñoz García', 'Pedro Muñoz'), false);
+  assert.equal(matchesAuthorName('J. Robert Oppenheimer', 'Frank Oppenheimer'), false);
+  assert.equal(matchesAuthorName('A. M. Gavrilik', 'B. Gavrilik'), false);
+});
+
 test('two different people do not match', () => {
   assert.equal(matchesAuthorName('Ada Lovelace', 'Grace Hopper'), false);
   assert.equal(matchesAuthorName('Ada Lovelace', ''), false);

@@ -88,14 +88,18 @@ function withQuery(path, query) {
  */
 export function authorExplorerPath(author, paper, { publicMode = false } = {}) {
   const name = authorDisplayName(author);
-  const identity = openAlexAuthorId(author) || authorOrcid(author);
-  const reference = identity ? null : paperReferenceFor(paper);
+  const openAlexId = openAlexAuthorId(author);
+  const identity = openAlexId || authorOrcid(author);
+  // An OpenAlex id is the author entity itself. An ORCID is a person OpenAlex
+  // may not have linked to any entity yet, so the paper travels with it: it
+  // is what still finds them there (review of 2026-09-25).
+  const reference = openAlexId ? null : paperReferenceFor(paper);
   if (publicMode) {
     const path = getPublicEntityPath('author', identity || name, { includeName: Boolean(identity), name }) || '';
     return path ? withQuery(path, paperQuery(reference)) : '';
   }
   if (identity) {
-    return `/explorer/author/${identity}${name ? `?name=${encodeURIComponent(name)}` : ''}`;
+    return withQuery(`/explorer/author/${identity}${name ? `?name=${encodeURIComponent(name)}` : ''}`, paperQuery(reference));
   }
   if (!name) return '';
   return withQuery(`/explorer/author/${encodeURIComponent(name)}`, paperQuery(reference));

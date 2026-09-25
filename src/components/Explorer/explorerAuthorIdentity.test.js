@@ -16,6 +16,18 @@ test('a name-only author is resolved with the paper the link carries', () => {
   assert.match(jsx, /data = await getAuthorProfileExact\(id, searchParams\.get\('paper'\) \|\| searchParams\.get\('arxivId'\)\);/);
 });
 
+// An ORCID OpenAlex has not linked to anyone fell straight to a stub whose
+// list is an arXiv search by name. The paper the link came from can still say
+// which author entity wrote it, so it is asked before the stub (review of
+// 2026-09-25).
+test('an ORCID OpenAlex does not know is resolved with the paper before falling back to a stub', () => {
+  const branch = jsx.slice(jsx.indexOf('if (orcidId) {'), jsx.indexOf('if (orcidId) {') + 1200);
+  assert.match(
+    branch,
+    /prefetchedOrcid = await getOrcidRecord\(orcidId\);\s*const sourceReference = searchParams\.get\('paper'\) \|\| searchParams\.get\('arxivId'\);\s*if \(prefetchedOrcid\?\.displayName && sourceReference\) \{\s*const fromPaper = await getAuthorProfileExact\(prefetchedOrcid\.displayName, sourceReference\);\s*if \(fromPaper\?\.verified\) data = fromPaper;\s*\}\s*if \(!data && prefetchedOrcid\?\.displayName\) \{\s*data = \{\s*id: `stub-\$\{orcidId\}`,/,
+  );
+});
+
 test('an unverified author gets no Follow and a notice that the results come from the name', () => {
   assert.match(jsx, /const authorIdentityUnverified = Boolean\(entity\) && !authorIdentityVerified\(\{ type, routeId: id, entity \}\);/);
   const follow = jsx.slice(jsx.indexOf('const followEntity = useMemo(() => {'), jsx.indexOf('const followEntity = useMemo(() => {') + 300);

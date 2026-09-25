@@ -36,10 +36,14 @@ test('SOURCE: every author link on the card goes through the helper', async () =
 // used to hand the paper's `pmid:…` id over as an "arXiv id" the explorer
 // turned into an impossible `10.48550/arxiv.pmid:…` DOI; the name search it
 // fell back to picked "Po-Wn Li" for "Li WN" (audit 2026-09-23, issue 4).
-test('an author with an ORCID and no OpenAlex id opens by ORCID', () => {
+// An ORCID is a person OpenAlex may not have linked to any author entity yet,
+// so the paper travels with it: without it, an unlinked ORCID fell back to an
+// arXiv search by the ORCID's name and showed homonyms' papers as the
+// person's (review of 2026-09-25).
+test('an author with an ORCID and no OpenAlex id opens by ORCID, with the paper beside it', () => {
   assert.equal(
     authorExplorerPath({ name: 'Li WN', orcid: 'https://orcid.org/0000-0002-1825-0097' }, { id: 'pmid:42774036', pmid: '42774036' }),
-    '/explorer/author/0000-0002-1825-0097?name=Li%20WN',
+    '/explorer/author/0000-0002-1825-0097?name=Li%20WN&paper=pmid%3A42774036',
   );
   assert.equal(
     authorExplorerPath({ name: 'Li WN', orcid: '0000-0002-1825-009X' }, {}, { publicMode: true }),

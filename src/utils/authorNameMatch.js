@@ -58,6 +58,14 @@ function readings(name) {
     return [{ surname: normalizeNameForMatch(tokens.slice(0, -1).join(' ')), given: initialsOf(last) }];
   }
   const plain = { surname: normalizeNameForMatch(last), given: givenParts(tokens.slice(0, -1)) };
+  // A Spanish or Portuguese name ends in two surnames, and is often indexed
+  // with the first alone: "Nicolás Muñoz García" is also "Nicolás Muñoz".
+  if (tokens.length >= 3 && !initialsOf(tokens[tokens.length - 2])) {
+    return [plain, {
+      surname: normalizeNameForMatch(tokens.slice(-2).join(' ')),
+      given: givenParts(tokens.slice(0, -2)),
+    }];
+  }
   // A hyphenated first word is a given name ("Yong-Wei Zhang"), never a
   // surname written first.
   if (tokens.length !== 2 || initialsOf(tokens[0]) || tokens[0].includes('-')) return [plain];
@@ -81,12 +89,21 @@ function sameGivenPart(a, b) {
 
 // Given names agree in order as far as both go; a side with fewer (or none)
 // does not contradict the other.
-function sameGiven(a, b) {
+function givenInOrder(a, b) {
   const length = Math.min(a.length, b.length);
   for (let index = 0; index < length; index += 1) {
     if (!sameGivenPart(a[index], b[index])) return false;
   }
   return true;
+}
+
+// A first initial is often dropped in front of the name a person goes by:
+// "J. Robert Oppenheimer" is "Robert Oppenheimer". The side with more given
+// names may skip its leading initial; nothing else is skipped.
+function sameGiven(a, b) {
+  if (givenInOrder(a, b)) return true;
+  const [longer, shorter] = a.length > b.length ? [a, b] : [b, a];
+  return longer.length > shorter.length && longer[0].length === 1 && givenInOrder(longer.slice(1), shorter);
 }
 
 export function matchesAuthorName(reqName, oaName) {

@@ -95,7 +95,11 @@ const ARXIV_SOURCE = /^(?:\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?\/\d{7})(?:v\d+)?
 export function authorIdentityVerified({ type, routeId, entity } = {}) {
   if (type !== 'author') return true;
   const raw = String(routeId || '').trim();
-  if (OPENALEX_AUTHOR_ROUTE.test(raw) || ORCID_ROUTE.test(raw)) return true;
+  if (OPENALEX_AUTHOR_ROUTE.test(raw)) return true;
+  // An ORCID says who the person is, but a stub (OpenAlex knows no author
+  // with it) lists an arXiv search by the name, which is not whose papers
+  // those are (review of 2026-09-25).
+  if (ORCID_ROUTE.test(raw)) return !String(entity?.id || '').startsWith('stub-');
   return entity?.verified === true;
 }
 

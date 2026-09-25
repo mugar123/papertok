@@ -883,7 +883,16 @@ export default function EntityExplorer({
         data = await getAuthorProfileByOrcid(orcidId);
         if (!data) {
           prefetchedOrcid = await getOrcidRecord(orcidId);
-          if (prefetchedOrcid?.displayName) {
+          // OpenAlex has not linked this ORCID to any author yet. The paper
+          // the link came from can still say which author entity wrote it;
+          // only when it cannot does the page fall back to a stub, whose list
+          // is a search by the name (review of 2026-09-25).
+          const sourceReference = searchParams.get('paper') || searchParams.get('arxivId');
+          if (prefetchedOrcid?.displayName && sourceReference) {
+            const fromPaper = await getAuthorProfileExact(prefetchedOrcid.displayName, sourceReference);
+            if (fromPaper?.verified) data = fromPaper;
+          }
+          if (!data && prefetchedOrcid?.displayName) {
             data = {
               id: `stub-${orcidId}`,
               display_name: prefetchedOrcid.displayName,
