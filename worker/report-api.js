@@ -2304,14 +2304,18 @@ async function handleScopus(request, env, identity) {
 // any provider is asked, and each OpenAlex call is then reserved against the
 // shared OpenAlex budget like any relay call, so the day's ceiling still sees
 // every call it pays for. At most one miss in eight of that budget can be a
-// share page. arXiv gets its own, smaller ceiling: the whole app has one call
-// every three seconds there, and a share page asks it only for a preprint
-// OpenAlex has not indexed yet.
-const SHARE_LOOKUP_MINUTE_LIMIT = 30;
+// share page. The minute ceiling only smooths bursts: a fan-out of one link
+// misses once per data centre, since the edge cache is per data centre, so it
+// leaves room for several at once (review of 2026-09-25). arXiv gets its own
+// ceiling, a tenth of the app's one call every three seconds, and a share page
+// asks it only for a preprint OpenAlex has not indexed yet.
+const SHARE_LOOKUP_MINUTE_LIMIT = 60;
 const SHARE_LOOKUP_DAILY_LIMIT = 1_000;
-const SHARE_ARXIV_HOURLY_LIMIT = 30;
+const SHARE_ARXIV_HOURLY_LIMIT = 120;
 const SHARE_UPSTREAM_TIMEOUT_MS = 6_000;
 
+// What was reserved, for whoever has to give it back, or null when a ceiling
+// refused (having given back what it had taken).
 async function reserveShareCeilings(env, periods) {
   const taken = [];
   for (const [periodKey, limit] of periods) {
@@ -2319,19 +2323,19 @@ async function reserveShareCeilings(env, periods) {
     const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
     if (!reservation.accepted) {
       await releaseHeld(env, taken);
-      return false;
+      return null;
     }
     taken.push(ledgerRequest);
   }
-  return true;
+  return taken;
 }
 
-function admitShareLookup(env) {
+async function admitShareLookup(env) {
   const now = new Date().toISOString();
-  return reserveShareCeilings(env, [
+  return Boolean(await reserveShareCeilings(env, [
     [`share:${now.slice(0, 16)}`, SHARE_LOOKUP_MINUTE_LIMIT],
     [`share:day:${now.slice(0, 10)}`, SHARE_LOOKUP_DAILY_LIMIT],
-  ]);
+  ]));
 }
 
 function shareUpstreamError(provider, response) {
@@ -2355,16 +2359,20 @@ function shareProviders(env) {
     },
     async arxiv(id) {
       const hour = new Date().toISOString().slice(0, 13);
-      if (!(await reserveShareCeilings(env, [[`share:arxiv:${hour}`, SHARE_ARXIV_HOURLY_LIMIT]]))) {
-        throw new Error('The arXiv ceiling for share pages is spent');
-      }
+      const held = await reserveShareCeilings(env, [[`share:arxiv:${hour}`, SHARE_ARXIV_HOURLY_LIMIT]]);
+      if (!held) throw new Error('The arXiv ceiling for share pages is spent');
       // The same beat as `/arxiv`: a share page waits its turn like the feed.
       const seat = await awaitUpstreamSlot(env.REQUEST_QUOTA_LEDGER, {
         namespace: 'arxiv',
         periodMs: ARXIV_PACE_PERIOD_MS,
         maxWaitMs: ARXIV_PACE_MAX_WAIT_MS,
       });
-      if (!seat.accepted && !seat.code) throw new Error('No arXiv seat for a share page');
+      // No seat, no call: the hour's unit goes back. Kept, a burst drained the
+      // hour without a single call to arXiv (review of 2026-09-25).
+      if (!seat.accepted && !seat.code) {
+        await releaseHeld(env, held);
+        throw new Error('No arXiv seat for a share page');
+      }
       const url = new URL('https://export.arxiv.org/api/query');
       url.searchParams.set('id_list', id);
       url.searchParams.set('max_results', '1');

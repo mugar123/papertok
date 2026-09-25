@@ -308,14 +308,31 @@ test('an entity page names the entity and what kind of entity it is', async () =
   assert.equal(metaContent(es, 'name', 'robots'), null);
 });
 
-test('an entity known only by a name gets a head with the name, not indexed, and costs no request', async () => {
+// A name-only page takes its name from the URL, so a preview that printed it
+// would let anyone mint a papertok.app card saying anything under our name and
+// image (review of 2026-09-25). The preview is PaperTok's own; the name stays
+// in the page's copy, as the Explorer itself shows it.
+test('an entity known only by a name previews as PaperTok, not indexed, and costs no request', async () => {
   const route = matchShareRoute(new URL('https://api.papertok.app/share/entity/author/Wei%20Zhang?paper=doi:10.1000%2Fx'));
   const outcome = await createShareLoader({
     openAlex: async () => { throw new Error('a name is not an identity to look up'); },
   })(route);
   const html = renderSharePage(SHELL, sharePageModel(route, outcome, 'en'));
-  assert.equal(titleOf(html), 'Wei Zhang - Author | PaperTok');
+  assert.equal(titleOf(html), 'PaperTok — Discover scientific research');
+  assert.equal(metaContent(html, 'property', 'og:title'), 'PaperTok — Discover scientific research');
+  assert.equal(metaContent(html, 'name', 'description'), 'PaperTok is an application for exploring and discovering scientific papers from multiple sources.');
+  assert.doesNotMatch(headOf(html), /Wei Zhang/, 'the URL\'s text is not the preview');
   assert.equal(metaContent(html, 'name', 'robots'), 'noindex, nofollow', 'a name can mix several people');
+  assert.match(html, /<h1>Wei Zhang<\/h1>/, 'the page itself still says whom it was opened for');
+});
+
+test('text-direction controls from a URL do not reach the page', async () => {
+  const override = String.fromCharCode(0x202e);
+  const route = matchShareRoute(new URL(`https://api.papertok.app/share/entity/author/Ada${encodeURIComponent(override)}%20Lovelace`));
+  const outcome = await createShareLoader({})(route);
+  const html = renderSharePage(SHELL, sharePageModel(route, outcome, 'en'));
+  assert.equal(html.includes(override), false);
+  assert.match(html, /<h1>Ada Lovelace<\/h1>/);
 });
 
 // ------------------------------------------------------------- escaping
@@ -442,10 +459,11 @@ test('both languages are served from one provider answer, each with its own copy
 });
 
 test('a page that does not exist answers 404 and noindex', async () => {
+  // An OpenAlex work id OpenAlex does not have: that answer is final.
   const { deps } = handlerDeps({
     loadRecord: createShareLoader({ openAlex: async () => null }),
   });
-  const response = await handleSharePage(shareRequest(`/share/paper/${DOI_KEY}`, { language: 'es' }), deps);
+  const response = await handleSharePage(shareRequest(`/share/paper/${encodePaperKey('openalex', 'W1')}`, { language: 'es' }), deps);
   const html = await response.text();
   assert.equal(response.status, 404);
   assert.equal(response.headers.get('x-robots-tag'), 'noindex, nofollow');
@@ -453,6 +471,46 @@ test('a page that does not exist answers 404 and noindex', async () => {
   assert.equal(titleOf(html), 'No encontramos este paper | PaperTok');
   assert.equal(seedOf(html), null);
   assert.equal(canonicalOf(html), null, 'a missing page claims no canonical address');
+});
+
+// OpenAlex indexes a DOI or a PMID days after it appears, and a fresh PubMed
+// paper is half of what the Medicine feed shows. «We could not find this
+// paper» with a 404 was a regression on the generic preview it replaced, and
+// platforms keep a preview for a long time (review of 2026-09-25).
+test('a DOI or a PMID OpenAlex has not indexed yet previews as PaperTok, not as missing', async () => {
+  for (const key of [DOI_KEY, encodePaperKey('pmid', '42774036')]) {
+    const { deps } = handlerDeps({ loadRecord: createShareLoader({ openAlex: async () => null }) });
+    const response = await handleSharePage(shareRequest(`/share/paper/${key}`, { language: 'en' }), deps);
+    const html = await response.text();
+    assert.equal(response.status, 200, key);
+    assert.equal(titleOf(html), 'PaperTok — Discover scientific research');
+    assert.equal(canonicalOf(html), `https://papertok.app/public/paper/${key}`);
+    assert.equal(metaContent(html, 'name', 'robots'), null);
+    assert.equal(response.headers.get('x-robots-tag'), null);
+    const [kept] = [...deps.cache.stored.values()];
+    assert.match(kept.headers.get('cache-control'), /s-maxage=3600\b/, 'asked again within the hour');
+  }
+});
+
+// privacy.html: «from then on it is no longer served». A record kept a day
+// outlived making a profile private, unpublishing a list or deleting the
+// account by a day (review of 2026-09-25).
+test('a list or a profile is kept five minutes, so its owner\'s switch reaches the preview', async () => {
+  const pages = [
+    [`/share/list/${SHARE_ID}`, { getDocument: async () => ({ exists: true, id: SHARE_ID, data: { title: 'Tutoring', papers: [] } }) }],
+    ['/share/user/ada_l', {
+      getDocument: async path => (path === 'handles/ada_l'
+        ? { exists: true, id: 'ada_l', data: { uid: 'u1' } }
+        : { exists: true, id: 'u1', data: { handle: 'ada_l', displayName: 'Ada Lovelace', visibility: 'public' } }),
+    }],
+  ];
+  for (const [path, firestore] of pages) {
+    const { deps } = handlerDeps({ loadRecord: createShareLoader({ firestore }) });
+    const response = await handleSharePage(shareRequest(path), deps);
+    const [kept] = [...deps.cache.stored.values()];
+    assert.match(kept.headers.get('cache-control'), /s-maxage=300\b/, path);
+    assert.match(response.headers.get('cache-control'), /max-age=60\b/, path);
+  }
 });
 
 test('a path that names no page answers 404 and noindex without spending a lookup', async () => {
@@ -504,6 +562,60 @@ test('a refused admission is a failure, not a lookup', async () => {
   assert.equal(response.status, 200);
   assert.equal(titleOf(await response.text()), 'PaperTok — Discover scientific research');
   assert.equal(loads, 0);
+});
+
+// A burst of crawlers for one link (a Mastodon fan-out) used to spend a
+// lookup each, run the ceilings dry, and leave a refusal cached over the page
+// another request had just found (review of 2026-09-25).
+test('a refused admission is not remembered: the next request asks again', async () => {
+  let admits = 0;
+  const { deps } = handlerDeps({ admit: async () => { admits += 1; return admits > 1; } });
+  const first = await handleSharePage(shareRequest(`/share/paper/${DOI_KEY}`, { language: 'en' }), deps);
+  assert.equal(titleOf(await first.text()), 'PaperTok — Discover scientific research');
+  const second = await handleSharePage(shareRequest(`/share/paper/${DOI_KEY}`, { language: 'en' }), deps);
+  assert.equal(titleOf(await second.text()), 'Characterizing Alternative Monetization Strategies on YouTube');
+  assert.equal(admits, 2);
+});
+
+test('a failure never replaces a record another lookup wrote meanwhile', async () => {
+  const cache = memoryCache();
+  const recordKey = `https://papertok.internal/cache/share/record/paper/${DOI_KEY}`;
+  const { deps } = handlerDeps({
+    cache,
+    loadRecord: async () => {
+      // Another isolate found the paper while this lookup was failing.
+      await cache.put(new Request(recordKey), new Response(JSON.stringify({
+        found: true,
+        record: { paper: { title: 'Found elsewhere', abstract: '', authors: [], doi: '10.1145/3555174' } },
+      }), { headers: { 'cache-control': 'public, s-maxage=86400' } }));
+      throw new Error('OpenAlex timed out');
+    },
+  });
+  const response = await handleSharePage(shareRequest(`/share/paper/${DOI_KEY}`, { language: 'en' }), deps);
+  assert.equal(titleOf(await response.text()), 'Found elsewhere');
+  const kept = await (await cache.match(new Request(recordKey))).json();
+  assert.equal(kept.found, true, 'the found record is still the one kept');
+});
+
+test('identical requests at once share one lookup', async () => {
+  let loads = 0;
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const { deps } = handlerDeps({
+    loadRecord: async (route) => {
+      loads += 1;
+      await gate;
+      return createShareLoader({ openAlex: async () => OPENALEX_WORK })(route);
+    },
+  });
+  const pending = [1, 2, 3].map(() => handleSharePage(shareRequest(`/share/paper/${DOI_KEY}`, { language: 'en' }), deps));
+  await new Promise(resolve => setTimeout(resolve, 20));
+  release();
+  const pages = await Promise.all(pending);
+  assert.equal(loads, 1);
+  for (const page of pages) {
+    assert.equal(titleOf(await page.text()), 'Characterizing Alternative Monetization Strategies on YouTube');
+  }
 });
 
 test('a page found once is served from the record cache the next time', async () => {

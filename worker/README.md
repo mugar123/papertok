@@ -69,12 +69,16 @@ per-tab limiter counted per caller, so N tabs were N times the limit.
 rewrites crawler user agents from `/public/{paper,list,user,entity}/…` here, so the routes are
 public, GET and HEAD only, and need no `Origin`: they sit ahead of every Origin gate. Each answers
 the deployed shell (`https://papertok.app/index.html`, kept five minutes) with the page's own
-head, a static copy inside `#root` and, for a paper, the paper as a JSON seed; a missing page is a
-404 with `noindex`, a provider failure the generic head. The record behind a page is kept 24 hours
-(a missing page one hour, a failure two minutes) and composed per request in the reader's language.
-What a miss may spend is bounded before any provider is asked — 30 a minute and 1000 a day in all
-(`share:` ledger periods), 30 arXiv calls an hour — and each OpenAlex call is then also reserved on
-the shared OpenAlex budget, like any `/openalex/*` call. Lists and profiles are read from Firestore
+head, a static copy inside `#root` and, for a paper, the paper as a JSON seed; a page whose source
+is final about it is a 404 with `noindex`, a DOI or PMID OpenAlex has not indexed yet and a
+provider failure get the generic head. The record behind a paper or an entity is kept 24 hours, a
+list's or a profile's five minutes (its owner can take it back), a missing page one hour and a
+failure two minutes, and the page is composed per request in the reader's language. What a miss
+may spend is bounded before any provider is asked — 60 a minute and 1000 a day in all (`share:`
+ledger periods), 120 arXiv calls an hour with the unit given back when no seat comes — and each
+OpenAlex call is then also reserved on the shared OpenAlex budget, like any `/openalex/*` call.
+Identical requests in one isolate share one lookup; a refused admission is not cached, and a
+failure never replaces a record another request found. Lists and profiles are read from Firestore
 anonymously, so the rules decide as they do for a visitor. These are **new** routes: deploy the
 Worker before the frontend, and check them with a crawler user agent.
 

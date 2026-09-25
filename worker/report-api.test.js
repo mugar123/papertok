@@ -2910,6 +2910,37 @@ test('a share lookup its ceiling refuses spends nothing upstream and answers the
   );
 });
 
+// The hourly arXiv unit was taken before the seat and kept when no seat came,
+// so a burst of previews for a fresh preprint drained the hour without a
+// single call to arXiv (review of 2026-09-25).
+test('an arXiv call a share page could not seat gives its hourly unit back', async () => {
+  const urls = [];
+  const state = { actions: [] };
+  const response = await withWorkerFetchMock(
+    async (url) => {
+      const address = String(url);
+      urls.push(address);
+      if (address === 'https://papertok.app/index.html') {
+        return new Response(APP_SHELL, { status: 200, headers: { 'content-type': 'text/html' } });
+      }
+      if (address.startsWith('https://api.openalex.org/works')) {
+        return new Response(JSON.stringify({ results: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      throw new Error(`unexpected upstream ${address}`);
+    },
+    () => reportApi.fetch(crawlerRequest(`/share/paper/${encodePaperKey('arxiv', '2609.28470')}`), {
+      ...openAlexEnv(),
+      REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_ARXIV_PACE }),
+    }),
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(
+    state.actions.filter(action => action.periodKey.startsWith('share:arxiv:')).map(action => action.action),
+    ['reserve', 'release'],
+  );
+  assert.equal(urls.some(url => url.includes('export.arxiv.org')), false, 'no seat, no call');
+});
+
 test('a profile page reads the public documents anonymously, as a visitor would', async () => {
   const urls = [];
   const documents = {

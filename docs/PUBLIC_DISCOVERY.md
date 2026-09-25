@@ -113,25 +113,34 @@ browser matched by mistake still gets the application: the Worker answers the sa
   key it was written for.
 
 Everything from a provider or a user is HTML-escaped; LaTeX in titles and abstracts becomes plain
-text (`src/utils/plainScientificText.js`). A page that does not exist answers `404` with
-`noindex`. A provider failure answers `200` with PaperTok's generic head at the page's own
-address: a preview bot shows nothing for an error status, and an outage is not a reason to drop a
-page from an index. An author known only by a name (no OpenAlex id or ORCID), a PaperTok topic and
-a search turned into a topic get a head with their name and `noindex`, and cost no lookup: a name
-is not an identity, and the same name can be several people.
+text (`src/utils/plainScientificText.js`), which strips the inline tags providers use and leaves a
+comparison sign alone. A page that does not exist answers `404` with `noindex`; that is only
+decided where the source is final (an OpenAlex work id, an arXiv id arXiv does not have, a list or
+a profile that is not public). A DOI or a PMID OpenAlex has not indexed yet — OpenAlex lags a
+paper's appearance by days — gets PaperTok's generic head with a `200` instead of «not found». A
+provider failure answers `200` with the same generic head at the page's own address: a preview bot
+shows nothing for an error status, and an outage is not a reason to drop a page from an index. An
+author known only by a name (no OpenAlex id or ORCID), a PaperTok topic and a search turned into a
+topic get PaperTok's own head and `noindex`, and cost no lookup: a name is not an identity, and the
+text comes from the URL, so it is kept out of the preview and printed only in the page's copy.
 
 **Where the data comes from, and what it may spend.** Papers from OpenAlex under the Worker's key
 and its shared daily budget; a preprint OpenAlex has not indexed yet (most of what the feed shows
 is days old) from arXiv, on the same one-call-every-three-seconds beat as `/arxiv`. Projects from
 OpenAIRE. Lists and profiles from their public Firestore documents, read anonymously, so the rules
-decide exactly as they do for a visitor and a private profile is a 404. Because the route is
-public and carries no `Origin`, a random key misses every cache, so misses have their own
-ceilings: 30 a minute and 1000 a day in all, and 30 arXiv calls an hour.
+decide exactly as they do for a visitor. Because the route is public and carries no `Origin`, a
+random key misses every cache, so misses have their own ceilings: 60 a minute and 1000 a day in
+all, and 120 arXiv calls an hour (a tenth of the app's arXiv seats), with the hour's unit given
+back when no seat comes. Identical requests at once in one isolate share one lookup, a refused
+admission is not remembered, and a failure never replaces a record another request found.
 
 **Caches.** The shell is kept five minutes: it names the hashed assets of the current deployment,
-and a stale one points at files Vercel no longer serves. A page's record is kept 24 hours, a
-missing page one hour, a failure two minutes. The page is composed per request from the two, so
-one record serves both languages and a deploy reaches every shared page within minutes.
+and a stale one points at files Vercel no longer serves. A paper's or an entity's record is kept 24
+hours. A list's or a profile's is kept five minutes and its page one more, because its owner can
+take it back — unpublish the list, make the profile private, delete the account — and the preview
+follows within six minutes. A missing page is kept one hour, a failure two minutes. The page is
+composed per request from the two, so one record serves both languages and a deploy reaches every
+shared page within minutes.
 
 **Googlebot.** Googlebot renders JavaScript, but `https://api.papertok.app/robots.txt` is
 `Disallow: /`, so the application's own requests fail for it. The paper page therefore paints the
@@ -150,8 +159,10 @@ zone must let a crawler user agent arriving from Vercel's addresses through.
 
 - A link of the old `/#/public/…` shape can never have its own preview: the fragment never
   reaches a server.
-- A PaperTok topic page previews with its id (`quant-ph`), and is not indexed: the taxonomy labels
-  live in `src/data/categories.js`, next to React icons the Worker should not bundle.
+- A PaperTok topic page previews as PaperTok and is not indexed: the taxonomy labels live in
+  `src/data/categories.js`, next to React icons the Worker should not bundle.
+- `caches.default` is per data centre, so a link shared everywhere at once is looked up once per
+  data centre that sees it.
 
 ## Sitemap and robots
 
@@ -159,7 +170,7 @@ zone must let a crawler user agent arriving from Vercel's addresses through.
 (the shell names `/feed`), and pages that need an account send a crawler back to `/feed`. There is
 no sitemap of papers: the only public collection that names papers, `publicLists`, is readable by
 id and deliberately not listable (`allow list: if false`, a directory the product never offers).
-Public lists and profiles link their papers from their own share pages instead.
+Public lists link their papers from their own share pages instead.
 
 `public/robots.txt` points crawlers to the sitemap and disallows the pages that need an account
 (`/lists`, `/research`, `/following`, `/search`, `/profile`, `/settings`, `/admin`, `/onboarding`,

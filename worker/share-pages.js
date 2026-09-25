@@ -43,6 +43,13 @@ const NO_INDEX = 'noindex, nofollow';
 
 const SHELL_CACHE_SECONDS = 5 * 60;
 const FOUND_CACHE_SECONDS = 24 * 60 * 60;
+// Lists and profiles are their owners' to take back: a list unpublished, a
+// profile made private, an account deleted. Kept a day, the preview outlived
+// that switch by a day (privacy.html: "from then on it is no longer served");
+// kept five minutes and served for one more, it reaches crawlers within six.
+const OWNED_FOUND_CACHE_SECONDS = 5 * 60;
+const OWNED_MAX_AGE_SECONDS = 60;
+const OWNED_KINDS = new Set(['list', 'user']);
 // A missing page can appear (a handle registered, a paper indexed), so its
 // answer is kept an hour rather than a day.
 const MISSING_CACHE_SECONDS = 60 * 60;
@@ -197,10 +204,18 @@ function isControlCharacter(character) {
   return code < 32 || code === 127;
 }
 
+// The marks and overrides that reorder text on screen: from a URL they can
+// make a name read as something else.
+function isDirectionControl(character) {
+  const code = character.charCodeAt(0);
+  return code === 0x061c || code === 0x200e || code === 0x200f
+    || (code >= 0x202a && code <= 0x202e) || (code >= 0x2066 && code <= 0x2069);
+}
+
 function cleanText(value, limit = 500) {
   if (value === null || value === undefined) return '';
   const text = [...String(value)]
-    .map(character => (isControlCharacter(character) ? ' ' : character))
+    .map(character => (isControlCharacter(character) || isDirectionControl(character) ? ' ' : character))
     .join('')
     .replace(/\s+/g, ' ')
     .trim();
@@ -383,6 +398,9 @@ const ARXIV_XML = new XMLParser({
 });
 
 const notFound = () => ({ found: false });
+// Not found by a provider whose silence proves nothing: OpenAlex indexes a DOI
+// or a PMID days after it appears.
+const unknown = () => ({ found: false, unknown: true });
 const found = record => ({ found: true, record });
 
 function paperFromOpenAlex(work, identity) {
@@ -464,7 +482,11 @@ async function loadPaper(route, { openAlex, arxiv }) {
     : type === 'openalex' ? `works/${value}` : `works/pmid:${value}`;
   const work = await openAlex(path, { select: WORK_SELECT });
   const paper = work?.id ? paperFromOpenAlex(work, route.identity) : null;
-  return paper ? found({ paper }) : notFound();
+  if (paper) return found({ paper });
+  // An OpenAlex work id OpenAlex does not have is final. A DOI or a PMID it
+  // has not indexed yet is most fresh PubMed papers, and «not found» is what
+  // a platform would then keep as the preview.
+  return type === 'openalex' ? notFound() : unknown();
 }
 
 async function loadList(route, { firestore }) {
@@ -608,12 +630,12 @@ function notFoundPage(kind, language) {
 // What a page says while its provider is down: PaperTok's own head, at the
 // page's own address. Not a 404, and not `noindex` — an outage is not a reason
 // for a preview to show nothing or for an index to drop the page.
-function unavailablePage(route, language) {
+function unavailablePage(route, language, maxAge = FAILURE_MAX_AGE_SECONDS) {
   const pageUrl = absoluteUrl(route.canonicalPath);
   return basePage(language, {
     canonicalUrl: pageUrl,
     pageUrl,
-    maxAge: FAILURE_MAX_AGE_SECONDS,
+    maxAge,
     jsonLd: webPage({ name: COPY.siteTitle[language], description: COPY.siteDescription[language], url: pageUrl, language }),
   });
 }
@@ -705,6 +727,7 @@ function listPage(route, list, language) {
     title: `${list.title} | ${COPY.listSuffix[language]}`,
     description,
     imageAlt: COPY.imageAlt.list[language],
+    maxAge: OWNED_MAX_AGE_SECONDS,
     canonicalUrl: pageUrl,
     pageUrl,
     jsonLd: webPage({
@@ -740,6 +763,7 @@ function profilePage(route, profile, language) {
     title: `${profile.displayName} (@${profile.handle}) | PaperTok`,
     description,
     imageAlt: COPY.imageAlt.user[language],
+    maxAge: OWNED_MAX_AGE_SECONDS,
     ogType: 'profile',
     canonicalUrl: pageUrl,
     pageUrl,
@@ -768,18 +792,29 @@ function profilePage(route, profile, language) {
 function entityPage(route, entity, language) {
   const pageUrl = absoluteUrl(route.canonicalPath);
   const typeLabel = COPY.entityTypes[route.type][language];
+  if (entity.nameOnly) {
+    // A page found by a name alone is not an entity, and its name is whatever
+    // the URL says: printed in the preview, it let anyone mint a papertok.app
+    // card that says anything under our name and image (review of
+    // 2026-09-25). The preview is PaperTok's own; the page's copy names whom
+    // it was opened for, as the Explorer does, and it stays out of an index,
+    // since the same name can be several people.
+    const note = route.type === 'author' ? `<p>${escapeHtml(COPY.nameOnlyAuthor[language])}</p>` : '';
+    return basePage(language, {
+      canonicalUrl: pageUrl,
+      pageUrl,
+      noIndex: true,
+      jsonLd: webPage({ name: COPY.siteTitle[language], description: COPY.siteDescription[language], url: pageUrl, language }),
+      fallbackHtml: `<main><h1>${escapeHtml(entity.name)}</h1><p>${escapeHtml(typeLabel)}</p>${note}</main>`,
+    });
+  }
   const description = entityDescription(entity.name, language);
-  const note = entity.nameOnly && route.type === 'author' ? `<p>${escapeHtml(COPY.nameOnlyAuthor[language])}</p>` : '';
   return basePage(language, {
     title: `${entity.name} - ${typeLabel} | PaperTok`,
     description,
     ogType: 'profile',
     canonicalUrl: pageUrl,
     pageUrl,
-    // A page found by a name alone is not an entity: the same name can be
-    // several people, so it is shown to whoever follows the link and kept out
-    // of an index.
-    noIndex: Boolean(entity.nameOnly),
     jsonLd: webPage({
       name: `${entity.name} - ${typeLabel}`,
       description,
@@ -788,7 +823,7 @@ function entityPage(route, entity, language) {
       extra: { about: { '@type': SCHEMA_TYPES[route.type], name: entity.name } },
     }),
     fallbackHtml: `<main><h1>${escapeHtml(entity.name)}</h1><p>${escapeHtml(typeLabel)}</p>`
-      + `<p>${escapeHtml(description)}</p>${note}</main>`,
+      + `<p>${escapeHtml(description)}</p></main>`,
   });
 }
 
@@ -799,7 +834,12 @@ function entityPage(route, entity, language) {
 export function sharePageModel(route, outcome, language) {
   const lang = language === 'es' ? 'es' : 'en';
   const kind = KINDS.has(route?.kind) ? route.kind : 'entity';
-  if (!route || route.invalid || !outcome || (!outcome.found && !outcome.failed)) return notFoundPage(kind, lang);
+  if (!route || route.invalid || !outcome || (!outcome.found && !outcome.failed && !outcome.unknown)) {
+    return notFoundPage(kind, lang);
+  }
+  // Not found by a provider whose silence proves nothing: PaperTok's own head,
+  // as for an outage, and no index directive either way.
+  if (outcome.unknown) return unavailablePage(route, lang, PAGE_MAX_AGE_SECONDS);
   const record = outcome.record || {};
   if (outcome.found && route.kind === 'paper' && record.paper) return paperPage(route, record.paper, lang);
   if (outcome.found && route.kind === 'list' && record.list) return listPage(route, record.list, lang);
@@ -918,22 +958,57 @@ export function createShellLoader({ fetchShell, cache = globalThis.caches?.defau
   };
 }
 
-async function readRecord(route, { loadRecord, admit, cache }) {
+// Lookups in flight in this isolate, by record. A fan-out of crawlers for one
+// link — a Mastodon post reaches hundreds of servers at once — used to spend a
+// lookup each and run the ceilings dry (review of 2026-09-25).
+const lookupsInFlight = new Map();
+
+async function readRecord(route, deps) {
   // A page known only by its name costs nothing to answer, and asks nobody.
-  if (route.kind === 'entity' && !route.lookup) return loadRecord(route);
+  if (route.kind === 'entity' && !route.lookup) return deps.loadRecord(route);
   const key = new Request(`${CACHE_ROOT}/record/${route.cacheId}`);
-  const cached = await cachedJson(cache, key);
+  const cached = await cachedJson(deps.cache, key);
   if (cached) return cached;
+
+  const pending = lookupsInFlight.get(route.cacheId);
+  if (pending) return pending;
+  const lookup = lookUpRecord(route, key, deps);
+  lookupsInFlight.set(route.cacheId, lookup);
+  try {
+    return await lookup;
+  } finally {
+    lookupsInFlight.delete(route.cacheId);
+  }
+}
+
+async function lookUpRecord(route, key, { loadRecord, admit, cache }) {
+  let admitted = false;
+  try {
+    admitted = await admit(route);
+  } catch (error) {
+    console.warn(`Share page admission failed (${route.kind})`, error?.message || error);
+  }
+  // A refusal is about this minute, not about the page: kept, it answered for
+  // the page long after the minute it was true in.
+  if (!admitted) return { failed: true };
 
   let outcome;
   let seconds;
   try {
-    if (!(await admit(route))) throw new Error('Share lookups are over their budget');
     const loaded = await loadRecord(route);
-    outcome = loaded?.found ? { found: true, record: loaded.record } : { found: false };
-    seconds = outcome.found ? FOUND_CACHE_SECONDS : MISSING_CACHE_SECONDS;
+    if (loaded?.found) {
+      outcome = { found: true, record: loaded.record };
+      seconds = OWNED_KINDS.has(route.kind) ? OWNED_FOUND_CACHE_SECONDS : FOUND_CACHE_SECONDS;
+    } else {
+      outcome = loaded?.unknown ? { unknown: true } : { found: false };
+      seconds = MISSING_CACHE_SECONDS;
+    }
   } catch (error) {
     console.warn(`Share page lookup failed (${route.kind})`, error?.message || error);
+    // Another lookup may have found the page while this one was failing; a
+    // failure never takes the place of what it found.
+    const current = await cachedJson(cache, key);
+    if (current && !current.failed) return current;
     outcome = { failed: true };
     seconds = FAILURE_CACHE_SECONDS;
   }
