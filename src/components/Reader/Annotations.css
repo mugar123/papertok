@@ -221,6 +221,15 @@
    so the rail leaves the tab order and the reader's reach only once it is
    actually gone. */
 .rd-rail[data-surface='rail'] {
+  /* No taller than the band of the scroller it sticks in — `.rd-scroll`'s
+     content box: sticky holds it under the top padding, and this stops it
+     above the bottom one — so a long margin scrolls its own list instead of
+     running off the screen. Uncapped, ten notes made it 2720px tall on an
+     800px screen: every note past the fold was out of reach, and the list, a
+     scroll container with nothing to scroll, swallowed the wheel as well (its
+     `overscroll-behavior: contain`), so over the margin nothing moved at all
+     (measured 2026-09-25). */
+  max-height: 100%;
   /* Plain durations, on purpose. This used to read `var(--transition-slow)
      cubic-bezier(…)`, and that token is `320ms ease` — a duration AND a
      curve — so every line carried two timing functions, the whole
@@ -359,6 +368,13 @@
   background: var(--bg-card);
   /* The exit collapses height; without this the content spills while it does. */
   overflow: hidden;
+  /* Never squeezed to fit. The `overflow` above takes away a flex item's
+     automatic minimum height, so in a capped column every card shrank to
+     make room for the others — the last one to 38px, quote and note cut
+     off — and the list was left with nothing to scroll: the cap alone, tried
+     in 4912b14 and reverted in 570fa0c. The exit still collapses, because it
+     animates `height` and the card's basis follows it. */
+  flex-shrink: 0;
 }
 
 .rd-note[data-kind='ai'],
