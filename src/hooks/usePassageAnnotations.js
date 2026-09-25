@@ -59,6 +59,10 @@ export function usePassageAnnotations({
   const [pending, setPending] = useState(null);
   const [busy, setBusy] = useState(IDLE);
   const [error, setError] = useState(null);
+  // Where the last "explain this" was asked: the margin keeps the card that
+  // waits for the answer — and the one that says it failed — in the place the
+  // answer is filed, not at the top of a list that may be scrolled elsewhere.
+  const [askedAt, setAskedAt] = useState(null);
   const askAbortRef = useRef(null);
 
   // Derived rather than cleared: without a reader or a paper there is nothing to
@@ -174,6 +178,7 @@ export function usePassageAnnotations({
     // immediately, and what the request is about must not depend on state the
     // reader can change while it is in flight.
     const passage = pending;
+    setAskedAt({ sectionId: passage.sectionId, paragraphIndex: passage.paragraphIndex });
     askAbortRef.current?.abort();
     const controller = new AbortController();
     askAbortRef.current = controller;
@@ -249,6 +254,7 @@ export function usePassageAnnotations({
     pending,
     busy,
     error,
+    askedAt,
     begin,
     dismiss,
     highlight,

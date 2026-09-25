@@ -55,6 +55,19 @@ export function sortAnnotations(annotations = [], sectionOrder = new Map()) {
 }
 
 /**
+ * Where an answer about `passage` will be filed among the annotations on
+ * show — the index it will take in `visible` — so that the card waiting for it
+ * can wait in that same place. The answer is stored last, so it sorts after
+ * every note already on its paragraph: a stand-in handed to `sortAnnotations`
+ * after the rest lands exactly where the answer will.
+ */
+export function answerSlot(visible = [], passage = null, sectionOrder = new Map()) {
+  if (!passage) return null;
+  const standIn = { sectionId: passage.sectionId, paragraphIndex: passage.paragraphIndex };
+  return sortAnnotations([...visible, standIn], sectionOrder).indexOf(standIn);
+}
+
+/**
  * `mine` is everything you made — a bare highlight and a highlight you wrote on
  * are both yours — and `ai` is only what the model answered.
  */

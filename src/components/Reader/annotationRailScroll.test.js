@@ -46,3 +46,30 @@ test('a note keeps its height in a capped column, so the list scrolls instead of
   const note = ruleBody(await annotations, '.rd-note');
   assert.match(note, /(?:^|[;\s])flex-shrink:\s*0\s*;/);
 });
+
+/**
+ * `contain` is right for a list that scrolls — reading the notes to their end
+ * must not start moving the paper beside them — and wrong for one that does
+ * not: Chrome cuts the scroll chain at a scroll container even when it has
+ * nothing to scroll, so over a margin whose notes fit, the wheel moved nothing
+ * (measured 2026-09-25). The rail marks its list while it overflows, and only
+ * then is the wheel kept.
+ */
+const RAIL_JSX = new URL('./AnnotationRail.jsx', import.meta.url);
+const stripScript = source => source
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^\s*\/\/.*$/gm, '');
+
+test('the list keeps the wheel to itself only while it has something to scroll', async () => {
+  const css = await annotations;
+  assert.doesNotMatch(ruleBody(css, '.rd-rail-list'), /overscroll-behavior/);
+  assert.match(ruleBody(css, '.rd-rail-list[data-scrollable]'), /(?:^|[;\s])overscroll-behavior:\s*contain\s*;/);
+});
+
+test('the rail marks its list as scrollable from a measurement that follows the list', async () => {
+  const jsx = stripScript(await readFile(RAIL_JSX, 'utf8'));
+  // The attribute the stylesheet keys on is the one the component writes.
+  assert.match(jsx, /\.dataset\.scrollable\s*=/);
+  assert.match(jsx, /scrollHeight\s*>\s*[\w.]+\.clientHeight/);
+  assert.match(jsx, /new ResizeObserver\(/);
+});

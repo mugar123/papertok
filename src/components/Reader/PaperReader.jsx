@@ -21,6 +21,7 @@ import { indexHighlightsByParagraph } from '../../services/userHighlightService.
 import ScientificText from '../ScientificText.js';
 import { usePassageAnnotations } from '../../hooks/usePassageAnnotations.js';
 import {
+  answerSlot,
   buildSectionOrder,
   countAnnotations,
   filterAnnotations,
@@ -1175,6 +1176,26 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     () => countAnnotations(orderedAnnotations),
     [orderedAnnotations],
   );
+  // The place in the margin where the answer being written will be filed.
+  const answerAt = useMemo(
+    () => answerSlot(visibleAnnotations, annotations.askedAt, sectionOrder),
+    [annotations.askedAt, sectionOrder, visibleAnnotations],
+  );
+
+  /**
+   * Asking for an explanation is asking to read one, and the answer only ever
+   * appears in the margin — so the margin comes out if it was put away (or
+   * the sheet up, below 1100px), and a filter showing only your own notes
+   * steps back to all of them. Left alone, each of those hid the answer the
+   * reader had just spent a use on.
+   */
+  const { ask: askAnnotation } = annotations;
+  const askAboutPassage = useCallback(() => {
+    setAnnotationFilter(current => (current === 'mine' ? 'all' : current));
+    if (railIsSheet) setSheetOpen(true);
+    else setRailOpen(true);
+    return askAnnotation();
+  }, [askAnnotation, railIsSheet]);
 
   const userHighlightIndex = useMemo(() => {
     const index = indexHighlightsByParagraph(annotations.annotations, {
@@ -1821,6 +1842,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             expanded={sheetOpen}
             onToggle={() => setSheetOpen(value => !value)}
             annotations={visibleAnnotations}
+            answerAt={answerAt}
             counts={annotationCounts}
             filter={annotationFilter}
             onFilter={setAnnotationFilter}
@@ -1852,7 +1874,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             busy={annotations.busy === 'saving'}
             onHighlight={annotations.highlight}
             onSaveNote={annotations.saveNote}
-            onAsk={annotations.ask}
+            onAsk={askAboutPassage}
             onClose={annotations.dismiss}
           />
         )}

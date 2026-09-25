@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  answerSlot,
   buildSectionOrder,
   countAnnotations,
   filterAnnotations,
@@ -81,4 +82,33 @@ test('marks and notes are counted apart, because they are not the same thing', (
     { kind: 'ai', note: 'del modelo' },
   ]);
   assert.deepEqual(counted, { notes: 2, marks: 1, total: 3 });
+});
+
+// Where "explain this" writes its answer: the card that says the model is
+// reading waits in the slot the answer will be filed into, so the margin moves
+// to one place once (reported 2026-09-24: the answer landed off screen, below a
+// card that had waited at the top of the list and then vanished).
+const FILED = [
+  { id: 'a', sectionId: 'abstract', paragraphIndex: 0 },
+  { id: 'b', sectionId: 'methods', paragraphIndex: 2 },
+  { id: 'c', sectionId: 'results', paragraphIndex: 0 },
+];
+
+test('an answer waits where it will be filed: after the notes above its passage, before the ones below', () => {
+  const order = buildSectionOrder(SECTIONS);
+  assert.equal(answerSlot(FILED, { sectionId: 'methods', paragraphIndex: 1 }, order), 1);
+});
+
+test('an answer goes after the notes already on its own paragraph, as a new note is filed', () => {
+  const order = buildSectionOrder(SECTIONS);
+  assert.equal(answerSlot(FILED, { sectionId: 'methods', paragraphIndex: 2 }, order), 2);
+});
+
+test('an answer about a section the rewrite no longer has waits at the end', () => {
+  const order = buildSectionOrder(SECTIONS);
+  assert.equal(answerSlot(FILED, { sectionId: 'gone', paragraphIndex: 0 }, order), 3);
+});
+
+test('with no passage asked about there is no slot', () => {
+  assert.equal(answerSlot(FILED, null, buildSectionOrder(SECTIONS)), null);
 });

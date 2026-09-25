@@ -1,8 +1,9 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { AlertCircle, ChevronUp, PenLine, Sparkles, Trash2 } from 'lucide-react';
 import { ANNOTATION_FILTERS } from '../../utils/annotationOrder.js';
 import { displayProse } from '../../utils/latex.js';
+import { revealScrollDelta } from '../../utils/railReveal.js';
 import { SHEET_DRAG_SLOP, sheetDragOffset, shouldSettleOpen } from '../../utils/sheetDrag.js';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.jsx';
 import ThinkingDots from './ThinkingDots.jsx';
@@ -31,6 +32,7 @@ export default function AnnotationRail({
   expanded = true,
   onToggle,
   annotations,
+  answerAt = null,
   counts,
   filter,
   onFilter,
@@ -45,6 +47,54 @@ export default function AnnotationRail({
   const prefersReducedMotion = useReducedMotion();
 
   const isSheet = surface === 'sheet';
+
+  /* ── Keeping the wheel only while there is something to scroll ──
+     `overscroll-behavior: contain` (Annotations.css) is keyed on this flag:
+     Chrome cuts the scroll chain at a scroll container even when it has
+     nothing to scroll, so over a margin whose notes fit, the wheel moved
+     neither the list nor the paper. The list's own box changes whenever its
+     content crosses the cap, which is what the observer hears; the measure
+     after every render covers content that grows under a list already capped. */
+  const listRef = useRef(null);
+  const measureOverflowRef = useRef(null);
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return undefined;
+    const measure = () => {
+      if (list.scrollHeight > list.clientHeight + 1) list.dataset.scrollable = '';
+      else delete list.dataset.scrollable;
+    };
+    measureOverflowRef.current = measure;
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    measureOverflowRef.current?.();
+  });
+
+  /* ── Bringing an answer into view ──
+     "Explain this" writes into the margin, and the margin may be scrolled
+     anywhere: the card that says the model is reading, the answer that takes
+     its place, and the failure if there is one each come into view as they
+     appear (reported 2026-09-24: the answer to a passage near the end was
+     filed below the fold while the list sat at its top). Only the list
+     scrolls — the paper stays where the reader left it. */
+  const freshAnswer = annotations.find(item => item.fresh && item.kind === 'ai')?.id ?? null;
+  const revealKey = thinking ? 'thinking' : error ? 'error' : freshAnswer;
+  useEffect(() => {
+    const list = listRef.current;
+    if (!revealKey || !list) return;
+    const card = [...list.querySelectorAll('[data-reveal]')]
+      .find(node => node.dataset.reveal === revealKey);
+    if (!card) return;
+    const delta = revealScrollDelta(list.getBoundingClientRect(), card.getBoundingClientRect());
+    if (Math.abs(delta) >= 1) {
+      list.scrollBy({ top: delta, behavior: prefersReducedMotion ? 'auto' : 'smooth' });
+    }
+  }, [prefersReducedMotion, revealKey]);
 
   /* ── Dragging the sheet by its header ──
      The header was already the whole handle, and a handle you can only operate
@@ -172,6 +222,103 @@ export default function AnnotationRail({
     </>
   );
 
+  const cards = annotations.map(annotation => (
+    <motion.div
+      key={annotation.id}
+      /* No `layout` here on purpose. It reads every card's box on every
+         render of the reader, and a forced layout on this page costs
+         milliseconds — while buying nothing the exit does not already
+         give: a removed card animates its own height to zero, so the
+         cards below slide up on that same curve. */
+      className="rd-note"
+      data-kind={annotation.kind === 'ai' ? 'ai' : 'user'}
+      data-reveal={annotation.fresh && annotation.kind === 'ai' ? annotation.id : undefined}
+      initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={prefersReducedMotion
+        ? { opacity: 0, transition: { duration: 0.12 } }
+        : { opacity: 0, x: -8, height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, transition: { duration: 0.18, ease: 'easeIn' } }}
+      transition={{ duration: prefersReducedMotion ? 0.12 : 0.22, ease: [0.16, 1, 0.3, 1] }}
+    >
+      <div className="rd-note-head">
+        <span className="rd-note-origin">
+          {annotation.kind === 'ai' && <Sparkles size={10} />}
+          {annotation.kind === 'ai' ? copy.originAi : copy.originMine}
+        </span>
+        {/* The anchor doubles as the way back to the passage. */}
+        <button
+          type="button"
+          className="rd-note-where"
+          onClick={() => onFocus(annotation)}
+          title={copy.goToPassage}
+        >
+          {labelFor(annotation)}
+        </button>
+        <button
+          type="button"
+          className="rd-note-remove"
+          onClick={() => onRemove(annotation.id)}
+          aria-label={copy.removeAnnotation}
+          title={copy.removeAnnotation}
+        >
+          <Trash2 size={13} />
+        </button>
+      </div>
+      <p className="rd-note-quote">{displayProse(annotation.quote)}</p>
+      {annotation.note && (
+        <p className="rd-note-body" data-fresh={annotation.fresh && annotation.kind === 'ai' ? '' : undefined}>
+          {annotation.note}
+        </p>
+      )}
+    </motion.div>
+  ));
+
+  /* The two cards that stand in for an answer — the model reading, and the
+     failure — wait in the slot the answer will be filed into (`answerAt`), so
+     the list moves to one place, once, and the answer writes itself in where
+     it is going to stay. Without a slot they sit at the top, as they did. */
+  const waiting = [
+    thinking && (
+      <motion.div
+        key="thinking"
+        className="rd-note rd-note--ai rd-note--thinking"
+        data-reveal="thinking"
+        initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        /* It hands its room back as it goes, like a removed card: the answer
+           arrives right beside it, and a card that only faded would leave the
+           answer to jump by its height the moment it unmounted. */
+        exit={prefersReducedMotion
+          ? { opacity: 0, transition: { duration: 0.12 } }
+          : { opacity: 0, y: -4, height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, transition: { duration: 0.18, ease: 'easeIn' } }}
+        transition={{ duration: prefersReducedMotion ? 0.12 : 0.22, ease: [0.16, 1, 0.3, 1] }}
+      >
+        <span className="rd-note-origin">
+          <ThinkingDots />
+          {copy.reading}
+        </span>
+        <span className="rd-note-bar" />
+        <span className="rd-note-bar rd-note-bar--short" />
+      </motion.div>
+    ),
+    error && (
+      <motion.p
+        key="error"
+        className="rd-note rd-note--failed"
+        data-reveal="error"
+        role="alert"
+        initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, transition: { duration: 0.12 } }}
+        transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+      >
+        <AlertCircle size={13} />
+        {errorText}
+      </motion.p>
+    ),
+  ].filter(Boolean);
+  const slot = answerAt == null ? 0 : Math.max(0, Math.min(answerAt, cards.length));
+
   return (
     <aside
       ref={railRef}
@@ -230,92 +377,9 @@ export default function AnnotationRail({
         ))}
       </ToggleGroup>
 
-      <div className="rd-rail-list">
+      <div ref={listRef} className="rd-rail-list">
         <AnimatePresence initial={false}>
-          {thinking && (
-            <motion.div
-              key="thinking"
-              className="rd-note rd-note--ai rd-note--thinking"
-              initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={prefersReducedMotion
-                ? { opacity: 0, transition: { duration: 0.12 } }
-                : { opacity: 0, y: -4, transition: { duration: 0.18, ease: 'easeIn' } }}
-              transition={{ duration: prefersReducedMotion ? 0.12 : 0.22, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <span className="rd-note-origin">
-                <ThinkingDots />
-                {copy.reading}
-              </span>
-              <span className="rd-note-bar" />
-              <span className="rd-note-bar rd-note-bar--short" />
-            </motion.div>
-          )}
-
-          {error && (
-            <motion.p
-              key="error"
-              className="rd-note rd-note--failed"
-              role="alert"
-              initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, transition: { duration: 0.12 } }}
-              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <AlertCircle size={13} />
-              {errorText}
-            </motion.p>
-          )}
-
-          {annotations.map(annotation => (
-            <motion.div
-              key={annotation.id}
-              /* No `layout` here on purpose. It reads every card's box on every
-                 render of the reader, and a forced layout on this page costs
-                 milliseconds — while buying nothing the exit does not already
-                 give: a removed card animates its own height to zero, so the
-                 cards below slide up on that same curve. */
-              className="rd-note"
-              data-kind={annotation.kind === 'ai' ? 'ai' : 'user'}
-              initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={prefersReducedMotion
-                ? { opacity: 0, transition: { duration: 0.12 } }
-                : { opacity: 0, x: -8, height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, transition: { duration: 0.18, ease: 'easeIn' } }}
-              transition={{ duration: prefersReducedMotion ? 0.12 : 0.22, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <div className="rd-note-head">
-                <span className="rd-note-origin">
-                  {annotation.kind === 'ai' && <Sparkles size={10} />}
-                  {annotation.kind === 'ai' ? copy.originAi : copy.originMine}
-                </span>
-                {/* The anchor doubles as the way back to the passage. */}
-                <button
-                  type="button"
-                  className="rd-note-where"
-                  onClick={() => onFocus(annotation)}
-                  title={copy.goToPassage}
-                >
-                  {labelFor(annotation)}
-                </button>
-                <button
-                  type="button"
-                  className="rd-note-remove"
-                  onClick={() => onRemove(annotation.id)}
-                  aria-label={copy.removeAnnotation}
-                  title={copy.removeAnnotation}
-                >
-                  <Trash2 size={13} />
-                </button>
-              </div>
-              <p className="rd-note-quote">{displayProse(annotation.quote)}</p>
-              {annotation.note && (
-                <p className="rd-note-body" data-fresh={annotation.fresh && annotation.kind === 'ai' ? '' : undefined}>
-                  {annotation.note}
-                </p>
-              )}
-            </motion.div>
-          ))}
+          {[...cards.slice(0, slot), ...waiting, ...cards.slice(slot)]}
         </AnimatePresence>
 
         {annotations.length === 0 && !thinking && !error && (

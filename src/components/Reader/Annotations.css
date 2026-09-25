@@ -334,8 +334,16 @@
   flex-direction: column;
   min-height: 0;
   overflow-y: auto;
-  overscroll-behavior: contain;
   scrollbar-width: none;
+}
+
+/* Reading the notes to their end must not start moving the paper beside them,
+   so a list that scrolls keeps the wheel. A list that does not must let it go:
+   Chrome cuts the scroll chain at any scroll container, even one with nothing
+   to scroll, and over a margin whose notes fit the wheel moved nothing at all
+   (measured 2026-09-25). AnnotationRail sets the flag while the list overflows. */
+.rd-rail-list[data-scrollable] {
+  overscroll-behavior: contain;
 }
 
 .rd-rail-list::-webkit-scrollbar { display: none; }
