@@ -7,9 +7,9 @@ import './NotFoundPage.css';
 
 // An address the app does not declare. It used to land on /feed without a
 // word, which hid a broken link behind a working page (audit 2026-09-23,
-// issue 12); the server answers these with public/404.html, and this is the
-// same answer for a navigation the app makes itself, or one the service
-// worker hands it.
+// issue 12). The server answers a page load of one with public/404.html (the
+// service worker sends navigations to the network, with no fallback); this is
+// the same answer for a navigation the app makes itself.
 const COPY = {
   es: {
     title: 'No encontramos esta página',

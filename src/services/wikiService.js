@@ -230,13 +230,17 @@ export async function getEntityWikiInfoByIdentity({ qid = '', enwikiTitle = '', 
  * entity is resolved by identity or shows no Wikipedia block.
  */
 export async function loadEntityWikiInfo({ entity, title, alternateTitle = '', language = 'es', signal } = {}) {
+  // No Wikidata id to go by: a search, and only an article by that exact
+  // title counts. For the taxonomy's own topics too, since their curated
+  // aliases already are titles, and a first hit that is another article is a
+  // guess (AGENTS.md, invariant 3; review of 2026-09-25).
   if (entity?._queryTopic || entity?._localTopic) {
     return getEntityWikiInfo({
       title,
       alternateTitle,
       language,
       signal,
-      strictTitleMatch: Boolean(entity._queryTopic),
+      strictTitleMatch: true,
     });
   }
   const identity = resolveEntityWikiIdentity(entity);

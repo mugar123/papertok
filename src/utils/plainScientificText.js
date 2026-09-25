@@ -63,9 +63,16 @@ function plainMath(source) {
     .replace(/\\/g, '');
 }
 
+// The inline tags providers leave in titles and abstracts, and nothing else:
+// a comparison sign is prose. A pattern that took any `<…>` for a tag emptied
+// «(P < .001) compared with … (P > .05)» of everything between the signs, the
+// bug this audit had fixed in the Europe PMC reader (review of 2026-09-25).
+// Attributes have to look like attributes, too.
+const INLINE_TAG = /<\/?(?:i|b|em|strong|sup|sub|span|a|u|small|abbr|italic|bold|sc)(?:\s+[a-z-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'<>]+))*\s*\/?>/gi;
+
 function plainProse(source) {
   return displayProse(source)
-    .replace(/<[^<>]*>/g, '')
+    .replace(INLINE_TAG, '')
     .replace(/\\([&#$_{}])/g, '$1');
 }
 

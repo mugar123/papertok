@@ -212,6 +212,24 @@ test('the Explorer\'s loader keeps the exact-title search for a free-text topic'
   assert.equal(requested.length > 0 && requested.every(url => url.includes('generator=search')), true);
 });
 
+// The taxonomy's own topics carry no Wikidata id, so their curated labels are
+// searched; a first hit that is some other article is a guess, and a missing
+// box beats a wrong one (AGENTS.md, invariant 3; review of 2026-09-25).
+test('the Explorer\'s loader keeps the exact-title search for a PaperTok topic too', async (t) => {
+  const requested = stubWikiFetch(t, [
+    { match: isWikipediaSearch('es'), body: wikipediaPage({ title: 'Materia (filosofía)', extract: 'La materia es aquello de lo que están hechas las cosas.', qid: 'Q35758', lang: 'es' }) },
+  ]);
+
+  const result = await loadEntityWikiInfo({
+    entity: { id: 'cond-mat.soft', display_name: 'Materia Blanda', _localTopic: true },
+    title: 'Materia Blanda',
+    language: 'es',
+  });
+
+  assert.equal(result, null);
+  assert.equal(requested.length > 0 && requested.every(url => url.includes('generator=search')), true);
+});
+
 test('maps a Wikipedia search result in the requested language', () => {
   const result = mapWikipediaSearchResponse({
     query: {

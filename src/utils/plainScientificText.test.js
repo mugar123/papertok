@@ -29,6 +29,18 @@ test('prose escapes and inline HTML come out as text', () => {
   assert.equal(plainScientificText('Salt \\& pepper noise'), 'Salt & pepper noise');
 });
 
+// A comparison sign is prose. PMID 42629277 lost everything between «P <»
+// and «(P >» to a pattern that took any `<…>` for a tag, the very bug this
+// audit fixed in the Europe PMC reader, back in the share preview, the page's
+// description and the share text (review of 2026-09-25).
+test('a comparison sign is prose, not the start of a tag', () => {
+  const pmid = 'higher (P < .001) compared with PNI and GPS (P > .05).';
+  assert.equal(plainScientificText(pmid), pmid);
+  const temperatures = 'Temperatures below 10 °C (<10 °C) and above 30 °C (>30 °C) cut the yield.';
+  assert.equal(plainScientificText(temperatures), temperatures);
+  assert.equal(plainScientificText('<span class="x">Marked</span> text'), 'Marked text');
+});
+
 test('whitespace collapses and nothing becomes the string "undefined"', () => {
   assert.equal(plainScientificText('  Two\n  lines\tof title  '), 'Two lines of title');
   assert.equal(plainScientificText(''), '');
