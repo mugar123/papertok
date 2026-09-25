@@ -5,7 +5,9 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', '.wrangler', 'scripts/diagnostics/**', 'video/**']),
+  // Worktrees live in `.claude/worktrees/`: full checkouts that git ignores,
+  // but ESLint does not read .gitignore and linted them from the main tree.
+  globalIgnores(['dist', '.wrangler', '.claude/**', 'scripts/diagnostics/**', 'video/**']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [
