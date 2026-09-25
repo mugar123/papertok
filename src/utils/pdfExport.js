@@ -108,6 +108,43 @@ export function buildPdfModel({
   };
 }
 
+/**
+ * Where a mark has to be cut so that each piece holds one line.
+ *
+ * `lines` are the mark's own client rects, one per line box it touches, and
+ * `units` the rects of what it holds — each character, each atomic inline such
+ * as a KaTeX `.base` — in document order. Returns the index of every unit that
+ * opens a line after the first. A unit belongs to the line its middle falls
+ * on: a fraction rises above its line and hangs below it, so its top or its
+ * bottom can sit in the neighbouring line's band while its middle never does.
+ */
+export function lineStartIndices(lines, units) {
+  const bands = [...lines].sort((a, b) => a.top - b.top);
+  if (bands.length < 2) return [];
+  const bandOf = ({ top, bottom }) => {
+    const middle = (top + bottom) / 2;
+    let best = 0;
+    let bestGap = Infinity;
+    bands.forEach((band, index) => {
+      const gap = Math.max(band.top - middle, middle - band.bottom, 0);
+      if (gap < bestGap) {
+        best = index;
+        bestGap = gap;
+      }
+    });
+    return best;
+  };
+
+  const starts = [];
+  let line = null;
+  units.forEach((unit, index) => {
+    const band = bandOf(unit);
+    if (line !== null && band > line) starts.push(index);
+    if (line === null || band > line) line = band;
+  });
+  return starts;
+}
+
 /* ── From here on, browser only ─────────────────────────────────────────── */
 
 /**
@@ -340,6 +377,100 @@ function markClass(kind) {
   return kind === 'ai' ? 'pdfx-mark pdfx-mark--ai' : 'pdfx-mark';
 }
 
+/**
+ * What a mark holds, as the units a line can start with: every character that
+ * is not blank, and every atomic inline — a KaTeX `.base` — whole, each with
+ * the DOM point just before it. KaTeX's MathML copy is out of flow (clipped,
+ * `position: absolute`) and takes no room on a line, so it is passed over. A
+ * mark that holds a block (display maths) answers null and is left whole: it
+ * is one box already, not a run of line boxes.
+ */
+function markUnits(mark) {
+  const units = [];
+  const range = document.createRange();
+  const visit = (parent) => {
+    for (const child of parent.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        const text = child.data;
+        for (let offset = 0; offset < text.length; offset += 1) {
+          if (/\s/.test(text[offset])) continue;
+          const code = text.charCodeAt(offset);
+          const end = Math.min(text.length, code >= 0xd800 && code <= 0xdbff ? offset + 2 : offset + 1);
+          range.setStart(child, offset);
+          range.setEnd(child, end);
+          const rect = range.getBoundingClientRect();
+          if (rect.width > 0 || rect.height > 0) units.push({ rect, node: child, offset });
+          offset = end - 1;
+        }
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        const { display, position } = getComputedStyle(child);
+        if (display === 'none' || position === 'absolute' || position === 'fixed') continue;
+        if (display === 'inline' || display === 'contents') {
+          if (!visit(child)) return false;
+        } else if (display.startsWith('inline-')) {
+          const offset = Array.prototype.indexOf.call(parent.childNodes, child);
+          units.push({ rect: child.getBoundingClientRect(), node: parent, offset });
+        } else {
+          return false;
+        }
+      }
+    }
+    return true;
+  };
+  return visit(mark) ? units : null;
+}
+
+/**
+ * One element per line for every mark on the pages, because that is the only
+ * way html2canvas will draw a mark that wraps.
+ *
+ * The browser draws a wrapped inline as one box per line. html2canvas draws
+ * every element as ONE box — its bounding rectangle — and paints it after the
+ * paragraph's own text. A mark that starts halfway along a line and ends
+ * halfway along another became a single slab from margin to margin, laid over
+ * the unmarked words of its first and last lines (reported 2026-09-24: "no se
+ * muestra el texto de debajo del subrayado"), and an AI mark drew its dotted
+ * rule once, under the whole of its last line, and under nothing above it.
+ * Cut at its line breaks, each piece's bounding box is exactly the box the
+ * browser drew for that line.
+ *
+ * Every mark is measured before any is cut, so the pages are laid out once
+ * rather than once per mark. The cut moves nothing: a line can only begin at
+ * a break the text already had, and the 1px side padding is kept at the two
+ * ends of the whole mark and taken off at each cut, where the browser never
+ * drew it (`box-decoration-break: slice`) — left on, a cut would widen its line
+ * by a pixel and could push the last word of a full line onto the next.
+ */
+function cutMarksAtLineBreaks(pages) {
+  const plans = pages
+    .flatMap(page => [...page.querySelectorAll('mark.pdfx-mark')])
+    .map(mark => {
+      const lines = [...mark.getClientRects()];
+      const units = lines.length > 1 ? markUnits(mark) : null;
+      const starts = units ? lineStartIndices(lines, units.map(unit => unit.rect)) : [];
+      return { mark, points: starts.map(index => units[index]) };
+    });
+
+  for (const { mark, points } of plans) {
+    if (points.length === 0) continue;
+    const pieces = [mark];
+    // From the last cut back, so every earlier point is still inside `mark`.
+    for (const { node, offset } of [...points].reverse()) {
+      const range = document.createRange();
+      range.setStart(node, offset);
+      range.setEnd(mark, mark.childNodes.length);
+      const piece = mark.cloneNode(false);
+      piece.appendChild(range.extractContents());
+      mark.after(piece);
+      pieces.splice(1, 0, piece);
+    }
+    pieces.forEach((piece, index) => {
+      if (index > 0) piece.style.paddingLeft = '0';
+      if (index < pieces.length - 1) piece.style.paddingRight = '0';
+    });
+  }
+}
+
 /** The blocks the pages are filled with, each with the notes it must seat. */
 function buildBlocks(model, katex) {
   const blocks = [];
@@ -447,6 +578,10 @@ function noteEntry(note) {
  * footer with the provenance line and the page number. The running head
  * cannot be written when the page is made — see the comment further down,
  * where it is actually filled in, for why that has to wait.
+ *
+ * The pages come back ready for the rasterizer, which draws a mark that wraps
+ * as one box across all its lines: every mark is cut into one element per line
+ * first (`cutMarksAtLineBreaks`). In the browser the cut changes nothing.
  */
 export async function renderPdfPages(model, host) {
   const katex = await loadKatex();
@@ -555,6 +690,8 @@ export async function renderPdfPages(model, host) {
 
   // Fonts settle after the text is in the DOM; the capture must not race them.
   if (document.fonts?.ready) await document.fonts.ready;
+  // Only now are the line breaks final, and they are what the marks are cut at.
+  cutMarksAtLineBreaks(pages);
   return pages;
 }
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildPdfModel } from './pdfExport.js';
+import { buildPdfModel, lineStartIndices } from './pdfExport.js';
 import { buildLatexDocument } from './latexExport.js';
 
 /**
@@ -189,4 +189,46 @@ test('an annotation from a level or language this rewrite is not is left out', (
   });
   assert.equal(model.sections[0].paragraphs[0].annotations.length, 0);
   assert.equal(model.noteCount, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Where a mark is cut before capture (reported 2026-09-24: a highlight that
+// wrapped hid the unmarked words on its first and last lines). html2canvas
+// paints a wrapped mark as one box, so the page hands it one element per line;
+// these are the line decisions, on rects as `getClientRects()` reports them.
+// Lines are 25.6px apart (16px text at line-height 1.6) with a 20px content
+// area, the geometry of `.pdfx-para`.
+// ---------------------------------------------------------------------------
+
+const LINE = [
+  { top: 100, bottom: 120 },
+  { top: 125.6, bottom: 145.6 },
+  { top: 151.2, bottom: 171.2 },
+];
+
+test('a mark that fits on one line is left whole', () => {
+  const units = [LINE[0], LINE[0], LINE[0], LINE[0]];
+  assert.deepEqual(lineStartIndices([LINE[0]], units), []);
+});
+
+test('a mark that wraps is cut where each later line begins', () => {
+  const units = [
+    LINE[0], LINE[0], LINE[0], LINE[0],
+    LINE[1], LINE[1], LINE[1],
+    LINE[2], LINE[2],
+  ];
+  assert.deepEqual(lineStartIndices(LINE, units), [4, 7]);
+});
+
+test('a formula taller than its line is kept on the line it sits on', () => {
+  // A fraction at the end of the first line rises above it and hangs into the
+  // second line's band; another opens the second line and reaches up into the
+  // first. Each belongs to the line its middle is on, not to where it pokes.
+  const units = [
+    LINE[0],
+    { top: 92, bottom: 128 },
+    { top: 118, bottom: 153 },
+    LINE[1],
+  ];
+  assert.deepEqual(lineStartIndices(LINE.slice(0, 2), units), [2]);
 });
