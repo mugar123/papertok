@@ -1,6 +1,32 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
-import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, BadgeCheck, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowsClockwise,
+  ArrowSquareOut,
+  BookOpen,
+  Briefcase,
+  Buildings,
+  CaretDown,
+  CaretRight,
+  CircleNotch,
+  CloudSlash,
+  DownloadSimple,
+  Eye,
+  FileText,
+  Funnel,
+  Globe,
+  Lightbulb,
+  MagnifyingGlass,
+  MapPin,
+  Medal,
+  SealCheck,
+  ShareNetwork,
+  SlidersHorizontal,
+  Tag,
+  Users,
+  X,
+} from '@phosphor-icons/react';
 import { getEntityById, peekEntity, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution, getEntityRecentImpact, getLocalTopicEntity, enrichAuthorInstitutionLocalization } from '../../services/openAlexService';
 import { isOpenAlexRateLimitError } from '../../services/openAlexClient';
 import { fetchPapersByIds, getAuthorPapers } from '../../services/arxivService';
@@ -1759,24 +1785,43 @@ export default function EntityExplorer({
   if (!entity) {
     return (
       <div className={`explorer-error${appChromeClass}`}>
-        <Button variant="outline" size="icon" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
-          <ArrowLeft size={24} />
-        </Button>
+        {/* A glyph that says which of the two it is, a sentence that says what
+            to do, and the way out as a labelled button under them — it used
+            to be a bare arrow above a lone heading, which read as a page that
+            had not finished rendering. */}
+        <div className={`explorer-error-icon${entityError ? ' explorer-error-icon--failed' : ''}`} aria-hidden="true">
+          {entityError ? <CloudSlash size={26} /> : <MagnifyingGlass size={26} />}
+        </div>
         <h1>{entityError
           ? (isEnglish ? 'The entity could not be loaded' : 'No se pudo cargar la entidad')
           : (isEnglish ? 'Entity not found' : 'Entidad no encontrada')}</h1>
-        {entityError && (
-          <>
-            <p role="alert">{getUiErrorMessage(entityError, language, 'ENTITY_LOAD_FAILED')}</p>
-            <Button variant="outline" size="sm" onClick={retryEntity}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
-          </>
+        {entityError ? (
+          <p role="alert">{getUiErrorMessage(entityError, language, 'ENTITY_LOAD_FAILED')}</p>
+        ) : (
+          <p>
+            {isEnglish
+              ? 'The source has no record for this page. It may have been merged with another one or removed.'
+              : 'La fuente no tiene ningún registro para esta página. Puede que se haya fusionado con otro o que se haya retirado.'}
+          </p>
         )}
+        <div className="explorer-error-actions">
+          {entityError && (
+            <Button onClick={retryEntity}>
+              <ArrowsClockwise size={16} aria-hidden="true" />
+              {isEnglish ? 'Try again' : 'Reintentar'}
+            </Button>
+          )}
+          <Button variant="outline" onClick={handleBack}>
+            <ArrowLeft size={16} aria-hidden="true" />
+            {isEnglish ? 'Back' : 'Volver'}
+          </Button>
+        </div>
       </div>
     );
   }
 
   const renderIcon = () => {
-    if (type === 'institution') return <Building2 size={36} />;
+    if (type === 'institution') return <Buildings size={36} />;
     if (type === 'concept' || type === 'topic') return <Lightbulb size={36} />;
     if (type === 'source') return <FileText size={36} />;
     if (type === 'project') return <Briefcase size={36} />;
@@ -1846,7 +1891,7 @@ export default function EntityExplorer({
             <span className="ehc-type">{entityTypeLabel}</span>
           </div>
           <Button variant="ghost" size="icon" onClick={handleShare} aria-label={isEnglish ? 'Share' : 'Compartir'} title={isEnglish ? 'Share' : 'Compartir'}>
-            <Share2 size={18} />
+            <ShareNetwork size={18} />
           </Button>
         </div>
         
@@ -1910,7 +1955,7 @@ export default function EntityExplorer({
                     title={isEnglish ? 'Professional experience' : 'Experiencia profesional'}
                   >
                     <Briefcase size={15} aria-hidden="true" />
-                    <ChevronDown size={16} aria-hidden="true" />
+                    <CaretDown size={16} aria-hidden="true" />
                   </button>
                 )}
               </div>
@@ -1922,7 +1967,7 @@ export default function EntityExplorer({
                   {entity.rorVerified && safeRorUrl && (
                     <div className="ehc-institution-identity">
                       <a href={safeRorUrl} target="_blank" rel="noopener noreferrer" title={isEnglish ? 'View official ROR record' : 'Ver registro oficial en ROR'}>
-                        <BadgeCheck size={13} /> {isEnglish ? 'ROR verified' : 'ROR verificado'}
+                        <SealCheck size={13} /> {isEnglish ? 'ROR verified' : 'ROR verificado'}
                       </a>
                       {entity.established && <span>{isEnglish ? 'Since' : 'Desde'} {entity.established}</span>}
                     </div>
@@ -1938,7 +1983,7 @@ export default function EntityExplorer({
                         >
                           <span>{ROR_RELATION_LABELS[language][relationship.type] || ROR_RELATION_LABELS[language].related}</span>
                           <strong>{relationship.label}</strong>
-                          <ChevronRight size={13} />
+                          <CaretRight size={13} />
                         </button>
                       ))}
                     </div>
@@ -1954,7 +1999,7 @@ export default function EntityExplorer({
                     disabled={isResolvingAuthorInstitution}
                     title={isEnglish ? 'View institution' : 'Ver institución'}
                   >
-                    {isResolvingAuthorInstitution ? <Loader2 className="spinning" size={15} /> : <Building2 size={15} />}
+                    {isResolvingAuthorInstitution ? <CircleNotch className="spinning" size={15} /> : <Buildings size={15} />}
                     <span>{authorInstitutionDisplayName}</span>
                   </button>
                   {authorInstitutionNavigationError && (
@@ -1979,7 +2024,7 @@ export default function EntityExplorer({
                     <DropdownMenuTrigger render={<button type="button" className="project-links-trigger" />}>
                       <Globe size={15} />
                       <span>{isEnglish ? 'View project' : 'Ver proyecto'}</span>
-                      <ChevronDown size={15} aria-hidden="true" />
+                      <CaretDown size={15} aria-hidden="true" />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent
                       className="project-links-dropdown"
@@ -1996,12 +2041,12 @@ export default function EntityExplorer({
                           rel="noreferrer"
                           closeOnClick
                         >
-                          <span className="project-links-option-icon"><Building2 size={16} /></span>
+                          <span className="project-links-option-icon"><Buildings size={16} /></span>
                           <span>
                             <strong>{isEnglish ? 'OpenAIRE record' : 'Ficha en OpenAIRE'}</strong>
                             <small>{isEnglish ? 'Data, publications, and participants' : 'Datos, publicaciones y participantes'}</small>
                           </span>
-                          <ExternalLink size={14} />
+                          <ArrowSquareOut size={14} />
                         </MenuPrimitive.LinkItem>
                       )}
                       {safeProjectWebsiteUrl && (
@@ -2017,7 +2062,7 @@ export default function EntityExplorer({
                             <strong>{isEnglish ? 'Official website' : 'Sitio oficial'}</strong>
                             <small>{isEnglish ? 'The project’s own website' : 'Web del propio proyecto'}</small>
                           </span>
-                          <ExternalLink size={14} />
+                          <ArrowSquareOut size={14} />
                         </MenuPrimitive.LinkItem>
                       )}
                     </DropdownMenuContent>
@@ -2212,13 +2257,13 @@ export default function EntityExplorer({
                 <span className="project-chip"><BookOpen size={13} /> {entity.callIdentifier}</span>
               )}
               {entity.contractType && (
-                <span className="project-chip"><Award size={13} /> {entity.contractType}</span>
+                <span className="project-chip"><Medal size={13} /> {entity.contractType}</span>
               )}
               {entity.openAccess && (
                 <span className="project-chip project-chip--oa"><BookOpen size={13} /> Open Access</span>
               )}
               {entity.measures?.downloads > 0 && (
-                <span className="project-chip"><Download size={13} /> {entity.measures.downloads.toLocaleString(locale)} {isEnglish ? 'downloads' : 'descargas'}</span>
+                <span className="project-chip"><DownloadSimple size={13} /> {entity.measures.downloads.toLocaleString(locale)} {isEnglish ? 'downloads' : 'descargas'}</span>
               )}
               {entity.measures?.views > 0 && (
                 <span className="project-chip"><Eye size={13} /> {entity.measures.views.toLocaleString(locale)} {isEnglish ? 'views' : 'vistas'}</span>
@@ -2251,7 +2296,7 @@ export default function EntityExplorer({
               </p>
               {isProjectSummaryExpandable && (
                 <span className="project-summary-toggle">
-                  <ChevronDown size={14} /> {expandedSummary
+                  <CaretDown size={14} /> {expandedSummary
                     ? (isEnglish ? 'Show less' : 'Mostrar menos')
                     : (isEnglish ? 'Read more' : 'Leer más')}
                 </span>
@@ -2274,7 +2319,7 @@ export default function EntityExplorer({
           {/* Participating organizations */}
           {type === 'project' && entity.participants?.length > 0 && (
             <div className="project-participants">
-              <h4 className="project-section-title"><Building2 size={14} /> {isEnglish ? 'Participating organizations' : 'Organizaciones participantes'}</h4>
+              <h4 className="project-section-title"><Buildings size={14} /> {isEnglish ? 'Participating organizations' : 'Organizaciones participantes'}</h4>
               <motion.div
                 id="project-participants-list"
                 layout={!prefersReducedMotion}
@@ -2303,8 +2348,8 @@ export default function EntityExplorer({
                       {p.country && <span className="project-participant-country"><MapPin size={11} /> {p.country}</span>}
                     </span>
                     {resolvingParticipant === p.name
-                      ? <Loader2 size={15} className="ehc-spinner" aria-hidden="true" />
-                      : <ChevronRight size={15} className="project-participant-arrow" aria-hidden="true" />}
+                      ? <CircleNotch size={15} className="ehc-spinner" aria-hidden="true" />
+                      : <CaretRight size={15} className="project-participant-arrow" aria-hidden="true" />}
                   </motion.button>
                 ))}
                 </AnimatePresence>
@@ -2422,18 +2467,18 @@ export default function EntityExplorer({
                     <span>{isWikiDescriptionExpanded
                       ? (isEnglish ? 'Show less' : 'Mostrar menos')
                       : (isEnglish ? 'Read more' : 'Leer más')}</span>
-                    <ChevronDown size={15} aria-hidden="true" />
+                    <CaretDown size={15} aria-hidden="true" />
                   </button>
                 )}
                 <div className="ehc-links">
                   {safeWikiUrl && (
                     <a href={safeWikiUrl} target="_blank" rel="noopener noreferrer" className="ehc-link">
-                      Wikipedia <ExternalLink size={14} />
+                      Wikipedia <ArrowSquareOut size={14} />
                     </a>
                   )}
                   {safeHomepageUrl && (
                     <a href={safeHomepageUrl} target="_blank" rel="noopener noreferrer" className="ehc-link">
-                      {isEnglish ? 'Official website' : 'Web oficial'} <ExternalLink size={14} />
+                      {isEnglish ? 'Official website' : 'Web oficial'} <ArrowSquareOut size={14} />
                     </a>
                   )}
                 </div>
@@ -2459,7 +2504,7 @@ export default function EntityExplorer({
                   </div>
                 </div>
                 <a href={`https://orcid.org/${orcidInfo.orcid}`} target="_blank" rel="noopener noreferrer" className="orcid-profile-link">
-                  {isEnglish ? 'View profile' : 'Ver perfil'} <ExternalLink size={12} />
+                  {isEnglish ? 'View profile' : 'Ver perfil'} <ArrowSquareOut size={12} />
                 </a>
               </div>
 
@@ -2562,12 +2607,12 @@ export default function EntityExplorer({
               className="explorer-search-box explorer-search-gate"
               onClick={() => requestAccount('explorer_search')}
             >
-              <Search size={16} className="es-icon" aria-hidden="true" />
+              <MagnifyingGlass size={16} className="es-icon" aria-hidden="true" />
               <span className="explorer-search-gate-label">{guestSearchLabel}</span>
             </button>
           ) : (
             <div className="explorer-search-box">
-              <Search size={16} className="es-icon" />
+              <MagnifyingGlass size={16} className="es-icon" />
               <Input
                 type="text"
                 className="explorer-search-input"
@@ -2595,7 +2640,7 @@ export default function EntityExplorer({
                 aria-label={isEnglish ? 'Open filters' : 'Abrir filtros'}
                 title={isEnglish ? 'Filters' : 'Filtros'}
               >
-                <Filter size={16} />
+                <Funnel size={16} />
               </Button>
             )}
           </div>
@@ -2631,12 +2676,12 @@ export default function EntityExplorer({
                             onClick={(event) => event.stopPropagation()}
                             aria-label={`${getPaperCitationCount(paper).toLocaleString(locale)} ${isEnglish ? 'citations on Scopus' : 'citas en Scopus'}`}
                           >
-                            <Award size={13} />
+                            <Medal size={13} />
                             {getPaperCitationCount(paper).toLocaleString(locale)} {isEnglish ? 'citations on Scopus' : 'citas en Scopus'}
                           </a>
                         ) : (
                           <span className="eli-citations">
-                            <Award size={13} />
+                            <Medal size={13} />
                             {getPaperCitationCount(paper).toLocaleString(locale)} {isEnglish ? 'citations' : 'citas'}
                           </span>
                         )
@@ -2711,7 +2756,7 @@ export default function EntityExplorer({
                   takes its place. */}
               {!publicMode && hasMore && rowsSettled && (filteredPapers.length > 0 || isFetchingMore) && (
                 <div ref={observerRef} className="ehc-sentinel">
-                  {isFetchingMore && <Loader2 className="ehc-spinner" size={24} />}
+                  {isFetchingMore && <CircleNotch className="ehc-spinner" size={24} />}
                   <span>{isFetchingMore
                     ? (isEnglish ? 'Loading more articles...' : 'Cargando más artículos...')
                     : (isEnglish ? 'Scroll for more' : 'Sigue bajando para ver más')}</span>
@@ -2772,7 +2817,7 @@ export default function EntityExplorer({
                       : `H-Index: ${author.h_index} • ${author.cited_by_count.toLocaleString(locale)} ${isEnglish ? 'citations' : 'citas'}`}
                   </p>
                 </div>
-                <ChevronRight size={18} className="ee-author-arrow" />
+                <CaretRight size={18} className="ee-author-arrow" />
               </div>
             ))}
             
@@ -2801,7 +2846,7 @@ export default function EntityExplorer({
             {/* Same reason as the publications sentinel above. */}
             {!publicMode && hasMoreAuthors && (entityAuthors.length > 0 || isFetchingMoreAuthors) && (
               <div ref={observerAuthorsRef} className="ehc-sentinel">
-                {isFetchingMoreAuthors && <Loader2 className="ehc-spinner" size={24} />}
+                {isFetchingMoreAuthors && <CircleNotch className="ehc-spinner" size={24} />}
                 <span>{isFetchingMoreAuthors
                   ? (isEnglish ? 'Loading more authors...' : 'Cargando más autores...')
                   : (isEnglish ? 'Scroll for more' : 'Sigue bajando para ver más')}</span>

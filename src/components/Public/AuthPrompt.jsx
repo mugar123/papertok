@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { X } from '@phosphor-icons/react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';

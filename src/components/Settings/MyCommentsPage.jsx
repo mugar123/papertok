@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { EyeOff, ExternalLink, MessageCircle, Trash2 } from 'lucide-react';
+import { ArrowSquareOut, ChatCircle, EyeSlash, Trash } from '@phosphor-icons/react';
 import { useLanguage } from '../../context/LanguageContext';
 import { deleteComment, fetchMyCommentsPage } from '../../services/commentService.js';
 import { decodeCanonicalPaperKey } from '../../utils/paperCanonicalKey.js';
@@ -214,7 +214,7 @@ export default function MyCommentsPage() {
 
         {state.status === 'ready' && state.rows.length === 0 && (
           <div className="my-comments-state">
-            <span className="my-comments-state-icon" aria-hidden="true"><MessageCircle size={20} /></span>
+            <span className="my-comments-state-icon" aria-hidden="true"><ChatCircle size={20} /></span>
             <h2 className="my-comments-state-title">{text(COPY.emptyTitle)}</h2>
             <p>{text(COPY.empty)}</p>
             <Link className="my-comments-cta" to="/feed">{text(COPY.emptyCta)}</Link>
@@ -240,7 +240,7 @@ export default function MyCommentsPage() {
                   {row.editedAt && <span className="my-comments-item-date">{text(COPY.edited)}</span>}
                   {row.status === 'hidden' && (
                     <span className="my-comments-chip my-comments-chip--hidden">
-                      <EyeOff size={11} aria-hidden="true" /> {text(COPY.hidden)}
+                      <EyeSlash size={11} aria-hidden="true" /> {text(COPY.hidden)}
                     </span>
                   )}
                 </div>
@@ -267,12 +267,12 @@ export default function MyCommentsPage() {
                   <div className="my-comments-item-actions">
                     {row.paperKey && (
                       <Link className="my-comments-action" to={`/public/paper/${encodeURIComponent(row.paperKey)}`}>
-                        <ExternalLink size={13} aria-hidden="true" /> {text(COPY.openPaper)}
+                        <ArrowSquareOut size={13} aria-hidden="true" /> {text(COPY.openPaper)}
                       </Link>
                     )}
                     <button type="button" className="my-comments-action my-comments-action--danger"
                       onClick={() => setConfirming(row.id)}>
-                      <Trash2 size={13} aria-hidden="true" /> {text(COPY.delete)}
+                      <Trash size={13} aria-hidden="true" /> {text(COPY.delete)}
                     </button>
                   </div>
                 )}

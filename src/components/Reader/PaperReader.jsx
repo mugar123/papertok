@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'framer-motion';
 import {
-  AlertCircle,
   ArrowLeft,
-  ExternalLink,
-  Download,
-  PenLine,
-  Sparkles,
-} from 'lucide-react';
+  ArrowSquareOut,
+  DownloadSimple,
+  PencilLine,
+  Sparkle,
+  WarningCircle,
+} from '@phosphor-icons/react';
 import {
   canRewritePaper,
   fetchRemainingAIUses,
@@ -1462,7 +1462,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
           title={copy.download}
           aria-label={copy.download}
         >
-          <Download size={15} />
+          <DownloadSimple size={15} />
         </PopoverTrigger>
       </div>
       <ExportCard
@@ -1565,7 +1565,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
               here on every pointer. On a fine pointer there is no scrolling
               chrome to hide behind in the first place, so the kicker simply
               stays: decision 3 in the reader's mobile plan, desktop untouched. */}
-          {!coarsePointer && <span className="rd-status-kicker"><Sparkles size={11} /> {copy.title}</span>}
+          {!coarsePointer && <span className="rd-status-kicker"><Sparkle size={11} /> {copy.title}</span>}
           {meta?.cached && <span className="rd-status-chip">{copy.cached}</span>}
           {quota && (
             <span
@@ -1638,7 +1638,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                 title={copy.toggleAnnotations}
                 aria-label={copy.toggleAnnotations}
               >
-                <PenLine size={15} />
+                <PencilLine size={15} />
               </Toggle>
             </div>
             <div className="rd-panel-divider" />
@@ -1663,7 +1663,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             {/* The kicker's other half of the split above: on a coarse pointer
                 it lives here, in flow, ahead of the title it names, so it
                 scrolls away with the paper instead of hovering over it. */}
-            {coarsePointer && <span className="rd-doc-kicker"><Sparkles size={11} /> {copy.title}</span>}
+            {coarsePointer && <span className="rd-doc-kicker"><Sparkle size={11} /> {copy.title}</span>}
             <h1 className="rd-doc-title" lang="en"><ScientificText>{paper?.title}</ScientificText></h1>
             <p className="rd-doc-byline">
               {(paper?.authors || []).slice(0, 6).map(author => author?.name || author).join(', ')}
@@ -1686,7 +1686,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                  same two-line hierarchy the rest of the document uses. */
               <div className="rd-error" role="alert" data-tone={errorTone}>
                 <span className="rd-error-kicker">
-                  <AlertCircle size={12} />
+                  <WarningCircle size={12} />
                   {copy.errorKicker}
                   {shownError && <code>{shownError}</code>}
                 </span>
@@ -1700,7 +1700,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                   )}
                   {originalUrl && (
                     <a className="rd-original" href={originalUrl} target="_blank" rel="noopener noreferrer">
-                      {copy.original} <ExternalLink size={13} />
+                      {copy.original} <ArrowSquareOut size={13} />
                     </a>
                   )}
                 </div>
@@ -1819,7 +1819,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                 <p className="rd-attribution">{copy.adaptation}</p>
                 {originalUrl && (
                   <a className="rd-original" href={originalUrl} target="_blank" rel="noopener noreferrer">
-                    {copy.original} <ExternalLink size={13} />
+                    {copy.original} <ArrowSquareOut size={13} />
                   </a>
                 )}
                 {meta?.model && (

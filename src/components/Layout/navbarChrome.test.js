@@ -19,7 +19,8 @@ const prefsCss = readFile(new URL('./NavPreferencesMenu.css', import.meta.url), 
 
 test('la navbar no dibuja el botón de recargar ni escucha al informe', async () => {
   const jsx = await navbarJsx;
-  for (const resto of ['RotateCw', 'refreshScientificReport', 'reportLoadingStart', 'reportLoadingEnd', 'showReloadButton', 'handleReload']) {
+  // Both names of the reload glyph: Lucide's, and Phosphor's since the switch.
+  for (const resto of ['RotateCw', 'ArrowClockwise', 'refreshScientificReport', 'reportLoadingStart', 'reportLoadingEnd', 'showReloadButton', 'handleReload']) {
     assert.ok(!jsx.includes(resto), `\`${resto}\` sigue en Navbar.jsx`);
   }
 });

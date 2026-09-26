@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { ArrowRight, Bookmark, Infinity as InfinityIcon, Users } from 'lucide-react';
+import { ArrowRight, BookmarkSimple, Infinity as InfinityIcon, Users } from '@phosphor-icons/react';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { Button } from '../ui/button.jsx';
@@ -45,7 +45,7 @@ const COPY = {
   },
 };
 
-const PERK_ICONS = [InfinityIcon, Bookmark, Users];
+const PERK_ICONS = [InfinityIcon, BookmarkSimple, Users];
 
 export default function GuestEndCard({ paperCount = 0, position = 0, onSignUp }) {
   const { isEnglish, language } = useLanguage();

@@ -23,7 +23,23 @@ import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.js';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.js';
 import { getPublicPaperUrl } from '../../utils/publicNavigation.js';
 import { paperShareData, shareOrCopyLink } from '../../utils/shareLink.js';
-import { Calendar, Award, Share2, Check, Unlock, Lock, ExternalLink, FileText, BarChart3, TrendingUp, Flame, Database, Sparkles, ArrowRight, ArrowLeft } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  ArrowSquareOut,
+  Calendar,
+  ChartBar,
+  Check,
+  Database,
+  FileText,
+  Fire,
+  Lock,
+  LockOpen,
+  Medal,
+  ShareNetwork,
+  Sparkle,
+  TrendUp,
+} from '@phosphor-icons/react';
 import ScientificText from '../ScientificText';
 import 'katex/dist/katex.min.css';
 import './ScientificReport.css';
@@ -31,8 +47,8 @@ import './ScientificReport.css';
 /** The same glyph per status the feed card uses, keyed the same way. */
 const STATUS_TAG_ICONS = {
   preprint: FileText,
-  open: Unlock,
-  openCopy: Unlock,
+  open: LockOpen,
+  openCopy: LockOpen,
   subscription: Lock,
 };
 
@@ -540,7 +556,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
         <div className="sr-header-top">
           <div className="sr-masthead-block">
             <span className="sr-eyebrow">
-              <Sparkles size={12} />
+              <Sparkle size={12} />
               {isEnglish ? 'Scientific edition for this period' : 'Edición científica del periodo'}
               {/* Only where there is somewhere to go: a period thin enough for
                   one selection must not offer a count of one. */}
@@ -708,7 +724,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
               the trends keep their heading and skeleton only the list. */}
           <div className="sr-stats-bar sr-enter" style={{ '--enter-order': ENTER.stats }}>
             <div className="sr-stat" title={isEnglish ? 'Papers included in this editorial selection' : 'Papers incluidos en esta selección editorial'}>
-              <BarChart3 size={16} />
+              <ChartBar size={16} />
               <div className="sr-stat-info">
                 <span className="sr-stat-number">
                   <StatValue loading={loading}><AnimatedNumber value={totalPapers} locale={locale} /></StatValue>
@@ -718,7 +734,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
             </div>
             <div className="sr-stat-divider" />
             <div className="sr-stat" title={isEnglish ? 'Total citations of selected papers' : 'Suma de citas de los papers seleccionados'}>
-              <TrendingUp size={16} />
+              <TrendUp size={16} />
               <div className="sr-stat-info">
                 <span className="sr-stat-number">
                   <StatValue loading={loading} width="72%"><AnimatedNumber value={totalCitations} duration={800} locale={locale} /></StatValue>
@@ -728,7 +744,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
             </div>
             <div className="sr-stat-divider" />
             <div className="sr-stat" title={isEnglish ? 'Open Access papers in the selection' : 'Papers Open Access dentro de la selección'}>
-              <Unlock size={16} />
+              <LockOpen size={16} />
               <div className="sr-stat-info">
                 <span className="sr-stat-number">
                   <StatValue loading={loading} width="58%">{oaCount}/{totalPapers}</StatValue>
@@ -750,7 +766,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
             aria-label={isEnglish ? 'Scientific trends' : 'Tendencias científicas'}
           >
             <div className="sr-trends-heading">
-              <span><TrendingUp size={15} /> {isEnglish ? 'Growing topics' : 'Temas en crecimiento'}</span>
+              <span><TrendUp size={15} /> {isEnglish ? 'Growing topics' : 'Temas en crecimiento'}</span>
               {currentTrendPeriod && previousTrendPeriod && (
                 <small>
                   {trends.provisional ? (isEnglish ? 'Provisional data · ' : 'Datos provisionales · ') : ''}
@@ -807,7 +823,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           {trends.status !== 'active' && report.featuredConcepts?.length > 0 && (
             <div className="sr-trending-topics sr-enter" style={{ '--enter-order': ENTER.topics }}>
               <span className="sr-trending-label">
-                <Flame size={14} className="sr-flame-icon" />
+                <Fire size={14} className="sr-flame-icon" />
                 {isEnglish ? 'Topics in this selection:' : 'Temas de esta selección:'}
               </span>
               <div className="sr-trending-pills">
@@ -860,8 +876,8 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                       </span>
                     );
                   })}
-                  {hero.citationCount > 0 && <span className="sr-tag"><Award size={12} /> {hero.citationCount} {isEnglish ? 'citations' : 'citas'}</span>}
-                  {safeDoiUrl(hero.doi) && <a href={safeDoiUrl(hero.doi)} target="_blank" rel="noopener noreferrer" className="sr-tag sr-tag--link" onClick={e => e.stopPropagation()} title={isEnglish ? 'Open the DOI record' : 'Abrir el registro DOI'}><ExternalLink size={12} /> DOI</a>}
+                  {hero.citationCount > 0 && <span className="sr-tag"><Medal size={12} /> {hero.citationCount} {isEnglish ? 'citations' : 'citas'}</span>}
+                  {safeDoiUrl(hero.doi) && <a href={safeDoiUrl(hero.doi)} target="_blank" rel="noopener noreferrer" className="sr-tag sr-tag--link" onClick={e => e.stopPropagation()} title={isEnglish ? 'Open the DOI record' : 'Abrir el registro DOI'}><ArrowSquareOut size={12} /> DOI</a>}
                 </div>
                 <div className="sr-hero-actions">
                   <Button onClick={() => setSelectedPaper(accessibleHero)}>
@@ -870,7 +886,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                   <Button variant="ghost" onClick={() => handleShare(accessibleHero)}>
                     {copied
                       ? <><Check size={15} /> {isEnglish ? 'Copied' : 'Copiado'}</>
-                      : <><Share2 size={15} /> {isEnglish ? 'Share' : 'Compartir'}</>}
+                      : <><ShareNetwork size={15} /> {isEnglish ? 'Share' : 'Compartir'}</>}
                   </Button>
                 </div>
                 </div>

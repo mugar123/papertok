@@ -2,9 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
-  ArrowRight, BadgeCheck, Bookmark, FolderOpen, Globe2, Heart, Lock, RefreshCw, Rss,
-  Settings2,
-} from 'lucide-react';
+  ArrowRight,
+  ArrowsClockwise,
+  BookmarkSimple,
+  FolderOpen,
+  GlobeHemisphereWest,
+  Heart,
+  Lock,
+  Rss,
+  SealCheck,
+  Sliders,
+} from '@phosphor-icons/react';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useFeed } from '../../context/FeedContext.jsx';
@@ -1006,7 +1014,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                 setReloadToken(token => token + 1);
               }}
             >
-              <RefreshCw size={16} /> {copy.retry}
+              <ArrowsClockwise size={16} /> {copy.retry}
             </button>
           )}
         </div>
@@ -1073,7 +1081,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   const listCards = (lists, own) => (
     <ul className="public-profile-list-grid">
       {lists.map((list, index) => {
-        // `emoji` holds a lucide icon name, not a literal emoji.
+        // `emoji` holds an icon name from utils/icons.js, not a literal emoji.
         const Icon = getIcon(list.emoji);
         // The owner's colour, resolved the same way the lists page resolves
         // it, so one list is one object wherever it is shown. A showcase card
@@ -1092,7 +1100,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
               </span>
               {own && list.isPublished && (
                 <span className="profile-badge-public">
-                  <Globe2 size={11} aria-hidden="true" /> {copy.publicBadge}
+                  <GlobeHemisphereWest size={11} aria-hidden="true" /> {copy.publicBadge}
                 </span>
               )}
             </span>
@@ -1205,7 +1213,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                 aria-label={copy.settings}
                 title={copy.settings}
               >
-                <Settings2 size={18} />
+                <Sliders size={18} />
               </button>
             )}
           </div>
@@ -1240,7 +1248,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
               {displayName}
               {profile?.verified && (
                 <span className="public-profile-verified" title={copy.verified}>
-                  <BadgeCheck size={20} aria-label={copy.verified} />
+                  <SealCheck size={20} aria-label={copy.verified} />
                 </span>
               )}
             </h1>
@@ -1446,7 +1454,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                 {activeTab === 'saved' && (!libraryReady ? loadingRowList
                   : savedRows.length === 0 ? (
                     <EmptyState
-                      Icon={Bookmark}
+                      Icon={BookmarkSimple}
                       title={copy.emptySavedTitle}
                       hint={copy.emptySavedHint}
                     />

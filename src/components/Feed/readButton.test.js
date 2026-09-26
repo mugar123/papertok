@@ -74,7 +74,7 @@ test('SOURCE: the way back is the same gesture played the other way', async () =
 
 test('SOURCE: the eye and the tick share the slot so one can turn into the other', async () => {
   const card = await read('./PaperCard.jsx');
-  assert.match(card, /<Eye size=\{20\} className="pc-icon-eye" aria-hidden="true" \/>\s*<CheckCircle2 size=\{20\} className="pc-icon-check" aria-hidden="true" \/>/);
+  assert.match(card, /<Eye size=\{20\} className="pc-icon-eye" aria-hidden="true" \/>\s*<CheckCircle size=\{20\} className="pc-icon-check" aria-hidden="true" \/>/);
   assert.match(card, /pressed=\{isReadActive\}/, 'the read button is a ui Toggle whose pressed state is isReadActive');
   const css = await read('./PaperCard.css');
   assert.match(css, /\.pc-side-btn--read \.pc-side-icon--morph \.pc-icon-eye \{[\s\S]*?opacity: 0;[\s\S]*?transform: scale\(0\.5\) rotate\(20deg\);/);

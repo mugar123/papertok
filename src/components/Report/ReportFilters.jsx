@@ -3,7 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Collapsible } from '@base-ui/react/collapsible';
 import { CATEGORIES } from '../../data/categories';
 import { getCountryName, searchCountries } from '../../data/countries';
-import { Check, ChevronDown, LoaderCircle, MapPin, Search, X } from 'lucide-react';
+import { CaretDown, Check, CircleNotch, MagnifyingGlass, MapPin, X } from '@phosphor-icons/react';
 import WorldMap from './WorldMap';
 import { Button } from '../ui/button.jsx';
 import { Input } from '../ui/input.jsx';
@@ -58,7 +58,7 @@ function Chevron({ isOpen, size = 16, reduced }) {
       transition={reduced ? { duration: 0 } : { duration: 0.25, ease: EASE }}
       aria-hidden="true"
     >
-      <ChevronDown size={size} />
+      <CaretDown size={size} />
     </motion.span>
   );
 }
@@ -165,7 +165,7 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
           )}
         </span>
         <span className="rf-toggle-status">
-          {loading && <LoaderCircle className="rf-loading-icon" size={14} aria-hidden="true" />}
+          {loading && <CircleNotch className="rf-loading-icon" size={14} aria-hidden="true" />}
           <span className="rf-toggle-action">
             {isOpen
               ? (isEnglish ? 'Close' : 'Cerrar')
@@ -290,7 +290,7 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
                 </p>
 
                 <div className="rf-search-wrap">
-                  <Search size={15} className="rf-search-icon" aria-hidden="true" />
+                  <MagnifyingGlass size={15} className="rf-search-icon" aria-hidden="true" />
                   <Input
                     ref={countryInputRef}
                     className="rf-search"
@@ -439,7 +439,7 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
                 onClick={applyFilters}
                 disabled={!hasPendingChanges || loading}
               >
-                {loading ? <LoaderCircle className="rf-loading-icon" size={15} aria-hidden="true" /> : <Check size={15} aria-hidden="true" />}
+                {loading ? <CircleNotch className="rf-loading-icon" size={15} aria-hidden="true" /> : <Check size={15} aria-hidden="true" />}
                 {isEnglish ? 'Apply filters' : 'Aplicar filtros'}
               </Button>
             </div>

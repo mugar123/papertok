@@ -1,5 +1,5 @@
 import { Menu as MenuPrimitive } from '@base-ui/react/menu';
-import { Check, ChevronRight } from 'lucide-react';
+import { CaretRight, Check } from '@phosphor-icons/react';
 import { cn } from '../../lib/utils.js';
 
 /**
@@ -141,7 +141,7 @@ function DropdownMenuSubTrigger({ className, inset, children, ...props }) {
       {...props}
     >
       {children}
-      <ChevronRight size={14} className="ml-auto" aria-hidden="true" />
+      <CaretRight size={14} className="ml-auto" aria-hidden="true" />
     </MenuPrimitive.SubmenuTrigger>
   );
 }

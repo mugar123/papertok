@@ -135,11 +135,19 @@ test('SOURCE: el tirón que refresca aterriza; el que no, vuelve con la goma', a
   assert.match(reduced, /\.feed-wrapper\[data-pull='landing'\] \.pc \{ transform: none; transition: none; \}/);
 });
 
-test('SOURCE: el invitado ve el modal de intereses al montar, sin esperar al feed', async () => {
+test('SOURCE: la primera visita es la bienvenida, en el primer render y sin cargar el feed', async () => {
   const src = strip(await read('../Public/GuestFeedPage.jsx'));
-  const ask = src.slice(src.indexOf('const [askedOnce, setAskedOnce]'), src.indexOf('setInterestsOpen(true);') + 24);
-  assert.doesNotMatch(ask, /feedReady|setTimeout|useEffect/, 'ni espera al feed, ni retardo, ni un efecto que llegue un commit tarde');
-  assert.match(ask, /if \(firstAsk && !askedOnce && !interestsPromptSuspended\)/);
+  // Decided from the stored answer during render: no efecto que llegue un
+  // commit tarde, y ninguna espera al feed.
+  assert.match(src, /const firstVisit = interests === null;/);
+  assert.match(src, /if \(firstVisit\) \{\s*return \(\s*<GuestWelcome/);
+  assert.doesNotMatch(src, /askedOnce|feedReady/);
+  // El feed no pregunta a ninguna fuente mientras la bienvenida está arriba:
+  // se construye con su respuesta.
+  assert.match(src, /useGuestFeed\(\{ areas, topics, enabled: !firstVisit \}\)/);
+  const hook = strip(await read('../../hooks/useGuestFeed.js'));
+  // `guestFeedLoadDecision` answers null while the feed is not enabled.
+  assert.match(hook, /const decision = guestFeedLoadDecision\(\{ enabled, previousKey, planKey: plan\.key \}\);\s*if \(!decision\) return undefined;/);
 });
 
 /**

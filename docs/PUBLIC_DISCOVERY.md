@@ -27,15 +27,26 @@ sample feed and open public paper or entity pages. Actions that create personal 
 preferences) keep their visible controls but open the sign-in prompt instead of writing shared
 guest data.
 
-The moment the guest page is up, a sheet opens once (`GuestInterestsPrompt`): two lines on what
-PaperTok is, then which areas the visitor is into. The answer — area keys, kept on the device in
-`papertok_guestInterests` — rebuilds the guest feed through `buildGuestFeedPlan`
+A first visit (no answer stored on the device) is a welcome page, not the feed: `GuestWelcome`
+renders in place of the guest feed page, with its own `<main>`: one centred column, one idea per
+screen, the button centred at the foot with back and skip as bare icons either side of it and
+progress dots over it. Four screens — what PaperTok is ("like TikTok, but you come out smarter", between two columns of
+real papers — recent AI among landmarks from every field — that scroll by themselves to the
+foot of the screen; each column is itself a named toggle that stops both, so no pause button
+is drawn; strips above and below on a phone; still under reduced
+motion), what you do in it (swipe, read in plain words, a feed
+that learns — side by side, arriving one after another), which areas to start from, and — a screen of its own,
+in the same cards — the specific topics inside each ticked area (the taxonomy's
+subcategories), optional and sold as what makes the feed yours. The areas screen has to be
+answered; the first two can skip to it, and the bar keeps language,
+theme and sign-in reachable throughout. No source is queried while the welcome is up (`useGuestFeed`'s
+`enabled`): the feed is built from the answer. The answer — area keys and any topics picked inside them, kept on the device in
+`papertok_guestInterests` (an area with no topics picked stands for all of it) — rebuilds the guest feed through `buildGuestFeedPlan`
 (`src/utils/guestFeedPlan.js`): every source is asked for those areas instead of the fixed
 sample, with the same per-source caps the signed-in feed keeps (six arXiv categories, five
 OpenAlex labels, three PubMed labels, spread round-robin across the chosen areas so each one
-is represented). The first ask has to be answered — no close button, no Escape, no scrim
-dismissal — because the feed behind it is built from the answer; the header chip reopens it
-as an editable sheet (with Cancel) and names the answer once there is one. If the guest signs up, the onboarding
+is represented). Once the feed is up, the header chip reopens the areas as an editable sheet
+(`GuestInterestsPrompt`, with Cancel) and names the answer. If the guest signs up, the onboarding
 skips the interests steps altogether and opens on the profile step, with those areas and all
 their categories pre-selected (Back reaches the receipt and the pickers for anyone who wants to
 narrow them); `completeOnboarding` writes them to the profile and clears the device copy.

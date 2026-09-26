@@ -1,33 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  ArrowCounterClockwise,
+  ArrowSquareOut,
   Bell,
-  BarChart3,
   BookOpen,
-  Building2,
-  BriefcaseBusiness,
+  Briefcase,
+  Buildings,
   Camera,
+  CaretRight,
+  ChartBar,
+  ChatCircle,
   Check,
-  ChevronRight,
-  Code2,
-  ExternalLink,
-  FlaskConical,
+  CircleNotch,
+  Code,
+  Envelope,
+  Flask,
   GraduationCap,
-  KeyRound,
-  Languages,
-  LoaderCircle,
-  LogOut,
-  Mail,
-  MessageCircle,
-  RotateCcw,
+  Key,
   ShieldCheck,
+  SignOut,
   SlidersHorizontal,
-  Sparkles,
+  Sparkle,
   Tag,
-  Trash2,
-  UserRound,
-  UsersRound,
-} from 'lucide-react';
+  Translate,
+  Trash,
+  User,
+  UsersThree,
+} from '@phosphor-icons/react';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useFollowing } from '../../context/FollowingContext';
@@ -87,15 +87,15 @@ const LEVEL_DETAILS = {
       es: 'Métodos, límites y detalle técnico',
       en: 'Methods, limitations, and technical detail',
     },
-    Icon: FlaskConical,
+    Icon: Flask,
   },
 };
 
 const FOLLOW_SUMMARY = [
-  { type: 'author', label: { es: 'Autores', en: 'Authors' }, Icon: UserRound },
+  { type: 'author', label: { es: 'Autores', en: 'Authors' }, Icon: User },
   { type: 'topic', label: { es: 'Temas', en: 'Topics' }, Icon: Tag },
-  { type: 'institution', label: { es: 'Instituciones', en: 'Institutions' }, Icon: Building2 },
-  { type: 'project', label: { es: 'Proyectos', en: 'Projects' }, Icon: BriefcaseBusiness },
+  { type: 'institution', label: { es: 'Instituciones', en: 'Institutions' }, Icon: Buildings },
+  { type: 'project', label: { es: 'Proyectos', en: 'Projects' }, Icon: Briefcase },
 ];
 
 /**
@@ -704,7 +704,7 @@ export default function SettingsPage() {
                   )}
                   {savingPhoto && (
                     <span className="settings-profile-loading" aria-hidden="true">
-                      <LoaderCircle size={22} />
+                      <CircleNotch size={22} />
                     </span>
                   )}
                 </div>
@@ -744,7 +744,7 @@ export default function SettingsPage() {
                       aria-label={user?.photoURL ? copy.restoreGooglePhoto : copy.removePhoto}
                       title={user?.photoURL ? copy.restoreGooglePhoto : copy.removePhoto}
                     >
-                      <RotateCcw size={17} aria-hidden="true" />
+                      <ArrowCounterClockwise size={17} aria-hidden="true" />
                     </Button>
                   )}
                 </div>
@@ -769,7 +769,7 @@ export default function SettingsPage() {
 
                 <div className="settings-list">
                   <div className="settings-row" style={{ '--settings-index': 0 }}>
-                    <span className="settings-row-icon is-purple"><UserRound size={20} /></span>
+                    <span className="settings-row-icon is-purple"><User size={20} /></span>
                     <div className="settings-row-content">
                       <div className="settings-row-title-line">
                         <h3>{copy.publicProfile}</h3>
@@ -786,23 +786,23 @@ export default function SettingsPage() {
                       <p>{copy.publicProfileDescription}</p>
                     </div>
                     <Button variant="outline" className="settings-row-action" onClick={() => navigate('/settings/profile')}>
-                      {copy.edit} <ChevronRight size={17} aria-hidden="true" />
+                      {copy.edit} <CaretRight size={17} aria-hidden="true" />
                     </Button>
                   </div>
 
                   <div className="settings-row" style={{ '--settings-index': 1 }}>
-                    <span className="settings-row-icon is-purple"><MessageCircle size={20} /></span>
+                    <span className="settings-row-icon is-purple"><ChatCircle size={20} /></span>
                     <div className="settings-row-content">
                       <h3>{copy.myComments}</h3>
                       <p>{copy.myCommentsDescription}</p>
                     </div>
                     <Button variant="outline" className="settings-row-action" onClick={() => navigate('/settings/comments')}>
-                      {copy.viewAll} <ChevronRight size={17} aria-hidden="true" />
+                      {copy.viewAll} <CaretRight size={17} aria-hidden="true" />
                     </Button>
                   </div>
 
                   <div className="settings-row" style={{ '--settings-index': 1 }}>
-                    <span className="settings-row-icon is-purple"><UsersRound size={20} /></span>
+                    <span className="settings-row-icon is-purple"><UsersThree size={20} /></span>
                     <div className="settings-row-content">
                       <h3>{copy.followedContent}</h3>
                       <p>
@@ -827,7 +827,7 @@ export default function SettingsPage() {
                       )}
                     </div>
                     <Button variant="outline" className="settings-row-action" onClick={() => navigate('/settings/following')}>
-                      {copy.viewAll} <ChevronRight size={17} aria-hidden="true" />
+                      {copy.viewAll} <CaretRight size={17} aria-hidden="true" />
                     </Button>
                   </div>
 
@@ -848,7 +848,7 @@ export default function SettingsPage() {
                       )}
                     </div>
                     <Button variant="outline" className="settings-row-action" onClick={() => setIsInterestsOpen(true)}>
-                      {copy.edit} <ChevronRight size={17} aria-hidden="true" />
+                      {copy.edit} <CaretRight size={17} aria-hidden="true" />
                     </Button>
                   </div>
                 </div>
@@ -856,7 +856,7 @@ export default function SettingsPage() {
 
               <section id="settings-reading" tabIndex={-1} className="settings-section" aria-labelledby="reading-heading">
                 <div className="settings-section-heading">
-                  <Sparkles size={18} />
+                  <Sparkle size={18} />
                   <div>
                     <h2 id="reading-heading">{copy.readingAi}</h2>
                     <p>{copy.readingAiDescription}</p>
@@ -865,7 +865,7 @@ export default function SettingsPage() {
 
                 <div className="settings-list">
                   <div className="settings-row settings-row--levels" style={{ '--settings-index': 2 }}>
-                    <span className="settings-row-icon is-purple"><Sparkles size={20} /></span>
+                    <span className="settings-row-icon is-purple"><Sparkle size={20} /></span>
                     <div className="settings-row-content">
                       <h3>{copy.defaultAiLevel}</h3>
                       <p>{copy.defaultAiDescription}</p>
@@ -904,7 +904,7 @@ export default function SettingsPage() {
 
               <section id="settings-interface" tabIndex={-1} className="settings-section" aria-labelledby="interface-heading">
                 <div className="settings-section-heading">
-                  <Languages size={18} />
+                  <Translate size={18} />
                   <div>
                     <h2 id="interface-heading">{copy.interface}</h2>
                     <p>{copy.interfaceDescription}</p>
@@ -913,7 +913,7 @@ export default function SettingsPage() {
 
                 <div className="settings-list">
                   <div className="settings-row" style={{ '--settings-index': 3 }}>
-                    <span className="settings-row-icon is-cyan"><Languages size={20} /></span>
+                    <span className="settings-row-icon is-cyan"><Translate size={20} /></span>
                     <div className="settings-row-content">
                       <h3>{copy.language}</h3>
                       <p>{copy.languageDescription}</p>
@@ -952,7 +952,7 @@ export default function SettingsPage() {
 
                 <div className="settings-list">
                   <div className="settings-row" style={{ '--settings-index': 4 }}>
-                    <span className="settings-row-icon is-amber"><Mail size={20} /></span>
+                    <span className="settings-row-icon is-amber"><Envelope size={20} /></span>
                     <div className="settings-row-content">
                       <div className="settings-row-title-line">
                         <h3>{copy.emailUpdates}</h3>
@@ -963,7 +963,7 @@ export default function SettingsPage() {
                       <p>{notificationStatus.description}</p>
                     </div>
                     <Button variant="outline" className="settings-row-action" onClick={() => setIsNotificationsOpen(true)}>
-                      {copy.configure} <ChevronRight size={17} aria-hidden="true" />
+                      {copy.configure} <CaretRight size={17} aria-hidden="true" />
                     </Button>
                   </div>
                 </div>
@@ -980,7 +980,7 @@ export default function SettingsPage() {
 
                 <div className="settings-list">
                   <div className="settings-row" style={{ '--settings-index': 5 }}>
-                    <span className="settings-row-icon is-cyan"><BarChart3 size={20} /></span>
+                    <span className="settings-row-icon is-cyan"><ChartBar size={20} /></span>
                     <div className="settings-row-content">
                       <h3>{copy.usageAnalytics}</h3>
                       <p>{copy.usageAnalyticsDescription}</p>
@@ -999,7 +999,7 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="settings-row" style={{ '--settings-index': 6 }}>
-                    <span className="settings-row-icon is-rose"><Trash2 size={20} /></span>
+                    <span className="settings-row-icon is-rose"><Trash size={20} /></span>
                     <div className="settings-row-content">
                       <h3>{copy.deleteAccount}</h3>
                       <p>{copy.deleteAccountDescription}</p>
@@ -1017,7 +1017,7 @@ export default function SettingsPage() {
 
               <section id="settings-community" tabIndex={-1} className="settings-section settings-section--community" aria-labelledby="community-heading">
                 <div className="settings-section-heading">
-                  <Code2 size={18} />
+                  <Code size={18} />
                   <div>
                     <h2 id="community-heading">{copy.community}</h2>
                     <p>{copy.communityDescription}</p>
@@ -1026,7 +1026,7 @@ export default function SettingsPage() {
 
                 <div className="settings-list">
                   <div className="settings-row" style={{ '--settings-index': 6 }}>
-                    <span className="settings-row-icon settings-row-icon--github"><Code2 size={20} /></span>
+                    <span className="settings-row-icon settings-row-icon--github"><Code size={20} /></span>
                     <div className="settings-row-content">
                       <h3>{copy.openSource}</h3>
                       <p>{copy.openSourceDescription}</p>
@@ -1038,7 +1038,7 @@ export default function SettingsPage() {
                       rel="noreferrer"
                       aria-label={`${copy.viewOnGitHub} (${copy.opensNewTab})`}
                     >
-                      {copy.viewOnGitHub} <ExternalLink size={16} />
+                      {copy.viewOnGitHub} <ArrowSquareOut size={16} />
                     </a>
                   </div>
                 </div>
@@ -1049,7 +1049,7 @@ export default function SettingsPage() {
                   a scroll apart. */}
               <section id="settings-access" tabIndex={-1} className="settings-section" aria-labelledby="access-heading">
                 <div className="settings-section-heading">
-                  <KeyRound size={18} />
+                  <Key size={18} />
                   <div>
                     <h2 id="access-heading">{copy.access}</h2>
                     <p>{copy.accessDescription}</p>
@@ -1073,19 +1073,19 @@ export default function SettingsPage() {
                         disabled={linkingGitHub}
                       >
                         {linkingGitHub ? copy.connecting : copy.connect}
-                        {!linkingGitHub && <ChevronRight size={17} aria-hidden="true" />}
+                        {!linkingGitHub && <CaretRight size={17} aria-hidden="true" />}
                       </Button>
                     )}
                   </div>
 
                   <div className="settings-row" style={{ '--settings-index': 7 }}>
-                    <span className="settings-row-icon is-rose"><UserRound size={20} /></span>
+                    <span className="settings-row-icon is-rose"><User size={20} /></span>
                     <div className="settings-row-content">
                       <h3>{copy.session}</h3>
                       <p>{copy.sessionDescription}</p>
                     </div>
                     <Button variant="outline" className="settings-signout" onClick={handleSignOut}>
-                      <LogOut size={18} aria-hidden="true" /> {copy.signOut}
+                      <SignOut size={18} aria-hidden="true" /> {copy.signOut}
                     </Button>
                   </div>
                 </div>

@@ -21,9 +21,11 @@ import './ThemeToggle.css';
  * so the drawing and the announcement cannot drift apart.
  *
  * The disc is one circle: `r 8` scaled to half for the sun, full and inked for
- * the moon, with a masked bite that slides in last. `vector-effect` keeps the
- * stroke at its lucide weight through the scale, so the moon does not come out
- * heavier than the icons either side of it.
+ * the moon, with a masked bite that slides in last. It is drawn by hand rather
+ * than taken from Phosphor because the morph needs one shape that becomes the
+ * other; the stroke is Phosphor's regular weight (1.5 on the 24 grid), and
+ * `vector-effect` keeps it there through the scale, so the moon does not come
+ * out heavier than the icons either side of it.
  */
 export default function ThemeToggle({ className = 'navbar-icon-btn' }) {
   const { isDark, toggleTheme } = useTheme();
@@ -49,7 +51,7 @@ export default function ThemeToggle({ className = 'navbar-icon-btn' }) {
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
-        strokeWidth="2"
+        strokeWidth="1.5"
         strokeLinecap="round"
         aria-hidden="true"
       >

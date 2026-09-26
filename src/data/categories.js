@@ -3,20 +3,20 @@
  * Complete mapping of scientific areas to arXiv categories.
  */
 
-import { 
-  Atom, 
-  Monitor, 
-  Calculator, 
-  Dna, 
-  BarChart2, 
-  TrendingUp, 
-  Zap, 
-  CircleDollarSign,
-  Settings,
+import {
+  Atom,
   Building,
-  Beaker,
-  HeartPulse
-} from 'lucide-react';
+  Calculator,
+  ChartBar,
+  CurrencyCircleDollar,
+  Dna,
+  Flask,
+  Gear,
+  Heartbeat,
+  Lightning,
+  Monitor,
+  TrendUp,
+} from '@phosphor-icons/react';
 
 export const CATEGORIES = {
   physics: {
@@ -116,7 +116,7 @@ export const CATEGORIES = {
   stat: {
     label: 'Estadística',
     labelEn: 'Statistics',
-    icon: BarChart2,
+    icon: ChartBar,
     gradient: 'var(--gradient-stat)',
     description: 'Machine learning, metodología y aplicaciones',
     descriptionEn: 'Machine learning, methodology, and applications',
@@ -131,7 +131,7 @@ export const CATEGORIES = {
   econ: {
     label: 'Economía',
     labelEn: 'Economics',
-    icon: TrendingUp,
+    icon: TrendUp,
     gradient: 'var(--gradient-econ)',
     description: 'Econometría y teoría económica',
     descriptionEn: 'Econometrics and economic theory',
@@ -144,7 +144,7 @@ export const CATEGORIES = {
   'q-fin': {
     label: 'Finanzas Cuantitativas',
     labelEn: 'Quantitative Finance',
-    icon: CircleDollarSign,
+    icon: CurrencyCircleDollar,
     gradient: 'var(--gradient-qfin)',
     description: 'Trading algorítmico, riesgo y portfolios',
     descriptionEn: 'Algorithmic trading, risk, and portfolios',
@@ -161,7 +161,7 @@ export const CATEGORIES = {
   eess: {
     label: 'Ingeniería Eléctrica y Electrónica',
     labelEn: 'Electrical & Electronic Engineering',
-    icon: Zap,
+    icon: Lightning,
     gradient: 'var(--gradient-eess)',
     description: 'Señales, potencia, telecomunicaciones y control',
     descriptionEn: 'Signals, power, telecommunications, and control',
@@ -178,7 +178,7 @@ export const CATEGORIES = {
   mech: {
     label: 'Ingeniería Mecánica y Aeroespacial',
     labelEn: 'Mechanical & Aerospace Engineering',
-    icon: Settings,
+    icon: Gear,
     gradient: 'var(--gradient-mech)',
     description: 'Robótica, termodinámica, fluidos y manufactura',
     descriptionEn: 'Robotics, thermodynamics, fluids, and manufacturing',
@@ -215,7 +215,7 @@ export const CATEGORIES = {
   chemeng: {
     label: 'Ingeniería Química y Materiales',
     labelEn: 'Chemical & Materials Engineering',
-    icon: Beaker,
+    icon: Flask,
     gradient: 'var(--gradient-chemeng)',
     description: 'Procesos químicos, nanotecnología y materiales',
     descriptionEn: 'Chemical processes, nanotechnology, and materials',
@@ -233,7 +233,7 @@ export const CATEGORIES = {
   med: {
     label: 'Medicina',
     labelEn: 'Medicine',
-    icon: HeartPulse,
+    icon: Heartbeat,
     gradient: 'var(--gradient-med)',
     description: 'Investigación clínica, salud pública y especialidades',
     descriptionEn: 'Clinical research, public health, and specialties',

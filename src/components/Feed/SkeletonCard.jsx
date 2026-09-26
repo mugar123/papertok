@@ -17,8 +17,14 @@ export default function SkeletonCard() {
           <div className="sk-avatar" />
           <div className="sk-name" />
         </div>
-        <div className="sk-text" />
-        <div className="sk-text sk-text--short" />
+        <div className="sk-abstract">
+          <div className="sk-text" />
+          <div className="sk-text" />
+          <div className="sk-text" />
+          <div className="sk-text" />
+          <div className="sk-text" />
+          <div className="sk-text sk-text--short" />
+        </div>
         <div className="sk-bar">
           <div className="sk-btn" />
           <div className="sk-btn sk-btn--small" />

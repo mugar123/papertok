@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ArrowLeft, Home, RotateCw } from 'lucide-react';
+import { ArrowClockwise, ArrowLeft, House } from '@phosphor-icons/react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useFeed } from '../../context/FeedContext.jsx';
@@ -338,7 +338,7 @@ export default function PublicPaperPage({
           </button>
           <div className="public-paper-wordmark" aria-label="PaperTok">Paper<span>Tok</span></div>
           <button type="button" className="public-paper-nav-button" onClick={() => navigate('/feed')} aria-label={text(COPY.home)} title={text(COPY.home)}>
-            <Home size={19} />
+            <House size={19} />
           </button>
         </nav>
       )}
@@ -419,13 +419,13 @@ export default function PublicPaperPage({
           <p>{text(status === 'not-found' ? COPY.notFoundDescription : COPY.errorDescription)}</p>
           <div className="public-paper-state-actions">
             <button type="button" className="public-paper-primary-action" onClick={retry}>
-              <RotateCw size={17} /> {text(COPY.retry)}
+              <ArrowClockwise size={17} /> {text(COPY.retry)}
             </button>
             <button type="button" className="public-paper-secondary-action" onClick={goBack}>
               <ArrowLeft size={17} /> {text(COPY.back)}
             </button>
             <button type="button" className="public-paper-secondary-action" onClick={() => navigate('/feed')}>
-              <Home size={17} /> {text(COPY.home)}
+              <House size={17} /> {text(COPY.home)}
             </button>
           </div>
         </section>

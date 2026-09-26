@@ -1,17 +1,17 @@
 import { Children, cloneElement, useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  AlertCircle,
-  Building2,
-  Check,
-  FileText,
   Briefcase,
+  Buildings,
+  Check,
+  CircleNotch,
+  FileText,
   Lightbulb,
-  LoaderCircle,
   Plus,
-  UserRound,
+  User,
   Users,
-} from 'lucide-react';
+  WarningCircle,
+} from '@phosphor-icons/react';
 import {
   CommandDialog,
   CommandEmpty,
@@ -83,7 +83,7 @@ const COPY = {
 
 const SUGGESTIONS = [
   { labelEs: 'Cosmología', labelEn: 'Cosmology', queryEs: 'Cosmología', queryEn: 'Cosmology', Icon: Lightbulb },
-  { labelEs: 'MIT', labelEn: 'MIT', queryEs: 'Massachusetts Institute of Technology', queryEn: 'Massachusetts Institute of Technology', Icon: Building2 },
+  { labelEs: 'MIT', labelEn: 'MIT', queryEs: 'Massachusetts Institute of Technology', queryEn: 'Massachusetts Institute of Technology', Icon: Buildings },
   { labelEs: 'CRISPR Cas9', labelEn: 'CRISPR Cas9', queryEs: 'CRISPR Cas9', queryEn: 'CRISPR Cas9', Icon: FileText },
   { labelEs: 'Geoffrey Hinton', labelEn: 'Geoffrey Hinton', queryEs: 'Geoffrey Hinton', queryEn: 'Geoffrey Hinton', Icon: Users },
 ];
@@ -109,9 +109,9 @@ const SECTION_ICONS = {
   papers: FileText,
   // `users` is somebody with a PaperTok account; `authors` is whoever wrote a
   // paper, from OpenAlex. Different things, so different icons.
-  users: UserRound,
+  users: User,
   authors: Users,
-  institutions: Building2,
+  institutions: Buildings,
   topics: Lightbulb,
   projects: Briefcase,
 };
@@ -240,7 +240,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
         aria-label={following ? copy.following : copy.follow}
       >
         {pending
-          ? <LoaderCircle size={12} className="spinning" />
+          ? <CircleNotch size={12} className="spinning" />
           : following ? <Check size={12} /> : <Plus size={12} />}
         <span>{following ? copy.following : copy.follow}</span>
       </Toggle>
@@ -311,7 +311,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
         value={`institution-${institution.id}`}
         onSelect={() => go(`/explorer/institution/${lastPathSegment(institution.id)}`, { entity: handoverFromSearchRow('institution', institution), entityType: 'institution' })}
       >
-        <Building2 size={14} className="sc-icon" />
+        <Buildings size={14} className="sc-icon" />
         <span className="sc-label">
           {getLocalizedInstitutionName(institution, language) || institution.display_name}
         </span>
@@ -512,13 +512,13 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
 
         {searchIssue && !searchPending && totalResults > 0 && (
           <div className="sc-status sc-status--warn" role="status">
-            <AlertCircle size={14} /> {copy.partial}
+            <WarningCircle size={14} /> {copy.partial}
           </div>
         )}
 
         {peopleNote && !searchPending && (
           <div className="sc-status sc-status--warn" role="status">
-            <UserRound size={14} /> {peopleNote}
+            <User size={14} /> {peopleNote}
           </div>
         )}
 

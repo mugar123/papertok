@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Check } from 'lucide-react';
+import { Check } from '@phosphor-icons/react';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { CATEGORIES } from '../../data/categories';
@@ -166,7 +166,7 @@ export default function EditInterestsModal({ isOpen, onClose }) {
                         onPressedChange={() => toggleSubcategory(subKey)}
                       >
                         <div className="eim-pill-content">
-                          {isSelected && <Check size={14} strokeWidth={3} className="eim-pill-check" aria-hidden="true" />}
+                          {isSelected && <Check size={14} weight="bold" className="eim-pill-check" aria-hidden="true" />}
                           <span>{isEnglish ? sub.labelEn || sub.label : sub.label}</span>
                         </div>
                       </Toggle>

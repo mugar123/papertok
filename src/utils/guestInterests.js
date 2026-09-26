@@ -13,9 +13,12 @@ import { CATEGORIES } from '../data/categories.js';
  * account on a shared machine with a stranger's interests). Either way, the
  * next guest on this device starts from nothing.
  *
- * The answer is a list of area keys (`cs`, `bio`, …), not subcategories: a
- * guest is asked one quick question, and the onboarding is where the fine
- * grain gets chosen — pre-filled from this.
+ * The answer is a list of area keys (`cs`, `bio`, …) and, optionally, the
+ * specific topics chosen inside them (`cs.LG`, `bio.neuro`, … — the same
+ * subcategory ids a member's `preferences` hold). An area with topics picked
+ * means those topics; an area with none means all of it. So the quick answer
+ * (areas only, which is also every answer stored before topics existed) keeps
+ * meaning what it always did, and the onboarding pre-fills from either.
  */
 export const GUEST_INTERESTS_STORAGE_KEY = 'papertok_guestInterests';
 
@@ -43,13 +46,38 @@ export function normalizeGuestAreas(areas) {
 }
 
 /**
- * Every subcategory id under the given areas, in taxonomy order. This is what
+ * Topics are kept only where they mean something: a known subcategory of an
+ * area that is itself chosen. Taxonomy order, deduplicated — so dropping an
+ * area drops its topics with it.
+ */
+export function normalizeGuestTopics(topics, areas) {
+  if (!Array.isArray(topics)) return [];
+  const wanted = new Set(topics.filter(topic => typeof topic === 'string'));
+  return normalizeGuestAreas(areas)
+    .flatMap(key => Object.keys(CATEGORIES[key].subcategories))
+    .filter(id => wanted.has(id));
+}
+
+/**
+ * The subcategory ids each chosen area stands for, area by area: its picked
+ * topics if it has any, otherwise every one of its subcategories.
+ */
+export function guestTopicListsForAreas(areas, topics = []) {
+  const chosenTopics = new Set(normalizeGuestTopics(topics, areas));
+  return normalizeGuestAreas(areas).map((key) => {
+    const all = Object.keys(CATEGORIES[key].subcategories);
+    const refined = all.filter(id => chosenTopics.has(id));
+    return refined.length > 0 ? refined : all;
+  });
+}
+
+/**
+ * Every subcategory id the answer stands for, in taxonomy order. This is what
  * `preferences` holds for a signed-in user, so it is what the onboarding
  * pre-selects and what the domain source plan is routed by.
  */
-export function guestCategoriesForAreas(areas) {
-  return normalizeGuestAreas(areas)
-    .flatMap(key => Object.keys(CATEGORIES[key].subcategories));
+export function guestCategoriesForAreas(areas, topics = []) {
+  return guestTopicListsForAreas(areas, topics).flat();
 }
 
 /**
@@ -68,9 +96,26 @@ export function guestCategoriesForAreas(areas) {
  */
 export const GUEST_SEED_PER_AREA = 5;
 
-export function guestSeedCategoriesForAreas(areas, perArea = GUEST_SEED_PER_AREA) {
-  const lists = normalizeGuestAreas(areas)
-    .map(key => Object.keys(CATEGORIES[key].subcategories).slice(0, perArea));
+// The rules' cap on a profile's preferences (firestore.rules), restated here
+// so this module stays free of the onboarding's imports; guestInterests.test.js
+// holds the two to the same value.
+export const GUEST_SEED_MAX = 100;
+
+/**
+ * An area the welcome narrowed to specific topics seeds exactly those — the
+ * visitor named them — and one left whole seeds its first `perArea`. The
+ * interleave keeps every area represented before any gets a second seat, and
+ * the whole seed stops at the rules' cap, so even a visitor who ticked every
+ * topic of every area gets a profile the rules accept.
+ */
+export function guestSeedCategoriesForAreas(areas, perArea = GUEST_SEED_PER_AREA, topics = []) {
+  const chosen = normalizeGuestAreas(areas);
+  const narrowed = new Set(normalizeGuestTopics(topics, chosen));
+  const lists = chosen.map((key) => {
+    const all = Object.keys(CATEGORIES[key].subcategories);
+    const picked = all.filter(id => narrowed.has(id));
+    return picked.length > 0 ? picked : all.slice(0, perArea);
+  });
   const picked = [];
   for (let index = 0; ; index += 1) {
     let added = false;
@@ -82,12 +127,12 @@ export function guestSeedCategoriesForAreas(areas, perArea = GUEST_SEED_PER_AREA
     }
     if (!added) break;
   }
-  return picked;
+  return picked.slice(0, GUEST_SEED_MAX);
 }
 
 /**
  * `null` when the prompt has never been answered on this device. Otherwise
- * `{ areas, dismissed }`: `dismissed` is a "not now" (or a pick emptied out),
+ * `{ areas, topics, dismissed }`: `dismissed` is a "not now" (or a pick emptied out),
  * which the prompt honours by not asking again — the header chip stays as
  * the way back in.
  */
@@ -99,16 +144,23 @@ export function readGuestInterests(storage) {
     const parsed = JSON.parse(target.getItem(GUEST_INTERESTS_STORAGE_KEY) || 'null');
     if (!parsed || typeof parsed !== 'object') return null;
     const areas = normalizeGuestAreas(parsed.areas);
+    const topics = normalizeGuestTopics(parsed.topics, areas);
     const dismissed = parsed.dismissedAt != null || areas.length === 0;
-    return { areas, dismissed };
+    return { areas, topics, dismissed };
   } catch {
     return null;
   }
 }
 
-/** Returns the normalized list that was actually stored. */
-export function saveGuestInterests(areas, storage) {
+/**
+ * Takes the areas alone (the header chip's sheet) or `{ areas, topics }` (the
+ * welcome). Returns the normalized list of areas that was actually stored;
+ * `readGuestInterests` has the topics.
+ */
+export function saveGuestInterests(answer, storage) {
+  const areas = Array.isArray(answer) ? answer : answer?.areas;
   const normalized = normalizeGuestAreas(areas);
+  const topics = Array.isArray(answer) ? [] : normalizeGuestTopics(answer?.topics, normalized);
   const target = getStorage(storage);
   if (!target) return normalized;
 
@@ -120,6 +172,7 @@ export function saveGuestInterests(areas, storage) {
     } else {
       target.setItem(GUEST_INTERESTS_STORAGE_KEY, JSON.stringify({
         areas: normalized,
+        topics,
         dismissedAt: null,
         updatedAt: Date.now(),
       }));

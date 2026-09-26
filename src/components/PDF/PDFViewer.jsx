@@ -1,6 +1,7 @@
 import { useEffect, useImperativeHandle, useMemo, useState, useRef, useCallback } from 'react';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { ArrowSquareOut, X } from '@phosphor-icons/react';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.jsx';
 import './PDFViewer.css';
 import { safeDoiUrl } from '../../utils/externalUrl.js';
@@ -109,10 +110,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }) {
           {/* Top bar */}
           <div className="pdf-topbar glass-strong">
             <DialogClose className="pdf-close-btn" aria-label={isEnglish ? 'Close PDF' : 'Cerrar PDF'} title={isEnglish ? 'Close' : 'Cerrar'}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
+              <X size={20} aria-hidden="true" />
             </DialogClose>
 
             <div className="pdf-heading">
@@ -126,11 +124,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }) {
               rel="noopener noreferrer"
               className="pdf-external-btn"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                <polyline points="15 3 21 3 21 9" />
-                <line x1="10" y1="14" x2="21" y2="3" />
-              </svg>
+              <ArrowSquareOut size={16} aria-hidden="true" />
               <span>{isEnglish ? 'New tab' : 'Nueva pestaña'}</span>
             </a>}
           </div>

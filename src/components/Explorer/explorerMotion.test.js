@@ -112,8 +112,8 @@ test('the sentinels spin only while something is actually loading, and stay moun
   // además una guarda para no invitar a bajar por una lista vacía, así que
   // aquí se fija el principio de la condición y el destino, no su literal.
   assert.match(jsx, /hasMore && rowsSettled &&[\s\S]{0,80}<div ref=\{observerRef\} className="ehc-sentinel">/);
-  assert.match(jsx, /\{isFetchingMore && <Loader2 className="ehc-spinner" size=\{24\} \/>\}/);
-  assert.match(jsx, /\{isFetchingMoreAuthors && <Loader2 className="ehc-spinner" size=\{24\} \/>\}/);
+  assert.match(jsx, /\{isFetchingMore && <CircleNotch className="ehc-spinner" size=\{24\} \/>\}/);
+  assert.match(jsx, /\{isFetchingMoreAuthors && <CircleNotch className="ehc-spinner" size=\{24\} \/>\}/);
   // And it says something true while it waits.
   assert.match(jsx, /'Scroll for more'/);
 });

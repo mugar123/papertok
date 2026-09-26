@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, Moon, Settings, SlidersHorizontal, Sun } from 'lucide-react';
+import { Check, Gear, Moon, SlidersHorizontal, Sun } from '@phosphor-icons/react';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover.jsx';
 import { Toggle } from '../ui/toggle.jsx';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.jsx';
@@ -86,7 +86,7 @@ export default function NavPreferencesMenu() {
                   navigate('/settings');
                 }}
               >
-                <Settings size={15} aria-hidden="true" />
+                <Gear size={15} aria-hidden="true" />
                 <span>{isEnglish ? 'All settings' : 'Todos los ajustes'}</span>
               </button>
             </>

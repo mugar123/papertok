@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ExternalLink, RotateCw, ShieldAlert } from 'lucide-react';
+import { ArrowClockwise, ArrowLeft, ArrowSquareOut, ShieldWarning } from '@phosphor-icons/react';
 import { useLanguage } from '../../context/LanguageContext';
 import { deleteComment, fetchComment } from '../../services/commentService.js';
 import {
@@ -172,7 +172,7 @@ export default function ModerationPage() {
             }}
             aria-label={text(COPY.refresh)}
           >
-            <RotateCw size={16} />
+            <ArrowClockwise size={16} />
           </button>
         </header>
 
@@ -193,7 +193,7 @@ export default function ModerationPage() {
         )}
         {state.status === 'unauthorized' && (
           <div className="moderation-state">
-            <ShieldAlert size={22} aria-hidden="true" />
+            <ShieldWarning size={22} aria-hidden="true" />
             <p>{text(COPY.unauthorized)}</p>
           </div>
         )}
@@ -242,7 +242,7 @@ export default function ModerationPage() {
                         className="moderation-action"
                         to={`/public/paper/${encodeURIComponent(target.paperKey ?? parseCommentTargetPath(report.targetPath)?.paperKey ?? report.targetPath.replace(/^papers\//, ''))}`}
                       >
-                        <ExternalLink size={13} aria-hidden="true" /> {text(COPY.openPaper)}
+                        <ArrowSquareOut size={13} aria-hidden="true" /> {text(COPY.openPaper)}
                       </Link>
                     )}
                     {target?.kind === 'comment' && (

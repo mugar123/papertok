@@ -1,4 +1,4 @@
-import { Check } from 'lucide-react';
+import { Check } from '@phosphor-icons/react';
 import { cn } from '../../lib/utils.js';
 import { Toggle } from './toggle.jsx';
 import './follow-toggle.css';

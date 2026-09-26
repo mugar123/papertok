@@ -1,5 +1,5 @@
 /* ============================================
-   GuestInterestsPrompt — one question, after the first card
+   GuestInterestsPrompt — changing the guest's areas from the header chip
 
    Drawn from the same parts as AuthPrompt (the ink scrim, the white sheet,
    the serif headline) and the onboarding's category chips, so a guest who
@@ -113,29 +113,6 @@
   line-height: 1.6;
 }
 
-/* ── The question, under the welcome (first ask only) ── */
-.gip-question {
-  margin: 0 0 var(--space-3);
-}
-
-.gip-question-title {
-  margin: 0 0 var(--space-1);
-  font-family: var(--font-serif);
-  font-size: 1.15rem;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
-}
-
-.gip-question-hint {
-  margin: 0;
-  max-width: 48ch;
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  line-height: 1.55;
-}
-
 /* ── The areas ── */
 .gip-areas {
   display: grid;
@@ -174,10 +151,9 @@
   width: 26px;
   height: 26px;
   place-items: center;
-  border-radius: var(--radius-sm);
+  /* The glyph alone, in its field's ink: no tile behind it. */
   color: var(--area-accent, var(--text-secondary));
-  background: color-mix(in srgb, var(--area-accent, var(--text-secondary)) 10%, transparent);
-  transition: color var(--transition-fast), background var(--transition-fast);
+  transition: color var(--transition-fast);
 }
 
 .gip-area-name {
@@ -206,7 +182,6 @@
 
 .gip-area[data-pressed] .gip-area-icon {
   color: var(--text-inverse);
-  background: rgba(255, 255, 255, 0.14);
 }
 
 .gip-area[data-pressed] .gip-area-check {
@@ -261,7 +236,10 @@
     top: 50%;
     bottom: auto;
     translate: -50% -50%;
-    width: min(600px, calc(100% - 2 * var(--space-5)));
+    /* Three columns of 190px and up: at 600px the longest fields
+       ("Ingeniería Eléctrica y Electrónica") broke onto three lines and the
+       grid read as a wall of uneven tiles. */
+    width: min(720px, calc(100% - 2 * var(--space-5)));
     padding: var(--space-8) var(--space-7) var(--space-5);
     border-bottom: 1px solid var(--border-default);
     border-radius: var(--radius-2xl);

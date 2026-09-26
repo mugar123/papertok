@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
-import { UsersRound, X } from 'lucide-react';
+import { UsersThree, X } from '@phosphor-icons/react';
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
 import { isReadTimeout, patientRead } from '../../utils/boundedRead.js';
 import { readFollowList, rememberFollowList } from '../../utils/profileSessionCaches.js';
@@ -492,7 +492,7 @@ export default function FollowSheet({
               {current.status === 'ready' && current.rows.length === 0 && (
                 <div className="follow-sheet-state">
                   <span className="follow-sheet-state-icon" aria-hidden="true">
-                    <UsersRound size={18} />
+                    <UsersThree size={18} />
                   </span>
                   <p className="follow-sheet-state-title">{copy.emptyTitle}</p>
                   <p>{copy.emptyHint}</p>

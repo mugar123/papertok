@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Collapsible } from '@base-ui/react/collapsible';
-import { ChevronRight, ChevronLeft, X } from 'lucide-react';
+import { CaretLeft, CaretRight, X } from '@phosphor-icons/react';
 import { Button } from '../ui/button.jsx';
 import { Slider } from '../ui/slider.jsx';
 import { useLanguage } from '../../context/LanguageContext';
@@ -238,7 +238,7 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
                 {startDateStr
                   ? (isEnglish ? 'Days chosen' : 'Días elegidos')
                   : (isEnglish ? 'Optional' : 'Opcional')}
-                <ChevronRight size={14} className="cds-step-chevron" aria-hidden="true" />
+                <CaretRight size={14} className="cds-step-chevron" aria-hidden="true" />
               </span>
             </Collapsible.Trigger>
 
@@ -252,7 +252,7 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
                     disabled={monthWindow === 0}
                     aria-label={isEnglish ? 'Earlier months' : 'Meses anteriores'}
                   >
-                    <ChevronLeft size={16} />
+                    <CaretLeft size={16} />
                   </button>
                   <span className="cds-cal-month">{yearRange[0]}</span>
                   <button
@@ -262,7 +262,7 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
                     disabled={monthWindow >= 9}
                     aria-label={isEnglish ? 'Later months' : 'Meses siguientes'}
                   >
-                    <ChevronRight size={16} />
+                    <CaretRight size={16} />
                   </button>
                 </div>
 

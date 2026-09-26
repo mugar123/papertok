@@ -2,12 +2,44 @@ import { Fragment, useState, useRef, useCallback, useLayoutEffect, useMemo, useE
 import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories';
 import {
-  ArrowLeft, Share2, FileText, Check, Loader2, Dna, BarChart2, TrendingUp, Zap,
-  CircleDollarSign, Brain, Cpu, Database, Orbit, FlaskConical, Network, Sigma,
-  Eye, CheckCircle2, UserCheck, Briefcase, ExternalLink,
-  Cog, Building, HeartPulse, Code2, PackageOpen, History, Sparkles, MessageCircle,
-  Lock, Unlock,
-} from 'lucide-react';
+  ArrowLeft,
+  ArrowSquareOut,
+  BookmarkSimple,
+  Brain,
+  Briefcase,
+  Building,
+  CaretDown,
+  ChartBar,
+  ChatCircle,
+  Check,
+  CheckCircle,
+  CircleNotch,
+  ClockCounterClockwise,
+  Code,
+  Cpu,
+  CurrencyCircleDollar,
+  Database,
+  Dna,
+  Eye,
+  FileText,
+  Flask,
+  Gear,
+  Graph,
+  Heart,
+  Heartbeat,
+  Lightning,
+  Lock,
+  LockOpen,
+  Package,
+  Planet,
+  Prohibit,
+  ShareNetwork,
+  Sigma,
+  Sparkle,
+  TrendUp,
+  UserCheck,
+  X,
+} from '@phosphor-icons/react';
 import { canonicalPaperIdentity } from '../../utils/paperCanonicalKey.js';
 import { useCommentCount } from '../../hooks/useCommentCount.js';
 import { useOverlayHistory } from '../../hooks/useOverlayHistory.js';
@@ -57,8 +89,8 @@ const ABSTRACT_SETTLE_MS = 180;
  */
 const STATUS_CHIP_ICONS = {
   preprint: FileText,
-  open: Unlock,
-  openCopy: Unlock,
+  open: LockOpen,
+  openCopy: LockOpen,
   subscription: Lock,
 };
 import { buildFollowReasonLabel } from '../../utils/followingFeed.js';
@@ -90,26 +122,26 @@ const PaperReader = lazy(() => import('../Reader/PaperReader.jsx'));
 // the sheet. It replaces the old animated icon constellation: the same visual
 // cue about the field, without the haze competing with the type.
 const AREA_WATERMARK_ICONS = {
-  physics: Orbit,
+  physics: Planet,
   cs: Cpu,
   math: Sigma,
-  stat: BarChart2,
-  econ: TrendingUp,
-  'q-fin': CircleDollarSign,
-  eess: Zap,
-  mech: Cog,
+  stat: ChartBar,
+  econ: TrendUp,
+  'q-fin': CurrencyCircleDollar,
+  eess: Lightning,
+  mech: Gear,
   civil: Building,
-  chemeng: FlaskConical,
-  med: HeartPulse,
+  chemeng: Flask,
+  med: Heartbeat,
   bio: Dna,
 };
 
 const RESOURCE_KIND_CONFIG = {
   dataset: { label: { es: 'Datos', en: 'Data' }, Icon: Database },
   model: { label: { es: 'Modelo IA', en: 'AI model' }, Icon: Brain },
-  software: { label: { es: 'Código', en: 'Code' }, Icon: Code2 },
-  material: { label: { es: 'Material', en: 'Material' }, Icon: PackageOpen },
-  version: { label: { es: 'Versión', en: 'Version' }, Icon: History },
+  software: { label: { es: 'Código', en: 'Code' }, Icon: Code },
+  material: { label: { es: 'Material', en: 'Material' }, Icon: Package },
+  version: { label: { es: 'Versión', en: 'Version' }, Icon: ClockCounterClockwise },
 };
 const ENRICHMENT_SETTLE_DELAY_MS = 240;
 const SECONDARY_NETWORK_DELAY_MS = 900;
@@ -1310,7 +1342,7 @@ const PaperCard = memo(function PaperCard({
       <article className="pc-sheet" style={{ '--area-accent': areaAccentForPaper(paper) }}>
         {WatermarkIcon && (
           <span className="pc-watermark" aria-hidden="true">
-            <WatermarkIcon size={220} strokeWidth={0.6} />
+            <WatermarkIcon size={220} weight="thin" />
           </span>
         )}
 
@@ -1332,6 +1364,10 @@ const PaperCard = memo(function PaperCard({
             </div>
           );
         })()}
+        {/* The meta line and the status chips share one row, so the headline
+            is two lines from the top of the sheet instead of four. It wraps
+            where the column is too narrow to hold both. */}
+        <div className="pc-kicker">
         <div className="pc-meta">
           {primaryTopic ? (
             <button
@@ -1434,9 +1470,10 @@ const PaperCard = memo(function PaperCard({
               onClick={(e) => e.stopPropagation()}
               title={isEnglish ? 'Open the DOI record' : 'Abrir el registro DOI'}
             >
-              <ExternalLink size={12} /> DOI
+              <ArrowSquareOut size={12} /> DOI
             </a>
           )}
+        </div>
         </div>
 
         {/* What the paper is filed under. Machine data, so it belongs with the
@@ -1793,7 +1830,7 @@ const PaperCard = memo(function PaperCard({
                           >
                             <ResourceIcon size={13} />
                             <span>{resourceLabel}</span>
-                            <ExternalLink size={11} />
+                            <ArrowSquareOut size={11} />
                           </motion.a>
                         );
                       })}
@@ -1826,7 +1863,7 @@ const PaperCard = memo(function PaperCard({
               disabled={isResolvingAccess}
               aria-label={primaryActionLabel}
             >
-              {isResolvingAccess ? <Loader2 className="spinning" size={16} /> : <FileText size={16} />}
+              {isResolvingAccess ? <CircleNotch className="spinning" size={16} /> : <FileText size={16} />}
               <span className="pc-action-label">{primaryActionLabel}</span>
               <span className="pc-action-label--short">{primaryActionShortLabel}</span>
             </Button>
@@ -1858,7 +1895,7 @@ const PaperCard = memo(function PaperCard({
                     como a 390. Sin él, el nombre lo pone el rótulo que de
                     verdad está puesto — «Leer en simple» ancho, «Simple»
                     estrecho — y no puede desviarse de lo que se lee. */}
-                <Sparkles size={16} />
+                <Sparkle size={16} />
                 <span className="pc-action-label">{isEnglish ? 'Read in plain words' : 'Leer en simple'}</span>
                 <span className="pc-action-label--short">{isEnglish ? 'Simple' : 'Simple'}</span>
                 {publicMode && <Lock size={13} className="pc-action-lock" aria-hidden="true" />}
@@ -1881,12 +1918,12 @@ const PaperCard = memo(function PaperCard({
                 ? (isEnglish ? 'Copied' : 'Copiado')
                 : (isEnglish ? 'Share' : 'Compartir')}
             >
-              {copied ? <Check size={16} /> : <Share2 size={16} />}
+              {copied ? <Check size={16} /> : <ShareNetwork size={16} />}
             </Button>
 
             {(paper.doi || paper.arxivId || paper.semanticScholarId) && (
               <Button
-                variant="sky"
+                variant="outline"
                 size="icon"
                 onClick={(event) => {
                   event.stopPropagation();
@@ -1902,7 +1939,7 @@ const PaperCard = memo(function PaperCard({
                 aria-label={isEnglish ? 'View related papers' : 'Ver papers relacionados'}
                 title={isEnglish ? 'Related papers' : 'Papers relacionados'}
               >
-                <Network size={17} />
+                <Graph size={17} />
               </Button>
             )}
           </div>
@@ -1925,9 +1962,7 @@ const PaperCard = memo(function PaperCard({
           onClick={swallowClick}
         >
           <span className="pc-side-icon">
-            <svg viewBox="0 0 24 24" fill={isLiked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.75">
-              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-            </svg>
+            <Heart size={20} weight={isLiked ? 'fill' : 'regular'} aria-hidden="true" />
           </span>
           <span className="pc-side-label">{isEnglish ? 'Like' : 'Me gusta'}</span>
         </Toggle>
@@ -1946,7 +1981,7 @@ const PaperCard = memo(function PaperCard({
               : (isEnglish ? 'Comments' : 'Comentarios')}
           >
             <span className="pc-side-icon">
-              <MessageCircle size={20} />
+              <ChatCircle size={20} />
             </span>
             <span className="pc-side-label">
               {commentCountLabel ?? (isEnglish ? 'Comments' : 'Comentarios')}
@@ -1961,10 +1996,7 @@ const PaperCard = memo(function PaperCard({
           onClick={swallowClick}
         >
           <span className="pc-side-icon">
-            <svg viewBox="0 0 24 24" fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.75">
-
-              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-            </svg>
+            <BookmarkSimple size={20} weight={isSaved ? 'fill' : 'regular'} aria-hidden="true" />
           </span>
           <span className="pc-side-label">{isEnglish ? 'Save' : 'Guardar'}</span>
         </Toggle>
@@ -1983,7 +2015,7 @@ const PaperCard = memo(function PaperCard({
               instead of one icon being swapped for the other between frames. */}
           <span className="pc-side-icon pc-side-icon--morph">
             <Eye size={20} className="pc-icon-eye" aria-hidden="true" />
-            <CheckCircle2 size={20} className="pc-icon-check" aria-hidden="true" />
+            <CheckCircle size={20} className="pc-icon-check" aria-hidden="true" />
           </span>
           <span className="pc-side-label">
             {isReadActive
@@ -1994,10 +2026,7 @@ const PaperCard = memo(function PaperCard({
 
         <button className="pc-side-btn pc-side-btn--skip" onClick={handleNotInterested}>
           <span className="pc-side-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
-              <circle cx="12" cy="12" r="10" />
-              <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
-            </svg>
+            <Prohibit size={20} aria-hidden="true" />
           </span>
           <span className="pc-side-label">{isEnglish ? 'Skip' : 'Pasar'}</span>
         </button>
@@ -2006,9 +2035,7 @@ const PaperCard = memo(function PaperCard({
       {/* Double-tap heart */}
       {showHeart && (
         <div className="pc-heart-burst">
-          <svg viewBox="0 0 24 24" fill="currentColor" width="88" height="88">
-            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-          </svg>
+          <Heart size={88} weight="fill" aria-hidden="true" />
           <div className="pc-heart-ring" />
         </div>
       )}
@@ -2018,9 +2045,7 @@ const PaperCard = memo(function PaperCard({
         <div className="pc-scroll-hint">
           <span className="pc-scroll-hint-label">{isEnglish ? 'Scroll' : 'Desliza'}</span>
           <span className="pc-scroll-hint-arrow">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
+            <CaretDown size={16} weight="bold" aria-hidden="true" />
           </span>
         </div>
       )}
@@ -2048,7 +2073,7 @@ const PaperCard = memo(function PaperCard({
           <div className="pc-authors-modal-header">
             <DrawerTitle render={<h3 id="pc-authors-dialog-title" />}>{isEnglish ? 'Authors' : 'Autores'}</DrawerTitle>
             <DrawerClose aria-label={isEnglish ? 'Close authors' : 'Cerrar autores'}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              <X size={22} aria-hidden="true" />
             </DrawerClose>
           </div>
           <div className="pc-authors-modal-list">

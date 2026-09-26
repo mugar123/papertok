@@ -341,6 +341,13 @@ const OUTLINE_OFF_ON_PURPOSE = new Map([
     + 'would read as a rendering bug rather than as focus',
   ],
   [
+    '.gw-title:focus-visible',
+    'GuestWelcome moves focus to each step’s h1 (tabIndex={-1}) when the reader moves '
+    + 'between steps, so a screen reader starts reading the new step and Tab starts from '
+    + 'its top. It is never a tab stop of its own; like .gip-title above, a ring round '
+    + 'a headline would read as a rendering bug rather than as focus',
+  ],
+  [
     "input:not([type='checkbox']):not([type='radio']):not([type='range']):focus-visible, "
     + "textarea:focus-visible, [contenteditable='true']:focus-visible",
     'the same rule that removes the outline draws the replacement in the next two '

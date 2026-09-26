@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BellRing, CheckCheck, Search } from 'lucide-react';
+import { BellRinging, Checks, MagnifyingGlass } from '@phosphor-icons/react';
 import FeedContainer from '../Feed/FeedContainer';
 import { useFeed } from '../../context/FeedContext';
 import { useFollowing } from '../../context/FollowingContext';
@@ -105,7 +105,7 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList, onOpenComme
 
   const emptyState = useMemo(() => hasFollows ? (
     <div className="ff-empty" role="status">
-      <CheckCheck size={30} aria-hidden="true" />
+      <Checks size={30} aria-hidden="true" />
       <h2>{isEnglish ? 'No new publications from what you follow' : 'No hay publicaciones nuevas de tus seguimientos'}</h2>
       <p>{isEnglish
         ? 'This feed collects recent work from what you follow and will update when new papers appear.'
@@ -116,7 +116,7 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList, onOpenComme
     </div>
   ) : (
     <div className="ff-empty" role="status">
-      <BellRing size={30} aria-hidden="true" />
+      <BellRinging size={30} aria-hidden="true" />
       <h2>{isEnglish
         ? 'You are not following any authors, topics, institutions, or projects yet'
         : 'Aún no sigues autores, temas, instituciones o proyectos'}</h2>
@@ -128,7 +128,7 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList, onOpenComme
           {isEnglish ? 'Discover papers' : 'Descubrir papers'}
         </button>
         <button className="feed-retry-btn ff-empty-secondary" onClick={() => navigate('/search')}>
-          <Search size={15} aria-hidden="true" /> {isEnglish ? 'Search entities' : 'Buscar entidades'}
+          <MagnifyingGlass size={15} aria-hidden="true" /> {isEnglish ? 'Search entities' : 'Buscar entidades'}
         </button>
       </div>
     </div>

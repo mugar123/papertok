@@ -1,5 +1,5 @@
 import { motion, useReducedMotion } from 'framer-motion';
-import { Globe2, Lock } from 'lucide-react';
+import { GlobeHemisphereWest, Lock } from '@phosphor-icons/react';
 import { PROFILE_VISIBILITY } from '../../services/userProfileService.js';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group.jsx';
 import { visibilityCopy } from './visibilityCopy.js';
@@ -28,7 +28,7 @@ export default function VisibilityChoice({ value, onChange, isEnglish, idPrefix 
   const options = [
     {
       id: PROFILE_VISIBILITY.public,
-      Icon: Globe2,
+      Icon: GlobeHemisphereWest,
       title: copy.publicTitle,
       body: copy.publicBody,
     },

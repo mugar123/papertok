@@ -2,15 +2,15 @@ import { useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  Building2,
-  BriefcaseBusiness,
-  ChevronRight,
+  Briefcase,
+  Buildings,
+  CaretRight,
+  CircleNotch,
   Compass,
-  LoaderCircle,
   Tag,
+  User,
   UserMinus,
-  UserRound,
-} from 'lucide-react';
+} from '@phosphor-icons/react';
 import { useFollowing } from '../../context/FollowingContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getFollowedEntityPath } from '../../utils/followingNavigation';
@@ -20,10 +20,10 @@ import { SETTINGS_BREADCRUMB } from './settingsBreadcrumb.js';
 import './FollowingSettingsPage.css';
 
 const FOLLOW_TABS = [
-  { type: 'author', label: { es: 'Autores', en: 'Authors' }, singular: { es: 'autor', en: 'author' }, Icon: UserRound },
+  { type: 'author', label: { es: 'Autores', en: 'Authors' }, singular: { es: 'autor', en: 'author' }, Icon: User },
   { type: 'topic', label: { es: 'Temas', en: 'Topics' }, singular: { es: 'tema', en: 'topic' }, Icon: Tag },
-  { type: 'institution', label: { es: 'Instituciones', en: 'Institutions' }, singular: { es: 'institución', en: 'institution' }, Icon: Building2 },
-  { type: 'project', label: { es: 'Proyectos', en: 'Projects' }, singular: { es: 'proyecto', en: 'project' }, Icon: BriefcaseBusiness },
+  { type: 'institution', label: { es: 'Instituciones', en: 'Institutions' }, singular: { es: 'institución', en: 'institution' }, Icon: Buildings },
+  { type: 'project', label: { es: 'Proyectos', en: 'Projects' }, singular: { es: 'proyecto', en: 'project' }, Icon: Briefcase },
 ];
 
 const SOURCE_LABELS = {
@@ -125,7 +125,7 @@ export default function FollowingSettingsPage() {
 
         {loading && followedEntities.length === 0 ? (
           <div className="following-settings-loading" role="status">
-            <LoaderCircle size={24} />
+            <CircleNotch size={24} />
             <span>
               {isEnglish ? 'Loading' : 'Cargando'} {activeTab.label[language].toLowerCase()}...
             </span>
@@ -166,7 +166,7 @@ export default function FollowingSettingsPage() {
                           {SOURCE_LABELS[entity.source] || 'PaperTok'}
                         </small>
                       </span>
-                      <ChevronRight size={18} aria-hidden="true" />
+                      <CaretRight size={18} aria-hidden="true" />
                     </Link>
                     <button
                       type="button"
@@ -176,7 +176,7 @@ export default function FollowingSettingsPage() {
                       aria-label={`${isEnglish ? 'Unfollow' : 'Dejar de seguir'} ${displayName}`}
                       title={`${isEnglish ? 'Unfollow' : 'Dejar de seguir'} ${displayName}`}
                     >
-                      {pending ? <LoaderCircle size={18} /> : <UserMinus size={18} />}
+                      {pending ? <CircleNotch size={18} /> : <UserMinus size={18} />}
                     </button>
                   </motion.article>
                 );

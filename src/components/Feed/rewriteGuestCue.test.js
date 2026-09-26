@@ -9,7 +9,9 @@ import { readFileSync } from 'node:fs';
 // paperCardActionNames.test.js keeps equal to what it shows (WCAG 2.5.3).
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 const card = stripComments(readFileSync(new URL('./PaperCard.jsx', import.meta.url), 'utf8'));
-const prompt = stripComments(readFileSync(new URL('../Public/GuestInterestsPrompt.jsx', import.meta.url), 'utf8'));
+// The first visit's copy lives on the welcome page now (GuestWelcome); the
+// interests sheet only edits areas and says nothing about reading.
+const welcome = stripComments(readFileSync(new URL('../Public/GuestWelcome.jsx', import.meta.url), 'utf8'));
 
 function rewriteButton() {
   const start = card.indexOf('<Button\n                variant="brand"');
@@ -32,12 +34,13 @@ test('a guest sees that plain-words reading needs an account, and hears it', () 
   assert.match(card, /const rewriteHintId = useId\(\);/);
 });
 
-test('the welcome sheet no longer promises every paper in plain words', () => {
-  const copy = prompt.slice(prompt.indexOf('const COPY = {'), prompt.indexOf('export default function GuestInterestsPrompt'));
-  assert.ok(copy.length > 0 && copy.split('\n').length < 45, 'the COPY table is where the prompt keeps it');
+test('the welcome no longer promises every paper in plain words', () => {
+  const copy = welcome.slice(welcome.indexOf('const COPY = {'), welcome.indexOf('// Where a source sits') > 0 ? welcome.indexOf('// Where a source sits') : welcome.indexOf('function PaperStream'));
+  assert.ok(copy.length > 0, 'the COPY table is where the welcome keeps it');
   assert.doesNotMatch(copy, /cada uno|each one/);
-  assert.match(copy, /Con una cuenta gratuita, muchos se pueden leer además explicados en claro\./);
-  assert.match(copy, /With a free account, many of them can also be read in plain words\./);
+  // Said where the welcome shows the gesture, in its sentence.
+  assert.match(copy, /Con una cuenta gratuita, muchos se pueden leer explicados en claro\./);
+  assert.match(copy, /With a free account, many can be read in plain words\./);
 });
 
 // English content in the Spanish UI says so (AGENTS.md, accessibility rule 8):

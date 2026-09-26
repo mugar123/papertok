@@ -87,7 +87,9 @@ test('SOURCE: the onboarding opens on the profile step, seeded from the guest an
   assert.match(code, /new Set\(guestSeed \?\? \[\]\)/, 'the areas are pre-selected');
   // A bounded seed per area, not every category of the area: the feed's
   // window is five wide and its exploration needs siblings left over.
-  assert.match(code, /new Set\(guestSeedCategoriesForAreas\(guestSeed \?\? \[\]\)\)/, 'the seed is the bounded per-area pick');
+  // An area the welcome narrowed seeds exactly those topics instead.
+  assert.match(code, /new Set\(guestSeedCategoriesForAreas\(guestSeed \?\? \[\], GUEST_SEED_PER_AREA, guestSeedTopics\)\)/, 'the seed is the bounded per-area pick, topics included');
+  assert.match(code, /const \[guestSeedTopics\] = useState\(\(\) => readGuestInterests\(\)\?\.topics \?\? \[\]\);/);
   assert.doesNotMatch(code, /guestCategoriesForAreas\(/, 'the full union belongs to the guest feed plan, not to the onboarding');
   // The profile step shows what came along and names the way to change it.
   assert.doesNotMatch(code, /onboarding-seed-note/, 'the one-line note is gone');

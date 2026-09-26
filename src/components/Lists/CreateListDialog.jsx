@@ -27,7 +27,7 @@
  * leaves the document.
  */
 import { useEffect, useId, useReducer, useRef, useState } from 'react';
-import { Check, X } from 'lucide-react';
+import { Check, X } from '@phosphor-icons/react';
 import { AVAILABLE_ICONS, getIcon } from '../../utils/icons.js';
 import { Button } from '../ui/button.jsx';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '../ui/dialog.jsx';
@@ -262,7 +262,7 @@ export default function CreateListDialog({
                   nativeButton
                   render={<button type="button" className="create-list-icon-btn" />}
                 >
-                  <Icon size={22} strokeWidth={1.5} aria-hidden="true" />
+                  <Icon size={22} aria-hidden="true" />
                 </RadioGroupItem>
               );
             })}
@@ -292,7 +292,7 @@ export default function CreateListDialog({
                   />
                 )}
               >
-                {state.color === colorId && <Check size={15} strokeWidth={3} aria-hidden="true" />}
+                {state.color === colorId && <Check size={15} weight="bold" aria-hidden="true" />}
               </RadioGroupItem>
             ))}
           </RadioGroup>

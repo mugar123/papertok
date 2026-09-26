@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { X } from 'lucide-react';
+import { X } from '@phosphor-icons/react';
 import ScientificText from '../ScientificText';
 import { useLanguage } from '../../context/LanguageContext';
 import { usePopupOpenOnMount } from '../../hooks/usePopupOpenOnMount.js';

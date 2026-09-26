@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { AlertCircle, ChevronUp, PenLine, Sparkles, Trash2 } from 'lucide-react';
+import { CaretUp, PencilLine, Sparkle, Trash, WarningCircle } from '@phosphor-icons/react';
 import { ANNOTATION_FILTERS } from '../../utils/annotationOrder.js';
 import { revealScrollDelta } from '../../utils/railReveal.js';
 import { SHEET_DRAG_SLOP, sheetDragOffset, shouldSettleOpen } from '../../utils/sheetDrag.js';
@@ -215,7 +215,7 @@ export default function AnnotationRail({
   const head = (
     <>
       <span className="rd-rail-title">
-        <PenLine size={12} />
+        <PencilLine size={12} />
         {copy.annotations}
       </span>
       <span className="rd-rail-count">{copy.countLine(counts)}</span>
@@ -242,7 +242,7 @@ export default function AnnotationRail({
     >
       <div className="rd-note-head">
         <span className="rd-note-origin">
-          {annotation.kind === 'ai' && <Sparkles size={10} />}
+          {annotation.kind === 'ai' && <Sparkle size={10} />}
           {annotation.kind === 'ai' ? copy.originAi : copy.originMine}
         </span>
         {/* The anchor doubles as the way back to the passage. */}
@@ -261,7 +261,7 @@ export default function AnnotationRail({
           aria-label={copy.removeAnnotation}
           title={copy.removeAnnotation}
         >
-          <Trash2 size={13} />
+          <Trash size={13} />
         </button>
       </div>
       {/* The passage as the paper sets it: a quote is stored as source text,
@@ -325,7 +325,7 @@ export default function AnnotationRail({
         exit={{ opacity: 0, transition: { duration: 0.12 } }}
         transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
       >
-        <AlertCircle size={13} />
+        <WarningCircle size={13} />
         {errorText}
       </motion.p>
     ),
@@ -364,7 +364,7 @@ export default function AnnotationRail({
           <span className="rd-rail-grabber" aria-hidden="true" />
           <span className="rd-rail-headline">
             {head}
-            <ChevronUp size={16} className="rd-rail-chevron" />
+            <CaretUp size={16} className="rd-rail-chevron" />
           </span>
         </button>
       ) : (

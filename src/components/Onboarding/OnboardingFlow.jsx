@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check } from '@phosphor-icons/react';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { CATEGORIES } from '../../data/categories';
@@ -15,7 +15,7 @@ import {
   readOwnUserProfile,
 } from '../../services/userProfileService.js';
 import { HANDLE_ERRORS, HANDLE_MAX_LENGTH, inspectHandle } from '../../utils/userHandle.js';
-import { guestSeedCategoriesForAreas, readGuestInterests } from '../../utils/guestInterests.js';
+import { GUEST_SEED_PER_AREA, guestSeedCategoriesForAreas, readGuestInterests } from '../../utils/guestInterests.js';
 import { USER_PREFERENCES_MAX } from '../../utils/accountOnboarding.js';
 import { Input } from '../ui/input.jsx';
 import { Label } from '../ui/label.jsx';
@@ -72,7 +72,7 @@ function InterestsReceipt({ rows, total, available, isEnglish }) {
       </div>
       {rows.map(({ key, area, count, total: areaTotal, sample, rest }) => (
         <div key={key} className="onboarding-receipt-row" style={{ '--area-accent': area.gradient }}>
-          <span className="onboarding-receipt-icon"><area.icon size={19} strokeWidth={1.75} /></span>
+          <span className="onboarding-receipt-icon"><area.icon size={19} /></span>
           <div className="onboarding-receipt-main">
             <div className="onboarding-receipt-name">{isEnglish ? area.labelEn : area.label}</div>
             <div className="onboarding-receipt-sample">
@@ -97,21 +97,26 @@ function InterestsReceipt({ rows, total, available, isEnglish }) {
 
 export default function OnboardingFlow() {
   // What this visitor said they were into before they had an account
-  // (GuestInterestsPrompt). Read once: the answer is the starting point, not a
-  // live source, and the areas step below can change everything about it. With
-  // an answer, the interests are settled — the first five categories of every
-  // area they picked (`guestSeedCategoriesForAreas`) — and the flow opens on
-  // the profile step, the only thing the guest has not been asked yet. The
-  // areas and categories steps and the receipt stay reachable through Back, for
-  // a reader who wants to narrow the pick before it is written. AuthContext
-  // clears the answer once completeOnboarding has written it to the profile.
+  // (GuestWelcome, or the header chip's GuestInterestsPrompt). Read once: the
+  // answer is the starting point, not a live source, and the areas step below
+  // can change everything about it. With an answer, the interests are settled
+  // — the first five categories of every area they picked, or exactly the
+  // topics they narrowed an area to on the welcome
+  // (`guestSeedCategoriesForAreas`) — and the flow opens on the profile step,
+  // the only thing the guest has not been asked yet. The areas and categories
+  // steps and the receipt stay reachable through Back, for a reader who wants
+  // to narrow the pick before it is written. AuthContext clears the answer once
+  // completeOnboarding has written it to the profile.
   const [guestSeed] = useState(() => {
     const stored = readGuestInterests();
     return stored?.areas.length ? stored.areas : null;
   });
+  // The specific topics the welcome let them narrow an area to, if any: an
+  // area narrowed there pre-selects only those categories here.
+  const [guestSeedTopics] = useState(() => readGuestInterests()?.topics ?? []);
   const [stepState, setStep] = useState(guestSeed ? 4 : 1);
   const [selectedAreas, setSelectedAreas] = useState(() => new Set(guestSeed ?? []));
-  const [selectedSubcategories, setSelectedSubcategories] = useState(() => new Set(guestSeedCategoriesForAreas(guestSeed ?? [])));
+  const [selectedSubcategories, setSelectedSubcategories] = useState(() => new Set(guestSeedCategoriesForAreas(guestSeed ?? [], GUEST_SEED_PER_AREA, guestSeedTopics)));
   // Whether the receipt still shows the guest answer untouched. Once they
   // go back and adjust, it is their selection, and the copy says so.
   const [seedAdjusted, setSeedAdjusted] = useState(false);
@@ -418,11 +423,11 @@ export default function OnboardingFlow() {
                     style={{ '--area-accent': area.gradient }}
                   >
                     <span className="area-card-top">
-                      <span className="area-card-icon"><area.icon size={20} strokeWidth={1.75} /></span>
+                      <span className="area-card-icon"><area.icon size={20} /></span>
                       <span className="area-card-count">
                         {AREA_SIZES[key]} {isEnglish ? 'cat.' : 'cat.'}
                       </span>
-                      <span className="area-card-box"><Check size={11} strokeWidth={3.5} /></span>
+                      <span className="area-card-box"><Check size={11} weight="bold" /></span>
                     </span>
                     <span className="area-card-name">
                       <span>{isEnglish ? area.labelEn : area.label}</span>
@@ -473,7 +478,7 @@ export default function OnboardingFlow() {
                 return (
                   <section key={areaKey} className="subcat-section" style={{ '--area-accent': area.gradient }}>
                     <div className="subcat-section-header">
-                      <span className="subcat-section-icon"><area.icon size={18} strokeWidth={1.75} /></span>
+                      <span className="subcat-section-icon"><area.icon size={18} /></span>
                       <h2 className="subcat-section-title">{isEnglish ? area.labelEn : area.label}</h2>
                       <span className="subcat-section-count">{chosen} / {subcatIds.length}</span>
                       <button
@@ -544,7 +549,7 @@ export default function OnboardingFlow() {
                     ) : (
                       <>
                         {isEnglish ? 'Start exploring' : 'Empezar a explorar'}
-                        <ArrowRight size={16} strokeWidth={2.25} />
+                        <ArrowRight size={16} weight="bold" />
                       </>
                     )}
                   </button>
@@ -556,7 +561,7 @@ export default function OnboardingFlow() {
                     disabled={saving}
                   >
                     {isEnglish ? 'Next: your profile' : 'Siguiente: tu perfil'}
-                    <ArrowRight size={16} strokeWidth={2.25} />
+                    <ArrowRight size={16} weight="bold" />
                   </button>
                 )}
                 <button
@@ -731,7 +736,7 @@ export default function OnboardingFlow() {
             )}
             {step > 1 && (
               <button type="button" className="onboarding-btn onboarding-btn--ghost" onClick={handleBack}>
-                <ArrowLeft size={15} strokeWidth={2.25} />
+                <ArrowLeft size={15} weight="bold" />
                 {isEnglish ? 'Back' : 'Atrás'}
               </button>
             )}
@@ -747,7 +752,7 @@ export default function OnboardingFlow() {
                 ) : (
                   <>
                     {isEnglish ? 'Start exploring' : 'Empezar a explorar'}
-                    <ArrowRight size={15} strokeWidth={2.25} />
+                    <ArrowRight size={15} weight="bold" />
                   </>
                 )}
               </button>
@@ -759,7 +764,7 @@ export default function OnboardingFlow() {
                 disabled={!canProceed}
               >
                 {isEnglish ? 'Next' : 'Siguiente'}
-                <ArrowRight size={15} strokeWidth={2.25} />
+                <ArrowRight size={15} weight="bold" />
               </button>
             )}
           </div>

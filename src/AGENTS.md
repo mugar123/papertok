@@ -22,7 +22,9 @@ for genuinely shared state.
 - Add Spanish and English copy together. Resolve local topics from canonical IDs so stored
   profile data can be rendered in either language.
 - Preserve the existing dense, card-based scientific interface and paired component CSS.
-- Use Lucide icons already installed in the project.
+- Use Phosphor icons (`@phosphor-icons/react`), already installed in the project. Express
+  emphasis with `weight` (`regular` by default, `bold`, `fill` for an active state), not
+  with stroke widths.
 - Respect reduced-motion preferences when adding transitions.
 - Accessibility is an acceptance criterion for every UI change: WCAG 2.2 AA per
   `docs/ACCESIBILIDAD.md` and the Accessibility section of the root `AGENTS.md`. In

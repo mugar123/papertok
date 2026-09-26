@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { CornerDownRight, Flag, MessageCircle, Pencil, Trash2, X } from 'lucide-react';
+import {
+  ArrowElbowDownRight,
+  ChatCircle,
+  Flag,
+  PencilSimple,
+  Trash,
+  X,
+} from '@phosphor-icons/react';
 import {
   createComment,
   deleteComment,
@@ -405,12 +412,12 @@ function CommentRow({
           <div className="comment-row-actions-primary">
             {canInteract && (
               <Button type="button" variant="ghost" size="sm" className="px-2" onClick={() => onReply(comment)}>
-                <CornerDownRight size={14} aria-hidden="true" /> {text(COPY.reply)}
+                <ArrowElbowDownRight size={14} aria-hidden="true" /> {text(COPY.reply)}
               </Button>
             )}
             {own && (
               <Button type="button" variant="ghost" size="sm" className="px-2" onClick={() => onEdit(comment)}>
-                <Pencil size={14} aria-hidden="true" /> {text(COPY.edit)}
+                <PencilSimple size={14} aria-hidden="true" /> {text(COPY.edit)}
               </Button>
             )}
           </div>
@@ -420,7 +427,7 @@ function CommentRow({
                 <Button type="button" variant="ghost" size="sm"
                   className="px-2 hover:text-[var(--accent-rose)]"
                   onClick={() => setConfirming('delete')}>
-                  <Trash2 size={14} aria-hidden="true" /> {text(COPY.delete)}
+                  <Trash size={14} aria-hidden="true" /> {text(COPY.delete)}
                 </Button>
               ) : (
                 <Button type="button" variant="ghost" size="sm" className="px-2"
@@ -1035,7 +1042,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
               transition={prefersReducedMotion ? { duration: 0.12 } : { duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
             >
               <span className="comments-sheet-state-icon" aria-hidden="true">
-                <MessageCircle size={20} />
+                <ChatCircle size={20} />
               </span>
               <h3 className="comments-sheet-state-title">{text(COPY.emptyTitle)}</h3>
               <p>{text(COPY.empty)}</p>
@@ -1257,7 +1264,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                 {replyTarget && (
                   <ThreadSlot key="reply" reduced={prefersReducedMotion}>
                     <div className="comments-composer-context">
-                      <CornerDownRight size={13} aria-hidden="true" />
+                      <ArrowElbowDownRight size={13} aria-hidden="true" />
                       <span>{text(COPY.replyingTo)} @{replyTarget.authorHandle}</span>
                       <Button type="button" variant="ghost" size="icon-sm"
                         onClick={() => setReplyTarget(null)} aria-label={text(COPY.cancel)}>
@@ -1269,7 +1276,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                 {editTarget && (
                   <ThreadSlot key="edit" reduced={prefersReducedMotion}>
                     <div className="comments-composer-context">
-                      <Pencil size={13} aria-hidden="true" />
+                      <PencilSimple size={13} aria-hidden="true" />
                       <span>{text(COPY.editing)}</span>
                       <Button type="button" variant="ghost" size="icon-sm"
                         onClick={resetComposer} aria-label={text(COPY.cancel)}>

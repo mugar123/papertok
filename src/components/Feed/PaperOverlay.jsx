@@ -1,4 +1,4 @@
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft } from '@phosphor-icons/react';
 import { Button } from '../ui/button';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.jsx';
 import './PaperOverlay.css';

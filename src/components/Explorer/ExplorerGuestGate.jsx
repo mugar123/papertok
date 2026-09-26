@@ -1,4 +1,4 @@
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight } from '@phosphor-icons/react';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { Button } from '../ui/button.jsx';
 import './ExplorerGuestGate.css';

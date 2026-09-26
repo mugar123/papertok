@@ -26,7 +26,7 @@ import { useAnalyticsConsent } from '../../context/AnalyticsContext';
 import { getIcon } from '../../utils/icons';
 import CreateListDialog from './CreateListDialog.jsx';
 import ScientificText from '../ScientificText.js';
-import { BookOpen, Check, Download, Plus, StickyNote, Tags, X } from 'lucide-react';
+import { BookOpen, Check, DownloadSimple, Note, Plus, Tag, X } from '@phosphor-icons/react';
 import { Button } from '../ui/button.jsx';
 import { Checkbox } from '../ui/checkbox.jsx';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '../ui/dialog.jsx';
@@ -739,9 +739,9 @@ export default function SaveToListModal({ paper, onClose }) {
                 onPressedChange={toggleReadLaterSelection}
               >
                 <span className="save-modal-tick" aria-hidden="true">
-                  <Check size={13} strokeWidth={3} />
+                  <Check size={13} weight="bold" />
                 </span>
-                <BookOpen className="save-modal-row-icon" size={18} strokeWidth={1.5} aria-hidden="true" />
+                <BookOpen className="save-modal-row-icon" size={18} aria-hidden="true" />
                 <span className="save-modal-row-text">
                   <span className="save-modal-row-name">
                     {pendingReadLater ? copy.readLaterOn : copy.readLaterOff}
@@ -790,7 +790,7 @@ export default function SaveToListModal({ paper, onClose }) {
                         checked={selected}
                         onCheckedChange={() => toggleListSelection(list.id)}
                       />
-                      <Icon className="save-modal-row-icon" size={18} strokeWidth={1.5} aria-hidden="true" />
+                      <Icon className="save-modal-row-icon" size={18} aria-hidden="true" />
                       <span className="save-modal-row-text">
                         <span className="save-modal-row-name">{list.name}</span>
                       </span>
@@ -829,7 +829,7 @@ export default function SaveToListModal({ paper, onClose }) {
             </div>
             <div className="save-modal-field">
               <Label className="save-modal-field-label" htmlFor="save-modal-note">
-                <StickyNote size={14} aria-hidden="true" /> {copy.privateNote}
+                <Note size={14} aria-hidden="true" /> {copy.privateNote}
               </Label>
               <Textarea
                 id="save-modal-note"
@@ -841,7 +841,7 @@ export default function SaveToListModal({ paper, onClose }) {
             </div>
             <div className="save-modal-field">
               <span id="save-modal-tags-label" className="save-modal-field-label">
-                <Tags size={14} aria-hidden="true" /> {copy.tags}
+                <Tag size={14} aria-hidden="true" /> {copy.tags}
               </span>
               <div className="save-modal-tag-editor">
                 {tags.map((tag) => (
@@ -853,7 +853,7 @@ export default function SaveToListModal({ paper, onClose }) {
                       onClick={() => removePendingTag(tag)}
                       aria-label={copy.removeTagLabel(tag)}
                     >
-                      <X size={11} strokeWidth={2.5} aria-hidden="true" />
+                      <X size={11} weight="bold" aria-hidden="true" />
                     </button>
                   </span>
                 ))}
@@ -879,14 +879,14 @@ export default function SaveToListModal({ paper, onClose }) {
                 size="sm"
                 onClick={() => downloadCitationFile([paper], 'bibtex', 'papertok-paper')}
               >
-                <Download size={14} aria-hidden="true" /> BibTeX
+                <DownloadSimple size={14} aria-hidden="true" /> BibTeX
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => downloadCitationFile([paper], 'ris', 'papertok-paper')}
               >
-                <Download size={14} aria-hidden="true" /> RIS
+                <DownloadSimple size={14} aria-hidden="true" /> RIS
               </Button>
             </div>
           </div>

@@ -1,6 +1,7 @@
 import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState, startTransition } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { RefreshCw, Check } from 'lucide-react';
+import { ArrowsClockwise, Check, CloudSlash } from '@phosphor-icons/react';
+import { Button } from '../ui/button.jsx';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getUiErrorMessage } from '../../utils/errorMessages';
@@ -999,12 +1000,17 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   if (displayState === FEED_DISPLAY_STATES.ERROR) {
     return (
       <FeedLandmark landmark={landmark} className="feed-empty">
-        <div className="feed-empty-icon">⚠️</div>
+        {/* The failure is announced as it appears: `role="alert"` on the
+            sentence rather than on the page, which may be the landmark. */}
+        <div className="feed-empty-icon" aria-hidden="true">
+          <CloudSlash size={26} />
+        </div>
         <h2>{isEnglish ? 'Error loading papers' : 'Error cargando papers'}</h2>
-        <p>{getUiErrorMessage(error, language, 'FEED_LOAD_FAILED')}</p>
-        <button className="feed-retry-btn" onClick={handleRefresh}>
+        <p role="alert">{getUiErrorMessage(error, language, 'FEED_LOAD_FAILED')}</p>
+        <Button size="lg" onClick={handleRefresh}>
+          <ArrowsClockwise size={16} aria-hidden="true" />
           {isEnglish ? 'Try again' : 'Reintentar'}
-        </button>
+        </Button>
       </FeedLandmark>
     );
   }
@@ -1076,7 +1082,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
             <span className="feed-refresh-gauge" aria-hidden="true">
               {Object.values(refreshLabels).map((label) => (
                 <span key={label} className="feed-refresh-content">
-                  <RefreshCw size={14} aria-hidden="true" />
+                  <ArrowsClockwise size={14} aria-hidden="true" />
                   <span className="feed-refresh-label">{label}</span>
                 </span>
               ))}
@@ -1092,7 +1098,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
                 {refreshPhase === 'done'
                   ? <Check size={14} aria-hidden="true" />
                   : (
-                    <RefreshCw
+                    <ArrowsClockwise
                       size={14}
                       aria-hidden="true"
                       className={`feed-refresh-icon${refreshPhase === 'refreshing' ? ' feed-refresh-icon--spinning' : ''}`}

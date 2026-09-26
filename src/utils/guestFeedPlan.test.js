@@ -78,3 +78,23 @@ test('PubMed is only asked for biology and medicine, and arXiv never for them', 
 test('the same areas in any order make the same plan', () => {
   assert.equal(buildGuestFeedPlan(['bio', 'cs']).key, buildGuestFeedPlan(['cs', 'bio', 'cs']).key);
 });
+
+test('a narrowed area sends its topics, not its first subcategories', async () => {
+  const { buildGuestFeedPlan: build } = await import('./guestFeedPlan.js');
+  const whole = build(['cs']);
+  const narrowed = build(['cs'], ['cs.CL', 'cs.CR']);
+  assert.notEqual(whole.key, narrowed.key, 'a different answer is a different plan');
+  assert.deepEqual(narrowed.arxivCategories, ['cs.CL', 'cs.CR']);
+  assert.deepEqual(narrowed.categories, ['cs.CL', 'cs.CR']);
+  assert.deepEqual(narrowed.topics, ['cs.CL', 'cs.CR']);
+  // An area left whole still offers all of its own next to a narrowed one.
+  const mixed = build(['physics', 'cs'], ['cs.CL']);
+  assert.ok(mixed.arxivCategories.includes('cs.CL'));
+  assert.ok(mixed.arxivCategories.some(id => !id.startsWith('cs.')), 'physics is still represented');
+  assert.ok(!mixed.arxivCategories.includes('cs.AI'), 'cs is narrowed to what was picked');
+});
+
+test('topics outside the chosen areas do not change the plan', async () => {
+  const { buildGuestFeedPlan: build } = await import('./guestFeedPlan.js');
+  assert.equal(build(['cs'], ['bio.neuro']).key, build(['cs']).key);
+});

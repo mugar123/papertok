@@ -71,7 +71,8 @@ Always use the radius tokens — never a pixel radius:
 `--radius-sm 2px` · `--radius-md 3px` · `--radius-lg 4px` · `--radius-xl 6px` ·
 `--radius-2xl 8px`. Only avatars and meters use `--radius-full`.
 Borders come from `--border-subtle` / `--border-default` / `--border-strong` /
-`--border-ink`. Structure is hairline rules, not shadows.
+`--border-ink`. Structure is hairline rules, not shadows — with one named
+exception, the feed sheet (see Recurring patterns).
 
 ### 5. Buttons come from the component, not from CSS
 ```jsx
@@ -187,12 +188,33 @@ Tailwind v4 is wired via `@tailwindcss/vite`; utility classes (`w-full`,
 - **Mono kicker / section label** — `font: var(--mono-label)` + track, uppercase,
   `--text-tertiary` (or `--area-accent` when it names a field).
 - **Field rule** — a `34px × 3px` bar of `var(--area-accent)` above a headline
-  (`.pc-body::before`, `.ehc-info::before`).
+  (`.pc-body::before`, `.ehc-info::before`). Where the headline sits on a
+  surface of its own, the rule becomes that surface's top edge instead: a `3px`
+  inset shadow of `var(--area-accent)`, which follows the corner radius and
+  costs no layout (the feed sheet on wide screens).
+- **The feed sheet** — the one place a page is laid *on* the page. Above 900px
+  the paper is `--bg-elevated` with a `--border-subtle` hairline, `--radius-2xl`
+  and `--shadow-lg`, centred in its frame; at 900px and below it is the
+  full-bleed frame itself and carries no surface. `SkeletonCard.css` mirrors
+  its geometry so the swap does not change shape.
+- **Action keys** — a column of toggles (like, save, read) is neutral at rest:
+  `--bg-elevated`, a `--border-default` hairline, ink glyph. The action's own
+  accent arrives on hover and fills the key when the state is on; `aria-pressed`
+  carries the state for anyone not reading colour. Five keys in five pastels
+  read as five unrelated badges before anything was pressed (`.pc-side-icon`).
+- **Kicker row** — the mono meta line and the status chips share one wrapping
+  row above the headline, so the headline starts two lines from the top rather
+  than four (`.pc-kicker`).
 - **Ruled rows** — a list is hairline-separated rows on `--bg-card`, each with a
   short `3px` field rule down the inner edge, a mono meta line, a serif title.
   No cards, no shadows (see Explorer's `.explorer-grid`, Report's `.sr-bento`).
 - **Editorial layout** — serif nameplate over a `3px double` rule, a lead story,
   the rest in ruled columns (`ScientificReport.css`).
+- **Status screens** — an error, a not-found or an empty result is a glyph on a
+  `56px` tinted square (`--tint-red-*` when a request failed, `--tint-neutral-*`
+  when nothing did), a serif heading, one sentence saying what to do, and the
+  way out as labelled `Button`s. Never an emoji, never a bare icon button as
+  the only exit (`.feed-empty-icon`, `.explorer-error-icon`).
 - **Overlay surfaces** — ink scrim `rgba(17,19,24,0.4)` + `blur`, a white sheet
   with `--border-default` and `--shadow-xl`, near-square top corners. Framer
   Motion for enter/exit; respect `prefers-reduced-motion`.

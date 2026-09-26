@@ -59,7 +59,7 @@
 }
 
 /* ── The disc ──
-   One circle at r 8: halved and hollow it is lucide's sun, full and inked it
+   One circle at r 8: halved and hollow it is the app's sun, full and inked it
    is the moon. `fill-box` keeps every transform around the circle's own
    centre. */
 .theme-toggle-rays,

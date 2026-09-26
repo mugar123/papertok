@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
-  ChevronRight,
+  CaretRight,
   Crosshair,
   GitBranch,
+  Graph,
   List,
   Lock,
-  Network,
-  Sparkles,
-  TriangleAlert,
+  Sparkle,
+  Warning,
   X,
-} from 'lucide-react';
+} from '@phosphor-icons/react';
 import { useReducedMotion } from 'framer-motion';
 import { getCitationGraph, getCitationGraphDoi } from '../../services/citationGraphService';
 import { getRelatedPapers } from '../../services/relatedPapersService';
@@ -692,7 +692,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
                     {related.citationCountKnown ? ` · ${related.citationCount} ${isEnglish ? 'citations' : 'citas'}` : ''}
                   </small>
                 </span>
-                <ChevronRight size={18} />
+                <CaretRight size={18} />
               </Toggle>
             );
           })}
@@ -720,7 +720,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
         <div className="related-grabber" aria-hidden="true" />
         <header className="related-header">
           <div>
-            <Network size={18} />
+            <Graph size={18} />
             <DrawerTitle render={<h3 />}>{isEnglish ? 'Paper connections' : 'Conexiones del paper'}</DrawerTitle>
           </div>
           <div className="related-header-actions">
@@ -741,7 +741,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
                     aria-label={isEnglish ? 'Map view' : 'Ver como mapa'}
                     title={isEnglish ? 'Map' : 'Mapa'}
                   >
-                    <Network size={17} />
+                    <Graph size={17} />
                   </ToggleGroupItem>
                   <ToggleGroupItem
                     value="list"
@@ -775,7 +775,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
               <GitBranch size={16} />{isEnglish ? 'Graph' : 'Grafo'}
             </TabsTrigger>
             <TabsTrigger value="similar" disabled={Boolean(selectedPaperKey)}>
-              <Sparkles size={16} />{isEnglish ? 'Similar' : 'Similares'}
+              <Sparkle size={16} />{isEnglish ? 'Similar' : 'Similares'}
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -801,7 +801,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
                 const last = index === trail.length - 1;
                 return (
                   <span className="graph-trail-step" key={getRelatedPaperIdentity(step) || index}>
-                    {index > 0 && <ChevronRight size={12} aria-hidden="true" />}
+                    {index > 0 && <CaretRight size={12} aria-hidden="true" />}
                     <button
                       type="button"
                       className={`graph-crumb ${last ? 'is-current' : ''}`}
@@ -819,7 +819,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
 
         {mode === 'graph' && graph.degraded && graphStatus === 'ready' && (
           <p className="graph-degraded" role="status">
-            <TriangleAlert size={14} aria-hidden="true" />
+            <Warning size={14} aria-hidden="true" />
             {isEnglish
               ? 'Incomplete neighbourhood — one source did not answer, and this is what the other could give.'
               : 'Vecindario incompleto — una fuente no respondió, y esto es lo que la otra pudo dar.'}
@@ -886,7 +886,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
                     {related.citationCountKnown ? ` · ${related.citationCount} ${isEnglish ? 'citations' : 'citas'}` : ''}
                   </small>
                 </span>
-                <ChevronRight size={18} />
+                <CaretRight size={18} />
               </button>
             ))}
           </div>

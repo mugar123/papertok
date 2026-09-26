@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Popover as PopoverPrimitive } from '@base-ui/react/popover';
-import { Highlighter, Loader2, PenLine, Sparkles } from 'lucide-react';
+import { CircleNotch, Highlighter, PencilLine, Sparkle } from '@phosphor-icons/react';
 import { MAX_NOTE_LENGTH } from '../../services/userHighlightService.js';
 import { Popover } from '../ui/popover.jsx';
 import { Textarea } from '../ui/textarea.jsx';
@@ -148,7 +148,7 @@ export default function SelectionMenu({
                 />
                 <div className="rd-menu-actions">
                   <button type="submit" className="rd-menu-save" disabled={!draft.trim() || busy}>
-                    {busy ? <Loader2 size={14} className="spinning" /> : null}
+                    {busy ? <CircleNotch size={14} className="spinning" /> : null}
                     {copy.save}
                   </button>
                   <button type="button" className="rd-menu-cancel" onClick={onClose}>{copy.cancel}</button>
@@ -161,7 +161,7 @@ export default function SelectionMenu({
                   {copy.justHighlight}
                 </button>
                 <button type="button" className="rd-menu-item" onClick={() => setComposing(true)}>
-                  <PenLine size={15} />
+                  <PencilLine size={15} />
                   {copy.writeNote}
                 </button>
                 <button
@@ -171,7 +171,7 @@ export default function SelectionMenu({
                   disabled={!canAsk}
                   title={canAsk ? undefined : copy.noUsesLeft}
                 >
-                  <Sparkles size={15} />
+                  <Sparkle size={15} />
                   {copy.explainThis}
                   {/* The price, stated before it is spent. A daily allowance that only
                       announces itself once it is gone is a trap — and where there is

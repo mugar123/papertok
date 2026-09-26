@@ -446,9 +446,19 @@
   animation: none;
 }
 
+/* A drawn glyph on a red wash rather than an emoji: the emoji came in the
+   platform's own colours and weight, and was the one thing on the screen not
+   set in the app's vocabulary. */
 .feed-empty-icon {
-  font-size: 2rem;
-  margin-bottom: var(--space-4);
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: var(--space-5);
+  border: 1px solid var(--tint-red-line);
+  border-radius: var(--radius-2xl);
+  background: var(--tint-red-bg);
+  color: var(--tint-red-fg);
 }
 
 /* ── Atom Loader ── */
@@ -480,18 +490,21 @@
 }
 
 .feed-empty h2 {
-  font-family: var(--font-heading);
-  font-size: var(--fs-xl);
+  font-family: var(--font-serif);
+  font-size: var(--fs-3xl);
   font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  letter-spacing: -0.015em;
   color: var(--text-primary);
-  margin-bottom: var(--space-2);
+  margin-bottom: var(--space-3);
 }
 
 .feed-empty p {
   color: var(--text-secondary);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-base);
+  line-height: var(--lh-normal);
   margin-bottom: var(--space-6);
-  max-width: 340px;
+  max-width: 380px;
 }
 
 .feed-retry-btn {

@@ -46,6 +46,26 @@
   background: var(--area-accent);
 }
 
+/* The paper's surface on a wide screen (PaperCard.css, the feed sheet), so
+   the last swipe lands on one more sheet rather than on bare ground. The
+   field rule becomes the top edge there, as it does on the paper. */
+@media not all and (max-width: 900px) {
+  .gec-sheet {
+    width: min(620px, 100%);
+    padding: clamp(28px, 3vw, 44px) clamp(28px, 3.2vw, 48px);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-2xl);
+    box-shadow:
+      inset 0 3px 0 var(--area-accent),
+      var(--shadow-lg);
+  }
+
+  .gec-sheet::before {
+    display: none;
+  }
+}
+
 /* ── Machine line ── */
 .gec-kicker {
   display: flex;
@@ -66,10 +86,10 @@
 .gec-heading {
   margin: 0 0 var(--space-3);
   font-family: var(--font-serif);
-  font-size: clamp(1.45rem, 2.5vw, 2.1rem);
+  font-size: clamp(1.6rem, 2.7vw, 2.45rem);
   font-weight: var(--fw-semibold);
-  line-height: 1.16;
-  letter-spacing: -0.015em;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
   color: var(--text-primary);
 }
 

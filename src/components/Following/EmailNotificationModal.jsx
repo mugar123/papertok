@@ -1,6 +1,13 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, CheckCircle2, Clock3, Loader2, Mail, Send } from 'lucide-react';
+import {
+  Check,
+  CheckCircle,
+  CircleNotch,
+  Clock,
+  Envelope,
+  PaperPlaneTilt,
+} from '@phosphor-icons/react';
 import { useEmailNotifications } from '../../context/EmailNotificationsContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.jsx';
@@ -148,7 +155,7 @@ export default function EmailNotificationModal({ isOpen, onClose }) {
         closeLabel={isEnglish ? 'Close' : 'Cerrar'}
       >
         <header>
-          <div className="email-notification-icon"><Mail size={20} aria-hidden="true" /></div>
+          <div className="email-notification-icon"><Envelope size={20} aria-hidden="true" /></div>
           <div>
             <DialogTitle>{isEnglish ? 'Email updates' : 'Novedades por email'}</DialogTitle>
             <DialogDescription>{isEnglish
@@ -251,7 +258,7 @@ export default function EmailNotificationModal({ isOpen, onClose }) {
           </div>
 
           <div className="email-notification-schedule">
-            <Clock3 size={16} aria-hidden="true" />
+            <Clock size={16} aria-hidden="true" />
             <span>
               {draft.frequency === 'weekly'
                 ? (isEnglish ? 'Monday mornings' : 'Los lunes por la mañana')
@@ -278,15 +285,15 @@ export default function EmailNotificationModal({ isOpen, onClose }) {
             <AnimatePresence mode="wait" initial={false}>
               {testState === 'sending' ? (
                 <motion.span key="sending" initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -3 }}>
-                  <Loader2 className="email-notification-test-spinner" size={16} /> {isEnglish ? 'Sending…' : 'Enviando…'}
+                  <CircleNotch className="email-notification-test-spinner" size={16} /> {isEnglish ? 'Sending…' : 'Enviando…'}
                 </motion.span>
               ) : testState === 'sent' ? (
                 <motion.span key="sent" initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
-                  <CheckCircle2 size={17} /> {isEnglish ? 'Sent' : 'Enviado'}
+                  <CheckCircle size={17} /> {isEnglish ? 'Sent' : 'Enviado'}
                 </motion.span>
               ) : (
                 <motion.span key="idle" initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -3 }}>
-                  <Send size={16} /> {isEnglish ? 'Send test' : 'Enviar prueba'}
+                  <PaperPlaneTilt size={16} /> {isEnglish ? 'Send test' : 'Enviar prueba'}
                 </motion.span>
               )}
             </AnimatePresence>

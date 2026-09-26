@@ -1,0 +1,1005 @@
+/* ============================================
+   GuestWelcome — the visitor's first screens
+
+   An app's first screens, not a landing page: one centred column, one idea
+   per screen. The bar keeps language, theme and sign-in in reach; the stage
+   holds an illustration, a kicker, a serif headline and a sentence; the foot
+   is the way forward — progress dots, the button centred, and the quiet ways
+   round it underneath. The vocabulary is the feed's own (serif headlines,
+   mono data, the paper sheet with its field-coloured top edge), so the step
+   from the last screen into the feed lands on something already familiar.
+   ============================================ */
+
+.gw {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg-primary);
+}
+
+/* ── Bar ── */
+.gw-bar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  /* Never squeezed: on the welcome the page is exactly the viewport tall,
+     and flex would otherwise take the columns' room out of the bar. */
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  height: var(--nav-total);
+  padding: var(--inset-top) var(--space-5) 0;
+  background: var(--bg-primary);
+}
+
+.gw-wordmark {
+  font-size: 1rem;
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.gw-wordmark span {
+  box-shadow: inset 0 -0.32em 0 var(--brand-yellow);
+}
+
+.gw-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.gw-bar-button {
+  display: inline-grid;
+  place-items: center;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font: 600 0.75rem/1 var(--font-mono);
+  letter-spacing: var(--mono-track);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .gw-bar-button:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+}
+
+/* ── Stage: the column ── */
+.gw-stage {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: var(--space-6) var(--space-5);
+}
+
+/* The areas are the one screen that can be taller than the viewport, so it
+   starts at the top and scrolls under the foot rather than centring. */
+.gw-stage--topics {
+  justify-content: flex-start;
+  padding-top: clamp(16px, 4vh, 40px);
+}
+
+.gw-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(520px, 100%);
+  text-align: center;
+}
+
+.gw-step--topics,
+.gw-step--subtopics {
+  width: min(760px, 100%);
+}
+
+.gw-step--how {
+  width: min(920px, 100%);
+}
+
+.gw-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.gw-kicker {
+  margin: 0 0 var(--space-3);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.gw-title {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-serif);
+  font-size: clamp(1.9rem, 4.2vw, 2.6rem);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+  color: var(--text-primary);
+}
+
+/* The heading takes focus when the reader moves to its screen (tabIndex
+   -1), so the screen reader starts there. It is never a tab stop of its
+   own; a ring round a headline would read as a rendering fault, not as
+   focus. */
+.gw-title:focus-visible {
+  outline: none;
+}
+
+.gw-lede {
+  max-width: 38ch;
+  margin: 0;
+  font-size: var(--fs-base);
+  line-height: 1.6;
+  text-wrap: pretty;
+  color: var(--text-secondary);
+}
+
+
+/* The gestures. Each is drawn straight on the page, a size up from a
+   thumbnail, and plays its point once. */
+.gw-demo {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.gw-demo-phone,
+.gw-demo-sheet {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2xl);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+
+.gw-demo-phone {
+  width: 124px;
+  height: 164px;
+}
+
+.gw-demo-track {
+  height: 300%;
+}
+
+.gw-demo-paper {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 6px;
+  height: 33.333%;
+  padding: 20px 12px 14px;
+}
+
+.gw-demo-kicker,
+.gw-demo-title,
+.gw-demo-line {
+  display: block;
+  border-radius: var(--radius-sm);
+}
+
+.gw-demo-kicker {
+  width: 44%;
+  height: 4px;
+  margin-bottom: 2px;
+  background: var(--area-accent);
+}
+
+.gw-demo-title {
+  width: 94%;
+  height: 7px;
+  background: var(--text-primary);
+  opacity: 0.85;
+}
+
+.gw-demo-title--short { width: 58%; margin-bottom: 4px; }
+
+.gw-demo-line {
+  width: 100%;
+  height: 4px;
+  background: var(--border-default);
+}
+
+.gw-demo-line--short { width: 66%; }
+
+.gw-demo-swipe {
+  position: absolute;
+  bottom: 18%;
+  left: 50%;
+  translate: -50% 0;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  box-shadow: var(--shadow-md);
+}
+
+.gw-demo-sheet {
+  width: 200px;
+  height: 136px;
+  padding: 16px;
+}
+
+.gw-demo-dense {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.gw-demo-line--dense {
+  height: 5px;
+}
+
+.gw-demo-line--dense:nth-child(3n) { width: 82%; }
+
+/* The plain version: the AI reading action's own yellow, which is the one
+   thing design.md reserves it for. */
+.gw-demo-plain {
+  position: absolute;
+  inset: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+}
+
+.gw-demo-spark {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-bottom: 2px;
+  color: var(--text-primary);
+}
+
+.gw-demo-highlight {
+  display: block;
+  width: calc(var(--w) * 100%);
+  height: 11px;
+  border-radius: var(--radius-sm);
+  background: var(--brand-yellow);
+  transform-origin: left center;
+}
+
+.gw-demo--learn {
+  grid-template-columns: auto auto;
+  gap: 20px;
+  align-content: center;
+  justify-content: center;
+}
+
+.gw-demo-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gw-demo-key {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.gw-demo-key--like { color: var(--accent-rose); }
+.gw-demo-key--save { color: var(--accent-save); }
+.gw-demo-key--follow { color: var(--accent-teal); }
+
+.gw-demo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* A width of its own: the well centres its children, and rows whose bars
+     are percentages of nothing collapse to their borders. */
+  width: 156px;
+}
+
+.gw-demo-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.gw-demo-row-title,
+.gw-demo-row-line {
+  display: block;
+  height: 5px;
+  border-radius: var(--radius-sm);
+}
+
+.gw-demo-row-title {
+  width: 86%;
+  background: var(--text-primary);
+  opacity: 0.8;
+}
+
+.gw-demo-row-line {
+  width: 60%;
+  background: var(--border-default);
+}
+
+/* The welcome's two sentences take two lines on a wide screen. */
+.gw-step--welcome .gw-lede {
+  max-width: 50ch;
+}
+
+/* The areas' sentence is one line; the reading measure above is for the
+   welcome's two-line lede. */
+.gw-step--topics .gw-lede,
+.gw-step--subtopics .gw-lede {
+  max-width: none;
+}
+
+/* ── The welcome: two columns of papers either side of the copy ──
+   Laid out at the viewport's height, so the columns have a height to scroll
+   through and the button stays in view; the copy sits in the middle column
+   at its reading width. */
+.gw--showcase {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 560px;
+}
+
+.gw--showcase .gw-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-block: 0;
+  overflow: hidden;
+}
+
+.gw-step--welcome {
+  width: min(1240px, 100%);
+  height: 100%;
+}
+
+.gw-showcase {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 480px) minmax(0, 1fr);
+  /* One row exactly the stage's height. Left to size itself, the row took the
+     height of a whole column of papers (thousands of pixels) and the copy was
+     centred in that, off the screen. */
+  grid-template-rows: minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(24px, 4vw, 56px);
+  width: 100%;
+  height: 100%;
+}
+
+/* The column and its toggle. The toggle is a sibling of the masked stream,
+   not inside it: the mask would fade its focus ring away at both ends. */
+.gw-stream-col {
+  position: relative;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The ends fade into the page, so papers arrive and leave instead of being
+   cut by the edge of the column. The lower fade runs to the foot of the
+   screen: the columns carry on behind the button. */
+.gw-stream {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 84%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 84%, transparent 100%);
+}
+
+.gw-stream-track {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-block: 6px;
+  animation: gwStreamY var(--stream-duration, 110s) linear infinite;
+}
+
+.gw-stream--reverse .gw-stream-track {
+  animation-direction: reverse;
+}
+
+.gw-stream-col.is-paused .gw-stream-track {
+  animation-play-state: paused;
+}
+
+/* The whole column is the pause toggle: no button drawn, a pointer cursor,
+   and the focus ring inset so it shows inside the column's own edge. */
+.gw-stream-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-2xl);
+  background: transparent;
+  cursor: pointer;
+}
+
+.gw-stream-hit:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+/* Half the track is one full copy of the list, so a loop lands exactly
+   where it started. */
+@keyframes gwStreamY {
+  to { transform: translateY(-50%); }
+}
+
+@keyframes gwStreamX {
+  to { transform: translateX(-50%); }
+}
+
+.gw-stream-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+  text-align: left;
+}
+
+.gw-stream-meta {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  white-space: nowrap;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--area-accent);
+}
+
+.gw-stream-meta > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gw-stream-dot {
+  color: var(--border-strong);
+}
+
+.gw-stream-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 1.02rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text-primary);
+}
+
+.gw-stream-authors {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+
+/* Wide screens: the foot floats over the columns instead of ending them, so
+   they run to the bottom of the screen. Its buttons sit in the middle column
+   and never overlap a card; the copy keeps the foot's height clear under it so
+   it stays centred in what is visible. */
+@media not all and (max-width: 860px) {
+  .gw--showcase .gw-foot {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: transparent;
+    pointer-events: none;
+  }
+
+  .gw--showcase .gw-foot > * {
+    pointer-events: auto;
+  }
+
+  .gw-showcase > .gw-copy {
+    padding-bottom: 132px;
+  }
+}
+
+/* ── What you do here: three gestures in a row ── */
+.gw-beats {
+  display: flex;
+  flex-direction: row;
+  gap: clamp(16px, 3vw, 36px);
+  width: 100%;
+  margin: clamp(24px, 5vh, 48px) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gw-beat {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+
+.gw-beat-demo {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 190px;
+  margin-bottom: var(--space-4);
+}
+
+.gw-beat-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.gw-beat-title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 1.3rem;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  color: var(--text-primary);
+}
+
+.gw-beat-body {
+  max-width: 26ch;
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+/* ── The areas ──
+   Compact tiles — glyph, name, box — so twelve fit in a glance and the
+   screen stays a question rather than a catalogue. */
+.gw-areas {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  width: 100%;
+  margin-top: var(--space-6);
+  text-align: left;
+}
+
+/* The shared Toggle, redrawn as a tile. Its own chip utilities (a 2rem row,
+   nowrap, an ink fill when pressed) are undone here; this rule is
+   unlayered, so it outranks the Tailwind layer they live in. */
+.gw-area {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  height: auto;
+  min-height: 52px;
+  padding: 8px 12px 8px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  text-align: left;
+  white-space: normal;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    box-shadow var(--transition-fast),
+    scale 150ms ease-out;
+  animation: gwAreaIn 0.4s var(--ease-out-expo) calc(var(--i, 0) * 24ms) backwards;
+}
+
+@keyframes gwAreaIn {
+  from { opacity: 0; translate: 0 8px; }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .gw-area:hover {
+    border-color: var(--border-strong);
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+  }
+}
+
+.gw-area:active {
+  scale: 0.98;
+}
+
+/* Picked: the field's own ink on the edge and a wash of it, and the box
+   ticked — the tick and `aria-pressed` say it without the colour. */
+.gw-area[data-pressed] {
+  border-color: var(--area-accent);
+  background: color-mix(in srgb, var(--area-accent) 7%, var(--bg-elevated));
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--area-accent);
+}
+
+/* The glyph alone, in its field's ink: no tile behind it. A picked area
+   fills it instead (`weight="fill"`, GuestWelcome.jsx), so the icon says it
+   too, beside the tick and the washed card. */
+.gw-area-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--area-accent);
+}
+
+.gw-area-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.875rem;
+  font-weight: var(--fw-semibold);
+  line-height: 1.3;
+}
+
+.gw-area-box {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  color: transparent;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.gw-area[data-pressed] .gw-area-box {
+  border-color: var(--area-accent);
+  background: var(--area-accent);
+  color: var(--text-inverse);
+}
+
+/* ── The specific topics: one group of area cards per area ── */
+.gw-subtopics {
+  width: 100%;
+  margin-top: var(--space-6);
+  text-align: left;
+}
+
+.gw-subtopics + .gw-subtopics {
+  margin-top: var(--space-8);
+}
+
+.gw-subtopics-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.gw-subtopics-title svg {
+  color: var(--area-accent);
+}
+
+/* The grid follows its group's title rather than the page's lede. */
+.gw-subtopics .gw-areas {
+  margin-top: var(--space-3);
+}
+
+/* "Show more" under a folded group: a quiet text control, left-aligned
+   under the grid it opens. */
+.gw-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  margin-top: var(--space-2);
+  padding: 0 var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .gw-more:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+}
+
+.gw-more svg {
+  transition: rotate var(--transition-base);
+}
+
+.gw-more svg.is-flipped {
+  rotate: 180deg;
+}
+
+/* ── Foot: the way forward, centred ── */
+.gw-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5) calc(var(--space-5) + var(--inset-bottom));
+  background: var(--bg-primary);
+}
+
+/* On the areas screen the tiles scroll under the foot, so it earns a rule. */
+.gw-stage--topics + .gw-foot {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.gw-dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The current screen is a longer bar, not only a darker dot: the shape
+   carries it as well as the ink, and `aria-current` names it. */
+.gw-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--border-strong);
+  transition: width var(--transition-base), background var(--transition-base);
+}
+
+.gw-dot.is-done {
+  background: var(--text-secondary);
+}
+
+.gw-dot.is-active {
+  width: 22px;
+  background: var(--accent-primary);
+}
+
+.gw-dot-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.gw-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  width: min(460px, 100%);
+}
+
+/* Each side keeps its width whether or not its icon is drawn, so the button
+   stays centred on every screen. */
+.gw-action-slot {
+  flex: 0 0 44px;
+  display: flex;
+  justify-content: center;
+}
+
+.gw-icon-action {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-xl);
+  color: var(--text-secondary);
+}
+
+.gw-primary {
+  flex: 1 1 auto;
+  max-width: 340px;
+}
+
+/* ── Narrow ── */
+@media (max-width: 860px) {
+  .gw--showcase {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  .gw--showcase .gw-stage {
+    padding-inline: 0;
+  }
+
+  .gw-showcase {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    gap: var(--space-6);
+    height: auto;
+    padding-block: var(--space-4);
+  }
+
+  .gw-showcase > .gw-copy {
+    padding-inline: var(--space-5);
+  }
+
+  .gw-stream {
+    height: auto;
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 12%, #000 88%, transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0, #000 12%, #000 88%, transparent 100%);
+  }
+
+  .gw-stream-track {
+    flex-direction: row;
+    width: max-content;
+    padding-block: 0;
+    padding-inline: 6px;
+    animation-name: gwStreamX;
+  }
+
+  .gw-stream-card {
+    width: 240px;
+  }
+
+  .gw-stream-title {
+    -webkit-line-clamp: 2;
+  }
+
+  .gw-stream-col {
+    height: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .gw-bar {
+    padding: var(--inset-top) var(--space-3) 0;
+  }
+
+  .gw-sign-in-label {
+    display: none;
+  }
+
+  /* One line down to a 360px phone: the size follows the width there. */
+  .gw-step--topics .gw-lede,
+  .gw-step--subtopics .gw-lede {
+    font-size: clamp(0.8125rem, 3.9vw, 0.9375rem);
+  }
+
+  .gw-stage {
+    padding: var(--space-4) var(--space-4);
+  }
+
+  .gw-areas {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: var(--space-5);
+  }
+
+  .gw-area {
+    gap: 8px;
+    padding: 7px 10px 7px 7px;
+  }
+
+  .gw-area-name {
+    font-size: 0.8125rem;
+  }
+
+  .gw-foot {
+    gap: var(--space-3);
+    padding-inline: var(--space-4);
+  }
+
+  .gw-actions {
+    gap: var(--space-2);
+  }
+
+  /* Three across does not fit a phone: the gestures stack, each a row of a
+     small well beside its words, the illustration drawn at a little under
+     half size so it plays the same point in the space it has. */
+  .gw-beats {
+    flex-direction: column;
+    gap: var(--space-4);
+    margin-top: var(--space-5);
+  }
+
+  .gw-beat {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-4);
+    text-align: left;
+  }
+
+  .gw-beat-demo {
+    flex: 0 0 104px;
+    width: 104px;
+    height: 104px;
+    margin: 0;
+    overflow: hidden;
+    border-radius: var(--radius-2xl);
+    background: var(--bg-secondary);
+  }
+
+  /* 236 × 0.44 = 104, the well: the widest illustration (the likes and the
+     list, 210px) lands at 92 and keeps its margin. */
+  .gw-beat-demo > .gw-demo {
+    zoom: 0.44;
+    width: 236px;
+    height: 236px;
+  }
+
+  .gw-beat-copy {
+    align-items: flex-start;
+  }
+
+  .gw-beat-title {
+    font-size: 1.1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gw-stream-track {
+    animation: none;
+  }
+
+  .gw-area {
+    animation: none;
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+  }
+
+  .gw-area:active {
+    scale: none;
+  }
+
+  .gw-dot,
+  .gw-area-icon,
+  .gw-area-box,
+  .gw-more svg {
+    transition: none;
+  }
+}

@@ -4,11 +4,13 @@ import { CATEGORIES } from '../data/categories.js';
 import {
   GUEST_INTERESTS_STORAGE_KEY,
   GUEST_SEED_PER_AREA,
+  GUEST_SEED_MAX,
   clearGuestInterests,
   dismissGuestInterests,
   guestCategoriesForAreas,
   guestSeedCategoriesForAreas,
   normalizeGuestAreas,
+  normalizeGuestTopics,
   readGuestInterests,
   saveGuestInterests,
 } from './guestInterests.js';
@@ -46,24 +48,24 @@ test('a saved pick comes back normalized and not dismissed', () => {
   const stored = saveGuestInterests(['bio', 'cs', 'made-up'], storage);
 
   assert.deepEqual(stored, ['cs', 'bio']);
-  assert.deepEqual(readGuestInterests(storage), { areas: ['cs', 'bio'], dismissed: false });
+  assert.deepEqual(readGuestInterests(storage), { areas: ['cs', 'bio'], topics: [], dismissed: false });
 });
 
 test('"not now" and an emptied pick both read as dismissed, with no areas', () => {
   const storage = fakeStorage();
   dismissGuestInterests(storage);
-  assert.deepEqual(readGuestInterests(storage), { areas: [], dismissed: true });
+  assert.deepEqual(readGuestInterests(storage), { areas: [], topics: [], dismissed: true });
 
   saveGuestInterests(['cs'], storage);
   saveGuestInterests([], storage);
-  assert.deepEqual(readGuestInterests(storage), { areas: [], dismissed: true });
+  assert.deepEqual(readGuestInterests(storage), { areas: [], topics: [], dismissed: true });
 });
 
 test('a stored list of unknown keys reads as dismissed rather than as a pick', () => {
   const storage = fakeStorage({
     [GUEST_INTERESTS_STORAGE_KEY]: JSON.stringify({ areas: ['zzz'], dismissedAt: null }),
   });
-  assert.deepEqual(readGuestInterests(storage), { areas: [], dismissed: true });
+  assert.deepEqual(readGuestInterests(storage), { areas: [], topics: [], dismissed: true });
 });
 
 test('clearing forgets the answer entirely', () => {
@@ -107,4 +109,51 @@ test('a small area contributes what it has, and the seed never reaches the rules
   assert.deepEqual(guestSeedCategoriesForAreas(['nope']), []);
   assert.deepEqual(guestSeedCategoriesForAreas(null), []);
   assert.deepEqual(guestSeedCategoriesForAreas(['cs'], 2), Object.keys(CATEGORIES.cs.subcategories).slice(0, 2));
+});
+
+test('topics survive only inside a chosen area, in taxonomy order', () => {
+  assert.deepEqual(
+    normalizeGuestTopics(['cs.CV', 'bio.neuro', 'cs.AI', 'cs.AI', 'made.up', 7], ['cs']),
+    ['cs.AI', 'cs.CV'],
+  );
+  assert.deepEqual(normalizeGuestTopics('cs.AI', ['cs']), []);
+});
+
+test('a narrowed area stands for its topics, an untouched one for all of it', () => {
+  const ids = guestCategoriesForAreas(['cs', 'bio'], ['cs.LG', 'cs.CL']);
+  assert.deepEqual(ids, ['cs.LG', 'cs.CL', ...Object.keys(CATEGORIES.bio.subcategories)]);
+});
+
+test('a pick with topics round-trips, and dropping an area drops its topics', () => {
+  const storage = fakeStorage();
+  const stored = saveGuestInterests({ areas: ['physics', 'cs'], topics: ['cs.LG', 'quant-ph', 'bio.neuro'] }, storage);
+  assert.deepEqual(stored, ['physics', 'cs']);
+  assert.deepEqual(readGuestInterests(storage), { areas: ['physics', 'cs'], topics: ['quant-ph', 'cs.LG'], dismissed: false });
+
+  // The header chip's sheet saves areas alone: that answer has no topics.
+  saveGuestInterests({ areas: ['cs'], topics: ['cs.LG', 'quant-ph'] }, storage);
+  assert.deepEqual(readGuestInterests(storage).topics, ['cs.LG']);
+});
+
+test('an answer stored before topics existed reads as whole areas', () => {
+  const storage = fakeStorage({
+    [GUEST_INTERESTS_STORAGE_KEY]: JSON.stringify({ areas: ['math'], dismissedAt: null }),
+  });
+  assert.deepEqual(readGuestInterests(storage), { areas: ['math'], topics: [], dismissed: false });
+});
+
+test('a narrowed area seeds exactly its topics, and the seed stays under the rules cap', () => {
+  const seed = guestSeedCategoriesForAreas(['physics', 'cs'], GUEST_SEED_PER_AREA, ['cs.CL', 'cs.CV']);
+  const physicsFirst = Object.keys(CATEGORIES.physics.subcategories).slice(0, GUEST_SEED_PER_AREA);
+  assert.deepEqual(seed.filter(id => id.startsWith('cs.')), ['cs.CV', 'cs.CL']);
+  assert.deepEqual(seed.filter(id => physicsFirst.includes(id)), physicsFirst, 'an untouched area keeps its bounded five');
+
+  const everyTopic = Object.values(CATEGORIES).flatMap(area => Object.keys(area.subcategories));
+  const all = guestSeedCategoriesForAreas(Object.keys(CATEGORIES), GUEST_SEED_PER_AREA, everyTopic);
+  assert.equal(all.length, GUEST_SEED_MAX, 'every topic ticked still makes a profile the rules accept');
+});
+
+test('the seed cap is the rules cap', async () => {
+  const { USER_PREFERENCES_MAX } = await import('./accountOnboarding.js');
+  assert.equal(GUEST_SEED_MAX, USER_PREFERENCES_MAX);
 });

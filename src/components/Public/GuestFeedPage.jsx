@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { LogIn, Sparkles } from 'lucide-react';
+import { SignIn, Sparkle } from '@phosphor-icons/react';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useGuestFeed } from '../../hooks/useGuestFeed.js';
@@ -13,49 +13,32 @@ import FeedContainer from '../Feed/FeedContainer.jsx';
 import ThemeToggle from '../Layout/ThemeToggle.jsx';
 import GuestEndCard from './GuestEndCard.jsx';
 import GuestInterestsPrompt from './GuestInterestsPrompt.jsx';
+import GuestWelcome from './GuestWelcome.jsx';
 import './GuestFeedPage.css';
 
 const NO_AREAS = Object.freeze([]);
-// The prompt waits for the first card to be on screen, and then a beat more:
-// the feed's own arrival (the atom veil lifting, the card composing) has to
-// finish before anything else asks for the eye.
 
 export default function GuestFeedPage({
   onAuthRequired,
   onOpenPdf,
   onOpenComments = null,
-  interestsPromptSuspended = false,
 }) {
   const { isEnglish, language, setLanguage } = useLanguage();
   const { consent, trackEvent } = useAnalyticsConsent();
-  // `null` until this device has answered the interests prompt one way or
-  // the other; the prompt opens by itself only in that state. Afterwards the
-  // header chip is the way back into it.
+  // `null` until this device has answered the welcome's interests step. In
+  // that state the page IS the welcome (GuestWelcome): four screens on what
+  // PaperTok is, what you do in it, which areas to start from and the specific
+  // topics inside them, and the feed only once they are answered. Afterwards the header chip reopens the
+  // areas as an editable sheet.
   const [interests, setInterests] = useState(() => readGuestInterests());
   const areas = interests?.areas?.length ? interests.areas : NO_AREAS;
-  // Off until this device has answered the interests question: the first
-  // ask cannot be dismissed, so a feed loaded behind it was six fields the
-  // visitor never chose, thrown away on the answer. The loading veil waits
-  // behind the sheet instead.
-  const guestFeed = useGuestFeed({ areas, enabled: interests !== null });
+  const topics = interests?.topics?.length ? interests.topics : NO_AREAS;
+  const firstVisit = interests === null;
+  // Not a single source is asked while the welcome is up: the feed is built
+  // from its answer, so a load for the fixed sample would be thrown away.
+  const guestFeed = useGuestFeed({ areas, topics, enabled: !firstVisit });
   const [interestsOpen, setInterestsOpen] = useState(false);
   const trackedDemoRef = useRef(false);
-  const firstAsk = interests === null;
-
-  // The first ask, the moment the page is up — not once the feed has loaded,
-  // and with no beat before it: a visitor who has just arrived is choosing
-  // what to read, and the cards can fill in behind the sheet. Not while the
-  // sign-in door is open — a guest sent here from a protected route is about
-  // to answer this in the onboarding anyway; if they close that door without
-  // signing in, the ask opens then.
-  // Adjusted during render rather than in an effect so the sheet is in the
-  // first paint, not one commit behind it. `askedOnce` keeps this from
-  // re-opening the sheet on every render while it is up.
-  const [askedOnce, setAskedOnce] = useState(false);
-  if (firstAsk && !askedOnce && !interestsPromptSuspended) {
-    setAskedOnce(true);
-    setInterestsOpen(true);
-  }
 
   useEffect(() => {
     if (
@@ -82,19 +65,20 @@ export default function GuestFeedPage({
     onAuthRequired?.(action);
   }, [onAuthRequired, trackEvent]);
 
-  const submitInterests = useCallback((nextAreas) => {
-    const stored = saveGuestInterests(nextAreas);
-    setInterests({ areas: stored, dismissed: stored.length === 0 });
+  // The welcome answers with `{ areas, topics }`; the header chip's sheet
+  // changes areas only, so it keeps the topics still inside them.
+  const submitInterests = useCallback((answer) => {
+    const next = Array.isArray(answer) ? { areas: answer, topics: interests?.topics ?? [] } : answer;
+    const stored = saveGuestInterests(next);
+    setInterests(readGuestInterests() ?? { areas: stored, topics: [], dismissed: stored.length === 0 });
     setInterestsOpen(false);
     trackEvent('guest_interests', {
       action: stored.length > 0 ? 'set' : 'clear',
       areas: stored.length,
       language,
     });
-  }, [language, trackEvent]);
+  }, [interests, language, trackEvent]);
 
-  // Only an edit can be dismissed: the first ask has no way out but an
-  // answer (GuestInterestsPrompt refuses to close without one).
   const dismissInterests = useCallback(() => {
     setInterestsOpen(false);
   }, []);
@@ -105,6 +89,19 @@ export default function GuestFeedPage({
   const interestsChipName = areas.length > 0
     ? (isEnglish ? `Your interests: ${areas.length} ${areas.length === 1 ? 'area' : 'areas'}. Change them` : `Tus intereses: ${areas.length} ${areas.length === 1 ? 'área' : 'áreas'}. Cambiarlos`)
     : (isEnglish ? 'Choose your interests' : 'Elegir tus intereses');
+
+  // The welcome is a page of its own, with its own <main>: the feed's page
+  // is not mounted underneath it, so the route keeps exactly one landmark.
+  // Its sign-in is the same door as the header's.
+  if (firstVisit) {
+    return (
+      <GuestWelcome
+        initialAreas={NO_AREAS}
+        onComplete={submitInterests}
+        onSignIn={() => requestAccount('other')}
+      />
+    );
+  }
 
   return (
     <>
@@ -131,11 +128,11 @@ export default function GuestFeedPage({
               aria-expanded={interestsOpen}
               title={interestsChipName}
             >
-              <Sparkles size={15} aria-hidden="true" />
+              <Sparkle size={15} aria-hidden="true" />
               <span className="guest-interests-label">{interestsChipLabel}</span>
             </button>
             <button type="button" className="guest-sign-in-button" onClick={() => requestAccount('other')}>
-              <LogIn size={15} /> {isEnglish ? 'Sign in' : 'Entrar'}
+              <SignIn size={15} /> {isEnglish ? 'Sign in' : 'Entrar'}
             </button>
           </div>
         </header>
@@ -175,7 +172,6 @@ export default function GuestFeedPage({
           <GuestInterestsPrompt
             key="guest-interests"
             initialAreas={areas}
-            firstAsk={firstAsk}
             onSubmit={submitInterests}
             onDismiss={dismissInterests}
           />

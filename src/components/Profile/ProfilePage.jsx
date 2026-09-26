@@ -2,9 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import {
-  ArrowRight, Check, ExternalLink, FolderOpen, Globe2, Loader2, Lock, Pin, PinOff,
+  ArrowRight,
+  ArrowSquareOut,
+  Check,
+  CircleNotch,
+  FolderOpen,
+  GlobeHemisphereWest,
+  Lock,
+  PushPin,
+  PushPinSlash,
   ShieldCheck,
-} from 'lucide-react';
+} from '@phosphor-icons/react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import {
   isTransientReadError, patientRead, slowNoticeStatus, withReadTimeout,
@@ -828,7 +836,7 @@ export default function ProfilePage() {
     return (
       <main className="profile-page">
         <div className="profile-shell">
-          <p className="profile-loading"><Loader2 size={18} className="profile-spin" /> {copy.loading}</p>
+          <p className="profile-loading"><CircleNotch size={18} className="profile-spin" /> {copy.loading}</p>
         </div>
       </main>
     );
@@ -1169,7 +1177,7 @@ export default function ProfilePage() {
                         const isPinned = attributed && pinnedShareIds.includes(list.shareId);
                         const pinsFull = !isPinned
                           && pinnedShareIds.length >= USER_PROFILE_LIMITS.pinnedShareIds;
-                        // `emoji` holds a lucide icon name, not a literal emoji.
+                        // `emoji` holds an icon name from utils/icons.js, not a literal emoji.
                         const Icon = getIcon(list.emoji);
                         const settlingHere = settling?.shareId === list.shareId ? settling.kind : null;
                         return (
@@ -1190,7 +1198,7 @@ export default function ProfilePage() {
                                 onPressedChange={() => toggleAttribution(list)}
                                 disabled={pinsBusy || migration === 'running'}
                               >
-                                {attributed ? <Globe2 size={16} aria-hidden="true" /> : <Lock size={16} aria-hidden="true" />}
+                                {attributed ? <GlobeHemisphereWest size={16} aria-hidden="true" /> : <Lock size={16} aria-hidden="true" />}
                                 {attributed ? copy.onProfile : copy.offProfile}
                               </Toggle>
                               {attributed && (
@@ -1200,7 +1208,7 @@ export default function ProfilePage() {
                                   onPressedChange={() => togglePin(list.shareId)}
                                   disabled={pinsBusy || migration === 'running' || pinsFull}
                                 >
-                                  {isPinned ? <PinOff size={16} aria-hidden="true" /> : <Pin size={16} aria-hidden="true" />}
+                                  {isPinned ? <PushPinSlash size={16} aria-hidden="true" /> : <PushPin size={16} aria-hidden="true" />}
                                   {isPinned ? copy.unpin : copy.pin}
                                 </Toggle>
                               )}
@@ -1257,7 +1265,7 @@ export default function ProfilePage() {
                 <span className={`profile-preview-badge${status === 'ready' && !isPublicProfile ? ' is-private' : ''}`}>
                   {status === 'ready' && !isPublicProfile
                     ? <><Lock size={11} aria-hidden="true" /> {copy.previewPrivateBadge}</>
-                    : <><Globe2 size={11} aria-hidden="true" /> {copy.previewPublicBadge}</>}
+                    : <><GlobeHemisphereWest size={11} aria-hidden="true" /> {copy.previewPublicBadge}</>}
                 </span>
               </div>
               <div className="profile-preview-body">
@@ -1316,7 +1324,7 @@ export default function ProfilePage() {
                             {isPinned ? ` · ${copy.previewPinned}` : ''}
                           </small>
                         </span>
-                        {isPinned && <Pin size={12} aria-hidden="true" />}
+                        {isPinned && <PushPin size={12} aria-hidden="true" />}
                       </div>
                     );
                   })}
@@ -1329,7 +1337,7 @@ export default function ProfilePage() {
               {publicPath && (
                 <Link className="profile-preview-open" to={publicPath}>
                   <span>{copy.viewPublic}</span>
-                  <ExternalLink size={14} aria-hidden="true" />
+                  <ArrowSquareOut size={14} aria-hidden="true" />
                 </Link>
               )}
             </div>

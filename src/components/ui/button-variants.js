@@ -1,8 +1,12 @@
 import { cva } from 'class-variance-authority';
 
 /** Lives apart from button.jsx so that file exports only a component. */
+// The press is a squeeze on the native `scale` property (Tailwind v4's
+// `scale-*`), not a `transform`: callers animate buttons with framer, which
+// writes `transform`, and the two compose instead of one replacing the other.
+// Refused motion keeps the colour change and drops the squeeze.
 export const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]',
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-semibold transition-[color,background-color,border-color,scale] duration-150 ease-out active:scale-[0.97] motion-reduce:active:scale-100 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]',
   {
     variants: {
       variant: {

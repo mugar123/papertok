@@ -28,7 +28,19 @@ import { resolveListColor } from '../../utils/listColors.js';
 import { areaAccentForPaper } from '../../utils/areaAccent.js';
 import ScientificText from '../ScientificText.js';
 import { paperLegacyAdapter } from '../../models/Paper';
-import { AlertTriangle, Check, Download, Globe2, Library, Lock, Pencil, Plus, Share2, Unlink, X } from 'lucide-react';
+import {
+  Books,
+  Check,
+  DownloadSimple,
+  GlobeHemisphereWest,
+  LinkBreak,
+  Lock,
+  PencilSimple,
+  Plus,
+  ShareNetwork,
+  Warning,
+  X,
+} from '@phosphor-icons/react';
 import { shareOrCopyLink } from '../../utils/shareLink.js';
 import { downloadCitationFile } from '../../utils/readingLibrary';
 import { decodeFirestoreDocId, encodeFirestoreDocId } from '../../utils/firestoreDocId.js';
@@ -1421,7 +1433,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                     <span className="lists-expanded-icon" aria-hidden="true">
                       {(() => {
                         const Icon = getIcon(list.emoji);
-                        return <Icon size={22} strokeWidth={1.6} />;
+                        return <Icon size={22} />;
                       })()}
                     </span>
                     <div className="lists-expanded-copy">
@@ -1438,8 +1450,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                               : badgeState === 'synced'
                                 ? <Check size={11} aria-hidden="true" />
                                 : badgeState === 'stale'
-                                  ? <AlertTriangle size={11} aria-hidden="true" />
-                                  : <Globe2 size={11} aria-hidden="true" />}
+                                  ? <Warning size={11} aria-hidden="true" />
+                                  : <GlobeHemisphereWest size={11} aria-hidden="true" />}
                             {' '}{badgeLabel}
                           </span>
                         ) : (
@@ -1462,7 +1474,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                           onClick={() => handleShareList(list)}
                           disabled={shareBusy}
                         >
-                          <Share2 size={16} /> {isEnglish ? 'Share' : 'Compartir'}
+                          <ShareNetwork size={16} /> {isEnglish ? 'Share' : 'Compartir'}
                         </button>
                       ) : (
                         <button
@@ -1471,7 +1483,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                           onClick={() => handlePublishList(list, publicPapers)}
                           disabled={shareBusy || pendingPaperIds.size > 0}
                         >
-                          <Globe2 size={16} /> {isEnglish ? 'Publish & share' : 'Publicar y compartir'}
+                          <GlobeHemisphereWest size={16} /> {isEnglish ? 'Publish & share' : 'Publicar y compartir'}
                         </button>
                       )}
                     </div>
@@ -1554,8 +1566,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                     {exportPapers.length > 0 && (
                       <div className="lists-export-actions">
                         <span className="lists-tools-label">{isEnglish ? 'Export citation' : 'Exportar cita'}</span>
-                        <button type="button" onClick={() => downloadCitationFile(exportPapers, 'bibtex', `papertok-${list.name}`)}><Download size={14} /> BibTeX</button>
-                        <button type="button" onClick={() => downloadCitationFile(exportPapers, 'ris', `papertok-${list.name}`)}><Download size={14} /> RIS</button>
+                        <button type="button" onClick={() => downloadCitationFile(exportPapers, 'bibtex', `papertok-${list.name}`)}><DownloadSimple size={14} /> BibTeX</button>
+                        <button type="button" onClick={() => downloadCitationFile(exportPapers, 'ris', `papertok-${list.name}`)}><DownloadSimple size={14} /> RIS</button>
                       </div>
                     )}
                     {isCustomList && (
@@ -1564,7 +1576,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                         className="lists-edit-btn"
                         onClick={() => setEditing(list)}
                       >
-                        <Pencil size={14} aria-hidden="true" /> {isEnglish ? 'Edit list' : 'Editar lista'}
+                        <PencilSimple size={14} aria-hidden="true" /> {isEnglish ? 'Edit list' : 'Editar lista'}
                       </button>
                     )}
                     {isCustomList && !IS_DEMO && list.publicShareId && (
@@ -1574,7 +1586,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                         onClick={() => handleUnpublishList(list)}
                         disabled={shareBusy}
                       >
-                        <Unlink size={14} aria-hidden="true" /> {isEnglish ? 'Stop sharing' : 'Dejar de compartir'}
+                        <LinkBreak size={14} aria-hidden="true" /> {isEnglish ? 'Stop sharing' : 'Dejar de compartir'}
                       </button>
                     )}
                   </div>
@@ -1677,7 +1689,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                               must look under the same key (R8: ids differ by
                               entry route). */}
                           <button className="lists-paper-edit-btn" onClick={(e) => { e.stopPropagation(); onEditPaper?.({ ...paper, id: paperId }); }} title={isEnglish ? 'Edit note and tags' : 'Editar nota y etiquetas'}>
-                            <Pencil size={17} />
+                            <PencilSimple size={17} />
                           </button>
                           <button
                             className="lists-paper-unmark-btn"
@@ -1703,7 +1715,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                   })}
                   {(!list.paperIds || list.paperIds.length === 0) && (
                     <div className="lists-empty-state lists-empty-state--inline">
-                      <span className="lists-empty-icon" aria-hidden="true"><Library size={20} /></span>
+                      <span className="lists-empty-icon" aria-hidden="true"><Books size={20} /></span>
                       <h3>{isEnglish ? 'This list is empty' : 'Esta lista está vacía'}</h3>
                       <p>
                         {isEnglish
@@ -1777,7 +1789,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
               >
                 <div className="list-card-top">
                   <span className="list-card-icon" aria-hidden="true">
-                    <Icon size={19} strokeWidth={1.6} />
+                    <Icon size={19} />
                   </span>
                   {isCustomList && (
                     <div className="list-card-tools">
@@ -1787,7 +1799,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                         aria-label={isEnglish ? `Edit ${list.name}` : `Editar ${list.name}`}
                         title={isEnglish ? 'Edit list' : 'Editar lista'}
                       >
-                        <Pencil size={13} aria-hidden="true" />
+                        <PencilSimple size={13} aria-hidden="true" />
                       </button>
                       <button
                         className="list-card-tool list-card-tool--danger"
@@ -1816,7 +1828,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                   {/* The profile card says Public; its twin here said nothing. */}
                   {list.publicShareId && (
                     <span className="lists-badge lists-badge--public">
-                      <Globe2 size={11} aria-hidden="true" /> {isEnglish ? 'Public' : 'Pública'}
+                      <GlobeHemisphereWest size={11} aria-hidden="true" /> {isEnglish ? 'Public' : 'Pública'}
                     </span>
                   )}
                 </div>

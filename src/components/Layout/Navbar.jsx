@@ -4,7 +4,7 @@ import { ruleTransform } from '../../utils/navRule.js';
 import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
-import { Search, Layers, Newspaper, UserCheck } from 'lucide-react';
+import { MagnifyingGlass, Newspaper, Stack, UserCheck } from '@phosphor-icons/react';
 import NavPreferencesMenu from './NavPreferencesMenu';
 import { shouldOpenSearchOnSlash } from './searchShortcut.js';
 import './Navbar.css';
@@ -213,7 +213,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
           onClick={onOpenSearch}
           aria-expanded={searchOpen}
         >
-          <Search size={15} aria-hidden="true" />
+          <MagnifyingGlass size={15} aria-hidden="true" />
           <span>{isEnglish ? 'Search papers, authors, topics...' : 'Buscar papers, autores, temas...'}</span>
           <kbd aria-hidden="true">/</kbd>
         </button>
@@ -251,7 +251,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
             onPointerUp={(event) => liftTab(event, 'home', '/feed')}
             onPointerCancel={releasePress}
           >
-            <Layers size={15} aria-hidden="true" />
+            <Stack size={15} aria-hidden="true" />
             {isEnglish ? 'For you' : 'Para ti'}
           </NavLink>
 
@@ -290,7 +290,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
             title={isEnglish ? 'Search' : 'Buscar'}
             aria-label={isEnglish ? 'Search' : 'Buscar'}
           >
-            <Search size={17} />
+            <MagnifyingGlass size={17} />
           </button>
 
           {/* Regla 6: las utilidades se agrupan a la derecha tras la regla de

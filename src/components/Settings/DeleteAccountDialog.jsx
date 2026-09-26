@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from 'react';
-import { LoaderCircle, Trash2, X } from 'lucide-react';
+import { CircleNotch, Trash, X } from '@phosphor-icons/react';
 import { deleteAccount } from '../../services/accountDeletionService.js';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import {
@@ -148,7 +148,7 @@ export default function DeleteAccountDialog({ open: openOnMount = true, language
             onClick={handleDelete}
             disabled={!confirmed || working}
           >
-            {working ? <LoaderCircle className="delete-account-spinner" size={16} aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}
+            {working ? <CircleNotch className="delete-account-spinner" size={16} aria-hidden="true" /> : <Trash size={16} aria-hidden="true" />}
             {copy.confirm}
           </Button>
         </div>

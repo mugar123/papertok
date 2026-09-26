@@ -111,10 +111,9 @@
   align-items: center;
   width: 40px;
   height: 40px;
-  border-radius: var(--radius-md);
-  background: var(--bg-secondary);
+  /* The glyph alone, no tile behind it; its colour comes from the style
+     prop, in the area's own ink. */
   color: var(--text-primary);
-  /* The icon color will be set dynamically via style prop */
 }
 
 .eim-area-title {

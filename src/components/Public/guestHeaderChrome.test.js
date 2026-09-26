@@ -24,7 +24,8 @@ const feedContainerJsx = readFile(new URL('../Feed/FeedContainer.jsx', import.me
 
 test('la cabecera de invitado ya no dibuja el botón de recargar', async () => {
   const jsx = await guestJsx;
-  assert.ok(!jsx.includes('RotateCw'), 'el icono de recargar sigue en GuestFeedPage.jsx');
+  // El glifo con sus dos nombres: el de Lucide y el de Phosphor desde el cambio.
+  assert.ok(!jsx.includes('RotateCw') && !jsx.includes('ArrowClockwise'), 'el icono de recargar sigue en GuestFeedPage.jsx');
   assert.ok(!jsx.includes('is-spinning'), 'la clase del spinner sigue en GuestFeedPage.jsx');
   assert.ok(!jsx.includes('guestFeed.refresh'), 'el handler del botón sigue enganchado en la cabecera');
 });
@@ -55,6 +56,6 @@ const stripAllComments = source => source
 
 test('la cabecera de invitado ya no dibuja la lupa', async () => {
   const jsx = stripAllComments(await guestJsx);
-  assert.ok(!/\bSearch\b/.test(jsx), 'el icono de la lupa sigue importado o dibujado en GuestFeedPage.jsx');
+  assert.ok(!/\bSearch\b|\bMagnifyingGlass\b/.test(jsx), 'el icono de la lupa sigue importado o dibujado en GuestFeedPage.jsx');
   assert.ok(!/'Buscar'/.test(jsx), 'la etiqueta del botón de buscar sigue en la cabecera');
 });

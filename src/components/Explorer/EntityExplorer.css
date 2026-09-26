@@ -95,6 +95,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-4);
+  padding: var(--space-6);
   color: var(--text-secondary);
   background: var(--bg-primary);
   /* Resolves from 0.35 like every other arrival in the hero: it replaces a
@@ -108,15 +109,47 @@
 
 .explorer-error h1 {
   font-family: var(--font-serif);
-  font-size: var(--fs-2xl);
+  font-size: var(--fs-3xl);
   font-weight: 600;
+  line-height: var(--lh-tight);
+  letter-spacing: -0.015em;
+  text-align: center;
   color: var(--text-primary);
 }
 
 .explorer-error p {
   max-width: 420px;
   text-align: center;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-base);
+  line-height: var(--lh-normal);
+}
+
+/* Neutral for "not found" — nothing failed, the record is just not there —
+   and the red wash only when a request did fail. */
+.explorer-error-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: var(--space-1);
+  border: 1px solid var(--tint-neutral-line);
+  border-radius: var(--radius-2xl);
+  background: var(--tint-neutral-bg);
+  color: var(--tint-neutral-fg);
+}
+
+.explorer-error-icon--failed {
+  border-color: var(--tint-red-line);
+  background: var(--tint-red-bg);
+  color: var(--tint-red-fg);
+}
+
+.explorer-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 
 /* ─── Hero ─── */

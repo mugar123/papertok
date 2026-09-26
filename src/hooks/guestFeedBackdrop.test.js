@@ -19,10 +19,12 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '
 
 test('the guest page enables its feed once the visitor has answered', () => {
   const page = stripComments(readFileSync(new URL('../components/Public/GuestFeedPage.jsx', import.meta.url), 'utf8'));
-  assert.match(page, /const guestFeed = useGuestFeed\(\{ areas, enabled: interests !== null \}\);/);
+  // `firstVisit` is `interests === null`: the welcome page is up until then.
+  assert.match(page, /const firstVisit = interests === null;/);
+  assert.match(page, /const guestFeed = useGuestFeed\(\{ areas, topics, enabled: !firstVisit \}\);/);
 
   const hook = stripComments(readFileSync(new URL('./useGuestFeed.js', import.meta.url), 'utf8'));
-  assert.match(hook, /export function useGuestFeed\(\{ areas = \[\], enabled = true \} = \{\}\)/);
+  assert.match(hook, /export function useGuestFeed\(\{ areas = \[\], topics = \[\], enabled = true \} = \{\}\)/);
   assert.match(hook, /const decision = guestFeedLoadDecision\(\{ enabled, previousKey, planKey: plan\.key \}\);\s*if \(!decision\) return undefined;/);
   assert.match(hook, /load\(plan, decision\.refresh \? \{ refresh: true, forceRefresh: false \} : \{\}\);/);
 });

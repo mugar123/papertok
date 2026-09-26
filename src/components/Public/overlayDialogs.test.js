@@ -64,12 +64,12 @@ test('the sign-in sheet keeps its look and leaves the centring to the primitive'
 test('the interests prompt is a modal Dialog and settles into one parent callback', async () => {
   const jsx = await gipJsx;
   assert.match(jsx, /from '\.\.\/ui\/dialog\.jsx'/);
-  assert.match(jsx, /<Dialog open=\{open\} onOpenChange=\{requestOpenChange\} onOpenChangeComplete=\{settle\} modal>/);
-  // The first ask cannot be waved away: no X, and a close request without an
-  // answer is refused. An edit keeps every way out.
-  assert.match(jsx, /if \(!nextOpen && firstAsk && !answerRef\.current\) return;/);
-  assert.match(jsx, /showClose=\{!firstAsk\}/);
-  assert.match(jsx, /\{!firstAsk && \(\s*<Button variant="ghost" onClick=\{dismiss\}>/);
+  // Edit-only now: the first answer is the welcome page's last step
+  // (GuestWelcome), so this sheet always has an answer to change and every
+  // way out stays open — the X, Escape, the scrim and Cancel.
+  assert.match(jsx, /<Dialog open=\{open\} onOpenChange=\{setOpen\} onOpenChangeComplete=\{settle\} modal>/);
+  assert.doesNotMatch(jsx, /firstAsk|requestOpenChange|showClose=/);
+  assert.match(jsx, /<Button variant="ghost" onClick=\{dismiss\}>/);
   assert.doesNotMatch(jsx, /useDialogFocus|framer-motion|aria-modal=/);
   // An answer and a dismissal both close the sheet first; the parent hears
   // one of them once the leave has played.

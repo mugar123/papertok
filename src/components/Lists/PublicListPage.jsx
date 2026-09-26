@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { BookOpen, Check, Quote, RefreshCw, Share2 } from 'lucide-react';
+import { ArrowsClockwise, BookOpen, Check, Quotes, ShareNetwork } from '@phosphor-icons/react';
 import { getCategoryLabel } from '../../data/categories';
 import ScientificText from '../ScientificText.js';
 import { useLanguage } from '../../context/LanguageContext.jsx';
@@ -287,7 +287,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
               setStatus('loading');
               setReloadToken(token => token + 1);
             }}>
-              <RefreshCw size={16} /> {copy.retry}
+              <ArrowsClockwise size={16} /> {copy.retry}
             </button>
           )}
         </section>
@@ -323,7 +323,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
               onClick={handleShare}
               data-state={shareState || 'idle'}
             >
-              {shareState === 'copied' ? <Check size={16} /> : <Share2 size={16} />}
+              {shareState === 'copied' ? <Check size={16} /> : <ShareNetwork size={16} />}
               {copy.share}
             </button>
             {/* The confirmation is a sibling, not the button's own label: a
@@ -373,7 +373,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
                   <div className="public-list-paper-footer">
                     {/* "0 citations" on every row is noise, not information. */}
                     {Number.isInteger(paper.citations) && paper.citations > 0 && (
-                      <span><Quote size={14} /> {copy.citations(paper.citations)}</span>
+                      <span><Quotes size={14} /> {copy.citations(paper.citations)}</span>
                     )}
                     {paper.concepts?.slice(0, 3).map(concept => <span key={concept}>{concept}</span>)}
                   </div>

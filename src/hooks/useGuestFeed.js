@@ -78,24 +78,25 @@ export function dropPaperById(papers, paperId) {
 
 /**
  * Whether the feed loads now, and how. Nothing loads while the feed is not
- * enabled — the guest page keeps it off behind the mandatory welcome sheet,
- * where it used to load six fields the visitor never chose (audit 2026-09-23,
- * issue 11a). The first load is a first load even when it follows a change of
- * plan, because nothing was on screen to refresh; a later change of plan is a
- * rebuild of what was shown. The same plan twice loads nothing.
+ * enabled — the guest page keeps it off while the welcome is up, where it used
+ * to load six fields the visitor never chose (audit 2026-09-23, issue 11a):
+ * the feed is built from the welcome's answer. The first load is a first load
+ * even when it follows a change of plan, because nothing was on screen to
+ * refresh; a later change of plan is a rebuild of what was shown. The same
+ * plan twice loads nothing.
  */
 export function guestFeedLoadDecision({ enabled, previousKey, planKey }) {
   if (!enabled || previousKey === planKey) return null;
   return { refresh: previousKey !== null };
 }
 
-export function useGuestFeed({ areas = [], enabled = true } = {}) {
+export function useGuestFeed({ areas = [], topics = [], enabled = true } = {}) {
   const [papers, setPapers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const requestIdRef = useRef(0);
-  const plan = useMemo(() => buildGuestFeedPlan(areas), [areas]);
+  const plan = useMemo(() => buildGuestFeedPlan(areas, topics), [areas, topics]);
   const planKey = plan.key;
 
   // `refresh` is the reader's pull-to-refresh: the shown papers stay until

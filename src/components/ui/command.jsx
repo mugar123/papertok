@@ -1,5 +1,5 @@
 import { Command as CommandPrimitive } from 'cmdk';
-import { Search } from 'lucide-react';
+import { MagnifyingGlass } from '@phosphor-icons/react';
 import { cn } from '../../lib/utils.js';
 import { Dialog, DialogContent, DialogTitle } from './dialog.jsx';
 
@@ -98,7 +98,7 @@ function CommandInput({ className, wrapperClassName, wrapperStyle, children, ...
       className={cn('flex items-center gap-1.5 border-b border-border px-4 py-2', wrapperClassName)}
       style={wrapperStyle}
     >
-      <Search size={16} className="shrink-0 text-muted-foreground" />
+      <MagnifyingGlass size={16} className="shrink-0 text-muted-foreground" />
       <CommandPrimitive.Input
         className={cn(
           // 16px, not 15: iOS Safari auto-zooms the page when a focused

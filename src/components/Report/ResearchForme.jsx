@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Unlock } from 'lucide-react';
+import { LockOpen } from '@phosphor-icons/react';
 import ScientificText from '../ScientificText';
 import { areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
 import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.js';
@@ -101,7 +101,7 @@ function FormeCell({ cell, figure, isLoaded, onLoaded, onSelect, enterOrder, isE
 
   const foot = (
     <div className="sr-cell-foot">
-      {paper.openAccess && <span className="sr-micro oa"><Unlock size={11} /> Open Access</span>}
+      {paper.openAccess && <span className="sr-micro oa"><LockOpen size={11} /> Open Access</span>}
       {paper.citationCount > 0 && (
         <span className="sr-micro">{paper.citationCount} {isEnglish ? 'citations' : 'citas'}</span>
       )}

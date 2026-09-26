@@ -1,5 +1,5 @@
 import { CATEGORIES } from '../data/categories.js';
-import { guestCategoriesForAreas, normalizeGuestAreas } from './guestInterests.js';
+import { guestCategoriesForAreas, guestTopicListsForAreas, normalizeGuestAreas, normalizeGuestTopics } from './guestInterests.js';
 
 const isDev = import.meta.env?.DEV === true;
 
@@ -68,10 +68,11 @@ const GUEST_PUBMED_CAP = 3;
  * Round-robin across areas: the first subcategory of each, then the second,
  * … until `cap`. Every chosen area is represented before any area gets a
  * second seat, so a guest who picked physics and economics does not get six
- * physics categories and no economics.
+ * physics categories and no economics. An area the guest narrowed to specific
+ * topics offers only those; one they did not offers all of its own.
  */
-function interleaveAreaCategories(areas, cap) {
-  const lists = areas.map(key => Object.keys(CATEGORIES[key].subcategories));
+function interleaveAreaCategories(areas, cap, topics = []) {
+  const lists = guestTopicListsForAreas(areas, topics);
   const picked = [];
   for (let index = 0; picked.length < cap; index += 1) {
     let added = false;
@@ -93,12 +94,14 @@ function interleaveAreaCategories(areas, cap) {
  * `key` is what the feed hook watches: a plan with the same key is the same
  * plan, and a re-render must not re-fetch.
  */
-export function buildGuestFeedPlan(areas = []) {
+export function buildGuestFeedPlan(areas = [], topics = []) {
   const chosen = normalizeGuestAreas(areas);
+  const chosenTopics = normalizeGuestTopics(topics, chosen);
   if (chosen.length === 0) {
     return Object.freeze({
       key: 'default',
       areas: [],
+      topics: [],
       categories: [...GUEST_CATEGORIES],
       arxivCategories: [...GUEST_CATEGORIES],
       discoveryQuery: buildGuestDiscoveryQuery(),
@@ -109,14 +112,15 @@ export function buildGuestFeedPlan(areas = []) {
 
   const arxivAreas = chosen.filter(key => ARXIV_AREAS.has(key));
   const pubmedAreas = chosen.filter(key => PUBMED_AREAS.has(key));
-  const pubmedCategories = interleaveAreaCategories(pubmedAreas, GUEST_PUBMED_CAP);
+  const pubmedCategories = interleaveAreaCategories(pubmedAreas, GUEST_PUBMED_CAP, chosenTopics);
 
   return Object.freeze({
-    key: chosen.join('+'),
+    key: chosenTopics.length > 0 ? `${chosen.join('+')}|${chosenTopics.join('+')}` : chosen.join('+'),
     areas: chosen,
-    categories: guestCategoriesForAreas(chosen),
-    arxivCategories: interleaveAreaCategories(arxivAreas, GUEST_ARXIV_CAP),
-    discoveryQuery: buildGuestDiscoveryQuery(interleaveAreaCategories(chosen, GUEST_DISCOVERY_CAP)),
+    topics: chosenTopics,
+    categories: guestCategoriesForAreas(chosen, chosenTopics),
+    arxivCategories: interleaveAreaCategories(arxivAreas, GUEST_ARXIV_CAP, chosenTopics),
+    discoveryQuery: buildGuestDiscoveryQuery(interleaveAreaCategories(chosen, GUEST_DISCOVERY_CAP, chosenTopics)),
     pubmedQuery: pubmedCategories.map(id => `"${guestCategoryLabel(id)}"`).join(' OR '),
     pubmedCategories,
   });

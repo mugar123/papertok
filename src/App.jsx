@@ -372,7 +372,6 @@ function AppContent() {
               ) : (
                 <PageTransition>
                   <GuestFeedPage
-                    interestsPromptSuspended={authPromptOpen}
                     onAuthRequired={requestAuthentication}
                     onOpenPdf={openPdf}
                     onOpenComments={setCommentsPaper}

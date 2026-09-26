@@ -53,13 +53,15 @@
 }
 
 /* ── The page ──
-   No card, no border, no shadow: the paper is set directly on the background
-   and the type does the work a container used to do. Within the sheet the
-   column is bottom-justified, so what yields when the card is short is the
-   abstract at the top of its box, never the actions at the foot. */
+   On a wide screen the paper is a sheet laid on the page: its own surface, a
+   hairline, a short drop, and the field's colour as the top edge (the
+   desktop block below). On a phone it is the whole frame and the type does
+   the work a container would. Within the sheet the column is
+   bottom-justified, so what yields when the card is short is the abstract at
+   the top of its box, never the actions at the foot. */
 .pc-sheet {
   position: relative;
-  flex: 0 1 min(820px, calc(100% - 560px));
+  flex: 0 1 min(860px, calc(100% - 480px));
   min-width: 0;
   max-height: 100%;
   display: flex;
@@ -75,6 +77,7 @@
   overflow-x: hidden;
   overflow-y: hidden;
   padding: clamp(20px, 2.5vw, 32px) 0;
+  border-radius: var(--radius-2xl);
   /* Travel only. The sheet used to fade from 0 as well, over 0.42s, while the
      page it sits in was already fading in over 0.3s: measured, the page was at
      0.98 when the sheet had reached 0.67, and the sheet kept fading for 300 ms
@@ -321,6 +324,15 @@
   .pc-figures { display: none; }
 }
 
+/* And with the clippings gone, the sheet has no margins to leave them: the
+   480px it holds back above is their room. Below 1080 it keeps only the
+   rail's column and a little air, so a tablet in landscape gets a page as
+   wide as it can read rather than one squeezed until its action row wraps.
+   `SkeletonCard.css` mirrors this basis. */
+@media (max-width: 1080px) {
+  .pc-sheet { flex-basis: min(760px, calc(100% - 120px)); }
+}
+
 /* A quiet field glyph in the corner of the sheet. */
 /* The field glyph stays when the paper brings figures. Hiding it outright took
    away the one mark that says which science this is, and it is the constant of
@@ -517,6 +529,27 @@
 .pc-debug-panel strong {
   color: var(--brand-yellow);
   margin-bottom: 4px;
+}
+
+/* ── Kicker — the meta line and the status chips, side by side ──
+   Their own margins go: the row owns the space under it, and the gap between
+   the two is a column gap so a wrap still leaves them a line apart. */
+.pc-kicker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-3);
+  row-gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.pc-kicker > .pc-meta,
+.pc-kicker > .pc-chips {
+  margin-bottom: 0;
+}
+
+.pc-kicker > .pc-chips:empty {
+  display: none;
 }
 
 /* ── Meta row — the machine-read line above the headline ── */
@@ -868,12 +901,16 @@ a.pc-citations {
 }
 
 /* ── Headline ── */
+/* The one large thing on the card. It was within a size step of the abstract
+   under it, so nothing on the sheet led; now the headline is what the eye
+   lands on and the rest reads as its apparatus. */
 .pc-title {
   font-family: var(--font-serif);
-  font-size: clamp(1.45rem, 2.5vw, 2.1rem);
+  font-size: clamp(1.6rem, 2.7vw, 2.45rem);
   font-weight: 600;
-  line-height: 1.16;
-  letter-spacing: -0.015em;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
   color: var(--text-primary);
   margin-bottom: var(--space-4);
   display: -webkit-box;
@@ -1021,8 +1058,8 @@ a.pc-citations {
 
 .pc-abstract p {
   font-family: var(--font-serif);
-  font-size: 1rem;
-  line-height: 1.6;
+  font-size: 1.0625rem;
+  line-height: 1.62;
   color: var(--text-secondary);
 }
 
@@ -1217,10 +1254,9 @@ a.pc-citations {
 }
 
 .pc-side-label {
-  font: 500 0.625rem/1.25 var(--font-mono);
-  letter-spacing: 0.02em;
+  font: 500 0.6875rem/1.25 var(--font-body);
   text-align: center;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   transition: color var(--transition-fast);
 }
 
@@ -1244,15 +1280,22 @@ a.pc-citations {
   min-height: 2.5em;
 }
 
+/* One neutral key per action at rest. Each used to wear its own pastel —
+   rose, grey, amber, teal, grey — so the column read as five unrelated
+   badges before anything had been pressed. The colour is now the answer, not
+   the question: it arrives on hover and when the state is on (`--liked`,
+   `--saved`, `--read` below), and `aria-pressed` carries that state for
+   anyone not reading colour. */
 .pc-side-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-md);
+  width: 46px;
+  height: 46px;
+  border-radius: var(--radius-2xl);
   display: grid;
   place-items: center;
-  color: var(--rail, var(--text-secondary));
-  background: color-mix(in srgb, var(--rail, #888) 7%, var(--bg-card));
-  border: 1px solid color-mix(in srgb, var(--rail, #888) 20%, var(--bg-card));
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-sm);
   transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
 }
 
@@ -1267,14 +1310,16 @@ a.pc-citations {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .pc-side-btn:hover .pc-side-icon {
-    color: var(--text-inverse);
-    background: var(--rail, var(--text-primary));
-    border-color: var(--rail, var(--text-primary));
+  /* Not over a key that is already on: its fill IS the state, and a hover
+     that washed it back to a tint would read as the press being undone. */
+  .pc-side-btn:not(.pc-side-btn--liked, .pc-side-btn--saved, .pc-side-btn--read):hover .pc-side-icon {
+    color: var(--rail, var(--text-primary));
+    background: color-mix(in srgb, var(--rail, #888) 8%, var(--bg-elevated));
+    border-color: var(--rail, var(--border-ink));
   }
 
   .pc-side-btn:hover .pc-side-label {
-    color: var(--rail, var(--text-secondary));
+    color: var(--text-primary);
   }
 }
 
@@ -2776,6 +2821,43 @@ a.pc-citations {
    Responsive
    ============================================ */
 
+/* ── The sheet as a surface ──
+   Wide screens only: the exact complement of the 900px block below, where the
+   sheet becomes the full-bleed frame and a surface would only draw a border
+   round the phone.
+
+   `--bg-elevated` and not `--bg-card`: on the ink side the card value is
+   darker than the page the feed sits on, so the sheet read as a hole cut into
+   it rather than a page laid over it. The field colour is an inset shadow on
+   the top edge rather than a `border-top`, so it follows the corner radius
+   and costs no layout: it replaces the short rule `.pc-body::before` draws on
+   a phone, which is the same mark with nowhere better to sit. */
+@media not all and (max-width: 900px) {
+  .pc-sheet {
+    padding: clamp(28px, 3vw, 44px) clamp(28px, 3.2vw, 48px);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    box-shadow:
+      inset 0 3px 0 var(--area-accent, var(--accent-primary)),
+      var(--shadow-lg);
+  }
+
+  .pc-body::before {
+    display: none;
+  }
+
+  /* Bled off the corner, so the glyph frames the headline instead of sitting
+     under its last words. The sheet's own overflow clips the rest. */
+  .pc-watermark {
+    right: -36px;
+    top: -40px;
+  }
+
+  .pc-watermark svg {
+    width: clamp(150px, 17vw, 230px);
+  }
+}
+
 @media (max-width: 900px) {
   .pc {
     padding: 0;
@@ -2790,6 +2872,7 @@ a.pc-citations {
     padding: var(--space-5);
     padding-right: 72px;
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--space-8));
+    border-radius: 0;
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
@@ -2828,13 +2911,30 @@ a.pc-citations {
   }
 }
 
+/* A portrait tablet takes the phone's full-bleed frame, but it is tall
+   enough that a bottom-anchored paper with a short abstract left the top half
+   of the screen empty. Here the paper sits in the middle of its frame, at a
+   measure that keeps lines readable instead of running the full width. */
+@media (min-width: 641px) and (max-width: 900px) {
+  .pc-sheet {
+    justify-content: center;
+  }
+
+  .pc-body {
+    width: 100%;
+    max-width: 680px;
+    margin-inline: auto;
+  }
+}
+
 @media (max-width: 640px) {
   .pc-title {
-    font-size: 1.3rem;
+    font-size: 1.5rem;
     -webkit-line-clamp: 4;
     margin-bottom: var(--space-3);
   }
 
+  .pc-kicker,
   .pc-meta,
   .pc-chips,
   .pc-topics {
@@ -2846,9 +2946,14 @@ a.pc-citations {
     padding-bottom: var(--space-3);
   }
 
+  /* A ceiling, not a size: the abstract is the one row that yields, so on a
+     short screen it still gives way to everything else. At 34dvh it stopped
+     short on every phone tall enough to matter, and the sheet — anchored to
+     the bottom — left a band of empty page above the kicker as tall as the
+     abstract it had just cut off. */
   .pc-abstract {
-    max-height: min(14em, 34vh);
-    max-height: min(14em, 34dvh);
+    max-height: min(26em, 52vh);
+    max-height: min(26em, 52dvh);
     margin-bottom: var(--space-4);
   }
 
@@ -2862,17 +2967,17 @@ a.pc-citations {
   }
 
   .pc-side-icon {
-    width: 36px;
-    height: 36px;
+    width: 42px;
+    height: 42px;
   }
 
   .pc-side-icon svg {
-    width: 18px;
-    height: 18px;
+    width: 19px;
+    height: 19px;
   }
 
   .pc-side-label {
-    font-size: 0.5625rem;
+    font-size: 0.625rem;
   }
 
   .pc-action-bar {
@@ -2934,9 +3039,14 @@ a.pc-citations {
 }
 
 @media (max-width: 420px) {
+  /* The bottom is restated, not left to the shorthand: `padding` alone
+     reset it to 16px, which dropped both the home-indicator inset and the
+     room the scroll hint needs, and put the hint over the action row on
+     every phone this narrow. */
   .pc-sheet {
     padding: var(--space-4);
     padding-right: 66px;
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--space-8));
   }
 
   .pc-action-utilities {

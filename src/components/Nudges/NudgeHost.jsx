@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { MailWarning, Star } from 'lucide-react';
+import { EnvelopeSimple, Star } from '@phosphor-icons/react';
 import { GithubMark } from '../ui/GithubMark.jsx';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -189,7 +189,7 @@ export default function NudgeHost() {
                 {copy['open-source'].title}
                 {stars !== null && (
                   <span className="nudge-stars" aria-label={copy.starsLabel(stars)}>
-                    <Star size={11} aria-hidden="true" />
+                    <Star size={11} weight="fill" aria-hidden="true" />
                     {stars.toLocaleString(locale)}
                   </span>
                 )}
@@ -203,7 +203,7 @@ export default function NudgeHost() {
         ) : (
           <NudgePanel
             key="nudge-email-down"
-            icon={<MailWarning size={19} />}
+            icon={<EnvelopeSimple size={19} />}
             title={emailCopy.title}
             body={emailCopy.body}
             action={{ label: copy['email-down'].cta, onClick: handleSettings }}

@@ -1,4 +1,4 @@
-import { Briefcase, FileText, SearchX, Users } from 'lucide-react';
+import { Briefcase, FileText, MagnifyingGlass, Users } from '@phosphor-icons/react';
 import { Button } from '../ui/button.jsx';
 
 // Copy for every non-error variant, as [title, body, action label] per
@@ -43,7 +43,7 @@ export function ExplorerEmptyState({ variant, isEnglish, onClearFilters, onRetry
     );
   }
 
-  const Icon = variant === 'filtered' ? SearchX : variant === 'project-unindexed' ? Briefcase : variant === 'authors' || variant === 'authors-none' ? Users : FileText;
+  const Icon = variant === 'filtered' ? MagnifyingGlass : variant === 'project-unindexed' ? Briefcase : variant === 'authors' || variant === 'authors-none' ? Users : FileText;
   const [title, body, action] = COPY[variant][lang];
 
   return (

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Check, Download, FileText, Info, X } from 'lucide-react';
+import { Check, DownloadSimple, FileText, Info, X } from '@phosphor-icons/react';
 import { Checkbox } from '../ui/checkbox.jsx';
 import { Label } from '../ui/label.jsx';
 import { PopoverClose, PopoverContent } from '../ui/popover.jsx';
@@ -227,7 +227,7 @@ export default function ExportCard({
             {[format === 'pdf' ? copy.downloadPdf : copy.downloadTex, copy.generating, copy.downloaded]
               .map(label => (
                 <span key={label} className="rd-export-go-face">
-                  <Download size={14} />
+                  <DownloadSimple size={14} />
                   {label}
                 </span>
               ))}
@@ -258,7 +258,7 @@ export default function ExportCard({
                     <Check size={14} />
                   </motion.span>
                 )
-                : <Download size={14} />}
+                : <DownloadSimple size={14} />}
               {phase === 'busy'
                 ? copy.generating
                 : phase === 'saved'

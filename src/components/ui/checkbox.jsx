@@ -1,5 +1,5 @@
 import { Checkbox as CheckboxPrimitive } from '@base-ui/react/checkbox';
-import { Check, Minus } from 'lucide-react';
+import { Check, Minus } from '@phosphor-icons/react';
 import { cn } from '../../lib/utils.js';
 
 /**
@@ -21,8 +21,8 @@ function Checkbox({ className, ...props }) {
       {...props}
     >
       <CheckboxPrimitive.Indicator data-slot="checkbox-indicator" className="grid place-content-center text-current">
-        <Check size={11} strokeWidth={3.5} aria-hidden="true" className="group-data-indeterminate/checkbox:hidden" />
-        <Minus size={11} strokeWidth={3.5} aria-hidden="true" className="hidden group-data-indeterminate/checkbox:block" />
+        <Check size={11} weight="bold" aria-hidden="true" className="group-data-indeterminate/checkbox:hidden" />
+        <Minus size={11} weight="bold" aria-hidden="true" className="hidden group-data-indeterminate/checkbox:block" />
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   );

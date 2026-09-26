@@ -1,22 +1,22 @@
 import { Children, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
-  Search,
-  FileText,
-  Users,
+  ArrowClockwise,
   ArrowLeft,
-  Building2,
-  Lightbulb,
   Briefcase,
-  Sparkles,
-  Compass,
-  TrendingUp,
+  Buildings,
   Check,
+  CircleNotch,
+  Compass,
+  FileText,
+  Lightbulb,
+  MagnifyingGlass,
   Plus,
-  LoaderCircle,
-  AlertCircle,
-  RotateCw,
-  UserRound,
-} from 'lucide-react';
+  Sparkle,
+  TrendUp,
+  User,
+  Users,
+  WarningCircle,
+} from '@phosphor-icons/react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   searchAuthors,
@@ -84,10 +84,10 @@ const USER_ROWS_IN_ALL = 5;
 // account here — so they are kept apart in the bar and the section titles say
 // which is which.
 const SEARCH_FILTER_OPTIONS = [
-  { id: 'all', labelEs: 'Todo', labelEn: 'All', Icon: Search },
-  { id: 'users', labelEs: 'Usuarios', labelEn: 'Users', Icon: UserRound },
+  { id: 'all', labelEs: 'Todo', labelEn: 'All', Icon: MagnifyingGlass },
+  { id: 'users', labelEs: 'Usuarios', labelEn: 'Users', Icon: User },
   { id: 'papers', labelEs: 'Papers', labelEn: 'Papers', Icon: FileText },
-  { id: 'institutions', labelEs: 'Instituciones', labelEn: 'Institutions', Icon: Building2 },
+  { id: 'institutions', labelEs: 'Instituciones', labelEn: 'Institutions', Icon: Buildings },
   { id: 'authors', labelEs: 'Autores', labelEn: 'Authors', Icon: Users },
   { id: 'projects', labelEs: 'Proyectos', labelEn: 'Projects', Icon: Briefcase },
   { id: 'topics', labelEs: 'Temas', labelEn: 'Topics', Icon: Lightbulb },
@@ -784,7 +784,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
     },
     {
       label: 'MIT',
-      icon: <Building2 size={14} />,
+      icon: <Buildings size={14} />,
       query: 'Massachusetts Institute of Technology',
       section: 'institutions',
     },
@@ -808,7 +808,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
     },
     {
       label: isEnglish ? 'Quantum computing' : 'Computación cuántica',
-      icon: <TrendingUp size={14} />,
+      icon: <TrendUp size={14} />,
       query: 'Quantum computing',
       section: 'topics',
     },
@@ -865,7 +865,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
             <ArrowLeft size={22} />
           </button>
           <div className={`search-input-wrapper ${searchPending ? 'is-searching' : ''}`}>
-            <Search className="search-icon" size={18} />
+            <MagnifyingGlass className="search-icon" size={18} />
             <Input
               type="search"
               className="search-input"
@@ -881,7 +881,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
             />
             {searchPending && (
               <span className="search-input-loader" role="status" aria-live="polite">
-                <LoaderCircle size={17} aria-hidden="true" />
+                <CircleNotch size={17} aria-hidden="true" />
                 <span className="visually-hidden">{isEnglish ? 'Searching' : 'Buscando'}</span>
               </span>
             )}
@@ -936,7 +936,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                 </div>
                 
                 <div className="search-suggestions">
-                  <h3 className="search-suggestions-title"><Sparkles size={16} /> {isEnglish ? 'Suggested searches' : 'Búsquedas sugeridas'}</h3>
+                  <h3 className="search-suggestions-title"><Sparkle size={16} /> {isEnglish ? 'Suggested searches' : 'Búsquedas sugeridas'}</h3>
                   <div className="search-suggestions-grid">
                     {suggestedQueries.map(item => (
                       <button
@@ -961,7 +961,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                 on every filter change traded one lie for another. */}
             {searchIssue && !searchPending && outageAffectsFilter(searchIssue, activeSearchFilter) && (
               <div className="search-service-state" role="status">
-                <AlertCircle size={20} aria-hidden="true" />
+                <WarningCircle size={20} aria-hidden="true" />
                 <div className="search-service-copy">
                   {/* One notice, always naming the provider that actually went
                       down. The page never claims "the search is unavailable":
@@ -1004,7 +1004,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                     aria-label={isEnglish ? 'Retry search' : 'Reintentar búsqueda'}
                     title={isEnglish ? 'Retry search' : 'Reintentar búsqueda'}
                   >
-                    <RotateCw size={17} />
+                    <ArrowClockwise size={17} />
                   </button>
                 )}
               </div>
@@ -1035,7 +1035,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
             {!hasVisibleResults && query && hasSearched && !searchPending
               && !outageAffectsFilter(searchIssue, activeSearchFilter) && (
               <div className="search-empty">
-                <Search size={40} className="search-empty-icon" />
+                <MagnifyingGlass size={40} className="search-empty-icon" />
                 <p>{emptyResultsMessage}</p>
                 <span>{hasResults && activeSearchFilter !== 'all'
                   ? (isEnglish ? 'Try another filter or search term' : 'Prueba otro filtro o término de búsqueda')
@@ -1084,7 +1084,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
 
                 {userTermTooShort && (
                   <div className="search-users-note" role="status">
-                    <UserRound size={18} aria-hidden="true" />
+                    <User size={18} aria-hidden="true" />
                     <div className="search-users-note-copy">
                       <span>{isEnglish
                         ? `Type at least ${USER_SEARCH_MIN_LENGTH} characters to search people.`
@@ -1095,7 +1095,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
 
                 {!userTermTooShort && userStatus === 'needs-session' && (
                   <div className="search-users-note" role="status">
-                    <UserRound size={18} aria-hidden="true" />
+                    <User size={18} aria-hidden="true" />
                     <div className="search-users-note-copy">
                       <strong>{isEnglish
                         ? 'Finding people needs an account'
@@ -1112,7 +1112,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
 
                 {(userStatus === 'searching' || userStatus === 'slow') && (
                   <div className="search-users-note" role="status">
-                    <LoaderCircle size={18} className="search-users-spinner" aria-hidden="true" />
+                    <CircleNotch size={18} className="search-users-spinner" aria-hidden="true" />
                     <div className="search-users-note-copy">
                       <span>{userStatus === 'slow'
                         ? (isEnglish
@@ -1125,7 +1125,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
 
                 {userStatus === 'failed' && (
                   <div className="search-users-note search-users-note--error" role="alert">
-                    <AlertCircle size={18} aria-hidden="true" />
+                    <WarningCircle size={18} aria-hidden="true" />
                     <div className="search-users-note-copy">
                       <span>{isEnglish
                         ? 'People could not be loaded.'
@@ -1146,7 +1146,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
 
                 {userStatus === 'done' && userResults.length === 0 && (
                   <div className="search-users-note" role="status">
-                    <UserRound size={18} aria-hidden="true" />
+                    <User size={18} aria-hidden="true" />
                     <div className="search-users-note-copy">
                       <strong>{isEnglish ? 'Nobody matches that.' : 'No hay nadie con ese nombre.'}</strong>
                       {/* The prefix limit said out loud. Without it an empty
@@ -1215,7 +1215,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                       style={{ '--search-item-index': Math.min(index, 6) }}
                       onClick={() => navigate(`/explorer/institution/${inst.id.split('/').pop()}`)}
                     >
-                      <div className="search-item-icon"><Building2 size={22} /></div>
+                      <div className="search-item-icon"><Buildings size={22} /></div>
                       <div className="search-item-info">
                         <h4>
                           <button

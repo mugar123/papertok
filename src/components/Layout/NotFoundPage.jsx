@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home } from 'lucide-react';
+import { House } from '@phosphor-icons/react';
 import { useLanguage } from '../../context/LanguageContext';
 import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.js';
 import './NotFoundPage.css';
@@ -43,7 +43,7 @@ export default function NotFoundPage() {
         <h1>{copy.title}</h1>
         <p>{copy.body}</p>
         <Link to="/feed" className="not-found-action">
-          <Home size={17} aria-hidden="true" />
+          <House size={17} aria-hidden="true" />
           {copy.action}
         </Link>
       </div>
