@@ -9,8 +9,8 @@ import {
 
 const PASSAGE = {
   paper: { title: 'Correlators of Worldline Proper Length' },
-  quote: 'esa cantidad deja de ser un número',
-  context: 'Los autores calculan cuánto tiempo propio transcurre, y encuentran que esa cantidad deja de ser un número en cuanto la gravedad cuántica entra en juego.',
+  quote: 'that quantity stops being a number',
+  context: 'The authors compute how much proper time elapses, and find that that quantity stops being a number as soon as quantum gravity comes into play.',
   level: 'university',
 };
 
@@ -19,26 +19,26 @@ function payloadOf(text) {
 }
 
 test('the prompt carries the passage and the paragraph, and says which is which', () => {
-  const prompt = buildAnnotationPrompt({ ...PASSAGE, language: 'es' });
+  const prompt = buildAnnotationPrompt(PASSAGE);
   assert.match(prompt, /Correlators of Worldline Proper Length/);
-  assert.match(prompt, /esa cantidad deja de ser un número/);
-  assert.match(prompt, /solo como contexto/);
+  assert.match(prompt, /that quantity stops being a number/);
+  assert.match(prompt, /context only/);
   // Explaining the paragraph instead of the selection is the failure this
   // labelling exists to prevent.
-  assert.match(prompt, /Explica QUÉ SIGNIFICA ESE FRAGMENTO/);
+  assert.match(prompt, /Explain WHAT THAT PASSAGE MEANS/);
 });
 
 test('the level changes who it is written for', () => {
-  const beginner = buildAnnotationPrompt({ ...PASSAGE, level: 'beginner', language: 'es' });
-  const researcher = buildAnnotationPrompt({ ...PASSAGE, level: 'researcher', language: 'es' });
-  assert.match(beginner, /sin formación/);
-  assert.match(researcher, /vocabulario estándar/);
+  const beginner = buildAnnotationPrompt({ ...PASSAGE, level: 'beginner' });
+  const researcher = buildAnnotationPrompt({ ...PASSAGE, level: 'researcher' });
+  assert.match(beginner, /no training in the field/);
+  assert.match(researcher, /standard vocabulary/);
 });
 
-test('English asks in English', () => {
-  const prompt = buildAnnotationPrompt({ ...PASSAGE, language: 'en' });
+test('a legacy Spanish language request still gets an English prompt', () => {
+  const prompt = buildAnnotationPrompt({ ...PASSAGE, language: 'es' });
   assert.match(prompt, /Explain WHAT THAT PASSAGE MEANS/);
-  assert.doesNotMatch(prompt, /Explica/);
+  assert.doesNotMatch(prompt, /Explica|FRAGMENTO/);
 });
 
 test('only the three reader levels are levels', () => {

@@ -88,7 +88,7 @@ export function classifyPubmedCategory(paper, internalCategories = []) {
   const ranked = candidates.map((categoryId, index) => {
     const definition = getCategoryDefinition(categoryId);
     const terms = [...new Set([
-      definition?.labelEn,
+      definition?.label,
       definition?.label,
       ...(PUBMED_CATEGORY_ALIASES[categoryId] || []),
     ].map(normalizePubmedText).filter(Boolean))];

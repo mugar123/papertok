@@ -52,21 +52,21 @@ const STATUS_TAG_ICONS = {
   subscription: Lock,
 };
 
-function getHeroCategoryLabel(paper, language = 'es') {
+function getHeroCategoryLabel(paper) {
   const category = typeof paper?.primaryCategory === 'string' ? paper.primaryCategory.trim() : '';
-  const fallback = language === 'en' ? 'Scientific research' : 'Investigación científica';
+  const fallback = 'Scientific research';
   if (!category) return fallback;
 
   if (CATEGORIES[category]) {
-    return language === 'en' ? CATEGORIES[category].labelEn : CATEGORIES[category].label;
+    return CATEGORIES[category].label;
   }
 
-  const categoryLabel = getCategoryLabel(category, language);
+  const categoryLabel = getCategoryLabel(category);
   return categoryLabel === category ? fallback : categoryLabel;
 }
 
-function getLocalizedTopicLabel(value, language = 'es') {
-  return resolvePaperTopic(value, language)?.label || value;
+function getLocalizedTopicLabel(value) {
+  return resolvePaperTopic(value)?.label || value;
 }
 
 /* Animated number component — counts up from 0 */
@@ -140,13 +140,6 @@ function StatValue({ loading, width = '64%', children }) {
 }
 
 const SOURCE_STATUS_LABELS = {
-  es: {
-    active: 'disponible',
-    partial: 'parcial',
-    unavailable: 'no disponible',
-    'not-applicable': 'no aplicable',
-    excluded: 'fuera por filtro',
-  },
   en: {
     active: 'available',
     partial: 'partial',
@@ -231,7 +224,7 @@ function LeadStorySkeleton() {
 }
 
 function ReportCoverage({ coverage, enterOrder }) {
-  const { language, isEnglish } = useLanguage();
+  const { language } = useLanguage();
   if (!coverage?.sources?.length) return null;
 
   const hasLimitedCoverage = coverage.countryLimited
@@ -246,10 +239,8 @@ function ReportCoverage({ coverage, enterOrder }) {
       <div className="sr-coverage-content">
         <span className="sr-coverage-label">
           {coverage.countryLimited
-            ? (isEnglish
-              ? 'Country coverage: only OpenAlex provides normalized affiliations.'
-              : 'Cobertura por país: solo OpenAlex aporta afiliaciones normalizadas.')
-            : (isEnglish ? 'Sources in this edition:' : 'Fuentes de esta edición:')}
+            ? ('Country coverage: only OpenAlex provides normalized affiliations.')
+            : ('Sources in this edition:')}
         </span>
         <div className="sr-coverage-sources">
           {coverage.sources.map(source => (
@@ -264,7 +255,7 @@ function ReportCoverage({ coverage, enterOrder }) {
 }
 
 export default function ScientificReport({ onOpenPdf, onSaveToList }) {
-  const { language, isEnglish, locale } = useLanguage();
+  const { locale } = useLanguage();
   const prefersReducedMotion = useReducedMotion();
   const [timeframe, setTimeframe] = useState('7d');
   const [filters, setFilters] = useState({ categories: [], countries: [] });
@@ -474,9 +465,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
       if (timeframe.from === timeframe.to) return `${timeframe.from}`;
       return `${timeframe.from}  —  ${timeframe.to}`;
     }
-    const labels = isEnglish
-      ? { '24h': 'Today and yesterday', '7d': 'Last 7 days', '30d': 'Last 30 days', '1y': 'Last year', '10y': 'Last decade' }
-      : { '24h': 'Hoy y ayer', '7d': 'Últimos 7 días', '30d': 'Últimos 30 días', '1y': 'Último año', '10y': 'Última década' };
+    const labels = { '24h': 'Today and yesterday', '7d': 'Last 7 days', '30d': 'Last 30 days', '1y': 'Last year', '10y': 'Last decade' };
     return labels[timeframe] || labels['7d'];
   };
 
@@ -533,12 +522,12 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   }, [hero?.doi, hero?.id, hero?.openAccess, hero?.pdfUrl]);
 
   const timeOptions = [
-    { id: '24h', label: isEnglish ? 'Today and yesterday' : 'Hoy y ayer' },
-    { id: '7d', label: isEnglish ? '7 days' : '7 días' },
-    { id: '30d', label: isEnglish ? '30 days' : '30 días' },
-    { id: '1y', label: isEnglish ? '1 year' : '1 año' },
-    { id: '10y', label: isEnglish ? '10 years' : '10 años' },
-    { id: 'custom', label: isEnglish ? 'Custom' : 'Otro' },
+    { id: '24h', label: 'Today and yesterday' },
+    { id: '7d', label: '7 days' },
+    { id: '30d', label: '30 days' },
+    { id: '1y', label: '1 year' },
+    { id: '10y', label: '10 years' },
+    { id: 'custom', label: 'Custom' },
   ];
 
   const trendItems = trends.items || [];
@@ -557,16 +546,14 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           <div className="sr-masthead-block">
             <span className="sr-eyebrow">
               <Sparkle size={12} />
-              {isEnglish ? 'Scientific edition for this period' : 'Edición científica del periodo'}
+              {'Scientific edition for this period'}
               {/* Only where there is somewhere to go: a period thin enough for
                   one selection must not offer a count of one. */}
               {totalSelections > 1 && (
                 <>
                   <span className="sr-eyebrow-sep" aria-hidden="true">·</span>
                   <span className="sr-eyebrow-count">
-                    {isEnglish
-                      ? `Selection ${currentSelection} of ${totalSelections}`
-                      : `Tanda ${currentSelection} de ${totalSelections}`}
+                    {`Selection ${currentSelection} of ${totalSelections}`}
                   </span>
                 </>
               )}
@@ -582,13 +569,11 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
         </div>
 
         <p className="report-lede">
-          {isEnglish
-            ? 'The most cited papers of the period, by field and country.'
-            : 'Los papers más citados del periodo, por campo y país.'}
+          {'The most cited papers of the period, by field and country.'}
         </p>
 
-        <nav className="sr-tabs" aria-label={isEnglish ? 'Edition period' : 'Periodo de la edición'}>
-          <span className="sr-tabs-label">{isEnglish ? 'Edition' : 'Edición'}</span>
+        <nav className="sr-tabs" aria-label={'Edition period'}>
+          <span className="sr-tabs-label">{'Edition'}</span>
           {timeOptions.map((o) => {
             const isActive = Boolean(timeframe === o.id || (o.id === 'custom' && customRange));
             return (
@@ -634,27 +619,25 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
       {error && totalPapers > 0 && (
         <div className="sr-inline-error" role="alert">
           <span>
-            {isEnglish
-              ? 'The filters could not be updated. The previous edition is still shown.'
-              : 'No se pudieron actualizar los filtros. Se mantiene visible la edición anterior.'}
+            {'The filters could not be updated. The previous edition is still shown.'}
           </span>
           <Button
             variant="outline"
             size="sm"
             onClick={() => fetchReport(timeframe, filters, 1, { forceRefresh: true, refreshTrends: true })}
           >
-            {isEnglish ? 'Retry' : 'Reintentar'}
+            {'Retry'}
           </Button>
         </div>
       )}
 
       {loading && totalPapers === 0 ? (
-        <div className="sr-state"><div className="sr-spinner" /><p>{isEnglish ? 'Compiling the edition...' : 'Compilando la edición...'}</p></div>
+        <div className="sr-state"><div className="sr-spinner" /><p>{'Compiling the edition...'}</p></div>
       ) : error && totalPapers === 0 ? (
         <div className="sr-state">
-          <p>{getUiErrorMessage(error, language, 'REPORT_LOAD_FAILED')}</p>
+          <p>{getUiErrorMessage(error, 'REPORT_LOAD_FAILED')}</p>
           <Button onClick={() => fetchReport(timeframe, filters, 1, { refreshTrends: true })}>
-            {isEnglish ? 'Try again' : 'Reintentar'}
+            {'Try again'}
           </Button>
         </div>
       ) : totalPapers === 0 ? (
@@ -662,20 +645,16 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           <ReportCoverage coverage={report.coverage} />
           <div className="sr-state sr-empty-state">
             <div className="sr-empty-icon"><FileText size={24} /></div>
-            <h2>{isEnglish ? 'No papers were found for this edition' : 'No encontramos papers para esta edición'}</h2>
+            <h2>{'No papers were found for this edition'}</h2>
             <p>
               {hasActiveFilters
-                ? (isEnglish
-                  ? 'Try broadening the period or removing one of the active filters.'
-                  : 'Prueba a ampliar el periodo o a retirar alguno de los filtros activos.')
-                : (isEnglish
-                  ? 'No results are available for this period. Try a broader edition.'
-                  : 'No hay resultados disponibles en este periodo. Prueba con una edición más amplia.')}
+                ? ('Try broadening the period or removing one of the active filters.')
+                : ('No results are available for this period. Try a broader edition.')}
             </p>
             <div className="sr-empty-actions">
               {hasActiveFilters && (
                 <Button onClick={() => setFilters({ categories: [], countries: [] })}>
-                  {isEnglish ? 'Clear filters' : 'Limpiar filtros'}
+                  {'Clear filters'}
                 </Button>
               )}
               {broaderTimeframe && (
@@ -686,12 +665,12 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                     setShowCustomPicker(false);
                   }}
                 >
-                  {isEnglish ? 'Broaden period' : 'Ampliar periodo'}
+                  {'Broaden period'}
                 </Button>
               )}
               {(hasUnavailableSource || !broaderTimeframe) && (
                 <Button onClick={() => fetchReport(timeframe, filters, 1, { forceRefresh: true, refreshTrends: true })}>
-                  {isEnglish ? 'Try again' : 'Reintentar'}
+                  {'Try again'}
                 </Button>
               )}
             </div>
@@ -723,33 +702,33 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
               are the sidebar's furniture, not the edition's data, the same way
               the trends keep their heading and skeleton only the list. */}
           <div className="sr-stats-bar sr-enter" style={{ '--enter-order': ENTER.stats }}>
-            <div className="sr-stat" title={isEnglish ? 'Papers included in this editorial selection' : 'Papers incluidos en esta selección editorial'}>
+            <div className="sr-stat" title={'Papers included in this editorial selection'}>
               <ChartBar size={16} />
               <div className="sr-stat-info">
                 <span className="sr-stat-number">
                   <StatValue loading={loading}><AnimatedNumber value={totalPapers} locale={locale} /></StatValue>
                 </span>
-                <span className="sr-stat-label">{isEnglish ? 'Selected' : 'Seleccionados'}</span>
+                <span className="sr-stat-label">{'Selected'}</span>
               </div>
             </div>
             <div className="sr-stat-divider" />
-            <div className="sr-stat" title={isEnglish ? 'Total citations of selected papers' : 'Suma de citas de los papers seleccionados'}>
+            <div className="sr-stat" title={'Total citations of selected papers'}>
               <TrendUp size={16} />
               <div className="sr-stat-info">
                 <span className="sr-stat-number">
                   <StatValue loading={loading} width="72%"><AnimatedNumber value={totalCitations} duration={800} locale={locale} /></StatValue>
                 </span>
-                <span className="sr-stat-label">{isEnglish ? 'Selection citations' : 'Citas selección'}</span>
+                <span className="sr-stat-label">{'Selection citations'}</span>
               </div>
             </div>
             <div className="sr-stat-divider" />
-            <div className="sr-stat" title={isEnglish ? 'Open Access papers in the selection' : 'Papers Open Access dentro de la selección'}>
+            <div className="sr-stat" title={'Open Access papers in the selection'}>
               <LockOpen size={16} />
               <div className="sr-stat-info">
                 <span className="sr-stat-number">
                   <StatValue loading={loading} width="58%">{oaCount}/{totalPapers}</StatValue>
                 </span>
-                <span className="sr-stat-label">{isEnglish ? 'Selection OA' : 'OA selección'}</span>
+                <span className="sr-stat-label">{'Selection OA'}</span>
                 {/* The ratio is easier to read as a proportion than as a fraction. */}
                 <span
                   className={`sr-stat-meter${loading ? ' sr-stat-meter--waiting' : ''}`}
@@ -763,14 +742,14 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           <section
             className={`sr-real-trends sr-enter ${trends.loading ? 'updating' : ''}`}
             style={{ '--enter-order': ENTER.trends }}
-            aria-label={isEnglish ? 'Scientific trends' : 'Tendencias científicas'}
+            aria-label={'Scientific trends'}
           >
             <div className="sr-trends-heading">
-              <span><TrendUp size={15} /> {isEnglish ? 'Growing topics' : 'Temas en crecimiento'}</span>
+              <span><TrendUp size={15} /> {'Growing topics'}</span>
               {currentTrendPeriod && previousTrendPeriod && (
                 <small>
-                  {trends.provisional ? (isEnglish ? 'Provisional data · ' : 'Datos provisionales · ') : ''}
-                  {currentTrendPeriod} {isEnglish ? 'compared with' : 'comparado con'} {previousTrendPeriod}
+                  {trends.provisional ? ('Provisional data · ') : ''}
+                  {currentTrendPeriod} {'compared with'} {previousTrendPeriod}
                 </small>
               )}
             </div>
@@ -779,7 +758,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                 {/* Real text, not just an aria-label: the skeleton spans below
                     carry no text of their own, so an aria-label alone here
                     would never be announced as a status change. */}
-                <span className="visually-hidden">{isEnglish ? 'Calculating trends' : 'Calculando tendencias'}</span>
+                <span className="visually-hidden">{'Calculating trends'}</span>
                 {[0, 1, 2, 3, 4].map(index => (
                   <span key={index} className="sr-trend-skeleton" />
                 ))}
@@ -791,30 +770,24 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                     className="sr-trend-item sr-trend-item--enter"
                     key={`${trends.periods?.current?.fromStr || 'current'}-${item.id}`}
                     style={{ '--trend-order': index }}
-                    title={isEnglish
-                      ? `${item.currentCount} works in the current period and ${item.previousCount} in the previous one. Confidence ${item.confidence}.`
-                      : `${item.currentCount} trabajos en el periodo actual y ${item.previousCount} en el anterior. Confianza ${item.confidence}.`}
+                    title={`${item.currentCount} works in the current period and ${item.previousCount} in the previous one. Confidence ${item.confidence}.`}
                   >
-                    <span className="sr-trend-name">{getLocalizedTopicLabel(item.label, language)}</span>
+                    <span className="sr-trend-name">{getLocalizedTopicLabel(item.label)}</span>
                     <span
                       className="sr-trend-bar"
                       style={{ '--fill': `${maxTrendChange > 0 ? Math.max(6, Math.round((item.changePercent / maxTrendChange) * 100)) : 0}%` }}
                       aria-hidden="true"
                     />
                     <strong>+{item.changePercent}%</strong>
-                    <small>{item.currentCount} {isEnglish ? 'works; previously' : 'trabajos; antes'} {item.previousCount}</small>
+                    <small>{item.currentCount} {'works; previously'} {item.previousCount}</small>
                   </div>
                 ))}
               </div>
             ) : (
               <p className="sr-trends-state">
                 {trends.status === 'unavailable'
-                    ? (isEnglish
-                      ? 'Trends are unavailable right now; the paper selection remains active.'
-                      : 'Las tendencias no están disponibles ahora; la selección de papers sigue activa.')
-                    : (isEnglish
-                      ? 'There is not enough volume yet to detect a reliable trend.'
-                      : 'Aún no hay volumen suficiente para detectar una tendencia fiable.')}
+                    ? ('Trends are unavailable right now; the paper selection remains active.')
+                    : ('There is not enough volume yet to detect a reliable trend.')}
               </p>
             )}
           </section>
@@ -824,11 +797,11 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
             <div className="sr-trending-topics sr-enter" style={{ '--enter-order': ENTER.topics }}>
               <span className="sr-trending-label">
                 <Fire size={14} className="sr-flame-icon" />
-                {isEnglish ? 'Topics in this selection:' : 'Temas de esta selección:'}
+                {'Topics in this selection:'}
               </span>
               <div className="sr-trending-pills">
                 {report.featuredConcepts.map((concept) => (
-                  <span key={concept} className="sr-trending-pill">{getLocalizedTopicLabel(concept, language)}</span>
+                  <span key={concept} className="sr-trending-pill">{getLocalizedTopicLabel(concept)}</span>
                 ))}
               </div>
             </div>
@@ -845,10 +818,10 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
             <section className="sr-hero sr-enter" style={{ '--hero-glow': heroGradient, '--enter-order': ENTER.hero }}>
               <div className="sr-hero-glow" />
               <div className="sr-hero-inner">
-                <span className="sr-lead-label">{isEnglish ? 'Lead story' : 'Portada'}</span>
+                <span className="sr-lead-label">{'Lead story'}</span>
                 <div className="sr-hero-main">
                 <div className="sr-hero-kicker">
-                  <span className="sr-kicker-cat">{(areaLabelForPaper(hero, { english: isEnglish }) || getHeroCategoryLabel(hero, language)).toUpperCase()}</span>
+                  <span className="sr-kicker-cat">{(areaLabelForPaper(hero) || getHeroCategoryLabel(hero)).toUpperCase()}</span>
                   <span className="sr-kicker-sep" />
                   {hero.journal && <span className="sr-kicker-venue">{hero.journal}</span>}
                   <span className="sr-kicker-year"><Calendar size={13} /> {hero.year}</span>
@@ -866,8 +839,8 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                     that has one was losing its only link to the record. */}
                 <div className="sr-hero-tags">
                   {[
-                    reviewTagForPaper(hero, { english: isEnglish }),
-                    accessTagForPaper(hero, { english: isEnglish, openCopy: heroOpenCopy }),
+                    reviewTagForPaper(hero),
+                    accessTagForPaper(hero, { openCopy: heroOpenCopy }),
                   ].filter(Boolean).map(tag => {
                     const Glyph = STATUS_TAG_ICONS[tag.key];
                     return (
@@ -876,24 +849,24 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                       </span>
                     );
                   })}
-                  {hero.citationCount > 0 && <span className="sr-tag"><Medal size={12} /> {hero.citationCount} {isEnglish ? 'citations' : 'citas'}</span>}
-                  {safeDoiUrl(hero.doi) && <a href={safeDoiUrl(hero.doi)} target="_blank" rel="noopener noreferrer" className="sr-tag sr-tag--link" onClick={e => e.stopPropagation()} title={isEnglish ? 'Open the DOI record' : 'Abrir el registro DOI'}><ArrowSquareOut size={12} /> DOI</a>}
+                  {hero.citationCount > 0 && <span className="sr-tag"><Medal size={12} /> {hero.citationCount} {'citations'}</span>}
+                  {safeDoiUrl(hero.doi) && <a href={safeDoiUrl(hero.doi)} target="_blank" rel="noopener noreferrer" className="sr-tag sr-tag--link" onClick={e => e.stopPropagation()} title={'Open the DOI record'}><ArrowSquareOut size={12} /> DOI</a>}
                 </div>
                 <div className="sr-hero-actions">
                   <Button onClick={() => setSelectedPaper(accessibleHero)}>
-                    {isEnglish ? 'View details' : 'Ver detalle'}
+                    {'View details'}
                   </Button>
                   <Button variant="ghost" onClick={() => handleShare(accessibleHero)}>
                     {copied
-                      ? <><Check size={15} /> {isEnglish ? 'Copied' : 'Copiado'}</>
-                      : <><ShareNetwork size={15} /> {isEnglish ? 'Share' : 'Compartir'}</>}
+                      ? <><Check size={15} /> {'Copied'}</>
+                      : <><ShareNetwork size={15} /> {'Share'}</>}
                   </Button>
                 </div>
                 </div>
                 <blockquote className="sr-hero-abstract">
                   {hasUsableAIAbstract(hero.abstract)
                     ? <ScientificText>{hero.abstract}</ScientificText>
-                    : (isEnglish ? 'Abstract unavailable.' : 'Resumen no disponible.')}
+                    : ('Abstract unavailable.')}
                 </blockquote>
               </div>
             </section>
@@ -905,7 +878,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           {report.highlights?.length > 0 && (
             <section className="sr-highlights">
               <h2 className="sr-section-label sr-enter" style={{ '--enter-order': ENTER.label }}>
-                {isEnglish ? 'Other highlighted research' : 'Otras investigaciones destacadas'}
+                {'Other highlighted research'}
               </h2>
               <ResearchForme
                 papers={report.highlights}
@@ -913,7 +886,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                 loading={loading}
                 onSelect={setSelectedPaper}
                 enterFrom={ENTER.cards}
-                isEnglish={isEnglish}
+               
               />
             </section>
           )}
@@ -925,21 +898,19 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
             <section className={`sr-turn ${currentSelection >= totalSelections ? 'is-exhausted' : ''}`}>
               <span className="sr-turn-kicker">
                 {currentSelection >= totalSelections
-                  ? (isEnglish ? 'End of the last selection' : 'Fin de la última tanda')
-                  : (isEnglish ? `End of selection ${currentSelection}` : `Fin de la tanda ${currentSelection}`)}
+                  ? ('End of the last selection')
+                  : (`End of selection ${currentSelection}`)}
               </span>
               {currentSelection >= totalSelections ? (
                 <>
                   <p className="sr-turn-line">
-                    {isEnglish
-                      ? 'That is every paper this period had to rank. To read more, widen the period or clear a filter.'
-                      : 'Eso es todo lo que este periodo tenía que ordenar. Para leer más, amplía el periodo o quita un filtro.'}
+                    {'That is every paper this period had to rank. To read more, widen the period or clear a filter.'}
                   </p>
                   <div className="sr-turn-row">
                     {currentSelection > 1 && (
                       <Button variant="outline" onClick={() => goToSelection(currentSelection - 1)}>
                         <ArrowLeft size={15} />
-                        {isEnglish ? `Selection ${currentSelection - 1}` : `Tanda ${currentSelection - 1}`}
+                        {`Selection ${currentSelection - 1}`}
                       </Button>
                     )}
                     {broaderTimeframe && (
@@ -947,17 +918,15 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                         variant="outline"
                         onClick={() => { setTimeframe(broaderTimeframe); setCustomRange(null); setShowCustomPicker(false); }}
                       >
-                        {isEnglish ? 'Widen the period' : 'Ampliar el periodo'}
+                        {'Widen the period'}
                       </Button>
                     )}
                     <span className="sr-turn-note">
-                      {isEnglish
-                        ? `${totalSelections} selections · ${report.corpusSize || 0} candidates ranked`
-                        : `${totalSelections} tandas · ${report.corpusSize || 0} candidatos ordenados`}
+                      {`${totalSelections} selections · ${report.corpusSize || 0} candidates ranked`}
                     </span>
                     {currentSelection > 2 && (
                       <Button variant="ghost" className="sr-turn-back" onClick={() => goToSelection(1)}>
-                        {isEnglish ? 'Back to selection 1' : 'Volver a la tanda 1'}
+                        {'Back to selection 1'}
                       </Button>
                     )}
                   </div>
@@ -965,9 +934,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
               ) : (
                 <>
                   <p className="sr-turn-line">
-                    {isEnglish
-                      ? `You have read the ${currentSelection * (report.editions?.perSelection || 11)} papers this period ranked highest.`
-                      : `Has leído los ${currentSelection * (report.editions?.perSelection || 11)} papers mejor situados de este periodo.`}
+                    {`You have read the ${currentSelection * (report.editions?.perSelection || 11)} papers this period ranked highest.`}
                   </p>
                   <div className="sr-turn-row">
                     {/* Stepping back one, beside the step forward. A reader who
@@ -976,21 +943,19 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                     {currentSelection > 1 && (
                       <Button variant="outline" onClick={() => goToSelection(currentSelection - 1)}>
                         <ArrowLeft size={15} />
-                        {isEnglish ? `Selection ${currentSelection - 1}` : `Tanda ${currentSelection - 1}`}
+                        {`Selection ${currentSelection - 1}`}
                       </Button>
                     )}
                     <Button onClick={() => goToSelection(currentSelection + 1)}>
-                      {isEnglish ? `Read selection ${currentSelection + 1}` : `Leer la tanda ${currentSelection + 1}`}
+                      {`Read selection ${currentSelection + 1}`}
                       <ArrowRight size={15} />
                     </Button>
                     <span className="sr-turn-note">
-                      {isEnglish
-                        ? `${totalSelections} selections in this period · ${report.corpusSize || 0} candidates ranked`
-                        : `${totalSelections} tandas en este periodo · ${report.corpusSize || 0} candidatos ordenados`}
+                      {`${totalSelections} selections in this period · ${report.corpusSize || 0} candidates ranked`}
                     </span>
                     {currentSelection > 2 && (
                       <Button variant="ghost" className="sr-turn-back" onClick={() => goToSelection(1)}>
-                        {isEnglish ? 'Back to selection 1' : 'Volver a la tanda 1'}
+                        {'Back to selection 1'}
                       </Button>
                     )}
                   </div>
@@ -1010,8 +975,8 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
         open={Boolean(selectedPaper)}
         onClose={closeOverlay}
         onExitComplete={() => setShownPaper(null)}
-        isEnglish={isEnglish}
-        label={isEnglish ? 'Paper details' : 'Detalles del paper'}
+       
+        label={'Paper details'}
       >
         {shownPaper && (
           <PaperCard

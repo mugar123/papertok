@@ -73,8 +73,8 @@ test('a located free copy opens a paper the record called closed', () => {
 });
 
 test('a copy found in a repository is a weaker claim than open access, and says so', () => {
-  const found = accessTagForPaper({ openAccess: false }, { openCopy: REPOSITORY_COPY, english: true });
-  const native = accessTagForPaper({ openAccess: true }, { english: true });
+  const found = accessTagForPaper({ openAccess: false }, { openCopy: REPOSITORY_COPY });
+  const native = accessTagForPaper({ openAccess: true });
   assert.equal(found.label, 'Open version');
   assert.equal(native.label, 'Open access');
   assert.notEqual(found.key, native.key);
@@ -84,11 +84,9 @@ test('a copy found in a repository is a weaker claim than open access, and says 
 test('the published version free at the publisher is open access, not a copy of it', () => {
   // A gold paper PubMed had no PMC for yet: Unpaywall found it at the
   // publisher, and "Open version" told the reader the published one was paid.
-  for (const english of [true, false]) {
-    const tag = accessTagForPaper({ openAccess: false }, { openCopy: PUBLISHER_COPY, english });
-    assert.equal(tag.key, 'open');
-    assert.equal(tag.label, english ? 'Open access' : 'Acceso abierto');
-  }
+  const tag = accessTagForPaper({ openAccess: false }, { openCopy: PUBLISHER_COPY });
+  assert.equal(tag.key, 'open');
+  assert.equal(tag.label, 'Open access');
   // Bronze copies come without a version; the publisher's page is still the article.
   const bronze = { ...PUBLISHER_COPY, version: undefined, license: undefined };
   assert.equal(accessTagForPaper({}, { openCopy: bronze }).key, 'open');
@@ -105,29 +103,26 @@ test('a downloadable pdf counts as open', () => {
   assert.equal(accessStatusForPaper({ openAccessPdfUrl: 'https://example.org/a.pdf' }), 'open');
 });
 
-test('every chip carries a tone, a word and an explanation, in both languages', () => {
+test('every chip carries a tone, a word and an explanation', () => {
   const papers = [
     { publicationType: 'preprint', arxivId: '2401.00001' },
     { journal: 'Nature', openAccess: false },
   ];
   for (const paper of papers) {
-    for (const english of [true, false]) {
-      // `reviewTagForPaper` puede no dar nada: desde el 12-09-2026 sólo hay
-      // distintivo para el preprint, la salvedad. Lo revisado por pares es la
-      // norma y no se señala.
-      for (const tag of [reviewTagForPaper(paper, { english }), accessTagForPaper(paper, { english })].filter(Boolean)) {
-        assert.match(tag.tone, /^(amber|blue|green|neutral)$/);
-        assert.ok(tag.label.length > 0 && tag.hint.length > 0);
-      }
+    // `reviewTagForPaper` puede no dar nada: desde el 12-09-2026 sólo hay
+    // distintivo para el preprint, la salvedad. Lo revisado por pares es la
+    // norma y no se señala.
+    for (const tag of [reviewTagForPaper(paper), accessTagForPaper(paper)].filter(Boolean)) {
+      assert.match(tag.tone, /^(amber|blue|green|neutral)$/);
+      assert.ok(tag.label.length > 0 && tag.hint.length > 0);
     }
   }
 });
 
-test('the words differ by language where the term does', () => {
-  // "Preprint" is the term in both; "Suscripción" is not.
-  assert.equal(reviewTagForPaper({ publicationType: 'preprint' }, { english: false }).label, 'Preprint');
-  assert.equal(accessTagForPaper({ openAccess: false }, { english: false }).label, 'Suscripción');
-  assert.equal(reviewTagForPaper({ journal: 'Nature' }, { english: false }), null,
+test('the chips use the English terms', () => {
+  assert.equal(reviewTagForPaper({ publicationType: 'preprint' }).label, 'Preprint');
+  assert.equal(accessTagForPaper({ openAccess: false }).label, 'Subscription');
+  assert.equal(reviewTagForPaper({ journal: 'Nature' }), null,
     'lo revisado por pares no lleva distintivo: era la norma, no la excepción');
 });
 
@@ -138,12 +133,10 @@ test('the words differ by language where the term does', () => {
  * hay distintivo detrás de él.
  */
 test('sólo el preprint lleva distintivo; lo revisado por pares no', () => {
-  for (const english of [true, false]) {
-    assert.equal(reviewTagForPaper({ journal: 'Nature' }, { english }), null);
-    assert.equal(reviewTagForPaper({ publicationStatus: 'published' }, { english }), null);
-    const preprint = reviewTagForPaper({ publicationType: 'preprint' }, { english });
-    assert.ok(preprint && preprint.key === 'preprint', 'la salvedad sí se señala');
-  }
+  assert.equal(reviewTagForPaper({ journal: 'Nature' }), null);
+  assert.equal(reviewTagForPaper({ publicationStatus: 'published' }), null);
+  const preprint = reviewTagForPaper({ publicationType: 'preprint' });
+  assert.ok(preprint && preprint.key === 'preprint', 'la salvedad sí se señala');
   assert.equal(reviewStatusForPaper({ journal: 'Nature' }), 'verified',
     'el hecho del registro no cambia, sólo deja de pintarse');
 });

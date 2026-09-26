@@ -9,7 +9,7 @@ This file applies to `src/`.
 - `services/` talks to scientific providers and maps external data.
 - `services/adapters/` implements source-specific paper adapters.
 - `utils/` contains deterministic ranking, normalization, navigation, and formatting logic.
-- `data/categories.js` is the canonical PaperTok taxonomy and bilingual label source.
+- `data/categories.js` is the canonical PaperTok taxonomy and label source.
 - `models/Paper.js` and `services/PaperBuilder.js` define the normalized paper contract.
 
 Prefer a service or adapter for remote data, a utility for pure behavior, and a context only
@@ -17,10 +17,10 @@ for genuinely shared state.
 
 ## UI Rules
 
-- Use `LanguageContext` for the active language. Do not infer language independently inside
-  a component or concatenate translated prefixes with untranslated taxonomy labels.
-- Add Spanish and English copy together. Resolve local topics from canonical IDs so stored
-  profile data can be rendered in either language.
+- The interface is English only. `LanguageContext` stays as the single source of the
+  language and locale passed to the Worker and to date/number formatting; do not add a
+  language toggle or `{ es, en }` copy tables back.
+- Resolve local topics from canonical IDs so stored profile data renders from the taxonomy.
 - Preserve the existing dense, card-based scientific interface and paired component CSS.
 - Use Phosphor icons (`@phosphor-icons/react`), already installed in the project. Express
   emphasis with `weight` (`regular` by default, `bold`, `fill` for an active state), not
@@ -29,8 +29,8 @@ for genuinely shared state.
 - Accessibility is an acceptance criterion for every UI change: WCAG 2.2 AA per
   `docs/ACCESIBILIDAD.md` and the Accessibility section of the root `AGENTS.md`. In
   particular: native controls (no clickable `div`s), keyboard operability, visible focus,
-  accessible names on icon buttons, announced status changes, and `lang="en"` on English
-  paper content.
+  accessible names on icon buttons, announced status changes, and a `lang` attribute on paper
+  content that is not in English.
 - Loading, empty, degraded, and retry states are part of the feature, not optional polish.
 - Avoid layout shifts when citations, concepts, project badges, or enriched metadata arrive.
 

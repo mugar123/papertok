@@ -8,7 +8,6 @@ test('SOURCE: la fila de Read later dice solo «Read later», sin subtítulo', a
   const src = strip(await read('./SaveToListModal.jsx'));
   assert.match(src, /readLaterOn: 'Read later'/);
   assert.match(src, /readLaterOff: 'Read later'/);
-  assert.match(src, /readLaterOn: 'Leer después'/);
   assert.doesNotMatch(src, /readLaterOnHint|readLaterOffHint/, 'los hints han desaparecido con su render');
 });
 

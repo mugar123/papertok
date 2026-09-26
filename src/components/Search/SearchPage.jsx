@@ -84,13 +84,13 @@ const USER_ROWS_IN_ALL = 5;
 // account here — so they are kept apart in the bar and the section titles say
 // which is which.
 const SEARCH_FILTER_OPTIONS = [
-  { id: 'all', labelEs: 'Todo', labelEn: 'All', Icon: MagnifyingGlass },
-  { id: 'users', labelEs: 'Usuarios', labelEn: 'Users', Icon: User },
-  { id: 'papers', labelEs: 'Papers', labelEn: 'Papers', Icon: FileText },
-  { id: 'institutions', labelEs: 'Instituciones', labelEn: 'Institutions', Icon: Buildings },
-  { id: 'authors', labelEs: 'Autores', labelEn: 'Authors', Icon: Users },
-  { id: 'projects', labelEs: 'Proyectos', labelEn: 'Projects', Icon: Briefcase },
-  { id: 'topics', labelEs: 'Temas', labelEn: 'Topics', Icon: Lightbulb },
+  { id: 'all', label: 'All', Icon: MagnifyingGlass },
+  { id: 'users', label: 'Users', Icon: User },
+  { id: 'papers', label: 'Papers', Icon: FileText },
+  { id: 'institutions', label: 'Institutions', Icon: Buildings },
+  { id: 'authors', label: 'Authors', Icon: Users },
+  { id: 'projects', label: 'Projects', Icon: Briefcase },
+  { id: 'topics', label: 'Topics', Icon: Lightbulb },
 ];
 
 /** The monogram a result row paints. The index holds no photo, by design. */
@@ -156,12 +156,11 @@ function OrderedSearchSections({ children, preferredSection }) {
 }
 
 function FollowButton({ entity, isFollowing, isPending, onToggle }) {
-  const { isEnglish } = useLanguage();
   const following = isFollowing(entity);
   const pending = isPending(entity);
   const label = following
-    ? (isEnglish ? 'Following' : 'Siguiendo')
-    : (isEnglish ? 'Follow' : 'Seguir');
+    ? ('Following')
+    : ('Follow');
 
   // A ui Toggle: Base UI writes `aria-pressed` (and `data-pressed`) from
   // `pressed`. The click still goes through `onToggle`, which stops it from
@@ -195,7 +194,7 @@ function formatPaperDate(paper, locale) {
 
 export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = () => {} }) {
   const navigate = useNavigate();
-  const { language, isEnglish, locale } = useLanguage();
+  const { language, locale } = useLanguage();
   const { user } = useAuth();
   const { trackEvent } = useAnalyticsConsent();
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
@@ -292,7 +291,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
     requestAbortRef.current?.abort();
     const requestController = new AbortController();
     requestAbortRef.current = requestController;
-    const localTopics = searchLocalTopics(searchTerm, language, 8);
+    const localTopics = searchLocalTopics(searchTerm, 8);
 
     setIsSearching(true);
     setHasSearched(true);
@@ -632,10 +631,8 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
   // The exact copy the visible empty state renders below, shared with the
   // hidden live region so the two can never say different things.
   const emptyResultsMessage = hasResults && activeSearchFilter !== 'all'
-    ? (isEnglish
-      ? `No ${activeFilterOption.labelEn.toLowerCase()} found for "${query}"`
-      : `No se encontraron ${activeFilterOption.labelEs.toLowerCase()} para "${query}"`)
-    : (isEnglish ? `No results found for "${query}"` : `No se encontraron resultados para "${query}"`);
+    ? (`No ${activeFilterOption.label.toLowerCase()} found for "${query}"`)
+    : (`No results found for "${query}"`);
 
   /**
    * The settled outcome of a search: how many results this filter is
@@ -675,9 +672,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
       : (activeSearchFilter === 'users' && !(userStatus === 'done' && userResults.length > 0))
         ? ''
         : visibleResultCount > 0
-          ? (isEnglish
-            ? `${visibleResultCount} ${visibleResultCount === 1 ? 'result' : 'results'} found${activeSearchFilter !== 'all' ? ` in ${activeFilterOption.labelEn}` : ''} for "${query}"`
-            : `${visibleResultCount} ${visibleResultCount === 1 ? 'resultado encontrado' : 'resultados encontrados'}${activeSearchFilter !== 'all' ? ` en ${activeFilterOption.labelEs}` : ''} para "${query}"`)
+          ? (`${visibleResultCount} ${visibleResultCount === 1 ? 'result' : 'results'} found${activeSearchFilter !== 'all' ? ` in ${activeFilterOption.label}` : ''} for "${query}"`)
           : emptyResultsMessage;
 
   // Memoised so the order is recomputed only when the results themselves
@@ -762,24 +757,21 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
   // the same words the filter pills use.
   const sectionWord = (section) => {
     const option = SEARCH_FILTER_OPTIONS.find(entry => entry.id === section);
-    return option ? (isEnglish ? option.labelEn : option.labelEs).toLowerCase() : null;
+    return option ? (option.label).toLowerCase() : null;
   };
   const outageSourceNames = joinNames(
     (searchIssue?.sources || []).map(source => SOURCE_LABELS[source]),
-    isEnglish,
   );
   // Every failed section, not just OpenAlex's: a simultaneous OpenAIRE failure
   // used to vanish behind the OpenAlex headline.
   const outageSectionNames = joinNames(
     (searchIssue?.sections || []).map(sectionWord),
-    isEnglish,
   );
-  const outageIsSingleSource = (searchIssue?.sources || []).length === 1;
   const suggestedQueries = [
     {
-      label: isEnglish ? 'Cosmology' : 'Cosmología',
+      label: 'Cosmology',
       icon: <Lightbulb size={14} />,
-      query: isEnglish ? 'Cosmology' : 'Cosmología',
+      query: 'Cosmology',
       section: 'topics',
     },
     {
@@ -795,7 +787,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
       section: 'papers',
     },
     {
-      label: isEnglish ? 'Horizon projects' : 'Proyectos Horizon',
+      label: 'Horizon projects',
       icon: <Briefcase size={14} />,
       query: 'Horizon',
       section: 'projects',
@@ -807,7 +799,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
       section: 'authors',
     },
     {
-      label: isEnglish ? 'Quantum computing' : 'Computación cuántica',
+      label: 'Quantum computing',
       icon: <TrendUp size={14} />,
       query: 'Quantum computing',
       section: 'topics',
@@ -853,14 +845,14 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
       value={activeSearchFilter}
       onValueChange={handleSearchFilterChange}
     >
-      <h1 className="visually-hidden">{isEnglish ? 'Search PaperTok' : 'Buscar en PaperTok'}</h1>
+      <h1 className="visually-hidden">{'Search PaperTok'}</h1>
       <div className="search-header">
         <div className="search-header-main">
           <button
             type="button"
             className="search-back-btn"
             onClick={() => navigate('/feed')}
-            aria-label={isEnglish ? 'Back' : 'Volver'}
+            aria-label={'Back'}
           >
             <ArrowLeft size={22} />
           </button>
@@ -869,8 +861,8 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
             <Input
               type="search"
               className="search-input"
-              placeholder={isEnglish ? 'Search PaperTok...' : 'Buscar en PaperTok...'}
-              aria-label={isEnglish ? 'Search PaperTok' : 'Buscar en PaperTok'}
+              placeholder={'Search PaperTok...'}
+              aria-label={'Search PaperTok'}
               value={query}
               onChange={(event) => updateQuery(event.target.value)}
               onKeyDown={(event) => {
@@ -882,7 +874,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
             {searchPending && (
               <span className="search-input-loader" role="status" aria-live="polite">
                 <CircleNotch size={17} aria-hidden="true" />
-                <span className="visually-hidden">{isEnglish ? 'Searching' : 'Buscando'}</span>
+                <span className="visually-hidden">{'Searching'}</span>
               </span>
             )}
           </div>
@@ -892,10 +884,9 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
         <TabsList
           variant="line"
           className="search-filter-bar"
-          aria-label={isEnglish ? 'Filter search results' : 'Filtrar resultados de búsqueda'}
+          aria-label={'Filter search results'}
         >
-          {SEARCH_FILTER_OPTIONS.map(({ id, labelEs, labelEn, Icon }) => {
-            const label = isEnglish ? labelEn : labelEs;
+          {SEARCH_FILTER_OPTIONS.map(({ id, label, Icon }) => {
             return (
               <TabsTrigger
                 key={id}
@@ -929,14 +920,12 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
               <div className="search-initial-state">
                 <div className="search-initial-hero">
                   <Compass size={48} className="search-initial-icon" />
-                  <h2>{isEnglish ? 'Explore knowledge' : 'Explora el conocimiento'}</h2>
-                  <p>{isEnglish
-                    ? 'Search papers, researchers, topics, institutions, and funded projects.'
-                    : 'Busca papers, investigadores, temas, universidades y proyectos financiados.'}</p>
+                  <h2>{'Explore knowledge'}</h2>
+                  <p>{'Search papers, researchers, topics, institutions, and funded projects.'}</p>
                 </div>
                 
                 <div className="search-suggestions">
-                  <h3 className="search-suggestions-title"><Sparkle size={16} /> {isEnglish ? 'Suggested searches' : 'Búsquedas sugeridas'}</h3>
+                  <h3 className="search-suggestions-title"><Sparkle size={16} /> {'Suggested searches'}</h3>
                   <div className="search-suggestions-grid">
                     {suggestedQueries.map(item => (
                       <button
@@ -968,29 +957,17 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                       it is the page itself, it knows perfectly well that it is
                       running, and it used to say that over a list of results. */}
                   <strong>{searchIssue.rateLimited
-                    ? (isEnglish
-                        ? 'OpenAlex is temporarily unavailable'
-                        : 'OpenAlex no está disponible temporalmente')
-                    : (isEnglish
-                        ? `${outageSourceNames} did not respond`
-                        : `${outageSourceNames} no ${outageIsSingleSource ? 'ha' : 'han'} respondido`)}</strong>
+                    ? ('OpenAlex is temporarily unavailable')
+                    : (`${outageSourceNames} did not respond`)}</strong>
                   <span>{[
                     // Only a real rate limit can promise a time; a timeout gets
                     // no invented estimate.
                     searchIssue.rateLimited && (openAlexRetryLabel
-                      ? (isEnglish
-                          ? `It is estimated to be back in ${openAlexRetryLabel}.`
-                          : `Se estima que vuelve en ${openAlexRetryLabel}.`)
-                      : (isEnglish
-                          ? 'It has not said when it will be back.'
-                          : 'No ha dicho cuándo vuelve.')),
+                      ? (`It is estimated to be back in ${openAlexRetryLabel}.`)
+                      : ('It has not said when it will be back.')),
                     outageSectionNames
-                      ? (isEnglish
-                          ? `Meanwhile ${outageSectionNames} may be limited.`
-                          : `Mientras tanto pueden faltar ${outageSectionNames}.`)
-                      : (isEnglish
-                          ? 'Searches may come back incomplete.'
-                          : 'Las búsquedas pueden salir incompletas.'),
+                      ? (`Meanwhile ${outageSectionNames} may be limited.`)
+                      : ('Searches may come back incomplete.'),
                   ].filter(Boolean).join(' ')}</span>
                 </div>
                 {/* No retry while OpenAlex is throttling us with a known wait:
@@ -1001,8 +978,8 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                     type="button"
                     className="search-retry-btn"
                     onClick={() => performSearch(query.trim())}
-                    aria-label={isEnglish ? 'Retry search' : 'Reintentar búsqueda'}
-                    title={isEnglish ? 'Retry search' : 'Reintentar búsqueda'}
+                    aria-label={'Retry search'}
+                    title={'Retry search'}
                   >
                     <ArrowClockwise size={17} />
                   </button>
@@ -1038,8 +1015,8 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                 <MagnifyingGlass size={40} className="search-empty-icon" />
                 <p>{emptyResultsMessage}</p>
                 <span>{hasResults && activeSearchFilter !== 'all'
-                  ? (isEnglish ? 'Try another filter or search term' : 'Prueba otro filtro o término de búsqueda')
-                  : (isEnglish ? 'Try a different search term' : 'Intenta con otros términos o busca en inglés')}</span>
+                  ? ('Try another filter or search term')
+                  : ('Try a different search term')}</span>
               </div>
             )}
 
@@ -1048,7 +1025,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                 {/* Direct ORCID */}
                 {cleanOrcid && (activeSearchFilter === 'all' || activeSearchFilter === 'authors') && (
                   <div className="search-section" style={{ order: 0 }}>
-                    <h3 className="search-section-title">{isEnglish ? 'Direct ORCID search' : 'Búsqueda directa ORCID'}</h3>
+                    <h3 className="search-section-title">{'Direct ORCID search'}</h3>
                     <div
                       className="search-item"
                       role="link"
@@ -1063,10 +1040,8 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                         <Users size={22} />
                       </div>
                       <div className="search-item-info">
-                        <h4 style={{ color: '#a6ce39' }}>{isEnglish ? 'View ORCID profile' : 'Ver perfil ORCID'} {cleanOrcid}</h4>
-                        <p>{isEnglish
-                          ? 'Explore the author and their work through a verified unique identifier'
-                          : 'Explorar autor e historial mediante su identificador único verificado'}</p>
+                        <h4 style={{ color: '#a6ce39' }}>{'View ORCID profile'} {cleanOrcid}</h4>
+                        <p>{'Explore the author and their work through a verified unique identifier'}</p>
                       </div>
                     </div>
                   </div>
@@ -1079,16 +1054,14 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                     Authors section right below is OpenAlex paper authors, and
                     the two are genuinely different things. */}
                 <h3 className="search-section-title">
-                  {isEnglish ? 'PaperTok users' : 'Usuarios de PaperTok'}
+                  {'PaperTok users'}
                 </h3>
 
                 {userTermTooShort && (
                   <div className="search-users-note" role="status">
                     <User size={18} aria-hidden="true" />
                     <div className="search-users-note-copy">
-                      <span>{isEnglish
-                        ? `Type at least ${USER_SEARCH_MIN_LENGTH} characters to search people.`
-                        : `Escribe al menos ${USER_SEARCH_MIN_LENGTH} caracteres para buscar personas.`}</span>
+                      <span>{`Type at least ${USER_SEARCH_MIN_LENGTH} characters to search people.`}</span>
                     </div>
                   </div>
                 )}
@@ -1097,15 +1070,11 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                   <div className="search-users-note" role="status">
                     <User size={18} aria-hidden="true" />
                     <div className="search-users-note-copy">
-                      <strong>{isEnglish
-                        ? 'Finding people needs an account'
-                        : 'Encontrar personas necesita una cuenta'}</strong>
-                      <span>{isEnglish
-                        ? 'Papers, institutions and projects stay open to everyone.'
-                        : 'Los papers, las instituciones y los proyectos siguen abiertos a todo el mundo.'}</span>
+                      <strong>{'Finding people needs an account'}</strong>
+                      <span>{'Papers, institutions and projects stay open to everyone.'}</span>
                     </div>
                     <button type="button" className="search-users-action" onClick={onAuthRequired}>
-                      {isEnglish ? 'Sign in' : 'Iniciar sesión'}
+                      {'Sign in'}
                     </button>
                   </div>
                 )}
@@ -1115,10 +1084,8 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                     <CircleNotch size={18} className="search-users-spinner" aria-hidden="true" />
                     <div className="search-users-note-copy">
                       <span>{userStatus === 'slow'
-                        ? (isEnglish
-                          ? 'This is taking longer than usual.'
-                          : 'Está tardando más de lo normal.')
-                        : (isEnglish ? 'Searching people…' : 'Buscando personas…')}</span>
+                        ? ('This is taking longer than usual.')
+                        : ('Searching people…')}</span>
                     </div>
                   </div>
                 )}
@@ -1127,9 +1094,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                   <div className="search-users-note search-users-note--error" role="alert">
                     <WarningCircle size={18} aria-hidden="true" />
                     <div className="search-users-note-copy">
-                      <span>{isEnglish
-                        ? 'People could not be loaded.'
-                        : 'No se han podido cargar las personas.'}</span>
+                      <span>{'People could not be loaded.'}</span>
                     </div>
                     {/* Retries only this, never the five external sources: the
                         banner's retry spends OpenAlex quota, which cannot fix
@@ -1139,7 +1104,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                       className="search-users-action"
                       onClick={() => performUserSearch(normalizeUserSearchTerm(query))}
                     >
-                      {isEnglish ? 'Try again' : 'Reintentar'}
+                      {'Try again'}
                     </button>
                   </div>
                 )}
@@ -1148,14 +1113,12 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                   <div className="search-users-note" role="status">
                     <User size={18} aria-hidden="true" />
                     <div className="search-users-note-copy">
-                      <strong>{isEnglish ? 'Nobody matches that.' : 'No hay nadie con ese nombre.'}</strong>
+                      <strong>{'Nobody matches that.'}</strong>
                       {/* The prefix limit said out loud. Without it an empty
                           people section beside a full page of papers reads as
                           "this person is not on PaperTok", which is usually
                           false — it only searches from the start. */}
-                      <span>{isEnglish
-                        ? 'It searches from the start of the handle or the name, so "nico" finds "Nicolás" but "muñoz" does not.'
-                        : 'Busca desde el principio del handle o del nombre, así que "nico" encuentra "Nicolás" pero "muñoz" no.'}</span>
+                      <span>{'It searches from the start of the handle or the name, so "nico" finds "Nicolás" but "muñoz" does not.'}</span>
                     </div>
                   </div>
                 )}
@@ -1195,9 +1158,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                     className="search-users-more"
                     onClick={() => handleSearchFilterChange('users')}
                   >
-                    {isEnglish
-                      ? `See all ${userResults.length} people`
-                      : `Ver las ${userResults.length} personas`}
+                    {`See all ${userResults.length} people`}
                   </button>
                 )}
               </div>
@@ -1205,9 +1166,9 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
 
             {institutionResults.length > 0 && (activeSearchFilter === 'all' || activeSearchFilter === 'institutions') && (
               <div className="search-section" data-section="institutions">
-                <h3 className="search-section-title">{isEnglish ? 'Universities and institutions' : 'Universidades e instituciones'}</h3>
+                <h3 className="search-section-title">{'Universities and institutions'}</h3>
                 {institutionResults.map((inst, index) => {
-                  const localizedName = getLocalizedInstitutionName(inst, language);
+                  const localizedName = getLocalizedInstitutionName(inst);
                   return (
                     <div
                       key={inst.id}
@@ -1226,7 +1187,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                             {localizedName}
                           </button>
                         </h4>
-                        <p>{inst.country_code || (isEnglish ? 'Unknown country' : 'País desconocido')} • {isEnglish ? 'Academic institution' : 'Institución académica'}</p>
+                        <p>{inst.country_code || ('Unknown country')} • {'Academic institution'}</p>
                       </div>
                       <FollowButton
                         entity={{
@@ -1249,7 +1210,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
 
             {projectResults.length > 0 && (activeSearchFilter === 'all' || activeSearchFilter === 'projects') && (
               <div className="search-section" data-section="projects">
-                <h3 className="search-section-title">{isEnglish ? 'Research projects' : 'Proyectos de investigación'}</h3>
+                <h3 className="search-section-title">{'Research projects'}</h3>
                 {projectResults.map((project, index) => (
                   <div
                     key={project.id}
@@ -1283,7 +1244,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
 
             {conceptResults.length > 0 && (activeSearchFilter === 'all' || activeSearchFilter === 'topics') && (
               <div className="search-section" data-section="topics">
-                <h3 className="search-section-title">{isEnglish ? 'Topics and areas' : 'Temas y áreas'}</h3>
+                <h3 className="search-section-title">{'Topics and areas'}</h3>
                 {conceptResults.map((concept, index) => (
                   <div
                     key={concept.id}
@@ -1304,13 +1265,13 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                       </h4>
                       <p>
                         {concept._localTopic && concept.level === 0
-                          ? `${concept.subcategoryCount || 0} ${isEnglish ? 'related topics' : 'temas relacionados'}`
+                          ? `${concept.subcategoryCount || 0} ${'related topics'}`
                           : concept._localTopic
-                            ? `${isEnglish ? 'Topic in' : 'Tema de'} ${concept.parent_display_name || (isEnglish ? 'PaperTok taxonomy' : 'la taxonomía de PaperTok')}`
+                            ? `${'Topic in'} ${concept.parent_display_name || ('PaperTok taxonomy')}`
                             : [
-                                concept.field_display_name || (isEnglish ? 'OpenAlex topic' : 'Tema de OpenAlex'),
+                                concept.field_display_name || ('OpenAlex topic'),
                                 Number.isFinite(concept.works_count)
-                                  ? `${concept.works_count.toLocaleString(locale)} ${isEnglish ? 'works' : 'trabajos'}`
+                                  ? `${concept.works_count.toLocaleString(locale)} ${'works'}`
                                   : '',
                               ].filter(Boolean).join(' • ')}
                       </p>
@@ -1323,8 +1284,9 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                         source: concept._localTopic ? 'papertok' : 'openalex',
                         metadata: {
                           categoryIds: concept.categoryIds,
-                          labelEs: concept.labelEs,
-                          labelEn: concept.labelEn,
+                          // Persisted on the follow; the key predates the
+                          // English-only interface and stays for the readers.
+                          labelEn: concept.label,
                         },
                       }}
                       isFollowing={isFollowing}
@@ -1338,12 +1300,11 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
 
             {authorResults.length > 0 && (activeSearchFilter === 'all' || activeSearchFilter === 'authors') && (
               <div className="search-section" data-section="authors">
-                <h3 className="search-section-title">{isEnglish ? 'Authors' : 'Autores'}</h3>
+                <h3 className="search-section-title">{'Authors'}</h3>
                 {authorResults.map((author, index) => {
                   const authorFollow = { type: 'author', id: author.id, displayName: author.display_name, source: 'openalex', externalIds: { orcid: author.orcid } };
                   const authorInstitution = getLocalizedInstitutionName(
                     author.institutionData || { display_name: author.institution },
-                    language,
                   );
                   return (
                     <div
@@ -1365,7 +1326,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                             {author.display_name}
                           </button>
                         </h4>
-                        <p>{authorInstitution || (isEnglish ? 'Unknown institution' : 'Institución desconocida')}</p>
+                        <p>{authorInstitution || ('Unknown institution')}</p>
                       </div>
                       <FollowButton
                         entity={authorFollow}
@@ -1381,7 +1342,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
 
             {paperResults.length > 0 && (activeSearchFilter === 'all' || activeSearchFilter === 'papers') && (
               <div className="search-section" data-section="papers">
-                <h3 className="search-section-title">{isEnglish ? 'Publications' : 'Publicaciones'}</h3>
+                <h3 className="search-section-title">{'Publications'}</h3>
                 {paperResults.map((paper, index) => {
                   const authors = (paper.authors || []).map(author => author.name || author);
                   return (
@@ -1402,7 +1363,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                         <h4 lang="en"><ScientificText>{paper.title}</ScientificText></h4>
                         <p className="search-item-authors">{authors.slice(0, 3).join(', ')}{authors.length > 3 ? ` +${authors.length - 3}` : ''}</p>
                         <span className="search-item-meta">
-                          {formatPaperDate(paper, locale) || (isEnglish ? 'Unknown date' : 'Fecha desconocida')} • {paper.primaryCategory || paper.journal || 'Paper'}
+                          {formatPaperDate(paper, locale) || ('Unknown date')} • {paper.primaryCategory || paper.journal || 'Paper'}
                         </span>
                       </div>
                     </div>
@@ -1421,8 +1382,8 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
         open={Boolean(selectedPaper && !pdfPaper)}
         onClose={closeSelectedPaper}
         onExitComplete={() => setShownPaper(null)}
-        isEnglish={isEnglish}
-        label={isEnglish ? 'Paper details' : 'Detalles del paper'}
+       
+        label={'Paper details'}
       >
         {shownPaper && (
           <PaperCard

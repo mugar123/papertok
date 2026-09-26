@@ -44,10 +44,10 @@ test('la navbar monta el menú de preferencias en vez del toggle suelto', async 
   assert.ok(!jsx.includes('<ThemeToggle'), 'el ThemeToggle suelto sigue en la navbar');
 });
 
-test('el menú reúne tema, idioma y el enlace a ajustes', async () => {
+test('the menu gathers the theme and the settings link, with no language row', async () => {
   const jsx = await prefsJsx;
   assert.match(jsx, /toggleTheme\(/, 'falta el tema');
-  assert.match(jsx, /setLanguage\(/, 'falta el idioma');
+  assert.doesNotMatch(jsx, /setLanguage|ToggleGroup/, 'the interface is English-only: no language row');
   assert.match(jsx, /navigate\('\/settings'\)/, 'falta el enlace a ajustes');
 });
 
@@ -103,17 +103,12 @@ test('el popover anima la salida, no solo la entrada', async () => {
 });
 
 /**
- * Tema e idioma son toggles de ui/: el tema un `Toggle` (un solo on/off, con
- * `aria-pressed` puesto por Base UI) y el idioma un `ToggleGroup` de selección
- * única, cuyo valor es siempre un array y llega vacío si se vuelve a pulsar el
- * idioma activo — un estado que no existe, así que se ignora.
+ * The theme is the ui/ `Toggle`: a single on/off, with `aria-pressed` written
+ * by Base UI.
  */
-test('tema e idioma son los toggles de ui/', async () => {
+test('the theme row is the ui/ Toggle', async () => {
   const jsx = await prefsJsx;
   assert.match(jsx, /<Toggle[\s\S]*?pressed=\{isDark\}[\s\S]*?onPressedChange=\{\(\) => toggleTheme\(themeRowRef\.current\)\}/);
-  assert.match(jsx, /<ToggleGroup[\s\S]*?value=\{\[language\]\}[\s\S]*?onValueChange=\{\(\[next\]\) => \{ if \(next\) setLanguage\(next\); \}\}/);
-  assert.match(jsx, /<ToggleGroupItem value="es">ES<\/ToggleGroupItem>/);
-  assert.match(jsx, /<ToggleGroupItem value="en">EN<\/ToggleGroupItem>/);
   assert.doesNotMatch(jsx, /aria-pressed=/, 'aria-pressed lo escriben los toggles');
 });
 

@@ -55,11 +55,8 @@ test("the project is queried with the route's funder and keeps the route id", as
  * once.
  *
  * So the entity keeps no name at all; the fallback happens where the title is
- * rendered, reusing the label the page already computes for the type. That
- * render body already has `isEnglish` in scope, so the entity effect needs
- * neither a ref nor a language dependency (which would drop every entity page
- * back to its skeleton on a toggle), and the wording follows a language change
- * without waiting for a remount.
+ * rendered, reusing the label the page already computes for the type, so the
+ * entity effect needs neither a ref nor an extra dependency.
  */
 test('a nameless project lends a title to the hero and no name to the follow', async () => {
   const src = stripComments(await read('./EntityExplorer.jsx'));
@@ -87,8 +84,8 @@ test('a nameless project lends a title to the hero and no name to the follow', a
   );
   assert.match(
     src,
-    /const entityTypeLabel = type === 'author'[\s\S]{0,400}?type === 'project'\s*\? \(isEnglish \? 'Research project' : 'Proyecto de investigación'\)/,
-    "the fallback is the page's own bilingual wording, read on every render",
+    /const entityTypeLabel = type === 'author'[\s\S]{0,400}?type === 'project'\s*\? \(?'Research project'\)?/,
+    "the fallback is the page's own wording, read on every render",
   );
 
   assert.match(

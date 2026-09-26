@@ -137,11 +137,11 @@ const AREA_WATERMARK_ICONS = {
 };
 
 const RESOURCE_KIND_CONFIG = {
-  dataset: { label: { es: 'Datos', en: 'Data' }, Icon: Database },
-  model: { label: { es: 'Modelo IA', en: 'AI model' }, Icon: Brain },
-  software: { label: { es: 'Código', en: 'Code' }, Icon: Code },
-  material: { label: { es: 'Material', en: 'Material' }, Icon: Package },
-  version: { label: { es: 'Versión', en: 'Version' }, Icon: ClockCounterClockwise },
+  dataset: { label: { en: 'Data' }, Icon: Database },
+  model: { label: { en: 'AI model' }, Icon: Brain },
+  software: { label: { en: 'Code' }, Icon: Code },
+  material: { label: { en: 'Material' }, Icon: Package },
+  version: { label: { en: 'Version' }, Icon: ClockCounterClockwise },
 };
 const ENRICHMENT_SETTLE_DELAY_MS = 240;
 const SECONDARY_NETWORK_DELAY_MS = 900;
@@ -464,7 +464,7 @@ const PaperCard = memo(function PaperCard({
   // played over a card that had already stopped moving.
   const [figures, setFigures] = useState(() => peekPaperFigures(paper)?.slice(0, 4) ?? []);
   const { followedByType, isFollowing } = useFollowing();
-  const { language, isEnglish } = useLanguage();
+  const { language } = useLanguage();
   const { trackEvent } = useAnalyticsConsent();
   // Not `useNavigate`: that subscribes every mounted card to the location
   // (hooks/useStableNavigate.js says what it cost).
@@ -1046,18 +1046,16 @@ const PaperCard = memo(function PaperCard({
     const cat = visiblePrimaryCategory;
     const area = Object.values(CATEGORIES).find(a => a.subcategories && a.subcategories[cat]);
     if (area) {
-      return isEnglish
-        ? area.subcategories[cat].labelEn || area.subcategories[cat].label
-        : area.subcategories[cat].label;
+      return area.subcategories[cat].label || area.subcategories[cat].label;
     }
     // Not `cat` raw. For anything from OpenAlex that is a concept, not a
     // field — "QUBIT", "Toric code" — so the kicker announced a keyword where
     // it meant to announce a branch of science, and disagreed with the colour
     // beside it. The branch, resolved through the same chain as the ink.
-    const branch = areaLabelForPaper(paper, { english: isEnglish });
+    const branch = areaLabelForPaper(paper);
     if (branch) return branch;
     if (paper.journal) return paper.journal;
-    return isEnglish ? 'Research Paper' : 'Artículo científico';
+    return 'Research Paper';
   };
 
   const categoryLabel = getCategoryLabelText();
@@ -1068,16 +1066,16 @@ const PaperCard = memo(function PaperCard({
       display_name: categoryLabel,
       query: visiblePrimaryCategory,
       source: 'category',
-    }, language) : null,
-    [categoryLabel, language, visiblePrimaryCategory]
+    }) : null,
+    [categoryLabel, visiblePrimaryCategory]
   );
   const paperTopicTags = useMemo(
     () => buildPaperTopicTags({
       categories: paper.categories,
       concepts: paper.concepts,
       primaryCategory: paper.primaryCategory,
-    }, 4, language),
-    [language, paper.categories, paper.concepts, paper.primaryCategory]
+    }, 4),
+    [paper.categories, paper.concepts, paper.primaryCategory]
   );
 
   const openTopic = useCallback((event, topic) => {
@@ -1214,11 +1212,8 @@ const PaperCard = memo(function PaperCard({
   // readable copy of its own. The copy decides the word: the published version
   // free at the publisher is open access, anything else is a weaker "open
   // version" (`paperStatus.js`).
-  const reviewTag = reviewTagForPaper(paper, { english: isEnglish });
-  const accessTag = accessTagForPaper(paper, {
-    english: isEnglish,
-    openCopy: resolvedOpenCopy,
-  });
+  const reviewTag = reviewTagForPaper(paper);
+  const accessTag = accessTagForPaper(paper, { openCopy: resolvedOpenCopy });
   const researchResources = linkedResources.paperId === paper.id ? linkedResources.items : [];
   const readablePaper = useMemo(() => resolvedOpenCopy ? {
     ...paper,
@@ -1260,14 +1255,14 @@ const PaperCard = memo(function PaperCard({
     }
   };
   const restingActionLabel = resolvedOpenCopy
-    ? (isEnglish ? 'Read open version' : 'Leer versión abierta')
+    ? ('Read open version')
     : paper.openAccessPdfUrl
-      ? (isEnglish ? 'Read full text' : 'Leer texto completo')
+      ? ('Read full text')
       : (!paper.pdfUrl && !paper.arxivId)
-        ? (isEnglish ? 'Source' : 'Fuente')
-        : (isEnglish ? 'Read article' : 'Leer artículo');
+        ? ('Source')
+        : ('Read article');
   const primaryActionLabel = isResolvingAccess
-    ? (isEnglish ? 'Finding access...' : 'Buscando acceso...')
+    ? ('Finding access...')
     : restingActionLabel;
   // What the phone shows, where the full label does not fit: its first word
   // ("Leer", "Fuente"). Derived rather than written twice, so it cannot drift
@@ -1350,7 +1345,6 @@ const PaperCard = memo(function PaperCard({
         {showFollowReason && (() => {
           const reason = buildFollowReasonLabel(
             (paper._followedEntityMatches || []).filter(match => typeof match === 'object'),
-            language,
           );
           if (!reason) return null;
           // A plain element: its entrance is the first step of the card's
@@ -1374,7 +1368,7 @@ const PaperCard = memo(function PaperCard({
               type="button"
               className="pc-category-pill pc-topic-link"
               onClick={(event) => openTopic(event, primaryTopic)}
-              title={`${isEnglish ? 'Explore' : 'Explorar'} ${categoryLabel}`}
+              title={`${'Explore'} ${categoryLabel}`}
             >
               {categoryLabel}
             </button>
@@ -1385,7 +1379,7 @@ const PaperCard = memo(function PaperCard({
             <>
               <span className="pc-meta-dot">·</span>
               <span className="pc-followed-badge">
-                <UserCheck size={12} /> {isEnglish ? 'Followed author' : 'Autor seguido'}
+                <UserCheck size={12} /> {'Followed author'}
               </span>
             </>
           )}
@@ -1405,13 +1399,13 @@ const PaperCard = memo(function PaperCard({
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(event) => event.stopPropagation()}
-                  aria-label={`${paper.citationCount} ${isEnglish ? 'citations on Scopus' : 'citas en Scopus'}`}
+                  aria-label={`${paper.citationCount} ${'citations on Scopus'}`}
                 >
-                  {paper.citationCount} {isEnglish ? 'Citations on Scopus' : 'Citas en Scopus'}
+                  {paper.citationCount} {'Citations on Scopus'}
                 </a>
               ) : (
                 <span className="pc-citations">
-                  {paper.citationCount} {isEnglish ? 'Citations' : 'Citas'}
+                  {paper.citationCount} {'Citations'}
                 </span>
               )}
             </>
@@ -1468,7 +1462,7 @@ const PaperCard = memo(function PaperCard({
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
-              title={isEnglish ? 'Open the DOI record' : 'Abrir el registro DOI'}
+              title={'Open the DOI record'}
             >
               <ArrowSquareOut size={12} /> DOI
             </a>
@@ -1484,10 +1478,10 @@ const PaperCard = memo(function PaperCard({
           <div
             className="pc-topics"
             role="group"
-            aria-label={isEnglish ? 'Paper topics' : 'Temas del paper'}
+            aria-label={'Paper topics'}
           >
             {paperTopicTags.map((tag) => {
-              const topic = resolvePaperTopic(tag.value, language);
+              const topic = resolvePaperTopic(tag.value);
               if (!topic) return null;
               return (
                 <button
@@ -1496,7 +1490,7 @@ const PaperCard = memo(function PaperCard({
                   className={`pc-semantic-tag pc-topic-link ${tag.source === 'concept' && !topic.reliable ? 'pc-topic-link--external' : ''}`}
                   lang={tag.lang}
                   onClick={(event) => openTopic(event, topic)}
-                  title={`${isEnglish ? 'Explore' : 'Explorar'} ${topic.label}`}
+                  title={`${'Explore'} ${topic.label}`}
                 >
                   {tag.label}
                 </button>
@@ -1581,13 +1575,13 @@ const PaperCard = memo(function PaperCard({
                       if (path) navigate(path);
                     }}
                     title={(project.id || project.code)
-                      ? (isEnglish ? 'Open research project' : 'Abrir proyecto de investigación')
+                      ? ('Open research project')
                       : undefined}
                   >
                     <Briefcase size={12} />
                     <span>
                       {[project.funderLevel, project.funder].find(value => value && value !== 'Unknown Funder')
-                        || (isEnglish ? 'Project' : 'Proyecto')}: {project.acronym}
+                        || ('Project')}: {project.acronym}
                     </span>
                   </button>
                 </motion.div>
@@ -1675,7 +1669,7 @@ const PaperCard = memo(function PaperCard({
                   // los autores» a secas dice mejor lo que hace, pero no
                   // contiene «et al.», que es lo único escrito ahí: quien
                   // navega por voz dice lo que ve y no acciona nada.
-                  aria-label={isEnglish ? 'et al., show all authors' : 'et al., ver todos los autores'}
+                  aria-label={'et al., show all authors'}
                 >
                   et al.
                 </button>
@@ -1721,7 +1715,7 @@ const PaperCard = memo(function PaperCard({
             >
               {abstractText
                 ? <ScientificText>{abstractText}</ScientificText>
-                : (isEnglish ? 'Abstract unavailable.' : 'Resumen no disponible.')}
+                : ('Abstract unavailable.')}
             </motion.p>
           </AnimatePresence>
         </div>
@@ -1745,8 +1739,8 @@ const PaperCard = memo(function PaperCard({
           onClick={openAbstract}
         >
           {expanded
-            ? (isEnglish ? 'Show less' : 'Mostrar menos')
-            : (isEnglish ? 'Read full abstract' : 'Leer el abstract completo')}
+            ? ('Show less')
+            : ('Read full abstract')}
         </button>
         )}
 
@@ -1800,8 +1794,8 @@ const PaperCard = memo(function PaperCard({
                       default: { delay: 0.3, duration: 0.6, ease: [0.22, 1, 0.36, 1] },
                     }}
                 >
-                  <div className="pc-linked-resources" aria-label={isEnglish ? 'Associated research resources' : 'Recursos de investigación asociados'}>
-                    <span className="pc-linked-resources-label"><Database size={14} /> {isEnglish ? 'Resources' : 'Recursos'}</span>
+                  <div className="pc-linked-resources" aria-label={'Associated research resources'}>
+                    <span className="pc-linked-resources-label"><Database size={14} /> {'Resources'}</span>
                     <div className="pc-linked-resources-list">
                       {researchResources.map((resource, index) => {
                         const config = RESOURCE_KIND_CONFIG[resource.kind] || RESOURCE_KIND_CONFIG.material;
@@ -1896,14 +1890,14 @@ const PaperCard = memo(function PaperCard({
                     verdad está puesto — «Leer en simple» ancho, «Simple»
                     estrecho — y no puede desviarse de lo que se lee. */}
                 <Sparkle size={16} />
-                <span className="pc-action-label">{isEnglish ? 'Read in plain words' : 'Leer en simple'}</span>
-                <span className="pc-action-label--short">{isEnglish ? 'Simple' : 'Simple'}</span>
+                <span className="pc-action-label">{'Read in plain words'}</span>
+                <span className="pc-action-label--short">{'Simple'}</span>
                 {publicMode && <Lock size={13} className="pc-action-lock" aria-hidden="true" />}
               </Button>
             )}
             {canRequestRewrite && publicMode && (
               <span id={rewriteHintId} className="visually-hidden">
-                {isEnglish ? 'Needs a free account' : 'Necesita una cuenta gratuita'}
+                {'Needs a free account'}
               </span>
             )}
           </div>
@@ -1913,10 +1907,10 @@ const PaperCard = memo(function PaperCard({
               variant="outline"
               size="icon"
               onClick={handleShare}
-              aria-label={isEnglish ? 'Share' : 'Compartir'}
+              aria-label={'Share'}
               title={copied
-                ? (isEnglish ? 'Copied' : 'Copiado')
-                : (isEnglish ? 'Share' : 'Compartir')}
+                ? ('Copied')
+                : ('Share')}
             >
               {copied ? <Check size={16} /> : <ShareNetwork size={16} />}
             </Button>
@@ -1936,8 +1930,8 @@ const PaperCard = memo(function PaperCard({
                   }
                   setShowRelated(true);
                 }}
-                aria-label={isEnglish ? 'View related papers' : 'Ver papers relacionados'}
-                title={isEnglish ? 'Related papers' : 'Papers relacionados'}
+                aria-label={'View related papers'}
+                title={'Related papers'}
               >
                 <Graph size={17} />
               </Button>
@@ -1964,7 +1958,7 @@ const PaperCard = memo(function PaperCard({
           <span className="pc-side-icon">
             <Heart size={20} weight={isLiked ? 'fill' : 'regular'} aria-hidden="true" />
           </span>
-          <span className="pc-side-label">{isEnglish ? 'Like' : 'Me gusta'}</span>
+          <span className="pc-side-label">{'Like'}</span>
         </Toggle>
 
         {canOpenComments && (
@@ -1977,14 +1971,14 @@ const PaperCard = memo(function PaperCard({
             // number is not a name a screen reader can act on, so the
             // accessible name keeps the word regardless of what is painted.
             aria-label={commentCountLabel
-              ? `${commentCountLabel} ${isEnglish ? 'comments' : 'comentarios'}`
-              : (isEnglish ? 'Comments' : 'Comentarios')}
+              ? `${commentCountLabel} ${'comments'}`
+              : ('Comments')}
           >
             <span className="pc-side-icon">
               <ChatCircle size={20} />
             </span>
             <span className="pc-side-label">
-              {commentCountLabel ?? (isEnglish ? 'Comments' : 'Comentarios')}
+              {commentCountLabel ?? ('Comments')}
             </span>
           </button>
         )}
@@ -1998,7 +1992,7 @@ const PaperCard = memo(function PaperCard({
           <span className="pc-side-icon">
             <BookmarkSimple size={20} weight={isSaved ? 'fill' : 'regular'} aria-hidden="true" />
           </span>
-          <span className="pc-side-label">{isEnglish ? 'Save' : 'Guardar'}</span>
+          <span className="pc-side-label">{'Save'}</span>
         </Toggle>
 
         <Toggle
@@ -2007,8 +2001,8 @@ const PaperCard = memo(function PaperCard({
           onPressedChange={handleMarkAsRead}
           onClick={swallowClick}
           title={isReadActive
-            ? (isEnglish ? 'Mark as unread' : 'Marcar como no leído')
-            : (isEnglish ? 'Mark as read' : 'Marcar como leído')}
+            ? ('Mark as unread')
+            : ('Mark as read')}
         >
           {/* Both glyphs are always in the slot, one over the other, so the
               eye can shrink away while the tick springs in (PaperCard.css)
@@ -2019,8 +2013,8 @@ const PaperCard = memo(function PaperCard({
           </span>
           <span className="pc-side-label">
             {isReadActive
-              ? (isEnglish ? 'Read' : 'Leído')
-              : (isEnglish ? 'Mark as read' : 'Marcar leído')}
+              ? ('Read')
+              : ('Mark as read')}
           </span>
         </Toggle>
 
@@ -2028,7 +2022,7 @@ const PaperCard = memo(function PaperCard({
           <span className="pc-side-icon">
             <Prohibit size={20} aria-hidden="true" />
           </span>
-          <span className="pc-side-label">{isEnglish ? 'Skip' : 'Pasar'}</span>
+          <span className="pc-side-label">{'Skip'}</span>
         </button>
       </div>
 
@@ -2043,7 +2037,7 @@ const PaperCard = memo(function PaperCard({
       {/* Scroll hint on first card */}
       {!hideScrollHint && (
         <div className="pc-scroll-hint">
-          <span className="pc-scroll-hint-label">{isEnglish ? 'Scroll' : 'Desliza'}</span>
+          <span className="pc-scroll-hint-label">{'Scroll'}</span>
           <span className="pc-scroll-hint-arrow">
             <CaretDown size={16} weight="bold" aria-hidden="true" />
           </span>
@@ -2071,8 +2065,8 @@ const PaperCard = memo(function PaperCard({
         >
           <DrawerHandle />
           <div className="pc-authors-modal-header">
-            <DrawerTitle render={<h3 id="pc-authors-dialog-title" />}>{isEnglish ? 'Authors' : 'Autores'}</DrawerTitle>
-            <DrawerClose aria-label={isEnglish ? 'Close authors' : 'Cerrar autores'}>
+            <DrawerTitle render={<h3 id="pc-authors-dialog-title" />}>{'Authors'}</DrawerTitle>
+            <DrawerClose aria-label={'Close authors'}>
               <X size={22} aria-hidden="true" />
             </DrawerClose>
           </div>
@@ -2152,13 +2146,13 @@ const PaperCard = memo(function PaperCard({
           className="related-card-overlay inset-0 max-w-none translate-x-0 translate-y-0 rounded-none"
           overlayClassName="related-card-scrim"
           showClose={false}
-          closeLabel={isEnglish ? 'Back to previous paper' : 'Volver al paper anterior'}
-          aria-label={isEnglish ? 'Related paper' : 'Paper relacionado'}
+          closeLabel={'Back to previous paper'}
+          aria-label={'Related paper'}
         >
           <DialogClose
             className="related-card-back"
-            aria-label={isEnglish ? 'Back to previous paper' : 'Volver al paper anterior'}
-            title={isEnglish ? 'Back' : 'Volver'}
+            aria-label={'Back to previous paper'}
+            title={'Back'}
           >
             <ArrowLeft size={22} />
           </DialogClose>
@@ -2187,7 +2181,7 @@ const PaperCard = memo(function PaperCard({
               />
             </div>
           ) : activeRelatedPaper ? (
-            <RelatedPaperCardSkeleton label={isEnglish ? 'Loading paper details' : 'Cargando detalles del paper'} />
+            <RelatedPaperCardSkeleton label={'Loading paper details'} />
           ) : null}
         </DialogContent>
       </Dialog>

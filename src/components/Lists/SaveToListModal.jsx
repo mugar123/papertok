@@ -88,7 +88,7 @@ function demoSet(key, value) {
  */
 export default function SaveToListModal({ paper, onClose }) {
   const { user } = useAuth();
-  const { language, isEnglish } = useLanguage();
+  const { language } = useLanguage();
   const { trackEvent, markActivation } = useAnalyticsConsent();
   const {
     markSaved, unmarkSaved, personalLibrary, ensurePersonalLibrary, toggleReadLater,
@@ -631,7 +631,7 @@ export default function SaveToListModal({ paper, onClose }) {
     }
   };
 
-  const copy = isEnglish ? {
+  const copy = {
     kicker: 'This paper',
     title: 'Save and organize',
     close: 'Close',
@@ -661,36 +661,6 @@ export default function SaveToListModal({ paper, onClose }) {
     discardTitle: 'You have unsaved changes.',
     discard: 'Discard',
     keepEditing: 'Keep editing',
-  } : {
-    kicker: 'Este paper',
-    title: 'Guardar y organizar',
-    close: 'Cerrar',
-    saveTo: 'Guardar en',
-    saveToHint: 'Se aplica al pulsar Guardar.',
-    readLaterOn: 'Leer después',
-    readLaterOff: 'Leer después',
-    loadingLists: 'Cargando listas...',
-    listsSlow: 'Está tardando más de lo normal. Seguimos intentándolo.',
-    listsOffline: 'Parece que no hay conexión. Seguimos intentándolo.',
-    listsStalled: 'Tus listas están tardando muchísimo. Seguimos intentándolo — tus papers están a salvo.',
-    listsUnavailable: 'No se pudieron cargar tus listas. Siguen ahí.',
-    retry: 'Reintentar',
-    noLists: 'Aún no tienes listas: crea la primera aquí debajo.',
-    newListCta: 'Crear nueva lista',
-    noteAndTags: 'Nota y etiquetas',
-    noteAndTagsHint: 'Solo tú los ves.',
-    privateNote: 'Nota privada',
-    notePlaceholder: 'Ideas, dudas o conclusiones...',
-    tags: 'Etiquetas',
-    tagPlaceholder: 'Escribe una etiqueta y pulsa Enter',
-    removeTagLabel: tag => `Quitar ${tag}`,
-    exportCitation: 'Exportar cita',
-    save: 'Guardar',
-    saving: 'Guardando...',
-    saveFailed: 'No se pudo guardar todo. Vuelve a Guardar para reintentar lo que falta.',
-    discardTitle: 'Tienes cambios sin guardar.',
-    discard: 'Descartar',
-    keepEditing: 'Seguir editando',
   };
 
   return (
@@ -816,7 +786,7 @@ export default function SaveToListModal({ paper, onClose }) {
                 and the same window the lists page opens. */}
             <CreateListDialog
               open={creatingList}
-              isEnglish={isEnglish}
+             
               onClose={() => setCreatingList(false)}
               onCreate={handleCreateList}
             />

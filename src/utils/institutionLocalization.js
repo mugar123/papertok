@@ -5,10 +5,10 @@ function getLocalizedNames(institution = {}) {
     || {};
 }
 
-export function getLocalizedInstitutionName(institution = {}, language = 'es') {
+export function getLocalizedInstitutionName(institution = {}) {
   const safeInstitution = institution || {};
   const localizedNames = getLocalizedNames(institution);
-  const languageKey = language === 'en' ? 'en' : 'es';
+  const languageKey = 'en';
   const localizedName = String(localizedNames[languageKey] || '').trim();
   const officialName = String(
     safeInstitution.display_name

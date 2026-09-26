@@ -1,25 +1,25 @@
 const entityWikiCache = new Map();
 
 const TOPIC_WIKI_ALIASES = new Map([
-  ['black hole', { en: 'Black hole', es: 'Agujero negro' }],
-  ['black holes', { en: 'Black hole', es: 'Agujero negro' }],
-  ['agujero negro', { en: 'Black hole', es: 'Agujero negro' }],
-  ['agujeros negros', { en: 'Black hole', es: 'Agujero negro' }],
-  ['neural networks', { en: 'Neural network', es: 'Red neuronal' }],
-  ['redes neuronales', { en: 'Neural network', es: 'Red neuronal' }],
-  ['gravitational waves', { en: 'Gravitational wave', es: 'Onda gravitacional' }],
-  ['ondas gravitacionales', { en: 'Gravitational wave', es: 'Onda gravitacional' }],
-  ['exoplanets', { en: 'Exoplanet', es: 'Exoplaneta' }],
-  ['exoplanetas', { en: 'Exoplanet', es: 'Exoplaneta' }],
-  ['superconductors', { en: 'Superconductivity', es: 'Superconductividad' }],
-  ['superconductores', { en: 'Superconductivity', es: 'Superconductividad' }],
-  ['large language models', { en: 'Large language model', es: 'Modelo de lenguaje de gran tamaño' }],
-  ['modelos de lenguaje grandes', { en: 'Large language model', es: 'Modelo de lenguaje de gran tamaño' }],
-  ['particle accelerators', { en: 'Particle accelerator', es: 'Acelerador de partículas' }],
-  ['aceleradores de particulas', { en: 'Particle accelerator', es: 'Acelerador de partículas' }],
-  ['quantum computers', { en: 'Quantum computing', es: 'Computación cuántica' }],
-  ['ordenadores cuanticos', { en: 'Quantum computing', es: 'Computación cuántica' }],
-  ['computadoras cuanticas', { en: 'Quantum computing', es: 'Computación cuántica' }],
+  ['black hole', { en: 'Black hole' }],
+  ['black holes', { en: 'Black hole' }],
+  ['agujero negro', { en: 'Black hole' }],
+  ['agujeros negros', { en: 'Black hole' }],
+  ['neural networks', { en: 'Neural network' }],
+  ['redes neuronales', { en: 'Neural network' }],
+  ['gravitational waves', { en: 'Gravitational wave' }],
+  ['ondas gravitacionales', { en: 'Gravitational wave' }],
+  ['exoplanets', { en: 'Exoplanet' }],
+  ['exoplanetas', { en: 'Exoplanet' }],
+  ['superconductors', { en: 'Superconductivity' }],
+  ['superconductores', { en: 'Superconductivity' }],
+  ['large language models', { en: 'Large language model' }],
+  ['modelos de lenguaje grandes', { en: 'Large language model' }],
+  ['particle accelerators', { en: 'Particle accelerator' }],
+  ['aceleradores de particulas', { en: 'Particle accelerator' }],
+  ['quantum computers', { en: 'Quantum computing' }],
+  ['ordenadores cuanticos', { en: 'Quantum computing' }],
+  ['computadoras cuanticas', { en: 'Quantum computing' }],
 ]);
 
 function normalizeWikiTitle(value = '') {
@@ -35,12 +35,12 @@ function normalizeComparableWikiTitle(value = '') {
     .toLowerCase();
 }
 
-function getTopicWikiAlias(value, language) {
+function getTopicWikiAlias(value) {
   const comparable = normalizeComparableWikiTitle(value);
-  return TOPIC_WIKI_ALIASES.get(comparable)?.[language === 'en' ? 'en' : 'es'] || '';
+  return TOPIC_WIKI_ALIASES.get(comparable)?.['en'] || '';
 }
 
-export function mapWikipediaSearchResponse(data, language = 'en', {
+export function mapWikipediaSearchResponse(data, {
   expectedTitle = '',
   strictTitleMatch = false,
 } = {}) {
@@ -60,7 +60,7 @@ export function mapWikipediaSearchResponse(data, language = 'en', {
     extract: normalizeWikiTitle(page.extract),
     thumbnail: page.thumbnail?.source || null,
     url: page.fullurl || '',
-    language: language === 'en' ? 'en' : 'es',
+    language: 'en',
   };
 }
 
@@ -68,7 +68,7 @@ async function searchWikipedia(title, language, signal, { strictTitleMatch = fal
   const normalizedTitle = normalizeWikiTitle(title);
   if (!normalizedTitle) return null;
 
-  const normalizedLanguage = language === 'en' ? 'en' : 'es';
+  const normalizedLanguage = 'en';
   const cacheKey = `${normalizedLanguage}:${strictTitleMatch ? 'strict' : 'fuzzy'}:${normalizedTitle.toLocaleLowerCase('en-US')}`;
   if (entityWikiCache.has(cacheKey)) return entityWikiCache.get(cacheKey);
   const url = new URL(`https://${normalizedLanguage}.wikipedia.org/w/api.php`);
@@ -90,7 +90,7 @@ async function searchWikipedia(title, language, signal, { strictTitleMatch = fal
   const response = await fetch(url, { signal });
   if (!response.ok) return null;
 
-  const result = mapWikipediaSearchResponse(await response.json(), normalizedLanguage, {
+  const result = mapWikipediaSearchResponse(await response.json(), {
     expectedTitle: normalizedTitle,
     strictTitleMatch,
   });
@@ -155,7 +155,7 @@ async function fetchWikidataSitelinks({ qid, enwikiTitle, signal }) {
     url.searchParams.set('titles', enwikiTitle);
   }
   url.searchParams.set('props', 'sitelinks');
-  url.searchParams.set('sitefilter', 'eswiki|enwiki');
+  url.searchParams.set('sitefilter', 'enwiki');
   url.searchParams.set('format', 'json');
   url.searchParams.set('origin', '*');
 
@@ -200,25 +200,21 @@ async function fetchWikipediaPageByTitle({ title, language, qid, signal }) {
 }
 
 /**
- * The Wikipedia article of an entity known by identity: the reader's language
- * when the item has an article there, English otherwise (`language: 'en'`
- * tells the page to mark it). Never a search.
+ * The English Wikipedia article of an entity known by identity. Never a search.
  */
-export async function getEntityWikiInfoByIdentity({ qid = '', enwikiTitle = '', language = 'es', signal } = {}) {
-  const requestedLanguage = language === 'en' ? 'en' : 'es';
+export async function getEntityWikiInfoByIdentity({ qid = '', enwikiTitle = '', signal } = {}) {
   const normalizedTitle = normalizeWikiTitle(enwikiTitle);
   if (!qid && !normalizedTitle) return null;
 
-  const cacheKey = `identity:${requestedLanguage}:${qid || `enwiki:${normalizedTitle}`}`;
+  const cacheKey = `identity:en:${qid || `enwiki:${normalizedTitle}`}`;
   if (entityWikiCache.has(cacheKey)) return entityWikiCache.get(cacheKey);
 
   const item = await fetchWikidataSitelinks({ qid, enwikiTitle: normalizedTitle, signal });
   if (!item) return null;
-  const pageLanguage = item.titles[`${requestedLanguage}wiki`] ? requestedLanguage : 'en';
-  const title = item.titles[`${pageLanguage}wiki`];
+  const title = item.titles.enwiki;
   if (!title) return null;
 
-  const result = await fetchWikipediaPageByTitle({ title, language: pageLanguage, qid: item.qid, signal });
+  const result = await fetchWikipediaPageByTitle({ title, language: 'en', qid: item.qid, signal });
   if (result) entityWikiCache.set(cacheKey, result);
   return result;
 }
@@ -229,7 +225,7 @@ export async function getEntityWikiInfoByIdentity({ qid = '', enwikiTitle = '', 
  * the title search (exact-title for free text, as before); every OpenAlex
  * entity is resolved by identity or shows no Wikipedia block.
  */
-export async function loadEntityWikiInfo({ entity, title, alternateTitle = '', language = 'es', signal } = {}) {
+export async function loadEntityWikiInfo({ entity, title, alternateTitle = '', signal } = {}) {
   // No Wikidata id to go by: a search, and only an article by that exact
   // title counts. For the taxonomy's own topics too, since their curated
   // aliases already are titles, and a first hit that is another article is a
@@ -238,28 +234,26 @@ export async function loadEntityWikiInfo({ entity, title, alternateTitle = '', l
     return getEntityWikiInfo({
       title,
       alternateTitle,
-      language,
       signal,
       strictTitleMatch: true,
     });
   }
   const identity = resolveEntityWikiIdentity(entity);
   if (!identity) return null;
-  return getEntityWikiInfoByIdentity({ ...identity, language, signal });
+  return getEntityWikiInfoByIdentity({ ...identity, signal });
 }
 
 export async function getEntityWikiInfo({
   title,
   alternateTitle = '',
-  language = 'es',
   signal,
   strictTitleMatch = false,
 } = {}) {
-  const requestedLanguage = language === 'en' ? 'en' : 'es';
+  const requestedLanguage = 'en';
   const rawCandidates = [title, alternateTitle].map(normalizeWikiTitle).filter(Boolean);
   const candidates = [...new Set([
     ...rawCandidates,
-    ...rawCandidates.map(candidate => getTopicWikiAlias(candidate, requestedLanguage)).filter(Boolean),
+    ...rawCandidates.map(candidate => getTopicWikiAlias(candidate)).filter(Boolean),
   ])];
   for (const candidate of candidates) {
     const result = await searchWikipedia(candidate, requestedLanguage, signal, { strictTitleMatch });

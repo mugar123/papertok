@@ -50,7 +50,7 @@ function getTitle(attributes, kind) {
     .replace(/<[^>]*>/g, '')
     .replace(/\s+/g, ' ')
     .trim()
-    || ({ dataset: 'Dataset asociado', software: 'Software asociado', material: 'Material asociado', version: 'Versión relacionada' }[kind]);
+    || ({ dataset: 'Associated dataset', software: 'Associated software', material: 'Associated material', version: 'Related version' }[kind]);
 }
 
 function getMeaningfulTitleTokens(value) {
@@ -121,7 +121,7 @@ export function mapDataCiteDirectRelations(record, targetDoi) {
       id: relatedDoi || url,
       doi: relatedDoi || undefined,
       kind,
-      title: ({ dataset: 'Dataset asociado', software: 'Software asociado', material: 'Material asociado', version: 'Versión relacionada' }[kind]),
+      title: ({ dataset: 'Associated dataset', software: 'Associated software', material: 'Associated material', version: 'Related version' }[kind]),
       relationType: relation.relationType,
       resourceType: relation.resourceTypeGeneral || '',
       publisher: '',

@@ -24,20 +24,18 @@ function apiBase() {
   return value;
 }
 
-function localizedFollowName(follow, language) {
+function localizedFollowName(follow) {
   if (follow.type === 'institution') {
     return getLocalizedInstitutionName({
       display_name: follow.displayName,
       metadata: follow.metadata,
-    }, language) || follow.displayName;
+    }) || follow.displayName;
   }
 
   if (follow.type === 'topic') {
-    const localizedMetadataLabel = language === 'en'
-      ? follow.metadata?.labelEn
-      : follow.metadata?.labelEs;
-    const localTopic = resolvePaperTopic(follow.canonicalId, language)
-      || resolvePaperTopic(follow.displayName, language);
+    const localizedMetadataLabel = follow.metadata?.labelEn;
+    const localTopic = resolvePaperTopic(follow.canonicalId)
+      || resolvePaperTopic(follow.displayName);
     return localizedMetadataLabel || localTopic?.label || follow.displayName;
   }
 
@@ -64,11 +62,11 @@ function notificationFollowMetadata(follow) {
   };
 }
 
-export function serializeFollowForNotifications(follow = {}, language = 'es') {
+export function serializeFollowForNotifications(follow = {}) {
   return {
     type: follow.type,
     canonicalId: follow.canonicalId,
-    displayName: localizedFollowName(follow, language),
+    displayName: localizedFollowName(follow),
     externalIds: {
       ...(follow.externalIds?.ror ? { ror: follow.externalIds.ror } : {}),
       ...(follow.externalIds?.orcid ? { orcid: follow.externalIds.orcid } : {}),
@@ -77,7 +75,7 @@ export function serializeFollowForNotifications(follow = {}, language = 'es') {
   };
 }
 
-export function serializeUpdateForNotifications(paper = {}, language = 'es') {
+export function serializeUpdateForNotifications(paper = {}) {
   return {
     id: paper.id,
     doi: paper.doi,
@@ -91,7 +89,7 @@ export function serializeUpdateForNotifications(paper = {}, language = 'es') {
     pdfUrl: paper.pdfUrl,
     matches: (paper._followedEntityMatches || [])
       .slice(0, 4)
-      .map(follow => serializeFollowForNotifications(follow, language)),
+      .map(follow => serializeFollowForNotifications(follow)),
   };
 }
 
@@ -155,7 +153,9 @@ export async function getEmailNotificationHealth() {
 }
 
 export async function saveEmailNotificationPreferences(preferences, follows = [], previewItems = []) {
-  const language = preferences.language === 'en' ? 'en' : 'es';
+  // English only: a preference saved as 'es' before the interface went
+  // English-only must not keep the emails in Spanish.
+  const language = 'en';
   const payload = await authenticatedRequest('/notifications/preferences', {
     method: 'PUT',
     body: JSON.stringify({
@@ -163,8 +163,8 @@ export async function saveEmailNotificationPreferences(preferences, follows = []
       frequency: preferences.frequency === 'weekly' ? 'weekly' : 'daily',
       maxPapers: [3, 5, 10].includes(Number(preferences.maxPapers)) ? Number(preferences.maxPapers) : 5,
       language,
-      follows: follows.slice(0, 40).map(follow => serializeFollowForNotifications(follow, language)),
-      previewItems: previewItems.slice(0, 20).map(paper => serializeUpdateForNotifications(paper, language)),
+      follows: follows.slice(0, 40).map(follow => serializeFollowForNotifications(follow)),
+      previewItems: previewItems.slice(0, 20).map(paper => serializeUpdateForNotifications(paper)),
     }),
   });
   return payload.preferences;

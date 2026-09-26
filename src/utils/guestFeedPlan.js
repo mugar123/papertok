@@ -39,7 +39,7 @@ function warnMissingCategory(categoryId) {
 export function guestCategoryLabel(categoryId, onMissing = warnMissingCategory) {
   for (const area of Object.values(CATEGORIES)) {
     const category = area.subcategories?.[categoryId];
-    if (category) return category.labelEn || category.label || categoryId;
+    if (category) return category.label || category.label || categoryId;
   }
   onMissing(categoryId);
   return categoryId;

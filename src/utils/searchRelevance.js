@@ -301,8 +301,7 @@ export function buildSearchSectionValues({
     topics: clean(topics.flatMap(concept => [
       concept.display_name,
       concept.label,
-      concept.labelEs,
-      concept.labelEn,
+      concept.label,
     ])),
     authors: clean(authors.map(author => author.display_name)),
     institutions: clean(institutions.flatMap(institutionSearchValues)),

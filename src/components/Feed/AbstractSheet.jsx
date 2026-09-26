@@ -1,7 +1,6 @@
 import { useRef } from 'react';
 import { X } from '@phosphor-icons/react';
 import ScientificText from '../ScientificText';
-import { useLanguage } from '../../context/LanguageContext';
 import { usePopupOpenOnMount } from '../../hooks/usePopupOpenOnMount.js';
 import { areaLabelForPaper } from '../../utils/areaAccent.js';
 import { Drawer, DrawerBody, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.jsx';
@@ -20,7 +19,6 @@ import './AbstractSheet.css';
  * and the card unmounts it once the leave has played (`onOpenChangeComplete`).
  */
 export default function AbstractSheet({ paper, onClose }) {
-  const { isEnglish } = useLanguage();
   const { open, requestClose } = usePopupOpenOnMount();
   const closeRef = useRef(null);
   const authors = (paper?.authors || []).map((author) => author?.name || author).filter(Boolean);
@@ -35,14 +33,14 @@ export default function AbstractSheet({ paper, onClose }) {
         <DrawerHandle />
         <header className="abstract-sheet-head">
           <div className="abstract-sheet-heading">
-            <span className="abstract-sheet-kicker">{areaLabelForPaper(paper, { english: isEnglish })}</span>
+            <span className="abstract-sheet-kicker">{areaLabelForPaper(paper)}</span>
             <DrawerTitle render={<h3 />} className="abstract-sheet-title"><ScientificText>{paper?.title}</ScientificText></DrawerTitle>
             {authorsLine && <p className="abstract-sheet-authors">{authorsLine}</p>}
           </div>
           <DrawerClose
             ref={closeRef}
             className="abstract-sheet-close"
-            aria-label={isEnglish ? 'Close' : 'Cerrar'}
+            aria-label={'Close'}
           >
             <X size={18} />
           </DrawerClose>

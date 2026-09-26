@@ -52,7 +52,6 @@ test('Cancel exists on the phone and only there', () => {
   // A DialogClose rendered as the ui Button, inside the field's row.
   assert.match(palette, /<CommandInput[\s\S]*?<DialogClose\s+render=\{<Button variant="ghost" size="sm" className="sc-cancel" \/>\}/);
   assert.match(palette, /\{copy\.cancel\}/);
-  assert.match(palette, /cancel: 'Cancelar',/);
   assert.match(palette, /cancel: 'Cancel',/);
   // cmdk answers Enter by picking the highlighted row; the button must keep it.
   assert.match(palette, /if \(event\.key === 'Enter'\) event\.stopPropagation\(\);/);

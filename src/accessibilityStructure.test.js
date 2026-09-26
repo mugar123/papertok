@@ -183,8 +183,8 @@ test('the navbar exposes a name and marks the active route', async () => {
     + 'it apart from any other, which defeats the point of having a landmark.',
   );
 
-  const forYouAt = navbar.search(/'For you'\s*:\s*'Para ti'/);
-  assert.notEqual(forYouAt, -1, 'the "For you" / "Para ti" control is gone from Navbar.jsx.');
+  const forYouAt = navbar.search(/\{'For you'\}/);
+  assert.notEqual(forYouAt, -1, 'the "For you" control is gone from Navbar.jsx.');
   const openingTagAt = navbar.lastIndexOf('<NavLink', forYouAt);
   assert.notEqual(
     openingTagAt,
@@ -290,24 +290,24 @@ test('el landmark del feed está en TODAS las ramas, no sólo en la que tiene pa
   );
 });
 
-test('`/following` pasa su propio landmark, con su propio encabezado', async () => {
-  const siguiendo = await readSource(new URL('./components/Following/FollowingFeedPage.jsx', import.meta.url));
+test('`/following` passes its own landmark, with its own heading', async () => {
+  const following = await readSource(new URL('./components/Following/FollowingFeedPage.jsx', import.meta.url));
 
-  const prop = siguiendo.match(/landmark=\{\{\s*label: ([^\n]+),\s*heading: ([^\n]+),\s*\}\}/);
+  const prop = following.match(/landmark=\{\{\s*label: ([^\n]+),\s*heading: ([^\n]+),\s*\}\}/);
   assert.ok(
     prop,
-    'FollowingFeedPage dejó de pasar `landmark` a FeedContainer. `/following` es su '
-    + 'propia ruta desde el 17-09-2026 y nadie más se lo pone: App.jsx sólo se lo pasa '
-    + 'a `/feed`. Sin él la página no tiene ni región principal ni encabezado de nivel 1.',
+    'FollowingFeedPage stopped passing `landmark` to FeedContainer. `/following` has been '
+    + 'its own route since 2026-09-17 and nobody else sets it: App.jsx only passes it to '
+    + '`/feed`. Without it the page has neither a main region nor a level-1 heading.',
   );
-  for (const [pos, trozo] of [['label', prop[1]], ['heading', prop[2]]]) {
-    assert.match(trozo, /isEnglish \?/, `el ${pos} del landmark de /following no está en los dos idiomas`);
+  for (const [pos, chunk] of [['label', prop[1]], ['heading', prop[2]]]) {
+    assert.match(chunk, /^'[^']+'$/, `the landmark ${pos} of /following is not a non-empty string`);
   }
   assert.doesNotMatch(
     prop[2],
-    /For you|Para ti/,
-    'el encabezado de `/following` se ha vuelto el de «Para ti». Son dos páginas: la '
-    + 'lista de encabezados de un lector de pantalla las anunciaría igual.',
+    /For you/,
+    'the `/following` heading became the "For you" one. They are two pages: a screen '
+    + "reader's heading list would announce them the same.",
   );
 });
 
@@ -638,7 +638,7 @@ test('the guest feed names itself with a visually hidden h1 inside its own <main
     .replace(/\{\s*\}/g, '');
   assert.match(
     guest,
-    /<main className="guest-feed-page">\s*<h1 className="visually-hidden">\{isEnglish \? '[^']+' : '[^']+'\}<\/h1>\s*<header className="guest-feed-header"/,
+    /<main className="guest-feed-page">\s*<h1 className="visually-hidden">\{'[^']+'\}<\/h1>\s*<header className="guest-feed-header"/,
     'the guest route has no h1 above the paper titles, or it sits outside its <main>.',
   );
   assert.equal((guest.match(/<main\b/g) || []).length, 1, 'one main, no nesting');
@@ -661,7 +661,7 @@ test('/search is a <main> with an h1', async () => {
   const search = await readSource(new URL('./components/Search/SearchPage.jsx', import.meta.url));
   assert.match(
     search,
-    /<Tabs\s+render=\{<main \/>\}\s+className="search-page-container"[\s\S]{0,300}?>\s*<h1 className="visually-hidden">\{isEnglish \? '[^']+' : '[^']+'\}<\/h1>\s*<div className="search-header">/,
+    /<Tabs\s+render=\{<main \/>\}\s+className="search-page-container"[\s\S]{0,300}?>\s*<h1 className="visually-hidden">\{'[^']+'\}<\/h1>\s*<div className="search-header">/,
   );
 });
 

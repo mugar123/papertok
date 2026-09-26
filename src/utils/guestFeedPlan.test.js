@@ -60,7 +60,7 @@ test('the chosen areas are all represented, and each source is capped', () => {
   assert.deepEqual(plan.arxivCategories.slice(0, 4), ['physics', 'cs', 'math', 'econ'].map(firstOf));
   assert.equal((plan.discoveryQuery.match(/"/g) || []).length, 5 * 2);
   assert.ok(plan.discoveryQuery.includes('"Artificial Intelligence"'));
-  assert.ok(plan.discoveryQuery.includes(`"${CATEGORIES.econ.subcategories[firstOf('econ')].labelEn}"`));
+  assert.ok(plan.discoveryQuery.includes(`"${CATEGORIES.econ.subcategories[firstOf('econ')].label}"`));
 });
 
 test('PubMed is only asked for biology and medicine, and arXiv never for them', () => {

@@ -24,7 +24,6 @@ import {
   pinnableListsCache,
   rememberOwnProfile,
 } from '../../utils/profileSessionCaches.js';
-import { useLanguage } from '../../context/LanguageContext.jsx';
 import {
   HandleUnavailableError,
   PROFILE_VISIBILITY,
@@ -74,14 +73,6 @@ const HANDLE_ERROR_COPY = {
     [HANDLE_ERRORS.charset]: 'Use lowercase letters, numbers and underscores only.',
     [HANDLE_ERRORS.numericOnly]: 'A handle needs at least one letter.',
     [HANDLE_ERRORS.reserved]: 'That handle is reserved.',
-  },
-  es: {
-    [HANDLE_ERRORS.empty]: 'Elige un handle.',
-    [HANDLE_ERRORS.tooShort]: 'Un handle necesita al menos 3 caracteres.',
-    [HANDLE_ERRORS.tooLong]: 'Un handle puede tener como mucho 40 caracteres.',
-    [HANDLE_ERRORS.charset]: 'Usa solo minúsculas, números y guiones bajos.',
-    [HANDLE_ERRORS.numericOnly]: 'Un handle necesita al menos una letra.',
-    [HANDLE_ERRORS.reserved]: 'Ese handle está reservado.',
   },
 };
 
@@ -138,7 +129,6 @@ export default function ProfilePage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, profilePhoto } = useAuth();
-  const { isEnglish } = useLanguage();
 
   useEffect(() => {
     void loadProfileFonts();
@@ -195,7 +185,7 @@ export default function ProfilePage() {
   // legacy artifacts untouched for the next visit's retry.
   const [migration, setMigration] = useState('idle');
 
-  const copy = isEnglish ? {
+  const copy = {
     back: 'Back',
     backToProfile: 'Back to profile',
     eyebrowFromProfile: 'Profile · Settings',
@@ -277,88 +267,6 @@ export default function ProfilePage() {
     unpublishAction: 'Unpublish profile',
     unpublishConfirm: handle => `Unpublish your public profile? Your page will stop existing and @${handle} becomes available to anyone.`,
     unpublished: 'Profile unpublished.',
-  } : {
-    back: 'Volver',
-    backToProfile: 'Volver al perfil',
-    eyebrowFromProfile: 'Perfil · Ajustes',
-    title: 'Perfil público',
-    createIntro: 'Elige un handle y tu perfil pasa a ser visible en su propio enlace público.',
-    editIntro: 'Esta pantalla decide todo lo que muestra tu página pública.',
-    sectionIdentity: 'Identidad pública',
-    handle: 'Handle',
-    handleHint: 'Minúsculas, números y guiones bajos.',
-    displayName: 'Nombre visible',
-    bio: 'Biografía',
-    photoMirror: 'Tu foto de perfil es la de tu cuenta.',
-    photoMirrorAction: 'Cámbiala en Ajustes',
-    sectionPrivacy: 'Privacidad',
-    privacyIntro: 'Lo que puede ver cualquiera con tu enlace público.',
-    visibilityLabel: 'Perfil público',
-    visibilityHintPublic: 'Cualquiera con el enlace puede abrir tu perfil.',
-    visibilityHintPrivate: 'Solo tú puedes abrir tu perfil. Su página no existe para nadie más.',
-    visibilityFailed: 'No se pudo guardar la visibilidad. Inténtalo de nuevo.',
-    privateNotice: 'Tu perfil es privado: solo tú puedes abrirlo.',
-    publicNow: 'Público en tu página',
-    publicItems: ['Handle y nombre visible', 'Biografía', 'Foto de cuenta (solo si la activas abajo)', 'Listas publicadas que muestras en tu perfil'],
-    neverPublic: 'Nunca es público',
-    neverItems: ['Tu correo', 'Guardados y me gusta', 'Historial de lectura', 'Listas sin publicar', 'A quién y qué sigues'],
-    showPhoto: 'Mostrar mi foto de cuenta',
-    showPhotoHint: 'Apagado: tu página muestra tu inicial en lugar de la foto.',
-    allowContact: 'Permitir que otros usuarios me contacten',
-    allowContactHint: 'Tu correo no se muestra ni se comparte en ningún caso.',
-    create: 'Crear mi perfil',
-    save: 'Guardar cambios',
-    autosaveNote: 'Las listas y despublicar se guardan al momento, sin este botón.',
-    saving: 'Guardando...',
-    saved: 'Guardado',
-    pinned: 'Listas en mi perfil',
-    pinnedHint: 'Publicar una lista la muestra en tu perfil. Aquí eliges cuáles aparecen y cuáles quedan destacadas arriba.',
-    noLists: 'Todavía no has publicado ninguna lista.',
-    goToLists: 'Ir a Mis listas',
-    loadingLists: 'Buscando tus listas publicadas...',
-    pin: 'Fijar',
-    unpin: 'Desfijar',
-    toc: 'En esta página',
-    tocLabel: 'Secciones del editor del perfil público',
-    preview: 'Vista previa · tu página pública',
-    previewHint: 'Así ve tu página cualquiera con el enlace. Se actualiza con lo que guardes aquí.',
-    previewUrl: 'URL pública',
-    previewPublicBadge: 'Público',
-    previewPrivateBadge: 'Privado',
-    previewNoBio: 'Todavía sin biografía.',
-    previewLists: 'Listas',
-    previewNoLists: 'Todavía no muestras ninguna lista en tu perfil.',
-    previewPinned: 'fijada',
-    previewPrivate: 'Privado — solo tú puedes abrir esta página.',
-    section: (current, total) => `Sección ${current} / ${total}`,
-    onProfile: 'En mi perfil',
-    offProfile: 'Fuera de mi perfil',
-    showcaseFull: 'Tu perfil ya muestra el máximo de listas.',
-    migrating: 'Actualizando tus listas fijadas al modelo nuevo…',
-    migrationFailed: 'No se pudieron actualizar tus listas fijadas al modelo nuevo. No ha cambiado nada; se reintentará en tu próxima visita.',
-    hiddenPinsTitle: 'Tenías listas fijadas ocultas',
-    hiddenPinsBody: 'Las listas ya no se ocultan en bloque: cada lista publicada tiene ahora su propio interruptor "En mi perfil". ¿Quieres que esas listas se muestren en tu perfil?',
-    hiddenPinsShow: 'Mostrarlas',
-    hiddenPinsKeep: 'No mostrarlas',
-    viewPublic: 'Ver perfil público',
-    papers: count => `${count} ${count === 1 ? 'paper' : 'papers'}`,
-    handleTaken: 'Ese handle ya está ocupado.',
-    genericError: 'Algo ha ido mal. Inténtalo de nuevo.',
-    loading: 'Cargando tu perfil...',
-    loadError: 'No se ha podido cargar tu perfil.',
-    loadSlow: 'Tu perfil está tardando más de lo normal.',
-    loadOffline: 'Parece que no hay conexión.',
-    loadSlowHint: 'Seguimos intentándolo — no se ha cambiado nada.',
-    loadErrorHint: 'Revisa tu conexión y vuelve a intentarlo — no se ha cambiado nada.',
-    retry: 'Reintentar',
-    nameRequired: 'El nombre visible es obligatorio.',
-    pinLimit: `Puedes fijar como mucho ${USER_PROFILE_LIMITS.pinnedShareIds} listas.`,
-    sectionDanger: 'Despublicar',
-    unpublishTitle: 'Despublicar mi perfil',
-    unpublishBody: handle => `Borra tu página pública y libera @${handle}. Las listas publicadas siguen publicadas, pero dejan de llevar tu nombre. Puedes volver a crear el perfil cuando quieras.`,
-    unpublishAction: 'Despublicar perfil',
-    unpublishConfirm: handle => `¿Despublicar tu perfil público? Tu página dejará de existir y @${handle} quedará libre para cualquiera.`,
-    unpublished: 'Perfil despublicado.',
   };
 
   useEffect(() => {
@@ -469,12 +377,12 @@ export default function ProfilePage() {
   // pages that manage their own metadata are not affected.
   useEffect(() => {
     const previous = document.title;
-    const ours = isEnglish ? 'Public profile | PaperTok' : 'Perfil público | PaperTok';
+    const ours = 'Public profile | PaperTok';
     document.title = ours;
     // Only restore if nothing claimed the title since (the outgoing route
     // stays mounted ~200ms into the next one under AnimatePresence).
     return () => { if (document.title === ours) document.title = previous; };
-  }, [isEnglish]);
+  }, []);
 
   /**
    * A write landed: say so, and bump the tick the preview highlights on.
@@ -488,7 +396,7 @@ export default function ProfilePage() {
 
   const handleCheck = useMemo(() => inspectHandle(handleDraft), [handleDraft]);
   const handleError = handleDraft && !handleCheck.valid
-    ? HANDLE_ERROR_COPY[isEnglish ? 'en' : 'es'][handleCheck.code]
+    ? HANDLE_ERROR_COPY.en[handleCheck.code]
     : '';
   // A profile still being created has only the two sections it can fill; the
   // pinned lists and the unpublish block arrive with the profile itself.
@@ -528,7 +436,7 @@ export default function ProfilePage() {
   }, [pinnableLists, profile?.pinnedShareIds]);
   const publicPath = profile ? getPublicProfilePath(profile.handle) : null;
   const isPublicProfile = profileIsPublic(profile);
-  const caveats = visibilityCopy(isEnglish);
+  const caveats = visibilityCopy();
   // Asked here as well as on the profile page: both screens have already read
   // the profile, so the question costs nothing extra on either.
   const askVisibility = status === 'ready' && needsVisibilityChoice(profile) && !promptDismissed;
@@ -879,7 +787,7 @@ export default function ProfilePage() {
             the form; the preview spans both rows and rises to meet it. */}
         <div className="profile-layout">
           <SettingsSubheader
-            eyebrow={fromProfile ? copy.eyebrowFromProfile : SETTINGS_BREADCRUMB[isEnglish ? 'en' : 'es']}
+            eyebrow={fromProfile ? copy.eyebrowFromProfile : SETTINGS_BREADCRUMB.en}
             title={copy.title}
             subtitle={status === 'new' ? copy.createIntro : copy.editIntro}
             backLabel={returnsToProfile ? copy.backToProfile : copy.back}
@@ -1050,7 +958,7 @@ export default function ProfilePage() {
                   <VisibilityChoice
                     value={visibilityDraft}
                     onChange={setVisibilityDraft}
-                    isEnglish={isEnglish}
+                   
                     idPrefix="profile-create"
                   />
                 )}
@@ -1349,7 +1257,7 @@ export default function ProfilePage() {
       <AnimatePresence>
         {askVisibility && (
           <VisibilityPrompt
-            isEnglish={isEnglish}
+           
             onResolved={visibility => setProfile(current => ({ ...current, visibility }))}
             onDismiss={() => setPromptDismissed(true)}
           />

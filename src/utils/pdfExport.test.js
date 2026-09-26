@@ -30,14 +30,13 @@ const SECTIONS = [
   },
 ];
 
-const KIND_LABELS = { abstract: 'De qué va', method: 'Método', other: 'Sección' };
+const KIND_LABELS = { abstract: 'What it is about', method: 'Method', other: 'Section' };
 
 function build(overrides = {}) {
   return buildPdfModel({
     paper: PAPER,
     sections: SECTIONS,
     annotations: [],
-    language: 'es',
     level: 'university',
     kindLabels: KIND_LABELS,
     originalUrl: 'https://arxiv.org/abs/2401.00001',
@@ -54,9 +53,9 @@ function build(overrides = {}) {
 
 test('el modelo lleva los metadatos montados, no las piezas sueltas', () => {
   const model = build({ generatedAt: new Date(Date.UTC(2026, 8, 4)) });
-  assert.equal(model.meta.masthead, 'PaperTok · Versión en lenguaje sencillo');
-  assert.equal(model.meta.level, 'Nivel universitario');
-  assert.match(model.meta.source, /4 de septiembre de 2026/);
+  assert.equal(model.meta.masthead, 'PaperTok · Plain-language version');
+  assert.equal(model.meta.level, 'University level');
+  assert.match(model.meta.source, /4 September 2026/);
   assert.equal(model.meta.colophon.rows.length > 0, true);
 });
 
@@ -74,7 +73,7 @@ test('una sección sin encabezado original lo deja vacío, no undefined', () => 
 
 test('el modelo del PDF y el del .tex cuentan lo mismo', () => {
   // Los dos formatos son el mismo documento: si divergen, uno miente.
-  const args = { paper: PAPER, sections: SECTIONS, annotations: [], language: 'es',
+  const args = { paper: PAPER, sections: SECTIONS, annotations: [],
     level: 'university', kindLabels: KIND_LABELS, originalUrl: 'https://arxiv.org/abs/2401.00001',
     generatedAt: new Date(Date.UTC(2026, 8, 4)) };
   const model = buildPdfModel(args);
@@ -89,30 +88,23 @@ test('el modelo del PDF y el del .tex cuentan lo mismo', () => {
 test('the model carries the frame the .tex carries: title, level, notice, provenance, source', () => {
   const model = build();
   assert.equal(model.meta.title, PAPER.title);
-  assert.equal(model.meta.level, 'Nivel universitario');
-  assert.match(model.meta.notice, /no es obra del autor/);
-  assert.match(model.meta.provenance, /Reescrito por PaperTok/);
-  assert.match(model.meta.source, /arxiv\.org\/abs\/2401\.00001/);
-  assert.deepEqual(model.labels, { mine: 'Tuya', ai: 'IA' });
-});
-
-test('in English every string follows', () => {
-  const model = build({ language: 'en' });
   assert.equal(model.meta.level, 'University level');
+  assert.match(model.meta.notice, /not the work of the article’s author/);
   assert.match(model.meta.provenance, /Rewritten by PaperTok/);
+  assert.match(model.meta.source, /arxiv\.org\/abs\/2401\.00001/);
   assert.deepEqual(model.labels, { mine: 'Yours', ai: 'AI' });
 });
 
 test('the file name is the .tex name with the other extension', () => {
-  assert.equal(build().fileName, 'correladores-el-100-del-ruido-medido-en-simple.pdf');
+  assert.equal(build().fileName, 'correladores-el-100-del-ruido-medido-plain-words.pdf');
 });
 
-test('a section without heading falls back to its kind label, then to "Sección"', () => {
+test('a section without heading falls back to its kind label, then to "Section"', () => {
   const model = build();
   assert.equal(model.sections[0].label, 'De qué va');
-  assert.equal(model.sections[1].label, 'Método');
+  assert.equal(model.sections[1].label, 'Method');
   const bare = build({ sections: [{ id: 's9', paragraphs: ['Texto.'] }], kindLabels: {} });
-  assert.equal(bare.sections[0].label, 'Sección');
+  assert.equal(bare.sections[0].label, 'Section');
 });
 
 // ---------------------------------------------------------------------------
@@ -184,7 +176,7 @@ test('an annotation from a level or language this rewrite is not is left out', (
   const model = build({
     annotations: [
       { id: 'other', sectionId: 's1', paragraphIndex: 0, kind: 'user', quote: 'x', note: 'de otro nivel', level: 'beginner' },
-      { id: 'en', sectionId: 's1', paragraphIndex: 0, kind: 'user', quote: 'x', note: 'in english', language: 'en' },
+      { id: 'es', sectionId: 's1', paragraphIndex: 0, kind: 'user', quote: 'x', note: 'en español', language: 'es' },
     ],
   });
   assert.equal(model.sections[0].paragraphs[0].annotations.length, 0);

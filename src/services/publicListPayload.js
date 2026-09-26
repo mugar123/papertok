@@ -188,7 +188,7 @@ export function sanitizePublicList(input) {
   return {
     title,
     ...(description ? { description } : {}),
-    language: input?.language === 'en' ? 'en' : 'es',
+    language: 'en',
     paperCount: papers.length,
     papers,
   };

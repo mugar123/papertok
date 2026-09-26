@@ -21,9 +21,9 @@ import './VisibilityChoice.css';
  * Space picks, and each card styles itself off `data-checked`. The staggered
  * rise on arrival is framer's, on the card element the radio renders.
  */
-export default function VisibilityChoice({ value, onChange, isEnglish, idPrefix = 'visibility' }) {
+export default function VisibilityChoice({ value, onChange, idPrefix = 'visibility' }) {
   const prefersReducedMotion = useReducedMotion();
-  const copy = visibilityCopy(isEnglish);
+  const copy = visibilityCopy();
 
   const options = [
     {

@@ -3,7 +3,6 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { ruleTransform } from '../../utils/navRule.js';
 import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
-import { useLanguage } from '../../context/LanguageContext';
 import { MagnifyingGlass, Newspaper, Stack, UserCheck } from '@phosphor-icons/react';
 import NavPreferencesMenu from './NavPreferencesMenu';
 import { shouldOpenSearchOnSlash } from './searchShortcut.js';
@@ -79,7 +78,6 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
     setArriving(false);
   };
   const { setFeedMode } = useFeed();
-  const { isEnglish } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '');
@@ -175,13 +173,13 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
     handledRef.current = 0;
     event.preventDefault();
   };
-  const rule = useActiveTabRule(linksRef, activeTab, `${activeTab}:${isEnglish}`);
+  const rule = useActiveTabRule(linksRef, activeTab, activeTab);
 
   return (
     <nav
       className={arriving ? 'navbar navbar--arriving' : 'navbar'}
       onAnimationEnd={handleArrived}
-      aria-label={isEnglish ? 'Main navigation' : 'Navegación principal'}
+      aria-label={'Main navigation'}
     >
       <div className="navbar-inner">
         {/* Sin `aria-label`. El botón ya se llama a sí mismo: el nombre sale de
@@ -214,7 +212,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
           aria-expanded={searchOpen}
         >
           <MagnifyingGlass size={15} aria-hidden="true" />
-          <span>{isEnglish ? 'Search papers, authors, topics...' : 'Buscar papers, autores, temas...'}</span>
+          <span>{'Search papers, authors, topics...'}</span>
           <kbd aria-hidden="true">/</kbd>
         </button>
 
@@ -252,7 +250,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
             onPointerCancel={releasePress}
           >
             <Stack size={15} aria-hidden="true" />
-            {isEnglish ? 'For you' : 'Para ti'}
+            {'For you'}
           </NavLink>
 
           <NavLink
@@ -278,7 +276,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
             onPointerCancel={releasePress}
           >
             <UserCheck size={15} aria-hidden="true" />
-            {isEnglish ? 'Following' : 'Siguiendo'}
+            {'Following'}
           </NavLink>
         </div>
 
@@ -287,8 +285,8 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
             className={`navbar-icon-btn navbar-icon-btn--search-compact ${searchOpen ? 'is-open' : ''}`}
             aria-expanded={searchOpen}
             onClick={onOpenSearch}
-            title={isEnglish ? 'Search' : 'Buscar'}
-            aria-label={isEnglish ? 'Search' : 'Buscar'}
+            title={'Search'}
+            aria-label={'Search'}
           >
             <MagnifyingGlass size={17} />
           </button>
@@ -309,8 +307,8 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
                   leave it stalled. */}
               <button
                 className={`navbar-avatar-btn ${pathname === '/profile' ? 'active' : ''}`}
-                aria-label={isEnglish ? 'My profile' : 'Mi perfil'}
-                title={isEnglish ? 'My profile' : 'Mi perfil'}
+                aria-label={'My profile'}
+                title={'My profile'}
                 onClick={() => navigate('/profile')}
               >
                 {profilePhoto || user.photoURL ? (

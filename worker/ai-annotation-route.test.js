@@ -19,9 +19,10 @@ const ORIGIN = 'https://mugar123.github.io';
 
 const PASSAGE = {
   paper: { title: 'Correlators of Worldline Proper Length' },
-  quote: 'esa cantidad deja de ser un número',
-  context: 'Los autores calculan cuánto tiempo propio transcurre, y encuentran que esa cantidad deja de ser un número en cuanto la gravedad cuántica entra en juego.',
+  quote: 'that quantity stops being a number',
+  context: 'The authors compute how much proper time elapses, and find that that quantity stops being a number as soon as quantum gravity comes into play.',
   level: 'university',
+  // A legacy client may still send Spanish; the product is English-only now.
   language: 'es',
 };
 
@@ -121,15 +122,17 @@ test('the router actually serves POST /ai/annotate', async () => {
   const payload = await response.json();
   assert.equal(payload.note, 'Antes medías un tiempo y salía un valor. Ahora sale un abanico de valores.');
   assert.equal(payload.remainingUses, 6);
-  assert.equal(payload.language, 'es');
+  // A legacy `language: 'es'` is accepted and ignored: the answer is English.
+  assert.equal(payload.language, 'en');
   assert.equal(response.headers.get('access-control-allow-origin'), ORIGIN);
   assert.equal(response.headers.get('cache-control'), 'private, no-store');
 
   // And it asked the model about the passage, with the paragraph as context.
   assert.equal(calls.length, 1);
   const prompt = calls[0].body.contents[0].parts[0].text;
-  assert.match(prompt, /esa cantidad deja de ser un número/);
-  assert.match(prompt, /solo como contexto/);
+  assert.match(prompt, /that quantity stops being a number/);
+  assert.match(prompt, /context only/);
+  assert.match(prompt, /Explain WHAT THAT PASSAGE MEANS/);
 });
 
 test('it costs one of the day\'s uses, reserved before the model is asked', async () => {

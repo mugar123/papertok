@@ -48,9 +48,9 @@ export function canExplainPaper(paper) {
   return hasUsableAbstract(paper) || Boolean(getOpenPdfUrl(paper));
 }
 
-export function formatAIModelLabel(model, provider = '', language = 'es') {
+export function formatAIModelLabel(model, provider = '') {
   const value = cleanText(model, 100);
-  if (!value) return language === 'en' ? 'AI model' : 'Modelo de IA';
+  if (!value) return 'AI model';
 
   if (provider === 'modal-kimi' || /(?:^|\/)kimi[-\s]?k?3$/i.test(value)) {
     return 'Kimi K3 · Modal';
@@ -123,11 +123,11 @@ export function toServiceError(error) {
   return new AIExplanationServiceError('AI_UNAVAILABLE');
 }
 
-export async function explainPaper(paper, level = 'university', { force = false, language = 'es' } = {}) {
+export async function explainPaper(paper, level = 'university', { force = false } = {}) {
   if (!AI_EXPLANATION_LEVELS.some(item => item.id === level)) {
     throw new AIExplanationServiceError('AI_INVALID_LEVEL');
   }
-  const explanationLanguage = language === 'en' ? 'en' : 'es';
+  const explanationLanguage = 'en';
   const cacheKey = `${paperCacheId(paper)}:${level}:${explanationLanguage}`;
   if (!force && explanationCache.has(cacheKey)) return explanationCache.get(cacheKey);
 

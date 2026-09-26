@@ -167,10 +167,10 @@ export function paperMatchesCategory(paper, categoryKey) {
 
   const labelsToMatch = new Set([
     normalizeCategoryText(area.label),
-    normalizeCategoryText(area.labelEn),
+    normalizeCategoryText(area.label),
     ...Object.values(area.subcategories).flatMap(sub => [
       normalizeCategoryText(sub.label),
-      normalizeCategoryText(sub.labelEn),
+      normalizeCategoryText(sub.label),
     ]),
   ]);
   const paperCats = rawPaperCategories.map(normalizeCategoryText).filter(Boolean);

@@ -65,7 +65,7 @@ function AuthCta({ user, onAuthRequired, label }) {
 export default function PublicListPage({ shareId: shareIdProp, onAuthRequired }) {
   const params = useParams();
   const shareId = shareIdProp || params.shareId;
-  const { isEnglish, locale } = useLanguage();
+  const { locale } = useLanguage();
   const { user, onboardingComplete, profileLoadError } = useAuth();
   const { trackEvent } = useAnalyticsConsent();
   const [publicList, setPublicList] = useState(null);
@@ -174,28 +174,24 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
   const metadata = useMemo(() => {
     const fallbackDescription = {
       en: 'Explore a public scientific reading list curated on PaperTok.',
-      es: 'Explora una lista pública de lectura científica creada en PaperTok.',
     };
     return {
       route: getPublicListPath(shareId),
       title: publicList ? {
         en: `${publicList.title} | PaperTok public list`,
-        es: `${publicList.title} | Lista pública de PaperTok`,
       } : {
         en: 'Public reading list | PaperTok',
-        es: 'Lista pública de lectura | PaperTok',
       },
       description: publicList?.description || fallbackDescription,
       imageAlt: {
         en: 'A public scientific reading list on PaperTok',
-        es: 'Una lista pública de lectura científica en PaperTok',
       },
       noIndex: status !== 'ready',
     };
   }, [publicList, shareId, status]);
   usePublicPageMetadata(metadata);
 
-  const copy = isEnglish ? {
+  const copy = {
     brand: 'PaperTok',
     publicList: 'Public reading list',
     loading: 'Opening public list...',
@@ -221,32 +217,6 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
     share: 'Share',
     shareCopied: 'Link copied',
     shareError: 'Could not copy the link',
-  } : {
-    brand: 'PaperTok',
-    publicList: 'Lista pública de lectura',
-    loading: 'Abriendo lista pública...',
-    notFoundTitle: 'Esta lista no está disponible',
-    notFoundBody: 'Puede que se haya dejado de compartir o que el enlace esté incompleto.',
-    errorTitle: 'No se pudo cargar la lista',
-    errorBody: 'Comprueba tu conexión e inténtalo de nuevo.',
-    slowTitle: 'Seguimos abriendo la lista',
-    slowBody: 'Está tardando más de lo normal. Seguimos intentándolo.',
-    stalledTitle: 'Seguimos abriendo la lista',
-    stalledBody: 'Está tardando muchísimo. Seguimos intentándolo por detrás.',
-    offlineTitle: 'Seguimos abriendo la lista',
-    offlineBody: 'Parece que no hay conexión. Se abrirá sola en cuanto vuelva.',
-    unsupportedTitle: 'Las listas públicas no están disponibles en el modo demo',
-    unsupportedBody: 'Abre este enlace en la aplicación completa de PaperTok.',
-    retry: 'Reintentar',
-    papers: count => `${count} ${count === 1 ? 'paper' : 'papers'}`,
-    updated: date => `Actualizada el ${date}`,
-    citations: count => `${count.toLocaleString(locale)} citas`,
-    open: title => `Abrir ${title}`,
-    empty: 'Esta lista pública aún no contiene papers.',
-    authCta: user ? 'Abrir mis listas' : 'Inicia sesión para crear una lista',
-    share: 'Compartir',
-    shareCopied: 'Enlace copiado',
-    shareError: 'No se pudo copiar el enlace',
   };
 
   const pageClass = `public-list-page${hasAppChrome ? ' public-list-page--app' : ''}`;
@@ -346,7 +316,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
                   <div className="public-list-paper-tags">
                     {/* The stored category is the raw arXiv slug (gr-qc); every
                         other screen shows the human label, so this one does too. */}
-                    {paper.category && <span>{getCategoryLabel(paper.category, isEnglish ? 'en' : 'es')}</span>}
+                    {paper.category && <span>{getCategoryLabel(paper.category)}</span>}
                     {paper.year && <span>{paper.year}</span>}
                   </div>
                   <h2>

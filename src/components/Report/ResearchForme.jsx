@@ -48,7 +48,7 @@ function Plate({ figure, aspect, isLoaded, onLoaded }) {
   );
 }
 
-function FormeCell({ cell, figure, isLoaded, onLoaded, onSelect, enterOrder, isEnglish }) {
+function FormeCell({ cell, figure, isLoaded, onLoaded, onSelect, enterOrder }) {
   const { paper, kind, span, isRowStart, isRowEnd, plate, aspect, titleSize, dekLines, twoColumnDek, rule, strip } = cell;
   /* Field and ink from the one shared resolution — arXiv category first, then
      the field OpenAlex itself declares, and only then the topic's name. Reading
@@ -57,8 +57,8 @@ function FormeCell({ cell, figure, isLoaded, onLoaded, onSelect, enterOrder, isE
      "Mathematics, Computing, and Information Studies" is filed by OpenAlex
      under computer science, and no amount of reading its title says so. */
   const accent = areaAccentForPaper(paper);
-  const category = areaLabelForPaper(paper, { english: isEnglish })
-    || (isEnglish ? 'Research' : 'Investigación');
+  const category = areaLabelForPaper(paper)
+    || ('Research');
 
   const className = [
     'sr-cell',
@@ -95,7 +95,7 @@ function FormeCell({ cell, figure, isLoaded, onLoaded, onSelect, enterOrder, isE
     >
       {hasUsableAIAbstract(paper.abstract)
         ? <ScientificText>{paper.abstract}</ScientificText>
-        : (isEnglish ? 'Abstract unavailable.' : 'Resumen no disponible.')}
+        : ('Abstract unavailable.')}
     </p>
   );
 
@@ -103,7 +103,7 @@ function FormeCell({ cell, figure, isLoaded, onLoaded, onSelect, enterOrder, isE
     <div className="sr-cell-foot">
       {paper.openAccess && <span className="sr-micro oa"><LockOpen size={11} /> Open Access</span>}
       {paper.citationCount > 0 && (
-        <span className="sr-micro">{paper.citationCount} {isEnglish ? 'citations' : 'citas'}</span>
+        <span className="sr-micro">{paper.citationCount} {'citations'}</span>
       )}
       {paper.journal && <span className="sr-micro venue" lang="en">{paper.journal}</span>}
     </div>
@@ -181,7 +181,7 @@ function SkeletonCell({ cell, enterOrder }) {
   );
 }
 
-export default function ResearchForme({ papers, editionKey, loading, onSelect, enterFrom = 0, isEnglish }) {
+export default function ResearchForme({ papers, editionKey, loading, onSelect, enterFrom = 0 }) {
   const list = useMemo(() => (papers || []).filter(Boolean), [papers]);
   const { figures, settled } = useEditionFigures(list);
   const [loadedPlates, setLoadedPlates] = useState(() => new Set());
@@ -217,7 +217,7 @@ export default function ResearchForme({ papers, editionKey, loading, onSelect, e
             onLoaded={markLoaded}
             onSelect={onSelect}
             enterOrder={enterOrder}
-            isEnglish={isEnglish}
+           
           />
         );
       })}

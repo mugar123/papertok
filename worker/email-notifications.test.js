@@ -168,9 +168,11 @@ test('sanitizes notification preferences and followed entities', () => {
     enabled: true,
     frequency: 'weekly',
     maxPapers: 10,
-    language: 'es',
+    language: 'en',
   });
   assert.equal(sanitizePreferences({ language: 'en' }).language, 'en');
+  // A legacy Spanish preference from an old client is stored as English.
+  assert.equal(sanitizePreferences({ language: 'es' }).language, 'en');
   assert.deepEqual(sanitizeFollow({
     type: 'institution',
     canonicalId: 'https://ror.org/02f40zc51',
@@ -532,7 +534,7 @@ test('scheduled digest fetches native arXiv follows before OpenAlex indexes them
     assert.equal(result.failed, 0);
     assert.equal(result.empty, 0);
     assert.equal(arxivQuery, 'cat:astro-ph.GA');
-    assert.equal(brevoPayload.subject, '1 novedad científica para ti');
+    assert.equal(brevoPayload.subject, '1 scientific update for you');
     assert.equal(
       brevoPayload.htmlContent.includes('The evolution of galaxy dust scaling relations'),
       true,
@@ -651,7 +653,7 @@ test('scheduled digest fetches and emails papers from every followed entity type
       brevoPayload.headers.idempotencyKey,
       /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
-    assert.equal(brevoPayload.subject, '4 novedades científicas para ti');
+    assert.equal(brevoPayload.subject, '4 scientific updates for you');
     assert.equal(
       brevoPayload.htmlContent.includes('https://api.papertok.app/notifications/unsubscribe?token=unsubscribe-token'),
       true,
@@ -736,7 +738,7 @@ test('unsubscribe GET confirms without mutating and POST removes the subscriptio
     'notification:subscription:reader': subscription,
     [`notification:unsubscribe:${token}`]: 'reader',
   });
-  const url = `https://example.com/notifications/unsubscribe?token=${token}&lang=en`;
+  const url = `https://example.com/notifications/unsubscribe?token=${token}`;
 
   const confirmation = await handleEmailUnsubscribe(new Request(url), { NOTIFICATION_STORE: kv });
   assert.equal(confirmation.status, 200);
@@ -767,7 +769,7 @@ test('a stale unsubscribe token cannot delete a newer subscription generation', 
   });
 
   const response = await handleEmailUnsubscribe(new Request(
-    `https://example.com/notifications/unsubscribe?token=${staleToken}&lang=en`,
+    `https://example.com/notifications/unsubscribe?token=${staleToken}`,
     { method: 'POST' },
   ), { NOTIFICATION_STORE: kv });
 
@@ -1759,7 +1761,7 @@ test('renders common LaTeX in email-safe HTML without exposing delimiters', () =
   assert.equal(digest.text.includes('$2560^3$'), false);
 });
 
-test('renders every digest label in the subscription language', () => {
+test('renders every digest label in English', () => {
   const digest = renderDigest({
     frequency: 'weekly',
     language: 'en',
@@ -1769,7 +1771,7 @@ test('renders every digest label in the subscription language', () => {
     authors: [],
     citationCount: 2,
     matches: [{ displayName: 'Quantum Physics' }],
-  }], 'https://example.com/unsubscribe?lang=en', false);
+  }], 'https://example.com/unsubscribe', false);
 
   assert.equal(digest.subject, '1 scientific update for you');
   assert.equal(digest.html.includes('PAPERTOK · FOLLOWING UPDATES'), true);
@@ -1780,6 +1782,65 @@ test('renders every digest label in the subscription language', () => {
   assert.equal(digest.html.includes('Unsubscribe'), true);
   assert.equal(digest.html.includes('Porque sigues'), false);
   assert.equal(digest.text.includes('This is your weekly selection.'), true);
+});
+
+test('a subscription stored with legacy Spanish still gets an English digest', () => {
+  const digest = renderDigest({
+    frequency: 'daily',
+    language: 'es',
+    displayName: 'Nicolas',
+  }, [{
+    title: 'A new result',
+    authors: [],
+    citationCount: 1,
+    matches: [{ displayName: 'Quantum Physics' }],
+  }], 'https://example.com/unsubscribe', false);
+
+  assert.equal(digest.subject, '1 scientific update for you');
+  assert.match(digest.html, /^<!doctype html><html lang="en">/);
+  assert.equal(digest.html.includes('Because you follow Quantum Physics'), true);
+  assert.equal(digest.html.includes('1 citation'), true);
+  assert.equal(digest.text.includes('This is your daily selection.'), true);
+  for (const spanish of ['Porque sigues', 'novedad', 'Darme de baja', 'selección']) {
+    assert.equal(digest.html.includes(spanish), false, spanish);
+    assert.equal(digest.text.includes(spanish), false, spanish);
+  }
+});
+
+test('the unsubscribe page is English even for legacy Spanish links and browsers', async () => {
+  const token = 'legacy-spanish-unsubscribe-token';
+  const kv = createMemoryKv({
+    'notification:subscription:reader': {
+      uid: 'reader',
+      email: 'reader@example.com',
+      enabled: true,
+      language: 'es',
+      unsubscribeToken: token,
+    },
+    [`notification:unsubscribe:${token}`]: 'reader',
+  });
+  // Links in emails sent before the change carried `&lang=es`.
+  const url = `https://example.com/notifications/unsubscribe?token=${token}&lang=es`;
+  const headers = { 'accept-language': 'es-ES,es;q=0.9' };
+
+  const confirmation = await handleEmailUnsubscribe(new Request(url, { headers }), { NOTIFICATION_STORE: kv });
+  assert.equal(confirmation.status, 200);
+  const page = await confirmation.text();
+  assert.match(page, /<html lang="en">/);
+  assert.match(page, /Confirm unsubscribe/);
+  assert.match(page, /Disable emails/);
+  assert.doesNotMatch(page, /Confirmar baja|lang=es/);
+
+  const invalid = await handleEmailUnsubscribe(
+    new Request('https://example.com/notifications/unsubscribe?token=bad&lang=es', { headers }),
+    { NOTIFICATION_STORE: kv },
+  );
+  assert.equal(invalid.status, 400);
+  assert.equal(await invalid.text(), 'Invalid unsubscribe link');
+
+  const unavailable = await handleEmailUnsubscribe(new Request(url, { headers }), {});
+  assert.equal(unavailable.status, 503);
+  assert.equal(await unavailable.text(), 'Service unavailable');
 });
 
 test('localizes the test-email subject and empty state', () => {
@@ -1837,6 +1898,8 @@ test('accepts a verified address or a federated provider that owns it', async ()
     emailVerified: true,
   });
   assert.equal(verified.preferences.email, 'reader@example.com');
+  // With no stored subscription the reported language is English, never the old Spanish default.
+  assert.equal(verified.preferences.language, 'en');
 
   // Firebase does not always mark federated sign-ins as verified, so the
   // provider that vouched for the address counts as proof of possession.
@@ -1916,7 +1979,7 @@ test('sends the Brevo digest with one-click unsubscribe headers', async () => {
     assert.equal(summary.sent, 1);
     // Gmail and Yahoo score sender reputation on RFC 8058 one-click, which the
     // Resend branch already sent and the production Brevo branch did not.
-    const unsubscribeUrl = 'https://api.papertok.app/notifications/unsubscribe?token=unsubscribe-token&lang=es';
+    const unsubscribeUrl = 'https://api.papertok.app/notifications/unsubscribe?token=unsubscribe-token';
     assert.equal(payload.headers['List-Unsubscribe'], `<${unsubscribeUrl}>`);
     assert.equal(payload.headers['List-Unsubscribe-Post'], 'List-Unsubscribe=One-Click');
     assert.equal(typeof payload.headers.idempotencyKey, 'string');

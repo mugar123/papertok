@@ -20,10 +20,10 @@ import { SETTINGS_BREADCRUMB } from './settingsBreadcrumb.js';
 import './FollowingSettingsPage.css';
 
 const FOLLOW_TABS = [
-  { type: 'author', label: { es: 'Autores', en: 'Authors' }, singular: { es: 'autor', en: 'author' }, Icon: User },
-  { type: 'topic', label: { es: 'Temas', en: 'Topics' }, singular: { es: 'tema', en: 'topic' }, Icon: Tag },
-  { type: 'institution', label: { es: 'Instituciones', en: 'Institutions' }, singular: { es: 'institución', en: 'institution' }, Icon: Buildings },
-  { type: 'project', label: { es: 'Proyectos', en: 'Projects' }, singular: { es: 'proyecto', en: 'project' }, Icon: Briefcase },
+  { type: 'author', label: { en: 'Authors' }, singular: { en: 'author' }, Icon: User },
+  { type: 'topic', label: { en: 'Topics' }, singular: { en: 'topic' }, Icon: Tag },
+  { type: 'institution', label: { en: 'Institutions' }, singular: { en: 'institution' }, Icon: Buildings },
+  { type: 'project', label: { en: 'Projects' }, singular: { en: 'project' }, Icon: Briefcase },
 ];
 
 const SOURCE_LABELS = {
@@ -33,9 +33,9 @@ const SOURCE_LABELS = {
   legacy: 'Perfil anterior',
 };
 
-function getFollowDisplayName(entity, language) {
+function getFollowDisplayName(entity) {
   return entity.type === 'institution'
-    ? getLocalizedInstitutionName(entity, language)
+    ? getLocalizedInstitutionName(entity)
     : entity.displayName;
 }
 
@@ -48,7 +48,7 @@ export default function FollowingSettingsPage() {
     if (location.key !== 'default') navigate(-1);
     else navigate('/settings');
   };
-  const { language, isEnglish, locale } = useLanguage();
+  const { language, locale } = useLanguage();
   const {
     followedEntities,
     followedByType,
@@ -66,10 +66,10 @@ export default function FollowingSettingsPage() {
   const visibleEntities = useMemo(
     () => [...(followedByType[activeType] || [])]
       .sort((left, right) => (
-        getFollowDisplayName(left, language)
-          .localeCompare(getFollowDisplayName(right, language), locale)
+        getFollowDisplayName(left)
+          .localeCompare(getFollowDisplayName(right), locale)
       )),
-    [activeType, followedByType, language, locale],
+    [activeType, followedByType, locale],
   );
 
   const handleUnfollow = async (entity) => {
@@ -77,10 +77,8 @@ export default function FollowingSettingsPage() {
     try {
       await toggleFollow(entity);
     } catch {
-      const displayName = getFollowDisplayName(entity, language);
-      setActionError(isEnglish
-        ? `Could not unfollow ${displayName}.`
-        : `No se pudo dejar de seguir a ${displayName}.`);
+      const displayName = getFollowDisplayName(entity);
+      setActionError(`Could not unfollow ${displayName}.`);
     }
   };
 
@@ -88,18 +86,16 @@ export default function FollowingSettingsPage() {
     <main className="following-settings-page">
       <div className="following-settings-shell">
         <SettingsSubheader
-          eyebrow={SETTINGS_BREADCRUMB[isEnglish ? 'en' : 'es']}
-          title={isEnglish ? 'What you follow' : 'Lo que sigues'}
+          eyebrow={SETTINGS_BREADCRUMB.en}
+          title={'What you follow'}
           subtitle={loading && followedEntities.length === 0
-            ? (isEnglish ? 'Loading what you follow...' : 'Cargando tus seguimientos...')
-            : isEnglish
-              ? `${followedEntities.length} ${followedEntities.length === 1 ? 'follow influences' : 'follows influence'} your recommendations.`
-              : `${followedEntities.length} ${followedEntities.length === 1 ? 'seguimiento influye' : 'seguimientos influyen'} en tus recomendaciones.`}
-          backLabel={isEnglish ? 'Back' : 'Volver'}
+            ? ('Loading what you follow...')
+            : `${followedEntities.length} ${followedEntities.length === 1 ? 'follow influences' : 'follows influence'} your recommendations.`}
+          backLabel={'Back'}
           onBack={goBack}
         />
 
-        <nav className="following-settings-tabs" aria-label={isEnglish ? 'Types of followed content' : 'Tipos de contenido seguido'}>
+        <nav className="following-settings-tabs" aria-label={'Types of followed content'}>
           {FOLLOW_TABS.map(({ type, label, Icon }) => {
             const count = followedByType[type]?.length || 0;
             const active = activeType === type;
@@ -127,7 +123,7 @@ export default function FollowingSettingsPage() {
           <div className="following-settings-loading" role="status">
             <CircleNotch size={24} />
             <span>
-              {isEnglish ? 'Loading' : 'Cargando'} {activeTab.label[language].toLowerCase()}...
+              {'Loading'} {activeTab.label[language].toLowerCase()}...
             </span>
           </div>
         ) : visibleEntities.length > 0 ? (
@@ -143,7 +139,7 @@ export default function FollowingSettingsPage() {
               {visibleEntities.map((entity) => {
                 const Icon = activeTab.Icon;
                 const pending = isFollowPending(entity);
-                const displayName = getFollowDisplayName(entity, language);
+                const displayName = getFollowDisplayName(entity);
                 return (
                   <motion.article
                     layout
@@ -173,8 +169,8 @@ export default function FollowingSettingsPage() {
                       className="following-settings-unfollow"
                       disabled={pending}
                       onClick={() => handleUnfollow(entity)}
-                      aria-label={`${isEnglish ? 'Unfollow' : 'Dejar de seguir'} ${displayName}`}
-                      title={`${isEnglish ? 'Unfollow' : 'Dejar de seguir'} ${displayName}`}
+                      aria-label={`${'Unfollow'} ${displayName}`}
+                      title={`${'Unfollow'} ${displayName}`}
                     >
                       {pending ? <CircleNotch size={18} /> : <UserMinus size={18} />}
                     </button>
@@ -192,15 +188,11 @@ export default function FollowingSettingsPage() {
           >
             <Compass size={28} />
             <h2>
-              {isEnglish
-                ? `You are not following any ${activeTab.singular.en}s`
-                : `No sigues ningún ${activeTab.singular.es}`}
+              {`You are not following any ${activeTab.singular.en}s`}
             </h2>
-            <p>{isEnglish
-              ? 'Anything you follow will appear here and help personalize your feeds.'
-              : 'Los que sigas aparecerán aquí y ayudarán a personalizar tus feeds.'}</p>
+            <p>{'Anything you follow will appear here and help personalize your feeds.'}</p>
             <button type="button" onClick={() => navigate('/search')}>
-              {isEnglish ? 'Explore PaperTok' : 'Explorar PaperTok'}
+              {'Explore PaperTok'}
             </button>
           </motion.section>
         )}

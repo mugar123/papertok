@@ -9,41 +9,6 @@
  */
 
 const COPY = {
-  es: {
-    babel: 'spanish,es-nodecimaldot,es-noquoting',
-    abstract: 'Reescritura en lenguaje sencillo del artículo original, generada automáticamente y anotada por el lector. El texto de abajo no es obra del autor del artículo: parafrasea sus resultados y no los sustituye.',
-    provenance: 'Reescrito por PaperTok. No es obra de sus autores',
-    mine: 'Tuya',
-    ai: 'IA',
-    levels: { beginner: 'principiante', university: 'universitario', researcher: 'investigador' },
-    fontHint: 'Descomenta las dos líneas siguientes si tienes Newsreader instalada.',
-    kindNote: ['El marcador de una nota es el mismo venga de quien venga; lo que las', 'distingue es la etiqueta con la que empieza la nota.'],
-    generated: 'Generado por PaperTok. Compila con pdflatex o xelatex.',
-    masthead: 'PaperTok · Versión en lenguaje sencillo',
-    levelStamp: level => `Nivel ${level}`,
-    noticeLabel: 'Aviso',
-    sourcePrefix: 'Artículo original',
-    colophonHeading: 'Procedencia',
-    colophonKeys: {
-      title: 'Artículo original',
-      authors: 'Autoría',
-      source: 'Fuente',
-      version: 'Esta versión',
-      annotated: 'Anotado con',
-    },
-    versionValue: (level, date) => `Lenguaje sencillo, nivel ${level} · ${date}`,
-    // Ni «0 subrayados» ni «0 notas»: la mitad que vale cero no se imprime. Un
-    // documento solo marcado y otro solo anotado son los dos casos normales.
-    annotatedWith: ({ marks, mine, ai }) => {
-      const notes = mine + ai;
-      if (marks + notes === 0) return 'Sin subrayados ni notas';
-      const left = marks ? `${marks} ${marks === 1 ? 'subrayado' : 'subrayados'}` : '';
-      const right = notes
-        ? `${notes} ${notes === 1 ? 'nota' : 'notas'}: ${mine} del lector, ${ai} de la IA`
-        : '';
-      return [left, right].filter(Boolean).join(' y ');
-    },
-  },
   en: {
     babel: 'english',
     abstract: 'A plain-language rewrite of the original article, generated automatically and annotated by its reader. The text below is not the work of the article’s author: it paraphrases the results and does not replace them.',
@@ -83,7 +48,7 @@ const COPY = {
  * A filename the operating system will accept, derived from the title so the
  * download is recognisable in a folder six months later.
  */
-export function exportFileName(paper, language = 'es', extension = 'tex') {
+export function exportFileName(paper, extension = 'tex') {
   const stem = String(paper?.title || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -92,7 +57,7 @@ export function exportFileName(paper, language = 'es', extension = 'tex') {
     .replace(/^-+|-+$/g, '')
     .slice(0, 60)
     .replace(/-+$/g, '');
-  const suffix = language === 'en' ? 'plain-words' : 'en-simple';
+  const suffix = 'plain-words';
   return `${stem || 'paper'}-${suffix}.${extension}`;
 }
 
@@ -100,8 +65,8 @@ export function exportFileName(paper, language = 'es', extension = 'tex') {
  * The document's words, shared with the PDF export so the two formats can
  * never drift apart: one provenance line, one pair of note labels.
  */
-export function documentCopy(language = 'es') {
-  return COPY[language === 'en' ? 'en' : 'es'];
+export function documentCopy() {
+  return COPY['en'];
 }
 
 /**
@@ -111,14 +76,14 @@ export function documentCopy(language = 'es') {
  * hace. Una fecha inválida devuelve cadena vacía en vez de «Invalid Date»
  * impreso en la portada: la línea se queda sin fecha, que es mucho menos malo.
  */
-export function formatExportDate(value, language = 'es') {
+export function formatExportDate(value) {
   // `new Date(null)` is not an invalid date, it is the Unix epoch: `null`
   // coerces to `0` before the constructor ever sees it. Ruled out by hand so
   // a missing date does not print as 1 de enero de 1970.
   if (value == null) return '';
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return new Intl.DateTimeFormat(language === 'en' ? 'en-GB' : 'es-ES', {
+  return new Intl.DateTimeFormat('en-GB', {
     day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',
   }).format(date);
 }
@@ -233,12 +198,12 @@ export function sectionMarkText(label, limit = 30) {
  * porque medio arXiv no trae DOI y una fila «Fuente: —» no informa de nada.
  */
 export function documentMeta({
-  paper, language = 'es', level = 'university', originalUrl = '',
+  paper, level = 'university', originalUrl = '',
   generatedAt = new Date(), counts = { marks: 0, mine: 0, ai: 0 },
 } = {}) {
-  const copy = documentCopy(language);
+  const copy = documentCopy();
   const levelName = copy.levels[level] || level;
-  const date = formatExportDate(generatedAt, language);
+  const date = formatExportDate(generatedAt);
   const title = String(paper?.title || '');
   const byline = bylineText(paper);
   const url = String(originalUrl || '');
@@ -323,10 +288,10 @@ export function numberAnnotations(sections, annotations) {
  * because wanting one is not wanting the other.
  */
 export function exportableAnnotations(annotations = [], {
-  sections = [], level, language, include = {},
+  sections = [], level, include = {},
 } = {}) {
   const known = new Set(sections.map(section => String(section?.id)));
-  const wanted = language === 'en' ? 'en' : 'es';
+  const wanted = 'en';
   const wantMarks = include.marks !== false;
   const wantMine = include.mine !== false;
   const wantAi = include.ai !== false;

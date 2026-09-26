@@ -11,6 +11,7 @@ import {
   explanationCacheKey,
   getDailyQuotaReset,
   getProviderRetry,
+  normalizeExplanationLanguage,
   normalizePaperForExplanation,
   parseExplanationText,
   shouldRefundAIQuota,
@@ -26,23 +27,32 @@ test('supports the three explanation depths', () => {
 test('builds a source-aware prompt without silently claiming full-text access', () => {
   const paper = normalizePaperForExplanation({ title: 'A test', abstract: 'Known facts.' });
   const prompt = buildPaperExplanationPrompt(paper, 'university', 'abstract');
-  assert.match(prompt, /Solo dispones del abstract/);
+  assert.match(prompt, /You only have the abstract and metadata/);
   assert.match(prompt, /Known facts/);
   assert.match(prompt, /LaTeX/);
   assert.match(prompt, /\$\.\.\.\$/);
-  assert.match(prompt, /nunca escribas ω_b/);
+  assert.match(prompt, /never write ω_b/);
   assert.match(prompt, /keyPoints/);
+
+  const fullText = buildPaperExplanationPrompt(paper, 'university', 'full_text');
+  assert.match(fullText, /The complete PDF is attached/);
+  assert.doesNotMatch(fullText, /You only have the abstract/);
 });
 
-test('builds English-only explanations when the interface language is English', () => {
+test('builds English-only explanations, even for a legacy Spanish request', () => {
   const paper = normalizePaperForExplanation({ title: 'A test', abstract: 'Known facts.' });
   const prompt = buildPaperExplanationPrompt(paper, 'university', 'abstract', 'en');
   assert.match(prompt, /faithfully explain a scientific paper in English/);
   assert.match(prompt, /Every explanatory field.*written in English/);
   assert.match(prompt, /You only have the abstract and metadata/);
   assert.match(prompt, /Known facts/);
-  assert.doesNotMatch(prompt, /explicar fielmente un paper científico en español/);
   assert.match(prompt, /below 1000 words/);
+
+  // Old clients or cached requests may still send `language: 'es'`.
+  assert.equal(normalizeExplanationLanguage('es'), 'en');
+  assert.equal(normalizeExplanationLanguage(undefined), 'en');
+  assert.equal(buildPaperExplanationPrompt(paper, 'university', 'abstract', 'es'), prompt);
+  assert.doesNotMatch(prompt, /explicar fielmente|español/);
 });
 
 test('repairs raw LaTeX backslashes without corrupting valid JSON escapes', () => {
@@ -105,13 +115,14 @@ test('gives the daily use back only when the provider did no work', () => {
   assert.equal(shouldRefundAIQuota(quotaError('user')), false);
 });
 
-test('keeps English and Spanish explanations in separate worker caches', async () => {
+test('worker cache keys keep their language segment, which is always English', async () => {
   const paper = normalizePaperForExplanation({ title: 'A test', abstract: 'Known facts.' });
-  const spanishKey = await explanationCacheKey(paper, 'university', 'es', 'gemini', 'test-model');
+  // The handler normalizes before building the key, so a legacy 'es' request
+  // shares the English entry instead of opening a Spanish one.
+  const legacyKey = await explanationCacheKey(paper, 'university', normalizeExplanationLanguage('es'), 'gemini', 'test-model');
   const englishKey = await explanationCacheKey(paper, 'university', 'en', 'gemini', 'test-model');
 
-  assert.notEqual(spanishKey.url, englishKey.url);
-  assert.match(spanishKey.url, /\/es\/university\//);
+  assert.equal(legacyKey.url, englishKey.url);
   assert.match(englishKey.url, /\/en\/university\//);
 });
 

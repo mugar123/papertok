@@ -26,19 +26,19 @@ function followedPaper(id, followId, overrides = {}) {
 test('names the followed entity behind a paper', () => {
   assert.equal(
     buildFollowReasonLabel([{ type: 'author', displayName: 'Haim Goldberg' }]),
-    'Porque sigues a Haim Goldberg',
+    'Because you follow Haim Goldberg',
   );
   assert.equal(
-    buildFollowReasonLabel([{ type: 'topic', displayName: 'Cosmología' }]),
-    'Porque sigues Cosmología',
+    buildFollowReasonLabel([{ type: 'topic', displayName: 'Cosmology' }]),
+    'Because you follow Cosmology',
   );
   assert.equal(
     buildFollowReasonLabel([{ type: 'institution', displayName: 'Leiden University' }]),
-    'Porque sigues Leiden University',
+    'Because you follow Leiden University',
   );
   assert.equal(
     buildFollowReasonLabel([{ type: 'project', displayName: 'NuBSM' }]),
-    'Porque sigues el proyecto NuBSM',
+    'Because you follow the project NuBSM',
   );
 });
 
@@ -50,12 +50,8 @@ test('localizes followed taxonomy topics without changing stored follow data', (
   };
 
   assert.equal(
-    buildFollowReasonLabel([galacticAstrophysics], 'en'),
+    buildFollowReasonLabel([galacticAstrophysics]),
     'Because you follow Astrophysics of Galaxies',
-  );
-  assert.equal(
-    buildFollowReasonLabel([galacticAstrophysics], 'es'),
-    'Porque sigues Astrofísica Galáctica',
   );
   assert.equal(galacticAstrophysics.displayName, 'Astrofísica Galáctica');
 });
@@ -74,12 +70,8 @@ test('localizes followed institutions without changing their official identity',
   };
 
   assert.equal(
-    buildFollowReasonLabel([university], 'en'),
+    buildFollowReasonLabel([university]),
     'Because you follow University of Salamanca',
-  );
-  assert.equal(
-    buildFollowReasonLabel([university], 'es'),
-    'Porque sigues Universidad de Salamanca',
   );
   assert.equal(university.displayName, 'Universidad de Salamanca');
 });
@@ -88,9 +80,9 @@ test('joins two reasons and collapses three or more', () => {
   assert.equal(
     buildFollowReasonLabel([
       { type: 'author', displayName: 'Ada Lovelace' },
-      { type: 'topic', displayName: 'Computación' },
+      { type: 'topic', displayName: 'Computing' },
     ]),
-    'Porque sigues a Ada Lovelace y Computación',
+    'Because you follow Ada Lovelace and Computing',
   );
   assert.equal(
     buildFollowReasonLabel([
@@ -98,7 +90,7 @@ test('joins two reasons and collapses three or more', () => {
       { type: 'topic', displayName: 'B' },
       { type: 'project', displayName: 'C' },
     ]),
-    'Coincide con varios de tus seguimientos',
+    'Matches several things you follow',
   );
   assert.equal(buildFollowReasonLabel([]), '');
   assert.equal(buildFollowReasonLabel([{ type: 'author' }]), '');

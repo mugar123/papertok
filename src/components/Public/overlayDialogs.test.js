@@ -41,7 +41,7 @@ test('the sign-in prompt tells App to unmount it once, after the leave has playe
 test('the sign-in prompt keeps its close control, its name, and its initial focus', async () => {
   const jsx = await authJsx;
   assert.match(jsx, /initialFocus=\{closeButtonRef\}/);
-  assert.match(jsx, /<DialogClose\s[\s\S]*?ref=\{closeButtonRef\}[\s\S]*?aria-label=\{isEnglish \? 'Close' : 'Cerrar'\}/);
+  assert.match(jsx, /<DialogClose\s[\s\S]*?ref=\{closeButtonRef\}[\s\S]*?aria-label=(?:"Close"|\{'Close'\})/);
   assert.match(jsx, /<DialogTitle className="auth-modal-title">/);
   assert.match(jsx, /<DialogDescription className="auth-modal-lede">/);
   // The analytics contract of the door is unchanged.
@@ -78,7 +78,7 @@ test('the interests prompt is a modal Dialog and settles into one parent callbac
   assert.match(settle[0], /if \(answer\) onSubmit\?\.\(answer\);\s*else onDismiss\?\.\(\);/);
   assert.equal((jsx.match(/onDismiss\?\.\(\)/g) ?? []).length, 1);
   assert.equal((jsx.match(/onSubmit\?\.\(/g) ?? []).length, 1);
-  // The close control is named in both languages. Initial focus lands on
+  // The close control has an accessible name. Initial focus lands on
   // the title, not the first area — see the dedicated SOURCE test below.
   assert.match(jsx, /closeLabel=\{copy\.close\}/);
   // The chips are the shared Toggle: a native button on which Base UI

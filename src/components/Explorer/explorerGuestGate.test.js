@@ -70,8 +70,8 @@ test('el buscador del invitado es un botón que dice que necesita cuenta y abre 
   assert.doesNotMatch(jsx, /readOnly=\{publicMode\}/, 'volvió el campo de solo lectura para el invitado');
   assert.match(
     jsx,
-    /const guestSearchLabel = isEnglish\s*\? `Search \$\{guestSearchScope\.en\} · needs an account`\s*: `Buscar en \$\{guestSearchScope\.es\} · necesita cuenta`;/,
-    'el rótulo del botón dejó de estar en los dos idiomas',
+    /const guestSearchLabel = `Search \$\{guestSearchScope\.en\} · needs an account`;/,
+    'the button label no longer says it needs an account',
   );
   const filters = jsx.slice(jsx.indexOf('Open filters') - 700, jsx.indexOf('Open filters'));
   assert.match(
@@ -88,14 +88,13 @@ test('la puerta del Explorer pasa su motivo al diálogo', async () => {
   assert.match(block, /\(reason\) => \{\s*trackEvent\([^)]*\);\s*onAuthRequired\(reason\);/);
 });
 
-test('la puerta dice lo mismo en los dos idiomas y para las dos listas', async () => {
+test('the gate has English copy for both lists', async () => {
   const jsx = await gateJsx;
   for (const key of ['papers', 'authors']) {
     assert.match(jsx, new RegExp(`${key}:`), `falta la copia de ${key}`);
   }
-  for (const lang of ['es:', 'en:']) {
-    assert.ok(jsx.includes(lang), `falta el idioma ${lang}`);
-  }
+  assert.ok(jsx.includes('en:'), 'the English copy is missing');
+  assert.ok(!/^\s*es:/m.test(jsx), 'a Spanish copy block is back');
   assert.match(jsx, /total/, 'la puerta no usa el número de publicaciones de la entidad');
 });
 

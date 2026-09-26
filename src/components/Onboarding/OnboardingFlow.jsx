@@ -32,10 +32,10 @@ const TOTAL_SUBCATEGORIES = Object.values(AREA_SIZES).reduce((n, size) => n + si
 
 /** The four tramos of the rail, in both languages. */
 const STEPS = [
-  { n: '01', label: 'Áreas', labelEn: 'Areas' },
-  { n: '02', label: 'Categorías', labelEn: 'Categories' },
-  { n: '03', label: 'Tu feed', labelEn: 'Your feed' },
-  { n: '04', label: 'Perfil', labelEn: 'Profile' },
+  { n: '01', label: 'Areas' },
+  { n: '02', label: 'Categories' },
+  { n: '03', label: 'Your feed' },
+  { n: '04', label: 'Profile' },
 ];
 
 const HANDLE_ERROR_COPY = {
@@ -47,14 +47,6 @@ const HANDLE_ERROR_COPY = {
     [HANDLE_ERRORS.numericOnly]: 'A handle needs at least one letter.',
     [HANDLE_ERRORS.reserved]: 'That handle is reserved.',
   },
-  es: {
-    [HANDLE_ERRORS.empty]: 'Elige un handle.',
-    [HANDLE_ERRORS.tooShort]: 'Un handle necesita al menos 3 caracteres.',
-    [HANDLE_ERRORS.tooLong]: 'Un handle puede tener como mucho 40 caracteres.',
-    [HANDLE_ERRORS.charset]: 'Usa solo minúsculas, números y guiones bajos.',
-    [HANDLE_ERRORS.numericOnly]: 'Un handle necesita al menos una letra.',
-    [HANDLE_ERRORS.reserved]: 'Ese handle está reservado.',
-  },
 };
 
 /**
@@ -63,30 +55,30 @@ const HANDLE_ERROR_COPY = {
  * intereses vinieron de la respuesta de invitado): un solo componente para
  * que ambos enseñen exactamente lo que `completeOnboarding` va a escribir.
  */
-function InterestsReceipt({ rows, total, available, isEnglish }) {
+function InterestsReceipt({ rows, total, available }) {
   return (
     <div className="onboarding-receipt">
       <div className="onboarding-receipt-head">
-        <span>{isEnglish ? 'Area' : 'Área'}</span>
-        <span>{isEnglish ? 'Categories' : 'Categorías'}</span>
+        <span>{'Area'}</span>
+        <span>{'Categories'}</span>
       </div>
       {rows.map(({ key, area, count, total: areaTotal, sample, rest }) => (
         <div key={key} className="onboarding-receipt-row" style={{ '--area-accent': area.gradient }}>
           <span className="onboarding-receipt-icon"><area.icon size={19} /></span>
           <div className="onboarding-receipt-main">
-            <div className="onboarding-receipt-name">{isEnglish ? area.labelEn : area.label}</div>
+            <div className="onboarding-receipt-name">{area.label}</div>
             <div className="onboarding-receipt-sample">
               {sample.join(' · ')}
-              {rest > 0 && ` · +${rest} ${isEnglish ? 'more' : 'más'}`}
+              {rest > 0 && ` · +${rest} ${'more'}`}
             </div>
           </div>
           <div className="onboarding-receipt-count">
-            {count}<small>{isEnglish ? `of ${areaTotal}` : `de ${areaTotal}`}</small>
+            {count}<small>{`of ${areaTotal}`}</small>
           </div>
         </div>
       ))}
       <div className="onboarding-receipt-total">
-        <span>{isEnglish ? 'Total' : 'Total'}</span>
+        <span>{'Total'}</span>
         <span className="onboarding-receipt-total-n">
           {total}<i> / {available}</i>
         </span>
@@ -131,7 +123,7 @@ export default function OnboardingFlow() {
   // account's, and a second create hits its own reservation as "taken".
   const profileCreated = useRef(false);
   const { completeOnboarding, onboardingComplete, user } = useAuth();
-  const { isEnglish, language } = useLanguage();
+  const { language } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
   const { trackEvent, markActivation } = useAnalyticsConsent();
@@ -146,7 +138,7 @@ export default function OnboardingFlow() {
   const handleCheck = useMemo(() => inspectHandle(handleDraft), [handleDraft]);
   const handleError = handleCheck.valid
     ? null
-    : HANDLE_ERROR_COPY[isEnglish ? 'en' : 'es'][handleCheck.code];
+    : HANDLE_ERROR_COPY.en[handleCheck.code];
   const googleDisplayName = user?.displayName
     ? String(user.displayName).slice(0, USER_PROFILE_LIMITS.displayName)
     : '';
@@ -269,22 +261,16 @@ export default function OnboardingFlow() {
       navigate(returnTo, { replace: true });
     } catch (err) {
       if (err instanceof HandleUnavailableError) {
-        setProfileError(isEnglish
-          ? 'That handle is already taken. Try another.'
-          : 'Ese handle ya está cogido. Prueba otro.');
+        setProfileError('That handle is already taken. Try another.');
       } else if (err?.code === 'ONBOARDING_WRITE_TIMEOUT') {
         // completeOnboarding's write is a merge-set of the same fields, and
         // profileCreated (above) already stops a second profile claim, so
         // the reader's own retry is the whole recovery — nothing to do here
         // but tell them why the button stopped spinning.
-        setProfileError(isEnglish
-          ? 'Still saving. Check your connection and try again.'
-          : 'Sigue guardando. Comprueba tu conexión e inténtalo de nuevo.');
+        setProfileError('Still saving. Check your connection and try again.');
       } else {
         console.error('Error saving preferences:', err);
-        setProfileError(isEnglish
-          ? 'Could not save. Try again.'
-          : 'No se pudo guardar. Inténtalo de nuevo.');
+        setProfileError('Could not save. Try again.');
       }
       setSaving(false);
     }
@@ -325,35 +311,31 @@ export default function OnboardingFlow() {
       if (chosen.length === 0) return null;
       const sample = chosen.slice(0, 3).map((id) => {
         const cat = area.subcategories[id];
-        return isEnglish ? (cat.labelEn || cat.label) : cat.label;
+        return cat.label || cat.label;
       });
       return { key, area, count: chosen.length, total: ids.length, sample, rest: chosen.length - sample.length };
     }).filter(Boolean)
-  ), [selectedAreas, selectedSubcategories, isEnglish]);
+  ), [selectedAreas, selectedSubcategories]);
 
   const plural = (n, one, many) => (n === 1 ? one : many);
 
   const tally = step === 1
     ? (selectedAreas.size > 0
-      ? `${selectedAreas.size} ${plural(selectedAreas.size, isEnglish ? 'area' : 'área', isEnglish ? 'areas' : 'áreas')} · ${availableSubcategories} ${plural(availableSubcategories, isEnglish ? 'category' : 'categoría', isEnglish ? 'categories' : 'categorías')}`
-      : (isEnglish ? 'No areas selected' : 'Ninguna área marcada'))
+      ? `${selectedAreas.size} ${plural(selectedAreas.size, 'area', 'areas')} · ${availableSubcategories} ${plural(availableSubcategories, 'category', 'categories')}`
+      : ('No areas selected'))
     : (selectedSubcategories.size > 0
-      ? `${selectedSubcategories.size} ${plural(selectedSubcategories.size, isEnglish ? 'category' : 'categoría', isEnglish ? 'categories' : 'categorías')} · ${areasWithPicks} ${isEnglish ? 'of' : 'de'} ${selectedAreas.size}`
-      : (isEnglish ? 'No categories selected' : 'Ninguna categoría marcada'));
+      ? `${selectedSubcategories.size} ${plural(selectedSubcategories.size, 'category', 'categories')} · ${areasWithPicks} ${'of'} ${selectedAreas.size}`
+      : ('No categories selected'));
 
   const hint = step === 1
     ? (selectedAreas.size > 0
-      ? (isEnglish
-        ? 'Next you pick which of those categories make it into your feed.'
-        : 'En el paso siguiente eliges cuáles de esas categorías entran en tu feed.')
-      : (isEnglish ? 'Select at least one area to continue.' : 'Marca al menos un área para continuar.'))
+      ? ('Next you pick which of those categories make it into your feed.')
+      : ('Select at least one area to continue.'))
     : overCap
-      ? (isEnglish
-        ? `At most ${USER_PREFERENCES_MAX} categories: drop ${selectedSubcategories.size - USER_PREFERENCES_MAX}.`
-        : `Como mucho ${USER_PREFERENCES_MAX} categorías: quita ${selectedSubcategories.size - USER_PREFERENCES_MAX}.`)
+      ? (`At most ${USER_PREFERENCES_MAX} categories: drop ${selectedSubcategories.size - USER_PREFERENCES_MAX}.`)
       : (selectedSubcategories.size > 0
-        ? (isEnglish ? 'That is enough to build your feed.' : 'Con esto ya podemos armar tu feed.')
-        : (isEnglish ? 'Select at least one category to continue.' : 'Marca al menos una categoría para continuar.'));
+        ? ('That is enough to build your feed.')
+        : ('Select at least one category to continue.'));
 
   return (
     <div className="onboarding">
@@ -367,12 +349,12 @@ export default function OnboardingFlow() {
           <span className="onboarding-wordmark">Paper<span>Tok</span></span>
         </span>
         <span className="onboarding-stepcount">
-          {isEnglish ? 'Step' : 'Paso'} <b>{visibleSteps[step - 1].n}</b> / {String(visibleSteps.length).padStart(2, '0')}
+          {'Step'} <b>{visibleSteps[step - 1].n}</b> / {String(visibleSteps.length).padStart(2, '0')}
         </span>
       </header>
 
       <div className="onboarding-body">
-        <nav className="onboarding-rail" aria-label={isEnglish ? 'Progress' : 'Progreso'}>
+        <nav className="onboarding-rail" aria-label={'Progress'}>
           {visibleSteps.map((s, i) => (
             <div
               key={s.n}
@@ -380,7 +362,7 @@ export default function OnboardingFlow() {
               aria-current={i + 1 === step ? 'step' : undefined}
             >
               <span className="onboarding-rail-n">{s.n}</span>
-              <span className="onboarding-rail-t">{isEnglish ? s.labelEn : s.label}</span>
+              <span className="onboarding-rail-t">{s.label}</span>
             </div>
           ))}
         </nav>
@@ -390,21 +372,19 @@ export default function OnboardingFlow() {
           <div className="onboarding-step" key="step1">
             <div className="onboarding-head">
               <div className="onboarding-head-copy">
-                <span className="onboarding-eyebrow">{isEnglish ? 'Let’s begin' : 'Empecemos'}</span>
+                <span className="onboarding-eyebrow">{'Let’s begin'}</span>
                 <h1 className="onboarding-title">
-                  {isEnglish ? 'Choose your areas of interest' : 'Elige tus áreas de interés'}
+                  {'Choose your areas of interest'}
                 </h1>
                 <p className="onboarding-lede">
-                  {isEnglish
-                    ? 'This is what your feed is built from. Mark the ones you care about — next you narrow down the specific categories, and you can change it any time from Settings.'
-                    : 'Con esto armamos tu feed. Marca las que te interesen — en el paso siguiente afinas las categorías concretas, y puedes cambiarlo cuando quieras desde Ajustes.'}
+                  {'This is what your feed is built from. Mark the ones you care about — next you narrow down the specific categories, and you can change it any time from Settings.'}
                 </p>
               </div>
               <div className="onboarding-meter">
                 <span className="onboarding-meter-n">
                   {selectedAreas.size}<i>/{AREA_ENTRIES.length}</i>
                 </span>
-                <span className="onboarding-meter-l">{isEnglish ? 'Areas selected' : 'Áreas marcadas'}</span>
+                <span className="onboarding-meter-l">{'Areas selected'}</span>
               </div>
             </div>
 
@@ -425,15 +405,15 @@ export default function OnboardingFlow() {
                     <span className="area-card-top">
                       <span className="area-card-icon"><area.icon size={20} /></span>
                       <span className="area-card-count">
-                        {AREA_SIZES[key]} {isEnglish ? 'cat.' : 'cat.'}
+                        {AREA_SIZES[key]} {'cat.'}
                       </span>
                       <span className="area-card-box"><Check size={11} weight="bold" /></span>
                     </span>
                     <span className="area-card-name">
-                      <span>{isEnglish ? area.labelEn : area.label}</span>
+                      <span>{area.label}</span>
                     </span>
                     <span className="area-card-desc">
-                      {isEnglish ? area.descriptionEn : area.description}
+                      {area.description}
                     </span>
                   </Toggle>
                 );
@@ -448,24 +428,22 @@ export default function OnboardingFlow() {
             <div className="onboarding-head">
               <div className="onboarding-head-copy">
                 <span className="onboarding-eyebrow">
-                  {selectedAreas.size} {plural(selectedAreas.size, isEnglish ? 'area' : 'área', isEnglish ? 'areas' : 'áreas')}
+                  {selectedAreas.size} {plural(selectedAreas.size, 'area', 'areas')}
                   {' · '}
-                  {availableSubcategories} {isEnglish ? 'categories available' : 'categorías disponibles'}
+                  {availableSubcategories} {'categories available'}
                 </span>
                 <h1 className="onboarding-title">
-                  {isEnglish ? 'Refine your interests' : 'Afina tus intereses'}
+                  {'Refine your interests'}
                 </h1>
                 <p className="onboarding-lede">
-                  {isEnglish
-                    ? 'Only the categories you mark here reach your feed. The fewer you pick, the tighter it gets — and you can always add more later.'
-                    : 'Solo entrarán en tu feed las categorías que marques aquí. Cuantas menos elijas, más ajustado será — y siempre puedes ampliar después.'}
+                  {'Only the categories you mark here reach your feed. The fewer you pick, the tighter it gets — and you can always add more later.'}
                 </p>
               </div>
               <div className="onboarding-meter">
                 <span className="onboarding-meter-n">
                   {selectedSubcategories.size}<i>/{availableSubcategories}</i>
                 </span>
-                <span className="onboarding-meter-l">{isEnglish ? 'Categories selected' : 'Categorías marcadas'}</span>
+                <span className="onboarding-meter-l">{'Categories selected'}</span>
               </div>
             </div>
 
@@ -479,7 +457,7 @@ export default function OnboardingFlow() {
                   <section key={areaKey} className="subcat-section" style={{ '--area-accent': area.gradient }}>
                     <div className="subcat-section-header">
                       <span className="subcat-section-icon"><area.icon size={18} /></span>
-                      <h2 className="subcat-section-title">{isEnglish ? area.labelEn : area.label}</h2>
+                      <h2 className="subcat-section-title">{area.label}</h2>
                       <span className="subcat-section-count">{chosen} / {subcatIds.length}</span>
                       <button
                         type="button"
@@ -487,8 +465,8 @@ export default function OnboardingFlow() {
                         onClick={() => selectAllInArea(areaKey)}
                       >
                         {allSelected
-                          ? (isEnglish ? 'Deselect all' : 'Quitar todo')
-                          : (isEnglish ? 'Select all' : 'Seleccionar todo')}
+                          ? ('Deselect all')
+                          : ('Select all')}
                       </button>
                     </div>
                     <div className="subcat-chips">
@@ -503,7 +481,7 @@ export default function OnboardingFlow() {
                             onPressedChange={() => toggleSubcategory(catId)}
                           >
                             <span className="subcat-chip-dot" />
-                            {isEnglish ? cat.labelEn || cat.label : cat.label}
+                            {cat.label || cat.label}
                           </Toggle>
                         );
                       })}
@@ -521,20 +499,16 @@ export default function OnboardingFlow() {
             <div className="onboarding-confirm-copy">
               <span className="onboarding-eyebrow">
                 {guestSeed && !seedAdjusted
-                  ? (isEnglish ? 'What you picked as a guest' : 'Lo que elegiste como invitado')
-                  : (isEnglish ? 'Done' : 'Hecho')}
+                  ? ('What you picked as a guest')
+                  : ('Done')}
               </span>
               <h1 className="onboarding-title onboarding-title--big">
-                {isEnglish ? <>Your feed is <span>ready</span></> : <>Tu feed está <span>listo</span></>}
+                {<>Your feed is <span>ready</span></>}
               </h1>
               <p className="onboarding-lede">
                 {guestSeed && !seedAdjusted
-                  ? (isEnglish
-                    ? `We kept the ${selectedAreas.size} ${selectedAreas.size === 1 ? 'area' : 'areas'} you picked before signing in — every one of its ${selectedSubcategories.size} categories. Narrow it down now, or any time from Settings.`
-                    : `Guardamos ${selectedAreas.size === 1 ? 'el área que marcaste' : `las ${selectedAreas.size} áreas que marcaste`} antes de entrar, con sus ${selectedSubcategories.size} categorías. Afínalo ahora, o cuando quieras desde Ajustes.`)
-                  : (isEnglish
-                    ? `You will see papers from the ${selectedSubcategories.size} categories you picked, ordered by what works for you. You can adjust the selection any time from Settings.`
-                    : `Vas a ver papers de las ${selectedSubcategories.size} categorías que marcaste, ordenados por lo que vaya funcionando contigo. Puedes ajustar la selección cuando quieras desde Ajustes.`)}
+                  ? (`We kept the ${selectedAreas.size} ${selectedAreas.size === 1 ? 'area' : 'areas'} you picked before signing in — every one of its ${selectedSubcategories.size} categories. Narrow it down now, or any time from Settings.`)
+                  : (`You will see papers from the ${selectedSubcategories.size} categories you picked, ordered by what works for you. You can adjust the selection any time from Settings.`)}
               </p>
               <div className="onboarding-actions">
                 {existingProfile ? (
@@ -548,7 +522,7 @@ export default function OnboardingFlow() {
                       <span className="onboarding-spinner" />
                     ) : (
                       <>
-                        {isEnglish ? 'Start exploring' : 'Empezar a explorar'}
+                        {'Start exploring'}
                         <ArrowRight size={16} weight="bold" />
                       </>
                     )}
@@ -560,7 +534,7 @@ export default function OnboardingFlow() {
                     onClick={handleNext}
                     disabled={saving}
                   >
-                    {isEnglish ? 'Next: your profile' : 'Siguiente: tu perfil'}
+                    {'Next: your profile'}
                     <ArrowRight size={16} weight="bold" />
                   </button>
                 )}
@@ -570,7 +544,7 @@ export default function OnboardingFlow() {
                   onClick={handleBack}
                   disabled={saving}
                 >
-                  {isEnglish ? 'Adjust selection' : 'Ajustar selección'}
+                  {'Adjust selection'}
                 </button>
               </div>
             </div>
@@ -580,10 +554,10 @@ export default function OnboardingFlow() {
                 rows={receipt}
                 total={selectedSubcategories.size}
                 available={availableSubcategories || TOTAL_SUBCATEGORIES}
-                isEnglish={isEnglish}
+               
               />
               <span className="onboarding-receipt-note">
-                {isEnglish ? 'Saved to your profile' : 'Guardado en tu perfil'}
+                {'Saved to your profile'}
               </span>
             </div>
           </div>
@@ -593,14 +567,12 @@ export default function OnboardingFlow() {
           <div className="onboarding-step onboarding-step--profile" key="step4">
             <div className="onboarding-head">
               <div className="onboarding-head-copy">
-                <span className="onboarding-eyebrow">{isEnglish ? 'One last thing' : 'Una cosa más'}</span>
+                <span className="onboarding-eyebrow">{'One last thing'}</span>
                 <h1 className="onboarding-title">
-                  {isEnglish ? 'Do you want a public profile?' : '¿Quieres un perfil público?'}
+                  {'Do you want a public profile?'}
                 </h1>
                 <p className="onboarding-lede">
-                  {isEnglish
-                    ? 'If you do, pick a handle. That is the name other people will see and the address of your page. You can stay private and skip this — Settings can create it later.'
-                    : 'Si sí, elige un handle. Es el nombre que verán los demás y la dirección de tu página. Puedes quedarte en privado y saltártelo — Ajustes puede crearlo después.'}
+                  {'If you do, pick a handle. That is the name other people will see and the address of your page. You can stay private and skip this — Settings can create it later.'}
                 </p>
               </div>
             </div>
@@ -613,16 +585,12 @@ export default function OnboardingFlow() {
                 <div className="onboarding-seed-receipt-head">
                   <div>
                     <span className="onboarding-eyebrow" id="onboarding-seed-title">
-                      {isEnglish ? 'Your interests' : 'Tus intereses'}
+                      {'Your interests'}
                     </span>
                     <p className="onboarding-seed-receipt-lede">
                       {seedAdjusted
-                        ? (isEnglish
-                          ? 'What you chose. Adjust it here, or any time from Settings.'
-                          : 'Lo que has elegido. Ajústalo aquí, o cuando quieras desde Ajustes.')
-                        : (isEnglish
-                          ? `From the ${selectedAreas.size} ${selectedAreas.size === 1 ? 'area' : 'areas'} you picked as a guest: the ${selectedSubcategories.size} categories your feed starts from. Adjust them here, or any time from Settings.`
-                          : `De ${selectedAreas.size === 1 ? 'el área que marcaste' : `las ${selectedAreas.size} áreas que marcaste`} como invitado: las ${selectedSubcategories.size} categorías con las que arranca tu feed. Ajústalas aquí, o cuando quieras desde Ajustes.`)}
+                        ? ('What you chose. Adjust it here, or any time from Settings.')
+                        : (`From the ${selectedAreas.size} ${selectedAreas.size === 1 ? 'area' : 'areas'} you picked as a guest: the ${selectedSubcategories.size} categories your feed starts from. Adjust them here, or any time from Settings.`)}
                     </p>
                   </div>
                   <button
@@ -631,14 +599,14 @@ export default function OnboardingFlow() {
                     onClick={adjustInterests}
                     disabled={saving}
                   >
-                    {isEnglish ? 'Adjust interests' : 'Ajustar intereses'}
+                    {'Adjust interests'}
                   </button>
                 </div>
                 <InterestsReceipt
                   rows={receipt}
                   total={selectedSubcategories.size}
                   available={availableSubcategories || TOTAL_SUBCATEGORIES}
-                  isEnglish={isEnglish}
+                 
                 />
               </section>
             )}
@@ -649,14 +617,14 @@ export default function OnboardingFlow() {
                 setVisibilityDraft(value);
                 setProfileError(null);
               }}
-              isEnglish={isEnglish}
+             
               idPrefix="onboarding-visibility"
             />
 
             {visibilityDraft === PROFILE_VISIBILITY.public && (
               <div className="onboarding-profile-fields">
                 <div className="onboarding-field">
-                  <Label htmlFor="onboarding-handle">{isEnglish ? 'Public handle' : 'Handle público'}</Label>
+                  <Label htmlFor="onboarding-handle">{'Public handle'}</Label>
                   <div className="onboarding-handle-input">
                     <span aria-hidden="true">@</span>
                     <Input
@@ -682,13 +650,11 @@ export default function OnboardingFlow() {
                   >
                     {handleDraft && handleError
                       ? handleError
-                      : (isEnglish
-                        ? 'Lowercase letters, numbers and underscores.'
-                        : 'Minúsculas, números y guiones bajos.')}
+                      : ('Lowercase letters, numbers and underscores.')}
                   </p>
                 </div>
                 <div className="onboarding-field">
-                  <Label htmlFor="onboarding-display-name">{isEnglish ? 'Display name' : 'Nombre visible'}</Label>
+                  <Label htmlFor="onboarding-display-name">{'Display name'}</Label>
                   <Input
                     id="onboarding-display-name"
                     value={displayName || googleDisplayName}
@@ -717,15 +683,13 @@ export default function OnboardingFlow() {
               <div className="onboarding-tally">
                 <span className={`onboarding-tally-n ${canProceed ? 'is-on' : ''}`}>
                   {visibilityDraft === PROFILE_VISIBILITY.public
-                    ? (isEnglish ? 'Public profile' : 'Perfil público')
+                    ? ('Public profile')
                     : visibilityDraft === PROFILE_VISIBILITY.private
-                      ? (isEnglish ? 'Private account' : 'Cuenta privada')
-                      : (isEnglish ? 'Choose one to continue.' : 'Elige una para continuar.')}
+                      ? ('Private account')
+                      : ('Choose one to continue.')}
                 </span>
                 <span className="onboarding-tally-hint">
-                  {isEnglish
-                    ? 'You can change this later in Settings.'
-                    : 'Puedes cambiarlo después en Ajustes.'}
+                  {'You can change this later in Settings.'}
                 </span>
               </div>
             ) : (
@@ -737,7 +701,7 @@ export default function OnboardingFlow() {
             {step > 1 && (
               <button type="button" className="onboarding-btn onboarding-btn--ghost" onClick={handleBack}>
                 <ArrowLeft size={15} weight="bold" />
-                {isEnglish ? 'Back' : 'Atrás'}
+                {'Back'}
               </button>
             )}
             {step === 4 ? (
@@ -751,7 +715,7 @@ export default function OnboardingFlow() {
                   <span className="onboarding-spinner" />
                 ) : (
                   <>
-                    {isEnglish ? 'Start exploring' : 'Empezar a explorar'}
+                    {'Start exploring'}
                     <ArrowRight size={15} weight="bold" />
                   </>
                 )}
@@ -763,7 +727,7 @@ export default function OnboardingFlow() {
                 onClick={handleNext}
                 disabled={!canProceed}
               >
-                {isEnglish ? 'Next' : 'Siguiente'}
+                {'Next'}
                 <ArrowRight size={15} weight="bold" />
               </button>
             )}

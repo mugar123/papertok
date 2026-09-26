@@ -38,8 +38,9 @@ closest tests first, then the full command before publishing.
    preferences, interactions, follows, seen papers, or reading history.
 3. Preserve metadata provenance. Missing citations, abstracts, peer-review status, concepts,
    and open-access links must remain missing rather than being guessed.
-4. The interface supports Spanish and English. New user-facing copy must work in both
-   languages, including Worker-generated content and cache keys.
+4. The interface is English only. Write new user-facing copy, including Worker-generated
+   explanations, emails and share pages, in English; do not reintroduce a language toggle
+   or per-language copy tables.
 5. Provider failure must degrade gracefully. One unavailable scientific API must not leave
    the feed loading forever when another source has usable papers.
 6. Paper identity and deduplication should prefer stable DOI, arXiv, OpenAlex, or provider
@@ -72,9 +73,10 @@ reviewing, or modifying UI. Non-negotiable core, summarized:
 6. Every field has a programmatic label; errors are associated to their field and
    announced. Status changes (results, confirmations, failures) reach assistive
    technology via live regions — silent success is a bug.
-7. Icon-only controls carry an accessible name (bilingual, like all copy). Informative
+7. Icon-only controls carry an accessible name. Informative
    images get useful `alt`; decorative ones get `alt=""`.
-8. Mark content-language changes (`lang="en"` on English paper content in the Spanish UI).
+8. Mark content-language changes (a `lang` attribute on paper content whose language is
+   not English, when it is known).
 9. Do not claim conformance from automatic tools alone (axe, Lighthouse); manual keyboard
    and, where possible, screen-reader verification are part of "done". Record what was
    tested and what was not in the delivery notes (see the evidence matrix in
@@ -83,7 +85,7 @@ reviewing, or modifying UI. Non-negotiable core, summarized:
 ## Change Discipline
 
 - Write code comments, documentation, commit messages, issue text, and pull request text in
-  English. User-facing interface copy remains bilingual in Spanish and English.
+  English. User-facing interface copy is English as well.
 - Follow existing React, service, adapter, and utility patterns before adding abstractions.
 - Keep tests beside the module they exercise using `*.test.js`.
 - Update documentation when adding routes, environment variables, providers, or persistence.

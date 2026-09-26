@@ -10,6 +10,5 @@
  * a file that exports both a component and a constant loses Fast Refresh.
  */
 export const SETTINGS_BREADCRUMB = {
-  es: 'Ajustes · 02 Descubrimiento',
   en: 'Settings · 02 Discovery',
 };

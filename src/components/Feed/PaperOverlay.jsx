@@ -27,7 +27,7 @@ import './PaperOverlay.css';
  * for 200ms. It is `onOpenChangeComplete(false)` from the primitive, the same
  * signal `PaperReader` and `SelectionMenu` already listen to.
  */
-export default function PaperOverlay({ open, onClose, onExitComplete, isEnglish, label, children }) {
+export default function PaperOverlay({ open, onClose, onExitComplete, label, children }) {
   return (
     <Dialog
       open={Boolean(open)}
@@ -38,8 +38,8 @@ export default function PaperOverlay({ open, onClose, onExitComplete, isEnglish,
         className="paper-overlay"
         overlayClassName="paper-overlay-scrim"
         showClose={false}
-        closeLabel={isEnglish ? 'Back' : 'Volver'}
-        aria-label={label || (isEnglish ? 'Publication details' : 'Detalles de la publicación')}
+        closeLabel={'Back'}
+        aria-label={label || ('Publication details')}
       >
         <div className="paper-overlay-surface">
           {/* Top-left, and an arrow rather than a cross: this is a place the
@@ -50,8 +50,8 @@ export default function PaperOverlay({ open, onClose, onExitComplete, isEnglish,
                 variant="outline"
                 size="icon"
                 className="paper-overlay-back"
-                aria-label={isEnglish ? 'Back' : 'Volver'}
-                title={isEnglish ? 'Back' : 'Volver'}
+                aria-label={'Back'}
+                title={'Back'}
               />
             )}
           >

@@ -400,7 +400,7 @@ export function AuthProvider({ children }) {
     const userId = user?.uid;
     const previous = profilePhoto;
     const next = normalizeProfilePhoto(value);
-    if (value && !next) throw new Error('La imagen procesada no es válida.');
+    if (value && !next) throw new Error('The processed image is not valid.');
     setProfilePhoto(next);
 
     try {

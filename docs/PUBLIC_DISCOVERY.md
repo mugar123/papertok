@@ -86,12 +86,12 @@ itself:
   profile photo;
 - its JSON-LD describes PaperTok as a `WebSite`, without inventing a public paper, author, or
   list;
-- English is the initial document language (`<html lang="en">`), with Spanish represented as an
-  alternate locale.
+- English is the document language (`<html lang="en">`, `og:locale` `en_US`); PaperTok is
+  English-only, so there is no alternate locale.
 
-`src/hooks/usePublicPageMetadata.js` is for public page consumers. It reads the active language
+`src/hooks/usePublicPageMetadata.js` is for public page consumers. It takes the fixed language
 from `LanguageContext` and updates the title, description, canonical URL, Open Graph, Twitter,
-robots, and JSON-LD tags at runtime. Localized values can be passed as `{ es, en }` objects.
+robots, and JSON-LD tags at runtime. Values are plain strings or `{ en }` objects.
 The hook restores the previous head state when its page unmounts. The paper page builds its
 values with `publicPaperMetadata` (`src/utils/shareSeed.js`): title and summary as plain text,
 and `noindex` only while there is no paper on screen.
@@ -115,8 +115,9 @@ browser matched by mistake still gets the application: the Worker answers the sa
 `https://papertok.app/index.html`, with the page's own head and body:
 
 - title, description, canonical, `og:*`, `twitter:*` and JSON-LD (`ScholarlyArticle`,
-  `CollectionPage`, `ProfilePage`, or a `WebPage` about the entity), in the reader's language
-  (`Accept-Language`: Spanish when asked for, English otherwise; `Vary: Accept-Language`);
+  `CollectionPage`, `ProfilePage`, or a `WebPage` about the entity), always in English
+  (`<html lang="en">`, `og:locale` `en_US` and no alternate locale; `Accept-Language` is not
+  consulted, so there is no `Vary: Accept-Language`);
 - a static copy of the page inside `#root` (title as h1, authors, abstract and links for a paper;
   the papers of a list, each linked to its own page), which the application replaces when it
   mounts;
@@ -150,7 +151,7 @@ and a stale one points at files Vercel no longer serves. A paper's or an entity'
 hours. A list's or a profile's is kept five minutes and its page one more, because its owner can
 take it back — unpublish the list, make the profile private, delete the account — and the preview
 follows within six minutes. A missing page is kept one hour, a failure two minutes. The page is
-composed per request from the two, so one record serves both languages and a deploy reaches every
+composed per request from the two, so one record serves every reader and a deploy reaches every
 shared page within minutes.
 
 **Googlebot.** Googlebot renders JavaScript, but `https://api.papertok.app/robots.txt` is

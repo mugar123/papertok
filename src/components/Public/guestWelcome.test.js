@@ -43,9 +43,8 @@ test('the specific topics are their own screen, in the area cards, and never blo
   assert.match(subtopics, /className="gw-areas"/, 'the same grid as the areas');
   assert.match(subtopics, /className="gw-area"/, 'the same cards as the areas');
   assert.doesNotMatch(jsx, /gw-chip|gw-refine/, 'the chip row is back');
-  assert.match(jsx, /cta: 'Continuar',/);
   assert.match(jsx, /cta: 'Continue',/);
-  assert.match(jsx, /lede: 'Cuanto más concretes, más tuyo será tu feed\.'/);
+  assert.match(jsx, /lede: 'The more specific, the more personal your feed\.'/);
 });
 
 /**
@@ -173,14 +172,14 @@ test('the paper columns loop real papers and the column itself pauses them', asy
 });
 
 /**
- * Copy is bilingual, key for key.
+ * The interface is English-only: the copy has one English block and no
+ * Spanish one left behind.
  */
-test('the welcome copy exists in both languages', async () => {
+test('the welcome copy is English-only', async () => {
   const source = await read('./GuestWelcome.jsx');
-  const es = source.slice(source.indexOf('  es: {'), source.indexOf('  en: {'));
-  const en = source.slice(source.indexOf('  en: {'), source.indexOf('\n};', source.indexOf('  en: {')));
-  const keys = block => [...block.matchAll(/^\s{4,6}(\w+):/gm)].map(([, key]) => key).sort();
-  assert.deepEqual(keys(es), keys(en));
+  assert.match(source, /const COPY = \{\n {2}en: \{/);
+  assert.doesNotMatch(source, /^\s*es: \{/m, 'a Spanish copy block is back');
+  assert.match(source, /const copy = COPY\.en;/);
 });
 
 /**
@@ -211,6 +210,5 @@ test('long topic groups fold behind show more without hiding a pick', async () =
   assert.match(jsx, /const SUBTOPICS_FOLD_MIN = SUBTOPICS_SHOWN \+ \d+;/, 'no "show 1 more"');
   assert.match(jsx, /entries\.filter\(\(\[id\], index\) => index < SUBTOPICS_SHOWN \|\| selectedTopics\.has\(id\)\)/);
   assert.match(jsx, /className="gw-more"\s+aria-expanded=\{expanded\}\s+aria-controls=\{gridId\}/);
-  assert.match(jsx, /showMore: n => `Mostrar \$\{n\} más`/);
   assert.match(jsx, /showMore: n => `Show \$\{n\} more`/);
 });

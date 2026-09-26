@@ -442,7 +442,6 @@ export function inferAcquisitionChannel({
 }
 
 export async function trackAcquisition({
-  language,
   storage = getSessionStorage(),
   referrer,
   location,
@@ -454,7 +453,7 @@ export async function trackAcquisition({
     if (persistedForSession || (!storage && acquisitionTrackedInMemory)) return false;
     const tracked = await track('acquisition_view', {
       acquisition_channel: inferAcquisitionChannel({ referrer, location }),
-      language: language === 'en' ? 'en' : 'es',
+      language: 'en',
     });
     if (!tracked) return false;
     acquisitionTrackedInMemory = true;

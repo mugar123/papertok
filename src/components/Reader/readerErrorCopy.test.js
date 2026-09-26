@@ -5,8 +5,8 @@ import { readFile } from 'node:fs/promises';
 /**
  * Every failure the reader can be handed has to say what it was.
  *
- * `ERROR_COPY` falls back to `AI_UNAVAILABLE` — «algo falló entre el lector y el
- * modelo, reintentar suele bastar» — for any code it does not know, which is a
+ * `ERROR_COPY` falls back to `AI_UNAVAILABLE` — "something broke between the reader
+ * and the model, retrying usually does it" — for any code it does not know, which is a
  * true sentence for exactly one of the codes below and a misleading one for the
  * rest: a paper too big to rewrite, a source that would not download, a body the
  * model refused outright and a monthly budget that ran out are four different
@@ -22,14 +22,13 @@ const stripComments = source => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '');
 
-/** The `es` and `en` halves of `ERROR_COPY`, separately. */
-function errorCopyBlocks(source) {
+/** The `en` block of `ERROR_COPY`. */
+function errorCopyBlock(source) {
   const table = source.match(/const ERROR_COPY = \{([\s\S]*?)\n\};/);
   assert.ok(table, 'expected an ERROR_COPY table');
-  const spanish = table[1].match(/\n {2}es: \{([\s\S]*?)\n {2}\},/);
   const english = table[1].match(/\n {2}en: \{([\s\S]*?)\n {2}\},/);
-  assert.ok(spanish && english, 'expected both languages in ERROR_COPY');
-  return { es: spanish[1], en: english[1] };
+  assert.ok(english, 'expected an en block in ERROR_COPY');
+  return english[1];
 }
 
 /** Codes the worker can put on the wire that had no copy of their own. */
@@ -40,13 +39,11 @@ const ORPHANS = [
   'AI_FALLBACK_BUDGET_EXHAUSTED',
 ];
 
-test('every code the worker can emit has reader copy, in both languages', async () => {
-  const blocks = errorCopyBlocks(stripComments(await read()));
+test('every code the worker can emit has reader copy', async () => {
+  const block = errorCopyBlock(stripComments(await read()));
 
-  for (const language of ['es', 'en']) {
-    for (const code of ORPHANS) {
-      assert.match(blocks[language], new RegExp(`${code}: \\{`), `${code} has no ${language} copy`);
-    }
+  for (const code of ORPHANS) {
+    assert.match(block, new RegExp(`${code}: \\{`), `${code} has no copy`);
   }
 });
 

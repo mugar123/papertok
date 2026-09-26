@@ -64,7 +64,7 @@ function Chevron({ isOpen, size = 16, reduced }) {
 }
 
 export default function ReportFilters({ filters, onChange, loading = false }) {
-  const { language, isEnglish } = useLanguage();
+  const { language } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const [isCountryOpen, setIsCountryOpen] = useState(() => (filters.countries?.length || 0) > 0);
   const [countrySearch, setCountrySearch] = useState('');
@@ -153,23 +153,23 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
       <Collapsible.Trigger
         render={<button type="button" className="rf-toggle" />}
       >
-        <span className="rf-toggle-label">{isEnglish ? 'Filters' : 'Filtros'}</span>
+        <span className="rf-toggle-label">{'Filters'}</span>
         <span className={`rf-toggle-summary ${appliedCount > 0 ? '' : 'is-empty'}`}>
           {appliedCount > 0 ? (
             <>
               <span className="rf-toggle-count">{appliedCount}</span>
-              {isEnglish ? ' active' : ' activos'}
+              {' active'}
             </>
           ) : (
-            isEnglish ? 'All disciplines and countries' : 'Todas las disciplinas y países'
+            'All disciplines and countries'
           )}
         </span>
         <span className="rf-toggle-status">
           {loading && <CircleNotch className="rf-loading-icon" size={14} aria-hidden="true" />}
           <span className="rf-toggle-action">
             {isOpen
-              ? (isEnglish ? 'Close' : 'Cerrar')
-              : (isEnglish ? 'Refine' : 'Afinar')}
+              ? ('Close')
+              : ('Refine')}
           </span>
           <Chevron isOpen={isOpen} reduced={reduced} />
         </span>
@@ -190,16 +190,16 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
             transition={reduced ? { duration: 0 } : { duration: 0.25, ease: EASE }}
             style={{ overflow: 'hidden' }}
           >
-            <div className="rf-active-chips" aria-label={isEnglish ? 'Active filters' : 'Filtros activos'}>
+            <div className="rf-active-chips" aria-label={'Active filters'}>
               {appliedFilters.categories.map(key => (
                 <button
                   type="button"
                   key={key}
                   className="rf-active-chip"
                   onClick={() => removeAppliedValue('categories', key)}
-                  aria-label={`${isEnglish ? 'Remove' : 'Quitar'} ${(isEnglish ? CATEGORIES[key]?.labelEn : CATEGORIES[key]?.label) || key}`}
+                  aria-label={`${'Remove'} ${(CATEGORIES[key]?.label) || key}`}
                 >
-                  {(isEnglish ? CATEGORIES[key]?.labelEn : CATEGORIES[key]?.label) || key} <X size={11} />
+                  {(CATEGORIES[key]?.label) || key} <X size={11} />
                 </button>
               ))}
               {appliedFilters.countries.map(code => (
@@ -208,7 +208,7 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
                   key={code}
                   className="rf-active-chip"
                   onClick={() => removeAppliedValue('countries', code)}
-                  aria-label={`${isEnglish ? 'Remove' : 'Quitar'} ${getCountryName(code, language)}`}
+                  aria-label={`${'Remove'} ${getCountryName(code, language)}`}
                 >
                   {getCountryName(code, language)} <X size={11} />
                 </button>
@@ -221,7 +221,7 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
       <Collapse id="rf-panel">
         <div className="rf-panel">
           <div className="rf-section">
-            <span className="rf-section-label">{isEnglish ? 'Discipline' : 'Disciplina'}</span>
+            <span className="rf-section-label">{'Discipline'}</span>
             {/* A multi-select ToggleGroup (`aria-pressed` on every pill, arrow
                 keys between them); the stagger and the press stay framer's,
                 on the items. `outline` so the group draws no track of its own. */}
@@ -231,7 +231,7 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
               className="rf-pills"
               value={activeCategories}
               onValueChange={setCategories}
-              aria-label={isEnglish ? 'Discipline' : 'Disciplina'}
+              aria-label={'Discipline'}
               render={(
                 <motion.div
                   initial={reduced ? false : 'hidden'}
@@ -244,13 +244,13 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
                 const area = CATEGORIES[key];
                 const Icon = area.icon;
                 const isActive = activeCategories.includes(key);
-                const label = isEnglish ? area.labelEn : area.label;
+                const label = area.label;
                 return (
                   <MotionToggleGroupItem
                     key={key}
                     value={key}
                     className="rf-pill"
-                    aria-label={`${isActive ? (isEnglish ? 'Remove' : 'Quitar') : (isEnglish ? 'Add' : 'Añadir')} ${label}`}
+                    aria-label={`${isActive ? ('Remove') : ('Add')} ${label}`}
                     style={isActive ? { '--rf-pill-accent': area.gradient } : undefined}
                     variants={{
                       hidden: { opacity: 0, y: 6 },
@@ -277,16 +277,14 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
             onOpenChange={setIsCountryOpen}
           >
             <Collapsible.Trigger render={<button type="button" className="rf-country-toggle" />}>
-              <span><MapPin size={13} /> {isEnglish ? 'Affiliation country' : 'País de afiliación'}{activeCountries.length ? ` (${activeCountries.length})` : ''}</span>
+              <span><MapPin size={13} /> {'Affiliation country'}{activeCountries.length ? ` (${activeCountries.length})` : ''}</span>
               <Chevron isOpen={isCountryOpen} size={15} reduced={reduced} />
             </Collapsible.Trigger>
 
             <Collapse id="rf-country-controls">
               <div className="rf-country-controls">
                 <p className="rf-country-note">
-                  {isEnglish
-                    ? 'Country results use normalized OpenAlex affiliations.'
-                    : 'Los resultados por país usan afiliaciones normalizadas de OpenAlex.'}
+                  {'Country results use normalized OpenAlex affiliations.'}
                 </p>
 
                 <div className="rf-search-wrap">
@@ -295,9 +293,9 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
                     ref={countryInputRef}
                     className="rf-search"
                     type="search"
-                    aria-label={isEnglish ? 'Search affiliation country' : 'Buscar país de afiliación'}
+                    aria-label={'Search affiliation country'}
                     autoComplete="off"
-                    placeholder={isEnglish ? 'Search country...' : 'Buscar país...'}
+                    placeholder={'Search country...'}
                     value={countrySearch}
                     onChange={(event) => setCountrySearch(event.target.value)}
                   />
@@ -306,7 +304,7 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
                       type="button"
                       className="rf-search-clear"
                       onClick={() => setCountrySearch('')}
-                      aria-label={isEnglish ? 'Clear country search' : 'Borrar búsqueda de país'}
+                      aria-label={'Clear country search'}
                     >
                       <X size={12} />
                     </button>
@@ -319,7 +317,7 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
                       key="results"
                       className="rf-search-results"
                       role="listbox"
-                      aria-label={isEnglish ? 'Country results' : 'Resultados de países'}
+                      aria-label={'Country results'}
                       initial={reduced ? false : { opacity: 0, y: -4 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={reduced ? { opacity: 0 } : { opacity: 0, y: -4 }}
@@ -354,14 +352,14 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
                     >
-                      {isEnglish ? 'No matching countries' : 'No hay países coincidentes'}
+                      {'No matching countries'}
                     </motion.p>
                   )}
                 </AnimatePresence>
 
                 {!countrySearch && (
                   <div className="rf-quick-countries">
-                    <span className="rf-quick-label">{isEnglish ? 'Quick selection' : 'Selección rápida'}</span>
+                    <span className="rf-quick-label">{'Quick selection'}</span>
                     {/* Independent chips, not a group: each is its own ui Toggle
                         (`aria-pressed` from Base UI), and the stylesheet keys
                         the pressed look off `data-pressed`. */}
@@ -389,7 +387,7 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
                 >
                   <WorldMap selectedCountries={activeCountries} onToggleCountry={toggleCountry} />
                   <p className="rf-map-hint">
-                    {isEnglish ? 'Select a supported country on the map.' : 'Selecciona un país disponible en el mapa.'}
+                    {'Select a supported country on the map.'}
                   </p>
                 </motion.div>
 
@@ -408,7 +406,7 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
                         <button
                           type="button"
                           onClick={() => toggleCountry(code)}
-                          aria-label={`${isEnglish ? 'Remove' : 'Quitar'} ${getCountryName(code, language)}`}
+                          aria-label={`${'Remove'} ${getCountryName(code, language)}`}
                         >
                           <X size={11} />
                         </button>
@@ -428,11 +426,11 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
               onClick={() => setDraftFilters({ categories: [], countries: [] })}
               disabled={draftCount === 0}
             >
-              <X size={13} /> {isEnglish ? 'Clear selection' : 'Limpiar selección'}
+              <X size={13} /> {'Clear selection'}
             </Button>
             <div className="rf-actions-primary">
               <Button type="button" variant="ghost" onClick={closePanel}>
-                {isEnglish ? 'Cancel' : 'Cancelar'}
+                {'Cancel'}
               </Button>
               <Button
                 type="button"
@@ -440,7 +438,7 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
                 disabled={!hasPendingChanges || loading}
               >
                 {loading ? <CircleNotch className="rf-loading-icon" size={15} aria-hidden="true" /> : <Check size={15} aria-hidden="true" />}
-                {isEnglish ? 'Apply filters' : 'Aplicar filtros'}
+                {'Apply filters'}
               </Button>
             </div>
           </div>

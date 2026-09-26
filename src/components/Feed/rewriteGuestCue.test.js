@@ -29,7 +29,7 @@ test('a guest sees that plain-words reading needs an account, and hears it', () 
   const after = card.slice(card.indexOf(button) + button.length, card.indexOf(button) + button.length + 400);
   assert.match(
     after,
-    /^\s*\)\}\s*\{canRequestRewrite && publicMode && \(\s*<span id=\{rewriteHintId\} className="visually-hidden">\s*\{isEnglish \? 'Needs a free account' : 'Necesita una cuenta gratuita'\}\s*<\/span>\s*\)\}/,
+    /^\s*\)\}\s*\{canRequestRewrite && publicMode && \(\s*<span id=\{rewriteHintId\} className="visually-hidden">\s*\{'Needs a free account'\}\s*<\/span>\s*\)\}/,
   );
   assert.match(card, /const rewriteHintId = useId\(\);/);
 });
@@ -37,9 +37,8 @@ test('a guest sees that plain-words reading needs an account, and hears it', () 
 test('the welcome no longer promises every paper in plain words', () => {
   const copy = welcome.slice(welcome.indexOf('const COPY = {'), welcome.indexOf('// Where a source sits') > 0 ? welcome.indexOf('// Where a source sits') : welcome.indexOf('function PaperStream'));
   assert.ok(copy.length > 0, 'the COPY table is where the welcome keeps it');
-  assert.doesNotMatch(copy, /cada uno|each one/);
+  assert.doesNotMatch(copy, /each one/);
   // Said where the welcome shows the gesture, in its sentence.
-  assert.match(copy, /Con una cuenta gratuita, muchos se pueden leer explicados en claro\./);
   assert.match(copy, /With a free account, many can be read in plain words\./);
 });
 

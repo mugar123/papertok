@@ -3,20 +3,20 @@
 // announcement for screen readers (all mapped routes).
 
 const LABELS = {
-  '/feed': ['For you', 'Para ti'],
-  '/lists': ['My lists', 'Mis listas'],
-  '/research': ['Research', 'Research'],
-  '/following': ['Following', 'Siguiendo'],
-  '/search': ['Search', 'Buscar'],
-  '/profile': ['My profile', 'Mi perfil'],
-  // SettingsPage titles and headings itself "Configuración" (SettingsPage.jsx),
-  // so the announcement must call the page what the page calls itself.
-  '/settings': ['Settings', 'Configuración'],
-  '/settings/profile': ['Edit profile', 'Editar perfil'],
-  '/settings/following': ['Following settings', 'Ajustes de seguimiento'],
-  '/settings/comments': ['My comments', 'Mis comentarios'],
-  '/login': ['Sign in', 'Iniciar sesión'],
-  '/onboarding': ['Welcome', 'Bienvenida'],
+  '/feed': 'For you',
+  '/lists': 'My lists',
+  '/research': 'Research',
+  '/following': 'Following',
+  '/search': 'Search',
+  '/profile': 'My profile',
+  // SettingsPage titles and headings itself "Settings" (SettingsPage.jsx), so
+  // the announcement must call the page what the page calls itself.
+  '/settings': 'Settings',
+  '/settings/profile': 'Edit profile',
+  '/settings/following': 'Following settings',
+  '/settings/comments': 'My comments',
+  '/login': 'Sign in',
+  '/onboarding': 'Welcome',
 }
 
 // These set document.title on their own (SettingsPage, ProfilePage,
@@ -27,14 +27,13 @@ function normalize(pathname) {
   return pathname === '/' ? '/' : pathname.replace(/\/+$/, '')
 }
 
-export function routeLabel(pathname, isEnglish) {
-  const entry = LABELS[normalize(pathname)]
-  return entry ? entry[isEnglish ? 0 : 1] : null
+export function routeLabel(pathname) {
+  return LABELS[normalize(pathname)] || null
 }
 
-export function routeTitle(pathname, isEnglish) {
+export function routeTitle(pathname) {
   const normalized = normalize(pathname)
   if (SELF_TITLED.has(normalized)) return null
-  const label = routeLabel(normalized, isEnglish)
+  const label = routeLabel(normalized)
   return label ? `${label} | PaperTok` : null
 }

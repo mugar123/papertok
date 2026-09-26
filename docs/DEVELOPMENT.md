@@ -107,13 +107,14 @@ Every action is pinned to a commit SHA; Dependabot proposes the bumps weekly.
 
 ## Localization
 
-PaperTok supports `es` and `en`.
+The interface is English only; there is no language setting.
 
-- Read the active language from `LanguageContext`.
-- Store canonical entity IDs, not translated labels, whenever possible.
-- Add both languages in the same change.
-- Include language in caches for translated or generated content.
-- Worker-generated explanations and emails must follow the user's selected language.
+- `LanguageContext` provides the fixed language (`en`) and locale (`en-US`) that services
+  pass to the Worker and use for date and number formatting. Read them from there rather
+  than writing the literal again.
+- Store canonical entity IDs, not display labels, whenever possible.
+- Worker-generated explanations, emails and share pages are written in English. A legacy
+  `language: 'es'` stored on old records or sent by an old client is accepted and ignored.
 
 ## Manual Diagnostics
 

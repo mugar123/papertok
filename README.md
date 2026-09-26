@@ -20,8 +20,7 @@ Instead of knowing exactly what to search for, you can browse papers, interact w
 
 > PaperTok is currently under active development. It is a personal open-source project and not affiliated with arXiv, OpenAlex, PubMed, or any other data provider.
 
-The interface supports Spanish and English. PaperTok selects a default from the visitor's
-region and also provides a manual language setting.
+The interface is in English.
 
 ## What PaperTok does
 

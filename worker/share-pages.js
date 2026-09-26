@@ -31,8 +31,8 @@ import { isValidHandle, normalizeHandle } from '../src/utils/userHandle.js';
  * names the hashed assets of the current deployment and a stale one points at
  * files Vercel no longer serves. What a page says (the record) is kept a day:
  * it costs a provider call, and papers, lists and profiles change slowly. The
- * page is composed per request from the two, in the reader's language, so a
- * record serves both languages and a deploy reaches every page in minutes.
+ * page is composed per request from the two, so a deploy reaches every page in
+ * minutes. Pages are English-only; the reader's Accept-Language is not consulted.
  */
 
 export const SHELL_URL = `${DEFAULT_PUBLIC_ORIGIN}/index.html`;
@@ -123,58 +123,38 @@ const SCHEMA_TYPES = Object.freeze({
 // The copy mirrors what each page sets for itself once the app runs
 // (`usePublicPageMetadata` callers), so a bot and a reader see one page.
 const COPY = Object.freeze({
-  siteTitle: {
-    es: 'PaperTok — Descubre investigación científica',
-    en: 'PaperTok — Discover scientific research',
-  },
-  siteDescription: {
-    es: 'PaperTok es una aplicación para explorar y descubrir artículos científicos de distintas fuentes.',
-    en: 'PaperTok is an application for exploring and discovering scientific papers from multiple sources.',
-  },
+  siteTitle: 'PaperTok — Discover scientific research',
+  siteDescription: 'PaperTok is an application for exploring and discovering scientific papers from multiple sources.',
   imageAlt: {
-    paper: { es: 'Vista de un artículo científico en PaperTok', en: 'A scientific paper view in PaperTok' },
-    list: { es: 'Una lista pública de lectura científica en PaperTok', en: 'A public scientific reading list on PaperTok' },
-    user: { es: 'Un perfil público de investigación en PaperTok', en: 'A public researcher profile on PaperTok' },
+    paper: 'A scientific paper view in PaperTok',
+    list: 'A public scientific reading list on PaperTok',
+    user: 'A public researcher profile on PaperTok',
   },
   notFound: {
-    paper: { es: 'No encontramos este paper', en: 'We could not find this paper' },
-    list: { es: 'No encontramos esta lista', en: 'We could not find this list' },
-    user: { es: 'No encontramos este perfil', en: 'We could not find this profile' },
-    entity: { es: 'No encontramos esta página', en: 'We could not find this page' },
+    paper: 'We could not find this paper',
+    list: 'We could not find this list',
+    user: 'We could not find this profile',
+    entity: 'We could not find this page',
   },
-  notFoundDescription: {
-    es: 'Puede que el enlace ya no esté disponible o no sea válido.',
-    en: 'The link may no longer be available or may not be valid.',
-  },
-  toFeed: { es: 'Ir al feed de PaperTok', en: 'Go to the PaperTok feed' },
-  listSuffix: { es: 'Lista pública de PaperTok', en: 'PaperTok public list' },
-  listFallback: {
-    es: 'Explora una lista pública de lectura científica creada en PaperTok.',
-    en: 'Explore a public scientific reading list curated on PaperTok.',
-  },
-  listPapers: { es: 'Papers de la lista', en: 'Papers in this list' },
-  userFallback: {
-    es: 'Un perfil público de investigación en PaperTok.',
-    en: 'A public researcher profile on PaperTok.',
-  },
+  notFoundDescription: 'The link may no longer be available or may not be valid.',
+  toFeed: 'Go to the PaperTok feed',
+  listSuffix: 'PaperTok public list',
+  listFallback: 'Explore a public scientific reading list curated on PaperTok.',
+  listPapers: 'Papers in this list',
+  userFallback: 'A public researcher profile on PaperTok.',
   entityTypes: {
-    author: { es: 'Autor', en: 'Author' },
-    institution: { es: 'Institución', en: 'Institution' },
-    project: { es: 'Proyecto de investigación', en: 'Research project' },
-    source: { es: 'Revista científica', en: 'Scientific journal' },
-    concept: { es: 'Tema de investigación', en: 'Research topic' },
-    topic: { es: 'Tema de investigación', en: 'Research topic' },
+    author: 'Author',
+    institution: 'Institution',
+    project: 'Research project',
+    source: 'Scientific journal',
+    concept: 'Research topic',
+    topic: 'Research topic',
   },
-  nameOnlyAuthor: {
-    es: 'Encontrado por el nombre: los resultados pueden mezclar a personas que se llaman igual.',
-    en: 'Found by name: these results may mix people who share it.',
-  },
+  nameOnlyAuthor: 'Found by name: these results may mix people who share it.',
 });
 
-function entityDescription(name, language) {
-  return language === 'en'
-    ? `Explore scientific papers, citations, and research connected to ${name} on PaperTok.`
-    : `Explora artículos científicos, citas e investigación relacionada con ${name} en PaperTok.`;
+function entityDescription(name) {
+  return `Explore scientific papers, citations, and research connected to ${name} on PaperTok.`;
 }
 
 // ------------------------------------------------------------ text helpers
@@ -372,21 +352,6 @@ export function matchShareRoute(url) {
   return invalid;
 }
 
-/** Spanish when the reader asks for it, English otherwise. */
-export function shareLanguage(acceptLanguage) {
-  let best = null;
-  for (const part of String(acceptLanguage || '').split(',')) {
-    const [tag, ...parameters] = part.trim().split(';');
-    const primary = tag.trim().toLowerCase().split('-')[0];
-    if (primary !== 'es' && primary !== 'en') continue;
-    const weight = parameters.map(parameter => parameter.trim()).find(parameter => parameter.startsWith('q='));
-    const q = weight ? Number.parseFloat(weight.slice(2)) : 1;
-    if (!Number.isFinite(q) || q <= 0) continue;
-    if (!best || q > best.q) best = { language: primary, q };
-  }
-  return best?.language || 'en';
-}
-
 // ----------------------------------------------------------------- records
 
 const ARXIV_XML = new XMLParser({
@@ -503,7 +468,8 @@ async function loadList(route, { firestore }) {
     list: {
       title,
       description: cleanText(data.description, 600),
-      language: data.language === 'en' ? 'en' : 'es',
+      // Recorded when the list was published; a list without it is not marked.
+      language: data.language === 'en' || data.language === 'es' ? data.language : '',
       papers,
     },
   });
@@ -580,13 +546,16 @@ export function createShareLoader(providers = {}) {
 
 // ------------------------------------------------------------------- pages
 
-function basePage(language, overrides = {}) {
+// Every share page is English: PaperTok is English-only.
+const PAGE_LANGUAGE = 'en';
+
+function basePage(overrides = {}) {
   return {
     status: 200,
-    language,
-    title: COPY.siteTitle[language],
-    description: COPY.siteDescription[language],
-    imageAlt: COPY.imageAlt.paper[language],
+    language: PAGE_LANGUAGE,
+    title: COPY.siteTitle,
+    description: COPY.siteDescription,
+    imageAlt: COPY.imageAlt.paper,
     ogType: 'website',
     canonicalUrl: null,
     pageUrl: `${DEFAULT_PUBLIC_ORIGIN}/`,
@@ -599,7 +568,7 @@ function basePage(language, overrides = {}) {
   };
 }
 
-function webPage({ name, description, url, language, extra = {} }) {
+function webPage({ name, description, url, extra = {} }) {
   return compact({
     '@context': 'https://schema.org',
     '@type': 'WebPage',
@@ -607,48 +576,48 @@ function webPage({ name, description, url, language, extra = {} }) {
     description,
     url,
     image: SHARE_IMAGE_URL,
-    inLanguage: language === 'en' ? 'en-US' : 'es-ES',
+    inLanguage: 'en-US',
     isPartOf: { '@type': 'WebSite', name: 'PaperTok', url: `${DEFAULT_PUBLIC_ORIGIN}/` },
     ...extra,
   });
 }
 
-function notFoundPage(kind, language) {
-  const heading = (COPY.notFound[kind] || COPY.notFound.entity)[language];
-  const description = COPY.notFoundDescription[language];
-  return basePage(language, {
+function notFoundPage(kind) {
+  const heading = (COPY.notFound[kind] || COPY.notFound.entity);
+  const description = COPY.notFoundDescription;
+  return basePage({
     status: 404,
     title: `${heading} | PaperTok`,
     description,
     noIndex: true,
-    jsonLd: webPage({ name: heading, description, url: `${DEFAULT_PUBLIC_ORIGIN}/`, language }),
+    jsonLd: webPage({ name: heading, description, url: `${DEFAULT_PUBLIC_ORIGIN}/` }),
     fallbackHtml: `<main><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(description)}</p>`
-      + `<p><a href="/feed">${escapeHtml(COPY.toFeed[language])}</a></p></main>`,
+      + `<p><a href="/feed">${escapeHtml(COPY.toFeed)}</a></p></main>`,
   });
 }
 
 // What a page says while its provider is down: PaperTok's own head, at the
 // page's own address. Not a 404, and not `noindex` — an outage is not a reason
 // for a preview to show nothing or for an index to drop the page.
-function unavailablePage(route, language, maxAge = FAILURE_MAX_AGE_SECONDS) {
+function unavailablePage(route, maxAge = FAILURE_MAX_AGE_SECONDS) {
   const pageUrl = absoluteUrl(route.canonicalPath);
-  return basePage(language, {
+  return basePage({
     canonicalUrl: pageUrl,
     pageUrl,
     maxAge,
-    jsonLd: webPage({ name: COPY.siteTitle[language], description: COPY.siteDescription[language], url: pageUrl, language }),
+    jsonLd: webPage({ name: COPY.siteTitle, description: COPY.siteDescription, url: pageUrl }),
   });
 }
 
-function paperPage(route, paper, language) {
+function paperPage(route, paper) {
   const pageUrl = absoluteUrl(route.canonicalPath);
-  const title = plainScientificText(paper.title) || COPY.siteTitle[language];
+  const title = plainScientificText(paper.title) || COPY.siteTitle;
   const abstract = plainScientificText(paper.abstract);
   const authors = asArray(paper.authors);
   const venue = [paper.journal, paper.year].filter(Boolean).join(' · ');
   const description = abstract
     ? truncate(abstract, DESCRIPTION_LENGTH)
-    : [authorLine(authors, 3), venue].filter(Boolean).join(' · ') || COPY.siteDescription[language];
+    : [authorLine(authors, 3), venue].filter(Boolean).join(' · ') || COPY.siteDescription;
   const doiUrl = paper.doi ? `https://doi.org/${paper.doi}` : '';
   const arxivUrl = paper.arxivId ? `https://arxiv.org/abs/${paper.arxivId.replace(/v\d+$/i, '')}` : '';
   const links = [
@@ -683,7 +652,7 @@ function paperPage(route, paper, language) {
       : '',
   ].join('');
 
-  return basePage(language, {
+  return basePage({
     title,
     description,
     ogType: 'article',
@@ -714,19 +683,21 @@ function paperPage(route, paper, language) {
   });
 }
 
-function listPage(route, list, language) {
+function listPage(route, list) {
   const pageUrl = absoluteUrl(route.canonicalPath);
-  const description = list.description || COPY.listFallback[language];
+  const description = list.description || COPY.listFallback;
   const papers = asArray(list.papers).map(paper => ({ ...paper, title: plainScientificText(paper.title) }));
   const items = papers.map(paper => (paper.key
     ? `<li><a href="/public/paper/${paper.key}">${escapeHtml(paper.title)}</a></li>`
     : `<li>${escapeHtml(paper.title)}</li>`)).join('');
-  const contentLanguage = list.language && list.language !== language ? ` lang="${list.language}"` : '';
+  // The list's own content language (its owner's title and description) is data:
+  // a list recorded as written in Spanish is marked `lang="es"` inside the English page.
+  const contentLanguage = list.language && list.language !== PAGE_LANGUAGE ? ` lang="${list.language}"` : '';
 
-  return basePage(language, {
-    title: `${list.title} | ${COPY.listSuffix[language]}`,
+  return basePage({
+    title: `${list.title} | ${COPY.listSuffix}`,
     description,
-    imageAlt: COPY.imageAlt.list[language],
+    imageAlt: COPY.imageAlt.list,
     maxAge: OWNED_MAX_AGE_SECONDS,
     canonicalUrl: pageUrl,
     pageUrl,
@@ -734,7 +705,6 @@ function listPage(route, list, language) {
       name: list.title,
       description,
       url: pageUrl,
-      language,
       extra: {
         '@type': 'CollectionPage',
         mainEntity: {
@@ -751,18 +721,18 @@ function listPage(route, list, language) {
     }),
     fallbackHtml: `<main${contentLanguage}><h1>${escapeHtml(list.title)}</h1>`
       + (list.description ? `<p>${escapeHtml(list.description)}</p>` : '')
-      + (items ? `<h2>${escapeHtml(COPY.listPapers[language])}</h2><ol>${items}</ol>` : '')
+      + (items ? `<h2>${escapeHtml(COPY.listPapers)}</h2><ol>${items}</ol>` : '')
       + '</main>',
   });
 }
 
-function profilePage(route, profile, language) {
+function profilePage(route, profile) {
   const pageUrl = absoluteUrl(route.canonicalPath);
-  const description = profile.bio || COPY.userFallback[language];
-  return basePage(language, {
+  const description = profile.bio || COPY.userFallback;
+  return basePage({
     title: `${profile.displayName} (@${profile.handle}) | PaperTok`,
     description,
-    imageAlt: COPY.imageAlt.user[language],
+    imageAlt: COPY.imageAlt.user,
     maxAge: OWNED_MAX_AGE_SECONDS,
     ogType: 'profile',
     canonicalUrl: pageUrl,
@@ -771,7 +741,6 @@ function profilePage(route, profile, language) {
       name: `${profile.displayName} (@${profile.handle})`,
       description,
       url: pageUrl,
-      language,
       extra: {
         '@type': 'ProfilePage',
         mainEntity: compact({
@@ -789,9 +758,9 @@ function profilePage(route, profile, language) {
   });
 }
 
-function entityPage(route, entity, language) {
+function entityPage(route, entity) {
   const pageUrl = absoluteUrl(route.canonicalPath);
-  const typeLabel = COPY.entityTypes[route.type][language];
+  const typeLabel = COPY.entityTypes[route.type];
   if (entity.nameOnly) {
     // A page found by a name alone is not an entity, and its name is whatever
     // the URL says: printed in the preview, it let anyone mint a papertok.app
@@ -799,17 +768,17 @@ function entityPage(route, entity, language) {
     // 2026-09-25). The preview is PaperTok's own; the page's copy names whom
     // it was opened for, as the Explorer does, and it stays out of an index,
     // since the same name can be several people.
-    const note = route.type === 'author' ? `<p>${escapeHtml(COPY.nameOnlyAuthor[language])}</p>` : '';
-    return basePage(language, {
+    const note = route.type === 'author' ? `<p>${escapeHtml(COPY.nameOnlyAuthor)}</p>` : '';
+    return basePage({
       canonicalUrl: pageUrl,
       pageUrl,
       noIndex: true,
-      jsonLd: webPage({ name: COPY.siteTitle[language], description: COPY.siteDescription[language], url: pageUrl, language }),
+      jsonLd: webPage({ name: COPY.siteTitle, description: COPY.siteDescription, url: pageUrl }),
       fallbackHtml: `<main><h1>${escapeHtml(entity.name)}</h1><p>${escapeHtml(typeLabel)}</p>${note}</main>`,
     });
   }
-  const description = entityDescription(entity.name, language);
-  return basePage(language, {
+  const description = entityDescription(entity.name);
+  return basePage({
     title: `${entity.name} - ${typeLabel} | PaperTok`,
     description,
     ogType: 'profile',
@@ -819,7 +788,6 @@ function entityPage(route, entity, language) {
       name: `${entity.name} - ${typeLabel}`,
       description,
       url: pageUrl,
-      language,
       extra: { about: { '@type': SCHEMA_TYPES[route.type], name: entity.name } },
     }),
     fallbackHtml: `<main><h1>${escapeHtml(entity.name)}</h1><p>${escapeHtml(typeLabel)}</p>`
@@ -831,21 +799,20 @@ function entityPage(route, entity, language) {
  * The page for a route and what its lookup gave: `{ found, record }`,
  * `{ found: false }`, or `{ failed: true }`.
  */
-export function sharePageModel(route, outcome, language) {
-  const lang = language === 'es' ? 'es' : 'en';
+export function sharePageModel(route, outcome) {
   const kind = KINDS.has(route?.kind) ? route.kind : 'entity';
   if (!route || route.invalid || !outcome || (!outcome.found && !outcome.failed && !outcome.unknown)) {
-    return notFoundPage(kind, lang);
+    return notFoundPage(kind);
   }
   // Not found by a provider whose silence proves nothing: PaperTok's own head,
   // as for an outage, and no index directive either way.
-  if (outcome.unknown) return unavailablePage(route, lang, PAGE_MAX_AGE_SECONDS);
+  if (outcome.unknown) return unavailablePage(route, PAGE_MAX_AGE_SECONDS);
   const record = outcome.record || {};
-  if (outcome.found && route.kind === 'paper' && record.paper) return paperPage(route, record.paper, lang);
-  if (outcome.found && route.kind === 'list' && record.list) return listPage(route, record.list, lang);
-  if (outcome.found && route.kind === 'user' && record.profile) return profilePage(route, record.profile, lang);
-  if (outcome.found && route.kind === 'entity' && record.entity) return entityPage(route, record.entity, lang);
-  return unavailablePage(route, lang);
+  if (outcome.found && route.kind === 'paper' && record.paper) return paperPage(route, record.paper);
+  if (outcome.found && route.kind === 'list' && record.list) return listPage(route, record.list);
+  if (outcome.found && route.kind === 'user' && record.profile) return profilePage(route, record.profile);
+  if (outcome.found && route.kind === 'entity' && record.entity) return entityPage(route, record.entity);
+  return unavailablePage(route);
 }
 
 // --------------------------------------------------------------- rendering
@@ -877,9 +844,6 @@ function setMeta(html, attribute, key, value) {
 /** The shell with the page's head, its static copy in #root and its seed. */
 export function renderSharePage(shell, page) {
   let html = typeof shell === 'string' && shell.includes(ROOT_ELEMENT) ? shell : MINIMAL_SHELL;
-  const locale = page.language === 'es' ? 'es_ES' : 'en_US';
-  const alternate = page.language === 'es' ? 'en_US' : 'es_ES';
-
   html = html.replace(/<html\b[^>]*>/i, () => `<html lang="${page.language}">`);
   html = setElement(html, TITLE_TAG, `<title>${escapeHtml(page.title)}</title>`);
   html = setMeta(html, 'name', 'description', page.description);
@@ -892,8 +856,9 @@ export function renderSharePage(shell, page) {
   html = setMeta(html, 'property', 'og:title', page.title);
   html = setMeta(html, 'property', 'og:description', page.description);
   html = setMeta(html, 'property', 'og:url', page.pageUrl);
-  html = setMeta(html, 'property', 'og:locale', locale);
-  html = setMeta(html, 'property', 'og:locale:alternate', alternate);
+  html = setMeta(html, 'property', 'og:locale', 'en_US');
+  // A shell that still advertises an alternate locale loses it: there is none.
+  html = setMeta(html, 'property', 'og:locale:alternate', null);
   html = setMeta(html, 'property', 'og:image', SHARE_IMAGE_URL);
   html = setMeta(html, 'property', 'og:image:alt', page.imageAlt);
   html = setMeta(html, 'name', 'twitter:card', 'summary_large_image');
@@ -1031,16 +996,14 @@ export async function handleSharePage(request, {
   cache = globalThis.caches?.default,
 } = {}) {
   const route = matchShareRoute(new URL(request.url));
-  const language = shareLanguage(request.headers.get('accept-language'));
   const outcome = route && !route.invalid
     ? await readRecord(route, { loadRecord, admit, cache })
     : { found: false };
-  const page = sharePageModel(route, outcome, language);
+  const page = sharePageModel(route, outcome);
 
   const headers = new Headers({
     'content-type': 'text/html; charset=utf-8',
     'cache-control': `public, max-age=${page.maxAge}`,
-    vary: 'Accept-Language',
     'content-language': page.language,
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'strict-origin',

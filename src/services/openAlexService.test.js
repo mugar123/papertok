@@ -30,30 +30,26 @@ import {
   searchLocalTopics,
 } from './openAlexService.js';
 
-test('localizes topic entities without changing their canonical category identity', () => {
-  const spanish = getLocalTopicEntity('gr-qc', 'es');
-  const english = getLocalTopicEntity('gr-qc', 'en');
+test('names local topic entities without changing their canonical category identity', () => {
+  const topic = getLocalTopicEntity('gr-qc');
 
-  assert.equal(spanish.id, 'gr-qc');
-  assert.equal(spanish.display_name, 'Relatividad General');
-  assert.equal(english.id, 'gr-qc');
-  assert.equal(english.display_name, 'General Relativity and Quantum Cosmology');
-  assert.deepEqual(english.categoryIds, spanish.categoryIds);
-  assert.equal(english._localTopic, true);
+  assert.equal(topic.id, 'gr-qc');
+  assert.equal(topic.display_name, 'General Relativity and Quantum Cosmology');
+  assert.deepEqual(topic.categoryIds, ['gr-qc']);
+  assert.equal(topic._localTopic, true);
 });
 
-test('searches local topics bilingually and ignores accents', () => {
-  const spanish = searchLocalTopics('cosmologia', 'es');
-  const english = searchLocalTopics('cosmology', 'en');
+test('searches local topics regardless of case', () => {
+  const lower = searchLocalTopics('cosmology');
+  const upper = searchLocalTopics('COSMOLOGY');
 
-  assert.equal(spanish[0].id, 'astro-ph.CO');
-  assert.equal(spanish[0].display_name, 'Cosmología');
-  assert.equal(english[0].id, 'astro-ph.CO');
-  assert.equal(english[0].display_name, 'Cosmology');
+  assert.equal(lower[0].id, 'astro-ph.CO');
+  assert.equal(lower[0].display_name, 'Cosmology');
+  assert.equal(upper[0].id, 'astro-ph.CO');
 });
 
 test('returns real local topic metadata instead of invented work counts', () => {
-  const [physics] = searchLocalTopics('physics', 'en');
+  const [physics] = searchLocalTopics('physics');
 
   assert.equal(physics.id, 'physics');
   assert.equal(physics.works_count, null);
@@ -220,7 +216,7 @@ test('adds localized ROR institution names to author profiles', async () => {
     });
 
     assert.equal(author.institutionData.localized_names.en, 'University of Salamanca');
-    assert.equal(author.last_known_institutions[0].localized_names.es, 'Universidad de Salamanca');
+    assert.equal(author.last_known_institutions[0].localized_names.en, 'University of Salamanca');
   } finally {
     globalThis.fetch = originalFetch;
   }

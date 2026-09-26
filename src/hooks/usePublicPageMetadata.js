@@ -8,15 +8,12 @@ import {
 
 const ROOT_METADATA = {
   title: {
-    es: 'PaperTok — Descubre investigación científica',
     en: 'PaperTok — Discover scientific research',
   },
   description: {
-    es: 'PaperTok es una aplicación para explorar y descubrir artículos científicos de distintas fuentes.',
     en: 'PaperTok is an application for exploring and discovering scientific papers from multiple sources.',
   },
   imageAlt: {
-    es: 'Vista de un artículo científico en PaperTok',
     en: 'A scientific paper view in PaperTok',
   },
 };
@@ -30,7 +27,7 @@ function cleanText(value) {
 
 function resolveLocalized(value, language, fallback) {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return cleanText(value[language] || value[language === 'en' ? 'es' : 'en'] || value.default) || fallback;
+    return cleanText(value[language] || value.default) || fallback;
   }
   return cleanText(value) || fallback;
 }
@@ -72,7 +69,6 @@ function buildStructuredData({
   description,
   pageUrl,
   imageUrl,
-  language,
   rootUrl,
   customData,
 }) {
@@ -83,7 +79,7 @@ function buildStructuredData({
     description,
     url: pageUrl,
     image: imageUrl,
-    inLanguage: language === 'en' ? 'en-US' : 'es-ES',
+    inLanguage: 'en-US',
     isPartOf: {
       '@type': 'WebSite',
       name: 'PaperTok',
@@ -170,11 +166,8 @@ function restoreNodes(records) {
 }
 
 export function usePublicPageMetadata(options = EMPTY_OPTIONS) {
-  const { language: contextLanguage } = useLanguage();
+  const { language } = useLanguage();
   const config = options || EMPTY_OPTIONS;
-  const language = config.language === 'en' || config.language === 'es'
-    ? config.language
-    : contextLanguage;
 
   const metadata = useMemo(() => {
     const navigationOptions = {
@@ -206,7 +199,7 @@ export function usePublicPageMetadata(options = EMPTY_OPTIONS) {
       imageUrl,
       ogType,
       robots: config.noIndex ? 'noindex, nofollow' : cleanText(config.robots) || 'index, follow',
-      locale: language === 'en' ? 'en_US' : 'es_ES',
+      locale: 'en_US',
       jsonLd,
     };
   }, [config, language]);
@@ -235,7 +228,6 @@ export function usePublicPageMetadata(options = EMPTY_OPTIONS) {
     upsertMeta(records, 'property', 'og:url', metadata.pageUrl);
     upsertMeta(records, 'property', 'og:site_name', 'PaperTok');
     upsertMeta(records, 'property', 'og:locale', metadata.locale);
-    upsertMeta(records, 'property', 'og:locale:alternate', language === 'en' ? 'es_ES' : 'en_US');
     upsertMeta(records, 'property', 'og:image', metadata.imageUrl);
     upsertMeta(records, 'property', 'og:image:alt', metadata.imageAlt);
     upsertMeta(records, 'property', 'og:image:width', '1200');

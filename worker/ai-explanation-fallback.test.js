@@ -161,14 +161,14 @@ const GEMINI_RATE_LIMIT = {
 };
 
 const EXPLANATION = {
-  overview: 'El trabajo mide cómo se enfría un gas ultrafrío al aplicarle un campo alterno.',
-  whyItMatters: 'Permite simular materiales cuánticos sin fabricarlos.',
-  keyPoints: ['Enfriamiento en dos etapas', 'Campo alterno de 40 kHz', 'Vida media de 8 s'],
-  methodology: 'Trampa magneto-óptica seguida de evaporación forzada.',
-  results: 'La temperatura baja un 40 % frente al protocolo estático.',
-  concepts: [{ term: 'Condensado de Bose-Einstein', explanation: 'Estado en el que los átomos comparten la misma función de onda.' }],
-  limitations: ['Una sola especie atómica'],
-  takeaway: 'El campo alterno mejora el enfriamiento sin coste de vida media.',
+  overview: 'The work measures how an ultracold gas cools when an alternating field is applied.',
+  whyItMatters: 'It makes it possible to simulate quantum materials without fabricating them.',
+  keyPoints: ['Two-stage cooling', '40 kHz alternating field', '8 s lifetime'],
+  methodology: 'Magneto-optical trap followed by forced evaporation.',
+  results: 'Temperature drops by 40 % compared with the static protocol.',
+  concepts: [{ term: 'Bose-Einstein condensate', explanation: 'A state in which the atoms share the same wave function.' }],
+  limitations: ['A single atomic species'],
+  takeaway: 'The alternating field improves cooling at no cost to lifetime.',
 };
 
 const kimiCompletion = () => json({
@@ -200,7 +200,7 @@ const PAPER = {
   categories: ['cond-mat.quant-gas'],
 };
 
-function explainRequest(paper = PAPER, { level = 'university', language = 'es' } = {}) {
+function explainRequest(paper = PAPER, { level = 'university', language = 'en' } = {}) {
   return new Request('https://worker.test/ai/explain', {
     method: 'POST',
     headers: { authorization: `Bearer ${fakeIdToken()}`, 'content-type': 'application/json' },
@@ -246,8 +246,8 @@ test('an exhausted Gemini daily quota hands the explanation to Kimi K3', async (
   // the prompt or the keys become a coin flip.
   const kimiPrompt = kimiCall.body.messages.at(-1).content;
   for (const field of REQUIRED_FIELDS) assert.match(kimiPrompt, new RegExp(`"${field}"`));
-  assert.match(kimiPrompt, /objetos con "term" y "explanation"/);
-  assert.match(kimiPrompt, /No renombres, traduzcas, anides ni omitas claves/);
+  assert.match(kimiPrompt, /objects with "term" and "explanation"/);
+  assert.match(kimiPrompt, /Do not rename, translate, nest, or omit keys/);
 
   // 900 prompt + (700 + 300) output tokens at $3 / $15 per million.
   assert.equal(env.KIMI_BUDGET_LEDGER.store.get('spentMicros'), 17_700);
@@ -335,7 +335,7 @@ test('a model Modal does not serve surfaces the original Gemini quota error', as
   assert.equal(env.KIMI_BUDGET_LEDGER.store.get('reservedMicros'), 0);
 });
 
-test('the contract follows the requested language', async () => {
+test('a legacy Spanish request still gets the English contract', async () => {
   installCache();
   const env = envWith();
   const calls = stubFetch({
@@ -344,11 +344,16 @@ test('the contract follows the requested language', async () => {
     'modal.run': kimiCompletion,
   });
 
-  await handleAIExplanation(explainRequest(PAPER, { language: 'en' }), env);
+  const result = await handleAIExplanation(explainRequest(PAPER, { language: 'es' }), env);
+  assert.equal(result.language, 'en');
 
-  const kimiPrompt = calls.find(call => call.url.includes('modal.run')).body.messages.at(-1).content;
+  const kimiMessages = calls.find(call => call.url.includes('modal.run')).body.messages;
+  const kimiPrompt = kimiMessages.at(-1).content;
   for (const field of REQUIRED_FIELDS) assert.match(kimiPrompt, new RegExp(`"${field}"`));
   assert.match(kimiPrompt, /copied verbatim in English/);
+  assert.match(kimiPrompt, /explain a scientific paper in English/);
+  assert.match(kimiMessages[0].content, /Respond entirely in English/);
+  assert.doesNotMatch(kimiPrompt, /Devuelve|español/);
 });
 
 test('translated keys from Kimi fail loudly instead of rendering half empty', async () => {
@@ -693,7 +698,7 @@ test('an exhausted Gemini daily quota hands the explanation to DeepSeek before K
   // travel inside the prompt exactly as it does for Kimi.
   const deepseekPrompt = deepseekCall.body.messages.at(-1).content;
   for (const field of REQUIRED_FIELDS) assert.match(deepseekPrompt, new RegExp(`"${field}"`));
-  assert.match(deepseekPrompt, /No renombres, traduzcas, anides ni omitas claves/);
+  assert.match(deepseekPrompt, /Do not rename, translate, nest, or omit keys/);
 });
 
 test('a DeepSeek outage advances the chain to Kimi', async () => {

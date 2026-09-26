@@ -16,11 +16,9 @@ import './CustomDateSelector.css';
 import { Toggle } from '../ui/toggle.jsx';
 
 const MONTHS = {
-  es: ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'],
   en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
 };
 const WEEKDAYS = {
-  es: ['L', 'M', 'X', 'J', 'V', 'S', 'D'],
   en: ['M', 'T', 'W', 'T', 'F', 'S', 'S'],
 };
 
@@ -55,7 +53,7 @@ function railPosition(year, currentYear) {
 }
 
 export default function CustomDateSelector({ value, onApply, onCancel }) {
-  const { language, isEnglish } = useLanguage();
+  const { language } = useLanguage();
   const currentYear = new Date().getFullYear();
   const initial = getInitialSelection(value, currentYear);
   const today = new Date();
@@ -146,7 +144,7 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
     return cellDateStr === startDateStr || cellDateStr === endDateStr;
   };
 
-  const locale = language === 'en' ? 'en-US' : 'es-ES';
+  const locale = 'en-US';
   const prettyDate = (iso) => readDate(iso, locale);
   const visibleMonths = monthsInWindow(monthWindow);
 
@@ -162,15 +160,15 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
   return (
     <div className="cds">
       <div className="cds-head cds-enter" style={{ '--enter-order': 0 }}>
-        <span className="cds-title">{isEnglish ? 'Custom period' : 'Periodo personalizado'}</span>
+        <span className="cds-title">{'Custom period'}</span>
         <span className="cds-hint">
-          {isEnglish ? 'Two steps: the years, then the days' : 'Dos pasos: los años y luego los días'}
+          {'Two steps: the years, then the days'}
         </span>
         <button
           type="button"
           className="cds-close"
           onClick={onCancel}
-          aria-label={isEnglish ? 'Close date selector' : 'Cerrar selector de fechas'}
+          aria-label={'Close date selector'}
         >
           <X size={16} />
         </button>
@@ -189,7 +187,7 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
             max={currentYear}
             value={yearRange}
             onValueChange={handleYearRangeChange}
-            getAriaLabel={(index) => (isEnglish ? ['Start year', 'End year'] : ['Año inicial', 'Año final'])[index]}
+            getAriaLabel={(index) => (['Start year', 'End year'])[index]}
           />
         </div>
         <div className="cds-rail-ticks" aria-hidden="true">
@@ -203,16 +201,14 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
         <div className="cds-step">
           <span className="cds-step-n">1</span>
           <span className="cds-step-body">
-            {isEnglish ? 'Drag the two ends to the years you want.' : 'Arrastra los dos extremos a los años que quieras.'}
+            {'Drag the two ends to the years you want.'}
           </span>
           <span className="cds-step-why">
             {isSingleYear
               ? `${yearRange[0]}`
               : `${yearRange[0]} — ${yearRange[1]}`}
             {' · '}
-            {isEnglish
-              ? `${spanYears} ${spanYears === 1 ? 'year' : 'years'}`
-              : `${spanYears} ${spanYears === 1 ? 'año' : 'años'}`}
+            {`${spanYears} ${spanYears === 1 ? 'year' : 'years'}`}
           </span>
         </div>
 
@@ -232,12 +228,12 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
             <Collapsible.Trigger render={<button type="button" className="cds-step cds-step--action" />}>
               <span className="cds-step-n">2</span>
               <span className="cds-step-body">
-                {isEnglish ? 'Narrow to exact days.' : 'Afina a días exactos.'}
+                {'Narrow to exact days.'}
               </span>
               <span className="cds-step-why">
                 {startDateStr
-                  ? (isEnglish ? 'Days chosen' : 'Días elegidos')
-                  : (isEnglish ? 'Optional' : 'Opcional')}
+                  ? ('Days chosen')
+                  : ('Optional')}
                 <CaretRight size={14} className="cds-step-chevron" aria-hidden="true" />
               </span>
             </Collapsible.Trigger>
@@ -250,7 +246,7 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
                     className="cds-cal-nav"
                     onClick={() => setMonthWindow(w => Math.max(0, w - 3))}
                     disabled={monthWindow === 0}
-                    aria-label={isEnglish ? 'Earlier months' : 'Meses anteriores'}
+                    aria-label={'Earlier months'}
                   >
                     <CaretLeft size={16} />
                   </button>
@@ -260,7 +256,7 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
                     className="cds-cal-nav"
                     onClick={() => setMonthWindow(w => Math.min(9, w + 3))}
                     disabled={monthWindow >= 9}
-                    aria-label={isEnglish ? 'Later months' : 'Meses siguientes'}
+                    aria-label={'Later months'}
                   >
                     <CaretRight size={16} />
                   </button>
@@ -307,7 +303,7 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
                     className="cds-cal-clear"
                     onClick={() => { setStartDateStr(null); setEndDateStr(null); }}
                   >
-                    {isEnglish ? 'Clear the days' : 'Quitar los días'}
+                    {'Clear the days'}
                   </button>
                 )}
               </div>
@@ -317,12 +313,10 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
           <div className="cds-step cds-step--off">
             <span className="cds-step-n">2</span>
             <span className="cds-step-body">
-              {isEnglish ? 'Narrow to exact days.' : 'Afina a días exactos.'}
+              {'Narrow to exact days.'}
             </span>
             <span className="cds-step-why">
-              {isEnglish
-                ? 'Available once both ends sit on the same year'
-                : 'Disponible cuando los dos extremos caen en el mismo año'}
+              {'Available once both ends sit on the same year'}
             </span>
           </div>
         )}
@@ -332,20 +326,18 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
           Apply is about to ask for, in the words the period is written in. */}
       <div className="cds-reading cds-enter" style={{ '--enter-order': 3 }}>
         <p className="cds-reading-line">
-          {isEnglish
-            ? `Papers published between ${prettyDate(period.from)} and ${prettyDate(period.to)}.`
-            : `Papers publicados entre el ${prettyDate(period.from)} y el ${prettyDate(period.to)}.`}
+          {`Papers published between ${prettyDate(period.from)} and ${prettyDate(period.to)}.`}
         </p>
         <span className="cds-reading-note">
           {period.from} → {period.to}
-          {period.cappedAtToday && ` · ${isEnglish ? 'closed at today' : 'cerrado en hoy'}`}
+          {period.cappedAtToday && ` · ${'closed at today'}`}
         </span>
         <div className="cds-reading-actions">
           <Button type="button" variant="outline" onClick={onCancel}>
-            {isEnglish ? 'Cancel' : 'Cancelar'}
+            {'Cancel'}
           </Button>
           <Button type="button" onClick={handleApply}>
-            {isEnglish ? 'Apply period' : 'Aplicar periodo'}
+            {'Apply period'}
           </Button>
         </div>
       </div>

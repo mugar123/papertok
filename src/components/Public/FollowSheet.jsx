@@ -181,7 +181,6 @@ export default function FollowSheet({
   uid,
   mode,
   counts,
-  isEnglish,
   onModeChange,
   onClose,
 }) {
@@ -247,7 +246,7 @@ export default function FollowSheet({
     return known == null ? 3 : Math.min(8, Math.max(0, known));
   }, [counts, mode]);
 
-  const copy = isEnglish ? {
+  const copy = {
     followers: 'Followers',
     following: 'Following',
     close: 'Close',
@@ -265,24 +264,6 @@ export default function FollowSheet({
     unavailable: 'Account unavailable',
     showing: 'Showing',
     of: 'of',
-  } : {
-    followers: 'Seguidores',
-    following: 'Siguiendo',
-    close: 'Cerrar',
-    emptyTitle: mode === 'followers' ? 'Sin seguidores todavía' : 'Sin usuarios seguidos todavía',
-    emptyHint: mode === 'followers'
-      ? 'Cuando alguien siga esta cuenta, aparecerá aquí.'
-      : 'Aquí aparecerán los usuarios que siga esta cuenta.',
-    more: 'Cargar más',
-    loading: 'Cargando...',
-    slow: 'Está tardando más de lo normal. Seguimos intentándolo.',
-    offline: 'Parece que no hay conexión. Seguimos intentándolo.',
-    stalled: 'Está tardando muchísimo. Seguimos intentándolo por detrás.',
-    error: 'No se pudo cargar esta lista.',
-    retry: 'Reintentar',
-    unavailable: 'Cuenta no disponible',
-    showing: 'Mostrando',
-    of: 'de',
   };
 
   /**

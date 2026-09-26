@@ -70,16 +70,16 @@ export function calculateEntityRecentImpact(works = [], minimumSampleSize = 50) 
   const score = Math.round((fwciScore * 0.7 + highImpactScore * 0.3) * 10) / 10;
 
   const level = score >= 8.5
-    ? 'Excepcional'
+    ? 'Exceptional'
     : score >= 7
-      ? 'Muy alto'
+      ? 'Very high'
       : score >= 5.5
-        ? 'Por encima de la media'
+        ? 'Above average'
         : score >= 4.5
-          ? 'En la media'
+          ? 'Average'
           : score >= 3
-            ? 'Por debajo de la media'
-            : 'Bajo';
+            ? 'Below average'
+            : 'Low';
 
   return {
     available: true,

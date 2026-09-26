@@ -45,8 +45,8 @@ export function publicPaperMetadata(paper, route) {
   const title = plainScientificText(paper.title) || String(paper.title || '');
   const description = plainScientificText(paper.abstract) || String(paper.abstract || '');
   return {
-    title: { es: title, en: title },
-    description: { es: description, en: description },
+    title: { en: title },
+    description: { en: description },
     route,
     ogType: 'article',
   };

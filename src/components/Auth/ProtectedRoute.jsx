@@ -2,12 +2,10 @@ import { useMemo, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { peekAuthReturn } from '../../utils/authReturn.js';
-import { useLanguage } from '../../context/LanguageContext';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import AnimatedAtom from '../Feed/AnimatedAtom';
 
 export default function ProtectedRoute({ children, requireOnboarding = true }) {
-  const { language, isEnglish } = useLanguage();
   const location = useLocation();
   const {
     user,
@@ -103,11 +101,11 @@ export default function ProtectedRoute({ children, requireOnboarding = true }) {
     return (
       <div className="loading-screen">
         <AnimatedAtom size={64} strokeWidth={1} className="loading-atom" />
-        <h2 className="loading-error-title">{isEnglish ? 'Your profile could not be loaded' : 'No se pudo cargar tu perfil'}</h2>
+        <h2 className="loading-error-title">{'Your profile could not be loaded'}</h2>
         <p className="loading-text">
-          {getUiErrorMessage(profileLoadError, language, 'PROFILE_LOAD_FAILED')}
+          {getUiErrorMessage(profileLoadError, 'PROFILE_LOAD_FAILED')}
         </p>
-        <button className="loading-retry" onClick={retryProfileLoad}>{isEnglish ? 'Try again' : 'Reintentar'}</button>
+        <button className="loading-retry" onClick={retryProfileLoad}>{'Try again'}</button>
         <style>{`
           .loading-screen {
             display: flex;

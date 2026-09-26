@@ -36,26 +36,6 @@ const REPO_API_URL = 'https://api.github.com/repos/mugar123/papertok';
 const THANKS_HOLD_MS = 600;
 
 const COPY = {
-  es: {
-    dismiss: 'Cerrar y no volver a mostrarlo',
-    starsLabel: count => `${count} ${count === 1 ? 'estrella' : 'estrellas'} en GitHub`,
-    'open-source': {
-      title: 'PaperTok es código abierto',
-      body: 'Licencia MIT. Una estrella ayuda a difundirlo.',
-      cta: 'Dale una estrella',
-    },
-    'email-down': {
-      'not-configured': {
-        title: 'Avisos por correo en pausa',
-        body: 'El servicio aún no está conectado, así que no saldrá ningún resumen.',
-      },
-      unavailable: {
-        title: 'Avisos por correo en pausa',
-        body: 'El servicio de correo no responde ahora mismo y los resúmenes no salen.',
-      },
-      cta: 'Ajustes',
-    },
-  },
   en: {
     dismiss: 'Dismiss and do not show again',
     starsLabel: count => `${count} ${count === 1 ? 'star' : 'stars'} on GitHub`,
@@ -80,7 +60,7 @@ const COPY = {
 
 export default function NudgeHost() {
   const { user, loading: authLoading, onboardingComplete } = useAuth();
-  const { isEnglish, locale } = useLanguage();
+  const { locale } = useLanguage();
   const { health, loading: emailLoading } = useEmailNotifications();
   const location = useLocation();
   const navigate = useNavigate();
@@ -171,7 +151,7 @@ export default function NudgeHost() {
     navigate('/settings');
   }, [close, navigate]);
 
-  const copy = COPY[isEnglish ? 'en' : 'es'];
+  const copy = COPY.en;
   const isStar = picked === 'open-source';
   const emailCopy = emailProblem ? copy['email-down'][emailProblem] : null;
   const ready = picked !== null && stars !== undefined;

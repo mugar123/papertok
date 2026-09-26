@@ -23,7 +23,7 @@ export default function GuestFeedPage({
   onOpenPdf,
   onOpenComments = null,
 }) {
-  const { isEnglish, language, setLanguage } = useLanguage();
+  const { language } = useLanguage();
   const { consent, trackEvent } = useAnalyticsConsent();
   // `null` until this device has answered the welcome's interests step. In
   // that state the page IS the welcome (GuestWelcome): four screens on what
@@ -84,11 +84,11 @@ export default function GuestFeedPage({
   }, []);
 
   const interestsChipLabel = areas.length > 0
-    ? `${areas.length} ${isEnglish ? (areas.length === 1 ? 'area' : 'areas') : (areas.length === 1 ? 'área' : 'áreas')}`
-    : (isEnglish ? 'Interests' : 'Intereses');
+    ? `${areas.length} ${areas.length === 1 ? 'area' : 'areas'}`
+    : ('Interests');
   const interestsChipName = areas.length > 0
-    ? (isEnglish ? `Your interests: ${areas.length} ${areas.length === 1 ? 'area' : 'areas'}. Change them` : `Tus intereses: ${areas.length} ${areas.length === 1 ? 'área' : 'áreas'}. Cambiarlos`)
-    : (isEnglish ? 'Choose your interests' : 'Elegir tus intereses');
+    ? (`Your interests: ${areas.length} ${areas.length === 1 ? 'area' : 'areas'}. Change them`)
+    : ('Choose your interests');
 
   // The welcome is a page of its own, with its own <main>: the feed's page
   // is not mounted underneath it, so the route keeps exactly one landmark.
@@ -108,13 +108,10 @@ export default function GuestFeedPage({
       <main className="guest-feed-page">
         {/* The page's h1, above the paper titles (h2): this route is also `/`
             and every protected route without a session, and it had none. */}
-        <h1 className="visually-hidden">{isEnglish ? 'PaperTok: scientific papers for you' : 'PaperTok: papers científicos para ti'}</h1>
-        <header className="guest-feed-header" aria-label={isEnglish ? 'PaperTok guest navigation' : 'Navegación de invitado de PaperTok'}>
+        <h1 className="visually-hidden">{'PaperTok: scientific papers for you'}</h1>
+        <header className="guest-feed-header" aria-label={'PaperTok guest navigation'}>
           <div className="guest-wordmark" aria-label="PaperTok">Paper<span>Tok</span></div>
           <div className="guest-header-actions">
-            <button type="button" className="guest-language-button" onClick={() => setLanguage(isEnglish ? 'es' : 'en')}>
-              {isEnglish ? 'ES' : 'EN'}
-            </button>
             {/* A visitor gets the system's answer by default and can still
                 overrule it here: the bar that carries this control for a session
                 is not rendered for them. */}
@@ -132,7 +129,7 @@ export default function GuestFeedPage({
               <span className="guest-interests-label">{interestsChipLabel}</span>
             </button>
             <button type="button" className="guest-sign-in-button" onClick={() => requestAccount('other')}>
-              <SignIn size={15} /> {isEnglish ? 'Sign in' : 'Entrar'}
+              <SignIn size={15} /> {'Sign in'}
             </button>
           </div>
         </header>

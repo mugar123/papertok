@@ -20,10 +20,10 @@ export function validateProfileImageMetadata(file) {
     throw new Error('Selecciona una imagen PNG, JPEG o WebP.');
   }
   if (!Number.isFinite(file.size) || file.size <= 0) {
-    throw new Error('La imagen está vacía o no se puede leer.');
+    throw new Error('The image is empty or cannot be read.');
   }
   if (file.size > MAX_INPUT_BYTES) {
-    throw new Error('La imagen no puede superar los 8 MB.');
+    throw new Error('The image cannot be larger than 8 MB.');
   }
 }
 
@@ -43,7 +43,7 @@ function loadImage(objectUrl) {
   return new Promise((resolve, reject) => {
     const image = new Image();
     image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error('No se pudo procesar esta imagen.'));
+    image.onerror = () => reject(new Error('This image could not be processed.'));
     image.src = objectUrl;
   });
 }
@@ -56,7 +56,7 @@ function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error('No se pudo leer la imagen procesada.'));
+    reader.onerror = () => reject(new Error('The processed image could not be read.'));
     reader.readAsDataURL(blob);
   });
 }
@@ -73,7 +73,7 @@ export async function prepareProfileImage(file, options = {}) {
     const image = await loadImage(objectUrl);
     const sourceSize = Math.min(image.naturalWidth, image.naturalHeight);
     if (!Number.isFinite(sourceSize) || sourceSize <= 0) {
-      throw new Error('La imagen no tiene unas dimensiones válidas.');
+      throw new Error('The image does not have valid dimensions.');
     }
     const sourceX = (image.naturalWidth - sourceSize) / 2;
     const sourceY = (image.naturalHeight - sourceSize) / 2;
@@ -118,7 +118,7 @@ export async function prepareProfileImage(file, options = {}) {
       if (normalized) return normalized;
     }
 
-    throw new Error('La imagen sigue siendo demasiado grande. Prueba con otra.');
+    throw new Error('The image is still too large. Try another one.');
   } finally {
     URL.revokeObjectURL(objectUrl);
   }

@@ -36,18 +36,9 @@ export const MAX_NOTE_CHARS = 700;
 const ANNOTATION_BUDGET_MS = 14_000;
 
 const LEVEL_VOICE = {
-  beginner: {
-    es: 'Escribe para alguien curioso sin formación en el área. Define cualquier término técnico que uses.',
-    en: 'Write for a curious reader with no training in the field. Define any technical term you use.',
-  },
-  university: {
-    es: 'Escribe para un estudiante universitario del área general, pero no de esta especialidad.',
-    en: 'Write for a university student in the broad field, but not in this specialty.',
-  },
-  researcher: {
-    es: 'Escribe para alguien que investiga en un área cercana: puedes dar por sabido el vocabulario estándar.',
-    en: 'Write for someone doing research in a neighbouring field: standard vocabulary can be assumed.',
-  },
+  beginner: 'Write for a curious reader with no training in the field. Define any technical term you use.',
+  university: 'Write for a university student in the broad field, but not in this specialty.',
+  researcher: 'Write for someone doing research in a neighbouring field: standard vocabulary can be assumed.',
 };
 
 export function isAnnotationLevel(level) {
@@ -58,33 +49,15 @@ export function isAnnotationLevel(level) {
  * The passage, plus just enough around it to make it mean something.
  *
  * A quote pulled out of a paragraph frequently cannot be explained on its own —
- * "esa cantidad" refers to something in the sentence before. The paragraph it
+ * "that quantity" refers to something in the sentence before. The paragraph it
  * came from travels with it as context and is explicitly marked as context, so
  * the model explains the selection rather than summarising the paragraph.
+ *
+ * The product is English-only: any incoming `language` is ignored here.
  */
-export function buildAnnotationPrompt({ paper, quote, context, level, language }) {
-  const es = language !== 'en';
-  const voice = LEVEL_VOICE[level][es ? 'es' : 'en'];
+export function buildAnnotationPrompt({ paper, quote, context, level }) {
+  const voice = LEVEL_VOICE[level];
   const title = cleanText(paper?.title, 500);
-
-  if (es) {
-    return `Un lector está leyendo una versión en lenguaje sencillo del artículo «${title}» y ha señalado un fragmento que no entiende.
-
-PÁRRAFO COMPLETO (solo como contexto, no lo resumas):
-${context}
-
-FRAGMENTO SEÑALADO:
-${quote}
-
-Explica QUÉ SIGNIFICA ESE FRAGMENTO. ${voice}
-
-Reglas:
-- Entre dos y cuatro frases. Nada más.
-- Empieza por lo que el fragmento quiere decir, no por «este fragmento dice que».
-- Si el fragmento depende de algo dicho antes en el párrafo, dilo explícitamente.
-- Si el fragmento no se puede explicar sin datos que no están aquí, dilo en una frase en vez de inventarlos.
-- Texto llano. Sin listas, sin títulos, sin markdown, sin comillas alrededor de la respuesta.`;
-  }
 
   return `A reader is working through a plain-language version of the paper "${title}" and has pointed at a passage they do not follow.
 
@@ -225,7 +198,7 @@ export async function handlePassageAnnotation(request, env) {
     const result = await requestAnnotation({
       env,
       model,
-      prompt: buildAnnotationPrompt({ paper, quote, context, level, language }),
+      prompt: buildAnnotationPrompt({ paper, quote, context, level }),
       language,
       timeoutMs: ANNOTATION_BUDGET_MS,
     });

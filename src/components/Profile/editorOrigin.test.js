@@ -36,11 +36,9 @@ test('every door from the profile page into the editor carries the origin', asyn
 test('the editor reads the origin and answers with its own eyebrow and back label', async () => {
   const source = await stripped('./ProfilePage.jsx');
   assert.match(source, /cameFromProfile\(location\)/);
-  // The profile-origin voice, in both languages.
+  // The profile-origin voice.
   assert.match(source, /eyebrowFromProfile:\s*'Profile · Settings'/);
-  assert.match(source, /eyebrowFromProfile:\s*'Perfil · Ajustes'/);
   assert.match(source, /backToProfile:\s*'Back to profile'/);
-  assert.match(source, /backToProfile:\s*'Volver al perfil'/);
   // The hub's voice stays the default.
-  assert.match(source, /SETTINGS_BREADCRUMB\[isEnglish \? 'en' : 'es'\]/);
+  assert.match(source, /fromProfile \? copy\.eyebrowFromProfile : SETTINGS_BREADCRUMB\.en/);
 });

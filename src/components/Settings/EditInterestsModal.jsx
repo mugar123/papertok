@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Check } from '@phosphor-icons/react';
 import { useAuth } from '../../context/AuthContext';
-import { useLanguage } from '../../context/LanguageContext';
 import { CATEGORIES } from '../../data/categories';
 import { USER_PREFERENCES_MAX } from '../../utils/accountOnboarding.js';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.jsx';
@@ -17,7 +16,6 @@ import './EditInterestsModal.css';
  */
 export default function EditInterestsModal({ isOpen, onClose }) {
   const { userPreferences, updatePreferences } = useAuth();
-  const { isEnglish } = useLanguage();
   const [selected, setSelected] = useState(new Set());
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState('');
@@ -79,9 +77,7 @@ export default function EditInterestsModal({ isOpen, onClose }) {
       // file already uses elsewhere (see the init effect).
       setFormError('');
       setTimeout(() => {
-        setFormError(isEnglish
-          ? 'Select at least one research area.'
-          : 'Selecciona al menos un área de investigación.');
+        setFormError('Select at least one research area.');
       }, 0);
       return;
     }
@@ -90,9 +86,7 @@ export default function EditInterestsModal({ isOpen, onClose }) {
       // repeat click must re-announce the error, not be swallowed by the diff.
       setFormError('');
       setTimeout(() => {
-        setFormError(isEnglish
-          ? `At most ${USER_PREFERENCES_MAX} interests: drop ${selected.size - USER_PREFERENCES_MAX}.`
-          : `Como mucho ${USER_PREFERENCES_MAX} intereses: quita ${selected.size - USER_PREFERENCES_MAX}.`);
+        setFormError(`At most ${USER_PREFERENCES_MAX} interests: drop ${selected.size - USER_PREFERENCES_MAX}.`);
       }, 0);
       return;
     }
@@ -103,9 +97,7 @@ export default function EditInterestsModal({ isOpen, onClose }) {
       onClose();
     } catch (error) {
       console.error('Error saving preferences:', error);
-      setFormError(isEnglish
-        ? 'We could not save your changes. Try again.'
-        : 'No se pudieron guardar los cambios. Inténtalo de nuevo.');
+      setFormError('We could not save your changes. Try again.');
     } finally {
       setIsSaving(false);
     }
@@ -116,14 +108,12 @@ export default function EditInterestsModal({ isOpen, onClose }) {
       <DialogContent
         className="eim-modal"
         overlayClassName="eim-overlay"
-        closeLabel={isEnglish ? 'Close' : 'Cerrar'}
+        closeLabel={'Close'}
       >
         <div className="eim-header">
           <div className="eim-header-text">
-            <DialogTitle>{isEnglish ? 'Configure your algorithm' : 'Configura tu algoritmo'}</DialogTitle>
-            <DialogDescription>{isEnglish
-              ? 'Select the research areas you want to see in your feed'
-              : 'Selecciona las áreas de investigación que quieres ver en tu feed'}</DialogDescription>
+            <DialogTitle>{'Configure your algorithm'}</DialogTitle>
+            <DialogDescription>{'Select the research areas you want to see in your feed'}</DialogDescription>
           </div>
         </div>
 
@@ -139,7 +129,7 @@ export default function EditInterestsModal({ isOpen, onClose }) {
                     <div className="eim-area-icon" aria-hidden="true">
                       <area.icon size={24} />
                     </div>
-                    <h3 className="eim-area-title">{isEnglish ? area.labelEn : area.label}</h3>
+                    <h3 className="eim-area-title">{area.label}</h3>
                   </div>
                   <button
                     type="button"
@@ -147,8 +137,8 @@ export default function EditInterestsModal({ isOpen, onClose }) {
                     onClick={() => toggleArea(areaKey)}
                   >
                     {allSelected
-                      ? (isEnglish ? 'Deselect all' : 'Deseleccionar todo')
-                      : (isEnglish ? 'Select all' : 'Seleccionar todo')}
+                      ? ('Deselect all')
+                      : ('Select all')}
                   </button>
                 </div>
                 <div className="eim-subcats">
@@ -167,7 +157,7 @@ export default function EditInterestsModal({ isOpen, onClose }) {
                       >
                         <div className="eim-pill-content">
                           {isSelected && <Check size={14} weight="bold" className="eim-pill-check" aria-hidden="true" />}
-                          <span>{isEnglish ? sub.labelEn || sub.label : sub.label}</span>
+                          <span>{sub.label || sub.label}</span>
                         </div>
                       </Toggle>
                     );
@@ -184,9 +174,7 @@ export default function EditInterestsModal({ isOpen, onClose }) {
 
         <div className="eim-footer">
           <span className="eim-selected-count">
-            {isEnglish
-              ? `${selected.size} selected ${selected.size === 1 ? 'interest' : 'interests'}`
-              : `${selected.size} interese${selected.size !== 1 ? 's' : ''} seleccionado${selected.size !== 1 ? 's' : ''}`}
+            {`${selected.size} selected ${selected.size === 1 ? 'interest' : 'interests'}`}
           </span>
           <button
             type="button"
@@ -199,7 +187,7 @@ export default function EditInterestsModal({ isOpen, onClose }) {
                 button keeps an accessible name — "Saving..." rather than
                 nothing — for the whole time it is busy. */}
             {isSaving && <div className="eim-spinner" aria-hidden="true" />}
-            {isSaving ? (isEnglish ? 'Saving...' : 'Guardando...') : (isEnglish ? 'Save changes' : 'Guardar cambios')}
+            {isSaving ? ('Saving...') : ('Save changes')}
           </button>
         </div>
       </DialogContent>

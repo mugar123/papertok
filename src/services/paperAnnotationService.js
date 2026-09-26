@@ -59,7 +59,6 @@ export async function annotatePassage(paper, {
   quote,
   context = '',
   level = 'university',
-  language = 'es',
   signal,
 } = {}) {
   if (!canAnnotatePassage(quote)) throw new PaperAnnotationError('AI_INVALID_REQUEST');
@@ -89,7 +88,7 @@ export async function annotatePassage(paper, {
         // explain a fragment whose subject is in the sentence before it.
         context: String(context || '').slice(0, 4_000),
         level,
-        language: language === 'en' ? 'en' : 'es',
+        language: 'en',
       }),
     });
 

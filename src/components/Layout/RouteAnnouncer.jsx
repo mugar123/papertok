@@ -5,12 +5,10 @@
 // so Tab restarts at the content instead of the top of the page.
 import { useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
-import { useLanguage } from '../../context/LanguageContext'
 import { routeTitle, routeLabel } from '../../utils/routeMetadata'
 
 export default function RouteAnnouncer() {
   const location = useLocation()
-  const { isEnglish } = useLanguage()
   const liveRef = useRef(null)
   // Last pathname we actually announced, not "is this the first render":
   // React.StrictMode (src/main.jsx) double-invokes this effect on mount
@@ -23,7 +21,7 @@ export default function RouteAnnouncer() {
   useEffect(() => {
     // The title updates on every run, including a same-route re-run caused
     // by a language toggle or StrictMode's double-invoke.
-    const title = routeTitle(location.pathname, isEnglish)
+    const title = routeTitle(location.pathname)
     if (title) document.title = title
 
     if (lastAnnouncedPath.current === null) {
@@ -37,10 +35,10 @@ export default function RouteAnnouncer() {
       return
     }
     lastAnnouncedPath.current = location.pathname
-    const label = routeLabel(location.pathname, isEnglish)
+    const label = routeLabel(location.pathname)
     if (liveRef.current) liveRef.current.textContent = label || ''
     document.getElementById('main-content')?.focus({ preventScroll: true })
-  }, [location.pathname, isEnglish])
+  }, [location.pathname])
 
   // Rendered persistently and empty: live regions only announce content
   // *changes*, so the node must exist before the first navigation.

@@ -128,7 +128,7 @@ test('SOURCE: the mark is measured once per tab change, from the tab the router 
   assert.doesNotMatch(jsx, /querySelector\('\.navbar-link\.active'\)/);
   // And it is told the tab the ROUTER made current — no optimistic tab, or
   // the mark is aimed twice and the second aim lands mid-flight.
-  assert.match(jsx, /useActiveTabRule\(linksRef, activeTab, `\$\{activeTab\}:\$\{isEnglish\}`\)/);
+  assert.match(jsx, /useActiveTabRule\(linksRef, activeTab, activeTab\)/);
   assert.doesNotMatch(jsx, /shownTab/, 'no optimistic tab for the mark');
   assert.doesNotMatch(jsx, /setPressed/, 'no press state left over');
   // The press is kept only to judge the lift, and only for a finger.

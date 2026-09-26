@@ -1,43 +1,4 @@
 const ERROR_MESSAGES = {
-  es: {
-    GENERAL_ERROR: 'Ha ocurrido un error inesperado. Inténtalo de nuevo.',
-    CONNECTION_ERROR: 'Comprueba tu conexión e inténtalo de nuevo.',
-    PROFILE_LOAD_FAILED: 'No se pudo recuperar tu perfil. Comprueba la conexión e inténtalo de nuevo.',
-    AUTH_FAILED: 'No se pudo iniciar sesión. Inténtalo de nuevo.',
-    AUTH_LINK_FAILED: 'No se pudo conectar ese método de acceso. Inténtalo de nuevo.',
-    AUTH_EMAIL_ALREADY_USED: 'Ese correo ya entra en PaperTok por otro método. Usa el que ya tienes y conecta GitHub desde Ajustes.',
-    AUTH_IDENTITY_TAKEN: 'Esa cuenta de GitHub ya abre otra cuenta de PaperTok.',
-    'auth/cancelled-popup-request': 'Se canceló la ventana de inicio de sesión.',
-    'auth/unauthorized-domain': 'Este dominio no está autorizado para iniciar sesión.',
-    'auth/popup-blocked': 'El navegador ha bloqueado la ventana de inicio de sesión.',
-    'auth/popup-closed-by-user': 'Se cerró la ventana antes de completar el inicio de sesión.',
-    FEED_LOAD_FAILED: 'No se pudieron cargar los papers. Comprueba tu conexión e inténtalo de nuevo.',
-    FOLLOWING_LOAD_FAILED: 'No se pudieron consultar tus seguimientos. Comprueba tu conexión e inténtalo de nuevo.',
-    ENTITY_LOAD_FAILED: 'No se pudo cargar esta entidad. Comprueba tu conexión e inténtalo de nuevo.',
-    PUBLICATIONS_LOAD_FAILED: 'No se pudieron cargar las publicaciones. Comprueba tu conexión e inténtalo de nuevo.',
-    PARTIAL_PUBLICATIONS_LOAD_FAILED: 'No se pudieron cargar algunas publicaciones.',
-    AUTHORS_LOAD_FAILED: 'No se pudieron cargar los autores. Comprueba tu conexión e inténtalo de nuevo.',
-    PARTIAL_AUTHORS_LOAD_FAILED: 'No se pudieron cargar algunos autores.',
-    REPORT_LOAD_FAILED: 'No se pudo cargar la edición. Inténtalo de nuevo.',
-    LISTS_LOAD_FAILED: 'No se pudieron actualizar tus listas personalizadas.',
-    // No es un fallo: es una espera que se ha alargado y sigue corriendo.
-    LISTS_LOAD_STALLED: 'Tus listas están tardando muchísimo. Seguimos intentándolo.',
-    LIST_METADATA_LOAD_FAILED: 'No se pudieron cargar todos los datos de esta lista.',
-    // P25: the public copy is rebuilt in the background, so its failures are
-    // never "your edit was lost" — the edit is safe in Firestore and the list
-    // stays marked dirty until a later open reconciles it.
-    PUBLIC_LIST_SYNC_FAILED: 'Tus cambios están guardados, pero el enlace público aún no los tiene. Se reintentará al abrir la lista.',
-    PUBLISH_UNREACHABLE: 'Tus cambios están guardados. El enlace público se pondrá al día cuando vuelva la conexión.',
-    PUBLISH_QUOTA_EXCEEDED: 'Has llegado al límite diario de cambios en enlaces públicos. El enlace se pondrá al día mañana.',
-    PROFILE_PHOTO_SAVE_FAILED: 'No se pudo guardar la foto de perfil.',
-    PROFILE_PHOTO_WRITE_TIMEOUT: 'La foto no se guardó a tiempo. Comprueba tu conexión e inténtalo de nuevo.',
-    ACCOUNT_DELETION_FAILED: 'No se pudo eliminar la cuenta. Inténtalo de nuevo.',
-    ACCOUNT_DELETION_UNREACHABLE: 'No se pudo contactar con el servidor para eliminar la cuenta.',
-    ACCOUNT_DELETION_NOT_CONFIGURED: 'El borrado de cuenta no está disponible ahora mismo.',
-    AUTH_RECENT_LOGIN_REQUIRED: 'Por seguridad, vuelve a iniciar sesión y pide el borrado otra vez.',
-    CONFIRMATION_REQUIRED: 'Confirma el borrado desde el diálogo de ajustes.',
-    ACCOUNT_DELETION_UNSUPPORTED_IN_DEMO: 'El modo demostración no puede borrar una cuenta real.',
-  },
   en: {
     GENERAL_ERROR: 'An unexpected error occurred. Try again.',
     CONNECTION_ERROR: 'Check your connection and try again.',
@@ -80,8 +41,8 @@ function errorCode(value) {
   return value?.code || '';
 }
 
-export function getUiErrorMessage(value, language = 'es', fallbackCode = 'GENERAL_ERROR') {
-  const messages = ERROR_MESSAGES[language === 'en' ? 'en' : 'es'];
+export function getUiErrorMessage(value, fallbackCode = 'GENERAL_ERROR') {
+  const messages = ERROR_MESSAGES['en'];
   const code = errorCode(value);
   return messages[code] || messages[fallbackCode] || messages.GENERAL_ERROR;
 }

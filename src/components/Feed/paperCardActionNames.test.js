@@ -37,10 +37,8 @@ const bloque = (jsx, ancla, cierre = '</Button>') => {
   return jsx.slice(desde, hasta);
 };
 
-/** Los literales de un ternario `isEnglish ? '…' : '…'`, o el literal suelto. */
+/** The string literal of an expression (the interface is English-only). */
 const idiomas = (expresion) => {
-  const ternario = expresion.match(/isEnglish \? '([^']*)' : '([^']*)'/);
-  if (ternario) return [ternario[1], ternario[2]];
   const suelto = expresion.match(/'([^']*)'/);
   return suelto ? [suelto[1]] : [];
 };
@@ -96,7 +94,7 @@ test('SOURCE: la palabra que el botón principal enseña en móvil está en su n
   );
   assert.match(
     card,
-    /const primaryActionLabel = isResolvingAccess\s*\?\s*\(isEnglish \? '[^']*' : '[^']*'\)\s*:\s*restingActionLabel;\s*const primaryActionShortLabel = restingActionLabel\.split\(' '\)\[0\];/,
+    /const primaryActionLabel = isResolvingAccess\s*\?\s*\(?'[^']*'\)?\s*:\s*restingActionLabel;\s*const primaryActionShortLabel = restingActionLabel\.split\(' '\)\[0\];/,
     'la palabra corta ya no es la primera del rótulo en reposo, así que el nombre '
     + 'accesible puede dejar de contenerla (2.5.3)',
   );
@@ -127,7 +125,7 @@ test('SOURCE: el botón de reescritura se llama por lo que dibuja, sin aria-labe
   const largo = boton.match(/<span className="pc-action-label">\{([\s\S]*?)\}<\/span>/)?.[1];
   const corto = boton.match(/<span className="pc-action-label--short">\{([\s\S]*?)\}<\/span>/)?.[1];
   assert.ok(largo && corto, 'el botón de reescritura ya no dibuja sus dos rótulos');
-  assert.ok(idiomas(largo).length === 2, 'el rótulo largo dejó de estar en los dos idiomas');
+  assert.ok(idiomas(largo).length === 1, 'the long label lost its text');
   assert.ok(idiomas(corto).length >= 1, 'el rótulo corto dejó de tener texto');
 });
 
@@ -139,7 +137,7 @@ test('SOURCE: el nombre del botón de autores empieza por lo que el botón ense�
   assert.ok(dibujado.length > 0, 'el botón de autores dejó de dibujar texto');
 
   const nombres = idiomas(boton.match(/aria-label=\{([\s\S]*?)\}\s*\n/)?.[1] || '');
-  assert.equal(nombres.length, 2, 'el botón de autores perdió su `aria-label` en los dos idiomas');
+  assert.equal(nombres.length, 1, 'the authors button lost its `aria-label`');
   for (const nombre of nombres) {
     assert.ok(
       nombre.toLowerCase().includes(dibujado.toLowerCase()),

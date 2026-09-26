@@ -392,7 +392,7 @@ test('the tab strip is marked by one rule that travels, not a border each tab pa
   // unchanged by the strip mounting — never read again. Measured with a ref:
   // the rule was in the DOM, armed, and permanently invisible.
   assert.match(jsx, /const \[tabsRow, setTabsRow\] = useState\(null\);/);
-  assert.match(jsx, /const tabRule = useActiveTabRule\(tabsRow, `\$\{activeTab\}:\$\{isEnglish\}`, '\.ee-tab\.active'\);/);
+  assert.match(jsx, /const tabRule = useActiveTabRule\(tabsRow, activeTab, '\.ee-tab\.active'\);/);
   assert.match(jsx, /<div className="ee-tabs" ref=\{setTabsRow\}>/);
   assert.match(jsx, /className=\{`ee-tab-rule\$\{tabRule\.measured \? ' is-measured' : ''\}`\}/,
     'the transition is armed only once the rule has been placed, or it slides in from the strip edge on load');

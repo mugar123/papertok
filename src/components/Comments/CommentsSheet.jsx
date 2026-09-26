@@ -74,78 +74,73 @@ const threadCache = createSessionCache({ maxEntries: 12 });
  */
 
 const COPY = {
-  title: { es: 'Comentarios', en: 'Comments' },
-  close: { es: 'Cerrar', en: 'Close' },
-  loading: { es: 'Cargando...', en: 'Loading...' },
-  emptyTitle: { es: 'Nadie ha comentado todavía', en: 'Nobody has commented yet' },
-  empty: { es: 'Abre la conversación.', en: 'Start the conversation.' },
-  loadError: { es: 'No se pudieron cargar los comentarios.', en: 'The comments could not be loaded.' },
+  title: { en: 'Comments' },
+  close: { en: 'Close' },
+  loading: { en: 'Loading...' },
+  emptyTitle: { en: 'Nobody has commented yet' },
+  empty: { en: 'Start the conversation.' },
+  loadError: { en: 'The comments could not be loaded.' },
   slowLoad: {
-    es: 'Está tardando más de lo normal. Seguimos intentándolo.',
     en: 'This is taking longer than usual. Still trying.',
   },
   noConnection: {
-    es: 'Parece que no hay conexión. Seguimos intentándolo.',
     en: 'There seems to be no connection. Still trying.',
   },
   stalledLoad: {
-    es: 'Está tardando muchísimo. Seguimos intentándolo por detrás.',
     en: 'This is taking unusually long. We are still trying in the background.',
   },
-  retry: { es: 'Reintentar', en: 'Try again' },
+  retry: { en: 'Try again' },
   // The inert composer's own voice. The thread above it has already painted
   // from the Worker, so a dead box with no words reads as a broken sheet
   // rather than as a wait — and the box cannot offer a retry, because the
   // body above already owns that button.
   composerWaking: {
-    es: 'La barra de escribir aún está en camino. Seguimos intentándolo.',
     en: 'The composer is still on its way. Still trying.',
   },
-  more: { es: 'Cargar más', en: 'Load more' },
-  placeholder: { es: 'Añade un comentario...', en: 'Add a comment...' },
+  more: { en: 'Load more' },
+  placeholder: { en: 'Add a comment...' },
   // The visible placeholder vanishes once the composer holds any text, so the
   // field needs a real accessible name of its own.
-  composerLabel: { es: 'Comentario', en: 'Comment' },
-  replyingTo: { es: 'Respondiendo a', en: 'Replying to' },
-  editing: { es: 'Editando tu comentario', en: 'Editing your comment' },
-  cancel: { es: 'Cancelar', en: 'Cancel' },
-  send: { es: 'Publicar', en: 'Post' },
-  save: { es: 'Guardar', en: 'Save' },
-  reply: { es: 'Responder', en: 'Reply' },
-  edit: { es: 'Editar', en: 'Edit' },
-  delete: { es: 'Borrar', en: 'Delete' },
-  deleteConfirm: { es: '¿Borrar? Sus respuestas se borran también.', en: 'Delete? Its replies go too.' },
-  deleteReplyConfirm: { es: '¿Borrar esta respuesta?', en: 'Delete this reply?' },
-  confirm: { es: 'Sí, borrar', en: 'Yes, delete' },
-  posted: { es: 'Comentario publicado.', en: 'Comment posted.' },
-  saved: { es: 'Cambios guardados.', en: 'Changes saved.' },
-  deleted: { es: 'Comentario borrado.', en: 'Comment deleted.' },
-  report: { es: 'Reportar', en: 'Report' },
-  reportWhy: { es: 'Motivo del reporte', en: 'Reason' },
-  reportSpam: { es: 'Spam', en: 'Spam' },
-  reportAbuse: { es: 'Abuso', en: 'Abuse' },
-  reportOther: { es: 'Otro', en: 'Other' },
-  reported: { es: 'Reportado. Ya no lo verás en este dispositivo.', en: 'Reported. You will no longer see it on this device.' },
-  reportThrottled: { es: 'Reportaste hace muy poco. Espera un minuto.', en: 'You reported very recently. Give it a minute.' },
-  edited: { es: 'editado', en: 'edited' },
-  hiddenBadge: { es: 'Oculto por moderación', en: 'Hidden by moderation' },
-  hiddenExplain: { es: 'Solo tú lo ves aquí.', en: 'Only you can see it here.' },
-  signInPrompt: { es: 'Inicia sesión para unirte a la conversación.', en: 'Sign in to join the conversation.' },
-  signIn: { es: 'Iniciar sesión', en: 'Sign in' },
-  needProfileTitle: { es: 'Comentar necesita un perfil público', en: 'Commenting needs a public profile' },
-  needProfileBody: { es: 'Tu comentario se firma con tu handle. Crea tu perfil para comentar.', en: 'Your comment is signed with your handle. Create your profile to comment.' },
-  needProfileCta: { es: 'Crear mi perfil', en: 'Create my profile' },
-  privateTitle: { es: 'Tu perfil es privado', en: 'Your profile is private' },
+  composerLabel: { en: 'Comment' },
+  replyingTo: { en: 'Replying to' },
+  editing: { en: 'Editing your comment' },
+  cancel: { en: 'Cancel' },
+  send: { en: 'Post' },
+  save: { en: 'Save' },
+  reply: { en: 'Reply' },
+  edit: { en: 'Edit' },
+  delete: { en: 'Delete' },
+  deleteConfirm: { en: 'Delete? Its replies go too.' },
+  deleteReplyConfirm: { en: 'Delete this reply?' },
+  confirm: { en: 'Yes, delete' },
+  posted: { en: 'Comment posted.' },
+  saved: { en: 'Changes saved.' },
+  deleted: { en: 'Comment deleted.' },
+  report: { en: 'Report' },
+  reportWhy: { en: 'Reason' },
+  reportSpam: { en: 'Spam' },
+  reportAbuse: { en: 'Abuse' },
+  reportOther: { en: 'Other' },
+  reported: { en: 'Reported. You will no longer see it on this device.' },
+  reportThrottled: { en: 'You reported very recently. Give it a minute.' },
+  edited: { en: 'edited' },
+  hiddenBadge: { en: 'Hidden by moderation' },
+  hiddenExplain: { en: 'Only you can see it here.' },
+  signInPrompt: { en: 'Sign in to join the conversation.' },
+  signIn: { en: 'Sign in' },
+  needProfileTitle: { en: 'Commenting needs a public profile' },
+  needProfileBody: { en: 'Your comment is signed with your handle. Create your profile to comment.' },
+  needProfileCta: { en: 'Create my profile' },
+  privateTitle: { en: 'Your profile is private' },
   privateBody: {
-    es: 'Comentar es un acto público: tu handle queda a la vista junto a lo que escribas. Para comentar, haz público tu perfil desde su editor.',
     en: 'Commenting is a public act: your handle stands next to what you write. To comment, make your profile public from the profile editor.',
   },
-  privateCta: { es: 'Revisar mi privacidad', en: 'Review my privacy' },
-  frozen: { es: 'Los comentarios están pausados temporalmente en toda la app.', en: 'Comments are temporarily paused across the app.' },
-  throttled: { es: 'Vas demasiado rápido. Espera unos segundos y vuelve a intentarlo.', en: 'Too fast. Wait a few seconds and try again.' },
-  writeError: { es: 'No se pudo publicar. Revisa tu conexión.', en: 'It could not be posted. Check your connection.' },
-  deleteError: { es: 'No se pudo borrar. Vuelve a intentarlo.', en: 'It could not be deleted. Try again.' },
-  deletedAccount: { es: 'Cuenta eliminada', en: 'Deleted account' },
+  privateCta: { en: 'Review my privacy' },
+  frozen: { en: 'Comments are temporarily paused across the app.' },
+  throttled: { en: 'Too fast. Wait a few seconds and try again.' },
+  writeError: { en: 'It could not be posted. Check your connection.' },
+  deleteError: { en: 'It could not be deleted. Try again.' },
+  deletedAccount: { en: 'Deleted account' },
 };
 
 /**
@@ -179,23 +174,23 @@ const PROFILE_WAIT_COPY = {
 };
 
 const RELATIVE_STEPS = [
-  { seconds: 60, es: 'ahora', en: 'now' },
-  { seconds: 3600, divisor: 60, es: 'min', en: 'min' },
-  { seconds: 86400, divisor: 3600, es: 'h', en: 'h' },
-  { seconds: 2592000, divisor: 86400, es: 'd', en: 'd' },
+  { seconds: 60, en: 'now' },
+  { seconds: 3600, divisor: 60, en: 'min' },
+  { seconds: 86400, divisor: 3600, en: 'h' },
+  { seconds: 2592000, divisor: 86400, en: 'd' },
 ];
 
-function relativeTime(value, isEnglish) {
+function relativeTime(value) {
   const time = commentMillis(value);
   if (!Number.isFinite(time) || time <= 0) return '';
   const elapsed = Math.max(0, (Date.now() - time) / 1000);
   for (const step of RELATIVE_STEPS) {
     if (elapsed < step.seconds) {
-      if (!step.divisor) return isEnglish ? step.en : step.es;
-      return `${Math.floor(elapsed / step.divisor)} ${isEnglish ? step.en : step.es}`;
+      if (!step.divisor) return step.en;
+      return `${Math.floor(elapsed / step.divisor)} ${step.en}`;
     }
   }
-  return new Date(time).toLocaleDateString(isEnglish ? 'en' : 'es', { day: 'numeric', month: 'short', year: 'numeric' });
+  return new Date(time).toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function initialOf(name) {
@@ -303,7 +298,7 @@ function ThreadSlot({ children, reduced }) {
   );
 }
 
-function CommentBody({ comment, isEnglish, text, onNavigate }) {
+function CommentBody({ comment, text, onNavigate }) {
   const dissociated = commentIsDissociated(comment);
   return (
     <>
@@ -324,7 +319,7 @@ function CommentBody({ comment, isEnglish, text, onNavigate }) {
           </Link>
         )}
         <span className="comment-row-dot" aria-hidden="true">·</span>
-        <span className="comment-row-time">{relativeTime(comment.createdAt, isEnglish)}</span>
+        <span className="comment-row-time">{relativeTime(comment.createdAt)}</span>
         {comment.editedAt && (
           <>
             <span className="comment-row-dot" aria-hidden="true">·</span>
@@ -344,7 +339,7 @@ function CommentBody({ comment, isEnglish, text, onNavigate }) {
 
 function CommentRow({
   comment, isReply, viewerUid, canInteract, busy,
-  onReply, onEdit, onDelete, onReport, isEnglish, text, onNavigate,
+  onReply, onEdit, onDelete, onReport, text, onNavigate,
 }) {
   const [confirming, setConfirming] = useState(null); // 'delete' | 'report'
   const reduced = useReducedMotion();
@@ -376,7 +371,7 @@ function CommentRow({
       layout={reduced ? false : 'position'}
       transition={{ duration: 0.24, ease: RESIZE }}
     >
-      <CommentBody comment={comment} isEnglish={isEnglish} text={text} onNavigate={onNavigate} />
+      <CommentBody comment={comment} text={text} onNavigate={onNavigate} />
 
       <AnimatePresence mode="wait" initial={false}>
       {footKey !== 'none' && (
@@ -446,9 +441,9 @@ function CommentRow({
   );
 }
 
-export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClose, onAuthRequired }) {
+export default function CommentsSheet({ paper, isAuthenticated, onClose, onAuthRequired }) {
   const prefersReducedMotion = useReducedMotion();
-  const text = useCallback(entry => entry[isEnglish ? 'en' : 'es'], [isEnglish]);
+  const text = useCallback(entry => entry.en, []);
 
   const seededThread = paper?.id ? threadCache.get(paper.id) : undefined;
   // Whether THIS open started from the cache — a ref, because the load
@@ -1109,7 +1104,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                       onEdit={startEdit}
                       onDelete={remove}
                       onReport={report}
-                      isEnglish={isEnglish}
+                     
                       text={text}
                       onNavigate={requestClose}
                     />
@@ -1148,7 +1143,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                               onEdit={startEdit}
                               onDelete={remove}
                               onReport={report}
-                              isEnglish={isEnglish}
+                             
                               text={text}
                               onNavigate={requestClose}
                             />

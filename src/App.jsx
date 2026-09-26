@@ -11,7 +11,7 @@ import RouteFallback from './components/Layout/RouteFallback'
 import RouteAnnouncer from './components/Layout/RouteAnnouncer'
 import NotFoundPage from './components/Layout/NotFoundPage'
 import { AuthProvider, useAuth } from './context/AuthContext'
-import { LanguageProvider, useLanguage } from './context/LanguageContext'
+import { LanguageProvider } from './context/LanguageContext'
 import { ThemeProvider } from './context/ThemeContext'
 import { AnalyticsProvider } from './context/AnalyticsContext'
 import { FeedProvider } from './context/FeedContext'
@@ -158,7 +158,6 @@ function AppContent() {
   // <Routes> still providing the location it was rendered for.
   const pageTransitionCustom = usePageTransitionCustom()
   const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth()
-  const { isEnglish } = useLanguage()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
   const navbarRoutes = ['/feed', '/lists', '/research', '/following', '/profile', '/settings', '/settings/following', '/settings/profile', '/settings/comments']
   // The paper, profile, list and entity pages keep the app chrome for a
@@ -320,7 +319,7 @@ function AppContent() {
   return (
     <FeedProvider feedRouteActive={normalizedPathname === '/feed'}>
       <a className="skip-link" href="#main-content" onClick={handleSkipLinkClick}>
-        {isEnglish ? 'Skip to content' : 'Saltar al contenido'}
+        {'Skip to content'}
       </a>
       <RouteAnnouncer />
       {showNavbar && <Navbar searchOpen={searchOpen} onOpenSearch={openSearch} />}
@@ -360,8 +359,8 @@ function AppContent() {
                   <PageTransition>
                     <FeedContainer
                       landmark={{
-                        label: isEnglish ? 'Paper feed' : 'Feed de papers',
-                        heading: isEnglish ? 'For you' : 'Para ti',
+                        label: 'Paper feed',
+                        heading: 'For you',
                       }}
                       onOpenPdf={openPdf}
                       onSaveToList={setSaveModalPaper}
@@ -606,7 +605,7 @@ function AppContent() {
             <CommentsSheet
               paper={commentsPaper}
               isAuthenticated={Boolean(user)}
-              isEnglish={isEnglish}
+             
               onClose={() => setCommentsPaper(null)}
               onAuthRequired={requestAuthentication}
             />

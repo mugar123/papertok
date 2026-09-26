@@ -49,8 +49,8 @@ function categoryIdsFromCanonical(canonicalId) {
 }
 
 function categorySearchQuery(categoryIds, canonicalId) {
-  if (CATEGORIES[canonicalId]) return getCategoryLabel(canonicalId, 'en');
-  return categoryIds.length ? getCategoryLabel(categoryIds[0], 'en') : '';
+  if (CATEGORIES[canonicalId]) return getCategoryLabel(canonicalId);
+  return categoryIds.length ? getCategoryLabel(categoryIds[0]) : '';
 }
 
 function normalizedCategoryIds(topic, canonicalId) {

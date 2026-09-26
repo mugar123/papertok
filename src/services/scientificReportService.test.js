@@ -77,7 +77,7 @@ test('extracts featured topics from string and OpenAlex object concepts', () => 
 
   assert.equal(concepts[0], 'Quantum computing');
   assert.ok(concepts.includes('Machine Learning'));
-  assert.ok(concepts.includes('Inteligencia Artificial'));
+  assert.ok(concepts.includes('Artificial Intelligence'));
   assert.ok(!concepts.includes('Physics'));
 });
 

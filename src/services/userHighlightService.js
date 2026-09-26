@@ -108,7 +108,7 @@ export function normalizeUserHighlight(input) {
   const level = ['beginner', 'university', 'researcher'].includes(input?.level)
     ? input.level
     : 'university';
-  const language = input?.language === 'en' ? 'en' : 'es';
+  const language = 'en';
   const sectionId = cleanText(input?.sectionId, 40);
   const paperId = cleanText(input?.paperId, 400);
   if (!sectionId || !paperId) return null;

@@ -11,7 +11,7 @@ import './WorldMap.css';
 const SUPPORTED_COUNTRIES = new Set(SUPPORTED_COUNTRY_CODES);
 
 export default function WorldMap({ selectedCountries = [], onToggleCountry }) {
-  const { language, isEnglish } = useLanguage();
+  const { language } = useLanguage();
   const [tooltipContent, setTooltipContent] = useState('');
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
@@ -88,7 +88,7 @@ export default function WorldMap({ selectedCountries = [], onToggleCountry }) {
                     nativeButton={false}
                     pressed={isSelected}
                     onPressedChange={() => onToggleCountry(alpha2)}
-                    aria-label={`${isEnglish ? 'Filter by' : 'Filtrar por'} ${countryName}`}
+                    aria-label={`${'Filter by'} ${countryName}`}
                     render={(
                       <Geography
                         geography={geo}

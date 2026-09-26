@@ -9,7 +9,7 @@ test('SOURCE: first-run onboarding asks for a public handle after interests', as
   assert.match(source, /PROFILE_VISIBILITY\.public/);
   assert.match(source, /PROFILE_VISIBILITY\.private/);
   assert.match(source, /onboardingComplete/);
-  assert.match(source, /¿Quieres un perfil público\?/);
+  assert.match(source, /Do you want a public profile\?/);
   assert.doesNotMatch(source, /if \(existingProfile && step > 3\) setStep\(3\)/);
 });
 
@@ -142,7 +142,6 @@ test('SOURCE: handleFinish tells a write timeout apart from a generic save failu
     'a write timeout is branched on its stable code, not on a message string',
   );
   assert.match(catchBlock[0], /Still saving\. Check your connection and try again\./);
-  assert.match(catchBlock[0], /Sigue guardando\. Comprueba tu conexión e inténtalo de nuevo\./);
   // The generic branch is still the fallback for everything else.
   assert.match(catchBlock[0], /\} else \{\s*console\.error\('Error saving preferences:', err\);/);
 });

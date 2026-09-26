@@ -195,7 +195,7 @@ export function extractFeaturedConcepts(papers, limit = 5) {
         if (!name || name.length <= 3) return;
 
         const label = getCategoryLabel(name);
-        const normalizedLabel = label.toLocaleLowerCase('es');
+        const normalizedLabel = label.toLocaleLowerCase('en');
         if (seenInPaper.has(normalizedLabel)) return;
         seenInPaper.add(normalizedLabel);
 
@@ -207,7 +207,7 @@ export function extractFeaturedConcepts(papers, limit = 5) {
   });
 
   return Array.from(conceptScores.entries())
-    .sort(([labelA, scoreA], [labelB, scoreB]) => scoreB - scoreA || labelA.localeCompare(labelB, 'es'))
+    .sort(([labelA, scoreA], [labelB, scoreB]) => scoreB - scoreA || labelA.localeCompare(labelB, 'en'))
     .map(([label]) => label)
     .slice(0, limit);
 }

@@ -657,7 +657,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     const sessionId = feedSessionId.current;
     if (!activeUserId.current) return;
     if (isTraversingNetwork.current) {
-      console.log("[Recomendador] Expansión en progreso. Petición ignorada para evitar saturación de API.");
+      console.log("[Recommender] Expansion in progress; request ignored to avoid saturating the API.");
       return;
     }
     
@@ -699,7 +699,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       if (sessionId !== feedSessionId.current) return;
       
       if (enriched && enriched.related_works && enriched.related_works.length > 0) {
-        console.log(`[Recomendador] Travesando red de citas de OpenAlex para: ${paper.title}`);
+        console.log(`[Recommender] Walking the OpenAlex citation network for: ${paper.title}`);
         const openAlexRecs = await getArxivIdsForOpenAlexWorks(enriched.related_works);
         if (sessionId !== feedSessionId.current) return;
         relatedArxivIds = [...new Set([...relatedArxivIds, ...openAlexRecs])];
@@ -760,10 +760,10 @@ export function FeedProvider({ children, feedRouteActive = true }) {
             return [...locked, ...reRankedRest];
           });
           
-          console.log(`[Recomendador] Insertados ${newGraphPapers.length} papers relacionados de OpenAlex en el feed.`);
+          console.log(`[Recommender] Inserted ${newGraphPapers.length} related OpenAlex papers into the feed.`);
         }
     } catch (err) {
-      console.error('[Recomendador] Error expandiendo la red del paper:', err);
+      console.error('[Recommender] Failed to expand the paper network:', err);
     } finally {
       if (sessionId === feedSessionId.current) isTraversingNetwork.current = false;
     }
@@ -839,13 +839,13 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         const { profile } = result;
         if (result.repairedDrift) {
           console.info(
-            `[Recomendador] Agregado reparado: le faltaban ${result.drift.missing} documentos `
+            `[Recommender] Aggregate repaired: it was missing ${result.drift.missing} documents `
             + `(${result.drift.accounted} contabilizados frente a ${result.drift.actual} reales).`,
           );
         }
         if (result.rebuilt) {
           console.info(
-            `[Recomendador] Perfil reconstruido desde ${result.documentsRead} interacciones`
+            `[Recommender] Profile rebuilt from ${result.documentsRead} interactions`
             + `${result.truncated ? ' (truncado en el tope duro)' : ''}.`,
           );
         }
@@ -963,7 +963,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         // this account stays, and the aggregate stays unwritten.
         if (!hasInteractionProfile(result)) {
           console.warn(
-            `[Recomendador] Perfil no disponible (${result.reason}); se mantiene el estado actual.`,
+            `[Recommender] Profile unavailable (${result.reason}); keeping the current state.`,
           );
           // The budget decides when the feed may start, not whether the
           // profile counts. The read behind it keeps going (patientRead in
@@ -975,7 +975,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           if (settled.status === 'timed_out') {
             profileLoad.then((lateResult) => {
               if (cancelled || !hasInteractionProfile(lateResult)) return;
-              console.info('[Recomendador] Perfil recibido tras el presupuesto; se aplica ahora.');
+              console.info('[Recommender] Profile arrived after the budget; applying it now.');
               applyInteractionProfile(lateResult);
             }).catch(() => {});
           }
@@ -1111,7 +1111,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
              const pubmedAdapter = new PubmedAdapter();
              const pubmedQuery = pubmedCats.map(c => {
                 const cat = allCategories.find(x => x.id === c);
-                return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
+                return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
              }).join(' OR ');
              pubmedProm = pubmedAdapter.search(pubmedQuery, currentPage + 1, { internalCategories: pubmedCats }).then(res => res.papers);
           }
@@ -1122,7 +1122,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
              const openAlexAdapter = new OpenAlexAdapter();
              const openAlexQuery = openAlexCats.map(c => {
                 const cat = allCategories.find(x => x.id === c);
-                return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
+                return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
              }).join(' OR ');
              openAlexProm = openAlexAdapter
                .search(openAlexQuery, currentPage + 1, { internalCategories: openAlexCats, priority: true })
@@ -1248,7 +1248,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
             if (pubmedNearby.length > 0) {
                 const pubmedQuery = pubmedNearby.map(c => {
                    const cat = allCategories.find(x => x.id === c);
-                   return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
+                   return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
                 }).join(' OR ');
                 const pubmedAdapter = new PubmedAdapter();
                 pubmedProm = pubmedAdapter.search(pubmedQuery, Math.floor(randomStart/25) + 1).then(res => res.papers).catch(() => []);
@@ -1260,7 +1260,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
                 const openAlexAdapter = new OpenAlexAdapter();
                 const openAlexQuery = openAlexNearby.map(c => {
                    const cat = allCategories.find(x => x.id === c);
-                   return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
+                   return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
                 }).join(' OR ');
                 openAlexProm = openAlexAdapter
                   .search(openAlexQuery, Math.floor(randomStart / 25) + 1, { internalCategories: openAlexNearby })
@@ -1323,7 +1323,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
             if (pubmedRandom.length > 0) {
                 const pubmedQuery = pubmedRandom.map(c => {
                    const cat = allCategories.find(x => x.id === c);
-                   return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
+                   return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
                 }).join(' OR ');
                 const pubmedAdapter = new PubmedAdapter();
                 pubmedProm = pubmedAdapter.search(pubmedQuery, Math.floor(randomStart/25) + 1).then(res => res.papers).catch(() => []);
@@ -1335,7 +1335,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
                 const openAlexAdapter = new OpenAlexAdapter();
                 const openAlexQuery = openAlexRandom.map(c => {
                    const cat = allCategories.find(x => x.id === c);
-                   return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
+                   return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
                 }).join(' OR ');
                 openAlexProm = openAlexAdapter
                   .search(openAlexQuery, Math.floor(randomStart / 25) + 1, { internalCategories: openAlexRandom })

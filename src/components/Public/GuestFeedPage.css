@@ -43,8 +43,7 @@
   gap: var(--space-1);
 }
 
-.guest-header-button,
-.guest-language-button {
+.guest-header-button {
   display: grid;
   width: 32px;
   height: 32px;
@@ -53,11 +52,6 @@
   color: var(--text-secondary);
   background: transparent;
   transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.guest-language-button {
-  font: 600 0.6875rem/1 var(--font-mono);
-  letter-spacing: var(--mono-track);
 }
 
 .guest-sign-in-button {
@@ -106,8 +100,7 @@
     border-color: var(--border-strong);
   }
 
-  .guest-header-button:hover,
-  .guest-language-button:hover {
+  .guest-header-button:hover {
     color: var(--text-primary);
     background: var(--bg-glass);
   }
@@ -156,7 +149,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .guest-header-button,
-  .guest-language-button,
   .guest-interests-button {
     transition: none;
   }

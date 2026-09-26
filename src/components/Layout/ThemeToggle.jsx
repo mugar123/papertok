@@ -1,6 +1,5 @@
 import { useRef } from 'react';
 import { Toggle } from '../ui/toggle.jsx';
-import { useLanguage } from '../../context/LanguageContext';
 import { useTheme } from '../../context/ThemeContext';
 import './ThemeToggle.css';
 
@@ -29,10 +28,9 @@ import './ThemeToggle.css';
  */
 export default function ThemeToggle({ className = 'navbar-icon-btn' }) {
   const { isDark, toggleTheme } = useTheme();
-  const { isEnglish } = useLanguage();
   const buttonRef = useRef(null);
 
-  const label = isEnglish ? 'Dark mode' : 'Modo oscuro';
+  const label = 'Dark mode';
 
   return (
     <Toggle

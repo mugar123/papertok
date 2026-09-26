@@ -698,7 +698,7 @@ export async function enrichAuthorInstitutionLocalization(author, { timeoutMs = 
   if (!sourceInstitution) return author;
 
   const existingNames = sourceInstitution.localized_names || sourceInstitution.localizedNames || {};
-  if (existingNames.es && existingNames.en) {
+  if (existingNames.en) {
     return { ...author, institutionData: sourceInstitution };
   }
 
@@ -938,27 +938,22 @@ function scoreTopicMatch(query, values) {
   return bestScore;
 }
 
-export function searchLocalTopics(query, language = 'es', limit = 8) {
+export function searchLocalTopics(query, limit = 8) {
   if (!query?.trim()) return [];
   const matches = [];
 
   Object.entries(CATEGORIES).forEach(([id, category]) => {
     const categoryScore = scoreTopicMatch(query, [
       category.label,
-      category.labelEn,
       id,
       category.description,
-      category.descriptionEn,
     ]);
     if (categoryScore >= 0) {
       matches.push({
         id,
-        display_name: language === 'en' ? category.labelEn || category.label : category.label,
-        labelEs: category.label,
-        labelEn: category.labelEn,
-        description: language === 'en'
-          ? category.descriptionEn || category.description
-          : category.description,
+        display_name: category.label,
+        label: category.label,
+        description: category.description,
         level: 0,
         categoryIds: Object.keys(category.subcategories || {}),
         subcategoryCount: Object.keys(category.subcategories || {}).length,
@@ -971,25 +966,16 @@ export function searchLocalTopics(query, language = 'es', limit = 8) {
     Object.entries(category.subcategories || {}).forEach(([subcategoryId, subcategory]) => {
       const subcategoryScore = scoreTopicMatch(query, [
         subcategory.label,
-        subcategory.labelEn,
         subcategoryId,
         category.label,
-        category.labelEn,
       ]);
       if (subcategoryScore < 0) return;
       matches.push({
         id: subcategoryId,
-        display_name: language === 'en'
-          ? subcategory.labelEn || subcategory.label
-          : subcategory.label,
-        labelEs: subcategory.label,
-        labelEn: subcategory.labelEn,
-        description: language === 'en'
-          ? category.descriptionEn || category.description
-          : category.description,
-        parent_display_name: language === 'en'
-          ? category.labelEn || category.label
-          : category.label,
+        display_name: subcategory.label,
+        label: subcategory.label,
+        description: category.description,
+        parent_display_name: category.label,
         level: 1,
         categoryIds: [subcategoryId],
         works_count: null,
@@ -1015,10 +1001,9 @@ export function searchLocalTopics(query, language = 'es', limit = 8) {
  */
 export async function searchConcepts(query, options = {}) {
   if (!query?.trim()) return [];
-  const language = options.language === 'en' ? 'en' : 'es';
   const limit = Math.max(1, Math.min(12, Number(options.limit) || 8));
   const normalizedQuery = query.trim();
-  const localTopics = searchLocalTopics(normalizedQuery, language, limit);
+  const localTopics = searchLocalTopics(normalizedQuery, limit);
 
   try {
     const url = new URL('https://api.openalex.org/autocomplete/topics');
@@ -1035,8 +1020,7 @@ export async function searchConcepts(query, options = {}) {
 
     const seen = new Set(localTopics.flatMap(topic => [
       normalizeTopicSearchValue(topic.display_name),
-      normalizeTopicSearchValue(topic.labelEs),
-      normalizeTopicSearchValue(topic.labelEn),
+      normalizeTopicSearchValue(topic.label),
     ]).filter(Boolean));
     const remoteTopics = (data?.topics || data?.results || []).flatMap(topic => {
       const id = String(topic?.id || '').split('/').pop();
@@ -1065,17 +1049,14 @@ export async function searchConcepts(query, options = {}) {
   }
 }
 
-export function getLocalTopicEntity(id, language = 'es') {
+export function getLocalTopicEntity(id) {
   const area = CATEGORIES[id];
   if (area) {
     return {
       id,
-      display_name: language === 'en' ? area.labelEn || area.label : area.label,
-      labelEs: area.label,
-      labelEn: area.labelEn,
-      description: language === 'en' ? area.descriptionEn || area.description : area.description,
-      descriptionEs: area.description,
-      descriptionEn: area.descriptionEn,
+      display_name: area.label,
+      label: area.label,
+      description: area.description,
       level: 0,
       categoryIds: Object.keys(area.subcategories || {}),
       _localTopic: true,
@@ -1086,14 +1067,9 @@ export function getLocalTopicEntity(id, language = 'es') {
     if (subcategory) {
       return {
         id,
-        display_name: language === 'en' ? subcategory.labelEn || subcategory.label : subcategory.label,
-        labelEs: subcategory.label,
-        labelEn: subcategory.labelEn,
-        description: language === 'en'
-          ? areaValue.descriptionEn || areaValue.description
-          : areaValue.description,
-        descriptionEs: areaValue.description,
-        descriptionEn: areaValue.descriptionEn,
+        display_name: subcategory.label,
+        label: subcategory.label,
+        description: areaValue.description,
         level: 1,
         categoryIds: [id],
         _localTopic: true,
@@ -1292,10 +1268,10 @@ export async function getEntityById(type, id) {
     if ((type === 'concept' || type === 'topic') && data && data.display_name) {
       let translatedName = data.display_name;
       Object.values(CATEGORIES).forEach(cat => {
-        if (cat.labelEn.toLowerCase() === data.display_name.toLowerCase()) translatedName = cat.label;
+        if (cat.label.toLowerCase() === data.display_name.toLowerCase()) translatedName = cat.label;
         if (cat.subcategories) {
           Object.values(cat.subcategories).forEach(sub => {
-            if (sub.labelEn.toLowerCase() === data.display_name.toLowerCase()) translatedName = sub.label;
+            if (sub.label.toLowerCase() === data.display_name.toLowerCase()) translatedName = sub.label;
           });
         }
       });

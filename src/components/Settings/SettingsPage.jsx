@@ -23,7 +23,6 @@ import {
   SlidersHorizontal,
   Sparkle,
   Tag,
-  Translate,
   Trash,
   User,
   UsersThree,
@@ -66,25 +65,22 @@ function GitHubMark({ size = 20 }) {
 
 const LEVEL_DETAILS = {
   beginner: {
-    label: { es: 'Principiante', en: 'Beginner' },
+    label: { en: 'Beginner' },
     description: {
-      es: 'Lenguaje claro y contexto desde cero',
       en: 'Clear language and context from first principles',
     },
     Icon: BookOpen,
   },
   university: {
-    label: { es: 'Universitario', en: 'University' },
+    label: { en: 'University' },
     description: {
-      es: 'Rigor académico sin asumir especialización',
       en: 'Academic rigor without assuming specialization',
     },
     Icon: GraduationCap,
   },
   researcher: {
-    label: { es: 'Investigador', en: 'Researcher' },
+    label: { en: 'Researcher' },
     description: {
-      es: 'Métodos, límites y detalle técnico',
       en: 'Methods, limitations, and technical detail',
     },
     Icon: Flask,
@@ -92,10 +88,10 @@ const LEVEL_DETAILS = {
 };
 
 const FOLLOW_SUMMARY = [
-  { type: 'author', label: { es: 'Autores', en: 'Authors' }, Icon: User },
-  { type: 'topic', label: { es: 'Temas', en: 'Topics' }, Icon: Tag },
-  { type: 'institution', label: { es: 'Instituciones', en: 'Institutions' }, Icon: Buildings },
-  { type: 'project', label: { es: 'Proyectos', en: 'Projects' }, Icon: Briefcase },
+  { type: 'author', label: { en: 'Authors' }, Icon: User },
+  { type: 'topic', label: { en: 'Topics' }, Icon: Tag },
+  { type: 'institution', label: { en: 'Institutions' }, Icon: Buildings },
+  { type: 'project', label: { en: 'Projects' }, Icon: Briefcase },
 ];
 
 /**
@@ -105,14 +101,13 @@ const FOLLOW_SUMMARY = [
  * order the sections are rendered in.
  */
 const SETTINGS_SECTIONS = [
-  { id: 'settings-account', label: { es: 'Cuenta', en: 'Account' } },
-  { id: 'settings-discovery', label: { es: 'Descubrimiento', en: 'Discovery' } },
-  { id: 'settings-reading', label: { es: 'Lectura e IA', en: 'Reading and AI' } },
-  { id: 'settings-interface', label: { es: 'Interfaz', en: 'Interface' } },
-  { id: 'settings-notifications', label: { es: 'Notificaciones', en: 'Notifications' } },
-  { id: 'settings-privacy', label: { es: 'Privacidad', en: 'Privacy' } },
-  { id: 'settings-community', label: { es: 'Comunidad', en: 'Community' } },
-  { id: 'settings-access', label: { es: 'Acceso y sesión', en: 'Access and session' } },
+  { id: 'settings-account', label: { en: 'Account' } },
+  { id: 'settings-discovery', label: { en: 'Discovery' } },
+  { id: 'settings-reading', label: { en: 'Reading and AI' } },
+  { id: 'settings-notifications', label: { en: 'Notifications' } },
+  { id: 'settings-privacy', label: { en: 'Privacy' } },
+  { id: 'settings-community', label: { en: 'Community' } },
+  { id: 'settings-access', label: { en: 'Access and session' } },
 ];
 
 /**
@@ -162,100 +157,6 @@ function useSectionSpy(sectionIds) {
 const PUBLIC_PHOTO_MIRROR_TIMEOUT_MS = 12_000;
 
 const SETTINGS_COPY = {
-  es: {
-    eyebrow: 'Ajustes de usuario',
-    title: 'Configuración',
-    subtitle: 'Tu cuenta, tus preferencias de descubrimiento y tus herramientas de lectura.',
-    index: 'Índice',
-    indexLabel: 'Secciones de los ajustes',
-    indexHint: 'Los cambios se guardan al momento, sección a sección.',
-    account: 'Cuenta',
-    defaultUser: 'Usuario de PaperTok',
-    googleAccount: 'Cuenta gestionada con Google',
-    githubAccount: 'Cuenta gestionada con GitHub',
-    accountBothProviders: 'Entras con Google y con GitHub',
-    genericAccount: 'Cuenta de PaperTok',
-    changePhoto: 'Cambiar foto',
-    restoreGooglePhoto: 'Restaurar foto de Google',
-    removePhoto: 'Quitar foto de perfil',
-    photoUpdated: 'Foto de perfil actualizada.',
-    googlePhotoRestored: 'Se ha restaurado tu foto de Google.',
-    photoRemoved: 'Foto de perfil eliminada.',
-    photoSaveError: 'No se pudo guardar la foto de perfil.',
-    photoRestoreError: 'No se pudo restaurar la foto de perfil.',
-    photoPublicPending: 'El cambio se ha guardado, pero tu perfil público todavía no lo refleja. Vuelve a intentarlo.',
-    discovery: 'Descubrimiento',
-    discoveryDescription: 'Señales que PaperTok utiliza para construir tus feeds.',
-    followedContent: 'Lo que sigues',
-    loadingFollowing: 'Cargando tus seguimientos...',
-    followedOne: 'entidad seguida',
-    followedMany: 'entidades seguidas',
-    recommendationsSuffix: 'influyen en tus recomendaciones',
-    followingSummary: 'Resumen de contenido seguido',
-    viewAll: 'Ver todo',
-    publicProfile: 'Perfil público',
-    publicProfileDescription: 'Tu handle, tu biografía y las listas que decidas mostrar',
-    profileIsPublicBadge: 'público',
-    profileIsPrivateBadge: 'privado',
-    myComments: 'Mis comentarios',
-    myCommentsDescription: 'Lo que has escrito en los papers, incluido lo moderado',
-    scientificInterests: 'Intereses científicos',
-    selectedOne: 'subcategoría seleccionada',
-    selectedMany: 'subcategorías seleccionadas',
-    trainFeed: 'para entrenar tu feed',
-    selectedAreas: 'Áreas seleccionadas',
-    edit: 'Editar',
-    readingAi: 'Lectura e IA',
-    readingAiDescription: 'Ajusta el nivel de profundidad de tus explicaciones.',
-    defaultAiLevel: 'Nivel predeterminado de IA',
-    defaultAiDescription: 'Se abrirá seleccionado cuando pidas que la IA explique un paper',
-    saving: 'Guardando...',
-    preferenceSaved: 'Preferencia guardada',
-    saveError: 'No se pudo guardar',
-    aiLevelLabel: 'Nivel predeterminado de explicación',
-    interface: 'Interfaz',
-    interfaceDescription: 'Elige el idioma que PaperTok utiliza en este dispositivo.',
-    language: 'Idioma',
-    languageDescription: 'Cambia los menús, controles y mensajes de la aplicación.',
-    languageLabel: 'Idioma de la interfaz',
-    spanish: 'Español',
-    english: 'English',
-    notifications: 'Notificaciones',
-    notificationsDescription: 'Decide si quieres recibir novedades aunque PaperTok esté cerrado.',
-    emailUpdates: 'Novedades por email',
-    configure: 'Configurar',
-    privacy: 'Privacidad',
-    privacyDescription: 'Controla las mediciones anónimas utilizadas para mejorar PaperTok.',
-    usageAnalytics: 'Analítica de uso',
-    usageAnalyticsDescription: 'Solo registra páginas anónimas; nunca búsquedas, papers, intereses ni datos de cuenta.',
-    analyticsEnabled: 'Activada',
-    analyticsDisabled: 'Desactivada',
-    analyticsToggleLabel: 'Permitir analítica de uso',
-    deleteAccount: 'Eliminar cuenta',
-    deleteAccountDescription: 'Borra tu perfil, tus datos y el acceso. No se puede deshacer.',
-    deleteAccountAction: 'Eliminar',
-    community: 'Comunidad',
-    communityDescription: 'Descubre el proyecto y participa en su desarrollo.',
-    openSource: 'PaperTok es open source',
-    openSourceDescription: 'Consulta el código, comparte ideas o contribuye en GitHub.',
-    viewOnGitHub: 'Ver en GitHub',
-    opensNewTab: 'se abre en una pestaña nueva',
-    access: 'Acceso y sesión',
-    accessDescription: 'Distintas puertas, la misma cuenta y los mismos datos.',
-    session: 'Sesión',
-    sessionDescription: 'La información personalizada permanece asociada a esta cuenta.',
-    signOut: 'Cerrar sesión',
-    signInMethods: 'Formas de entrar',
-    signInMethodsDescription: 'Distintas puertas, la misma cuenta y los mismos datos.',
-    githubMethod: 'Entrar con GitHub',
-    githubLinked: 'Conectado. Ya puedes entrar con GitHub.',
-    githubUnlinked: 'Conéctalo y podrás entrar con GitHub además de como entras hoy.',
-    connect: 'Conectar',
-    connecting: 'Conectando...',
-    connected: 'Conectado',
-    linkSuccess: 'GitHub conectado. La próxima vez puedes entrar con cualquiera de los dos.',
-    linkTaken: 'Esa cuenta de GitHub ya abre otra cuenta de PaperTok. Las dos no se fusionan: entra en la otra si es la que quieres conservar, o conecta una cuenta de GitHub distinta.',
-  },
   en: {
     eyebrow: 'User settings',
     title: 'Settings',
@@ -307,13 +208,6 @@ const SETTINGS_COPY = {
     preferenceSaved: 'Preference saved',
     saveError: 'Could not save',
     aiLevelLabel: 'Default explanation level',
-    interface: 'Interface',
-    interfaceDescription: 'Choose the language PaperTok uses on this device.',
-    language: 'Language',
-    languageDescription: 'Changes the menus, controls, and messages in the app.',
-    languageLabel: 'Interface language',
-    spanish: 'Español',
-    english: 'English',
     notifications: 'Notifications',
     notificationsDescription: 'Choose whether to receive updates while PaperTok is closed.',
     emailUpdates: 'Email updates',
@@ -352,38 +246,31 @@ const SETTINGS_COPY = {
   },
 };
 
-function emailStatus(preferences, health, loading, language) {
-  const isEnglish = language === 'en';
+function emailStatus(preferences, health, loading) {
   if (loading) {
     return {
-      label: isEnglish ? 'Checking' : 'Comprobando',
-      description: isEnglish ? 'Loading your email settings' : 'Cargando tu configuración de correo',
+      label: 'Checking',
+      description: 'Loading your email settings',
       tone: 'neutral',
     };
   }
   if (!health.available) {
     return {
-      label: isEnglish ? 'Unavailable' : 'No disponible',
-      description: isEnglish
-        ? 'The email service is not responding right now'
-        : 'El servicio de correo no responde en este momento',
+      label: 'Unavailable',
+      description: 'The email service is not responding right now',
       tone: 'warning',
     };
   }
   if (!preferences.enabled) {
     return {
-      label: isEnglish ? 'Off' : 'Desactivado',
-      description: isEnglish
-        ? `Updates will not be sent to ${preferences.email || 'your email'}`
-        : `Los avisos no se enviarán a ${preferences.email || 'tu correo'}`,
+      label: 'Off',
+      description: `Updates will not be sent to ${preferences.email || 'your email'}`,
       tone: 'neutral',
     };
   }
   return {
-    label: isEnglish ? 'On' : 'Activado',
-    description: isEnglish
-      ? `${preferences.frequency === 'weekly' ? 'Every Monday' : 'Every morning'} · up to ${preferences.maxPapers || 5} papers`
-      : `${preferences.frequency === 'weekly' ? 'Cada lunes' : 'Cada mañana'} · hasta ${preferences.maxPapers || 5} papers`,
+    label: 'On',
+    description: `${preferences.frequency === 'weekly' ? 'Every Monday' : 'Every morning'} · up to ${preferences.maxPapers || 5} papers`,
     tone: 'success',
   };
 }
@@ -391,7 +278,7 @@ function emailStatus(preferences, health, loading, language) {
 export default function SettingsPage() {
   const navigate = useNavigate();
   const profileInputRef = useRef(null);
-  const { language, setLanguage } = useLanguage();
+  const { language } = useLanguage();
   const { consent: analyticsConsent, updateConsent: updateAnalyticsConsent } = useAnalyticsConsent();
   const copy = SETTINGS_COPY[language];
   const {
@@ -421,8 +308,6 @@ export default function SettingsPage() {
   const [levelFeedback, setLevelFeedback] = useState(null);
   const [savingPhoto, setSavingPhoto] = useState(false);
   const [photoFeedback, setPhotoFeedback] = useState(null);
-  const [savingLanguage, setSavingLanguage] = useState(false);
-  const [languageFeedback, setLanguageFeedback] = useState(null);
   const [linkingGitHub, setLinkingGitHub] = useState(false);
   const [linkFeedback, setLinkFeedback] = useState(null);
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
@@ -475,7 +360,7 @@ export default function SettingsPage() {
         setLinkFeedback(null);
       } else {
         console.error('Error linking GitHub:', linkError);
-        setLinkFeedback({ tone: 'error', text: getUiErrorMessage(linkError, language, 'AUTH_LINK_FAILED') });
+        setLinkFeedback({ tone: 'error', text: getUiErrorMessage(linkError, 'AUTH_LINK_FAILED') });
       }
     } finally {
       setLinkingGitHub(false);
@@ -487,16 +372,16 @@ export default function SettingsPage() {
     return Object.entries(CATEGORIES)
       .map(([id, area]) => {
         const count = Object.keys(area.subcategories).filter(key => selected.has(key)).length;
-        return count > 0 ? { id, label: language === 'en' ? area.labelEn : area.label, count } : null;
+        return count > 0 ? { id, label: area.label, count } : null;
       })
       .filter(Boolean);
-  }, [language, userPreferences]);
+  }, [userPreferences]);
 
   // The tab keeps saying which screen this is; restored on the way out so the
   // pages that manage their own metadata are not affected.
   useEffect(() => {
     const previous = document.title;
-    const ours = language === 'en' ? 'Settings | PaperTok' : 'Configuración | PaperTok';
+    const ours = 'Settings | PaperTok';
     document.title = ours;
     // Only restore if nothing claimed the title since (the outgoing route
     // stays mounted ~200ms into the next one under AnimatePresence).
@@ -508,7 +393,6 @@ export default function SettingsPage() {
     notificationPreferences,
     notificationHealth,
     notificationsLoading,
-    language,
   );
   const visibleProfilePhoto = profilePhoto || user?.photoURL;
 
@@ -523,12 +407,6 @@ export default function SettingsPage() {
     const timer = window.setTimeout(() => setPhotoFeedback(null), 2_400);
     return () => window.clearTimeout(timer);
   }, [photoFeedback]);
-
-  useEffect(() => {
-    if (!languageFeedback) return undefined;
-    const timer = window.setTimeout(() => setLanguageFeedback(null), 1_800);
-    return () => window.clearTimeout(timer);
-  }, [languageFeedback]);
 
   const handleLevelChange = async (level) => {
     if (level === readingPreferences.aiExplanationLevel || savingLevel) return;
@@ -583,7 +461,7 @@ export default function SettingsPage() {
     } catch (error) {
       setPhotoFeedback({
         tone: 'error',
-        text: getUiErrorMessage(error, language, 'PROFILE_PHOTO_SAVE_FAILED'),
+        text: getUiErrorMessage(error, 'PROFILE_PHOTO_SAVE_FAILED'),
       });
     } finally {
       setSavingPhoto(false);
@@ -623,19 +501,6 @@ export default function SettingsPage() {
     navigate('/feed');
   };
 
-  const handleLanguageChange = async (nextLanguage) => {
-    if (nextLanguage === language || savingLanguage) return;
-    setSavingLanguage(true);
-    setLanguageFeedback(null);
-    try {
-      await setLanguage(nextLanguage);
-      setLanguageFeedback('saved');
-    } catch {
-      setLanguageFeedback('error');
-    } finally {
-      setSavingLanguage(false);
-    }
-  };
 
   return (
     <>
@@ -897,45 +762,6 @@ export default function SettingsPage() {
                           </RadioGroupItem>
                         );
                       })}
-                    </RadioGroup>
-                  </div>
-                </div>
-              </section>
-
-              <section id="settings-interface" tabIndex={-1} className="settings-section" aria-labelledby="interface-heading">
-                <div className="settings-section-heading">
-                  <Translate size={18} />
-                  <div>
-                    <h2 id="interface-heading">{copy.interface}</h2>
-                    <p>{copy.interfaceDescription}</p>
-                  </div>
-                </div>
-
-                <div className="settings-list">
-                  <div className="settings-row" style={{ '--settings-index': 3 }}>
-                    <span className="settings-row-icon is-cyan"><Translate size={20} /></span>
-                    <div className="settings-row-content">
-                      <h3>{copy.language}</h3>
-                      <p>{copy.languageDescription}</p>
-                      <span className={`settings-save-feedback ${languageFeedback ? `is-${languageFeedback}` : ''}`} aria-live="polite">
-                        {savingLanguage && copy.saving}
-                        {!savingLanguage && languageFeedback === 'saved' && copy.preferenceSaved}
-                        {!savingLanguage && languageFeedback === 'error' && copy.saveError}
-                      </span>
-                    </div>
-                    <RadioGroup
-                      className="settings-language"
-                      aria-label={copy.languageLabel}
-                      value={language}
-                      onValueChange={handleLanguageChange}
-                      disabled={savingLanguage}
-                    >
-                      <RadioGroupItem value="es" render={<button type="button" />} nativeButton disabled={savingLanguage}>
-                        {copy.spanish}
-                      </RadioGroupItem>
-                      <RadioGroupItem value="en" render={<button type="button" />} nativeButton disabled={savingLanguage}>
-                        {copy.english}
-                      </RadioGroupItem>
                     </RadioGroup>
                   </div>
                 </div>

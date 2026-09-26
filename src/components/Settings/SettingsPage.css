@@ -591,46 +591,6 @@
   line-height: 1.35;
 }
 
-.settings-language {
-  display: grid;
-  width: 230px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
-  background: var(--bg-sunken);
-}
-
-.settings-language button {
-  min-height: 36px;
-  padding: 7px 11px;
-  border-radius: var(--radius-md);
-  color: var(--text-tertiary);
-  font-size: 11px;
-  font-weight: 750;
-  transition:
-    color var(--transition-fast),
-    background var(--transition-fast),
-    box-shadow var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .settings-language button:hover {
-    color: var(--text-primary);
-  }
-}
-
-.settings-language button[data-checked] {
-  color: var(--text-inverse);
-  background: var(--accent-primary);
-  box-shadow: 0 4px 14px rgba(17, 19, 24, 0.08);
-}
-
-.settings-language button:disabled {
-  cursor: default;
-}
-
 .settings-save-feedback {
   display: block;
   min-height: 15px;
@@ -785,10 +745,6 @@
     grid-column: 1 / -1;
     margin-top: 5px;
   }
-
-  .settings-language {
-    width: min(100%, 260px);
-  }
 }
 
 @media (max-width: 700px) {
@@ -873,11 +829,6 @@
     grid-template-columns: 1fr;
   }
 
-  .settings-language {
-    width: 100%;
-    grid-column: 1 / -1;
-  }
-
   .settings-levels button {
     min-height: 66px;
     flex-direction: row;
@@ -901,7 +852,6 @@
   .settings-photo-restore,
   .settings-row-action,
   .settings-levels button,
-  .settings-language button,
   .settings-index-list button,
   .settings-index-marker,
   .settings-signout {

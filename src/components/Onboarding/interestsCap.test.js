@@ -19,7 +19,7 @@ test('SOURCE: the onboarding refuses to leave the categories step, or to finish,
   // survived — the assertion would prove nothing about `canProceed` at all.
   assert.match(code, /\|\|\s*\(step === 2 && selectedSubcategories\.size > 0 && !overCap\)/, 'and so is canProceed');
   assert.match(code, /\(step === 4 && !overCap && \(/, 'Start exploring is gated too');
-  assert.match(code, /Como mucho \$\{USER_PREFERENCES_MAX\} categorías: quita \$\{selectedSubcategories\.size - USER_PREFERENCES_MAX\}\./, 'the hint says how many to drop');
+  assert.match(code, /At most \$\{USER_PREFERENCES_MAX\} categories: drop \$\{selectedSubcategories\.size - USER_PREFERENCES_MAX\}\./, 'the hint says how many to drop');
   // Step 3 has its own finish button in the `existingProfile` branch, which
   // calls handleFinish directly and never consults canProceed. The cap closes
   // at the function too, so no entry point can finish over it.
@@ -32,7 +32,7 @@ test('SOURCE: the settings picker refuses to save over the cap, before the write
   assert.match(code, /import \{ USER_PREFERENCES_MAX \} from '\.\.\/\.\.\/utils\/accountOnboarding\.js';/);
   const guard = code.match(/if \(selected\.size > USER_PREFERENCES_MAX\) \{[\s\S]*?return;\s*\}/);
   assert.ok(guard, 'the save handler has no cap guard');
-  assert.match(guard[0], /Como mucho \$\{USER_PREFERENCES_MAX\} intereses: quita \$\{selected\.size - USER_PREFERENCES_MAX\}\./);
+  assert.match(guard[0], /At most \$\{USER_PREFERENCES_MAX\} interests: drop \$\{selected\.size - USER_PREFERENCES_MAX\}\./);
   const save = code.indexOf('await updatePreferences(Array.from(selected))');
   assert.ok(save > -1 && code.indexOf('if (selected.size > USER_PREFERENCES_MAX)') < save, 'the guard runs before the write');
 });

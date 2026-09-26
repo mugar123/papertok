@@ -13,7 +13,6 @@ import {
   Sparkle,
   UserPlus,
 } from '@phosphor-icons/react';
-import { useLanguage } from '../../context/LanguageContext.jsx';
 import { CATEGORIES } from '../../data/categories.js';
 import { normalizeGuestAreas, normalizeGuestTopics } from '../../utils/guestInterests.js';
 import ThemeToggle from '../Layout/ThemeToggle.jsx';
@@ -104,47 +103,6 @@ const SUBTOPICS_FOLD_MIN = SUBTOPICS_SHOWN + 3;
 const BEAT_STAGGER_MS = 900;
 
 const COPY = {
-  es: {
-    progress: 'Progreso',
-    stepOf: (n, total) => `Paso ${n} de ${total}`,
-    signIn: 'Entrar',
-    signInName: 'Entrar con tu cuenta',
-    back: 'Atrás',
-    skip: 'Saltar la intro',
-    pauseMotion: 'Pausar el movimiento de los papers',
-    welcome: {
-      kicker: 'Te damos la bienvenida a PaperTok',
-      title: 'La ciencia de hoy, en un feed.',
-      lede: 'Como TikTok, pero sales sabiendo más. Cinco minutos al día y no se te escapa nada de tu campo.',
-      cta: 'Empezar',
-    },
-    how: {
-      kicker: 'Qué haces aquí',
-      title: 'Lees ciencia como quien pasa el dedo.',
-      beats: [
-        { title: 'Un paper por pantalla', body: 'Título, autores y resumen. Desliza para el siguiente.' },
-        { title: 'Léelo en simple', body: 'Con una cuenta gratuita, muchos se pueden leer explicados en claro.' },
-        { title: 'Tu feed aprende', body: 'Lo que te gusta y guardas decide lo que ves.' },
-      ],
-      cta: 'Elegir mis temas',
-    },
-    topics: {
-      kicker: 'Tus temas',
-      title: '¿Qué te interesa?',
-      lede: 'Así armamos tu feed. Puedes cambiarlo luego.',
-      areasLabel: 'Áreas de interés',
-      cta: 'Continuar',
-    },
-    subtopics: {
-      kicker: 'Afina tu feed',
-      title: '¿Algo más concreto?',
-      lede: 'Cuanto más concretes, más tuyo será tu feed.',
-      topicsOf: area => `Temas de ${area}`,
-      showMore: n => `Mostrar ${n} más`,
-      showLess: 'Mostrar menos',
-      cta: 'Ver mi feed',
-    },
-  },
   en: {
     progress: 'Progress',
     stepOf: (n, total) => `Step ${n} of ${total}`,
@@ -197,7 +155,7 @@ const COPY = {
 // pointer passing over does not stop it; the column itself is the control, a
 // toggle — click, tap, or Tab to it and press Enter — that stops both. The cards are decoration and hidden from assistive tech;
 // the toggle is what a screen reader meets, by name and pressed state.
-function PaperStream({ papers, reverse = false, paused, onToggle, toggleLabel, still, isEnglish }) {
+function PaperStream({ papers, reverse = false, paused, onToggle, toggleLabel, still }) {
   return (
     <div className={`gw-stream-col${paused ? ' is-paused' : ''}`}>
       <div className={`gw-stream${reverse ? ' gw-stream--reverse' : ''}`} aria-hidden="true">
@@ -209,7 +167,7 @@ function PaperStream({ papers, reverse = false, paused, onToggle, toggleLabel, s
             return (
               <div key={index} className="gw-stream-card" style={{ '--area-accent': area.gradient }}>
                 <p className="gw-stream-meta">
-                  <span>{isEnglish ? label.labelEn : label.label}</span>
+                  <span>{label.label}</span>
                   <span className="gw-stream-dot">·</span>
                   <span>{paper.year}</span>
                 </p>
@@ -406,10 +364,9 @@ function Beat({ beat, index, still }) {
 }
 
 export default function GuestWelcome({ initialAreas = [], initialTopics = [], onComplete, onSignIn }) {
-  const { isEnglish, setLanguage } = useLanguage();
   const prefersReducedMotion = useReducedMotion();
   const still = Boolean(prefersReducedMotion);
-  const copy = COPY[isEnglish ? 'en' : 'es'];
+  const copy = COPY.en;
   const [stepIndex, setStepIndex] = useState(0);
   const [direction, setDirection] = useState(1);
   const [leaving, setLeaving] = useState(false);
@@ -533,15 +490,6 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], on
       <header className="gw-bar">
         <div className="gw-wordmark" aria-label="PaperTok">Paper<span>Tok</span></div>
         <div className="gw-bar-actions">
-          <button
-            type="button"
-            className="gw-bar-button"
-            onClick={() => setLanguage(isEnglish ? 'es' : 'en')}
-            lang={isEnglish ? 'es' : 'en'}
-            aria-label={isEnglish ? 'Cambiar a español' : 'Switch to English'}
-          >
-            {isEnglish ? 'ES' : 'EN'}
-          </button>
           <ThemeToggle className="gw-bar-button" />
           <Button variant="ghost" size="sm" onClick={onSignIn} aria-label={copy.signInName}>
             <SignIn size={15} aria-hidden="true" />
@@ -572,7 +520,7 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], on
                   onToggle={toggleStreams}
                   toggleLabel={copy.pauseMotion}
                   still={still}
-                  isEnglish={isEnglish}
+                 
                 />
                 {copyBlock}
                 <PaperStream
@@ -582,7 +530,7 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], on
                   onToggle={toggleStreams}
                   toggleLabel={copy.pauseMotion}
                   still={still}
-                  isEnglish={isEnglish}
+                 
                 />
               </div>
             ) : copyBlock}
@@ -611,7 +559,7 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], on
                     <span className="gw-area-icon" aria-hidden="true">
                       <area.icon size={20} weight={selected.has(key) ? 'fill' : 'regular'} />
                     </span>
-                    <span className="gw-area-name">{isEnglish ? area.labelEn : area.label}</span>
+                    <span className="gw-area-name">{area.label}</span>
                     <span className="gw-area-box" aria-hidden="true">
                       <Check size={11} weight="bold" />
                     </span>
@@ -626,7 +574,7 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], on
                 the areas, one group per area ticked on the screen before, in
                 its colour and with its glyph. */}
             {isSubtopics && AREA_ENTRIES.filter(([key]) => selected.has(key)).map(([key, area]) => {
-              const areaLabel = isEnglish ? area.labelEn : area.label;
+              const areaLabel = area.label;
               const entries = Object.entries(area.subcategories);
               const folds = entries.length >= SUBTOPICS_FOLD_MIN;
               const expanded = !folds || expandedAreas.has(key);
@@ -658,7 +606,7 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], on
                           <span className="gw-area-icon" aria-hidden="true">
                             <area.icon size={20} weight={pressed ? 'fill' : 'regular'} />
                           </span>
-                          <span className="gw-area-name">{isEnglish ? sub.labelEn : sub.label}</span>
+                          <span className="gw-area-name">{sub.label}</span>
                           <span className="gw-area-box" aria-hidden="true">
                             <Check size={11} weight="bold" />
                           </span>

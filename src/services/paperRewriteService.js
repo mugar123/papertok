@@ -23,9 +23,9 @@ const rewriteCache = new Map();
 const STALL_TIMEOUT_MS = 45_000;
 
 export const PAPER_REWRITE_LEVELS = Object.freeze([
-  { id: 'beginner', label: 'Principiante', labelEn: 'Beginner' },
-  { id: 'university', label: 'Universitario', labelEn: 'University' },
-  { id: 'researcher', label: 'Investigador', labelEn: 'Researcher' },
+  { id: 'beginner', label: 'Beginner' },
+  { id: 'university', label: 'University' },
+  { id: 'researcher', label: 'Researcher' },
 ]);
 
 export class PaperRewriteError extends Error {
@@ -128,7 +128,7 @@ export function rewriteCacheKey(paper, level, language) {
   return `${paperCacheId(paper)}:${level}:${language}`;
 }
 
-export function getCachedRewrite(paper, level, language = 'es') {
+export function getCachedRewrite(paper, level, language = 'en') {
   return rewriteCache.get(rewriteCacheKey(paper, level, language)) || null;
 }
 
@@ -193,7 +193,6 @@ export function toRewriteError(error, { cancelled = false } = {}) {
 }
 
 export async function rewritePaper(paper, level = 'university', {
-  language = 'es',
   force = false,
   signal,
   onMeta,
@@ -209,7 +208,7 @@ export async function rewritePaper(paper, level = 'university', {
   // between here and that POST is synchronous, so this is the only place where
   // an early abort can still be noticed.
   if (signal?.aborted) throw new PaperRewriteError('AI_CANCELLED');
-  const rewriteLanguage = language === 'en' ? 'en' : 'es';
+  const rewriteLanguage = 'en';
   const cacheKey = rewriteCacheKey(paper, level, rewriteLanguage);
 
   if (!force && rewriteCache.has(cacheKey)) {

@@ -19,7 +19,7 @@ test('the filter drawer is a ui Sheet from the right, named by its title, with n
   assert.match(jsx, /<Sheet open=\{showFilters\} onOpenChange=\{setShowFilters\}>/);
   assert.match(jsx, /<SheetContent\s+side="right"\s+className="ee-filter-drawer"\s+overlayClassName="ee-filter-backdrop"/);
   assert.match(jsx, /<SheetTitle render=\{<h3 \/>\}>/);
-  assert.match(jsx, /<SheetClose\s+render=\{<Button variant="ghost" size="icon" \/>\}\s+aria-label=\{isEnglish \? 'Close filters' : 'Cerrar filtros'\}/);
+  assert.match(jsx, /<SheetClose\s+render=\{<Button variant="ghost" size="icon" \/>\}\s+aria-label=\{'Close filters'\}/);
   for (const resto of ['useDialogFocus', 'aria-modal=', 'role="dialog"', 'ee-filter-backdrop" onClick']) {
     assert.ok(!jsx.includes(resto), `\`${resto}\` sigue en EntityExplorer.jsx: eso lo pone el Sheet`);
   }
@@ -35,7 +35,7 @@ test('the project links are a DropdownMenu of link items, positioned by Base UI'
   const jsx = await jsxFile;
   const css = await cssFile;
   assert.match(jsx, /<DropdownMenu>\s*<DropdownMenuTrigger render=\{<button type="button" className="project-links-trigger" \/>\}>/);
-  assert.match(jsx, /<DropdownMenuContent[\s\S]*?className="project-links-dropdown"[\s\S]*?aria-label=\{isEnglish \? 'Project links' : 'Enlaces del proyecto'\}/);
+  assert.match(jsx, /<DropdownMenuContent[\s\S]*?className="project-links-dropdown"[\s\S]*?aria-label=\{'Project links'\}/);
   assert.match(jsx, /<MenuPrimitive\.LinkItem[\s\S]*?closeOnClick/);
   assert.doesNotMatch(jsx, /addEventListener\('pointerdown'|isProjectLinksMenuOpen|aria-haspopup=/);
   assert.match(css, /\.project-links-trigger\[data-popup-open\]/);
@@ -48,7 +48,7 @@ test('the project links are a DropdownMenu of link items, positioned by Base UI'
 test('the drawer\'s sort, category and date rows are single-select ToggleGroups that announce their choice', async () => {
   const jsx = await jsxFile;
   const css = await cssFile;
-  assert.match(jsx, /<ToggleGroup\s+variant="outline"\s+className="ee-filter-chips"\s+aria-label=\{isEnglish \? 'Sort by' : 'Ordenar por'\}\s+value=\{\[sortBy\]\}/);
+  assert.match(jsx, /<ToggleGroup\s+variant="outline"\s+className="ee-filter-chips"\s+aria-label=\{'Sort by'\}\s+value=\{\[sortBy\]\}/);
   assert.match(jsx, /value=\{\[filters\.category \|\| 'all'\]\}/);
   assert.match(jsx, /value=\{\[filters\.dateRange \|\| 'any'\]\}/);
   assert.doesNotMatch(jsx, /className=\{`ee-filter-chip \$\{/, 'the pressed chip is the one Base UI marks, not a class computed by hand');

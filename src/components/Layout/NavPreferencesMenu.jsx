@@ -3,9 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Check, Gear, Moon, SlidersHorizontal, Sun } from '@phosphor-icons/react';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover.jsx';
 import { Toggle } from '../ui/toggle.jsx';
-import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.jsx';
 import { useAuth } from '../../context/AuthContext';
-import { useLanguage } from '../../context/LanguageContext';
 import { useTheme } from '../../context/ThemeContext';
 import './NavPreferencesMenu.css';
 
@@ -21,12 +19,10 @@ export default function NavPreferencesMenu() {
   const [open, setOpen] = useState(false);
   const themeRowRef = useRef(null);
   const { isDark, toggleTheme } = useTheme();
-  const { language, isEnglish, setLanguage } = useLanguage();
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  const label = isEnglish ? 'Preferences' : 'Preferencias';
-  const languageLabel = isEnglish ? 'Language' : 'Idioma';
+  const label = 'Preferences';
 
   return (
     <div className="nav-prefs">
@@ -56,24 +52,10 @@ export default function NavPreferencesMenu() {
             onPressedChange={() => toggleTheme(themeRowRef.current)}
           >
             {isDark ? <Moon size={15} aria-hidden="true" /> : <Sun size={15} aria-hidden="true" />}
-            <span>{isEnglish ? 'Dark mode' : 'Modo oscuro'}</span>
+            <span>{'Dark mode'}</span>
             {isDark && <Check size={14} className="nav-prefs-check" aria-hidden="true" />}
           </Toggle>
 
-          <div className="nav-prefs-row nav-prefs-row--static">
-            <span>{languageLabel}</span>
-            {/* Single-select: the group reports `[]` when the pressed language
-                is pressed again, and "no language" is not a state we have. */}
-            <ToggleGroup
-              className="nav-prefs-lang"
-              aria-label={languageLabel}
-              value={[language]}
-              onValueChange={([next]) => { if (next) setLanguage(next); }}
-            >
-              <ToggleGroupItem value="es">ES</ToggleGroupItem>
-              <ToggleGroupItem value="en">EN</ToggleGroupItem>
-            </ToggleGroup>
-          </div>
 
           {user && (
             <>
@@ -87,7 +69,7 @@ export default function NavPreferencesMenu() {
                 }}
               >
                 <Gear size={15} aria-hidden="true" />
-                <span>{isEnglish ? 'All settings' : 'Todos los ajustes'}</span>
+                <span>{'All settings'}</span>
               </button>
             </>
           )}

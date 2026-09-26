@@ -61,14 +61,13 @@ test('an address nobody declared is left to the 404 page', async () => {
   }
 });
 
-test('the 404 page is bilingual, has its own main and h1, and is not indexed', async () => {
+test('the 404 page is in English, has its own main and h1, and is not indexed', async () => {
   const html = await readFile(NOT_FOUND, 'utf8');
   assert.match(html, /<meta name="robots" content="noindex" \/>/);
-  assert.match(html, /<html lang="es">/);
+  assert.match(html, /<html lang="en">/);
   assert.equal((html.match(/<main\b/g) || []).length, 1);
   assert.equal((html.match(/<h1\b/g) || []).length, 1);
-  assert.match(html, /<h1>No encontramos esta página<\/h1>/);
-  assert.match(html, /<section lang="en"[^>]*>[\s\S]*We could not find this page[\s\S]*<\/section>/);
-  assert.equal((html.match(/href="\/feed"/g) || []).length, 2, 'the way back, in each language');
+  assert.match(html, /<h1>We could not find this page<\/h1>/);
+  assert.equal((html.match(/href="\/feed"/g) || []).length, 1, 'one way back');
   assert.doesNotMatch(html, /outline:\s*(?:none|0)\b/, 'focus stays visible');
 });

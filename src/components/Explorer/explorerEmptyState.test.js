@@ -36,16 +36,16 @@ test('the authors tab blames the search only when there is one', async () => {
   const explorer = await read('./EntityExplorer.jsx');
   assert.match(
     explorer,
-    /<ExplorerEmptyState variant=\{debouncedSearch \? 'authors' : 'authors-none'\} isEnglish=\{isEnglish\} \/>/,
+    /<ExplorerEmptyState variant=\{debouncedSearch \? 'authors' : 'authors-none'\} \/>/,
     'the variant is picked from whether a search is actually running',
   );
 
   const emptyState = await read('./ExplorerEmptyState.jsx');
-  const copy = emptyState.match(/ {2}'authors-none': \{\n {4}en: \[[^\]]*\],\n {4}es: \[[^\]]*\],\n {2}\},/);
-  assert.ok(copy, "the 'authors-none' variant carries its own copy, in both languages");
+  const copy = emptyState.match(/ {2}'authors-none': \{\n {4}en: \[[^\]]*\],\n {2}\},/);
+  assert.ok(copy, "the 'authors-none' variant carries its own copy");
   assert.doesNotMatch(
     copy[0],
-    /search|spelling|búsqueda|grafía/i,
+    /search|spelling/i,
     'no search is mentioned to a reader who never ran one',
   );
   assert.match(

@@ -44,7 +44,8 @@ When adding or changing a route:
 ## AI Output
 
 - Gemini and Kimi must share the same output contract.
-- Prompts, schemas, system instructions, and caches must honor Spanish and English.
+- PaperTok is English-only: prompts, schemas, system instructions, and generated copy are
+  English. Accept and ignore a legacy `language: 'es'` input rather than rejecting it.
 - Never claim full-text access when only an abstract was supplied.
 - Preserve LaTeX delimiters and return structured JSON only.
 

@@ -167,7 +167,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { trackEvent } = useAnalyticsConsent();
-  const { language, isEnglish } = useLanguage();
+  const { language } = useLanguage();
   const {
     unmarkAsRead,
     interactionIdFor,
@@ -315,12 +315,12 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
       .map((record) => record.paperId);
     return [
-      { id: '__favorites__', name: isEnglish ? 'Favorites' : 'Favoritos', emoji: 'Heart', paperIds: favoriteIds, createdAt: 'default' },
-      { id: '__read_later__', name: isEnglish ? 'Read later' : 'Leer después', emoji: 'BookOpen', paperIds: readLaterIds, createdAt: 'default' },
-      { id: '__read__', name: isEnglish ? 'Reading history' : 'Historial de lectura', emoji: 'Eye', paperIds: readIds, createdAt: 'default' },
+      { id: '__favorites__', name: 'Favorites', emoji: 'Heart', paperIds: favoriteIds, createdAt: 'default' },
+      { id: '__read_later__', name: 'Read later', emoji: 'BookOpen', paperIds: readLaterIds, createdAt: 'default' },
+      { id: '__read__', name: 'Reading history', emoji: 'Eye', paperIds: readIds, createdAt: 'default' },
       ...lists,
     ];
-  }, [isEnglish, likedPaperIds, lists, personalLibrary, readPaperIds]);
+  }, [likedPaperIds, lists, personalLibrary, readPaperIds]);
 
   const getPaper = useCallback((paperId) => {
     // `libraryPapers` last of the three, because it is the broadest and the
@@ -1003,9 +1003,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     // Deleting is irreversible and, for a published list, takes the public
     // link down with it; a hover-revealed ✕ is too easy to hit for that.
     const confirmed = globalThis.confirm?.(
-      isEnglish
-        ? `Delete "${list?.name ?? 'this list'}"? This cannot be undone.`
-        : `¿Eliminar "${list?.name ?? 'esta lista'}"? No se puede deshacer.`,
+      `Delete "${list?.name ?? 'this list'}"? This cannot be undone.`,
     );
     if (confirmed === false) return;
     if (IS_DEMO) {
@@ -1139,7 +1137,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       listId: list.id,
       title: list.name,
       description: list.description,
-      language: language === 'en' ? 'en' : 'es',
+      language: 'en',
       papers,
     };
 
@@ -1181,9 +1179,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
 
   const handleUnpublishList = async (list) => {
     const confirmed = globalThis.confirm?.(
-      isEnglish
-        ? 'Stop sharing this list? Its public link will no longer work.'
-        : '¿Dejar de compartir esta lista? Su enlace público dejará de funcionar.',
+      'Stop sharing this list? Its public link will no longer work.',
     );
     if (confirmed === false) return;
 
@@ -1311,7 +1307,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       listId: list.id,
       title: list.name,
       description: list.description,
-      language: language === 'en' ? 'en' : 'es',
+      language: 'en',
       // Advisory only — the Worker reads the membership from the private list.
       paperIds: list.paperIds || [],
       papers,
@@ -1360,7 +1356,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       {loading && !expandedList && lists.length === 0 && (
         <div className="lists-inline-status" aria-live="polite">
           <div className="lists-loading-spinner" />
-          <span>{isEnglish ? 'Updating personal lists...' : 'Actualizando listas personales...'}</span>
+          <span>{'Updating personal lists...'}</span>
         </div>
       )}
       {error && (
@@ -1372,9 +1368,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
           role={error === 'LISTS_LOAD_STALLED' ? 'status' : 'alert'}
           aria-busy={error === 'LISTS_LOAD_STALLED'}
         >
-          <span>{getUiErrorMessage(error, language, 'LISTS_LOAD_FAILED')}</span>
+          <span>{getUiErrorMessage(error, 'LISTS_LOAD_FAILED')}</span>
           <button className="lists-retry-btn" onClick={() => setReloadToken(token => token + 1)}>
-            {isEnglish ? 'Try again' : 'Reintentar'}
+            {'Try again'}
           </button>
         </div>
       )}
@@ -1387,8 +1383,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
             onClick={openedFromRoute ? () => navigate(-1) : closeExpandedList}
           >
             {openedFromRoute
-              ? (isEnglish ? '← Back' : '← Volver')
-              : (isEnglish ? '← My lists' : '← Mis listas')}
+              ? ('← Back')
+              : ('← My lists')}
           </button>
           {(() => {
             const list = displayLists.find((l) => l.id === expandedList);
@@ -1418,10 +1414,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                 : publicPapers.length))
               : 0;
             const badgeLabel = {
-              public: isEnglish ? 'Public' : 'Pública',
-              syncing: isEnglish ? 'Updating…' : 'Actualizando…',
-              synced: isEnglish ? 'Up to date' : 'Al día',
-              stale: isEnglish ? 'Out of date' : 'Sin actualizar',
+              public: 'Public',
+              syncing: 'Updating…',
+              synced: 'Up to date',
+              stale: 'Out of date',
             }[badgeState];
             return (
               <>
@@ -1456,7 +1452,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                           </span>
                         ) : (
                           <span className="lists-badge">
-                            <Lock size={11} aria-hidden="true" /> {isEnglish ? 'Private' : 'Privada'}
+                            <Lock size={11} aria-hidden="true" /> {'Private'}
                           </span>
                         ))}
                       </p>
@@ -1474,7 +1470,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                           onClick={() => handleShareList(list)}
                           disabled={shareBusy}
                         >
-                          <ShareNetwork size={16} /> {isEnglish ? 'Share' : 'Compartir'}
+                          <ShareNetwork size={16} /> {'Share'}
                         </button>
                       ) : (
                         <button
@@ -1483,14 +1479,14 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                           onClick={() => handlePublishList(list, publicPapers)}
                           disabled={shareBusy || pendingPaperIds.size > 0}
                         >
-                          <GlobeHemisphereWest size={16} /> {isEnglish ? 'Publish & share' : 'Publicar y compartir'}
+                          <GlobeHemisphereWest size={16} /> {'Publish & share'}
                         </button>
                       )}
                     </div>
                   )}
                   {isCustomList && IS_DEMO && (
                     <span className="lists-share-demo-note">
-                      {isEnglish ? 'Public sharing is unavailable in demo mode.' : 'No se pueden publicar listas en el modo demo.'}
+                      {'Public sharing is unavailable in demo mode.'}
                     </span>
                   )}
                 </header>
@@ -1501,30 +1497,30 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                     aria-live="polite"
                   >
                     {listShareFeedback.state === 'loading' && (
-                      <><span className="lists-loading-spinner" /> {isEnglish ? 'Updating public link...' : 'Actualizando enlace público...'}</>
+                      <><span className="lists-loading-spinner" /> {'Updating public link...'}</>
                     )}
                     {listShareFeedback.state === 'shared' && (
-                      <span>{isEnglish ? 'Public link shared.' : 'Enlace público compartido.'}</span>
+                      <span>{'Public link shared.'}</span>
                     )}
                     {listShareFeedback.state === 'success' && (
                       <>
                         <span>{listShareFeedback.copied
-                          ? (isEnglish ? 'Public link copied.' : 'Enlace público copiado.')
-                          : (isEnglish ? 'Public link ready. Copy it from here:' : 'Enlace público listo. Cópialo desde aquí:')}</span>
+                          ? ('Public link copied.')
+                          : ('Public link ready. Copy it from here:')}</span>
                         {listShareFeedback.url && <a href={listShareFeedback.url} target="_blank" rel="noopener noreferrer">{listShareFeedback.url}</a>}
                       </>
                     )}
                     {listShareFeedback.state === 'copy-error' && (
                       <>
-                        <span>{isEnglish ? 'The link is public, but it could not be copied automatically.' : 'El enlace es público, pero no se pudo copiar automáticamente.'}</span>
+                        <span>{'The link is public, but it could not be copied automatically.'}</span>
                         {listShareFeedback.url && <a href={listShareFeedback.url} target="_blank" rel="noopener noreferrer">{listShareFeedback.url}</a>}
                       </>
                     )}
                     {listShareFeedback.state === 'unpublished' && (
-                      <span>{isEnglish ? 'The list is private again.' : 'La lista vuelve a ser privada.'}</span>
+                      <span>{'The list is private again.'}</span>
                     )}
                     {listShareFeedback.state === 'error' && (
-                      <span>{isEnglish ? 'The public link could not be changed. Try again.' : 'No se pudo cambiar el enlace público. Inténtalo de nuevo.'}</span>
+                      <span>{'The public link could not be changed. Try again.'}</span>
                     )}
                   </div>
                 )}
@@ -1534,9 +1530,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                     this on its own — the button is here to save the wait. */}
                 {list.publicShareId && syncState?.status === 'error' && (
                   <div className="lists-share-status is-error" role="alert">
-                    <span>{getUiErrorMessage(syncState.code, language, 'PUBLIC_LIST_SYNC_FAILED')}</span>
+                    <span>{getUiErrorMessage(syncState.code, 'PUBLIC_LIST_SYNC_FAILED')}</span>
                     <button className="lists-retry-btn" onClick={() => retryPublicListSync(syncKey)}>
-                      {isEnglish ? 'Try again' : 'Reintentar'}
+                      {'Try again'}
                     </button>
                   </div>
                 )}
@@ -1546,26 +1542,20 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                 {isCustomList && (list.publicShareId
                   ? missingFromPublic > 0 && (
                     <p className="lists-share-limit-note">
-                      {isEnglish
-                        ? `${missingFromPublic} of ${listTotal} papers are not in the public link yet.`
-                        : `${missingFromPublic} de ${listTotal} papers aún no están en el enlace público.`}
-                      {listTotal > PUBLIC_LIST_LIMITS.papers && (isEnglish
-                        ? ` Public links include up to ${PUBLIC_LIST_LIMITS.papers} papers.`
-                        : ` Los enlaces públicos incluyen hasta ${PUBLIC_LIST_LIMITS.papers} papers.`)}
+                      {`${missingFromPublic} of ${listTotal} papers are not in the public link yet.`}
+                      {listTotal > PUBLIC_LIST_LIMITS.papers && (` Public links include up to ${PUBLIC_LIST_LIMITS.papers} papers.`)}
                     </p>
                   )
                   : publicPapers.length < listTotal && (
                     <p className="lists-share-limit-note">
-                      {isEnglish
-                        ? `Publishing would include ${publicPapers.length} of ${listTotal} papers: the rest have no details saved yet.`
-                        : `Al publicarla entrarían ${publicPapers.length} de ${listTotal} papers: del resto aún no hay datos guardados.`}
+                      {`Publishing would include ${publicPapers.length} of ${listTotal} papers: the rest have no details saved yet.`}
                     </p>
                   ))}
                 {(exportPapers.length > 0 || isCustomList) && (
                   <div className="lists-expanded-tools">
                     {exportPapers.length > 0 && (
                       <div className="lists-export-actions">
-                        <span className="lists-tools-label">{isEnglish ? 'Export citation' : 'Exportar cita'}</span>
+                        <span className="lists-tools-label">{'Export citation'}</span>
                         <button type="button" onClick={() => downloadCitationFile(exportPapers, 'bibtex', `papertok-${list.name}`)}><DownloadSimple size={14} /> BibTeX</button>
                         <button type="button" onClick={() => downloadCitationFile(exportPapers, 'ris', `papertok-${list.name}`)}><DownloadSimple size={14} /> RIS</button>
                       </div>
@@ -1576,7 +1566,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                         className="lists-edit-btn"
                         onClick={() => setEditing(list)}
                       >
-                        <PencilSimple size={14} aria-hidden="true" /> {isEnglish ? 'Edit list' : 'Editar lista'}
+                        <PencilSimple size={14} aria-hidden="true" /> {'Edit list'}
                       </button>
                     )}
                     {isCustomList && !IS_DEMO && list.publicShareId && (
@@ -1586,7 +1576,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                         onClick={() => handleUnpublishList(list)}
                         disabled={shareBusy}
                       >
-                        <LinkBreak size={14} aria-hidden="true" /> {isEnglish ? 'Stop sharing' : 'Dejar de compartir'}
+                        <LinkBreak size={14} aria-hidden="true" /> {'Stop sharing'}
                       </button>
                     )}
                   </div>
@@ -1598,9 +1588,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                     now lives on the papers container itself. */}
                 {metadataError && (
                   <div className="lists-metadata-status is-error" role="alert">
-                    <span>{getUiErrorMessage(metadataError, language, 'LIST_METADATA_LOAD_FAILED')}</span>
+                    <span>{getUiErrorMessage(metadataError, 'LIST_METADATA_LOAD_FAILED')}</span>
                     <button className="lists-retry-btn" onClick={() => openList(list, true)}>
-                      {isEnglish ? 'Try again' : 'Reintentar'}
+                      {'Try again'}
                     </button>
                   </div>
                 )}
@@ -1608,7 +1598,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                   className="lists-expanded-papers"
                   aria-busy={pendingPaperIds.size > 0 ? 'true' : undefined}
                   aria-label={pendingPaperIds.size > 0
-                    ? (isEnglish ? 'Loading papers in this list...' : 'Cargando los papers de esta lista...')
+                    ? ('Loading papers in this list...')
                     : undefined}
                 >
                   {(list.paperIds || []).map((paperId, idx) => {
@@ -1645,7 +1635,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                           </div>
                         ) : (
                           <p className="lists-paper-title lists-paper-placeholder">
-                            {isEnglish ? 'The title could not be loaded' : 'No se pudo cargar el título'}
+                            {'The title could not be loaded'}
                           </p>
                         )}
                       </div>
@@ -1657,7 +1647,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                         <div className="lists-paper-item-content">
                           <div className="lists-paper-head">
                             {paper.categories && paper.categories.length > 0 && (
-                              <span className="lists-paper-cat">{getCategoryLabel(paper.categories[0], language)}</span>
+                              <span className="lists-paper-cat">{getCategoryLabel(paper.categories[0])}</span>
                             )}
                             {paper.year && <span className="lists-paper-date">{paper.year}</span>}
                           </div>
@@ -1688,7 +1678,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                               the modal's membership check and note record
                               must look under the same key (R8: ids differ by
                               entry route). */}
-                          <button className="lists-paper-edit-btn" onClick={(e) => { e.stopPropagation(); onEditPaper?.({ ...paper, id: paperId }); }} title={isEnglish ? 'Edit note and tags' : 'Editar nota y etiquetas'}>
+                          <button className="lists-paper-edit-btn" onClick={(e) => { e.stopPropagation(); onEditPaper?.({ ...paper, id: paperId }); }} title={'Edit note and tags'}>
                             <PencilSimple size={17} />
                           </button>
                           <button
@@ -1705,7 +1695,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                                 handleRemoveFromCustomList(e, list.id, paperId);
                               }
                             }}
-                            title={isEnglish ? 'Remove from list' : 'Quitar de la lista'}
+                            title={'Remove from list'}
                           >
                             <X size={18} />
                           </button>
@@ -1716,11 +1706,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                   {(!list.paperIds || list.paperIds.length === 0) && (
                     <div className="lists-empty-state lists-empty-state--inline">
                       <span className="lists-empty-icon" aria-hidden="true"><Books size={20} /></span>
-                      <h3>{isEnglish ? 'This list is empty' : 'Esta lista está vacía'}</h3>
+                      <h3>{'This list is empty'}</h3>
                       <p>
-                        {isEnglish
-                          ? 'Add papers to it from the feed with "Save and organize".'
-                          : 'Añádele papers desde el feed con "Guardar y organizar".'}
+                        {'Add papers to it from the feed with "Save and organize".'}
                       </p>
                     </div>
                   )}
@@ -1735,7 +1723,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
           key="opening"
           {...viewMotion}
           aria-busy="true"
-          aria-label={isEnglish ? 'Opening list...' : 'Abriendo la lista...'}
+          aria-label={'Opening list...'}
         >
           {/* The same three-bar rhythm the finished rows have, so opening a
               list settles into its content instead of swapping silhouettes. */}
@@ -1758,21 +1746,19 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
           <header className="lists-header">
             <div className="lists-masthead-row">
               <div className="lists-masthead-block">
-                <p className="lists-eyebrow">{isEnglish ? 'Personal library' : 'Biblioteca personal'}</p>
-                <h1>{isEnglish ? 'My lists' : 'Mis listas'}</h1>
+                <p className="lists-eyebrow">{'Personal library'}</p>
+                <h1>{'My lists'}</h1>
               </div>
               {/* The primary action rides the nameplate rather than trailing the
                   grid as a ghost tile, so it stays reachable however long the
                   grid gets. */}
               <Button className="lists-create-btn" onClick={() => setCreating(true)}>
                 <Plus size={16} aria-hidden="true" />
-                {isEnglish ? 'New list' : 'Nueva lista'}
+                {'New list'}
               </Button>
             </div>
             <p className="lists-subtitle">
-              {isEnglish
-                ? 'Organize, annotate and share the papers you keep.'
-                : 'Organiza, anota y comparte los papers que guardas.'}
+              {'Organize, annotate and share the papers you keep.'}
             </p>
           </header>
           <div className="lists-grid">
@@ -1796,16 +1782,16 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                       <button
                         className="list-card-tool"
                         onClick={(e) => { e.stopPropagation(); setEditing(list); }}
-                        aria-label={isEnglish ? `Edit ${list.name}` : `Editar ${list.name}`}
-                        title={isEnglish ? 'Edit list' : 'Editar lista'}
+                        aria-label={`Edit ${list.name}`}
+                        title={'Edit list'}
                       >
                         <PencilSimple size={13} aria-hidden="true" />
                       </button>
                       <button
                         className="list-card-tool list-card-tool--danger"
                         onClick={(e) => { e.stopPropagation(); handleDeleteList(list.id); }}
-                        aria-label={isEnglish ? `Delete ${list.name}` : `Eliminar ${list.name}`}
-                        title={isEnglish ? 'Delete list' : 'Eliminar lista'}
+                        aria-label={`Delete ${list.name}`}
+                        title={'Delete list'}
                       >
                         <X size={13} aria-hidden="true" />
                       </button>
@@ -1828,7 +1814,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                   {/* The profile card says Public; its twin here said nothing. */}
                   {list.publicShareId && (
                     <span className="lists-badge lists-badge--public">
-                      <GlobeHemisphereWest size={11} aria-hidden="true" /> {isEnglish ? 'Public' : 'Pública'}
+                      <GlobeHemisphereWest size={11} aria-hidden="true" /> {'Public'}
                     </span>
                   )}
                 </div>
@@ -1841,7 +1827,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                 <div className="list-card-preview">
                   {(list.paperIds?.length ?? 0) === 0 ? (
                     <p className="list-card-preview-empty">
-                      {isEnglish ? 'Nothing saved yet.' : 'Nada guardado todavía.'}
+                      {'Nothing saved yet.'}
                     </p>
                   ) : (
                     list.paperIds
@@ -1882,8 +1868,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
         open={Boolean(overlayPaper)}
         onClose={closeOverlayPaper}
         onExitComplete={() => setShownPaper(null)}
-        isEnglish={isEnglish}
-        label={isEnglish ? 'Paper details' : 'Detalles del paper'}
+       
+        label={'Paper details'}
       >
         {shownPaper && (
           <PaperCard
@@ -1909,13 +1895,13 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
           one branch would unmount the moment the other took over. */}
       <CreateListDialog
         open={creating}
-        isEnglish={isEnglish}
+       
         onClose={() => setCreating(false)}
         onCreate={handleCreateList}
       />
       <CreateListDialog
         open={Boolean(editing)}
-        isEnglish={isEnglish}
+       
         list={editing}
         onClose={() => setEditing(null)}
         onSave={handleEditList}

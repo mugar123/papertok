@@ -106,7 +106,7 @@ export function FollowingUpdatesProvider({ children }) {
         seenIdsRef.current = merged;
         setSeenIds(merged);
       })
-      .catch(loadError => console.warn('No se pudo sincronizar el estado de novedades', loadError));
+      .catch(loadError => console.warn('Could not sync the updates state', loadError));
     return () => {
       cancelled = true;
       clearTimeout(restoreTimeout);
@@ -211,7 +211,7 @@ export function FollowingUpdatesProvider({ children }) {
           updatedAt: serverTimestamp(),
         }, { merge: true });
       } catch (persistError) {
-        console.warn('No se pudo guardar el estado de novedades', persistError);
+        console.warn('Could not save the updates state', persistError);
       }
     }
   }, [userId]);

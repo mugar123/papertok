@@ -22,7 +22,7 @@ function getPreferredName(names = []) {
 }
 
 function getLocalizedNames(names = []) {
-  return Object.fromEntries(['es', 'en'].flatMap((language) => {
+  return Object.fromEntries(['en'].flatMap((language) => {
     const candidates = names.filter(name => (
       name?.lang === language
       && name?.value

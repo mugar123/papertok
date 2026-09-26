@@ -139,18 +139,10 @@ test('a list of one or none needs no conjunction', () => {
   assert.equal(joinNames([null, 'ROR', undefined]), 'ROR');
 });
 
-test('Spanish swaps y for e before the i sound', () => {
-  assert.equal(joinNames(['autores', 'instituciones']), 'autores e instituciones');
-  assert.equal(joinNames(['papers', 'historia']), 'papers e historia');
-  assert.equal(joinNames(['papers', 'temas']), 'papers y temas');
-  assert.equal(joinNames(['agua', 'hielo']), 'agua y hielo', 'a diphthong keeps y');
-});
-
 test('English always joins with and', () => {
-  assert.equal(joinNames(['authors', 'institutions'], true), 'authors and institutions');
-  assert.equal(joinNames(['papers', 'authors', 'topics'], true), 'papers, authors and topics');
+  assert.equal(joinNames(['authors', 'institutions']), 'authors and institutions');
 });
 
 test('three or more items keep the commas', () => {
-  assert.equal(joinNames(['papers', 'autores', 'temas']), 'papers, autores y temas');
+  assert.equal(joinNames(['papers', 'authors', 'topics']), 'papers, authors and topics');
 });

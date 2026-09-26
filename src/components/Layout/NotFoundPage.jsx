@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { House } from '@phosphor-icons/react';
-import { useLanguage } from '../../context/LanguageContext';
 import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.js';
 import './NotFoundPage.css';
 
@@ -11,12 +10,6 @@ import './NotFoundPage.css';
 // service worker sends navigations to the network, with no fallback); this is
 // the same answer for a navigation the app makes itself.
 const COPY = {
-  es: {
-    title: 'No encontramos esta página',
-    body: 'Puede que el enlace ya no exista o que esté mal escrito.',
-    action: 'Ir al feed',
-    documentTitle: 'Página no encontrada | PaperTok',
-  },
   en: {
     title: 'We could not find this page',
     body: 'The link may no longer exist, or it may be mistyped.',
@@ -26,12 +19,11 @@ const COPY = {
 };
 
 export default function NotFoundPage() {
-  const { isEnglish } = useLanguage();
   const location = useLocation();
-  const copy = COPY[isEnglish ? 'en' : 'es'];
+  const copy = COPY.en;
   const metadata = useMemo(() => ({
-    title: { es: COPY.es.documentTitle, en: COPY.en.documentTitle },
-    description: { es: COPY.es.body, en: COPY.en.body },
+    title: { en: COPY.en.documentTitle },
+    description: { en: COPY.en.body },
     route: location.pathname,
     noIndex: true,
   }), [location.pathname]);

@@ -32,7 +32,7 @@ loading states, authentication, or responsive layout.
 - Add or update tests for ranking, provider mapping, deduplication, localization, and Worker
   contracts.
 - Document new routes, providers, environment variables, and persistence.
-- Include Spanish and English copy for user-facing changes.
+- Write user-facing copy in English.
 - Explain any API quota, caching, privacy, or fallback implications.
 
 For large features or recommendation changes, open an issue first so the behavior and success

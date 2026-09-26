@@ -115,7 +115,7 @@ The Worker entry point is `worker/report-api.js`. Its route groups include:
 
 - share pages: `/share/{paper,list,user,entity}/…` (HTML for crawlers, which `vercel.json` sends
   from `/public/…`; public, GET and HEAD, no `Origin`; see `docs/PUBLIC_DISCOVERY.md`)
-- health and locale: `/health`, `/health/email`, `/health/ai`, `/locale`
+- health: `/health`, `/health/email`, `/health/ai`
 - comment threads: `/thread-anchor` (KV-cached stub + first page at the edge; HTTP `no-store` so a write's KV delete is the invalidation; `POST /thread-anchor/invalidate` after a create, edit or delete)
 - account deletion: `/account/delete` (Firebase identity, service-account Firestore walk, newsletter KV, Auth last; retryable 202 slices)
 - discovery: `/report/trends`, `/related`, `/citation-graph`, `/arxiv`
@@ -127,7 +127,7 @@ The Worker entry point is `worker/report-api.js`. Its route groups include:
 - biomedical metrics: `/enrich/icite`
 - associated AI resources: `/resources/huggingface`
 - AI: `/ai/explain`
-- notifications: `/notifications/*` (authenticated preferences include the active `es`/`en` locale used by digest and unsubscribe copy)
+- notifications: `/notifications/*` (authenticated preferences; digest and unsubscribe copy are English-only, and a stored legacy `language: 'es'` is served English)
 
 The browser calls the Worker through `VITE_PAPER_API_BASE_URL`. Worker credentials are stored
 with `wrangler secret put`.

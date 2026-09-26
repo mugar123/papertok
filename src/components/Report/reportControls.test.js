@@ -48,16 +48,16 @@ test('the country results keep their listbox semantics and the search field is t
   const jsx = await read('ReportFilters.jsx');
   assert.match(jsx, /role="listbox"/);
   assert.match(jsx, /role="option"[\s\S]*?aria-selected=\{selected\}/);
-  assert.match(jsx, /<Input\s+ref=\{countryInputRef\}[\s\S]*?type="search"[\s\S]*?aria-label=\{isEnglish \? 'Search affiliation country' : 'Buscar país de afiliación'\}/);
+  assert.match(jsx, /<Input\s+ref=\{countryInputRef\}[\s\S]*?type="search"[\s\S]*?aria-label=\{'Search affiliation country'\}/);
 });
 
-test('the year rail is the ui Slider, with both thumbs named in both languages; rc-slider is gone', async () => {
+test('the year rail is the ui Slider, with both thumbs named; rc-slider is gone', async () => {
   const jsx = await read('CustomDateSelector.jsx');
   const css = await read('CustomDateSelector.css');
   assert.doesNotMatch(jsx, /rc-slider/);
   assert.doesNotMatch(css, /rc-slider/);
   assert.match(jsx, /from '\.\.\/ui\/slider\.jsx'/);
-  assert.match(jsx, /<Slider[\s\S]*?value=\{yearRange\}[\s\S]*?onValueChange=\{handleYearRangeChange\}[\s\S]*?getAriaLabel=\{\(index\) => \(isEnglish \? \['Start year', 'End year'\] : \['Año inicial', 'Año final'\]\)\[index\]\}/);
+  assert.match(jsx, /<Slider[\s\S]*?value=\{yearRange\}[\s\S]*?onValueChange=\{handleYearRangeChange\}[\s\S]*?getAriaLabel=\{\(index\) => \(\['Start year', 'End year'\]\)\[index\]\}/);
   // Focus sits on the hidden input inside the thumb; the ring has to be drawn where it can be seen.
   assert.match(css, /\[data-slot='slider-thumb'\]:focus-within \{[^}]*outline: 2px solid var\(--focus-ring\)/);
 });

@@ -28,7 +28,7 @@ test('fails without reaching for a third-party proxy when no arXiv route exists'
     clearCache();
     await assert.rejects(
       fetchPapers(['cs.AI'], 0, 5),
-      /No se pudo conectar con arXiv/,
+      /Could not reach arXiv/,
     );
     assert.deepEqual(requested, []);
   } finally {
@@ -91,7 +91,7 @@ test('the Worker route is given longer than the Worker gives arXiv', async () =>
 test('the error the route ends in keeps the status and retry-after of the refusal behind it', () => {
   const refusal = Object.assign(new Error('PaperTok arXiv API error: 429'), { status: 429, retryAfterMs: 4_000 });
   const error = arxivUnreachableError(refusal);
-  assert.match(error.message, /No se pudo conectar con arXiv/);
+  assert.match(error.message, /Could not reach arXiv/);
   assert.equal(error.status, 429);
   assert.equal(error.retryAfterMs, 4_000);
   assert.equal(error.cause, refusal);

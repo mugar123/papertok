@@ -228,7 +228,6 @@ test('SOURCE: la píldora dice qué está haciendo en cada uno de sus tres estad
   assert.match(body, /AnimatePresence initial=\{false\}/, 'las caras se relevan; la primera no se anima al montar');
   assert.match(body, /refreshPhase === 'done'\s*\?\s*<Check/, 'al terminar, una marca, no la flecha girando');
   assert.match(body, /refreshing: 'Refreshing…', done: 'Updated', idle: 'Refresh'/);
-  assert.match(body, /refreshing: 'Actualizando…', done: 'Actualizado', idle: 'Actualizar'/);
 });
 
 /**

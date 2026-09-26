@@ -34,7 +34,7 @@ test('an unverified author gets no Follow and a notice that the results come fro
   assert.match(follow, /if \(!entity \|\| authorIdentityUnverified \|\|/);
   assert.match(
     jsx,
-    /\{authorIdentityUnverified \? \(\s*<p className="ehc-identity-note">\s*\{isEnglish\s*\? 'Found by name: these results may mix people who share it\.'\s*: 'Encontrado por el nombre: los resultados pueden mezclar a personas que se llaman igual\.'\}\s*<\/p>\s*\) : followEntity && \(/,
+    /\{authorIdentityUnverified \? \(\s*<p className="ehc-identity-note">\s*(?:\{'Found by name: these results may mix people who share it\.'\}|Found by name: these results may mix people who share it\.)\s*<\/p>\s*\) : followEntity && \(/,
   );
 });
 

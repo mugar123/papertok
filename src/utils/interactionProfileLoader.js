@@ -184,7 +184,7 @@ export async function loadInteractionProfile({
     }
 
     console.warn(
-      `[Recomendador] El agregado ignora ${drift.missing} documentos de interacción `
+      `[Recommender] The aggregate ignores ${drift.missing} interaction documents `
       + `(${drift.accounted} contabilizados frente a ${drift.actual} reales); se reconstruye.`,
     );
     // Fall through to the rebuild, sharing the same per-session cache so the

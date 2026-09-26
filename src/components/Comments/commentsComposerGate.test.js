@@ -73,7 +73,7 @@ test('the footer has a branch for loading: the composer, inert but not gone', as
 
 test('the inert composer keeps its place in the tab order, and says why it is inert', async () => {
   const jsx = await read('./CommentsSheet.jsx');
-  assert.match(jsx, /composerWaking: \{\s*es: '[^']+',\s*en: '[^']+',?\s*\}/, 'the wait has bilingual copy');
+  assert.match(jsx, /composerWaking: \{\s*en: '[^']+',?\s*\}/, 'the wait has copy');
   assert.match(
     jsx,
     /const PROFILE_WAIT_COPY = \{[\s\S]*?slow: COPY\.composerWaking,[\s\S]*?offline: COPY\.noConnection,[\s\S]*?stalled: COPY\.stalledLoad,[\s\S]*?\};/,

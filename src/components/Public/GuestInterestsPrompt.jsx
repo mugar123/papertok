@@ -1,6 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
 import { ArrowRight, Check } from '@phosphor-icons/react';
-import { useLanguage } from '../../context/LanguageContext.jsx';
 import { CATEGORIES } from '../../data/categories.js';
 import { normalizeGuestAreas } from '../../utils/guestInterests.js';
 import { Button } from '../ui/button.jsx';
@@ -22,16 +21,6 @@ import './GuestInterestsPrompt.css';
 const AREA_ENTRIES = Object.entries(CATEGORIES);
 
 const COPY = {
-  es: {
-    kicker: 'Tus intereses',
-    title: '¿Qué te interesa?',
-    lede: 'Cambia las áreas y el feed se vuelve a armar con ellas.',
-    areasLabel: 'Áreas de interés',
-    picked: n => `${n} ${n === 1 ? 'área marcada' : 'áreas marcadas'}`,
-    primary: 'Actualizar feed',
-    secondary: 'Cancelar',
-    close: 'Cerrar',
-  },
   en: {
     kicker: 'Your interests',
     title: 'What are you into?',
@@ -50,12 +39,11 @@ const COPY = {
 // `onOpenChangeComplete(false)` hands the outcome to the parent: the answer
 // through `onSubmit`, anything else through `onDismiss`. One call, once.
 export default function GuestInterestsPrompt({ initialAreas = [], onSubmit, onDismiss }) {
-  const { isEnglish } = useLanguage();
   const [open, setOpen] = useState(true);
   const answerRef = useRef(null);
   const titleRef = useRef(null);
   const [selected, setSelected] = useState(() => new Set(normalizeGuestAreas(initialAreas)));
-  const copy = COPY[isEnglish ? 'en' : 'es'];
+  const copy = COPY.en;
 
   const initialKey = useMemo(() => normalizeGuestAreas(initialAreas).join('+'), [initialAreas]);
   const selectedKey = normalizeGuestAreas(Array.from(selected)).join('+');
@@ -115,7 +103,7 @@ export default function GuestInterestsPrompt({ initialAreas = [], onSubmit, onDi
                 <span className="gip-area-icon" aria-hidden="true">
                   <area.icon size={17} />
                 </span>
-                <span className="gip-area-name">{isEnglish ? area.labelEn : area.label}</span>
+                <span className="gip-area-name">{area.label}</span>
                 <span className="gip-area-check" aria-hidden="true">
                   <Check size={11} weight="bold" />
                 </span>

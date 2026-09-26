@@ -18,12 +18,11 @@ test('keeps original arXiv categories ahead of later OpenAlex concepts', () => {
   });
 
   assert.deepEqual(after.slice(0, before.length), before);
-  // "Cosmology" is the paper's own primary category, already on the pill as
-  // «Cosmología»: since the chips read in the interface language it is the
-  // same topic twice, so it is not repeated (2026-09-24).
+  // "Cosmology" is the paper's own primary category, already on the pill:
+  // it is the same topic twice, so it is not repeated (2026-09-24).
   assert.deepEqual(after.map(tag => tag.label), [
-    'Relatividad General',
-    'Altas Energías (Fenomenología)',
+    'General Relativity and Quantum Cosmology',
+    'High Energy Physics - Phenomenology',
     'Dark matter',
   ]);
 });
@@ -33,12 +32,13 @@ test('deduplicates concepts that repeat a visible category label', () => {
     primaryCategory: 'astro-ph.CO',
     categories: ['astro-ph.CO', 'physics.optics'],
     concepts: [
-      { id: 'C1', display_name: 'Óptica' },
+      { id: 'C1', display_name: 'Óptics' },
       { id: 'C2', display_name: 'Photonics' },
     ],
   });
 
-  assert.deepEqual(tags.map(tag => tag.label), ['Óptica', 'Photonics']);
+  // "Óptics" folds to the visible "Optics" category chip and is dropped.
+  assert.deepEqual(tags.map(tag => tag.label), ['Optics', 'Photonics']);
 });
 
 test('hides PACS classification codes from visible paper topics', () => {
@@ -49,7 +49,7 @@ test('hides PACS classification codes from visible paper topics', () => {
       { id: 'ads:pacs', display_name: '04.70.Dy' },
       { id: 'C1', display_name: 'Quantum gravity' },
     ],
-  }, 4, 'en');
+  }, 4);
 
   assert.deepEqual(tags.map(tag => tag.label), ['Quantum gravity']);
 });
@@ -59,7 +59,7 @@ test('uses readable area labels for valid arXiv codes outside the preference tax
     primaryCategory: 'quant-ph',
     categories: ['quant-ph', 'nlin.CD', 'cs.CC', 'cs.IT', 'astro-ph.IM'],
     concepts: [{ id: 'C1', display_name: 'Quantum chaos' }],
-  }, 4, 'en');
+  }, 4);
 
   assert.deepEqual(tags.map(tag => tag.label), [
     'Physics',
@@ -67,7 +67,7 @@ test('uses readable area labels for valid arXiv codes outside the preference tax
     'Quantum chaos',
   ]);
 
-  const fallbackTopic = resolvePaperTopic(tags[0].value, 'en');
+  const fallbackTopic = resolvePaperTopic(tags[0].value);
   const fallbackUrl = new URL(topicExplorerPath(fallbackTopic), 'https://papertok.test');
   assert.equal(fallbackTopic.display_name, 'Physics');
   assert.equal(fallbackTopic.query, 'nlin.CD');
@@ -87,14 +87,14 @@ test('only emits semantic tags that resolve to navigable topics', () => {
       { id: 'provider:url', display_name: 'https://example.com/topic' },
       { id: 'provider:pacs', display_name: '04.70.Dy' },
     ],
-  }, 10, 'en');
+  }, 10);
 
   assert.deepEqual(tags.map(tag => tag.label), [
     'General Relativity and Quantum Cosmology',
     'Spatial transcriptomics',
     'Quantum sensing',
   ]);
-  assert.equal(tags.every(tag => Boolean(topicExplorerPath(resolvePaperTopic(tag.value, 'en')))), true);
+  assert.equal(tags.every(tag => Boolean(topicExplorerPath(resolvePaperTopic(tag.value)))), true);
 });
 
 test('recognizes every supported semantic label field', () => {
@@ -105,7 +105,7 @@ test('recognizes every supported semantic label field', () => {
       { id: 'provider:three', name: 'Quantum sensing' },
       { id: 'provider:four', label: 'Gene regulation' },
     ],
-  }, 10, 'en');
+  }, 10);
 
   assert.deepEqual(tags.map(tag => tag.label), [
     'Spatial transcriptomics',
@@ -115,18 +115,16 @@ test('recognizes every supported semantic label field', () => {
   ]);
 });
 
-// A chip whose English label is one of our own topics was resolved to the
-// Spanish topic for its link and tooltip, and still printed in English
-// ("Oncology" with the title "Explorar Oncología"): 42 of 91 chips on the
-// guest's OpenAlex cards (audit 2026-09-23, issue 8).
-test('a chip that is one of our topics reads in the interface language', () => {
+// A chip that is one of our own topics prints that topic's label and carries
+// no `lang` override (audit 2026-09-23, issue 8).
+test('a chip that is one of our topics prints our topic label', () => {
   const tags = buildPaperTopicTags({
     primaryCategory: 'med.cardio',
     categories: ['med.cardio', 'Oncology'],
     concepts: [{ id: 'https://openalex.org/C41008148', display_name: 'Computer science' }],
-  }, 4, 'es');
+  }, 4);
 
-  assert.deepEqual(tags.map(tag => tag.label), ['Oncología', 'Ciencias de la Computación']);
+  assert.deepEqual(tags.map(tag => tag.label), ['Oncology', 'Computer Science']);
   assert.deepEqual(tags.map(tag => tag.lang), [undefined, undefined]);
 });
 
@@ -135,7 +133,7 @@ test('provider text keeps its words and says they are English', () => {
     primaryCategory: 'med.onco',
     categories: ['med.onco', 'Tumor Microenvironment'],
     concepts: [{ id: 'C1', display_name: 'Dark matter' }],
-  }, 4, 'es');
+  }, 4);
 
   assert.deepEqual(tags.map(tag => [tag.label, tag.lang]), [
     ['Tumor Microenvironment', 'en'],
@@ -143,13 +141,13 @@ test('provider text keeps its words and says they are English', () => {
   ]);
 });
 
-test('our translation of an arXiv code is ours, not English', () => {
+test('our label for an arXiv code is ours, not provider text', () => {
   const tags = buildPaperTopicTags({
     primaryCategory: 'quant-ph',
     categories: ['quant-ph', 'nlin.CD'],
-  }, 4, 'es');
+  }, 4);
 
-  assert.deepEqual(tags.map(tag => [tag.label, tag.lang]), [['Física', undefined]]);
+  assert.deepEqual(tags.map(tag => [tag.label, tag.lang]), [['Physics', undefined]]);
 });
 
 test('two chips that are the same topic show once, and never repeat the category pill', () => {
@@ -157,7 +155,7 @@ test('two chips that are the same topic show once, and never repeat the category
     primaryCategory: 'astro-ph.CO',
     categories: ['astro-ph.CO', 'med.onco', 'Oncology'],
     concepts: [{ id: 'C1', display_name: 'Cosmology' }, { id: 'C2', display_name: 'Oncology' }],
-  }, 4, 'es');
+  }, 4);
 
-  assert.deepEqual(tags.map(tag => tag.label), ['Oncología']);
+  assert.deepEqual(tags.map(tag => tag.label), ['Oncology']);
 });

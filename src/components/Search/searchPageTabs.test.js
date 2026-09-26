@@ -18,7 +18,7 @@ test('the filter bar is a Tabs root with a line list, and the results are its pa
   const css = await cssFile;
   // Rendered as the page's <main> (accessibilityStructure.test.js).
   assert.match(jsx, /<Tabs\s+render=\{<main \/>\}\s+className="search-page-container"\s+value=\{activeSearchFilter\}\s+onValueChange=\{handleSearchFilterChange\}/);
-  assert.match(jsx, /<TabsList\s+variant="line"\s+className="search-filter-bar"\s+aria-label=\{isEnglish \? 'Filter search results' : 'Filtrar resultados de búsqueda'\}/);
+  assert.match(jsx, /<TabsList\s+variant="line"\s+className="search-filter-bar"\s+aria-label=\{'Filter search results'\}/);
   assert.match(jsx, /<TabsTrigger[\s\S]*?value=\{id\}\s+className="search-filter-pill"/);
   assert.match(jsx, /<TabsContent\s+value=\{activeSearchFilter\}\s+id="search-results-panel"/);
   assert.doesNotMatch(jsx, /role="tab"|role="tablist"|aria-selected=/, 'Base UI writes the tab roles and states');
@@ -29,7 +29,7 @@ test('the filter bar is a Tabs root with a line list, and the results are its pa
 
 test('the search field is the ui Input with a name, and follow is a Toggle', async () => {
   const jsx = await jsxFile;
-  assert.match(jsx, /<Input\s+type="search"\s+className="search-input"[\s\S]*?aria-label=\{isEnglish \? 'Search PaperTok' : 'Buscar en PaperTok'\}/);
+  assert.match(jsx, /<Input\s+type="search"\s+className="search-input"[\s\S]*?aria-label=\{'Search PaperTok'\}/);
   assert.match(jsx, /<Toggle\s+variant="outline"\s+className=\{`search-follow-btn[\s\S]*?pressed=\{following\}/);
   assert.doesNotMatch(jsx, /aria-pressed=/);
 });

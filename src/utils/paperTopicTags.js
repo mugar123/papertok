@@ -35,11 +35,11 @@ function chipText(topic, providerLabel, translatedLabel) {
   return { label: providerLabel, lang: 'en', identity: normalizedLabel(providerLabel) };
 }
 
-export function buildPaperTopicTags(paper, limit = 4, language = 'es') {
+export function buildPaperTopicTags(paper, limit = 4) {
   const primaryCategory = paper?.primaryCategory || paper?.categories?.[0] || '';
-  const primaryLabel = getCategoryLabel(primaryCategory, language);
+  const primaryLabel = getCategoryLabel(primaryCategory);
   const primaryTopic = primaryCategory
-    ? resolvePaperTopic({ categoryId: primaryCategory, categoryIds: [primaryCategory], display_name: primaryLabel, query: primaryCategory, source: 'category' }, language)
+    ? resolvePaperTopic({ categoryId: primaryCategory, categoryIds: [primaryCategory], display_name: primaryLabel, query: primaryCategory, source: 'category' })
     : null;
   // The category pill already says the primary category; no chip repeats it,
   // in either language.
@@ -51,7 +51,7 @@ export function buildPaperTopicTags(paper, limit = 4, language = 'es') {
   const tags = [];
 
   for (const category of paper?.categories || []) {
-    const label = getCategoryLabel(category, language);
+    const label = getCategoryLabel(category);
     if (
       !normalizedLabel(label)
       || category === primaryCategory
@@ -65,7 +65,7 @@ export function buildPaperTopicTags(paper, limit = 4, language = 'es') {
       query: category,
       source: 'category',
     };
-    const topic = resolvePaperTopic(value, language);
+    const topic = resolvePaperTopic(value);
     if (!topic) continue;
     const text = chipText(topic, label, label !== category ? label : '');
     if (seen.has(text.identity) || seen.has(normalizedLabel(text.label))) continue;
@@ -85,7 +85,7 @@ export function buildPaperTopicTags(paper, limit = 4, language = 'es') {
     const label = conceptLabel(concept);
     const normalized = normalizedLabel(label);
     if (!normalized || isTechnicalClassification(label)) continue;
-    const topic = resolvePaperTopic(concept, language);
+    const topic = resolvePaperTopic(concept);
     if (!topic) continue;
     const text = chipText(topic, label, '');
     if (seen.has(text.identity) || seen.has(normalizedLabel(text.label))) continue;

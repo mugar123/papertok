@@ -19,40 +19,36 @@ import './MyCommentsPage.css';
 
 const COPY = {
   eyebrow: SETTINGS_BREADCRUMB,
-  title: { es: 'Mis comentarios', en: 'My comments' },
+  title: { en: 'My comments' },
   subtitle: {
-    es: 'Lo que has escrito en papers, con lo moderado incluido.',
     en: 'What you have written on papers, moderated items included.',
   },
-  back: { es: 'Volver', en: 'Back' },
-  loading: { es: 'Cargando...', en: 'Loading...' },
-  emptyTitle: { es: 'Todavía no has comentado', en: 'No comments yet' },
-  empty: { es: 'Todavía no has comentado ningún paper.', en: 'You have not commented on any paper yet.' },
-  emptyCta: { es: 'Explorar papers', en: 'Explore papers' },
-  error: { es: 'No se pudieron cargar tus comentarios.', en: 'Your comments could not be loaded.' },
+  back: { en: 'Back' },
+  loading: { en: 'Loading...' },
+  emptyTitle: { en: 'No comments yet' },
+  empty: { en: 'You have not commented on any paper yet.' },
+  emptyCta: { en: 'Explore papers' },
+  error: { en: 'Your comments could not be loaded.' },
   slowLoad: {
-    es: 'Está tardando más de lo normal. Seguimos intentándolo.',
     en: 'This is taking longer than usual. Still trying.',
   },
   noConnection: {
-    es: 'Parece que no hay conexión. Seguimos intentándolo.',
     en: 'There seems to be no connection. Still trying.',
   },
   stalledLoad: {
-    es: 'Está tardando muchísimo. Seguimos intentándolo por detrás.',
     en: 'This is taking unusually long. We are still trying in the background.',
   },
-  retry: { es: 'Reintentar', en: 'Try again' },
-  more: { es: 'Cargar más', en: 'Load more' },
-  openPaper: { es: 'Ver el paper', en: 'View paper' },
-  reply: { es: 'Respuesta', en: 'Reply' },
-  hidden: { es: 'Oculto por moderación', en: 'Hidden by moderation' },
-  edited: { es: 'editado', en: 'edited' },
-  delete: { es: 'Borrar', en: 'Delete' },
-  deleteConfirm: { es: '¿Borrar? Si tiene respuestas, se borran también.', en: 'Delete? Any replies go too.' },
-  confirm: { es: 'Sí, borrar', en: 'Yes, delete' },
-  cancel: { es: 'Cancelar', en: 'Cancel' },
-  deleteError: { es: 'No se pudo borrar. Vuelve a intentarlo.', en: 'It could not be deleted. Try again.' },
+  retry: { en: 'Try again' },
+  more: { en: 'Load more' },
+  openPaper: { en: 'View paper' },
+  reply: { en: 'Reply' },
+  hidden: { en: 'Hidden by moderation' },
+  edited: { en: 'edited' },
+  delete: { en: 'Delete' },
+  deleteConfirm: { en: 'Delete? Any replies go too.' },
+  confirm: { en: 'Yes, delete' },
+  cancel: { en: 'Cancel' },
+  deleteError: { en: 'It could not be deleted. Try again.' },
 };
 
 /**
@@ -75,8 +71,8 @@ function formatDate(value, locale) {
 export default function MyCommentsPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isEnglish, locale } = useLanguage();
-  const text = useCallback(entry => entry[isEnglish ? 'en' : 'es'], [isEnglish]);
+  const { locale } = useLanguage();
+  const text = useCallback(entry => entry.en, []);
 
   const [state, setState] = useState({ status: 'loading', rows: [], cursor: null, hasMore: false });
   const [attempt, setAttempt] = useState(0);

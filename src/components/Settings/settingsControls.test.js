@@ -31,7 +31,7 @@ test('the interests editor is a modal Dialog with a named close and pressed chip
   const jsx = await read('./EditInterestsModal.jsx');
   assert.match(jsx, /from '\.\.\/ui\/dialog\.jsx'/);
   assert.match(jsx, /<Dialog open=\{isOpen\} onOpenChange=\{nextOpen => \{ if \(!nextOpen\) onClose\(\); \}\} modal>/);
-  assert.match(jsx, /closeLabel=\{isEnglish \? 'Close' : 'Cerrar'\}/);
+  assert.match(jsx, /closeLabel=\{'Close'\}/);
   assert.doesNotMatch(jsx, /isClosing|setIsClosing|setTimeout\(\(\) => \{\s*onClose/, 'the exit timer is the primitive\'s now');
   // The chips are the shared Toggle: a native button on which Base UI
   // writes `aria-pressed` and `data-pressed`, so the pill's CSS reads the
@@ -55,11 +55,11 @@ test('the settings page uses the shared Switch and RadioGroup, and styles them o
   assert.doesNotMatch(jsx, /role="switch"|role="radiogroup"|role="radio"|aria-checked/);
   assert.match(jsx, /<Switch\s+className="settings-toggle"[\s\S]*?aria-label=\{copy\.analyticsToggleLabel\}/);
   assert.match(jsx, /<RadioGroup\s+className="settings-levels"\s+aria-label=\{copy\.aiLevelLabel\}[\s\S]*?onValueChange=\{handleLevelChange\}/);
-  assert.match(jsx, /<RadioGroup\s+className="settings-language"\s+aria-label=\{copy\.languageLabel\}[\s\S]*?onValueChange=\{handleLanguageChange\}/);
+  // The interface language choice is gone: the app is English-only.
+  assert.doesNotMatch(jsx, /settings-language|handleLanguageChange|setLanguage/);
   // Each choice is a real button, so the page's own card rules still apply.
-  assert.equal((jsx.match(/render=\{<button type="button" \/>\}\s+nativeButton/g) ?? []).length, 3);
+  assert.equal((jsx.match(/render=\{<button type="button" \/>\}\s+nativeButton/g) ?? []).length, 1);
   const css = await read('./SettingsPage.css');
   assert.match(css, /\.settings-levels button\[data-checked\]\s*\{/);
-  assert.match(css, /\.settings-language button\[data-checked\]\s*\{/);
   assert.doesNotMatch(css, /\.settings-levels button\.is-active|\.settings-language button\.is-active|\.settings-toggle\.is-active|\.settings-toggle > span/);
 });

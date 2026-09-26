@@ -15,19 +15,6 @@ import { Label } from '../ui/label.jsx';
 import './DeleteAccountDialog.css';
 
 const COPY = {
-  es: {
-    title: 'Eliminar cuenta',
-    close: 'Cerrar',
-    lead: 'Esto borra tu perfil, tus listas, tus subrayados, tus seguimientos, tus preferencias, la suscripción al boletín y la cuenta de acceso. No se puede deshacer.',
-    comments: 'Tus comentarios permanecen en los hilos, firmados como cuenta eliminada, para no romper conversaciones ajenas.',
-    privacy: 'Política de privacidad',
-    privacyNewTab: 'se abre en una pestaña nueva',
-    typeLabel: 'Escribe ELIMINAR para confirmar',
-    phrase: 'ELIMINAR',
-    confirm: 'Eliminar mi cuenta',
-    working: 'Eliminando la cuenta…',
-    cancel: 'Cancelar',
-  },
   en: {
     title: 'Delete account',
     close: 'Close',
@@ -51,8 +38,8 @@ const COPY = {
  * is the one call to the parent's `onClose`. While the deletion runs nothing
  * closes it: the outcome is either `onDeleted` or an error to read.
  */
-export default function DeleteAccountDialog({ open: openOnMount = true, language, onClose, onDeleted }) {
-  const copy = COPY[language === 'en' ? 'en' : 'es'];
+export default function DeleteAccountDialog({ open: openOnMount = true, onClose, onDeleted }) {
+  const copy = COPY['en'];
   const inputId = useId();
   const errorId = useId();
   const [open, setOpen] = useState(openOnMount);
@@ -76,7 +63,7 @@ export default function DeleteAccountDialog({ open: openOnMount = true, language
       await deleteAccount();
       await onDeleted();
     } catch (err) {
-      setError(getUiErrorMessage(err, language, 'ACCOUNT_DELETION_FAILED'));
+      setError(getUiErrorMessage(err, 'ACCOUNT_DELETION_FAILED'));
       setWorking(false);
     }
   };

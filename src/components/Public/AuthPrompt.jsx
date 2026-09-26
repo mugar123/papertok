@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react';
 import { X } from '@phosphor-icons/react';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import { authPromptCopy } from './authPromptCopy.js';
@@ -22,9 +21,8 @@ import './AuthPrompt.css';
 // unmount. That is the one place `onClose` is called, so it reaches App once.
 export default function AuthPrompt({ onClose, reason = 'default' }) {
   const { signInWithGoogle, signInWithGitHub, error, user } = useAuth();
-  const { language, isEnglish } = useLanguage();
   // What opened the door decides what it says (authPromptCopy.js).
-  const copy = authPromptCopy(reason, isEnglish ? 'en' : 'es');
+  const copy = authPromptCopy(reason);
   const { trackEvent } = useAnalyticsConsent();
   const [open, setOpen] = useState(true);
   const [pendingProvider, setPendingProvider] = useState(null);
@@ -80,7 +78,7 @@ export default function AuthPrompt({ onClose, reason = 'default' }) {
         <DialogClose
           ref={closeButtonRef}
           render={<Button variant="ghost" size="icon-sm" className="auth-modal-close" />}
-          aria-label={isEnglish ? 'Close' : 'Cerrar'}
+          aria-label={'Close'}
         >
           <X size={16} />
         </DialogClose>
@@ -116,7 +114,7 @@ export default function AuthPrompt({ onClose, reason = 'default' }) {
                 <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
               </svg>
             )}
-            <span>{isEnglish ? 'Continue with Google' : 'Continuar con Google'}</span>
+            <span>{'Continue with Google'}</span>
           </Button>
 
           <Button
@@ -137,23 +135,19 @@ export default function AuthPrompt({ onClose, reason = 'default' }) {
                 />
               </svg>
             )}
-            <span>{isEnglish ? 'Continue with GitHub' : 'Continuar con GitHub'}</span>
+            <span>{'Continue with GitHub'}</span>
           </Button>
         </div>
 
         {collision ? (
           <div className="auth-modal-note auth-modal-note--warn" role="alert">
             {collision.email
-              ? (isEnglish
-                ? <><strong>{collision.email}</strong> already signs in another way. Use that method, then connect GitHub from Settings.</>
-                : <><strong>{collision.email}</strong> ya entra por otro método. Usa ese y luego conecta GitHub desde Ajustes.</>)
-              : (isEnglish
-                ? 'That address already signs in another way. Use that method, then connect GitHub from Settings.'
-                : 'Ese correo ya entra por otro método. Usa ese y luego conecta GitHub desde Ajustes.')}
+              ? (<><strong>{collision.email}</strong> already signs in another way. Use that method, then connect GitHub from Settings.</>)
+              : ('That address already signs in another way. Use that method, then connect GitHub from Settings.')}
           </div>
         ) : error ? (
           <p className="auth-modal-note auth-modal-note--error" role="alert">
-            {getUiErrorMessage(error, language, 'AUTH_FAILED')}
+            {getUiErrorMessage(error, 'AUTH_FAILED')}
           </p>
         ) : null}
       </DialogContent>

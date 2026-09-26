@@ -41,7 +41,7 @@ test('the guest page forwards the action it was given', () => {
 test('the dialog reads its headline and lede from the reason', () => {
   const prompt = read('./AuthPrompt.jsx');
   assert.match(prompt, /export default function AuthPrompt\(\{ onClose, reason = 'default' \}\)/);
-  assert.match(prompt, /const copy = authPromptCopy\(reason, isEnglish \? 'en' : 'es'\);/);
+  assert.match(prompt, /const copy = authPromptCopy\(reason\);/);
   assert.match(prompt, /<DialogTitle className="auth-modal-title">\s*\{copy\.title\}\s*<\/DialogTitle>/);
   assert.match(prompt, /<DialogDescription className="auth-modal-lede">\s*\{copy\.lede\}\s*<\/DialogDescription>/);
 });
@@ -50,7 +50,7 @@ test('a guest pressing Connections gets the dialog with its reason, not a sheet 
   const card = read('../Feed/PaperCard.jsx');
   assert.match(
     card,
-    /onClick=\{\(event\) => \{\s*event\.stopPropagation\(\);\s*if \(publicMode\) \{\s*requireAuthentication\('related'\);\s*return;\s*\}\s*setShowRelated\(true\);\s*\}\}\s*aria-label=\{isEnglish \? 'View related papers' : 'Ver papers relacionados'\}/,
+    /onClick=\{\(event\) => \{\s*event\.stopPropagation\(\);\s*if \(publicMode\) \{\s*requireAuthentication\('related'\);\s*return;\s*\}\s*setShowRelated\(true\);\s*\}\}\s*aria-label=\{'View related papers'\}/,
   );
 });
 

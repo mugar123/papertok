@@ -117,7 +117,7 @@ function safeYear(value) {
 function categoryLabel(categoryId) {
   for (const area of Object.values(CATEGORIES)) {
     const category = area.subcategories?.[categoryId];
-    if (category) return category.labelEn || category.label;
+    if (category) return category.label || category.label;
   }
   return categoryId.replace(/[.-]/g, ' ');
 }

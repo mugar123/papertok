@@ -108,7 +108,7 @@ test('the related paper opens as a full-screen modal Dialog whose exit plays bef
   assert.doesNotMatch(jsx, /<Dialog\s[\s\S]*?modal=\{false\}/, 'FeedContainer probes [aria-modal="true"]; the card must stay modal');
   // The primitive centres a dialog; this one is the whole viewport.
   assert.match(jsx, /className="related-card-overlay inset-0 max-w-none translate-x-0 translate-y-0 rounded-none"/);
-  assert.match(jsx, /closeLabel=\{isEnglish \? 'Back to previous paper' : 'Volver al paper anterior'\}/);
+  assert.match(jsx, /closeLabel=(?:"Back to previous paper"|\{'Back to previous paper'\})/);
   assert.match(jsx, /<DialogClose\s+className="related-card-back"/);
   // Closing only takes `open` down; the paper goes when the exit has played.
   const close = jsx.match(/const closeRelatedCard = useCallback\(\(\) => \{([\s\S]*?)\}, \[\]\);/);

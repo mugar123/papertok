@@ -99,58 +99,55 @@ test('an OpenAlex entity is identified by its Wikidata id, a topic by its Englis
   assert.equal(resolveEntityWikiIdentity(null), null);
 });
 
-test('a concept with a Spanish article reads that article, found by identity and never by search', async (t) => {
+test('a concept reads its English article, found by identity and never by search', async (t) => {
   const requested = stubWikiFetch(t, [
     { match: isWikidata({ ids: 'Q11190' }), body: wikidataEntity('Q11190', { enwiki: 'Medicine', eswiki: 'Medicina' }) },
-    { match: isWikipediaTitle('es', 'Medicina'), body: wikipediaPage({ title: 'Medicina', extract: 'La medicina es la ciencia de la salud.', qid: 'Q11190', lang: 'es', thumbnail: 'https://upload.wikimedia.org/medicina.jpg' }) },
-    { match: isWikipediaSearch('es'), body: wikipediaPage({ title: 'Medicine', extract: 'Medicine es una canción de Shakira.', qid: 'Q17040952', lang: 'es' }) },
+    { match: isWikipediaTitle('en', 'Medicine'), body: wikipediaPage({ title: 'Medicine', extract: 'Medicine is the science of health.', qid: 'Q11190', thumbnail: 'https://upload.wikimedia.org/medicine.jpg' }) },
+    { match: isWikipediaSearch('en'), body: wikipediaPage({ title: 'Medicine (song)', extract: 'Medicine is a song by Shakira.', qid: 'Q17040952' }) },
   ]);
 
-  const result = await getEntityWikiInfoByIdentity({ qid: 'Q11190', language: 'es' });
+  const result = await getEntityWikiInfoByIdentity({ qid: 'Q11190' });
 
   assert.deepEqual(result, {
-    title: 'Medicina',
-    extract: 'La medicina es la ciencia de la salud.',
-    thumbnail: 'https://upload.wikimedia.org/medicina.jpg',
-    url: 'https://es.wikipedia.org/wiki/Medicina',
-    language: 'es',
+    title: 'Medicine',
+    extract: 'Medicine is the science of health.',
+    thumbnail: 'https://upload.wikimedia.org/medicine.jpg',
+    url: 'https://en.wikipedia.org/wiki/Medicine',
+    language: 'en',
   });
   assert.equal(requested.some(url => url.includes('generator=search')), false);
 });
 
-test('without an article in the reader\'s language the English one is used and says so', async (t) => {
-  stubWikiFetch(t, [
-    { match: isWikidata({ ids: 'Q16909647' }), body: wikidataEntity('Q16909647', { enwiki: 'Tumor progression' }) },
-    { match: isWikipediaTitle('en', 'Tumor progression'), body: wikipediaPage({ title: 'Tumor progression', extract: 'Tumor progression is the third and last phase in tumor development.', qid: 'Q16909647' }) },
+test('an item without an English article gives no box', async (t) => {
+  const requested = stubWikiFetch(t, [
+    { match: isWikidata({ ids: 'Q7654321' }), body: wikidataEntity('Q7654321', { eswiki: 'Solo en español' }) },
   ]);
 
-  const result = await getEntityWikiInfoByIdentity({ qid: 'Q16909647', language: 'es' });
-
-  assert.equal(result?.title, 'Tumor progression');
-  assert.equal(result?.language, 'en');
+  assert.equal(await getEntityWikiInfoByIdentity({ qid: 'Q7654321' }), null);
+  assert.equal(requested.some(url => url.includes('wikipedia.org')), false);
 });
 
-test('a topic known only by its English article is translated through Wikidata', async (t) => {
+test('a topic known only by its English article is resolved through Wikidata', async (t) => {
   stubWikiFetch(t, [
     { match: isWikidata({ sites: 'enwiki', titles: 'Cancer stem cell' }), body: wikidataEntity('Q1638475', { enwiki: 'Cancer stem cell', eswiki: 'Célula madre cancerosa' }) },
-    { match: isWikipediaTitle('es', 'Célula madre cancerosa'), body: wikipediaPage({ title: 'Célula madre cancerosa', extract: 'Las células madre cancerosas son células tumorales.', qid: 'Q1638475', lang: 'es' }) },
+    { match: isWikipediaTitle('en', 'Cancer stem cell'), body: wikipediaPage({ title: 'Cancer stem cell', extract: 'Cancer stem cells are cancer cells that possess characteristics of normal stem cells.', qid: 'Q1638475' }) },
   ]);
 
-  const result = await getEntityWikiInfoByIdentity({ enwikiTitle: 'Cancer stem cell', language: 'es' });
+  const result = await getEntityWikiInfoByIdentity({ enwikiTitle: 'Cancer stem cell' });
 
-  assert.equal(result?.title, 'Célula madre cancerosa');
-  assert.equal(result?.language, 'es');
+  assert.equal(result?.title, 'Cancer stem cell');
+  assert.equal(result?.language, 'en');
 });
 
 test('a page that turns out to describe something else is refused', async (t) => {
   stubWikiFetch(t, [
-    { match: isWikidata({ ids: 'Q424242' }), body: wikidataEntity('Q424242', { eswiki: 'Algo' }) },
+    { match: isWikidata({ ids: 'Q424242' }), body: wikidataEntity('Q424242', { enwiki: 'Something' }) },
     // The title now redirects to another item: the photo and the text would be
     // someone else's.
-    { match: isWikipediaTitle('es', 'Algo'), body: wikipediaPage({ title: 'Otra cosa', extract: 'Un artículo sobre otra cosa.', qid: 'Q999', lang: 'es' }) },
+    { match: isWikipediaTitle('en', 'Something'), body: wikipediaPage({ title: 'Something else', extract: 'An article about something else.', qid: 'Q999' }) },
   ]);
 
-  assert.equal(await getEntityWikiInfoByIdentity({ qid: 'Q424242', language: 'es' }), null);
+  assert.equal(await getEntityWikiInfoByIdentity({ qid: 'Q424242' }), null);
 });
 
 test('an unknown title, a missing page or a failed call give no box', async (t) => {
@@ -161,22 +158,21 @@ test('an unknown title, a missing page or a failed call give no box', async (t) 
     { match: isWikidata({ ids: 'Q616161' }), ok: false, body: {} },
   ]);
 
-  assert.equal(await getEntityWikiInfoByIdentity({ enwikiTitle: 'Nothing here', language: 'en' }), null);
-  assert.equal(await getEntityWikiInfoByIdentity({ qid: 'Q515151', language: 'en' }), null);
-  assert.equal(await getEntityWikiInfoByIdentity({ qid: 'Q616161', language: 'en' }), null);
+  assert.equal(await getEntityWikiInfoByIdentity({ enwikiTitle: 'Nothing here' }), null);
+  assert.equal(await getEntityWikiInfoByIdentity({ qid: 'Q515151' }), null);
+  assert.equal(await getEntityWikiInfoByIdentity({ qid: 'Q616161' }), null);
 });
 
 test('the Explorer\'s loader resolves an OpenAlex concept by identity, not by the first search hit', async (t) => {
   const requested = stubWikiFetch(t, [
     { match: isWikidata({ ids: 'Q16909648' }), body: wikidataEntity('Q16909648', { enwiki: 'Tumor progression' }) },
     { match: isWikipediaTitle('en', 'Tumor progression'), body: wikipediaPage({ title: 'Tumor progression', extract: 'Tumor progression is the third and last phase in tumor development.', qid: 'Q16909648' }) },
-    { match: isWikipediaSearch('es'), body: wikipediaPage({ title: 'Allan Balmain', extract: 'Allan Balmain FRS es un profesor distinguido de Genética del Cáncer.', qid: 'Q20031714', lang: 'es', thumbnail: 'https://upload.wikimedia.org/balmain.jpg' }) },
+    { match: isWikipediaSearch('en'), body: wikipediaPage({ title: 'Allan Balmain', extract: 'Allan Balmain FRS is a distinguished professor of cancer genetics.', qid: 'Q20031714', thumbnail: 'https://upload.wikimedia.org/balmain.jpg' }) },
   ]);
 
   const result = await loadEntityWikiInfo({
     entity: { id: 'https://openalex.org/C2779256057', display_name: 'Tumor progression', ids: { wikidata: 'https://www.wikidata.org/wiki/Q16909648' } },
     title: 'Tumor progression',
-    language: 'es',
   });
 
   assert.equal(result?.title, 'Tumor progression');
@@ -190,7 +186,6 @@ test('the Explorer\'s loader shows nothing for an OpenAlex entity without an ide
   const result = await loadEntityWikiInfo({
     entity: { id: 'https://openalex.org/I12345', display_name: 'Some Institute', ids: {} },
     title: 'Some Institute',
-    language: 'es',
   });
 
   assert.equal(result, null);
@@ -205,7 +200,6 @@ test('the Explorer\'s loader keeps the exact-title search for a free-text topic'
   const result = await loadEntityWikiInfo({
     entity: { id: 'q-theory-of-stuff', display_name: 'Theory of stuff', _queryTopic: true },
     title: 'Theory of stuff',
-    language: 'en',
   });
 
   assert.equal(result, null);
@@ -217,20 +211,19 @@ test('the Explorer\'s loader keeps the exact-title search for a free-text topic'
 // box beats a wrong one (AGENTS.md, invariant 3; review of 2026-09-25).
 test('the Explorer\'s loader keeps the exact-title search for a PaperTok topic too', async (t) => {
   const requested = stubWikiFetch(t, [
-    { match: isWikipediaSearch('es'), body: wikipediaPage({ title: 'Materia (filosofía)', extract: 'La materia es aquello de lo que están hechas las cosas.', qid: 'Q35758', lang: 'es' }) },
+    { match: isWikipediaSearch('en'), body: wikipediaPage({ title: 'Matter', extract: 'Matter is any substance that has mass and takes up space.', qid: 'Q35758' }) },
   ]);
 
   const result = await loadEntityWikiInfo({
-    entity: { id: 'cond-mat.soft', display_name: 'Materia Blanda', _localTopic: true },
-    title: 'Materia Blanda',
-    language: 'es',
+    entity: { id: 'cond-mat.soft', display_name: 'Soft Condensed Matter', _localTopic: true },
+    title: 'Soft Condensed Matter',
   });
 
   assert.equal(result, null);
   assert.equal(requested.length > 0 && requested.every(url => url.includes('generator=search')), true);
 });
 
-test('maps a Wikipedia search result in the requested language', () => {
+test('maps an English Wikipedia search result', () => {
   const result = mapWikipediaSearchResponse({
     query: {
       pages: {
@@ -243,7 +236,7 @@ test('maps a Wikipedia search result in the requested language', () => {
         },
       },
     },
-  }, 'en');
+  });
 
   assert.deepEqual(result, {
     title: 'General relativity',
@@ -271,7 +264,7 @@ test('skips disambiguation and empty Wikipedia results', () => {
         },
       },
     },
-  }, 'en'), null);
+  }), null);
 });
 
 test('rejects an approximate Wikipedia result for a free-text topic', () => {
@@ -288,7 +281,7 @@ test('rejects an approximate Wikipedia result for a free-text topic', () => {
     },
   };
 
-  assert.equal(mapWikipediaSearchResponse(data, 'en', {
+  assert.equal(mapWikipediaSearchResponse(data, {
     expectedTitle: 'Theory of computation',
     strictTitleMatch: true,
   }), null);
@@ -306,7 +299,7 @@ test('keeps an exact Wikipedia result for a free-text topic', () => {
         },
       },
     },
-  }, 'en', {
+  }, {
     expectedTitle: 'Theory of computation',
     strictTitleMatch: true,
   });
@@ -314,7 +307,7 @@ test('keeps an exact Wikipedia result for a free-text topic', () => {
   assert.equal(result?.title, 'Theory of computation');
 });
 
-test('uses a localized canonical title for a major plural topic', async (t) => {
+test('uses a canonical title for a major plural topic', async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
   const requestedSearches = [];
@@ -346,7 +339,6 @@ test('uses a localized canonical title for a major plural topic', async (t) => {
 
   const result = await getEntityWikiInfo({
     title: 'Black holes',
-    language: 'en',
     strictTitleMatch: true,
   });
 

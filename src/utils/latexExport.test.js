@@ -217,9 +217,8 @@ function build(overrides = {}) {
     paper: PAPER,
     sections: SECTIONS,
     annotations: [],
-    language: 'es',
     level: 'university',
-    kindLabels: { abstract: 'Resumen' },
+    kindLabels: { abstract: 'Summary' },
     originalUrl: 'https://arxiv.org/abs/2405.04331',
     ...overrides,
   });
@@ -236,30 +235,30 @@ test('the preamble does not declare a font the compiling machine may not have', 
   assert.match(source, /\\usepackage\{lmodern\}/);
 });
 
-test('Spanish keeps the decimal point inside maths', () => {
-  // Without es-nodecimaldot, babel rewrites `$0.02$` as `0,02` — silently
-  // changing the paper's numbers. Seen on the compiled page.
-  assert.match(build().source, /\\usepackage\[spanish,es-nodecimaldot,es-noquoting\]\{babel\}/);
-  assert.match(build({ language: 'en' }).source, /\\usepackage\[english\]\{babel\}/);
+test('the document loads English babel, which keeps the decimal point inside maths', () => {
+  // Spanish babel rewrote `$0.02$` as `0,02` — silently changing the paper's
+  // numbers. English babel does not touch them.
+  assert.match(build().source, /\\usepackage\[english\]\{babel\}/);
+  assert.doesNotMatch(build().source, /spanish/);
 });
 
 test('the title, the authors and the level travel with the file', () => {
   const { source } = build();
   assert.match(source, /\{\\LARGE Correladores \\& el 100\\% del ruido\\_medido\\par\}/);
   assert.match(source, /\{\\large Allic Sivaramakrishnan, M\. Ángeles Pérez\\par\}/);
-  assert.match(source, /Nivel universitario/);
+  assert.match(source, /University level/);
 });
 
 test('provenance is a page footer, not one of the notes', () => {
   const { source } = build();
   assert.match(source, /\\fancyfoot\[L\]/);
-  assert.match(source, /No es obra de sus autores/);
+  assert.match(source, /Not the work of its authors/);
   // The cover prints the source URL as escaped text in its source line now,
   // not as a clickable \url{} — that comes back later, in the colophon's
-  // "Fuente" row, which this task does not build.
+  // "Source" row, which this task does not build.
   assert.match(source, /https:\/\/arxiv\.org\/abs\/2405\.04331/);
   // It must never be a numbered footnote: those belong to the reader's notes.
-  assert.doesNotMatch(source, /\\footnote\{[^}]*No es obra/);
+  assert.doesNotMatch(source, /\\footnote\{[^}]*Not the work/);
 });
 
 test('a paper with no link still gets a footer', () => {
@@ -313,14 +312,14 @@ test('a section with no heading falls back to its kind, then to a generic word',
   const noHeading = buildLatexDocument({
     paper: PAPER,
     sections: [{ id: 's1', kind: 'methods', paragraphs: ['Texto.'] }],
-    kindLabels: { methods: 'Método' },
+    kindLabels: { methods: 'Method' },
   });
-  assert.match(noHeading.source, /\\section\{Método\}/);
+  assert.match(noHeading.source, /\\section\{Method\}/);
   const unknown = buildLatexDocument({
     paper: PAPER,
     sections: [{ id: 's1', kind: 'nonesuch', paragraphs: ['Texto.'] }],
   });
-  assert.match(unknown.source, /\\section\{Sección\}/);
+  assert.match(unknown.source, /\\section\{Section\}/);
 });
 
 // ---------------------------------------------------------------------------
@@ -523,9 +522,9 @@ test('an annotation made at another level is not exported into this one', () => 
   // in the text are filtered. Exporting the rail's list put notes written on
   // other words into a document that no longer contains them.
   const annotations = [
-    { id: 'here', sectionId: 's1', paragraphIndex: 0, kind: 'user', level: 'university', language: 'es', quote: 'Los autores calculan', note: 'de este nivel' },
-    { id: 'other', sectionId: 's1', paragraphIndex: 0, kind: 'user', level: 'beginner', language: 'es', quote: 'Los autores calculan', note: 'de otro nivel' },
-    { id: 'english', sectionId: 's1', paragraphIndex: 0, kind: 'user', level: 'university', language: 'en', quote: 'Los autores calculan', note: 'de otro idioma' },
+    { id: 'here', sectionId: 's1', paragraphIndex: 0, kind: 'user', level: 'university', language: 'en', quote: 'Los autores calculan', note: 'de este nivel' },
+    { id: 'other', sectionId: 's1', paragraphIndex: 0, kind: 'user', level: 'beginner', language: 'en', quote: 'Los autores calculan', note: 'de otro nivel' },
+    { id: 'spanish', sectionId: 's1', paragraphIndex: 0, kind: 'user', level: 'university', language: 'es', quote: 'Los autores calculan', note: 'de otro idioma' },
   ];
   const { source } = build({ annotations });
   assert.match(source, /de este nivel/);
@@ -603,7 +602,7 @@ test('la portada va en bandera: ni maketitle ni abstract', () => {
 
 test('el aviso lleva su etiqueta al margen y no es un resumen', () => {
   const { source } = buildLatexDocument({ paper: PAPER, sections: SECTIONS, annotations: [] });
-  assert.match(source, /\\begin\{minipage\}\[t\]\{58pt\}\\ptmono\\scriptsize Aviso/);
+  assert.match(source, /\\begin\{minipage\}\[t\]\{58pt\}\\ptmono\\scriptsize Notice/);
 });
 
 test('el encabezado original del paper se imprime bajo el título de sección', () => {
@@ -687,19 +686,19 @@ test('el documento cierra con un colofón de procedencia', () => {
     originalUrl: 'https://arxiv.org/abs/2405.04331',
     generatedAt: new Date(Date.UTC(2026, 8, 4)),
   });
-  assert.match(source, /Procedencia/);
-  assert.match(source, /Artículo original/);
-  assert.match(source, /4 de septiembre de 2026/);
+  assert.match(source, /Provenance/);
+  assert.match(source, /Original article/);
+  assert.match(source, /4 September 2026/);
   // Va al final, después de la última sección y antes de cerrar el documento.
-  assert.ok(source.indexOf('Procedencia') > source.lastIndexOf('\\section{'));
+  assert.ok(source.indexOf('Provenance') > source.lastIndexOf('\\section{'));
 });
 
 test('el colofón no imprime filas sin dato', () => {
   const { source } = buildLatexDocument({
     paper: { title: 'T', authors: [] }, sections: SECTIONS, annotations: [], originalUrl: '',
   });
-  assert.doesNotMatch(source, /Autoría/);
-  assert.doesNotMatch(source, /Fuente/);
+  assert.doesNotMatch(source, /ptGrey\}Authors\}/);
+  assert.doesNotMatch(source, /ptGrey\}Source\}/);
 });
 
 test('la fila de fuente lleva la URL como \\url{} clicable, no como texto escapado', () => {
@@ -715,7 +714,7 @@ test('la fila de fuente lleva la URL como \\url{} clicable, no como texto escapa
 test('sin URL original no queda ningún \\url{ suelto ni fila de fuente', () => {
   const { source } = build({ originalUrl: '' });
   assert.doesNotMatch(source, /\\url\{/);
-  assert.doesNotMatch(source, /Fuente/);
+  assert.doesNotMatch(source, /ptGrey\}Source\}/);
 });
 
 test('la URL del colofón se escapa con las reglas de \\url, no con las de la prosa', () => {
@@ -732,11 +731,10 @@ test('la URL del colofón se escapa con las reglas de \\url, no con las de la pr
   assert.doesNotMatch(colophonBlock, /textasciitilde/);
 });
 
-test('en inglés la fila de fuente se identifica por clave, no por el texto "Fuente"', () => {
-  // `colophonKeys.source` es "Source" en inglés. Si el código comparase
-  // contra la cadena española "Fuente" a pelo, este documento no tendría
-  // nunca un \url{} clicable.
-  const { source } = build({ language: 'en', originalUrl: 'https://arxiv.org/abs/2405.04331' });
+test('la fila de fuente se identifica por clave, no por un texto escrito a pelo', () => {
+  // `colophonKeys.source` es "Source". Si el código comparase contra otra
+  // cadena escrita a mano, este documento no tendría nunca un \url{} clicable.
+  const { source } = build({ originalUrl: 'https://arxiv.org/abs/2405.04331' });
   assert.match(source, /Source/);
   assert.match(source, /\\url\{https:\/\/arxiv\.org\/abs\/2405\.04331\}/);
 });

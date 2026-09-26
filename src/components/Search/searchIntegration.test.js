@@ -603,12 +603,12 @@ test('the search page input is named by more than its placeholder', () => {
   );
   assert.match(
     input[0],
-    /placeholder=\{isEnglish \? 'Search PaperTok\.\.\.' : 'Buscar en PaperTok\.\.\.'\}/,
+    /placeholder=\{'Search PaperTok\.\.\.'\}/,
     'the search input lost its placeholder; update this test alongside it',
   );
   assert.match(
     input[0],
-    /aria-label=\{isEnglish \? '[^']+' : '[^']+'\}/,
+    /aria-label=\{'[^']+'\}/,
     'the search input lost its aria-label and is named only by a placeholder again.',
   );
 });

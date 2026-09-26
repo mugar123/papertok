@@ -43,7 +43,8 @@ test('allows the notification preferences PUT request through CORS', async () =>
   assert.match(response.headers.get('access-control-allow-methods'), /(?:^|,\s*)PUT(?:,|$)/);
 });
 
-test('returns only the Cloudflare country code for automatic language selection', async () => {
+test('the retired /locale route no longer reveals the caller\'s country', async () => {
+  // PaperTok is English-only, so nothing chooses a language from the country.
   const request = new Request('https://papertok-report-api.example/locale', {
     headers: { origin: 'https://mugar123.github.io' },
   });
@@ -51,9 +52,8 @@ test('returns only the Cloudflare country code for automatic language selection'
 
   const response = await reportApi.fetch(request, {});
 
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
-  assert.deepEqual(await response.json(), { country: 'MX' });
+  assert.notEqual(response.status, 200);
+  assert.doesNotMatch(await response.text(), /MX/);
 });
 
 test('returns an unhealthy status when the email provider works but the scheduler is stale', async () => {
@@ -2838,6 +2838,7 @@ const SHARED_WORK = {
 function crawlerRequest(path, { method = 'GET' } = {}) {
   return new Request(`https://papertok-report-api.example${path}`, {
     method,
+    // A Spanish-speaking crawler still gets the English page: PaperTok is English-only.
     headers: { 'user-agent': 'facebookexternalhit/1.1', 'accept-language': 'es-ES,es;q=0.9' },
   });
 }
@@ -2867,7 +2868,7 @@ test('a crawler gets a paper page with no Origin, from OpenAlex under the Worker
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-type'), /^text\/html/);
   assert.match(html, /<title>Characterizing Alternative Monetization Strategies on YouTube<\/title>/);
-  assert.match(html, /<html lang="es">/);
+  assert.match(html, /<html lang="en">/);
   const openAlex = urls.find(entry => entry.address.startsWith('https://api.openalex.org/'));
   assert.ok(openAlex, 'the paper came from OpenAlex');
   assert.match(openAlex.address, /[?&]api_key=worker-key(&|$)/, 'under the key the browser cannot hold');
@@ -2901,7 +2902,7 @@ test('a share lookup its ceiling refuses spends nothing upstream and answers the
     }),
   );
   assert.equal(response.status, 200);
-  assert.match(await response.text(), /<title>PaperTok — Descubre investigación científica<\/title>/);
+  assert.match(await response.text(), /<title>PaperTok — Discover scientific research<\/title>/);
   assert.equal(urls.some(entry => entry.address.startsWith('https://api.openalex.org/')), false);
   assert.equal(
     state.actions.some(action => action.periodKey.startsWith('openalex:')),

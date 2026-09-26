@@ -20,11 +20,6 @@ import './ExplorerGuestGate.css';
 
 const COPY = {
   papers: {
-    es: {
-      kicker: 'Vista sin cuenta',
-      title: total => (total ? `Aquí hay ${total} publicaciones` : 'La lista sigue'),
-      body: 'Estás viendo las dos primeras. Con una cuenta se abre entera, con su buscador y sus filtros.',
-    },
     en: {
       kicker: 'Preview without an account',
       title: total => (total ? `There are ${total} publications here` : 'The list keeps going'),
@@ -32,11 +27,6 @@ const COPY = {
     },
   },
   authors: {
-    es: {
-      kicker: 'Vista sin cuenta',
-      title: () => 'La lista de autores sigue',
-      body: 'Estás viendo a los dos primeros. Con una cuenta se abre entera.',
-    },
     en: {
       kicker: 'Preview without an account',
       title: () => 'The author list keeps going',
@@ -46,13 +36,12 @@ const COPY = {
 };
 
 const CTA = {
-  es: { cta: 'Regístrate', foot: 'Con Google o GitHub, y sin salir de esta pantalla.' },
   en: { cta: 'Sign up', foot: 'With Google or GitHub, without leaving this screen.' },
 };
 
 export default function ExplorerGuestGate({ kind = 'papers', total = null, onSignUp }) {
-  const { isEnglish, locale } = useLanguage();
-  const lang = isEnglish ? 'en' : 'es';
+  const { locale } = useLanguage();
+  const lang = 'en';
   const copy = COPY[kind][lang];
   const action = CTA[lang];
   const formattedTotal = typeof total === 'number' ? total.toLocaleString(locale) : null;

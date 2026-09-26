@@ -13,7 +13,6 @@ import {
   SealCheck,
   Sliders,
 } from '@phosphor-icons/react';
-import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useFeed } from '../../context/FeedContext.jsx';
 import { useFollowing } from '../../context/FollowingContext.jsx';
@@ -155,7 +154,7 @@ function RowSkeleton({ index = 0 }) {
   );
 }
 
-function PaperRow({ row, index = 0, isEnglish, libraryReady }) {
+function PaperRow({ row, index = 0, libraryReady }) {
   /**
    * A row with no title is a row we have not heard about, and it must not say
    * otherwise — and it must never print the document id. Those ids (`openalex:W…`,
@@ -172,7 +171,7 @@ function PaperRow({ row, index = 0, isEnglish, libraryReady }) {
     return (
       <div className="profile-row profile-row--unresolved">
         <span className="profile-row-title profile-row-title--placeholder">
-          {isEnglish ? 'The title could not be loaded' : 'No se pudo cargar el título'}
+          {'The title could not be loaded'}
         </span>
       </div>
     );
@@ -187,7 +186,7 @@ function PaperRow({ row, index = 0, isEnglish, libraryReady }) {
   // inner edge and a kicker in that same ink. A row whose seed never arrived
   // simply has no kicker and no colour — nothing is guessed.
   const paper = row.seed;
-  const field = paper ? areaLabelForPaper(paper, { english: isEnglish }) : null;
+  const field = paper ? areaLabelForPaper(paper) : null;
   const kicker = [field, paper?.year].filter(Boolean).join(' · ');
   const style = paper ? { '--area-accent': areaAccentForPaper(paper) } : undefined;
   const body = (
@@ -226,12 +225,12 @@ function PaperRow({ row, index = 0, isEnglish, libraryReady }) {
  * never resolved) leaves the line out rather than printing a date nobody can
  * vouch for. Month and year only: the day is noise on a profile.
  */
-function joinedLabel(createdAt, isEnglish) {
+function joinedLabel(createdAt) {
   // A Timestamp from the SDK, a Date from a REST read (utils/firestoreRest.js).
   const millis = createdAt?.toMillis?.() ?? createdAt?.getTime?.()
     ?? (typeof createdAt?.seconds === 'number' ? createdAt.seconds * 1000 : Date.parse(createdAt));
   if (!Number.isFinite(millis)) return '';
-  return new Date(millis).toLocaleDateString(isEnglish ? 'en' : 'es', {
+  return new Date(millis).toLocaleDateString('en', {
     month: 'short',
     year: 'numeric',
   });
@@ -306,7 +305,6 @@ function readSeededFollowStats(uid, selfMode) {
 export default function PublicProfilePage({ handle: handleProp, selfMode = false, onAuthRequired }) {
   const params = useParams();
   const handle = selfMode ? '' : normalizeHandle(handleProp || params.handle);
-  const { isEnglish } = useLanguage();
   const prefersReducedMotion = useReducedMotion();
   const navigate = useNavigate();
   const {
@@ -808,16 +806,14 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   const metadata = useMemo(() => {
     const fallbackDescription = {
       en: 'A public researcher profile on PaperTok.',
-      es: 'Un perfil público de investigación en PaperTok.',
     };
     if (selfMode) {
       return {
         route: '/profile',
-        title: { en: 'My profile | PaperTok', es: 'Mi perfil | PaperTok' },
+        title: { en: 'My profile | PaperTok' },
         description: fallbackDescription,
         imageAlt: {
           en: 'A researcher profile on PaperTok',
-          es: 'Un perfil de investigación en PaperTok',
         },
         noIndex: true,
       };
@@ -826,22 +822,19 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
       route: `/public/user/${handle}`,
       title: profile ? {
         en: `${profile.displayName} (@${profile.handle}) | PaperTok`,
-        es: `${profile.displayName} (@${profile.handle}) | PaperTok`,
       } : {
         en: 'Public profile | PaperTok',
-        es: 'Perfil público | PaperTok',
       },
       description: profile?.bio || fallbackDescription,
       imageAlt: {
         en: 'A public researcher profile on PaperTok',
-        es: 'Un perfil público de investigación en PaperTok',
       },
       noIndex: status !== 'ready',
     };
   }, [handle, profile, selfMode, status]);
   usePublicPageMetadata(metadata);
 
-  const copy = isEnglish ? {
+  const copy = {
     brand: 'PaperTok',
     publicProfile: 'Public profile',
     loading: 'Opening profile...',
@@ -893,58 +886,6 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     truncated: count => `Showing the ${count} most recent.`,
     loadingRows: 'Loading...',
     authCta: 'Sign in to build your own',
-  } : {
-    brand: 'PaperTok',
-    publicProfile: 'Perfil público',
-    loading: 'Abriendo perfil...',
-    notFoundTitle: 'Este perfil no está disponible',
-    notFoundBody: 'Puede que el handle haya cambiado o que el enlace esté incompleto.',
-    errorTitle: 'No se pudo cargar el perfil',
-    errorBody: 'Comprueba tu conexión e inténtalo de nuevo.',
-    slowTitle: 'Tu perfil está tardando más de lo normal',
-    offlineTitle: 'Parece que no hay conexión',
-    waitingBody: 'Seguimos intentándolo. No ha cambiado nada.',
-    unsupportedTitle: 'Los perfiles no están disponibles en el modo demo',
-    unsupportedBody: 'Abre este enlace en la aplicación completa de PaperTok.',
-    retry: 'Reintentar',
-    verified: 'Investigador verificado',
-    kicker: 'Perfil',
-    joined: label => `Miembro desde ${label}`,
-    publicLists: count => `${count} ${count === 1 ? 'pública' : 'públicas'}`,
-    settings: 'Ajustes del perfil',
-    editProfile: 'Editar perfil',
-    createProfile: 'Crea tu perfil público',
-    privateBadge: 'Privado',
-    privateNotice: 'Solo tú ves este perfil. Su página no se abre para nadie más.',
-    privateManage: 'Cambiar esto',
-    tabsLabel: 'Secciones del perfil',
-    tabs: { lists: 'Listas', saved: 'Guardados', liked: 'Me gusta' },
-    stats: { following: 'Siguiendo', followers: 'Seguidores', likes: 'Me gusta' },
-    followedContent: 'Contenido seguido',
-    openFollowing: 'Ver usuarios seguidos',
-    openFollowers: 'Ver seguidores',
-    openLiked: 'Abrir tus me gusta',
-    follow: 'Seguir',
-    followingState: 'Siguiendo',
-    followFailed: 'No se pudo completar. Inténtalo de nuevo.',
-    pinnedHeading: 'Listas',
-    papers: count => `${count} ${count === 1 ? 'paper' : 'papers'}`,
-    open: title => `Abrir ${title}`,
-    manageLists: 'Gestionar en Mis listas',
-    publicBadge: 'Pública',
-    ownListsNote: 'Las listas no publicadas solo las ves tú.',
-    ownListsError: 'No se pudieron cargar tus listas. Ábrelas en Mis listas para reintentar.',
-    emptyPinnedTitle: 'Sin listas',
-    emptyPinnedHint: 'Este perfil todavía no ha publicado ninguna lista de lectura.',
-    emptyOwnListsTitle: 'Todavía no hay listas',
-    emptyOwnListsHint: 'Guarda un paper en una lista y aparecerá aquí.',
-    emptySavedTitle: 'Nada guardado todavía',
-    emptySavedHint: 'Los papers que guardes para leer más tarde aparecerán aquí.',
-    emptyLikedTitle: 'Todavía no hay me gusta',
-    emptyLikedHint: 'Los papers que te gusten aparecerán aquí.',
-    truncated: count => `Se muestran los ${count} más recientes.`,
-    loadingRows: 'Cargando...',
-    authCta: 'Inicia sesión para crear el tuyo',
   };
 
   const pageClass = `public-profile-page${hasAppChrome ? ' public-profile-page--app' : ''}`;
@@ -1038,7 +979,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   const followedContentCount = followedEntities?.length ?? 0;
   const likesCount = likedPaperIds?.size ?? 0;
 
-  const joined = joinedLabel(profile?.createdAt, isEnglish);
+  const joined = joinedLabel(profile?.createdAt);
   const statValue = value => (typeof value === 'number' ? value.toLocaleString() : value);
   // A dangling "0" reads as something broken, and a count that has not been
   // read yet is not zero — both render as no number at all, the same way the
@@ -1140,7 +1081,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     >
       {rows.map((row, index) => (
         <motion.div key={row.id} {...rowMotion(prefersReducedMotion, index)}>
-          <PaperRow row={row} index={index} isEnglish={isEnglish} libraryReady={libraryReady} />
+          <PaperRow row={row} index={index} libraryReady={libraryReady} />
         </motion.div>
       ))}
     </div>
@@ -1530,7 +1471,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
             asking costs no extra read. */}
         {view.isOwner && needsVisibilityChoice(profile) && !promptDismissed && (
           <VisibilityPrompt
-            isEnglish={isEnglish}
+           
             onResolved={visibility => setProfile(current => ({ ...current, visibility }))}
             onDismiss={() => setPromptDismissed(true)}
           />
@@ -1546,7 +1487,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
               followers: followersView ? followCount(followersView) : null,
               following: followedView ? followCount(followedView) : null,
             }}
-            isEnglish={isEnglish}
+           
             onModeChange={setFollowSheet}
             onClose={() => setFollowSheet(null)}
           />

@@ -102,7 +102,7 @@ function LoadingState({ label }) {
  * focus trap, Escape and the restore.
  */
 export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onSelectPaper }) {
-  const { isEnglish, locale } = useLanguage();
+  const { locale } = useLanguage();
   const { open, setOpen } = usePopupOpenOnMount();
   const hasGraphIdentifier = Boolean(getCitationGraphDoi(paper));
   const [mode, setMode] = useState(hasGraphIdentifier ? 'graph' : 'similar');
@@ -220,7 +220,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
       setGraphs(previous => ({ ...previous, [centerDoi]: { status: empty ? 'empty' : 'ready', data } }));
     }).catch(error => {
       if (cancelled || !mountedRef.current) return;
-      console.error('No se pudo cargar el grafo de citas', error);
+      console.error('Could not load the citation graph', error);
       setGraphs(previous => ({ ...previous, [centerDoi]: { status: isSignInRequiredError(error) ? 'signin' : 'error' } }));
     });
     return () => { cancelled = true; };
@@ -370,12 +370,8 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
   const isArriving = phase === 'arriving';
 
   const graphEmptyLabel = isWalking
-    ? (isEnglish
-      ? 'OpenCitations has no links for this work. That happens with very recent papers, and with anything published where nobody deposits their citations.'
-      : 'OpenCitations no tiene enlaces para este trabajo. Pasa con lo muy reciente, y también con lo que se publicó donde nadie deposita sus citas.')
-    : (isEnglish
-      ? 'No linked references or later works were found for this paper.'
-      : 'No se encontraron referencias ni trabajos posteriores enlazados para este paper.');
+    ? ('OpenCitations has no links for this work. That happens with very recent papers, and with anything published where nobody deposits their citations.')
+    : ('No linked references or later works were found for this paper.');
 
   const visibleStatus = mode === 'graph' ? graphStatus : relatedStatus;
   const similarEntries = useMemo(() => buildRelatedPaperEntries(papers), [papers]);
@@ -408,9 +404,9 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     const total = relation === 'reference' ? graph.counts.references : graph.counts.citations;
     const totalLabel = formatCount(Math.max(total, shown), locale);
     if (relation === 'reference') {
-      return isEnglish ? `${shown} most cited of ${totalLabel}` : `${shown} más citadas de ${totalLabel}`;
+      return `${shown} most cited of ${totalLabel}`;
     }
-    return isEnglish ? `${shown} most recent of ${totalLabel}` : `${shown} más recientes de ${totalLabel}`;
+    return `${shown} most recent of ${totalLabel}`;
   };
 
   const renderNode = (node) => {
@@ -434,8 +430,8 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     else style.left = `${node.x - 22}px`;
 
     const citations = node.paper.citationCountKnown
-      ? `${formatCount(node.paper.citationCount, locale)} ${isEnglish ? 'citations' : 'citas'}`
-      : (isEnglish ? 'citations unknown' : 'citas desconocidas');
+      ? `${formatCount(node.paper.citationCount, locale)} ${'citations'}`
+      : ('citations unknown');
 
     return (
       <Toggle
@@ -461,7 +457,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     const peekPaper = focusedListPaper;
     if (!peekPaper) return null;
     const accent = areaAccentForPaper(peekPaper);
-    const fieldLabel = areaLabelForPaper(peekPaper, { english: isEnglish });
+    const fieldLabel = areaLabelForPaper(peekPaper);
     const canCentre = Boolean(getCitationGraphDoi(peekPaper));
     const focusedEntry = focusedNode
       || [...listEntries.references, ...listEntries.citations].find(entry => `list:${entry.key}` === focusedKey);
@@ -476,20 +472,20 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
           <span className="graph-peek-dot" aria-hidden="true">·</span>
           <span>
             {peekPaper.citationCountKnown
-              ? `${formatCount(peekPaper.citationCount, locale)} ${isEnglish ? 'citations' : 'citas'}`
-              : (isEnglish ? 'citations unknown' : 'citas desconocidas')}
+              ? `${formatCount(peekPaper.citationCount, locale)} ${'citations'}`
+              : ('citations unknown')}
           </span>
           {peekPaper.openAccess && (
             <span className="graph-peek-open">
               <Lock size={11} aria-hidden="true" />
-              {isEnglish ? 'Open access' : 'Acceso abierto'}
+              {'Open access'}
             </span>
           )}
           <button
             type="button"
             className="graph-peek-close"
             onClick={() => setFocusedKey(null)}
-            aria-label={isEnglish ? 'Close details' : 'Cerrar ficha'}
+            aria-label={'Close details'}
           >
             <X size={15} />
           </button>
@@ -505,7 +501,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
             onClick={() => requestPaper(peekPaper, openKey || getRelatedPaperIdentity(peekPaper))}
             disabled={Boolean(selectedPaperKey)}
           >
-            {isEnglish ? 'Open' : 'Abrir'}
+            {'Open'}
           </button>
           <button
             type="button"
@@ -514,10 +510,10 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
             disabled={!canCentre || Boolean(selectedPaperKey) || phase !== 'idle'}
             title={canCentre
               ? undefined
-              : (isEnglish ? 'This work has no DOI to follow' : 'Este trabajo no tiene DOI que seguir')}
+              : ('This work has no DOI to follow')}
           >
             <Crosshair size={15} aria-hidden="true" />
-            {isEnglish ? 'Centre here' : 'Centrar aquí'}
+            {'Centre here'}
           </button>
           {focusedEntry?.paper?.doi && (
             <span className="graph-peek-doi">{`doi:${focusedEntry.paper.doi}`}</span>
@@ -530,12 +526,12 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
   const renderMap = () => (
     <div className="graph-map">
       <div className="graph-band-head">
-        <span className="graph-band-name">{isEnglish ? 'Before · what it cites' : 'Antes · lo que cita'}</span>
+        <span className="graph-band-name">{'Before · what it cites'}</span>
         <span className="graph-band-count">
           {bandCaption('reference')}
           {layout.omitted.references > 0 && (
             <button type="button" className="graph-omitted" onClick={() => setView('list')}>
-              {isEnglish ? `+${layout.omitted.references} in the list` : `+${layout.omitted.references} en la lista`}
+              {`+${layout.omitted.references} in the list`}
             </button>
           )}
         </span>
@@ -588,8 +584,8 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
               }}
             >
               {isWalking
-                ? `${isEnglish ? 'Centre' : 'Centro'} · ${center.year}`
-                : `${isEnglish ? 'This paper' : 'Este paper'} · ${center.year}`}
+                ? `${'Centre'} · ${center.year}`
+                : `${'This paper'} · ${center.year}`}
             </span>
 
             {graphStatus === 'ready' && layout.nodes.map(renderNode)}
@@ -631,12 +627,12 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
       </div>
 
       <div className="graph-band-head">
-        <span className="graph-band-name">{isEnglish ? 'After · what cites it' : 'Después · quien lo cita'}</span>
+        <span className="graph-band-name">{'After · what cites it'}</span>
         <span className="graph-band-count">
           {bandCaption('citation')}
           {layout.omitted.citations > 0 && (
             <button type="button" className="graph-omitted" onClick={() => setView('list')}>
-              {isEnglish ? `+${layout.omitted.citations} in the list` : `+${layout.omitted.citations} en la lista`}
+              {`+${layout.omitted.citations} in the list`}
             </button>
           )}
         </span>
@@ -644,7 +640,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
 
       <div className="graph-axis">
         {layout.ticks.length > 0 && layout.ticks[0].x > 110 && (
-          <span className="graph-axis-name">{isEnglish ? 'Citations received' : 'Citas recibidas'}</span>
+          <span className="graph-axis-name">{'Citations received'}</span>
         )}
         {layout.ticks.map(tick => (
           <span key={`label-${tick.value}`} className="graph-axis-tick" style={{ left: `${tick.x}px` }}>{tick.label}</span>
@@ -663,8 +659,8 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
           <div className="graph-list-head">
             <span className="graph-band-name">
               {relation === 'reference'
-                ? (isEnglish ? 'Before · what it cites' : 'Antes · lo que cita')
-                : (isEnglish ? 'After · what cites it' : 'Después · quien lo cita')}
+                ? ('Before · what it cites')
+                : ('After · what cites it')}
             </span>
             <span className="graph-band-count">{bandCaption(relation, 'list')}</span>
           </div>
@@ -689,7 +685,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
                   <small>
                     {related.authors.slice(0, 2).map(author => author.name || author).join(', ')}
                     {related.year ? ` · ${related.year}` : ''}
-                    {related.citationCountKnown ? ` · ${related.citationCount} ${isEnglish ? 'citations' : 'citas'}` : ''}
+                    {related.citationCountKnown ? ` · ${related.citationCount} ${'citations'}` : ''}
                   </small>
                 </span>
                 <CaretRight size={18} />
@@ -721,7 +717,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
         <header className="related-header">
           <div>
             <Graph size={18} />
-            <DrawerTitle render={<h3 />}>{isEnglish ? 'Paper connections' : 'Conexiones del paper'}</DrawerTitle>
+            <DrawerTitle render={<h3 />}>{'Paper connections'}</DrawerTitle>
           </div>
           <div className="related-header-actions">
             {mode === 'graph' && (
@@ -732,14 +728,14 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
                   className="graph-view-toggle"
                   value={[view]}
                   onValueChange={([next]) => { if (next) setView(next); }}
-                  aria-label={isEnglish ? 'Graph view' : 'Vista del grafo'}
+                  aria-label={'Graph view'}
                 >
                   <ToggleGroupItem
                     value="map"
                     size="icon"
                     className="graph-view-button"
-                    aria-label={isEnglish ? 'Map view' : 'Ver como mapa'}
-                    title={isEnglish ? 'Map' : 'Mapa'}
+                    aria-label={'Map view'}
+                    title={'Map'}
                   >
                     <Graph size={17} />
                   </ToggleGroupItem>
@@ -747,8 +743,8 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
                     value="list"
                     size="icon"
                     className="graph-view-button"
-                    aria-label={isEnglish ? 'List view' : 'Ver como lista'}
-                    title={isEnglish ? 'List' : 'Lista'}
+                    aria-label={'List view'}
+                    title={'List'}
                   >
                     <List size={17} />
                   </ToggleGroupItem>
@@ -758,8 +754,8 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
             )}
             <DrawerClose
               ref={closeButtonRef}
-              aria-label={isEnglish ? 'Close' : 'Cerrar'}
-              title={isEnglish ? 'Close' : 'Cerrar'}
+              aria-label={'Close'}
+              title={'Close'}
             >
               <X size={20} />
             </DrawerClose>
@@ -770,31 +766,31 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
             content below is switched by `mode` rather than held in panels,
             because most of it is shared between the two. */}
         <Tabs value={mode} onValueChange={(next) => setMode(next)}>
-          <TabsList variant="pill" className="related-mode-tabs" aria-label={isEnglish ? 'Connection type' : 'Tipo de conexión'}>
+          <TabsList variant="pill" className="related-mode-tabs" aria-label={'Connection type'}>
             <TabsTrigger value="graph" disabled={!hasGraphIdentifier || Boolean(selectedPaperKey)}>
-              <GitBranch size={16} />{isEnglish ? 'Graph' : 'Grafo'}
+              <GitBranch size={16} />{'Graph'}
             </TabsTrigger>
             <TabsTrigger value="similar" disabled={Boolean(selectedPaperKey)}>
-              <Sparkle size={16} />{isEnglish ? 'Similar' : 'Similares'}
+              <Sparkle size={16} />{'Similar'}
             </TabsTrigger>
           </TabsList>
         </Tabs>
 
         {mode === 'graph' && (
-          <div className="graph-trail" aria-label={isEnglish ? 'Path through the graph' : 'Recorrido por el grafo'}>
+          <div className="graph-trail" aria-label={'Path through the graph'}>
             {isWalking && (
               <button
                 type="button"
                 className="graph-trail-back"
                 onClick={() => goBackTo(trail.length - 2)}
-                aria-label={isEnglish ? 'Back' : 'Atrás'}
-                title={isEnglish ? 'Back' : 'Atrás'}
+                aria-label={'Back'}
+                title={'Back'}
               >
                 <ArrowLeft size={15} />
               </button>
             )}
             <span className="graph-trail-label">
-              {isWalking ? (isEnglish ? 'Path' : 'Recorrido') : (isEnglish ? 'This paper' : 'Este paper')}
+              {isWalking ? ('Path') : ('This paper')}
             </span>
             <div className="graph-trail-steps">
               {trail.map((step, index) => {
@@ -820,9 +816,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
         {mode === 'graph' && graph.degraded && graphStatus === 'ready' && (
           <p className="graph-degraded" role="status">
             <Warning size={14} aria-hidden="true" />
-            {isEnglish
-              ? 'Incomplete neighbourhood — one source did not answer, and this is what the other could give.'
-              : 'Vecindario incompleto — una fuente no respondió, y esto es lo que la otra pudo dar.'}
+            {'Incomplete neighbourhood — one source did not answer, and this is what the other could give.'}
           </p>
         )}
 
@@ -830,11 +824,11 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
         {isList && graphStatus === 'ready' && renderList()}
 
         {mode === 'similar' && visibleStatus === 'loading' && (
-          <LoadingState label={isEnglish ? 'Finding connections...' : 'Buscando conexiones...'} />
+          <LoadingState label={'Finding connections...'} />
         )}
         {visibleStatus === 'unavailable' && (
           <div className="related-state">
-            {isEnglish ? 'The bibliographic graph needs a valid DOI.' : 'El grafo bibliográfico necesita un DOI válido.'}
+            {'The bibliographic graph needs a valid DOI.'}
           </div>
         )}
         {visibleStatus === 'empty' && (
@@ -842,28 +836,24 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
             <p>
               {mode === 'graph'
                 ? graphEmptyLabel
-                : (isEnglish ? 'No recommendations are available for this paper.' : 'No hay recomendaciones disponibles para este paper.')}
+                : ('No recommendations are available for this paper.')}
             </p>
             {mode === 'graph' && isWalking && (
               <button type="button" className="graph-back-button" onClick={() => goBackTo(trail.length - 2)}>
                 <ArrowLeft size={15} aria-hidden="true" />
-                {isEnglish ? 'Back to' : 'Volver a'} {shortTitle(previousCentre?.title, 24)}
+                {'Back to'} {shortTitle(previousCentre?.title, 24)}
               </button>
             )}
           </div>
         )}
         {visibleStatus === 'error' && (
           <div className="related-state" role="status">
-            {isEnglish
-              ? 'These connections could not be loaded right now. The rest of PaperTok will continue to work normally.'
-              : 'No se pudieron cargar estas conexiones ahora. El resto de PaperTok seguirá funcionando con normalidad.'}
+            {'These connections could not be loaded right now. The rest of PaperTok will continue to work normally.'}
           </div>
         )}
         {visibleStatus === 'signin' && (
           <div className="related-state" role="status">
-            {isEnglish
-              ? 'A paper’s connections need an account. Sign in to see its citation graph and similar papers.'
-              : 'Las conexiones de un paper necesitan una cuenta. Inicia sesión para ver su grafo de citas y los papers similares.'}
+            {'A paper’s connections need an account. Sign in to see its citation graph and similar papers.'}
           </div>
         )}
 
@@ -883,7 +873,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
                   <small>
                     {related.authors.slice(0, 2).map(author => author.name || author).join(', ')}
                     {related.year ? ` · ${related.year}` : ''}
-                    {related.citationCountKnown ? ` · ${related.citationCount} ${isEnglish ? 'citations' : 'citas'}` : ''}
+                    {related.citationCountKnown ? ` · ${related.citationCount} ${'citations'}` : ''}
                   </small>
                 </span>
                 <CaretRight size={18} />
@@ -908,7 +898,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
             {graphStatus === 'ready' && (
               <>
                 <span>{sourceLabel}</span>
-                <span>{isEnglish ? 'One hop · cached 24 h' : 'Un salto · en caché 24 h'}</span>
+                <span>{'One hop · cached 24 h'}</span>
               </>
             )}
           </div>

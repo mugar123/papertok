@@ -72,35 +72,6 @@ const COPY = {
       crimson: 'Crimson',
     },
   },
-  es: {
-    title: 'Nueva lista',
-    editTitle: 'Editar lista',
-    close: 'Cerrar',
-    nameLabel: 'Nombre',
-    namePlaceholder: 'p. ej. Lecturas de tesis',
-    iconLabel: 'Icono',
-    colorLabel: 'Color',
-    colorHint: 'Se asigna uno al azar al crear la lista. Cámbialo aquí o más tarde.',
-    colorHintEdit: 'Elige uno de los ocho de la paleta.',
-    privacyNote: 'Nace privada. Publícala desde Mis listas cuando tenga contenido.',
-    create: 'Crear',
-    creating: 'Creando...',
-    save: 'Guardar',
-    saving: 'Guardando...',
-    cancel: 'Cancelar',
-    error: 'No se pudo crear. Inténtalo de nuevo.',
-    editError: 'No se pudo guardar. Inténtalo de nuevo.',
-    colors: {
-      ochre: 'Ocre',
-      olive: 'Oliva',
-      green: 'Verde',
-      teal: 'Turquesa',
-      blue: 'Azul',
-      indigo: 'Índigo',
-      violet: 'Violeta',
-      crimson: 'Granate',
-    },
-  },
 };
 
 /**
@@ -113,7 +84,6 @@ const COPY = {
  */
 export default function CreateListDialog({
   open,
-  isEnglish = false,
   list = null,
   onClose,
   onCreate,
@@ -170,7 +140,7 @@ export default function CreateListDialog({
     });
   }, [open, editing, listName, listIcon, listColor]);
 
-  const copy = isEnglish ? COPY.en : COPY.es;
+  const copy = COPY.en;
 
   /**
    * Every close path lands here, so none of them can abandon a write midway.

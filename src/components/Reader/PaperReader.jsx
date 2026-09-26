@@ -42,7 +42,6 @@ import {
 } from '../../utils/exportDocument.js';
 import { buildPdfModel, downloadPdfDocument } from '../../utils/pdfExport.js';
 import { useAuth } from '../../context/AuthContext';
-import { useLanguage } from '../../context/LanguageContext';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext';
 import { pickSelectionRoute } from '../../utils/readerSelection.js';
 import { nextBarVisibility } from '../../utils/scrollDirection.js';
@@ -64,99 +63,6 @@ import './Export.css';
 import './ReaderBar.css';
 
 const COPY = {
-  es: {
-    title: 'Leer en simple',
-    close: 'Cerrar lector',
-    back: 'Volver',
-    level: 'Nivel',
-    writing: 'Reescribiendo el paper',
-    writingHint: 'Las secciones aparecen a medida que se escriben.',
-    cached: 'Versión guardada',
-    original: 'Ver el paper original',
-    adaptation: 'Adaptación generada por IA a partir del texto completo. No sustituye al artículo original.',
-    remaining: (count) => `${count} ${count === 1 ? 'uso' : 'usos'} hoy`,
-    uses: (left, total) => `${left}/${total} hoy`,
-    usesTitle: (left, total) => (left === 0
-      ? `Has gastado los ${total} usos de IA de hoy. Vuelven mañana.`
-      : `Te ${left === 1 ? 'queda' : 'quedan'} ${left} de ${total} usos de IA hoy.`),
-    stages: {
-      source: 'Descargando el paper',
-      reading: 'El modelo está leyendo el paper',
-      writing: 'Reescribiendo el paper',
-    },
-    retry: 'Reintentar',
-    incomplete: 'La reescritura se cortó antes de terminar. Puedes reintentarlo.',
-    sections: 'secciones',
-    errorKicker: 'No se pudo reescribir',
-    download: 'Descargar',
-    whatGoes: 'Qué se lleva',
-    exportOptions: {
-      marks: 'Tus subrayados',
-      mine: 'Tus notas',
-      ai: 'Anotaciones de la IA',
-    },
-    optionCount: (id, count) => (id === 'marks'
-      ? `${count} ${count === 1 ? 'pasaje' : 'pasajes'}`
-      : `${count} ${count === 1 ? 'nota' : 'notas'} · numerada${count === 1 ? '' : 's'} al pie`),
-    noneOfThese: 'ninguna todavía',
-    alwaysIncluded: 'Siempre se incluyen el título, los autores, el enlace al original y la nota de que el texto lo escribió una IA. El fichero puede acabar lejos de aquí.',
-    previewMasthead: 'PaperTok · versión en lenguaje sencillo',
-    previewTitle: 'Título del paper',
-    previewByline: 'autores · reescrito por PaperTok',
-    previewNotice: 'Aviso',
-    previewSection: 'De qué va el paper',
-    // Deliberately identical in the `en` block below: this is the heading as
-    // printed in the source paper, in the paper's own language, not the
-    // reader's — translating it would show a heading the paper never had.
-    previewOrigin: '§1 Introduction',
-    previewNote: (format) => (format === 'pdf' ? 'Así se verá el PDF' : 'Así se verá al compilarlo'),
-    format: 'Formato',
-    downloadTex: 'Descargar .tex',
-    downloadPdf: 'Descargar PDF',
-    generating: 'Generando…',
-    downloaded: 'Descargado',
-    unlimitedUses: 'IA sin límite',
-    unlimitedUsesTitle: 'Esta cuenta no tiene límite diario de usos de IA.',
-    annotations: 'Anotaciones',
-    toggleAnnotations: 'Ver anotaciones',
-    settings: 'Ajustes',
-    selectionTitle: 'Qué hacer con la selección',
-    // Read by `aria-describedby` on every paragraph on the desktop route
-    // (`paragraphHintId`), not shown: the keyboard route's own instructions,
-    // for the audience that cannot see a hint that only paints on focus.
-    annotateParagraphInstructions: 'Pulsa Intro para abrir las opciones de anotación de este párrafo: subrayarlo, escribirle una nota o pedirle a la IA que lo explique.',
-    // The same instructions, compressed to what fits in a small tag that
-    // paints over the paragraph's own corner on keyboard focus (CSS
-    // `content: attr(data-hint)` in PaperReader.css) -- for the reader who
-    // can see the screen but has no mouse and no screen reader to read the
-    // sentence above out loud.
-    annotateParagraphBadge: 'Intro: anotar',
-    justHighlight: 'Subrayar',
-    writeNote: 'Escribir nota',
-    explainThis: 'Que me lo explique',
-    yourNote: 'Tu nota',
-    notePlaceholder: 'Lo que quieras recordar de este pasaje…',
-    save: 'Guardar',
-    cancel: 'Cancelar',
-    oneUse: '1 uso',
-    noUsesLeftShort: 'sin usos',
-    noUsesLeft: 'Se han acabado los usos de IA de hoy.',
-    usesLeftLine: (left) => `Te ${left === 1 ? 'queda' : 'quedan'} ${left} ${left === 1 ? 'uso' : 'usos'} de IA hoy.`,
-    reading: 'Leyendo el pasaje',
-    originMine: 'Tuya',
-    originAi: 'IA',
-    goToPassage: 'Ir al pasaje',
-    removeAnnotation: 'Quitar anotación',
-    emptyAll: 'Selecciona una frase del texto para escribir una nota, o para pedirle a la IA que te la explique.',
-    emptyFiltered: 'Aquí no hay nada todavía.',
-    countLine: ({ notes, marks }) => {
-      const parts = [];
-      if (marks) parts.push(`${marks} ${marks === 1 ? 'marca' : 'marcas'}`);
-      if (notes) parts.push(`${notes} ${notes === 1 ? 'nota' : 'notas'}`);
-      return parts.join(' · ');
-    },
-    filters: { all: 'Todas', mine: 'Tuyas', ai: 'IA' },
-  },
   en: {
     title: 'Read in plain words',
     close: 'Close reader',
@@ -250,72 +156,6 @@ const COPY = {
  * app giving up rather than as a thing that failed for a reason.
  */
 const ERROR_COPY = {
-  es: {
-    AI_REWRITE_NEEDS_FULL_TEXT: {
-      title: 'No hay paper que leer',
-      body: 'La reescritura necesita el texto completo, y de este solo hay resumen o el PDF no se deja abrir. A veces es la fuente, que está caída: si crees que sí debería estar, reintenta.',
-    },
-    AI_AUTH_REQUIRED: {
-      title: 'Necesitas iniciar sesión',
-      body: 'Reescribir papers con IA es una función de las cuentas registradas.',
-    },
-    AI_QUOTA_EXHAUSTED: {
-      title: 'Se han acabado los usos de hoy',
-      body: 'Los usos de IA se reponen mañana. Mientras tanto, el paper original sigue donde estaba.',
-    },
-    AI_QUOTA_EXHAUSTED_PROVIDER: {
-      title: 'El servicio agotó su cuota de hoy',
-      body: 'El límite es del proveedor del modelo, no tuyo: tus usos siguen intactos. Suele liberarse en un rato.',
-    },
-    AI_NOT_CONFIGURED: {
-      title: 'La reescritura no está disponible',
-      body: 'Esta función todavía no está activada aquí. No es culpa del paper.',
-    },
-    AI_TIMEOUT: {
-      title: 'Ha tardado demasiado',
-      body: 'El modelo dejó de responder a mitad de camino. Reintentar suele bastar.',
-    },
-    AI_BUSY: {
-      title: 'El servicio está saturado',
-      body: 'Hay demasiadas peticiones a la vez. Espera un momento y vuelve a intentarlo.',
-    },
-    AI_INVALID_PAPER: {
-      title: 'Este paper no da para una versión en simple',
-      body: 'El PDF no tiene texto suficiente que reescribir. Suele pasar con escaneos y con artículos de una página.',
-    },
-    AI_INVALID_RESPONSE: {
-      title: 'El modelo contestó en otro formato',
-      body: 'Respondió, pero no como el lector espera leerlo. Reintentar casi siempre lo arregla.',
-    },
-    AI_EMPTY_RESPONSE: {
-      title: 'El modelo no devolvió nada',
-      body: 'Suele ser un PDF demasiado grande, o un límite del proveedor. Reintentar a veces basta.',
-    },
-    AI_CANCELLED: {
-      title: 'Reescritura cancelada',
-      body: 'Se detuvo antes de empezar a escribir.',
-    },
-    AI_REQUEST_TOO_LARGE: {
-      title: 'El paper es demasiado grande para reescribirlo',
-      body: 'No cabe en una sola petición al modelo. El original sigue donde estaba.',
-    },
-    AI_SOURCE_UNAVAILABLE: {
-      title: 'No se pudo descargar el paper',
-      body: 'La fuente no contestó a tiempo. Suele ser pasajero: reintenta en un momento.',
-    },
-    AI_INVALID_REQUEST_UPSTREAM: {
-      title: 'El modelo rechazó este paper',
-      body: 'No es un fallo del servicio: con este documento la respuesta sería la misma. Prueba con otro nivel o con el original.',
-    },
-    AI_FALLBACK_BUDGET_EXHAUSTED: {
-      title: 'El presupuesto mensual de respaldo se agotó',
-      body: 'El modelo de reserva no puede trabajar más este mes. Vuelve a intentarlo cuando el principal esté disponible.',
-    },
-    AI_UNAVAILABLE: {
-      title: 'No se ha podido reescribir',
-      body: 'Algo falló entre el lector y el modelo. Reintentar suele bastar.',
-    },
-  },
   en: {
     AI_REWRITE_NEEDS_FULL_TEXT: {
       title: 'There is no paper to read',
@@ -394,16 +234,6 @@ const ERROR_COPY = {
  * line each: the rail is a 320px column, not an error page.
  */
 const ANNOTATION_ERROR_COPY = {
-  es: {
-    AI_NOT_CONFIGURED: 'Preguntarle a la IA no está disponible todavía.',
-    AI_AUTH_REQUIRED: 'Inicia sesión para preguntarle a la IA.',
-    AI_QUOTA_EXHAUSTED: 'Se han acabado los usos de IA de hoy.',
-    AI_BUSY: 'El servicio está saturado. Inténtalo en un momento.',
-    AI_TIMEOUT: 'La explicación ha tardado demasiado. Puedes volver a pedirla.',
-    AI_EMPTY_RESPONSE: 'El modelo no devolvió nada sobre este pasaje.',
-    AI_INVALID_REQUEST: 'Selecciona un poco más de texto para poder preguntar.',
-    AI_UNAVAILABLE: 'No se ha podido explicar este pasaje.',
-  },
   en: {
     AI_NOT_CONFIGURED: 'Asking the AI is not available yet.',
     AI_AUTH_REQUIRED: 'Sign in to ask the AI.',
@@ -739,18 +569,16 @@ function anchorFromSelection(range, paragraphNode, paragraphText) {
 }
 
 const KIND_LABELS = {
-  es: { abstract: 'Resumen', intro: 'Introducción', background: 'Contexto', methods: 'Método', results: 'Resultados', discussion: 'Discusión', conclusion: 'Conclusión', other: 'Sección' },
   en: { abstract: 'Abstract', intro: 'Introduction', background: 'Background', methods: 'Methods', results: 'Results', discussion: 'Discussion', conclusion: 'Conclusion', other: 'Section' },
 };
 
 export default function PaperReader({ paper, onClose, originRect = null, closeRef = null }) {
-  const { isEnglish } = useLanguage();
   const { user } = useAuth();
   const uid = user?.uid;
   const { trackEvent } = useAnalyticsConsent();
   const prefersReducedMotion = useReducedMotion();
-  const copy = COPY[isEnglish ? 'en' : 'es'];
-  const kindLabels = KIND_LABELS[isEnglish ? 'en' : 'es'];
+  const copy = COPY.en;
+  const kindLabels = KIND_LABELS.en;
   // One shared id: every paragraph's `aria-describedby` on the keyboard
   // route points at the same hidden sentence rather than each rendering its
   // own copy of it.
@@ -841,7 +669,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     abortRef.current = controller;
 
     // A cached level swaps in without a loading state at all.
-    const cached = !force && getCachedRewrite(paper, targetLevel, isEnglish ? 'en' : 'es');
+    const cached = !force && getCachedRewrite(paper, targetLevel, 'en');
     if (cached) {
       setSections(cached.sections);
       setMeta({ ...cached.meta, cached: true });
@@ -863,7 +691,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
 
     try {
       const result = await rewritePaper(paper, targetLevel, {
-        language: isEnglish ? 'en' : 'es',
+        language: 'en',
         force,
         signal: controller.signal,
         onMeta: (nextMeta) => {
@@ -896,7 +724,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       // can show the refund rather than a use the reader never actually spent.
       fetchRemainingAIUses({ signal: controller.signal }).then(fresh => { if (fresh) setQuota(fresh); });
     }
-  }, [isEnglish, paper, trackEvent]);
+  }, [paper, trackEvent]);
 
   useEffect(() => {
     // The two ways the PDF can change are not the same thing. Going from no
@@ -906,7 +734,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     // the key ignores `pdfUrl`, so that re-run recognises its own request and
     // leaves the stream in flight alone.
     if (!supportsRewrite) return undefined;
-    const requestKey = rewriteCacheKey(paper, level, isEnglish ? 'en' : 'es');
+    const requestKey = rewriteCacheKey(paper, level, 'en');
     if (requestedRewriteRef.current === requestKey) return undefined;
     // Deferred so the request starts after this render commits, matching how
     // the report page kicks off its own fetches. The key is claimed inside the
@@ -917,7 +745,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       load(level);
     }, 0);
     return () => clearTimeout(timerId);
-  }, [isEnglish, level, load, paper, supportsRewrite]);
+  }, [level, load, paper, supportsRewrite]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -999,7 +827,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     paper,
     paperId,
     level,
-    language: isEnglish ? 'en' : 'es',
+    language: 'en',
     onQuota: noteQuota,
     trackEvent,
   });
@@ -1200,7 +1028,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   const userHighlightIndex = useMemo(() => {
     const index = indexHighlightsByParagraph(annotations.annotations, {
       level,
-      language: isEnglish ? 'en' : 'es',
+      language: 'en',
     });
     // One transient state gets folded in here rather than stored: the pen
     // stroke on a mark that has just been made.
@@ -1227,14 +1055,14 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       ]);
     }
     return index;
-  }, [annotations.annotations, annotations.pending, isEnglish, level, selectionRoute]);
+  }, [annotations.annotations, annotations.pending, level, selectionRoute]);
 
   const originalUrl = safeExternalUrl(paper?.openAccessPdfUrl)
     || safeExternalUrl(paper?.pdfUrl)
     || safeExternalUrl(paper?.landingPageUrl)
     || safeDoiUrl(paper?.doi);
 
-  const levelLabel = PAPER_REWRITE_LEVELS.find(option => option.id === level) || { label: level, labelEn: level };
+  const levelLabel = PAPER_REWRITE_LEVELS.find(option => option.id === level) || { label: level };
 
   // Counted on the same list the file will carry, not on the rail's: the rail
   // shows every annotation for the paper, and the card would have promised to
@@ -1243,9 +1071,9 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     () => summarizeExport(exportableAnnotations(annotations.annotations, {
       sections,
       level,
-      language: isEnglish ? 'en' : 'es',
+      language: 'en',
     })),
-    [annotations.annotations, isEnglish, level, sections],
+    [annotations.annotations, level, sections],
   );
 
   /**
@@ -1262,7 +1090,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       paper,
       sections,
       annotations: annotations.annotations,
-      language: isEnglish ? 'en' : 'es',
+      language: 'en',
       level,
       kindLabels,
       originalUrl,
@@ -1284,7 +1112,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       format: 'tex',
       notes: built.noteCount,
     });
-  }, [annotations.annotations, include, isEnglish, kindLabels, level, originalUrl, paper, sections, trackEvent]);
+  }, [annotations.annotations, include, kindLabels, level, originalUrl, paper, sections, trackEvent]);
 
   /**
    * The PDF is made, not written: pages laid out and rasterized in
@@ -1299,7 +1127,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       paper,
       sections,
       annotations: annotations.annotations,
-      language: isEnglish ? 'en' : 'es',
+      language: 'en',
       level,
       kindLabels,
       originalUrl,
@@ -1317,7 +1145,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       format: 'pdf',
       notes: model.noteCount,
     });
-  }, [annotations.annotations, include, isEnglish, kindLabels, level, originalUrl, paper, sections, trackEvent]);
+  }, [annotations.annotations, include, kindLabels, level, originalUrl, paper, sections, trackEvent]);
 
   const handleDownload = useCallback(
     (format) => (format === 'pdf' ? downloadPdf() : downloadTex()),
@@ -1360,8 +1188,8 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    */
   const providerQuota = shownError === 'AI_QUOTA_EXHAUSTED' && error?.quota?.scope === 'provider';
   const isStreaming = shownStatus === 'streaming';
-  const errorCopy = ERROR_COPY[isEnglish ? 'en' : 'es'][providerQuota ? 'AI_QUOTA_EXHAUSTED_PROVIDER' : shownError]
-    || ERROR_COPY[isEnglish ? 'en' : 'es'].AI_UNAVAILABLE;
+  const errorCopy = ERROR_COPY.en[providerQuota ? 'AI_QUOTA_EXHAUSTED_PROVIDER' : shownError]
+    || ERROR_COPY.en.AI_UNAVAILABLE;
   const errorTone = providerQuota ? 'wait' : (ERROR_TONES[shownError] || 'broken');
   const canRetry = supportsRewrite && (providerQuota || !UNRETRYABLE_ERRORS.has(shownError));
 
@@ -1416,7 +1244,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             className="rd-level-item"
             value={option.id}
             disabled={isStreaming && level !== option.id}
-            aria-label={isEnglish ? option.labelEn : option.label}
+            aria-label={option.label}
           >
             {/* The mark is not a state of the button any more: it is one
                 element that moves to whichever button was chosen, which is the
@@ -1435,7 +1263,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                   : { duration: 0.22, ease: EASE_TRAVEL }}
               />
             )}
-            <span className="rd-level-label">{isEnglish ? option.labelEn : option.label}</span>
+            <span className="rd-level-label">{option.label}</span>
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
@@ -1493,10 +1321,10 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
         onDownload={handleDownload}
         busy={exporting}
         fileNames={{
-          pdf: exportFileName(paper, isEnglish ? 'en' : 'es', 'pdf'),
-          tex: exportFileName(paper, isEnglish ? 'en' : 'es'),
+          pdf: exportFileName(paper, 'pdf'),
+          tex: exportFileName(paper),
         }}
-        stamp={`${isEnglish ? levelLabel.labelEn : levelLabel.label} · ${isEnglish ? 'English' : 'Español'}`}
+        stamp={`${levelLabel.label} · ${'English'}`}
       />
     </Popover>
   );
@@ -1509,8 +1337,8 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   // string, while there is no error: both consumers gate their own rendering
   // on this being truthy, so a stray string here would show a phantom.
   const askErrorText = annotations.error
-    ? (ANNOTATION_ERROR_COPY[isEnglish ? 'en' : 'es'][annotations.error]
-      || ANNOTATION_ERROR_COPY[isEnglish ? 'en' : 'es'].AI_UNAVAILABLE)
+    ? (ANNOTATION_ERROR_COPY.en[annotations.error]
+      || ANNOTATION_ERROR_COPY.en.AI_UNAVAILABLE)
     : null;
 
   return (
@@ -1848,7 +1676,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             onFilter={setAnnotationFilter}
             thinking={annotations.busy === 'asking'}
             error={Boolean(annotations.error)}
-            errorText={askErrorText || ANNOTATION_ERROR_COPY[isEnglish ? 'en' : 'es'].AI_UNAVAILABLE}
+            errorText={askErrorText || ANNOTATION_ERROR_COPY.en.AI_UNAVAILABLE}
             onFocus={goToPassage}
             onRemove={annotations.remove}
             labelFor={annotationLabel}

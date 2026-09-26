@@ -55,7 +55,7 @@ test('scores field-normalized recent institutional impact on a ten-point scale',
   assert.equal(impact.sampleSize, 50);
   assert.equal(impact.medianFwci, 1);
   assert.equal(impact.highImpactShare, 0.4);
-  assert.equal(impact.level, 'Por encima de la media');
+  assert.equal(impact.level, 'Above average');
 });
 
 test('does not publish an impact score from an undersized sample', () => {

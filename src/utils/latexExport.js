@@ -480,7 +480,7 @@ export function renderParagraph(text, annotations = [], labels = {}) {
   return pieces.join('');
 }
 
-const SECTION_FALLBACK = { es: 'Sección', en: 'Section' };
+const SECTION_FALLBACK = { en: 'Section' };
 
 /**
  * El byline, escapado. Ya no es un `\parbox` centrado: la portada va en
@@ -718,14 +718,14 @@ export function buildLatexDocument({
   paper,
   sections = [],
   annotations = [],
-  language = 'es',
+  language = 'en',
   level = 'university',
   kindLabels = {},
   originalUrl = '',
   generatedAt = new Date(),
   include = {},
 } = {}) {
-  const copy = documentCopy(language);
+  const copy = documentCopy();
   const kept = exportableAnnotations(annotations, {
     sections, level, language, include,
   });
@@ -770,7 +770,7 @@ export function buildLatexDocument({
   for (const section of sections) {
     const label = section?.heading
       || kindLabels[section?.kind]
-      || SECTION_FALLBACK[language === 'en' ? 'en' : 'es'];
+      || SECTION_FALLBACK['en'];
     // `\section[corto]{label}` solo cuando `label` pasa el tope de
     // `sectionMarkText`: por debajo, el argumento corto sería idéntico al
     // completo y `\section{label}` de siempre ya es exactamente ese caso.
@@ -801,7 +801,7 @@ export function buildLatexDocument({
 
   return {
     source: lines.join('\n'),
-    fileName: exportFileName(paper, language),
+    fileName: exportFileName(paper),
     noteCount: numbered.length,
   };
 }

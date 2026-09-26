@@ -24,7 +24,6 @@ import { DialogClose } from '../ui/dialog.jsx';
 import { Button } from '../ui/button.jsx';
 import { useEntitySearch } from '../../hooks/useEntitySearch.js';
 import { useFollowing } from '../../context/FollowingContext';
-import { useLanguage } from '../../context/LanguageContext';
 import { searchPaperDestination } from '../../utils/searchDestinations.js';
 import { handoverFromSearchRow } from '../../utils/explorerHandover.js';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
@@ -37,27 +36,6 @@ import './SearchCommand.css';
 import { Toggle } from '../ui/toggle.jsx';
 
 const COPY = {
-  es: {
-    placeholder: 'Busca papers, personas, autores, temas, instituciones...',
-    papers: 'Papers',
-    users: 'Usuarios de PaperTok',
-    authors: 'Autores',
-    institutions: 'Instituciones',
-    topics: 'Temas',
-    projects: 'Proyectos',
-    empty: 'Sin resultados',
-    searching: 'Buscando...',
-    hint: 'Escribe para buscar en papers, usuarios, autores, temas, instituciones y proyectos financiados.',
-    suggested: 'Sugerencias',
-    partial: 'Algunas fuentes no respondieron; se muestra lo disponible.',
-    peopleSlow: 'Las personas están tardando más de lo normal.',
-    peopleFailed: 'No se han podido cargar las personas.',
-    follow: 'Seguir',
-    following: 'Siguiendo',
-    citations: 'citas',
-    works: 'trabajos',
-    cancel: 'Cancelar',
-  },
   en: {
     placeholder: 'Search papers, people, authors, topics, institutions...',
     papers: 'Papers',
@@ -82,10 +60,10 @@ const COPY = {
 };
 
 const SUGGESTIONS = [
-  { labelEs: 'Cosmología', labelEn: 'Cosmology', queryEs: 'Cosmología', queryEn: 'Cosmology', Icon: Lightbulb },
-  { labelEs: 'MIT', labelEn: 'MIT', queryEs: 'Massachusetts Institute of Technology', queryEn: 'Massachusetts Institute of Technology', Icon: Buildings },
-  { labelEs: 'CRISPR Cas9', labelEn: 'CRISPR Cas9', queryEs: 'CRISPR Cas9', queryEn: 'CRISPR Cas9', Icon: FileText },
-  { labelEs: 'Geoffrey Hinton', labelEn: 'Geoffrey Hinton', queryEs: 'Geoffrey Hinton', queryEn: 'Geoffrey Hinton', Icon: Users },
+  { label: 'Cosmology', query: 'Cosmology', Icon: Lightbulb },
+  { label: 'MIT', query: 'Massachusetts Institute of Technology', Icon: Buildings },
+  { label: 'CRISPR Cas9', query: 'CRISPR Cas9', Icon: FileText },
+  { label: 'Geoffrey Hinton', query: 'Geoffrey Hinton', Icon: Users },
 ];
 
 // Every section the palette can paint. `users` has to be in here AND in
@@ -141,8 +119,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
   // sheet, scrim and feed dissolved on three clocks with two empty frames in
   // the middle. Cleared on the way in, like `reset`.
   const [leavingBySelect, setLeavingBySelect] = useState(false);
-  const { isEnglish, language } = useLanguage();
-  const copy = COPY[isEnglish ? 'en' : 'es'];
+  const copy = COPY.en;
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
   // The spend gate, in the palette's own terms. The page has filter pills and
   // only pays for people under the two that render the section; the palette has
@@ -313,7 +290,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
       >
         <Buildings size={14} className="sc-icon" />
         <span className="sc-label">
-          {getLocalizedInstitutionName(institution, language) || institution.display_name}
+          {getLocalizedInstitutionName(institution) || institution.display_name}
         </span>
         <span className="sc-meta">{institution.country_code || ''}</span>
         {renderFollow({
@@ -473,14 +450,14 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
           >
             {SUGGESTIONS.map((item, index) => (
               <CommandItem
-                key={item.labelEn}
-                value={`suggestion-${item.labelEn}`}
+                key={item.label}
+                value={`suggestion-${item.label}`}
                 className="sc-enter"
                 style={{ '--sc-enter-index': Math.min(index + 2, ENTER_STAGGER_CAP) }}
-                onSelect={() => setQuery(isEnglish ? item.queryEn : item.queryEs)}
+                onSelect={() => setQuery(item.query)}
               >
                 <item.Icon size={14} className="sc-icon" />
-                <span className="sc-label">{isEnglish ? item.labelEn : item.labelEs}</span>
+                <span className="sc-label">{item.label}</span>
               </CommandItem>
             ))}
           </CommandGroup>

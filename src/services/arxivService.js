@@ -30,7 +30,7 @@ function isArxivCategory(category) {
 function categoryMatchScore(paper, categoryId) {
   if (paper.categories?.includes(categoryId) || paper.primaryCategory === categoryId) return Number.POSITIVE_INFINITY;
 
-  const label = CATEGORY_DEFINITIONS.get(categoryId)?.labelEn || categoryId.replace(/\./g, ' ');
+  const label = CATEGORY_DEFINITIONS.get(categoryId)?.label || categoryId.replace(/\./g, ' ');
   const terms = label.toLowerCase().split(/[^a-z0-9]+/).filter(term => term.length >= 4);
   const text = `${paper.title || ''} ${paper.abstract || ''}`.toLowerCase();
   return terms.reduce((score, term) => score + (text.includes(term) ? 1 : 0), 0);
@@ -242,7 +242,7 @@ async function fetchArxivDataNow(url) {
 // request 420 ms after the first 429 of the paced Worker (measured
 // 2026-09-16) instead of pausing.
 export function arxivUnreachableError(cause) {
-  const error = new Error('No se pudo conectar con arXiv. Inténtalo de nuevo en unos segundos.', { cause });
+  const error = new Error('Could not reach arXiv. Try again in a few seconds.', { cause });
   if (Number.isInteger(cause?.status)) error.status = cause.status;
   if (Number.isFinite(cause?.retryAfterMs)) error.retryAfterMs = cause.retryAfterMs;
   return error;
@@ -261,7 +261,7 @@ export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20,
       if (isArxivCategory(cat)) {
         return `cat:${cat}`;
       } else {
-        const searchPhrase = CATEGORY_DEFINITIONS.get(cat)?.labelEn || cat.replace(/\./g, ' ');
+        const searchPhrase = CATEGORY_DEFINITIONS.get(cat)?.label || cat.replace(/\./g, ' ');
         return `all:"${searchPhrase}"`;
       }
     }).join(' OR ')})`;

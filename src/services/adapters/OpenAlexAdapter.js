@@ -98,9 +98,9 @@ export class OpenAlexAdapter extends BaseAdapter {
       };
     } catch (error) {
       if (error.code !== 'aborted') {
-        console.error('[OpenAlexAdapter] Error en búsqueda:', error);
+        console.error('[OpenAlexAdapter] Search failed:', error);
       }
-      throw new Error(`No se pudo conectar con OpenAlex: ${error.message}`, { cause: error });
+      throw new Error(`Could not reach OpenAlex: ${error.message}`, { cause: error });
     }
   }
 

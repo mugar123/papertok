@@ -172,8 +172,8 @@ export function areaAccentForPaper(paper) {
  * Falls back to OpenAlex's own field name — "Computer Science" — for a branch
  * this app has no area of its own for, and to null when there is nothing to say.
  */
-export function areaLabelForPaper(paper, { english = false } = {}) {
+export function areaLabelForPaper(paper) {
   const area = areaForPaper(paper);
-  if (area) return (english ? area.labelEn : area.label) || area.labelEn || area.label || null;
+  if (area) return area.label || null;
   return paper?.primaryTopic?.field?.display_name || null;
 }

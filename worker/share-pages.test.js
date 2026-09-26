@@ -11,7 +11,6 @@ import {
   handleSharePage,
   matchShareRoute,
   renderSharePage,
-  shareLanguage,
   sharePageModel,
 } from './share-pages.js';
 
@@ -182,20 +181,21 @@ test('a share path that cannot name a page is refused before anything is fetched
 
 // -------------------------------------------------------------- language
 
-test('the copy follows Accept-Language: Spanish when asked for, English otherwise', () => {
-  assert.equal(shareLanguage('es-ES,es;q=0.9,en;q=0.8'), 'es');
-  assert.equal(shareLanguage('en-US,en;q=0.9'), 'en');
-  assert.equal(shareLanguage('en;q=0.4, es;q=0.8'), 'es');
-  assert.equal(shareLanguage('fr-FR,fr;q=0.9'), 'en');
-  assert.equal(shareLanguage(''), 'en');
-  assert.equal(shareLanguage(null), 'en');
+test('the copy is English whatever the reader\'s Accept-Language says', async () => {
+  const outcome = await foundPaper();
+  // `sharePageModel` takes no language any more; a legacy third argument is ignored.
+  const html = renderSharePage(SHELL, sharePageModel(paperRoute(), outcome, 'es'));
+  assert.match(html, /<html lang="en">/);
+  assert.equal(metaContent(html, 'property', 'og:locale'), 'en_US');
+  assert.equal(metaContent(html, 'property', 'og:locale:alternate'), null, 'there is no alternate locale');
+  assert.doesNotMatch(html, /es_ES|es-ES/);
 });
 
 // ------------------------------------------------------------ one head per kind
 
 test('a paper page carries its own title, description, canonical, og and twitter tags', async () => {
   const outcome = await foundPaper();
-  const html = renderSharePage(SHELL, sharePageModel(paperRoute(), outcome, 'es'));
+  const html = renderSharePage(SHELL, sharePageModel(paperRoute(), outcome));
   const url = `https://papertok.app/public/paper/${DOI_KEY}`;
 
   assert.equal(titleOf(html), 'Characterizing Alternative Monetization Strategies on YouTube');
@@ -207,10 +207,10 @@ test('a paper page carries its own title, description, canonical, og and twitter
   assert.equal(metaContent(html, 'property', 'og:url'), url);
   assert.equal(metaContent(html, 'name', 'twitter:url'), url);
   assert.equal(metaContent(html, 'property', 'og:type'), 'article');
-  assert.equal(metaContent(html, 'property', 'og:locale'), 'es_ES');
+  assert.equal(metaContent(html, 'property', 'og:locale'), 'en_US');
   assert.equal(metaContent(html, 'name', 'robots'), null, 'a found paper is indexable');
   assert.doesNotMatch(headOf(html), /papertok\.app\/feed/, 'nothing in the head still points at /feed');
-  assert.match(html, /<html lang="es">/);
+  assert.match(html, /<html lang="en">/);
 
   const jsonLd = jsonLdOf(html);
   assert.equal(jsonLd['@type'], 'ScholarlyArticle');
@@ -251,15 +251,15 @@ test('a list page names the list and links every paper in it', async () => {
     },
   })(route);
 
-  const es = renderSharePage(SHELL, sharePageModel(route, outcome, 'es'));
-  const en = renderSharePage(SHELL, sharePageModel(route, outcome, 'en'));
-  assert.equal(titleOf(es), 'Tutoring with language models | Lista pública de PaperTok');
-  assert.equal(titleOf(en), 'Tutoring with language models | PaperTok public list');
-  assert.equal(metaContent(es, 'name', 'description'), 'What the evidence says about AI tutors.');
-  assert.equal(canonicalOf(es), `https://papertok.app/public/list/${SHARE_ID}`);
-  assert.equal(jsonLdOf(es)['@type'], 'CollectionPage');
-  assert.match(es, new RegExp(`<a href="/public/paper/${DOI_KEY}">Characterizing Alternative Monetization Strategies on YouTube</a>`));
-  assert.match(es, new RegExp(`<a href="/public/paper/${ARXIV_KEY}">StudentBench: AI and human tutoring</a>`));
+  const html = renderSharePage(SHELL, sharePageModel(route, outcome));
+  assert.equal(titleOf(html), 'Tutoring with language models | PaperTok public list');
+  assert.equal(metaContent(html, 'name', 'description'), 'What the evidence says about AI tutors.');
+  assert.equal(canonicalOf(html), `https://papertok.app/public/list/${SHARE_ID}`);
+  assert.equal(jsonLdOf(html)['@type'], 'CollectionPage');
+  assert.equal(jsonLdOf(html).inLanguage, 'en-US');
+  assert.match(html, /<h2>Papers in this list<\/h2>/);
+  assert.match(html, new RegExp(`<a href="/public/paper/${DOI_KEY}">Characterizing Alternative Monetization Strategies on YouTube</a>`));
+  assert.match(html, new RegExp(`<a href="/public/paper/${ARXIV_KEY}">StudentBench: AI and human tutoring</a>`));
 });
 
 test('a profile page names the person and their handle', async () => {
@@ -278,7 +278,7 @@ test('a profile page names the person and their handle', async () => {
     },
   })(route);
 
-  const html = renderSharePage(SHELL, sharePageModel(route, outcome, 'en'));
+  const html = renderSharePage(SHELL, sharePageModel(route, outcome));
   assert.deepEqual(reads, ['handles/ada_l', 'userProfiles/uid-123']);
   assert.equal(titleOf(html), 'Ada Lovelace (@ada_l) | PaperTok');
   assert.equal(metaContent(html, 'name', 'description'), 'Analytical engines.');
@@ -297,15 +297,15 @@ test('an entity page names the entity and what kind of entity it is', async () =
     },
   })(route);
 
-  const es = renderSharePage(SHELL, sharePageModel(route, outcome, 'es'));
+  const html = renderSharePage(SHELL, sharePageModel(route, outcome));
   assert.equal(asked[0].path, 'authors/A5018713931');
-  assert.equal(titleOf(es), 'Yiqing Hua - Autor | PaperTok');
+  assert.equal(titleOf(html), 'Yiqing Hua - Author | PaperTok');
   assert.equal(
-    metaContent(es, 'name', 'description'),
-    'Explora artículos científicos, citas e investigación relacionada con Yiqing Hua en PaperTok.',
+    metaContent(html, 'name', 'description'),
+    'Explore scientific papers, citations, and research connected to Yiqing Hua on PaperTok.',
   );
-  assert.equal(canonicalOf(es), 'https://papertok.app/public/entity/author/A5018713931');
-  assert.equal(metaContent(es, 'name', 'robots'), null);
+  assert.equal(canonicalOf(html), 'https://papertok.app/public/entity/author/A5018713931');
+  assert.equal(metaContent(html, 'name', 'robots'), null);
 });
 
 // A name-only page takes its name from the URL, so a preview that printed it
@@ -317,7 +317,7 @@ test('an entity known only by a name previews as PaperTok, not indexed, and cost
   const outcome = await createShareLoader({
     openAlex: async () => { throw new Error('a name is not an identity to look up'); },
   })(route);
-  const html = renderSharePage(SHELL, sharePageModel(route, outcome, 'en'));
+  const html = renderSharePage(SHELL, sharePageModel(route, outcome));
   assert.equal(titleOf(html), 'PaperTok — Discover scientific research');
   assert.equal(metaContent(html, 'property', 'og:title'), 'PaperTok — Discover scientific research');
   assert.equal(metaContent(html, 'name', 'description'), 'PaperTok is an application for exploring and discovering scientific papers from multiple sources.');
@@ -330,7 +330,7 @@ test('text-direction controls from a URL do not reach the page', async () => {
   const override = String.fromCharCode(0x202e);
   const route = matchShareRoute(new URL(`https://api.papertok.app/share/entity/author/Ada${encodeURIComponent(override)}%20Lovelace`));
   const outcome = await createShareLoader({})(route);
-  const html = renderSharePage(SHELL, sharePageModel(route, outcome, 'en'));
+  const html = renderSharePage(SHELL, sharePageModel(route, outcome));
   assert.equal(html.includes(override), false);
   assert.match(html, /<h1>Ada Lovelace<\/h1>/);
 });
@@ -346,7 +346,7 @@ test('everything from a provider or a user is escaped, and no replacement patter
         : { exists: true, id: 'u1', data: { handle: 'ada_l', displayName: 'Ada "</title><script>alert(1)</script>', bio: 'Costs $& and $1 & <b>bold</b> \u2028 end' } }),
     },
   })(route);
-  const html = renderSharePage(SHELL, sharePageModel(route, outcome, 'en'));
+  const html = renderSharePage(SHELL, sharePageModel(route, outcome));
 
   assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
   assert.equal(titleOf(html), 'Ada &quot;&lt;/title&gt;&lt;script&gt;alert(1)&lt;/script&gt; (@ada_l) | PaperTok');
@@ -361,7 +361,7 @@ test('LaTeX in a title becomes plain text in the head and stays LaTeX in the see
   const outcome = await createShareLoader({
     openAlex: async () => ({ ...OPENALEX_WORK, title: 'On commensurations of pro-$\\mathcal{C}$ groups', display_name: 'x' }),
   })(paperRoute());
-  const html = renderSharePage(SHELL, sharePageModel(paperRoute(), outcome, 'en'));
+  const html = renderSharePage(SHELL, sharePageModel(paperRoute(), outcome));
   assert.equal(titleOf(html), 'On commensurations of pro-C groups');
   assert.equal(metaContent(html, 'property', 'og:title'), 'On commensurations of pro-C groups');
   assert.equal(seedOf(html).paper.title, 'On commensurations of pro-$\\mathcal{C}$ groups', 'the card renders the math itself');
@@ -371,7 +371,7 @@ test('LaTeX in a title becomes plain text in the head and stays LaTeX in the see
 
 test('a paper page embeds a seed that parses, names its key and can paint the page', async () => {
   const outcome = await foundPaper();
-  const html = renderSharePage(SHELL, sharePageModel(paperRoute(), outcome, 'en'));
+  const html = renderSharePage(SHELL, sharePageModel(paperRoute(), outcome));
   const seed = seedOf(html);
 
   assert.equal(seed.key, DOI_KEY);
@@ -391,7 +391,7 @@ test('the page reads back the seed the Worker writes, paints from it and indexes
   // writes are the ones src/utils/shareSeed.js reads, and what it reads goes
   // through the same adapter and paint rule as a seed handed over in-app.
   const outcome = await foundPaper();
-  const html = renderSharePage(SHELL, sharePageModel(paperRoute(), outcome, 'en'));
+  const html = renderSharePage(SHELL, sharePageModel(paperRoute(), outcome));
   const text = html.match(/<script type="application\/json" id="papertok-share-seed">([\s\S]*?)<\/script>/)[1];
   const documentStub = { getElementById: id => (id === 'papertok-share-seed' ? { textContent: text } : null) };
   const paper = readShareSeed(DOI_KEY, documentStub);
@@ -404,7 +404,7 @@ test('the page reads back the seed the Worker writes, paints from it and indexes
 test('only a paper page carries a seed', async () => {
   const route = matchShareRoute(new URL('https://api.papertok.app/share/entity/author/A1'));
   const outcome = await createShareLoader({ openAlex: async () => ({ id: 'https://openalex.org/A1', display_name: 'X Y' }) })(route);
-  assert.equal(seedOf(renderSharePage(SHELL, sharePageModel(route, outcome, 'en'))), null);
+  assert.equal(seedOf(renderSharePage(SHELL, sharePageModel(route, outcome))), null);
 });
 
 // -------------------------------------------------------------- handler
@@ -424,18 +424,19 @@ function handlerDeps(overrides = {}) {
   return { deps, loads: () => loads };
 }
 
-test('a found page answers 200 HTML that downstream caches keep apart by language', async () => {
+test('a found page answers 200 English HTML even to a Spanish-speaking browser', async () => {
   const { deps } = handlerDeps();
   const response = await handleSharePage(shareRequest(`/share/paper/${DOI_KEY}`, { language: 'es-ES,es;q=0.9' }), deps);
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-type'), /^text\/html; charset=utf-8/);
-  assert.match(response.headers.get('vary'), /accept-language/i);
-  assert.equal(response.headers.get('content-language'), 'es');
+  // One language, so nothing downstream needs to keep variants apart.
+  assert.equal(response.headers.get('vary'), null);
+  assert.equal(response.headers.get('content-language'), 'en');
   assert.match(response.headers.get('cache-control'), /max-age=300/);
   assert.equal(titleOf(await response.text()), 'Characterizing Alternative Monetization Strategies on YouTube');
 });
 
-test('both languages are served from one provider answer, each with its own copy', async () => {
+test('a list page is English whatever the browser asks for, from one provider answer', async () => {
   const route = `/share/list/${SHARE_ID}`;
   let reads = 0;
   const { deps } = handlerDeps({
@@ -449,14 +450,31 @@ test('both languages are served from one provider answer, each with its own copy
     }),
   });
 
-  const es = await (await handleSharePage(shareRequest(route, { language: 'es' }), deps)).text();
-  const en = await (await handleSharePage(shareRequest(route, { language: 'en-GB' }), deps)).text();
-  assert.equal(titleOf(es), 'Tutoring | Lista pública de PaperTok');
-  assert.equal(titleOf(en), 'Tutoring | PaperTok public list');
-  assert.equal(metaContent(es, 'name', 'description'), 'Explora una lista pública de lectura científica creada en PaperTok.');
-  assert.equal(metaContent(en, 'name', 'description'), 'Explore a public scientific reading list curated on PaperTok.');
-  assert.equal(reads, 1, 'the record is the same in both languages; only the copy around it changes');
+  const fromSpanish = await (await handleSharePage(shareRequest(route, { language: 'es' }), deps)).text();
+  const fromEnglish = await (await handleSharePage(shareRequest(route, { language: 'en-GB' }), deps)).text();
+  assert.equal(fromSpanish, fromEnglish);
+  assert.equal(titleOf(fromSpanish), 'Tutoring | PaperTok public list');
+  assert.equal(metaContent(fromSpanish, 'name', 'description'), 'Explore a public scientific reading list curated on PaperTok.');
+  assert.doesNotMatch(fromSpanish, /Lista pública|Explora/);
+  // Nothing records the language this list was written in, so its content is
+  // not marked as anything other than the page's.
+  assert.match(fromSpanish, /<main><h1>Tutoring<\/h1>/);
+  assert.equal(reads, 1, 'the record is fetched once and served to every reader');
 });
+
+test('a list recorded as written in Spanish marks its own content lang="es"', async () => {
+  const { deps } = handlerDeps({
+    loadRecord: createShareLoader({
+      firestore: {
+        getDocument: async () => ({ exists: true, id: SHARE_ID, data: { title: 'Tutorías', language: 'es', papers: [] } }),
+      },
+    }),
+  });
+  const html = await (await handleSharePage(shareRequest(`/share/list/${SHARE_ID}`), deps)).text();
+  assert.match(html, /<html lang="en">/);
+  assert.match(html, /<main lang="es"><h1>Tutorías<\/h1>/);
+});
+
 
 test('a page that does not exist answers 404 and noindex', async () => {
   // An OpenAlex work id OpenAlex does not have: that answer is final.
@@ -468,7 +486,7 @@ test('a page that does not exist answers 404 and noindex', async () => {
   assert.equal(response.status, 404);
   assert.equal(response.headers.get('x-robots-tag'), 'noindex, nofollow');
   assert.equal(metaContent(html, 'name', 'robots'), 'noindex, nofollow');
-  assert.equal(titleOf(html), 'No encontramos este paper | PaperTok');
+  assert.equal(titleOf(html), 'We could not find this paper | PaperTok');
   assert.equal(seedOf(html), null);
   assert.equal(canonicalOf(html), null, 'a missing page claims no canonical address');
 });
@@ -714,7 +732,7 @@ test('a project is looked up in OpenAIRE by its OpenAIRE id', async () => {
     },
   })(route);
   assert.deepEqual(asked, [{ openaireProjectID: 'corda__h2020::b9871e3e08a9db98aaa42bf321ed0f1a' }]);
-  const html = renderSharePage(SHELL, sharePageModel(route, outcome, 'en'));
+  const html = renderSharePage(SHELL, sharePageModel(route, outcome));
   assert.equal(titleOf(html), 'TAILOR: Foundations of Trustworthy AI - Integrating Reasoning, Learning and Optimization - Research project | PaperTok');
 });
 

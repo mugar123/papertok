@@ -23,7 +23,7 @@ import './VisibilityPrompt.css';
  * then `onOpenChangeComplete(false)` hands the outcome to the parent: the
  * saved choice through `onResolved`, anything else through `onDismiss`.
  */
-export default function VisibilityPrompt({ isEnglish, onResolved, onDismiss }) {
+export default function VisibilityPrompt({ onResolved, onDismiss }) {
   const [open, setOpen] = useState(true);
   const [choice, setChoice] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -31,7 +31,7 @@ export default function VisibilityPrompt({ isEnglish, onResolved, onDismiss }) {
   const savedChoice = useRef(null);
   const laterButton = useRef(null);
 
-  const copy = isEnglish ? {
+  const copy = {
     eyebrow: 'One-time question',
     title: 'Your profile is public right now',
     intro: 'PaperTok now lets a profile be private. Nothing has changed about yours — it is public, exactly as it was. Choose what you want it to be.',
@@ -40,15 +40,6 @@ export default function VisibilityPrompt({ isEnglish, onResolved, onDismiss }) {
     later: 'Decide later',
     failed: 'That did not go through. Try again.',
     close: 'Close',
-  } : {
-    eyebrow: 'Pregunta única',
-    title: 'Ahora mismo tu perfil es público',
-    intro: 'PaperTok ya permite tener el perfil privado. Con el tuyo no ha cambiado nada: sigue público, exactamente como estaba. Elige qué quieres que sea.',
-    confirm: 'Guardar mi elección',
-    saving: 'Guardando...',
-    later: 'Decidir más tarde',
-    failed: 'No se pudo completar. Inténtalo de nuevo.',
-    close: 'Cerrar',
   };
 
   const submit = async () => {
@@ -92,7 +83,7 @@ export default function VisibilityPrompt({ isEnglish, onResolved, onDismiss }) {
         <VisibilityChoice
           value={choice}
           onChange={setChoice}
-          isEnglish={isEnglish}
+         
           idPrefix="visibility-prompt"
         />
 

@@ -114,28 +114,11 @@ export function formatRetryDelay(ms) {
 }
 
 /**
- * "OpenAIRE", "ROR y OpenAIRE", "papers, autores e instituciones".
- *
- * Spanish swaps `y` for `e` before a word that begins with the i sound (i-,
- * hi-), which is precisely the case here: "autores e instituciones". The
- * exception is a diphthong — "hielo", "hierro" — which keeps `y`.
+ * "OpenAIRE", "ROR and OpenAIRE", "papers, authors and institutions".
  */
-export function joinNames(words, isEnglish = false) {
+export function joinNames(words) {
   const list = (words || []).filter(Boolean);
   if (list.length === 0) return '';
   if (list.length === 1) return list[0];
-
-  const last = list[list.length - 1];
-  const conjunction = isEnglish ? 'and' : spanishAndFor(last);
-  return `${list.slice(0, -1).join(', ')} ${conjunction} ${last}`;
-}
-
-function spanishAndFor(nextWord) {
-  const normalized = String(nextWord)
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-  if (/^hie/.test(normalized)) return 'y';
-  return /^(i|hi)/.test(normalized) ? 'e' : 'y';
+  return `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`;
 }

@@ -18,21 +18,6 @@ import { Switch } from '../ui/switch.jsx';
 import './EmailNotificationModal.css';
 
 const ERROR_COPY = {
-  es: {
-    EMAIL_NOT_CONFIGURED: 'Los avisos por email todavía no están configurados.',
-    EMAIL_AUTH_REQUIRED: 'Vuelve a iniciar sesión para configurar los avisos.',
-    EMAIL_ADDRESS_NOT_VERIFIED: 'Confirma tu dirección de correo con tu proveedor de acceso antes de activar los avisos.',
-    EMAIL_PROVIDER_AUTH_FAILED: 'El proveedor de correo ha rechazado la credencial configurada.',
-    EMAIL_SENDER_NOT_VERIFIED: 'El remitente de Brevo todavía no está verificado.',
-    EMAIL_PROVIDER_LIMIT: 'Se ha alcanzado temporalmente el límite de envío.',
-    EMAIL_TEST_RATE_LIMIT: 'Espera un minuto antes de enviar otra prueba.',
-    EMAIL_TEST_RECIPIENT_RESTRICTED: 'Resend está en modo de prueba y sólo permite enviar al correo propietario de la cuenta. Para otros destinatarios necesitas verificar un dominio.',
-    EMAIL_DATA_LOADING: 'Estamos terminando de cargar tus seguimientos. Inténtalo de nuevo en unos segundos.',
-    EMAIL_FOLLOWS_REQUIRED: 'Sigue al menos un tema, autor, institución o proyecto antes de activar los correos.',
-    EMAIL_SEND_FAILED: 'No se ha podido enviar el correo de prueba.',
-    EMAIL_TIMEOUT: 'El servicio de correo está tardando demasiado.',
-    EMAIL_UNAVAILABLE: 'El servicio de correo no está disponible ahora mismo.',
-  },
   en: {
     EMAIL_NOT_CONFIGURED: 'Email updates have not been configured yet.',
     EMAIL_AUTH_REQUIRED: 'Sign in again to configure email updates.',
@@ -67,7 +52,7 @@ const MAX_PAPERS_OPTIONS = [3, 5, 10].map(value => ({ value, label: String(value
  * Base UI plays the leave before the popup goes.
  */
 export default function EmailNotificationModal({ isOpen, onClose }) {
-  const { language, isEnglish } = useLanguage();
+  const { language } = useLanguage();
   const enabledId = useId();
   const countId = useId();
   const {
@@ -113,8 +98,8 @@ export default function EmailNotificationModal({ isOpen, onClose }) {
       setFeedback({
         type: 'success',
         text: draft.enabled
-          ? (isEnglish ? 'Email updates enabled.' : 'Avisos por email activados.')
-          : (isEnglish ? 'Email updates disabled.' : 'Avisos por email desactivados.'),
+          ? ('Email updates enabled.')
+          : ('Email updates disabled.'),
       });
     } catch (error) {
       setFeedback({ type: 'error', text: ERROR_COPY[language][error.code] || ERROR_COPY[language].EMAIL_UNAVAILABLE });
@@ -134,7 +119,7 @@ export default function EmailNotificationModal({ isOpen, onClose }) {
       setDraft(saved);
       setFeedback({
         type: 'success',
-        text: isEnglish ? `Test email sent to ${saved.email}.` : `Correo de prueba enviado a ${saved.email}.`,
+        text: `Test email sent to ${saved.email}.`,
       });
       setTestState('sent');
       testFeedbackTimerRef.current = setTimeout(() => setTestState('idle'), TEST_SENT_VISIBLE_MS);
@@ -152,57 +137,49 @@ export default function EmailNotificationModal({ isOpen, onClose }) {
       <DialogContent
         className="email-notification-modal"
         overlayClassName="email-notification-backdrop"
-        closeLabel={isEnglish ? 'Close' : 'Cerrar'}
+        closeLabel={'Close'}
       >
         <header>
           <div className="email-notification-icon"><Envelope size={20} aria-hidden="true" /></div>
           <div>
-            <DialogTitle>{isEnglish ? 'Email updates' : 'Novedades por email'}</DialogTitle>
-            <DialogDescription>{isEnglish
-              ? 'Receive a compact digest even when PaperTok is closed.'
-              : 'Recibe un digest compacto aunque PaperTok esté cerrado.'}</DialogDescription>
+            <DialogTitle>{'Email updates'}</DialogTitle>
+            <DialogDescription>{'Receive a compact digest even when PaperTok is closed.'}</DialogDescription>
           </div>
         </header>
 
         <div className="email-notification-body">
           {!loading && !health.available && (
             <div className="email-notification-provider-warning">
-              <strong>{isEnglish ? 'Sending requires configuration' : 'Envío pendiente de configuración'}</strong>
+              <strong>{'Sending requires configuration'}</strong>
               <span>{health.code === 'EMAIL_PROVIDER_AUTH_FAILED'
-                ? (isEnglish ? 'The email provider did not accept the saved credential.' : 'El proveedor de correo no ha aceptado la credencial guardada.')
+                ? ('The email provider did not accept the saved credential.')
                 : health.code === 'EMAIL_SENDER_NOT_VERIFIED'
-                  ? (isEnglish ? 'Brevo does not yet recognize the configured sender as active.' : 'Brevo todavía no reconoce el remitente configurado como activo.')
-                  : (isEnglish ? 'The email provider is not available right now.' : 'El proveedor de correo no está disponible en este momento.')}</span>
+                  ? ('Brevo does not yet recognize the configured sender as active.')
+                  : ('The email provider is not available right now.')}</span>
             </div>
           )}
           {!loading && health.available && health.provider === 'resend' && health.senderMode === 'resend-test' && (
             <div className="email-notification-provider-warning is-info">
-              <strong>{isEnglish ? 'Resend test mode' : 'Modo de prueba de Resend'}</strong>
-              <span>{isEnglish
-                ? 'Without a verified domain, Resend will only deliver email to the account owner.'
-                : 'Sin un dominio verificado, Resend sólo entregará correos a la dirección propietaria de tu cuenta.'}</span>
+              <strong>{'Resend test mode'}</strong>
+              <span>{'Without a verified domain, Resend will only deliver email to the account owner.'}</span>
             </div>
           )}
           {!loading && health.available && health.provider === 'resend' && health.permissionLimited && health.senderMode !== 'resend-test' && (
             <div className="email-notification-provider-warning is-info">
-              <strong>{isEnglish ? 'Restricted sending key' : 'Clave de envío restringida'}</strong>
-              <span>{isEnglish
-                ? 'The Resend credential only has sending permission, so the domain status cannot be checked here. Sending still works normally.'
-                : 'La credencial de Resend sólo tiene permiso de envío, así que no podemos comprobar el estado del dominio desde aquí. El envío funciona con normalidad.'}</span>
+              <strong>{'Restricted sending key'}</strong>
+              <span>{'The Resend credential only has sending permission, so the domain status cannot be checked here. Sending still works normally.'}</span>
             </div>
           )}
           {!loading && notificationDataReady && !hasFollows && (
             <div className="email-notification-provider-warning is-info">
-              <strong>{isEnglish ? 'Nothing followed yet' : 'Todavía no sigues nada'}</strong>
-              <span>{isEnglish
-                ? 'Follow a topic, author, institution, or project so PaperTok can prepare relevant email updates.'
-                : 'Sigue un tema, autor, institución o proyecto para que PaperTok pueda preparar correos relevantes.'}</span>
+              <strong>{'Nothing followed yet'}</strong>
+              <span>{'Follow a topic, author, institution, or project so PaperTok can prepare relevant email updates.'}</span>
             </div>
           )}
           <div className="email-notification-toggle-row">
             <Label htmlFor={enabledId}>
-              <strong>{isEnglish ? 'Enable email updates' : 'Activar correos'}</strong>
-              <small>{isEnglish ? 'They will be sent to' : 'Se enviarán a'} {draft.email || preferences.email}</small>
+              <strong>{'Enable email updates'}</strong>
+              <small>{'They will be sent to'} {draft.email || preferences.email}</small>
             </Label>
             <Switch
               id={enabledId}
@@ -215,29 +192,27 @@ export default function EmailNotificationModal({ isOpen, onClose }) {
 
           <div className={`email-notification-options ${draft.enabled ? '' : 'is-disabled'}`}>
             <fieldset disabled={optionsDisabled}>
-              <legend>{isEnglish ? 'Frequency' : 'Frecuencia'}</legend>
+              <legend>{'Frequency'}</legend>
               <RadioGroup
                 className="email-notification-segments"
-                aria-label={isEnglish ? 'Frequency' : 'Frecuencia'}
+                aria-label={'Frequency'}
                 value={draft.frequency}
                 onValueChange={frequency => setDraft(current => ({ ...current, frequency }))}
                 disabled={optionsDisabled}
               >
                 <RadioGroupItem value="daily" render={<button type="button" />} nativeButton>
-                  {isEnglish ? 'Daily' : 'Diario'}
+                  {'Daily'}
                 </RadioGroupItem>
                 <RadioGroupItem value="weekly" render={<button type="button" />} nativeButton>
-                  {isEnglish ? 'Weekly' : 'Semanal'}
+                  {'Weekly'}
                 </RadioGroupItem>
               </RadioGroup>
             </fieldset>
 
             <div className="email-notification-count">
               <Label htmlFor={countId}>
-                <strong>{isEnglish ? 'Maximum per email' : 'Máximo por correo'}</strong>
-                <small>{isEnglish
-                  ? 'PaperTok will send fewer when there are not enough high-quality matches'
-                  : 'PaperTok enviará menos si no encuentra suficiente calidad'}</small>
+                <strong>{'Maximum per email'}</strong>
+                <small>{'PaperTok will send fewer when there are not enough high-quality matches'}</small>
               </Label>
               <Select
                 items={MAX_PAPERS_OPTIONS}
@@ -261,8 +236,8 @@ export default function EmailNotificationModal({ isOpen, onClose }) {
             <Clock size={16} aria-hidden="true" />
             <span>
               {draft.frequency === 'weekly'
-                ? (isEnglish ? 'Monday mornings' : 'Los lunes por la mañana')
-                : (isEnglish ? 'Every morning' : 'Cada mañana')}, {isEnglish ? 'only when there are updates.' : 'sólo cuando haya novedades.'}
+                ? ('Monday mornings')
+                : ('Every morning')}, {'only when there are updates.'}
             </span>
           </div>
 
@@ -285,23 +260,23 @@ export default function EmailNotificationModal({ isOpen, onClose }) {
             <AnimatePresence mode="wait" initial={false}>
               {testState === 'sending' ? (
                 <motion.span key="sending" initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -3 }}>
-                  <CircleNotch className="email-notification-test-spinner" size={16} /> {isEnglish ? 'Sending…' : 'Enviando…'}
+                  <CircleNotch className="email-notification-test-spinner" size={16} /> {'Sending…'}
                 </motion.span>
               ) : testState === 'sent' ? (
                 <motion.span key="sent" initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
-                  <CheckCircle size={17} /> {isEnglish ? 'Sent' : 'Enviado'}
+                  <CheckCircle size={17} /> {'Sent'}
                 </motion.span>
               ) : (
                 <motion.span key="idle" initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -3 }}>
-                  <PaperPlaneTilt size={16} /> {isEnglish ? 'Send test' : 'Enviar prueba'}
+                  <PaperPlaneTilt size={16} /> {'Send test'}
                 </motion.span>
               )}
             </AnimatePresence>
           </button>
           <button type="button" className="email-notification-save" onClick={handleSave} disabled={saving || testing || loading || !notificationDataReady || (draft.enabled && (!health.available || !hasFollows))}>
             {saving
-              ? (isEnglish ? 'Saving...' : 'Guardando...')
-              : (isEnglish ? 'Save changes' : 'Guardar cambios')}
+              ? ('Saving...')
+              : ('Save changes')}
           </button>
         </footer>
       </DialogContent>

@@ -17,18 +17,14 @@ test('only a known reason is a reason; an event, a paper or nothing is the gener
   assert.equal(normalizeAuthReason(undefined), 'default');
 });
 
-test('each door says why it opened, in both languages', () => {
-  assert.equal(authPromptCopy('default', 'es').title, 'Haz que PaperTok sea tuyo');
-  assert.equal(authPromptCopy('default', 'en').title, 'Make PaperTok yours');
-  assert.match(authPromptCopy('paper_rewrite', 'es').title, /Leer en simple/);
-  assert.match(authPromptCopy('paper_rewrite', 'en').title, /plain words/i);
-  assert.match(authPromptCopy('related', 'es').lede, /grafo de citas/);
-  assert.match(authPromptCopy('related', 'en').lede, /citation graph/);
-  assert.match(authPromptCopy('explorer_search', 'es').title, /Buscar/);
-  assert.match(authPromptCopy('explorer_search', 'en').title, /Search/);
+test('each door says why it opened', () => {
+  assert.equal(authPromptCopy('default').title, 'Make PaperTok yours');
+  assert.match(authPromptCopy('paper_rewrite').title, /plain words/i);
+  assert.match(authPromptCopy('related').lede, /citation graph/);
+  assert.match(authPromptCopy('explorer_search').title, /Search/);
   // A reason the table does not know falls back to the general copy, not to
   // an empty dialog.
-  assert.equal(authPromptCopy({ type: 'click' }, 'es').title, 'Haz que PaperTok sea tuyo');
+  assert.equal(authPromptCopy({ type: 'click' }).title, 'Make PaperTok yours');
 });
 
 test('a missing session is told apart from a failure', () => {

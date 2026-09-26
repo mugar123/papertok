@@ -48,7 +48,7 @@ const GENERIC_TOPIC_LABELS = new Set([
  * The taxonomy with its labels already normalised, built once.
  *
  * `findLocalTopic` used to walk every area and every subcategory and run
- * `normalizeLabel` — NFKD plus two Unicode regexes — over both labels of each,
+ * `normalizeLabel` — NFKD plus two Unicode regexes — over the label of each,
  * on EVERY call. That is a few hundred normalisations per lookup, and a feed
  * card asks for one per topic it shows.
  *
@@ -68,23 +68,23 @@ function getTaxonomyIndex() {
   taxonomyIndex = Object.entries(CATEGORIES).map(([areaId, area]) => ({
     areaId,
     area,
-    areaKeys: [area.label, area.labelEn].map(normalizeLabel),
+    areaKeys: [normalizeLabel(area.label)],
     subcategories: Object.entries(area.subcategories || {}).map(([categoryId, category]) => ({
       categoryId,
       category,
-      keys: [category.label, category.labelEn].map(normalizeLabel),
+      keys: [normalizeLabel(category.label)],
     })),
   }));
   return taxonomyIndex;
 }
 
-function findLocalTopic(value, language = 'es') {
+function findLocalTopic(value) {
   if (!value) return null;
   if (CATEGORIES[value]) {
     const area = CATEGORIES[value];
     return {
       id: value,
-      label: language === 'en' ? area.labelEn || area.label : area.label,
+      label: area.label,
       type: 'topic',
       reliable: true,
     };
@@ -95,7 +95,7 @@ function findLocalTopic(value, language = 'es') {
     if (areaKeys.some(label => label === normalized)) {
       return {
         id: areaId,
-        label: language === 'en' ? area.labelEn || area.label : area.label,
+        label: area.label,
         type: 'topic',
         reliable: true,
       };
@@ -104,7 +104,7 @@ function findLocalTopic(value, language = 'es') {
       if (categoryId === value || keys.some(label => label === normalized)) {
         return {
           id: categoryId,
-          label: language === 'en' ? category.labelEn || category.label : category.label,
+          label: category.label,
           type: 'topic',
           reliable: true,
         };
@@ -241,13 +241,13 @@ export function resolveQueryTopicRoute(id, searchParams) {
   return topic?.id === id ? topic : null;
 }
 
-export function resolvePaperTopic(value, language = 'es') {
+export function resolvePaperTopic(value) {
   const concept = typeof value === 'object' && value !== null ? value : null;
   const label = cleanTopicText(
     concept?.display_name || concept?.displayName || concept?.name || concept?.label || value,
   );
-  const local = findLocalTopic(concept?.categoryId || label, language)
-    || (typeof value === 'string' ? findLocalTopic(value, language) : null);
+  const local = findLocalTopic(concept?.categoryId || label)
+    || (typeof value === 'string' ? findLocalTopic(value) : null);
   if (local) return local;
 
   const rawId = concept?.id || concept?.openAlexId || '';
@@ -290,7 +290,7 @@ export function paperMatchesLocalTopic(paper, topic) {
 
   const paperCategories = [paper?.primaryCategory, ...(paper?.categories || [])].filter(Boolean);
 
-  const topicLabels = [topic?.display_name, topic?.labelEn]
+  const topicLabels = [topic?.display_name, topic?.label]
     .map(normalizeLabel)
     .filter(label => label.length >= 4);
   if (topicLabels.length === 0) return false;

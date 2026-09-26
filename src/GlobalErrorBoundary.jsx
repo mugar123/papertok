@@ -1,23 +1,11 @@
 import React from 'react';
 
 const COPY = {
-  es: {
-    title: 'Se ha producido un error',
-    body: 'PaperTok no pudo completar esta acción. Recarga la página para intentarlo de nuevo.',
-    retry: 'Recargar',
-    details: 'Detalles técnicos',
-  },
-  en: {
-    title: 'Something went wrong',
-    body: 'PaperTok could not complete this action. Reload the page to try again.',
-    retry: 'Reload',
-    details: 'Technical details',
-  },
+  title: 'Something went wrong',
+  body: 'PaperTok could not complete this action. Reload the page to try again.',
+  retry: 'Reload',
+  details: 'Technical details',
 };
-
-function activeLanguage() {
-  return document.documentElement.lang === 'en' ? 'en' : 'es';
-}
 
 export default class GlobalErrorBoundary extends React.Component {
   constructor(props) {
@@ -36,7 +24,7 @@ export default class GlobalErrorBoundary extends React.Component {
 
   render() {
     if (this.state.hasError) {
-      const copy = COPY[activeLanguage()];
+      const copy = COPY;
       return (
         <div style={{ padding: '24px', background: '#0c0b10', color: '#f6f4fb', zIndex: 99999, position: 'fixed', inset: 0, overflow: 'auto', display: 'grid', placeItems: 'center', textAlign: 'center', fontFamily: 'Inter, system-ui, sans-serif' }}>
           <div style={{ maxWidth: '560px' }}>

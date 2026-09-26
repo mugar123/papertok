@@ -32,7 +32,7 @@ test('round-trips bounded query-topic metadata without unrelated fields', () => 
       categoryIds: ['bio.gen'],
       ignored: 'not part of the contract',
     },
-  }, 'en');
+  });
 
   assert.deepEqual(serialized.metadata, {
     query: 'Spatial transcriptomics',
@@ -62,7 +62,7 @@ test('serializes a compact paper preview with follow reasons', () => {
     _followedEntityMatches: [{ type: 'topic', canonicalId: 'T1', displayName: 'Physics' }],
   });
   assert.equal(preview.abstract, undefined);
-  assert.equal(preview.matches[0].displayName, 'Física');
+  assert.equal(preview.matches[0].displayName, 'Physics');
 });
 
 test('localizes followed topics and institutions for English digests', () => {
@@ -70,7 +70,7 @@ test('localizes followed topics and institutions for English digests', () => {
     type: 'topic',
     canonicalId: 'astro-ph.GA',
     displayName: 'Astrofísica Galáctica',
-  }, 'en').displayName, 'Astrophysics of Galaxies');
+  }).displayName, 'Astrophysics of Galaxies');
 
   assert.equal(serializeFollowForNotifications({
     type: 'institution',
@@ -82,7 +82,7 @@ test('localizes followed topics and institutions for English digests', () => {
         es: 'Universidad de Salamanca',
       },
     },
-  }, 'en').displayName, 'University of Salamanca');
+  }).displayName, 'University of Salamanca');
 });
 
 test('uses the requested language for paper follow reasons', () => {
@@ -94,7 +94,7 @@ test('uses the requested language for paper follow reasons', () => {
       canonicalId: 'quant-ph',
       displayName: 'Física Cuántica',
     }],
-  }, 'en');
+  });
 
   assert.equal(preview.matches[0].displayName, 'Quantum Physics');
 });

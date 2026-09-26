@@ -32,7 +32,7 @@ import { loadKatex } from './katexLoader.js';
  * `renderPdfPages` down needs a DOM and is verified live.
  */
 
-const SECTION_FALLBACK = { es: 'Sección', en: 'Section' };
+const SECTION_FALLBACK = { en: 'Section' };
 
 /**
  * Everything the pages need, decided before any DOM exists. The include
@@ -62,26 +62,26 @@ export function buildPdfModel({
   paper,
   sections = [],
   annotations = [],
-  language = 'es',
+  language = 'en',
   level = 'university',
   kindLabels = {},
   originalUrl = '',
   generatedAt = new Date(),
   include = {},
 } = {}) {
-  const copy = documentCopy(language);
+  const copy = documentCopy();
   const kept = exportableAnnotations(annotations, {
     sections, level, language, include,
   });
 
   const { byParagraph, numbered } = numberAnnotations(sections, kept);
-  const fallback = SECTION_FALLBACK[language === 'en' ? 'en' : 'es'];
+  const fallback = SECTION_FALLBACK['en'];
 
   return {
     meta: documentMeta({
       paper, language, level, originalUrl, generatedAt, counts: summarizeExport(kept),
     }),
-    language: language === 'en' ? 'en' : 'es',
+    language: 'en',
     labels: { mine: copy.mine, ai: copy.ai },
     sections: sections.map(section => {
       const label = section?.heading || kindLabels[section?.kind] || fallback;
@@ -104,7 +104,7 @@ export function buildPdfModel({
       };
     }),
     noteCount: numbered.length,
-    fileName: exportFileName(paper, language, 'pdf'),
+    fileName: exportFileName(paper, 'pdf'),
   };
 }
 

@@ -5,7 +5,6 @@ import FeedContainer from '../Feed/FeedContainer';
 import { useFeed } from '../../context/FeedContext';
 import { useFollowing } from '../../context/FollowingContext';
 import { useFollowingUpdates } from '../../context/FollowingUpdatesContext';
-import { useLanguage } from '../../context/LanguageContext';
 import { FOLLOWING_ORDER_STORAGE_KEY } from '../../utils/followingOrderStorage.js';
 import {
   followingFirstLoadPending,
@@ -59,7 +58,6 @@ lastOrder.orderKeys = readStoredOrderKeys();
 
 export default function FollowingFeedPage({ onOpenPdf, onSaveToList, onOpenComments = null }) {
   const navigate = useNavigate();
-  const { isEnglish } = useLanguage();
   const { followedEntities } = useFollowing();
   // Skip writes into this set (`markNotInterested`), and For You gets its
   // effect for free because that same call drops the paper from the list it
@@ -106,33 +104,27 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList, onOpenComme
   const emptyState = useMemo(() => hasFollows ? (
     <div className="ff-empty" role="status">
       <Checks size={30} aria-hidden="true" />
-      <h2>{isEnglish ? 'No new publications from what you follow' : 'No hay publicaciones nuevas de tus seguimientos'}</h2>
-      <p>{isEnglish
-        ? 'This feed collects recent work from what you follow and will update when new papers appear.'
-        : 'La bandeja recoge trabajos recientes de lo que sigues y se actualizará cuando aparezcan.'}</p>
+      <h2>{'No new publications from what you follow'}</h2>
+      <p>{'This feed collects recent work from what you follow and will update when new papers appear.'}</p>
       <button className="feed-retry-btn" onClick={() => refresh()}>
-        {isEnglish ? 'Check for updates' : 'Buscar novedades'}
+        {'Check for updates'}
       </button>
     </div>
   ) : (
     <div className="ff-empty" role="status">
       <BellRinging size={30} aria-hidden="true" />
-      <h2>{isEnglish
-        ? 'You are not following any authors, topics, institutions, or projects yet'
-        : 'Aún no sigues autores, temas, instituciones o proyectos'}</h2>
-      <p>{isEnglish
-        ? 'Follow anything from a paper or its page and its publications will appear here.'
-        : 'Sigue cualquier entidad desde un paper o desde su página y sus publicaciones aparecerán aquí.'}</p>
+      <h2>{'You are not following any authors, topics, institutions, or projects yet'}</h2>
+      <p>{'Follow anything from a paper or its page and its publications will appear here.'}</p>
       <div className="ff-empty-actions">
         <button className="feed-retry-btn" onClick={() => navigate('/feed')}>
-          {isEnglish ? 'Discover papers' : 'Descubrir papers'}
+          {'Discover papers'}
         </button>
         <button className="feed-retry-btn ff-empty-secondary" onClick={() => navigate('/search')}>
-          <MagnifyingGlass size={15} aria-hidden="true" /> {isEnglish ? 'Search entities' : 'Buscar entidades'}
+          <MagnifyingGlass size={15} aria-hidden="true" /> {'Search entities'}
         </button>
       </div>
     </div>
-  ), [hasFollows, isEnglish, navigate, refresh]);
+  ), [hasFollows, navigate, refresh]);
 
   const source = useMemo(() => ({
     papers: shownPapers,
@@ -158,8 +150,8 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList, onOpenComme
       // `/feed` los pasa desde App.jsx y `/research` los escribe él mismo, y
       // «Siguiendo» se quedó sin ambos por el camino.
       landmark={{
-        label: isEnglish ? 'Papers from what you follow' : 'Papers de tus seguimientos',
-        heading: isEnglish ? 'Following' : 'Siguiendo',
+        label: 'Papers from what you follow',
+        heading: 'Following',
       }}
       onOpenPdf={onOpenPdf}
       onSaveToList={onSaveToList}

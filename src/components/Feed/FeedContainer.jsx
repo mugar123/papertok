@@ -3,7 +3,6 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowsClockwise, Check, CloudSlash } from '@phosphor-icons/react';
 import { Button } from '../ui/button.jsx';
 import { useFeed } from '../../context/FeedContext';
-import { useLanguage } from '../../context/LanguageContext';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 
 import PaperCard from './PaperCard';
@@ -205,7 +204,6 @@ function FeedLandmark({ landmark, className = 'feed-wrapper', children }) {
  */
 export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments = null, source = null, scrollKey = 'forYou', landmark = null }) {
   const feed = useFeed();
-  const { language, isEnglish } = useLanguage();
   const publicMode = Boolean(source?.publicMode);
   const onAuthRequired = source?.onAuthRequired;
   const dismissFromSource = source?.onNotInterested;
@@ -1005,11 +1003,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
         <div className="feed-empty-icon" aria-hidden="true">
           <CloudSlash size={26} />
         </div>
-        <h2>{isEnglish ? 'Error loading papers' : 'Error cargando papers'}</h2>
-        <p role="alert">{getUiErrorMessage(error, language, 'FEED_LOAD_FAILED')}</p>
+        <h2>{'Error loading papers'}</h2>
+        <p role="alert">{getUiErrorMessage(error, 'FEED_LOAD_FAILED')}</p>
         <Button size="lg" onClick={handleRefresh}>
           <ArrowsClockwise size={16} aria-hidden="true" />
-          {isEnglish ? 'Try again' : 'Reintentar'}
+          {'Try again'}
         </Button>
       </FeedLandmark>
     );
@@ -1037,14 +1035,12 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
         <div className="atom-loader">
           <AnimatedAtom size={80} strokeWidth={1} className="atom-loader-icon" />
         </div>
-        <h2>{isEnglish ? 'Searching for discoveries...' : 'Buscando descubrimientos...'}</h2>
+        <h2>{'Searching for discoveries...'}</h2>
         <p>
-          {isEnglish
-            ? 'There are no papers in your categories yet. Try broadening your interests.'
-            : 'Aún no hay papers en tus categorías. Prueba a ampliar tus intereses.'}
+          {'There are no papers in your categories yet. Try broadening your interests.'}
         </p>
         <button className="feed-retry-btn" onClick={handleRefresh}>
-          {isEnglish ? 'Explore again' : 'Explorar de nuevo'}
+          {'Explore again'}
         </button>
       </FeedLandmark>
     );
@@ -1052,9 +1048,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
 
   if (displayState === FEED_DISPLAY_STATES.FEED || atomVeil) {
   const refreshPhase = isRefreshing ? 'refreshing' : (refreshDone || doneHold) ? 'done' : 'idle';
-  const refreshLabels = isEnglish
-    ? { refreshing: 'Refreshing…', done: 'Updated', idle: 'Refresh' }
-    : { refreshing: 'Actualizando…', done: 'Actualizado', idle: 'Actualizar' };
+  const refreshLabels = { refreshing: 'Refreshing…', done: 'Updated', idle: 'Refresh' };
   const refreshLabel = refreshLabels[refreshPhase];
   const faceMotion = refreshFaceMotion(refreshPhase, prefersReducedMotion);
   return (
@@ -1200,13 +1194,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
             <motion.div className="feed-empty-copy" variants={prefersReducedMotion ? undefined : ATOM_COPY_VARIANTS}>
               <h2>
                 {atomVeil === 'gathering'
-                  ? (isEnglish ? 'Gathering papers...' : 'Sintetizando papers...')
-                  : (isEnglish ? 'Searching for discoveries...' : 'Buscando descubrimientos...')}
+                  ? ('Gathering papers...')
+                  : ('Searching for discoveries...')}
               </h2>
               <p>
-                {isEnglish
-                  ? 'Connecting to scientific sources to bring you the latest research'
-                  : 'Conectando con las fuentes para traer lo último en ciencia'}
+                {'Connecting to scientific sources to bring you the latest research'}
               </p>
             </motion.div>
           </motion.div>

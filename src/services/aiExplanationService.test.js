@@ -69,7 +69,7 @@ test('formats the configured AI model for the explanation metadata', () => {
   assert.equal(formatAIModelLabel('gemini-3.5-flash'), 'Gemini 3.5 Flash');
   assert.equal(formatAIModelLabel('moonshotai/Kimi-K3', 'modal-kimi'), 'Kimi K3 · Modal');
   assert.equal(formatAIModelLabel('deepseek-ai/deepseek-v4-flash-0731', 'nvidia-deepseek'), 'DeepSeek V4 Flash · NVIDIA');
-  assert.equal(formatAIModelLabel(''), 'Modelo de IA');
+  assert.equal(formatAIModelLabel(''), 'AI model');
 });
 
 test('tells an expired session apart from a broken AI service', () => {

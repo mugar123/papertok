@@ -129,7 +129,7 @@ export function useEntitySearch({ usersRequested = false } = {}) {
     requestAbortRef.current?.abort();
     const requestController = new AbortController();
     requestAbortRef.current = requestController;
-    const localTopics = searchLocalTopics(searchTerm, language, 8);
+    const localTopics = searchLocalTopics(searchTerm, 8);
 
     setIsSearching(true);
     setHasSearched(true);

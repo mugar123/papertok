@@ -91,7 +91,7 @@ export async function findOpenAccessCopy(rawDoi) {
     return result;
   } catch (error) {
     rememberFailure(doi);
-    if (error?.name !== 'AbortError') console.warn('Unpaywall no está disponible', error);
+    if (error?.name !== 'AbortError') console.warn('Unpaywall is unavailable', error);
     return null;
   } finally {
     clearTimeout(timeout);

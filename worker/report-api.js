@@ -2637,14 +2637,6 @@ export default {
       }
     }
     if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
-    if (url.pathname === '/locale') {
-      if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
-      const country = String(request.cf?.country || '').trim().toUpperCase();
-      return json({ country: /^[A-Z]{2}$/.test(country) ? country : null }, 200, {
-        ...corsHeaders(origin, env),
-        'cache-control': 'private, no-store',
-      });
-    }
     if (url.pathname === '/health') {
       return json({
         ok: true,

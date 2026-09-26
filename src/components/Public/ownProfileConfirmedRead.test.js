@@ -88,8 +88,8 @@ test('a slow wait never replaces a page that is already showing a profile', asyn
 test('the waits reuse the state page: a title, the same body, and the same Try again', async () => {
   const jsx = await read('./PublicProfilePage.jsx');
   for (const key of ['slowTitle', 'offlineTitle', 'waitingBody']) {
-    assert.equal((jsx.match(new RegExp(`^    ${key}: '`, 'gm')) || []).length, 2,
-      `${key} exists in both languages`);
+    assert.equal((jsx.match(new RegExp(`^    ${key}: '`, 'gm')) || []).length, 1,
+      `${key} has copy`);
   }
   const stateMap = jsx.match(/const state = \{[\s\S]*?\}\[status\];/);
   assert.ok(stateMap, 'the state page still maps status to copy');

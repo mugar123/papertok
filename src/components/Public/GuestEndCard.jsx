@@ -15,20 +15,6 @@ import './GuestEndCard.css';
 // already moved the user somewhere else, and this one has not moved anybody.
 
 const COPY = {
-  es: {
-    end: 'Fin de la prueba',
-    count: count => `${count} ${count === 1 ? 'paper' : 'papers'}`,
-    heading: '¿Quieres continuar?',
-    lede: 'Esto es todo lo que se ve sin cuenta. Al otro lado, el feed no se acaba.',
-    perks: [
-      'El feed sigue, y aprende de lo que lees',
-      'Guarda en tus listas lo que te interese',
-      'Sigue a autores, temas e instituciones',
-    ],
-    cta: 'Regístrate',
-    foot: 'Con Google o GitHub, y sin salir de esta pantalla.',
-    region: 'Continúa en PaperTok con una cuenta',
-  },
   en: {
     end: 'End of the preview',
     count: count => `${count} ${count === 1 ? 'paper' : 'papers'}`,
@@ -48,9 +34,9 @@ const COPY = {
 const PERK_ICONS = [InfinityIcon, BookmarkSimple, Users];
 
 export default function GuestEndCard({ paperCount = 0, position = 0, onSignUp }) {
-  const { isEnglish, language } = useLanguage();
+  const { language } = useLanguage();
   const { trackEvent } = useAnalyticsConsent();
-  const copy = COPY[isEnglish ? 'en' : 'es'];
+  const copy = COPY.en;
   const cardRef = useRef(null);
   const trackedRef = useRef(false);
 

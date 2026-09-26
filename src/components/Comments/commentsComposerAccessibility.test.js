@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises';
  * and 3.3.1).
  *
  * The composer's only visible label used to be its own placeholder
- * ("Add a comment..." / "Añade un comentario..."), which vanishes the moment
+ * ("Add a comment..."), which vanishes the moment
  * anyone types -- not a label. `composerError` (set from `explainDenial` when
  * posting or editing fails: throttled, frozen, or a bare write failure) was
  * announced through `role="alert"` but never tied to the field it is about,
@@ -57,8 +57,8 @@ test('the composer textarea is named by more than its placeholder', async () => 
 
   assert.match(
     jsx,
-    /composerLabel:\s*\{\s*es:\s*'[^']+',\s*en:\s*'[^']+'\s*\}/,
-    'the bilingual COPY.composerLabel entry the aria-label above reads from is gone.',
+    /composerLabel:\s*\{\s*en:\s*'[^']+',?\s*\}/,
+    'the COPY.composerLabel entry the aria-label above reads from is gone.',
   );
 });
 

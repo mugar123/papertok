@@ -8,12 +8,6 @@ const IMMEDIATE_REPEAT_PENALTY = 12;
 const MAX_CONSECUTIVE_PER_FOLLOW = 2;
 
 const TYPE_LABELS = {
-  es: {
-    author: 'a',
-    topic: '',
-    institution: '',
-    project: 'el proyecto',
-  },
   en: {
     author: '',
     topic: '',
@@ -31,29 +25,26 @@ const TYPE_LABELS = {
  * @param {Array<{type: string, displayName: string}>} matches
  * @returns {string}
  */
-export function buildFollowReasonLabel(matches = [], language = 'es') {
+export function buildFollowReasonLabel(matches = []) {
   const named = matches.filter(match => match?.displayName);
   if (named.length === 0) return '';
-  const isEnglish = language === 'en';
   if (named.length > 2) {
-    return isEnglish ? 'Matches several things you follow' : 'Coincide con varios de tus seguimientos';
+    return 'Matches several things you follow';
   }
 
   const parts = named.map((match) => {
-    const connector = TYPE_LABELS[isEnglish ? 'en' : 'es'][match.type] ?? '';
+    const connector = TYPE_LABELS.en[match.type] ?? '';
     const localizedTopic = match.type === 'topic'
-      ? resolvePaperTopic(match.canonicalId, language)
-        || resolvePaperTopic(match.displayName, language)
+      ? resolvePaperTopic(match.canonicalId)
+        || resolvePaperTopic(match.displayName)
       : null;
     const localizedInstitution = match.type === 'institution'
-      ? getLocalizedInstitutionName(match, language)
+      ? getLocalizedInstitutionName(match)
       : null;
     const displayName = localizedTopic?.label || localizedInstitution || match.displayName;
     return connector ? `${connector} ${displayName}` : displayName;
   });
-  return isEnglish
-    ? `Because you follow ${parts.join(' and ')}`
-    : `Porque sigues ${parts.join(' y ')}`;
+  return `Because you follow ${parts.join(' and ')}`;
 }
 
 function getFollowKeys(paper = {}) {

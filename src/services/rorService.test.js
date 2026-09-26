@@ -36,7 +36,6 @@ test('normalizes ROR v2 institutional metadata', () => {
   const institution = normalizeRorInstitution(ROR_RECORD);
   assert.equal(institution.display_name, 'Universidad de Salamanca');
   assert.deepEqual(institution.localized_names, {
-    es: 'Universidad de Salamanca',
     en: 'University of Salamanca',
   });
   assert.equal(institution.domains[0], 'usal.es');

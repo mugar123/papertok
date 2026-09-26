@@ -1,6 +1,5 @@
 import { useEffect, useImperativeHandle, useMemo, useState, useRef, useCallback } from 'react';
 import { useFeed } from '../../context/FeedContext';
-import { useLanguage } from '../../context/LanguageContext';
 import { ArrowSquareOut, X } from '@phosphor-icons/react';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.jsx';
 import './PDFViewer.css';
@@ -16,7 +15,6 @@ import { pdfLinksForPaper } from '../../utils/paperOpenTargets.js';
  * scroll lock and the restore to the button that opened it.
  */
 export default function PDFViewer({ paper, onClose, closeRef = null }) {
-  const { isEnglish } = useLanguage();
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
   const [open, setOpen] = useState(true);
@@ -103,13 +101,13 @@ export default function PDFViewer({ paper, onClose, closeRef = null }) {
         className="pdf-overlay"
         overlayClassName="pdf-scrim"
         showClose={false}
-        closeLabel={isEnglish ? 'Close PDF' : 'Cerrar PDF'}
-        aria-label={isEnglish ? 'PDF viewer' : 'Visor de PDF'}
+        closeLabel={'Close PDF'}
+        aria-label={'PDF viewer'}
       >
         <div className="pdf-viewer">
           {/* Top bar */}
           <div className="pdf-topbar glass-strong">
-            <DialogClose className="pdf-close-btn" aria-label={isEnglish ? 'Close PDF' : 'Cerrar PDF'} title={isEnglish ? 'Close' : 'Cerrar'}>
+            <DialogClose className="pdf-close-btn" aria-label={'Close PDF'} title={'Close'}>
               <X size={20} aria-hidden="true" />
             </DialogClose>
 
@@ -125,7 +123,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }) {
               className="pdf-external-btn"
             >
               <ArrowSquareOut size={16} aria-hidden="true" />
-              <span>{isEnglish ? 'New tab' : 'Nueva pestaña'}</span>
+              <span>{'New tab'}</span>
             </a>}
           </div>
 
@@ -133,18 +131,16 @@ export default function PDFViewer({ paper, onClose, closeRef = null }) {
           {canEmbed && !iframeLoaded && !showFallback && (
             <div className="pdf-loading">
               <div className="pdf-loading-spinner" />
-              <p>{isEnglish ? 'Loading PDF...' : 'Cargando PDF...'}</p>
+              <p>{'Loading PDF...'}</p>
             </div>
           )}
 
           {/* Touch hand-off: the full PDF, in the one viewer that can page it */}
           {pdfUrl && coarsePointer && (
             <div className="pdf-fallback pdf-handoff">
-              <p>{isEnglish
-                ? 'On a phone, the embedded viewer can only show the first page — the full PDF opens in its own tab.'
-                : 'En el móvil, el visor embebido solo puede enseñar la primera página: el PDF completo se abre en su propia pestaña.'}</p>
+              <p>{'On a phone, the embedded viewer can only show the first page — the full PDF opens in its own tab.'}</p>
               <a href={pdfUrl} target="_blank" rel="noopener noreferrer" className="pdf-fallback-link">
-                {isEnglish ? 'Open the full PDF →' : 'Abrir el PDF completo →'}
+                {'Open the full PDF →'}
               </a>
             </div>
           )}
@@ -155,16 +151,14 @@ export default function PDFViewer({ paper, onClose, closeRef = null }) {
           {shouldShowFallback && !(coarsePointer && pdfUrl) && !iframeLoaded && (
             <div className="pdf-fallback">
               <p>{!fullTextUrl
-                ? (isEnglish ? 'No open-access PDF is available.' : 'No hay PDF de acceso abierto disponible.')
+                ? ('No open-access PDF is available.')
                 : !pdfUrl
-                  ? (isEnglish
-                    ? 'This PDF is hosted somewhere that refuses to be embedded — it opens in its own tab.'
-                    : 'Este PDF está alojado donde no se deja enmarcar: se abre en su propia pestaña.')
-                  : (isEnglish ? 'The PDF could not be loaded in the app.' : 'El PDF no pudo cargarse en la app.')}</p>
+                  ? ('This PDF is hosted somewhere that refuses to be embedded — it opens in its own tab.')
+                  : ('The PDF could not be loaded in the app.')}</p>
               {externalUrl && <a href={externalUrl} target="_blank" rel="noopener noreferrer" className="pdf-fallback-link">
                 {fullTextUrl
-                  ? (isEnglish ? 'Open the full PDF →' : 'Abrir el PDF completo →')
-                  : (isEnglish ? 'Open original source in a new tab →' : 'Abrir fuente original en nueva pestaña →')}
+                  ? ('Open the full PDF →')
+                  : ('Open original source in a new tab →')}
               </a>}
             </div>
           )}

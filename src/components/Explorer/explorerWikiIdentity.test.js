@@ -25,7 +25,7 @@ test('the Explorer loads its Wikipedia block through the identity-aware loader',
   const effect = bounded(source, 'if (!canLoadWikiInfo) {', 'setSettledWikiRequestKey(wikiRequestKey)', 'the Wikipedia effect', 60);
   assert.match(
     effect,
-    /loadEntityWikiInfo\(\{\s*entity: wikiEntity,\s*title: entityDisplayName,\s*alternateTitle,\s*language,\s*signal: controller\.signal,\s*\}\)/,
+    /loadEntityWikiInfo\(\{\s*entity: wikiEntity,\s*title: entityDisplayName,\s*signal: controller\.signal,\s*\}\)/,
   );
   assert.doesNotMatch(source, /getEntityWikiInfo\(/);
 });

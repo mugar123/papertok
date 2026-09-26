@@ -1,62 +1,9 @@
 /**
  * Country data for PaperTok Report filters.
- * Maps ISO 3166-1 alpha-2 codes to Spanish names.
+ * Maps ISO 3166-1 alpha-2 codes to English names.
  */
 
 export const COUNTRIES = {
-  US: 'Estados Unidos',
-  CN: 'China',
-  GB: 'Reino Unido',
-  DE: 'Alemania',
-  JP: 'Japón',
-  FR: 'Francia',
-  CA: 'Canadá',
-  IT: 'Italia',
-  IN: 'India',
-  AU: 'Australia',
-  KR: 'Corea del Sur',
-  ES: 'España',
-  BR: 'Brasil',
-  NL: 'Países Bajos',
-  CH: 'Suiza',
-  SE: 'Suecia',
-  RU: 'Rusia',
-  IL: 'Israel',
-  TW: 'Taiwán',
-  AT: 'Austria',
-  BE: 'Bélgica',
-  DK: 'Dinamarca',
-  FI: 'Finlandia',
-  NO: 'Noruega',
-  PL: 'Polonia',
-  SG: 'Singapur',
-  PT: 'Portugal',
-  IE: 'Irlanda',
-  CZ: 'República Checa',
-  NZ: 'Nueva Zelanda',
-  MX: 'México',
-  AR: 'Argentina',
-  CL: 'Chile',
-  CO: 'Colombia',
-  ZA: 'Sudáfrica',
-  TR: 'Turquía',
-  SA: 'Arabia Saudí',
-  EG: 'Egipto',
-  NG: 'Nigeria',
-  KE: 'Kenia',
-  TH: 'Tailandia',
-  MY: 'Malasia',
-  ID: 'Indonesia',
-  PK: 'Pakistán',
-  IR: 'Irán',
-  GR: 'Grecia',
-  HU: 'Hungría',
-  RO: 'Rumanía',
-  UA: 'Ucrania',
-  HK: 'Hong Kong',
-};
-
-export const COUNTRIES_EN = {
   US: 'United States',
   CN: 'China',
   GB: 'United Kingdom',
@@ -120,21 +67,19 @@ function normalizeCountrySearch(value) {
 }
 
 /**
- * Get the localized name for a country code.
+ * Get the name for a country code.
  */
-export function getCountryName(code, language = 'es') {
-  const names = language === 'en' ? COUNTRIES_EN : COUNTRIES;
-  return names[code] || code;
+export function getCountryName(code) {
+  return COUNTRIES[code] || code;
 }
 
 /**
- * Search countries by localized name. Returns array of { code, name }.
+ * Search countries by name. Returns array of { code, name }.
  */
-export function searchCountries(query, language = 'es') {
+export function searchCountries(query) {
   const q = normalizeCountrySearch(query);
   if (!q) return [];
-  const names = language === 'en' ? COUNTRIES_EN : COUNTRIES;
-  return Object.entries(names)
+  return Object.entries(COUNTRIES)
     .map(([code, name]) => ({
       code,
       name,
@@ -147,7 +92,7 @@ export function searchCountries(query, language = 'es') {
     .sort((a, b) => {
       const aStarts = a.normalizedCode.startsWith(q) ? 0 : a.normalizedName.startsWith(q) ? 1 : 2;
       const bStarts = b.normalizedCode.startsWith(q) ? 0 : b.normalizedName.startsWith(q) ? 1 : 2;
-      return aStarts - bStarts || a.name.localeCompare(b.name, language);
+      return aStarts - bStarts || a.name.localeCompare(b.name, 'en');
     })
     .map(({ code, name }) => ({ code, name }))
     .slice(0, 10);

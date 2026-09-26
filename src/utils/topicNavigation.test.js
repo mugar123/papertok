@@ -11,7 +11,7 @@ import { CATEGORIES } from '../data/categories.js';
 
 test('resolves a PaperTok category id as a reliable topic', () => {
   const topic = resolvePaperTopic('astro-ph.CO');
-  assert.deepEqual(topic, { id: 'astro-ph.CO', label: 'Cosmología', type: 'topic', reliable: true });
+  assert.deepEqual(topic, { id: 'astro-ph.CO', label: 'Cosmology', type: 'topic', reliable: true });
   assert.equal(topicExplorerPath(topic), '/explorer/topic/astro-ph.CO');
 });
 
@@ -126,7 +126,7 @@ test('keeps query-topic metadata bounded to query, source, and scientific catego
 });
 
 test('keeps exact category papers and rejects unrelated supplemental results', () => {
-  const topic = { categoryIds: ['cond-mat.str-el'], display_name: 'Electrones Correlacionados', labelEn: 'Strongly Correlated Electrons' };
+  const topic = { categoryIds: ['cond-mat.str-el'], display_name: 'Strongly Correlated Electrons', label: 'Strongly Correlated Electrons' };
   assert.equal(paperMatchesLocalTopic({ categories: ['cond-mat.str-el'], title: 'A lattice model' }, topic), true);
   assert.equal(paperMatchesLocalTopic({ categories: ['physics.chem-ph'], title: 'Water dehydrogenation by scandium' }, topic), false);
   assert.equal(paperMatchesLocalTopic({ primaryCategory: 'cond-mat.str-el', categories: ['physics.chem-ph'], title: 'Water dehydrogenation by scandium' }, topic), false);
@@ -147,9 +147,9 @@ test('keeps exact category papers and rejects unrelated supplemental results', (
  * The walk still visits in the same order and still stops at the first match,
  * so nothing about WHICH entry wins should have changed. This re-implements the
  * old loop and compares the two over every id and every label the taxonomy has,
- * in both languages, plus the shapes that used to fall through it.
+ * plus the shapes that used to fall through it.
  */
-function findLocalTopicTheOldWay(value, language = 'es') {
+function findLocalTopicTheOldWay(value) {
   const normalizeLabel = (input = '') => String(input || '')
     .normalize('NFKD')
     .replace(/\p{M}/gu, '')
@@ -159,16 +159,16 @@ function findLocalTopicTheOldWay(value, language = 'es') {
   if (!value) return null;
   if (CATEGORIES[value]) {
     const area = CATEGORIES[value];
-    return { id: value, label: language === 'en' ? area.labelEn || area.label : area.label, type: 'topic', reliable: true };
+    return { id: value, label: area.label, type: 'topic', reliable: true };
   }
   const normalized = normalizeLabel(value);
   for (const [areaId, area] of Object.entries(CATEGORIES)) {
-    if ([area.label, area.labelEn].some(label => normalizeLabel(label) === normalized)) {
-      return { id: areaId, label: language === 'en' ? area.labelEn || area.label : area.label, type: 'topic', reliable: true };
+    if (normalizeLabel(area.label) === normalized) {
+      return { id: areaId, label: area.label, type: 'topic', reliable: true };
     }
     for (const [categoryId, category] of Object.entries(area.subcategories || {})) {
-      if (categoryId === value || [category.label, category.labelEn].some(label => normalizeLabel(label) === normalized)) {
-        return { id: categoryId, label: language === 'en' ? category.labelEn || category.label : category.label, type: 'topic', reliable: true };
+      if (categoryId === value || normalizeLabel(category.label) === normalized) {
+        return { id: categoryId, label: category.label, type: 'topic', reliable: true };
       }
     }
   }
@@ -178,27 +178,25 @@ function findLocalTopicTheOldWay(value, language = 'es') {
 test('the indexed taxonomy answers exactly what the per-call walk answered', () => {
   const inputs = [];
   for (const [areaId, area] of Object.entries(CATEGORIES)) {
-    inputs.push(areaId, area.label, area.labelEn);
+    inputs.push(areaId, area.label);
     for (const [categoryId, category] of Object.entries(area.subcategories || {})) {
-      inputs.push(categoryId, category.label, category.labelEn);
+      inputs.push(categoryId, category.label);
     }
   }
   // The shapes that used to fall off the end of the walk, plus the accent and
   // case folding the normaliser is there for.
-  inputs.push('', null, undefined, 'no-such-topic', 'BIOLOGÍA', '  biologia  ', 'Física', 'C123456');
+  inputs.push('', null, undefined, 'no-such-topic', 'BIOLOGY', '  biology  ', 'Phýsics', 'C123456');
 
   let matched = 0;
-  for (const language of ['es', 'en']) {
-    for (const value of inputs) {
-      const now = resolvePaperTopic(value, language);
-      const before = findLocalTopicTheOldWay(value, language);
-      // `resolvePaperTopic` only returns the local answer when there is one;
-      // past that it builds a query topic, which this refactor never touched.
-      if (before) {
-        assert.deepEqual(now, before, `${language}: ${String(value)}`);
-        matched += 1;
-      }
+  for (const value of inputs) {
+    const now = resolvePaperTopic(value);
+    const before = findLocalTopicTheOldWay(value);
+    // `resolvePaperTopic` only returns the local answer when there is one;
+    // past that it builds a query topic, which this refactor never touched.
+    if (before) {
+      assert.deepEqual(now, before, String(value));
+      matched += 1;
     }
   }
-  assert.ok(matched > 60, `the comparison actually exercised the taxonomy (${matched} local hits)`);
+  assert.ok(matched > 30, `the comparison actually exercised the taxonomy (${matched} local hits)`);
 });

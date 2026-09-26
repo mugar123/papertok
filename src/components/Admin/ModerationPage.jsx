@@ -24,35 +24,33 @@ import './ModerationPage.css';
  */
 
 const COPY = {
-  title: { es: 'Moderación', en: 'Moderation' },
-  back: { es: 'Volver', en: 'Back' },
-  loading: { es: 'Cargando...', en: 'Loading...' },
-  refresh: { es: 'Recargar', en: 'Refresh' },
+  title: { en: 'Moderation' },
+  back: { en: 'Back' },
+  loading: { en: 'Loading...' },
+  refresh: { en: 'Refresh' },
   unauthorized: {
-    es: 'Esta cuenta no es la administradora. La cola es invisible para cualquier otra.',
     en: 'This account is not the admin. The queue is invisible to any other.',
   },
-  empty: { es: 'No hay reportes abiertos. Nada que revisar.', en: 'No open reports. Nothing to review.' },
-  error: { es: 'La cola no se pudo cargar.', en: 'The queue could not be loaded.' },
-  killswitch: { es: 'Congelar comentarios en toda la app', en: 'Freeze comments across the app' },
+  empty: { en: 'No open reports. Nothing to review.' },
+  error: { en: 'The queue could not be loaded.' },
+  killswitch: { en: 'Freeze comments across the app' },
   killswitchHint: {
-    es: 'Mientras esté activo, nadie puede crear comentarios ni hilos. Sin deploy.',
     en: 'While on, nobody can create comments or threads. No deploy involved.',
   },
-  reportedBy: { es: 'Reportado por', en: 'Reported by' },
-  targetGone: { es: 'El contenido ya no existe.', en: 'The content no longer exists.' },
-  targetNotComment: { es: 'Reporte sobre un stub de paper (posible duplicado).', en: 'Report about a paper stub (possible duplicate).' },
-  openPaper: { es: 'Abrir el paper', en: 'Open paper' },
-  hide: { es: 'Ocultar', en: 'Hide' },
-  show: { es: 'Mostrar', en: 'Show' },
-  hiddenNow: { es: 'Oculto', en: 'Hidden' },
-  deleteTarget: { es: 'Borrar comentario', en: 'Delete comment' },
-  deleteConfirm: { es: '¿Borrarlo? Sus respuestas también.', en: 'Delete it? Replies go too.' },
-  confirm: { es: 'Sí, borrar', en: 'Yes, delete' },
-  cancel: { es: 'Cancelar', en: 'Cancel' },
-  resolve: { es: 'Resolver', en: 'Resolve' },
-  dismiss: { es: 'Descartar', en: 'Dismiss' },
-  actionError: { es: 'La acción falló. Vuelve a intentarlo.', en: 'The action failed. Try again.' },
+  reportedBy: { en: 'Reported by' },
+  targetGone: { en: 'The content no longer exists.' },
+  targetNotComment: { en: 'Report about a paper stub (possible duplicate).' },
+  openPaper: { en: 'Open paper' },
+  hide: { en: 'Hide' },
+  show: { en: 'Show' },
+  hiddenNow: { en: 'Hidden' },
+  deleteTarget: { en: 'Delete comment' },
+  deleteConfirm: { en: 'Delete it? Replies go too.' },
+  confirm: { en: 'Yes, delete' },
+  cancel: { en: 'Cancel' },
+  resolve: { en: 'Resolve' },
+  dismiss: { en: 'Dismiss' },
+  actionError: { en: 'The action failed. Try again.' },
 };
 
 function formatWhen(value, locale) {
@@ -63,8 +61,8 @@ function formatWhen(value, locale) {
 
 export default function ModerationPage() {
   const navigate = useNavigate();
-  const { isEnglish, locale } = useLanguage();
-  const text = useCallback(entry => entry[isEnglish ? 'en' : 'es'], [isEnglish]);
+  const { locale } = useLanguage();
+  const text = useCallback(entry => entry.en, []);
   const killswitchId = useId();
 
   const [state, setState] = useState({ status: 'loading', reports: [] });

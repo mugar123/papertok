@@ -78,9 +78,8 @@ const REVIEW_TAGS = {
   preprint: {
     key: 'preprint',
     tone: 'amber',
-    label: { es: 'Preprint', en: 'Preprint' },
+    label: { en: 'Preprint' },
     hint: {
-      es: 'Preprint: difundido antes de pasar por revisión por pares.',
       en: 'Preprint: shared before peer review.',
     },
   },
@@ -96,9 +95,8 @@ const ACCESS_TAGS = {
   open: {
     key: 'open',
     tone: 'green',
-    label: { es: 'Acceso abierto', en: 'Open access' },
+    label: { en: 'Open access' },
     hint: {
-      es: 'Se puede leer entero sin suscripción.',
       en: 'Free to read in full.',
     },
   },
@@ -108,37 +106,35 @@ const ACCESS_TAGS = {
   openCopy: {
     key: 'openCopy',
     tone: 'green',
-    label: { es: 'Versión abierta', en: 'Open version' },
+    label: { en: 'Open version' },
     hint: {
-      es: 'Existe una copia libre, aunque la versión publicada sea de pago.',
       en: 'A free copy exists, though the published version is paywalled.',
     },
   },
   subscription: {
     key: 'subscription',
     tone: 'neutral',
-    label: { es: 'Suscripción', en: 'Subscription' },
+    label: { en: 'Subscription' },
     hint: {
-      es: 'El texto completo puede requerir suscripción o pago.',
       en: 'The full text may require a subscription or payment.',
     },
   },
 };
 
-function localize(tag, english) {
+function localize(tag) {
   return {
     key: tag.key,
     tone: tag.tone,
-    label: english ? tag.label.en : tag.label.es,
-    hint: english ? tag.hint.en : tag.hint.es,
+    label: tag.label.en,
+    hint: tag.hint.en,
   };
 }
 
 /** The peer-review chip for a paper, or null when there is nothing to flag. */
-export function reviewTagForPaper(paper, { english = false } = {}) {
+export function reviewTagForPaper(paper) {
   const status = reviewStatusForPaper(paper);
   const tag = status ? REVIEW_TAGS[status] : null;
-  return tag ? localize(tag, english) : null;
+  return tag ? localize(tag) : null;
 }
 
 /**
@@ -152,12 +148,12 @@ export function isPublishedVersionCopy(copy) {
 }
 
 /** The availability chip for a paper, or null when the record cannot say. */
-export function accessTagForPaper(paper, { english = false, openCopy = null } = {}) {
+export function accessTagForPaper(paper, { openCopy = null } = {}) {
   const status = accessStatusForPaper(paper, { openCopy });
   if (!status) return null;
   // "Open version" says the published one is paid, which is false for a copy
   // that IS the published one.
   const weakerCopy = status === 'open' && openCopy && !isPublishedVersionCopy(openCopy);
   const tag = weakerCopy ? ACCESS_TAGS.openCopy : ACCESS_TAGS[status];
-  return localize(tag, english);
+  return localize(tag);
 }

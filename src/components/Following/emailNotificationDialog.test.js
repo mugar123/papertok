@@ -15,7 +15,7 @@ test('the email modal is a modal Dialog whose only way out is the parent\'s onCl
   const jsx = await read('./EmailNotificationModal.jsx');
   assert.match(jsx, /from '\.\.\/ui\/dialog\.jsx'/);
   assert.match(jsx, /<Dialog open=\{isOpen\} onOpenChange=\{nextOpen => \{ if \(!nextOpen\) onClose\(\); \}\} modal>/);
-  assert.match(jsx, /closeLabel=\{isEnglish \? 'Close' : 'Cerrar'\}/);
+  assert.match(jsx, /closeLabel=(?:"Close"|\{'Close'\})/);
   assert.doesNotMatch(jsx, /closeOnEscape|addEventListener|role="dialog"|aria-modal=|useReducedMotion/);
   // framer stays only for the content it animates: the feedback line and
   // the test button's three states.

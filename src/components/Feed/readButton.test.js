@@ -119,6 +119,6 @@ test('the read button reserves both its lines, so the rail never moves under it'
 test('SOURCE: la etiqueta del ojo es «Mark as read»/«Read», nunca la acción de abrir', async () => {
   const card = stripComments(await read('./PaperCard.jsx'));
   const slot = card.slice(card.indexOf('pc-side-btn--seen'), card.indexOf('pc-side-btn--skip'));
-  assert.doesNotMatch(slot, /Read article|Open version|Open source|Leer artículo|Versión abierta/);
-  assert.match(slot, /isReadActive\s*\?\s*\(isEnglish \? 'Read' : 'Leído'\)\s*:\s*\(isEnglish \? 'Mark as read' : 'Marcar leído'\)/);
+  assert.doesNotMatch(slot, /Read article|Open version|Open source/);
+  assert.match(slot, /isReadActive\s*\?\s*\(?'Read'\)?\s*:\s*\(?'Mark as read'\)?/);
 });

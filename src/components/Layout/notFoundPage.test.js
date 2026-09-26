@@ -26,9 +26,8 @@ test('SOURCE: the not-found page is one main with one h1 and a link to the feed'
   assert.match(markup, /<main className="not-found-page">\s*<div className="not-found-card">\s*<h1[^>]*>\{copy\.title\}<\/h1>\s*<p>\{copy\.body\}<\/p>\s*<Link to="\/feed" className="not-found-action">/);
 });
 
-test('SOURCE: the not-found page says so in both languages and is kept out of an index', async () => {
+test('SOURCE: the not-found page says so and is kept out of an index', async () => {
   const code = stripComments(await read('./NotFoundPage.jsx'));
-  assert.match(code, /es: \{\s*title: 'No encontramos esta página',/);
   assert.match(code, /en: \{\s*title: 'We could not find this page',/);
   assert.match(code, /usePublicPageMetadata\(metadata\)/);
   assert.match(code, /noIndex: true/);

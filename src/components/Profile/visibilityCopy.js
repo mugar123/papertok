@@ -6,8 +6,8 @@
  * only a component.
  */
 
-export function visibilityCopy(isEnglish) {
-  return isEnglish ? {
+export function visibilityCopy() {
+  return {
     legend: 'Who can see your profile?',
     publicTitle: 'Public profile',
     publicBody: 'Anyone with the link sees your name, bio and pinned lists. Your profile can be followed, and it appears when signed-in people search for users by handle or name.',
@@ -20,18 +20,5 @@ export function visibilityCopy(isEnglish) {
       'The number of people following you stays countable.',
     ],
     changeLater: 'You can change this whenever you want, in Settings.',
-  } : {
-    legend: '¿Quién puede ver tu perfil?',
-    publicTitle: 'Perfil público',
-    publicBody: 'Cualquiera con el enlace ve tu nombre, tu biografía y tus listas fijadas. Tu perfil se puede seguir y aparece cuando alguien con sesión busca usuarios por handle o por nombre.',
-    privateTitle: 'Perfil privado',
-    privateBody: 'Solo tú ves tu perfil. Su página no se abre para nadie más, con sesión o sin ella, y no apareces en la búsqueda de usuarios.',
-    notProtectedTitle: 'Lo que ser privado no cubre',
-    notProtected: [
-      'Las listas que ya publicaste siguen siendo públicas y accesibles por su enlace — ser privado les quita tu nombre, no las retira. Se despublican en Mis listas.',
-      'Tu handle sigue reservado, así que nadie más puede cogerlo — lo que también significa que se puede saber que ese handle existe.',
-      'El número de personas que te siguen se puede seguir contando.',
-    ],
-    changeLater: 'Puedes cambiarlo cuando quieras, en Ajustes.',
   };
 }

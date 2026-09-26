@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowClockwise, ArrowLeft, House } from '@phosphor-icons/react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useFeed } from '../../context/FeedContext.jsx';
 import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.js';
 import { fetchPapersByIds } from '../../services/arxivService.js';
@@ -32,35 +31,27 @@ import './PublicPaperPage.css';
 
 const COPY = {
   loading: {
-    es: 'Cargando paper...',
     en: 'Loading paper...',
   },
   notFoundTitle: {
-    es: 'No encontramos este paper',
     en: 'We could not find this paper',
   },
   notFoundDescription: {
-    es: 'Puede que el enlace ya no esté disponible o no sea válido.',
     en: 'The link may no longer be available or may not be valid.',
   },
   errorTitle: {
-    es: 'No se pudo cargar el paper',
     en: 'The paper could not be loaded',
   },
   errorDescription: {
-    es: 'Revisa tu conexión y vuelve a intentarlo.',
     en: 'Check your connection and try again.',
   },
   retry: {
-    es: 'Reintentar',
     en: 'Retry',
   },
   back: {
-    es: 'Volver',
     en: 'Back',
   },
   home: {
-    es: 'Inicio',
     en: 'Home',
   },
 };
@@ -119,7 +110,6 @@ export default function PublicPaperPage({
   const { paperKey = '' } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { language } = useLanguage();
   const {
     likedPaperIds,
     savedPaperIds,
@@ -206,8 +196,7 @@ export default function PublicPaperPage({
   const status = hasCurrentResult
     ? result.status
     : (seedPainted || sharePainted ? 'ready' : (identity ? 'loading' : 'not-found'));
-  const isEnglish = language === 'en';
-  const text = useCallback((entry) => entry[isEnglish ? 'en' : 'es'], [isEnglish]);
+  const text = useCallback((entry) => entry.en, []);
 
   // The card arrives in up to two beats: the copy handed over by the link,
   // then the full paper once the providers answer. Declared as variants rather
@@ -332,7 +321,7 @@ export default function PublicPaperPage({
           <ArrowLeft size={20} />
         </Button>
       ) : (
-        <nav className="public-paper-nav" aria-label={isEnglish ? 'Paper navigation' : 'Navegación del paper'}>
+        <nav className="public-paper-nav" aria-label={'Paper navigation'}>
           <button type="button" className="public-paper-nav-button" onClick={goBack} aria-label={text(COPY.back)} title={text(COPY.back)}>
             <ArrowLeft size={20} />
           </button>
@@ -373,7 +362,7 @@ export default function PublicPaperPage({
           <CommentsSheet
             paper={paper}
             isAuthenticated={isAuthenticated}
-            isEnglish={isEnglish}
+           
             onClose={() => setCommentsOpen(false)}
             onAuthRequired={onAuthRequired}
           />

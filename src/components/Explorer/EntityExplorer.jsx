@@ -171,13 +171,6 @@ const handleActivationKey = (event, action) => {
 };
 
 const ROR_RELATION_LABELS = {
-  es: {
-    parent: 'Parte de',
-    child: 'Incluye',
-    related: 'Relacionada',
-    predecessor: 'Predecesora',
-    successor: 'Sucesora',
-  },
   en: {
     parent: 'Part of',
     child: 'Includes',
@@ -233,7 +226,7 @@ export default function EntityExplorer({
   // down: see the measurement in usePageArrival.js.
   const isPageArriving = useIsPageArriving();
   const afterPageArrival = useAfterPageArrival();
-  const { language, isEnglish, locale } = useLanguage();
+  const { language, locale } = useLanguage();
   const { trackEvent } = useAnalyticsConsent();
   const [searchParams] = useSearchParams();
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
@@ -398,12 +391,12 @@ export default function EntityExplorer({
   const projectSummaryTextRef = useRef(null);
   const wikiDescriptionTextRef = useRef(null);
   const localizedTopicEntity = useMemo(
-    () => entity?._localTopic ? getLocalTopicEntity(entity.id || id, language) : null,
-    [entity, id, language],
+    () => entity?._localTopic ? getLocalTopicEntity(entity.id || id) : null,
+    [entity, id],
   );
   const entityOfficialName = localizedTopicEntity?.display_name || entity?.display_name || '';
   const entityDisplayName = type === 'institution'
-    ? getLocalizedInstitutionName(entity, language)
+    ? getLocalizedInstitutionName(entity)
     : entityOfficialName;
   const publicEntityPath = useMemo(
     () => entity ? getPublicEntityPath(type, id) : null,
@@ -421,22 +414,20 @@ export default function EntityExplorer({
   const metadataConfig = useMemo(() => {
     if (!entity || !entityDisplayName || !publicEntityPath) return { noIndex: true };
     const typeLabel = {
-      author: { en: 'Author', es: 'Autor' },
-      institution: { en: 'Institution', es: 'Institución' },
-      project: { en: 'Research project', es: 'Proyecto de investigación' },
-      source: { en: 'Scientific journal', es: 'Revista científica' },
-      concept: { en: 'Research topic', es: 'Tema de investigación' },
-      topic: { en: 'Research topic', es: 'Tema de investigación' },
-    }[type] || { en: 'Scientific entity', es: 'Entidad científica' };
+      author: { en: 'Author' },
+      institution: { en: 'Institution' },
+      project: { en: 'Research project' },
+      source: { en: 'Scientific journal' },
+      concept: { en: 'Research topic' },
+      topic: { en: 'Research topic' },
+    }[type] || { en: 'Scientific entity' };
 
     return {
       title: {
         en: `${entityDisplayName} - ${typeLabel.en} | PaperTok`,
-        es: `${entityDisplayName} - ${typeLabel.es} | PaperTok`,
       },
       description: {
         en: `Explore scientific papers, citations, and research connected to ${entityDisplayName} on PaperTok.`,
-        es: `Explora artículos científicos, citas e investigación relacionada con ${entityDisplayName} en PaperTok.`,
       },
       route: publicEntityPath,
       ogType: 'profile',
@@ -499,7 +490,7 @@ export default function EntityExplorer({
   const authorInstitution = type === 'author'
     ? entity?.institutionData || entity?.last_known_institutions?.[0] || (entity?.institution ? { display_name: entity.institution } : null)
     : null;
-  const authorInstitutionDisplayName = getLocalizedInstitutionName(authorInstitution, language);
+  const authorInstitutionDisplayName = getLocalizedInstitutionName(authorInstitution);
   const wikiRequestKey = `${entityReloadKey}:${language}:${type}:${entityDisplayName}`;
   const visibleWikiInfo = wikiInfo?._requestKey === wikiRequestKey ? wikiInfo : null;
   const safeRorUrl = safeExternalUrl(entity?.ror);
@@ -573,7 +564,7 @@ export default function EntityExplorer({
   // held in STATE, not a ref: the live strip does not exist while the entity
   // loads, and a ref would be read once as null and never again.
   const [tabsRow, setTabsRow] = useState(null);
-  const tabRule = useActiveTabRule(tabsRow, `${activeTab}:${isEnglish}`, '.ee-tab.active');
+  const tabRule = useActiveTabRule(tabsRow, activeTab, '.ee-tab.active');
 
   const heroBodyRef = useRef(null);
   useHeightSettle(
@@ -644,15 +635,13 @@ export default function EntityExplorer({
   }, [analyticsEntityType, onAuthRequired, trackEvent]);
   // What a guest's search button covers, in the placeholder's own words.
   const guestSearchScope = type === 'institution'
-    ? { es: 'esta universidad', en: 'this institution' }
+    ? { en: 'this institution' }
     : type === 'concept' || type === 'topic'
-      ? { es: 'este tema', en: 'this topic' }
+      ? { en: 'this topic' }
       : type === 'project'
-        ? { es: 'este proyecto', en: 'this project' }
-        : { es: 'esta persona', en: 'this person' };
-  const guestSearchLabel = isEnglish
-    ? `Search ${guestSearchScope.en} · needs an account`
-    : `Buscar en ${guestSearchScope.es} · necesita cuenta`;
+        ? { en: 'this project' }
+        : { en: 'this person' };
+  const guestSearchLabel = `Search ${guestSearchScope.en} · needs an account`;
 
   const measureExpandableDescriptions = useCallback(() => {
     const measure = (element, setHeight, setExpandable) => {
@@ -1038,15 +1027,10 @@ export default function EntityExplorer({
     let isActive = true;
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 5_000);
-    const alternateTitle = language === 'en'
-      ? localizedTopicEntity?.labelEs
-      : localizedTopicEntity?.labelEn;
 
     loadEntityWikiInfo({
       entity: wikiEntity,
       title: entityDisplayName,
-      alternateTitle,
-      language,
       signal: controller.signal,
     }).then(async info => {
       /* Wikipedia answers on its own clock, and when it answers fast — a warm
@@ -1082,8 +1066,7 @@ export default function EntityExplorer({
     canLoadWikiInfo,
     entityDisplayName,
     language,
-    localizedTopicEntity?.labelEn,
-    localizedTopicEntity?.labelEs,
+    localizedTopicEntity?.label,
     type,
     wikiEntity,
     wikiRequestKey,
@@ -1189,7 +1172,7 @@ export default function EntityExplorer({
                 arxPapersFromNative = primaryResult.value || [];
               }
             } else {
-              primaryError = primaryResult.reason || new Error('La fuente principal tardó demasiado en responder.');
+              primaryError = primaryResult.reason || new Error('The main source took too long to respond.');
             }
 
             const [semanticScholar, pub, scopus] = supplementalResults.map(result => result.status === 'fulfilled' ? result.value?.papers || [] : []);
@@ -1230,7 +1213,7 @@ export default function EntityExplorer({
               ENTITY_PRIMARY_RENDER_BUDGET_MS,
             );
             if (primaryResult.status !== 'fulfilled') {
-              throw primaryResult.reason || new Error('La fuente principal tardó demasiado en responder.');
+              throw primaryResult.reason || new Error('The main source took too long to respond.');
             }
             const res = primaryResult.value;
             fetchedPapers.push(...(res.papers || []));
@@ -1460,8 +1443,8 @@ export default function EntityExplorer({
   // load, re-derived every time the page re-rendered around the rows.
   const rowAreas = useMemo(() => visiblePapers.map((paper) => ({
     accent: areaAccentForPaper(paper),
-    label: areaLabelForPaper(paper, { english: isEnglish }) || (isEnglish ? 'Paper' : 'Artículo'),
-  })), [isEnglish, visiblePapers]);
+    label: areaLabelForPaper(paper) || ('Paper'),
+  })), [visiblePapers]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -1515,7 +1498,7 @@ export default function EntityExplorer({
     trackEvent('share', { method: 'clipboard', content_type: analyticsEntityType, surface: 'explorer' });
     try {
       await navigator.clipboard.writeText(publicEntityUrl);
-      alert(isEnglish ? 'Link copied to clipboard' : 'Enlace copiado al portapapeles');
+      alert('Link copied to clipboard');
     } catch (error) {
       console.error('Failed to copy entity link', error);
     }
@@ -1560,15 +1543,11 @@ export default function EntityExplorer({
       if (institution) {
         navigateToEntity('institution', institution.id);
       } else {
-        setParticipantNavigationError(isEnglish
-          ? `We could not find an institution profile for ${participant.name}.`
-          : `No encontramos el perfil institucional de ${participant.name}.`);
+        setParticipantNavigationError(`We could not find an institution profile for ${participant.name}.`);
       }
     } catch (error) {
       console.error('Failed to resolve project participant', error);
-      setParticipantNavigationError(isEnglish
-        ? `We could not open ${participant.name}. Try again.`
-        : `No pudimos abrir ${participant.name}. Inténtalo de nuevo.`);
+      setParticipantNavigationError(`We could not open ${participant.name}. Try again.`);
     } finally {
       setResolvingParticipant(null);
     }
@@ -1598,15 +1577,11 @@ export default function EntityExplorer({
       if (institution?.id) {
         navigateToEntity('institution', institution.id.split('/').pop());
       } else {
-        setAuthorInstitutionNavigationError(isEnglish
-          ? 'We could not find this institution profile.'
-          : 'No encontramos el perfil de esta institución.');
+        setAuthorInstitutionNavigationError('We could not find this institution profile.');
       }
     } catch (error) {
       console.error('Failed to resolve author institution', error);
-      setAuthorInstitutionNavigationError(isEnglish
-        ? 'We could not open this institution. Try again.'
-        : 'No pudimos abrir esta institución. Inténtalo de nuevo.');
+      setAuthorInstitutionNavigationError('We could not open this institution. Try again.');
     } finally {
       setIsResolvingAuthorInstitution(false);
     }
@@ -1627,7 +1602,7 @@ export default function EntityExplorer({
         className={`explorer-container explorer-skeleton explorer-skeleton--${type || 'entity'}${appChromeClass}`}
         role="status"
         aria-busy="true"
-        aria-label={isEnglish ? 'Loading' : 'Cargando'}
+        aria-label={'Loading'}
       >
         {/* Not `aria-hidden` on the whole hero: the real, working Back button
             lives inside it, and hiding its container would hide a focusable
@@ -1638,7 +1613,7 @@ export default function EntityExplorer({
         <div className="explorer-hero">
           <div className="explorer-hero-top">
             <div className="eht-left">
-              <Button variant="outline" size="icon" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
+              <Button variant="outline" size="icon" onClick={handleBack} aria-label={'Back'} title={'Back'}>
                 <ArrowLeft size={20} />
               </Button>
               <div className="ex-skel ex-skel-type" aria-hidden="true"></div>
@@ -1793,27 +1768,25 @@ export default function EntityExplorer({
           {entityError ? <CloudSlash size={26} /> : <MagnifyingGlass size={26} />}
         </div>
         <h1>{entityError
-          ? (isEnglish ? 'The entity could not be loaded' : 'No se pudo cargar la entidad')
-          : (isEnglish ? 'Entity not found' : 'Entidad no encontrada')}</h1>
+          ? ('The entity could not be loaded')
+          : ('Entity not found')}</h1>
         {entityError ? (
-          <p role="alert">{getUiErrorMessage(entityError, language, 'ENTITY_LOAD_FAILED')}</p>
+          <p role="alert">{getUiErrorMessage(entityError, 'ENTITY_LOAD_FAILED')}</p>
         ) : (
           <p>
-            {isEnglish
-              ? 'The source has no record for this page. It may have been merged with another one or removed.'
-              : 'La fuente no tiene ningún registro para esta página. Puede que se haya fusionado con otro o que se haya retirado.'}
+            {'The source has no record for this page. It may have been merged with another one or removed.'}
           </p>
         )}
         <div className="explorer-error-actions">
           {entityError && (
             <Button onClick={retryEntity}>
               <ArrowsClockwise size={16} aria-hidden="true" />
-              {isEnglish ? 'Try again' : 'Reintentar'}
+              {'Try again'}
             </Button>
           )}
           <Button variant="outline" onClick={handleBack}>
             <ArrowLeft size={16} aria-hidden="true" />
-            {isEnglish ? 'Back' : 'Volver'}
+            {'Back'}
           </Button>
         </div>
       </div>
@@ -1829,14 +1802,14 @@ export default function EntityExplorer({
   };
 
   const entityTypeLabel = type === 'author'
-    ? (isEnglish ? 'Author' : 'Autor')
+    ? ('Author')
     : type === 'institution'
-      ? (isEnglish ? 'University / Institution' : 'Universidad / Institución')
+      ? ('University / Institution')
       : type === 'source'
-        ? (isEnglish ? 'Journal' : 'Revista')
+        ? ('Journal')
         : type === 'project'
-          ? (isEnglish ? 'Research project' : 'Proyecto de investigación')
-          : (isEnglish ? 'Topic' : 'Tema');
+          ? ('Research project')
+          : ('Topic');
   const topConcepts = entity.x_concepts ? entity.x_concepts.slice(0, 4) : [];
 
   // The type rides on the live container, the way the skeleton already carries
@@ -1885,12 +1858,12 @@ export default function EntityExplorer({
         
         <div className="explorer-hero-top">
           <div className="eht-left">
-            <Button variant="outline" size="icon" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
+            <Button variant="outline" size="icon" onClick={handleBack} aria-label={'Back'} title={'Back'}>
               <ArrowLeft size={20} />
             </Button>
             <span className="ehc-type">{entityTypeLabel}</span>
           </div>
-          <Button variant="ghost" size="icon" onClick={handleShare} aria-label={isEnglish ? 'Share' : 'Compartir'} title={isEnglish ? 'Share' : 'Compartir'}>
+          <Button variant="ghost" size="icon" onClick={handleShare} aria-label={'Share'} title={'Share'}>
             <ShareNetwork size={18} />
           </Button>
         </div>
@@ -1951,8 +1924,8 @@ export default function EntityExplorer({
                     onClick={() => { setExperienceToggled(true); setIsExperienceOpen(open => !open); }}
                     aria-expanded={isExperienceOpen}
                     aria-controls="ehc-experience-panel"
-                    aria-label={isEnglish ? 'Professional experience' : 'Experiencia profesional'}
-                    title={isEnglish ? 'Professional experience' : 'Experiencia profesional'}
+                    aria-label={'Professional experience'}
+                    title={'Professional experience'}
                   >
                     <Briefcase size={15} aria-hidden="true" />
                     <CaretDown size={16} aria-hidden="true" />
@@ -1966,14 +1939,14 @@ export default function EntityExplorer({
                   </p>
                   {entity.rorVerified && safeRorUrl && (
                     <div className="ehc-institution-identity">
-                      <a href={safeRorUrl} target="_blank" rel="noopener noreferrer" title={isEnglish ? 'View official ROR record' : 'Ver registro oficial en ROR'}>
-                        <SealCheck size={13} /> {isEnglish ? 'ROR verified' : 'ROR verificado'}
+                      <a href={safeRorUrl} target="_blank" rel="noopener noreferrer" title={'View official ROR record'}>
+                        <SealCheck size={13} /> {'ROR verified'}
                       </a>
-                      {entity.established && <span>{isEnglish ? 'Since' : 'Desde'} {entity.established}</span>}
+                      {entity.established && <span>{'Since'} {entity.established}</span>}
                     </div>
                   )}
                   {entity.relationships?.length > 0 && (
-                    <div className="ehc-ror-relations" aria-label={isEnglish ? 'Institutional relationships verified by ROR' : 'Relaciones institucionales verificadas por ROR'}>
+                    <div className="ehc-ror-relations" aria-label={'Institutional relationships verified by ROR'}>
                       {entity.relationships.slice(0, 4).map(relationship => (
                         <button
                           key={`${relationship.type}-${relationship.rorId}`}
@@ -1997,7 +1970,7 @@ export default function EntityExplorer({
                     className="ehc-author-institution"
                     onClick={openAuthorInstitution}
                     disabled={isResolvingAuthorInstitution}
-                    title={isEnglish ? 'View institution' : 'Ver institución'}
+                    title={'View institution'}
                   >
                     {isResolvingAuthorInstitution ? <CircleNotch className="spinning" size={15} /> : <Buildings size={15} />}
                     <span>{authorInstitutionDisplayName}</span>
@@ -2023,7 +1996,7 @@ export default function EntityExplorer({
                   <DropdownMenu>
                     <DropdownMenuTrigger render={<button type="button" className="project-links-trigger" />}>
                       <Globe size={15} />
-                      <span>{isEnglish ? 'View project' : 'Ver proyecto'}</span>
+                      <span>{'View project'}</span>
                       <CaretDown size={15} aria-hidden="true" />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent
@@ -2031,7 +2004,7 @@ export default function EntityExplorer({
                       align="start"
                       side="bottom"
                       sideOffset={8}
-                      aria-label={isEnglish ? 'Project links' : 'Enlaces del proyecto'}
+                      aria-label={'Project links'}
                     >
                       {entity.openaireId && (
                         <MenuPrimitive.LinkItem
@@ -2043,8 +2016,8 @@ export default function EntityExplorer({
                         >
                           <span className="project-links-option-icon"><Buildings size={16} /></span>
                           <span>
-                            <strong>{isEnglish ? 'OpenAIRE record' : 'Ficha en OpenAIRE'}</strong>
-                            <small>{isEnglish ? 'Data, publications, and participants' : 'Datos, publicaciones y participantes'}</small>
+                            <strong>{'OpenAIRE record'}</strong>
+                            <small>{'Data, publications, and participants'}</small>
                           </span>
                           <ArrowSquareOut size={14} />
                         </MenuPrimitive.LinkItem>
@@ -2059,8 +2032,8 @@ export default function EntityExplorer({
                         >
                           <span className="project-links-option-icon"><Globe size={16} /></span>
                           <span>
-                            <strong>{isEnglish ? 'Official website' : 'Sitio oficial'}</strong>
-                            <small>{isEnglish ? 'The project’s own website' : 'Web del propio proyecto'}</small>
+                            <strong>{'Official website'}</strong>
+                            <small>{'The project’s own website'}</small>
                           </span>
                           <ArrowSquareOut size={14} />
                         </MenuPrimitive.LinkItem>
@@ -2087,19 +2060,19 @@ export default function EntityExplorer({
             {entity?.works_count != null && (
               <div className="ehc-stat-box">
                 <span className="ehc-stat-value">{entity.works_count.toLocaleString(locale)}</span>
-                <span className="ehc-stat-label">{isEnglish ? 'Publications' : 'Publicaciones'}</span>
+                <span className="ehc-stat-label">{'Publications'}</span>
               </div>
             )}
             {entity?.cited_by_count != null && (
               <div className="ehc-stat-box">
                 <span className="ehc-stat-value">{entity.cited_by_count.toLocaleString(locale)}</span>
-                <span className="ehc-stat-label">{isEnglish ? 'Total citations' : 'Citas totales'}</span>
+                <span className="ehc-stat-label">{'Total citations'}</span>
               </div>
             )}
             {(entity?.summary_stats?.h_index != null || entity?.h_index != null) && (
               <div className="ehc-stat-box">
                 <span className="ehc-stat-value">{entity?.summary_stats?.h_index ?? entity?.h_index}</span>
-                <span className="ehc-stat-label">{type === 'source' ? (isEnglish ? 'Type' : 'Tipo') : 'H-Index'}</span>
+                <span className="ehc-stat-label">{type === 'source' ? ('Type') : 'H-Index'}</span>
               </div>
             )}
             {['institution', 'author'].includes(type) && (
@@ -2107,7 +2080,7 @@ export default function EntityExplorer({
                 impact={recentImpact}
                 isLoading={isLoadingRecentImpact}
                 error={recentImpactError}
-                isEnglish={isEnglish}
+               
               />
             )}
             {type === 'project' && entity._detailsPending && [1, 2].map((n) => (
@@ -2121,7 +2094,7 @@ export default function EntityExplorer({
                 <span className="ehc-stat-value">
                   {(() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: entity.currency, maximumFractionDigits: 0 }).format(entity.budget); } catch { return `${entity.budget.toLocaleString(locale)} €`; } })()}
                 </span>
-                <span className="ehc-stat-label">{isEnglish ? 'Total budget' : 'Presupuesto total'}</span>
+                <span className="ehc-stat-label">{'Total budget'}</span>
               </div>
             )}
             {type === 'project' && entity.fundedAmount > 0 && entity.fundedAmount !== entity.budget && (
@@ -2129,33 +2102,31 @@ export default function EntityExplorer({
                 <span className="ehc-stat-value">
                   {(() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: entity.currency, maximumFractionDigits: 0 }).format(entity.fundedAmount); } catch { return `${entity.fundedAmount.toLocaleString(locale)} €`; } })()}
                 </span>
-                <span className="ehc-stat-label">{isEnglish ? 'Funding' : 'Financiación'}</span>
+                <span className="ehc-stat-label">{'Funding'}</span>
               </div>
             )}
             {type === 'project' && entity.startDate && (
               <div className="ehc-stat-box">
                 <span className="ehc-stat-value">{entity.startDate.split('-')[0]} - {entity.endDate?.split('-')[0] || '...'}</span>
-                <span className="ehc-stat-label">{isEnglish ? 'Duration' : 'Duración'}</span>
+                <span className="ehc-stat-label">{'Duration'}</span>
               </div>
             )}
             {type === 'project' && entity.participants?.length > 0 && (
               <div className="ehc-stat-box">
                 <span className="ehc-stat-value">{entity.participants.length}</span>
-                <span className="ehc-stat-label">{isEnglish ? 'Participants' : 'Participantes'}</span>
+                <span className="ehc-stat-label">{'Participants'}</span>
               </div>
             )}
             {type === 'project' && entity.measures?.citations > 0 && (
               <div className="ehc-stat-box">
                 <span className="ehc-stat-value">{entity.measures.citations.toLocaleString(locale)}</span>
-                <span className="ehc-stat-label">{isEnglish ? 'Citations' : 'Citas'}</span>
+                <span className="ehc-stat-label">{'Citations'}</span>
               </div>
             )}
           </div>
           {authorIdentityUnverified ? (
             <p className="ehc-identity-note">
-              {isEnglish
-                ? 'Found by name: these results may mix people who share it.'
-                : 'Encontrado por el nombre: los resultados pueden mezclar a personas que se llaman igual.'}
+              {'Found by name: these results may mix people who share it.'}
             </p>
           ) : followEntity && (
             // A pressed button, not a command: the shared Follow control, the
@@ -2164,8 +2135,8 @@ export default function EntityExplorer({
               pressed={entityIsFollowing}
               onClick={handleFollow}
               disabled={entityFollowPending}
-              followLabel={isEnglish ? 'Follow' : 'Seguir'}
-              followingLabel={isEnglish ? 'Following' : 'Siguiendo'}
+              followLabel={'Follow'}
+              followingLabel={'Following'}
             />
           )}
           </div>
@@ -2217,7 +2188,7 @@ export default function EntityExplorer({
                   <div className="ehc-experience-inner">
                   <div className="ehc-experience-title">
                     <Briefcase size={13} aria-hidden="true" />
-                    {isEnglish ? 'Professional experience' : 'Experiencia profesional'}
+                    {'Professional experience'}
                   </div>
                   <div className="orcid-timeline">
                     {orcidInfo.employments.map((emp, i) => (
@@ -2229,7 +2200,7 @@ export default function EntityExplorer({
                             const inst = await findInstitution({ rorUrl: emp.ror, name: emp.organization });
                             if (inst) navigateToEntity('institution', inst.id);
                           }}
-                          title={`${isEnglish ? 'Find and view profile for' : 'Buscar y ver perfil de'} ${emp.organization}`}
+                          title={`${'Find and view profile for'} ${emp.organization}`}
                         >
                           {emp.organization}
                         </button>
@@ -2238,7 +2209,7 @@ export default function EntityExplorer({
                           <div className="orcid-item-dates">
                             {emp.startDate}
                             <span className="dot-separator">→</span>
-                            {emp.endDate || (isEnglish ? 'Present' : 'Presente')}
+                            {emp.endDate || ('Present')}
                           </div>
                         )}
                       </div>
@@ -2263,10 +2234,10 @@ export default function EntityExplorer({
                 <span className="project-chip project-chip--oa"><BookOpen size={13} /> Open Access</span>
               )}
               {entity.measures?.downloads > 0 && (
-                <span className="project-chip"><DownloadSimple size={13} /> {entity.measures.downloads.toLocaleString(locale)} {isEnglish ? 'downloads' : 'descargas'}</span>
+                <span className="project-chip"><DownloadSimple size={13} /> {entity.measures.downloads.toLocaleString(locale)} {'downloads'}</span>
               )}
               {entity.measures?.views > 0 && (
-                <span className="project-chip"><Eye size={13} /> {entity.measures.views.toLocaleString(locale)} {isEnglish ? 'views' : 'vistas'}</span>
+                <span className="project-chip"><Eye size={13} /> {entity.measures.views.toLocaleString(locale)} {'views'}</span>
               )}
             </div>
           )}
@@ -2283,8 +2254,8 @@ export default function EntityExplorer({
               aria-expanded={isProjectSummaryExpandable ? expandedSummary : undefined}
               aria-label={isProjectSummaryExpandable
                 ? expandedSummary
-                  ? (isEnglish ? 'Collapse project summary' : 'Contraer resumen del proyecto')
-                  : (isEnglish ? 'Expand project summary' : 'Ampliar resumen del proyecto')
+                  ? ('Collapse project summary')
+                  : ('Expand project summary')
                 : undefined}
             >
               <p
@@ -2297,8 +2268,8 @@ export default function EntityExplorer({
               {isProjectSummaryExpandable && (
                 <span className="project-summary-toggle">
                   <CaretDown size={14} /> {expandedSummary
-                    ? (isEnglish ? 'Show less' : 'Mostrar menos')
-                    : (isEnglish ? 'Read more' : 'Leer más')}
+                    ? ('Show less')
+                    : ('Read more')}
                 </span>
               )}
             </div>
@@ -2307,7 +2278,7 @@ export default function EntityExplorer({
           {/* Project subjects */}
           {type === 'project' && entity.subjects?.length > 0 && (
             <div className="project-subjects">
-              <h4 className="project-section-title"><Tag size={14} /> {isEnglish ? 'Project topics' : 'Temas del proyecto'}</h4>
+              <h4 className="project-section-title"><Tag size={14} /> {'Project topics'}</h4>
               <div className="project-subjects-list">
                 {entity.subjects.map((s, i) => (
                   <span key={i} className="ehc-tag">{s}</span>
@@ -2319,7 +2290,7 @@ export default function EntityExplorer({
           {/* Participating organizations */}
           {type === 'project' && entity.participants?.length > 0 && (
             <div className="project-participants">
-              <h4 className="project-section-title"><Buildings size={14} /> {isEnglish ? 'Participating organizations' : 'Organizaciones participantes'}</h4>
+              <h4 className="project-section-title"><Buildings size={14} /> {'Participating organizations'}</h4>
               <motion.div
                 id="project-participants-list"
                 layout={!prefersReducedMotion}
@@ -2341,7 +2312,7 @@ export default function EntityExplorer({
                       : { duration: 0.24, delay: i < 6 ? 0 : Math.min((i - 6) * 0.025, 0.18) }}
                     onClick={() => openParticipantInstitution(p)}
                     disabled={resolvingParticipant === p.name}
-                    aria-label={`${isEnglish ? 'Open institution profile for' : 'Abrir perfil institucional de'} ${p.name}`}
+                    aria-label={`${'Open institution profile for'} ${p.name}`}
                   >
                     <span className="project-participant-info">
                       <span className="project-participant-name">{p.name}</span>
@@ -2365,8 +2336,8 @@ export default function EntityExplorer({
                   aria-controls="project-participants-list"
                 >
                   {participantsExpanded
-                    ? (isEnglish ? 'Show fewer organizations' : 'Mostrar menos organizaciones')
-                    : `+${entity.participants.length - 6} ${isEnglish ? 'more organizations' : 'organizaciones más'}`}
+                    ? ('Show fewer organizations')
+                    : `+${entity.participants.length - 6} ${'more organizations'}`}
                 </button>
               )}
             </div>
@@ -2432,7 +2403,7 @@ export default function EntityExplorer({
                     height animation IS the handover, and the words only need to
                     arrive rather than appear. */}
                 {isWikiRequestPending ? (
-                  <div className="ehc-wiki-skeleton" role="status" aria-label={isEnglish ? 'Loading topic details' : 'Cargando información del tema'}>
+                  <div className="ehc-wiki-skeleton" role="status" aria-label={'Loading topic details'}>
                     {/* A re-lookup, not the first one: the block is already
                         open and holds its rows until the new paragraph
                         replaces them in the same commit. Three lines because
@@ -2465,8 +2436,8 @@ export default function EntityExplorer({
                     aria-expanded={isWikiDescriptionExpanded}
                   >
                     <span>{isWikiDescriptionExpanded
-                      ? (isEnglish ? 'Show less' : 'Mostrar menos')
-                      : (isEnglish ? 'Read more' : 'Leer más')}</span>
+                      ? ('Show less')
+                      : ('Read more')}</span>
                     <CaretDown size={15} aria-hidden="true" />
                   </button>
                 )}
@@ -2478,7 +2449,7 @@ export default function EntityExplorer({
                   )}
                   {safeHomepageUrl && (
                     <a href={safeHomepageUrl} target="_blank" rel="noopener noreferrer" className="ehc-link">
-                      {isEnglish ? 'Official website' : 'Web oficial'} <ArrowSquareOut size={14} />
+                      {'Official website'} <ArrowSquareOut size={14} />
                     </a>
                   )}
                 </div>
@@ -2499,12 +2470,12 @@ export default function EntityExplorer({
                     <img src="https://info.orcid.org/wp-content/uploads/2019/11/orcid_16x16.png" alt="ORCID" />
                   </div>
                   <div className="orcid-badge-text">
-                    <span className="orcid-badge-label">{isEnglish ? 'Verified ORCID profile' : 'Perfil verificado ORCID'}</span>
+                    <span className="orcid-badge-label">{'Verified ORCID profile'}</span>
                     <span className="orcid-badge-id">{orcidInfo.orcid}</span>
                   </div>
                 </div>
                 <a href={`https://orcid.org/${orcidInfo.orcid}`} target="_blank" rel="noopener noreferrer" className="orcid-profile-link">
-                  {isEnglish ? 'View profile' : 'Ver perfil'} <ArrowSquareOut size={12} />
+                  {'View profile'} <ArrowSquareOut size={12} />
                 </a>
               </div>
 
@@ -2523,7 +2494,7 @@ export default function EntityExplorer({
                     return safeUrl ? (
                       <a key={i} href={safeUrl} target="_blank" rel="noopener noreferrer" className="orcid-ext-link">
                         <Globe size={12} />
-                        {u.name || (isEnglish ? 'External link' : 'Enlace externo')}
+                        {u.name || ('External link')}
                       </a>
                     ) : null;
                   })}
@@ -2535,7 +2506,7 @@ export default function EntityExplorer({
                 <div className="orcid-timeline-block">
                   <div className="orcid-timeline-title">
                     <span className="orcid-tl-icon orcid-tl-icon--edu"><BookOpen size={12} /></span>
-                    {isEnglish ? 'Education' : 'Formación académica'}
+                    {'Education'}
                   </div>
                   <div className="orcid-timeline">
                     {orcidInfo.educations.map((edu, i) => (
@@ -2547,7 +2518,7 @@ export default function EntityExplorer({
                             const inst = await findInstitution({ rorUrl: edu.ror, name: edu.organization });
                             if (inst) navigateToEntity('institution', inst.id);
                           }}
-                          title={`${isEnglish ? 'Find and view profile for' : 'Buscar y ver perfil de'} ${edu.organization}`}
+                          title={`${'Find and view profile for'} ${edu.organization}`}
                         >
                           {edu.organization}
                         </button>
@@ -2582,11 +2553,11 @@ export default function EntityExplorer({
             style={{ transform: tabRule.transform || undefined, opacity: tabRule.transform ? 1 : 0 }}
           />
           <button className={`ee-tab ${activeTab === 'papers' ? 'active' : ''}`} onClick={() => openTab('papers')}>
-             {isEnglish ? 'Papers' : 'Artículos'}
+             {'Papers'}
           </button>
           {hasAuthorsTab(type, entity) && (
              <button className={`ee-tab ${activeTab === 'authors' ? 'active' : ''}`} onClick={() => openTab('authors')}>
-               {isEnglish ? 'Authors' : 'Autores'}
+               {'Authors'}
              </button>
           )}
         </div>
@@ -2616,17 +2587,13 @@ export default function EntityExplorer({
               <Input
                 type="text"
                 className="explorer-search-input"
-                placeholder={isEnglish
-                  ? `Search ${activeTab === 'papers' ? 'papers' : 'authors'} from ${type === 'institution' ? 'this institution' : type === 'concept' || type === 'topic' ? 'this topic' : type === 'project' ? 'this project' : 'this person'}...`
-                  : `Buscar ${activeTab === 'papers' ? 'publicaciones' : 'autores'} de ${type === 'institution' ? 'esta universidad' : type === 'concept' || type === 'topic' ? 'este tema' : type === 'project' ? 'este proyecto' : 'esta persona'}...`}
+                placeholder={`Search ${activeTab === 'papers' ? 'papers' : 'authors'} from ${type === 'institution' ? 'this institution' : type === 'concept' || type === 'topic' ? 'this topic' : type === 'project' ? 'this project' : 'this person'}...`}
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                aria-label={isEnglish
-                  ? `Search ${activeTab === 'papers' ? 'publications' : 'authors'} in this entity`
-                  : `Buscar ${activeTab === 'papers' ? 'publicaciones' : 'autores'} en esta entidad`}
+                aria-label={`Search ${activeTab === 'papers' ? 'publications' : 'authors'} in this entity`}
               />
               {searchQuery && (
-                <Button variant="ghost" size="icon-sm" className="es-clear" onClick={() => setSearchQuery('')} aria-label={isEnglish ? 'Clear search' : 'Limpiar búsqueda'} title={isEnglish ? 'Clear search' : 'Limpiar búsqueda'}>
+                <Button variant="ghost" size="icon-sm" className="es-clear" onClick={() => setSearchQuery('')} aria-label={'Clear search'} title={'Clear search'}>
                   <X size={14} />
                 </Button>
               )}
@@ -2637,8 +2604,8 @@ export default function EntityExplorer({
                 variant={filters?.category || filters?.peerReviewed || filters?.dateRange ? 'default' : 'outline'}
                 size="icon"
                 onClick={publicMode ? () => requestAccount('explorer_search') : () => setShowFilters(true)}
-                aria-label={isEnglish ? 'Open filters' : 'Abrir filtros'}
-                title={isEnglish ? 'Filters' : 'Filtros'}
+                aria-label={'Open filters'}
+                title={'Filters'}
               >
                 <Funnel size={16} />
               </Button>
@@ -2660,7 +2627,7 @@ export default function EntityExplorer({
                   onKeyDown={(event) => handleActivationKey(event, () => setSelectedPaper(paper))}
                   role="button"
                   tabIndex={0}
-                  aria-label={`${isEnglish ? 'Open publication' : 'Abrir publicación'}: ${normalizeScientificMarkup(paper.title) || (isEnglish ? 'Untitled' : 'Sin título')}`}
+                  aria-label={`${'Open publication'}: ${normalizeScientificMarkup(paper.title) || ('Untitled')}`}
                   style={{ '--i': Math.min(idx, 8), '--area-accent': rowAreas[idx].accent }}
                 >
                   <div className="eli-header">
@@ -2674,15 +2641,15 @@ export default function EntityExplorer({
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(event) => event.stopPropagation()}
-                            aria-label={`${getPaperCitationCount(paper).toLocaleString(locale)} ${isEnglish ? 'citations on Scopus' : 'citas en Scopus'}`}
+                            aria-label={`${getPaperCitationCount(paper).toLocaleString(locale)} ${'citations on Scopus'}`}
                           >
                             <Medal size={13} />
-                            {getPaperCitationCount(paper).toLocaleString(locale)} {isEnglish ? 'citations on Scopus' : 'citas en Scopus'}
+                            {getPaperCitationCount(paper).toLocaleString(locale)} {'citations on Scopus'}
                           </a>
                         ) : (
                           <span className="eli-citations">
                             <Medal size={13} />
-                            {getPaperCitationCount(paper).toLocaleString(locale)} {isEnglish ? 'citations' : 'citas'}
+                            {getPaperCitationCount(paper).toLocaleString(locale)} {'citations'}
                           </span>
                         )
                       )}
@@ -2696,7 +2663,7 @@ export default function EntityExplorer({
                   <p className="eli-summary">
                     {hasUsableAIAbstract(paper.abstract)
                       ? <ScientificText>{paper.abstract}</ScientificText>
-                      : (isEnglish ? 'Abstract unavailable.' : 'Resumen no disponible.')}
+                      : ('Abstract unavailable.')}
                   </p>
                 </div>
               ))}
@@ -2722,8 +2689,8 @@ export default function EntityExplorer({
               {isLoadingPapers && !isFetchingMore && isPapersLoadSlow && (
                 <p className="explorer-loading-note" role="status">
                   {type === 'project'
-                    ? (isEnglish ? 'Asking OpenAIRE for this project’s publications. It can take a few seconds.' : 'Consultando a OpenAIRE las publicaciones del proyecto. Puede tardar unos segundos.')
-                    : (isEnglish ? 'Still loading publications…' : 'Todavía cargando publicaciones…')}
+                    ? ('Asking OpenAIRE for this project’s publications. It can take a few seconds.')
+                    : ('Still loading publications…')}
                 </p>
               )}
 
@@ -2745,8 +2712,8 @@ export default function EntityExplorer({
                   rather than stopping 420px short of them. */}
               {!isLoadingPapers && papersError && filteredPapers.length > 0 && (
                 <div className="explorer-inline-error" role="status">
-                  <span>{getUiErrorMessage('PARTIAL_PUBLICATIONS_LOAD_FAILED', language)}</span>
-                  <Button variant="ghost" size="sm" onClick={retryPapers}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
+                  <span>{getUiErrorMessage('PARTIAL_PUBLICATIONS_LOAD_FAILED')}</span>
+                  <Button variant="ghost" size="sm" onClick={retryPapers}>{'Try again'}</Button>
                 </div>
               )}
 
@@ -2758,8 +2725,8 @@ export default function EntityExplorer({
                 <div ref={observerRef} className="ehc-sentinel">
                   {isFetchingMore && <CircleNotch className="ehc-spinner" size={24} />}
                   <span>{isFetchingMore
-                    ? (isEnglish ? 'Loading more articles...' : 'Cargando más artículos...')
-                    : (isEnglish ? 'Scroll for more' : 'Sigue bajando para ver más')}</span>
+                    ? ('Loading more articles...')
+                    : ('Scroll for more')}</span>
                 </div>
               )}
 
@@ -2787,8 +2754,8 @@ export default function EntityExplorer({
                   hasActiveFilters: Boolean(debouncedSearch) || Boolean(filters.category) || filters.peerReviewed || Boolean(filters.dateRange),
                   type,
                 })}
-                isEnglish={isEnglish}
-                errorMessage={papersError ? getUiErrorMessage(papersError, language, 'PUBLICATIONS_LOAD_FAILED') : ''}
+               
+                errorMessage={papersError ? getUiErrorMessage(papersError, 'PUBLICATIONS_LOAD_FAILED') : ''}
                 onRetry={retryPapers}
                 onClearFilters={() => { setSearchQuery(''); setFilters({ category: '', peerReviewed: false, dateRange: '' }); }}
                 openAireUrl={entity?.openaireId ? `https://explore.openaire.eu/search/project?projectId=${encodeURIComponent(entity.openaireId)}` : null}
@@ -2806,15 +2773,15 @@ export default function EntityExplorer({
                 onKeyDown={(event) => handleActivationKey(event, () => navigateToEntity('author', author.id, author))}
                 role="link"
                 tabIndex={0}
-                aria-label={`${isEnglish ? 'Open profile for' : 'Abrir perfil de'} ${author.display_name}`}
+                aria-label={`${'Open profile for'} ${author.display_name}`}
               >
                 <div className="ee-author-icon"><Users size={24} /></div>
                 <div className="ee-author-info">
                   <h4>{author.display_name}</h4>
                   <p className="ee-author-metrics">
                     {author.source === 'crossref'
-                      ? `${author.works_count.toLocaleString(locale)} ${isEnglish ? 'matching publications' : 'publicaciones coincidentes'}`
-                      : `H-Index: ${author.h_index} • ${author.cited_by_count.toLocaleString(locale)} ${isEnglish ? 'citations' : 'citas'}`}
+                      ? `${author.works_count.toLocaleString(locale)} ${'matching publications'}`
+                      : `H-Index: ${author.h_index} • ${author.cited_by_count.toLocaleString(locale)} ${'citations'}`}
                   </p>
                 </div>
                 <CaretRight size={18} className="ee-author-arrow" />
@@ -2838,8 +2805,8 @@ export default function EntityExplorer({
             {/* Same order as the publications strip above, for the same reason. */}
             {!isLoadingAuthors && authorsError && entityAuthors.length > 0 && (
               <div className="explorer-inline-error" role="status">
-                <span>{getUiErrorMessage('PARTIAL_AUTHORS_LOAD_FAILED', language)}</span>
-                <Button variant="ghost" size="sm" onClick={retryAuthors}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
+                <span>{getUiErrorMessage('PARTIAL_AUTHORS_LOAD_FAILED')}</span>
+                <Button variant="ghost" size="sm" onClick={retryAuthors}>{'Try again'}</Button>
               </div>
             )}
 
@@ -2848,8 +2815,8 @@ export default function EntityExplorer({
               <div ref={observerAuthorsRef} className="ehc-sentinel">
                 {isFetchingMoreAuthors && <CircleNotch className="ehc-spinner" size={24} />}
                 <span>{isFetchingMoreAuthors
-                  ? (isEnglish ? 'Loading more authors...' : 'Cargando más autores...')
-                  : (isEnglish ? 'Scroll for more' : 'Sigue bajando para ver más')}</span>
+                  ? ('Loading more authors...')
+                  : ('Scroll for more')}</span>
               </div>
             )}
 
@@ -2859,11 +2826,11 @@ export default function EntityExplorer({
             {!isLoadingAuthors && !isFetchingMoreAuthors && entityAuthors.length === 0 && (
               authorsError ? (
                 <div className="explorer-empty">
-                  <p role="alert">{getUiErrorMessage(authorsError, language, 'AUTHORS_LOAD_FAILED')}</p>
-                  <Button variant="outline" size="sm" onClick={retryAuthors}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
+                  <p role="alert">{getUiErrorMessage(authorsError, 'AUTHORS_LOAD_FAILED')}</p>
+                  <Button variant="outline" size="sm" onClick={retryAuthors}>{'Try again'}</Button>
                 </div>
               ) : (
-                <ExplorerEmptyState variant={debouncedSearch ? 'authors' : 'authors-none'} isEnglish={isEnglish} />
+                <ExplorerEmptyState variant={debouncedSearch ? 'authors' : 'authors-none'} />
               )
             )}
           </div>
@@ -2881,11 +2848,11 @@ export default function EntityExplorer({
           showClose={false}
         >
               <div className="ee-filter-header">
-                <SheetTitle render={<h3 />}><SlidersHorizontal size={18}/> {isEnglish ? 'Advanced filters' : 'Filtros avanzados'}</SheetTitle>
+                <SheetTitle render={<h3 />}><SlidersHorizontal size={18}/> {'Advanced filters'}</SheetTitle>
                 <SheetClose
                   render={<Button variant="ghost" size="icon" />}
-                  aria-label={isEnglish ? 'Close filters' : 'Cerrar filtros'}
-                  title={isEnglish ? 'Close' : 'Cerrar'}
+                  aria-label={'Close filters'}
+                  title={'Close'}
                 >
                   <X size={20}/>
                 </SheetClose>
@@ -2900,49 +2867,49 @@ export default function EntityExplorer({
                     The open choices ("All", "Any date") are stored as '' and
                     carried under a sentinel value here. */}
                 <div className="ee-filter-section">
-                  <h4>{isEnglish ? 'Sort by' : 'Ordenar por'}</h4>
+                  <h4>{'Sort by'}</h4>
                   <ToggleGroup
                     variant="outline"
                     className="ee-filter-chips"
-                    aria-label={isEnglish ? 'Sort by' : 'Ordenar por'}
+                    aria-label={'Sort by'}
                     value={[sortBy]}
                     onValueChange={([next]) => { if (next !== undefined) setSortBy(next); }}
                   >
                     <ToggleGroupItem value="cited_by_count:desc" className="ee-filter-chip">
-                      {isEnglish ? 'Most cited' : 'Más citados'}
+                      {'Most cited'}
                     </ToggleGroupItem>
                     <ToggleGroupItem value="publication_date:desc" className="ee-filter-chip">
-                      {isEnglish ? 'Most recent' : 'Más recientes'}
+                      {'Most recent'}
                     </ToggleGroupItem>
                   </ToggleGroup>
                 </div>
                 <div className="ee-filter-section">
-                  <h4>{isEnglish ? 'Category (Area)' : 'Categoría (Área)'}</h4>
+                  <h4>{'Category (Area)'}</h4>
                   <ToggleGroup
                     variant="outline"
                     className="ee-filter-chips"
-                    aria-label={isEnglish ? 'Category (Area)' : 'Categoría (Área)'}
+                    aria-label={'Category (Area)'}
                     value={[filters.category || 'all']}
                     onValueChange={([next]) => {
                       if (next !== undefined) setFilters({ ...filters, category: next === 'all' ? '' : next });
                     }}
                   >
                     <ToggleGroupItem value="all" className="ee-filter-chip">
-                      {isEnglish ? 'All' : 'Todas'}
+                      {'All'}
                     </ToggleGroupItem>
                     {Object.entries(CATEGORIES).map(([key, cat]) => (
                       <ToggleGroupItem key={key} value={key} className="ee-filter-chip">
-                        {isEnglish ? cat.labelEn : cat.label}
+                        {cat.label}
                       </ToggleGroupItem>
                     ))}
                   </ToggleGroup>
                 </div>
                 <div className="ee-filter-section">
-                  <h4>{isEnglish ? 'Publication date' : 'Fecha de publicación'}</h4>
+                  <h4>{'Publication date'}</h4>
                   <ToggleGroup
                     variant="outline"
                     className="ee-filter-chips"
-                    aria-label={isEnglish ? 'Publication date' : 'Fecha de publicación'}
+                    aria-label={'Publication date'}
                     value={[filters.dateRange || 'any']}
                     onValueChange={([next]) => {
                       if (next !== undefined) setFilters({ ...filters, dateRange: next === 'any' ? '' : next });
@@ -2951,10 +2918,10 @@ export default function EntityExplorer({
                     {['any', 'last_year', 'last_5_years'].map(val => (
                       <ToggleGroupItem key={val} value={val} className="ee-filter-chip">
                         {val === 'any'
-                          ? (isEnglish ? 'Any date' : 'Cualquier fecha')
+                          ? ('Any date')
                           : val === 'last_year'
-                            ? (isEnglish ? 'Last year' : 'Último año')
-                            : (isEnglish ? 'Last 5 years' : 'Últimos 5 años')}
+                            ? ('Last year')
+                            : ('Last 5 years')}
                       </ToggleGroupItem>
                     ))}
                   </ToggleGroup>
@@ -2968,16 +2935,16 @@ export default function EntityExplorer({
                       checked={filters.peerReviewed}
                       onCheckedChange={(checked) => setFilters({ ...filters, peerReviewed: checked })}
                     />
-                    {isEnglish ? 'Peer-reviewed only' : 'Solo revisados por pares'}
+                    {'Peer-reviewed only'}
                   </Label>
                 </div>
               </div>
               <div className="ee-filter-footer">
                 <Button variant="outline" className="ee-filter-reset" onClick={() => { setFilters({category:'', peerReviewed:false, dateRange:''}); setShowFilters(false); }}>
-                  {isEnglish ? 'Reset' : 'Restablecer'}
+                  {'Reset'}
                 </Button>
                 <Button className="ee-filter-apply" onClick={() => setShowFilters(false)}>
-                  {isEnglish ? 'Apply filters' : 'Aplicar filtros'}
+                  {'Apply filters'}
                 </Button>
               </div>
         </SheetContent>
@@ -2989,8 +2956,8 @@ export default function EntityExplorer({
         open={Boolean(selectedPaper && !pdfPaperToView)}
         onClose={closeSelectedPaper}
         onExitComplete={() => setShownPaper(null)}
-        isEnglish={isEnglish}
-        label={isEnglish ? 'Publication details' : 'Detalles de la publicación'}
+       
+        label={'Publication details'}
       >
         {shownPaper && (
           <PaperCard
