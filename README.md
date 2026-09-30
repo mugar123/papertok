@@ -276,6 +276,7 @@ PaperTok is a personal open-source project, and some people have chosen to suppo
   <a href="https://github.com/ConvenIA-RLT-bot" title="ConvenIA-RLT-bot"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/donors/convenia-rlt-bot-dark.svg"><img src="docs/assets/donors/convenia-rlt-bot-light.svg" width="146" height="96" alt="ConvenIA-RLT-bot"></picture></a>
   <a href="https://github.com/XMihura" title="XMihura"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/donors/xmihura-dark.svg"><img src="docs/assets/donors/xmihura-light.svg" width="146" height="96" alt="XMihura"></picture></a>
   <a href="https://github.com/felipebasurto" title="felipebasurto"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/donors/felipebasurto-dark.svg"><img src="docs/assets/donors/felipebasurto-light.svg" width="146" height="96" alt="felipebasurto"></picture></a>
+  <a href="https://github.com/helmcode" title="helmcode"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/donors/helmcode-dark.svg"><img src="docs/assets/donors/helmcode-light.svg" width="146" height="96" alt="helmcode"></picture></a>
   <a href="https://github.com/sponsors/mugar123" title="Support PaperTok on GitHub Sponsors"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/donors/become-a-donor-dark.svg"><img src="docs/assets/donors/become-a-donor-light.svg" width="146" height="96" alt="Become a donor on GitHub Sponsors"></picture></a>
 </p>
 <!-- donors:end -->
