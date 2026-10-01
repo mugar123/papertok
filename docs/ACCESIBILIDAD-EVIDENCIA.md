@@ -919,3 +919,24 @@ fila se apoya en una captura.
 `src/utils/spaRouteCoverage.test.js` cubren el «no encontrado» y el 404. Los avisos con
 motivo tienen sus propios tests (tabla de arriba). `npm run check` pasa, y la suite pasa
 también en Node 22.
+
+## Ponytail audit cleanup (2026-10-01)
+
+Three independent reviewers checked all seven findings. The cleanup removes unused code,
+flattens private English copy in Settings/Profile, and shares the section observer and
+base64url codec. LanguageContext, public metadata shapes, paper identity rules, visible
+copy, control markup, focus handling and styles remain unchanged. The scroll tween
+and its tests are retained while PaperCard still uses them.
+
+| Page or flow | Component | WCAG criterion | Result | Evidence | Limitation | Recheck |
+|---|---|---|---|---|---|---|
+| Settings and profile editor | Private copy tables | 3.1.1, 3.3.1, 4.1.2 | No verificado (manual) | Five before/after table comparisons preserve every English string; existing Settings/Profile tests pass | Static comparison does not establish assistive-technology behavior | Read labels and validation errors with a screen reader |
+| Settings and profile editor | Section index and useSectionSpy | 1.3.1, 2.1.1, 2.4.3, 2.4.7, 4.1.2 | No verificado (manual) | Observer behavior matches both original implementations for overlapping sections, empty bands, absent nodes, unsupported observer and cleanup; button markup and aria-current unchanged | Native computer access was blocked by the locked Mac; no authenticated browser session was available | Traverse both indexes with Tab/Shift+Tab and Enter/Space; verify focus and announcements |
+
+Initial validation in the working tree, including separate feed edits: 189 focused
+tests and all 3,194 project tests passed. Source lint
+(`eslint src worker proxy`), frontend build, secret scan and Worker deployment dry-run
+passed. `npm run check` stops at 2,178 lint errors in two pre-existing generated bundles
+under `landing/dist/assets`; no lint/configuration, dependency, fixture or harness
+files were changed to bypass them. Frontend build retains its chunk-size warning.
+No deployment was performed and no WCAG conformance is claimed.

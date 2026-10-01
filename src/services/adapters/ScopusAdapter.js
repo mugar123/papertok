@@ -1,4 +1,3 @@
-import { BaseAdapter } from './BaseAdapter.js';
 import { PaperBuilder } from '../PaperBuilder.js';
 import { authenticatedWorkerFetch, hasWorkerSession } from '../workerApiClient.js';
 
@@ -65,9 +64,9 @@ function selectRequestedCategory(raw, requestedCategories) {
   }) || requestedCategories[0];
 }
 
-export class ScopusAdapter extends BaseAdapter {
+export class ScopusAdapter {
   constructor() {
-    super('scopus');
+    this.name = 'scopus';
   }
 
   async search(query, page = 1, filters = {}) {
@@ -109,10 +108,6 @@ export class ScopusAdapter extends BaseAdapter {
     } finally {
       clearTimeout(timeout);
     }
-  }
-
-  async getDetails() {
-    return null;
   }
 
   mapToStandard(raw, requestedCategories = []) {

@@ -1,4 +1,3 @@
-export { BaseAdapter } from './BaseAdapter';
 export { SemanticScholarAdapter } from './SemanticScholarAdapter';
 export { PubmedAdapter } from './PubmedAdapter';
 export { OpenAlexAdapter } from './OpenAlexAdapter';

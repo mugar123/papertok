@@ -1,5 +1,4 @@
 import { CATEGORIES } from '../../data/categories.js';
-import { BaseAdapter } from './BaseAdapter.js';
 import { readSourceCache, writeSourceCache } from '../../utils/sourceCache.js';
 import { mergePubmedAuthors, readPubmedEfetch } from '../../utils/pubmedEfetch.js';
 import { fetchWorkerSourceJson } from '../workerApiClient.js';
@@ -150,12 +149,12 @@ function publicationTypeFromPubtype(pubtype) {
   return undefined; // unknown stays unknown; PaperBuilder must not default it
 }
 
-export class PubmedAdapter extends BaseAdapter {
+export class PubmedAdapter {
   // `workerOptions` is the injection seam `openAlexClient` already uses:
   // `import.meta.env` does not exist under `node --test`, so without it this
   // adapter's network path could only be exercised in a browser.
   constructor(workerOptions = {}) {
-    super('pubmed');
+    this.name = 'pubmed';
     this.workerOptions = workerOptions;
   }
 

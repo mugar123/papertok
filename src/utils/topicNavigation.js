@@ -281,28 +281,3 @@ export function topicExplorerPath(topic) {
     .forEach(categoryId => params.append('category', categoryId));
   return `${basePath}?${params.toString()}`;
 }
-
-export function paperMatchesLocalTopic(paper, topic) {
-  const categoryIds = topic?.categoryIds || [];
-  const explicitCategories = (paper?.categories || []).filter(isScientificCategoryId);
-  if (explicitCategories.length > 0 && categoryIds.includes(explicitCategories[0])) return true;
-  if (explicitCategories.length === 0 && categoryIds.includes(paper?.primaryCategory)) return true;
-
-  const paperCategories = [paper?.primaryCategory, ...(paper?.categories || [])].filter(Boolean);
-
-  const topicLabels = [topic?.display_name, topic?.label]
-    .map(normalizeLabel)
-    .filter(label => label.length >= 4);
-  if (topicLabels.length === 0) return false;
-
-  const conceptLabels = (paper?.concepts || []).map(concept => concept?.display_name || concept?.name || '');
-  const searchableText = normalizeLabel([
-    paper?.title,
-    paper?.abstract,
-    paper?.summary,
-    ...paperCategories,
-    ...conceptLabels,
-  ].filter(Boolean).join(' '));
-
-  return topicLabels.some(label => searchableText.includes(label));
-}

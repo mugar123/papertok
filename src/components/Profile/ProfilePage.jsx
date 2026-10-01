@@ -1,3 +1,4 @@
+import { useSectionSpy } from '../../hooks/useSectionSpy.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
@@ -66,50 +67,13 @@ import { Toggle } from '../ui/toggle.jsx';
 import './ProfilePage.css';
 
 const HANDLE_ERROR_COPY = {
-  en: {
-    [HANDLE_ERRORS.empty]: 'Choose a handle.',
-    [HANDLE_ERRORS.tooShort]: 'A handle needs at least 3 characters.',
-    [HANDLE_ERRORS.tooLong]: 'A handle can have at most 40 characters.',
-    [HANDLE_ERRORS.charset]: 'Use lowercase letters, numbers and underscores only.',
-    [HANDLE_ERRORS.numericOnly]: 'A handle needs at least one letter.',
-    [HANDLE_ERRORS.reserved]: 'That handle is reserved.',
-  },
+  [HANDLE_ERRORS.empty]: 'Choose a handle.',
+  [HANDLE_ERRORS.tooShort]: 'A handle needs at least 3 characters.',
+  [HANDLE_ERRORS.tooLong]: 'A handle can have at most 40 characters.',
+  [HANDLE_ERRORS.charset]: 'Use lowercase letters, numbers and underscores only.',
+  [HANDLE_ERRORS.numericOnly]: 'A handle needs at least one letter.',
+  [HANDLE_ERRORS.reserved]: 'That handle is reserved.',
 };
-
-/**
- * Which numbered section is currently in the reading band below the navbar.
- * Same idea as the settings hub: document order, not whichever observer
- * callback arrived last, so two overlapping sections cannot flicker the
- * marker between them.
- */
-function useSectionSpy(sectionIds) {
-  const [activeId, setActiveId] = useState(sectionIds[0]);
-
-  useEffect(() => {
-    if (typeof IntersectionObserver !== 'function') return undefined;
-    const nodes = sectionIds
-      .map(id => document.getElementById(id))
-      .filter(Boolean);
-    if (nodes.length === 0) return undefined;
-
-    const visible = new Set();
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) visible.add(entry.target.id);
-          else visible.delete(entry.target.id);
-        }
-        const first = sectionIds.find(id => visible.has(id));
-        if (first) setActiveId(first);
-      },
-      { rootMargin: '-96px 0px -62% 0px' },
-    );
-    nodes.forEach(node => observer.observe(node));
-    return () => observer.disconnect();
-  }, [sectionIds]);
-
-  return activeId;
-}
 
 /**
  * The owner's view of their public profile: create it, edit it, decide what it
@@ -396,7 +360,7 @@ export default function ProfilePage() {
 
   const handleCheck = useMemo(() => inspectHandle(handleDraft), [handleDraft]);
   const handleError = handleDraft && !handleCheck.valid
-    ? HANDLE_ERROR_COPY.en[handleCheck.code]
+    ? HANDLE_ERROR_COPY[handleCheck.code]
     : '';
   // A profile still being created has only the two sections it can fill; the
   // pinned lists and the unpublish block arrive with the profile itself.
