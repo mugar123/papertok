@@ -1358,10 +1358,6 @@ const PaperCard = memo(function PaperCard({
             </div>
           );
         })()}
-        {/* The meta line and the status chips share one row, so the headline
-            is two lines from the top of the sheet instead of four. It wraps
-            where the column is too narrow to hold both. */}
-        <div className="pc-kicker">
         <div className="pc-meta">
           {primaryTopic ? (
             <button
@@ -1467,7 +1463,6 @@ const PaperCard = memo(function PaperCard({
               <ArrowSquareOut size={12} /> DOI
             </a>
           )}
-        </div>
         </div>
 
         {/* What the paper is filed under. Machine data, so it belongs with the
@@ -1917,7 +1912,7 @@ const PaperCard = memo(function PaperCard({
 
             {(paper.doi || paper.arxivId || paper.semanticScholarId) && (
               <Button
-                variant="outline"
+                variant="sky"
                 size="icon"
                 onClick={(event) => {
                   event.stopPropagation();
