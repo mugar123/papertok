@@ -447,46 +447,6 @@ export function applyRecommendationScore(paper, context = {}) {
   return paper;
 }
 
-export function weightedShuffle(papers, weights = DEFAULT_RECOMMENDATION_WEIGHTS, random = Math.random) {
-  const config = mergeRecommendationWeights(weights);
-  const pool = [...papers];
-  const result = [];
-
-  while (pool.length > 0) {
-    let totalWeight = 0;
-    const itemWeights = pool.map((paper) => {
-      const isExplore = paper._debugScore?.isExploration || paper._type === 'exploration';
-      const score = paper._dynamicScore || 0;
-      const baseWeight = isExplore ? config.explorationBaseWeight : config.exploitBaseWeight;
-      const weight = Math.max(config.minShuffleWeight, score + baseWeight);
-      totalWeight += weight;
-      return weight;
-    });
-
-    if (totalWeight <= 0) {
-      const index = Math.floor(random() * pool.length);
-      result.push(pool[index]);
-      pool.splice(index, 1);
-      continue;
-    }
-
-    let cursor = random() * totalWeight;
-    let selectedIndex = 0;
-    for (let i = 0; i < pool.length; i += 1) {
-      cursor -= itemWeights[i];
-      if (cursor <= 0) {
-        selectedIndex = i;
-        break;
-      }
-    }
-
-    result.push(pool[selectedIndex]);
-    pool.splice(selectedIndex, 1);
-  }
-
-  return result;
-}
-
 function countRecentProperties(papers) {
   const counts = { preprint: 0, published: 0, openAccess: 0, subscription: 0, journal: 0, conference: 0 };
 

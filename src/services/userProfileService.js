@@ -192,51 +192,6 @@ export function sanitizePinnedLists(entries) {
   return result;
 }
 
-/** Pure: the pinned array a profile should hold after pinning `entry`. */
-export function pinListEntry(currentPinned, entry) {
-  const pinned = sanitizePinnedList(entry);
-  if (!pinned) throw new TypeError('A published list is required to pin it.');
-  const rest = sanitizePinnedLists(currentPinned).filter(item => item.shareId !== pinned.shareId);
-  if (rest.length >= USER_PROFILE_LIMITS.pinnedLists) {
-    throw new RangeError(`A profile holds at most ${USER_PROFILE_LIMITS.pinnedLists} pinned lists.`);
-  }
-  return [...rest, pinned];
-}
-
-/** Pure: the pinned array a profile should hold after unpinning `shareId`. */
-export function unpinListEntry(currentPinned, shareId) {
-  const normalized = cleanString(shareId, 64).toLowerCase();
-  return sanitizePinnedLists(currentPinned).filter(item => item.shareId !== normalized);
-}
-
-/**
- * Pure: the pinned array after toggling `card`, with every pin that is no
- * longer backed by a published list dropped on the way.
- *
- * The rules ownership-check every entry in the array being written, and a
- * stale pin — its list unpublished, or republished under a fresh share id —
- * fails that check, so one leftover entry vetoes the WHOLE write, including
- * the attempt to pin the list's own successor. That is exactly the state a
- * republish produces, and what the profile screen surfaced as a bare
- * "something went wrong" on the Pin button.
- *
- * `publishedLists` is the pin picker's own data (readPinnableLists), so the
- * filter costs no extra read. It must have actually loaded: dropping every
- * pin because the picker has not answered yet would be the worse bug, so a
- * missing list refuses instead of guessing.
- */
-export function togglePinnedList(currentPinned, card, publishedLists) {
-  if (!Array.isArray(publishedLists)) {
-    throw new TypeError('The published lists are required to toggle a pin.');
-  }
-  const { pinned } = partitionStalePins(currentPinned, publishedLists);
-  const target = sanitizePinnedList(card);
-  if (!target) throw new TypeError('A published list is required to pin it.');
-  return pinned.some(item => item.shareId === target.shareId)
-    ? unpinListEntry(pinned, target.shareId)
-    : pinListEntry(pinned, target);
-}
-
 /**
  * Splits a profile's pins into the ones still backed by a published list and
  * the ones whose list has since been unpublished.
@@ -374,10 +329,6 @@ export function profileIsPublic(profile) {
 /** True when the owner has never made the choice, so the app must ask. */
 export function needsVisibilityChoice(profile) {
   return Boolean(profile) && !isVisibilityChoice(profile.visibility);
-}
-
-export function pinnedListsAreVisible(profile) {
-  return profile?.showPinnedLists !== false;
 }
 
 /**
@@ -567,51 +518,6 @@ function stashReference(api, uid) {
   return api.document(api.database, 'users', uid, 'profileStash', 'pinnedLists');
 }
 
-/**
- * Shows or hides the pinned lists.
- *
- * Firestore has no field-level security: every field of a readable document is
- * readable. So hiding the pins cannot be a flag the UI honours — the entries
- * have to leave the public document. They are parked in `users/{uid}`, which
- * is owner-only, and put back verbatim when the switch goes the other way.
- * Two documents, one batch, so the pins can never exist in both places or in
- * neither.
- */
-export async function setPinnedListsVisible(visible, overrides) {
-  const api = operations(overrides);
-  requireSupported(api);
-  const uid = requireOwner(api);
-  const batch = api.batch(api.database);
-  const profileRef = profileReference(api, uid);
-  const stashRef = stashReference(api, uid);
-
-  if (visible) {
-    // Restoring reads the stash — one bounded document, and only on the click
-    // that needs it, never on a page load.
-    const stashed = await api.getDocument(stashRef);
-    const pins = sanitizePinnedLists(stashed?.data?.()?.pinnedLists);
-    batch.update(profileRef, {
-      pinnedLists: pins,
-      showPinnedLists: true,
-      updatedAt: api.now(),
-    });
-    batch.set(stashRef, { pinnedLists: [], updatedAt: api.now() });
-    await batch.commit();
-    return { uid, showPinnedLists: true, pinnedLists: pins };
-  }
-
-  const current = await api.getDocument(profileRef);
-  const pins = sanitizePinnedLists(current?.data?.()?.pinnedLists);
-  batch.set(stashRef, { pinnedLists: pins, updatedAt: api.now() });
-  batch.update(profileRef, {
-    pinnedLists: [],
-    showPinnedLists: false,
-    updatedAt: api.now(),
-  });
-  await batch.commit();
-  return { uid, showPinnedLists: false, pinnedLists: [] };
-}
-
 export async function updateUserProfile(patch, overrides) {
   const api = operations(overrides);
   requireSupported(api);
@@ -635,22 +541,6 @@ export async function updateUserProfile(patch, overrides) {
   }
   await batch.commit();
   return { uid, ...payload };
-}
-
-/**
- * Pinning writes one document: the owner's profile. `publicLists` and
- * `publicListOwners` are never opened, let alone modified.
- */
-export async function savePinnedLists(pinnedLists, overrides) {
-  const api = operations(overrides);
-  requireSupported(api);
-  const uid = requireOwner(api);
-  const payload = sanitizePinnedLists(pinnedLists);
-  const batch = api.batch(api.database);
-
-  batch.update(profileReference(api, uid), { pinnedLists: payload, updatedAt: api.now() });
-  await batch.commit();
-  return payload;
 }
 
 /** The F12 pin write: one field, one document, no reads. */
