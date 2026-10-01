@@ -238,7 +238,10 @@ export default defineConfig(({ command, mode }) => {
               handler: 'NetworkFirst',
               options: {
                 cacheName: 'papertok-html',
-                networkTimeoutSeconds: 3,
+                // A slow connection is not an offline connection. Returning
+                // cached HTML after three seconds could boot a days-old build
+                // even when the current document was about to arrive. Fall
+                // back only when the network request actually fails.
                 expiration: { maxEntries: 5 },
                 plugins: [
                   {

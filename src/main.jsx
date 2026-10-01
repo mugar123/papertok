@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { registerSW } from 'virtual:pwa-register'
+import { watchServiceWorkerUpdates } from './utils/serviceWorkerUpdates.js'
 import { applyReloadPolicy, markAppForcedReload } from './utils/appReload.js'
 import { applyLegacyHashRoute } from './utils/legacyHashRoute.js'
 import { clearStaleOverlayMarker } from './hooks/useOverlayHistory.js'
@@ -66,13 +67,11 @@ import './styles/global.css'
 // unprompted, the instant the new worker takes control. Not "the reader
 // gets the new build next time they reload": the reload is not requested,
 // it is forced. `isUpdate` is false on a first install, so this never fires
-// for a first-time visitor; it fires on every revisit after a deploy. Since
+// for a first-time visitor; it fires when an updated worker activates. Since
 // taking control follows precaching the whole boot set over the network, on
 // a slow connection that forced reload can land mid-reading-session. It is
-// not rescuing anyone from a stale build either -- the `navigate`
-// runtimeCaching rule below is NetworkFirst, so an un-reloaded tab would
-// already be showing the new HTML; the reload is close to pure cost.
-// Left as-is anyway: without it, a tab that stays open across a deploy
+// needed because NetworkFirst only fetches new HTML on a navigation, not
+// when an existing tab resumes. Without it, a tab that stays open across a deploy
 // keeps the OLD `app.html` in memory, and that page's own lazy
 // `import()` calls still ask for chunks by their old content hash, which
 // the new deploy no longer serves -- a plain 404, and a route that simply
@@ -155,7 +154,11 @@ applyReloadPolicy()
 // its own tag on an entry it never pushed (useOverlayHistory.js).
 clearStaleOverlayMarker({ history: window.history, location: window.location })
 
-registerSW()
+registerSW({
+  onRegisteredSW(_url, registration) {
+    watchServiceWorkerUpdates(registration)
+  },
+})
 
 // The phone-side record of the tab bar's taps (diagnostics/tapDiagnostics.js):
 // behind `?tapdiag=1`, remembered for the tab's session so the app's own

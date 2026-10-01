@@ -95,6 +95,20 @@ before merge. There is no second publish workflow: `deploy.yml` published to Git
 removed on 2026-09-18, and what it ran was a strict subset of `npm run check`.
 Every action is pinned to a commit SHA; Dependabot proposes the bumps weekly.
 
+## PWA updates
+
+Navigation uses Workbox `NetworkFirst` without a cache timeout: slow successful
+requests serve current HTML, and cached HTML is used only when the network fails.
+The cached `/feed` shell remains available for offline routes. Hashed JS, CSS and
+fonts keep their `CacheFirst` policy.
+
+After service worker registration, the app checks for updates when it becomes
+visible, returns from the back/forward cache, or regains connectivity, and every
+five minutes while visible and online. Successful checks are throttled to one per
+minute; failed checks can retry on the next event. An installation already in
+progress is left alone. The existing automatic activation and reload behavior
+applies a detected deployment, preserving the feed position through `appReload`.
+
 ## Adding a Scientific Provider
 
 1. Decide whether the browser can call the provider safely and reliably.
