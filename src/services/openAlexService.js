@@ -1080,14 +1080,6 @@ export function getLocalTopicEntity(id) {
 }
 
 /**
- * Search journals/sources by name.
- */
-export async function searchSources() {
-  // Free openalex api is down. For now, we return empty so it doesn't crash.
-  return [];
-}
-
-/**
  * Look up an OpenAlex institution by its ROR identifier or name.
  * Returns { id, display_name } or null if not found.
  */
@@ -1472,14 +1464,6 @@ export async function getEntityRecentImpact(type, entityOrId, now = new Date()) 
   }
 }
 
-export function getInstitutionRecentImpact(entityOrId, now = new Date()) {
-  return getEntityRecentImpact('institution', entityOrId, now);
-}
-
-export function getAuthorRecentImpact(entityOrId, now = new Date()) {
-  return getEntityRecentImpact('author', entityOrId, now);
-}
-
 /**
  * OpenAlex Concept Mapping for PaperTok Categories
  */
@@ -1841,35 +1825,5 @@ export async function fetchPaperByWorkId(type, value, options = {}) {
     // anything else is the provider misbehaving, and the page offers a retry.
     if (error?.status === 404) return null;
     throw error;
-  }
-}
-
-export async function getTrendingPapers() {
-  const cacheKey = 'trending_papers_v2';
-  const cached = CACHE.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < 1000 * 60 * 60) return cached.data; // Cache for 1 hour
-
-  try {
-    const year = new Date().getFullYear();
-    const month = String(new Date().getMonth() + 1).padStart(2, '0');
-    // Get papers published in the last year, sort by citations
-    const filter = `from_publication_date:${year - 1}-${month}-01,has_doi:true,type:article`;
-    
-    // Slight randomization of page to make it change from time to time
-    const page = Math.floor(Math.random() * 3) + 1; 
-    const url = `https://api.openalex.org/works?filter=${filter}&sort=cited_by_count:desc&per-page=10&page=${page}`;
-    
-    const response = await fetchWithTimeout(url, 8000);
-    if (!response.ok) return [];
-    
-    const data = await response.json();
-    if (!data || !data.results) return [];
-    
-    const papers = data.results.map(formatOpenAlexWorkAsPaper);
-    CACHE.set(cacheKey, { data: papers, timestamp: Date.now() });
-    return papers;
-  } catch (err) {
-    console.error("Failed to fetch trending papers", err);
-    return [];
   }
 }

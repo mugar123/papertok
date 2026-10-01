@@ -1,4 +1,3 @@
-import { BaseAdapter } from './BaseAdapter.js';
 import { assignRequestedCategories } from '../arxivService.js';
 import { openAlexFetch } from '../openAlexClient.js';
 import { getArxivIdFromWork } from '../openAlexService.js';
@@ -51,9 +50,9 @@ export const OPENALEX_PUBLISHED_TYPES = Object.freeze(['article', 'conference-pa
 // directly, and datasets, theses, and paratext are still left out here.
 export const OPENALEX_SEARCH_TYPES = Object.freeze([...OPENALEX_PUBLISHED_TYPES, 'preprint', 'review']);
 
-export class OpenAlexAdapter extends BaseAdapter {
+export class OpenAlexAdapter {
   constructor() {
-    super('openalex_search');
+    this.name = 'openalex_search';
     this.baseUrl = 'https://api.openalex.org/works';
     this.mailto = 'app@papertok.io';
   }
@@ -101,27 +100,6 @@ export class OpenAlexAdapter extends BaseAdapter {
         console.error('[OpenAlexAdapter] Search failed:', error);
       }
       throw new Error(`Could not reach OpenAlex: ${error.message}`, { cause: error });
-    }
-  }
-
-  async getDetails(id) {
-    let cleanId = id;
-    if (id.startsWith('openalex:')) cleanId = id.replace('openalex:', '');
-    
-    const url = `${this.baseUrl}/${cleanId}?mailto=${this.mailto}`;
-    try {
-      const response = await openAlexFetch(url, {
-        timeoutMs: 10000,
-        cacheTtlMs: 24 * 60 * 60 * 1000,
-        staleIfError: true,
-      });
-      if (!response.ok) throw new Error(`OpenAlex API error: ${response.status}`);
-      
-      const data = await response.json();
-      return this.mapToStandard(data);
-    } catch (error) {
-      console.error('[OpenAlexAdapter] Error obteniendo detalles:', error);
-      return null;
     }
   }
 

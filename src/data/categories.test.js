@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getAreaKeyFromTopicName, getCategoryGradient } from './categories.js';
+import { getAreaKeyFromTopicName } from './categories.js';
 
 /* The twelve field inks are keyed to arXiv's category codes, but most of the
    corpus arrives from OpenAlex as a topic's display name. Every one of those
@@ -51,23 +51,4 @@ test('a topic with nothing distinctive keeps the ink rather than guessing', () =
   for (const vague of ['General', 'Miscellaneous', 'Social and Behavioural Sciences', '', null, undefined, 42]) {
     assert.equal(getAreaKeyFromTopicName(vague), '', `${vague} should not be given a field`);
   }
-});
-
-test('arXiv codes keep resolving exactly as they did', () => {
-  assert.equal(getCategoryGradient('cs.AI'), 'var(--gradient-cs)');
-  assert.equal(getCategoryGradient('quant-ph'), 'var(--gradient-physics)');
-  assert.equal(getCategoryGradient('math.AG'), 'var(--gradient-math)');
-});
-
-test('a topic name now reaches a field ink instead of the brand fallback', () => {
-  assert.equal(getCategoryGradient('Wastewater Treatment and Reuse'), 'var(--gradient-civil)');
-  assert.equal(getCategoryGradient('Protein Structure and Dynamics'), 'var(--gradient-bio)');
-  // And what genuinely has no field still gets the ink.
-  assert.equal(getCategoryGradient('General'), 'var(--gradient-brand)');
-});
-
-test('the observed topics do not all collapse onto one colour', () => {
-  const inks = new Set(OBSERVED.map(([topic]) => getCategoryGradient(topic)));
-  assert.ok(inks.size >= 6, `only ${inks.size} distinct field inks across the observed topics`);
-  assert.equal(inks.has('var(--gradient-brand)'), false);
 });

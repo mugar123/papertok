@@ -376,29 +376,6 @@ export function getAreaKeyFromTopicName(value) {
 }
 
 /**
- * Get the gradient CSS variable for a given arXiv category.
- * Maps any category to its parent area gradient.
- */
-export function getCategoryGradient(arxivCategory) {
-  for (const [areaKey, area] of Object.entries(CATEGORIES)) {
-    if (arxivCategory in area.subcategories) {
-      return area.gradient;
-    }
-    // Check if it's a parent-level match (e.g., 'cs' matches 'cs.AI')
-    if (arxivCategory.startsWith(areaKey + '.') || arxivCategory.startsWith(areaKey + '-')) {
-      return area.gradient;
-    }
-  }
-  // Fallback: try to match by prefix
-  const area = CATEGORIES[getFallbackAreaKey(arxivCategory)];
-  if (area) return area.gradient;
-
-  // Not an arXiv code at all, which is the common case: read the name.
-  const named = CATEGORIES[getAreaKeyFromTopicName(arxivCategory)];
-  return named ? named.gradient : 'var(--gradient-brand)';
-}
-
-/**
  * Get the human-readable label for a given arXiv category.
  */
 export function getCategoryLabel(arxivCategory) {
@@ -429,25 +406,6 @@ export function getCategoryArea(arxivCategory) {
     }
   }
   return null;
-}
-
-/**
- * Get all selected arXiv category IDs from a selection object.
- * @param {Object} selection - { areaKey: Set of subcategory IDs }
- * @returns {string[]} Array of arXiv category IDs
- */
-export function getSelectedCategoryIds(selection) {
-  const ids = [];
-  for (const [, subcats] of Object.entries(selection)) {
-    if (subcats instanceof Set) {
-      for (const id of subcats) {
-        ids.push(id);
-      }
-    } else if (Array.isArray(subcats)) {
-      ids.push(...subcats);
-    }
-  }
-  return ids;
 }
 
 /**

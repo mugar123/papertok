@@ -1,3 +1,4 @@
+import { useSectionSpy } from '../../hooks/useSectionSpy.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -65,33 +66,27 @@ function GitHubMark({ size = 20 }) {
 
 const LEVEL_DETAILS = {
   beginner: {
-    label: { en: 'Beginner' },
-    description: {
-      en: 'Clear language and context from first principles',
-    },
+    label: 'Beginner',
+    description: 'Clear language and context from first principles',
     Icon: BookOpen,
   },
   university: {
-    label: { en: 'University' },
-    description: {
-      en: 'Academic rigor without assuming specialization',
-    },
+    label: 'University',
+    description: 'Academic rigor without assuming specialization',
     Icon: GraduationCap,
   },
   researcher: {
-    label: { en: 'Researcher' },
-    description: {
-      en: 'Methods, limitations, and technical detail',
-    },
+    label: 'Researcher',
+    description: 'Methods, limitations, and technical detail',
     Icon: Flask,
   },
 };
 
 const FOLLOW_SUMMARY = [
-  { type: 'author', label: { en: 'Authors' }, Icon: User },
-  { type: 'topic', label: { en: 'Topics' }, Icon: Tag },
-  { type: 'institution', label: { en: 'Institutions' }, Icon: Buildings },
-  { type: 'project', label: { en: 'Projects' }, Icon: Briefcase },
+  { type: 'author', label: 'Authors', Icon: User },
+  { type: 'topic', label: 'Topics', Icon: Tag },
+  { type: 'institution', label: 'Institutions', Icon: Buildings },
+  { type: 'project', label: 'Projects', Icon: Briefcase },
 ];
 
 /**
@@ -101,54 +96,14 @@ const FOLLOW_SUMMARY = [
  * order the sections are rendered in.
  */
 const SETTINGS_SECTIONS = [
-  { id: 'settings-account', label: { en: 'Account' } },
-  { id: 'settings-discovery', label: { en: 'Discovery' } },
-  { id: 'settings-reading', label: { en: 'Reading and AI' } },
-  { id: 'settings-notifications', label: { en: 'Notifications' } },
-  { id: 'settings-privacy', label: { en: 'Privacy' } },
-  { id: 'settings-community', label: { en: 'Community' } },
-  { id: 'settings-access', label: { en: 'Access and session' } },
+  { id: 'settings-account', label: 'Account' },
+  { id: 'settings-discovery', label: 'Discovery' },
+  { id: 'settings-reading', label: 'Reading and AI' },
+  { id: 'settings-notifications', label: 'Notifications' },
+  { id: 'settings-privacy', label: 'Privacy' },
+  { id: 'settings-community', label: 'Community' },
+  { id: 'settings-access', label: 'Access and session' },
 ];
-
-/**
- * Which section the reader is on, for the index rail.
- *
- * A "reading band" a little below the navbar decides: the active section is
- * the first one, in document order, whose box touches that band. Picking by
- * document order rather than by whichever entry the observer reports last is
- * what keeps the marker from flickering between two sections that straddle
- * the band at the same moment.
- */
-function useSectionSpy(sectionIds) {
-  const [activeId, setActiveId] = useState(sectionIds[0]);
-
-  useEffect(() => {
-    if (typeof IntersectionObserver !== 'function') return undefined;
-    const nodes = sectionIds
-      .map(id => document.getElementById(id))
-      .filter(Boolean);
-    if (nodes.length === 0) return undefined;
-
-    const visible = new Set();
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) visible.add(entry.target.id);
-          else visible.delete(entry.target.id);
-        }
-        const first = sectionIds.find(id => visible.has(id));
-        // No band contact at all (between sections, or bounced past the end)
-        // keeps the last answer rather than clearing the marker.
-        if (first) setActiveId(first);
-      },
-      { rootMargin: '-96px 0px -62% 0px' },
-    );
-    nodes.forEach(node => observer.observe(node));
-    return () => observer.disconnect();
-  }, [sectionIds]);
-
-  return activeId;
-}
 
 /**
  * The public copy's whole budget: the patient read (PUBLIC_PHOTO_READ_TIMEOUT_MS,
@@ -157,93 +112,91 @@ function useSectionSpy(sectionIds) {
 const PUBLIC_PHOTO_MIRROR_TIMEOUT_MS = 12_000;
 
 const SETTINGS_COPY = {
-  en: {
-    eyebrow: 'User settings',
-    title: 'Settings',
-    subtitle: 'Your account, discovery preferences, and reading tools.',
-    index: 'Index',
-    indexLabel: 'Settings sections',
-    indexHint: 'Changes are saved as you make them, section by section.',
-    account: 'Account',
-    defaultUser: 'PaperTok user',
-    googleAccount: 'Account managed with Google',
-    githubAccount: 'Account managed with GitHub',
-    accountBothProviders: 'You sign in with Google and GitHub',
-    genericAccount: 'PaperTok account',
-    changePhoto: 'Change photo',
-    restoreGooglePhoto: 'Restore Google photo',
-    removePhoto: 'Remove profile photo',
-    photoUpdated: 'Profile photo updated.',
-    googlePhotoRestored: 'Your Google photo has been restored.',
-    photoRemoved: 'Profile photo removed.',
-    photoSaveError: 'The profile photo could not be saved.',
-    photoRestoreError: 'The profile photo could not be restored.',
-    photoPublicPending: 'The change is saved, but your public profile does not reflect it yet. Try again.',
-    discovery: 'Discovery',
-    discoveryDescription: 'Signals PaperTok uses to build your feeds.',
-    followedContent: 'Following',
-    loadingFollowing: 'Loading the content you follow...',
-    followedOne: 'followed entity',
-    followedMany: 'followed entities',
-    recommendationsSuffix: 'influence your recommendations',
-    followingSummary: 'Summary of followed content',
-    viewAll: 'View all',
-    publicProfile: 'Public profile',
-    publicProfileDescription: 'Your handle, your bio and the lists you choose to show',
-    profileIsPublicBadge: 'public',
-    profileIsPrivateBadge: 'private',
-    myComments: 'My comments',
-    myCommentsDescription: 'What you have written on papers, moderated items included',
-    scientificInterests: 'Scientific interests',
-    selectedOne: 'selected subcategory',
-    selectedMany: 'selected subcategories',
-    trainFeed: 'used to train your feed',
-    selectedAreas: 'Selected areas',
-    edit: 'Edit',
-    readingAi: 'Reading and AI',
-    readingAiDescription: 'Adjust the depth of your AI explanations.',
-    defaultAiLevel: 'Default AI level',
-    defaultAiDescription: 'This level will be preselected when you ask AI to explain a paper',
-    saving: 'Saving...',
-    preferenceSaved: 'Preference saved',
-    saveError: 'Could not save',
-    aiLevelLabel: 'Default explanation level',
-    notifications: 'Notifications',
-    notificationsDescription: 'Choose whether to receive updates while PaperTok is closed.',
-    emailUpdates: 'Email updates',
-    configure: 'Configure',
-    privacy: 'Privacy',
-    privacyDescription: 'Control the anonymous measurements used to improve PaperTok.',
-    usageAnalytics: 'Usage analytics',
-    usageAnalyticsDescription: 'Only anonymous pages are recorded; never searches, papers, interests, or account data.',
-    analyticsEnabled: 'On',
-    analyticsDisabled: 'Off',
-    analyticsToggleLabel: 'Allow usage analytics',
-    deleteAccount: 'Delete account',
-    deleteAccountDescription: 'Deletes your profile, your data, and sign-in access. It cannot be undone.',
-    deleteAccountAction: 'Delete',
-    community: 'Community',
-    communityDescription: 'Explore the project and take part in its development.',
-    openSource: 'PaperTok is open source',
-    openSourceDescription: 'View the code, share ideas, or contribute on GitHub.',
-    viewOnGitHub: 'View on GitHub',
-    opensNewTab: 'opens in a new tab',
-    access: 'Access and session',
-    accessDescription: 'Different doors, the same account and the same data.',
-    session: 'Session',
-    sessionDescription: 'Your personalized information remains linked to this account.',
-    signOut: 'Sign out',
-    signInMethods: 'Ways to sign in',
-    signInMethodsDescription: 'Different doors, the same account and the same data.',
-    githubMethod: 'Sign in with GitHub',
-    githubLinked: 'Connected. You can sign in with GitHub now.',
-    githubUnlinked: 'Connect it and you can sign in with GitHub as well as the way you sign in today.',
-    connect: 'Connect',
-    connecting: 'Connecting...',
-    connected: 'Connected',
-    linkSuccess: 'GitHub connected. Next time you can sign in with either one.',
-    linkTaken: 'That GitHub account already opens a different PaperTok account. The two are not merged: sign in to the other one if that is the account you want to keep, or connect a different GitHub account.',
-  },
+  eyebrow: 'User settings',
+  title: 'Settings',
+  subtitle: 'Your account, discovery preferences, and reading tools.',
+  index: 'Index',
+  indexLabel: 'Settings sections',
+  indexHint: 'Changes are saved as you make them, section by section.',
+  account: 'Account',
+  defaultUser: 'PaperTok user',
+  googleAccount: 'Account managed with Google',
+  githubAccount: 'Account managed with GitHub',
+  accountBothProviders: 'You sign in with Google and GitHub',
+  genericAccount: 'PaperTok account',
+  changePhoto: 'Change photo',
+  restoreGooglePhoto: 'Restore Google photo',
+  removePhoto: 'Remove profile photo',
+  photoUpdated: 'Profile photo updated.',
+  googlePhotoRestored: 'Your Google photo has been restored.',
+  photoRemoved: 'Profile photo removed.',
+  photoSaveError: 'The profile photo could not be saved.',
+  photoRestoreError: 'The profile photo could not be restored.',
+  photoPublicPending: 'The change is saved, but your public profile does not reflect it yet. Try again.',
+  discovery: 'Discovery',
+  discoveryDescription: 'Signals PaperTok uses to build your feeds.',
+  followedContent: 'Following',
+  loadingFollowing: 'Loading the content you follow...',
+  followedOne: 'followed entity',
+  followedMany: 'followed entities',
+  recommendationsSuffix: 'influence your recommendations',
+  followingSummary: 'Summary of followed content',
+  viewAll: 'View all',
+  publicProfile: 'Public profile',
+  publicProfileDescription: 'Your handle, your bio and the lists you choose to show',
+  profileIsPublicBadge: 'public',
+  profileIsPrivateBadge: 'private',
+  myComments: 'My comments',
+  myCommentsDescription: 'What you have written on papers, moderated items included',
+  scientificInterests: 'Scientific interests',
+  selectedOne: 'selected subcategory',
+  selectedMany: 'selected subcategories',
+  trainFeed: 'used to train your feed',
+  selectedAreas: 'Selected areas',
+  edit: 'Edit',
+  readingAi: 'Reading and AI',
+  readingAiDescription: 'Adjust the depth of your AI explanations.',
+  defaultAiLevel: 'Default AI level',
+  defaultAiDescription: 'This level will be preselected when you ask AI to explain a paper',
+  saving: 'Saving...',
+  preferenceSaved: 'Preference saved',
+  saveError: 'Could not save',
+  aiLevelLabel: 'Default explanation level',
+  notifications: 'Notifications',
+  notificationsDescription: 'Choose whether to receive updates while PaperTok is closed.',
+  emailUpdates: 'Email updates',
+  configure: 'Configure',
+  privacy: 'Privacy',
+  privacyDescription: 'Control the anonymous measurements used to improve PaperTok.',
+  usageAnalytics: 'Usage analytics',
+  usageAnalyticsDescription: 'Only anonymous pages are recorded; never searches, papers, interests, or account data.',
+  analyticsEnabled: 'On',
+  analyticsDisabled: 'Off',
+  analyticsToggleLabel: 'Allow usage analytics',
+  deleteAccount: 'Delete account',
+  deleteAccountDescription: 'Deletes your profile, your data, and sign-in access. It cannot be undone.',
+  deleteAccountAction: 'Delete',
+  community: 'Community',
+  communityDescription: 'Explore the project and take part in its development.',
+  openSource: 'PaperTok is open source',
+  openSourceDescription: 'View the code, share ideas, or contribute on GitHub.',
+  viewOnGitHub: 'View on GitHub',
+  opensNewTab: 'opens in a new tab',
+  access: 'Access and session',
+  accessDescription: 'Different doors, the same account and the same data.',
+  session: 'Session',
+  sessionDescription: 'Your personalized information remains linked to this account.',
+  signOut: 'Sign out',
+  signInMethods: 'Ways to sign in',
+  signInMethodsDescription: 'Different doors, the same account and the same data.',
+  githubMethod: 'Sign in with GitHub',
+  githubLinked: 'Connected. You can sign in with GitHub now.',
+  githubUnlinked: 'Connect it and you can sign in with GitHub as well as the way you sign in today.',
+  connect: 'Connect',
+  connecting: 'Connecting...',
+  connected: 'Connected',
+  linkSuccess: 'GitHub connected. Next time you can sign in with either one.',
+  linkTaken: 'That GitHub account already opens a different PaperTok account. The two are not merged: sign in to the other one if that is the account you want to keep, or connect a different GitHub account.',
 };
 
 function emailStatus(preferences, health, loading) {
@@ -280,7 +233,7 @@ export default function SettingsPage() {
   const profileInputRef = useRef(null);
   const { language } = useLanguage();
   const { consent: analyticsConsent, updateConsent: updateAnalyticsConsent } = useAnalyticsConsent();
-  const copy = SETTINGS_COPY[language];
+  const copy = SETTINGS_COPY;
   const {
     user,
     userPreferences,
@@ -534,7 +487,7 @@ export default function SettingsPage() {
                       onClick={() => jumpToSection(section.id)}
                     >
                       <span aria-hidden="true">{String(position + 1).padStart(2, '0')}</span>
-                      {section.label[language]}
+                      {section.label}
                     </button>
                   );
                 })}
@@ -684,7 +637,7 @@ export default function SettingsPage() {
                             .map(({ type, label, Icon }) => (
                               <span key={type}>
                                 <Icon size={12} />
-                                {label[language]}
+                                {label}
                                 <strong>{followedByType[type].length}</strong>
                               </span>
                             ))}
@@ -758,7 +711,7 @@ export default function SettingsPage() {
                             disabled={Boolean(savingLevel)}
                           >
                             <Icon size={18} aria-hidden="true" />
-                            <span><strong>{label[language]}</strong><small>{description[language]}</small></span>
+                            <span><strong>{label}</strong><small>{description}</small></span>
                           </RadioGroupItem>
                         );
                       })}

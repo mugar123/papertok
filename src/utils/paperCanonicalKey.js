@@ -1,3 +1,5 @@
+import { encodeBase64Url, decodeBase64Url } from './base64Url.js';
+
 /**
  * The canonical identity of a paper, for the stub collection (F3).
  *
@@ -23,13 +25,12 @@
  * `/`, which would nest paths — the exact bug family that bit `interactions`),
  * reversible, and the same alphabet the public paper URLs already use.
  *
- * Pure module: no imports, no environment. The exhaustive tests are the gate
+ * Pure module: shared byte encoding, no environment. The exhaustive tests are the gate
  * for this phase — the key is the hardest decision to walk back.
  */
 
 const DOI_PATTERN = /^10\.\d{4,9}\/\S+$/;
 const ARXIV_PATTERN = /^(?:\d{4}\.\d{4,5}|[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)?\/\d{7})(?:v\d+)?$/i;
-const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 /** Longest identity the stub rules accept; DOIs in the wild stay under 300. */
 export const CANONICAL_IDENTITY_MAX_LENGTH = 600;
@@ -133,44 +134,6 @@ export function candidateStubIdentities(paper) {
     if (arxivId && primary !== `arxiv:${arxivId}`) identities.push(`arxiv:${arxivId}`);
   }
   return identities;
-}
-
-function encodeUtf8(value) {
-  const bytes = new TextEncoder().encode(value);
-  return String.fromCharCode(...bytes);
-}
-
-function decodeUtf8(value) {
-  const bytes = Uint8Array.from(value, character => character.charCodeAt(0));
-  return new TextDecoder().decode(bytes);
-}
-
-function encodeBase64Url(value) {
-  const binary = encodeUtf8(value);
-  const buffer = globalThis.Buffer;
-  const base64 = typeof btoa === 'function'
-    ? btoa(binary)
-    : buffer
-      ? buffer.from(binary, 'binary').toString('base64')
-      : '';
-  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}
-
-function decodeBase64Url(value) {
-  if (!BASE64URL_PATTERN.test(value)) return '';
-  const padded = value.replace(/-/g, '+').replace(/_/g, '/')
-    .padEnd(Math.ceil(value.length / 4) * 4, '=');
-  try {
-    const buffer = globalThis.Buffer;
-    const binary = typeof atob === 'function'
-      ? atob(padded)
-      : buffer
-        ? buffer.from(padded, 'base64').toString('binary')
-        : '';
-    return binary ? decodeUtf8(binary) : '';
-  } catch {
-    return '';
-  }
 }
 
 /** The Firestore document id for an identity already in canonical form. */

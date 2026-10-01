@@ -1,15 +1,14 @@
-import { BaseAdapter } from './BaseAdapter.js';
 import { fetchWorkerSourceJson } from '../workerApiClient.js';
 import { semanticScholarIsPreprint } from '../../utils/publicationStatus.js';
 
 const SEMANTIC_SCHOLAR_PAGE_SIZE = 25;
 
-export class SemanticScholarAdapter extends BaseAdapter {
+export class SemanticScholarAdapter {
   // Same injection seam as `PubmedAdapter`: `import.meta.env` is absent under
   // `node --test`, so the Worker origin has to be passable for the network path
   // to be testable at all.
   constructor(workerOptions = {}) {
-    super('semanticscholar');
+    this.name = 'semanticscholar';
     this.workerOptions = workerOptions;
   }
 
@@ -59,10 +58,6 @@ export class SemanticScholarAdapter extends BaseAdapter {
       console.error("Error fetching from Semantic Scholar:", e);
       return { papers: [], total: 0 };
     }
-  }
-
-  async getDetails() {
-    return null; 
   }
 
   mapToStandard(raw) {
