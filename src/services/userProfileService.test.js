@@ -16,7 +16,6 @@ import {
   createUserProfile,
   deleteOwnUserProfile,
   partitionStalePins,
-  pinListEntry,
   publicAvatarFrom,
   readConfirmedOwnUserProfile,
   readOwnLists,
@@ -27,18 +26,13 @@ import {
   sanitizePinnedList,
   sanitizePinnedLists,
   sanitizeUserProfile,
-  savePinnedLists,
   savePublicProfilePhoto,
-  togglePinnedList,
-  unpinListEntry,
   updateUserProfile,
   PROFILE_VISIBILITY,
   isVisibilityChoice,
   needsVisibilityChoice,
-  pinnedListsAreVisible,
   profileIsPublic,
   saveProfileVisibility,
-  setPinnedListsVisible,
   mergeShowcaseCards,
   migrateHiddenPins,
   migrateLegacyPins,
@@ -144,60 +138,6 @@ test('a pinned list card is a share id, a title and a count — nothing else', (
   assert.deepEqual(pinned, { shareId: SHARE_ID, title: 'Reading', paperCount: 4 });
   assert.equal(sanitizePinnedList({ shareId: 'not-a-share-id', title: 'x' }), null);
   assert.equal(sanitizePinnedList({ shareId: SHARE_ID, title: '   ' }), null);
-});
-
-// --- pinning ---------------------------------------------------------------
-
-test('pinning and unpinning a list is idempotent and bounded', () => {
-  const first = pinListEntry([], { shareId: SHARE_ID, title: 'Reading', paperCount: 2 });
-  assert.equal(first.length, 1);
-
-  const again = pinListEntry(first, { shareId: SHARE_ID, title: 'Reading renamed', paperCount: 3 });
-  assert.equal(again.length, 1, 'pinning the same list twice must not duplicate it');
-  assert.equal(again[0].title, 'Reading renamed');
-
-  const two = pinListEntry(again, { shareId: OTHER_SHARE_ID, title: 'Second', paperCount: 1 });
-  assert.deepEqual(unpinListEntry(two, SHARE_ID).map(item => item.shareId), [OTHER_SHARE_ID]);
-  assert.deepEqual(unpinListEntry(two, SHARE_ID.toUpperCase()).map(item => item.shareId), [OTHER_SHARE_ID]);
-  assert.deepEqual(unpinListEntry(two, 'unknown'), two);
-});
-
-test('refuses to pin past the documented ceiling', () => {
-  const full = Array.from({ length: USER_PROFILE_LIMITS.pinnedLists }, (_, index) => ({
-    shareId: index.toString(16).padStart(32, '0'),
-    title: `List ${index}`,
-    paperCount: 0,
-  }));
-  assert.throws(
-    () => pinListEntry(full, { shareId: SHARE_ID, title: 'One too many', paperCount: 0 }),
-    RangeError,
-  );
-});
-
-test('pinning writes the profile and NOTHING in publicLists', async () => {
-  // Attribution is opt-in precisely because the public list documents stay
-  // anonymous. A write here would undo that.
-  const { api, calls } = fakeApi();
-  await savePinnedLists([{ shareId: SHARE_ID, title: 'Reading', paperCount: 2 }], api);
-
-  assert.deepEqual(writtenPaths(calls), ['db/userProfiles/user-1']);
-  for (const path of writtenPaths(calls)) {
-    assert.doesNotMatch(path, /publicList/i);
-  }
-  const [, , payload] = calls[0];
-  assert.deepEqual(Object.keys(payload).sort(), ['pinnedLists', 'updatedAt']);
-});
-
-test('unpinning writes the profile and NOTHING in publicLists', async () => {
-  const { api, calls } = fakeApi();
-  const remaining = unpinListEntry(
-    [{ shareId: SHARE_ID, title: 'Reading', paperCount: 2 }],
-    SHARE_ID,
-  );
-  await savePinnedLists(remaining, api);
-
-  assert.deepEqual(writtenPaths(calls), ['db/userProfiles/user-1']);
-  assert.deepEqual(calls[0][2].pinnedLists, []);
 });
 
 // --- handle reservation ----------------------------------------------------
@@ -789,24 +729,6 @@ test('the pin-card cap IS the public-list cap, in code and in rules', async () =
   assert.match(rules, new RegExp(`entry\\.paperCount <= ${PUBLIC_LIST_LIMITS.papers}\\b`));
 });
 
-test('toggling through togglePinnedList drops pins with no published backing', () => {
-  const published = [{ shareId: SHARE_ID, title: 'Live', paperCount: 19 }];
-  const stale = { shareId: OTHER_SHARE_ID, title: 'Unpublished', paperCount: 3 };
-
-  // Pinning the live list while a stale pin lingers: the stale entry must not
-  // ride along, because the rules refuse the whole write over it.
-  const pinned = togglePinnedList([stale], published[0], published);
-  assert.deepEqual(pinned.map(item => item.shareId), [SHARE_ID]);
-
-  // Unpinning drops the stale entry too, not just the toggled one.
-  const unpinned = togglePinnedList([stale, published[0]], published[0], published);
-  assert.deepEqual(unpinned, []);
-
-  // A picker that has not answered refuses rather than treating every pin as
-  // stale — guessing here would silently wipe the profile's pins.
-  assert.throws(() => togglePinnedList([stale], published[0], null), TypeError);
-});
-
 // --- the public avatar -----------------------------------------------------
 
 const GOOGLE_AVATAR = 'https://lh3.googleusercontent.com/a/ACg8ocLoyCJZgVTNsCm0=s96-c';
@@ -1107,48 +1029,11 @@ test('switching visibility touches the profile and the index, never the handle',
   assert.deepEqual(rejected.calls, []);
 });
 
-test('hiding pinned lists moves them out of the public document', async () => {
-  // Firestore has no field-level security: a flag the UI honours would leave
-  // the entries readable. They have to leave the document.
-  const pins = [{ shareId: SHARE_ID, title: 'Reading', paperCount: 3 }];
-  const { api, calls } = fakeApi({
-    getDocument: async () => ({ exists: () => true, data: () => ({ pinnedLists: pins }) }),
-  });
-  await setPinnedListsVisible(false, api);
-
-  assert.deepEqual(writtenPaths(calls), ['db/users/user-1/profileStash/pinnedLists', 'db/userProfiles/user-1']);
-  assert.deepEqual(calls[0][2].pinnedLists, pins, 'the pins are parked, not discarded');
-  assert.deepEqual(calls[1][2].pinnedLists, [], 'and the public array is emptied');
-  assert.equal(calls[1][2].showPinnedLists, false);
-  assert.equal(calls.at(-1)[0], 'commit', 'both documents move in one commit');
-});
-
-test('showing pinned lists again restores exactly what was parked', async () => {
-  const pins = [{ shareId: SHARE_ID, title: 'Reading', paperCount: 3 }];
-  const { api, calls } = fakeApi({
-    getDocument: async () => ({ exists: () => true, data: () => ({ pinnedLists: pins }) }),
-  });
-  await setPinnedListsVisible(true, api);
-
-  assert.deepEqual(writtenPaths(calls), ['db/userProfiles/user-1', 'db/users/user-1/profileStash/pinnedLists']);
-  assert.deepEqual(calls[0][2].pinnedLists, pins);
-  assert.equal(calls[0][2].showPinnedLists, true);
-  assert.deepEqual(calls[1][2].pinnedLists, [], 'the stash is emptied, not left duplicated');
-});
-
-test('an empty pin list and hidden pins are different states', () => {
-  // Without the flag they would be identical on reload, and the switch would
-  // appear to forget what the user set.
-  assert.equal(pinnedListsAreVisible({ pinnedLists: [] }), true);
-  assert.equal(pinnedListsAreVisible({ pinnedLists: [], showPinnedLists: false }), false);
-  assert.equal(pinnedListsAreVisible({ showPinnedLists: true }), true);
-});
-
 // --- the editor's write paths must not carry stale pins ---------------------
 
 test('SOURCE: the profile editor writes pins as ids and never as cards (F12)', async () => {
   // The F12 pin is an order of share ids; the card-writing helpers are the
-  // legacy model, kept only for the migration window, and reaching them from
+  // retired model, and reaching them from
   // the editor would resurrect the stale-pin veto the id model dissolved.
   // Same convention as the feed's SOURCE tests: the invariant breaks with an
   // import, so the import is what gets pinned.

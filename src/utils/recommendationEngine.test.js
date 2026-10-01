@@ -5,10 +5,8 @@ import {
   applyRecommendationScore,
   diversifiedWeightedShuffle,
   FEED_SHUFFLE_POOL_CAP,
-  mergeRecommendationWeights,
   scorePaperForRecommendation,
   trimScoredCandidatePool,
-  weightedShuffle,
 } from './recommendationEngine.js';
 
 const NOW = new Date('2026-07-05T12:00:00Z').getTime();
@@ -214,22 +212,6 @@ test('matches followed topics directly across categories, concepts, topics, and 
     title: 'Spatial transcriptomics maps tissue',
   }, { now: NOW, followedEntities: [queryFollow] });
   assert.equal(titleOnly.followedEntityMatches.topic, false);
-});
-
-test('weighted shuffle honors deterministic random selection', () => {
-  const papers = [
-    { id: 'low', _dynamicScore: 0, _type: 'exploration' },
-    { id: 'high', _dynamicScore: 100, _type: 'exploit' },
-  ];
-
-  const shuffled = weightedShuffle(
-    papers,
-    mergeRecommendationWeights(),
-    () => 0.99
-  );
-
-  assert.equal(shuffled[0].id, 'high');
-  assert.deepEqual(new Set(shuffled.map((paper) => paper.id)), new Set(['low', 'high']));
 });
 
 test('diversified shuffle limits consecutive papers from the same category', () => {

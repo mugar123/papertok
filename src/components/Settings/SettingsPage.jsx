@@ -33,7 +33,7 @@ import { useFollowing } from '../../context/FollowingContext';
 import { useEmailNotifications } from '../../context/EmailNotificationsContext';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext';
 import { ANALYTICS_CONSENT } from '../../services/analyticsService';
-import { AI_EXPLANATION_LEVELS } from '../../services/aiExplanationService';
+import { PAPER_REWRITE_LEVELS } from '../../services/paperRewriteService';
 import { CATEGORIES } from '../../data/categories';
 import { PUBLIC_AVATAR_PRESET, prepareProfileImage } from '../../utils/profileImage';
 import { profileIsPublic, savePublicProfilePhoto } from '../../services/userProfileService';
@@ -747,7 +747,7 @@ export default function SettingsPage() {
                       onValueChange={handleLevelChange}
                       disabled={Boolean(savingLevel)}
                     >
-                      {AI_EXPLANATION_LEVELS.map(({ id }) => {
+                      {PAPER_REWRITE_LEVELS.map(({ id }) => {
                         const { label, description, Icon } = LEVEL_DETAILS[id];
                         return (
                           <RadioGroupItem
