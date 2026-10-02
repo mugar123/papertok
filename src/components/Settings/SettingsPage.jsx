@@ -266,7 +266,7 @@ export default function SettingsPage() {
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
 
   const sectionIds = useMemo(() => SETTINGS_SECTIONS.map(section => section.id), []);
-  const activeSection = useSectionSpy(sectionIds);
+  const [activeSection, activateSection] = useSectionSpy(sectionIds);
 
   /**
    * The public profile's handle, for the row's badge — read from the session
@@ -281,12 +281,13 @@ export default function SettingsPage() {
   const jumpToSection = useCallback((id) => {
     const node = document.getElementById(id);
     if (!node) return;
+    activateSection(id);
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
     node.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
     // The rail moves the viewport, so the heading it lands on takes focus:
     // a keyboard user must not be left with focus behind the scroll.
     node.focus({ preventScroll: true });
-  }, []);
+  }, [activateSection]);
 
   const gitHubLinked = signInProviders.includes(SIGN_IN_PROVIDERS.github);
   const googleLinked = signInProviders.includes(SIGN_IN_PROVIDERS.google);
