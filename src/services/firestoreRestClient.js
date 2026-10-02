@@ -14,5 +14,9 @@
  */
 import app from './firebase.js';
 import { createFirestoreRest } from '../utils/firestoreRest.js';
+import { firebaseEmulatorConfig, LOCAL_FIRESTORE_BASE } from '../utils/firebaseEmulator.js';
 
-export const firestoreRest = createFirestoreRest({ projectId: app.options.projectId });
+export const firestoreRest = createFirestoreRest({
+  projectId: app.options.projectId,
+  baseUrl: firebaseEmulatorConfig(import.meta.env) ? LOCAL_FIRESTORE_BASE : undefined,
+});

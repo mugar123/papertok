@@ -91,9 +91,9 @@ function lastSegment(path) {
  * passing one: an `Authorization` header makes every request a CORS
  * preflight (one per URL), so a token doubles the round trips of a read.
  */
-export function createFirestoreRest({ projectId, fetchImpl = globalThis.fetch, getToken } = {}) {
+export function createFirestoreRest({ projectId, fetchImpl = globalThis.fetch, getToken, baseUrl = FIRESTORE_REST_BASE } = {}) {
   if (!projectId) throw new TypeError('A Firestore project id is required.');
-  const base = `${FIRESTORE_REST_BASE}/${documentRoot(projectId)}`;
+  const base = `${baseUrl}/${documentRoot(projectId)}`;
 
   async function authorization() {
     if (!getToken) return {};
