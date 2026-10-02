@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { IS_DEMO, db } from '../../services/firebase';
 import {
   collection,
@@ -29,6 +29,7 @@ import { areaAccentForPaper } from '../../utils/areaAccent.js';
 import ScientificText from '../ScientificText.js';
 import { paperLegacyAdapter } from '../../models/Paper';
 import {
+  ArrowLeft,
   Books,
   Check,
   DownloadSimple,
@@ -83,6 +84,7 @@ import {
   planMetadataRequests,
   planRetryRequests,
 } from '../../utils/listPaperMetadataPlan.js';
+import '../Settings/SettingsSubheader.css';
 import './ListsPage.css';
 
 /**
@@ -1744,6 +1746,14 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
               the standfirst carries the whole hierarchy, so it sits tight to
               the title. */}
           <header className="lists-header">
+            <Link
+              to="/profile"
+              className="settings-subheader-back lists-back"
+              aria-label="Back to profile"
+              title="Back to profile"
+            >
+              <ArrowLeft size={18} aria-hidden="true" />
+            </Link>
             <div className="lists-masthead-row">
               <div className="lists-masthead-block">
                 <p className="lists-eyebrow">{'Personal library'}</p>

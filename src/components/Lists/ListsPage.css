@@ -38,7 +38,18 @@
 /* ─── Nameplate ─── */
 
 .lists-header {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  column-gap: var(--space-4);
   margin-bottom: var(--space-8);
+}
+
+.lists-back {
+  grid-row: 1 / 3;
+}
+
+.lists-header > .lists-subtitle {
+  grid-column: 2;
 }
 
 /* No rule under the nameplate. `3px double` draws two hairlines with a gap
