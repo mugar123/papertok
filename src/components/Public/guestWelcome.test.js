@@ -24,7 +24,7 @@ test('the welcome is a page of four screens and ends on the areas and their topi
   // The feed is built from the answer, so the last step cannot be passed
   // without one; the first two can be skipped straight to it.
   assert.match(jsx, /const primaryDisabled = isQuestion && selected\.size === 0;/);
-  assert.match(jsx, /const finish = \(\) => \{\s*if \(selected\.size === 0 \|\| leaving\) return;/);
+  assert.match(jsx, /const finish = \(\) => \{\s*if \(selected\.size === 0\) return;/);
   assert.match(jsx, /onClick=\{\(\) => goTo\(TOPICS_INDEX\)\}/, 'the skip goes to the areas step, not past it');
   assert.match(jsx, /const TOPICS_INDEX = STEPS\.indexOf\('topics'\);/);
 });
@@ -126,7 +126,7 @@ test('with motion refused the illustrations are drawn finished and the columns h
   const jsx = await jsxPromise;
   assert.match(jsx, /const still = Boolean\(prefersReducedMotion\);/);
   assert.match(jsx, /const \[order, setOrder\] = useState\(still \? \['b', 'a', 'c'\] : \['a', 'b', 'c'\]\);/);
-  assert.match(jsx, /if \(still\) onComplete\?\.\(/, 'with no leave to wait for, the answer is handed over at once');
+  assert.match(jsx, /onComplete\?\.\(answer\(\)\);/, 'completion opens sign-in immediately in either motion mode');
   assert.match(jsx, /\{!still && \(\s*<button[\s\S]*?className="gw-stream-hit"/, 'no pause control when nothing moves');
   const css = await cssPromise;
   const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/)?.[0] ?? '';
@@ -211,4 +211,13 @@ test('long topic groups fold behind show more without hiding a pick', async () =
   assert.match(jsx, /entries\.filter\(\(\[id\], index\) => index < SUBTOPICS_SHOWN \|\| selectedTopics\.has\(id\)\)/);
   assert.match(jsx, /className="gw-more"\s+aria-expanded=\{expanded\}\s+aria-controls=\{gridId\}/);
   assert.match(jsx, /showMore: n => `Show \$\{n\} more`/);
+});
+
+test('completion leaves the welcome visible so sign-in can be cancelled and retried', async () => {
+  const jsx = await jsxPromise;
+  assert.match(jsx, /cta: 'Sign in'/);
+  const page = jsx.slice(jsx.indexOf('<motion.main'), jsx.indexOf('<header className="gw-bar">'));
+  assert.doesNotMatch(page, /animate=|onAnimationComplete=/);
+  assert.doesNotMatch(jsx, /setLeaving/);
+  assert.match(jsx, /const finish = \(\) => \{\s*if \(selected\.size === 0\) return;\s*onComplete\?\.\(answer\(\)\);/);
 });

@@ -76,8 +76,8 @@ test('SOURCE: Skip without an account is opt-in, per surface', async () => {
   assert.match(wrapper, /dismissFromSource\?\.\(paperId\)/, 'which ends in the surface dropping the paper by id');
 
   const guest = stripComments(await read('../components/Public/GuestFeedPage.jsx'));
-  assert.match(guest, /onNotInterested: guestFeed\.dismissPaper/,
-    'and the guest feed is the surface that supplies it');
+  assert.doesNotMatch(guest, /FeedContainer|onNotInterested/,
+    'the signed-out feed route only presents the welcome');
 });
 
 /**

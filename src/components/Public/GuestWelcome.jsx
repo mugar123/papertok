@@ -24,10 +24,9 @@ import './GuestWelcome.css';
 // not read yet — and an app's first screens, not a landing page. One column,
 // one idea per screen, and the way forward centred at the foot: the button,
 // with back and skip as bare icons either side of it and the progress dots
-// over it. Three screens — what PaperTok is, what you do in it (its three
-// gestures side by side, arriving one after another), and which areas to
-// build the first feed from — and then the feed itself. The last screen has
-// to be answered (the feed is built from it); the first two can skip there.
+// over it. The intro covers what PaperTok is, what you do in it, and which
+// areas and topics to build the first feed from, before sign-in. A session is
+// required for the feed. The areas have to be answered; the intro can skip there.
 //
 // The papers drifting past the first screen are real ones
 // (guestWelcome.test.js holds each to a complete citation).
@@ -141,7 +140,7 @@ const COPY = {
       topicsOf: area => `${area} topics`,
       showMore: n => `Show ${n} more`,
       showLess: 'Show less',
-      cta: 'Show my feed',
+      cta: 'Sign in',
     },
   },
 };
@@ -369,7 +368,6 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], on
   const copy = COPY.en;
   const [stepIndex, setStepIndex] = useState(0);
   const [direction, setDirection] = useState(1);
-  const [leaving, setLeaving] = useState(false);
   const [streamsPaused, setStreamsPaused] = useState(false);
   const toggleStreams = useCallback(() => setStreamsPaused(paused => !paused), []);
   const [selected, setSelected] = useState(() => new Set(normalizeGuestAreas(initialAreas)));
@@ -440,10 +438,10 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], on
   };
 
   const finish = () => {
-    if (selected.size === 0 || leaving) return;
-    setLeaving(true);
-    // With motion refused there is no leave to wait for.
-    if (still) onComplete?.(answer());
+    if (selected.size === 0) return;
+    // Sign-in opens over this page. Keep it visible and usable if the reader
+    // closes the dialog or authentication fails.
+    onComplete?.(answer());
   };
 
   const primary = () => {
@@ -481,17 +479,12 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], on
   return (
     <motion.main
       className={`gw${step === 'welcome' ? ' gw--showcase' : ''}`}
-      animate={leaving && !still ? { opacity: 0, y: -16 } : { opacity: 1, y: 0 }}
-      transition={{ duration: 0.28, ease: [0.32, 0, 0.67, 0] }}
-      onAnimationComplete={() => {
-        if (leaving && !still) onComplete?.(answer());
-      }}
     >
       <header className="gw-bar">
         <div className="gw-wordmark" aria-label="PaperTok">Paper<span>Tok</span></div>
         <div className="gw-bar-actions">
           <ThemeToggle className="gw-bar-button" />
-          <Button variant="ghost" size="sm" onClick={onSignIn} aria-label={copy.signInName}>
+          <Button variant="ghost" size="sm" onClick={() => onSignIn?.(selected.size > 0 ? answer() : undefined)} aria-label={copy.signInName}>
             <SignIn size={15} aria-hidden="true" />
             <span className="gw-sign-in-label">{copy.signIn}</span>
           </Button>

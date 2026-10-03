@@ -414,8 +414,8 @@ test('SOURCE: the card counts comments through one door, and only when active', 
  * likely to undo by accident: the fix is to withhold the COUNT, not the
  * button. A signed-out visitor still gets a Comments button that opens the
  * thread — `canOpenComments` asks only whether there is somewhere to open
- * and something to anchor it to, and `App.jsx` goes on handing
- * `onOpenComments` to `GuestFeedPage`. Removing either would have closed the
+ * and something to anchor it to, and shared public paper pages keep their
+ * `onOpenComments` callback. Removing either would have closed the
  * read too, which is exactly why this is pinned beside the gate rather than
  * left to be re-derived.
  */
@@ -426,6 +426,6 @@ test('SOURCE: a signed-out reader keeps the comments button; only the count is w
     /const canOpenComments = useMemo\(\s*\(\) => Boolean\(onOpenComments && canonicalPaperIdentity\(paper\)\),\s*\[onOpenComments, paper\],\s*\);/,
     'whether the button renders must not learn about the session',
   );
-  const app = stripComments(await readSource('../App.jsx'));
-  assert.match(app, /<GuestFeedPage[\s\S]{0,400}onOpenComments=\{setCommentsPaper\}/, 'the guest feed still gets the door');
+  const page = stripComments(await readSource('../components/Public/PublicPaperPage.jsx'));
+  assert.match(page, /onOpenComments=\{\(\) => setCommentsOpen\(true\)\}/, 'shared public papers still open their comments');
 });
