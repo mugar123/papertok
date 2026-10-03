@@ -33,8 +33,11 @@ export function getFeedDisplayState({
  * refreshed. An empty feed that has stopped loading is a verdict with a retry,
  * not a wait, and gets no veil.
  */
-export function feedAtomVeilCopy({ displayState, loading, isRefreshing }) {
+export function feedAtomVeilCopy({ displayState, loading, isRefreshing, leadPending = false }) {
   if (displayState === FEED_DISPLAY_STATES.INITIAL_DISCOVERY) return 'discovery';
+  // The papers are here, but the first card's line and figure are not yet:
+  // the first reveal waits for them, briefly, under the same screen.
+  if (displayState === FEED_DISPLAY_STATES.FEED && leadPending) return 'discovery';
   if (displayState === FEED_DISPLAY_STATES.EMPTY && (loading || isRefreshing)) return 'gathering';
   return null;
 }

@@ -59,7 +59,10 @@
    abstract at the top of its box, never the actions at the foot. */
 .pc-sheet {
   position: relative;
-  flex: 0 1 min(820px, calc(100% - 560px));
+  /* A reading measure, not a slab: 680px holds a headline and the line
+     under it without running the eye across the screen, and the margins it
+     leaves are where the clippings sit when there is room for them. */
+  flex: 0 1 min(680px, calc(100% - 160px));
   min-width: 0;
   max-height: 100%;
   display: flex;
@@ -371,8 +374,14 @@
 }
 
 .pc-watermark svg {
-  width: clamp(120px, 15vw, 190px);
+  width: clamp(96px, 11vw, 150px);
   height: auto;
+}
+
+/* The field glyph is decoration for a card with nothing else to look at.
+   With the paper's own figure at the top it only competes with it. */
+.pc-sheet--hero .pc-watermark {
+  visibility: hidden;
 }
 
 @keyframes cardSlideUp {
@@ -392,23 +401,28 @@
    because half of these pieces are optional and the sequence must not shift
    when one is absent. `backwards` holds the first frame during the delay and
    nothing after the run: once each piece has landed, no transform is left. */
+.pc-hero,
 .pc-title { --arrive: 0; }
+.pc-hook,
 .pc-meta,
 .pc-chips,
 .pc-topics { --arrive: 1; }
 .pc-authors { --arrive: 2; }
-.pc-abstract { --arrive: 3; }
+.pc-abstract-link { --arrive: 3; }
+
 .pc-follow-reason { --arrive: 4; }
 .pc-action-bar,
 .pc-side-actions { --arrive: 5; }
 
 .pc-follow-reason,
+.pc-hero,
+.pc-hook,
 .pc-meta,
 .pc-chips,
 .pc-topics,
 .pc-title,
 .pc-authors,
-.pc-abstract,
+.pc-abstract-link,
 .pc-action-bar,
 .pc-side-actions {
   animation: pcArrive 0.32s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--arrive, 0) * 45ms) backwards;
@@ -444,8 +458,10 @@
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-chips,
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-topics,
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-title,
+:is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-hero,
+:is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-hook,
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-authors,
-:is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-abstract,
+:is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-abstract-link,
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-action-bar,
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-side-actions {
   animation: none;
@@ -648,10 +664,14 @@ a.pc-citations {
      the box height comes from the line, not from whatever icon landed in it,
      and the chips sit on one cap line however the row is composed. */
   min-height: 22px;
-  padding: 2px 6px;
-  border: 1px solid var(--tint-neutral-line);
+  /* Words, not badges: the row states facts about the paper, and five
+     outlined boxes above the headline competed with it for the eye. The
+     tone survives as ink colour, and the icon keeps it from being colour
+     alone. */
+  padding: 2px 0;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  background: var(--tint-neutral-bg);
+  background: transparent;
   color: var(--tint-neutral-fg);
   font: 500 0.6875rem/1.35 var(--font-mono);
   white-space: nowrap;
@@ -663,20 +683,14 @@ a.pc-citations {
 }
 
 .pc-chip[data-tone='blue'] {
-  border-color: var(--tint-blue-line);
-  background: var(--tint-blue-bg);
   color: var(--tint-blue-fg);
 }
 
 .pc-chip[data-tone='amber'] {
-  border-color: var(--tint-amber-line);
-  background: var(--tint-amber-bg);
   color: var(--tint-amber-fg);
 }
 
 .pc-chip[data-tone='green'] {
-  border-color: var(--tint-green-line);
-  background: var(--tint-green-bg);
   color: var(--tint-green-fg);
 }
 
@@ -688,16 +702,17 @@ a.pc-citations {
    that answers to the pointer. */
 .pc-chip--link {
   background: transparent;
-  border-color: var(--border-default);
   color: var(--text-tertiary);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
   transition: color var(--transition-fast), border-color var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
   a.pc-chip:hover {
-    border-color: var(--border-strong);
     color: var(--text-primary);
-    text-decoration: none;
+    text-decoration-color: currentColor;
   }
 }
 
@@ -960,24 +975,6 @@ a.pc-citations {
 }
 
 /* ── Abstract ── */
-.pc-abstract {
-  max-height: min(30em, 46vh);
-  max-height: min(30em, 46dvh);
-  overflow: hidden;
-  position: relative;
-  transition:
-    max-height 0.42s cubic-bezier(0.16, 1, 0.3, 1),
-    -webkit-mask-size 0.42s cubic-bezier(0.16, 1, 0.3, 1),
-    mask-size 0.42s cubic-bezier(0.16, 1, 0.3, 1);
-  cursor: pointer;
-  margin-bottom: var(--space-4);
-  /* The one part of the card that yields. Everything else — kicker, badges,
-     title, authors, actions — keeps its natural height; the abstract shrinks
-     into whatever is left, which is what keeps the frame still on a short
-     screen now that the sheet cannot scroll. */
-  flex: 0 1 auto;
-  min-height: 0;
-}
 
 /* The bottom fade is always the same mask; what changes is how far down its
    gradient is stretched. Toggling `mask-image` on and off cannot be animated —
@@ -985,22 +982,11 @@ a.pc-citations {
    so at 400% the transparent stop is pushed four heights below the panel and
    the fade eases away instead of vanishing between frames. It rides the same
    curve and duration as the height, so opening reads as one gesture. */
-.pc-abstract {
-  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
-  mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
-  -webkit-mask-size: 100% 100%;
-  mask-size: 100% 100%;
-}
 
 /* Open, or short enough to end on its own: either way there is nothing below
    the fold to promise, and a fade over the last line of a complete abstract
    only makes it harder to read. Same 400% as opening, so a panel that turns
    out to fit eases its fade away instead of blinking it off. */
-.pc-abstract--open,
-.pc-abstract--whole {
-  -webkit-mask-size: 100% 400%;
-  mask-size: 100% 400%;
-}
 
 /* While the panel is travelling between two abstracts it takes an explicit
    height, set from JS: the height it had before the words changed cannot be
@@ -1011,30 +997,8 @@ a.pc-citations {
    The other three are repeated because `transition` is a shorthand: without
    them the panel would lose its open/close animation for as long as this class
    is on, which is exactly when a reader might tap it. */
-.pc-abstract--resizing {
-  transition:
-    height 0.42s cubic-bezier(0.16, 1, 0.3, 1),
-    max-height 0.42s cubic-bezier(0.16, 1, 0.3, 1),
-    -webkit-mask-size 0.42s cubic-bezier(0.16, 1, 0.3, 1),
-    mask-size 0.42s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.pc-abstract p {
-  font-family: var(--font-serif);
-  font-size: 1rem;
-  line-height: 1.6;
-  color: var(--text-secondary);
-}
 
 /* An opening capital: the cheapest way to say "this is an article". */
-.pc-abstract p::first-letter {
-  float: left;
-  margin: 0.06em 0.08em 0 0;
-  font-size: 2.9em;
-  line-height: 0.82;
-  font-weight: 600;
-  color: var(--area-accent, var(--text-primary));
-}
 
 /* Expanded, it takes the space the rest of the card is not using and scrolls
    inside it, rather than growing to a fixed 62vh and taking the sheet with it.
@@ -1046,11 +1010,130 @@ a.pc-citations {
    `max-height` transitionend that `handleAbstractTransitionEnd` listens on to
    put the reader back at the first line on the way closed. A percentage of the
    body is both a real ceiling and an animatable one. */
-.pc-abstract--open {
-  flex: 1 1 auto;
-  max-height: 100%;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+
+/* ── The abstract's door ──
+   The abstract is not on the card any more; this opens it in its own sheet.
+   A quiet text control under the authors, so it reads as a reference, not as
+   a third action next to Read and Plain words. */
+.pc-abstract-link {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  margin-bottom: var(--space-4);
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font: 500 0.8125rem/1.4 var(--font-body);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pc-abstract-link:hover {
+    color: var(--text-primary);
+    text-decoration-color: currentColor;
+  }
+}
+
+/* ── Lead figure ──
+   The paper's own first figure, when the feed had it before the card came on
+   screen (see PaperCard: it is never dropped in later). A fixed frame, so the
+   picture loading cannot move anything; the only part of the card besides the
+   abstract that may give up height on a short screen. Figures are drawn on
+   white, so the frame is white in both themes, a step dimmer in dark. */
+.pc-body > .pc-hero {
+  flex-shrink: 1;
+}
+
+.pc-hero {
+  position: relative;
+  height: clamp(120px, 26vh, 260px);
+  min-height: 88px;
+  margin: 0 0 var(--space-4);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: #fff;
+}
+
+/* Pinned to the frame rather than sized from it: the frame may have given up
+   height to the flex column, and a percentage height would still resolve
+   against the height it asked for, cropping the bottom of the figure. */
+.pc-hero img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 10px;
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.pc-hero.is-loaded img {
+  opacity: 1;
+}
+
+:root[data-theme='dark'] .pc-hero {
+  background: #ecebe8;
+}
+
+:root[data-theme='dark'] .pc-hero img {
+  filter: brightness(0.94);
+}
+
+/* ── Why it matters ──
+   One generated sentence under the headline, said to be generated. It is the
+   line that decides whether the reader stays, so it is set larger than the
+   abstract and in the interface face rather than the article's. */
+.pc-hook {
+  margin-bottom: var(--space-4);
+}
+
+.pc-hook-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font: var(--mono-label);
+  font-weight: 600;
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--area-accent, var(--accent-primary));
+}
+
+.pc-hook-source {
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+
+.pc-hook-source::before {
+  content: '·';
+  margin-right: 6px;
+  color: var(--border-strong);
+}
+
+.pc-hook-text {
+  font-family: var(--font-body);
+  font-size: clamp(1.0625rem, 1.5vw, 1.25rem);
+  font-weight: 500;
+  line-height: 1.45;
+  text-wrap: pretty;
+  color: var(--text-primary);
+}
+
+/* With the sentence above it, the abstract becomes the fine print: three
+   lines, smaller, no opening capital, and the same control to read the rest. */
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-hero img {
+    transition: none;
+  }
 }
 
 /* Structural wrappers for the animated linked-resources row (no colour). */
@@ -1384,8 +1467,6 @@ a.pc-citations {
 .pc-side-btn--unreading .pc-side-icon {
   animation: readRelease 0.36s cubic-bezier(0.16, 1, 0.3, 1);
 }
-
-
 
 /* ── Double-tap heart ── */
 .pc-heart-burst {
@@ -2846,17 +2927,6 @@ a.pc-citations {
     padding-bottom: var(--space-3);
   }
 
-  .pc-abstract {
-    max-height: min(14em, 34vh);
-    max-height: min(14em, 34dvh);
-    margin-bottom: var(--space-4);
-  }
-
-  .pc-abstract p {
-    font-size: 0.875rem;
-    line-height: 1.65;
-  }
-
   .pc-side-btn {
     width: 54px;
   }
@@ -3028,9 +3098,9 @@ a.pc-citations {
   .pc-topics,
   .pc-title,
   .pc-authors,
+  .pc-abstract-link,
   .pc-action-bar,
   .pc-side-actions,
-  .pc-abstract,
   .pc-side-icon,
   .pc-side-btn,
   .pc-scroll-hint,
@@ -3115,17 +3185,6 @@ a.pc-citations {
   text-underline-offset: 2px;
 }
 
-.pc-abstract-toggle {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--text-secondary);
-  padding: var(--space-1) 0;
-  align-self: flex-start;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  transition: opacity 0.2s ease-out;
-}
-
 /* The button holds its place on every card, whether or not the panel turns
    out to be hiding words. Whether it is hiding words is a measurement, and a
    panel sized by the flex room its siblings leave has no height to measure in
@@ -3140,16 +3199,6 @@ a.pc-citations {
    the panel's own room no longer depends on the answer. `visibility` rather
    than `opacity` alone: an invisible button must be out of the tab order and
    off the accessibility tree, not just transparent. */
-.pc-abstract-toggle--reserved {
-  opacity: 0;
-  visibility: hidden;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pc-abstract-toggle {
-    transition: none;
-  }
-}
 
 /* `.pc-author-names` clips with `overflow: hidden` + ellipsis, so the default
    2px outside ring on these two buttons can be shaved by the container edge

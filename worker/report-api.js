@@ -51,6 +51,7 @@ import {
 } from './thread-anchor.js';
 import { isServiceAccountConfigured } from './firestore-admin.js';
 import { releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.js';
+import { handlePaperHooks } from './ai-hooks.js';
 import { awaitUpstreamSlot, PACE_RETRY_AFTER_SECONDS, paceRetryAfterSeconds } from './upstream-pace.js';
 import { createFirestoreRest } from '../src/utils/firestoreRest.js';
 import { createShareLoader, createShellLoader, handleSharePage } from './share-pages.js';
@@ -2562,6 +2563,25 @@ export default {
       } catch (error) {
         const known = error instanceof PublicListApiError || error instanceof WorkerAuthError;
         return json({ code: known ? error.code : 'PUBLISH_FAILED' }, known ? error.status : 502, {
+          ...corsHeaders(origin, env),
+          'cache-control': 'no-store',
+        });
+      }
+    }
+    // The feed's "why it matters" line. Open to guests, with its own allowance:
+    // see worker/ai-hooks.js. A failure is an empty answer, never an error.
+    if (url.pathname === '/ai/hooks') {
+      if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
+      if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+      try {
+        const payload = await handlePaperHooks(request, env);
+        return json(payload, 200, {
+          ...corsHeaders(origin, env),
+          'cache-control': 'private, no-store',
+        });
+      } catch (error) {
+        const knownError = error instanceof AIExplanationError;
+        return json({ code: knownError ? error.code : 'AI_UNAVAILABLE' }, knownError ? error.status : 502, {
           ...corsHeaders(origin, env),
           'cache-control': 'no-store',
         });

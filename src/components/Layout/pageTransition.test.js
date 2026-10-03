@@ -161,7 +161,7 @@ test('a step between tabs resumes the cards at rest in both directions, like the
   const rule = css.match(/\n((?::is\(\[data-nav-direction="-1"\], \[data-nav-lateral="true"\]\) \.pc-[\w-]+,\n)+:is\(\[data-nav-direction="-1"\], \[data-nav-lateral="true"\]\) \.pc-[\w-]+) \{\s*animation: none;\s*\}/);
   assert.ok(rule, 'one rule keeps the pieces at rest under both a return and a tab step');
   const pieces = [...rule[1].matchAll(/\.pc-([\w-]+)/g)].map((m) => m[1]);
-  for (const piece of ['sheet', 'follow-reason', 'meta', 'chips', 'topics', 'title', 'authors', 'abstract', 'action-bar', 'side-actions']) {
+  for (const piece of ['sheet', 'follow-reason', 'meta', 'chips', 'topics', 'title', 'authors', 'abstract-link', 'action-bar', 'side-actions']) {
     assert.ok(pieces.includes(piece), `.pc-${piece} sits at rest too`);
   }
   // Every piece the arrival animates is in that list.

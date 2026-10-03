@@ -16,6 +16,7 @@ const figureCache = new Map();
 /** In-flight requests, so a double mount does not fetch the same paper twice
  *  and then race to cache each other's result. */
 const pendingRequests = new Map();
+const figureListeners = new Set();
 const REQUEST_TIMEOUT_MS = 10_000;
 
 /**
@@ -54,6 +55,7 @@ async function requestFigures(url, arxivId) {
     // Only a real answer is remembered. Caching a failure here once meant an
     // aborted duplicate request could permanently blank a paper's figures.
     figureCache.set(arxivId, figures);
+    figureListeners.forEach(listener => listener());
     return figures;
   } catch {
     return [];
@@ -96,4 +98,14 @@ export async function getPaperFigures(paper) {
   const request = requestFigures(url, arxivId);
   pendingRequests.set(arxivId, request);
   return request;
+}
+
+/**
+ * Called whenever a paper's figures arrive. The feed asks for the next cards'
+ * figures ahead of time, and a card that is mounted but not yet on screen can
+ * still take its lead figure from them; see `PaperCard`.
+ */
+export function subscribePaperFigures(listener) {
+  figureListeners.add(listener);
+  return () => figureListeners.delete(listener);
 }

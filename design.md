@@ -188,6 +188,13 @@ Tailwind v4 is wired via `@tailwindcss/vite`; utility classes (`w-full`,
   `--text-tertiary` (or `--area-accent` when it names a field).
 - **Field rule** — a `34px × 3px` bar of `var(--area-accent)` above a headline
   (`.pc-body::before`, `.ehc-info::before`).
+- **The feed card** — no surface: the paper is set on the page and the type
+  does the work, in a reading measure of at most `680px`. It leads with the
+  paper's own first figure when the feed had it in time (a fixed white frame,
+  `.pc-hero`), then the kicker, the serif headline, and the "why it matters"
+  line (`.pc-hook`: a mono label naming it as an AI summary, then one sentence
+  in the interface face). The abstract is not on the card; `Read abstract`
+  opens it in its sheet. The side rail keeps a tinted key per action.
 - **Ruled rows** — a list is hairline-separated rows on `--bg-card`, each with a
   short `3px` field rule down the inner edge, a mono meta line, a serif title.
   No cards, no shadows (see Explorer's `.explorer-grid`, Report's `.sr-bento`).

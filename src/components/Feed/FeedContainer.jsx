@@ -23,7 +23,27 @@ import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../.
 import { createFeedResumeMemory } from '../../utils/feedResumeMemory.js';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feedPullToRefresh.js';
 import { SKIP_EXIT_MS, skipExitSlot } from '../../utils/feedSkipExit.js';
+import { canHaveHook, peekPaperHook, prefetchPaperHooks } from '../../services/paperHookService.js';
+import { canHaveFigures, getPaperFigures, peekPaperFigures } from '../../services/paperFigureService.js';
 import './FeedContainer.css';
+
+const HOOK_LOOKAHEAD = 6;
+const FIGURE_LOOKAHEAD = 3;
+/**
+ * How long the first card of a visit may wait, under the loading screen, for
+ * its "why it matters" line and its figure. A card never takes them once it is
+ * on screen (PaperCard), so without this wait the first card — the one that
+ * decides whether the reader stays — was the one card that never had them.
+ */
+const LEAD_WAIT_MS = 1_800;
+
+/** Whether what the lead card could show is already known, either way. */
+function leadEnrichmentKnown(paper) {
+  if (!paper) return true;
+  const hookKnown = !canHaveHook(paper) || peekPaperHook(paper) !== null;
+  const figuresKnown = !canHaveFigures(paper) || peekPaperFigures(paper) !== null;
+  return hookKnown && figuresKnown;
+}
 
 // Per-surface memory of the card each feed was left on: the Siguiendo feed
 // shares this container with For You and must not clobber its place. The
@@ -274,6 +294,39 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   // the scroll event corrected it. The restore effect below re-seeds it for
   // the other resume shape, a reload whose papers had not arrived yet.
   const [activeIndex, setActiveIndex] = useState(() => resumeAnchor(papers, scrollKey).index);
+  // The next cards' "why it matters" line and lead figure, asked for while the
+  // reader is still on this one. A card fixes what it shows once it is the
+  // active card (PaperCard), so whatever is here by then is what it shows.
+  useEffect(() => {
+    const ahead = papers.slice(Math.max(0, activeIndex), activeIndex + HOOK_LOOKAHEAD);
+    // The card on screen alone, then the ones after it: a batch of one is the
+    // Worker's fastest answer, and on a first visit it is the one being waited
+    // for. Already-answered papers are skipped, so on a scroll this is one call.
+    prefetchPaperHooks(ahead.slice(0, 1));
+    prefetchPaperHooks(ahead.slice(1));
+    ahead.slice(1, FIGURE_LOOKAHEAD + 1).forEach(paper => { getPaperFigures(paper); });
+  }, [papers, activeIndex]);
+
+  // The first reveal of this feed waits for the lead card's line and figure,
+  // up to LEAD_WAIT_MS, under the loading screen. Once only: a refresh, or a
+  // feed come back to with its answers cached, never waits.
+  const leadPaper = papers[Math.min(Math.max(0, activeIndex), papers.length - 1)];
+  const [leadWaitOver, setLeadWaitOver] = useState(false);
+  const leadKnown = leadEnrichmentKnown(leadPaper);
+  const leadPending = Boolean(leadPaper) && !leadWaitOver && !leadKnown;
+  useEffect(() => {
+    if (!leadPaper || leadWaitOver) return undefined;
+    let over = false;
+    const finish = () => {
+      if (over) return;
+      over = true;
+      setLeadWaitOver(true);
+    };
+    const timer = setTimeout(finish, leadKnown ? 0 : LEAD_WAIT_MS);
+    // Resolves on the lead's own answer, whichever request carries it.
+    Promise.all([prefetchPaperHooks([leadPaper]), getPaperFigures(leadPaper)]).then(finish);
+    return () => { over = true; clearTimeout(timer); };
+  }, [leadPaper, leadKnown, leadWaitOver]);
   // Where a touch-driven pull-to-refresh started, or null when the current
   // touch isn't a pull (it didn't begin at scrollTop 0). A ref, not state:
   // the drag distance is only read once, on touchend.
@@ -908,7 +961,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     initialLoadPending: (source ? Boolean(source.initialLoadPending) : !initialFeedReady) && !error,
     hasSourceEmptyState: Boolean(source?.emptyState),
   });
-  const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing });
+  const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing, leadPending });
 
   // Native listeners, not React's: React registers `touchmove` at the root as
   // passive, so `preventDefault` inside an `onTouchMove` prop is ignored —
@@ -1144,6 +1197,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
               analyticsSurface={analyticsSurface}
               position={index + 1}
               isActive={index === activeIndex}
+              underVeil={leadPending}
               // The scroll hint belongs to the first card only, and this prop is
               // the only thing that decides it now: a
               // `.feed-snap-item:not(:first-child) .pc-scroll-hint { display:

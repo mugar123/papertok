@@ -6,31 +6,17 @@ const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 /**
- * SOURCE tests for the abstract panel's two doors (2026-09-18).
- *
- * Tapping an abstract that fits whole used to flip `expanded` on, and the
- * toggle reserved beneath it — invisible until then — came up saying "Show
- * less" for a panel that had never been anything but open (reproduced on
- * the guest feed, desktop). A panel that hides nothing has nothing to open.
+ * The abstract is not on the feed card (2026-09-26): the card leads with the
+ * title and its "why it matters" line, and the abstract is one press away, in
+ * the reading sheet. So there is one door, the same on every pointer, and no
+ * panel in the card to fold, measure or unfold.
  */
-test('a panel that hides nothing cannot be opened, so the reserved toggle never says "Show less"', async () => {
+test('the card has no abstract panel, only a named door to the reading sheet', async () => {
   const jsx = stripComments(await read('./PaperCard.jsx'));
-  assert.match(jsx, /const toggleExpanded = \(e, newState\) => \{\s*e\.stopPropagation\(\);\s*if \(newState && abstractClipped !== true\) return;/);
-});
-
-/**
- * On a phone the card's column is bottom-anchored and short, so the unfolded
- * panel scrolls inside a box a few lines tall. A clipped abstract opens a
- * bottom sheet there instead — gated by pointer type, like the reader's
- * selection route, never by width — and the card's own panel stays put.
- */
-test('on a coarse pointer a clipped abstract opens the reading sheet instead of unfolding in the card', async () => {
-  const jsx = stripComments(await read('./PaperCard.jsx'));
-  assert.match(jsx, /const coarsePointer = useMemo\(\(\) => \{\s*try \{ return window\.matchMedia\('\(pointer: coarse\)'\)\.matches; \} catch \{ return false; \}\s*\}, \[\]\);/);
-  assert.match(jsx, /const readsInSheet = coarsePointer && abstractClipped === true && !expanded;/);
-  assert.match(jsx, /const openAbstract = \(e\) => \{\s*if \(readsInSheet\) \{\s*e\.stopPropagation\(\);\s*setShowAbstractSheet\(true\);\s*return;\s*\}\s*toggleExpanded\(e, !expanded\);\s*\};/);
-  assert.match(jsx, /className=\{`pc-abstract \$\{expanded[^`]*`\}\s*onClick=\{openAbstract\}/);
-  assert.match(jsx, /className=\{`pc-abstract-toggle\$\{abstractClipped === true \|\| expanded \? '' : ' pc-abstract-toggle--reserved'\}`\}\s*aria-expanded=\{readsInSheet \? undefined : expanded\}\s*aria-haspopup=\{readsInSheet \? 'dialog' : undefined\}\s*aria-controls=\{readsInSheet \? undefined : abstractId\}\s*onClick=\{openAbstract\}/);
+  assert.doesNotMatch(jsx, /className=\{`pc-abstract /, 'no abstract panel in the card');
+  assert.doesNotMatch(jsx, /abstractClipped|toggleExpanded|readsInSheet/, 'nothing left measuring or folding it');
+  assert.match(jsx, /\{abstractText && \(\s*<button\s+type="button"\s+className="pc-abstract-link"\s+aria-haspopup="dialog"\s+onClick=\{\(event\) => \{\s*event\.stopPropagation\(\);\s*setShowAbstractSheet\(true\);\s*\}\}\s*>/);
+  assert.match(jsx, /\{'Read abstract'\}/);
   assert.match(jsx, /\{showAbstractSheet && \(\s*<AbstractSheet paper=\{paper\} onClose=\{closeAbstractSheet\} \/>\s*\)\}/);
 });
 

@@ -573,7 +573,7 @@ const KIND_LABELS = {
 };
 
 export default function PaperReader({ paper, onClose, originRect = null, closeRef = null }) {
-  const { user } = useAuth();
+  const { user, readingPreferences } = useAuth();
   const uid = user?.uid;
   const { trackEvent } = useAnalyticsConsent();
   const prefersReducedMotion = useReducedMotion();
@@ -584,7 +584,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   // own copy of it.
   const paragraphHintId = useId();
 
-  const [level, setLevel] = useState('university');
+  const [level, setLevel] = useState(() => readingPreferences?.aiExplanationLevel ?? 'university');
   const [sections, setSections] = useState([]);
   const [meta, setMeta] = useState(null);
   const [status, setStatus] = useState('idle');

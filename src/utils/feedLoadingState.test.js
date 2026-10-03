@@ -92,3 +92,19 @@ test('there is no veil over cards, a verdict, a skeleton or a source\'s own empt
   // An empty feed that has stopped loading is a verdict with a retry, not a wait.
   assert.equal(feedAtomVeilCopy({ displayState: FEED_DISPLAY_STATES.EMPTY, loading: false, isRefreshing: false }), null);
 });
+
+test('a feed whose first card is still waiting for its line and figure stays under the veil', () => {
+  assert.equal(
+    feedAtomVeilCopy({ displayState: FEED_DISPLAY_STATES.FEED, loading: false, isRefreshing: false, leadPending: true }),
+    'discovery',
+  );
+  assert.equal(
+    feedAtomVeilCopy({ displayState: FEED_DISPLAY_STATES.FEED, loading: false, isRefreshing: false, leadPending: false }),
+    null,
+  );
+  // Only the feed waits for it: an error or an empty verdict is shown at once.
+  assert.equal(
+    feedAtomVeilCopy({ displayState: FEED_DISPLAY_STATES.ERROR, loading: false, isRefreshing: false, leadPending: true }),
+    null,
+  );
+});
