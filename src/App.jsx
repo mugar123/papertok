@@ -372,6 +372,8 @@ function AppContent() {
                 <PageTransition>
                   <GuestFeedPage
                     onAuthRequired={requestAuthentication}
+                    onOpenPdf={openPdf}
+                    onOpenComments={setCommentsPaper}
                   />
                 </PageTransition>
               )

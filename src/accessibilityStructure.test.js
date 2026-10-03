@@ -632,10 +632,18 @@ test('no component outranks the global focus ring from JSX', async () => {
 // `page-has-heading-one` was closed for the signed-in routes on 2026-09-18;
 // these are the routes that pass went round.
 
-test('the signed-out route delegates its landmark and heading to the welcome', async () => {
-  const guest = await readSource(new URL('./components/Public/GuestFeedPage.jsx', import.meta.url));
-  assert.match(guest, /return \(\s*<GuestWelcome/);
-  assert.doesNotMatch(guest, /<main\b|<h1\b|FeedContainer/, 'no nested landmark or guest paper feed');
+test('the guest feed names itself with a visually hidden h1 inside its own <main>', async () => {
+  // A JSX comment leaves its braces behind once the comment is stripped.
+  const guest = (await readSource(new URL('./components/Public/GuestFeedPage.jsx', import.meta.url)))
+    .replace(/\{\s*\}/g, '');
+  assert.match(
+    guest,
+    /<main className="guest-feed-page">\s*<h1 className="visually-hidden">\{'[^']+'\}<\/h1>\s*<header className="guest-feed-header"/,
+    'the guest route has no h1 above the paper titles, or it sits outside its <main>.',
+  );
+  assert.equal((guest.match(/<main\b/g) || []).length, 1, 'one main, no nesting');
+  assert.equal((guest.match(/<h1\b/g) || []).length, 1);
+  // The welcome, which the same route shows first, brings its own pair.
   const welcome = await readSource(new URL('./components/Public/GuestWelcome.jsx', import.meta.url));
   assert.equal((welcome.match(/<motion\.main\b/g) || []).length, 1);
   assert.equal((welcome.match(/<h1\b/g) || []).length, 1);

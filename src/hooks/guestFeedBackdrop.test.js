@@ -17,18 +17,23 @@ test('nothing loads until the feed is enabled, and the first load after it is no
 
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
-test('stored guest choices never enable or mount a feed on the signed-out route', () => {
+test('the guest page enables its feed once the visitor has answered', () => {
   const page = stripComments(readFileSync(new URL('../components/Public/GuestFeedPage.jsx', import.meta.url), 'utf8'));
-  assert.doesNotMatch(page, /useGuestFeed|FeedContainer|firstVisit|guest_demo_start/);
-  assert.match(page, /return \(\s*<GuestWelcome/);
-  assert.match(page, /initialAreas=\{interests\?\.areas\}/);
-  assert.match(page, /initialTopics=\{interests\?\.topics\}/);
-  assert.match(page, /onComplete=\{requestAccount\}/);
-  assert.match(page, /onSignIn=\{requestAccount\}/);
-  assert.match(page, /if \(answer\?\.areas\) saveGuestInterests\(answer\);\s*onAuthRequired\?\.\('other'\);/);
+  // `firstVisit` is `interests === null`: the welcome page is up until then.
+  assert.match(page, /const firstVisit = interests === null;/);
+  assert.match(page, /const guestFeed = useGuestFeed\(\{ areas, topics, enabled: !firstVisit \}\);/);
+  // The welcome asks for no account: its only way out is its answer, into the feed.
+  assert.match(page, /<GuestWelcome\s+initialAreas=\{NO_AREAS\}\s+onComplete=\{submitInterests\}\s+\/>/);
+  assert.doesNotMatch(page, /onSignIn/);
+  // The areas sheet keeps what the welcome stored for the account to come.
+  assert.match(page, /readingLevel: interests\?\.readingLevel,\s*emailDigest: interests\?\.emailDigest === true,/);
+
+  const hook = stripComments(readFileSync(new URL('./useGuestFeed.js', import.meta.url), 'utf8'));
+  assert.match(hook, /export function useGuestFeed\(\{ areas = \[\], topics = \[\], enabled = true \} = \{\}\)/);
+  assert.match(hook, /const decision = guestFeedLoadDecision\(\{ enabled, previousKey, planKey: plan\.key \}\);\s*if \(!decision\) return undefined;/);
+  assert.match(hook, /load\(plan, decision\.refresh \? \{ refresh: true, forceRefresh: false \} : \{\}\);/);
 
   const app = stripComments(readFileSync(new URL('../App.jsx', import.meta.url), 'utf8'));
   const feedRoute = app.slice(app.indexOf('path="/feed"'), app.indexOf('path="/lists"'));
-  assert.match(feedRoute, /authLoading \|\| user \? \(\s*<ProtectedRoute>/);
-  assert.match(feedRoute, /<GuestFeedPage\s+onAuthRequired=\{requestAuthentication\}/);
+  assert.match(feedRoute, /<GuestFeedPage\s+onAuthRequired=\{requestAuthentication\}\s+onOpenPdf=\{openPdf\}\s+onOpenComments=\{setCommentsPaper\}/);
 });

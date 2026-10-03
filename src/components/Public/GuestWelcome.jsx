@@ -8,13 +8,13 @@ import {
   CaretUp,
   Check,
   Heart,
-  SignIn,
   SkipForward,
   Sparkle,
   UserPlus,
 } from '@phosphor-icons/react';
 import { CATEGORIES } from '../../data/categories.js';
 import { normalizeGuestAreas, normalizeGuestTopics } from '../../utils/guestInterests.js';
+import { WelcomeReadingChoice, WelcomeInboxChoice, WelcomeProjectSupport } from './GuestWelcomePreferences.jsx';
 import ThemeToggle from '../Layout/ThemeToggle.jsx';
 import { Button } from '../ui/button.jsx';
 import { Toggle } from '../ui/toggle.jsx';
@@ -24,9 +24,12 @@ import './GuestWelcome.css';
 // not read yet — and an app's first screens, not a landing page. One column,
 // one idea per screen, and the way forward centred at the foot: the button,
 // with back and skip as bare icons either side of it and the progress dots
-// over it. The intro covers what PaperTok is, what you do in it, and which
-// areas and topics to build the first feed from, before sign-in. A session is
-// required for the feed. The areas have to be answered; the intro can skip there.
+// over it. The intro covers what PaperTok is, what you do in it (its three
+// gestures side by side, arriving one after another), and which areas to
+// build the first feed from. Reading, the optional email digest, and project
+// support follow in the same layout, and then the feed itself. The areas have
+// to be answered; the first two screens can skip there. Nothing here asks for
+// an account: signing in lives in the feed.
 //
 // The papers drifting past the first screen are real ones
 // (guestWelcome.test.js holds each to a complete citation).
@@ -87,7 +90,7 @@ const SHOWCASE_RIGHT = [
 // paper does not speed the column up.
 const STREAM_SECONDS_PER_PAPER = 7;
 
-const STEPS = ['welcome', 'how', 'topics', 'subtopics'];
+const STEPS = ['welcome', 'how', 'topics', 'subtopics', 'reading', 'inbox', 'support'];
 // Where the intro's skip lands: the question, not past it.
 const TOPICS_INDEX = STEPS.indexOf('topics');
 
@@ -105,8 +108,6 @@ const COPY = {
   en: {
     progress: 'Progress',
     stepOf: (n, total) => `Step ${n} of ${total}`,
-    signIn: 'Sign in',
-    signInName: 'Sign in to your account',
     back: 'Back',
     skip: 'Skip the intro',
     pauseMotion: 'Pause the moving papers',
@@ -140,7 +141,24 @@ const COPY = {
       topicsOf: area => `${area} topics`,
       showMore: n => `Show ${n} more`,
       showLess: 'Show less',
-      cta: 'Sign in',
+      cta: 'Continue',
+    },
+    reading: {
+      kicker: 'Your reading, your way',
+      title: 'How deep do you want to go?',
+      lede: 'Choose your default for Read in plain words. Start simple, or keep the scientific depth.',
+      cta: 'Continue',
+    },
+    inbox: {
+      kicker: 'Your inbox',
+      title: 'A little science in your inbox?',
+      cta: 'Continue',
+    },
+    support: {
+      kicker: 'Before you dive in',
+      title: 'Free for you. Powered by stars.',
+      lede: 'PaperTok is free and open source. Stars are how it grows.',
+      cta: 'Start exploring papers',
     },
   },
 };
@@ -362,12 +380,16 @@ function Beat({ beat, index, still }) {
   );
 }
 
-export default function GuestWelcome({ initialAreas = [], initialTopics = [], onComplete, onSignIn }) {
+export default function GuestWelcome({ initialAreas = [], initialTopics = [], initialReadingLevel = 'university', initialEmailDigest = false, onComplete }) {
   const prefersReducedMotion = useReducedMotion();
   const still = Boolean(prefersReducedMotion);
   const copy = COPY.en;
   const [stepIndex, setStepIndex] = useState(0);
+  const [readingLevel, setReadingLevel] = useState(initialReadingLevel);
+  // Opt-in: off until the visitor turns it on.
+  const [emailDigest, setEmailDigest] = useState(initialEmailDigest);
   const [direction, setDirection] = useState(1);
+  const [leaving, setLeaving] = useState(false);
   const [streamsPaused, setStreamsPaused] = useState(false);
   const toggleStreams = useCallback(() => setStreamsPaused(paused => !paused), []);
   const [selected, setSelected] = useState(() => new Set(normalizeGuestAreas(initialAreas)));
@@ -397,6 +419,7 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], on
   const isSubtopics = step === 'subtopics';
   // The two question screens scroll under the foot and share a width.
   const isQuestion = isTopics || isSubtopics;
+  const isPreferences = step === 'reading' || step === 'inbox' || step === 'support';
 
   const goTo = (nextIndex) => {
     if (nextIndex === stepIndex || nextIndex < 0 || nextIndex >= STEPS.length) return;
@@ -434,18 +457,18 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], on
 
   const answer = () => {
     const areas = normalizeGuestAreas(Array.from(selected));
-    return { areas, topics: normalizeGuestTopics(Array.from(selectedTopics), areas) };
+    return { areas, topics: normalizeGuestTopics(Array.from(selectedTopics), areas), readingLevel, emailDigest };
   };
 
   const finish = () => {
-    if (selected.size === 0) return;
-    // Sign-in opens over this page. Keep it visible and usable if the reader
-    // closes the dialog or authentication fails.
-    onComplete?.(answer());
+    if (selected.size === 0 || leaving) return;
+    setLeaving(true);
+    // With motion refused there is no leave to wait for.
+    if (still) onComplete?.(answer());
   };
 
   const primary = () => {
-    if (isSubtopics) finish();
+    if (step === 'support') finish();
     else goTo(stepIndex + 1);
   };
 
@@ -479,19 +502,21 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], on
   return (
     <motion.main
       className={`gw${step === 'welcome' ? ' gw--showcase' : ''}`}
+      id="main-content"
+      animate={leaving && !still ? { opacity: 0, y: -16 } : { opacity: 1, y: 0 }}
+      transition={{ duration: 0.28, ease: [0.32, 0, 0.67, 0] }}
+      onAnimationComplete={() => {
+        if (leaving && !still) onComplete?.(answer());
+      }}
     >
       <header className="gw-bar">
         <div className="gw-wordmark" aria-label="PaperTok">Paper<span>Tok</span></div>
         <div className="gw-bar-actions">
           <ThemeToggle className="gw-bar-button" />
-          <Button variant="ghost" size="sm" onClick={() => onSignIn?.(selected.size > 0 ? answer() : undefined)} aria-label={copy.signInName}>
-            <SignIn size={15} aria-hidden="true" />
-            <span className="gw-sign-in-label">{copy.signIn}</span>
-          </Button>
         </div>
       </header>
 
-      <div className={`gw-stage${isQuestion ? ' gw-stage--topics' : ''}`}>
+      <div className={`gw-stage${isQuestion || isPreferences ? ' gw-stage--topics' : ''}`}>
         {/* No `initial={false}` here: AnimatePresence hands it down to every
             motion component inside, and the illustrations would mount already
             finished. */}
@@ -535,6 +560,10 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], on
                 ))}
               </ol>
             )}
+
+            {step === 'reading' && <WelcomeReadingChoice level={readingLevel} onChange={setReadingLevel} />}
+            {step === 'inbox' && <WelcomeInboxChoice subscribed={emailDigest} onChange={setEmailDigest} />}
+            {step === 'support' && <WelcomeProjectSupport />}
 
             {isTopics && (
               <div className="gw-areas" role="group" aria-label={copy.topics.areasLabel}>

@@ -157,3 +157,33 @@ test('the seed cap is the rules cap', async () => {
   const { USER_PREFERENCES_MAX } = await import('./accountOnboarding.js');
   assert.equal(GUEST_SEED_MAX, USER_PREFERENCES_MAX);
 });
+
+test('the guest reading choice survives the bridge and is removed with it', () => {
+  const storage = fakeStorage();
+  saveGuestInterests({ areas: ['cs'], topics: ['cs.LG'], readingLevel: 'beginner' }, storage);
+  assert.deepEqual(readGuestInterests(storage), {
+    areas: ['cs'], topics: ['cs.LG'], dismissed: false, readingLevel: 'beginner',
+  });
+  clearGuestInterests(storage);
+  assert.equal(readGuestInterests(storage), null);
+});
+
+test('invalid guest reading levels normalize safely and old answers stay compatible', () => {
+  const storage = fakeStorage();
+  saveGuestInterests({ areas: ['cs'], readingLevel: 'invalid' }, storage);
+  assert.equal(readGuestInterests(storage).readingLevel, 'university');
+  saveGuestInterests({ areas: ['cs'] }, storage);
+  assert.deepEqual(readGuestInterests(storage), { areas: ['cs'], topics: [], dismissed: false });
+});
+
+test('the email digest travels only as an explicit yes', () => {
+  const storage = fakeStorage();
+  saveGuestInterests({ areas: ['cs'], emailDigest: true }, storage);
+  assert.equal(readGuestInterests(storage).emailDigest, true);
+  saveGuestInterests({ areas: ['cs'], emailDigest: false }, storage);
+  assert.equal('emailDigest' in readGuestInterests(storage), false);
+  storage.setItem('papertok_guestInterests', JSON.stringify({ areas: ['cs'], emailDigest: 'yes' }));
+  assert.equal('emailDigest' in readGuestInterests(storage), false);
+  clearGuestInterests(storage);
+  assert.equal(readGuestInterests(storage), null);
+});

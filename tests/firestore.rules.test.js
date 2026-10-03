@@ -1816,6 +1816,18 @@ test('the key allowlist still bites on a legacy document', async () => {
   await assertFails(setDoc(ref, { profilePhoto: 'x'.repeat(280_001) }, { merge: true }));
 });
 
+test('the email digest opt-in is a bool the owner can set and then delete', async () => {
+  // AuthContext writes it after onboarding, in a merge of its own, and
+  // EmailNotificationsContext deletes it once the subscription exists.
+  await reset();
+  const db = asAlice();
+  const ref = doc(db, 'users', ALICE);
+  await assertSucceeds(setDoc(ref, { onboardingComplete: true, preferences: ['cs.LG'] }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { emailDigestOptIn: true }, { merge: true }));
+  await assertFails(setDoc(ref, { emailDigestOptIn: 'yes' }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { emailDigestOptIn: deleteField() }, { merge: true }));
+});
+
 // =========================================================================
 // F9 — User search index
 //

@@ -35,9 +35,9 @@ test('el spinner de la cabecera se fue con su botón', async () => {
   assert.ok(!css.includes('.guest-header-button.is-spinning'), 'la regla del spinner sigue en GuestFeedPage.css');
 });
 
-test('the signed-out welcome exposes no paper feed or refresh source', async () => {
+test('el feed de invitado conserva su propio refresh, el que usa FeedContainer', async () => {
   const [guest, container] = await Promise.all([guestJsx, feedContainerJsx]);
-  assert.doesNotMatch(guest, /FeedContainer|useGuestFeed|\.\.\.guestFeed/, 'stored choices must not reveal the paper feed');
+  assert.match(guest, /\.\.\.guestFeed/, 'el feed ya no se le pasa entero a FeedContainer');
   assert.match(container, /source\.refresh/, 'FeedContainer dejó de leer el refresh del source');
   assert.match(container, /source\.isRefreshing/, 'FeedContainer dejó de leer isRefreshing del source');
 });

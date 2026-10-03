@@ -17,3 +17,9 @@ test('the client cap is the rules cap, read from the rules file itself', async (
   assert.equal(USER_PREFERENCES_MAX, 100);
   assert.match(rules, new RegExp(`preferences\\.size\\(\\) <= ${USER_PREFERENCES_MAX}\\)`));
 });
+
+test('the rules accept the email digest opt-in only as a bool', async () => {
+  const rules = await readFile(new URL('../../firestore.rules', import.meta.url), 'utf8');
+  assert.match(rules, /function userProfileKeys\(\) \{[\s\S]*?'emailDigestOptIn'[\s\S]*?\];/);
+  assert.match(rules, /\('emailDigestOptIn' in request\.resource\.data\)\s*\|\| request\.resource\.data\.emailDigestOptIn is bool\)/);
+});

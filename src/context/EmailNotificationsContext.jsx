@@ -26,7 +26,7 @@ const DEFAULT_PREFERENCES = {
 };
 
 export function EmailNotificationsProvider({ children }) {
-  const { user } = useAuth();
+  const { user, emailDigestPending, settleEmailDigestOptIn } = useAuth();
   const { language } = useLanguage();
   const { trackEvent, markActivation } = useAnalyticsConsent();
   const userEmail = user?.email || '';
@@ -157,6 +157,43 @@ export function EmailNotificationsProvider({ children }) {
       setTesting(false);
     }
   }, [applySavedPreferences, followedEntities, hasFollows, items, language, notificationDataReady, preferences]);
+
+  // A yes from the guest welcome, carried out here: the account is created
+  // with no follows and the digest is built from them (the Worker refuses an
+  // empty subscription), so the subscription starts with the first follow,
+  // to the address the account signs in with. Once per session; a failure
+  // keeps the flag and the next session tries again. Once it exists — or the
+  // reader already turned email on themselves — the flag is spent, so a later
+  // unsubscribe in Settings is never undone.
+  const optInAttemptedFor = useRef(null);
+  useEffect(() => {
+    if (
+      !emailDigestPending
+      || !userId
+      || loading
+      || error
+      || loadedForUser.current !== userId
+      || optInAttemptedFor.current === userId
+      || !notificationDataReady
+      || updatesLoading
+    ) return undefined;
+    if (preferences.enabled) {
+      optInAttemptedFor.current = userId;
+      settleEmailDigestOptIn()
+        .catch(settleError => console.warn('Could not settle the email digest opt-in', settleError));
+      return undefined;
+    }
+    if (!hasFollows || !health.available) return undefined;
+    // A beat after the follow lands, like the digest sync below, so a burst
+    // of follows becomes one subscription carrying all of them.
+    const optInTimeout = setTimeout(() => {
+      optInAttemptedFor.current = userId;
+      savePreferences({ ...preferences, enabled: true })
+        .then(() => settleEmailDigestOptIn())
+        .catch(optInError => console.warn('Could not start the email digest the reader opted into', optInError));
+    }, 1200);
+    return () => clearTimeout(optInTimeout);
+  }, [emailDigestPending, error, hasFollows, health.available, loading, notificationDataReady, preferences, savePreferences, settleEmailDigestOptIn, updatesLoading, userId]);
 
   useEffect(() => {
     if (

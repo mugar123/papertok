@@ -49,3 +49,13 @@ test('every write of the preference reports through applySavedPreferences', () =
     'a preference write that never reaches applySavedPreferences subscribes without recording it',
   );
 });
+
+test('a welcome opt-in subscribes through savePreferences, only with follows, and is then spent', () => {
+  // The digest is built from follows and the Worker refuses an empty
+  // subscription, so the yes waits for the first follow and a working sender.
+  assert.match(source, /if \(!hasFollows \|\| !health\.available\) return undefined;/);
+  // Through savePreferences, so `newsletter_change` reports the subscription.
+  assert.match(source, /savePreferences\(\{ \.\.\.preferences, enabled: true \}\)\s*\.then\(\(\) => settleEmailDigestOptIn\(\)\)/);
+  // Already subscribed: nothing to start, only the flag to spend.
+  assert.match(source, /if \(preferences\.enabled\) \{\s*optInAttemptedFor\.current = userId;\s*settleEmailDigestOptIn\(\)/);
+});

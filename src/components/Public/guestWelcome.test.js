@@ -16,15 +16,15 @@ const cssPromise = read('./GuestWelcome.css').then(stripComments);
  * them — a page with its own landmark, and the areas as the one question that
  * has to be answered before the feed.
  */
-test('the welcome is a page of four screens and ends on the areas and their topics', async () => {
+test('the welcome retains its intro and topics before personalization and optional support', async () => {
   const jsx = await jsxPromise;
-  assert.match(jsx, /const STEPS = \['welcome', 'how', 'topics', 'subtopics'\];/);
+  assert.match(jsx, /const STEPS = \['welcome', 'how', 'topics', 'subtopics', 'reading', 'inbox', 'support'\];/);
   assert.match(jsx, /<motion\.main\s+className=\{`gw\$\{/, 'the welcome brings its own <main>, the feed page is not mounted under it');
   assert.doesNotMatch(jsx, /ui\/dialog|<Dialog/, 'a first visit is not a dialog over the feed');
   // The feed is built from the answer, so the last step cannot be passed
   // without one; the first two can be skipped straight to it.
   assert.match(jsx, /const primaryDisabled = isQuestion && selected\.size === 0;/);
-  assert.match(jsx, /const finish = \(\) => \{\s*if \(selected\.size === 0\) return;/);
+  assert.match(jsx, /const finish = \(\) => \{\s*if \(selected\.size === 0 \|\| leaving\) return;/);
   assert.match(jsx, /onClick=\{\(\) => goTo\(TOPICS_INDEX\)\}/, 'the skip goes to the areas step, not past it');
   assert.match(jsx, /const TOPICS_INDEX = STEPS\.indexOf\('topics'\);/);
 });
@@ -38,7 +38,7 @@ test('the welcome is a page of four screens and ends on the areas and their topi
  */
 test('the specific topics are their own screen, in the area cards, and never block the feed', async () => {
   const jsx = await jsxPromise;
-  assert.match(jsx, /const primary = \(\) => \{\s*if \(isSubtopics\) finish\(\);\s*else goTo\(stepIndex \+ 1\);/);
+  assert.match(jsx, /const primary = \(\) => \{\s*if \(step === 'support'\) finish\(\);\s*else goTo\(stepIndex \+ 1\);/);
   const subtopics = jsx.slice(jsx.indexOf('{isSubtopics && AREA_ENTRIES'), jsx.indexOf('</motion.section>'));
   assert.match(subtopics, /className="gw-areas"/, 'the same grid as the areas');
   assert.match(subtopics, /className="gw-area"/, 'the same cards as the areas');
@@ -126,7 +126,7 @@ test('with motion refused the illustrations are drawn finished and the columns h
   const jsx = await jsxPromise;
   assert.match(jsx, /const still = Boolean\(prefersReducedMotion\);/);
   assert.match(jsx, /const \[order, setOrder\] = useState\(still \? \['b', 'a', 'c'\] : \['a', 'b', 'c'\]\);/);
-  assert.match(jsx, /onComplete\?\.\(answer\(\)\);/, 'completion opens sign-in immediately in either motion mode');
+  assert.match(jsx, /if \(still\) onComplete\?\.\(/, 'with no leave to wait for, the answer is handed over at once');
   assert.match(jsx, /\{!still && \(\s*<button[\s\S]*?className="gw-stream-hit"/, 'no pause control when nothing moves');
   const css = await cssPromise;
   const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/)?.[0] ?? '';
@@ -213,11 +213,13 @@ test('long topic groups fold behind show more without hiding a pick', async () =
   assert.match(jsx, /showMore: n => `Show \$\{n\} more`/);
 });
 
-test('completion leaves the welcome visible so sign-in can be cancelled and retried', async () => {
+
+test('the welcome ends in the feed, not in a sign-in', async () => {
   const jsx = await jsxPromise;
-  assert.match(jsx, /cta: 'Sign in'/);
-  const page = jsx.slice(jsx.indexOf('<motion.main'), jsx.indexOf('<header className="gw-bar">'));
-  assert.doesNotMatch(page, /animate=|onAnimationComplete=/);
-  assert.doesNotMatch(jsx, /setLeaving/);
-  assert.match(jsx, /const finish = \(\) => \{\s*if \(selected\.size === 0\) return;\s*onComplete\?\.\(answer\(\)\);/);
+  const support = jsx.slice(jsx.indexOf('    support: {'), jsx.indexOf('const SHOWCASE') > jsx.indexOf('    support: {') ? jsx.indexOf('const SHOWCASE') : undefined);
+  assert.match(support, /cta: 'Start exploring papers'/);
+  assert.doesNotMatch(jsx, /onSignIn|cta: 'Sign in'/, 'signing in lives in the feed, not in the onboarding');
+  // The page leaves, and only then hands its answer over.
+  assert.match(jsx, /animate=\{leaving && !still \? \{ opacity: 0, y: -16 \} : \{ opacity: 1, y: 0 \}\}/);
+  assert.match(jsx, /onAnimationComplete=\{\(\) => \{\s*if \(leaving && !still\) onComplete\?\.\(answer\(\)\);/);
 });

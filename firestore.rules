@@ -71,7 +71,10 @@ service cloud.firestore {
         'followedAuthors',
         'followingMigratedAt',
         'readingPreferences',
-        'profilePhoto'
+        'profilePhoto',
+        // A guest's yes to the email digest, waiting for the first follow
+        // (src/context/EmailNotificationsContext.jsx). A bool, then deleted.
+        'emailDigestOptIn'
       ];
     }
 
@@ -681,7 +684,9 @@ service cloud.firestore {
             && (!('languagePreferenceSet' in request.resource.data.readingPreferences)
               || request.resource.data.readingPreferences.languagePreferenceSet is bool))
         && (!('profilePhoto' in request.resource.data)
-          || validString(request.resource.data.profilePhoto, 280000));
+          || validString(request.resource.data.profilePhoto, 280000))
+        && (!('emailDigestOptIn' in request.resource.data)
+          || request.resource.data.emailDigestOptIn is bool);
 
       // Where pinned lists wait while "show pinned lists" is off (F8).
       //

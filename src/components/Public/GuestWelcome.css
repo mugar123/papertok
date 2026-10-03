@@ -902,10 +902,6 @@
     padding: var(--inset-top) var(--space-3) 0;
   }
 
-  .gw-sign-in-label {
-    display: none;
-  }
-
   /* One line down to a 360px phone: the size follows the width there. */
   .gw-step--topics .gw-lede,
   .gw-step--subtopics .gw-lede {
@@ -983,6 +979,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .gw-env-label > span { transform: none !important; transition: opacity 150ms ease; }
+
   .gw-stream-track {
     animation: none;
   }
@@ -1002,4 +1000,110 @@
   .gw-more svg {
     transition: none;
   }
+}
+
+/* Personalization continues the welcome's centered, document-first layout. */
+.gw-step--reading { width: min(760px, 100%); }
+.gw-preferences { width: 100%; margin-top: var(--space-6); }
+.gw-levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); margin: 0; padding: 0; border: 0; }
+.gw-level { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); padding: var(--space-5); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--bg-card); text-align: left; cursor: pointer; }
+.gw-level input { position: absolute; top: var(--space-5); right: var(--space-5); width: 18px; height: 18px; accent-color: var(--text-primary); }
+.gw-level strong { font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
+.gw-level > span { font-size: var(--fs-xs); line-height: 1.7; color: var(--text-secondary); }
+.gw-level:has(input:checked) { border-color: var(--border-ink); box-shadow: inset 0 -3px 0 var(--text-primary); background: var(--bg-sunken); }
+.gw-level:has(input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+.gw-preference-note { margin: var(--space-4) 0 0; font-size: var(--fs-xs); line-height: 1.8; color: var(--text-secondary); }
+/* The digest arriving: an envelope on a sunken panel. Stage 260 × 410, the
+   envelope the bottom 240 × 150 of it; the letters rise from inside and the
+   slot clips them at the envelope's foot. Order, back to front: inside, flap
+   once open, letters, pocket, flap while closed, seal. */
+.gw-inbox { margin-top: var(--space-2); }
+/* The stage keeps headroom for the sparks; let it sit under the lede. */
+.gw-digest-preview { display: grid; place-items: center; margin-top: -32px; pointer-events: none; }
+.gw-env { position: relative; width: 260px; height: 410px; perspective: 900px; zoom: 0.85; }
+.gw-env-back,.gw-env-flap,.gw-env-pocket { position: absolute; left: 10px; right: 10px; bottom: 0; height: 150px; }
+.gw-env-back { z-index: 0; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--text-primary) 7%, var(--bg-elevated)); }
+.gw-env-flap { clip-path: polygon(0 0, 100% 0, 50% 62%); transform-origin: 50% 0; backface-visibility: visible; background: color-mix(in srgb, var(--text-primary) 3%, var(--bg-elevated)); }
+.gw-env-back svg,.gw-env-flap svg,.gw-env-pocket svg { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: var(--border-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.gw-env-flap path,.gw-env-pocket path { vector-effect: non-scaling-stroke; }
+.gw-env-slot { position: absolute; inset: 0; z-index: 2; overflow: hidden; }
+.gw-env-letter { position: absolute; left: 50%; bottom: 8px; display: flex; flex-direction: column; gap: 6px; width: 224px; height: 350px; margin-left: -112px; padding: 14px; border: 1px solid var(--border-default); border-top: 3px solid var(--area-accent); border-radius: var(--radius-lg); background: var(--bg-card); box-shadow: var(--shadow-sm); text-align: left; }
+.gw-env-letter--behind { gap: 7px; background: color-mix(in srgb, var(--area-accent) 5%, var(--bg-card)); }
+.gw-env-venue,.gw-env-label { font: var(--mono-label); letter-spacing: var(--mono-track); text-transform: uppercase; }
+.gw-env-letter strong { font: 500 0.95rem/1.25 var(--font-serif); color: var(--text-primary); text-wrap: balance; }
+.gw-env-authors { font-size: 0.6875rem; line-height: 1.4; color: var(--text-secondary); }
+.gw-env-hook { margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--border-subtle); font: italic 400 0.8125rem/1.45 var(--font-serif); color: var(--text-secondary); }
+.gw-env-venue { margin-top: auto; color: var(--text-tertiary); }
+.gw-env-pocket { z-index: 3; clip-path: polygon(0 0, 50% 58%, 100% 0, 100% 100%, 0 100%); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--bg-elevated); }
+.gw-env-label { position: absolute; left: 0; right: 0; bottom: 12px; display: grid; justify-items: center; color: var(--text-secondary); }
+.gw-env-label > span { grid-area: 1 / 1; display: inline-flex; align-items: center; gap: 5px; transition: opacity 200ms cubic-bezier(0.23, 1, 0.32, 1), transform 200ms cubic-bezier(0.23, 1, 0.32, 1); }
+.gw-env-label > span:last-child { color: var(--accent-success); opacity: 0; transform: translateY(5px); }
+.gw-env-label[data-subscribed] > span:first-child { opacity: 0; transform: translateY(-5px); }
+.gw-env-label[data-subscribed] > span:last-child { opacity: 1; transform: translateY(0); }
+/* The opt-in: one row, the whole row a target for the switch. */
+.gw-digest-optin { display: flex; align-items: center; gap: var(--space-4); width: min(400px, 100%); margin: var(--space-4) auto 0; text-align: left; padding: var(--space-4); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--bg-card); cursor: pointer; transition: border-color 150ms ease, background-color 150ms ease; }
+/* On is said by the switch, in the same green as the envelope's label; the
+   row only warms a little, so the pair does not read as a block of ink. */
+.gw-digest-optin[data-checked] { border-color: color-mix(in srgb, var(--accent-success) 45%, var(--border-strong)); background: color-mix(in srgb, var(--accent-success) 5%, var(--bg-card)); }
+.gw-digest-optin:has(:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+.gw-digest-optin-text { display: flex; flex: 1; flex-direction: column; gap: 6px; min-width: 0; }
+.gw-digest-optin-text strong { font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
+.gw-digest-optin-text span { font-size: var(--fs-xs); line-height: 1.6; color: var(--text-secondary); }
+.gw-env-seal { position: absolute; top: 338px; left: 50%; z-index: 5; display: grid; place-items: center; width: 30px; height: 30px; border-radius: var(--radius-full); background: var(--accent-primary); color: var(--text-inverse); box-shadow: 0 0 0 2px var(--bg-elevated), 0 0 0 3px var(--border-strong); font: 600 0.95rem/1 var(--font-serif); }
+.gw-env-sparks { position: absolute; top: 52px; left: 50%; z-index: 5; }
+.gw-env-sparks span { position: absolute; top: -3px; left: -3px; width: 6px; height: 6px; border-radius: var(--radius-full); background: var(--area-accent); }
+/* Support: the words and the browser side by side, browser on the right, so
+   the browser can be large. Reversed in CSS rather than in the markup: the
+   browser is decoration (aria-hidden) and still comes first where a phone,
+   with no room for the pair, stacks them (below). */
+.gw-step--support { width: min(900px, 100%); }
+.gw-support { display: flex; flex-direction: row-reverse; align-items: center; justify-content: center; gap: var(--space-10); }
+.gw-support-copy { display: flex; flex: 0 1 280px; flex-direction: column; align-items: flex-start; gap: var(--space-5); text-align: left; }
+.gw-support-copy p { margin: 0; font-size: var(--fs-base); line-height: 1.7; color: var(--text-secondary); }
+/* The star demo: a browser on the repository. The page is 340 × 186 and
+   zooms from its top-right corner, where GitHub keeps the Star button, so the
+   cursor (a child of the page) stays on the button through the zoom. */
+.gw-gh { flex: none; width: 340px; zoom: 1.45; overflow: hidden; border: 1px solid var(--border-strong); border-radius: var(--radius-2xl); background: var(--bg-elevated); box-shadow: var(--shadow-md); text-align: left; }
+.gw-gh-chrome { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--border-default); background: var(--bg-sunken); }
+.gw-gh-dots { display: flex; gap: 5px; }
+.gw-gh-dots i { width: 7px; height: 7px; border: 1px solid var(--border-strong); border-radius: var(--radius-full); }
+.gw-gh-url { display: flex; flex: 1; align-items: center; justify-content: center; gap: 5px; min-width: 0; padding: 4px 8px; border: 1px solid var(--border-default); border-radius: var(--radius-full); background: var(--bg-elevated); font: 500 0.625rem/1 var(--font-mono); color: var(--text-secondary); white-space: nowrap; }
+.gw-gh-view { position: relative; height: 186px; overflow: hidden; }
+.gw-gh-page { position: absolute; inset: 0; padding: 12px; transform-origin: 100% 0; color: var(--text-primary); }
+.gw-gh-head { display: flex; align-items: center; gap: 6px; height: 22px; font-size: 0.6875rem; white-space: nowrap; }
+.gw-gh-repo { color: var(--accent-secondary); }
+.gw-gh-pill { padding: 2px 6px; border: 1px solid var(--border-default); border-radius: var(--radius-full); font-size: 0.5625rem; color: var(--text-secondary); }
+.gw-gh-star { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 4px; width: 64px; height: 22px; margin-left: auto; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--bg-sunken); font-size: 0.625rem; font-weight: var(--fw-semibold); }
+.gw-gh-star-icon { display: grid; color: var(--text-secondary); }
+.gw-gh-star[data-starred] .gw-gh-star-icon,.gw-gh-plus { color: var(--accent-save); }
+.gw-gh-ring { position: absolute; inset: -1px; border: 1px solid var(--accent-save); border-radius: inherit; }
+.gw-gh-plus { position: absolute; top: -4px; right: 4px; font: 600 0.5625rem/1 var(--font-mono); }
+.gw-gh-tabs { display: flex; gap: 14px; margin: 12px -12px 0; padding: 0 12px; border-bottom: 1px solid var(--border-default); font-size: 0.625rem; color: var(--text-secondary); }
+.gw-gh-tabs span { padding-bottom: 7px; }
+.gw-gh-tabs .is-active { margin-bottom: -1px; border-bottom: 2px solid var(--text-primary); color: var(--text-primary); font-weight: var(--fw-semibold); }
+.gw-gh-files { margin: 10px 0 0; padding: 0; border: 1px solid var(--border-default); border-radius: var(--radius-lg); list-style: none; }
+.gw-gh-files li { display: flex; align-items: center; gap: 7px; height: 19px; padding: 0 8px; font: 500 0.625rem/1 var(--font-mono); color: var(--text-secondary); }
+.gw-gh-files li + li { border-top: 1px solid var(--border-subtle); }
+.gw-gh-files li > span { width: 62px; color: var(--text-primary); }
+.gw-gh-files li > i { flex: 1; height: 4px; max-width: 46%; border-radius: var(--radius-sm); background: var(--border-default); }
+.gw-gh-files li:nth-child(even) > i { max-width: 32%; }
+.gw-gh-cursor { position: absolute; top: 0; left: 0; display: grid; transform-origin: 0 0; color: var(--text-primary); filter: drop-shadow(0 1px 1px var(--bg-elevated)); }
+@media (max-width: 900px) { .gw-gh { zoom: 1.15; } }
+@media (max-width: 760px) {
+  .gw-support { flex-direction: column; gap: var(--space-5); }
+  .gw-support-copy { flex: none; align-items: center; text-align: center; }
+  .gw-support-copy p { max-width: 42ch; font-size: var(--fs-sm); }
+  .gw-gh { zoom: 1; }
+}
+@media (max-width: 380px) { .gw-gh { zoom: 0.84; } }
+.gw-preferences :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+.gw-preferences [data-slot=button],.gw-level { scroll-margin-block: 100px 160px; }
+@media (max-width: 640px) {
+  .gw-levels { grid-template-columns: minmax(0, 1fr); }
+  .gw-level { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 6px 12px; padding: var(--space-4); padding-right: 48px; }
+  .gw-level > svg { grid-row: 1 / 3; }
+  .gw-level > span { grid-column: 2; }
+  .gw-level input { top: var(--space-4); right: var(--space-4); }
+  /* Keep the illustration short enough that the sign-in action stays near. */
+  .gw-env { zoom: 0.72; }
 }

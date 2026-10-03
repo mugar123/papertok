@@ -22,7 +22,7 @@ import { clearUserScopedStorage, readStoredOnboarding, saveStoredOnboarding } fr
 import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from '../services/accountWarmup.js';
 import { forgetOwnProfile } from '../utils/profileSessionCaches.js';
 import { accountLooksOnboarded } from '../utils/accountOnboarding.js';
-import { clearGuestInterests } from '../utils/guestInterests.js';
+import { clearGuestInterests, readGuestInterests } from '../utils/guestInterests.js';
 import { toggleFollowedAuthor } from '../utils/followedAuthors.js';
 
 const PROFILE_CACHE_TIMEOUT_MS = 800;
@@ -48,6 +48,11 @@ export function AuthProvider({ children }) {
   const [followedAuthors, setFollowedAuthors] = useState([]);
   const [readingPreferences, setReadingPreferences] = useState(DEFAULT_READING_PREFERENCES);
   const [profilePhoto, setProfilePhoto] = useState(null);
+  // A yes to the email digest given in the guest welcome, saved on the
+  // account at onboarding and waiting for the first follow: the digest is
+  // built from follows, so EmailNotificationsContext turns the subscription
+  // on then and settles this flag.
+  const [emailDigestPending, setEmailDigestPending] = useState(false);
   const [profileLoadError, setProfileLoadError] = useState(null);
   // Which doors this account has (F5). Kept in state rather than read from
   // `user.providerData` at render time because linking does not always
@@ -85,6 +90,7 @@ export function AuthProvider({ children }) {
       setFollowedAuthors([]);
       setReadingPreferences(DEFAULT_READING_PREFERENCES);
       setProfilePhoto(null);
+      setEmailDigestPending(false);
       setSignInProviders(providerIdsOf(currentUser));
 
       if (currentUser) {
@@ -112,6 +118,7 @@ export function AuthProvider({ children }) {
           setFollowedAuthors(data.followedAuthors || []);
           setReadingPreferences(normalizeReadingPreferences(data.readingPreferences));
           setProfilePhoto(normalizeProfilePhoto(data.profilePhoto));
+          setEmailDigestPending(data.emailDigestOptIn === true);
           if (onboarded) {
             saveStoredOnboarding(currentUser.uid, {
               complete: true,
@@ -260,6 +267,7 @@ export function AuthProvider({ children }) {
       setFollowedAuthors([]);
       setReadingPreferences(DEFAULT_READING_PREFERENCES);
       setProfilePhoto(null);
+      setEmailDigestPending(false);
       setSignInProviders([]);
       localStorage.removeItem('papertok_user');
       return;
@@ -283,9 +291,21 @@ export function AuthProvider({ children }) {
   // (docs/AUDITORIA-ONBOARDING-INTERESES-2026-09-16.md, hallazgo 4). Now the
   // failure reaches handleFinish's catch, on screen, with the pick intact.
   const completeOnboarding = useCallback(async (preferences) => {
+    const guestAnswer = readGuestInterests();
+    const guestLevel = guestAnswer?.readingLevel;
+    // Only an explicit yes reaches the account; demo mode has no Worker to
+    // subscribe with, so it never records one.
+    const guestEmailDigest = !IS_DEMO && guestAnswer?.emailDigest === true;
+    const guestReading = guestLevel
+      ? normalizeReadingPreferences({ ...readingPreferences, aiExplanationLevel: guestLevel })
+      : null;
     if (IS_DEMO) {
       demoSet('selectedCategories', preferences);
       demoSet('onboardingComplete', true);
+      if (guestReading) {
+        demoSet('readingPreferences', guestReading);
+        setReadingPreferences(guestReading);
+      }
       clearGuestInterests();
       setUserPreferences(preferences);
       setOnboardingComplete(true);
@@ -305,6 +325,7 @@ export function AuthProvider({ children }) {
       const settled = await settleWithin(
         setDoc(doc(db, 'users', userId), {
           onboardingComplete: true,
+          ...(guestReading ? { readingPreferences: guestReading } : {}),
           preferences
         }, { merge: true }),
         PROFILE_NETWORK_TIMEOUT_MS,
@@ -323,6 +344,24 @@ export function AuthProvider({ children }) {
         }
         throw settled.reason;
       }
+      if (guestReading) setReadingPreferences(guestReading);
+      // The email opt-in is its own write, after the onboarding's and never
+      // awaited by it: the frontend and the Firestore rules deploy separately,
+      // and a refusal here (rules that do not know the field yet, a stalled
+      // connection) must cost the reader the opt-in, not the account. They can
+      // still turn email on in Settings.
+      if (guestEmailDigest) {
+        void settleWithin(
+          setDoc(doc(db, 'users', userId), { emailDigestOptIn: true }, { merge: true }),
+          PROFILE_NETWORK_TIMEOUT_MS,
+        ).then((optIn) => {
+          if (optIn.status !== 'fulfilled') {
+            console.warn('Could not save the email digest opt-in', optIn.reason || optIn.status);
+            return;
+          }
+          if (auth.currentUser?.uid === userId) setEmailDigestPending(true);
+        });
+      }
       saveStoredOnboarding(userId, { complete: true, preferences });
       // The interests a guest picked before signing up have now reached the
       // profile (the onboarding pre-selects from them); the bridge is done.
@@ -330,7 +369,7 @@ export function AuthProvider({ children }) {
     }
     setUserPreferences(preferences);
     setOnboardingComplete(true);
-  }, [user?.uid]);
+  }, [readingPreferences, user?.uid]);
 
   const updatePreferences = useCallback(async (newPreferences) => {
     setUserPreferences(newPreferences);
@@ -396,6 +435,15 @@ export function AuthProvider({ children }) {
     }
   }, [readingPreferences, user?.uid]);
 
+  // The pending yes is spent once the subscription exists (or the reader has
+  // since decided for themselves), so a later unsubscribe is never undone.
+  const settleEmailDigestOptIn = useCallback(async () => {
+    const userId = user?.uid;
+    if (!userId || IS_DEMO) return;
+    await setDoc(doc(db, 'users', userId), { emailDigestOptIn: deleteField() }, { merge: true });
+    if (auth.currentUser?.uid === userId) setEmailDigestPending(false);
+  }, [user?.uid]);
+
   const updateProfilePhoto = useCallback(async (value) => {
     const userId = user?.uid;
     const previous = profilePhoto;
@@ -453,6 +501,7 @@ export function AuthProvider({ children }) {
     followedAuthors,
     readingPreferences,
     profilePhoto,
+    emailDigestPending,
     profileLoadError,
     signInProviders,
     signInWithGoogle,
@@ -460,6 +509,7 @@ export function AuthProvider({ children }) {
     linkGitHubAccount,
     signOut,
     completeOnboarding,
+    settleEmailDigestOptIn,
     updatePreferences,
     setUserPreferences,
     toggleFollowAuthor,
@@ -468,9 +518,9 @@ export function AuthProvider({ children }) {
     retryProfileLoad,
     isDemo: IS_DEMO,
   }), [
-    completeOnboarding, error, followedAuthors, linkGitHubAccount, loading,
+    completeOnboarding, emailDigestPending, error, followedAuthors, linkGitHubAccount, loading,
     onboardingComplete, profileLoadError, profilePhoto, readingPreferences,
-    retryProfileLoad, setUserPreferences, signInProviders, signInWithGitHub,
+    retryProfileLoad, setUserPreferences, settleEmailDigestOptIn, signInProviders, signInWithGitHub,
     signInWithGoogle, signOut, toggleFollowAuthor, updatePreferences,
     updateProfilePhoto, updateReadingPreferences, user, userPreferences,
   ]);

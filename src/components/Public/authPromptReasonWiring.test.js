@@ -32,10 +32,10 @@ test('a guest bounced off a protected route gets the general door, not a stale r
   assert.match(app, /onClose=\{\(\) => \{\s*setAuthPromptOpen\(false\)\s*setAuthPromptReason\('default'\)\s*\}\}/);
 });
 
-test('the welcome opens the general sign-in door after saving its choices', () => {
+test('the guest page forwards the action it was given', () => {
   const page = read('./GuestFeedPage.jsx');
-  const requestAccount = bounded(page, 'const requestAccount = (answer) => {', '};', 'requestAccount', 5);
-  assert.match(requestAccount, /if \(answer\?\.areas\) saveGuestInterests\(answer\);\s*onAuthRequired\?\.\('other'\);/);
+  const requestAccount = bounded(page, 'const requestAccount = useCallback(', '}, [', 'requestAccount', 8);
+  assert.match(requestAccount, /onAuthRequired\?\.\(action\);/);
 });
 
 test('the dialog reads its headline and lede from the reason', () => {

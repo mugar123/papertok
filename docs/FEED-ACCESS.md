@@ -1,5 +1,12 @@
 # Feed access
 
+> **Superseded on 2026-10-03.** The restriction described below was reverted
+> the same day: a signed-out visitor who has finished the welcome sees the guest
+> feed built from the areas and topics they picked, and signing in is offered
+> there rather than in the welcome. The current behavior is in
+> `docs/ONBOARDING-PERSONALIZATION.md` ("Guest feed restored"). What follows is
+> kept as the record of the restriction and of how it was verified.
+
 `/feed` requires an authenticated session with completed account onboarding.
 Signed-out visitors always see `GuestWelcome`, including devices with an old
 `papertok_guestInterests` answer. Stored areas and topics are an onboarding draft,

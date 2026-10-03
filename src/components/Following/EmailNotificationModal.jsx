@@ -8,6 +8,7 @@ import {
   Envelope,
   PaperPlaneTilt,
 } from '@phosphor-icons/react';
+import { useAuth } from '../../context/AuthContext';
 import { useEmailNotifications } from '../../context/EmailNotificationsContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.jsx';
@@ -53,6 +54,7 @@ const MAX_PAPERS_OPTIONS = [3, 5, 10].map(value => ({ value, label: String(value
  */
 export default function EmailNotificationModal({ isOpen, onClose }) {
   const { language } = useLanguage();
+  const { emailDigestPending } = useAuth();
   const enabledId = useId();
   const countId = useId();
   const {
@@ -173,7 +175,9 @@ export default function EmailNotificationModal({ isOpen, onClose }) {
           {!loading && notificationDataReady && !hasFollows && (
             <div className="email-notification-provider-warning is-info">
               <strong>{'Nothing followed yet'}</strong>
-              <span>{'Follow a topic, author, institution, or project so PaperTok can prepare relevant email updates.'}</span>
+              <span>{emailDigestPending
+                ? 'You asked for the digest when you joined. It starts on its own with your first follow: a topic, author, institution, or project.'
+                : 'Follow a topic, author, institution, or project so PaperTok can prepare relevant email updates.'}</span>
             </div>
           )}
           <div className="email-notification-toggle-row">

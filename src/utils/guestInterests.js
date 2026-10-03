@@ -1,4 +1,5 @@
 import { CATEGORIES } from '../data/categories.js';
+import { normalizeReadingPreferences } from './userSettings.js';
 
 /**
  * What a visitor told us they care about, before they had an account.
@@ -132,7 +133,7 @@ export function guestSeedCategoriesForAreas(areas, perArea = GUEST_SEED_PER_AREA
 
 /**
  * `null` when the prompt has never been answered on this device. Otherwise
- * `{ areas, topics, dismissed }`: `dismissed` is a "not now" (or a pick emptied out),
+ * `{ areas, topics, dismissed, readingLevel?, emailDigest? }`: `dismissed` is a "not now" (or a pick emptied out),
  * which the prompt honours by not asking again — the header chip stays as
  * the way back in.
  */
@@ -146,7 +147,12 @@ export function readGuestInterests(storage) {
     const areas = normalizeGuestAreas(parsed.areas);
     const topics = normalizeGuestTopics(parsed.topics, areas);
     const dismissed = parsed.dismissedAt != null || areas.length === 0;
-    return { areas, topics, dismissed };
+    const reading = ['beginner', 'university', 'researcher'].includes(parsed.readingLevel)
+      ? { readingLevel: parsed.readingLevel } : {};
+    // Present only as an explicit yes: email is opt-in, so anything else —
+    // an old answer, a no, a malformed value — reads as no.
+    const email = parsed.emailDigest === true ? { emailDigest: true } : {};
+    return { areas, topics, dismissed, ...reading, ...email };
   } catch {
     return null;
   }
@@ -155,7 +161,9 @@ export function readGuestInterests(storage) {
 /**
  * Takes the areas alone (the header chip's sheet) or `{ areas, topics }` (the
  * welcome). Returns the normalized list of areas that was actually stored;
- * `readGuestInterests` has the topics.
+ * `readGuestInterests` has the topics and optional reading level. The level
+ * travels with this guest bridge until account onboarding saves it to the UID,
+ * and so does an explicit yes to the email digest (`emailDigest: true`).
  */
 export function saveGuestInterests(answer, storage) {
   const areas = Array.isArray(answer) ? answer : answer?.areas;
@@ -173,6 +181,8 @@ export function saveGuestInterests(answer, storage) {
       target.setItem(GUEST_INTERESTS_STORAGE_KEY, JSON.stringify({
         areas: normalized,
         topics,
+        ...(answer?.readingLevel ? { readingLevel: normalizeReadingPreferences({ aiExplanationLevel: answer.readingLevel }).aiExplanationLevel } : {}),
+        ...(answer?.emailDigest === true ? { emailDigest: true } : {}),
         dismissedAt: null,
         updatedAt: Date.now(),
       }));

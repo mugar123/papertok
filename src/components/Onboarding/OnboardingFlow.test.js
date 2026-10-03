@@ -108,12 +108,19 @@ test('SOURCE: the onboarding opens on the profile step, seeded from the guest an
 test('SOURCE: the guest answer is cleared where the profile takes over', async () => {
   const source = await readFile(new URL('../../context/AuthContext.jsx', import.meta.url), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-  const complete = code.match(/const completeOnboarding = useCallback\(async \(preferences\) => \{[\s\S]*?\n {2}\}, \[user\?\.uid\]\);/);
+  const complete = code.match(/const completeOnboarding = useCallback\(async \(preferences\) => \{[\s\S]*?\n {2}\}, \[readingPreferences, user\?\.uid\]\);/);
   assert.ok(complete, 'completeOnboarding is gone or reshaped');
   assert.match(
     complete[0],
-    /await settleWithin\(\s*setDoc\(doc\(db, 'users', userId\), \{\s*onboardingComplete: true,\s*preferences\s*\}, \{ merge: true \}\),\s*PROFILE_NETWORK_TIMEOUT_MS,\s*\);[\s\S]*?clearGuestInterests\(\);/,
+    /await settleWithin\(\s*setDoc\(doc\(db, 'users', userId\), \{\s*onboardingComplete: true,\s*\.\.\.\(guestReading \? \{ readingPreferences: guestReading \} : \{\}\),\s*preferences\s*\}, \{ merge: true \}\),\s*PROFILE_NETWORK_TIMEOUT_MS,\s*\);[\s\S]*?clearGuestInterests\(\);/,
     'the answer is cleared after the preferences write has settled, never before',
+  );
+  // The email opt-in rides in a write of its own that the onboarding does not
+  // wait for: rules that have not been deployed yet must not block an account.
+  assert.doesNotMatch(complete[0], /onboardingComplete: true,[\s\S]{0,160}emailDigestOptIn/);
+  assert.match(
+    complete[0],
+    /if \(guestEmailDigest\) \{\s*void settleWithin\(\s*setDoc\(doc\(db, 'users', userId\), \{ emailDigestOptIn: true \}, \{ merge: true \}\),/,
   );
   assert.match(
     code,

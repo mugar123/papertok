@@ -22,8 +22,9 @@ flowchart LR
 `src/App.jsx` defines the authenticated routes:
 
 - `/` redirects to `/feed`: authenticated, onboarded users see the personalized
-  For You feed. Signed-out visitors see `GuestWelcome` even if guest interests
-  are stored. Those choices only prefill onboarding; completion opens sign-in.
+  For You feed. Signed-out visitors see `GuestWelcome` until they finish it, and
+  from then on the guest feed built from the areas and topics they picked, where
+  signing in is offered. Those choices also prefill onboarding.
 - `/research`: scientific report and trends
 - `/following`: ranked feed from followed entities
 - `/search`: cross-entity search. The papers section (`services/paperSearchService.js`, shared
@@ -88,10 +89,13 @@ diversity.
 - Browser storage is used only for bounded caches and must be namespaced by user when it
   contains personalized state. The one deliberate exception is `papertok_guestInterests`
   (`src/utils/guestInterests.js`): the choices a signed-out visitor picked in the welcome,
-  which has no user id to be scoped to. Stored choices never grant feed access. It is a bridge,
-  not a store — onboarding pre-selects from it and `completeOnboarding` clears it once the preferences are
+  which has no user id to be scoped to. They select the guest feed's sources. It is a bridge,
+  not a store — the onboarding pre-selects from it and `completeOnboarding` clears it once the preferences are
   in `users/{uid}`, and a session that loads an already-onboarded profile clears it too, so a
-  stray answer never seeds the next account on a shared device.
+  stray answer never seeds the next account on a shared device. A guest's explicit yes to the
+  email digest crosses the same bridge into `users/{uid}.emailDigestOptIn`, which
+  `EmailNotificationsContext` spends by subscribing at the account's first follow
+  (docs/ONBOARDING-PERSONALIZATION.md).
 - Cloudflare KV stores notification state and edge-cached comment-thread anchors. Atomic AI and protected-provider request quotas use
   a Durable Object ledger keyed by bounded UTC periods and hashed user identifiers.
 - Scheduled digests query native arXiv categories directly before falling back to OpenAlex,
@@ -128,7 +132,7 @@ The Worker entry point is `worker/report-api.js`. Its route groups include:
 - specialist sources: `/sources/*`
 - biomedical metrics: `/enrich/icite`
 - associated AI resources: `/resources/huggingface`
-- AI: `/ai/explain`
+- AI: `/ai/explain`; the feed card's "why it matters" line: `/ai/hooks` (guests included, own daily allowance, cached per paper)
 - notifications: `/notifications/*` (authenticated preferences; digest and unsubscribe copy are English-only, and a stored legacy `language: 'es'` is served English)
 
 The browser calls the Worker through `VITE_PAPER_API_BASE_URL`. Worker credentials are stored
@@ -138,8 +142,8 @@ OpenReview and Hugging Face contribute optional AI and computer-science candidat
 enriches PubMed-indexed candidates in one bounded batch and never blocks the feed when the
 service is unavailable. PubMed and Semantic Scholar searches are proxied by `/sources/pubmed` and
 `/sources/s2`: both providers rate-limit per caller identity rather than per user, so the limiter
-belongs where there is one copy of it. Neither route requires a session, because shared paper
-and author pages are public; a global per-minute ceiling and the edge cache stand in
+belongs where there is one copy of it. Neither route requires a session, because the guest feed
+reads PubMed and author pages are public; a global per-minute ceiling and the edge cache stand in
 for the identity check, as they already do for `/openalex/*`. Hugging Face model and dataset
 links are loaded only for papers whose normalized provenance includes Hugging Face.
 
