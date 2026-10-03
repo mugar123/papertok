@@ -21,7 +21,9 @@ flowchart LR
 
 `src/App.jsx` defines the authenticated routes:
 
-- `/`: personalized For You feed
+- `/` redirects to `/feed`: authenticated, onboarded users see the personalized
+  For You feed. Signed-out visitors see `GuestWelcome` even if guest interests
+  are stored. Those choices only prefill onboarding; completion opens sign-in.
 - `/research`: scientific report and trends
 - `/following`: ranked feed from followed entities
 - `/search`: cross-entity search. The papers section (`services/paperSearchService.js`, shared
@@ -85,9 +87,9 @@ diversity.
 - Firestore stores profiles, follows, interactions, preferences, and reading data.
 - Browser storage is used only for bounded caches and must be namespaced by user when it
   contains personalized state. The one deliberate exception is `papertok_guestInterests`
-  (`src/utils/guestInterests.js`): the areas a signed-out visitor picked in the guest feed's
-  interests prompt, which has no user id to be scoped to. It is a bridge, not a store — the
-  onboarding pre-selects from it and `completeOnboarding` clears it once the preferences are
+  (`src/utils/guestInterests.js`): the choices a signed-out visitor picked in the welcome,
+  which has no user id to be scoped to. Stored choices never grant feed access. It is a bridge,
+  not a store — onboarding pre-selects from it and `completeOnboarding` clears it once the preferences are
   in `users/{uid}`, and a session that loads an already-onboarded profile clears it too, so a
   stray answer never seeds the next account on a shared device.
 - Cloudflare KV stores notification state and edge-cached comment-thread anchors. Atomic AI and protected-provider request quotas use
@@ -136,8 +138,8 @@ OpenReview and Hugging Face contribute optional AI and computer-science candidat
 enriches PubMed-indexed candidates in one bounded batch and never blocks the feed when the
 service is unavailable. PubMed and Semantic Scholar searches are proxied by `/sources/pubmed` and
 `/sources/s2`: both providers rate-limit per caller identity rather than per user, so the limiter
-belongs where there is one copy of it. Neither route requires a session, because the guest feed
-reads PubMed and author pages are public; a global per-minute ceiling and the edge cache stand in
+belongs where there is one copy of it. Neither route requires a session, because shared paper
+and author pages are public; a global per-minute ceiling and the edge cache stand in
 for the identity check, as they already do for `/openalex/*`. Hugging Face model and dataset
 links are loaded only for papers whose normalized provenance includes Hugging Face.
 
