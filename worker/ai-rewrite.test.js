@@ -51,7 +51,16 @@ test('the prompt requires highlight quotes to come from the rewritten text', () 
 test('the prompt asks for the paper own headings, not a fixed template', () => {
   const prompt = buildRewritePrompt(paper, 'researcher', 'en');
   assert.match(prompt, /originalHeading/);
-  assert.match(prompt, /the paper's own sections/);
+  assert.match(prompt, /the paper's own top-level sections/);
+});
+
+test('the prompt folds subsections, so the cap is not reached before the conclusion', () => {
+  // Followed down to "3.2.1", a fifteen-page paper used all fourteen sections
+  // on its methods and lost Results and Conclusion without a word.
+  const prompt = buildRewritePrompt(paper, 'university', 'en');
+  assert.match(prompt, /Fold numbered subsections/);
+  assert.match(prompt, /reaching the paper's conclusion/);
+  assert.doesNotMatch(prompt, /3\.2 Ablation study/);
 });
 
 test('an unknown level is rejected before any request is made', () => {
@@ -231,7 +240,7 @@ test('cache keys separate level, model and paper', async () => {
   const keys = new Set([base, otherLevel, otherModel, otherPaper]);
   assert.equal(keys.size, 4);
   // The key format keeps its language segment; it is always 'en' now.
-  assert.match(base, /^paper-rewrite-v1:gemini-3\.5-flash:en:university:/);
+  assert.match(base, /^paper-rewrite-v2:gemini-3\.5-flash:en:university:/);
 });
 
 test('the same paper and settings reuse one cache key', async () => {
@@ -519,7 +528,9 @@ async function withRewriteHarness({ pdf = readablePdf, provider }, callback) {
       put: async () => undefined,
     },
   };
-  globalThis.fetch = async (url, options) => (String(url).includes('generativelanguage.googleapis.com')
+  const isProvider = url => ['generativelanguage.googleapis.com', 'api.nan.builders']
+    .some(host => String(url).includes(host));
+  globalThis.fetch = async (url, options) => (isProvider(url)
     ? provider(url, options)
     : pdf(url, options));
   try {
@@ -1356,4 +1367,201 @@ test('a reader that hangs up after content keeps its use and cancels the model',
   assert.equal(state.release, 0);
   // And nobody is listening any more, so the model must stop generating.
   assert.equal(upstreamCancelled, true);
+});
+
+/* ============================================================
+   NaN: the paper as text, the stream in OpenAI's shape
+   ============================================================ */
+
+const PAPER_TEXT = 'We measure the cooling of an ultracold gas under an alternating field. '.repeat(30);
+
+/** A Workers AI binding whose every conversion yields `data`, recording the calls. */
+function workersAI(data = PAPER_TEXT, { reply } = {}) {
+  const calls = [];
+  return {
+    calls,
+    toMarkdown: async (file, options) => {
+      calls.push({ file, options });
+      if (reply) return reply();
+      return { name: file.name, format: 'markdown', data };
+    },
+  };
+}
+
+function nanEnv(overrides = {}) {
+  return {
+    AI_PROVIDER: 'nan',
+    NAN_API_KEY: 'sk-test-key',
+    FIREBASE_WEB_API_KEY: 'firebase-test-key',
+    AI: workersAI(),
+    ...overrides,
+  };
+}
+
+/** One OpenAI chat-completion chunk on its own SSE line, the way NaN streams. */
+function chunkFrame(content, finishReason = null) {
+  return `data: ${JSON.stringify({
+    object: 'chat.completion.chunk',
+    choices: [{ index: 0, delta: content === null ? {} : { content }, finish_reason: finishReason }],
+  })}\n\n`;
+}
+
+const nanRewrite = () => sseResponse([
+  chunkFrame(sectionLine('intro', 'It began.')),
+  chunkFrame(sectionLine('results', 'It worked.')),
+  chunkFrame(null, 'stop'),
+  'data: [DONE]\n\n',
+]);
+
+test('reads the text of an OpenAI chunk and never its reasoning', () => {
+  assert.equal(extractSseTextDelta(chunkFrame('Hello').trim()), 'Hello');
+  assert.equal(extractSseTextDelta(`data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: 'Let me think' } }] })}`), '');
+  assert.equal(extractSseTextDelta(`data: ${JSON.stringify({ choices: [{ delta: { role: 'assistant' } }] })}`), '');
+});
+
+test('OpenAI finish reasons are read in the words the cache decides by', () => {
+  assert.equal(extractSseFinishReason(chunkFrame(null, 'stop').trim()), 'STOP');
+  assert.equal(extractSseFinishReason(chunkFrame(null, 'length').trim()), 'MAX_TOKENS');
+  assert.equal(extractSseFinishReason(chunkFrame(null, 'content_filter').trim()), 'SAFETY');
+  assert.equal(extractSseFinishReason(chunkFrame('Still writing.').trim()), '');
+});
+
+test('with NaN the paper goes as extracted text, reasoning off, and streams in sections', async () => {
+  const store = fakeRewriteStore();
+  const state = newLedgerState();
+  const env = nanEnv({ AI_REWRITE_STORE: store, REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) });
+  const asked = [];
+
+  const { events } = await runRewrite({
+    provider: async (url, options) => {
+      asked.push({ url: String(url), headers: options.headers, body: JSON.parse(options.body) });
+      return nanRewrite();
+    },
+  }, env);
+
+  assert.equal(asked.length, 1);
+  const [call] = asked;
+  assert.equal(call.url, 'https://api.nan.builders/v1/chat/completions');
+  assert.equal(call.headers.authorization, 'Bearer sk-test-key');
+  assert.equal(call.body.model, 'deepseek-v4-flash');
+  assert.equal(call.body.stream, true);
+  // With reasoning on, the same rewrite spent its whole budget thinking.
+  assert.deepEqual(call.body.chat_template_kwargs, { thinking: false, enable_thinking: false });
+  assert.match(call.body.messages[0].content, /never extend it/);
+  // Text, not the PDF: the gateway takes ~45 s to read a PDF itself.
+  const userContent = call.body.messages[1].content;
+  assert.equal(typeof userContent, 'string');
+  assert.match(userContent, /JSON Lines/);
+  assert.match(userContent, /<paper>\nWe measure the cooling/);
+  assert.equal(env.AI.calls.length, 1);
+
+  const meta = events.find(event => event.type === 'meta');
+  assert.equal(meta.provider, 'nan');
+  assert.equal(meta.model, 'deepseek-v4-flash');
+  assert.deepEqual(events.filter(event => event.type === 'section').map(event => event.kind), ['intro', 'results']);
+  assert.equal(events.at(-1).type, 'done');
+  assert.equal(events.at(-1).truncated, undefined);
+  // Finished, so kept for the next reader, whole.
+  assert.equal(store.entries.size, 1);
+  assert.equal(JSON.parse([...store.entries.values()][0].value).truncated, false);
+  assert.equal(state.release, 0);
+});
+
+test('when the PDF will not convert, NaN is handed the PDF itself', async () => {
+  const asked = [];
+  const { events } = await runRewrite({
+    provider: async (_url, options) => {
+      asked.push(JSON.parse(options.body));
+      return nanRewrite();
+    },
+  }, nanEnv({
+    AI: workersAI('', { reply: () => { throw new Error('Workers AI is down'); } }),
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
+  }));
+
+  const content = asked[0].messages[1].content;
+  assert.ok(Array.isArray(content));
+  assert.match(content[0].text, /JSON Lines/);
+  // `readablePdf` is the four bytes "%PDF".
+  assert.deepEqual(content[1], {
+    type: 'file',
+    file: { filename: 'paper.pdf', file_data: 'data:application/pdf;base64,JVBERg==' },
+  });
+  assert.equal(events.at(-1).type, 'done');
+});
+
+test('the log says how much text NaN read, or why it got the PDF instead', async () => {
+  const read = await runRewriteCapturingLogs({ provider: async () => nanRewrite() }, nanEnv({
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
+  }));
+  assert.equal(read.lines.length, 1);
+  assert.equal(read.lines[0].textChars, PAPER_TEXT.trim().length);
+  assert.equal('textReason' in read.lines[0], false);
+
+  const handed = await runRewriteCapturingLogs({ provider: async () => nanRewrite() }, nanEnv({
+    AI: undefined,
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
+  }));
+  assert.equal(handed.lines[0].textChars, 0);
+  assert.equal(handed.lines[0].textReason, 'unavailable');
+});
+
+test('a NaN rewrite cut at the token ceiling is kept as the half paper it is', async () => {
+  const store = fakeRewriteStore();
+  const { events } = await runRewrite({
+    provider: async () => sseResponse([
+      chunkFrame(sectionLine('intro', 'It began.')),
+      chunkFrame(null, 'length'),
+    ]),
+  }, nanEnv({ AI_REWRITE_STORE: store, REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()) }));
+
+  const done = events.at(-1);
+  assert.equal(done.type, 'done');
+  assert.equal(done.truncated, true);
+  assert.equal(done.finishReason, 'MAX_TOKENS');
+  assert.equal(JSON.parse([...store.entries.values()][0].value).truncated, true);
+});
+
+test('a busy NaN is not retried on the Gemini fallback model, and the use comes back', async () => {
+  const state = newLedgerState();
+  const asked = [];
+  const { events } = await runRewrite({
+    provider: async (url) => {
+      asked.push(String(url));
+      return new Response(JSON.stringify({ error: { message: 'max_parallel_requests', code: 'rate_limit_exceeded' } }), {
+        status: 429,
+        headers: { 'retry-after': '7' },
+      });
+    },
+  }, nanEnv({ AI_FALLBACK_MODEL: 'gemini-3.5-flash-lite', REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) }));
+
+  // AI_FALLBACK_MODEL names a Gemini model: NaN would only 404 it.
+  assert.deepEqual(asked, ['https://api.nan.builders/v1/chat/completions']);
+  const error = events.at(-1);
+  assert.equal(error.code, 'AI_BUSY');
+  assert.equal(error.quota.retryAfterSeconds, 7);
+  assert.equal(state.release, 1);
+});
+
+test('a spent NaN month says when it comes back, and gives the use back', async () => {
+  const state = newLedgerState();
+  const { events } = await runRewrite({
+    provider: async () => new Response(JSON.stringify({ error: { code: 'monthly_cap_reached' } }), { status: 402 }),
+  }, nanEnv({ REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) }));
+
+  const error = events.at(-1);
+  assert.equal(error.code, 'AI_QUOTA_EXHAUSTED');
+  assert.equal(error.quota.scope, 'provider');
+  // NaN's allowance is per calendar month, not per day like Gemini's.
+  assert.match(error.quota.resetAt, /^\d{4}-\d{2}-01T00:00:00\.000Z$/);
+  assert.equal(state.release, 1);
+});
+
+test('NaN chosen without a NaN key is not configured, even with a Gemini key', async () => {
+  await withRewriteHarness({
+    provider: async () => { throw new Error('an unconfigured rewrite must not reach a model'); },
+  }, () => assert.rejects(
+    handlePaperRewrite(rewriteRequest(), nanEnv({ NAN_API_KEY: '', GEMINI_API_KEY: 'gemini-test-key' })),
+    error => error.code === 'AI_NOT_CONFIGURED' && error.status === 503,
+  ));
 });

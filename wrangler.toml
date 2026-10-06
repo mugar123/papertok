@@ -20,7 +20,12 @@ custom_domain = true
 # 5174/5175 are here because Vite increments the port when 5173 is taken, and a
 # missing origin only shows up as a blocked POST after a successful preflight.
 ALLOWED_ORIGINS = "https://papertok.app,https://www.papertok.app,https://papertok-ten.vercel.app,https://mugar123.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:5175,http://127.0.0.1:5175,http://localhost:4175,http://127.0.0.1:4175"
-AI_PROVIDER = "gemini"
+# NaN Builders answers every AI route since 2026-10-06, when the Gemini
+# allowance ran out (key: the NAN_API_KEY secret). "gemini" switches all of
+# them back to the Gemini models below.
+AI_PROVIDER = "nan"
+# NaN's DeepSeek V4 Flash, used by every route while AI_PROVIDER is "nan".
+NAN_MODEL = "deepseek-v4-flash"
 # Cost order: DeepSeek on NVIDIA is free, Kimi on Modal pays per token, so the
 # chain only reaches Modal when NVIDIA could not answer.
 AI_FALLBACK_PROVIDER = "nvidia-deepseek,modal-kimi"
@@ -98,6 +103,11 @@ id = "45c1519982dd48f8a0ea08403c159ae1"
 # [[kv_namespaces]]
 # binding = "AI_REWRITE_STORE"
 # id = "<id from wrangler kv namespace create>"
+
+# Workers AI, for toMarkdown only: it turns a paper's PDF into the text NaN
+# reads in /ai/rewrite (worker/paper-text.js). No model runs on it.
+[ai]
+binding = "AI"
 
 [[durable_objects.bindings]]
 name = "KIMI_BUDGET_LEDGER"

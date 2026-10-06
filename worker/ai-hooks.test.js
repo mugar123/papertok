@@ -9,6 +9,7 @@ import {
   handlePaperHooks,
   normalizeHookPapers,
   parseHookPayload,
+  parseHookText,
 } from './ai-hooks.js';
 
 const ABSTRACT = 'We show that for any two finite-dimensional memoryless quantum channels, parallel, adaptive and general testing strategies achieve the same Stein exponent at every fixed type-I error tolerance, namely the regularized channel relative entropy. Adaptivity therefore provides no asymptotic advantage.';
@@ -206,4 +207,60 @@ test('the router answers /ai/hooks, and refuses a foreign origin and a GET', asy
 
   const get = await reportApi.fetch(new Request('https://papertok-report-api.example/ai/hooks'), env(ledger));
   assert.equal(get.status, 405);
+});
+
+/* NaN, the primary provider since 2026-10-06. */
+
+function nanAnswer(text) {
+  return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: text } }] }));
+}
+
+function nanEnv(ledger, overrides = {}) {
+  return env(ledger, { AI_PROVIDER: 'nan', NAN_API_KEY: 'sk-test-key', GEMINI_API_KEY: '', ...overrides });
+}
+
+test('an array the model fenced or introduced is still read', () => {
+  const asked = [paper('a')];
+  const answer = [{ id: 'a', whyItMatters: 'Fixed plans are as good as clever ones.' }];
+  const expected = { a: 'Fixed plans are as good as clever ones.' };
+  assert.deepEqual(parseHookText(JSON.stringify(answer), asked), expected);
+  assert.deepEqual(parseHookText(`\`\`\`json\n${JSON.stringify(answer)}\n\`\`\``, asked), expected);
+  assert.deepEqual(parseHookText(`Here you go: ${JSON.stringify(answer)}`, asked), expected);
+  assert.deepEqual(parseHookText('no array here', asked), {});
+});
+
+test('with NaN as the provider the batch goes to NaN in one call, reasoning off, and is cached', async () => {
+  const ledger = recordingLedger();
+  const cache = memoryCache();
+  const asked = [];
+  const fetchImpl = async (url, options) => {
+    asked.push({ url: String(url), body: JSON.parse(options.body) });
+    return nanAnswer(`\`\`\`json\n${JSON.stringify([
+      { id: 'a', whyItMatters: 'Changing strategy mid-test buys nothing.' },
+      { id: 'b', whyItMatters: 'Fixed plans are as good as clever ones.' },
+    ])}\n\`\`\``);
+  };
+
+  const first = await handlePaperHooks(hooksRequest([paper('a'), paper('b')]), nanEnv(ledger), { fetchImpl, cache });
+  assert.deepEqual(Object.keys(first.hooks).sort(), ['a', 'b']);
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0].url, 'https://api.nan.builders/v1/chat/completions');
+  assert.equal(asked[0].body.model, 'deepseek-v4-flash');
+  assert.deepEqual(asked[0].body.chat_template_kwargs, { thinking: false, enable_thinking: false });
+  assert.match(asked[0].body.messages[0].content, /id: a/);
+  assert.match(asked[0].body.messages[0].content, /id: b/);
+
+  const second = await handlePaperHooks(hooksRequest([paper('a'), paper('b')]), nanEnv(ledger), { fetchImpl, cache });
+  assert.deepEqual(second.hooks, first.hooks);
+  assert.equal(asked.length, 1, 'no second model call');
+});
+
+test('NaN chosen without a NaN key never reaches a model', async () => {
+  const fetchImpl = async () => { throw new Error('the model must not be called'); };
+  const { hooks } = await handlePaperHooks(
+    hooksRequest([paper('a')]),
+    nanEnv(recordingLedger(), { NAN_API_KEY: '', GEMINI_API_KEY: 'gemini-test-key' }),
+    { fetchImpl, cache: memoryCache() },
+  );
+  assert.deepEqual(hooks, {});
 });

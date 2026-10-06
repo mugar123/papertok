@@ -11,6 +11,7 @@ import {
 } from './ai-explanation.js';
 import { handlePaperRewrite } from './ai-rewrite.js';
 import { handlePassageAnnotation } from './ai-annotation.js';
+import { isNanConfigured } from './nan-client.js';
 import {
   checkEmailProviderHealth,
   EmailNotificationError,
@@ -2660,7 +2661,9 @@ export default {
     if (url.pathname === '/health') {
       return json({
         ok: true,
-        aiConfigured: Boolean(env.GEMINI_API_KEY || isDeepseekConfigured(env) || isKimiConfigured(env)),
+        aiConfigured: Boolean(
+          env.GEMINI_API_KEY || isNanConfigured(env) || isDeepseekConfigured(env) || isKimiConfigured(env),
+        ),
         openAlexConfigured: Boolean(env.OPENALEX_API_KEY),
         adsConfigured: Boolean(env.NASA_ADS_API_TOKEN),
         scopusConfigured: isScopusEgressConfigured(env),

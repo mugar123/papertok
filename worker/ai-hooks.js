@@ -6,6 +6,15 @@ import {
 import { readBoundedJson } from './bounded-body.js';
 import { releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.js';
 import { verifyFirebaseIdentity } from './firebase-auth.js';
+import {
+  NAN_CHAT_COMPLETIONS_URL,
+  buildNanChatBody,
+  chatCompletionText,
+  isNanConfigured,
+  isNanPrimary,
+  nanHeaders,
+  nanModel,
+} from './nan-client.js';
 
 /**
  * "Why it matters": one sentence per feed card, in front of the abstract.
@@ -100,15 +109,30 @@ export function cleanHookSentence(value) {
   return `${sentence.slice(0, MAX_HOOK_CHARS - 1).replace(/\s+\S*$/, '')}…`;
 }
 
-/** Maps the model's answer back onto the ids that were asked for, and only those. */
+/** Pulls the answer out of Gemini's envelope; see `parseHookText`. */
 export function parseHookPayload(payload, papers) {
   const parts = payload?.candidates?.[0]?.content?.parts;
   const raw = Array.isArray(parts)
     ? parts.map(part => (typeof part?.text === 'string' ? part.text : '')).join('')
     : '';
+  return parseHookText(raw, papers);
+}
+
+/**
+ * Maps the model's answer back onto the ids that were asked for, and only those.
+ *
+ * Gemini answers under a schema; NaN's DeepSeek cannot take one and its JSON
+ * mode only produces objects, so it answers in plain text and may fence the
+ * array or say a word before it. The array is read from its first bracket to
+ * its last either way.
+ */
+export function parseHookText(raw, papers) {
+  const text = String(raw || '');
+  const start = text.indexOf('[');
+  const end = text.lastIndexOf(']');
   let items;
   try {
-    items = JSON.parse(raw);
+    items = JSON.parse(start !== -1 && end > start ? text.slice(start, end + 1) : text);
   } catch {
     return {};
   }
@@ -128,46 +152,68 @@ async function hookCacheKey(paper, model) {
   return new Request(`https://papertok.internal/ai-hooks/${HOOK_PROMPT_VERSION}/${encodeURIComponent(model)}/${fingerprint}`);
 }
 
-async function requestHooks({ env, model, papers, fetchImpl }) {
+/** The one batched call, in the shape the provider takes it. */
+function hooksCall({ provider, env, model, papers }) {
+  if (provider === 'nan') {
+    return {
+      url: NAN_CHAT_COMPLETIONS_URL,
+      headers: nanHeaders(env),
+      body: buildNanChatBody({
+        model,
+        messages: [{ role: 'user', content: buildHookPrompt(papers) }],
+        maxTokens: 200 * papers.length,
+        temperature: 0.3,
+      }),
+    };
+  }
+  return {
+    url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+    headers: {
+      'content-type': 'application/json',
+      'x-goog-api-key': env.GEMINI_API_KEY,
+    },
+    body: {
+      contents: [{ role: 'user', parts: [{ text: buildHookPrompt(papers) }] }],
+      generationConfig: {
+        thinkingConfig: { thinkingLevel: 'low' },
+        maxOutputTokens: 200 * papers.length,
+        temperature: 0.3,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              id: { type: 'STRING' },
+              whyItMatters: { type: 'STRING' },
+            },
+            required: ['id', 'whyItMatters'],
+          },
+        },
+      },
+    },
+  };
+}
+
+async function requestHooks({ provider, env, model, papers, fetchImpl }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), HOOK_BUDGET_MS);
   const startedAt = Date.now();
   try {
-    const response = await fetchImpl(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-      {
-        method: 'POST',
-        signal: controller.signal,
-        headers: {
-          'content-type': 'application/json',
-          'x-goog-api-key': env.GEMINI_API_KEY,
-        },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: buildHookPrompt(papers) }] }],
-          generationConfig: {
-            thinkingConfig: { thinkingLevel: 'low' },
-            maxOutputTokens: 200 * papers.length,
-            temperature: 0.3,
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: 'ARRAY',
-              items: {
-                type: 'OBJECT',
-                properties: {
-                  id: { type: 'STRING' },
-                  whyItMatters: { type: 'STRING' },
-                },
-                required: ['id', 'whyItMatters'],
-              },
-            },
-          },
-        }),
-      },
-    );
+    const call = hooksCall({ provider, env, model, papers });
+    const response = await fetchImpl(call.url, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: call.headers,
+      body: JSON.stringify(call.body),
+    });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new AIExplanationError('AI_UNAVAILABLE', 502);
-    const hooks = parseHookPayload(payload, papers);
+    const hooks = provider === 'nan'
+      ? parseHookText(chatCompletionText(payload), papers)
+      : parseHookPayload(payload, papers);
     console.info('AI hooks', JSON.stringify({
+      provider,
       model,
       asked: papers.length,
       answered: Object.keys(hooks).length,
@@ -176,6 +222,7 @@ async function requestHooks({ env, model, papers, fetchImpl }) {
     return hooks;
   } catch (error) {
     console.warn('AI hooks', JSON.stringify({
+      provider,
       model,
       outcome: error?.name === 'AbortError' ? 'AI_TIMEOUT' : (error?.code || 'AI_UNAVAILABLE'),
       durationMs: Date.now() - startedAt,
@@ -211,10 +258,14 @@ export async function handlePaperHooks(request, env, {
     invalid: () => new AIExplanationError('AI_INVALID_REQUEST', 400),
   });
   const papers = normalizeHookPapers(payload?.papers);
-  if (!papers.length || env.AI_HOOKS_DISABLED === 'true' || !env.GEMINI_API_KEY) return { hooks: {} };
+  const provider = isNanPrimary(env) ? 'nan' : 'gemini';
+  const configured = provider === 'nan' ? isNanConfigured(env) : Boolean(env.GEMINI_API_KEY);
+  if (!papers.length || env.AI_HOOKS_DISABLED === 'true' || !configured) return { hooks: {} };
 
   const cache = injectedCache || caches.default;
-  const model = cleanText(env.AI_HOOK_MODEL || DEFAULT_MODEL, 100) || DEFAULT_MODEL;
+  const model = provider === 'nan'
+    ? nanModel(env)
+    : cleanText(env.AI_HOOK_MODEL || DEFAULT_MODEL, 100) || DEFAULT_MODEL;
   const hooks = {};
   const missing = [];
   const keys = new Map();
@@ -242,7 +293,7 @@ export async function handlePaperHooks(request, env, {
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest).catch(() => null);
   if (!reservation?.accepted) return { hooks };
 
-  const generated = await requestHooks({ env, model, papers: missing, fetchImpl });
+  const generated = await requestHooks({ provider, env, model, papers: missing, fetchImpl });
   const unanswered = missing.filter(paper => !generated[paper.id]).length;
   if (unanswered > 0) {
     await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER, { ...ledgerRequest, amount: unanswered }).catch(() => {});

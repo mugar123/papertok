@@ -12,7 +12,7 @@ flowchart LR
     UI --> S["Browser-safe scientific APIs"]
     UI --> W["Cloudflare Worker"]
     W --> P["Protected scientific providers"]
-    W --> AI["Gemini / DeepSeek / Kimi"]
+    W --> AI["NaN Builders / DeepSeek / Kimi (Gemini on switch)"]
     W --> E["Brevo / Resend"]
     W --> KV["KV + Durable Objects"]
 ```
@@ -102,8 +102,13 @@ diversity.
   avoiding the indexing delay for newly submitted physics and mathematics papers.
 - AI explanations bound PDF acquisition and provider retries within the browser request
   deadline, while provider JSON is normalized before LaTeX-aware rendering.
-- When Gemini exhausts its daily quota, the fallback chain runs in cost order: DeepSeek V4
-  Flash on NVIDIA's free API first, Modal's paid Kimi K3 only when NVIDIA could not answer.
+- Every AI route answers through NaN Builders (`AI_PROVIDER = "nan"`, DeepSeek V4 Flash,
+  reasoning off) since 2026-10-06; `AI_PROVIDER = "gemini"` switches them all back. A rewrite
+  hands NaN the paper as text that Workers AI's `toMarkdown` extracted from the PDF, and the
+  PDF itself only when that conversion fails.
+- When the primary provider cannot answer an explanation (Gemini: its daily quota; NaN: its
+  monthly allowance or an outage), the fallback chain runs in cost order: DeepSeek V4 Flash on
+  NVIDIA's free API first, Modal's paid Kimi K3 only when NVIDIA could not answer.
 - The Kimi budget ledger uses a Durable Object for atomic monthly reservations.
 - Provider-backed Worker routes verify Firebase identity and use canonical cache keys before
   spending protected API quota. A canonical key is built from the values the handler is about to
@@ -132,7 +137,7 @@ The Worker entry point is `worker/report-api.js`. Its route groups include:
 - specialist sources: `/sources/*`
 - biomedical metrics: `/enrich/icite`
 - associated AI resources: `/resources/huggingface`
-- AI: `/ai/explain`; the feed card's "why it matters" line: `/ai/hooks` (guests included, own daily allowance, cached per paper)
+- AI: `/ai/rewrite`, `/ai/annotate`, `/ai/quota`, `/ai/explain` (no caller in the app); the feed card's "why it matters" line: `/ai/hooks` (guests included, own daily allowance, cached per paper)
 - notifications: `/notifications/*` (authenticated preferences; digest and unsubscribe copy are English-only, and a stored legacy `language: 'es'` is served English)
 
 The browser calls the Worker through `VITE_PAPER_API_BASE_URL`. Worker credentials are stored

@@ -4,6 +4,7 @@ import {
   cleanText,
   getDailyQuotaReset,
   getProviderRetry,
+  nanProviderError,
   normalizeExplanationLanguage,
   releaseAIQuota,
   reserveAIQuota,
@@ -11,6 +12,15 @@ import {
   verifyFirebaseAccount,
 } from './ai-explanation.js';
 import { readBoundedJson } from './bounded-body.js';
+import {
+  NAN_CHAT_COMPLETIONS_URL,
+  buildNanChatBody,
+  chatCompletionText,
+  isNanConfigured,
+  isNanPrimary,
+  nanHeaders,
+  nanModel,
+} from './nan-client.js';
 
 /**
  * One passage, explained where the reader is standing.
@@ -77,15 +87,20 @@ Rules:
 - Plain text. No lists, no headings, no markdown, no quotation marks around the answer.`;
 }
 
-/**
- * Pulls the answer out of Gemini's envelope and holds it to the shape the
- * margin can show: one paragraph, no markdown scaffolding, bounded length.
- */
+/** Pulls the answer out of Gemini's envelope; see `cleanAnnotationNote`. */
 export function parseAnnotationPayload(payload) {
   const parts = payload?.candidates?.[0]?.content?.parts;
   const raw = Array.isArray(parts)
     ? parts.map(part => (typeof part?.text === 'string' ? part.text : '')).join('')
     : '';
+  return cleanAnnotationNote(raw);
+}
+
+/**
+ * Holds an answer, whichever provider wrote it, to the shape the margin can
+ * show: one paragraph, no markdown scaffolding, bounded length.
+ */
+export function cleanAnnotationNote(raw) {
   const note = String(raw)
     // Models reach for a bullet or a bold lead even when told not to; stripping
     // is kinder than refusing an answer that is otherwise correct.
@@ -102,33 +117,57 @@ export function parseAnnotationPayload(payload) {
   return note.slice(0, MAX_NOTE_CHARS);
 }
 
-async function requestAnnotation({ env, model, prompt, language, timeoutMs }) {
+/**
+ * The one call, in the shape the provider takes it. NaN gets no reasoning at
+ * all (see `NAN_REASONING_OFF`), which is the same choice the Gemini call makes
+ * with its lowest thinking level: the reader is waiting mid-sentence.
+ */
+function annotationCall({ provider, env, model, prompt }) {
+  if (provider === 'nan') {
+    return {
+      url: NAN_CHAT_COMPLETIONS_URL,
+      headers: nanHeaders(env),
+      body: buildNanChatBody({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        maxTokens: 600,
+        temperature: 0.2,
+      }),
+    };
+  }
+  return {
+    url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+    headers: {
+      'content-type': 'application/json',
+      'x-goog-api-key': env.GEMINI_API_KEY,
+    },
+    body: {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: {
+        // The cheapest thinking this model offers: the question is small and
+        // the reader is waiting mid-sentence.
+        thinkingConfig: { thinkingLevel: 'low' },
+        maxOutputTokens: 600,
+        temperature: 0.2,
+      },
+    },
+  };
+}
+
+async function requestAnnotation({ provider, env, model, prompt, language, timeoutMs }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = Date.now();
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-      {
-        method: 'POST',
-        signal: controller.signal,
-        headers: {
-          'content-type': 'application/json',
-          'x-goog-api-key': env.GEMINI_API_KEY,
-        },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: {
-            // The cheapest thinking this model offers: the question is small and
-            // the reader is waiting mid-sentence.
-            thinkingConfig: { thinkingLevel: 'low' },
-            maxOutputTokens: 600,
-            temperature: 0.2,
-          },
-        }),
-      },
-    );
+    const call = annotationCall({ provider, env, model, prompt });
+    const response = await fetch(call.url, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: call.headers,
+      body: JSON.stringify(call.body),
+    });
     const payload = await response.json().catch(() => ({}));
+    if (!response.ok && provider === 'nan') throw nanProviderError(response, payload);
     if (!response.ok) {
       const code = classifyGeminiError(response.status, payload);
       throw new AIExplanationError(
@@ -142,8 +181,11 @@ async function requestAnnotation({ env, model, prompt, language, timeoutMs }) {
             : null,
       );
     }
-    const note = parseAnnotationPayload(payload);
+    const note = provider === 'nan'
+      ? cleanAnnotationNote(chatCompletionText(payload))
+      : parseAnnotationPayload(payload);
     console.info('AI annotation', JSON.stringify({
+      provider,
       model,
       language,
       outcome: 'success',
@@ -158,6 +200,7 @@ async function requestAnnotation({ env, model, prompt, language, timeoutMs }) {
       // never reaches the Worker.
       : new AIExplanationError(error?.name === 'AbortError' ? 'AI_TIMEOUT' : 'AI_UNAVAILABLE', 502);
     console.warn('AI annotation', JSON.stringify({
+      provider,
       model,
       language,
       outcome: normalized.code,
@@ -188,14 +231,20 @@ export async function handlePassageAnnotation(request, env) {
   if (quote.length < 8) throw new AIExplanationError('AI_INVALID_REQUEST', 400);
   const context = cleanText(payload.context, 4_000) || quote;
   const paper = { title: cleanText(payload?.paper?.title, 1_000) };
-  if (!env.GEMINI_API_KEY) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
+  const provider = isNanPrimary(env) ? 'nan' : 'gemini';
+  if (provider === 'nan' ? !isNanConfigured(env) : !env.GEMINI_API_KEY) {
+    throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
+  }
 
-  const model = cleanText(env.AI_ANNOTATION_MODEL || DEFAULT_MODEL, 100) || DEFAULT_MODEL;
+  const model = provider === 'nan'
+    ? nanModel(env)
+    : cleanText(env.AI_ANNOTATION_MODEL || DEFAULT_MODEL, 100) || DEFAULT_MODEL;
   // Reserved before the call and handed back by the same predicate the other
   // two routes use, so a provider outage never costs the reader a use.
   const quota = await reserveAIQuota(env, account.uid, { unlimited: account.unlimitedAI });
   try {
     const result = await requestAnnotation({
+      provider,
       env,
       model,
       prompt: buildAnnotationPrompt({ paper, quote, context, level }),

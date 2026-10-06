@@ -265,3 +265,64 @@ test('an oversized chunked passage is cut off at the cap', { timeout: 10_000 }, 
   assert.equal((await response.json()).code, 'AI_REQUEST_TOO_LARGE');
   assert.deepEqual(ledger.actions, []);
 });
+
+/* NaN, the primary provider since 2026-10-06. */
+
+const NAN = { AI_PROVIDER: 'nan', NAN_API_KEY: 'sk-test-key' };
+
+/** Stands in for NaN: an OpenAI chat completion whose answer is `text`. */
+function nanSaid(text) {
+  return () => new Response(JSON.stringify({
+    choices: [{
+      index: 0,
+      finish_reason: 'stop',
+      message: { role: 'assistant', content: text, reasoning_content: null },
+    }],
+  }), { status: 200, headers: { 'content-type': 'application/json' } });
+}
+
+test('with NaN as the provider the passage goes to NaN, reasoning off', async () => {
+  const ledger = recordingLedger();
+  const { result: response, calls } = await withModel(
+    nanSaid('**It means** the length stops being one number.'),
+    () => withCachedIdentity(() => reportApi.fetch(annotationRequest(), annotationEnv(ledger, NAN))),
+  );
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  // The same cleaning as Gemini's answers: no markdown in a margin.
+  assert.equal(payload.note, 'It means the length stops being one number.');
+  assert.equal(payload.model, 'deepseek-v4-flash');
+  assert.deepEqual(ledger.actions, ['reserve']);
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://api.nan.builders/v1/chat/completions');
+  assert.equal(calls[0].body.model, 'deepseek-v4-flash');
+  // The reader is waiting mid-sentence: no reasoning phase at all.
+  assert.deepEqual(calls[0].body.chat_template_kwargs, { thinking: false, enable_thinking: false });
+  assert.match(calls[0].body.messages[0].content, /that quantity stops being a number/);
+});
+
+test('a busy NaN hands the use back', async () => {
+  const ledger = recordingLedger();
+  const { result: response } = await withModel(
+    () => new Response(JSON.stringify({ error: { code: 'rate_limit_exceeded' } }), { status: 429 }),
+    () => withCachedIdentity(() => reportApi.fetch(annotationRequest(), annotationEnv(ledger, NAN))),
+  );
+
+  assert.equal(response.status, 429);
+  assert.equal((await response.json()).code, 'AI_BUSY');
+  assert.deepEqual(ledger.actions, ['reserve', 'release']);
+});
+
+test('NaN chosen without a NaN key is not configured, and costs nothing', async () => {
+  const ledger = recordingLedger();
+  const response = await withCachedIdentity(() => reportApi.fetch(
+    annotationRequest(),
+    annotationEnv(ledger, { ...NAN, NAN_API_KEY: '' }),
+  ));
+
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).code, 'AI_NOT_CONFIGURED');
+  assert.deepEqual(ledger.actions, []);
+});

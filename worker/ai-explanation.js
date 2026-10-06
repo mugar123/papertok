@@ -9,6 +9,15 @@ import {
 import { readBoundedBytes, readBoundedJson } from './bounded-body.js';
 import { peekRequestQuota, releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.js';
 import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.js';
+import {
+  NAN_API_BASE_URL,
+  NAN_CHAT_COMPLETIONS_URL,
+  NAN_REASONING_OFF,
+  classifyNanError,
+  isNanConfigured,
+  nanHeaders,
+  nanModel,
+} from './nan-client.js';
 
 const PROMPT_VERSION = 'paper-explainer-v4';
 const DEFAULT_MODEL = 'gemini-3.5-flash';
@@ -30,6 +39,9 @@ export const AI_REQUEST_BUDGETS = Object.freeze({
   pdfOnlySourceMs: 9_000,
   geminiPrimaryMs: 12_000,
   geminiFallbackMs: 32_000,
+  // NaN as the primary, reasoning off, from the abstract: a few seconds when
+  // the cluster is free, with room for a queue in front of it.
+  nanMs: 30_000,
   deepseekMs: 30_000,
   kimiMs: 52_000,
   browserMs: 70_000,
@@ -300,7 +312,7 @@ function safeNumber(value, fallback, minimum, maximum) {
   return Number.isFinite(parsed) ? Math.max(minimum, Math.min(maximum, parsed)) : fallback;
 }
 
-function bytesToBase64(bytes) {
+export function bytesToBase64(bytes) {
   let binary = '';
   const chunkSize = 0x8000;
   for (let offset = 0; offset < bytes.length; offset += chunkSize) {
@@ -310,7 +322,7 @@ function bytesToBase64(bytes) {
 }
 
 /**
- * The paper's PDF as base64, or why there is none.
+ * The paper's PDF as bytes, or why there is none.
  *
  * The reason travels because "the download produced nothing" covered three
  * different failures that need three different answers: a mirror that never
@@ -319,8 +331,8 @@ function bytesToBase64(bytes) {
  * is a paper this endpoint will never read. They were indistinguishable in the
  * logs, which is how PMC's interstitial hid behind arXiv's timeouts.
  */
-export async function fetchPaperPdf(pdfUrl, timeoutMs = AI_REQUEST_BUDGETS.pdfOnlySourceMs) {
-  const failed = reason => ({ base64: null, reason });
+export async function fetchPaperPdfBytes(pdfUrl, timeoutMs = AI_REQUEST_BUDGETS.pdfOnlySourceMs) {
+  const failed = reason => ({ bytes: null, reason });
   if (!isAIReadablePdfUrl(pdfUrl)) return failed('unreachable');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -350,12 +362,18 @@ export async function fetchPaperPdf(pdfUrl, timeoutMs = AI_REQUEST_BUDGETS.pdfOn
     const bytes = await readBoundedBytes(response, MAX_PDF_BYTES);
     if (!bytes) return failed('too_large');
     if (!bytes.length) return failed('unreachable');
-    return { base64: bytesToBase64(bytes), reason: '' };
+    return { bytes, reason: '' };
   } catch {
     return failed('unreachable');
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/** The paper's PDF as base64, the form Gemini takes it in, or why there is none. */
+export async function fetchPaperPdf(pdfUrl, timeoutMs = AI_REQUEST_BUDGETS.pdfOnlySourceMs) {
+  const { bytes, reason } = await fetchPaperPdfBytes(pdfUrl, timeoutMs);
+  return { base64: bytes ? bytesToBase64(bytes) : null, reason };
 }
 
 function normalizeExplanation(value) {
@@ -506,6 +524,22 @@ export function classifyGeminiError(status, payload) {
   // same body, so this must not look retryable.
   if (status === 400) return 'AI_INVALID_REQUEST_UPSTREAM';
   return 'AI_UNAVAILABLE';
+}
+
+/**
+ * A refusal from NaN as the error every AI route throws. Its spent allowance
+ * is monthly, not daily like Gemini's, so the reset the reader is shown is
+ * the first of next month (UTC).
+ */
+export function nanProviderError(response, payload) {
+  const code = classifyNanError(response.status);
+  const status = code === 'AI_NOT_CONFIGURED' ? 503 : code === 'AI_QUOTA_EXHAUSTED' || response.status === 429 ? 429 : 502;
+  const quota = code === 'AI_QUOTA_EXHAUSTED'
+    ? { ...getMonthlyBudgetReset(), scope: 'provider' }
+    : code === 'AI_BUSY'
+      ? getProviderRetry(payload, response.headers.get('retry-after'))
+      : null;
+  return new AIExplanationError(code, status, code, quota);
 }
 
 async function requestGeminiExplanation({ paper, level, language, pdfBase64, env, model, timeoutMs }) {
@@ -933,25 +967,35 @@ function deepseekModel(env) {
   return cleanText(env.NVIDIA_DEEPSEEK_MODEL || DEFAULT_DEEPSEEK_MODEL, 160) || DEFAULT_DEEPSEEK_MODEL;
 }
 
-async function explainWithDeepseek({ paper, level, language, env, deadline }) {
-  if (!isDeepseekConfigured(env) || !paper.abstract) {
-    throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
-  }
-  const model = deepseekModel(env);
-  const budgetMs = stageBudgetMs(deadline, AI_REQUEST_BUDGETS.deepseekMs);
+/**
+ * One explanation from the abstract, through an OpenAI-compatible chat
+ * endpoint. DeepSeek on NVIDIA and NaN differ only in where the request goes,
+ * with which key, and how a refusal reads.
+ */
+async function explainFromAbstract({
+  provider,
+  url,
+  headers,
+  model,
+  stageMs,
+  extraBody = {},
+  toError,
+  paper,
+  level,
+  language,
+  deadline,
+}) {
+  const budgetMs = stageBudgetMs(deadline, stageMs);
   if (budgetMs <= 0) throw new AIExplanationError('AI_UNAVAILABLE', 503);
 
   const startedAt = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), budgetMs);
   try {
-    const response = await fetch(`${NVIDIA_API_BASE_URL}/chat/completions`, {
+    const response = await fetch(url, {
       method: 'POST',
       signal: controller.signal,
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${cleanText(env.NVIDIA_API_KEY, 200)}`,
-      },
+      headers,
       body: JSON.stringify({
         model,
         messages: [
@@ -965,28 +1009,19 @@ async function explainWithDeepseek({ paper, level, language, env, deadline }) {
         max_tokens: kimiMaxOutputTokens(level),
         temperature: 0.2,
         stream: false,
+        ...extraBody,
       }),
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      // The classifier reads the OpenAI-compatible error shape both providers
-      // share; nothing in it is Kimi-specific.
-      const code = classifyKimiError(response.status, payload);
-      throw new AIExplanationError(
-        code,
-        response.status === 429 ? 429 : code === 'AI_NOT_CONFIGURED' ? 503 : 502,
-        code,
-        code === 'AI_BUSY' ? getProviderRetry(payload, response.headers.get('retry-after')) : null,
-      );
-    }
+    if (!response.ok) throw toError(response, payload);
     const result = {
       explanation: parseOpenAIChatPayload(payload),
       model,
-      provider: 'nvidia-deepseek',
+      provider,
       sourceBasis: 'abstract',
     };
     console.info('AI provider attempt', JSON.stringify({
-      provider: 'nvidia-deepseek',
+      provider,
       model,
       language,
       sourceBasis: 'abstract',
@@ -999,7 +1034,7 @@ async function explainWithDeepseek({ paper, level, language, env, deadline }) {
       ? error
       : new AIExplanationError('AI_UNAVAILABLE', 502);
     console.warn('AI provider attempt', JSON.stringify({
-      provider: 'nvidia-deepseek',
+      provider,
       model,
       language,
       sourceBasis: 'abstract',
@@ -1012,8 +1047,65 @@ async function explainWithDeepseek({ paper, level, language, env, deadline }) {
   }
 }
 
+function deepseekError(response, payload) {
+  // The classifier reads the OpenAI-compatible error shape both providers
+  // share; nothing in it is Kimi-specific.
+  const code = classifyKimiError(response.status, payload);
+  return new AIExplanationError(
+    code,
+    response.status === 429 ? 429 : code === 'AI_NOT_CONFIGURED' ? 503 : 502,
+    code,
+    code === 'AI_BUSY' ? getProviderRetry(payload, response.headers.get('retry-after')) : null,
+  );
+}
+
+async function explainWithDeepseek({ paper, level, language, env, deadline }) {
+  if (!isDeepseekConfigured(env) || !paper.abstract) {
+    throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
+  }
+  return explainFromAbstract({
+    provider: 'nvidia-deepseek',
+    url: `${NVIDIA_API_BASE_URL}/chat/completions`,
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${cleanText(env.NVIDIA_API_KEY, 200)}`,
+    },
+    model: deepseekModel(env),
+    stageMs: AI_REQUEST_BUDGETS.deepseekMs,
+    toError: deepseekError,
+    paper,
+    level,
+    language,
+    deadline,
+  });
+}
+
+/**
+ * NaN as the primary reads the abstract, like the fallbacks behind it. The
+ * full-text path readers actually use is `/ai/rewrite`.
+ */
+async function explainWithNan({ paper, level, language, env, deadline }) {
+  if (!isNanConfigured(env) || !paper.abstract) {
+    throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
+  }
+  return explainFromAbstract({
+    provider: 'nan',
+    url: NAN_CHAT_COMPLETIONS_URL,
+    headers: nanHeaders(env),
+    model: nanModel(env),
+    stageMs: AI_REQUEST_BUDGETS.nanMs,
+    extraBody: { chat_template_kwargs: NAN_REASONING_OFF },
+    toError: nanProviderError,
+    paper,
+    level,
+    language,
+    deadline,
+  });
+}
+
 const PROVIDERS = {
   gemini: explainWithGemini,
+  nan: explainWithNan,
   'nvidia-deepseek': explainWithDeepseek,
   'modal-kimi': explainWithKimi,
 };
@@ -1051,9 +1143,10 @@ function isFallbackReady(name, { env, paper, deadline }) {
 /**
  * Failures that hand the paper to the next provider in the chain rather than
  * the caller: the provider was busy, broken, misconfigured, or out of its own
- * budget. What stays out: `AI_INVALID_REQUEST_UPSTREAM` never reaches here
- * (only Gemini raises it), and a provider that *answered wrongly* enough times
- * to matter is already covered by `AI_INVALID_RESPONSE`.
+ * budget. What stays out: `AI_INVALID_REQUEST_UPSTREAM` (only Gemini and NaN
+ * raise it, and the next provider would be handed the same rejected paper),
+ * and a provider that *answered wrongly* enough times to matter is already
+ * covered by `AI_INVALID_RESPONSE`.
  */
 const FALLBACK_ADVANCE_CODES = new Set([
   'AI_BUSY',
@@ -1063,6 +1156,19 @@ const FALLBACK_ADVANCE_CODES = new Set([
   'AI_FALLBACK_BUDGET_EXHAUSTED',
 ]);
 
+/**
+ * When the primary hands the paper to the chain. Gemini already retries a busy
+ * or broken answer on its lighter model, so only its spent daily allowance
+ * moves on. NaN has no second model behind it: whatever would advance a
+ * fallback advances it as well, and so does its spent monthly allowance.
+ */
+function shouldLeavePrimary(providerName, error) {
+  if (shouldFallbackToKimi(error)) return providerName === 'gemini' || providerName === 'nan';
+  return providerName === 'nan'
+    && error instanceof AIExplanationError
+    && FALLBACK_ADVANCE_CODES.has(error.code);
+}
+
 async function explainWithProviderChain({ providerName, fallbackProviderNames = [], ...args }) {
   const provider = PROVIDERS[providerName];
   if (!provider) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
@@ -1070,7 +1176,7 @@ async function explainWithProviderChain({ providerName, fallbackProviderNames = 
     const result = await provider(args);
     return { ...result, provider: result.provider || providerName };
   } catch (primaryError) {
-    if (providerName !== 'gemini' || !shouldFallbackToKimi(primaryError)) throw primaryError;
+    if (!shouldLeavePrimary(providerName, primaryError)) throw primaryError;
     let lastError = null;
     for (const name of fallbackProviderNames) {
       if (!isFallbackReady(name, args)) continue;
@@ -1085,7 +1191,7 @@ async function explainWithProviderChain({ providerName, fallbackProviderNames = 
       }
     }
     // Nothing was attempted, or the last attempt turned out not to be
-    // configured after all — either way Gemini's quota error is the truth.
+    // configured after all — either way the primary's error is the truth.
     if (!lastError || lastError.code === 'AI_NOT_CONFIGURED') throw primaryError;
     throw lastError;
   }
@@ -1175,8 +1281,50 @@ async function checkDeepseekHealth(env) {
   }
 }
 
+/**
+ * A key that works and a model name NaN does not serve would otherwise only
+ * show up as the first reader's failed rewrite, so the configured model has to
+ * be on the list, not merely the list reachable. `paperText` says whether the
+ * Workers AI binding that turns PDFs into text is there: without it every
+ * rewrite falls back to NaN reading the PDF itself, which works but is slow.
+ */
+async function checkNanHealth(env) {
+  const provider = 'nan';
+  const model = nanModel(env);
+  const paperText = typeof env.AI?.toMarkdown === 'function';
+  if (!isNanConfigured(env)) {
+    return { provider, model, paperText, configured: false, available: false, code: 'AI_NOT_CONFIGURED' };
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const response = await fetch(`${NAN_API_BASE_URL}/models`, {
+      signal: controller.signal,
+      headers: nanHeaders(env),
+    });
+    if (!response.ok) {
+      return { provider, model, paperText, configured: true, available: false, code: classifyNanError(response.status) };
+    }
+    const payload = await response.json().catch(() => ({}));
+    const served = Array.isArray(payload?.data) && payload.data.some(entry => entry?.id === model);
+    return {
+      provider,
+      model,
+      paperText,
+      configured: true,
+      available: served,
+      code: served ? null : 'AI_NOT_CONFIGURED',
+    };
+  } catch {
+    return { provider, model, paperText, configured: true, available: false, code: 'AI_UNAVAILABLE' };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 const HEALTH_CHECKS = {
   gemini: checkGeminiHealth,
+  nan: checkNanHealth,
   'nvidia-deepseek': checkDeepseekHealth,
   'modal-kimi': checkKimiHealth,
 };
@@ -1417,7 +1565,9 @@ export async function handleAIExplanation(request, env, { now = Date.now } = {})
   const providerName = cleanText(env.AI_PROVIDER || 'gemini', 40).toLowerCase();
   const fallbackProviderNames = parseFallbackProviderNames(env);
   if (!PROVIDERS[providerName]) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
-  const model = cleanText(env.AI_MODEL || DEFAULT_MODEL, 100) || DEFAULT_MODEL;
+  const model = providerName === 'nan'
+    ? nanModel(env)
+    : cleanText(env.AI_MODEL || DEFAULT_MODEL, 100) || DEFAULT_MODEL;
   const fallbackModels = fallbackProviderNames.map(name => name === 'modal-kimi'
     ? cleanText(env.MODAL_KIMI_MODEL || DEFAULT_KIMI_MODEL, 160) || DEFAULT_KIMI_MODEL
     : deepseekModel(env));

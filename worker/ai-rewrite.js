@@ -19,12 +19,14 @@
 
 import {
   AIExplanationError,
+  bytesToBase64,
   cleanText,
   escapeLatexBackslashesInJson,
-  fetchPaperPdf,
+  fetchPaperPdfBytes,
   getDailyQuotaReset,
   getProviderRetry,
   classifyGeminiError,
+  nanProviderError,
   normalizeExplanationLanguage,
   normalizePaperForExplanation,
   releaseAIQuota,
@@ -34,8 +36,23 @@ import {
   verifyFirebaseAccount,
 } from './ai-explanation.js';
 import { readBoundedJson } from './bounded-body.js';
+import {
+  NAN_CHAT_COMPLETIONS_URL,
+  buildNanChatBody,
+  isNanConfigured,
+  isNanPrimary,
+  nanHeaders,
+  nanModel,
+  nanPdfPart,
+} from './nan-client.js';
+import { extractPaperText, formatPaperTextForPrompt } from './paper-text.js';
 
-export const REWRITE_PROMPT_VERSION = 'paper-rewrite-v1';
+/**
+ * v2 (2026-10-06): the structure asks for top-level sections and folds
+ * subsections into them. DeepSeek on NaN followed v1 down to "3.2.1", reached
+ * the section cap at "5 Training" and dropped Results and Conclusion unseen.
+ */
+export const REWRITE_PROMPT_VERSION = 'paper-rewrite-v2';
 const DEFAULT_REWRITE_MODEL = 'gemini-3.5-flash';
 const MAX_REQUEST_BYTES = 100_000;
 const MAX_SECTIONS = 14;
@@ -129,12 +146,12 @@ Paper metadata (context only — the attached PDF is the source):
 ${metadata}
 
 Structure:
-- Follow the paper's own sections, in the order the document presents them.
-- For each section, set "originalHeading" to the heading as printed in the PDF (for example "3.2 Ablation study") and "heading" to a readable version at this level.
+- Follow the paper's own top-level sections, in the order the document presents them. Fold numbered subsections (3.1, 3.2.1, …) into their parent section instead of giving them sections of their own.
+- For each section, set "originalHeading" to the heading as printed in the PDF (for example "4 Experiments") and "heading" to a readable version at this level.
 - "kind" must be one of: abstract, intro, background, methods, results, discussion, conclusion, other.
 - If the document has no usable headings, use the sections the argument actually has and leave "originalHeading" empty.
 - Cover the whole paper. Do not stop at the introduction. Skip acknowledgements, references, and author lists.
-- At most ${MAX_SECTIONS} sections.
+- At most ${MAX_SECTIONS} sections, the last of them reaching the paper's conclusion.
 
 Highlights:
 - For each section, add a "highlights" array marking what a reader must not miss.
@@ -329,7 +346,7 @@ export function createSectionAssembler() {
 }
 
 /* ============================================================
-   Gemini SSE
+   Provider SSE
    ============================================================ */
 
 /**
@@ -338,8 +355,9 @@ export function createSectionAssembler() {
  * Deliberately line-based rather than frame-based. Splitting on a blank line
  * means agreeing with the server about its line endings, and a CRLF stream
  * never contains two consecutive newlines — the events would never be seen at
- * all. Gemini puts one complete JSON object on each `data:` line, so a line is
- * a sufficient unit.
+ * all. Gemini and NaN both put one complete JSON object on each `data:` line,
+ * so a line is a sufficient unit. NaN's is the OpenAI chunk, where a reasoning
+ * delta travels apart from the answer and is not part of the rewrite.
  */
 export function extractSseTextDelta(line) {
   const trimmed = String(line || '').trim();
@@ -348,6 +366,10 @@ export function extractSseTextDelta(line) {
   if (!payload || payload === '[DONE]') return '';
   try {
     const parsed = JSON.parse(payload);
+    if (Array.isArray(parsed?.choices)) {
+      const content = parsed.choices[0]?.delta?.content;
+      return typeof content === 'string' ? content : '';
+    }
     return (parsed?.candidates?.[0]?.content?.parts || [])
       .map(part => part?.text || '')
       .join('');
@@ -356,12 +378,24 @@ export function extractSseTextDelta(line) {
   }
 }
 
+/**
+ * OpenAI's finish reasons in Gemini's words, which are the ones
+ * `cacheableFinish` and the logs already speak.
+ */
+const OPENAI_FINISH_REASONS = Object.freeze({
+  stop: 'STOP',
+  length: 'MAX_TOKENS',
+  content_filter: 'SAFETY',
+});
+
 /** Reads why the model stopped, so an empty rewrite can be explained. */
 export function extractSseFinishReason(line) {
   const trimmed = String(line || '').trim();
   if (!trimmed.startsWith('data:')) return '';
   try {
     const parsed = JSON.parse(trimmed.slice(5).trim());
+    const openAIReason = cleanText(parsed?.choices?.[0]?.finish_reason, 40);
+    if (openAIReason) return OPENAI_FINISH_REASONS[openAIReason] || openAIReason.toUpperCase();
     return cleanText(parsed?.candidates?.[0]?.finishReason, 40);
   } catch {
     return '';
@@ -583,7 +617,56 @@ function replayCachedRewrite(cached, level, language, extraHeaders) {
  * stops the stream from starting, so one catch upstream can turn every refusal
  * into the same `error` line.
  */
-async function requestModelStream({ env, paper, level, language, pdfBase64, model, signal }) {
+async function requestModelStream({ provider, ...request }) {
+  return provider === 'nan' ? requestNanStream(request) : requestGeminiStream(request);
+}
+
+function streamRequestFailed(error) {
+  return error?.name === 'AbortError'
+    ? new AIExplanationError('AI_TIMEOUT', 504)
+    : new AIExplanationError('AI_UNAVAILABLE', 502);
+}
+
+/**
+ * NaN reads the paper as text when the Worker could extract it, and as the
+ * attached PDF when it could not. Same prompt either way: the text is the
+ * PDF's, so "the attached paper" is still what it rewrites.
+ */
+async function requestNanStream({ env, paper, level, source, model, signal }) {
+  const config = REWRITE_LEVELS[level];
+  const prompt = buildRewritePrompt(paper, level);
+  const content = source.text
+    ? `${prompt}\n\n${formatPaperTextForPrompt(source.text, { truncated: source.truncated })}`
+    : [{ type: 'text', text: prompt }, nanPdfPart(source.pdfBase64)];
+  let upstream;
+  try {
+    upstream = await fetch(NAN_CHAT_COMPLETIONS_URL, {
+      method: 'POST',
+      signal,
+      headers: nanHeaders(env),
+      body: JSON.stringify(buildNanChatBody({
+        model,
+        messages: [
+          { role: 'system', content: buildRewriteSystemInstruction() },
+          { role: 'user', content },
+        ],
+        maxTokens: config.maxOutputTokens,
+        temperature: 0.25,
+        stream: true,
+      })),
+    });
+  } catch (error) {
+    throw streamRequestFailed(error);
+  }
+
+  if (!upstream.ok || !upstream.body) {
+    const payload = await upstream.json().catch(() => ({}));
+    throw nanProviderError(upstream, payload);
+  }
+  return upstream;
+}
+
+async function requestGeminiStream({ env, paper, level, language, source, model, signal }) {
   const config = REWRITE_LEVELS[level];
   let upstream;
   try {
@@ -602,7 +685,7 @@ async function requestModelStream({ env, paper, level, language, pdfBase64, mode
             role: 'user',
             parts: [
               { text: buildRewritePrompt(paper, level, language) },
-              { inlineData: { mimeType: 'application/pdf', data: pdfBase64 } },
+              { inlineData: { mimeType: 'application/pdf', data: source.pdfBase64 } },
             ],
           }],
           generationConfig: {
@@ -614,9 +697,7 @@ async function requestModelStream({ env, paper, level, language, pdfBase64, mode
       },
     );
   } catch (error) {
-    throw error?.name === 'AbortError'
-      ? new AIExplanationError('AI_TIMEOUT', 504)
-      : new AIExplanationError('AI_UNAVAILABLE', 502);
+    throw streamRequestFailed(error);
   }
 
   if (!upstream.ok || !upstream.body) {
@@ -649,6 +730,18 @@ async function requestModelStream({ env, paper, level, language, pdfBase64, mode
 const RETRY_ON_FALLBACK_MODEL = new Set(['AI_BUSY', 'AI_UNAVAILABLE', 'AI_QUOTA_EXHAUSTED']);
 
 /**
+ * What the model is handed. Gemini reads the PDF itself. NaN gets the text
+ * Workers AI extracted, and the PDF only when that failed: NaN reads it too,
+ * but at about 45 s before the first token instead of two or three.
+ */
+async function paperSourceFor(provider, env, pdfData) {
+  if (provider !== 'nan') return { pdfBase64: bytesToBase64(pdfData) };
+  const extracted = await extractPaperText(env, pdfData);
+  if (extracted.text) return { text: extracted.text, truncated: extracted.truncated, textReason: '' };
+  return { pdfBase64: bytesToBase64(pdfData), textReason: extracted.reason };
+}
+
+/**
  * Runs the model and pipes sections out as they close.
  *
  * **The 200 commits before any of the slow work starts, and that is the point.**
@@ -667,6 +760,7 @@ const RETRY_ON_FALLBACK_MODEL = new Set(['AI_BUSY', 'AI_UNAVAILABLE', 'AI_QUOTA_
  */
 function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, extraHeaders }) {
   const model = meta.model;
+  const provider = meta.provider;
   const encoder = new TextEncoder();
   const startedAt = Date.now();
 
@@ -698,6 +792,15 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
     let pdfMs = 0;
     let pdfBytes = 0;
     let upstreamStatus = 0;
+    // What the model was handed, for NaN: how much extracted text, or why it
+    // got the PDF instead — the one fact that explains a slow first section.
+    let source = null;
+    const sourceFields = () => (provider === 'nan'
+      ? {
+        textChars: source?.text ? source.text.length : 0,
+        ...(source?.textReason ? { textReason: source.textReason } : {}),
+      }
+      : {});
     // What the heartbeat is currently waiting on. The reader shows it, because
     // "downloading the paper" and "the model is reading it" are a minute of
     // waiting either way and only one of them is worth staying for.
@@ -752,32 +855,34 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
 
     try {
       const pdfStartedAt = Date.now();
-      const { base64: pdfBase64, reason: pdfReason } = await fetchPaperPdf(paper.pdfUrl, PDF_FETCH_BUDGET_MS);
+      const { bytes: pdfData, reason: pdfReason } = await fetchPaperPdfBytes(paper.pdfUrl, PDF_FETCH_BUDGET_MS);
       pdfMs = Date.now() - pdfStartedAt;
-      // The file as it left the mirror, not as it travels: base64 is four
-      // characters per three bytes, and reporting the inflated number would put
-      // every paper a third closer to the cap than it is.
-      pdfBytes = pdfBase64 ? Math.floor(pdfBase64.replace(/=+$/, '').length * 3 / 4) : 0;
+      // The file as it left the mirror, not as it travels to a model.
+      pdfBytes = pdfData ? pdfData.length : 0;
       // The paper arrived with a PDF and was accepted on it, so an empty download
       // is the source being unreachable, not the paper being unrewritable — a
       // stalled arXiv mirror reads the same as a paywall from here. The reader
       // sees the same sentence either way; what changes is that a use is no
       // longer burnt on a Gemini call nobody made, and that `detail` says which
       // of the three failures it was rather than leaving them one line.
-      if (!pdfBase64) {
+      if (!pdfData) {
         const unreadable = new AIExplanationError('AI_REWRITE_NEEDS_FULL_TEXT', 422);
         unreadable.detail = pdfReason;
         throw unreadable;
       }
 
       stage = 'reading';
+      // Before the model's budget is armed, like the download: the extraction
+      // has its own ceiling and must not eat the time the rewrite needs.
+      source = await paperSourceFor(provider, env, pdfData);
       modelTimer = setTimeout(() => modelDeadline.abort(), STREAM_BUDGET_MS);
       const askModel = candidate => requestModelStream({
+        provider,
         env,
         paper,
         level,
         language,
-        pdfBase64,
+        source,
         model: candidate,
         signal: modelDeadline.signal,
       });
@@ -791,7 +896,9 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
       try {
         upstream = await askModel(model);
       } catch (error) {
-        const fallback = cleanText(env.AI_FALLBACK_MODEL, 100);
+        // `AI_FALLBACK_MODEL` names a Gemini model, which NaN would refuse
+        // with a 404 after a second wait.
+        const fallback = provider === 'nan' ? '' : cleanText(env.AI_FALLBACK_MODEL, 100);
         const worthRetrying = error instanceof AIExplanationError
           && RETRY_ON_FALLBACK_MODEL.has(error.code)
           && fallback
@@ -881,6 +988,7 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
         durationMs: Date.now() - startedAt,
         pdfMs,
         pdfBytes,
+        ...sourceFields(),
         kvHit: false,
         upstreamStatus,
         refunded,
@@ -928,6 +1036,7 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
         durationMs: Date.now() - startedAt,
         pdfMs,
         pdfBytes,
+        ...sourceFields(),
         kvHit: false,
         upstreamStatus,
         // Read straight off the latch, so the line says what the ledger did
@@ -957,7 +1066,10 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
 export async function handlePaperRewrite(request, env, extraHeaders = {}) {
   const contentLength = Number(request.headers.get('content-length') || 0);
   if (contentLength > MAX_REQUEST_BYTES) throw new AIExplanationError('AI_REQUEST_TOO_LARGE', 413);
-  if (!env.GEMINI_API_KEY) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
+  const provider = isNanPrimary(env) ? 'nan' : 'gemini';
+  if (provider === 'nan' ? !isNanConfigured(env) : !env.GEMINI_API_KEY) {
+    throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
+  }
 
   const account = await verifyFirebaseAccount(request, env);
   const uid = account.uid;
@@ -974,8 +1086,9 @@ export async function handlePaperRewrite(request, env, extraHeaders = {}) {
   // Rewriting from an abstract would mean inventing the methods and results.
   if (!paper.pdfUrl) throw new AIExplanationError('AI_REWRITE_NEEDS_FULL_TEXT', 422);
 
-  const model = cleanText(env.AI_REWRITE_MODEL || env.AI_MODEL || DEFAULT_REWRITE_MODEL, 100)
-    || DEFAULT_REWRITE_MODEL;
+  const model = provider === 'nan'
+    ? nanModel(env)
+    : cleanText(env.AI_REWRITE_MODEL || env.AI_MODEL || DEFAULT_REWRITE_MODEL, 100) || DEFAULT_REWRITE_MODEL;
   const cacheKey = await rewriteCacheKey(paper, level, language, model);
 
   const cached = await readCachedRewrite(env, cacheKey);
@@ -990,7 +1103,7 @@ export async function handlePaperRewrite(request, env, extraHeaders = {}) {
       level,
       language,
       model,
-      provider: 'gemini',
+      provider,
       promptVersion: REWRITE_PROMPT_VERSION,
       sourceBasis: 'full_text',
       title: paper.title,

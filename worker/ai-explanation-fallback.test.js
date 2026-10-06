@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { handleAIExplanation } from './ai-explanation.js';
+import { checkAIProviderHealth, handleAIExplanation } from './ai-explanation.js';
 import { KimiBudgetLedger } from './kimi-budget-ledger.js';
 import { fakeIdToken } from '../src/test-support/firebaseIdToken.js';
 
@@ -841,4 +841,131 @@ test('a success that reports no usage keeps the conservative charge', async () =
   assert.equal(result.explanation.overview, EXPLANATION.overview);
   assert.ok(env.KIMI_BUDGET_LEDGER.store.get('spentMicros') > 100_000);
   assert.equal(env.KIMI_BUDGET_LEDGER.store.get('reservedMicros'), 0);
+});
+
+// ---------------------------------------------------------------------------
+// NaN as the primary: NaN → DeepSeek (NVIDIA) → Kimi.
+// ---------------------------------------------------------------------------
+
+const nanCompletion = () => json({
+  id: 'chatcmpl-nan',
+  model: 'deepseek-v4-flash',
+  choices: [{
+    index: 0,
+    finish_reason: 'stop',
+    message: { role: 'assistant', content: JSON.stringify(EXPLANATION), reasoning_content: null },
+  }],
+  usage: { prompt_tokens: 900, completion_tokens: 500 },
+});
+
+function envWithNan(overrides = {}) {
+  return envWithChain({
+    AI_PROVIDER: 'nan',
+    NAN_API_KEY: 'sk-test-key',
+    GEMINI_API_KEY: '',
+    ...overrides,
+  });
+}
+
+test('NaN as the primary explains from the abstract, reasoning off', async () => {
+  installCache();
+  const env = envWithNan();
+  const calls = stubFetch({
+    identitytoolkit: identityOk,
+    'api.nan.builders': nanCompletion,
+  });
+
+  const result = await handleAIExplanation(explainRequest(), env);
+
+  assert.equal(result.provider, 'nan');
+  assert.equal(result.model, 'deepseek-v4-flash');
+  assert.equal(result.sourceBasis, 'abstract');
+  assert.equal(result.explanation.overview, EXPLANATION.overview);
+
+  const nanCall = calls.find(call => call.url.includes('api.nan.builders'));
+  assert.equal(nanCall.url, 'https://api.nan.builders/v1/chat/completions');
+  assert.equal(nanCall.headers.authorization, 'Bearer sk-test-key');
+  assert.equal(nanCall.body.response_format.type, 'json_object');
+  assert.deepEqual(nanCall.body.chat_template_kwargs, { thinking: false, enable_thinking: false });
+  const prompt = nanCall.body.messages.at(-1).content;
+  for (const field of REQUIRED_FIELDS) assert.match(prompt, new RegExp(`"${field}"`));
+  // NaN refuses json_object on this model unless the prompt says JSON.
+  assert.match(prompt, /JSON/);
+});
+
+test('a NaN outage hands the paper to DeepSeek', async () => {
+  installCache();
+  const env = envWithNan();
+  stubFetch({
+    identitytoolkit: identityOk,
+    'api.nan.builders': () => json({ error: { message: 'upstream model error' } }, 500),
+    'integrate.api.nvidia.com': deepseekCompletion,
+  });
+
+  const result = await handleAIExplanation(explainRequest(), env);
+  assert.equal(result.provider, 'nvidia-deepseek');
+});
+
+test('a spent NaN month with nothing behind it surfaces as the provider quota, refunded', async () => {
+  installCache();
+  const env = envWithNan({ NVIDIA_API_KEY: '', MODAL_KIMI_BASE_URL: '' });
+  stubFetch({
+    identitytoolkit: identityOk,
+    'api.nan.builders': () => json({ error: { code: 'monthly_cap_reached' } }, 402),
+  });
+
+  await assert.rejects(
+    handleAIExplanation(explainRequest(), env),
+    error => error.code === 'AI_QUOTA_EXHAUSTED'
+      && error.quota.scope === 'provider'
+      && /-01T00:00:00\.000Z$/.test(error.quota.resetAt),
+  );
+  assert.deepEqual(ledgerActions(env), ['reserve', 'release']);
+});
+
+test('a request NaN rejected is not handed on: the next provider would get the same paper', async () => {
+  installCache();
+  const env = envWithNan();
+  const calls = stubFetch({
+    identitytoolkit: identityOk,
+    'api.nan.builders': () => json({ error: { code: 'content_policy_violation' } }, 400),
+    'integrate.api.nvidia.com': deepseekCompletion,
+  });
+
+  await assert.rejects(
+    handleAIExplanation(explainRequest(), env),
+    error => error.code === 'AI_INVALID_REQUEST_UPSTREAM',
+  );
+  assert.equal(calls.some(call => call.url.includes('integrate.api.nvidia.com')), false);
+});
+
+test('/health/ai checks that NaN serves the configured model, not merely that the key works', async () => {
+  stubFetch({
+    'api.nan.builders/v1/models': () => json({ object: 'list', data: [{ id: 'deepseek-v4-flash' }, { id: 'qwen3.6' }] }),
+  });
+
+  const healthy = await checkAIProviderHealth({
+    AI_PROVIDER: 'nan',
+    NAN_API_KEY: 'sk-test-key',
+    AI: { toMarkdown: async () => ({}) },
+  });
+  assert.equal(healthy.provider, 'nan');
+  assert.equal(healthy.model, 'deepseek-v4-flash');
+  assert.equal(healthy.available, true);
+  assert.equal(healthy.code, null);
+  assert.equal(healthy.paperText, true);
+
+  // A model id NaN does not serve: the key works, every rewrite would 404.
+  const misnamed = await checkAIProviderHealth({
+    AI_PROVIDER: 'nan',
+    NAN_API_KEY: 'sk-test-key',
+    NAN_MODEL: 'deepseek-v4.1',
+  });
+  assert.equal(misnamed.available, false);
+  assert.equal(misnamed.code, 'AI_NOT_CONFIGURED');
+  assert.equal(misnamed.paperText, false);
+
+  const keyless = await checkAIProviderHealth({ AI_PROVIDER: 'nan' });
+  assert.equal(keyless.configured, false);
+  assert.equal(keyless.code, 'AI_NOT_CONFIGURED');
 });
