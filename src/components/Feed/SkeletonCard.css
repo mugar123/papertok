@@ -146,6 +146,14 @@
     border-radius: 0;
     background: transparent;
   }
+
+  /* With the sheet gone the blocks sit straight on the slot's own
+     --bg-secondary, and in that colour they were invisible: the skeleton was
+     an empty screen on a phone (measured 2026-10-06). A rule-weight grey
+     keeps them on the ground in both themes. */
+  .sk-pill, .sk-small, .sk-title, .sk-name, .sk-text, .sk-btn, .sk-avatar {
+    background: var(--border-subtle);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

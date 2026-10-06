@@ -29,7 +29,7 @@ export default function AbstractSheet({ paper, onClose }) {
       onOpenChange={(next) => { if (!next) requestClose(); }}
       onOpenChangeComplete={(next) => { if (!next) onClose(); }}
     >
-      <DrawerContent render={<section />} className="abstract-sheet" initialFocus={closeRef}>
+      <DrawerContent render={<section />} className="abstract-sheet" overlayClassName="abstract-sheet-backdrop" initialFocus={closeRef}>
         <DrawerHandle />
         <header className="abstract-sheet-head">
           <div className="abstract-sheet-heading">

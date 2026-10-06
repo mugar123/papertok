@@ -461,6 +461,35 @@
   color: var(--tint-red-fg);
 }
 
+/* The loading slot at the end of the feed (FeedContainer.jsx): a full snap
+   item like a card, holding the first load's atom at a smaller size. Centred
+   in the slot on its own ground, so it reads the same at every width; the
+   card that replaces it brings its own arrival (`pcArrive`). */
+.feed-tail {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  text-align: center;
+}
+
+.feed-tail .feed-tail-atom {
+  width: 72px;
+  height: 72px;
+  margin: 0;
+}
+
+.feed-tail-label {
+  margin: 0;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
 /* ── Atom Loader ── */
 .atom-loader {
   position: relative;

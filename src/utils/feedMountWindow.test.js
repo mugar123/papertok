@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { growMountWindow, inMountWindow, initialMountWindow, mountWindowCovers } from './feedMountWindow.js';
+import { growMountWindow, inMountWindow, initialMountWindow, mountWindowCovers, windowReachingReader } from './feedMountWindow.js';
 
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
@@ -49,6 +49,24 @@ test('membership and coverage are half-open on the high side', () => {
   assert.equal(mountWindowCovers({ lo: 0, hi: 0 }, 0), true);
 });
 
+test('a page that lands under the reader is mounted at once, not left to the idle growth', () => {
+  // The window covered the 15 papers it had; the reader is on the loading
+  // slot below them (index 15) when 14 more arrive.
+  assert.deepEqual(windowReachingReader({ lo: 0, hi: 15 }, 15, 29), { lo: 0, hi: 17 },
+    'the paper taking the slot the reader is on, and the next one');
+  assert.deepEqual(windowReachingReader({ lo: 0, hi: 15 }, 14, 29), { lo: 0, hi: 16 },
+    'on the last mounted card, the one below it is mounted before the swipe');
+  assert.deepEqual(windowReachingReader({ lo: 0, hi: 15 }, 16, 29), { lo: 0, hi: 18 },
+    'a reader still swiping past the stretched edge, before the idle growth has written it');
+  assert.deepEqual(windowReachingReader({ lo: 0, hi: 15 }, 25, 29), { lo: 0, hi: 15 },
+    'a far jump does not mount the run of cards in between');
+  assert.deepEqual(windowReachingReader({ lo: 0, hi: 15 }, 12, 29), { lo: 0, hi: 15 },
+    'a reader away from the edge leaves the window to the idle growth');
+  assert.deepEqual(windowReachingReader({ lo: 0, hi: 15 }, 15, 16), { lo: 0, hi: 16 }, 'never past the end');
+  assert.deepEqual(windowReachingReader({ lo: 0, hi: 15 }, 15, 15), { lo: 0, hi: 15 }, 'nothing new, nothing to mount');
+  assert.deepEqual(windowReachingReader({ lo: 0, hi: 0 }, 0, 0), { lo: 0, hi: 0 });
+});
+
 test('SOURCE: the container mounts a window and grows it off the critical path', async () => {
   const code = await readFile(new URL('../components/Feed/FeedContainer.jsx', import.meta.url), 'utf8');
   // The anchor goes through `resumeAnchor` now, so the window and the card
@@ -75,6 +93,8 @@ test('SOURCE: the container mounts a window and grows it off the critical path',
     'a chunk waits for the scroll to settle before it mounts anything');
   assert.match(code, /requestIdleCallback\(fn, \{ timeout: MOUNT_WINDOW_IDLE_TIMEOUT_MS \}\)/);
   assert.match(code, /inMountWindow\(anchoredWindow, index\)[\s\S]*?feed-snap-item--pending/, 'cards outside it are full-height placeholders');
+  assert.match(stripComments(code), /windowReachingReader\(mountWindow, activeIndex, papers\.length\)/,
+    'and a reader at the edge of the window has the next papers mounted without waiting for idle');
 });
 
 test('a feed resumes on the paper it was on, wherever that paper is now', async () => {

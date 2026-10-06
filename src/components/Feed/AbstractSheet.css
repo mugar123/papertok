@@ -8,6 +8,22 @@
   overflow: hidden;
 }
 
+/* The arrival, eased for the distance. This is the tallest sheet in the app
+   (a long abstract reaches the 85dvh cap: ~720 px on a 390x844 phone), and
+   on the drawer's default curve that travel peaked at 122 px a frame in the
+   fourth frame and then dropped to 70 and 42 — a lurch and a brake, which is
+   what read as a jerk (measured 2026-10-06, Chromium and WebKit, rAF
+   samples). This curve is fastest on its first frame and slows evenly, every
+   frame a little less than the one before (85, 83, 80 … px), over a slightly
+   longer 480 ms; nine tenths of the way is still reached in ~220 ms. The
+   backdrop takes the same timing so the two arrive together. Reduced motion
+   still zeroes both in ui/drawer.css. */
+.abstract-sheet,
+.abstract-sheet-backdrop {
+  --drawer-enter-ms: 480ms;
+  --drawer-enter-ease: cubic-bezier(0.25, 0.85, 0.3, 1);
+}
+
 .abstract-sheet-head {
   display: flex;
   align-items: flex-start;

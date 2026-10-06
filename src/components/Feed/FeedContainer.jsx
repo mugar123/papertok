@@ -17,6 +17,7 @@ import {
   initialMountWindow,
   mountWindowCovers,
   resumeIndex,
+  windowReachingReader,
 } from '../../utils/feedMountWindow.js';
 import AnimatedAtom from './AnimatedAtom';
 import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feedLoadingState';
@@ -349,14 +350,15 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   // until it got there. Derived, not set in an effect, so the first paint
   // with papers already has the right cards in it.
   const anchoredWindow = useMemo(() => {
-    if (mountWindow.hi !== 0 || papers.length === 0) return mountWindow;
+    if (mountWindow.hi !== 0) return windowReachingReader(mountWindow, activeIndex, papers.length);
+    if (papers.length === 0) return mountWindow;
     const { saved, index } = resumeAnchor(papers, scrollKey);
     return initialMountWindow({
       total: papers.length,
       anchorIndex: index,
       radius: saved.paperId ? MOUNT_WINDOW_RESUME_RADIUS : MOUNT_WINDOW_RADIUS,
     });
-  }, [mountWindow, papers, scrollKey]);
+  }, [mountWindow, papers, scrollKey, activeIndex]);
   useEffect(() => {
     if (mountWindowCovers(anchoredWindow, papers.length)) return undefined;
     // `requestIdleCallback` where it exists, so a chunk never lands inside a
@@ -1158,9 +1160,34 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
           )
         ))}
 
-        {loading && (
-          <div className="feed-snap-item">
-            <SkeletonCard />
+        {/* The wait at the end of the feed. It used to be a SkeletonCard
+            mounted for exactly as long as `loading`, which failed three ways
+            (measured 2026-10-06, production build): on a phone its blocks
+            were the colour of their own ground, so the reader sat on an empty
+            screen; on a desktop it was a boxed card the real card no longer
+            resembles; and a load that chains a second page dropped `loading`
+            for a commit, so the slot left, the scroll extent shrank under a
+            reader parked on it, and it came back. It is now the feed's own
+            loading mark — the atom of the first load — and it stays the last
+            snap item for as long as more can come, so it is already there
+            when the reader reaches it and never leaves from under them.
+            Keyed by the count, so the slot the page lands on is a new element:
+            kept as the same one, the browser re-snapped to it after the
+            insert (a snapped element stays snapped) and carried the reader
+            past the fifteen papers that had just arrived. */}
+        {(loading || (hasMore && !error)) && (
+          <div key={`tail-${papers.length}`} className="feed-snap-item feed-snap-item--tail">
+            <div className="feed-tail">
+              <div className="atom-loader feed-tail-atom" aria-hidden="true">
+                <AnimatedAtom size={56} strokeWidth={1} className="atom-loader-icon" />
+              </div>
+              <p className="feed-tail-label" aria-hidden="true">{'Loading more papers…'}</p>
+              {/* Spoken only while a page is actually on its way: the slot
+                  is mounted ahead of the load, and a fresh one after every
+                  page, so a live region carrying the words from the start
+                  would speak for waits that are not happening. */}
+              <span className="visually-hidden" role="status">{loading ? 'Loading more papers…' : ''}</span>
+            </div>
           </div>
         )}
 

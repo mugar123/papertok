@@ -51,6 +51,33 @@ export function growMountWindow(window, total, step = MOUNT_WINDOW_STEP) {
   return { lo: lo - above, hi: hi + below };
 }
 
+/**
+ * The window, stretched to a reader who has reached its lower edge.
+ *
+ * The idle growth is right for cards the reader is not looking at, and wrong
+ * for the one they are: a page that lands while the reader sits on the
+ * loading slot below the last card puts its first paper in that very slot,
+ * outside the window — a blank full-height placeholder where the loader was,
+ * until an idle callback came, and on a trackpad's momentum that waited for
+ * the scroll to stop (measured 2026-10-06 on the production build). A reader
+ * on the last mounted card or on the slot just past it gets the next two
+ * mounted now; anywhere else the window is left alone.
+ *
+ * `window` is the state, which only the idle growth writes, so it lags a
+ * reader who keeps swiping: the next swipe lands one past the stretched
+ * edge, and a check of "exactly at the edge" left that card blank for as
+ * long as the swipes kept coming (measured, 700 ms). The reach covers a few
+ * swipes past it — one card per swipe, since every card is a hard snap stop
+ * — without ever mounting a long run of cards because of a far jump.
+ */
+export const MOUNT_WINDOW_REACH = 4;
+export function windowReachingReader(window, readerIndex, total) {
+  const lo = window?.lo ?? 0;
+  const hi = window?.hi ?? 0;
+  if (hi === 0 || total <= hi || readerIndex < hi - 1 || readerIndex > hi + MOUNT_WINDOW_REACH) return window;
+  return { lo, hi: Math.min(total, readerIndex + 2) };
+}
+
 export function mountWindowCovers(window, total) {
   return total <= 0 || ((window?.lo ?? 0) <= 0 && (window?.hi ?? 0) >= total);
 }

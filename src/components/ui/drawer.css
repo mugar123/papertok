@@ -6,6 +6,12 @@
    colour, rule and radius here is still a token. `--bleed` is the extra
    sheet pulled below the viewport edge so an overshoot never shows the page
    behind it.
+
+   `--drawer-enter-ms` and `--drawer-enter-ease` are the arrival (and the
+   spring back from a swipe that does not dismiss). The default curve speeds
+   up for four frames and then brakes hard, which a short sheet hides and a
+   tall one does not; a tall sheet sets its own on the popup and on the
+   backdrop (`overlayClassName`), as AbstractSheet.css does.
    ============================================ */
 
 .ui-drawer-backdrop {
@@ -17,7 +23,7 @@
   min-height: 100dvh;
   background: rgb(17, 19, 24);
   opacity: calc(var(--backdrop-opacity) * (1 - var(--drawer-swipe-progress)));
-  transition: opacity 400ms cubic-bezier(0.32, 0.72, 0, 1);
+  transition: opacity var(--drawer-enter-ms, 400ms) var(--drawer-enter-ease, cubic-bezier(0.32, 0.72, 0, 1));
 }
 
 .ui-drawer-backdrop[data-starting-style],
@@ -77,7 +83,7 @@
   overscroll-behavior: contain;
   will-change: transform;
   transform: translateY(var(--drawer-swipe-movement-y));
-  transition: transform 400ms cubic-bezier(0.32, 0.72, 0, 1);
+  transition: transform var(--drawer-enter-ms, 400ms) var(--drawer-enter-ease, cubic-bezier(0.32, 0.72, 0, 1));
 }
 
 .ui-drawer-popup[data-starting-style],
