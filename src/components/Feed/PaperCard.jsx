@@ -67,12 +67,19 @@ import { getRelatedResearchResources } from '../../services/dataCiteService';
 import { getHuggingFaceResearchResources } from '../../services/huggingFaceService';
 import { isOpaqueQueryTopicText, resolvePaperTopic, topicExplorerPath } from '../../utils/topicNavigation';
 import { canRewritePaper } from '../../services/paperRewriteService.js';
-import { getPaperFigures, peekPaperFigures, subscribePaperFigures } from '../../services/paperFigureService.js';
-import { peekPaperHook, subscribePaperHooks } from '../../services/paperHookService.js';
+import { getPaperFigures, peekPaperFigures } from '../../services/paperFigureService.js';
+import { CARD_DURATION_MS, tweenScrollTop } from '../../utils/scrollTween.js';
 import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
 import { accessTagForPaper, reviewTagForPaper } from '../../utils/paperStatus.js';
 import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.js';
 import { buildPaperTopicTags } from '../../utils/paperTopicTags.js';
+
+/**
+ * How still the abstract panel has to be before its clipping is believed: the
+ * quiet demanded after the LAST size change, not a wait for the whole travel.
+ * A 420ms collapse keeps resetting this, so the reading lands once — after it.
+ */
+const ABSTRACT_SETTLE_MS = 180;
 
 /**
  * A glyph per status, keyed the same way the tags are.
@@ -186,18 +193,6 @@ const FIGURE_ENTRANCE_STAGGER_MS = 60;
 
 /** FNV-1a, the same one `buildHighlightId` uses: short, stable, and enough to
  *  tell four slots of one paper apart. */
-/** The figure a card leads with: the paper's first, which is usually its overview. */
-function leadFigure(figures) {
-  return Array.isArray(figures) && figures[0]?.url ? figures[0] : null;
-}
-
-/** The lead figure's text alternative, from the paper's own caption. */
-function leadFigureAlt(figure) {
-  const caption = String(figure?.caption || '').replace(/\s+/g, ' ').trim();
-  if (!caption) return 'Figure from the paper';
-  return `Figure from the paper: ${caption.length > 160 ? `${caption.slice(0, 159).replace(/\s+\S*$/, '')}…` : caption}`;
-}
-
 function figureHash(fingerprint) {
   let hash = 0x811c9dc5;
   for (let index = 0; index < fingerprint.length; index += 1) {
@@ -345,15 +340,35 @@ const PaperCard = memo(function PaperCard({
   // the third term: no session, no count. See useCommentCount.js for the
   // budget this protects.
   isActive = false,
-  // True while the feed's loading screen still covers this card (the first
-  // reveal waits for the lead card's line and figure, FeedContainer). Under
-  // it the card is not being read, so it may still take them.
-  underVeil = false,
 }) {
-  // The abstract is not on the card: it opens in its own sheet
-  // (AbstractSheet), so the card leads with the title and the line under it.
+  // `position` is optional and PaperCard renders on five different surfaces,
+  // so it cannot anchor a stable, collision-free id for aria-controls.
+  const abstractId = useId();
+  const [expanded, setExpanded] = useState(false);
+  // Whether the collapsed panel is actually hiding words. The toggle below the
+  // abstract only earns its place when there is something to reveal: a short
+  // abstract needs no control, and a paper that carries none at all must not
+  // offer to expand what it does not have.
+  // `null` until the panel has been measured, which is not the same as "fits":
+  // the fade below is the honest state to show while the answer is unknown, so
+  // a long abstract — the common case — never has one ease in over words that
+  // were already painted clear. The toggle keeps treating anything but a firm
+  // `true` as "nothing hidden", exactly as it did.
+  const [abstractClipped, setAbstractClipped] = useState(null);
+  // On a phone a clipped abstract is read in a sheet rather than unfolded in
+  // place (AbstractSheet). Gated by pointer type, never by width, like the
+  // reader's selection route: shrinking a laptop window must not send a mouse
+  // user to the sheet.
   const [showAbstractSheet, setShowAbstractSheet] = useState(false);
   const closeAbstractSheet = useCallback(() => setShowAbstractSheet(false), []);
+  const coarsePointer = useMemo(() => {
+    try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
+  }, []);
+  // Read by the measurement below, which must not re-run when the panel opens:
+  // a reading taken while it travels between its two heights is of the height
+  // the animation is passing through, not the one it rests at.
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
   const [showHeart, setShowHeart] = useState(false);
   // True for the moment after a read mark is taken back, so the slot can
   // play its release (PaperCard.css) — a class the resting state cannot carry.
@@ -465,7 +480,13 @@ const PaperCard = memo(function PaperCard({
   }, [followedByType.author, isFollowing, paper]);
 
   const lastTap = useRef(0);
+  const abstractRef = useRef(null);
+  // Cancels the in-flight return to the first line, if there is one.
+  const stopAbstractScroll = useRef(null);
 
+  // A card swiped away mid-collapse would otherwise leave its frame loop
+  // running against a node nobody can see any more.
+  useEffect(() => () => stopAbstractScroll.current?.(), []);
   const cardRef = useRef(null);
   const viewStartTime = useRef(null);
   const totalViewTime = useRef(0);
@@ -482,45 +503,10 @@ const PaperCard = memo(function PaperCard({
   // — React's documented way to reset state when a prop changes — because an
   // effect only runs AFTER the frame that already showed them.
   const [figuresPaperKey, setFiguresPaperKey] = useState(paperViewKey);
-  // "Why it matters" and the lead figure. Both come from the feed's lookahead
-  // (FeedContainer) and are only read here. While the card is off screen it
-  // may still take one that arrives; once any of it is on screen, what it shows
-  // is fixed, so nothing lands above the text the reader has started on
-  // (AGENTS.md, invariant 7). A card that came on screen without them keeps the
-  // abstract and the scattered clippings, as before.
-  const [feedHook, setFeedHook] = useState(() => peekPaperHook(paper) || '');
-  const [heroFigure, setHeroFigure] = useState(() => leadFigure(peekPaperFigures(paper)));
-  const [heroLoaded, setHeroLoaded] = useState(false);
-  const [heroFailed, setHeroFailed] = useState(false);
   if (figuresPaperKey !== paperViewKey) {
     setFiguresPaperKey(paperViewKey);
     setFigures(peekPaperFigures(paper)?.slice(0, 4) ?? []);
-    setFeedHook(peekPaperHook(paper) || '');
-    setHeroFigure(leadFigure(peekPaperFigures(paper)));
-    setHeroLoaded(false);
-    setHeroFailed(false);
   }
-  const underVeilRef = useRef(underVeil);
-  useEffect(() => { underVeilRef.current = underVeil; }, [underVeil]);
-  useEffect(() => {
-    // Measured at the moment an answer lands, not read from `isActive`: that
-    // flag arrives in a transition and can trail the scroll by a frame or two,
-    // and a card half-scrolled into view is already being read.
-    const unseen = () => {
-      if (underVeilRef.current) return true;
-      const box = cardRef.current?.getBoundingClientRect();
-      return !box || box.bottom <= 0 || box.top >= window.innerHeight
-        || box.right <= 0 || box.left >= window.innerWidth;
-    };
-    const takeHook = () => { if (unseen()) setFeedHook(peekPaperHook(paper) || ''); };
-    const takeFigure = () => { if (unseen()) setHeroFigure(leadFigure(peekPaperFigures(paper))); };
-    const offHooks = subscribePaperHooks(takeHook);
-    const offFigures = subscribePaperFigures(takeFigure);
-    // Anything that landed between this card's render and this subscription.
-    takeHook();
-    takeFigure();
-    return () => { offHooks(); offFigures(); };
-  }, [paper]);
 
   useEffect(() => {
     if (!isCardVisible) {
@@ -733,7 +719,215 @@ const PaperCard = memo(function PaperCard({
     return () => { isMounted = false; };
   }, [isCardIdle, paper]);
 
+  const toggleExpanded = (e, newState) => {
+    e.stopPropagation();
+    // A panel that hides nothing has nothing to open. Without this, tapping an
+    // abstract that fits whole flipped `expanded` on, and the toggle — reserved
+    // beneath it, invisible — came up saying "Show less" for a panel that had
+    // never been anything but open (measured 2026-09-18, guest feed, desktop).
+    if (newState && abstractClipped !== true) return;
+    setExpanded(newState);
+
+    // Whichever way this goes, the previous run stops first. Tapping twice
+    // quickly used to leave a scroll still travelling into a panel that had
+    // already reopened, so the text crawled while the reader was trying to
+    // read it.
+    stopAbstractScroll.current?.();
+
+    // Closing puts the reader back at the first line, on the same clock as the
+    // panel's height: `scrollTo({ behavior: 'smooth' })` animates on a duration
+    // and a curve the browser chooses, so the text and the panel finished at
+    // different moments and the motion read as two things, one dragging behind
+    // the other. Same easing, same 420ms, and they land together.
+    if (!newState && abstractRef.current) {
+      stopAbstractScroll.current = tweenScrollTop(abstractRef.current, 0, {
+        durationMs: CARD_DURATION_MS,
+        immediate: prefersReducedMotion,
+      });
+    }
+  };
+
+  /**
+   * What the panel is showing, and a key that changes only when the words do.
+   *
+   * The screens that hand this card a stored copy of a paper — a list, a
+   * profile tab — carry no abstract at all: `serializeLibraryPaper` keeps a
+   * title, authors and a truncated summary, not the text. So a paper opened
+   * from Favourites paints "Abstract unavailable." and then, a beat later,
+   * arXiv and OpenAlex answer with the real thing.
+   *
+   * The key is not the text itself. A 1,500-character paragraph as a React key
+   * is paid for on every render, and all this has to answer is whether these
+   * are the same words as before.
+   */
   const abstractText = hasUsableAIAbstract(paper.abstract) ? paper.abstract : null;
+  const abstractKey = abstractText
+    ? `abstract:${abstractText.length}:${abstractText.slice(0, 24)}`
+    : 'abstract:none';
+
+  // The paragraph the panel is showing, the height it stands at, and the way to
+  // end a resize that is still running.
+  const lastAbstractParagraph = useRef(null);
+  const lastAbstractHeight = useRef(null);
+  const settleAbstractResize = useRef(null);
+
+  /**
+   * The height is tracked by an observer rather than measured on every render,
+   * and that is not a micro-optimisation: the swap below is committed by
+   * AnimatePresence's own state, which re-renders the paragraph WITHOUT
+   * re-rendering this card. Measuring per render was therefore both too often
+   * and, at the one moment it matters, not often enough — the first build of
+   * this ran the panel's growth 390ms after the words had already changed,
+   * which is the jump it was meant to remove plus a bounce afterwards.
+   */
+  useEffect(() => {
+    const node = abstractRef.current;
+    if (!node) return undefined;
+    lastAbstractHeight.current = node.offsetHeight;
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(() => {
+      lastAbstractHeight.current = node.offsetHeight;
+    });
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+      settleAbstractResize.current?.();
+    };
+  }, []);
+
+  /**
+   * Whether the collapsed panel is hiding words, which is the only thing that
+   * earns the toggle below it a place on the card.
+   *
+   * Two things make the reading harder than `scrollHeight > clientHeight`.
+   *
+   * The panel is sized by the flex room its siblings leave, and that is not
+   * resolved in the commit that mounts it — measuring there reads a box with no
+   * height yet and calls every abstract clipped. Hence the frame's wait.
+   *
+   * And a collapse looks from here like a storm of resizes whose early frames
+   * still report the open height, so they answer "nothing is hidden" about a
+   * panel that is mid-travel. Reading only once the size has been quiet for a
+   * moment takes the settled answer instead of one the transition passed
+   * through, which is also what stops the button blinking out and back.
+   *
+   * `expandedRef` rather than `expanded` keeps all of this out of the effect's
+   * dependencies: an open panel clips nothing, and re-running on open would
+   * throw away the verdict that earned the button its place.
+   */
+  useEffect(() => {
+    if (!abstractText) {
+      setAbstractClipped(false);
+      return undefined;
+    }
+    let alive = true;
+    let settleTimer = null;
+    const read = () => {
+      const node = abstractRef.current;
+      if (!alive || !node || expandedRef.current) return;
+      setAbstractClipped(node.scrollHeight - node.clientHeight > 1);
+    };
+    const settle = () => {
+      if (settleTimer) clearTimeout(settleTimer);
+      settleTimer = setTimeout(read, ABSTRACT_SETTLE_MS);
+    };
+    const frame = requestAnimationFrame(() => requestAnimationFrame(read));
+    const node = abstractRef.current;
+    const observer = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(settle);
+    if (node && observer) observer.observe(node);
+    window.addEventListener('resize', settle);
+    return () => {
+      alive = false;
+      cancelAnimationFrame(frame);
+      if (settleTimer) clearTimeout(settleTimer);
+      observer?.disconnect();
+      window.removeEventListener('resize', settle);
+    };
+  }, [abstractKey, abstractText]);
+
+  /**
+   * The other half of the swap: the panel eases between the height it had and
+   * the height the new words need, on the card's own curve and duration.
+   *
+   * The words were the smaller half of the problem. The sheet is bottom
+   * anchored (`justify-content: flex-end`), so one line of "Abstract
+   * unavailable." becoming a full column of text threw the title, the authors
+   * and the badges upward in a single frame — the reader's eye lost the line it
+   * was on.
+   *
+   * It hangs off the paragraph's ref, which is the only hook that fires in the
+   * commit that actually replaces the element, and it fires before the browser
+   * paints it: the height the panel jumped to is measured and put back in the
+   * same breath, so what is painted is the first frame of the transition rather
+   * than the jump.
+   */
+  const attachAbstractBody = useCallback((paragraph) => {
+    const previous = lastAbstractParagraph.current;
+    // Detaching. `previous` has to survive it: it is what the attach of the
+    // paragraph replacing this one compares itself against.
+    if (!paragraph) return;
+    lastAbstractParagraph.current = paragraph;
+
+    const node = abstractRef.current;
+    const from = lastAbstractHeight.current;
+    // First words on the card, or a re-attach of the same ones (this callback
+    // changes identity when the panel opens): nothing has been replaced.
+    if (!node || !previous || previous === paragraph || from === null) return;
+    // Open, the panel is sized by the room its siblings leave rather than by
+    // its own text, so there is no height to travel — only the words change.
+    if (expanded || prefersReducedMotion) return;
+
+    // A swap on top of a swap starts from wherever the panel has got to, which
+    // is what `from` already holds; this only hands the height back so the
+    // measurement below is of the text and not of the animation.
+    settleAbstractResize.current?.();
+    const target = node.offsetHeight;
+    if (Math.abs(target - from) < 1) return;
+
+    node.style.height = `${from}px`;
+    node.classList.add('pc-abstract--resizing');
+    // Read back, or the browser folds both heights into one style change and
+    // there is nothing left to transition between.
+    void node.offsetHeight;
+    node.style.height = `${target}px`;
+
+    let backstop = null;
+    const settle = () => {
+      clearTimeout(backstop);
+      settleAbstractResize.current = null;
+      node.style.height = '';
+      node.classList.remove('pc-abstract--resizing');
+      lastAbstractHeight.current = node.offsetHeight;
+    };
+    // `transitionend` below does the finishing. This only covers the case where
+    // it never arrives — an interrupted transition fires nothing — because an
+    // inline height left behind would pin the panel at that size for good.
+    backstop = setTimeout(settle, CARD_DURATION_MS + 120);
+    settleAbstractResize.current = settle;
+  }, [expanded, prefersReducedMotion]);
+
+  // The clipped abstract's door on a phone: the sheet, not the fold. Once the
+  // panel is open (a fine pointer got it there) the toggle closes it as ever.
+  const readsInSheet = coarsePointer && abstractClipped === true && !expanded;
+  const openAbstract = (e) => {
+    if (readsInSheet) {
+      e.stopPropagation();
+      setShowAbstractSheet(true);
+      return;
+    }
+    toggleExpanded(e, !expanded);
+  };
+
+  const handleAbstractTransitionEnd = (event) => {
+    // The panel has finished travelling between two abstracts: hand its height
+    // back to the layout before anything else moves it.
+    if (event.propertyName === 'height') settleAbstractResize.current?.();
+    if (!expanded && event.propertyName === 'max-height' && abstractRef.current) {
+      abstractRef.current.scrollTop = 0;
+    }
+  };
 
   const isReadActive = isRead;
   const activeRelatedPaper = selectedRelatedPaper || pendingRelatedPaper;
@@ -1103,7 +1297,7 @@ const PaperCard = memo(function PaperCard({
         </div>
       )}
 
-      {!heroFigure && scatteredFigures.length > 0 && (
+      {scatteredFigures.length > 0 && (
         <div className="pc-figures" aria-hidden="true">
           {scatteredFigures.map(({ item, style }) => (
             <figure
@@ -1140,10 +1334,7 @@ const PaperCard = memo(function PaperCard({
         </div>
       )}
 
-      <article
-        className={`pc-sheet${feedHook ? ' pc-sheet--hooked' : ''}${heroFigure ? ' pc-sheet--hero' : ''}`}
-        style={{ '--area-accent': areaAccentForPaper(paper) }}
-      >
+      <article className="pc-sheet" style={{ '--area-accent': areaAccentForPaper(paper) }}>
         {WatermarkIcon && (
           <span className="pc-watermark" aria-hidden="true">
             <WatermarkIcon size={220} weight="thin" />
@@ -1151,23 +1342,6 @@ const PaperCard = memo(function PaperCard({
         )}
 
         <div className="pc-body">
-        {heroFigure && (
-          // The paper's own figure, framed at a fixed height so the picture
-          // arriving never moves the text under it. A picture that fails
-          // leaves the frame empty rather than collapsing it on screen.
-          <figure className={`pc-hero${heroLoaded ? ' is-loaded' : ''}`}>
-            {!heroFailed && (
-              <img
-                src={heroFigure.url}
-                alt={leadFigureAlt(heroFigure)}
-                decoding="async"
-                ref={(node) => { if (node?.complete && node.naturalWidth > 0) setHeroLoaded(true); }}
-                onLoad={() => setHeroLoaded(true)}
-                onError={() => setHeroFailed(true)}
-              />
-            )}
-          </figure>
-        )}
         {showFollowReason && (() => {
           const reason = buildFollowReasonLabel(
             (paper._followedEntityMatches || []).filter(match => typeof match === 'object'),
@@ -1415,19 +1589,6 @@ const PaperCard = memo(function PaperCard({
           <ScientificText>{paper.title}</ScientificText>
         </TitleTag>
 
-        {feedHook && (
-          // Generated from the abstract, and said so: this is not the authors'
-          // sentence (AGENTS.md, invariant 3).
-          <div className="pc-hook">
-            <p className="pc-hook-label">
-              <Sparkle size={12} weight="fill" aria-hidden="true" />
-              <span>{'Why it matters'}</span>
-              <span className="pc-hook-source">{'AI summary'}</span>
-            </p>
-            <p className="pc-hook-text">{feedHook}</p>
-          </div>
-        )}
-
         <div 
           className="pc-authors pc-authors--mobile-clickable"
           onClick={(e) => {
@@ -1512,19 +1673,70 @@ const PaperCard = memo(function PaperCard({
           </div>
         </div>
 
+        <div
+          ref={abstractRef}
+          id={abstractId}
+          className={`pc-abstract ${expanded ? 'pc-abstract--open' : ''} ${abstractClipped === false ? 'pc-abstract--whole' : ''}`}
+          onClick={openAbstract}
+          onTransitionEnd={handleAbstractTransitionEnd}
+        >
+          {/* The words are replaced, not swapped. A stored copy of a paper
+              carries no abstract, so this panel goes from "Abstract
+              unavailable." to a full column of text the moment the providers
+              answer, and doing that in one frame reads as a glitch — the same
+              reason the access chip above cross-fades.
+
+              `mode="wait"` rather than two paragraphs at once: superimposing
+              two different texts at half opacity is not a cross-fade, it is a
+              smudge. The old text leaves, the new one arrives as the panel
+              makes room for it — the ref below is what starts that. */}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.p
+              key={abstractKey}
+              ref={attachAbstractBody}
+              lang={abstractText ? 'en' : undefined}
+              initial={{ opacity: 0 }}
+              animate={{
+                opacity: 1,
+                transition: {
+                  duration: prefersReducedMotion ? 0.1 : 0.34,
+                  ease: [0.16, 1, 0.3, 1],
+                },
+              }}
+              exit={{
+                opacity: 0,
+                transition: { duration: prefersReducedMotion ? 0.08 : 0.18, ease: 'easeIn' },
+              }}
+            >
+              {abstractText
+                ? <ScientificText>{abstractText}</ScientificText>
+                : ('Abstract unavailable.')}
+            </motion.p>
+          </AnimatePresence>
+        </div>
+
+        {/* Its box is on the card from the first frame; the verdict only
+            decides whether the label is on. Shown when the panel is hiding
+            words, and kept on once opened, since an open panel clips nothing
+            and would otherwise take away the control that closes it. It used
+            to be mounted by that verdict, which is a measurement and cannot
+            be taken before the panel has a height: on a phone, where the
+            column is bottom-anchored, the button joining the layout two
+            frames in pushed the abstract, the authors and the title 25 px up
+            in one frame, in the middle of their arrival. */}
         {abstractText && (
-          <button
-            type="button"
-            className="pc-abstract-link"
-            aria-haspopup="dialog"
-            onClick={(event) => {
-              event.stopPropagation();
-              setShowAbstractSheet(true);
-            }}
-          >
-            <FileText size={14} aria-hidden="true" />
-            {'Read abstract'}
-          </button>
+        <button
+          type="button"
+          className={`pc-abstract-toggle${abstractClipped === true || expanded ? '' : ' pc-abstract-toggle--reserved'}`}
+          aria-expanded={readsInSheet ? undefined : expanded}
+          aria-haspopup={readsInSheet ? 'dialog' : undefined}
+          aria-controls={readsInSheet ? undefined : abstractId}
+          onClick={openAbstract}
+        >
+          {expanded
+            ? ('Show less')
+            : ('Read full abstract')}
+        </button>
         )}
 
         <AnimatePresence initial={false}>
