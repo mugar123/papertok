@@ -30,8 +30,8 @@ export default function GuestFeedPage({
   // areas and topics to start from, the reading level, the email digest and
   // the repository — and the feed only once its last screen is passed, which
   // is what stores the answer. Afterwards the header chip reopens the areas
-  // as an editable sheet. Signing in lives here, in the feed's header and its
-  // cards, not in the welcome.
+  // as an editable sheet. Signing in is offered in the welcome's bar too, for
+  // an account onboarded on another device, and here in the header and cards.
   const [interests, setInterests] = useState(() => readGuestInterests());
   const areas = interests?.areas?.length ? interests.areas : NO_AREAS;
   const topics = interests?.topics?.length ? interests.topics : NO_AREAS;
@@ -107,6 +107,7 @@ export default function GuestFeedPage({
       <GuestWelcome
         initialAreas={NO_AREAS}
         onComplete={submitInterests}
+        onSignIn={() => requestAccount('other')}
       />
     );
   }

@@ -70,10 +70,33 @@
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
+/* Labelled at every width, unlike the feed's: on a phone this is the door a
+   returning account is looking for, and the bar has room for it. */
+.gw-sign-in {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-ink);
+  border-radius: var(--radius-md);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
 @media (hover: hover) and (pointer: fine) {
   .gw-bar-button:hover {
     background: var(--bg-secondary);
     color: var(--text-primary);
+  }
+
+  .gw-sign-in:hover {
+    background: var(--accent-primary-hover);
   }
 }
 

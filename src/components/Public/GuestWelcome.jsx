@@ -8,6 +8,7 @@ import {
   CaretUp,
   Check,
   Heart,
+  SignIn,
   SkipForward,
   Sparkle,
   UserPlus,
@@ -29,7 +30,8 @@ import './GuestWelcome.css';
 // build the first feed from. Reading, the optional email digest, and project
 // support follow in the same layout, and then the feed itself. The areas have
 // to be answered; the first two screens can skip there. Nothing here asks for
-// an account: signing in lives in the feed.
+// an account, but the bar offers Sign in on every screen: someone onboarded on
+// another device goes straight to their account instead of answering again.
 //
 // The papers drifting past the first screen are real ones
 // (guestWelcome.test.js holds each to a complete citation).
@@ -380,7 +382,7 @@ function Beat({ beat, index, still }) {
   );
 }
 
-export default function GuestWelcome({ initialAreas = [], initialTopics = [], initialReadingLevel = 'university', initialEmailDigest = false, onComplete }) {
+export default function GuestWelcome({ initialAreas = [], initialTopics = [], initialReadingLevel = 'university', initialEmailDigest = false, onComplete, onSignIn }) {
   const prefersReducedMotion = useReducedMotion();
   const still = Boolean(prefersReducedMotion);
   const copy = COPY.en;
@@ -513,6 +515,10 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
         <div className="gw-wordmark" aria-label="PaperTok">Paper<span>Tok</span></div>
         <div className="gw-bar-actions">
           <ThemeToggle className="gw-bar-button" />
+          <button type="button" className="gw-sign-in" onClick={onSignIn}>
+            <SignIn size={15} aria-hidden="true" />
+            Sign in
+          </button>
         </div>
       </header>
 

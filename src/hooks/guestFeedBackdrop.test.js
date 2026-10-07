@@ -22,9 +22,9 @@ test('the guest page enables its feed once the visitor has answered', () => {
   // `firstVisit` is `interests === null`: the welcome page is up until then.
   assert.match(page, /const firstVisit = interests === null;/);
   assert.match(page, /const guestFeed = useGuestFeed\(\{ areas, topics, enabled: !firstVisit \}\);/);
-  // The welcome asks for no account: its only way out is its answer, into the feed.
-  assert.match(page, /<GuestWelcome\s+initialAreas=\{NO_AREAS\}\s+onComplete=\{submitInterests\}\s+\/>/);
-  assert.doesNotMatch(page, /onSignIn/);
+  // The welcome asks for no account, but an existing one can sign in from it
+  // through the same door as the feed's header.
+  assert.match(page, /<GuestWelcome\s+initialAreas=\{NO_AREAS\}\s+onComplete=\{submitInterests\}\s+onSignIn=\{\(\) => requestAccount\('other'\)\}\s+\/>/);
   // The areas sheet keeps what the welcome stored for the account to come.
   assert.match(page, /readingLevel: interests\?\.readingLevel,\s*emailDigest: interests\?\.emailDigest === true,/);
 

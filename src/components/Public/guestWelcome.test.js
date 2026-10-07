@@ -214,11 +214,16 @@ test('long topic groups fold behind show more without hiding a pick', async () =
 });
 
 
-test('the welcome ends in the feed, not in a sign-in', async () => {
+test('the welcome ends in the feed, and an existing account can sign in from any screen', async () => {
   const jsx = await jsxPromise;
   const support = jsx.slice(jsx.indexOf('    support: {'), jsx.indexOf('const SHOWCASE') > jsx.indexOf('    support: {') ? jsx.indexOf('const SHOWCASE') : undefined);
   assert.match(support, /cta: 'Start exploring papers'/);
-  assert.doesNotMatch(jsx, /onSignIn|cta: 'Sign in'/, 'signing in lives in the feed, not in the onboarding');
+  assert.doesNotMatch(jsx, /cta: 'Sign in'/, 'the last action opens the feed, not a dialog');
+  // Someone onboarded on another device must not answer the welcome again to
+  // reach their account: the bar carries Sign in on every screen.
+  const bar = jsx.slice(jsx.indexOf('<header className="gw-bar">'), jsx.indexOf('</header>'));
+  assert.match(bar, /<button type="button" className="gw-sign-in" onClick=\{onSignIn\}>/);
+  assert.match(bar, /Sign in/);
   // The page leaves, and only then hands its answer over.
   assert.match(jsx, /animate=\{leaving && !still \? \{ opacity: 0, y: -16 \} : \{ opacity: 1, y: 0 \}\}/);
   assert.match(jsx, /onAnimationComplete=\{\(\) => \{\s*if \(leaving && !still\) onComplete\?\.\(answer\(\)\);/);

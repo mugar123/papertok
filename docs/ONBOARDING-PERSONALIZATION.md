@@ -5,9 +5,10 @@ Welcome → How it works → Areas → Specific topics → Reading → Inbox →
 Its last screen's action, "Start exploring papers", stores the answer and opens
 the guest feed: a signed-out visitor with a stored answer sees the feed built
 from those areas and topics, and the welcome is shown only until one exists.
-The welcome asks for no account and carries no sign-in control; signing in is
-offered in the guest feed (its header button, its end card, and the actions
-that need an account). The stored choices also prefill account onboarding.
+The welcome asks for no account, but its bar carries Sign in on every screen,
+so an account onboarded on another device signs in without answering the
+welcome again; the guest feed offers it too (its header button, its end card,
+and the actions that need an account). The stored choices also prefill account onboarding.
 
 The three new screens reuse the existing wordmark, theme control, centered
 headline, progress dots, Back action, and primary action. They do not introduce
@@ -178,3 +179,21 @@ Verification:
 - Not verified: keyboard-only traversal of the restored guest feed, a
   screen-reader pass, and the leave transition's feel (the preview pane was
   hidden and throttled animation frames).
+
+
+## Sign in from the welcome, 2026-10-07
+
+An account onboarded on one device had to pass every welcome screen on another
+(a phone, say) before reaching the guest feed's Sign in. The welcome's bar now
+carries a labelled Sign in beside the theme control on every screen, opening
+the same dialog as the feed header. It keeps its label at phone widths. The
+last screen's action is still "Start exploring papers".
+
+Verification:
+
+- `guestWelcome.test.js` and `accessibilityStructure.test.js` pass; ESLint
+  passed for the changed files.
+- In the browser at 375 px: the button sits inside the bar (no horizontal
+  scroll); Enter opened the sign-in dialog, Escape closed it, and focus returned
+  to the button with a visible outline.
+- Not verified: a real sign-in on a second device, a screen reader.
