@@ -380,14 +380,15 @@ export default function ProfilePage() {
     () => editorSections.map(section => section.id),
     [editorSections],
   );
-  const activeSection = useSectionSpy(editorSectionIds);
+  const [activeSection, activateSection] = useSectionSpy(editorSectionIds);
   const jumpToSection = useCallback((id) => {
     const node = document.getElementById(id);
     if (!node) return;
+    activateSection(id);
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
     node.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
     node.focus({ preventScroll: true });
-  }, []);
+  }, [activateSection]);
   const pinnedShareIds = profile?.pinnedShareIds || [];
   /** What the public page will actually show, pinned lists first. */
   const previewLists = useMemo(() => {
