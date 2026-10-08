@@ -170,11 +170,6 @@
   line-height: 1.6;
 }
 
-.public-paper-spinner {
-  color: var(--accent-primary);
-  animation: public-paper-spin 0.9s linear infinite;
-}
-
 .public-paper-state-actions {
   display: flex;
   flex-wrap: wrap;
@@ -220,14 +215,4 @@
   .public-paper-primary-action:hover {
     background: var(--accent-primary-hover);
   }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .public-paper-spinner {
-    animation: none;
-  }
-}
-
-@keyframes public-paper-spin {
-  to { transform: rotate(360deg); }
 }

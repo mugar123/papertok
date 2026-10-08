@@ -77,9 +77,6 @@ export const OWN_LISTS_PAGE_SIZE = 60;
 /** The pin picker's name for the same ceiling. */
 export const PINNABLE_LISTS_PAGE_SIZE = OWN_LISTS_PAGE_SIZE;
 
-/** Fields only the service identity may ever write (F6). */
-const SERVICE_ONLY_FIELDS = Object.freeze(['orcid', 'verified']);
-
 export class UserProfileUnsupportedError extends Error {
   constructor() {
     super('Public profiles are unavailable in demo mode.');
@@ -998,5 +995,3 @@ export async function readOwnLists(overrides) {
     .sort((first, second) => (second.createdAtMillis - first.createdAtMillis)
       || first.title.localeCompare(second.title));
 }
-
-export { SERVICE_ONLY_FIELDS };

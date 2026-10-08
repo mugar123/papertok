@@ -472,14 +472,6 @@ export function createWrite(name, data) {
   };
 }
 
-/** Overwrites a document wholesale and fails if it is not already there. */
-export function replaceWrite(name, data) {
-  return {
-    update: { name, fields: encodeFields(data) },
-    currentDocument: { exists: true },
-  };
-}
-
 /**
  * Touches only the named fields. The mask is what keeps `createdAt` out of an
  * update: the field is never sent, so it cannot be moved, and no read is

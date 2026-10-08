@@ -60,8 +60,6 @@ export const COMMENT_PAGE_SIZE = 20;
 export const COMMENT_TEXT_MAX = 4000;
 /** Same 1000-entry cap as follows: one billed read per count, forever. */
 export const COMMENT_COUNT_CAP = 1000;
-/** Mirrors the rules intervals; used only to phrase errors, never to enforce. */
-export const COMMENT_INTERVAL_SECONDS = 15;
 /** A parent and up to this many replies fit one atomic batch (cap is 500). */
 const CASCADE_PAGE_SIZE = 400;
 const MY_COMMENTS_PAGE_SIZE = 30;

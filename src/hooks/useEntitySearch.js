@@ -427,6 +427,3 @@ export function useEntitySearch({ usersRequested = false } = {}) {
     reset,
   };
 }
-
-/** The external fan-out, in order. People are a channel, not one of these. */
-export const SEARCH_SECTIONS = Object.freeze(['papers', 'authors', 'institutions', 'topics', 'projects']);

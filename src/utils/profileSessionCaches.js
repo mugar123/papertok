@@ -172,11 +172,6 @@ export function rememberListPapers(uid, papers) {
   listPapersCache.set(uid, known ? { ...known, ...papers } : { ...papers });
 }
 
-export function forgetListPapers(uid) {
-  if (!uid) return;
-  listPapersCache.delete(uid);
-}
-
 /**
  * A counter is worth remembering only when it is a real number. The header
  * uses `{ count: null }` as its "the read failed" sentinel, and caching that

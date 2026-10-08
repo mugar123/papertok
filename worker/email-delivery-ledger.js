@@ -354,9 +354,3 @@ export class EmailDeliveryLedger {
     await this.state.storage.deleteAll();
   }
 }
-
-export const emailDeliveryLedgerInternals = {
-  ledgerMetaKey: LEDGER_META_KEY,
-  ledgerReservationPrefix: LEDGER_RESERVATION_PREFIX,
-  ledgerRetentionMs: LEDGER_RETENTION_MS,
-};

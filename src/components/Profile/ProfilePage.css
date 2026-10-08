@@ -191,29 +191,6 @@
   color: var(--accent-danger);
 }
 
-.profile-photo-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
-
-.profile-photo-preview {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  overflow: hidden;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-subtle);
-}
-
-.profile-photo-preview img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
 .profile-secondary,
 .profile-pin-toggle {
   min-height: 36px;

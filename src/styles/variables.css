@@ -530,11 +530,6 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes loginSlideUp {
-  from { opacity: 0; transform: translateY(30px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
 @keyframes slideInFromBottom {
   from { transform: translateY(100%); }
   to { transform: translateY(0); }
@@ -605,14 +600,6 @@
 /* ============================================
    Utility Classes
    ============================================ */
-
-/* Kept for compatibility: on white, the brand mark is ink with a
-   yellow highlight behind it rather than clipped gradient text. */
-.gradient-text {
-  color: var(--text-primary);
-  -webkit-text-fill-color: currentColor;
-  background: none;
-}
 
 .visually-hidden {
   position: absolute;

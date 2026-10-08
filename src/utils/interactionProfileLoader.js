@@ -86,10 +86,6 @@ export function hasInteractionProfile(result) {
  */
 const sessionRebuilds = new Map();
 
-export function resetSessionRebuilds() {
-  sessionRebuilds.clear();
-}
-
 function sortByRecencyDescending(documents) {
   return [...documents].sort((a, b) => {
     const left = Date.parse(a?.data?.timestamp || a?.data?.libraryUpdatedAt || '') || 0;
