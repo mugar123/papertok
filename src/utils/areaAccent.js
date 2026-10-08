@@ -103,16 +103,6 @@ export function areaKeyForOpenAlexField(field) {
   return (area && CATEGORIES[area]) ? area : null;
 }
 
-/** The area an OpenAlex field belongs to, given its id or its `/fields/17` URL. */
-export function areaForOpenAlexField(field) {
-  return CATEGORIES[areaKeyForOpenAlexField(field)] || null;
-}
-
-/** The ink for an OpenAlex field. */
-export function areaAccentForOpenAlexField(field) {
-  return areaForOpenAlexField(field)?.gradient || FALLBACK;
-}
-
 /**
  * The area a paper belongs to: its arXiv category if it has one, otherwise the
  * branch OpenAlex filed it under.

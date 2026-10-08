@@ -27,18 +27,6 @@ import { deleteCachedEntries } from './thread-anchor.js';
 
 export const ACCOUNT_DELETE_PATH = '/account/delete';
 
-export const ACCOUNT_DELETION_STAGES = Object.freeze([
-  'comments',
-  'publicLists',
-  'followsOut',
-  'followsIn',
-  'papers',
-  'profile',
-  'userTree',
-  'notifications',
-  'auth',
-]);
-
 const USER_SUBCOLLECTIONS = Object.freeze([
   'lists',
   'highlights',

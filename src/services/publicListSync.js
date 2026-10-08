@@ -256,4 +256,3 @@ export const queuePublicListSync = (request) => engine.queue(request);
 export const cancelPublicListSync = (key) => engine.cancel(key);
 export const retryPublicListSync = (key) => engine.retry(key);
 export const subscribeToPublicListSync = (listener) => engine.subscribe(listener);
-export const getPublicListSyncState = (key) => engine.getState(key);

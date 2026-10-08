@@ -387,11 +387,6 @@
   }
 }
 
-.navbar-avatar--small {
-  width: 22px;
-  height: 22px;
-}
-
 .navbar-avatar--fallback {
   display: flex;
   align-items: center;

@@ -249,11 +249,6 @@ export function curatedIds(profile, name) {
   return set ? [...set.order] : [];
 }
 
-export function curatedIdSet(profile, name) {
-  const set = profile && curatedSet(profile, name);
-  return set ? new Set(set.members) : new Set();
-}
-
 /**
  * True when the paper is already known to the profile and must stay out of the
  * feed. Exact for everything inside the caps; beyond them the Bloom filter can

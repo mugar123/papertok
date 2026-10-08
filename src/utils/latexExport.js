@@ -1,4 +1,4 @@
-import { normalizeLatexText, splitLatexText } from './latex.js';
+import { splitLatexText } from './latex.js';
 import { buildHighlightPlan } from './textHighlights.js';
 import {
   documentCopy,
@@ -804,11 +804,6 @@ export function buildLatexDocument({
     fileName: exportFileName(paper),
     noteCount: numbered.length,
   };
-}
-
-/** The normalized paragraph text, for callers that need to match offsets. */
-export function normalizedParagraph(text) {
-  return normalizeLatexText(text);
 }
 
 /** Exposed for the tests: the chunks a paragraph is made of. */

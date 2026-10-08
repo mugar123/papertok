@@ -269,11 +269,6 @@ export function mergePreparedPayload({ header, byRawId, requestIds }, existing, 
   return { payload, listCount: ids.length, skipped };
 }
 
-/** The two halves back together, for a caller that has both at once. */
-export function buildMergedPayload(body, existing, membership) {
-  return mergePreparedPayload(prepareMergeInput(body), existing, membership);
-}
-
 /**
  * The showcase (F12): `profileLists/{uid}`, the one document a profile's
  * Listas tab reads. Only this Worker writes it — `firestore.rules` refuses

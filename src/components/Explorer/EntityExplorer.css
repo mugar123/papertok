@@ -1369,8 +1369,7 @@
 .explorer-skeleton .ex-skel-strip .ex-skel:nth-child(3)::after { animation-delay: 0.15s; }
 .explorer-skeleton .ex-skel-strip .ex-skel:nth-child(4)::after { animation-delay: 0.18s; }
 .explorer-skeleton .ehc-stats-grid .ex-skel::after { animation-delay: 0.21s; }
-.explorer-skeleton .ex-skel-follow::after,
-.explorer-skeleton .ex-skel-meta::after { animation-delay: 0.24s; }
+.explorer-skeleton .ex-skel-follow::after { animation-delay: 0.24s; }
 .explorer-skeleton .orcid-skeleton .ex-skel::after { animation-delay: 0.27s; }
 .explorer-skeleton .ex-skel-tab::after { animation-delay: 0.3s; }
 .explorer-skeleton .ex-skel-search::after { animation-delay: 0.33s; }
@@ -1397,7 +1396,6 @@
 
 /* The chrome that always arrives, at the heights it arrives at, so the list
    below does not move when it does. */
-.ex-skel-meta { width: 34%; height: 13px; }
 .ex-skel-tab { width: 58px; height: 15px; }
 /* The strip stands as tall as the live one — 40px, a tab's 10px of padding
    either side of its label plus the 3px rule — with the shapes in its middle.
@@ -2882,17 +2880,5 @@
   .ee-filter-apply:active:not(:disabled),
   .ee-tab:active:not(:disabled) {
     transform: none;
-  }
-}
-
-.eli-header-inst-link {
-  cursor: pointer;
-  transition: opacity var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .eli-header-inst-link:hover {
-    opacity: 0.8;
-    text-decoration: underline;
   }
 }
