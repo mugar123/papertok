@@ -168,6 +168,32 @@ This keeps the main application lightweight while allowing integrations that req
 
 ## Running PaperTok locally
 
+### With Docker (no local Node.js installation)
+
+With Docker running and Docker Compose 2.32 or newer, run from the cloned repository:
+
+```bash
+docker compose up --build --watch dev
+```
+
+Open http://localhost:5173. Firebase Authentication and Firestore run locally with the
+isolated `demo-papertok` project; inspect test data at http://localhost:4000. Use the
+Google sign-in button to create a fictitious account in the emulator's popup.
+Source edits are synced for Vite's live reload; dependencies stay inside Docker.
+The Worker is not included, so AI and publishing lists are unavailable in this setup.
+In another terminal, run the pre-PR checks:
+
+```bash
+docker compose run --build --rm check
+docker compose run --build --rm rules
+```
+
+Stop with Ctrl+C, then `docker compose down --remove-orphans`. See the
+[Docker development guide](docs/DEVELOPMENT.md#docker-development-and-checks) for configuration,
+individual checks, cleanup, and Firebase/Worker limitations.
+
+### With local Node.js
+
 Clone the repository:
 
 ```bash

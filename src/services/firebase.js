@@ -6,8 +6,9 @@
 export const IS_DEMO = false;
 
 import { initializeApp } from 'firebase/app';
-import { getAuth, GithubAuthProvider, GoogleAuthProvider } from 'firebase/auth';
-import { disableNetwork, enableNetwork, getFirestore } from 'firebase/firestore';
+import { connectAuthEmulator, getAuth, GithubAuthProvider, GoogleAuthProvider } from 'firebase/auth';
+import { connectFirestoreEmulator, disableNetwork, enableNetwork, getFirestore } from 'firebase/firestore';
+import { firebaseEmulatorConfig, LOCAL_AUTH_URL } from '../utils/firebaseEmulator.js';
 import { isOffline, registerStallRecovery } from '../utils/boundedRead.js';
 import { createStreamRecovery } from '../utils/streamRecovery.js';
 
@@ -32,8 +33,10 @@ const firebaseConfig = {
   // so leaving the id here would only invite that import back.
 };
 
-const app = initializeApp(firebaseConfig);
+const emulatorConfig = firebaseEmulatorConfig(import.meta.env);
+const app = initializeApp(emulatorConfig || firebaseConfig);
 const auth = getAuth(app);
+if (emulatorConfig) connectAuthEmulator(auth, LOCAL_AUTH_URL);
 const googleProvider = new GoogleAuthProvider();
 const githubProvider = new GithubAuthProvider();
 // `user:email` is requested on purpose (F5). Without it GitHub only hands over
@@ -49,6 +52,7 @@ githubProvider.addScope('user:email');
 // fatal internal assertion. PaperTok already keeps its bounded feed snapshot
 // separately, so database persistence is unnecessary here.
 const db = getFirestore(app);
+if (emulatorConfig) connectFirestoreEmulator(db, 'localhost', 8080);
 
 // The one listen stream every SDK read rides can die under a live client and
 // the SDK will never notice (utils/streamRecovery.js: 96 s unanswered,

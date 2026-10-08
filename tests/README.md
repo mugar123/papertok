@@ -21,6 +21,10 @@ because it needs the emulator and would otherwise fail in environments without
 one. If `FIRESTORE_EMULATOR_HOST` is unset the file throws rather than
 reporting a pass without evaluating a single rule.
 
+With Docker, run `docker compose run --build --rm rules` from the repository root.
+Java and the Firebase CLI are included in the image; this starts a separate emulator
+without changing users or lists in the development environment.
+
 ## Requirements
 
 The emulator needs a JRE (Java 11+). On this machine it was installed with:
@@ -54,3 +58,15 @@ Both were found by running this suite, not by reading documentation:
 
 If a change to `firestore.rules` makes `FIX A: the cap sits below the expression
 budget, not on it` fail, the pinned-list cap has to come down.
+
+## Docker integration smoke test
+
+With `docker compose up --build --watch dev` running, execute:
+
+```bash
+docker compose exec -T dev node tests/firebaseEmulator.smoke.mjs
+```
+
+This checks local signup, private-list writes/reads through the SDK, reads through REST,
+and denial of anonymous access. It cleans up its own account and list, and only targets
+the `demo-papertok` project in Docker. It is outside `npm test` because it needs emulators.

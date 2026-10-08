@@ -167,3 +167,12 @@ links are loaded only for papers whose normalized provenance includes Hugging Fa
   not exist yet. The rule above is about changing a route both sides already use.
 - Firestore rules are deployed explicitly with
   `npx --yes firebase-tools@15.26.0 deploy --only firestore:rules --project papertok-168df`.
+
+## Local Docker development
+
+`compose.yaml` runs Vite with Firebase Auth and Firestore emulators under the fixed
+`demo-papertok` project. The development-only `VITE_USE_FIREBASE_EMULATORS` flag redirects
+both SDK traffic and the frontend Firestore REST client. Production Firebase configuration
+and Worker behavior are unchanged. The Worker is not part of this environment; see
+[the development guide](DEVELOPMENT.md#docker-development-and-checks) for supported flows,
+local ports, test commands, and reset behavior.

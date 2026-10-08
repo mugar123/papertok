@@ -1,0 +1,71 @@
+x-local-environment: &local-environment
+  VITE_PAPER_API_BASE_URL: http://localhost:8787
+  VITE_REPORT_API_URL: http://localhost:8787
+  VITE_SCOPUS_ENABLED: "false"
+  VITE_UNPAYWALL_EMAIL: ${VITE_UNPAYWALL_EMAIL:-you@example.com}
+  WRANGLER_SEND_METRICS: "false"
+
+services:
+  dev:
+    build:
+      context: .
+      target: development
+    init: true
+    ports:
+      - "127.0.0.1:${PAPERTOK_PORT:-5173}:5173"
+    environment:
+      <<: *local-environment
+      VITE_USE_FIREBASE_EMULATORS: "true"
+    depends_on:
+      firebase:
+        condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: .
+          target: /app
+          initial_sync: true
+          ignore:
+            - package.json
+            - package-lock.json
+            - Dockerfile
+            - compose.yaml
+        - action: rebuild
+          path: package.json
+        - action: rebuild
+          path: package-lock.json
+        - action: rebuild
+          path: Dockerfile
+
+  check:
+    build:
+      context: .
+      target: development
+    init: true
+    profiles: ["test"]
+    environment: *local-environment
+    command: ["npm", "run", "check"]
+
+  firebase:
+    build:
+      context: .
+      target: emulators
+    init: true
+    ports:
+      - "127.0.0.1:4000:4000"
+      - "127.0.0.1:9099:9099"
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4400/emulators').then(r=>r.json()).then(e=>{if(!e.auth||!e.firestore)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      start_period: 30s
+      retries: 30
+
+  rules:
+    build:
+      context: .
+      target: emulators
+    init: true
+    profiles: ["test"]
+    command: ["npm", "run", "test:rules"]
