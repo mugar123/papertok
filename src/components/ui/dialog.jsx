@@ -27,10 +27,6 @@ function Dialog(props) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />;
 }
 
-function DialogTrigger(props) {
-  return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />;
-}
-
 function DialogPortal(props) {
   return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />;
 }
@@ -96,20 +92,6 @@ function DialogContent({ className, children, showClose = true, showCloseButton,
   );
 }
 
-function DialogHeader({ className, ...props }) {
-  return <div data-slot="dialog-header" className={cn('flex flex-col gap-1 text-left', className)} {...props} />;
-}
-
-function DialogFooter({ className, ...props }) {
-  return (
-    <div
-      data-slot="dialog-footer"
-      className={cn('flex flex-wrap items-center justify-end gap-2', className)}
-      {...props}
-    />
-  );
-}
-
 /* Prose is serif (design.md, rule 1): a dialog's headline reads like one. */
 function DialogTitle({ className, ...props }) {
   return (
@@ -136,10 +118,7 @@ export {
   DialogClose,
   DialogContent,
   DialogDescription,
-  DialogFooter,
-  DialogHeader,
   DialogOverlay,
   DialogPortal,
   DialogTitle,
-  DialogTrigger,
 };

@@ -11,10 +11,6 @@ function AlertDialog(props) {
   return <AlertDialogPrimitive.Root data-slot="alert-dialog" {...props} />;
 }
 
-function AlertDialogTrigger(props) {
-  return <AlertDialogPrimitive.Trigger data-slot="alert-dialog-trigger" {...props} />;
-}
-
 function AlertDialogPortal(props) {
   return <AlertDialogPrimitive.Portal data-slot="alert-dialog-portal" {...props} />;
 }
@@ -54,20 +50,6 @@ function AlertDialogContent({ className, overlayClassName, ...props }) {
   );
 }
 
-function AlertDialogHeader({ className, ...props }) {
-  return <div data-slot="alert-dialog-header" className={cn('flex flex-col gap-1 text-left', className)} {...props} />;
-}
-
-function AlertDialogFooter({ className, ...props }) {
-  return (
-    <div
-      data-slot="alert-dialog-footer"
-      className={cn('flex flex-wrap items-center justify-end gap-2', className)}
-      {...props}
-    />
-  );
-}
-
 function AlertDialogTitle({ className, ...props }) {
   return (
     <AlertDialogPrimitive.Title
@@ -88,18 +70,7 @@ function AlertDialogDescription({ className, ...props }) {
   );
 }
 
-/* Both buttons are Close parts: the difference is which one the caller
-   wires an action to. `variant` passes through to the shared Button. */
-function AlertDialogAction({ variant = 'default', ...props }) {
-  return (
-    <AlertDialogPrimitive.Close
-      data-slot="alert-dialog-action"
-      render={<Button variant={variant} />}
-      {...props}
-    />
-  );
-}
-
+/* `variant` passes through to the shared Button. */
 function AlertDialogCancel({ variant = 'outline', ...props }) {
   return (
     <AlertDialogPrimitive.Close
@@ -112,14 +83,10 @@ function AlertDialogCancel({ variant = 'outline', ...props }) {
 
 export {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
   AlertDialogOverlay,
   AlertDialogPortal,
   AlertDialogTitle,
-  AlertDialogTrigger,
 };

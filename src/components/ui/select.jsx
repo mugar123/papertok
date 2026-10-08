@@ -10,10 +10,6 @@ import { cn } from '../../lib/utils.js';
  */
 const Select = SelectPrimitive.Root;
 
-function SelectGroup({ className, ...props }) {
-  return <SelectPrimitive.Group data-slot="select-group" className={cn('scroll-my-1 p-1', className)} {...props} />;
-}
-
 function SelectValue({ className, ...props }) {
   return <SelectPrimitive.Value data-slot="select-value" className={cn('flex flex-1 truncate text-left', className)} {...props} />;
 }
@@ -83,16 +79,6 @@ function SelectContent({
   );
 }
 
-function SelectLabel({ className, ...props }) {
-  return (
-    <SelectPrimitive.GroupLabel
-      data-slot="select-label"
-      className={cn('px-2 py-1.5 font-mono text-[0.6875rem] font-semibold uppercase tracking-[var(--mono-track)] text-[var(--text-tertiary)]', className)}
-      {...props}
-    />
-  );
-}
-
 function SelectItem({ className, children, ...props }) {
   return (
     <SelectPrimitive.Item
@@ -113,14 +99,4 @@ function SelectItem({ className, children, ...props }) {
   );
 }
 
-function SelectSeparator({ className, ...props }) {
-  return (
-    <SelectPrimitive.Separator
-      data-slot="select-separator"
-      className={cn('pointer-events-none -mx-1 my-1 h-px bg-border', className)}
-      {...props}
-    />
-  );
-}
-
-export { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue };
+export { Select, SelectContent, SelectItem, SelectTrigger, SelectValue };

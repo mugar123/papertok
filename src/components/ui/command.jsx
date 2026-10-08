@@ -191,14 +191,6 @@ function CommandItem({ className, ...props }) {
   );
 }
 
-function CommandSeparator({ className, ...props }) {
-  return <CommandPrimitive.Separator className={cn('-mx-1 h-px bg-border', className)} {...props} />;
-}
-
-function CommandLoading(props) {
-  return <CommandPrimitive.Loading {...props} />;
-}
-
 export {
   Command,
   CommandDialog,
@@ -207,6 +199,4 @@ export {
   CommandInput,
   CommandItem,
   CommandList,
-  CommandLoading,
-  CommandSeparator,
 };

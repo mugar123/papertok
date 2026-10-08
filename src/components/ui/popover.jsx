@@ -64,37 +64,9 @@ function PopoverContent({
   );
 }
 
-function PopoverHeader({ className, ...props }) {
-  return <div data-slot="popover-header" className={cn('flex flex-col gap-0.5', className)} {...props} />;
-}
-
-/* A popover's title is a section label: mono, tracked, uppercase. */
-function PopoverTitle({ className, ...props }) {
-  return (
-    <PopoverPrimitive.Title
-      data-slot="popover-title"
-      className={cn('font-mono text-[0.6875rem] font-semibold uppercase tracking-[var(--mono-track)] text-[var(--text-tertiary)]', className)}
-      {...props}
-    />
-  );
-}
-
-function PopoverDescription({ className, ...props }) {
-  return (
-    <PopoverPrimitive.Description
-      data-slot="popover-description"
-      className={cn('text-muted-foreground', className)}
-      {...props}
-    />
-  );
-}
-
 export {
   Popover,
   PopoverClose,
   PopoverContent,
-  PopoverDescription,
-  PopoverHeader,
-  PopoverTitle,
   PopoverTrigger,
 };

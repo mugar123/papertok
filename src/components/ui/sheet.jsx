@@ -16,10 +16,6 @@ function Sheet(props) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />;
 }
 
-function SheetTrigger(props) {
-  return <SheetPrimitive.Trigger data-slot="sheet-trigger" {...props} />;
-}
-
 function SheetClose(props) {
   return <SheetPrimitive.Close data-slot="sheet-close" {...props} />;
 }
@@ -107,20 +103,6 @@ function SheetContent({
   );
 }
 
-function SheetHeader({ className, ...props }) {
-  return <div data-slot="sheet-header" className={cn('flex flex-col gap-1 p-5 pb-3', className)} {...props} />;
-}
-
-function SheetFooter({ className, ...props }) {
-  return (
-    <div
-      data-slot="sheet-footer"
-      className={cn('mt-auto flex flex-wrap items-center justify-end gap-2 border-t border-border p-4', className)}
-      {...props}
-    />
-  );
-}
-
 function SheetTitle({ className, ...props }) {
   return (
     <SheetPrimitive.Title
@@ -131,25 +113,11 @@ function SheetTitle({ className, ...props }) {
   );
 }
 
-function SheetDescription({ className, ...props }) {
-  return (
-    <SheetPrimitive.Description
-      data-slot="sheet-description"
-      className={cn('text-[0.8125rem] leading-relaxed text-muted-foreground', className)}
-      {...props}
-    />
-  );
-}
-
 export {
   Sheet,
   SheetClose,
   SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
   SheetOverlay,
   SheetPortal,
   SheetTitle,
-  SheetTrigger,
 };
