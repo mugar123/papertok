@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node --test --experimental-strip-types src/**/*.test.ts src/*.test.ts"
+    "test": "node --test --experimental-strip-types src/**/*.test.ts src/*.test.ts",
+    "loop:sound": "node --experimental-strip-types scripts/loop-sound.mjs",
+    "loop:studio": "npm run loop:sound && remotion studio",
+    "loop:render": "npm run loop:sound && remotion render Loop out/papertok-loop-video.mp4 --codec h264 --crf 16 --muted && remotion ffmpeg -y -loglevel error -i out/papertok-loop-video.mp4 -i public/audio/papertok-loop.wav -map 0:v -map 1:a -c:v copy -c:a aac -b:a 256k -t 15 -movflags +faststart out/papertok-loop.mp4"
   },
   "keywords": [],
   "author": "",
