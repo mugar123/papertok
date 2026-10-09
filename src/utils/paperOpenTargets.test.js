@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { openFirstTarget, openTargetsForPaper, pdfLinksForPaper } from './paperOpenTargets.js';
+import { openFirstTarget, openTargetsForPaper, pdfLinksForPaper, pdfRelayUrl } from './paperOpenTargets.js';
 
 test('ordena los destinos: la copia abierta manda, y el DOI nunca entra', () => {
   const targets = openTargetsForPaper({
@@ -63,6 +63,7 @@ test('separa el PDF que existe del PDF que se puede enmarcar', () => {
   assert.deepEqual(pdfLinksForPaper({ pdfUrl: 'https://europepmc.org/articles/PMC1?pdf=render' }), {
     fullTextUrl: 'https://europepmc.org/articles/PMC1?pdf=render',
     embedUrl: '',
+    relaySourceUrl: 'https://europepmc.org/articles/PMC1?pdf=render',
   });
 
   assert.deepEqual(pdfLinksForPaper({
@@ -71,9 +72,27 @@ test('separa el PDF que existe del PDF que se puede enmarcar', () => {
   }), {
     fullTextUrl: 'https://europepmc.org/articles/PMC1?pdf=render',
     embedUrl: 'https://arxiv.org/pdf/2101.00001',
+    relaySourceUrl: 'https://europepmc.org/articles/PMC1?pdf=render',
   });
 
-  assert.deepEqual(pdfLinksForPaper({}), { fullTextUrl: '', embedUrl: '' });
+  assert.deepEqual(pdfLinksForPaper({}), { fullTextUrl: '', embedUrl: '', relaySourceUrl: '' });
+});
+
+// El visor táctil dibuja las páginas desde el reenvío del Worker, que solo
+// acepta los hosts de las rutas de IA: un PDF de otro sitio no tiene reenvío.
+test('el reenvío del PDF solo existe para los hosts que el Worker acepta', () => {
+  assert.equal(
+    pdfLinksForPaper({ pdfUrl: 'https://publisher.example/p.pdf', arxivId: '2101.00001' }).relaySourceUrl,
+    'https://arxiv.org/pdf/2101.00001',
+  );
+  assert.equal(pdfLinksForPaper({ pdfUrl: 'https://publisher.example/p.pdf' }).relaySourceUrl, '');
+
+  assert.equal(
+    pdfRelayUrl('https://arxiv.org/pdf/2101.00001v2', 'https://api.papertok.app/'),
+    'https://api.papertok.app/pdf?url=https%3A%2F%2Farxiv.org%2Fpdf%2F2101.00001v2',
+  );
+  assert.equal(pdfRelayUrl('https://publisher.example/p.pdf', 'https://api.papertok.app'), '');
+  assert.equal(pdfRelayUrl('https://arxiv.org/pdf/2101.00001', ''), '');
 });
 
 test('avisa de que no abrió nada cuando ningún destino responde', () => {

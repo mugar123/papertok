@@ -2975,3 +2975,105 @@ test('a profile page reads the public documents anonymously, as a visitor would'
   assert.equal(reads.length, 2);
   assert.equal(reads.every(entry => entry.authorization === null), true, 'no credential: the rules decide as for anyone');
 });
+
+// The PDF relay behind the touch-screen viewer. It must stay a relay for the
+// hosts the AI routes already read, never a general proxy.
+const PDF_BYTES = new TextEncoder().encode('%PDF-1.7\n%fake\n');
+const pdfRelay = (target, env, upstream, origin = 'https://mugar123.github.io') => withWorkerFetchMock(
+  upstream,
+  () => reportApi.fetch(new Request(
+    `https://papertok-report-api.example/pdf?url=${encodeURIComponent(target)}`,
+    { headers: origin ? { origin } : {} },
+  ), env),
+);
+const pdfUpstream = calls => async (url) => {
+  calls.push(String(url));
+  return new Response(PDF_BYTES, { headers: { 'content-type': 'application/pdf' } });
+};
+
+test('relays an arXiv PDF to the app with CORS and an edge-cacheable answer', async () => {
+  const calls = [];
+  const response = await pdfRelay(
+    'https://arxiv.org/pdf/2601.00001',
+    { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger({ actions: [] }) },
+    pdfUpstream(calls),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'application/pdf');
+  assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
+  assert.match(response.headers.get('cache-control'), /s-maxage=86400/);
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), PDF_BYTES);
+  assert.deepEqual(calls, ['https://arxiv.org/pdf/2601.00001']);
+});
+
+test('refuses to relay a PDF from a host outside the allowlist, without fetching it', async () => {
+  const calls = [];
+  for (const target of ['https://evil.example/paper.pdf', 'http://arxiv.org/pdf/2601.00001', 'not a url']) {
+    const response = await pdfRelay(target, { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger({ actions: [] }) }, pdfUpstream(calls));
+    assert.equal(response.status, 400, target);
+    assert.equal((await response.json()).code, 'PDF_HOST_NOT_ALLOWED');
+  }
+  assert.equal(calls.length, 0);
+});
+
+test('refuses a PDF relay request without the app as its origin', async () => {
+  const calls = [];
+  for (const origin of ['', 'https://evil.example']) {
+    const response = await pdfRelay(
+      'https://arxiv.org/pdf/2601.00001',
+      { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger({ actions: [] }) },
+      pdfUpstream(calls),
+      origin,
+    );
+    assert.equal(response.status, 403, origin || '(no origin)');
+  }
+  assert.equal(calls.length, 0);
+});
+
+test('does not follow a redirect off the PDF allowlist', async () => {
+  const calls = [];
+  const response = await pdfRelay(
+    'https://arxiv.org/pdf/2601.00001',
+    { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger({ actions: [] }) },
+    async (url) => {
+      calls.push(String(url));
+      return new Response(null, { status: 302, headers: { location: 'https://evil.example/x.pdf' } });
+    },
+  );
+
+  assert.equal(response.status, 502);
+  assert.deepEqual(calls, ['https://arxiv.org/pdf/2601.00001']);
+});
+
+test('refuses to relay an answer that is not a PDF', async () => {
+  const response = await pdfRelay(
+    'https://arxiv.org/pdf/2601.00001',
+    { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger({ actions: [] }) },
+    async () => new Response('<html>captcha</html>', { headers: { 'content-type': 'text/html' } }),
+  );
+
+  assert.equal(response.status, 415);
+  assert.equal((await response.json()).reason, 'not_pdf');
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+});
+
+test('a PDF relay miss is refused with 429 when the shared minute ceiling is spent, without fetching', async () => {
+  const calls = [];
+  const response = await pdfRelay(
+    'https://arxiv.org/pdf/2601.00001',
+    { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger({ actions: [] }, { refuse: key => key.startsWith('pdf:') }) },
+    pdfUpstream(calls),
+  );
+
+  assert.equal(response.status, 429);
+  assert.equal(calls.length, 0);
+});
+
+test('a PDF relay closes when there is no ledger to bound it', async () => {
+  const calls = [];
+  const response = await pdfRelay('https://arxiv.org/pdf/2601.00001', {}, pdfUpstream(calls));
+
+  assert.equal(response.status, 503);
+  assert.equal(calls.length, 0);
+});

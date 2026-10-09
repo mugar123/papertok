@@ -1,10 +1,15 @@
-import { useEffect, useImperativeHandle, useMemo, useState, useRef, useCallback } from 'react';
+import { lazy, Suspense, useEffect, useImperativeHandle, useMemo, useState, useRef, useCallback } from 'react';
 import { useFeed } from '../../context/FeedContext';
 import { ArrowSquareOut, X } from '@phosphor-icons/react';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.jsx';
 import './PDFViewer.css';
 import { safeDoiUrl } from '../../utils/externalUrl.js';
-import { pdfLinksForPaper } from '../../utils/paperOpenTargets.js';
+import { pdfLinksForPaper, pdfRelayUrl } from '../../utils/paperOpenTargets.js';
+
+// pdf.js is about 1.8 MB with its worker, and only a touch screen draws pages
+// itself: a desktop never downloads it.
+const PdfPages = lazy(() => import('./PdfPages.jsx'));
+const PAPER_API_BASE_URL = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
 
 /**
  * A full-screen Base UI Dialog (ui/dialog.jsx). App.jsx mounts the viewer and
@@ -22,18 +27,25 @@ export default function PDFViewer({ paper, onClose, closeRef = null }) {
   // Que exista un PDF y que se pueda enmarcar son dos preguntas distintas, y
   // fundirlas hacía que el visor negara un PDF que tenía delante. `fullTextUrl`
   // es el que hay; `pdfUrl`, el que además admite el iframe.
-  const { fullTextUrl, embedUrl: pdfUrl } = pdfLinksForPaper(paper);
+  const { fullTextUrl, embedUrl: pdfUrl, relaySourceUrl } = pdfLinksForPaper(paper);
 
   // The embedded route is a desktop privilege. Framed PDFs are crippled on
   // every touch platform: iOS Safari paints only the FIRST page of a PDF
   // inside an iframe and refuses to scroll it (reported from a real iPhone,
   // 2026-08-29), and Android Chrome does not render framed PDFs at all. On a
-  // coarse pointer the viewer hands off to the browser's own full viewer in
-  // a new tab, where paging actually works, instead of pretending.
+  // coarse pointer the viewer draws the pages itself with pdf.js instead
+  // (PdfPages.jsx), from the Worker's relay — arXiv and Europe PMC send no
+  // CORS headers — so a phone reads the paper inside PaperTok, as a desktop
+  // does (2026-10-09). A PDF the relay does not take, or one it fails to
+  // deliver, still gets the hand-off to the browser's own viewer.
   const coarsePointer = useMemo(() => {
     try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
   }, []);
   const canEmbed = Boolean(pdfUrl) && !coarsePointer;
+  const relayUrl = coarsePointer ? pdfRelayUrl(relaySourceUrl, PAPER_API_BASE_URL) : '';
+  const [relayFailed, setRelayFailed] = useState(false);
+  const drawsPages = Boolean(relayUrl) && !relayFailed;
+  const handleRelayUnavailable = useCallback(() => setRelayFailed(true), []);
 
   const { trackPdfBounce } = useFeed();
   const startTimeRef = useRef(null);
@@ -81,7 +93,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }) {
 
   // Fallback timeout
   useEffect(() => {
-    if (!pdfUrl) return undefined;
+    if (!canEmbed) return undefined;
     const fallbackTimer = setTimeout(() => {
       if (!iframeLoaded) setShowFallback(true);
     }, 8000);
@@ -89,7 +101,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }) {
     return () => {
       clearTimeout(fallbackTimer);
     };
-  }, [iframeLoaded, pdfUrl]);
+  }, [iframeLoaded, canEmbed]);
 
   return (
     <Dialog
@@ -135,12 +147,28 @@ export default function PDFViewer({ paper, onClose, closeRef = null }) {
             </div>
           )}
 
-          {/* Touch hand-off: the full PDF, in the one viewer that can page it */}
-          {pdfUrl && coarsePointer && (
-            <div className="pdf-fallback pdf-handoff">
-              <p>{'On a phone, the embedded viewer can only show the first page — the full PDF opens in its own tab.'}</p>
-              <a href={pdfUrl} target="_blank" rel="noopener noreferrer" className="pdf-fallback-link">
+          {/* Touch: the pages, drawn here */}
+          {drawsPages && (
+            <Suspense fallback={(
+              <div className="pdf-loading">
+                <div className="pdf-loading-spinner" />
+                <p>{'Loading PDF...'}</p>
+              </div>
+            )}>
+              <PdfPages src={relayUrl} title={paper.title} onUnavailable={handleRelayUnavailable} />
+            </Suspense>
+          )}
+
+          {/* Touch hand-off: a PDF exists but cannot be drawn here, so the
+              browser's own viewer, the one that can page it, gets it. */}
+          {coarsePointer && !drawsPages && fullTextUrl && (
+            <div className="pdf-fallback pdf-handoff" role="status">
+              <p>{relayFailed
+                ? 'The PDF could not be loaded in the app.'
+                : 'This PDF is hosted somewhere PaperTok cannot display it on a phone.'}</p>
+              <a href={fullTextUrl} target="_blank" rel="noopener noreferrer" className="pdf-fallback-link">
                 {'Open the full PDF →'}
+                <span className="visually-hidden"> (opens in a new tab)</span>
               </a>
             </div>
           )}
@@ -148,7 +176,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }) {
           {/* Fallback message. On touch it still owns the no-PDF case — the
               hand-off card above only ever replaces it when there IS a PDF to
               hand off. */}
-          {shouldShowFallback && !(coarsePointer && pdfUrl) && !iframeLoaded && (
+          {shouldShowFallback && !(coarsePointer && fullTextUrl) && !iframeLoaded && (
             <div className="pdf-fallback">
               <p>{!fullTextUrl
                 ? ('No open-access PDF is available.')

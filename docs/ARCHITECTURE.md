@@ -130,6 +130,7 @@ The Worker entry point is `worker/report-api.js`. Its route groups include:
 - comment threads: `/thread-anchor` (KV-cached stub + first page at the edge; HTTP `no-store` so a write's KV delete is the invalidation; `POST /thread-anchor/invalidate` after a create, edit or delete)
 - account deletion: `/account/delete` (Firebase identity, service-account Firestore walk, newsletter KV, Auth last; retryable 202 slices)
 - discovery: `/report/trends`, `/related`, `/citation-graph`, `/arxiv`
+- reading: `/pdf` (relays arXiv and Europe PMC/PMC PDFs to the touch-screen viewer, `src/components/PDF/PdfPages.jsx`)
 - open access: `/oa` (Unpaywall first; for a DOI Unpaywall has not indexed yet, the Crossref
   licence on the version of record, answered in Unpaywall's shape with `source: 'crossref'`; a
   DOI neither can answer for is `source: 'unresolved'`, cached six hours; an upstream outage is a

@@ -4,7 +4,6 @@ import { AnimatePresence } from 'framer-motion'
 import PageTransition from './components/Layout/PageTransition'
 import { PageTransitionCustomProvider, usePageTransitionCustom } from './hooks/usePageTransitionCustom'
 import { useOverlayHistory } from './hooks/useOverlayHistory.js'
-import { safeExternalUrl } from './utils/externalUrl.js'
 import { INITIAL_ACCOUNT_SCOPE, accountScopeKey, nextAccountScope } from './utils/accountScope.js'
 import { clearAuthReturn, isInAppPath, offerAuthReturn, takeAuthReturn } from './utils/authReturn.js'
 import RouteFallback from './components/Layout/RouteFallback'
@@ -99,26 +98,12 @@ function AppContent() {
     else setPdfPaper(null)
   }, [])
   useOverlayHistory(Boolean(pdfPaper), requestPdfClose, 'pdf')
-  // On a coarse pointer, "open the PDF" means the browser's own viewer in a
-  // new tab, straight away: framed PDFs are crippled on every touch platform
-  // (iOS paints only the first page; Android Chrome renders nothing), and the
-  // hand-off card the overlay showed instead was one tap of ceremony nobody
-  // asked for (2026-08-29). The overlay stays the desktop route, and the
-  // fallthrough (no usable URL, or no matchMedia) still mounts it — its own
-  // hand-off card is the belt to this suspender.
-  const openPdf = useCallback((paper) => {
-    try {
-      if (window.matchMedia('(pointer: coarse)').matches) {
-        const candidate = paper.pdfUrl || (paper.arxivId ? `https://arxiv.org/pdf/${paper.arxivId}` : '')
-        const url = safeExternalUrl(candidate)
-        // `window.open` answers null when a popup blocker eats it; falling
-        // through to the overlay then still gives the reader its hand-off
-        // link instead of a tap that visibly did nothing.
-        if (url && window.open(url, '_blank', 'noopener')) return
-      }
-    } catch { /* matchMedia absence falls through to the overlay */ }
-    setPdfPaper(paper)
-  }, [])
+  // Every pointer opens the PDF here, in the viewer. A touch screen used to be
+  // sent to the browser's viewer in a new tab, because a framed PDF is
+  // crippled there (2026-08-29); the viewer now draws the pages itself on a
+  // touch screen (PdfPages.jsx), so the paper stays in PaperTok on a phone as
+  // it does on a desktop (2026-10-09).
+  const openPdf = setPdfPaper
   const [saveModalPaper, setSaveModalPaper] = useState(null)
   // The comment sheet is hosted here, next to the PDF viewer and the save
   // modal, for the same reason those are: the feed hands over a paper and

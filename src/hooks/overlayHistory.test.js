@@ -273,17 +273,10 @@ test('SOURCE: el visor de PDF de App usa useOverlayHistory con el tag pdf', asyn
   assert.match(armedBody, /setPdfPaper\(null\)/, 'con el desmontaje solo como respaldo mientras el chunk perezoso no ha montado');
   assert.match(code, /<PDFViewer paper=\{pdfPaper\} closeRef=\{pdfCloseRef\}/, 'y el visor tiene que recibir ese mismo ref');
 
-  // Critical point 3: on a coarse pointer, openPdf hands off to a new tab and
-  // returns WITHOUT touching pdfPaper — it must arm nothing. Pin that the
-  // early return still precedes the only setPdfPaper call in the function.
-  const openPdfBody = code.match(/const openPdf = useCallback\(\(paper\) => \{[\s\S]*?\n {2}\}, \[\]\)/);
-  assert.ok(openPdfBody, 'openPdf must still have this shape');
-  const body = openPdfBody[0];
-  const setCalls = body.match(/setPdfPaper\(/g) || [];
-  assert.equal(setCalls.length, 1, 'openPdf must call setPdfPaper exactly once');
-  const returnIndex = body.indexOf('if (url && window.open(url, \'_blank\', \'noopener\')) return');
-  const setIndex = body.indexOf('setPdfPaper(');
-  assert.ok(returnIndex > -1 && setIndex > returnIndex, 'the coarse-pointer hand-off must return before setPdfPaper is ever reached');
+  // Critical point 3: since 2026-10-09 every pointer opens the viewer (a
+  // touch screen draws the pages itself, PdfPages.jsx), so every open arms
+  // the history entry. No branch may leave the app without setting pdfPaper.
+  assert.match(code, /const openPdf = setPdfPaper\b/, 'openPdf is the setter: every open mounts the viewer');
 });
 
 test('SOURCE: el visor de PDF propio de EntityExplorer usa useOverlayHistory con el tag pdf', async () => {

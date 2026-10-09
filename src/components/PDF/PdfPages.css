@@ -1,0 +1,104 @@
+/* The touch-screen pages of PDFViewer (PdfPages.jsx): the paper drawn by
+   pdf.js, one page under another, scrolled inside the viewer. */
+.pdf-pages {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) calc(var(--space-6) + env(safe-area-inset-bottom));
+  background: var(--bg-secondary);
+}
+
+.pdf-pages:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -2px;
+}
+
+/* A page is white paper whichever theme the app is in: the PDF draws its own
+   ink, usually black, and assumes a white sheet under it. */
+.pdf-page {
+  position: relative;
+  flex-shrink: 0;
+  width: 100%;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  /* pdf.js sizes the text layer with these (setLayerDimensions). */
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+}
+
+.pdf-page-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.pdf-page-canvas.is-drawn {
+  opacity: 1;
+}
+
+/* pdf.js's own text-layer rules (web/pdf_viewer.css), trimmed to what a
+   reading view uses: transparent text laid exactly over the drawing, so it can
+   be selected and read by a screen reader. */
+.pdf-page .textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  letter-spacing: normal;
+  word-spacing: normal;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.pdf-page .textLayer :is(span, br) {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.pdf-page .textLayer > :not(.markedContent),
+.pdf-page .textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.pdf-page .textLayer .markedContent {
+  display: contents;
+}
+
+.pdf-page .textLayer ::selection {
+  background: rgba(0, 0, 255, 0.25);
+  color: transparent;
+}
+
+.pdf-page .textLayer br::selection {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdf-page-canvas {
+    transition: none;
+  }
+}

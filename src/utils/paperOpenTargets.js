@@ -18,6 +18,7 @@
  * agotado el texto completo y de haber preguntado por una copia libre.
  */
 import { isTrustedInlinePdfUrl, safeExternalUrl } from './externalUrl.js';
+import { isAIReadablePdfUrl } from './aiExplanationAccess.js';
 
 function arxivPdfUrl(arxivId) {
   const id = String(arxivId || '').trim();
@@ -41,7 +42,20 @@ export function pdfLinksForPaper(paper) {
   return {
     fullTextUrl: direct || arxiv,
     embedUrl: [direct, arxiv].find(url => url && isTrustedInlinePdfUrl(url)) || '',
+    // El que el Worker accede a reenviar (`GET /pdf`) para que el visor táctil
+    // dibuje las páginas él mismo: los hosts que ya leen las rutas de IA.
+    relaySourceUrl: [direct, arxiv].find(url => url && isAIReadablePdfUrl(url)) || '',
   };
+}
+
+/**
+ * La URL del reenvío del Worker para un PDF, o '' si no hay Worker o el PDF
+ * no es de un host que el Worker acepte.
+ */
+export function pdfRelayUrl(sourceUrl, apiBase) {
+  const base = String(apiBase || '').replace(/\/$/, '');
+  if (!base || !sourceUrl || !isAIReadablePdfUrl(sourceUrl)) return '';
+  return `${base}/pdf?url=${encodeURIComponent(sourceUrl)}`;
 }
 
 /**
