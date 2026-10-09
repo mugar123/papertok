@@ -546,9 +546,13 @@
 }
 
 /* A passage waiting on the menu's answer wears the pen already, so the mark you
-   are about to make is the mark you can already see. */
-.rd-mark--pending {
+   are about to make is the mark you can already see. The pending mark is also
+   a user mark, whose ink is fixed for the saturated pen; on the soft wash,
+   which flips, that ink sat on dark amber in the dark theme. Tripled to beat
+   `.rd-mark--user.rd-mark--user`, which otherwise took the underline away. */
+.rd-mark--pending.rd-mark--pending.rd-mark--pending {
   background: var(--brand-yellow-soft);
+  color: var(--text-on-brand-soft);
   box-shadow: inset 0 -2px 0 var(--brand-yellow);
 }
 
