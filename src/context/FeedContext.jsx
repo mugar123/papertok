@@ -1040,6 +1040,15 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       currentPage = Math.floor(Math.random() * 5);
     }
 
+    const isAvailablePaper = (paper) => (
+      !notInterestedIdsRef.current.has(paper.id)
+      && !readPaperIdsRef.current.has(paper.id)
+      && !likedPaperIdsRef.current.has(paper.id)
+      && !savedPaperIdsRef.current.has(paper.id)
+      && !sessionSeenPapers.current.has(paper.id)
+      && !isKnownPaper(paper.id)
+    );
+
     try {
       let newPapers = [];
       if (activeMode === 'top' || activeMode === null) {
@@ -1154,11 +1163,13 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           const { first, all } = settleSourcesForFirstPaint(
             [arxivProm, pubmedProm, openAlexProm, domainProm],
             FEED_SOURCE_RENDER_BUDGET_MS,
-            (papers) => PaperBuilder.deduplicate(papers).length >= PAGE_SIZE,
+            (papers) => PaperBuilder.deduplicate(papers).filter(isAvailablePaper).length >= PAGE_SIZE,
           );
           let sourceResults = await first;
           mainPapers = PaperBuilder.deduplicate(fulfilledPaperLists(sourceResults));
-          if (mainPapers.length === 0) {
+          // A raw page can mostly contain papers the account already knows.
+          // Let slower sources complete it before publishing a short batch.
+          if (mainPapers.filter(isAvailablePaper).length < PAGE_SIZE) {
             sourceResults = await all;
             mainPapers = PaperBuilder.deduplicate(fulfilledPaperLists(sourceResults));
           } else {
@@ -1381,11 +1392,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
               existing._followedEntityMatches,
               p._followedEntityMatches,
             );
-          } else if (!likedPaperIdsRef.current.has(p.id) &&
-              !savedPaperIdsRef.current.has(p.id) &&
-              !readPaperIdsRef.current.has(p.id) &&
-              !notInterestedIdsRef.current.has(p.id) &&
-              !isKnownPaper(p.id)) {
+          } else {
             uniqueMap.set(p.id, p);
           }
         });
@@ -1397,14 +1404,9 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       }
       if (requestId !== feedRequestId.current) return;
 
-      let filtered = newPapers.filter((p) => 
-        !notInterestedIdsRef.current.has(p.id) && 
-        !readPaperIdsRef.current.has(p.id) &&
-        !likedPaperIdsRef.current.has(p.id) &&
-        !savedPaperIdsRef.current.has(p.id) &&
-        !sessionSeenPapers.current.has(p.id) &&
-        !isKnownPaper(p.id)
-      );
+      // Keep the raw candidates until here: an entirely excluded page still
+      // proves that the provider has results and pagination should continue.
+      let filtered = newPapers.filter(isAvailablePaper);
 
       // If everything was filtered out but we actually fetched papers, it means the user has seen them all.
       // We must fetch the NEXT page automatically.
@@ -1427,9 +1429,11 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           setLoading(false);
           setPage(nextPageToFetch);
           
-          if (requestId === feedRequestId.current && loadPapersRef.current) {
-            setTimeout(() => loadPapersRef.current(false, activeMode, false, nextPageToFetch), 0);
-          }
+          setTimeout(() => {
+            if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId && loadPapersRef.current) {
+              loadPapersRef.current(false, activeMode, false, nextPageToFetch);
+            }
+          }, 0);
           return;
         }
       }
@@ -1604,6 +1608,17 @@ export function FeedProvider({ children, feedRouteActive = true }) {
             return enriched;
           });
         });
+      }
+
+      // A short first screen should fill itself even before the reader reaches
+      // the scroll sentinel. Use the same bounded pagination as excluded pages;
+      // a competing load or reset cancels this scheduled continuation.
+      if (nextPapers.length < PAGE_SIZE && newPapers.length > 0 && currentPage < 10) {
+        setTimeout(() => {
+          if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
+            loadPapersRef.current?.(false, activeMode, false, nextPage);
+          }
+        }, 0);
       }
 
       if (iCitePmids.length > 0) {
