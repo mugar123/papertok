@@ -58,6 +58,22 @@
   animation: pdfViewerOut 0.2s forwards;
 }
 
+/* On a touch screen the viewer leaves the way it came: back down the screen,
+   the arrival played in reverse. Same distance, same 0.3s, and the mirror of
+   its ease-out (ease-in); the veil, which arrives on ease-out too, fades out
+   on ease-in with it. A desktop keeps the quick fade. Both last as long as
+   each other, so the primitive, which waits for the popup's own animation,
+   never unmounts the sheet mid-slide. */
+@media (pointer: coarse) {
+  .pdf-overlay[data-closed] {
+    animation: pdfOverlayOut 0.3s ease-in forwards;
+  }
+
+  .pdf-overlay[data-closed] .pdf-viewer {
+    animation: pdfViewerSlideOut 0.3s ease-in forwards;
+  }
+}
+
 .pdf-topbar {
   display: flex;
   align-items: center;
@@ -244,6 +260,15 @@
   }
   to {
     transform: translateY(0);
+  }
+}
+
+@keyframes pdfViewerSlideOut {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
   }
 }
 
