@@ -1,7 +1,129 @@
-import { useEffect, useReducer } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { getKatex, loadKatex } from '../../utils/katexLoader.js';
 import { displayProse, katexSource } from '../../utils/latex.js';
 import { buildHighlightPlan } from '../../utils/textHighlights.js';
+import {
+  hiddenWidth,
+  inlineMathNeedsScroll,
+  sliderKeyTarget,
+  sliderThumbWidth,
+  sliderValueText,
+} from '../../utils/wideMath.js';
+
+/**
+ * One rendered formula, and the slider it grows when it is wider than the
+ * column (see utils/wideMath.js for why the column cannot just overflow).
+ *
+ * The element carrying `data-math` and the offsets stays the formula itself —
+ * it becomes the scroller — so selection anchoring and the highlight classes
+ * see exactly what they saw before. The wrapper and the slider carry no
+ * offsets and no text, so they are invisible to `anchorFromSelection`.
+ *
+ * The slider is a native range input: it is a keyboard route to the hidden
+ * part (WCAG 2.1.1) without making every formula a tab stop, it is visible on
+ * touch screens and macOS where the system scrollbar only shows mid-scroll,
+ * and dragging the formula itself still scrolls it as usual.
+ */
+function MathRun({ Tag, display, html, ...rest }) {
+  const scrollerRef = useRef(null);
+  // Same object across renders: React re-assigns `innerHTML` for a new one,
+  // and this component re-renders on every scroll step — a fresh object would
+  // rebuild the formula and throw it back to its start mid-drag.
+  const markup = useMemo(() => ({ __html: html }), [html]);
+  const [inlineWide, setInlineWide] = useState(false);
+  const [hidden, setHidden] = useState(0);
+  const [position, setPosition] = useState(0);
+  const [thumb, setThumb] = useState(0);
+
+  const measure = useCallback(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    if (!display) {
+      const paragraph = scroller.closest('p') || scroller.parentElement?.parentElement;
+      const bases = [...scroller.querySelectorAll('.katex-html > .base')]
+        .map(node => node.getBoundingClientRect().width);
+      setInlineWide(inlineMathNeedsScroll(bases, paragraph?.clientWidth ?? 0));
+    }
+    const nextHidden = hiddenWidth(scroller.scrollWidth, scroller.clientWidth);
+    setHidden(nextHidden);
+    setPosition(Math.min(scroller.scrollLeft, nextHidden));
+    setThumb(sliderThumbWidth(scroller.clientWidth, scroller.clientWidth, scroller.scrollWidth));
+  }, [display]);
+
+  // Measured before paint so a formula that does not fit never shows a frame
+  // of itself cut off without its slider; again whenever the column changes
+  // width (window, margin, orientation) or the formula does (KaTeX's fonts
+  // arriving after the markup).
+  useLayoutEffect(() => {
+    measure();
+    const scroller = scrollerRef.current;
+    if (!scroller || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(() => measure());
+    observer.observe(scroller);
+    const paragraph = scroller.closest('p');
+    if (paragraph) observer.observe(paragraph);
+    // The formula's own runs, not `.katex`: an inline formula's `.katex` is a
+    // plain inline box, which a ResizeObserver never reports on. The runs are
+    // inline blocks, so they do report when KaTeX's fonts swap in.
+    for (const run of scroller.querySelectorAll('.katex-html > .base')) observer.observe(run);
+    // And the font load itself, which does not wait for a rendering frame.
+    const fonts = typeof document !== 'undefined' ? document.fonts : null;
+    fonts?.addEventListener?.('loadingdone', measure);
+    return () => {
+      observer.disconnect();
+      fonts?.removeEventListener?.('loadingdone', measure);
+    };
+  }, [measure, html, inlineWide]);
+
+  const scrollTo = value => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    scroller.scrollLeft = value;
+    setPosition(value);
+  };
+
+  const wide = display || inlineWide;
+  const scrolls = hidden > 0;
+
+  return (
+    <span
+      className="rd-math"
+      data-wide={wide ? '' : undefined}
+      data-scrolls={scrolls ? '' : undefined}
+    >
+      <Tag
+        {...rest}
+        ref={scrollerRef}
+        className={[rest.className, 'rd-math-scroller'].filter(Boolean).join(' ')}
+        onScroll={scrolls ? event => setPosition(event.currentTarget.scrollLeft) : undefined}
+        dangerouslySetInnerHTML={markup}
+      />
+      {scrolls && (
+        <input
+          type="range"
+          className="rd-math-slider"
+          min={0}
+          max={hidden}
+          step={1}
+          value={Math.round(position)}
+          aria-label="Scroll the formula sideways"
+          aria-valuetext={sliderValueText(position, hidden)}
+          style={{ '--rd-math-thumb': `${thumb}px` }}
+          onChange={event => scrollTo(Number(event.target.value))}
+          onKeyDown={event => {
+            const target = sliderKeyTarget(event.key, position, hidden);
+            if (target === null) return;
+            // Handled here, not left to the range: its own arrow step is one
+            // pixel, and the paragraph around it must not take the key either.
+            event.preventDefault();
+            event.stopPropagation();
+            scrollTo(target);
+          }}
+        />
+      )}
+    </span>
+  );
+}
 
 /**
  * Scientific text with highlight marks.
@@ -96,14 +218,16 @@ export default function HighlightedScientificText({ children, highlights = [] })
           return html === null
             ? <Tag key={`math-raw-${index}`} {...bounds} {...marks} data-math="" data-highlight-id={mathId} className={markClass}>{item.raw}</Tag>
             : (
-              <Tag
+              <MathRun
                 key={`math-${index}`}
+                Tag={Tag}
+                display={Boolean(item.display)}
+                html={html}
                 {...bounds}
                 {...marks}
                 data-math=""
                 data-highlight-id={mathId}
                 className={markClass}
-                dangerouslySetInnerHTML={{ __html: html }}
               />
             );
         }

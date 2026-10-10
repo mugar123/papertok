@@ -417,6 +417,104 @@
   border-radius: var(--radius-sm);
 }
 
+/* ── Formulas wider than the column ──
+   `.rd-scroll` clips sideways, so a formula wider than the column was simply
+   cut at its edge. Display maths, and an inline formula with a run too wide to
+   wrap (`HighlightedScientificText.jsx` decides), scrolls on its own instead,
+   with the slider below it as the visible handle. The native scrollbar is
+   hidden there only because the slider replaces it: two bars for one scroll
+   read as two things. */
+.rd-math[data-wide] {
+  display: block;
+  max-width: 100%;
+}
+
+.rd-math[data-wide] > .rd-math-scroller {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  /* KaTeX hangs accents and limits a little outside its boxes; the padding
+     keeps them inside the clip that `overflow-y` has to have here. */
+  overflow-y: hidden;
+  padding-block: 0.2em;
+  white-space: nowrap;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.rd-math[data-wide] > .rd-math-scroller::-webkit-scrollbar {
+  display: none;
+}
+
+/* A display formula's own margins sit inside the scroller now; the slider
+   should hug the formula rather than float a line below it. */
+.rd-math[data-scrolls] .katex-display {
+  margin-bottom: 0.25em;
+}
+
+.rd-math-slider {
+  --rd-math-track: var(--border-default);
+  --rd-math-handle: var(--text-tertiary);
+  display: block;
+  width: 100%;
+  /* 24px tall for the pointer target (WCAG 2.5.8); the track drawn inside it
+     is thin so it reads as a scrollbar, not as a control asking for a value. */
+  height: 24px;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  /* The app's field chrome (global.css) would box it like a text input. */
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  touch-action: pan-y;
+  border-radius: var(--radius-full);
+}
+
+.rd-math-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--rd-math-track);
+}
+
+.rd-math-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: var(--rd-math-thumb, 24px);
+  height: 8px;
+  margin-top: -2px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--rd-math-handle);
+}
+
+.rd-math-slider::-moz-range-track {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--rd-math-track);
+}
+
+.rd-math-slider::-moz-range-thumb {
+  width: var(--rd-math-thumb, 24px);
+  height: 8px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--rd-math-handle);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rd-math-slider:hover {
+    --rd-math-handle: var(--text-secondary);
+  }
+}
+
+.rd-math-slider:active,
+.rd-math-slider:focus-visible {
+  --rd-math-handle: var(--text-primary);
+}
+
 .rd-p[data-annotatable]:focus-visible::after {
   content: attr(data-hint);
   position: absolute;
