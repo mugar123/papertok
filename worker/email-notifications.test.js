@@ -28,6 +28,7 @@ const {
   parseArxivDigestFeed,
   selectDigestPapers,
   isSubscriptionDue,
+  isSubscriptionCalendarDue,
   saveSubscription,
   resendSendErrorCode,
   renderScientificHtml,
@@ -1367,6 +1368,314 @@ test('does not start a new digest in the final recovery-only cron window', async
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+// --- A weekly digest whose sources failed this week may retry on Tuesday ----
+
+const SCHEDULED_WORK = {
+  id: 'https://openalex.org/WWEEKLY',
+  display_name: 'A paper published before the outage',
+  publication_date: '2026-07-26',
+  cited_by_count: 2,
+  authorships: [{ author: { display_name: 'Weekly Researcher' } }],
+  primary_location: {
+    source: { display_name: 'PaperTok Journal' },
+    landing_page_url: 'https://example.com/weekly',
+  },
+  open_access: { is_oa: true },
+};
+
+// One reader following one author, run cron window by cron window. Each test
+// switches OpenAlex on and off and scripts what Brevo answers. `Date.now` is
+// pinned to the window because reservation recovery measures age with it.
+function digestScheduleHarness(subscription = {}) {
+  const subscriptionKey = 'notification:subscription:schedule-reader';
+  const kv = createMemoryKv({
+    [subscriptionKey]: digestSubscription({ uid: 'schedule-reader', frequency: 'weekly', ...subscription }),
+  });
+  const upstream = {
+    sourcesUp: false,
+    sourceRequests: 0,
+    providerBodies: [],
+    provider: () => jsonResponse(201, { messageId: 'scheduled-digest' }),
+  };
+  async function fetchUpstream(input, options = {}) {
+    const url = new URL(String(input));
+    if (url.hostname === 'api.brevo.com') {
+      upstream.providerBodies.push(JSON.parse(options.body));
+      return upstream.provider();
+    }
+    if (url.hostname !== 'api.openalex.org') throw new Error(`Unexpected request: ${url}`);
+    upstream.sourceRequests += 1;
+    if (!upstream.sourcesUp) return jsonResponse(503, {});
+    const followed = (url.searchParams.get('filter') || '').includes('author.id:A1');
+    return jsonResponse(200, { results: followed ? [SCHEDULED_WORK] : [] });
+  }
+  async function run(isoWindow) {
+    const at = Date.parse(isoWindow);
+    const originalFetch = globalThis.fetch;
+    const originalDateNow = Date.now;
+    globalThis.fetch = fetchUpstream;
+    Date.now = () => at;
+    try {
+      return await runEmailNotificationSchedule(emailEnvironment(kv), at);
+    } finally {
+      globalThis.fetch = originalFetch;
+      Date.now = originalDateNow;
+    }
+  }
+  return { upstream, run, state: () => storedSubscriptionWithState(kv, subscriptionKey) };
+}
+
+function weeklySubscriptionState(lastDelivery, extra = {}) {
+  return { enabled: true, frequency: 'weekly', lastDelivery, ...extra };
+}
+
+test('a weekly digest whose sources failed late on Monday is retried on Tuesday', async () => {
+  // A weekly reader is due on Monday, and a source failure is retried after 40
+  // minutes. A failure at 13:00 has no Monday window left that may start a
+  // delivery: 13:20 is too soon and 13:40 is recovery-only. The collection
+  // failed before any delivery was reserved, so there is nothing to recover
+  // either. OpenAlex is back at 13:20, so only the schedule stands between the
+  // reader and this week's digest.
+  const { upstream, run, state } = digestScheduleHarness();
+
+  const failedMonday = await run('2026-07-27T13:00:00Z');
+  const failure = (await state()).lastDelivery;
+  upstream.sourcesUp = true;
+  const tooSoon = await run('2026-07-27T13:20:00Z');
+  const recoveryOnly = await run('2026-07-27T13:40:00Z');
+  const requestsOnMonday = upstream.sourceRequests;
+  const tuesday = await run('2026-07-28T07:00:00Z');
+
+  // Monday, as the schedule is designed: one failed attempt (both of its
+  // OpenAlex requests refused), then two windows that may not start one.
+  assert.equal(failedMonday.failed, 1);
+  assert.equal(failure.status, 'failed');
+  assert.equal(failure.code, 'EMAIL_DIGEST_SOURCES_UNAVAILABLE');
+  assert.equal(requestsOnMonday, 2);
+  assert.equal(tooSoon.sent + recoveryOnly.sent, 0);
+  // Tuesday: the sources answer, so the week's digest goes out -- once.
+  assert.deepEqual({
+    tuesdaySent: tuesday.sent,
+    tuesdaySkipped: tuesday.skipped,
+    askedSourcesOnTuesday: upstream.sourceRequests > requestsOnMonday,
+    emailsThisWeek: upstream.providerBodies.length,
+  }, {
+    tuesdaySent: 1,
+    tuesdaySkipped: 0,
+    askedSourcesOnTuesday: true,
+    emailsThisWeek: 1,
+  });
+  assert.equal((await state()).lastSentAt, '2026-07-28T07:00:00.000Z');
+});
+
+test('a Tuesday retry that fails on its sources again waits the usual 40 minutes', async () => {
+  const { upstream, run } = digestScheduleHarness();
+
+  await run('2026-07-27T13:00:00Z');
+  const firstTuesday = await run('2026-07-28T07:00:00Z');
+  upstream.sourcesUp = true;
+  const requestsBefore = upstream.sourceRequests;
+  const tooSoon = await run('2026-07-28T07:20:00Z');
+  const askedTooSoon = upstream.sourceRequests > requestsBefore;
+  const retried = await run('2026-07-28T07:40:00Z');
+
+  assert.equal(firstTuesday.failed, 1);
+  assert.equal(tooSoon.skipped, 1);
+  assert.equal(askedTooSoon, false);
+  assert.equal(retried.sent, 1);
+  assert.equal(upstream.providerBodies.length, 1);
+});
+
+test('a weekly digest whose sources failed is not retried from Wednesday on', async () => {
+  // Monday and Tuesday both fail on their sources. The sources are back on
+  // Wednesday, but the retry does not reach it: the digest waits for Monday.
+  const { upstream, run } = digestScheduleHarness();
+
+  await run('2026-07-27T13:00:00Z');
+  const tuesday = await run('2026-07-28T13:00:00Z');
+  upstream.sourcesUp = true;
+  const requestsBefore = upstream.sourceRequests;
+  const wednesday = await run('2026-07-29T07:00:00Z');
+
+  assert.equal(tuesday.failed, 1);
+  assert.equal(wednesday.skipped, 1);
+  assert.equal(upstream.sourceRequests, requestsBefore);
+  assert.equal(upstream.providerBodies.length, 0);
+  const failedTuesday = weeklySubscriptionState({
+    status: 'failed',
+    code: 'EMAIL_DIGEST_SOURCES_UNAVAILABLE',
+    at: '2026-07-28T13:00:00.000Z',
+  });
+  for (const day of ['2026-07-29', '2026-07-30', '2026-07-31', '2026-08-01', '2026-08-02']) {
+    assert.equal(isSubscriptionDue(failedTuesday, new Date(`${day}T07:00:00Z`)), false, day);
+  }
+  assert.equal(isSubscriptionDue(failedTuesday, new Date('2026-08-03T07:00:00Z')), true);
+});
+
+test('a weekly send failure is never retried on Tuesday as a new digest', () => {
+  // Only a collection failure is known to have sent nothing. A failure at or
+  // after the provider may have delivered, and a Tuesday reservation would
+  // carry a new idempotency key, so the provider could not tell it was a
+  // repeat.
+  const tuesday = new Date('2026-07-28T07:00:00Z');
+  const failedMonday = code => weeklySubscriptionState({
+    status: 'failed',
+    kind: 'digest',
+    at: '2026-07-27T13:00:00.000Z',
+    ...(code ? { code } : {}),
+  });
+
+  assert.equal(isSubscriptionDue(failedMonday('EMAIL_DIGEST_SOURCES_UNAVAILABLE'), tuesday), true);
+  for (const code of [
+    'EMAIL_SEND_OUTCOME_UNKNOWN',
+    'EMAIL_SEND_FAILED',
+    'EMAIL_PROVIDER_LIMIT',
+    'EMAIL_PROVIDER_AUTH_FAILED',
+    'EMAIL_SENDER_NOT_VERIFIED',
+    'EMAIL_SCHEDULE_PROCESSING_FAILED',
+    '',
+  ]) {
+    assert.equal(isSubscriptionDue(failedMonday(code), tuesday), false, code || 'no code');
+  }
+  // An authoritative empty selection is an answer, not a failure.
+  assert.equal(isSubscriptionDue(weeklySubscriptionState({
+    status: 'empty',
+    code: 'EMAIL_DIGEST_SOURCES_UNAVAILABLE',
+    at: '2026-07-27T13:00:00.000Z',
+  }), tuesday), false);
+});
+
+test('a Monday send with an unknown outcome is reconciled on Tuesday, not resent', async () => {
+  // The provider's answer is lost at 13:20, so the email may have gone out.
+  // Tuesday's existing recovery reconciles the reservation as uncertain, and
+  // the source-failure retry never fires for it.
+  const { upstream, run, state } = digestScheduleHarness();
+  upstream.sourcesUp = true;
+  upstream.provider = () => {
+    throw new TypeError('simulated response loss');
+  };
+
+  const monday = await run('2026-07-27T13:20:00Z');
+  const failure = (await state()).lastDelivery;
+  upstream.provider = () => jsonResponse(201, { messageId: 'must-not-be-sent' });
+  const requestsBefore = upstream.sourceRequests;
+  const tuesday = await run('2026-07-28T07:00:00Z');
+  const laterTuesday = await run('2026-07-28T07:40:00Z');
+
+  assert.equal(monday.failed, 1);
+  assert.equal(failure.code, 'EMAIL_SEND_OUTCOME_UNKNOWN');
+  assert.equal(tuesday.uncertain, 1);
+  assert.equal(laterTuesday.sent + laterTuesday.uncertain, 0);
+  assert.equal(upstream.sourceRequests, requestsBefore);
+  assert.equal(upstream.providerBodies.length, 1);
+  assert.equal((await state()).lastDelivery.status, 'uncertain');
+});
+
+test('a weekly digest sent this week is not sent again on Tuesday', async () => {
+  // Monday's first attempt fails on its sources and the 40-minute retry sends.
+  // A source failure from this week does not outrank a send from this week.
+  const { upstream, run } = digestScheduleHarness();
+
+  await run('2026-07-27T07:00:00Z');
+  upstream.sourcesUp = true;
+  const retried = await run('2026-07-27T07:40:00Z');
+  const requestsBefore = upstream.sourceRequests;
+  const tuesday = await run('2026-07-28T07:00:00Z');
+
+  assert.equal(retried.sent, 1);
+  assert.equal(tuesday.skipped, 1);
+  assert.equal(upstream.sourceRequests, requestsBefore);
+  assert.equal(upstream.providerBodies.length, 1);
+  assert.equal(isSubscriptionDue(weeklySubscriptionState({
+    status: 'failed',
+    code: 'EMAIL_DIGEST_SOURCES_UNAVAILABLE',
+    at: '2026-07-27T13:00:00.000Z',
+  }, { lastSentAt: '2026-07-27T07:40:00.000Z' }), new Date('2026-07-28T07:00:00Z')), false);
+});
+
+test('a daily digest keeps its schedule around a Monday source failure', async () => {
+  // Daily readers were already due again on Tuesday; none of this changes them.
+  const { upstream, run } = digestScheduleHarness({ frequency: 'daily' });
+
+  const monday = await run('2026-07-27T13:00:00Z');
+  upstream.sourcesUp = true;
+  const tooSoon = await run('2026-07-27T13:20:00Z');
+  const tuesday = await run('2026-07-28T07:00:00Z');
+  const laterTuesday = await run('2026-07-28T07:40:00Z');
+
+  assert.equal(monday.failed, 1);
+  assert.equal(tooSoon.skipped, 1);
+  assert.equal(tuesday.sent, 1);
+  assert.equal(laterTuesday.skipped, 1);
+  assert.equal(upstream.providerBodies.length, 1);
+});
+
+test('a weekly source failure from an earlier week is not retried on Tuesday', () => {
+  const tuesday = new Date('2026-07-28T07:00:00Z');
+  const failedAt = at => weeklySubscriptionState({
+    status: 'failed',
+    code: 'EMAIL_DIGEST_SOURCES_UNAVAILABLE',
+    at,
+  }, { lastSentAt: '2026-07-13T07:00:00.000Z' });
+
+  assert.equal(isSubscriptionDue(failedAt('2026-07-27T13:00:00.000Z'), tuesday), true);
+  // Last week's Monday, and the Sunday just before this week began.
+  assert.equal(isSubscriptionDue(failedAt('2026-07-20T13:00:00.000Z'), tuesday), false);
+  assert.equal(isSubscriptionDue(failedAt('2026-07-26T13:00:00.000Z'), tuesday), false);
+});
+
+test('a weekly source failure stamped after now does not make Tuesday due', () => {
+  // Checked on the calendar rule itself: `isSubscriptionDue` would refuse a
+  // future failure anyway, because its 40-minute spacing sees negative time.
+  const tuesday = new Date('2026-07-28T07:00:00Z');
+  const failedAt = at => weeklySubscriptionState({
+    status: 'failed',
+    code: 'EMAIL_DIGEST_SOURCES_UNAVAILABLE',
+    at,
+  });
+
+  assert.equal(isSubscriptionCalendarDue(failedAt('2026-07-27T13:00:00.000Z'), tuesday), true);
+  assert.equal(isSubscriptionCalendarDue(failedAt('2026-07-28T07:00:00.001Z'), tuesday), false);
+  assert.equal(isSubscriptionCalendarDue(failedAt('2026-07-29T07:00:00.000Z'), tuesday), false);
+});
+
+test('a Tuesday retry whose email provider fails keeps the existing duplicate protection', async () => {
+  // Monday fails on its sources. Tuesday's retry reserves a delivery and the
+  // provider's answer is lost. The next window replays the same reserved draft
+  // under the same idempotency key without collecting papers again, and no
+  // later window sends a second email.
+  const { upstream, run, state } = digestScheduleHarness();
+
+  await run('2026-07-27T13:00:00Z');
+  upstream.sourcesUp = true;
+  upstream.provider = () => {
+    throw new TypeError('simulated response loss');
+  };
+  const tuesday = await run('2026-07-28T07:00:00Z');
+  const failure = (await state()).lastDelivery;
+  upstream.provider = () => jsonResponse(201, { messageId: 'scheduled-digest' });
+  const requestsBefore = upstream.sourceRequests;
+  const replay = await run('2026-07-28T07:20:00Z');
+  const afterwards = [
+    await run('2026-07-28T07:40:00Z'),
+    await run('2026-07-28T13:40:00Z'),
+    await run('2026-07-29T07:00:00Z'),
+  ];
+
+  assert.equal(tuesday.failed, 1);
+  assert.equal(failure.code, 'EMAIL_SEND_OUTCOME_UNKNOWN');
+  assert.equal(replay.sent, 1);
+  assert.equal(upstream.sourceRequests, requestsBefore);
+  assert.equal(upstream.providerBodies.length, 2);
+  assert.equal(
+    upstream.providerBodies[0].headers.idempotencyKey,
+    upstream.providerBodies[1].headers.idempotencyKey,
+  );
+  assert.deepEqual(upstream.providerBodies[0], upstream.providerBodies[1]);
+  assert.equal(afterwards.reduce((total, summary) => total + summary.sent + summary.uncertain, 0), 0);
+  assert.equal((await state()).lastSentAt, '2026-07-28T07:00:00.000Z');
 });
 
 test('provider success followed by state reconciliation failure does not resend', async () => {

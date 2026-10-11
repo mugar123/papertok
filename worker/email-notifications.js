@@ -44,6 +44,7 @@ const SCHEDULE_MIN_BATCH_REMAINING_MS = 3 * 60 * 1000;
 const SCHEDULE_PAGE_SIZE = 3;
 const EMPTY_RETRY_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const FAILURE_RETRY_INTERVAL_MS = 40 * 60 * 1000;
+const DIGEST_SOURCES_UNAVAILABLE = 'EMAIL_DIGEST_SOURCES_UNAVAILABLE';
 const FUTURE_DATE_TOLERANCE_MS = DAY_MS;
 const FOLLOWED_PAPER_MIN_SCORE = 55;
 const EXPLORATION_PAPER_MIN_SCORE = 70;
@@ -74,7 +75,7 @@ export class EmailNotificationError extends Error {
 
 export class EmailDigestTransientError extends EmailNotificationError {
   constructor(sourceReport) {
-    super('EMAIL_DIGEST_SOURCES_UNAVAILABLE', 503);
+    super(DIGEST_SOURCES_UNAVAILABLE, 503);
     this.name = 'EmailDigestTransientError';
     this.transient = true;
     this.sourceReport = sourceReport;
@@ -2113,12 +2114,36 @@ export async function checkEmailProviderHealth(env) {
   }
 }
 
+// Monday's weekly digest may be retried on Tuesday, and only on Tuesday, when
+// this week's last attempt failed because the sources were unavailable. That
+// failure is raised while papers are collected, before any delivery is
+// reserved, so no email can stand behind it. A send failure may have been
+// delivered, a send this week was delivered, and a failure from an earlier week
+// is not this week's digest: none of them starts a new digest before next
+// Monday. Tuesday only, because reservation recovery looks back a single day,
+// so a Tuesday send is still within its reach. A failure stamped after `now`
+// is not a failure of this week's past.
+function isWeeklySourceFailureRetry(subscription, now, dayStart) {
+  if (now.getUTCDay() !== 2) return false;
+  const weekStart = dayStart - DAY_MS;
+  const lastSent = Date.parse(subscription.lastSentAt || '');
+  if (Number.isFinite(lastSent) && lastSent >= weekStart) return false;
+  const lastDelivery = subscription.lastDelivery;
+  const failedAt = Date.parse(lastDelivery?.at || '');
+  return lastDelivery?.status === 'failed'
+    && lastDelivery.code === DIGEST_SOURCES_UNAVAILABLE
+    && Number.isFinite(failedAt)
+    && failedAt >= weekStart
+    && failedAt <= now.getTime();
+}
+
 function isSubscriptionCalendarDue(subscription, now) {
   if (!subscription?.enabled) return false;
   const lastSent = Date.parse(subscription.lastSentAt || 0);
   const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   if (subscription.frequency === 'weekly') {
-    return now.getUTCDay() === 1 && (!lastSent || lastSent < dayStart);
+    return (now.getUTCDay() === 1 && (!lastSent || lastSent < dayStart))
+      || isWeeklySourceFailureRetry(subscription, now, dayStart);
   }
   return !lastSent || lastSent < dayStart;
 }
@@ -2475,6 +2500,7 @@ export const emailNotificationInternals = {
   parseArxivDigestFeed,
   selectDigestPapers,
   isSubscriptionDue,
+  isSubscriptionCalendarDue,
   resendSendErrorCode,
   renderScientificHtml,
   renderDigest,
