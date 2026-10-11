@@ -1678,6 +1678,42 @@ test('a Tuesday retry whose email provider fails keeps the existing duplicate pr
   assert.equal((await state()).lastSentAt, '2026-07-28T07:00:00.000Z');
 });
 
+test('a late Tuesday delivery with an unknown outcome is reconciled on Wednesday without repeating papers', async () => {
+  const { upstream, run, state } = digestScheduleHarness();
+
+  await run('2026-07-27T13:00:00Z');
+  upstream.sourcesUp = true;
+  upstream.provider = () => {
+    throw new TypeError('simulated response loss');
+  };
+  const tuesday = await run('2026-07-28T13:20:00Z');
+  const finalTuesday = await run('2026-07-28T13:40:00Z');
+  const requestsBeforeRecovery = upstream.sourceRequests;
+  upstream.provider = () => jsonResponse(201, { messageId: 'must-not-repeat' });
+  const wednesday = await run('2026-07-29T07:00:00Z');
+  const recovered = await state();
+  const laterWednesday = await run('2026-07-29T07:40:00Z');
+
+  assert.equal(tuesday.failed, 1);
+  assert.equal(finalTuesday.failed, 1);
+  assert.equal(wednesday.uncertain, 1);
+  assert.equal(wednesday.sent, 0);
+  assert.equal(upstream.sourceRequests, requestsBeforeRecovery);
+  assert.equal(upstream.providerBodies.length, 2);
+  assert.deepEqual(upstream.providerBodies[0], upstream.providerBodies[1]);
+  assert.equal(recovered.lastDelivery.status, 'uncertain');
+  assert.equal(recovered.lastSentAt, '2026-07-28T13:20:00.000Z');
+  assert.ok(recovered.sentPaperKeys.length > 0);
+  assert.equal(laterWednesday.skipped, 1);
+
+  // The same paper is still in next Monday's rolling publication window,
+  // but the recovered identity history must prevent sending it again.
+  const nextMonday = await run('2026-08-03T07:00:00Z');
+  assert.equal(nextMonday.empty, 1);
+  assert.equal(nextMonday.sent, 0);
+  assert.equal(upstream.providerBodies.length, 2);
+});
+
 test('provider success followed by state reconciliation failure does not resend', async () => {
   const firstWindow = new Date('2026-08-09T11:00:00Z');
   const retryWindow = new Date('2026-08-10T07:00:00Z');

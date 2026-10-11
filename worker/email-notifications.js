@@ -2120,9 +2120,8 @@ export async function checkEmailProviderHealth(env) {
 // reserved, so no email can stand behind it. A send failure may have been
 // delivered, a send this week was delivered, and a failure from an earlier week
 // is not this week's digest: none of them starts a new digest before next
-// Monday. Tuesday only, because reservation recovery looks back a single day,
-// so a Tuesday send is still within its reach. A failure stamped after `now`
-// is not a failure of this week's past.
+// Monday. Wednesday remains recovery-only for Tuesday's reservations. A
+// failure stamped after `now` is not a failure of this week's past.
 function isWeeklySourceFailureRetry(subscription, now, dayStart) {
   if (now.getUTCDay() !== 2) return false;
   const weekStart = dayStart - DAY_MS;
@@ -2163,7 +2162,7 @@ function isSubscriptionDue(subscription, now) {
 function shouldInspectPreviousDay(subscription, now) {
   return (
     isSubscriptionCalendarDue(subscription, now)
-    || (subscription?.frequency === 'weekly' && now.getUTCDay() === 2)
+    || (subscription?.frequency === 'weekly' && [2, 3].includes(now.getUTCDay()))
   );
 }
 
