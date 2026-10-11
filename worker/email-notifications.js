@@ -958,7 +958,11 @@ function fetchOpenAlexDigestPayload(
       source: 'openalex',
       report: sourceReport,
     });
-    return response.json();
+    const payload = await response.json();
+    if (!Array.isArray(payload?.results)) {
+      throw new DigestSourceError('openalex', 'EMAIL_SOURCE_OPENALEX_INVALID_RESPONSE');
+    }
+    return payload;
   };
   if (!openAlexRequests) return request();
   const key = openAlexRequestKey(url);

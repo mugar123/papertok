@@ -856,6 +856,41 @@ test('a failed shared request is dropped so a later page asks again, and every H
   });
 });
 
+test('malformed shared OpenAlex payloads are dropped so a later page can recover', async (t) => {
+  for (const [name, payload] of [
+    ['null payload', null],
+    ['missing results', {}],
+    ['non-array results', { results: {} }],
+  ]) {
+    await t.test(name, async () => {
+      const kv = readersKv(Object.fromEntries(['reader-1', 'reader-2', 'reader-3', 'reader-4', 'reader-5'].map(uid => [
+        uid,
+        { follows: [scheduledFollow('author', 'A1', 'Ada Author')] },
+      ])));
+      let malformed = true;
+      const malformedThenHealthy = async (url, query) => {
+        if (query === 'author.id:A1' && malformed) {
+          malformed = false;
+          await new Promise(resolve => setTimeout(resolve, 25));
+          return jsonResponse(200, payload);
+        }
+        return answerWithOneRecentWork(url, query);
+      };
+
+      await withDigestUpstream(malformedThenHealthy, async (upstream) => {
+        const summary = await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
+
+        assert.equal(summary.failed, 3);
+        assert.equal(summary.sent, 2);
+        assert.deepEqual(upstream.openAlex.byQuery, { 'author.id:A1': 2, exploration: 1 });
+        assert.equal(summary.failureCodes.EMAIL_SOURCE_OPENALEX_INVALID_RESPONSE, 3);
+        assert.equal(summary.sources.bySource.openalex.requestAttempts, 3);
+        assert.equal(summary.sources.bySource.openalex.retried, 0);
+      });
+    });
+  }
+});
+
 test('readers who share an OpenAlex answer keep their own follow names and sent history', async () => {
   const kv = readersKv({
     'reader-1': { follows: [scheduledFollow('author', 'A1', 'Ada Lovelace')] },
