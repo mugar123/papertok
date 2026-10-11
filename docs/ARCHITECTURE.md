@@ -99,7 +99,9 @@ diversity.
 - Cloudflare KV stores notification state and edge-cached comment-thread anchors. Atomic AI and protected-provider request quotas use
   a Durable Object ledger keyed by bounded UTC periods and hashed user identifiers.
 - Scheduled digests query native arXiv categories directly before falling back to OpenAlex,
-  avoiding the indexing delay for newly submitted physics and mathematics papers.
+  avoiding the indexing delay for newly submitted physics and mathematics papers. Within one
+  cron run, identical OpenAlex requests are sent once and shared between readers before any
+  per-reader filtering (see `worker/README.md`).
 - AI explanations bound PDF acquisition and provider retries within the browser request
   deadline, while provider JSON is normalized before LaTeX-aware rendering.
 - Every AI route answers through NaN Builders (`AI_PROVIDER = "nan"`, DeepSeek V4 Flash,

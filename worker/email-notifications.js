@@ -36,6 +36,7 @@ const DELIVERY_PENDING_RETRY_WINDOW_MS = 25 * 60 * 1000;
 const DIGEST_SOURCE_MAX_ATTEMPTS = 2;
 const DIGEST_SOURCE_TIMEOUT_MS = 5_000;
 const DIGEST_SOURCE_RETRY_MAX_DELAY_MS = 1_000;
+const MAX_SHARED_OPENALEX_REQUESTS = 200;
 const EMAIL_PROVIDER_TIMEOUT_MS = 12_000;
 const EMAIL_IDENTITY_TIMEOUT_MS = 8_000;
 const EMAIL_HEALTH_TIMEOUT_MS = 8_000;
@@ -456,7 +457,10 @@ function sourceCodeName(source) {
 
 function sourceBucket(report, source) {
   if (!report) return null;
-  report.bySource[source] ||= { attempted: 0, succeeded: 0, failed: 0 };
+  // `attempted`, `succeeded` and `failed` count the questions a digest asked;
+  // `requestAttempts` and `retried` count the HTTP calls actually made, which
+  // is fewer when a schedule run shares an answer between readers.
+  report.bySource[source] ||= { attempted: 0, succeeded: 0, failed: 0, requestAttempts: 0, retried: 0 };
   return report.bySource[source];
 }
 
@@ -502,8 +506,13 @@ async function fetchDigestSource(input, init, {
   let lastError;
   for (let attempt = 0; attempt < DIGEST_SOURCE_MAX_ATTEMPTS; attempt += 1) {
     if (report) {
+      const bucket = sourceBucket(report, source);
       report.requestAttempts += 1;
-      if (attempt > 0) report.retried += 1;
+      bucket.requestAttempts += 1;
+      if (attempt > 0) {
+        report.retried += 1;
+        bucket.retried += 1;
+      }
     }
     let response;
     try {
@@ -923,7 +932,48 @@ function openAlexWorkForTopicRelevance(work = {}) {
   };
 }
 
-async function fetchOpenAlexUpdates(follow, env, now = Date.now(), sourceReport) {
+function openAlexRequestKey(url) {
+  const key = new URL(url);
+  key.searchParams.delete('api_key');
+  return key.toString();
+}
+
+// A digest's OpenAlex request is a public question -- a followed entity or a
+// search string, plus the run date -- so readers who follow the same thing in
+// one schedule run can share one answer. What is shared is the parsed response,
+// before any reader-specific filter or mapping, so no digest changes. A failed
+// request is dropped from the map: a later reader asks again, with the same
+// retries it would have had on its own. Without a map (the test email), every
+// call goes upstream as before. Answers stay whole and in memory for the rest
+// of the run, so the map is capped; once full, a new question is asked unshared
+// rather than pushing out an answer a later reader may still need.
+function fetchOpenAlexDigestPayload(
+  url,
+  sourceReport,
+  openAlexRequests,
+  limit = MAX_SHARED_OPENALEX_REQUESTS,
+) {
+  const request = async () => {
+    const response = await fetchDigestSource(url, { headers: { accept: 'application/json' } }, {
+      source: 'openalex',
+      report: sourceReport,
+    });
+    return response.json();
+  };
+  if (!openAlexRequests) return request();
+  const key = openAlexRequestKey(url);
+  const pending = openAlexRequests.get(key);
+  if (pending) return pending;
+  if (openAlexRequests.size >= limit) return request();
+  const shared = request();
+  openAlexRequests.set(key, shared);
+  shared.catch(() => {
+    if (openAlexRequests.get(key) === shared) openAlexRequests.delete(key);
+  });
+  return shared;
+}
+
+async function fetchOpenAlexUpdates(follow, env, now = Date.now(), sourceReport, openAlexRequests = null) {
   const id = normalizeId(follow.canonicalId);
   const url = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
   const cutoff = new Date(now - DIGEST_FRESHNESS_DAYS * DAY_MS).toISOString().slice(0, 10);
@@ -948,11 +998,7 @@ async function fetchOpenAlexUpdates(follow, env, now = Date.now(), sourceReport)
   url.searchParams.set('sort', 'publication_date:desc');
   url.searchParams.set('per-page', '6');
   return trackDigestSource(sourceReport, 'openalex', async () => {
-    const response = await fetchDigestSource(url, { headers: { accept: 'application/json' } }, {
-      source: 'openalex',
-      report: sourceReport,
-    });
-    const payload = await response.json();
+    const payload = await fetchOpenAlexDigestPayload(url, sourceReport, openAlexRequests);
     let works = payload?.results || [];
     if (follow.type === 'topic' && isQueryTopicId(id)) {
       const query = topicSearchQuery(follow);
@@ -965,7 +1011,7 @@ async function fetchOpenAlexUpdates(follow, env, now = Date.now(), sourceReport)
   });
 }
 
-async function fetchExplorationUpdates(env, now = Date.now(), sourceReport) {
+async function fetchExplorationUpdates(env, now = Date.now(), sourceReport, openAlexRequests = null) {
   const url = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
   const cutoff = new Date(now - 4 * DAY_MS).toISOString().slice(0, 10);
   const today = new Date(now).toISOString().slice(0, 10);
@@ -976,16 +1022,12 @@ async function fetchExplorationUpdates(env, now = Date.now(), sourceReport) {
   url.searchParams.set('sort', 'cited_by_count:desc');
   url.searchParams.set('per-page', '8');
   return trackDigestSource(sourceReport, 'openalex', async () => {
-    const response = await fetchDigestSource(url, { headers: { accept: 'application/json' } }, {
-      source: 'openalex',
-      report: sourceReport,
-    });
-    const payload = await response.json();
+    const payload = await fetchOpenAlexDigestPayload(url, sourceReport, openAlexRequests);
     return (payload?.results || []).map(work => mapOpenAlexPaper(work, null)).filter(Boolean);
   });
 }
 
-async function fetchProjectUpdates(follow, env, sourceReport) {
+async function fetchProjectUpdates(follow, env, sourceReport, openAlexRequests = null) {
   const requestUrl = new URL('https://api.openaire.eu/search/publications');
   requestUrl.searchParams.set('format', 'json');
   requestUrl.searchParams.set('size', '10');
@@ -1014,12 +1056,7 @@ async function fetchProjectUpdates(follow, env, sourceReport) {
   openAlexUrl.searchParams.set('filter', `doi:${dois.map(doi => doi.replace(/^https?:\/\/doi\.org\//i, '')).join('|')}`);
   openAlexUrl.searchParams.set('per-page', '10');
   return trackDigestSource(sourceReport, 'openalex', async () => {
-    const openAlexResponse = await fetchDigestSource(
-      openAlexUrl,
-      { headers: { accept: 'application/json' } },
-      { source: 'openalex', report: sourceReport },
-    );
-    const openAlexPayload = await openAlexResponse.json();
+    const openAlexPayload = await fetchOpenAlexDigestPayload(openAlexUrl, sourceReport, openAlexRequests);
     return (openAlexPayload?.results || []).map(work => mapOpenAlexPaper(work, follow)).filter(Boolean);
   });
 }
@@ -1188,7 +1225,11 @@ function digestFollowsForWindow(follows, now = Date.now()) {
   return allFollows.slice(offset).concat(allFollows.slice(0, offset)).slice(0, MAX_QUERIED_FOLLOWS);
 }
 
-async function collectDigestPapers(subscription, env, { test = false, now = Date.now() } = {}) {
+async function collectDigestPapers(subscription, env, {
+  test = false,
+  now = Date.now(),
+  openAlexRequests = null,
+} = {}) {
   const follows = digestFollowsForWindow(subscription.follows, now);
   const sourceReport = createSourceReport();
   if (!follows.length) return { papers: [], sourceReport };
@@ -1196,8 +1237,8 @@ async function collectDigestPapers(subscription, env, { test = false, now = Date
   const indexedFollows = follows.filter(follow => arxivCategoriesForFollow(follow).length === 0);
   const indexedFreshPromise = mapWithConcurrency(indexedFollows, 4, follow => (
     follow.type === 'project'
-      ? fetchProjectUpdates(follow, env, sourceReport)
-      : fetchOpenAlexUpdates(follow, env, now, sourceReport)
+      ? fetchProjectUpdates(follow, env, sourceReport, openAlexRequests)
+      : fetchOpenAlexUpdates(follow, env, now, sourceReport, openAlexRequests)
   ));
   const arxivFreshPromise = (async () => {
     if (!arxivFollows.length) return { papers: [], requiredFailed: 0 };
@@ -1211,7 +1252,7 @@ async function collectDigestPapers(subscription, env, { test = false, now = Date
       const fallbackResults = await mapWithConcurrency(
         arxivFollows,
         2,
-        follow => fetchOpenAlexUpdates(follow, env, now, sourceReport),
+        follow => fetchOpenAlexUpdates(follow, env, now, sourceReport, openAlexRequests),
       );
       return {
         papers: fallbackResults
@@ -1252,7 +1293,7 @@ async function collectDigestPapers(subscription, env, { test = false, now = Date
       ...followedSelection.flatMap(paperIdentityKeys),
     ]);
     try {
-      const exploration = await fetchExplorationUpdates(env, now, sourceReport);
+      const exploration = await fetchExplorationUpdates(env, now, sourceReport, openAlexRequests);
       discovery = selectDigestPapers(exploration, {
         limit: 1,
         now,
@@ -1675,6 +1716,8 @@ function compactSourceReport(report = {}) {
       attempted: Math.max(0, Number(counts?.attempted) || 0),
       succeeded: Math.max(0, Number(counts?.succeeded) || 0),
       failed: Math.max(0, Number(counts?.failed) || 0),
+      requestAttempts: Math.max(0, Number(counts?.requestAttempts) || 0),
+      retried: Math.max(0, Number(counts?.retried) || 0),
     }])),
     failureCodes: Object.fromEntries(Object.entries(report.failureCodes || {})
       .filter(([, count]) => Number(count) > 0)),
@@ -2171,9 +2214,9 @@ function mergeSourceReports(target, report) {
     target[field] += Math.max(0, Number(report[field]) || 0);
   });
   Object.entries(report.bySource || {}).forEach(([source, counts]) => {
-    target.bySource[source] ||= { attempted: 0, succeeded: 0, failed: 0 };
-    ['attempted', 'succeeded', 'failed'].forEach((field) => {
-      target.bySource[source][field] += Math.max(0, Number(counts?.[field]) || 0);
+    const bucket = sourceBucket(target, source);
+    ['attempted', 'succeeded', 'failed', 'requestAttempts', 'retried'].forEach((field) => {
+      bucket[field] += Math.max(0, Number(counts?.[field]) || 0);
     });
   });
   Object.entries(report.failureCodes || {}).forEach(([code, count]) => {
@@ -2227,7 +2270,7 @@ async function persistScheduledDelivery(env, key, subscription, delivery) {
   };
 }
 
-async function processScheduledSubscription(env, key, now) {
+async function processScheduledSubscription(env, key, now, openAlexRequests) {
   const subscription = await loadSubscriptionWithState(env, key.name);
   if (!subscription?.enabled || !shouldInspectPreviousDay(subscription, now)) return { skipped: true };
   const checkedAt = now.toISOString();
@@ -2256,7 +2299,10 @@ async function processScheduledSubscription(env, key, now) {
       return { skipped: true };
     }
 
-    const collected = await collectDigestPapers(subscription, env, { now: now.getTime() });
+    const collected = await collectDigestPapers(subscription, env, {
+      now: now.getTime(),
+      openAlexRequests,
+    });
     sourceReport = collected.sourceReport;
     if (!collected.papers.length) {
       await recordSubscriptionOutcome(env, key.name, subscription, 'empty', checkedAt, { sourceReport });
@@ -2374,6 +2420,9 @@ export async function runEmailNotificationSchedule(env, scheduledTime = Date.now
   let failed = 0;
   const sources = createSourceReport();
   const failureCodes = {};
+  // One per run, never module-level: the isolate outlives the run, so a shared
+  // map would hand one run's answers to the next and grow without bound.
+  const openAlexRequests = new Map();
   let inventoryComplete = false;
   while (!inventoryComplete) {
     const elapsed = Date.now() - startedAt;
@@ -2398,7 +2447,12 @@ export async function runEmailNotificationSchedule(env, scheduledTime = Date.now
       continue;
     }
     const batch = page.keys || [];
-    const results = await Promise.allSettled(batch.map(key => processScheduledSubscription(env, key, now)));
+    const results = await Promise.allSettled(batch.map(key => processScheduledSubscription(
+      env,
+      key,
+      now,
+      openAlexRequests,
+    )));
     processed += batch.length;
     scanned += batch.length;
     sent += results.filter(result => result.status === 'fulfilled' && result.value?.sent).length;
@@ -2469,6 +2523,7 @@ export const emailNotificationInternals = {
   sanitizePreferences,
   topicSearchQuery,
   fetchOpenAlexUpdates,
+  fetchOpenAlexDigestPayload,
   saveSubscription,
   mergePapers,
   arxivCategoriesForFollow,

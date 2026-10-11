@@ -13,6 +13,7 @@ import {
 const {
   brevoSendErrorCode,
   fetchDigestSource,
+  fetchOpenAlexDigestPayload,
   fetchWithDeadline,
   buildDeliveryReservationId,
   buildProviderIdempotencyKey,
@@ -676,6 +677,331 @@ test('scheduled digest fetches and emails papers from every followed entity type
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+// --- One schedule run shares identical OpenAlex requests between readers ----
+
+const DIGEST_RUN = new Date('2026-08-10T07:00:00.000Z');
+
+function scheduledFollow(type, canonicalId, displayName, metadata = {}) {
+  return { type, canonicalId, displayName, externalIds: {}, metadata: { categoryIds: [], ...metadata } };
+}
+
+function readerSubscription(uid, overrides = {}) {
+  return digestSubscription({
+    uid,
+    email: `${uid}@example.com`,
+    unsubscribeToken: `unsubscribe-${uid}`,
+    ...overrides,
+  });
+}
+
+function readersKv(readers) {
+  return createMemoryKv(Object.fromEntries(Object.entries(readers).map(([uid, overrides]) => [
+    `notification:subscription:${uid}`,
+    readerSubscription(uid, overrides),
+  ])));
+}
+
+function recentOpenAlexWork(entityId, overrides = {}) {
+  return {
+    id: `https://openalex.org/W${entityId}`,
+    display_name: `Recent paper for ${entityId}`,
+    publication_date: '2026-08-09',
+    cited_by_count: 2,
+    authorships: [{ author: { display_name: `Researcher ${entityId}` } }],
+    primary_location: {
+      source: { display_name: 'PaperTok Journal' },
+      landing_page_url: `https://example.com/${entityId}`,
+    },
+    open_access: { is_oa: true },
+    ...overrides,
+  };
+}
+
+// The question a digest's OpenAlex request asks: the exploration pick, a
+// search string, or the last filter clause (the followed entity or DOI list).
+function digestOpenAlexQuery(url) {
+  const filter = url.searchParams.get('filter') || '';
+  if (filter.includes('is_retracted:false')) return 'exploration';
+  const search = url.searchParams.get('search');
+  return search ? `search:${search}` : filter.split(',').at(-1);
+}
+
+function answerWithOneRecentWork(url, query) {
+  if (!query) throw new Error(`Unexpected request: ${url}`);
+  if (query === 'exploration') return jsonResponse(200, { results: [] });
+  return jsonResponse(200, { results: [recentOpenAlexWork(query.split(':').at(-1))] });
+}
+
+// Counts every OpenAlex request by the question it asks, keeps each digest
+// email by recipient, and hands every other request to `respond`.
+async function withDigestUpstream(respond, callback) {
+  const upstream = { openAlex: { total: 0, byQuery: {} }, emailsTo: {}, hosts: [] };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, options = {}) => {
+    const url = new URL(String(input));
+    upstream.hosts.push(url.hostname);
+    if (url.hostname === 'api.brevo.com') {
+      const email = JSON.parse(options.body);
+      upstream.emailsTo[email.to[0].email] = email;
+      return jsonResponse(201, { messageId: `digest-${email.to[0].email}` });
+    }
+    if (url.hostname !== 'api.openalex.org') return respond(url, null);
+    const query = digestOpenAlexQuery(url);
+    upstream.openAlex.total += 1;
+    upstream.openAlex.byQuery[query] = (upstream.openAlex.byQuery[query] || 0) + 1;
+    return respond(url, query);
+  };
+  try {
+    return await callback(upstream);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+test('one schedule run asks OpenAlex once for a query that several subscribers share', async () => {
+  // Five daily readers whose follows overlap: three of them follow A1, three
+  // follow T1, and all five have room for the exploration pick, whose URL
+  // depends only on the run date. Every distinct question is worth one request
+  // per run; what each reader sees is decided after the response arrives.
+  const kv = readersKv({
+    'reader-1': { follows: [scheduledFollow('author', 'A1', 'Ada Author'), scheduledFollow('topic', 'T1', 'Topic One')] },
+    'reader-2': { follows: [scheduledFollow('author', 'A1', 'Ada Author'), scheduledFollow('topic', 'T2', 'Topic Two')] },
+    'reader-3': { follows: [scheduledFollow('topic', 'T1', 'Topic One'), scheduledFollow('institution', 'I1', 'Institution One')] },
+    'reader-4': { follows: [scheduledFollow('author', 'A2', 'Alan Author')] },
+    'reader-5': { follows: [scheduledFollow('topic', 'T1', 'Topic One'), scheduledFollow('author', 'A1', 'Ada Author')] },
+  });
+
+  await withDigestUpstream(answerWithOneRecentWork, async (upstream) => {
+    const summary = await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
+
+    assert.equal(summary.sent, 5);
+    assert.equal(summary.failed, 0);
+    assert.deepEqual(upstream.openAlex, {
+      total: 6,
+      byQuery: {
+        'author.id:A1': 1,
+        'author.id:A2': 1,
+        'topics.id:T1': 1,
+        'topics.id:T2': 1,
+        'institutions.id:I1': 1,
+        exploration: 1,
+      },
+    });
+    // The questions are still counted per reader; only the HTTP calls behind
+    // them are shared, and the source report says how many were made.
+    assert.equal(summary.sources.bySource.openalex.attempted, 14);
+    assert.equal(summary.sources.bySource.openalex.requestAttempts, 6);
+    assert.equal(summary.sources.requestAttempts, 6);
+  });
+});
+
+test('readers in one page share an OpenAlex request that is still in flight', async () => {
+  // A slow answer keeps the first request open while the other two readers of
+  // the page reach the same question, so only sharing the pending request --
+  // not a cache of finished answers -- keeps this to one call.
+  const kv = readersKv(Object.fromEntries(['reader-1', 'reader-2', 'reader-3'].map(uid => [
+    uid,
+    { follows: [scheduledFollow('author', 'A1', 'Ada Author')] },
+  ])));
+  const slowly = async (url, query) => {
+    if (query === 'author.id:A1') await new Promise(resolve => setTimeout(resolve, 25));
+    return answerWithOneRecentWork(url, query);
+  };
+
+  await withDigestUpstream(slowly, async (upstream) => {
+    const summary = await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
+
+    assert.equal(summary.sent, 3);
+    assert.deepEqual(upstream.openAlex.byQuery, { 'author.id:A1': 1, exploration: 1 });
+  });
+});
+
+test('a failed shared request is dropped so a later page asks again, and every HTTP attempt is counted', async () => {
+  // OpenAlex refuses A1 twice. The first page's shared request spends both of
+  // `fetchDigestSource`'s attempts on those refusals, so its three readers fail
+  // together, as they would have failed alone. The failed entry is dropped, and
+  // the second page's question goes upstream again and gets an answer.
+  const kv = readersKv(Object.fromEntries(['reader-1', 'reader-2', 'reader-3', 'reader-4', 'reader-5'].map(uid => [
+    uid,
+    { follows: [scheduledFollow('author', 'A1', 'Ada Author')] },
+  ])));
+  let refusalsLeft = 2;
+  const refusingTwice = (url, query) => {
+    if (query === 'author.id:A1' && refusalsLeft > 0) {
+      refusalsLeft -= 1;
+      return jsonResponse(503, {});
+    }
+    return answerWithOneRecentWork(url, query);
+  };
+
+  await withDigestUpstream(refusingTwice, async (upstream) => {
+    const summary = await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
+
+    assert.equal(summary.failed, 3);
+    assert.equal(summary.sent, 2);
+    // The first page's attempt and its retry, the second page's single
+    // attempt, and one exploration request for the two readers with papers.
+    assert.deepEqual(upstream.openAlex.byQuery, { 'author.id:A1': 3, exploration: 1 });
+    assert.deepEqual(summary.sources.bySource.openalex, {
+      attempted: 7,
+      succeeded: 4,
+      failed: 3,
+      requestAttempts: 4,
+      retried: 1,
+    });
+    assert.equal(summary.sources.requestAttempts, 4);
+    assert.equal(summary.sources.retried, 1);
+  });
+});
+
+test('readers who share an OpenAlex answer keep their own follow names and sent history', async () => {
+  const kv = readersKv({
+    'reader-1': { follows: [scheduledFollow('author', 'A1', 'Ada Lovelace')] },
+    'reader-2': { follows: [scheduledFollow('author', 'A1', 'Countess of Lovelace')] },
+    // Already received the A1 paper, so only the T2 paper is new for this reader.
+    'reader-3': {
+      follows: [scheduledFollow('author', 'A1', 'Ada Lovelace'), scheduledFollow('topic', 'T2', 'Topic Two')],
+      sentPaperKeys: ['id:wa1'],
+    },
+  });
+
+  await withDigestUpstream(answerWithOneRecentWork, async (upstream) => {
+    const summary = await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
+    const html = uid => upstream.emailsTo[`${uid}@example.com`].htmlContent;
+
+    assert.equal(summary.sent, 3);
+    assert.equal(upstream.openAlex.byQuery['author.id:A1'], 1);
+    assert.match(html('reader-1'), /Because you follow Ada Lovelace/);
+    assert.doesNotMatch(html('reader-1'), /Countess of Lovelace/);
+    assert.match(html('reader-2'), /Because you follow Countess of Lovelace/);
+    assert.doesNotMatch(html('reader-2'), /Ada Lovelace/);
+    assert.match(html('reader-3'), /Recent paper for T2/);
+    assert.doesNotMatch(html('reader-3'), /Recent paper for A1/);
+  });
+});
+
+test('readers who share an OpenAlex search keep their own relevance filter', async () => {
+  // The same search string, so one request. Only the first reader's topic
+  // carries the category the second work declares, so only that reader may
+  // receive it -- the filter runs per reader, after the answer is shared.
+  const query = 'Spatial transcriptomics';
+  const kv = readersKv({
+    'reader-1': {
+      follows: [scheduledFollow('topic', 'query-1234abcd', query, { query, categoryIds: ['genomics-lab'] })],
+    },
+    'reader-2': { follows: [scheduledFollow('topic', 'query-5678abcd', query, { query })] },
+  });
+  const searchAnswer = (url, question) => {
+    if (question !== `search:${query}`) return answerWithOneRecentWork(url, question);
+    return jsonResponse(200, {
+      results: [
+        recentOpenAlexWork('PHRASE', { display_name: 'Spatial transcriptomics of the mouse brain' }),
+        recentOpenAlexWork('CATEGORY', {
+          display_name: 'A cell atlas of the developing heart',
+          categories: ['genomics-lab'],
+        }),
+      ],
+    });
+  };
+
+  await withDigestUpstream(searchAnswer, async (upstream) => {
+    const summary = await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
+    const html = uid => upstream.emailsTo[`${uid}@example.com`].htmlContent;
+
+    assert.equal(summary.sent, 2);
+    assert.equal(upstream.openAlex.byQuery[`search:${query}`], 1);
+    assert.match(html('reader-1'), /Spatial transcriptomics of the mouse brain/);
+    assert.match(html('reader-1'), /A cell atlas of the developing heart/);
+    assert.match(html('reader-2'), /Spatial transcriptomics of the mouse brain/);
+    assert.doesNotMatch(html('reader-2'), /A cell atlas of the developing heart/);
+  });
+});
+
+test('each schedule run starts without shared OpenAlex answers', async () => {
+  // Same day, same question in both runs: a map that outlived the first run
+  // would answer the second one from memory.
+  const kv = readersKv({ 'reader-1': { follows: [scheduledFollow('author', 'A1', 'Ada Author')] } });
+
+  await withDigestUpstream(answerWithOneRecentWork, async (upstream) => {
+    const first = await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
+    await kv.put('notification:subscription:reader-2', JSON.stringify(readerSubscription('reader-2', {
+      follows: [scheduledFollow('author', 'A1', 'Ada Author')],
+    })));
+    const second = await runEmailNotificationSchedule(
+      emailEnvironment(kv),
+      DIGEST_RUN.getTime() + 20 * 60 * 1000,
+    );
+
+    assert.equal(first.sent, 1);
+    assert.equal(second.sent, 1);
+    assert.deepEqual(upstream.openAlex.byQuery, { 'author.id:A1': 2, exploration: 2 });
+  });
+});
+
+test('readers who follow the same project share its OpenAlex lookup', async () => {
+  // OpenAIRE is still asked once per reader -- the sharing covers OpenAlex
+  // only -- but it returns the same DOIs, so the OpenAlex lookup is the same.
+  const kv = readersKv({
+    'reader-1': { follows: [scheduledFollow('project', 'project-4', 'Discovery Project')] },
+    'reader-2': { follows: [scheduledFollow('project', 'project-4', 'Discovery Project')] },
+  });
+  const projectAnswer = (url, query) => {
+    if (url.hostname === 'api.openaire.eu') {
+      return jsonResponse(200, {
+        response: {
+          results: {
+            result: [{
+              metadata: {
+                'oaf:entity': { 'oaf:result': { pid: [{ '@classname': 'doi', $: '10.1234/project-paper' }] } },
+              },
+            }],
+          },
+        },
+      });
+    }
+    if (query === 'doi:10.1234/project-paper') {
+      return jsonResponse(200, { results: [recentOpenAlexWork('PROJECT')] });
+    }
+    return answerWithOneRecentWork(url, query);
+  };
+
+  await withDigestUpstream(projectAnswer, async (upstream) => {
+    const summary = await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
+
+    assert.equal(summary.sent, 2);
+    assert.equal(upstream.hosts.filter(host => host === 'api.openaire.eu').length, 2);
+    assert.deepEqual(upstream.openAlex.byQuery, { 'doi:10.1234/project-paper': 1, exploration: 1 });
+  });
+});
+
+test('the shared OpenAlex map stops growing at its limit and never keys on the API key', async () => {
+  const requested = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    requested.push(String(input));
+    return jsonResponse(200, { results: [] });
+  };
+  const requests = new Map();
+  const first = new URL('https://api.openalex.org/works?filter=author.id:A1&api_key=secret-key');
+  const second = new URL('https://api.openalex.org/works?filter=author.id:A2&api_key=secret-key');
+
+  try {
+    await fetchOpenAlexDigestPayload(first, null, requests, 1);
+    await fetchOpenAlexDigestPayload(second, null, requests, 1);
+    await fetchOpenAlexDigestPayload(second, null, requests, 1);
+    await fetchOpenAlexDigestPayload(first, null, requests, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  // Past the limit a question is asked unshared, every time, exactly as it was
+  // before sharing existed; what is already shared stays shared.
+  assert.equal(requests.size, 1);
+  assert.equal(requested.filter(url => url.includes('author.id:A1')).length, 1);
+  assert.equal(requested.filter(url => url.includes('author.id:A2')).length, 2);
+  assert.equal([...requests.keys()].some(key => key.includes('secret-key')), false);
 });
 
 test('does not overwrite an enabled subscription when the client sends zero follows', async () => {

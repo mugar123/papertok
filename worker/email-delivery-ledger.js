@@ -32,6 +32,8 @@ function sanitizeSourceSummary(value = {}) {
         attempted: positiveInteger(counts?.attempted),
         succeeded: positiveInteger(counts?.succeeded),
         failed: positiveInteger(counts?.failed),
+        requestAttempts: positiveInteger(counts?.requestAttempts),
+        retried: positiveInteger(counts?.retried),
       },
     ])
     .filter(([source]) => source)
