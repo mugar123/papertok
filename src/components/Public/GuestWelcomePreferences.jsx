@@ -41,33 +41,17 @@ const DIGEST_BEHIND = [
   { key: 'bio', accent: CATEGORIES.bio.gradient, settle: 'translateY(30px) rotate(-6deg)' },
   { key: 'cs', accent: CATEGORIES.cs.gradient, settle: 'translateY(22px) rotate(5deg)' },
 ];
-// Where the spark burst's dots fly, from the top of the landed letter.
-const DIGEST_SPARKS = [
-  { x: -78, y: -22, accent: CATEGORIES.physics.gradient },
-  { x: -52, y: -48, accent: CATEGORIES.cs.gradient },
-  { x: -16, y: -62, accent: CATEGORIES.bio.gradient },
-  { x: 20, y: -60, accent: CATEGORIES.math.gradient },
-  { x: 56, y: -44, accent: CATEGORIES.med.gradient },
-  { x: 80, y: -18, accent: CATEGORIES.econ.gradient },
-];
 
-// The beat entrance's curve for what arrives; a strong ease-in-out for the
-// flap, which moves on screen rather than entering.
+// The beat entrance's curve for what arrives; a strong ease-in-out for what
+// moves on screen rather than entering.
 const ARRIVE_EASE = [0.16, 1, 0.3, 1];
 const FLAP_EASE = [0.77, 0, 0.175, 1];
-const SEAL_AT = 0.6;
-const FLAP_AT = 0.75;
-const FLAP_DURATION = 0.55;
-const LETTERS_AT = FLAP_AT + FLAP_DURATION - 0.05;
-const SPARKS_AT = LETTERS_AT + 0.55;
 
-// The digest arriving: a sealed envelope lands, the seal gives, the flap
-// swings open and a paper rises out of it with two more behind. Plays once
-// and is still by about 2.5 seconds (WCAG 2.2.2). With motion refused it is
-// drawn open, the letter already out.
-function DigestPreview({ still, subscribed }) {
+// The digest: an envelope, open, a paper out of it with two more behind.
+// Only its arrival moves (like the other screens' props); the rest is drawn
+// as it ends. `stamp`, optional, is stuck on the envelope's front corner.
+export function DigestPreview({ still, stamp }) {
   const field = CATEGORIES[DIGEST_LETTER.field];
-  const rise = { type: 'spring', duration: 0.8, bounce: 0.22 };
   return <div className="gw-digest-preview" aria-hidden="true">
     <motion.div
       className="gw-env"
@@ -76,67 +60,29 @@ function DigestPreview({ still, subscribed }) {
       transition={{ duration: 0.45, ease: ARRIVE_EASE, delay: 0.1 }}
     >
       <div className="gw-env-back"/>
-      <motion.div
-        className="gw-env-flap"
-        style={{ zIndex: still ? 1 : 4 }}
-        initial={still ? false : { transform: 'rotateX(0deg)' }}
-        animate={{ transform: 'rotateX(180deg)', ...(still ? {} : { transitionEnd: { zIndex: 1 } }) }}
-        transition={{ duration: FLAP_DURATION, ease: FLAP_EASE, delay: FLAP_AT }}
-      >
+      <div className="gw-env-flap" style={{ zIndex: 1, transform: 'rotateX(180deg)' }}>
         <svg viewBox="0 0 240 150" preserveAspectRatio="none"><path d="M0 0.5 L120 93 L240 0.5"/></svg>
-      </motion.div>
+      </div>
       <div className="gw-env-slot">
-        {DIGEST_BEHIND.map((letter, index) => <motion.div
+        {DIGEST_BEHIND.map(letter => <div
           key={letter.key}
           className="gw-env-letter gw-env-letter--behind"
-          style={{ '--area-accent': letter.accent }}
-          initial={still ? false : { transform: 'translateY(220px) rotate(0deg)' }}
-          animate={{ transform: letter.settle }}
-          transition={{ ...rise, delay: LETTERS_AT + index * 0.08 }}
+          style={{ '--area-accent': letter.accent, transform: letter.settle }}
         >
           <span className="gw-demo-title"/>
           <span className="gw-demo-title gw-demo-title--short"/>
-        </motion.div>)}
-        <motion.div
-          className="gw-env-letter"
-          style={{ '--area-accent': field.gradient }}
-          initial={still ? false : { transform: 'translateY(220px)' }}
-          animate={{ transform: 'translateY(0px)' }}
-          transition={{ ...rise, delay: LETTERS_AT + 0.16 }}
-        >
+        </div>)}
+        <div className="gw-env-letter" style={{ '--area-accent': field.gradient }}>
           <strong lang="en">{DIGEST_LETTER.title}</strong>
           <span className="gw-env-authors">{DIGEST_LETTER.authors}</span>
           <span className="gw-env-hook">{DIGEST_LETTER.hook}</span>
           <span className="gw-env-venue">{DIGEST_LETTER.venue}</span>
-        </motion.div>
+        </div>
       </div>
       <div className="gw-env-pocket">
         <svg viewBox="0 0 240 150" preserveAspectRatio="none"><path d="M0.5 0.5 L120 87 L239.5 0.5 M0.5 149.5 L98 76 M239.5 149.5 L142 76"/></svg>
-        {/* Turning the digest on readdresses the envelope: the two lines
-            share a cell and cross-fade, so a quick on-off-on retargets. */}
-        <span className="gw-env-label" data-subscribed={subscribed ? '' : undefined}>
-          <span>PaperTok Weekly · Monday</span>
-          <span><Check size={11} weight="bold"/>On its way to you</span>
-        </span>
       </div>
-      {!still && <motion.span
-        className="gw-env-seal"
-        initial={{ opacity: 1, transform: 'translateX(-50%) scale(1)' }}
-        animate={{ opacity: 0, transform: 'translateX(-50%) scale(0.9)' }}
-        transition={{ duration: 0.2, ease: ARRIVE_EASE, delay: SEAL_AT }}
-      >P</motion.span>}
-      {!still && <div className="gw-env-sparks">
-        {DIGEST_SPARKS.map(spark => <motion.span
-          key={`${spark.x}:${spark.y}`}
-          style={{ '--area-accent': spark.accent }}
-          initial={{ opacity: 0, transform: 'translate(0px, 0px) scale(1)' }}
-          animate={{
-            opacity: [0, 1, 0],
-            transform: ['translate(0px, 0px) scale(1)', `translate(${spark.x * 0.7}px, ${spark.y * 0.7}px) scale(1)`, `translate(${spark.x}px, ${spark.y}px) scale(0.6)`],
-          }}
-          transition={{ duration: 0.65, ease: ARRIVE_EASE, times: [0, 0.35, 1], delay: SPARKS_AT }}
-        />)}
-      </div>}
+      {stamp}
     </motion.div>
   </div>;
 }
@@ -146,9 +92,7 @@ function DigestPreview({ still, subscribed }) {
 // subscription itself starts with the account's first follow, because the
 // digest is built from follows (EmailNotificationsContext).
 export function WelcomeInboxChoice({ subscribed, onChange }) {
-  const still = Boolean(useReducedMotion());
   return <div className="gw-preferences gw-inbox">
-    <DigestPreview still={still} subscribed={subscribed}/>
     <label className="gw-digest-optin" data-checked={subscribed ? '' : undefined}>
       <span className="gw-digest-optin-text">
         <strong id="gw-digest-optin-title">Email me the weekly digest</strong>
@@ -184,7 +128,9 @@ const CARD_SETTLE = 0.85;
 // turns into "Via your library". Plays once and is still by two seconds
 // (WCAG 2.2.2); with motion refused it is drawn opened, the card in place.
 // Only the account onboarding's university screen (OnboardingFlow) draws it.
-export function LibraryPreview({ still }) {
+// `stamp`, optional, is drawn on the paper's corner (the account onboarding
+// stamps Petri there).
+export function LibraryPreview({ still, stamp }) {
   const field = CATEGORIES[LIBRARY_PAPER.field];
   const [opened, setOpened] = useState(still);
   return <div className="gw-library-preview" aria-hidden="true">
@@ -206,6 +152,7 @@ export function LibraryPreview({ still }) {
         </span>
         <span className="gw-demo-title" />
         <span className="gw-demo-title gw-demo-title--short" />
+        {stamp}
       </div>
       <motion.div
         className="gw-library-card"

@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
+  ArrowRight,
   BookmarkSimple,
+  CaretDown,
   CaretUp,
   Heart,
   SignIn,
@@ -9,8 +11,17 @@ import {
   UserPlus,
 } from '@phosphor-icons/react';
 import { CATEGORIES } from '../../data/categories.js';
+import { Button } from '../ui/button.jsx';
+import { GithubMark } from '../ui/GithubMark.jsx';
+import { getUiErrorMessage } from '../../utils/errorMessages';
+import GoogleMark from './GoogleMark.jsx';
+import { useProviderSignIn } from './useProviderSignIn.js';
+import PetriFlask from '../Onboarding/PetriFlask.jsx';
+import PetriReading from '../Onboarding/PetriReading.jsx';
+import PetriStamp from '../Onboarding/PetriStamp.jsx';
+import PetriWelcome from '../Onboarding/PetriWelcome.jsx';
 import { normalizeGuestAreas, normalizeGuestTopics } from '../../utils/guestInterests.js';
-import { WelcomeReadingChoice, WelcomeInboxChoice, WelcomeProjectSupport } from './GuestWelcomePreferences.jsx';
+import { DigestPreview, WelcomeReadingChoice, WelcomeInboxChoice, WelcomeProjectSupport } from './GuestWelcomePreferences.jsx';
 import { AreaPicker, SubtopicsPicker, WelcomeCopy, WelcomeShell } from './WelcomeShell.jsx';
 import PrivacyPopover from './PrivacyPopover.jsx';
 import './GuestWelcome.css';
@@ -28,64 +39,21 @@ import './GuestWelcome.css';
 // another device goes straight to their account instead of answering again.
 // It offers Privacy too, so analytics can be turned off before anything else.
 //
-// The papers drifting past the first screen are real ones
-// (guestWelcome.test.js holds each to a complete citation).
+// The first screen is the landing page: the hero centred on the paper with its
+// own way forward, three engravings in the corners and a star now and then.
 //
-// Motion is decorative and runs once: every sequence settles inside five
-// seconds and then holds still, so nothing moves alongside the copy for
-// longer than WCAG 2.2.2 allows without a pause control. With motion refused,
-// each illustration is drawn in its final state.
-
-// The papers the welcome's two columns scroll through. Decoration, not feed
-// data — the feed only ever shows what the providers return — but real
-// papers, with the titles, authors and years they were published under, so
-// nothing on the first screen is invented. Heavy on recent AI, which is what
-// most visitors arrive wanting, and interleaved with landmarks from the other
-// fields so each column still reads as all of science. `topic` is the arXiv
-// category the paper is filed under, and its label comes from the taxonomy.
-const SHOWCASE_LEFT = [
-  { field: 'cs', topic: 'cs.CL', title: 'Attention Is All You Need', authors: 'Vaswani et al.', year: 2017 },
-  { field: 'physics', title: 'Observation of Gravitational Waves from a Binary Black Hole Merger', authors: 'LIGO Scientific and Virgo Collaborations', year: 2016 },
-  { field: 'cs', topic: 'cs.CL', title: 'Language Models are Few-Shot Learners', authors: 'Brown et al.', year: 2020 },
-  { field: 'bio', title: 'Highly accurate protein structure prediction with AlphaFold', authors: 'Jumper et al.', year: 2021 },
-  { field: 'cs', topic: 'cs.CL', title: 'Chain-of-Thought Prompting Elicits Reasoning in Large Language Models', authors: 'Wei et al.', year: 2022 },
-  { field: 'cs', topic: 'cs.CV', title: 'High-Resolution Image Synthesis with Latent Diffusion Models', authors: 'Rombach et al.', year: 2022 },
-  { field: 'q-fin', title: 'The Pricing of Options and Corporate Liabilities', authors: 'Black & Scholes', year: 1973 },
-  { field: 'cs', topic: 'cs.LG', title: 'Direct Preference Optimization: Your Language Model is Secretly a Reward Model', authors: 'Rafailov et al.', year: 2023 },
-  { field: 'eess', title: 'A Mathematical Theory of Communication', authors: 'Shannon', year: 1948 },
-  { field: 'cs', topic: 'cs.AI', title: 'DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning', authors: 'DeepSeek-AI', year: 2025 },
-  { field: 'cs', topic: 'cs.CV', title: 'Segment Anything', authors: 'Kirillov et al.', year: 2023 },
-  { field: 'math', title: 'The entropy formula for the Ricci flow and its geometric applications', authors: 'Perelman', year: 2002 },
-  { field: 'cs', topic: 'cs.LG', title: 'FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness', authors: 'Dao et al.', year: 2022 },
-  { field: 'econ', title: 'Prospect Theory: An Analysis of Decision under Risk', authors: 'Kahneman & Tversky', year: 1979 },
-  { field: 'cs', topic: 'cs.CV', title: 'An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale', authors: 'Dosovitskiy et al.', year: 2021 },
-  { field: 'mech', title: 'A Robust Layered Control System for a Mobile Robot', authors: 'Brooks', year: 1986 },
-];
-
-const SHOWCASE_RIGHT = [
-  { field: 'cs', topic: 'cs.CL', title: 'Training language models to follow instructions with human feedback', authors: 'Ouyang et al.', year: 2022 },
-  { field: 'med', title: 'Safety and Efficacy of the BNT162b2 mRNA Covid-19 Vaccine', authors: 'Polack et al.', year: 2020 },
-  { field: 'cs', topic: 'cs.CV', title: 'Deep Residual Learning for Image Recognition', authors: 'He et al.', year: 2016 },
-  { field: 'bio', title: 'A Programmable Dual-RNA–Guided DNA Endonuclease in Adaptive Bacterial Immunity', authors: 'Jinek et al.', year: 2012 },
-  { field: 'cs', topic: 'cs.CV', title: 'Learning Transferable Visual Models From Natural Language Supervision', authors: 'Radford et al.', year: 2021 },
-  { field: 'cs', topic: 'cs.CL', title: 'LLaMA: Open and Efficient Foundation Language Models', authors: 'Touvron et al.', year: 2023 },
-  { field: 'stat', title: 'Regression Shrinkage and Selection via the Lasso', authors: 'Tibshirani', year: 1996 },
-  { field: 'cs', topic: 'cs.LG', title: 'Mamba: Linear-Time Sequence Modeling with Selective State Spaces', authors: 'Gu & Dao', year: 2023 },
-  { field: 'physics', title: 'Quantum supremacy using a programmable superconducting processor', authors: 'Arute et al.', year: 2019 },
-  { field: 'cs', topic: 'cs.CL', title: 'Constitutional AI: Harmlessness from AI Feedback', authors: 'Bai et al.', year: 2022 },
-  { field: 'cs', topic: 'cs.CL', title: 'Toolformer: Language Models Can Teach Themselves to Use Tools', authors: 'Schick et al.', year: 2023 },
-  { field: 'chemeng', title: 'Electric Field Effect in Atomically Thin Carbon Films', authors: 'Novoselov et al.', year: 2004 },
-  { field: 'cs', topic: 'cs.CL', title: 'LoRA: Low-Rank Adaptation of Large Language Models', authors: 'Hu et al.', year: 2022 },
-  { field: 'cs', topic: 'cs.LG', title: 'Scaling Laws for Neural Language Models', authors: 'Kaplan et al.', year: 2020 },
-  { field: 'civil', title: 'The Tragedy of the Commons', authors: 'Hardin', year: 1968 },
-  { field: 'cs', topic: 'cs.LG', title: 'Denoising Diffusion Probabilistic Models', authors: 'Ho, Jain & Abbeel', year: 2020 },
-];
-
-// Seconds per card on screen: the loop's length follows the list, so adding a
-// paper does not speed the column up.
-const STREAM_SECONDS_PER_PAPER = 7;
+// Motion is decorative. Every sequence settles inside five seconds and then
+// holds still, except the stars, which are single glints of under two seconds
+// each, never over the copy. With motion refused, each illustration is drawn
+// in its final state and no star is drawn at all.
 
 const STEPS = ['welcome', 'how', 'topics', 'subtopics', 'reading', 'inbox', 'support'];
+// Petri in place of the kicker, as on the account onboarding: looking into a
+// flask over the areas, and dressed for the level picked (PetriReading) over
+// how deep to read. The other screens
+// carry their own illustrations or a long list, and leave her out.
+// What you do here opens on her holding up a card that says hello.
+const STEP_PETRI = { how: PetriWelcome, topics: PetriFlask, reading: PetriReading };
 // Where the intro's skip lands: the question, not past it.
 const TOPICS_INDEX = STEPS.indexOf('topics');
 
@@ -99,15 +67,19 @@ const COPY = {
     stepOf: (n, total) => `Step ${n} of ${total}`,
     back: 'Back',
     skip: 'Skip the intro',
-    pauseMotion: 'Pause the moving papers',
     welcome: {
       kicker: 'Welcome to PaperTok',
-      title: 'Today’s science, in one feed.',
+      title: <>Today’s science, <em>in one feed.</em></>,
       lede: 'Like TikTok, but you come out smarter. Five minutes a day and nothing in your field slips past you.',
       cta: 'Get started',
+      or: 'or',
+      signIn: 'I already have an account',
+      github: 'Continue with GitHub',
+      google: 'Continue with Google',
     },
     how: {
-      kicker: 'What you do here',
+      // Petri holds this up on a card in place of a kicker (STEP_PETRI).
+      kicker: 'Hello',
       title: 'You read science the way you scroll.',
       beats: [
         { title: 'One paper per screen', body: 'Title, authors and abstract. Swipe for the next one.' },
@@ -138,6 +110,7 @@ const COPY = {
     inbox: {
       kicker: 'Your inbox',
       title: 'A little science in your inbox?',
+      lede: 'Once a week, the papers worth your time from the fields you follow, in one short email.',
       cta: 'Continue',
     },
     support: {
@@ -149,50 +122,49 @@ const COPY = {
   },
 };
 
-// One of the welcome's two columns: a loop of paper cards drifting past on
-// their own. The list is drawn twice and the track travels exactly half its
-// height (or width, on a phone), so the seam never shows.
-//
-// Anything that moves by itself for more than five seconds beside the copy
-// has to be stoppable (WCAG 2.2.2). There is no pause button on screen and a
-// pointer passing over does not stop it; the column itself is the control, a
-// toggle — click, tap, or Tab to it and press Enter — that stops both. The cards are decoration and hidden from assistive tech;
-// the toggle is what a screen reader meets, by name and pressed state.
-function PaperStream({ papers, reverse = false, paused, onToggle, toggleLabel, still }) {
-  return (
-    <div className={`gw-stream-col${paused ? ' is-paused' : ''}`}>
-      <div className={`gw-stream${reverse ? ' gw-stream--reverse' : ''}`} aria-hidden="true">
-        <div className="gw-stream-track" style={{ '--stream-duration': `${papers.length * STREAM_SECONDS_PER_PAPER}s` }}>
-          {[...papers, ...papers].map((paper, index) => {
-            const area = CATEGORIES[paper.field];
-            const topic = paper.topic ? area.subcategories[paper.topic] : null;
-            const label = topic ?? area;
-            return (
-              <div key={index} className="gw-stream-card" style={{ '--area-accent': area.gradient }}>
-                <p className="gw-stream-meta">
-                  <span>{label.label}</span>
-                  <span className="gw-stream-dot">·</span>
-                  <span>{paper.year}</span>
-                </p>
-                <p className="gw-stream-title" lang="en">{paper.title}</p>
-                <p className="gw-stream-authors">{paper.authors}</p>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      {!still && (
-        <button
-          type="button"
-          className="gw-stream-hit"
-          aria-pressed={paused}
-          aria-label={toggleLabel}
-          title={toggleLabel}
-          onClick={onToggle}
-        />
-      )}
-    </div>
-  );
+// The welcome's stars: one four-point glint at a time fades up, turns and fades
+// out somewhere on the page, then the next, never over the hero. Decoration
+// only, so the layer is hidden from assistive tech; nothing at all with motion
+// refused. Drawn with the Web Animations API, so no state re-renders the page.
+const STAR_PATH = 'M12 0C12.8 7 17 11.2 24 12C17 12.8 12.8 17 12 24C11.2 17 7 12.8 0 12C7 11.2 11.2 7 12 0Z';
+
+function Stars({ avoid }) {
+  const sky = useRef(null);
+  useEffect(() => {
+    let timer;
+    const twinkle = () => {
+      const box = sky.current?.getBoundingClientRect();
+      const hero = avoid.current?.getBoundingClientRect();
+      if (!box || !hero) return;
+      let x;
+      let y;
+      let tries = 0;
+      do {
+        x = Math.random() * box.width;
+        y = Math.random() * box.height;
+        tries += 1;
+      } while (tries < 8 && x > hero.left - box.left - 24 && x < hero.right - box.left + 24
+        && y > hero.top - box.top - 24 && y < hero.bottom - box.top + 24);
+      const size = 10 + Math.random() * 12;
+      const star = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      star.setAttribute('viewBox', '0 0 24 24');
+      if (Math.random() < 0.5) star.classList.add('is-spot');
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', STAR_PATH);
+      star.append(path);
+      Object.assign(star.style, { left: `${x - size / 2}px`, top: `${y - size / 2}px`, width: `${size}px`, height: `${size}px` });
+      sky.current.append(star);
+      star.animate([
+        { opacity: 0, transform: 'scale(0.4) rotate(0deg)' },
+        { opacity: 0.9, transform: 'scale(1) rotate(45deg)', offset: 0.4 },
+        { opacity: 0, transform: 'scale(0.6) rotate(90deg)' },
+      ], { duration: 1400 + Math.random() * 800, easing: 'ease-in-out' }).finished.then(() => star.remove(), () => star.remove());
+      timer = window.setTimeout(twinkle, 500 + Math.random() * 1000);
+    };
+    timer = window.setTimeout(twinkle, 800);
+    return () => window.clearTimeout(timer);
+  }, [avoid]);
+  return <div ref={sky} className="gw-stars" aria-hidden="true" />;
 }
 
 // ── The three gestures, one per screen, each playing its point once ──
@@ -376,8 +348,15 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
   const [emailDigest, setEmailDigest] = useState(initialEmailDigest);
   const [direction, setDirection] = useState(1);
   const [leaving, setLeaving] = useState(false);
-  const [streamsPaused, setStreamsPaused] = useState(false);
-  const toggleStreams = useCallback(() => setStreamsPaused(paused => !paused), []);
+  const hero = useRef(null);
+  // The screen actually on show. The page around it (the landing's engravings,
+  // its missing foot, the bar's Sign in) follows this rather than `step`, so it
+  // changes as the old screen finishes leaving, not under it mid-fade.
+  const [shownStep, setShownStep] = useState(STEPS[0]);
+  const onLanding = shownStep === 'welcome';
+  // The landing's account button opens the two providers under it, in place.
+  const [accountOpen, setAccountOpen] = useState(false);
+  const { collision, error: signInError, signIn } = useProviderSignIn('onboarding');
   const [selected, setSelected] = useState(() => new Set(normalizeGuestAreas(initialAreas)));
   const [selectedTopics, setSelectedTopics] = useState(() => new Set(normalizeGuestTopics(initialTopics, initialAreas)));
   const [expandedAreas, setExpandedAreas] = useState(() => new Set());
@@ -394,7 +373,6 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
   const isSubtopics = step === 'subtopics';
   // The two question screens scroll under the foot and share a width.
   const isQuestion = isTopics || isSubtopics;
-  const isPreferences = step === 'reading' || step === 'inbox' || step === 'support';
 
   const goTo = (nextIndex) => {
     if (nextIndex === stepIndex || nextIndex < 0 || nextIndex >= STEPS.length) return;
@@ -450,7 +428,21 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
   // un-narrowed stands for all of it, so the last button is always live.
   const primaryDisabled = isQuestion && selected.size === 0;
 
-  const copyBlock = <WelcomeCopy kicker={stepCopy.kicker} title={stepCopy.title} lede={stepCopy.lede} />;
+  const StepPetri = STEP_PETRI[step];
+  // The inbox screen opens on its envelope, over the title where the kicker
+  // was, stamped with Petri like the university screen's paper.
+  const copyBlock = (
+    <>
+      {step === 'inbox' && <DigestPreview still={still} stamp={<PetriStamp />} />}
+      <WelcomeCopy
+        kicker={StepPetri
+          ? <StepPetri level={readingLevel} label={stepCopy.kicker} className="gw-petri" />
+          : step === 'inbox' ? null : stepCopy.kicker}
+        title={stepCopy.title}
+        lede={stepCopy.lede}
+      />
+    </>
+  );
 
   return (
     <WelcomeShell
@@ -459,44 +451,85 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
       still={still}
       leaving={leaving}
       onLeaveComplete={() => onComplete?.(answer())}
-      className={step === 'welcome' ? 'gw--showcase' : undefined}
-      stageClassName={isQuestion || isPreferences ? 'gw-stage--topics' : undefined}
+      className={onLanding ? 'gw--landing' : undefined}
+      landing={onLanding}
+      onStepShown={setShownStep}
+      // Follows the screen on show, like the landing's chrome above.
+      stageClassName={['topics', 'subtopics', 'reading', 'inbox', 'support'].includes(shownStep) ? 'gw-stage--topics' : undefined}
       dots={{ count: STEPS.length, index: stepIndex, label: copy.stepOf, ariaLabel: copy.progress }}
       primary={{ label: stepCopy.cta, onClick: primary, disabled: primaryDisabled }}
       back={stepIndex > 0 ? { onClick: () => goTo(stepIndex - 1), label: copy.back } : null}
       // The intro's skip lands on the question, wherever there is intro left.
       skip={stepIndex < TOPICS_INDEX ? { onClick: () => goTo(TOPICS_INDEX), label: copy.skip } : null}
+      // The engravings and stars sit against the whole page, outside the
+      // screen's entrance, so they are in their corners from the first frame.
+      backdrop={onLanding && (
+        <>
+          <span className="gw-plate gw-plate--scrolls" aria-hidden="true" />
+          <span className="gw-plate gw-plate--microscope" aria-hidden="true" />
+          <span className="gw-plate gw-plate--lab" aria-hidden="true" />
+          {!still && <Stars avoid={hero} />}
+        </>
+      )}
       barAction={(
         <>
           {/* Here and not in WelcomeShell: account onboarding shares the shell
-              and has Settings. A visitor can object before answering anything. */}
+              and has Settings. A visitor can object before answering anything,
+              so Privacy is on the landing too. The landing carries its own
+              account button, so the bar's Sign in starts on the next screen. */}
           <PrivacyPopover className="gw-bar-button" />
-          <button type="button" className="gw-sign-in" onClick={onSignIn}>
-            <SignIn size={15} aria-hidden="true" />
-            Sign in
-          </button>
+          {!onLanding && (
+            <button type="button" className="gw-sign-in" onClick={onSignIn}>
+              <SignIn size={15} aria-hidden="true" />
+              Sign in
+            </button>
+          )}
         </>
       )}
     >
       {step === 'welcome' ? (
-        <div className="gw-showcase">
-          <PaperStream
-            papers={SHOWCASE_LEFT}
-            paused={streamsPaused}
-            onToggle={toggleStreams}
-            toggleLabel={copy.pauseMotion}
-            still={still}
-          />
-          {copyBlock}
-          <PaperStream
-            papers={SHOWCASE_RIGHT}
-            reverse
-            paused={streamsPaused}
-            onToggle={toggleStreams}
-            toggleLabel={copy.pauseMotion}
-            still={still}
-          />
-        </div>
+        <>
+          <div ref={hero}>
+            {copyBlock}
+            <div className="gw-cta">
+              <Button variant="engraved" size="lg" className="w-full" onClick={primary}>
+                {copy.welcome.cta}
+                <ArrowRight size={16} aria-hidden="true" />
+              </Button>
+              <p className="gw-or">{copy.welcome.or}</p>
+              <Button
+                variant="halftone"
+                size="lg"
+                className="w-full"
+                aria-expanded={accountOpen}
+                aria-controls="gw-providers"
+                onClick={() => setAccountOpen(open => !open)}
+              >
+                {copy.welcome.signIn}
+                <CaretDown size={14} weight="bold" aria-hidden="true" className="gw-account-caret" />
+              </Button>
+              {/* Rows grow 0fr to 1fr, so the stack opens without measuring;
+                  closed it is inert, so the keyboard never lands on a hidden provider. */}
+              <div id="gw-providers" className="gw-providers" data-open={accountOpen ? '' : undefined} inert={!accountOpen}>
+                <div>
+                  <Button variant="outline" size="lg" className="w-full" onClick={() => signIn('github')}>
+                    <GithubMark size={18} />
+                    {copy.welcome.github}
+                  </Button>
+                  <Button variant="outline" size="lg" className="w-full" onClick={() => signIn('google')}>
+                    <GoogleMark size={18} />
+                    {copy.welcome.google}
+                  </Button>
+                  <p className="gw-providers-note" role={collision || signInError ? 'alert' : undefined}>
+                    {collision
+                      ? 'That address already signs in another way. Use that method, then connect the other from Settings.'
+                      : signInError ? getUiErrorMessage(signInError, 'AUTH_FAILED') : ''}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
       ) : copyBlock}
 
       {step === 'how' && (

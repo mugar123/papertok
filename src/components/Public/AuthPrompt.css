@@ -116,11 +116,6 @@
   animation: authSpin 0.7s linear infinite;
 }
 
-.auth-spinner--on-ink {
-  border-color: rgba(255, 255, 255, 0.35);
-  border-top-color: var(--text-inverse);
-}
-
 @keyframes authSpin {
   to { transform: rotate(360deg); }
 }

@@ -117,7 +117,9 @@ test('each step heading takes focus when the reader moves to it', async () => {
  */
 test('the steps presence does not switch off the illustrations’ entrance', async () => {
   const shell = await shellPromise;
-  const presence = shell.match(/<AnimatePresence[^>]*>/g) ?? [];
+  // The screens' presence (mode="wait"); the progress dots have their own,
+  // which skips the first paint on purpose so the dots are simply there.
+  const presence = (shell.match(/<AnimatePresence[^>]*>/g) ?? []).filter(tag => tag.includes('mode="wait"'));
   assert.ok(presence.length > 0, 'the steps still cross-fade through AnimatePresence');
   for (const tag of presence) {
     assert.doesNotMatch(tag, /initial=\{false\}/, `${tag} would freeze every illustration on its last frame`);
@@ -128,56 +130,43 @@ test('the steps presence does not switch off the illustrations’ entrance', asy
 });
 
 /**
- * Refused motion draws every illustration in its final state, holds the
- * paper columns still, and so has no pause control to offer.
+ * Refused motion draws every illustration in its final state and draws no
+ * stars at all.
  */
 test('with motion refused the illustrations are drawn finished and the columns hold still', async () => {
   const jsx = await jsxPromise;
   assert.match(jsx, /const still = Boolean\(prefersReducedMotion\);/);
   assert.match(jsx, /const \[order, setOrder\] = useState\(still \? \['b', 'a', 'c'\] : \['a', 'b', 'c'\]\);/);
   assert.match(jsx, /if \(still\) onComplete\?\.\(/, 'with no leave to wait for, the answer is handed over at once');
-  assert.match(jsx, /\{!still && \(\s*<button[\s\S]*?className="gw-stream-hit"/, 'no pause control when nothing moves');
+  assert.match(jsx, /\{!still && <Stars avoid=\{hero\} \/>\}/, 'no stars when motion is refused');
   const css = await cssPromise;
   const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/)?.[0] ?? '';
-  assert.match(reduced, /\.gw-stream-track \{\s*animation: none;/);
   assert.match(reduced, /\.gw-area \{\s*animation: none;/);
 });
 
 
 /**
- * The two columns on the first screen: real papers, filed under fields and
- * arXiv categories that exist in the app's own taxonomy, looping without a
- * seam. They move by themselves for longer than five seconds beside the copy,
- * so they have to be stoppable (WCAG 2.2.2) — and with no pause button drawn
- * and no pause on hover, the column itself is the control: a named toggle
- * over it, with its focus ring drawn outside the fading mask.
+ * The first screen is the landing page: the hero carries its own way forward
+ * (the shell's foot is not drawn there), the account button discloses the two
+ * providers in place — named as expanded or not, and inert while closed — and
+ * the engravings and stars are decoration that assistive tech never meets.
  */
-test('the paper columns loop real papers and the column itself pauses them', async () => {
-  const jsx = await jsxPromise;
-  const { CATEGORIES } = await import('../../data/categories.js');
-  const papers = [...jsx.matchAll(/\{ field: '([^']+)', (?:topic: '([^']+)', )?title: '([^']+)', authors: '([^']+)', year: (\d{4}) \}/g)];
-  assert.ok(papers.length >= 32, 'sixteen papers a column');
-  assert.ok(papers.filter(([, field, topic]) => field === 'cs' && topic).length >= 16, 'recent AI is well represented');
-  for (const [, field, topic, title, authors, year] of papers) {
-    assert.ok(CATEGORIES[field], `${title}: "${field}" is not a PaperTok field`);
-    if (topic) assert.ok(CATEGORIES[field].subcategories[topic], `${title}: "${topic}" is not a category of ${field}`);
-    assert.ok(authors.length > 0 && Number(year) > 1900 && Number(year) <= 2026, `${title}: incomplete citation`);
+test('the welcome is the landing page, with its own way forward and decorative engravings', async () => {
+  const [jsx, css] = await Promise.all([jsxPromise, cssPromise]);
+  const welcome = jsx.slice(jsx.indexOf("{step === 'welcome' ? ("), jsx.indexOf(') : copyBlock}'));
+  // The engravings ride the page, not the screen's entrance: placed against a
+  // section that slides in, they would start out bunched at its middle.
+  const backdrop = jsx.slice(jsx.indexOf('backdrop={onLanding && ('), jsx.indexOf('barAction={'));
+  assert.match(welcome, /<Button variant="engraved" size="lg" className="w-full" onClick=\{primary\}>/, 'Get started moves to the next screen');
+  assert.match(welcome, /aria-expanded=\{accountOpen\}\s+aria-controls="gw-providers"/, 'the account button says whether the providers are open');
+  assert.match(welcome, /id="gw-providers"[^>]*inert=\{!accountOpen\}/, 'closed, the providers cannot take focus');
+  assert.match(welcome, /onClick=\{\(\) => signIn\('github'\)\}/);
+  assert.match(welcome, /onClick=\{\(\) => signIn\('google'\)\}/);
+  for (const plate of ['scrolls', 'microscope', 'lab']) {
+    assert.match(backdrop, new RegExp(`<span className="gw-plate gw-plate--${plate}" aria-hidden="true" />`));
   }
-  const titles = papers.map(([, , , title]) => title);
-  assert.equal(new Set(titles).size, titles.length, 'no paper in both columns');
-
-  // Drawn twice and moved half its length: the loop lands where it started.
-  assert.match(jsx, /\[\.\.\.papers, \.\.\.papers\]\.map/);
-  const css = await cssPromise;
-  assert.match(css, /@keyframes gwStreamY \{\s*to \{ transform: translateY\(-50%\); \}/);
-
-  // The pause, with no button on screen.
-  assert.doesNotMatch(jsx, /gw-stream-toggle/, 'a pause button is drawn again');
-  assert.match(jsx, /className="gw-stream-hit"\s+aria-pressed=\{paused\}\s+aria-label=\{toggleLabel\}/);
-  assert.match(css, /\.gw-stream-col\.is-paused \.gw-stream-track \{\s*animation-play-state: paused;/);
-  assert.doesNotMatch(css, /\.gw-stream-col:hover/, 'passing the pointer over a column must not stop it');
-  assert.match(css, /\.gw-stream-hit:focus-visible \{\s*outline: 2px solid var\(--focus-ring\);/);
-  assert.match(jsx, /<div className=\{`gw-stream\$\{reverse[^`]*`\} aria-hidden="true">/, 'the cards are decoration');
+  assert.match(jsx, /<div ref=\{sky\} className="gw-stars" aria-hidden="true" \/>/);
+  assert.match(css, /\.gw--landing \.gw-foot \{\s*display: none;/, 'one way forward on the landing, not two');
 });
 
 /**
@@ -192,8 +181,8 @@ test('the welcome copy is English-only', async () => {
 });
 
 /**
- * An app's first screens, not a landing page: one centred column and the way
- * forward centred at the foot, with nothing competing beside it.
+ * One centred column and the way forward centred at the foot, with nothing
+ * competing beside it (the landing page carries its own, see above).
  */
 test('the welcome is one centred column with the button centred at the foot', async () => {
   const css = await cssPromise;
@@ -203,7 +192,6 @@ test('the welcome is one centred column with the button centred at the foot', as
   const foot = css.match(/(?:^|\n)\.gw-foot \{[^}]*\}/)?.[0] ?? '';
   assert.match(foot, /flex-direction: column;/);
   assert.match(foot, /align-items: center;/);
-  assert.doesNotMatch(css, /\.gw-hero|\.gw-stats/, 'the landing-page layout is back');
 });
 
 /**
@@ -229,11 +217,13 @@ test('the welcome ends in the feed, and an existing account can sign in from any
   assert.match(support, /cta: 'Start exploring papers'/);
   assert.doesNotMatch(jsx, /cta: 'Sign in'/, 'the last action opens the feed, not a dialog');
   // Someone onboarded on another device must not answer the welcome again to
-  // reach their account: the bar carries Sign in on every screen.
+  // reach their account: the landing's account button opens the providers, and
+  // the bar carries Sign in on every screen after it.
   const bar = shell.slice(shell.indexOf('<header className="gw-bar">'), shell.indexOf('</header>'));
   assert.match(bar, /\{barAction\}/, 'the bar draws the action its caller passes');
-  const barAction = jsx.slice(jsx.indexOf('barAction={('), jsx.indexOf(')}', jsx.indexOf('barAction={(')));
-  assert.match(barAction, /<button type="button" className="gw-sign-in" onClick=\{onSignIn\}>/);
+  const barAction = jsx.slice(jsx.indexOf('barAction={('), jsx.indexOf("{step === 'welcome'", jsx.indexOf('barAction={(')));
+  assert.match(barAction, /<PrivacyPopover className="gw-bar-button" \/>/, 'Privacy is on every screen, the landing included');
+  assert.match(barAction, /\{!onLanding && \(\s*<button type="button" className="gw-sign-in" onClick=\{onSignIn\}>/);
   assert.match(barAction, /Sign in/);
   // The page leaves, and only then hands its answer over.
   assert.match(shell, /animate=\{leaving && !still \? \{ opacity: 0, y: -16 \} : \{ opacity: 1, y: 0 \}\}/);

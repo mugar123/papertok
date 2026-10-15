@@ -10,6 +10,62 @@
    arriving. Tokens only, so the dark theme needs nothing from this file.
    ============================================ */
 
+/* ── The greeting: Petri with the reader's name, then the title written out ──
+   Petri rises onto its dish with a small overshoot and is settled by 0.6s,
+   when the title's pen starts (WRITE_START in OnboardingFlow.jsx). */
+.onboarding-petri {
+  display: block;
+  width: 8.5rem;
+  height: 8.25rem; /* the cropped drawing's 128 × 124 */
+  margin: 0 auto var(--space-2);
+  color: var(--text-primary);
+  /* The rise overshoots: the card goes past the box's top for a moment. */
+  overflow: visible;
+}
+
+.onboarding-petri .onboarding-petri-body {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: onboardingPetriRise 500ms cubic-bezier(0.34, 1.56, 0.64, 1) 100ms backwards;
+}
+
+@keyframes onboardingPetriRise {
+  from { opacity: 0; translate: 0 24px; scale: 1 0.7; }
+}
+
+/* The profile screen's Petri: on "private" the glasses drop onto her face as
+   the smile goes. Transitions, not keyframes, so a quick flip of the choice
+   retargets from wherever the glasses are. */
+.onboarding-petri-smile,
+.onboarding-petri-shades {
+  transition: opacity 160ms ease-out, translate 220ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.onboarding-petri-shades {
+  opacity: 0;
+  translate: 0 -14px;
+}
+
+.onboarding-petri[data-private] .onboarding-petri-shades {
+  opacity: 1;
+  translate: 0 0;
+}
+
+.onboarding-petri[data-private] .onboarding-petri-smile {
+  opacity: 0;
+}
+
+/* The smile flattens to a straight line from its corners' height, in place. */
+.onboarding-petri-mouth {
+  transform-box: fill-box;
+  transform-origin: 50% 0;
+  transition: scale 220ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.onboarding-petri[data-private] .onboarding-petri-mouth {
+  scale: 1 0.05;
+}
+
 /* ── The greeting: the title written out ── */
 .onboarding-script {
   display: block;
@@ -37,6 +93,18 @@
    Side by side from 240px each. The screen's heading asks the question, so
    the group's legend is left to assistive tech. */
 .gw-step--profile {
+  width: min(640px, 100%);
+}
+
+/* The university screen opens on the welcome's library paper, over the
+   title (the prop has no kicker over it), 24px clear of it like the handle's
+   window. */
+.gw-step--university > .gw-library-preview {
+  margin: 0 0 var(--space-6);
+}
+
+/* The university screen is as wide as the profile one before it. */
+.gw-step--university {
   width: min(640px, 100%);
 }
 
@@ -68,7 +136,9 @@
 .onboarding-fields {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  /* Wider between fields than inside one, so each label, input and hint read
+     as one group rather than the hint floating between two. */
+  gap: var(--space-7);
   width: min(400px, 100%);
   margin: var(--space-6) auto 0;
   text-align: left;
@@ -99,7 +169,8 @@
 }
 
 .onboarding-field-hint {
-  margin: 0;
+  /* Tucked under its input (4px rather than the field's 8px). */
+  margin: calc(-1 * var(--space-1)) 0 0;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   line-height: var(--lh-normal);
@@ -133,6 +204,12 @@
 
 /* The handle field's "@", painted inside the field in the body face, as in
    the profile editor. A click on it has to reach the input underneath. */
+/* On the handle screen the fields open the preferences block, whose own
+   margin already spaces them from the lede: no second margin on top. */
+.onboarding-handle > .onboarding-fields {
+  margin-top: 0;
+}
+
 .onboarding-handle-input {
   position: relative;
 }
@@ -162,7 +239,9 @@
    once it is. Under the chrome, the page it opens as a faint skeleton. */
 .gw-gh.onboarding-window {
   width: 320px;
-  margin-inline: auto;
+  /* Over the title: 20px drawn at 1.25 is the 24px the lede keeps from the
+     fields, so the screen keeps one rhythm, window, title, lede, fields. */
+  margin: 0 auto var(--space-5);
   zoom: 1.25;
 }
 
@@ -205,6 +284,18 @@
   border: 1px solid var(--border-default);
   border-radius: var(--radius-full);
   background: var(--bg-sunken);
+}
+
+/* Petri's face as the page's profile picture, cropped to the circle. */
+.onboarding-window-avatar:has(> svg) {
+  overflow: hidden;
+  border-color: var(--border-strong);
+}
+
+.onboarding-window-avatar > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .onboarding-window-bar {
@@ -345,6 +436,15 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .onboarding-petri .onboarding-petri-body {
+    animation: none;
+  }
+
+  /* The faces still cross-fade; the glasses no longer drop. */
+  .onboarding-petri-shades {
+    translate: none;
+  }
+
   .onboarding-university .institution-link.is-linked,
   .onboarding-university .institution-services-list > li {
     animation: none;
