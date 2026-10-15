@@ -17,7 +17,6 @@ import { ACCOUNT_DELETE_PATH, AccountDeletionError, handleAccountDeletionRequest
 import { INSTITUTION_PATHS, InstitutionLinkError, handleInstitutionLinkRequest } from './institution-link.js';
 import { INSTITUTION_ACCESS_PATH, InstitutionAccessError, handleInstitutionAccess } from './institution-access.js';
 import { INSTITUTION_SERVICES_PATH, handleInstitutionServices } from './institution-services.js';
-import { handleThreadAnchorRequest, threadAnchorErrorResponse } from './thread-anchor.js';
 import { isServiceAccountConfigured } from './firestore-admin.js';
 import { allowedOrigins, corsHeaders, json } from './http.js';
 import { handleOpenAlex } from './openalex-api.js';
@@ -167,24 +166,6 @@ export async function handleRequest(request, env) {
       });
     }
     return handleShareRoute(request, env);
-  }
-  if (url.pathname === '/thread-anchor' || url.pathname === '/thread-anchor/invalidate') {
-    // Public comments: a guest can open a thread, so this is origin-gated
-    // rather than session-gated — and `Origin` is required, not optional:
-    // every fetch from the app is cross-origin and carries it, and a request
-    // without one is not a browser of ours. Invalidation still requires a
-    // Firebase identity because it is a write against the shared cache.
-    if (!origin || !allowedOrigins(env).has(origin)) {
-      return json({ code: 'ORIGIN_NOT_ALLOWED' }, 403, { 'cache-control': 'no-store' });
-    }
-    try {
-      return await handleThreadAnchorRequest(request, env, url, {
-        cors: corsHeaders(origin, env),
-      });
-    } catch (error) {
-      console.error('Thread anchor failed', error);
-      return threadAnchorErrorResponse(error, corsHeaders(origin, env));
-    }
   }
   if (url.pathname === '/notifications/unsubscribe' && ['GET', 'POST'].includes(request.method)) {
     return handleEmailUnsubscribe(request, env);

@@ -67,24 +67,10 @@ OPENALEX_GLOBAL_DAILY_LIMIT = "8000"
 # /sources/s2 and /related, which spend the same allowance.
 PUBMED_GLOBAL_MINUTE_LIMIT = "60"
 S2_GLOBAL_MINUTE_LIMIT = "60"
-# Firestore REST misses of /thread-anchor a minute, global: a KV hit is free
-# and not counted, and the unit reserved is one missing identity, not one
-# request -- a request can miss on up to four identities at once, and
-# charging per request would let it spend every one for the price of one.
-# 120 missing identities a minute is 360 reads a minute at worst, each miss
-# up to three service-account reads.
-THREAD_ANCHOR_GLOBAL_MINUTE_LIMIT = "120"
 
 [[kv_namespaces]]
 binding = "NOTIFICATION_STORE"
 id = "45c1519982dd48f8a0ea08403c159ae1"
-
-# Comment-thread anchors share this namespace under a `thread:v1:` prefix
-# until a dedicated `THREAD_ANCHOR_STORE` exists. Invalidation is a KV delete
-# on write, with a short TTL as the missed-invalidation net.
-# [[kv_namespaces]]
-# binding = "THREAD_ANCHOR_STORE"
-# id = "<id from wrangler kv namespace create THREAD_ANCHOR_STORE>"
 
 # A rewrite is identical for every reader, so it is cached globally in KV rather
 # than per edge. Until a dedicated namespace exists, ai-rewrite.js falls back to

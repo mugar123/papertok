@@ -12,7 +12,6 @@
  * privacy policy default.
  */
 
-import { DISSOCIATED_COMMENT_FIELDS } from '../src/utils/commentIdentity.js';
 import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.js';
 import {
   clearFieldsWrite,
@@ -23,9 +22,17 @@ import {
   mergeWrite,
 } from './firestore-admin.js';
 import { purgeEmailSubscription } from './email-notifications.js';
-import { deleteCachedEntries } from './thread-anchor.js';
 
 export const ACCOUNT_DELETE_PATH = '/account/delete';
+
+// How a comment written before comments were removed names its author once the
+// account is gone: the text stays, the author does not. `dissociated: true` is
+// the durable signal; an empty handle on its own could be a half-written row.
+const DISSOCIATED_COMMENT_FIELDS = Object.freeze({
+  authorUid: '',
+  authorHandle: '',
+  dissociated: true,
+});
 
 const USER_SUBCOLLECTIONS = Object.freeze([
   'lists',
@@ -58,10 +65,6 @@ function requireUid(value) {
     throw new AccountDeletionError('INVALID_USER', 400);
   }
   return uid;
-}
-
-function kvBinding(env) {
-  return env?.THREAD_ANCHOR_STORE || env?.NOTIFICATION_STORE || null;
 }
 
 function bearerToken(request) {
@@ -101,13 +104,7 @@ async function commitBestEffort(admin, writes) {
   }
 }
 
-function paperKeyFromCommentPath(path) {
-  if (!Array.isArray(path) || path.length < 4) return '';
-  if (path[0] !== 'papers' || path[2] !== 'comments') return '';
-  return path[1];
-}
-
-async function dissociateComments(admin, uid, env) {
+async function dissociateComments(admin, uid) {
   const rows = await admin.runQuery({
     collectionId: 'comments',
     allDescendants: true,
@@ -115,18 +112,12 @@ async function dissociateComments(admin, uid, env) {
     limit: PAGE_SIZE,
   });
   const writes = [];
-  const paperKeys = [];
   for (const row of rows) {
     if (!Array.isArray(row.path) || row.path.length < 4) continue;
     writes.push(mergeWrite(admin.name(row.path), { ...DISSOCIATED_COMMENT_FIELDS }));
-    const paperKey = paperKeyFromCommentPath(row.path);
-    if (paperKey) paperKeys.push(paperKey);
     if (writes.length >= MAX_WRITES) break;
   }
   await commitBestEffort(admin, writes);
-  if (paperKeys.length > 0) {
-    await deleteCachedEntries(kvBinding(env), [...new Set(paperKeys)]);
-  }
   return rows.length >= PAGE_SIZE;
 }
 
@@ -277,7 +268,7 @@ export async function runAccountDeletionSlice(admin, uid, env, {
   idToken,
   fetchImpl = fetch,
 } = {}) {
-  if (await dissociateComments(admin, uid, env)) {
+  if (await dissociateComments(admin, uid)) {
     return { complete: false, stage: 'comments' };
   }
   if (await deleteOwnedPublicLists(admin, uid)) {
