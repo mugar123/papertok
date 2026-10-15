@@ -9,7 +9,10 @@ been loaded when the session started at the root. Worker configuration also foll
 
 ## Scope and skills
 
-- Name new branches `samuel/feature-name` unless the user requests another name.
+- Name new branches `<author-name>/feature-name`, using the current author's given
+  name in lowercase ASCII (for example, `nicolas/feature-name` for Nicolas), unless
+  the user requests another name. Resolve the author from the user's stated identity
+  or Git author configuration; ask if neither identifies them.
 - Keep one objective per change. Preserve user-owned work; exclude unrelated formatting,
   lint fixes, refactors and imports. Findings outside the task are observations, not
   permission to repair the repository.

@@ -7,7 +7,11 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 export default defineConfig([
   // Worktrees live in `.claude/worktrees/`: full checkouts that git ignores,
   // but ESLint does not read .gitignore and linted them from the main tree.
-  globalIgnores(['dist', '.wrangler', '.claude/**', 'scripts/diagnostics/**']),
+  globalIgnores([
+    'dist', '.wrangler', '.claude/**', 'scripts/diagnostics/**',
+    // Vendored Impeccable scripts retain their upstream source and lint conventions.
+    '.agents/skills/impeccable/scripts/**',
+  ]),
   {
     files: ['**/*.{js,jsx}'],
     extends: [
