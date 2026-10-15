@@ -218,17 +218,14 @@ test('the pop marks the toggle the owner just changed, not every marked toggle o
   assert.ok(pin.indexOf('await savePinnedShareIds') < pin.indexOf("kind: 'pin'"), 'the pin pops before the save lands');
 });
 
-test('Save changes is the shared Button, with the yellow rule that thickens under the pointer', async () => {
+test('Save changes is the shared Button, drawn by the design system alone', async () => {
   const jsx = await readFile(new URL('./ProfileEditor.jsx', import.meta.url), 'utf8');
-  // Colour, hover, press and focus come from ui/button; only the brand's
-  // underline is this page's own.
-  assert.match(jsx, /<Button\s+type="submit"\s+className="profile-primary"/);
+  // Colour, hover, press and focus all come from ui/button (the engraved
+  // primary); the page adds no look of its own on top.
+  assert.match(jsx, /<Button\s+type="submit"\s+disabled=/);
   assert.doesNotMatch(jsx, /<button\b/, 'a hand-rolled button came back');
   const css = rules(await readFile(new URL('./ProfileEditor.css', import.meta.url), 'utf8'));
-  assert.match(css, /\.profile-primary\s*\{[^}]*box-shadow:\s*inset 0 -3px 0 var\(--brand-yellow\)/);
-  const primary = css.match(/\.profile-primary:hover:not\(:disabled\)[^{]*\{[^}]*\}/);
-  assert.ok(primary, 'the primary button has no hover');
-  assert.match(primary[0], /box-shadow:\s*inset 0 -4px 0 var\(--brand-yellow\)/);
+  assert.doesNotMatch(css, /\.profile-primary/, 'a page-level skin came back over the shared button');
 });
 
 test('unpublishing rebuilds the form, and the rebuilt form rises the way the page did', async () => {

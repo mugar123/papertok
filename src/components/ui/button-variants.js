@@ -10,8 +10,16 @@ export const buttonVariants = cva(
   {
     variants: {
       variant: {
+        // The quiet pair every screen uses: solid ink, and paper in an ink frame.
         default: 'bg-primary text-primary-foreground border border-foreground hover:bg-[var(--accent-primary-hover)]',
-        outline: 'border border-border bg-card text-foreground hover:bg-secondary hover:border-[var(--border-strong)]',
+        outline: 'border border-[var(--border-ink)] bg-card text-foreground hover:bg-secondary',
+        // The two patterned buttons (global.css). They draw the eye, so they are
+        // asked for by name and only where design.md allows them — the landing
+        // and the onboarding — which buttonPatterns.test.js holds to a list.
+        // Engraved: a hatched ink frame around a spot-yellow plate; hover and press fill the hatch.
+        engraved: 'btn-engraved [transition:--hatch_90ms_steps(3,end),scale_120ms_var(--ease-out-expo)]',
+        // Halftone: a paper plate over a 1-bit checker shadow offset 4px down-right.
+        halftone: 'btn-halftone',
         ghost: 'text-muted-foreground hover:bg-secondary hover:text-foreground',
         // The brand yellow is a highlighter, so it marks the AI reading action.
         // The soft wash flips with the theme and the full yellow does not, so
@@ -45,7 +53,7 @@ export const buttonVariants = cva(
         success: 'bg-[var(--tint-green-bg)] text-[var(--tint-green-fg)] border border-[var(--tint-green-line)] hover:bg-[var(--accent-success)] hover:text-white hover:border-[var(--accent-success)]',
         // Takes its colour from --accent on the element, so a control can adopt
         // the research field of whatever it belongs to.
-        field: 'bg-[color-mix(in_srgb,var(--accent,#111318)_9%,white)] text-[var(--accent,#111318)] border border-[color-mix(in_srgb,var(--accent,#111318)_26%,white)] hover:bg-[var(--accent,#111318)] hover:text-white',
+        field: 'bg-[color-mix(in_srgb,var(--accent,var(--accent-primary))_9%,var(--bg-card))] text-[var(--accent,var(--accent-primary))] border border-[color-mix(in_srgb,var(--accent,var(--accent-primary))_26%,var(--bg-card))] hover:bg-[var(--accent,var(--accent-primary))] hover:text-[var(--text-inverse)]',
         destructive: 'bg-destructive text-destructive-foreground hover:opacity-90',
       },
       size: {

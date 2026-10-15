@@ -225,7 +225,58 @@
      frame of that animation without a single line in either file naming
      it — which is exactly what happened before this comment was written. */
   dialog::backdrop {
-    background: rgba(17, 19, 24, 0.4);
+    background: var(--scrim);
+  }
+}
+
+/* ── Riso buttons (ui/button-variants.js) ──
+   In the components layer, so a caller's utility still wins. The label never sits on a pattern:
+   it is always on a solid plate drawn in a pseudo-element under it. */
+@property --hatch { syntax: '<length>'; inherits: false; initial-value: 1px; }
+@layer components {
+  /* Engraved, the primary: a hatched ink frame around a solid spot plate. */
+  .btn-engraved {
+    --hatch: 1px; --frame: var(--border-ink); --plate: var(--brand-yellow);
+    position: relative; isolation: isolate; color: var(--text-on-brand);
+    border: 1px solid var(--frame);
+    background: repeating-linear-gradient(-45deg, var(--frame) 0 var(--hatch), transparent var(--hatch) 4px);
+  }
+  .btn-engraved::before {
+    content: ''; position: absolute; inset: 3px; z-index: -1; border-radius: var(--radius-sm);
+    background: var(--plate); box-shadow: 0 0 0 1px var(--frame);
+  }
+  /* Hover and press fill the hatch solid: 4px is the hatch period, so no gap is left. */
+  @media (hover: hover) and (pointer: fine) { .btn-engraved:hover { --hatch: 4px; } }
+  .btn-engraved:active { --hatch: 4px; }
+
+  /* Halftone, the outline: a paper plate over a 1-bit checker shadow, 4px down-right. */
+  .btn-halftone { position: relative; isolation: isolate; color: var(--text-primary); background: transparent; }
+  .btn-halftone::before, .btn-halftone::after { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; }
+  .btn-halftone::before {
+    translate: 4px 4px; transition: opacity 120ms ease-out;
+    background: repeating-conic-gradient(var(--border-ink) 0 25%, transparent 0 50%) 0 0 / 4px 4px;
+  }
+  .btn-halftone::after { border: 1px solid var(--border-ink); background: var(--bg-card); transition: background-color 150ms ease-out; }
+  @media (hover: hover) and (pointer: fine) { .btn-halftone:hover::after { background: var(--bg-secondary); } }
+  .btn-halftone[aria-expanded='true']::after { background: var(--bg-secondary); }
+  /* While its menu or popover is open the trigger lies flat: one patterned thing on screen at a time. */
+  .btn-halftone[data-popup-open]::before { opacity: 0; }
+  .btn-halftone[data-popup-open]::after { background: var(--bg-secondary); }
+
+  /* Paper grain: two blue-noise tiles in the ink, offset so no grid shows, fixed
+     under everything. A route paints its own opaque ground (.page-transition, so
+     two pages crossing never show through each other), so the grain is drawn on
+     that ground too, isolated so it stays under the page's content. */
+  .page-transition {
+    isolation: isolate;
+  }
+
+  body::before,
+  .page-transition::before {
+    content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background: var(--text-primary); opacity: var(--grain);
+    mask: var(--grain-mask);
+    mask-composite: add;
   }
 }
 

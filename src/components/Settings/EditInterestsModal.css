@@ -229,35 +229,6 @@
   color: var(--text-secondary);
 }
 
-.eim-save-btn {
-  background: var(--bg-card);
-  color: var(--text-primary);
-  border: none;
-  padding: 12px 28px;
-  border-radius: var(--radius-2xl);
-  font-family: var(--font-body);
-  font-weight: var(--fw-bold);
-  font-size: var(--fs-md);
-  cursor: pointer;
-  transition: all 0.3s ease;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .eim-save-btn:hover:not(:disabled) {
-    transform: scale(1.05);
-    box-shadow: 0 0 20px rgba(17, 19, 24, 0.12);
-  }
-}
-
-.eim-save-btn:disabled {
-  background: var(--bg-glass-hover);
-  color: var(--text-tertiary);
-  cursor: not-allowed;
-}
-
 /* Loading state for button */
 .eim-spinner {
   width: 16px;
