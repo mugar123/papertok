@@ -12,6 +12,14 @@ import { queryIsAuthoritative } from './cacheAuthority.js';
 export { queryIsAuthoritative as snapshotIsAuthoritative };
 
 /**
+ * The ceiling for every read of an account's own `lists` collection: the lists
+ * page, the save-and-organize modal and the sign-in warm-up. A bounded page,
+ * never the whole collection: an account with thousands of lists must not turn
+ * opening a screen into an unbounded read.
+ */
+export const OWN_LISTS_PAGE_SIZE = 60;
+
+/**
  * Turns a lists snapshot into the two things both screens need: the lists
  * themselves, and which of them already hold this paper.
  *

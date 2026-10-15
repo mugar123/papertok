@@ -136,6 +136,9 @@ test('publishing posts the sanitized list to the Worker, never to Firestore', as
   // caller could aim a publish at somebody else's link.
   assert.equal('shareId' in requests[0].body, false);
   assert.equal('ownerId' in requests[0].body, false);
+  // The Worker attributes by default; with no public profile that would be a
+  // hidden showcase card per publish, capped at thirty.
+  assert.equal(requests[0].body.attributed, false);
   assert.equal(published.shareId, '07070707070707070707070707070707');
 
   // Private fields are stripped before the payload ever leaves the browser.

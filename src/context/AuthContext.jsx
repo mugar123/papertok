@@ -25,7 +25,7 @@ import { documentIsAuthoritative } from '../utils/cacheAuthority.js';
 import { normalizeProfilePhoto } from '../utils/profileImage';
 import { clearUserScopedStorage, readStoredOnboarding, saveStoredOnboarding } from '../utils/userScopedStorage';
 import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from '../services/accountWarmup.js';
-import { forgetOwnProfile } from '../utils/profileSessionCaches.js';
+import { forgetOwnLists } from '../utils/profileSessionCaches.js';
 import { accountLooksOnboarded } from '../utils/accountOnboarding.js';
 import { clearGuestInterests, readGuestInterests } from '../utils/guestInterests.js';
 import { toggleFollowedAuthor } from '../utils/followedAuthors.js';
@@ -311,7 +311,7 @@ export function AuthProvider({ children }) {
       // the next account on this device must not inherit it.
       clearGuestInterests();
       clearUserScopedStorage(signingOutUserId);
-      forgetOwnProfile(signingOutUserId);
+      forgetOwnLists(signingOutUserId);
       resetAccountWarmup(signingOutUserId);
     } catch (err) {
       setError(err?.code || 'AUTH_FAILED');

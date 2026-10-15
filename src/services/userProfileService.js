@@ -35,6 +35,7 @@ import { PUBLIC_LIST_LIMITS } from './publicListPayload.js';
 import { userSearchEntry, userSearchReference } from './userSearchService.js';
 import { patientRead } from '../utils/boundedRead.js';
 import { documentIsAuthoritative } from '../utils/cacheAuthority.js';
+import { OWN_LISTS_PAGE_SIZE } from '../utils/ownLists.js';
 import { normalizeHandle, requireHandle } from '../utils/userHandle.js';
 import { normalizeInstitution } from './institutionService.js';
 
@@ -63,19 +64,7 @@ export const USER_PROFILE_LIMITS = Object.freeze({
   pinnedShareIds: 3,
 });
 
-/**
- * The ceiling for every screen that reads an account's own `lists` collection.
- * A bounded page, never the whole collection: an account with thousands of
- * lists must not turn opening a screen into an unbounded read.
- *
- * The pin picker was the only reader that honoured this. The save-and-organize
- * modal and the lists page both read `collection(users/{uid}/lists)` raw — the
- * only two unbounded collection reads left in the client — so they take the
- * same ceiling from here rather than inventing their own.
- */
-export const OWN_LISTS_PAGE_SIZE = 60;
-
-/** The pin picker's name for the same ceiling. */
+/** The pin picker reads the same `lists` collection, under the same ceiling. */
 export const PINNABLE_LISTS_PAGE_SIZE = OWN_LISTS_PAGE_SIZE;
 
 export class UserProfileUnsupportedError extends Error {

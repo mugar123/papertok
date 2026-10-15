@@ -67,7 +67,6 @@ import {
 import { getPublicListUrl, getPublicPaperPath } from '../../utils/publicNavigation.js';
 import PaperCard from '../Feed/PaperCard.jsx';
 import PaperOverlay from '../Feed/PaperOverlay.jsx';
-import { OWN_LISTS_PAGE_SIZE } from '../../services/userProfileService.js';
 import { isReadTimeout, patientRead } from '../../utils/boundedRead.js';
 import {
   ownListsCache,
@@ -75,7 +74,7 @@ import {
   rememberListPapers,
   rememberOwnLists,
 } from '../../utils/profileSessionCaches.js';
-import { snapshotIsAuthoritative } from '../../utils/ownLists.js';
+import { OWN_LISTS_PAGE_SIZE, snapshotIsAuthoritative } from '../../utils/ownLists.js';
 import { readStoredLists, saveStoredLists } from '../../utils/userScopedStorage.js';
 import { queryIsAuthoritative } from '../../utils/cacheAuthority.js';
 import {

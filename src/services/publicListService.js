@@ -122,12 +122,18 @@ async function callWorker(api, path, body) {
   return payload;
 }
 
+/**
+ * `attributed: false` because there is no public profile to show the list on.
+ * The Worker attributes a publish by default, which would add a card nobody
+ * can see to `profileLists/{uid}` and refuse the 31st publish with
+ * `PROFILE_LISTS_FULL`.
+ */
 export async function publishPublicList(input, overrides) {
   const api = operations(overrides);
   requireSupported(api);
   const listId = validatePrivateListId(input?.listId);
   const payload = sanitizePublicList(input);
-  const result = await callWorker(api, '/lists/publish', { listId, ...payload });
+  const result = await callWorker(api, '/lists/publish', { listId, ...payload, attributed: false });
   return { ...payload, ...result };
 }
 
