@@ -79,7 +79,6 @@ const STATIC_ANALYTICS_PATHS = new Set([
   // path the server sees, not a fragment: `location.pathname` IS the route
   // (src/main.jsx), which is what this whole list has to keep pace with.
   '/feed',
-  '/admin/moderation',
   '/following',
   '/lists',
   '/login',
@@ -89,7 +88,6 @@ const STATIC_ANALYTICS_PATHS = new Set([
   '/research',
   '/search',
   '/settings',
-  '/settings/comments',
   '/settings/discovery',
   '/settings/following',
   '/settings/notifications',

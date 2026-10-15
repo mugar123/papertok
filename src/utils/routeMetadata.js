@@ -17,7 +17,6 @@ const LABELS = {
   '/settings/notifications': 'Notifications · Settings',
   '/settings/privacy': 'Privacy · Settings',
   '/settings/following': 'Following settings',
-  '/settings/comments': 'My comments',
   '/login': 'Sign in',
   '/onboarding': 'Welcome',
 }

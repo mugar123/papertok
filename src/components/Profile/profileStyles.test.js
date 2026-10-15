@@ -45,8 +45,6 @@ const OWNED = [
   '../Profile/ProfileEditor.css',
   '../Public/PublicProfilePage.css',
   '../Public/FollowSheet.css',
-  '../Settings/MyCommentsPage.css',
-  '../Admin/ModerationPage.css',
   // Added with the save-and-organize fix, which introduced `.save-modal-retry`.
   // The file was already clean, so this costs nothing and stops the next token
   // added here from being the one nobody notices.

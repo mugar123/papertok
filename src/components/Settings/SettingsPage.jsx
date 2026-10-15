@@ -8,7 +8,6 @@ import {
   Buildings,
   CaretRight,
   ChartBar,
-  ChatCircle,
   CircleNotch,
   Envelope,
   Flask,
@@ -146,10 +145,7 @@ const SETTINGS_COPY = {
   recommendationsSuffix: 'influence your recommendations',
   followingSummary: 'Summary of followed content',
   viewAll: 'View all',
-  viewAllComments: 'View all my comments',
   viewAllFollowing: 'View everything you follow',
-  myComments: 'My comments',
-  myCommentsDescription: 'What you have written on papers, moderated items included',
   scientificInterests: 'Scientific interests',
   selectedOne: 'selected subcategory',
   selectedMany: 'selected subcategories',
@@ -661,15 +657,6 @@ function DiscoveryPage() {
       <section className="settings-section" aria-labelledby="settings-discovery-heading">
         <SectionHeading id="settings-discovery-heading" Icon={SlidersHorizontal} title={copy.discovery} description={copy.discoveryDescription} />
         <div className="settings-list">
-          <div className="settings-row">
-            <span className="settings-row-icon is-purple"><ChatCircle size={20} aria-hidden="true" /></span>
-            <div className="settings-row-content">
-              <h3>{copy.myComments}</h3>
-              <p>{copy.myCommentsDescription}</p>
-            </div>
-            <IconAction Icon={CaretRight} label={copy.viewAllComments} title={copy.viewAll} onClick={() => navigate('/settings/comments')} />
-          </div>
-
           <div className="settings-row">
             <span className="settings-row-icon is-purple"><UsersThree size={20} aria-hidden="true" /></span>
             <div className="settings-row-content">

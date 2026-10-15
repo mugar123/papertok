@@ -55,8 +55,6 @@ const EntityExplorer = lazyWithPreload(() => import('./components/Explorer/Entit
 const FollowingFeedPage = lazyWithPreload(() => import('./components/Following/FollowingFeedPage'))
 const SettingsPage = lazyWithPreload(() => import('./components/Settings/SettingsPage'))
 const FollowingSettingsPage = lazyWithPreload(() => import('./components/Settings/FollowingSettingsPage'))
-const MyCommentsPage = lazyWithPreload(() => import('./components/Settings/MyCommentsPage'))
-const ModerationPage = lazyWithPreload(() => import('./components/Admin/ModerationPage'))
 const PublicPaperPage = lazyWithPreload(() => import('./components/Public/PublicPaperPage'))
 const PublicListPage = lazyWithPreload(() => import('./components/Lists/PublicListPage'))
 const PublicProfilePage = lazyWithPreload(() => import('./components/Public/PublicProfilePage'))
@@ -137,7 +135,7 @@ function AppContent() {
   const pageTransitionCustom = usePageTransitionCustom()
   const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
-  const navbarRoutes = ['/feed', '/lists', '/following', '/profile', '/settings', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following', '/settings/comments']
+  const navbarRoutes = ['/feed', '/lists', '/following', '/profile', '/settings', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following']
   // The paper, profile, list and entity pages keep the app chrome for a
   // signed-in user — reaching a paper from Liked, a profile from the follow
   // sheet, a list from someone's shared link, or an author from a card, must
@@ -254,9 +252,6 @@ function AppContent() {
       // the tap, the chunk and the fallback throttle in front of it.
       PublicListPage.preload().catch(() => {})
       SettingsPage.preload().catch(() => {})
-      // One row inside Settings; small chunk, and the first visit used to pay
-      // it on top of the cold Firestore read the page then makes.
-      MyCommentsPage.preload().catch(() => {})
       // Every card links to authors, topics and projects; the first of those
       // opened in a session used to pay the chunk and the fallback throttle.
       EntityExplorer.preload().catch(() => {})
@@ -474,28 +469,6 @@ function AppContent() {
               <ProtectedRoute>
                 <PageTransition>
                   <FollowingSettingsPage />
-                </PageTransition>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/settings/comments"
-            element={
-              <ProtectedRoute>
-                <PageTransition>
-                  <MyCommentsPage />
-                </PageTransition>
-              </ProtectedRoute>
-            }
-          />
-          {/* Unlisted, not secret: the rules deny the queue to any uid that
-              is not the admin's, and the page says so. */}
-          <Route
-            path="/admin/moderation"
-            element={
-              <ProtectedRoute>
-                <PageTransition>
-                  <ModerationPage />
                 </PageTransition>
               </ProtectedRoute>
             }
