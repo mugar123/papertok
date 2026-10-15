@@ -470,6 +470,17 @@ export function sanitizeAnalyticsCapture(capture, consent = readAnalyticsConsent
   };
 }
 
+/**
+ * The same last step for Vercel Web Analytics (`beforeSend`): the normalized
+ * address, or nothing once the reader has turned analytics off. The choice is
+ * read from storage at send time rather than from the tab's React state,
+ * because another tab may have turned analytics off since this one rendered.
+ */
+export function sanitizeVercelEvent(event, consent = readAnalyticsConsent()) {
+  if (!event || consent !== ANALYTICS_CONSENT.GRANTED) return null;
+  return { ...event, url: sanitizeAnalyticsEventUrl(event.url) };
+}
+
 let analyticsClient = null;
 
 /**

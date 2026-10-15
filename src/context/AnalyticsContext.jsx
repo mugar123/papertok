@@ -11,7 +11,7 @@ import {
   normalizeAnalyticsPath,
   readAnalyticsConsent,
   removeLegacyGoogleAnalyticsCookies,
-  sanitizeAnalyticsEventUrl,
+  sanitizeVercelEvent,
   setAnalyticsConsent,
   trackAcquisition,
   trackDay7Return,
@@ -21,8 +21,9 @@ import {
 
 // Declared once, outside the component: `<Analytics />` re-registers its
 // `beforeSend` on every change of identity, so an inline arrow would re-register
-// it on every render of the whole app.
-const sanitizeOutgoingEvent = event => ({ ...event, url: sanitizeAnalyticsEventUrl(event.url) });
+// it on every render of the whole app. It takes only the event, so the stored
+// choice is read at send time (`sanitizeVercelEvent`).
+const sanitizeOutgoingEvent = event => sanitizeVercelEvent(event);
 
 export function AnalyticsProvider({ children }) {
   const location = useLocation();

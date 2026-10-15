@@ -14,6 +14,7 @@ import {
   sanitizeAnalyticsEventUrl,
   sanitizeAnalyticsLocation,
   sanitizeProductEventParams,
+  sanitizeVercelEvent,
   setAnalyticsConsent,
   trackAcquisition,
   trackDay7Return,
@@ -470,6 +471,30 @@ test('nothing leaves that is not a page view or a registered event, or once anal
   }
   assert.equal(sanitizeAnalyticsCapture(postHogCapture('$pageview', {}), ANALYTICS_CONSENT.DENIED), null);
   assert.equal(sanitizeAnalyticsCapture(null, ANALYTICS_CONSENT.GRANTED), null);
+});
+
+test('a Vercel event leaves with the normalized address while analytics is on', () => {
+  const sent = sanitizeVercelEvent(
+    { type: 'pageview', url: 'https://papertok.app/public/paper/W2741809807' },
+    ANALYTICS_CONSENT.GRANTED,
+  );
+  assert.deepEqual(sent, { type: 'pageview', url: 'https://papertok.app/public/paper/:id' });
+});
+
+test('a Vercel event is dropped once another tab has turned analytics off', t => {
+  const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  // This tab rendered while analytics was on; the other tab then stored the
+  // reader's refusal. The send reads that, not this tab's state.
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.DENIED }),
+  });
+  t.after(() => {
+    if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
+    else delete globalThis.localStorage;
+  });
+
+  assert.equal(sanitizeVercelEvent({ type: 'pageview', url: 'https://papertok.app/feed' }), null);
 });
 
 /**
