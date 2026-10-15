@@ -28,7 +28,7 @@ const firebaseConfig = {
   appId: "1:310243065214:web:623735321262c6e154c72f",
   // No `measurementId`: it named the GA4 property this app used to report to,
   // and the only thing Firebase does with it is hand it to `firebase/analytics`.
-  // Measurement is PostHog now (src/services/analyticsService.js),
+  // Measurement is Vercel Web Analytics and PostHog now (src/services/analyticsService.js),
   // so leaving the id here would only invite that import back.
 };
 

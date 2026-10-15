@@ -29,7 +29,7 @@
          /privacy.html promises the opposite in as many words: "Reading a
          specific paper is recorded as /public/paper/:id [...] which one never
          travels." `strict-origin` caps every request this document makes — the
-         analytics requests, the API calls, an outbound link to a publisher — at
+         analytics script and requests, the API calls, an outbound link to a publisher — at
          the origin, so the promise does not depend on any one of them behaving.
          Not `no-referrer`: an origin-restricted API key checks this header, and
          `https://papertok.app/` still satisfies such a check. -->

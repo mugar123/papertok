@@ -1,7 +1,9 @@
-// The transport is PostHog's EU cloud, in cookieless mode, loaded on the first
-// event. What did NOT move with it is this file's actual subject: the consent
-// gate (an opt-out since 2026-09-17), the event registry, and the path
-// normalizer that keeps an identifier out of a report.
+// Two transports with different jobs. Vercel Web Analytics counts visits,
+// pages and countries; AnalyticsProvider renders its <Analytics /> and sends the
+// page views. PostHog's EU cloud, in cookieless mode and loaded on the first
+// event, receives the product events below. This file's actual subject is what
+// both share: the consent gate (an opt-out since 2026-09-17), the event
+// registry, and the path normalizer that keeps an identifier out of a report.
 
 export const ANALYTICS_CONSENT_KEY = 'papertok_analytics_consent';
 export const ANALYTICS_CONSENT_COOKIE_KEY = 'papertok_analytics_decision';
@@ -212,8 +214,9 @@ function persistAnalyticsConsentCookie(value) {
 }
 
 // Granted unless the reader has said otherwise. Nobody is asked any more
-// (2026-09-17): the analytics transport sets no cookies and identifies nobody
-// (PostHog runs cookieless, see POSTHOG_OPTIONS), and the switch in Settings, or
+// (2026-09-17): neither transport sets cookies or identifies anybody (Vercel
+// Web Analytics by design, PostHog in cookieless mode, see POSTHOG_OPTIONS), and
+// one choice turns both off: the switch in Settings, or
 // a visitor's Privacy button (PrivacyPopover), is the way out. The default is
 // never written down -- a stored "granted" means somebody chose it, a stored
 // "denied" is respected, and an empty store IS the default.
@@ -282,12 +285,14 @@ export function sanitizeAnalyticsLocation(pathname, browserLocation = globalThis
 }
 
 /**
- * The door that is easy to miss. PostHog fills `$current_url` on EVERY event,
- * page view or not, from `location.href`, and that string is whatever the
- * address bar says: `https://papertok.app/public/paper/<the real id>`, or
- * `/search?q=<what was searched>`. That is precisely the value the privacy
- * policy promises never leaves the browser. `sanitizeAnalyticsCapture` is
- * where it gets replaced, and this is what replaces it.
+ * The door that is easy to miss. Both transports read `location.href` on their
+ * own: the Vercel script builds its payload's `url` field from it, and PostHog
+ * fills `$current_url` from it on EVERY event, page view or not. That string is
+ * whatever the address bar says: `https://papertok.app/public/paper/<the real
+ * id>`, or `/search?q=<what was searched>`, precisely the value the privacy
+ * policy promises never leaves the browser. AnalyticsContext's `beforeSend`
+ * and `sanitizeAnalyticsCapture` are where it gets replaced, and this is what
+ * replaces it.
  *
  * The fragment branch below is the LEGACY case, and it stays because links
  * minted before the migration are still out there: one arrives as
@@ -327,7 +332,7 @@ export function sanitizeProductEventParams(eventName, params = {}) {
  * `_ga_<id>` cookies with a two-year expiry, set by a measurement library this
  * app no longer loads. Nothing reads them any more and nothing else will ever
  * clear them, so they would sit in the browser until 2028 as the only remaining
- * trace of GA4. The current transport sets no cookies of its own, which is why
+ * trace of GA4. Neither current transport sets cookies of its own, which is why
  * this is a one-off cleanup on mount rather than part of withdrawing consent.
  */
 export function removeLegacyGoogleAnalyticsCookies() {
@@ -351,8 +356,10 @@ function clearConsentScopedAnalyticsState(storage = getBrowserStorage()) {
   }
 }
 
-// Granting only has to persist: nothing is loaded until the next event asks
-// for it. Withdrawing stops recording at once, because the senders below and
+// Granting only has to persist: AnalyticsProvider renders the Vercel script
+// while consent reads as granted, and PostHog loads on the next event.
+// Withdrawing stops recording at once: the provider stops rendering the Vercel
+// script and sending its page views, and the senders below and
 // `sanitizeAnalyticsCapture` read the stored choice at capture time. A library
 // already loaded in this tab stays in memory and records nothing new. Events
 // recorded before can still leave afterwards: in PostHog's next batch, or, for
