@@ -394,7 +394,7 @@ buttons inside the app, never in dense screens (feed, reader, explorer,
 settings, dialogs). `buttonPatterns.test.js` holds the list; a new place is a
 design decision, made here and there together. The label always sits on a
 solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
-`global.css`).
+`src/components/ui/button.css`).
 
 ### Chips
 - **Style:** `1px` border, `sm` radius, mono or small Inter, tinted from the

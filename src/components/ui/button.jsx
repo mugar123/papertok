@@ -1,6 +1,7 @@
 import { Button as ButtonPrimitive } from '@base-ui/react/button';
 import { cn } from '../../lib/utils.js';
 import { buttonVariants } from './button-variants.js';
+import './button.css';
 
 /**
  * The only button (design.md, rule 5) — shadcn's Base UI button, with this
