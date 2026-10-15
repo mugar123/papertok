@@ -30,7 +30,7 @@ function cleanText(value, maxLength) {
 /**
  * The Firestore pieces travel as one injectable unit so the shape of the read
  * query can be asserted without a Firestore behind it, the same seam
- * `followUserService` and `commentService` use for their own query shapes.
+ * `followUserService` uses for its own query shapes.
  */
 function operations(overrides = {}) {
   return {

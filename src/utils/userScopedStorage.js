@@ -5,10 +5,9 @@ const FOLLOW_STATS_KEY_PREFIX = 'papertok_followStats:';
 const OWN_LISTS_KEY_PREFIX = 'papertok_ownLists:';
 const OWN_PROFILE_KEY_PREFIX = 'papertok_ownProfile:';
 const ONBOARDING_KEY_PREFIX = 'papertok_onboarding:';
-// The comments a reporter chose not to see. Held here, and not in
-// `reportService.js` where it is used, so this module stays the leaf it is:
-// `FeedContext.jsx` imports it, and the moderation service says of itself that
-// nothing in it is imported by the feed.
+// The comments a reporter chose not to see, from when the app had comments.
+// Nothing writes it any more; sign-out still sweeps it so a list left in a
+// browser does not outlive the feature.
 const LOCAL_HIDDEN_PREFIX = 'papertok:locallyHiddenComments';
 // The key this list lived under before it was scoped. Never migrated — one
 // browser's two accounts have no shared answer to migrate to — only swept.
