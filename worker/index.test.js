@@ -1208,8 +1208,8 @@ test('still lets a caller cancellation be told apart from its own deadline', asy
 // --- G5: the cache key is the upstream call ---------------------------------
 // Every test below asks the same question in a different place: do two requests
 // that reach the same upstream also reach the same cache entry? Before G5 they
-// did not, and on the routes OpenAlex bills that was money -- `categories=zzz1`,
-// `zzz2`, ... each cost two calls against a $1/day budget for one identical query.
+// did not, and on the routes OpenAlex bills that was money: one identical query,
+// billed against a $1/day budget again for every spelling of it.
 
 // A cache that actually remembers, plus a signed-in caller. `withCachedIdentity`
 // answers the auth lookup but stores nothing, and what these tests measure is
@@ -1257,51 +1257,13 @@ async function withCountedUpstream(handler, callback) {
 
 const BROWSER = Object.freeze({ origin: 'https://mugar123.github.io' });
 const SIGNED_IN = Object.freeze({ ...BROWSER, authorization: 'Bearer test-token' });
-const TRENDS_BASE = 'https://papertok-report-api.example/report/trends'
-  + '?from=2026-01-01&to=2026-02-01&previous_from=2025-12-01&previous_to=2026-01-01';
-
-const trendsPage = async () => new Response(
-  JSON.stringify({ meta: { count: 1 }, group_by: [] }),
+// The citation graph is the route that reaches `cacheResponse` with both an
+// identity and a billed OpenAlex spend, so the budget tests below run on it.
+const CITATION_GRAPH_URL = 'https://papertok-report-api.example/citation-graph?doi=10.1234/abc&limit=8';
+const citationGraphPage = async url => new Response(
+  JSON.stringify(String(url).includes('opencitations') ? [] : { id: 'https://openalex.org/W1', results: [] }),
   { headers: { 'content-type': 'application/json' } },
 );
-
-test('two discarded trend filters are one billed query, not two', async () => {
-  const calls = await withCountedUpstream(trendsPage, async () => {
-    await withIdentityAndCacheStore(async () => {
-      for (const categories of ['zzz1', 'zzz2']) {
-        const response = await reportApi.fetch(new Request(
-          `${TRENDS_BASE}&categories=${categories}`,
-          { headers: SIGNED_IN },
-        ), AUTHENTICATED_ENV);
-        assert.equal(response.status, 200);
-      }
-    });
-  });
-
-  // Two calls -- one pair of periods -- not four. `normalizeReportFilters` throws
-  // away anything outside `REPORT_OPENALEX_FIELDS`, so both requests ask OpenAlex
-  // the identical question; keying on what arrived made each one a fresh miss,
-  // and an authenticated caller sustains sixty of those a minute.
-  assert.equal(calls.length, 2);
-});
-
-test('reordering and recasing a trend filter does not buy a second cache entry', async () => {
-  const calls = await withCountedUpstream(trendsPage, async () => {
-    await withIdentityAndCacheStore(async () => {
-      for (const query of ['categories=cs,math&countries=US', 'categories=math,cs&countries=us']) {
-        const response = await reportApi.fetch(new Request(
-          `${TRENDS_BASE}&${query}`,
-          { headers: SIGNED_IN },
-        ), AUTHENTICATED_ENV);
-        assert.equal(response.status, 200);
-      }
-    });
-  });
-
-  // `normalizeReportFilters` sorts and uppercases, so the upstream filter is
-  // byte-identical in both cases.
-  assert.equal(calls.length, 2);
-});
 
 test('the same DOI in a different shape is the same citation graph', async () => {
   const citationGraphUpstream = async url => new Response(
@@ -1531,22 +1493,24 @@ function recordingLedger(answer = () => ({ accepted: true })) {
   };
 }
 
-test('a cold trend report reserves both OpenAlex periods for what it actually spends', async () => {
+test('a cold citation graph reserves both OpenAlex periods for what it may spend', async () => {
   const ledger = recordingLedger();
-  await withCountedUpstream(trendsPage, async () => {
+  await withCountedUpstream(citationGraphPage, async () => {
     await withIdentityAndCacheStore(async () => {
       const response = await reportApi.fetch(new Request(
-        `${TRENDS_BASE}&categories=cs`,
+        CITATION_GRAPH_URL,
         { headers: SIGNED_IN },
       ), { ...AUTHENTICATED_ENV, REQUEST_QUOTA_LEDGER: ledger.binding });
       assert.equal(response.status, 200);
     });
   });
 
-  // This route spent two billed OpenAlex calls per miss and reserved none of
-  // them: the `openalex:*` ceiling only ever covered `/openalex/*`.
+  // The `openalex:*` ceiling used to cover only `/openalex/*`. A miss here can
+  // spend nine billed calls -- one `works/doi:` lookup, then up to two batches
+  // for each of the two reference filters and the same for citations -- and the
+  // route reserves all nine before the work starts.
   const openAlex = ledger.reservations.filter(entry => entry.periodKey.startsWith('openalex:'));
-  assert.deepEqual(openAlex.map(entry => entry.amount), [2, 2]);
+  assert.deepEqual(openAlex.map(entry => entry.amount), [9, 9]);
   assert.match(openAlex[0].periodKey, /^openalex:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
   assert.match(openAlex[1].periodKey, /^openalex:day:\d{4}-\d{2}-\d{2}$/);
   assert.equal(openAlex[1].limit, 8_000);
@@ -1566,22 +1530,25 @@ test('the daily OpenAlex ceiling refuses a request the per-minute one would allo
   assert.equal(response.headers.get('retry-after'), '300');
 });
 
-test('a cached trend report spends nothing against either ceiling', async () => {
+test('a cached citation graph spends nothing against either ceiling', async () => {
   const ledger = recordingLedger();
-  const calls = await withCountedUpstream(trendsPage, async () => {
+  let afterFirst = 0;
+  const calls = await withCountedUpstream(citationGraphPage, async collected => {
     await withIdentityAndCacheStore(async () => {
       const env = { ...AUTHENTICATED_ENV, REQUEST_QUOTA_LEDGER: ledger.binding };
       const request = () => reportApi.fetch(new Request(
-        `${TRENDS_BASE}&categories=cs`,
+        CITATION_GRAPH_URL,
         { headers: SIGNED_IN },
       ), env);
       await request();
+      afterFirst = collected.length;
       ledger.reservations.length = 0;
       assert.equal((await request()).status, 200);
     });
   });
 
-  assert.equal(calls.length, 2);
+  assert.ok(afterFirst > 0, 'the first request reached the upstreams');
+  assert.equal(calls.length, afterFirst, 'the second request was served from the cache');
   assert.deepEqual(ledger.reservations, []);
 });
 
@@ -2281,12 +2248,13 @@ test('gives the minute unit and the identity unit back when the beat refuses aft
   assert.equal(releasesOf(state).length, 2, 'the minute and identity units were held');
 });
 
-// L5: the OpenAlex budget refuses after the identity unit was taken. Trends has
-// no minute ceiling entry, so the identity unit is the only thing at risk.
+// L5: the OpenAlex budget refuses after the identity unit was taken. The
+// citation graph has no minute ceiling entry, so the identity unit is the only
+// thing at risk.
 test('gives the identity unit back when the OpenAlex budget refuses after it', async () => {
   const state = { actions: [] };
-  const response = await withWorkerFetchMock(trendsPage, () => withCachedIdentity(() => reportApi.fetch(
-    new Request(TRENDS_BASE, { headers: SIGNED_IN }),
+  const response = await withWorkerFetchMock(citationGraphPage, () => withCachedIdentity(() => reportApi.fetch(
+    new Request(CITATION_GRAPH_URL, { headers: SIGNED_IN }),
     { ...AUTHENTICATED_ENV, REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_OPENALEX_MINUTE }) },
   )));
 
@@ -2302,15 +2270,15 @@ test('gives the identity unit back when the OpenAlex budget refuses after it', a
 // two leaks, before giving a unit back was a pattern in this file.
 test('gives the OpenAlex minute unit back when the day ceiling refuses after it', async () => {
   const state = { actions: [] };
-  const response = await withWorkerFetchMock(trendsPage, () => withCachedIdentity(() => reportApi.fetch(
-    new Request(TRENDS_BASE, { headers: SIGNED_IN }),
+  const response = await withWorkerFetchMock(citationGraphPage, () => withCachedIdentity(() => reportApi.fetch(
+    new Request(CITATION_GRAPH_URL, { headers: SIGNED_IN }),
     { ...AUTHENTICATED_ENV, REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_OPENALEX_DAY }) },
   )));
 
   assert.equal(response.status, 429);
   assert.equal(response.headers.get('retry-after'), '300', 'the day ceiling names its own wait');
   assertRefunded(state, IS_OPENALEX_MINUTE);
-  // Trends also holds an identity unit, and `reserveGates` gives that back too.
+  // The graph also holds an identity unit, and `reserveGates` gives that back too.
   assertRefunded(state, IS_IDENTITY);
   assert.equal(releasesOf(state).length, 2, 'the OpenAlex minute unit and the identity unit were held');
 });

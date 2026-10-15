@@ -20,7 +20,7 @@ import { INSTITUTION_SERVICES_PATH, handleInstitutionServices } from './institut
 import { handleThreadAnchorRequest, threadAnchorErrorResponse } from './thread-anchor.js';
 import { isServiceAccountConfigured } from './firestore-admin.js';
 import { allowedOrigins, corsHeaders, json } from './http.js';
-import { handleOpenAlex, handleTrends } from './openalex-api.js';
+import { handleOpenAlex } from './openalex-api.js';
 import { handleCitationGraph } from './citation-graph.js';
 import { handleOpenAccess } from './open-access.js';
 import { handleArxiv } from './arxiv-api.js';
@@ -45,7 +45,6 @@ import {
 } from './source-api.js';
 
 const PROTECTED_PROVIDER_PATHS = new Set([
-  '/report/trends',
   '/related',
   '/citation-graph',
   '/sources/core',
@@ -427,13 +426,6 @@ export async function handleRequest(request, env) {
       'cache-control': 'no-store',
       ...(status === 429 ? { 'retry-after': '60' } : {}),
     });
-  }
-  if (url.pathname === '/report/trends') {
-    try {
-      return await handleTrends(request, env, protectedIdentity);
-    } catch {
-      return json({ error: 'Trend data unavailable' }, 502, corsHeaders(origin, env));
-    }
   }
   if (url.pathname === '/related') {
     try {
