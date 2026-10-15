@@ -13,7 +13,7 @@ export const buttonVariants = cva(
         // The quiet pair every screen uses: solid ink, and paper in an ink frame.
         default: 'bg-primary text-primary-foreground border border-foreground hover:bg-[var(--accent-primary-hover)]',
         outline: 'border border-[var(--border-ink)] bg-card text-foreground hover:bg-secondary',
-        // The two patterned buttons (global.css). They draw the eye, so they are
+        // The two patterned buttons (button.css). They draw the eye, so they are
         // asked for by name and only where design.md allows them — the landing
         // and the onboarding — which buttonPatterns.test.js holds to a list.
         // Engraved: a hatched ink frame around a spot-yellow plate; hover and press fill the hatch.
