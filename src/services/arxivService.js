@@ -178,7 +178,7 @@ function safeDateISO(dateStr) {
 // and answers 502 when that passes. The client used to leave at 4 s, before the
 // Worker could say anything: a `sortBy=relevance` query, which arXiv takes 5 s+
 // to answer, could never succeed however healthy the route. One second above
-// the Worker's own deadline, and still under the report's per-source 10 s.
+// the Worker's own deadline.
 export const ARXIV_ROUTE_TIMEOUT_MS = 6_000;
 
 // Every arXiv request of this tab goes through one lane (arxivRequestQueue.js):
@@ -202,9 +202,7 @@ async function fetchArxivDataNow(url) {
   // The Worker is the only browser-reachable route to arXiv in production:
   // export.arxiv.org answers without any access-control-allow-origin header, so a
   // direct fetch from the page is blocked however it is spelled. Measured latency
-  // of the route is ~0.3s warm; the deadline is set by the Worker's own, above,
-  // and stays under the report's per-source deadline so the availability flag
-  // keeps telling the truth.
+  // of the route is ~0.3s warm; the deadline is set by the Worker's own, above.
   if (PAPER_API_BASE) {
     try {
       const query = new URL(url, 'https://export.arxiv.org').search;

@@ -84,17 +84,11 @@ export class PaperBuilder {
       categories: data.categories || [],
       allCategories: data.allCategories || data.categories || [],
       primaryCategory: data.primaryCategory || data.categories?.[0] || '',
-      countryCodes: data.countryCodes || [],
-      institutionCount: data.institutionCount || 0,
       institutions: data.institutions || [],
       projectIds: data.projectIds || [],
       hasReferences: Boolean(data.hasReferences),
       hasData: Boolean(data.hasData),
       hasSupplement: Boolean(data.hasSupplement),
-      fwci: data.fwci ?? null,
-      citationNormalizedPercentile: data.citationNormalizedPercentile || data.citation_normalized_percentile || null,
-      citedByPercentileYear: data.citedByPercentileYear || data.cited_by_percentile_year || null,
-      countsByYear: data.countsByYear || data.counts_by_year || [],
       iciteMetrics: data.iciteMetrics || undefined,
       researchResources: data.researchResources || [],
       published: data.published || data.publishedDate || '',
@@ -241,17 +235,6 @@ export class PaperBuilder {
     if (enrichmentData.topics?.length > 0) merged.topics = enrichmentData.topics;
     if (enrichmentData.primaryTopic || enrichmentData.primary_topic) {
       merged.primaryTopic = enrichmentData.primaryTopic || enrichmentData.primary_topic;
-    }
-    if (Number.isFinite(enrichmentData.fwci)) merged.fwci = enrichmentData.fwci;
-    if (enrichmentData.citationNormalizedPercentile || enrichmentData.citation_normalized_percentile) {
-      merged.citationNormalizedPercentile = enrichmentData.citationNormalizedPercentile
-        || enrichmentData.citation_normalized_percentile;
-    }
-    if (enrichmentData.countsByYear?.length || enrichmentData.counts_by_year?.length) {
-      merged.countsByYear = enrichmentData.countsByYear || enrichmentData.counts_by_year;
-    }
-    if (Number.isFinite(enrichmentData.institutionCount)) {
-      merged.institutionCount = Math.max(merged.institutionCount || 0, enrichmentData.institutionCount);
     }
     if (enrichmentData.institutions?.length) {
       const institutions = [...(merged.institutions || []), ...enrichmentData.institutions];

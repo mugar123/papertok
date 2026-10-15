@@ -49,7 +49,7 @@ test('SOURCE: the check job is deploy.yml\'s Verify plus the build, on Node 22, 
   assert.match(check, /node-version: '22'/, 'CI is Node 22 (local is newer; the gap is real)');
   assert.match(check, /run: npm ci\n/, 'a clean install from the lockfile');
   assert.match(check, /run: npm run check\n/, 'one script, the same one a developer runs');
-  for (const name of ['VITE_REPORT_API_URL', 'VITE_SCOPUS_ENABLED', 'VITE_UNPAYWALL_EMAIL']) {
+  for (const name of ['VITE_SCOPUS_ENABLED', 'VITE_UNPAYWALL_EMAIL']) {
     assert.match(check, new RegExp(`${name}: \\$\\{\\{ vars\\.${name} \\}\\}`), `${name} comes from the repository variables, as in deploy.yml`);
   }
   // Pull requests from forks receive no repository variables, and `vite build`
