@@ -8,7 +8,7 @@
 .settings-page {
   /* The panel's edge and the rules between its rows. In the dark theme the
      hairline all but vanishes on ink (1.16:1), so it steps up to the strong
-     rule, as ProfileEditor.css does for its own lines. */
+     rule. */
   --settings-panel-line: var(--border-subtle);
   min-height: 100vh;
   min-height: 100dvh;
@@ -104,13 +104,11 @@
   outline-offset: -2px;
 }
 
-.settings-content > :first-child,
-.settings-content > form:first-child > .settings-section:first-child,
-.settings-content > .profile-form:first-child > .settings-section:first-child {
+.settings-content > :first-child {
   margin-top: 0;
 }
 
-/* ── The account photo, a row inside Public identity ── */
+/* ── The account photo ── */
 .settings-photo-field {
   display: grid;
   grid-template-columns: 56px minmax(0, 1fr) auto;
@@ -213,8 +211,8 @@
   line-height: var(--lh-normal);
 }
 
-/* The panel: sunken paper in a hairline, the wells of design.md. The
-   profile editor's sections (.profile-fields) are panels too. */
+/* The panel: sunken paper in a hairline, the wells of design.md. A section
+   of fields (.profile-fields) is a panel too. */
 .settings-list,
 .settings-levels,
 .profile-fields {
@@ -224,6 +222,9 @@
 }
 
 .profile-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
   padding: var(--space-5);
 }
 
@@ -473,21 +474,41 @@
   flex: 0 0 auto;
 }
 
-/* A confirmation on the shared AlertDialog: the sheet's spacing, then the
-   two answers at its foot. */
-.settings-confirm-dialog {
-  display: grid;
-  gap: var(--space-3);
-  width: min(440px, calc(100% - 2 * var(--space-5)));
-  padding: var(--space-6);
+/* ProfileEditor.css is no longer loaded on these pages, so the profile-*
+   classes they still render have their rules here: the photo's hint and the
+   analytics switch. */
+.profile-hint {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
 }
 
-.settings-confirm-actions {
+/* The label and its hint beside the control, inside the panel. */
+.profile-switch {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
+  align-items: center;
+  gap: var(--space-4);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-normal);
+  cursor: pointer;
+}
+
+.profile-switch-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.profile-switch-label {
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-sm);
+}
+
+.profile-switch-hint {
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
 }
 
 @keyframes settingsSpin {

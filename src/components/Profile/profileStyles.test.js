@@ -127,24 +127,6 @@ function rules(css) {
   return css.replace(/\/\*[\s\S]*?\*\//g, '');
 }
 
-test('the editor is split across the settings pages, with the identity first on Profile', async () => {
-  const settings = await readFile(new URL('../Settings/SettingsPage.jsx', import.meta.url), 'utf8');
-  const sections = await readFile(new URL('./ProfileEditor.jsx', import.meta.url), 'utf8');
-  // The identity opens the Profile page; who can see it and what it shows
-  // live in Privacy.
-  assert.match(settings, /editor\.read\.ready \? \(\s*<>\s*<IdentitySection form=\{editor\.form\}/);
-  assert.match(settings, /<PublicPageSection form=\{editor\.form\} visibility=\{editor\.visibility\} \/>/);
-  // Each section gets the part of the editor it renders, never all of it.
-  assert.doesNotMatch(settings, /editor=\{editor\}/);
-  assert.doesNotMatch(sections, /function \w+\(\{ editor\b/);
-  // Each page is a route of its own, so the rail is links, not a scroll spy.
-  assert.match(settings, /<NavLink\s+key=\{entry\.slug\}\s+to=\{`\/settings\/\$\{entry\.slug\}`\}\s+replace/);
-  assert.doesNotMatch(settings, /useSectionSpy|scrollIntoView/);
-  // There is no public page to open any more, and no preview of one.
-  assert.doesNotMatch(sections, /ProfilePreview|profile-preview/);
-  assert.doesNotMatch(sections, /publicPath/);
-});
-
 test('in the dark theme, what sits on the soft yellow is the ink that flips with it, not the fixed one', async () => {
   const css = rules(await readFile(new URL('./ProfileEditor.css', import.meta.url), 'utf8'));
   // `--text-on-brand` is ink in both themes because the full yellow does not
