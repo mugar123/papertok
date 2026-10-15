@@ -331,9 +331,10 @@ Nothing leaves the DOM; keyboard focus scrolls a chip into view (`.pc-topics`,
 
 ## Elevation & Depth
 
-Nothing floats. The system is flat: every `--shadow-*` token resolves to
-`none`, and depth is conveyed by hairline rules, by the step between paper and
-Ink Wash, and by a faint paper grain printed over the page (`--grain`, two
+Nothing floats. The system is flat: every elevation `--shadow-*` token
+(`sm` to `xl`) resolves to `none`; the two `--shadow-glow-*` tokens are the
+3px focus ring on fields, not elevation, and stay. Depth is conveyed by
+hairline rules, by the step between paper and Ink Wash, and by a faint paper grain printed over the page (`--grain`, two
 offset blue-noise tiles in the ink, 0.22 light / 0.18 dark). An overlay is set
 apart by its `rule-default` hairline over a flat ink scrim (`--scrim`, ink at
 30%, no blur).

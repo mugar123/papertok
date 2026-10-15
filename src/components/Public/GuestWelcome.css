@@ -590,10 +590,6 @@
   color: var(--accent-danger);
 }
 
-.gw-providers-note:empty {
-  display: none;
-}
-
 /* The bar's theme switch as a halftone plate: its checker shadow sticks out
    4px, so the plate keeps that much clear of the edge. At 40px the plate is
    its own touch target, so ThemeToggle's 44px hit area, which also lives on

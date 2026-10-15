@@ -1,3 +1,4 @@
+import { BODY } from './PetriFrame.jsx';
 import './PetriStamp.css';
 
 // Petri, the mascot, as a rubber stamp: on the corner of the university
@@ -14,7 +15,7 @@ export default function PetriStamp() {
       </g>
       {/* The idle pose from petri.html, scaled into the ring. */}
       <g transform="translate(-1.5 -6.2) scale(0.42)" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M48 124c-14-20-4-56 30-58 26-2 40 18 38 36-1 12-3 20-6 22Z" fill="var(--brand-yellow)" stroke="var(--accent-rose)" strokeWidth="5" />
+        <path d={BODY} fill="var(--brand-yellow)" stroke="var(--accent-rose)" strokeWidth="5" />
         <path d="M62 66l-4-8M78 62l-1-9M94 64l3-8" fill="none" stroke="var(--accent-rose)" strokeWidth="5" />
         <circle cx="70" cy="90" r="5" fill="var(--text-on-brand)" />
         <circle cx="90" cy="90" r="5" fill="var(--text-on-brand)" />

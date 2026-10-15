@@ -23,5 +23,5 @@ const POSES = {
  */
 export default function Petri({ pose, ...props }) {
   const Pose = POSES[pose];
-  return Pose ? <Pose {...props} /> : null;
+  return <Pose {...props} />;
 }

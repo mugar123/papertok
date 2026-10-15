@@ -5,7 +5,7 @@ import { getUiErrorMessage } from '../../utils/errorMessages';
 import { authPromptCopy } from './authPromptCopy.js';
 import { Button } from '../ui/button.jsx';
 import GoogleMark from './GoogleMark.jsx';
-import { useProviderSignIn } from './useProviderSignIn.js';
+import { COLLISION_NOTE, useProviderSignIn } from './useProviderSignIn.js';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.jsx';
 import './AuthPrompt.css';
 
@@ -108,9 +108,7 @@ export default function AuthPrompt({ onClose, reason = 'default' }) {
 
         {collision ? (
           <div className="auth-modal-note auth-modal-note--warn" role="alert">
-            {collision.email
-              ? (<><strong>{collision.email}</strong> already signs in another way. Use that method, then connect GitHub from Settings.</>)
-              : ('That address already signs in another way. Use that method, then connect GitHub from Settings.')}
+            {collision.email ? <strong>{collision.email}</strong> : 'That address'} {COLLISION_NOTE}
           </div>
         ) : error ? (
           <p className="auth-modal-note auth-modal-note--error" role="alert">

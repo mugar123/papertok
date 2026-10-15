@@ -14,6 +14,9 @@ import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
  * again opens a fresh window, Firebase cancels the old one, and only the
  * latest attempt decides what the buttons show.
  */
+// After the address (or "That address") when `collision` is set.
+export const COLLISION_NOTE = 'already signs in another way. Use that method, then connect the other from Settings.';
+
 export function useProviderSignIn(surface) {
   const { signInWithGoogle, signInWithGitHub, error } = useAuth();
   const { trackEvent } = useAnalyticsConsent();
@@ -34,7 +37,7 @@ export function useProviderSignIn(surface) {
       // One account per email address: this address already opens PaperTok
       // through some other door. Email enumeration protection means Firebase
       // will not name which, so the copy points at "the method you already use".
-      if (signInError?.code === 'AUTH_EMAIL_ALREADY_USED') {
+      if (signInError?.code === 'AUTH_EMAIL_ALREADY_USED' && latest.current === attempt) {
         setCollision({ email: signInError.email || '' });
       }
     } finally {

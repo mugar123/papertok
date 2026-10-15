@@ -246,7 +246,8 @@
   /* ── Shadows ──
      None. A riso page prints, it does not float: an overlay is set apart by its
      --border-default hairline, the same as the account menu. The tokens stay so
-     every caller resolves to nothing rather than to an undefined value. */
+     every caller resolves to nothing rather than to an undefined value. The
+     two glows are not elevation: they are the focus ring on fields. */
   --shadow-sm: none;
   --shadow-md: none;
   --shadow-lg: none;
@@ -481,8 +482,6 @@
 
 .glass-strong {
   background: var(--bg-glass-strong);
-  backdrop-filter: saturate(180%) blur(12px);
-  -webkit-backdrop-filter: saturate(180%) blur(12px);
   border: 1px solid var(--border-default);
 }
 

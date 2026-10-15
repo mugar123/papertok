@@ -139,6 +139,8 @@ test('with motion refused the illustrations are drawn finished and the columns h
   assert.match(jsx, /const \[order, setOrder\] = useState\(still \? \['b', 'a', 'c'\] : \['a', 'b', 'c'\]\);/);
   assert.match(jsx, /if \(still\) onComplete\?\.\(/, 'with no leave to wait for, the answer is handed over at once');
   assert.match(jsx, /\{!still && <Stars avoid=\{hero\} \/>\}/, 'no stars when motion is refused');
+  // WCAG 2.2.2: with no pause control, the stars stop scheduling themselves too.
+  assert.match(jsx, /if \(performance\.now\(\) \+ delay < until\) timer = window\.setTimeout\(twinkle, delay\);/, 'the stars stop on their own');
   const css = await cssPromise;
   const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/)?.[0] ?? '';
   assert.match(reduced, /\.gw-area \{\s*animation: none;/);

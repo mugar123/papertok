@@ -1,8 +1,9 @@
 import { useId } from 'react';
 import './Petri.css';
 
-// Petri's silhouette, the same in every pose (obradither/landing/petri.html).
-const BODY = 'M48 124c-14-20-4-56 30-58 26-2 40 18 38 36-1 12-3 20-6 22Z';
+// Petri's silhouette, the same in every pose and in the stamp
+// (obradither/landing/petri.html).
+export const BODY = 'M48 124c-14-20-4-56 30-58 26-2 40 18 38 36-1 12-3 20-6 22Z';
 
 /**
  * What every pose of Petri shares: the svg, the hatch the dish is filled

@@ -15,13 +15,14 @@ import { Button } from '../ui/button.jsx';
 import { GithubMark } from '../ui/GithubMark.jsx';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import GoogleMark from './GoogleMark.jsx';
-import { useProviderSignIn } from './useProviderSignIn.js';
+import { COLLISION_NOTE, useProviderSignIn } from './useProviderSignIn.js';
 import Petri from '../Onboarding/Petri.jsx';
 import PetriStamp from '../Onboarding/PetriStamp.jsx';
 import { normalizeGuestAreas, normalizeGuestTopics } from '../../utils/guestInterests.js';
 import { DigestPreview, WelcomeReadingChoice, WelcomeInboxChoice, WelcomeProjectSupport } from './GuestWelcomePreferences.jsx';
 import { AreaPicker, SubtopicsPicker, WelcomeCopy, WelcomeShell } from './WelcomeShell.jsx';
 import PrivacyPopover from './PrivacyPopover.jsx';
+import './AuthPrompt.css'; // .auth-spinner, the provider in flight
 import './GuestWelcome.css';
 
 // The first thing a visitor sees: a page, not a sheet over a feed they have
@@ -38,12 +39,13 @@ import './GuestWelcome.css';
 // It offers Privacy too, so analytics can be turned off before anything else.
 //
 // The first screen is the landing page: the hero centred on the paper with its
-// own way forward, three engravings in the corners and a star now and then.
+// own way forward, three engravings in the corners and a few stars as it opens.
 //
-// Motion is decorative. Every sequence settles inside five seconds and then
-// holds still, except the stars, which are single glints of under two seconds
-// each, never over the copy. With motion refused, each illustration is drawn
-// in its final state and no star is drawn at all.
+// Motion is decorative and runs once: every sequence, the stars included,
+// settles inside five seconds and then holds still, so nothing moves beside
+// the copy for longer than WCAG 2.2.2 allows without a pause control. With
+// motion refused, each illustration is drawn in its final state and no star
+// is drawn at all.
 
 const STEPS = ['welcome', 'how', 'topics', 'subtopics', 'reading', 'inbox', 'support'];
 // Petri in place of the kicker, as on the account onboarding: looking into a
@@ -121,16 +123,22 @@ const COPY = {
 };
 
 // The welcome's stars: one four-point glint at a time fades up, turns and fades
-// out somewhere on the page, then the next, never over the hero. Decoration
-// only, so the layer is hidden from assistive tech; nothing at all with motion
-// refused. Drawn with the Web Animations API, so no state re-renders the page.
+// out somewhere on the page, then the next, never over the hero. No glint
+// starts after STARS_LAST_MS and none lasts over 2.2s, so the sky is still
+// inside five seconds. Decoration only, so the layer is hidden from assistive
+// tech; nothing at all with motion refused. Drawn with the Web Animations API,
+// so no state re-renders the page.
+const STARS_LAST_MS = 2800;
 const STAR_PATH = 'M12 0C12.8 7 17 11.2 24 12C17 12.8 12.8 17 12 24C11.2 17 7 12.8 0 12C7 11.2 11.2 7 12 0Z';
 
 function Stars({ avoid }) {
   const sky = useRef(null);
   useEffect(() => {
     let timer;
+    const until = performance.now() + STARS_LAST_MS;
     const twinkle = () => {
+      const delay = 500 + Math.random() * 1000;
+      if (performance.now() + delay < until) timer = window.setTimeout(twinkle, delay);
       const box = sky.current?.getBoundingClientRect();
       const hero = avoid.current?.getBoundingClientRect();
       if (!box || !hero) return;
@@ -157,7 +165,6 @@ function Stars({ avoid }) {
         { opacity: 0.9, transform: 'scale(1) rotate(45deg)', offset: 0.4 },
         { opacity: 0, transform: 'scale(0.6) rotate(90deg)' },
       ], { duration: 1400 + Math.random() * 800, easing: 'ease-in-out' }).finished.then(() => star.remove(), () => star.remove());
-      timer = window.setTimeout(twinkle, 500 + Math.random() * 1000);
     };
     timer = window.setTimeout(twinkle, 800);
     return () => window.clearTimeout(timer);
@@ -354,7 +361,7 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
   const onLanding = shownStep === 'welcome';
   // The landing's account button opens the two providers under it, in place.
   const [accountOpen, setAccountOpen] = useState(false);
-  const { collision, error: signInError, signIn } = useProviderSignIn('onboarding');
+  const { pendingProvider, collision, error: signInError, signIn } = useProviderSignIn('onboarding');
   const [selected, setSelected] = useState(() => new Set(normalizeGuestAreas(initialAreas)));
   const [selectedTopics, setSelectedTopics] = useState(() => new Set(normalizeGuestTopics(initialTopics, initialAreas)));
   const [expandedAreas, setExpandedAreas] = useState(() => new Set());
@@ -453,7 +460,7 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
       landing={onLanding}
       onStepShown={setShownStep}
       // Follows the screen on show, like the landing's chrome above.
-      stageClassName={['topics', 'subtopics', 'reading', 'inbox', 'support'].includes(shownStep) ? 'gw-stage--topics' : undefined}
+      stageClassName={STEPS.indexOf(shownStep) >= TOPICS_INDEX ? 'gw-stage--topics' : undefined}
       dots={{ count: STEPS.length, index: stepIndex, label: copy.stepOf, ariaLabel: copy.progress }}
       primary={{ label: stepCopy.cta, onClick: primary, disabled: primaryDisabled }}
       back={stepIndex > 0 ? { onClick: () => goTo(stepIndex - 1), label: copy.back } : null}
@@ -511,16 +518,18 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
               <div id="gw-providers" className="gw-providers" data-open={accountOpen ? '' : undefined} inert={!accountOpen}>
                 <div>
                   <Button variant="outline" size="lg" className="w-full" onClick={() => signIn('github')}>
-                    <GithubMark size={18} />
+                    {pendingProvider === 'github' ? <span className="auth-spinner" aria-hidden="true" /> : <GithubMark size={18} />}
                     {copy.welcome.github}
                   </Button>
                   <Button variant="outline" size="lg" className="w-full" onClick={() => signIn('google')}>
-                    <GoogleMark size={18} />
+                    {pendingProvider === 'google' ? <span className="auth-spinner" aria-hidden="true" /> : <GoogleMark size={18} />}
                     {copy.welcome.google}
                   </Button>
-                  <p className="gw-providers-note" role={collision || signInError ? 'alert' : undefined}>
+                  {/* Always mounted and displayed, even empty, so the alert is a
+                      live region before its text arrives. */}
+                  <p className="gw-providers-note" role="alert">
                     {collision
-                      ? 'That address already signs in another way. Use that method, then connect the other from Settings.'
+                      ? <>{collision.email ? <strong>{collision.email}</strong> : 'That address'} {COLLISION_NOTE}</>
                       : signInError ? getUiErrorMessage(signInError, 'AUTH_FAILED') : ''}
                   </p>
                 </div>

@@ -302,10 +302,14 @@ export function AuthProvider({ children }) {
       setSignInProviders([]);
       setInstitution(null);
       localStorage.removeItem('papertok_user');
+      clearGuestInterests();
       return;
     }
     try {
       await firebaseSignOut(auth);
+      // A guest answer still waiting for adoption belonged to this session:
+      // the next account on this device must not inherit it.
+      clearGuestInterests();
       clearUserScopedStorage(signingOutUserId);
       forgetOwnProfile(signingOutUserId);
       resetAccountWarmup(signingOutUserId);
