@@ -103,7 +103,7 @@ function shareProviders(env) {
       return response.json();
     },
     // Anonymous, on purpose: with no credential the rules decide exactly as
-    // they do for a visitor, so a private profile stays private here too.
+    // they do for a visitor.
     firestore: {
       getDocument(path) {
         firestore ||= createFirestoreRest({
