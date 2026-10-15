@@ -31,6 +31,10 @@ function DialogPortal(props) {
   return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />;
 }
 
+function DialogTrigger(props) {
+  return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />;
+}
+
 function DialogClose(props) {
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />;
 }
@@ -43,7 +47,7 @@ function DialogOverlay({ className, ...props }) {
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        'fixed inset-0 z-[12050] bg-[rgba(17,19,24,0.4)]',
+        'fixed inset-0 z-[12050] bg-[var(--scrim)]',
         'motion-safe:data-open:[animation:fadeIn_150ms_ease]',
         'motion-safe:data-closed:[animation:fadeOut_150ms_ease_both]',
         className,
@@ -72,7 +76,7 @@ function DialogContent({ className, children, showClose = true, showCloseButton,
           'fixed left-1/2 top-1/2 z-[12051] w-full max-w-lg -translate-x-1/2 -translate-y-1/2',
           'border border-border bg-card shadow-[var(--shadow-xl)] rounded-xl outline-none',
           'motion-safe:data-open:[animation:dialogIn_180ms_cubic-bezier(0.16,1,0.3,1)]',
-          'motion-safe:data-closed:[animation:dialogOut_140ms_ease_both]',
+          'motion-safe:data-closed:[animation:dialogOut_140ms_cubic-bezier(0.23,1,0.32,1)_both]',
           className,
         )}
         {...props}
@@ -121,4 +125,5 @@ export {
   DialogOverlay,
   DialogPortal,
   DialogTitle,
+  DialogTrigger,
 };

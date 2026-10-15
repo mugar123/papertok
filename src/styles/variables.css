@@ -1,7 +1,8 @@
 /* ============================================
    PaperTok Design System — CSS Variables
 
-   Light, document-first palette. Paper is white, structure comes from
+   Riso print, document-first. One ink (navy) on warm paper with a spot yellow,
+   the landing's palette (obradither/design-system). Structure comes from
    hairline rules instead of shadows, and metadata is set in mono so the
    interface reads like a machine-generated index over editorial content.
    ============================================ */
@@ -12,11 +13,11 @@
   color-scheme: light;
 
   /* ── Surfaces ── */
-  --bg-primary: #ffffff;
-  --bg-secondary: #f7f7f8;
-  --bg-card: #ffffff;
-  --bg-elevated: #ffffff;
-  --bg-sunken: #fafafa;
+  --bg-primary: #fbf8f0;
+  --bg-secondary: #ebeae5; /* ink 7% on paper: the wash */
+  --bg-card: #fbf8f0;
+  --bg-elevated: #fbf8f0;
+  --bg-sunken: #f3f1eb;
   /* The plate a paper's own figure is printed on, and the one surface that
      deliberately has NO counterpart in the dark block: it is paper on both
      sides, so the dark block inherits this value rather than overriding it.
@@ -30,23 +31,22 @@
   --bg-figure-plate: #ffffff;
   /* "Glass" now means a faint ink wash: light surfaces read better with a
      tint of the text color than with translucent white. */
-  --bg-glass: rgba(17, 19, 24, 0.03);
-  --bg-glass-strong: rgba(255, 255, 255, 0.88);
-  --bg-glass-hover: rgba(17, 19, 24, 0.06);
+  --bg-glass: rgba(29, 43, 83, 0.03);
+  --bg-glass-strong: rgba(251, 248, 240, 0.88);
+  --bg-glass-hover: rgba(29, 43, 83, 0.06);
 
   /* ── Ink ── */
-  --text-primary: #111318;
-  --text-secondary: #5b6270;
-  /* 4.83:1 on white, 4.52:1 on --bg-secondary. The previous #8a919e sat at
-     3.17:1, below the 4.5:1 floor for normal text (WCAG 1.4.3). */
-  --text-tertiary: #6b7280;
-  --text-inverse: #ffffff;
+  --text-primary: #1d2b53;
+  --text-secondary: #46527a;
+  /* 5.48:1 on paper, 4.82:1 on --bg-secondary (WCAG 1.4.3 needs 4.5:1). */
+  --text-tertiary: #5a6488;
+  --text-inverse: #fbf8f0;
 
   /* ── Accents ── */
   /* Ink is the interactive accent: primary buttons, active tabs, focus. */
-  --accent-primary: #111318;
-  --accent-primary-hover: #2b2f38;
-  --accent-primary-glow: rgba(17, 19, 24, 0.12);
+  --accent-primary: #1d2b53;
+  --accent-primary-hover: #3e4a6b;
+  --accent-primary-glow: rgba(29, 43, 83, 0.12);
   --accent-secondary: #1a5fd0;
   --accent-secondary-glow: rgba(26, 95, 208, 0.16);
 
@@ -61,16 +61,16 @@
      every surface, far past the 3:1 of WCAG 1.4.11 — contrast.test.js keeps
      measuring it. Same value as --border-ink on purpose, declared separately
      because the two flip for different reasons. */
-  --focus-ring: #111318;
+  --focus-ring: #1d2b53;
   /* Ink, in both themes. The yellow is the one surface whose value does not
      flip — a mark that changes value stops being a mark — so whatever sits on
      it cannot take `--text-primary`, which does flip. Same for the orange
      focus ring and for the user's highlight in the reader. */
-  --text-on-brand: #111318;
+  --text-on-brand: #1d2b53;
   /* Ink for the SOFT yellow, which does flip: on paper it is ink like the
      mark's, on the dark wash it becomes the brand yellow itself, so the
      control still says "yellow" where the surface alone reads as brown. */
-  --text-on-brand-soft: #111318;
+  --text-on-brand-soft: #1d2b53;
 
   /* Action accents. Each pairs a legible foreground with a surface tint, so a
      control can be coloured without inventing a one-off value at the callsite. */
@@ -110,15 +110,21 @@
   --tint-violet-bg: #f3efff;
   --tint-violet-fg: #5b21b6;
   --tint-violet-line: #ded0fb;
-  --tint-neutral-bg: #f4f4f5;
+  --tint-neutral-bg: #efece4;
   --tint-neutral-fg: #4a5160;
-  --tint-neutral-line: #e4e4e7;
+  --tint-neutral-line: #e4dccb;
 
   /* ── Borders ── */
-  --border-subtle: #e6e7ea;
-  --border-default: #d3d5db;
-  --border-strong: #a9aeba;
-  --border-ink: #111318;
+  --border-subtle: #e4dccb; /* the riso rule */
+  --border-default: #d6ccb6;
+  --border-strong: #a59c88;
+  --border-ink: #1d2b53;
+  /* The scrim under a modal: the ink at 30%, flat — no blur (the riso system prints, it does not frost). */
+  --scrim: rgba(29, 43, 83, 0.3);
+  /* Paper grain over the page: sparse blue-noise dots in the ink (public/grain*.png), this strong. */
+  --grain: 0.22;
+  /* The grain's two blue-noise tiles, offset so no grid shows (public/grain*.png). */
+  --grain-mask: url(/grain.png) 0 0 / 512px 512px repeat, url(/grain2.png) 137px 211px / 384px 384px repeat;
 
   /* ── Category accents ──
      Flat, print-ink colors. The variables keep the `gradient-*` names the
@@ -141,8 +147,8 @@
   --gradient-med: #be123c;      /* rose */
   --gradient-bio: #15803d;      /* green */
 
-  --gradient-brand: #111318;
-  --gradient-brand-hover: #2b2f38;
+  --gradient-brand: #1d2b53;
+  --gradient-brand-hover: #3e4a6b;
 
   /* ── List colours ──
      The palette a list is painted with. Deliberately NOT the `--gradient-*`
@@ -238,11 +244,13 @@
   --radius-full: 9999px;
 
   /* ── Shadows ──
-     Barely there. Elevation on white comes from a border plus a short drop. */
-  --shadow-sm: 0 1px 2px rgba(17, 19, 24, 0.04);
-  --shadow-md: 0 2px 6px rgba(17, 19, 24, 0.06);
-  --shadow-lg: 0 8px 24px rgba(17, 19, 24, 0.08);
-  --shadow-xl: 0 16px 48px rgba(17, 19, 24, 0.12);
+     None. A riso page prints, it does not float: an overlay is set apart by its
+     --border-default hairline, the same as the account menu. The tokens stay so
+     every caller resolves to nothing rather than to an undefined value. */
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --shadow-xl: none;
   --shadow-glow-primary: 0 0 0 3px var(--accent-primary-glow);
   --shadow-glow-secondary: 0 0 0 3px var(--accent-secondary-glow);
 
@@ -288,7 +296,8 @@
   --inset-bottom: env(safe-area-inset-bottom, 0px);
 
   /* ── Navbar height ── */
-  --nav-height: 56px;
+  /* 2026-10-15: 8px taller on desktop, 4px above and 4px below the content. */
+  --nav-height: 64px;
   --nav-height-mobile: 52px;
   /* The bar's real rendered height, notch included. Every consumer that
      used to read --nav-height/--nav-height-mobile directly and also needed
@@ -329,9 +338,8 @@
    palette is regenerated — hue and chroma from the light value, lightness from
    the family — rather than by picking values that look right in isolation.
 
-   Shadows change substance, not just depth: a drop tinted with the text colour
-   is invisible on ink, so they are black and deeper. Structure still comes
-   from hairline rules.
+   There are no shadows on either side (see the light block), so nothing here
+   redefines them. Structure comes from hairline rules and ink frames.
 
    There is deliberately no `@media (prefers-color-scheme: dark)` copy of this
    block: `index.html` resolves the preference into `data-theme` before the
@@ -343,28 +351,28 @@
   color-scheme: dark;
 
   /* ── Surfaces ── */
-  --bg-primary: #111318;
-  --bg-secondary: #1a1d24;
-  --bg-card: #16191f;
-  --bg-elevated: #1c2029;
-  --bg-sunken: #0d0f13;
+  --bg-primary: #14161d;
+  --bg-secondary: #24252a;
+  --bg-card: #1b1c23;
+  --bg-elevated: #212328;
+  --bg-sunken: #0f1016;
   /* The ink wash turns into a paper wash: on this side lifting a surface means
      adding light, not adding text colour. */
-  --bg-glass: rgba(255, 255, 255, 0.045);
-  --bg-glass-strong: rgba(17, 19, 24, 0.9);
-  --bg-glass-hover: rgba(255, 255, 255, 0.08);
+  --bg-glass: rgba(244, 236, 216, 0.045);
+  --bg-glass-strong: rgba(20, 22, 29, 0.9);
+  --bg-glass-hover: rgba(244, 236, 216, 0.08);
 
   /* ── Ink ── */
-  --text-primary: #f2f3f5;
-  --text-secondary: #a1a8b5;
-  /* 5.35:1 on the page, 4.69:1 on --bg-elevated; #757c8a was 4.43:1. */
-  --text-tertiary: #828a99;
-  --text-inverse: #111318;
+  --text-primary: #f4ecd8;
+  --text-secondary: #b9b1a0;
+  /* 6.62:1 on the page, 5.60:1 on --bg-secondary. */
+  --text-tertiary: #a39c8c;
+  --text-inverse: #14161d;
 
   /* ── Accents ── */
-  --accent-primary: #f2f3f5;
-  --accent-primary-hover: #d7dae1;
-  --accent-primary-glow: rgba(242, 243, 245, 0.16);
+  --accent-primary: #f4ecd8;
+  --accent-primary-hover: #d2ccbc;
+  --accent-primary-glow: rgba(244, 236, 216, 0.16);
   --accent-secondary: #6ea4ff;
   --accent-secondary-glow: rgba(110, 164, 255, 0.22);
 
@@ -377,7 +385,7 @@
   --text-on-brand-soft: #ffd21e;
   /* Paper-on-ink, mirroring the light side's ink-on-paper: the orange ring is
      gone everywhere for the same reason (see the light definition). */
-  --focus-ring: #f2f3f5;
+  --focus-ring: #f4ecd8;
 
   /* ── Action accents ── */
   --accent-violet: #a98fff;
@@ -421,10 +429,12 @@
   --tint-neutral-line: #363d4b;
 
   /* ── Borders ── */
-  --border-subtle: #23262e;
-  --border-default: #2e323b;
-  --border-strong: #474d59;
-  --border-ink: #f2f3f5;
+  --border-subtle: #2c2f3a; /* the riso rule */
+  --border-default: #383b47;
+  --border-strong: #535766;
+  --border-ink: #f4ecd8;
+  --scrim: rgba(0, 0, 0, 0.5);
+  --grain: 0.18;
 
   /* ── Category accents ──
      The twelve field inks at oklch L 0.70. Hue and chroma are the light
@@ -442,8 +452,8 @@
   --gradient-med: #ff6173;      /* rose */
   --gradient-bio: #57b66f;      /* green */
 
-  --gradient-brand: #f2f3f5;
-  --gradient-brand-hover: #d7dae1;
+  --gradient-brand: #f4ecd8;
+  --gradient-brand-hover: #d2ccbc;
 
   /* ── List colours ──
      The same eight hues at oklch L 0.68, so the family still reads as one
@@ -457,11 +467,6 @@
   --list-violet: #c374d5;
   --list-crimson: #e7688b;
 
-  /* ── Shadows ── */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
-  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.6);
 }
 
 /* ============================================

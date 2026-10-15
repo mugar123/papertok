@@ -260,17 +260,6 @@
 }
 
 
-.profile-primary {
-  box-shadow: inset 0 -3px 0 var(--brand-yellow);
-  transition: color var(--transition-fast), background-color var(--transition-fast),
-    border-color var(--transition-fast), box-shadow var(--transition-fast), scale var(--transition-fast);
-}
-
-.profile-primary:hover:not(:disabled),
-.profile-primary:focus-visible:not(:disabled) {
-  box-shadow: inset 0 -4px 0 var(--brand-yellow);
-}
-
 .profile-pin-toggle:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -757,8 +746,7 @@
   }
 
   .profile-preview-open,
-  .profile-pin-toggle,
-  .profile-primary {
+  .profile-pin-toggle {
     transition: none;
   }
 }

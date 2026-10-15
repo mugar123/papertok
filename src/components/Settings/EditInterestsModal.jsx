@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { CATEGORIES } from '../../data/categories';
 import { USER_PREFERENCES_MAX } from '../../utils/accountOnboarding.js';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.jsx';
+import { Button } from '../ui/button.jsx';
 import { Toggle } from '../ui/toggle.jsx';
 import './EditInterestsModal.css';
 
@@ -176,9 +177,8 @@ export default function EditInterestsModal({ isOpen, onClose }) {
           <span className="eim-selected-count">
             {`${selected.size} selected ${selected.size === 1 ? 'interest' : 'interests'}`}
           </span>
-          <button
-            type="button"
-            className="eim-save-btn"
+          <Button
+            size="lg"
             onClick={handleSave}
             disabled={isSaving}
             aria-busy={isSaving ? 'true' : undefined}
@@ -188,7 +188,7 @@ export default function EditInterestsModal({ isOpen, onClose }) {
                 nothing — for the whole time it is busy. */}
             {isSaving && <div className="eim-spinner" aria-hidden="true" />}
             {isSaving ? ('Saving...') : ('Save changes')}
-          </button>
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

@@ -136,7 +136,6 @@ function SaveFoot({ form }) {
       <div className="profile-actions">
         <Button
           type="submit"
-          className="profile-primary"
           disabled={form.saving || form.deleting || !form.handleCheck.valid || form.needsVisibility}
           aria-describedby={form.needsVisibility ? 'profile-visibility-needed' : undefined}
         >
