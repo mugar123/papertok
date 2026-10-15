@@ -36,7 +36,6 @@ import {
   updateUserProfile,
 } from '../../services/userProfileService.js';
 import { attributePublicList } from '../../services/publicListService.js';
-import { getPublicProfilePath } from '../../utils/publicNavigation.js';
 import { clearStoredProfile } from '../../utils/userScopedStorage.js';
 import { HANDLE_ERROR_MESSAGES, inspectHandle } from '../../utils/userHandle.js';
 import { loadProfileFonts } from '../../utils/loadDisplayFonts.js';
@@ -128,8 +127,8 @@ export function useProfileEditor() {
     void loadProfileFonts();
   }, []);
 
-  // Seeded from the cache the public profile page and the other settings
-  // page fill, so moving between them paints instead of spinning.
+  // Seeded from the cache the account warm-up and the other settings page
+  // fill, so moving between them paints instead of spinning.
   const seededKey = ownProfileKey(user?.uid);
   const seeded = seededKey ? ownProfileCache.get(seededKey) : undefined;
   const seededProfile = seeded?.profile;
@@ -692,8 +691,6 @@ export function useProfileEditor() {
       saving,
       deleting,
       reborn,
-      // Only a profile that exists has a page to open.
-      publicPath: profile ? getPublicProfilePath(profile.handle) : null,
     },
     visibility: {
       isNew,

@@ -48,7 +48,7 @@ The current look comes from an editorial redesign — serif headlines, ruled sec
 
 **Search that always lands.** Press `/` anywhere: papers, authors, institutions, topics and projects, and every result leads to a real destination — a paper opens its public page instantly, entities open their explorer profiles.
 
-**A personal library, in color.** Lists carry one of eight colors generated under three constraints (shared lightness, capped chroma, minimum contrast), visible from the library to your public profile.
+**A personal library, in color.** Lists carry one of eight colors generated under three constraints (shared lightness, capped chroma, minimum contrast), visible from the library to the lists you share.
 
 **Honest labels.** Every card answers whether a paper passed peer review ("Preprint" / "Verified") and whether you can actually read it ("Open access" / "Open version" / "Subscription") — and shows nothing rather than guessing when the record doesn't say.
 

@@ -57,7 +57,6 @@ const SettingsPage = lazyWithPreload(() => import('./components/Settings/Setting
 const FollowingSettingsPage = lazyWithPreload(() => import('./components/Settings/FollowingSettingsPage'))
 const PublicPaperPage = lazyWithPreload(() => import('./components/Public/PublicPaperPage'))
 const PublicListPage = lazyWithPreload(() => import('./components/Lists/PublicListPage'))
-const PublicProfilePage = lazyWithPreload(() => import('./components/Public/PublicProfilePage'))
 const SearchCommand = lazyWithPreload(() => import('./components/Search/SearchCommand'))
 
 // The standalone routes a guest can reach without a session — `/feed` is
@@ -135,17 +134,15 @@ function AppContent() {
   const pageTransitionCustom = usePageTransitionCustom()
   const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
-  const navbarRoutes = ['/feed', '/lists', '/following', '/profile', '/settings', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following']
-  // The paper, profile, list and entity pages keep the app chrome for a
-  // signed-in user — reaching a paper from Liked, a profile from the follow
-  // sheet, a list from someone's shared link, or an author from a card, must
-  // not feel like leaving the app. Measured before the entity pages joined:
-  // the bar unmounted in the frame after the tap and left an empty band over
-  // the card while it dissolved. Signed-out visitors still get the standalone
-  // page (`user` gates below).
+  const navbarRoutes = ['/feed', '/lists', '/following', '/settings', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following']
+  // The paper, list and entity pages keep the app chrome for a signed-in
+  // user — reaching a paper from a list, a list from someone's shared link,
+  // or an author from a card, must not feel like leaving the app. Measured
+  // before the entity pages joined: the bar unmounted in the frame after the
+  // tap and left an empty band over the card while it dissolved. Signed-out
+  // visitors still get the standalone page (`user` gates below).
   const showNavbar = (navbarRoutes.includes(normalizedPathname)
     || normalizedPathname.startsWith('/public/paper/')
-    || normalizedPathname.startsWith('/public/user/')
     || normalizedPathname.startsWith('/public/list/')
     || normalizedPathname.startsWith('/explorer/'))
     && Boolean(user)
@@ -241,16 +238,11 @@ function AppContent() {
       PDFViewer.preload().catch(() => {})
       SaveToListModal.preload().catch(() => {})
       FollowingFeedPage.preload().catch(() => {})
-      // The avatar and the gear are one tap from every screen. Fetched on
-      // first visit instead, the profile and settings chunks were what a
-      // deploy most often took away from an open tab: a 404 on the chunk,
-      // the forced reload in main.jsx, and the feed coming back from the top
-      // — which read as the whole feed reloading.
-      PublicProfilePage.preload().catch(() => {})
-      // A profile's list cards open here. Measured 2026-09-23: unpreloaded,
-      // the first list of a session started its Firestore read ~370 ms after
-      // the tap, the chunk and the fallback throttle in front of it.
-      PublicListPage.preload().catch(() => {})
+      // Settings is one tap from every screen, in the account menu. Fetched
+      // on first visit instead, its chunk was what a deploy most often took
+      // away from an open tab: a 404 on the chunk, the forced reload in
+      // main.jsx, and the feed coming back from the top — which read as the
+      // whole feed reloading.
       SettingsPage.preload().catch(() => {})
       // Every card links to authors, topics and projects; the first of those
       // opened in a session used to pay the chunk and the fallback throttle.
@@ -390,18 +382,9 @@ function AppContent() {
               </ProtectedRoute>
             }
           />
-          {/* The user's own profile: the same page as /public/user/:handle,
-              in owner mode. It renders even before a public profile exists. */}
-          <Route
-            path="/profile"
-            element={
-              <ProtectedRoute>
-                <PageTransition>
-                  <PublicProfilePage selfMode />
-                </PageTransition>
-              </ProtectedRoute>
-            }
-          />
+          {/* The profile page was removed with following people. Its address
+              lands on the lists, where the likes and saves it showed live. */}
+          <Route path="/profile" element={<Navigate to="/lists" replace />} />
           {/* One route per settings page; the bare address opens the first. */}
           <Route path="/settings" element={<Navigate to="/settings/profile" replace />} />
           <Route
@@ -499,14 +482,6 @@ function AppContent() {
                   onOpenPdf={openPdf}
                   onSaveToList={user ? setSaveModalPaper : requestAuthentication}
                 />
-              </PageTransition>
-            }
-          />
-          <Route
-            path="/public/user/:handle"
-            element={
-              <PageTransition>
-                <PublicProfilePage onAuthRequired={requestAuthentication} />
               </PageTransition>
             }
           />

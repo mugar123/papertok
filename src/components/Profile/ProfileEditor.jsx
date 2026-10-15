@@ -2,7 +2,6 @@ import { Link } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import {
   ArrowRight,
-  ArrowSquareOut,
   CircleNotch,
   FolderOpen,
   GlobeHemisphereWest,
@@ -16,9 +15,7 @@ import VisibilityList from './VisibilityList.jsx';
 import VisibilityPrompt from './VisibilityPrompt.jsx';
 import { getIcon } from '../../utils/icons.js';
 import { HANDLE_MAX_LENGTH } from '../../utils/userHandle.js';
-import { cn } from '../../lib/utils.js';
 import { Button } from '../ui/button.jsx';
-import { buttonVariants } from '../ui/button-variants.js';
 import { Input } from '../ui/input.jsx';
 import { Label } from '../ui/label.jsx';
 import { Switch } from '../ui/switch.jsx';
@@ -70,8 +67,6 @@ const copy = {
   hiddenPinsBody: 'Lists no longer hide as a group: each published list now has its own "On my profile" switch. Do you want those lists shown on your profile?',
   hiddenPinsShow: 'Show them',
   hiddenPinsKeep: 'Keep them off',
-  viewPublic: 'View public profile',
-  viewPublicNewTab: 'View public profile (opens in a new tab)',
   papers: count => `${count} ${count === 1 ? 'paper' : 'papers'}`,
   loading: 'Loading your profile...',
   loadError: 'Your profile could not be loaded.',
@@ -169,22 +164,6 @@ export function IdentitySection({ form, photo }) {
                     aria-describedby="profile-handle-hint"
                   />
                 </div>
-                {/* The page the saved handle names (the draft may not exist
-                    yet), in a new tab so unsaved edits stay here. A link drawn
-                    as a button, not a Button rendered as a link: Base UI gives
-                    a non-button element `role="button"`, and this navigates. */}
-                {form.publicPath && (
-                  <a
-                    href={form.publicPath}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={cn(buttonVariants({ variant: 'outline', size: 'icon' }), 'profile-handle-open')}
-                    aria-label={copy.viewPublicNewTab}
-                    title={copy.viewPublic}
-                  >
-                    <ArrowSquareOut size={17} aria-hidden="true" />
-                  </a>
-                )}
               </div>
               <p id="profile-handle-hint" className={`profile-hint${handleError ? ' is-error' : ''}`} aria-live="polite">
                 {handleError || copy.handleHint}

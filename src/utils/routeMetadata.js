@@ -7,7 +7,6 @@ const LABELS = {
   '/lists': 'My lists',
   '/following': 'Following',
   '/search': 'Search',
-  '/profile': 'My profile',
   // Each settings page titles itself "<page> · Settings" (SettingsPage.jsx),
   // so the announcement calls the page what the page calls itself.
   '/settings': 'Settings',
@@ -21,8 +20,8 @@ const LABELS = {
   '/onboarding': 'Welcome',
 }
 
-// These set document.title on their own (the SettingsPage pages,
-// PublicProfilePage in selfMode); the announcer still announces them.
+// These set document.title on their own (the SettingsPage pages); the
+// announcer still announces them.
 const SELF_TITLED = new Set([
   '/settings',
   '/settings/profile',
@@ -30,7 +29,6 @@ const SELF_TITLED = new Set([
   '/settings/reading',
   '/settings/notifications',
   '/settings/privacy',
-  '/profile',
 ])
 
 function normalize(pathname) {

@@ -1,9 +1,10 @@
 /**
  * Warm the signed-in account's own profile and lists so the first visit to
- * /profile or the save-to-list modal is not a cold Firestore handshake.
+ * the profile settings or the save-to-list modal is not a cold Firestore
+ * handshake.
  *
- * Session caches die on reload. localStorage already remembers lists and
- * follow counters; this module hydrates the session caches from that, then
+ * Session caches die on reload. localStorage already remembers lists and the
+ * profile; this module hydrates the session caches from that, then
  * revalidates in the background. The first paint of those screens can then
  * use data this device already had, instead of waiting for a channel that
  * has not opened yet.
@@ -72,7 +73,7 @@ export async function warmAccountCaches(uid, {
   // Signing out does not cancel a read already in flight. Whatever lands
   // afterwards belongs to a session that no longer exists, and the caches it
   // would be written into are the ones the NEXT account reads — including the
-  // handle-keyed entry a visitor is served from.
+  // own-profile entry the settings screens seed from.
   const stillCurrent = () => currentUid() === uid && warmed.has(uid);
   const [profileRead, listsSnapshot] = await Promise.all([
     // A failed read and "no profile" are different answers, and only the

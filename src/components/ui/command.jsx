@@ -33,8 +33,8 @@ function Command({ className, ...props }) {
  * `tailwind-merge` (via `cn`) drops conflicting utilities for the same
  * property down to the last one, so a second bracket value in the old unit
  * here would just be dead code, not a fallback. `dvh` already ships bare
- * elsewhere in this codebase (`FollowSheet.css:190`) and has near-universal
- * support, so going bare here matches that precedent.
+ * elsewhere in this codebase (the sheet's `max-height` in `drawer.css`) and
+ * has near-universal support, so going bare here matches that precedent.
  */
 function CommandDialog({ children, className, overlayClassName, finalFocus, title = 'Search', ...props }) {
   return (

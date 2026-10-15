@@ -10,9 +10,8 @@
  *
  * A timeout is emphatically **not an answer**: it says nothing about whether
  * the data exists, so callers must treat it as a retryable failure and never
- * as a confirmed absence — the same rule `pendingIdRequests` enforces for
- * cache-served misses. `isReadTimeout` exists so a caller can tell this apart
- * from a genuine error such as a permission denial.
+ * as a confirmed absence. `isReadTimeout` exists so a caller can tell this
+ * apart from a genuine error such as a permission denial.
  *
  * A stall has **two shapes**, and missing the second one is what kept the
  * comment sheet ending in "could not be loaded":

@@ -4,20 +4,17 @@ import assert from 'node:assert/strict';
 import {
   clearStoredProfile,
   clearUserScopedStorage,
-  getFollowStatsStorageKey,
   getLocalHiddenStorageKey,
   getOnboardingStorageKey,
   getOwnListsStorageKey,
   getOwnProfileStorageKey,
   getSeenPapersStorageKey,
   readSeenPaperIds,
-  readStoredFollowStats,
   readStoredLists,
   readStoredOnboarding,
   readStoredProfile,
   removeLegacySeenPaperIds,
   saveSeenPaperIds,
-  saveStoredFollowStats,
   saveStoredLists,
   saveStoredOnboarding,
   saveStoredProfile,
@@ -87,60 +84,22 @@ test('logout removes only the current user personal caches', () => {
 });
 
 /**
- * The follow counters of your own profile, remembered across a reload.
- *
- * The session cache spares every re-entry within a tab but dies with it, and a
- * `count()` aggregation is server-only — so the first visit after a reload had
- * no local answer of any kind and said so with an ellipsis. This is the seed
- * that closes that last gap.
+ * The removed profile page remembered its follow counters under
+ * `papertok_followStats:{uid}`. Nothing writes that key any more, but devices
+ * that stored one still lose it when that account signs out.
  */
 
-test('follow counters survive a reload, per account', () => {
+test('signing out takes the legacy follow counters with everything else', () => {
   const storage = createStorage();
 
-  saveStoredFollowStats('user-a', {
-    followers: { count: 43, capped: false },
-    followed: { count: 7, capped: true },
-  }, storage);
-  saveStoredFollowStats('user-b', { followers: { count: 0, capped: false } }, storage);
-
-  assert.deepEqual(readStoredFollowStats('user-a', storage), {
-    followers: { count: 43, capped: false },
-    followed: { count: 7, capped: true },
-  });
-  assert.deepEqual(readStoredFollowStats('user-b', storage).followers, { count: 0, capped: false });
-  assert.equal(readStoredFollowStats('user-b', storage).followed, null, 'a counter never stored is not a zero');
-  assert.equal(readStoredFollowStats('user-c', storage), null);
-});
-
-test('a counter that failed to read is not written, and rubbish does not come back', () => {
-  const storage = createStorage();
-
-  saveStoredFollowStats('user-d', {
-    followers: { count: null, capped: false },
-    followed: null,
-  }, storage);
-  assert.equal(readStoredFollowStats('user-d', storage), null, 'nothing worth keeping, nothing written');
-
-  storage.setItem(getFollowStatsStorageKey('user-e'), '{ not json');
-  assert.equal(readStoredFollowStats('user-e', storage), null);
-
-  storage.setItem(getFollowStatsStorageKey('user-f'), JSON.stringify({ followers: { count: 'many' } }));
-  assert.equal(readStoredFollowStats('user-f', storage), null, 'a count that is not a number is not a count');
-
-  assert.equal(getFollowStatsStorageKey(null), null);
-  assert.equal(readStoredFollowStats(null, storage), null);
-});
-
-test('signing out takes the follow counters with everything else', () => {
-  const storage = createStorage();
-
-  saveStoredFollowStats('user-g', { followers: { count: 43, capped: false } }, storage);
+  storage.setItem('papertok_followStats:user-g', JSON.stringify({ followers: { count: 43, capped: false } }));
+  storage.setItem('papertok_followStats:user-h', JSON.stringify({ followers: { count: 2, capped: false } }));
   saveSeenPaperIds('user-g', new Set(['paper-a']), storage);
 
   clearUserScopedStorage('user-g', storage);
 
-  assert.equal(readStoredFollowStats('user-g', storage), null);
+  assert.equal(storage.getItem('papertok_followStats:user-g'), null);
+  assert.ok(storage.getItem('papertok_followStats:user-h'), 'another account keeps its own key');
   assert.deepEqual([...readSeenPaperIds('user-g', storage)], []);
 });
 

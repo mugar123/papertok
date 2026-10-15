@@ -25,7 +25,6 @@ const INJECTED_PROPERTIES = new Map([
   ['--stagger-index', '../Lists/ListsPage.jsx'],
   ['--loading-row-index', '../Search/SearchPage.jsx'],
   ['--search-item-index', '../Search/SearchPage.jsx'],
-  ['--follow-rows', '../Public/FollowSheet.jsx'],
   // A row takes the research field of its paper, the same way a card or an
   // entity header does, so its rules are tinted by the data rather than by a
   // decorative default. The lists page sets it per row.
@@ -39,8 +38,6 @@ const INJECTED_PROPERTIES = new Map([
 
 const OWNED = [
   '../Profile/ProfileEditor.css',
-  '../Public/PublicProfilePage.css',
-  '../Public/FollowSheet.css',
   // Added with the save-and-organize fix, which introduced `.save-modal-retry`.
   // The file was already clean, so this costs nothing and stops the next token
   // added here from being the one nobody notices.
@@ -143,11 +140,9 @@ test('the editor is split across the settings pages, with the identity first on 
   // Each page is a route of its own, so the rail is links, not a scroll spy.
   assert.match(settings, /<NavLink\s+key=\{entry\.slug\}\s+to=\{`\/settings\/\$\{entry\.slug\}`\}\s+replace/);
   assert.doesNotMatch(settings, /useSectionSpy|scrollIntoView/);
-  // The way to the public page is a named link beside the handle that makes
-  // its address, shown only once there is a saved profile to open. A real
-  // link: a Button rendered as one would be announced as a button.
+  // There is no public page to open any more, and no preview of one.
   assert.doesNotMatch(sections, /ProfilePreview|profile-preview/);
-  assert.match(sections, /\{form\.publicPath && \(\s*<a\s+href=\{form\.publicPath\}\s+target="_blank"[\s\S]*?aria-label=\{copy\.viewPublicNewTab\}/);
+  assert.doesNotMatch(sections, /publicPath/);
 });
 
 test('in the dark theme, what sits on the soft yellow is the ink that flips with it, not the fixed one', async () => {

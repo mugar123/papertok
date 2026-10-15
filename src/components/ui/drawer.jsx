@@ -5,7 +5,7 @@ import './drawer.css';
 /**
  * The bottom sheet a thumb dismisses — Base UI's Drawer: a Dialog plus
  * swipe-to-dismiss, snap points and the swipe-progress variables its
- * stylesheet reads. The follow sheet, related papers, the authors sheet:
+ * stylesheet reads. The account sheet, related papers, the authors sheet:
  * anything that arrives from the bottom of a phone and should leave the same
  * way, by hand or by gesture. For a panel with no gesture, Sheet.
  *

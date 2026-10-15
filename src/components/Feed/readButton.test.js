@@ -82,11 +82,9 @@ test('SOURCE: the eye and the tick share the slot so one can turn into the other
   assert.doesNotMatch(css, /\.pc--fade-out/);
 });
 
-test('SOURCE: a stored copy from a list or a profile row opens on the skeleton', async () => {
+test('SOURCE: a stored copy from a list opens on the skeleton', async () => {
   const lists = await read('../Lists/ListsPage.jsx');
   assert.match(lists, /navigate\(path, \{ state: \{ paper, stored: true \} \}\)/);
-  const profile = await read('../Public/PublicProfilePage.jsx');
-  assert.match(profile, /state=\{row\.seed \? \{ paper: row\.seed, stored: true \} : undefined\}/);
   const palette = await read('../../utils/searchDestinations.js');
   assert.match(palette, /state: \{ paper \}/, 'the palette hands over the paper itself, which does paint');
 });
