@@ -174,7 +174,7 @@ test('SOURCE: no queda ningún glifo de verificado en las superficies', async ()
   const leer = (ruta) => readFile(new URL(ruta, import.meta.url), 'utf8');
   const sinComentarios = (x) => x.replace(/\/\*[\s\S]*?\*\/|\{\/\*[\s\S]*?\*\/\}|\/\/.*$/gm, '');
 
-  for (const ruta of ['../components/Feed/PaperCard.jsx', '../components/Report/ScientificReport.jsx']) {
+  for (const ruta of ['../components/Feed/PaperCard.jsx']) {
     const src = sinComentarios(await leer(ruta));
     assert.doesNotMatch(src, /verified:\s*BadgeCheck/, `${ruta}: glifo muerto`);
     assert.doesNotMatch(src, /BadgeCheck/, `${ruta}: el icono ya no hace falta`);

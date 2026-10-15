@@ -152,8 +152,8 @@ export function watchCommentCount(paper, onCount, overrides) {
  * `isActive && canOpenComments && !publicMode` (PaperCard.jsx): every
  * surface that mounts a card passes `isActive` now, but `canOpenComments`
  * also needs `onOpenComments`, and only the feed, `PublicPaperPage` and the
- * related-paper overlay pass that — `EntityExplorer`, `ListsPage`,
- * `SearchPage` and `ScientificReport` never do, so a card on any of those is
+ * related-paper overlay pass that — `EntityExplorer`, `ListsPage` and
+ * `SearchPage` never do, so a card on any of those is
  * never enabled; and `publicMode` turns the last one off for a signed-out
  * reader, whose comments button still opens but who bills nothing to reach
  * a number. Such a card may only be handed a fresh entry. Anything
@@ -174,7 +174,7 @@ export function paintableCommentCount(paperId, enabled) {
  * (PaperCard.jsx), so what actually keeps most of them off is
  * `canOpenComments`: it also needs `onOpenComments`, and only the feed,
  * `PublicPaperPage` and the related-paper overlay pass that —
- * `EntityExplorer`, `ListsPage`, `SearchPage` and `ScientificReport` are off
+ * `EntityExplorer`, `ListsPage` and `SearchPage` are off
  * unconditionally, same as a paper with nowhere to anchor a thread. The
  * third term is the session: `firestore.rules` opens `list` on
  * `{path=**}/comments` to an anonymous client, so a signed-out visitor

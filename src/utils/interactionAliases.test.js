@@ -82,7 +82,6 @@ test('SOURCE: every card surface looks a mark up under the resolved id', async (
     ['../components/Feed/FeedContainer.jsx', 'paper'],
     ['../components/Search/SearchPage.jsx', 'shownPaper'],
     ['../components/Explorer/EntityExplorer.jsx', 'shownPaper'],
-    ['../components/Report/ScientificReport.jsx', 'shownPaper'],
     ['../components/Lists/ListsPage.jsx', 'shownPaper'],
   ]) {
     const code = stripComments(await read(path));

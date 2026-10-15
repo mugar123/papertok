@@ -12,7 +12,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { normalizeArxivFigureId, canHaveFigures, peekPaperFigures } from './paperFigureService.js';
+import { normalizeArxivFigureId, peekPaperFigures } from './paperFigureService.js';
 import { isArxivFigureId } from '../../worker/paper-figures.js';
 
 const IDS = [
@@ -52,13 +52,6 @@ test('the version suffix and the arxiv: prefix are stripped before matching', ()
   assert.equal(normalizeArxivFigureId({ arxivId: 'arXiv:2401.12345v3' }), '2401.12345');
   assert.equal(normalizeArxivFigureId({ arxivId: 'math/0309136v2' }), 'math/0309136');
   assert.equal(normalizeArxivFigureId({ arxivId: '  2401.12345  ' }), '2401.12345');
-});
-
-test('a paper without an arXiv identifier asks for nothing', () => {
-  assert.equal(canHaveFigures({}), false);
-  assert.equal(canHaveFigures({ arxivId: null }), false);
-  assert.equal(canHaveFigures(undefined), false);
-  assert.equal(canHaveFigures({ arxivId: 'math/0309136' }), true);
 });
 
 /**

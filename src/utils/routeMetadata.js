@@ -5,7 +5,6 @@
 const LABELS = {
   '/feed': 'For you',
   '/lists': 'My lists',
-  '/research': 'Research',
   '/following': 'Following',
   '/search': 'Search',
   '/profile': 'My profile',

@@ -64,7 +64,7 @@ function verifyProductionEnv(mode) {
 // The service worker precaches the BOOT SET ONLY -- what a first visit
 // already pays for -- not the naive "every js/css/html/svg/png/woff2 in
 // dist" glob. That naive pattern would sweep in every lazy route chunk
-// (katex ~258 KB, ScientificReport ~336 KB) and all 49 self-hosted font
+// (katex alone is ~258 KB) and all 49 self-hosted font
 // files (~1031 KiB across every script subset), when a Spanish/English
 // reader's first paint downloads only 7 of those fonts (Inter 400/500/
 // 600/700 + IBM Plex Mono 400/500/600, latin subset, ~139 KiB -- confirmed
@@ -85,13 +85,13 @@ function verifyProductionEnv(mode) {
 // `bootSetManifestTransform` below reads the actual <script>/modulepreload/
 // stylesheet references out of the built dist/index.html and adds whichever
 // of them the glob patterns here didn't already catch -- the boot set, by
-// construction, without re-admitting katex or ScientificReport (neither is
+// construction, without re-admitting katex (it is not
 // referenced from index.html) and without hardcoding chunk names that
 // change on every content-hash rebuild.
 //
 // The icons, the manifest, and just 7 of the ~49 font files (Inter 400/500/
 // 600/700 + IBM Plex Mono 400/500/600, latin subset) round out the glob
-// here; everything else -- katex, ScientificReport, the other 42 font
+// here; everything else -- katex, the other 42 font
 // files, every lazy route chunk -- is left to the CacheFirst runtime rule
 // below, cached only once a reader's session actually asks for it.
 //
@@ -116,7 +116,7 @@ const PRECACHE_GLOB_PATTERNS = [
 // re-deriving its reference list as a second glob. It adds whichever
 // script/modulepreload/stylesheet targets PRECACHE_GLOB_PATTERNS above
 // didn't already catch (the ~24 further boot-set chunks -- see the comment
-// above), and leaves everything else (katex, ScientificReport, every lazy
+// above), and leaves everything else (katex, every lazy
 // route chunk: none of them referenced from index.html) alone.
 function bootSetManifestTransform(distDir) {
   // The one <script type="module"> is the entry chunk; used below only to
@@ -247,7 +247,7 @@ export default defineConfig(({ command, mode }) => {
                   {
                     // Both halves have failed: no network, and nothing in this
                     // cache for the URL asked for. That is not exotic now that
-                    // the routes are real -- a reader offline on /research has
+                    // the routes are real -- a reader offline on /lists has
                     // only ever had /feed put in here (public/sw-html-warm.js
                     // warms it at install), and every route serves the same
                     // document anyway. Answering with it beats the browser's
@@ -280,7 +280,7 @@ export default defineConfig(({ command, mode }) => {
             {
               // Every hashed, content-addressed build asset NOT already in
               // the boot-set precache above: lazy route chunks, katex,
-              // ScientificReport, the other 42 font files. Filenames are
+              // the other 42 font files. Filenames are
               // content-hashed, so CacheFirst is safe -- a changed file gets
               // a new URL -- and this is what actually kills the repeat
               // 10-minute-max-age re-fetch on a second visit. `sameOrigin`

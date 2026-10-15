@@ -28,7 +28,6 @@ const strip = (src) => src
  */
 
 const CALLERS = [
-  { name: 'Research', path: '../Report/ScientificReport.jsx' },
   { name: 'the explorer', path: '../Explorer/EntityExplorer.jsx' },
   { name: 'search', path: '../Search/SearchPage.jsx' },
   { name: 'the lists page', path: '../Lists/ListsPage.jsx', selected: 'overlayPaper' },

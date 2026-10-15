@@ -38,7 +38,6 @@ test('SOURCE: every card mount can take a read mark back', async () => {
     ['../Feed/FeedContainer.jsx', /onUnmarkAsRead=\{unmarkAsRead\}/],
     ['../Search/SearchPage.jsx', /onUnmarkAsRead=\{unmarkAsRead\}/],
     ['../Explorer/EntityExplorer.jsx', /onUnmarkAsRead=\{unmarkAsRead\}/],
-    ['../Report/ScientificReport.jsx', /onUnmarkAsRead=\{unmarkAsRead\}/],
     ['../Public/PublicPaperPage.jsx', /onUnmarkAsRead=\{unmarkAsRead\}/],
     ['../Lists/ListsPage.jsx', /onUnmarkAsRead=\{forgetRead\}/],
   ];

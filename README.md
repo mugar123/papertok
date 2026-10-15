@@ -54,20 +54,6 @@ The current look comes from an editorial redesign — serif headlines, ruled sec
 
 **Installable.** Add PaperTok to your home screen and it opens standalone, with its own icon and a theme-tinted system bar. (No offline mode yet — it still needs the network.)
 
-## Research
-
-PaperTok also includes a **Research** section designed for exploring important research over different time periods.
-
-It collects candidates from several scientific sources and ranks them using a combination of relevance, scientific impact, recency and diversity.
-
-The report is intended to answer a slightly different question from the main feed:
-
-> *What research is worth paying attention to right now?*
-
-Since 0.2, each edition is laid out like the front section of a newspaper — a lead story, strips and briefs on a six-column measure — with a composition seeded from the edition's identity, so the same edition always renders the same way. Selections page in batches of eleven with explicit closings instead of silently truncating, and next to the fixed periods there is a custom one: drag a year range from 1950 to today, and narrow down to exact days.
-
-Rather than only showing papers from a single database, PaperTok normalizes papers from different providers into a common format before ranking them.
-
 ## Data sources
 
 PaperTok uses open scientific infrastructure wherever possible.

@@ -5,7 +5,6 @@ import { routeTitle, routeLabel } from './routeMetadata.js'
 test('titles the main authenticated routes', () => {
   assert.equal(routeTitle('/feed'), 'For you | PaperTok')
   assert.equal(routeTitle('/lists'), 'My lists | PaperTok')
-  assert.equal(routeTitle('/research'), 'Research | PaperTok')
   assert.equal(routeTitle('/following'), 'Following | PaperTok')
   assert.equal(routeTitle('/search'), 'Search | PaperTok')
 })

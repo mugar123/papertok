@@ -432,8 +432,8 @@ test('the focus ring is never painted in the brand orange again', async () => {
     + '1.4.11 asks of a focus indicator. The ring is `var(--focus-ring)`, which is the '
     + 'one token that deliberately flips with the theme (#b45309 on paper, #ff9d00 on '
     + 'ink) so it clears 3:1 on both. --brand-orange stays the brand mark and is still '
-    + 'legitimately a `color:` in ScientificReport.css and a `hover:border` on the '
-    + 'shared Button — this only forbids it as an outline.',
+    + 'legitimately a `hover:border` on the shared Button — this only forbids it as an '
+    + 'outline.',
   );
 });
 

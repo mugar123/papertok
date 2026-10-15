@@ -334,13 +334,13 @@ const PaperCard = memo(function PaperCard({
   position,
   // Whether the feed currently treats this card as the one on screen — or,
   // off the feed, whether this mount is the one paper a single-paper surface
-  // is showing. All six other call sites (lists, the explorer, search, the
-  // scientific report, the public paper page, the related-paper overlay) now
-  // pass it too, bare (`isActive` = `true`), so the entrance animation below
-  // plays there as well. The comment-count read further down is NOT gated by
-  // this prop alone: `canOpenComments` also needs `onOpenComments`, and only
-  // the feed, the public paper page and the related-paper overlay pass that
-  // — the other four call sites never do, so a card mounted there is never
+  // is showing. All five other call sites (lists, the explorer, search, the
+  // public paper page, the related-paper overlay) now pass it too, bare
+  // (`isActive` = `true`), so the entrance animation below plays there as
+  // well. The comment-count read further down is NOT gated by this prop
+  // alone: `canOpenComments` also needs `onOpenComments`, and only the feed,
+  // the public paper page and the related-paper overlay pass that — the
+  // other three call sites never do, so a card mounted there is never
   // enabled and never reads, `isActive` notwithstanding. `!publicMode` is
   // the third term: no session, no count. See useCommentCount.js for the
   // budget this protects.
@@ -506,8 +506,8 @@ const PaperCard = memo(function PaperCard({
   const paperViewKey = paper?.id || paper?.doi || paper?.arxivId || 'paper';
 
   // A NEW paper in the same card. The feed keys its cards by paper so this
-  // never fires there, but the overlay surfaces (Research, the explorer,
-  // search) hand one mounted card a different paper, and the old paper's
+  // never fires there, but the overlay surfaces (the explorer, search) hand
+  // one mounted card a different paper, and the old paper's
   // clippings must not be painted against the new one. Adjusted during render
   // — React's documented way to reset state when a prop changes — because an
   // effect only runs AFTER the frame that already showed them.
