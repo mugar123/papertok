@@ -94,8 +94,8 @@ test('SOURCE: a stored copy from a list or a profile row opens on the skeleton',
 /**
  * The rail holds still. It is centred on its own height — `translate: 0 -50%`
  * against the card on a phone, `align-self: center` beside it otherwise — so
- * any change to that height moves every button in the column, like and
- * comments and save included.
+ * any change to that height moves every button in the column, like and save
+ * included.
  *
  * Exactly one label here changes at runtime: this button's. It crosses between
  * one line ("Leído", "Leer", "Abrir fuente") and two ("Leer artículo",

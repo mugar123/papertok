@@ -10,7 +10,6 @@ import {
   Building,
   CaretDown,
   ChartBar,
-  ChatCircle,
   Check,
   CheckCircle,
   CircleNotch,
@@ -41,8 +40,6 @@ import {
   UserCheck,
   X,
 } from '@phosphor-icons/react';
-import { canonicalPaperIdentity } from '../../utils/paperCanonicalKey.js';
-import { useCommentCount } from '../../hooks/useCommentCount.js';
 import { useOverlayHistory } from '../../hooks/useOverlayHistory.js';
 import { useIsPageArriving } from '../../hooks/usePageArrival.js';
 import ScientificText from '../ScientificText';
@@ -309,19 +306,6 @@ const PaperCard = memo(function PaperCard({
   trackSkip = () => {},
   onOpenPdf = () => {},
   onSaveToList = () => {},
-  // The door to the paper's comment thread. A callback and nothing more:
-  // the sheet, its pagination, its writes and every Firestore read they need
-  // live with the host (App.jsx, like the PDF viewer and the save modal).
-  // A feed LOAD still costs one document read — none of that is on the
-  // module graph. What the card itself may spend, once the feed says it is
-  // the active one AND there is a signed-in reader behind it, is the capped
-  // `count()` behind the number on this button: at most two aggregations for
-  // that one paper, once per session, and only through `useCommentCount.js`.
-  // A signed-out visitor spends nothing at all — the button still opens the
-  // thread, the number simply does not appear. That hook is the single door
-  // between this file and the social collections; the guards in
-  // commentService.test.js and threadAnchorClient.test.js hold it shut.
-  onOpenComments = null,
   getInteractionState = () => ({}),
   hideScrollHint = false,
   showFollowReason = false,
@@ -332,19 +316,6 @@ const PaperCard = memo(function PaperCard({
   onAuthRequired,
   analyticsSurface = 'feed',
   position,
-  // Whether the feed currently treats this card as the one on screen — or,
-  // off the feed, whether this mount is the one paper a single-paper surface
-  // is showing. All five other call sites (lists, the explorer, search, the
-  // public paper page, the related-paper overlay) now pass it too, bare
-  // (`isActive` = `true`), so the entrance animation below plays there as
-  // well. The comment-count read further down is NOT gated by this prop
-  // alone: `canOpenComments` also needs `onOpenComments`, and only the feed,
-  // the public paper page and the related-paper overlay pass that — the
-  // other three call sites never do, so a card mounted there is never
-  // enabled and never reads, `isActive` notwithstanding. `!publicMode` is
-  // the third term: no session, no count. See useCommentCount.js for the
-  // budget this protects.
-  isActive = false,
 }) {
   // `position` is optional and PaperCard renders on five different surfaces,
   // so it cannot anchor a stable, collision-free id for aria-controls.
@@ -381,42 +352,6 @@ const PaperCard = memo(function PaperCard({
   const releaseTimerRef = useRef(null);
   useEffect(() => () => clearTimeout(releaseTimerRef.current), []);
   const [copied, setCopied] = useState(false);
-  // Only papers with a canonical identity can anchor a thread; for the rest
-  // the button would open a sheet with nowhere to converge, so it does not
-  // render. Pure string work — no reads.
-  const canOpenComments = useMemo(
-    () => Boolean(onOpenComments && canonicalPaperIdentity(paper)),
-    [onOpenComments, paper],
-  );
-  // Two `count()` reads at most, for the active card on a surface that can
-  // open a thread (the feed, `PublicPaperPage`, the related-paper overlay),
-  // and only with a session — never for the ones scrolled past or waiting
-  // below, and never for a signed-out visitor. That fence has two links,
-  // both guarded, neither the whole budget alone: this call site (pinned by
-  // commentService.test.js and threadAnchorClient.test.js) and the hook's
-  // own refusal to subscribe when `enabled` is false (pinned by
-  // commentCount.test.js) — drop either and a mounted card that is not the
-  // active one starts reading. See the hook for the budget it is built
-  // against and why it cannot go through the Worker.
-  //
-  // `!publicMode` is the session half, and it is the same question every
-  // other action on this card asks before it spends anything: `publicMode`
-  // is what the guest feed sets (`source.publicMode`, FeedContainer) and
-  // what `PublicPaperPage` computes straight from auth
-  // (`publicMode={!isAuthenticated}`). `firestore.rules` lets an anonymous
-  // client `list` any `{path=**}/comments`, so without this a signed-out
-  // visitor scrolling the public feed billed two aggregations per card to
-  // the project's account, with no session and no rate limit, on the app's
-  // highest fan-out surface. It gates the COUNT and nothing else:
-  // `canOpenComments` above is untouched, so the button still opens the
-  // thread for a guest — they just do not pay for a number first.
-  const commentCount = useCommentCount(paper, Boolean(isActive && canOpenComments && !publicMode));
-  // `1000+` past the cap, the same as the sheet's own header: each key's
-  // aggregation stops counting at COMMENT_COUNT_CAP, so the raw sum of two
-  // capped keys is not a number anyone should be shown.
-  const commentCountLabel = commentCount && commentCount.count > 0
-    ? (commentCount.capped ? '1000+' : String(commentCount.count))
-    : null;
   const [showAuthorsModal, setShowAuthorsModal] = useState(false);
   // The sheet is leaving with the page: an author was picked from it. It
   // closes in its leaving pose (`is-leaving`, PaperCard.css) — a short drop
@@ -1998,28 +1933,6 @@ const PaperCard = memo(function PaperCard({
           <span className="pc-side-label">{'Like'}</span>
         </Toggle>
 
-        {canOpenComments && (
-          <button
-            className="pc-side-btn"
-            onClick={() => onOpenComments(paper)}
-            aria-haspopup="dialog"
-            // The visible label drops to a bare number once it is known, same
-            // as Like/Save above it once they carry a count — but a bare
-            // number is not a name a screen reader can act on, so the
-            // accessible name keeps the word regardless of what is painted.
-            aria-label={commentCountLabel
-              ? `${commentCountLabel} ${'comments'}`
-              : ('Comments')}
-          >
-            <span className="pc-side-icon">
-              <ChatCircle size={20} />
-            </span>
-            <span className="pc-side-label">
-              {commentCountLabel ?? ('Comments')}
-            </span>
-          </button>
-        )}
-
         <Toggle
           className={`pc-side-btn pc-side-btn--bookmark ${isSaved ? 'pc-side-btn--saved' : ''}`}
           pressed={isSaved}
@@ -2208,7 +2121,6 @@ const PaperCard = memo(function PaperCard({
                 trackSkip={trackSkip}
                 onOpenPdf={onOpenPdf}
                 onSaveToList={onSaveToList}
-                onOpenComments={onOpenComments}
                 getInteractionState={getInteractionState}
                 hideScrollHint
                 publicMode={publicMode}

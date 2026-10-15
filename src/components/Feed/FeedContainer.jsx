@@ -203,7 +203,7 @@ function FeedLandmark({ landmark, className = 'feed-wrapper', children }) {
  * has genuinely run out — same height, same snapping, same swipe. The guest
  * feed uses it to end on a sign-up card instead of on nothing.
  */
-export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments = null, source = null, scrollKey = 'forYou', landmark = null }) {
+export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, scrollKey = 'forYou', landmark = null }) {
   const feed = useFeed();
   const publicMode = Boolean(source?.publicMode);
   const onAuthRequired = source?.onAuthRequired;
@@ -256,9 +256,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   const sentinelRef = useRef(null);
   // The card currently snapped into view, derived in handleScroll from the
   // same scrollTop/clientHeight math the keyboard-nav effect below already
-  // uses. Task 9 gates a per-card comment-count fetch on it and Task 11
-  // gates the entrance animation on it, and it tracks the scroll position
-  // on every scroll, not just the mount window. But the mount window can
+  // uses. It tracks the scroll position on every scroll, and the mount
+  // window grows toward it (`windowReachingReader`). But the mount window can
   // trail it and briefly leave zero cards active, not the wrong one: right
   // after a resume the window is exactly the one card resumed onto
   // (`MOUNT_WINDOW_RESUME_RADIUS` is 0), and right after any mount the
@@ -266,8 +265,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   // A swipe that outruns the window in that stretch — one ordinary swipe
   // suffices on resume — sets activeIndex to a card still rendered as a
   // `.feed-snap-item--pending` placeholder. It self-heals there: nothing
-  // resets activeIndex in between, so the target card mounts already
-  // isActive=true.
+  // resets activeIndex in between, so the window still reaches the target
+  // card once it grows.
   // Seeded from the same anchor the mount window uses, never from a bare 0:
   // a resumed feed mounts card N and nothing else, and a 0 here would hand
   // that card `data-active="false"` for the first painted frame — complete,
@@ -745,7 +744,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   // the scroller, the pill showed… a blink for as long as the mouse stayed.
   //
   // Hover starts locked. Coming back from a topic/author/project remounts
-  // the feed under a cursor that never left the band; closing comments/save
+  // the feed under a cursor that never left the band; closing the save sheet
   // is the same. The first mousemove would flash the pill. Stay hidden until
   // the pointer leaves the band once; after that, hover works as before.
   // A pointerdown outside the wrapper (sheet, modal, navbar) re-locks.
@@ -854,12 +853,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
    * un móvil de gama media podría acercarse al perfil de dev, y es para ese caso
    * para el que esto está aquí.
    *
-   * Lo que sí es cierto y sostiene que sea seguro: `activeIndex` sólo alimenta
-   * `isActive`, y dentro de la tarjeta eso gobierna UNA cosa, si se pide la
-   * cuenta de comentarios. Nada visual depende de él —los recortes entran por
-   * IntersectionObserver al 15% y `pcArrive` no tiene condición—, así que un
-   * valor que aterriza uno o dos fotogramas más tarde no hace parpadear nada.
-   * feedScrollPriority.test.js fija esas dos condiciones.
+   * What does hold, and keeps this safe: the card no longer receives
+   * `activeIndex` in any form. Nothing visual depends on it (clips enter
+   * through an IntersectionObserver at 15% and `pcArrive` has no condition),
+   * so a value that lands a frame or two late makes nothing flicker.
+   * feedScrollPriority.test.js pins that the card takes no active flag.
    *
    * El `setActiveIndex` del efecto de resume NO va en transición: allí el valor
    * tiene que estar puesto antes de que la ventana de montaje decida, o la
@@ -1141,14 +1139,12 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
               trackSkip={handleSkip}
               onOpenPdf={handleOpenPdf}
               onSaveToList={handleSaveToList}
-              onOpenComments={onOpenComments}
               getInteractionState={getInteractionState}
               showFollowReason={Boolean(source?.showFollowReason)}
               publicMode={publicMode}
               onAuthRequired={onAuthRequired}
               analyticsSurface={analyticsSurface}
               position={index + 1}
-              isActive={index === activeIndex}
               // The scroll hint belongs to the first card only, and this prop is
               // the only thing that decides it now: a
               // `.feed-snap-item:not(:first-child) .pc-scroll-hint { display:

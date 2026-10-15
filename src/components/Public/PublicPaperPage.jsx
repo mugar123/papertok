@@ -26,7 +26,6 @@ import { publicPaperMetadata, readShareSeed } from '../../utils/shareSeed.js';
 import PaperCard from '../Feed/PaperCard.jsx';
 import SkeletonCard from '../Feed/SkeletonCard.jsx';
 import { Button } from '../ui/button.jsx';
-import CommentsSheet from '../Comments/CommentsSheet.jsx';
 import './PublicPaperPage.css';
 
 const COPY = {
@@ -127,7 +126,6 @@ export default function PublicPaperPage({
   } = useFeed();
   const [result, setResult] = useState({ requestKey: '', paper: null, status: 'loading' });
   const [attempt, setAttempt] = useState(0);
-  const [commentsOpen, setCommentsOpen] = useState(false);
   const requestIdRef = useRef(0);
   const identity = useMemo(() => parsePaperKey(paperKey), [paperKey]);
 
@@ -357,18 +355,6 @@ export default function PublicPaperPage({
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {commentsOpen && paper && (
-          <CommentsSheet
-            paper={paper}
-            isAuthenticated={isAuthenticated}
-           
-            onClose={() => setCommentsOpen(false)}
-            onAuthRequired={onAuthRequired}
-          />
-        )}
-      </AnimatePresence>
-
       {status === 'ready' && paper ? (
         <motion.section
           className="public-paper-card"
@@ -393,9 +379,6 @@ export default function PublicPaperPage({
             onAuthRequired={onAuthRequired}
             onOpenPdf={handleOpenPdf}
             onSaveToList={onSaveToList}
-            // The card's own rail button — the same door the feed shows.
-            // The sheet stays hosted by this page, which already had it.
-            onOpenComments={() => setCommentsOpen(true)}
             publicMode={!isAuthenticated}
             analyticsSurface="other"
             hideScrollHint

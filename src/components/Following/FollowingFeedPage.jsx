@@ -56,7 +56,7 @@ function writeStoredOrderKeys(keys) {
 const lastOrder = { items: null, ordered: [] };
 lastOrder.orderKeys = readStoredOrderKeys();
 
-export default function FollowingFeedPage({ onOpenPdf, onSaveToList, onOpenComments = null }) {
+export default function FollowingFeedPage({ onOpenPdf, onSaveToList }) {
   const navigate = useNavigate();
   const { followedEntities } = useFollowing();
   // Skip writes into this set (`markNotInterested`), and For You gets its
@@ -155,7 +155,6 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList, onOpenComme
       }}
       onOpenPdf={onOpenPdf}
       onSaveToList={onSaveToList}
-      onOpenComments={onOpenComments}
       source={source}
       scrollKey="following"
     />

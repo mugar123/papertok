@@ -50,7 +50,6 @@ const OnboardingFlow = lazyWithPreload(() => import('./components/Onboarding/Onb
 const ListsPage = lazyWithPreload(() => import('./components/Lists/ListsPage'))
 const PDFViewer = lazyWithPreload(() => import('./components/PDF/PDFViewer'))
 const SaveToListModal = lazyWithPreload(() => import('./components/Lists/SaveToListModal'))
-const CommentsSheet = lazyWithPreload(() => import('./components/Comments/CommentsSheet'))
 const SearchPage = lazyWithPreload(() => import('./components/Search/SearchPage'))
 const EntityExplorer = lazyWithPreload(() => import('./components/Explorer/EntityExplorer'))
 const FollowingFeedPage = lazyWithPreload(() => import('./components/Following/FollowingFeedPage'))
@@ -104,11 +103,6 @@ function AppContent() {
   // it does on a desktop (2026-10-09).
   const openPdf = setPdfPaper
   const [saveModalPaper, setSaveModalPaper] = useState(null)
-  // The comment sheet is hosted here, next to the PDF viewer and the save
-  // modal, for the same reason those are: the feed hands over a paper and
-  // nothing else, so no social service ever enters the feed's module graph
-  // and a feed load keeps costing one read.
-  const [commentsPaper, setCommentsPaper] = useState(null)
   const [authPromptOpen, setAuthPromptOpen] = useState(false)
   const [authPromptReason, setAuthPromptReason] = useState('default')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -242,11 +236,10 @@ function AppContent() {
       // then commits the Suspense fallback and holds it for its 300 ms
       // throttle. Measured on the screens: a 300 ms blank beat between exit
       // and entrance on the first visit to Research or Following, chunk
-      // cached or not. Measured on the overlays: the comments sheet appeared
-      // ~420 ms after the tap that opened it the first time in a session,
-      // chunk cached or not, and at once every time after. Preloaded, the
-      // first time is every other time.
-      CommentsSheet.preload().catch(() => {})
+      // cached or not. Measured on the overlays (on the comments sheet, since
+      // removed): it appeared ~420 ms after the tap that opened it the first
+      // time in a session, chunk cached or not, and at once every time after.
+      // Preloaded, the first time is every other time.
       PDFViewer.preload().catch(() => {})
       SaveToListModal.preload().catch(() => {})
       FollowingFeedPage.preload().catch(() => {})
@@ -349,7 +342,6 @@ function AppContent() {
                       }}
                       onOpenPdf={openPdf}
                       onSaveToList={setSaveModalPaper}
-                      onOpenComments={setCommentsPaper}
                     />
                   </PageTransition>
                 </ProtectedRoute>
@@ -358,7 +350,6 @@ function AppContent() {
                   <GuestFeedPage
                     onAuthRequired={requestAuthentication}
                     onOpenPdf={openPdf}
-                    onOpenComments={setCommentsPaper}
                   />
                 </PageTransition>
               )
@@ -387,7 +378,6 @@ function AppContent() {
                   <FollowingFeedPage
                     onOpenPdf={openPdf}
                     onSaveToList={setSaveModalPaper}
-                    onOpenComments={setCommentsPaper}
                   />
                 </PageTransition>
               </ProtectedRoute>
@@ -606,20 +596,6 @@ function AppContent() {
       {/* Each overlay suspends on its own: while its chunk downloads (idle
           prefetch usually has it already) nothing flashes, and the rest of
           the screen stays interactive. */}
-      <Suspense fallback={null}>
-        <AnimatePresence>
-          {commentsPaper && (
-            <CommentsSheet
-              paper={commentsPaper}
-              isAuthenticated={Boolean(user)}
-             
-              onClose={() => setCommentsPaper(null)}
-              onAuthRequired={requestAuthentication}
-            />
-          )}
-        </AnimatePresence>
-      </Suspense>
-
       <Suspense fallback={null}>
         {pdfPaper && (
           <PDFViewer paper={pdfPaper} closeRef={pdfCloseRef} onClose={() => setPdfPaper(null)} />
