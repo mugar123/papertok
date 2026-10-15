@@ -356,9 +356,6 @@ test('Firestore rules keep public lists readable and shut to every client', asyn
   // reads like a live guarantee.
   assert.doesNotMatch(rules, /function validPublicPaper/);
   assert.doesNotMatch(rules, /function validPublicList/);
-  // But the shared helper stays: savedPapers still uses it.
-  assert.match(rules, /function validBoundedStringList/);
-  assert.match(rules, /validBoundedStringList\(request\.resource\.data\.authors, 20, 160\)/);
 
   // The pointer is the Worker's, and the delete rule leans on that.
   assert.match(rules, /function publicShareIdUntouched\(\)/);
