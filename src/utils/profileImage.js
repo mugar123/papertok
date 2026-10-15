@@ -39,22 +39,10 @@ export function normalizeProfilePhoto(value, maxLength = MAX_PROFILE_DATA_URL_LE
   return normalized;
 }
 
-/**
- * The square of the source image to draw, in source pixels. A `crop` from the
- * picker is clamped inside the image; without one, the centred square.
- */
-export function squareSource(naturalWidth, naturalHeight, crop) {
+/** The centred square of the source image to draw, in source pixels. */
+export function squareSource(naturalWidth, naturalHeight) {
   const side = Math.min(naturalWidth, naturalHeight);
-  if (!crop) {
-    return { x: (naturalWidth - side) / 2, y: (naturalHeight - side) / 2, size: side };
-  }
-  const size = Math.min(Math.max(Number(crop.size) || side, 1), side);
-  const clamp = (value, max) => Math.min(Math.max(Number(value) || 0, 0), max);
-  return {
-    x: clamp(crop.x, naturalWidth - size),
-    y: clamp(crop.y, naturalHeight - size),
-    size,
-  };
+  return { x: (naturalWidth - side) / 2, y: (naturalHeight - side) / 2, size: side };
 }
 
 function loadImage(objectUrl) {
@@ -93,7 +81,7 @@ export async function prepareProfileImage(file, options = {}) {
     if (!Number.isFinite(side) || side <= 0) {
       throw new Error('The image does not have valid dimensions.');
     }
-    const source = squareSource(image.naturalWidth, image.naturalHeight, options.crop);
+    const source = squareSource(image.naturalWidth, image.naturalHeight);
     const canvas = document.createElement('canvas');
     canvas.width = avatarSize;
     canvas.height = avatarSize;

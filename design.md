@@ -441,7 +441,7 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
 - **`popover.jsx`**, **`sheet.jsx`**, **`tooltip.jsx`**, **`tabs.jsx`**
   (`line` with the yellow underline, `pill` on a sunken track), and the form
   controls (`switch`, `checkbox`, `radio-group`, `select`, `input`,
-  `textarea`, `slider`).
+  `textarea`).
 - **Toasts:** Sonner (`ui/sonner.jsx`) on paper with a hairline; a success
   carries the check icon. On a phone, a toast confirming a sheet's action comes
   in at the top, clear of the thumb.

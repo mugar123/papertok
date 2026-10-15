@@ -298,14 +298,10 @@ test('the handle is one box with the @ inside it, not a box within a box', async
  * hears nothing until they leave the field and come back — the error is
  * identified programmatically (`aria-invalid` + `aria-describedby`) but never
  * announced, which is two thirds of WCAG 3.3.1 rather than all of it.
- *
- * The onboarding flow already got this right on the identical pattern; this
- * pins the pair together so the two cannot drift apart again.
  */
 test('the handle hint announces itself when it turns into an error', async () => {
   const pairs = [
     ['src/components/Profile/ProfileEditor.jsx', 'profile-handle-hint'],
-    ['src/components/Onboarding/OnboardingFlow.jsx', 'onboarding-handle-hint'],
   ];
 
   for (const [path, hintId] of pairs) {

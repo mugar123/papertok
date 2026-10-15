@@ -173,9 +173,6 @@
 
 
 .gw-stage--topics:has(> .gw-step--topics),
-.gw-stage--topics:has(> .gw-step--profile),
-.gw-stage--topics:has(> .gw-step--handle),
-.gw-stage--topics:has(> .gw-step--about),
 .gw-stage--topics:has(> .gw-step--university),
 .gw-stage--topics:has(> .gw-step--reading),
 .gw-stage--topics:has(> .gw-step--inbox),
@@ -446,23 +443,17 @@
   max-width: 50ch;
 }
 
-/* The areas' sentence is one line, and so are the account's own screens'
-   (profile, handle, page, university): their copy runs the screen's width
-   rather than the reading measure above, which is for the welcome's two-line
-   lede and left these sentences broken into short lines. */
+/* The areas' sentence is one line, and so is the account's university
+   screen's: their copy runs the screen's width rather than the reading
+   measure above, which is for the welcome's two-line lede and left these
+   sentences broken into short lines. */
 .gw-step--topics .gw-lede,
 .gw-step--subtopics .gw-lede,
-.gw-step--profile .gw-lede,
-.gw-step--handle .gw-lede,
-.gw-step--about .gw-lede,
 .gw-step--university .gw-lede {
   max-width: none;
 }
 
 
-.gw-step--profile .gw-title,
-.gw-step--handle .gw-title,
-.gw-step--about .gw-title,
 .gw-step--university .gw-title {
   width: max-content;
   max-width: min(820px, calc(100vw - 2 * var(--space-5)));

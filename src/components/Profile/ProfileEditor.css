@@ -123,7 +123,7 @@
   display: grid;
   place-items: center;
   color: var(--text-tertiary);
-  /* The sign in the body face, as Handle.css sets it: Plex Mono's "@" is a
+  /* The sign in the body face: Plex Mono's "@" is a
      cramped, low-slung glyph that reads as a smudge next to the letters. */
   font-family: var(--font-body);
   font-size: var(--fs-base);

@@ -366,12 +366,10 @@ export function AuthProvider({ children }) {
         }, { merge: true }),
         PROFILE_NETWORK_TIMEOUT_MS,
       );
-      // A retry is safe — this merge-sets the same fields — and
-      // OnboardingFlow's `profileCreated` ref already stops a retried
-      // handleFinish from creating the public-profile document twice, so
-      // there is nothing to do here but let the caller know and stop: the
-      // flag and the preferences must stay unflipped, same as the reorder
-      // above already guarantees for a rules refusal.
+      // A retry is safe — this merge-sets the same fields — so there is
+      // nothing to do here but let the caller know and stop: the flag and
+      // the preferences must stay unflipped, same as the reorder above
+      // already guarantees for a rules refusal.
       if (settled.status !== 'fulfilled') {
         if (settled.status === 'timed_out') {
           const timeoutError = new Error('completeOnboarding: the write did not settle in time');
