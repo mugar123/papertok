@@ -29,11 +29,8 @@ import { Label } from '../ui/label.jsx';
 import { Switch } from '../ui/switch.jsx';
 import { Textarea } from '../ui/textarea.jsx';
 import WELCOME_TITLE from './welcomeTitlePaths.js';
-import PetriFlask from './PetriFlask.jsx';
+import Petri from './Petri.jsx';
 import PetriStamp from './PetriStamp.jsx';
-import PetriThinking from './PetriThinking.jsx';
-import PetriProfile from './PetriProfile.jsx';
-import PetriWelcome from './PetriWelcome.jsx';
 import './OnboardingFlow.css';
 
 // Petri on the screens that show her in place of the kicker: looking into a
@@ -44,9 +41,9 @@ import './OnboardingFlow.css';
 // avatar in the handle's browser window (AddressWindow), a stamp on the
 // university's paper (PetriStamp).
 const STEP_PETRI = {
-  topics: PetriFlask,
-  profile: PetriProfile,
-  about: PetriThinking,
+  topics: 'flask',
+  profile: 'profile',
+  about: 'thinking',
 };
 
 // The account's first screens, drawn in the welcome's layout (WelcomeShell),
@@ -536,7 +533,7 @@ export default function OnboardingFlow() {
 
   const isLast = stepIndex === steps.length - 1;
   const stepCopy = COPY[step];
-  const StepPetri = STEP_PETRI[step];
+  const petriPose = STEP_PETRI[step];
   const handleTaken = step === 'handle' && profileError === COPY.handle.handleTaken;
   const handleInvalid = handleTaken || (Boolean(handleDraft) && Boolean(handleError));
   // On the university screen an address typed and nothing linked yet makes
@@ -604,7 +601,7 @@ export default function OnboardingFlow() {
       {step === 'welcome' ? (
         <WelcomeCopy
           // Petri holds up the reader's first name, and says the hello for it.
-          kicker={<PetriWelcome name={firstName} label={COPY.welcome.kicker(firstName)} className="onboarding-petri" />}
+          kicker={<Petri pose="welcome" name={firstName} label={COPY.welcome.kicker(firstName)} className="onboarding-petri" />}
           title={(
             <>
               <span className="sr-only">{COPY.welcome.title}</span>
@@ -616,8 +613,8 @@ export default function OnboardingFlow() {
       ) : (
         <WelcomeCopy
           // On these screens Petri stands in for the kicker (STEP_PETRI).
-          kicker={StepPetri
-            ? <StepPetri visibility={visibilityDraft} label={stepCopy.kicker} className="onboarding-petri" />
+          kicker={petriPose
+            ? <Petri pose={petriPose} visibility={visibilityDraft} label={stepCopy.kicker} className="onboarding-petri" />
             : step === 'handle' || step === 'university' ? null : stepCopy.kicker}
           title={stepCopy.title}
           lede={stepCopy.lede}

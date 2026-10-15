@@ -16,10 +16,8 @@ import { GithubMark } from '../ui/GithubMark.jsx';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import GoogleMark from './GoogleMark.jsx';
 import { useProviderSignIn } from './useProviderSignIn.js';
-import PetriFlask from '../Onboarding/PetriFlask.jsx';
-import PetriReading from '../Onboarding/PetriReading.jsx';
+import Petri from '../Onboarding/Petri.jsx';
 import PetriStamp from '../Onboarding/PetriStamp.jsx';
-import PetriWelcome from '../Onboarding/PetriWelcome.jsx';
 import { normalizeGuestAreas, normalizeGuestTopics } from '../../utils/guestInterests.js';
 import { DigestPreview, WelcomeReadingChoice, WelcomeInboxChoice, WelcomeProjectSupport } from './GuestWelcomePreferences.jsx';
 import { AreaPicker, SubtopicsPicker, WelcomeCopy, WelcomeShell } from './WelcomeShell.jsx';
@@ -53,7 +51,7 @@ const STEPS = ['welcome', 'how', 'topics', 'subtopics', 'reading', 'inbox', 'sup
 // how deep to read. The other screens
 // carry their own illustrations or a long list, and leave her out.
 // What you do here opens on her holding up a card that says hello.
-const STEP_PETRI = { how: PetriWelcome, topics: PetriFlask, reading: PetriReading };
+const STEP_PETRI = { how: 'welcome', topics: 'flask', reading: 'reading' };
 // Where the intro's skip lands: the question, not past it.
 const TOPICS_INDEX = STEPS.indexOf('topics');
 
@@ -428,15 +426,15 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
   // un-narrowed stands for all of it, so the last button is always live.
   const primaryDisabled = isQuestion && selected.size === 0;
 
-  const StepPetri = STEP_PETRI[step];
+  const petriPose = STEP_PETRI[step];
   // The inbox screen opens on its envelope, over the title where the kicker
   // was, stamped with Petri like the university screen's paper.
   const copyBlock = (
     <>
       {step === 'inbox' && <DigestPreview still={still} stamp={<PetriStamp />} />}
       <WelcomeCopy
-        kicker={StepPetri
-          ? <StepPetri level={readingLevel} label={stepCopy.kicker} className="gw-petri" />
+        kicker={petriPose
+          ? <Petri pose={petriPose} level={readingLevel} label={stepCopy.kicker} className="gw-petri" />
           : step === 'inbox' ? null : stepCopy.kicker}
         title={stepCopy.title}
         lede={stepCopy.lede}

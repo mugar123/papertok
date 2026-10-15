@@ -1,4 +1,5 @@
-import { useId, useState } from 'react';
+import { useState } from 'react';
+import PetriFrame from './PetriFrame.jsx';
 
 const ORDER = ['beginner', 'university', 'researcher'];
 
@@ -48,7 +49,6 @@ const LOOKS = {
 // in from that level's side (GuestWelcome.css). It stands where the screen's
 // kicker was, so it carries the kicker as its name (`label`).
 export default function PetriReading({ level = 'university', label, className }) {
-  const hatch = useId();
   const [shown, setShown] = useState(level);
   const [from, setFrom] = useState(0);
   if (shown !== level) {
@@ -56,21 +56,13 @@ export default function PetriReading({ level = 'university', label, className })
     setFrom(Math.sign(ORDER.indexOf(level) - ORDER.indexOf(shown)) || 1);
   }
   return (
-    // The greeting's crop, so every screen's Petri shares a size and an axis.
-    <svg viewBox="14 22 128 124" role="img" aria-label={label} className={className}>
-      <defs>
-        <pattern id={hatch} width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
-          <rect width="1.4" height="4" fill="currentColor" />
-        </pattern>
-      </defs>
-      <g stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round">
-        <ellipse cx="78" cy="128" rx="62" ry="15" fill="var(--bg-primary)" />
-        <ellipse cx="78" cy="124" rx="54" ry="10" fill={`url(#${hatch})`} strokeWidth="1.6" />
-        <g key={level} className={from ? 'onboarding-petri-body petri-swap' : 'onboarding-petri-body'} style={{ '--petri-from': from }}>
-          <path d="M48 124c-14-20-4-56 30-58 26-2 40 18 38 36-1 12-3 20-6 22Z" fill="var(--brand-yellow)" stroke="var(--brand-yellow)" />
-          {LOOKS[level] ?? LOOKS.university}
-        </g>
-      </g>
-    </svg>
+    <PetriFrame
+      label={label}
+      className={className}
+      bodyKey={level}
+      bodyProps={{ className: from ? 'onboarding-petri-body petri-swap' : 'onboarding-petri-body', style: { '--petri-from': from } }}
+    >
+      {LOOKS[level] ?? LOOKS.university}
+    </PetriFrame>
   );
 }
