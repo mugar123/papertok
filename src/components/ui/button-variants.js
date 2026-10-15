@@ -28,7 +28,7 @@ export const buttonVariants = cva(
         // On hover the wash becomes the full spot plate in an ink frame, the
         // engraved button's look, and only the sparkles move: they turn and
         // grow a touch (220ms). The button itself stays on the page — it
-        // lifted 2px with a shadow until 2026-10-15, and the riso page does
+        // lifted 2px with a shadow until 2026-10-15, and the page does
         // not float (design.md, The Print Does Not Float Rule). The press is
         // the base's 0.97 squeeze. Reduced motion keeps the colours and drops
         // the sparkles' turn.
