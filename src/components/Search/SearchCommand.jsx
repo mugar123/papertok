@@ -8,7 +8,6 @@ import {
   FileText,
   Lightbulb,
   Plus,
-  User,
   Users,
   WarningCircle,
 } from '@phosphor-icons/react';
@@ -32,26 +31,22 @@ import {
   getSearchSectionOrder,
   resolvePreferredSearchSection,
 } from '../../utils/searchRelevance';
-import Handle from '../Profile/Handle.jsx';
 import './SearchCommand.css';
 import { Toggle } from '../ui/toggle.jsx';
 
 const COPY = {
   en: {
-    placeholder: 'Search papers, people, authors, topics, institutions...',
+    placeholder: 'Search papers, authors, topics, institutions...',
     papers: 'Papers',
-    users: 'PaperTok users',
     authors: 'Authors',
     institutions: 'Institutions',
     topics: 'Topics',
     projects: 'Projects',
     empty: 'No results',
     searching: 'Searching...',
-    hint: 'Type to search papers, users, authors, topics, institutions and funded projects.',
+    hint: 'Type to search papers, authors, topics, institutions and funded projects.',
     suggested: 'Suggestions',
     partial: 'Some sources did not answer; showing what is available.',
-    peopleSlow: 'People are taking longer than usual.',
-    peopleFailed: 'People could not be loaded.',
     follow: 'Follow',
     following: 'Following',
     citations: 'citations',
@@ -67,11 +62,11 @@ const SUGGESTIONS = [
   { label: 'Geoffrey Hinton', query: 'Geoffrey Hinton', Icon: Users },
 ];
 
-// Every section the palette can paint. `users` has to be in here AND in
+// Every section the palette can paint. Each one also has to be in
 // searchRelevance's DEFAULT_SECTION_ORDER: a section the palette renders but
 // the ordering module has never heard of scores 99 and sinks to the bottom of
 // every search, silently.
-const SECTIONS = ['papers', 'users', 'authors', 'institutions', 'topics', 'projects'];
+const SECTIONS = ['papers', 'authors', 'institutions', 'topics', 'projects'];
 
 /**
  * How far down the list the entrance cascade runs before every remaining row
@@ -86,9 +81,6 @@ const ENTER_STAGGER_CAP = 10;
 
 const SECTION_ICONS = {
   papers: FileText,
-  // `users` is somebody with a PaperTok account; `authors` is whoever wrote a
-  // paper, from OpenAlex. Different things, so different icons.
-  users: User,
   authors: Users,
   institutions: Buildings,
   topics: Lightbulb,
@@ -97,11 +89,6 @@ const SECTION_ICONS = {
 
 function lastPathSegment(value) {
   return String(value || '').split('/').pop();
-}
-
-function initialOf(name, handle) {
-  const source = (name || handle || '?').trim();
-  return source.charAt(0).toUpperCase() || '?';
 }
 
 /**
@@ -122,25 +109,11 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
   const [leavingBySelect, setLeavingBySelect] = useState(false);
   const copy = COPY.en;
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
-  // The spend gate, in the palette's own terms. The page has filter pills and
-  // only pays for people under the two that render the section; the palette has
-  // one view and no pills, so what decides whether the section is going to be
-  // painted is simply whether the palette is on screen. A closed palette shows
-  // nothing, so it must not spend a Firestore read on anything — including a
-  // query still sitting in state from the last time it was open.
-  const usersRequested = open;
   const {
-    query, setQuery, results, users, userStatus, totalResults,
-    isSearching, peoplePending, isStale, hasSearched, searchIssue, reset,
-  } = useEntitySearch({ usersRequested });
+    query, setQuery, results, totalResults,
+    isPending, isStale, hasSearched, searchIssue, reset,
+  } = useEntitySearch();
   const [pendingEntity, setPendingEntity] = useState(null);
-
-  // Both channels, one wait: the external fan-out settles on its own clock and
-  // people on theirs, and announcing "no results" while either is still owed an
-  // answer is how the palette would end up denying somebody who is about to
-  // appear. It is also what holds the paint back until the whole answer exists
-  // — see the skeleton and the section gate below.
-  const searchPending = isSearching || peoplePending;
 
   // Cleared on the way in, never on the way out. The palette stays mounted
   // between opens (App.jsx), so `open` turning false is the START of the exit,
@@ -194,7 +167,6 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
       // had already handed it — and an acronym carries no organisation word,
       // so the exact sweep is the only way such a search can land.
       sectionValues: buildSearchSectionValues({
-        users,
         papers: results.papers,
         authors: results.authors,
         institutions: results.institutions,
@@ -204,7 +176,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
     });
     return [...SECTIONS]
       .sort((left, right) => getSearchSectionOrder(left, preferred) - getSearchSectionOrder(right, preferred));
-  }, [query, results, users]);
+  }, [query, results]);
 
   const renderFollow = (entity) => {
     const following = isFollowing(entity);
@@ -224,24 +196,6 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
       </Toggle>
     );
   };
-
-  // A monogram, the name, the handle — and nothing else. No photo, because the
-  // people index deliberately carries none, and no follow button: knowing
-  // whether you already follow somebody is one read per row, and the profile
-  // this opens is where following lives.
-  const userRow = (person) => (
-    <CommandItem
-      key={person.uid}
-      value={`user-${person.uid}`}
-      onSelect={() => go(`/public/user/${person.handle}`)}
-    >
-      <span className="sc-avatar" aria-hidden="true">{initialOf(person.name, person.handle)}</span>
-      <span className="sc-label">{person.name || person.handle}</span>
-      <Handle className="sc-meta sc-meta--handle" handle={person.handle} />
-    </CommandItem>
-  );
-
-  const sectionItems = { ...results, users };
 
   const sectionContent = {
     papers: () => results.papers.map(paper => (
@@ -264,7 +218,6 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
         </span>
       </CommandItem>
     )),
-    users: () => users.map(userRow),
     authors: () => results.authors.map(author => {
       const orcid = author.orcid ? String(author.orcid).replace(/^https?:\/\/orcid\.org\//, '') : '';
       const path = orcid
@@ -336,16 +289,6 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
     )),
   };
 
-  // People speak for themselves, in their own line, never through the banner
-  // above: that one names the external providers, and a Firestore hiccup
-  // announced under somebody else's name is a sentence the palette made up.
-  // 'needs-session' and 'unsupported' say nothing at all — the first cannot
-  // happen (the palette only mounts with a session) and the second is a demo
-  // build without a people index, neither of which is news to anybody.
-  const peopleNote = userStatus === 'failed'
-    ? copy.peopleFailed
-    : userStatus === 'slow' ? copy.peopleSlow : null;
-
   /**
    * The answer arriving, as one movement.
    *
@@ -359,14 +302,14 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
    * start at once. Headings take a step of their own, which is what makes a
    * group read as a group rather than as a label bolted to its first row.
    *
-   * The index is injected here rather than written into each of the six row
+   * The index is injected here rather than written into each of the five row
    * renderers: they build plain `CommandItem`s and know nothing about where
    * they sit in the final order, which is decided by `orderedSections` after
    * the fact.
    */
   let enterIndex = 0;
   const renderedSections = orderedSections.map((section) => {
-    if (sectionItems[section].length === 0) return null;
+    if (results[section].length === 0) return null;
     const SectionIcon = SECTION_ICONS[section];
     const headingIndex = Math.min(enterIndex, ENTER_STAGGER_CAP);
     enterIndex += 1;
@@ -377,7 +320,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
         '--sc-enter-index': Math.min(enterIndex + offset, ENTER_STAGGER_CAP),
       },
     }));
-    enterIndex += sectionItems[section].length;
+    enterIndex += results[section].length;
     return (
       <CommandGroup
         key={section}
@@ -469,7 +412,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
             shape: a spinner over an empty sheet reads as nothing happening, and
             a sheet that fills from nothing shifts everything under the cursor
             when it does. */}
-        {searchPending && (
+        {isPending && (
           <div className="sc-skeleton" role="status">
             {[0, 1, 2, 3, 4].map(index => (
               <div className="sc-skeleton-row" key={index}>
@@ -488,27 +431,20 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
           </div>
         )}
 
-        {searchIssue && !searchPending && totalResults > 0 && (
+        {searchIssue && !isPending && totalResults > 0 && (
           <div className="sc-status sc-status--warn" role="status">
             <WarningCircle size={14} /> {copy.partial}
           </div>
         )}
 
-        {peopleNote && !searchPending && (
-          <div className="sc-status sc-status--warn" role="status">
-            <User size={14} /> {peopleNote}
-          </div>
-        )}
-
-        {hasSearched && !searchPending && totalResults === 0 && (
+        {hasSearched && !isPending && totalResults === 0 && (
           <CommandEmpty>{copy.empty}</CommandEmpty>
         )}
 
-        {/* Nothing paints while an answer is still owed. The five external
-            sources land in one commit, but people run on their own 400 ms clock
-            and used to appear on their own — one section arriving alone, after
-            the rest, and pushing them down. The gate covers both channels. */}
-        {!searchPending && renderedSections}
+        {/* No new section paints until the five sources land in one commit.
+            Until then the skeleton above stands in, or, while the next search
+            waits out its debounce, the previous rows stay up dimmed. */}
+        {!isPending && renderedSections}
 
         {/* The tail of the same cascade. It was the last thing on the sheet
             still arriving fully painted while the rows above it rose — the

@@ -6,24 +6,6 @@
   color: var(--text-tertiary);
 }
 
-/* A person's row opens with a monogram where every other row opens with an
-   icon: same 14px column, same rhythm. Not a photo — the people index carries
-   none, which is the point rather than an omission. */
-.sc-avatar {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: 1px solid var(--border-default);
-  border-radius: 50%;
-  background: var(--bg-sunken);
-  color: var(--text-secondary);
-  font: 600 0.5625rem/1 var(--font-mono);
-  text-transform: uppercase;
-}
-
 .sc-label {
   flex: 1;
   min-width: 0;
@@ -211,16 +193,9 @@
     font-size: var(--fs-sm);
   }
 
-  .sc-sheet [cmdk-item] > .sc-icon,
-  .sc-sheet [cmdk-item] > .sc-avatar {
+  .sc-sheet [cmdk-item] > .sc-icon {
     grid-column: 1;
     grid-row: 1;
-  }
-
-  .sc-sheet [cmdk-item] > .sc-avatar {
-    width: 24px;
-    height: 24px;
-    font-size: 0.6875rem;
   }
 
   /* Two lines of title rather than forty characters and an ellipsis: on a

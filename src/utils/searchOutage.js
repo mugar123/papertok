@@ -84,8 +84,7 @@ export function describeSearchOutage({
 /**
  * Whether the outage is still true for the view being looked at. Switching to
  * the Papers pill during an OpenAlex outage must keep the notice — it is
- * exactly the pill it describes — while the Users pill never matches, because
- * people come from Firestore and no provider here serves them.
+ * exactly the pill it describes.
  */
 export function outageAffectsFilter(outage, filter) {
   if (!outage) return false;

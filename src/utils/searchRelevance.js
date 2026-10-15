@@ -1,13 +1,6 @@
-// `users` sits second, and being in this list at all is the point: an unknown
-// section scores 99 in getSearchSectionOrder, so a section missing from here
-// silently sinks to the bottom of every search forever.
-//
-// Second rather than first because a non-empty users section is not on its own
-// evidence that somebody was looking for a person — a two-letter prefix matches
-// by accident — and first would put strangers above the literature on every
-// search. The cases where the intent IS a person are caught above, by exact
-// match and by the @ sigil.
-const DEFAULT_SECTION_ORDER = ['papers', 'users', 'topics', 'authors', 'institutions', 'projects'];
+// An unknown section scores 99 in getSearchSectionOrder, so a section missing
+// from here silently sinks to the bottom of every search forever.
+const DEFAULT_SECTION_ORDER = ['papers', 'topics', 'authors', 'institutions', 'projects'];
 
 /**
  * The words that make a piece of text an organisation.
@@ -286,7 +279,6 @@ export function institutionSearchValues(institution) {
  */
 export function buildSearchSectionValues({
   papers = [],
-  users = [],
   authors = [],
   institutions = [],
   topics = [],
@@ -294,9 +286,6 @@ export function buildSearchSectionValues({
 } = {}) {
   const clean = values => values.filter(Boolean);
   return {
-    // Both fields: an exact handle and an exact display name are each the
-    // strongest evidence available that a person was meant.
-    users: clean(users.flatMap(person => [person.handle, person.name])),
     papers: clean(papers.map(paper => paper.title)),
     topics: clean(topics.flatMap(concept => [
       concept.display_name,
@@ -321,11 +310,6 @@ export function resolvePreferredSearchSection({
   );
   if (hint && availableSections.has(hint)) return hint;
 
-  // A leading @ is a statement of intent no scoring can improve on: nobody
-  // types "@" looking for a paper. Checked on the raw query, because
-  // normalizeSearchText strips the sigil along with every other symbol.
-  if (availableSections.has('users') && /^\s*@/.test(String(query || ''))) return 'users';
-
   const normalizedQuery = normalizeSearchText(query);
 
   // What the WORDS of the query say it is about, read before the exact-match
@@ -345,15 +329,11 @@ export function resolvePreferredSearchSection({
   const organisationQuery = ORGANISATION_WORDS.test(normalizedQuery);
   const projectQuery = PROJECT_WORDS.test(normalizedQuery);
 
-  // `users` leads in every variant: an exact match on a handle or a display
-  // name is the strongest signal available that a person was meant, stronger
-  // than a paper whose title happens to be the same words — and a handle that
-  // matches "university of salamanca" word for word is not a real collision.
   const exactPriority = organisationQuery
-    ? ['users', 'institutions', 'topics', 'authors', 'projects', 'papers']
+    ? ['institutions', 'topics', 'authors', 'projects', 'papers']
     : projectQuery
-      ? ['users', 'projects', 'topics', 'authors', 'institutions', 'papers']
-      : ['users', 'topics', 'authors', 'institutions', 'projects', 'papers'];
+      ? ['projects', 'topics', 'authors', 'institutions', 'papers']
+      : ['topics', 'authors', 'institutions', 'projects', 'papers'];
 
   const exactSection = exactPriority.find(section => (
     availableSections.has(section)

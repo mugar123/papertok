@@ -78,8 +78,6 @@
 .search-suggestion-chip:focus-visible,
 .search-follow-btn:focus-visible,
 .search-retry-btn:focus-visible,
-.search-users-action:focus-visible,
-.search-users-more:focus-visible,
 .search-item:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
@@ -436,11 +434,7 @@
   display: flex;
   align-items: center;
   background: var(--bg-card);
-  /* Every row opens with its own rule and the section closes with one. Doing it
-     the other way round — a bottom rule per row plus a top rule on the first —
-     needs to know which row is first, and `:first-of-type` gets that wrong in
-     the people section, where a `.search-users-note` can stand between the
-     heading and the rows. */
+  /* Every row opens with its own rule and the section closes with one. */
   border-top: 1px solid var(--border-default);
   padding: var(--space-4) var(--space-4) var(--space-4) var(--space-5);
   cursor: pointer;
@@ -495,9 +489,7 @@
   border-color: var(--accent-violet-line);
 }
 
-/* A monogram where the other rows open with an icon — the same treatment the
-   palette gives a person in `.sc-avatar`. Not a photo: the people index carries
-   none, which is the point rather than an omission. */
+/* An author's monogram where the other rows open with an icon. */
 .search-item-avatar {
   background: var(--bg-sunken);
   border: 1px solid var(--border-default);
@@ -853,113 +845,6 @@
 
   .search-filter-pill {
     transition: none;
-  }
-}
-
-/* ─── People (F9) ───
-   The rows themselves reuse .search-item and .search-item-avatar, which
-   already paint a monogram for OpenAlex authors — so a person costs no new row
-   styling at all. What is new is only what a person section can say when it has
-   nothing to list: sign in, that failed, or "this searches from the start". */
-.search-users-note {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: 58px;
-  padding: var(--space-3);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--bg-sunken);
-  color: var(--text-secondary);
-  animation: searchSectionIn 0.2s ease-out both;
-}
-
-.search-users-note > svg {
-  flex-shrink: 0;
-  /* This file used an undefined --text-muted seven times; those declarations
-     were dropped in silence. They now use --text-tertiary, and this file is in
-     the OWNED list of profileStyles.test.js so the next ghost token fails a
-     test instead of shipping. */
-  color: var(--text-secondary);
-}
-
-.search-users-note--error {
-  border-color: var(--tint-red-line);
-  background: var(--tint-red-bg);
-  color: var(--tint-red-fg);
-}
-
-.search-users-note--error > svg {
-  color: var(--tint-red-fg);
-}
-
-.search-users-note-copy {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.search-users-note-copy strong {
-  color: var(--text-primary);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-}
-
-.search-users-note-copy span {
-  font-size: var(--fs-xs);
-  line-height: 1.45;
-}
-
-.search-users-action,
-.search-users-more {
-  flex-shrink: 0;
-  min-height: 34px;
-  padding: 0 var(--space-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--bg-card);
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-medium);
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  transition: background-color var(--transition-fast), border-color var(--transition-fast);
-}
-
-.search-users-more {
-  align-self: flex-start;
-  margin-top: 2px;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .search-users-action:hover,
-  .search-users-more:hover {
-    border-color: var(--border-ink);
-    background: var(--bg-secondary);
-  }
-}
-
-.search-users-spinner {
-  animation: searchInputSpin 720ms linear infinite;
-}
-
-@media (max-width: 520px) {
-  .search-users-note {
-    flex-wrap: wrap;
-  }
-
-  .search-users-action {
-    margin-left: auto;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .search-users-note,
-  .search-users-spinner {
-    animation: none;
   }
 }
 

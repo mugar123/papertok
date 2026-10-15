@@ -379,26 +379,17 @@ function AppContent() {
             }
           />
           {/* One search box. Papers, institutions, topics and projects come
-              from OpenAlex and OpenAIRE over HTTP; people come from
-              `userSearch/` in Firestore, behind a session the rules require of
-              the query itself. The Users pill filters this page rather than
-              leaving it, and it is also the spend gate: with any other filter
-              selected, no Firestore query is issued. */}
+              from OpenAlex and OpenAIRE over HTTP. */}
           <Route
             path="/search"
             element={
               <ProtectedRoute>
                 <PageTransition>
-                  <SearchPage
-                    onSaveToList={setSaveModalPaper}
-                    onAuthRequired={requestAuthentication}
-                  />
+                  <SearchPage onSaveToList={setSaveModalPaper} />
                 </PageTransition>
               </ProtectedRoute>
             }
           />
-          {/* The standalone /search/users page is gone, not redirected: F9's UI
-              was never deployed, so no link to it exists anywhere. */}
           {/* The user's own profile: the same page as /public/user/:handle,
               in owner mode. It renders even before a public profile exists. */}
           <Route
