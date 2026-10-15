@@ -1,4 +1,5 @@
 import { CATEGORIES } from '../data/categories.js';
+import { ARXIV_FEED_AREAS } from '../services/arxivService.js';
 import { guestCategoriesForAreas, guestTopicListsForAreas, normalizeGuestAreas, normalizeGuestTopics } from './guestInterests.js';
 
 const isDev = import.meta.env?.DEV === true;
@@ -49,12 +50,6 @@ export function buildGuestDiscoveryQuery(categories = GUEST_CATEGORIES) {
   return categories.map(category => `"${guestCategoryLabel(category)}"`).join(' OR ');
 }
 
-/**
- * The areas arXiv can be asked by category. Elsewhere (medicine, biology) an
- * id becomes a phrase search in `fetchPapers`, which is what the signed-in
- * feed avoids with the same list (FeedContext's `arxivAllowedAreas`).
- */
-const ARXIV_AREAS = new Set(['physics', 'math', 'cs', 'eess', 'stat', 'econ', 'mech', 'civil', 'chemeng']);
 const PUBMED_AREAS = new Set(['bio', 'med']);
 
 // One query each. The signed-in feed sends five categories to arXiv, five to
@@ -110,7 +105,7 @@ export function buildGuestFeedPlan(areas = [], topics = []) {
     });
   }
 
-  const arxivAreas = chosen.filter(key => ARXIV_AREAS.has(key));
+  const arxivAreas = chosen.filter(key => ARXIV_FEED_AREAS.includes(key));
   const pubmedAreas = chosen.filter(key => PUBMED_AREAS.has(key));
   const pubmedCategories = interleaveAreaCategories(pubmedAreas, GUEST_PUBMED_CAP, chosenTopics);
 
