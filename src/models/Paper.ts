@@ -1,52 +1,187 @@
-/**
- * @typedef {Object} Author
- * @property {string} name
- * @property {string} [id] - OpenAlex ID, Scopus ID, etc.
- * @property {string} [orcid]
- */
+export interface PaperAuthor {
+  name: string;
+  id?: string | null;
+  orcid?: string;
+  fullName?: string;
+  affiliation?: string | null;
+}
+
+export interface PaperSources {
+  primary: string;
+  enrichedBy: string[];
+}
+
+export interface PaperSubjectReference {
+  id: string;
+  display_name: string;
+}
+
+// OpenAlex topics also flow through concepts during enrichment.
+export interface PaperSubject {
+  id: string;
+  display_name?: string;
+  level?: number;
+  score?: number;
+  subfield?: PaperSubjectReference;
+  field?: PaperSubjectReference;
+  domain?: PaperSubjectReference;
+}
+
+export interface PaperInstitution {
+  id?: string;
+  ror?: string | null;
+  displayName?: string;
+  display_name?: string;
+}
+
+export interface PaperICiteMetrics {
+  relativeCitationRatio?: number | null;
+  nihPercentile?: number | null;
+  approximatePotentialToTranslate?: number | null;
+  isClinical?: boolean | null;
+  provisional?: boolean | null;
+}
+
+export interface PaperResearchResource {
+  id: string;
+  kind: string;
+  title: string;
+  url: string;
+  downloads?: number;
+  likes?: number;
+}
+
+export interface PaperFollowMatch {
+  type: 'author' | 'topic' | 'institution' | 'project';
+  canonicalId: string;
+  displayName: string;
+  source?: string;
+  externalIds?: Record<string, string | undefined>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface PaperRecommendationScore {
+  total: number;
+  baseTotal: number;
+  affinity: number;
+  preference: number;
+  recency: number;
+  classicBoost: number;
+  semantic: number;
+  citations: number;
+  graphBoost: number;
+  followBoost: number;
+  diversityBoost: number;
+  authorBoost: number;
+  followedEntityMatches: Record<PaperFollowMatch['type'], boolean>;
+  cooldownMultiplier: number;
+  isExploration: boolean;
+  explanation: string;
+}
 
 /**
- * @typedef {Object} PaperSources
- * @property {string} primary - Provider that originally discovered the paper (for example, 'arxiv' or 'openalex')
- * @property {string[]} enrichedBy - Providers that contributed additional metadata
+ * Shared by provider normalization, PaperBuilder and stored papers.
+ * Optional and nullable fields preserve missing source data. This is a type
+ * contract, not validation of provider responses or persisted records.
  */
+export interface Paper {
+  id: string;
+  sources: PaperSources;
+  title: string;
+  abstract: string;
+  // The builder preserves older name-only arrays; enrichment must accept both.
+  authors: Array<PaperAuthor | string>;
+  year?: number | null;
 
-/**
- * @typedef {Object} Paper
- * @property {string} id - Canonical identifier (DOI when available, for example "10.1038/xxx"; otherwise "arxiv:2401.12345")
- * @property {PaperSources} sources - Data-source provenance
- * @property {string} title
- * @property {string} abstract
- * @property {Author[]} authors
- * 
- * @property {string} [doi]
- * @property {string} [pmid]
- * @property {string} [pmcid]
- * @property {string} [openReviewId]
- * @property {string} [huggingFaceId]
- * @property {string} [journal]
- * @property {string} [conference]
- * @property {number} year
- * @property {string} [publisher]
- * 
- * @property {"preprint" | "journal" | "conference" | "book"} publicationType
- * @property {"preprint" | "published" | "accepted" | "retracted"} publicationStatus
- * @property {boolean} peerReviewed - Computado como (publicationType !== "preprint")
- * @property {boolean} openAccess
- * 
- * @property {string} [pdfUrl] - Enlace directo al PDF si existe y es Open Access
- * @property {string} [openAccessPdfUrl] - Open-access PDF URL to open externally
- * @property {string} landingPageUrl - URL oficial de la editorial/fuente
- * 
- * // Metadatos aplanados
- * @property {number} [citationCount]
- * @property {number} [referenceCount]
- * @property {{relativeCitationRatio: number|null, nihPercentile: number|null, approximatePotentialToTranslate: number|null}} [iciteMetrics]
- * @property {Array<{id: string, kind: string, title: string, url: string}>} [researchResources]
- * @property {Array<{id: string, display_name: string, level: number}>} [concepts]
- * @property {string[]} [keywords]
- * @property {string[]} [categories] - Legacy/arXiv categories
- */
+  doi?: string | null;
+  arxivId?: string;
+  pmid?: string;
+  pmcid?: string;
+  openAlexId?: string;
+  semanticScholarId?: string;
+  scopusId?: string;
+  scopusUrl?: string;
+  scopusCitedByUrl?: string;
+  scopusCitationCount?: number;
+  adsBibcode?: string;
+  adsUrl?: string;
+  inspireId?: string;
+  inspireUrl?: string;
+  openReviewId?: string;
+  openReviewUrl?: string;
+  openReviewVenueId?: string;
+  huggingFaceId?: string;
+  huggingFaceUrl?: string;
+  huggingFaceUpvotes?: number;
+
+  journal?: string;
+  conference?: string;
+  publisher?: string;
+  // Providers retain their vocabulary (article, report, thesis, letter, etc.).
+  publicationType?: string;
+  publicationStatus?: 'preprint' | 'published' | 'accepted' | 'retracted';
+  peerReviewed?: boolean;
+  openAccess?: boolean;
+  pdfUrl?: string | null;
+  openAccessPdfUrl?: string;
+  landingPageUrl?: string | null;
+  europePmcUrl?: string;
+  accessSource?: string;
+  license?: string;
+
+  // A zero with citationCountKnown: false is the builder's unknown sentinel.
+  // A confirmed zero needs citationCountKnown: true; absence is also unknown.
+  citationCount?: number;
+  citationCountKnown?: boolean;
+  referenceCount?: number;
+  iciteMetrics?: PaperICiteMetrics;
+  researchResources?: PaperResearchResource[];
+  concepts?: PaperSubject[];
+  topics?: PaperSubject[];
+  primaryTopic?: PaperSubject | null;
+  keywords?: string[];
+  biomedicalTerms?: string[];
+  categories?: string[];
+  allCategories?: string[];
+  primaryCategory?: string;
+  institutions?: PaperInstitution[];
+  projectIds?: string[];
+  hasReferences?: boolean;
+  hasData?: boolean;
+  hasSupplement?: boolean;
+  published?: string;
+  summary?: string;
+  sourceType?: string;
+  provider?: string;
+  citationMetadataResolved?: boolean;
+  _followedEntityMatches?: Array<PaperFollowMatch | string>;
+  _type?: 'followed' | 'graph' | 'exploit' | 'exploration';
+  _isGraphCandidate?: boolean;
+  _dynamicScore?: number;
+  _debugScore?: PaperRecommendationScore;
+  updateKey?: string;
+
+  // These aliases still arrive from adapters and older saved records.
+  citationsCount?: number;
+  publishedDate?: string | null;
+  publicationDate?: string;
+  primary_topic?: PaperSubject | null;
+  sourceName?: string;
+  openAlex?: Partial<Paper> & {
+    cited_by_count?: number | null;
+    related_works?: string[];
+  };
+  // A retained provider payload remains untrusted at this boundary.
+  raw?: unknown;
+}
+
+// Storage accepts older keys; normalization preserves an already-sourced record.
+type StoredPaperInput = Omit<Partial<Paper>, 'id' | 'sources'> & {
+  id?: string | number | null;
+  sources?: PaperSources | null;
+  source?: string;
+  journalRef?: string;
+};
 
 const ARXIV_ID_PATTERN = /^(?:\d{4}\.\d{4,5}|[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)?\/\d{7})(?:v\d+)?$/i;
 
@@ -55,7 +190,7 @@ const ARXIV_ID_PATTERN = /^(?:\d{4}\.\d{4,5}|[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)?\/\
  * with an `arxiv:` prefix or as an arxiv.org URL. Any other shape — an OpenAlex
  * work id, a PubMed id, a DOI — is not an arXiv id, however it arrived.
  */
-export function readArxivId(value) {
+export function readArxivId(value: unknown): string {
   const cleaned = String(value || '')
     .trim()
     .replace(/^arxiv:\s*/i, '')
@@ -65,13 +200,13 @@ export function readArxivId(value) {
 }
 
 /**
- * Convierte un paper antiguo almacenado en localStorage/Firebase al nuevo formato Paper unificado.
- * Esto evita romper la app al leer colecciones guardadas previamente.
- * 
- * @param {Object} legacyPaper - El paper antiguo.
- * @returns {Paper} El paper convertido.
+ * Adapts older localStorage/Firebase records. A sources object bypasses
+ * normalization, so a partial stored record is not guaranteed to be a Paper.
  */
-export function paperLegacyAdapter(legacyPaper) {
+export function paperLegacyAdapter<T extends StoredPaperInput & { sources: PaperSources | null }>(legacyPaper: T): T;
+export function paperLegacyAdapter(legacyPaper: StoredPaperInput & { sources?: undefined }): Paper;
+export function paperLegacyAdapter(legacyPaper: StoredPaperInput): Paper | StoredPaperInput;
+export function paperLegacyAdapter(legacyPaper: StoredPaperInput): Paper | StoredPaperInput {
   // If it already looks like a new Paper (has sources object), return as is
   if (legacyPaper && typeof legacyPaper.sources === 'object') {
     return legacyPaper;
@@ -146,7 +281,7 @@ export function paperLegacyAdapter(legacyPaper) {
     categories: legacyPaper.allCategories
       || (Array.isArray(legacyPaper.categories) && legacyPaper.categories.length > 0
         ? legacyPaper.categories
-        : [legacyPaper.primaryCategory].filter(Boolean)),
+        : [legacyPaper.primaryCategory].filter(Boolean) as string[]),
     published: legacyPaper.published || undefined,
   };
 }

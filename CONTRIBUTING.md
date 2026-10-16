@@ -69,9 +69,18 @@ Node does not execute `.tsx`; tests must import modules without JSX or inspect
 component source as text. Update source-reading paths and extension filters with
 every rename, and verify those assertions with a failing control mutation.
 
-No application or test files have been renamed in the setup phase. Tailwind's
-`@source` in `src/styles/global.css` still scans `.js` and `.jsx`; add `.ts` and
-`.tsx` and compare production CSS when components are first renamed.
+The shared paper contract and its parts live in `src/models/Paper.ts`. Import
+`Paper` with `import type`; use `Partial<Paper>` for enrichment metadata instead
+of a separate provider or component paper type. `PaperBuilder` references that
+contract through JSDoc while its JavaScript implementation awaits phase 3.
+Missing metadata stays optional. In particular, a zero citation count with
+`citationCountKnown: false` is unknown; only a known zero is a confirmed count.
+The legacy adapter can pass through a partial stored record without normalizing
+it, so its return type does not promise a complete `Paper` for that input.
+
+Only the paper model has moved to TypeScript; tests still use `.test.js`.
+Tailwind's `@source` in `src/styles/global.css` still scans `.js` and `.jsx`;
+add `.ts` and `.tsx` and compare production CSS when components are first renamed.
 
 ## Pull Request Scope
 

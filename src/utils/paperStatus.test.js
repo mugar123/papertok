@@ -126,7 +126,7 @@ test('a library that could not answer, or said no, leaves the record\'s word', (
 });
 
 test('a downloadable pdf counts as open', () => {
-  // `Paper.js`: "Enlace directo al PDF si existe y es Open Access".
+  // A direct PDF link is evidence of an accessible copy.
   assert.equal(accessStatusForPaper({ pdfUrl: 'https://example.org/a.pdf' }), 'open');
   assert.equal(accessStatusForPaper({ openAccessPdfUrl: 'https://example.org/a.pdf' }), 'open');
 });

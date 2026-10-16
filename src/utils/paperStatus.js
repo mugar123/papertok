@@ -19,11 +19,9 @@
 /**
  * Peer review, as far as the record goes: 'preprint', 'verified', or null.
  *
- * `publicationType` is the authoritative field — `Paper.js` documents
- * `peerReviewed` as `publicationType !== 'preprint'` — but OpenAlex fills
- * `publicationStatus` from whether any location claims to be published, and a
- * work can be typed `article` while every copy of it is still a preprint. If
- * either says preprint, it is one.
+ * The contract in `Paper.ts` keeps review and publication metadata optional.
+ * If either `publicationStatus` or `publicationType` says preprint, the
+ * record is treated as a preprint.
  *
  * Null when the record says nothing. Calling an unknown paper `Verified` is a
  * claim about peer review made from an empty field, and the reassuring
@@ -68,8 +66,7 @@ export function accessStatusForPaper(paper, { openCopy = null } = {}) {
     return 'open';
   }
   if (paper.openAccess === false) return 'subscription';
-  // `pdfUrl` is only ever set for a copy that can be fetched — `Paper.js`:
-  // "Enlace directo al PDF si existe y es Open Access".
+  // A PDF link is also evidence of an accessible copy.
   if (paper.pdfUrl) return 'open';
   return null;
 }

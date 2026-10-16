@@ -1,6 +1,8 @@
 import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.js';
 import { matchesAuthorName } from '../utils/authorNameMatch.js';
 
+/** @typedef {import('../models/Paper.ts').Paper} Paper */
+
 // Below this many alphanumeric characters a title is not a fingerprint of a
 // paper -- "editorial", "introduction", "lettertotheeditor" (17) -- and the
 // order-blind author keys in `deduplicate` are not issued for it.
@@ -13,7 +15,7 @@ const HEURISTIC_LOOSE_TITLE_MIN_LENGTH = 20;
 export class PaperBuilder {
   /**
    * Constructs a new Paper object from base data
-   * @param {Object} data 
+   * @param {Partial<Paper>} data
    * @returns {Paper}
    */
   static create(data) {
@@ -101,10 +103,24 @@ export class PaperBuilder {
 
   /**
    * Merges partial metadata from an enrichment source into an existing Paper.
+   * @overload
    * @param {Paper} existingPaper 
-   * @param {Object} enrichmentData - Partial paper data from OpenAlex, Elsevier, etc.
-   * @param {string} sourceName - e.g., 'openalex'
+   * @param {Partial<Paper>} enrichmentData
+   * @param {string} [sourceName]
    * @returns {Paper} A new merged Paper object
+   */
+  /**
+   * Partial records keep their missing fields; merge does not call create.
+   * @overload
+   * @param {Partial<Paper> & Pick<Paper, 'sources'>} existingPaper
+   * @param {Partial<Paper>} enrichmentData
+   * @param {string} [sourceName]
+   * @returns {Partial<Paper> & Pick<Paper, 'sources'>}
+   */
+  /**
+   * @param {Partial<Paper> & Pick<Paper, 'sources'>} existingPaper
+   * @param {Partial<Paper>} enrichmentData
+   * @param {string} [sourceName]
    */
   static merge(existingPaper, enrichmentData, sourceName) {
     const merged = { ...existingPaper };
@@ -313,8 +329,8 @@ export class PaperBuilder {
   /**
    * Deduplicates and merges an array of papers coming from different adapters.
    * Uses stable provider identifiers before Title + First Author as a fallback heuristic.
-   * @param {Array<Object>} papers - Array of paper objects from adapters
-   * @returns {Array<Object>} Deduplicated and merged array
+   * @param {Array<Partial<Paper> | null | undefined> | null | undefined} papers
+   * @returns {Paper[]} Deduplicated and merged array
    */
   static deduplicate(papers) {
     if (!papers || papers.length === 0) return [];
