@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { dropPaperById } from './useGuestFeed.js';
+import { dropPaperById } from './useGuestFeed.ts';
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
@@ -36,7 +36,7 @@ test('dropPaperById survives a list that is not a list', () => {
  * that could take it there, so the removal path stays inside setState.
  */
 test('SOURCE: the guest dismissal only touches React state', async () => {
-  const src = stripComments(await read('./useGuestFeed.js'));
+  const src = stripComments(await read('./useGuestFeed.ts'));
   const start = src.indexOf('const dismissPaper = useCallback(');
   assert.ok(start > -1, 'useGuestFeed exposes a dismissPaper');
   const body = src.slice(start, src.indexOf('}, [', start));

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { deleteAccount, AccountDeletionError } from './accountDeletionService.js';
+import { deleteAccount, AccountDeletionError } from './accountDeletionService.ts';
 
 test('deleteAccount retries 202 slices until complete', async () => {
   const statuses = [];

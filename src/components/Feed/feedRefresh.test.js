@@ -144,7 +144,7 @@ test('SOURCE: la primera visita es la bienvenida, en el primer render y sin carg
   // El feed no pregunta a ninguna fuente mientras la bienvenida está arriba:
   // se construye con su respuesta.
   assert.match(src, /useGuestFeed\(\{ areas, topics, enabled: !firstVisit \}\)/);
-  const hook = strip(await read('../../hooks/useGuestFeed.js'));
+  const hook = strip(await read('../../hooks/useGuestFeed.ts'));
   // `guestFeedLoadDecision` answers null while the feed is not enabled.
   assert.match(hook, /const decision = guestFeedLoadDecision\(\{ enabled, previousKey, planKey: plan\.key \}\);\s*if \(!decision\) return undefined;/);
 });

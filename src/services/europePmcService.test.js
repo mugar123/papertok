@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europePmcService.js';
-import { PaperBuilder } from './PaperBuilder.js';
+import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europePmcService.ts';
+import { PaperBuilder } from './PaperBuilder.ts';
 
 test('maps Europe PMC open full text and biomedical metadata', () => {
   const mapped = mapEuropePmcResult({

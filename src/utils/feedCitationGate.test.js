@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CITATION_GATE_MAX_WAIT_MS, awaitWithinGate } from './feedCitationGate.js';
+import { CITATION_GATE_MAX_WAIT_MS, awaitWithinGate } from './feedCitationGate.ts';
 
 const never = () => new Promise(() => {});
 const after = (ms, value) => new Promise((resolve) => { setTimeout(() => resolve(value), ms); });

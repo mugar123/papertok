@@ -13,8 +13,8 @@ import {
   persistTheme,
   readStoredTheme,
   systemPrefersDark,
-} from '../utils/theme';
-import { runThemeSwitch } from '../utils/themeTransition';
+} from '../utils/theme.ts';
+import { runThemeSwitch } from '../utils/themeTransition.ts';
 
 /**
  * Light or dark, and nothing else — no palette, no per-surface overrides. The

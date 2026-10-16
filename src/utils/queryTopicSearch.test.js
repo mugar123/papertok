@@ -3,7 +3,7 @@ import test from 'node:test';
 import {
   filterRelevantQueryTopicPapers,
   scoreQueryTopicPaper,
-} from './queryTopicSearch.js';
+} from './queryTopicSearch.ts';
 
 const TOPIC = {
   query: 'spatial transcriptomics',

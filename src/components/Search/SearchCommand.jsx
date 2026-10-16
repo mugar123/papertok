@@ -21,16 +21,16 @@ import {
 } from '../ui/command.jsx';
 import { DialogClose } from '../ui/dialog.jsx';
 import { Button } from '../ui/button.jsx';
-import { useEntitySearch } from '../../hooks/useEntitySearch.js';
+import { useEntitySearch } from '../../hooks/useEntitySearch.ts';
 import { useFollowing } from '../../context/FollowingContext';
-import { searchPaperDestination } from '../../utils/searchDestinations.js';
-import { handoverFromSearchRow } from '../../utils/explorerHandover.js';
-import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
+import { searchPaperDestination } from '../../utils/searchDestinations.ts';
+import { handoverFromSearchRow } from '../../utils/explorerHandover.ts';
+import { getLocalizedInstitutionName } from '../../utils/institutionLocalization.ts';
 import {
   buildSearchSectionValues,
   getSearchSectionOrder,
   resolvePreferredSearchSection,
-} from '../../utils/searchRelevance';
+} from '../../utils/searchRelevance.ts';
 import './SearchCommand.css';
 import { Toggle } from '../ui/toggle.jsx';
 

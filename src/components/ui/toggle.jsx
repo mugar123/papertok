@@ -1,5 +1,5 @@
 import { Toggle as TogglePrimitive } from '@base-ui/react/toggle';
-import { cn } from '../../lib/utils.js';
+import { cn } from '../../lib/utils.ts';
 import { toggleVariants } from './toggle-variants.js';
 
 /**

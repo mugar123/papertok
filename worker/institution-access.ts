@@ -28,7 +28,7 @@ type CrossrefWork = Partial<Record<'issued' | 'published-online' | 'published-pr
  * a free proxy to the resolvers.
  */
 
-import { institutionDomainOf } from '../src/utils/institutionDomain.js';
+import { institutionDomainOf } from '../src/utils/institutionDomain.ts';
 import { cacheResponse } from './provider-runtime.ts';
 
 // A library's holdings change slowly; `unknown` (no ISSN, or GetFTR down with

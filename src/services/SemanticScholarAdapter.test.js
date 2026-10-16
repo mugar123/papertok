@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SemanticScholarAdapter } from './adapters/SemanticScholarAdapter.js';
+import { SemanticScholarAdapter } from './adapters/SemanticScholarAdapter.ts';
 
 // This adapter reached `api.semanticscholar.org` with a bare `fetch(url)` -- no
 // key, no signal -- and a three-attempt backoff of its own, which every open tab

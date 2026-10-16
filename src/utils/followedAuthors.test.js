@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { toggleFollowedAuthor } from './followedAuthors.js';
+import { toggleFollowedAuthor } from './followedAuthors.ts';
 
 const transforms = {
   union: name => ({ op: 'union', name }),

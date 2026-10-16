@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const FIREBASE = new URL('../services/firebase.js', import.meta.url);
+const FIREBASE = new URL('../services/firebase.ts', import.meta.url);
 const VERCEL = new URL('../../vercel.json', import.meta.url);
 const ENV_EXAMPLE = new URL('../../.env.example', import.meta.url);
 

@@ -22,7 +22,7 @@ const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
  * spurious `onOpenChangeComplete(false)`.
  */
 test('the popup mounts closed and opens on the next frame', async () => {
-  const hook = await read('./usePopupOpenOnMount.js');
+  const hook = await read('./usePopupOpenOnMount.ts');
   assert.match(hook, /const \[open, setOpen\] = useState\(false\);/, 'it mounts closed');
   assert.match(hook, /const frame = requestAnimationFrame\(\(\) => setOpen\(true\)\);/, 'and opens a frame later');
   assert.match(hook, /return \(\) => cancelAnimationFrame\(frame\);/, 'a sheet dismissed inside that frame leaves nothing armed');

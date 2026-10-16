@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { mapCrossrefInstitutionWork } from './crossrefInstitutionService.js';
-import { openAlexClient, writeOpenAlexPersistent } from './openAlexClient.js';
+import { mapCrossrefInstitutionWork } from './crossrefInstitutionService.ts';
+import { openAlexClient, writeOpenAlexPersistent } from './openAlexClient.ts';
 import {
   dribblingFetch,
   settleWithin,
@@ -28,7 +28,7 @@ import {
   peekEntity,
   searchInstitutions,
   searchLocalTopics,
-} from './openAlexService.js';
+} from './openAlexService.ts';
 
 test('names local topic entities without changing their canonical category identity', () => {
   const topic = getLocalTopicEntity('gr-qc');
@@ -545,7 +545,7 @@ test('a work OpenAlex does not have is not found; a provider failure is an error
 });
 
 test('a works page and an authors page persist as what the Explorer shows, not as raw OpenAlex objects', async () => {
-  const { slimWorksPage, slimAuthorsPage } = await import('./openAlexService.js');
+  const { slimWorksPage, slimAuthorsPage } = await import('./openAlexService.ts');
   const work = {
     id: 'https://openalex.org/W1', title: 'A paper', publication_date: '2024-02-01', cited_by_count: 3,
     abstract_inverted_index: { This: [0], abstract: [1], describes: [2], a: [3], paper: [4], about: [5], experimental: [6], physics: [7], results: [8] },
@@ -566,7 +566,7 @@ test('a works page and an authors page persist as what the Explorer shows, not a
 
 test('SOURCE: the works and authors requests persist through persistentSlim under v2 keys', async () => {
   const { readFile } = await import('node:fs/promises');
-  const code = await readFile(new URL('./openAlexService.js', import.meta.url), 'utf8');
+  const code = await readFile(new URL('./openAlexService.ts', import.meta.url), 'utf8');
   assert.match(code, /const worksCacheKey = `entity-works-v2:/);
   assert.match(code, /persistentKey: worksCacheKey,[\s\S]*?persistentSlim: slimWorksPage,/);
   assert.match(code, /const authorsCacheKey = `entity-authors-v2:/);
@@ -622,7 +622,7 @@ test('SOURCE: the enrichment request asks OpenAlex for the authorships', async (
   // Without this field the ids never reach the browser at all, and the card
   // has to send the reader through the name door. OpenAlex refuses subfield
   // selection (`authorships.author.id` answers 400), so it is all or nothing.
-  const source = (await readFile(new URL('./openAlexService.js', import.meta.url), 'utf8'))
+  const source = (await readFile(new URL('./openAlexService.ts', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
   const select = source.match(/const OPENALEX_ENRICHMENT_SELECT = \[([\s\S]*?)\]\.join/);

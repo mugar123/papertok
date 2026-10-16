@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GUEST_CATEGORIES } from '../utils/guestFeedPlan.js';
+import { GUEST_CATEGORIES } from '../utils/guestFeedPlan.ts';
 import {
   DOMAIN_SOURCE_PATHS,
   PROTECTED_SOURCE_PATHS,
@@ -16,7 +16,7 @@ import {
   mapNasaRecord,
   mapOstiRecord,
   readBioRxivResponse,
-} from './domainSourceService.js';
+} from './domainSourceService.ts';
 
 // The Worker answers a bioRxiv outage with an empty collection marked
 // `_papertok.degraded` (cached briefly). Read as papers it would be "bioRxiv has
@@ -34,7 +34,7 @@ test('a degraded bioRxiv answer is a source failure, not an empty result', () =>
 });
 // Shared with `fetchWorkerSourceJson`, so it lives in the module both source
 // entry points can import without closing a cycle.
-import { sourceResponseError } from './workerApiClient.js';
+import { sourceResponseError } from './workerApiClient.ts';
 
 test('routes biology and engineering categories only to relevant specialist sources', () => {
   const plan = getDomainSourcePlan(['bio.cell', 'mech.aero', 'chemeng.energy', 'physics.optics']);

@@ -15,10 +15,10 @@
  */
 
 import { XMLParser } from 'fast-xml-parser';
-import { OPENALEX_SEARCH_TYPES, OpenAlexAdapter } from '../../src/services/adapters/OpenAlexAdapter.js';
-import { identifyOpenAlexUrl } from '../../src/services/openAlexClient.js';
-import { PaperBuilder } from '../../src/services/PaperBuilder.js';
-import { rankPaperSearchResults } from '../../src/utils/searchRelevance.js';
+import { OPENALEX_SEARCH_TYPES, OpenAlexAdapter } from '../../src/services/adapters/OpenAlexAdapter.ts';
+import { identifyOpenAlexUrl } from '../../src/services/openAlexClient.ts';
+import { PaperBuilder } from '../../src/services/PaperBuilder.ts';
+import { rankPaperSearchResults } from '../../src/utils/searchRelevance.ts';
 
 const API_BASE = (process.env.PAPER_API_BASE || 'https://api.papertok.app').replace(/\/$/, '');
 const ORIGIN = process.env.ORIGIN || 'https://papertok.app';

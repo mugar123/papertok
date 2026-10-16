@@ -9,7 +9,7 @@ import {
   hasInteractionProfile,
   loadInteractionProfile,
   rebuildInteractionProfile,
-} from './interactionProfileLoader.js';
+} from './interactionProfileLoader.ts';
 import {
   createEmptyInteractionProfile,
   curatedIds,
@@ -17,7 +17,7 @@ import {
   isPaperKnown,
   readCategorySignals,
   serializeInteractionProfile,
-} from './interactionProfile.js';
+} from './interactionProfile.ts';
 
 const NOW = Date.parse('2026-08-19T12:00:00.000Z');
 const DAY_MS = 24 * 60 * 60 * 1000;

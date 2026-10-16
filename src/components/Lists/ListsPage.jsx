@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { IS_DEMO, db } from '../../services/firebase';
+import { IS_DEMO, db } from '../../services/firebase.ts';
 import {
   collection,
   getDocs,
@@ -21,11 +21,11 @@ import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getCategoryLabel } from '../../data/categories';
-import { getIcon } from '../../utils/icons';
+import { getIcon } from '../../utils/icons.ts';
 import CreateListDialog from './CreateListDialog.jsx';
 import { Button } from '../ui/button.jsx';
-import { resolveListColor } from '../../utils/listColors.js';
-import { areaAccentForPaper } from '../../utils/areaAccent.js';
+import { resolveListColor } from '../../utils/listColors.ts';
+import { areaAccentForPaper } from '../../utils/areaAccent.ts';
 import ScientificText from '../ScientificText.js';
 import { paperLegacyAdapter } from '../../models/Paper.ts';
 import {
@@ -41,47 +41,47 @@ import {
   Warning,
   X,
 } from '@phosphor-icons/react';
-import { shareOrCopyLink } from '../../utils/shareLink.js';
-import { downloadCitationFile } from '../../utils/readingLibrary';
-import { decodeFirestoreDocId, encodeFirestoreDocId } from '../../utils/firestoreDocId.js';
-import { hydrateLegacyArxivPapers } from '../../services/likedPaperRecords.js';
-import { getUiErrorMessage } from '../../utils/errorMessages';
+import { shareOrCopyLink } from '../../utils/shareLink.ts';
+import { downloadCitationFile } from '../../utils/readingLibrary.ts';
+import { decodeFirestoreDocId, encodeFirestoreDocId } from '../../utils/firestoreDocId.ts';
+import { hydrateLegacyArxivPapers } from '../../services/likedPaperRecords.ts';
+import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext';
 import {
   PUBLIC_LIST_LIMITS,
   publishPublicList,
   readPublicList,
   unpublishPublicList,
-} from '../../services/publicListService.js';
+} from '../../services/publicListService.ts';
 import {
   cancelPublicListSync,
   queuePublicListSync,
   retryPublicListSync,
   subscribeToPublicListSync,
-} from '../../services/publicListSync.js';
+} from '../../services/publicListSync.ts';
 import {
   listNeedsPublicSync,
   publicListSyncKey,
   toEpochMillis,
-} from '../../utils/publicListFreshness.js';
-import { getPublicListUrl, getPublicPaperPath } from '../../utils/publicNavigation.js';
+} from '../../utils/publicListFreshness.ts';
+import { getPublicListUrl, getPublicPaperPath } from '../../utils/publicNavigation.ts';
 import PaperCard from '../Feed/PaperCard.jsx';
 import PaperOverlay from '../Feed/PaperOverlay.jsx';
-import { isReadTimeout, patientRead } from '../../utils/boundedRead.js';
+import { isReadTimeout, patientRead } from '../../utils/boundedRead.ts';
 import {
   ownListsCache,
   readListPapers,
   rememberListPapers,
   rememberOwnLists,
-} from '../../utils/profileSessionCaches.js';
-import { OWN_LISTS_PAGE_SIZE, snapshotIsAuthoritative } from '../../utils/ownLists.js';
-import { readStoredLists, saveStoredLists } from '../../utils/userScopedStorage.js';
-import { queryIsAuthoritative } from '../../utils/cacheAuthority.js';
+} from '../../utils/profileSessionCaches.ts';
+import { OWN_LISTS_PAGE_SIZE, snapshotIsAuthoritative } from '../../utils/ownLists.ts';
+import { readStoredLists, saveStoredLists } from '../../utils/userScopedStorage.ts';
+import { queryIsAuthoritative } from '../../utils/cacheAuthority.ts';
 import {
   PAPER_METADATA_BATCH_SIZE,
   planMetadataRequests,
   planRetryRequests,
-} from '../../utils/listPaperMetadataPlan.js';
+} from '../../utils/listPaperMetadataPlan.ts';
 import './ListsPage.css';
 
 /**

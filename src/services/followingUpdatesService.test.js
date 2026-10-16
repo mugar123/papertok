@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { withStubbedFetch } from '../test-support/deadlineHarness.js';
-import { CACHE } from './openAireService.js';
-import { fetchFollowingUpdates } from './followingUpdatesService.js';
+import { CACHE } from './openAireService.ts';
+import { fetchFollowingUpdates } from './followingUpdatesService.ts';
 
 const emptyOpenAire = { ok: true, json: async () => ({ response: { header: { total: { $: '0' } }, results: {} } }) };
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { handedEntityFor, handoverFromSearchRow } from './explorerHandover.js';
+import { handedEntityFor, handoverFromSearchRow } from './explorerHandover.ts';
 
 /**
  * The palette's rows hold the entity they point at, and `go()` already hands a

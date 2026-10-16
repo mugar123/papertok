@@ -1,6 +1,6 @@
 import { Radio as RadioPrimitive } from '@base-ui/react/radio';
 import { RadioGroup as RadioGroupPrimitive } from '@base-ui/react/radio-group';
-import { cn } from '../../lib/utils.js';
+import { cn } from '../../lib/utils.ts';
 
 /**
  * One choice among a few (`role="radiogroup"`, arrow keys between items).

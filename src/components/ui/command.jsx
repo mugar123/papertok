@@ -1,6 +1,6 @@
 import { Command as CommandPrimitive } from 'cmdk';
 import { MagnifyingGlass } from '@phosphor-icons/react';
-import { cn } from '../../lib/utils.js';
+import { cn } from '../../lib/utils.ts';
 import { Dialog, DialogContent, DialogTitle } from './dialog.jsx';
 
 function Command({ className, ...props }) {

@@ -35,7 +35,7 @@ test('no component imports icons from lucide-react', async () => {
  * has to keep resolving to its own glyph, not to the folder fallback.
  */
 test('every stored list icon name still resolves to its own icon', async () => {
-  const source = await readFile(new URL('./icons.js', import.meta.url), 'utf8');
+  const source = await readFile(new URL('./icons.ts', import.meta.url), 'utf8');
   const offered = JSON.parse(source.match(/export const AVAILABLE_ICONS = (\[[^\]]*\]);/)[1].replace(/'/g, '"'));
   const icons = source.match(/export const ICONS = \{([\s\S]*?)\};/)[1];
   const keys = icons.split(',').map(part => part.trim().split(':')[0].trim()).filter(Boolean);

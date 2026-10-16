@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { paperLegacyAdapter } from '../src/models/Paper.ts';
-import { seedPaintsWhole } from '../src/utils/paperSeed.js';
-import { encodePaperKey } from '../src/utils/publicNavigation.js';
-import { publicPaperMetadata, readShareSeed } from '../src/utils/shareSeed.js';
+import { seedPaintsWhole } from '../src/utils/paperSeed.ts';
+import { encodePaperKey } from '../src/utils/publicNavigation.ts';
+import { publicPaperMetadata, readShareSeed } from '../src/utils/shareSeed.ts';
 import {
   createShareLoader,
   createShellLoader,
@@ -363,7 +363,7 @@ test('a paper page embeds a seed that parses, names its key and can paint the pa
 
 test('the page reads back the seed the Worker writes, paints from it and indexes it', async () => {
   // Both sides of the contract at once: the element and the key the Worker
-  // writes are the ones src/utils/shareSeed.js reads, and what it reads goes
+  // writes are the ones src/utils/shareSeed.ts reads, and what it reads goes
   // through the same adapter and paint rule as a seed handed over in-app.
   const outcome = await foundPaper();
   const html = renderSharePage(SHELL, sharePageModel(paperRoute(), outcome));

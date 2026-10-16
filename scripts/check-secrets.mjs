@@ -14,7 +14,7 @@ const patterns = [
 
 const ignoredPaths = new Set(['package-lock.json']);
 const publicCredentialAllowlist = new Map([
-  ['src/services/firebase.js', new Set(['Google API key'])],
+  ['src/services/firebase.ts', new Set(['Google API key'])],
   ['wrangler.toml', new Set(['Google API key'])],
 ]);
 const candidateFiles = execFileSync(

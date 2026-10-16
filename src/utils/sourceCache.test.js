@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readSourceCache, writeSourceCache } from './sourceCache.js';
+import { readSourceCache, writeSourceCache } from './sourceCache.ts';
 
 function fakeStorage() {
   const map = new Map();

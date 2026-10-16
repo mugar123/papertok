@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Popover as PopoverPrimitive } from '@base-ui/react/popover';
 import { CircleNotch, Highlighter, PencilLine, Sparkle } from '@phosphor-icons/react';
-import { MAX_NOTE_LENGTH } from '../../services/userHighlightService.js';
+import { MAX_NOTE_LENGTH } from '../../services/userHighlightService.ts';
 import { Popover } from '../ui/popover.jsx';
 import { Textarea } from '../ui/textarea.jsx';
 

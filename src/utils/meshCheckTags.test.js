@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isMeshCheckTag, orderMeshDescriptors } from './meshCheckTags.js';
+import { isMeshCheckTag, orderMeshDescriptors } from './meshCheckTags.ts';
 
 test('the NLM check tags are recognised, in any case, and a subject is not', () => {
   for (const tag of ['Humans', 'Female', 'Male', 'Animals', 'Aged, 80 and over', 'Infant, Newborn', 'Middle Aged', 'Mice', 'Rats', 'Pregnancy', 'History, 20th Century', 'humans']) {

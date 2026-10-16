@@ -1,4 +1,4 @@
-import { cn } from '../../lib/utils.js';
+import { cn } from '../../lib/utils.ts';
 
 /**
  * The multi-line field, drawn like Input. `field-sizing: content` lets it

@@ -1,5 +1,5 @@
 import { GraduationCap } from '@phosphor-icons/react';
-import { institutionLabel } from '../../services/institutionService.js';
+import { institutionLabel } from '../../services/institutionService.ts';
 import './Institution.css';
 
 /**

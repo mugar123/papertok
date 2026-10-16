@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { paperShareData, shareOrCopyLink } from './shareLink.js';
+import { paperShareData, shareOrCopyLink } from './shareLink.ts';
 
 // The shape publicNavigation.js mints: a real path, no fragment. This helper
 // never parses the URL — it hands it to the sheet or the clipboard whole — but

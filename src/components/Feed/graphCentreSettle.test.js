@@ -49,7 +49,7 @@ test('the provenance row holds its 30px from the first frame, so the plot never 
 });
 
 test('the centre is placed at half the plot, which is what makes a late sibling move it', async () => {
-  const layout = await read('../../utils/citationMap.js');
+  const layout = await read('../../utils/citationMap.ts');
   assert.match(layout, /const ruleY = height \/ 2;/);
 
   const css = await read('./PaperCard.css');

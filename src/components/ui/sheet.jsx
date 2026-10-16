@@ -1,6 +1,6 @@
 import { Dialog as SheetPrimitive } from '@base-ui/react/dialog';
 import { X } from '@phosphor-icons/react';
-import { cn } from '../../lib/utils.js';
+import { cn } from '../../lib/utils.ts';
 
 /**
  * A panel that slides in from an edge and does not need a swipe gesture —

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getFollowedEntityPath } from './followingNavigation.js';
+import { getFollowedEntityPath } from './followingNavigation.ts';
 
 test('builds a navigable institution route from a saved follow', () => {
   assert.equal(

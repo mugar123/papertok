@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { openFirstTarget, openTargetsForPaper, pdfLinksForPaper, pdfRelayUrl } from './paperOpenTargets.js';
+import { openFirstTarget, openTargetsForPaper, pdfLinksForPaper, pdfRelayUrl } from './paperOpenTargets.ts';
 
 test('ordena los destinos: la copia abierta manda, y el DOI nunca entra', () => {
   const targets = openTargetsForPaper({

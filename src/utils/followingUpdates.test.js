@@ -5,7 +5,7 @@ import {
   getFollowingUpdatePaperKey,
   isRecentFollowingUpdate,
   mergeFollowingUpdatePapers,
-} from './followingUpdates.js';
+} from './followingUpdates.ts';
 
 test('uses DOI as the stable inbox identity when available', () => {
   assert.equal(

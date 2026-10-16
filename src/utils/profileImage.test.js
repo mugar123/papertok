@@ -4,7 +4,7 @@ import {
   normalizeProfilePhoto,
   squareSource,
   validateProfileImageMetadata,
-} from './profileImage.js';
+} from './profileImage.ts';
 
 test('accepts ordinary profile image metadata', () => {
   assert.doesNotThrow(() => validateProfileImageMetadata({

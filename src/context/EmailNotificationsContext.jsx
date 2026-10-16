@@ -12,8 +12,8 @@ import {
   getEmailNotificationHealth,
   saveEmailNotificationPreferences,
   sendEmailNotificationTest,
-} from '../services/emailNotificationService';
-import { getFollowingSignature } from '../utils/followingUpdates';
+} from '../services/emailNotificationService.ts';
+import { getFollowingSignature } from '../utils/followingUpdates.ts';
 
 const DEFAULT_PREFERENCES = {
   enabled: false,

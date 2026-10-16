@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { mapWithConcurrency } from './mapWithConcurrency.js';
+import { mapWithConcurrency } from './mapWithConcurrency.ts';
 
 /**
  * The guard on the fan-out that grows with an account.
@@ -84,7 +84,7 @@ test('an empty list spawns no workers and a ceiling below one still runs', async
 });
 
 test('STRUCTURAL: the library read fans out through the bounded pool', async () => {
-  const source = await readFile(new URL('../services/interactionProfileStore.js', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../services/interactionProfileStore.ts', import.meta.url), 'utf8');
   const body = source.slice(source.indexOf('export async function fetchLibraryRecords'));
 
   assert.ok(

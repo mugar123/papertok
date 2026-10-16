@@ -5,7 +5,7 @@ import {
   resolvePaperTopic,
   resolveQueryTopicRoute,
   topicExplorerPath,
-} from './topicNavigation.js';
+} from './topicNavigation.ts';
 import { CATEGORIES } from '../data/categories.js';
 
 test('resolves a PaperTok category id as a reliable topic', () => {

@@ -5,7 +5,7 @@ import {
   requestDeadline,
   withEnforcedDeadline,
   withRequestDeadline,
-} from './requestDeadline.js';
+} from './requestDeadline.ts';
 
 /**
  * `AbortSignal.timeout` schedules an **unref'd** timer, so under Node it does not

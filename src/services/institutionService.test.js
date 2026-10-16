@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { institutionDomainOf } from '../utils/institutionDomain.js';
+import { institutionDomainOf } from '../utils/institutionDomain.ts';
 import {
   InstitutionLinkError,
   institutionLabel,
   linkInstitution,
   normalizeInstitution,
   unlinkInstitution,
-} from './institutionService.js';
+} from './institutionService.ts';
 
 const INSTITUTION = {
   domain: 'usal.es',

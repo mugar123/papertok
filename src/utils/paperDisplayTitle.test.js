@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isPlaceholderPaperTitle } from './paperDisplayTitle.js';
+import { isPlaceholderPaperTitle } from './paperDisplayTitle.ts';
 
 test('empty and identity-shaped strings are not titles', () => {
   assert.equal(isPlaceholderPaperTitle('', 'x'), true);

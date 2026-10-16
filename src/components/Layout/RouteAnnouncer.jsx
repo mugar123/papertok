@@ -5,7 +5,7 @@
 // so Tab restarts at the content instead of the top of the page.
 import { useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
-import { routeTitle, routeLabel } from '../../utils/routeMetadata'
+import { routeTitle, routeLabel } from '../../utils/routeMetadata.ts'
 
 export default function RouteAnnouncer() {
   const location = useLocation()

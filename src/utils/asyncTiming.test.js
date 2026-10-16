@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { resolveWithin, settleWithin, settleSourcesForFirstPaint, fulfilledPaperLists } from './asyncTiming.js';
+import { resolveWithin, settleWithin, settleSourcesForFirstPaint, fulfilledPaperLists } from './asyncTiming.ts';
 
 test('returns a fast result without waiting for the full budget', async () => {
   assert.deepEqual(await settleWithin(Promise.resolve(['paper']), 50), {

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { routeTitle, routeLabel } from './routeMetadata.js'
+import { routeTitle, routeLabel } from './routeMetadata.ts'
 
 test('titles the main authenticated routes', () => {
   assert.equal(routeTitle('/feed'), 'For you | PaperTok')

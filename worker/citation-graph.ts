@@ -13,7 +13,7 @@ import {
   extractCitationOpenAlexId,
   normalizeCitationDoi,
   normalizeCitationRows,
-} from '../src/utils/citationGraph.js';
+} from '../src/utils/citationGraph.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { addOpenAlexCredentials, fetchOpenAlexJsonWithFallback } from './openalex-api.ts';
 import { cacheResponse, DEGRADED_CACHE_SECONDS, fetchJsonWithTimeout, getSafeLimit, OPENALEX_CALLS } from './provider-runtime.ts';

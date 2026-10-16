@@ -27,13 +27,13 @@ import {
   Users,
   X,
 } from '@phosphor-icons/react';
-import { getEntityById, peekEntity, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution, getEntityRecentImpact, getLocalTopicEntity, enrichAuthorInstitutionLocalization } from '../../services/openAlexService';
-import { isOpenAlexRateLimitError } from '../../services/openAlexClient';
-import { fetchPapersByIds, getAuthorPapers } from '../../services/arxivService';
+import { getEntityById, peekEntity, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution, getEntityRecentImpact, getLocalTopicEntity, enrichAuthorInstitutionLocalization } from '../../services/openAlexService.ts';
+import { isOpenAlexRateLimitError } from '../../services/openAlexClient.ts';
+import { fetchPapersByIds, getAuthorPapers } from '../../services/arxivService.ts';
 import { isScopusEnabled, PubmedAdapter, ScopusAdapter, SemanticScholarAdapter } from '../../services/adapters';
-import { getPapersByProject, getProjectDetails } from '../../services/openAireService';
-import { PaperBuilder } from '../../services/PaperBuilder';
-import { extractOrcid, getOrcidRecord } from '../../services/orcidService';
+import { getPapersByProject, getProjectDetails } from '../../services/openAireService.ts';
+import { PaperBuilder } from '../../services/PaperBuilder.ts';
+import { extractOrcid, getOrcidRecord } from '../../services/orcidService.ts';
 import {
   EXPLORER_ROW_CHUNK,
   authorIdentityVerified,
@@ -47,16 +47,16 @@ import {
   pinSourcePaper,
   shouldShowGuestGate,
   sourceArxivIdFrom,
-} from '../../utils/entityExplorer';
+} from '../../utils/entityExplorer.ts';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { useHeightSettle } from '../../hooks/useHeightSettle';
-import { useActiveTabRule } from '../../hooks/useActiveTabRule.js';
-import { useIsPageArriving, useAfterPageArrival } from '../../hooks/usePageArrival.js';
-import { useOverlayHistory } from '../../hooks/useOverlayHistory.js';
+import { useHeightSettle } from '../../hooks/useHeightSettle.ts';
+import { useActiveTabRule } from '../../hooks/useActiveTabRule.ts';
+import { useIsPageArriving, useAfterPageArrival } from '../../hooks/usePageArrival.ts';
+import { useOverlayHistory } from '../../hooks/useOverlayHistory.ts';
 import { CATEGORIES } from '../../data/categories';
-import { areaAccentForCategory as getAreaGradient, areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
-import { explorerSkeletonShape, hasAuthorsTab } from '../../utils/explorerSkeletonShape.js';
-import { handedEntityFor, handoverFromSearchRow } from '../../utils/explorerHandover.js';
+import { areaAccentForCategory as getAreaGradient, areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.ts';
+import { explorerSkeletonShape, hasAuthorsTab } from '../../utils/explorerSkeletonShape.ts';
+import { handedEntityFor, handoverFromSearchRow } from '../../utils/explorerHandover.ts';
 import { Menu as MenuPrimitive } from '@base-ui/react/menu';
 import { Button } from '../ui/button.jsx';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '../ui/dropdown-menu.jsx';
@@ -77,20 +77,20 @@ import RecentImpactStat from './RecentImpactStat';
 import { ExplorerEmptyState } from './ExplorerEmptyState.jsx';
 import ExplorerGuestGate from './ExplorerGuestGate.jsx';
 import { pickEmptyVariant } from './explorerEmptyVariant.js';
-import { normalizeScientificMarkup } from '../../utils/latex';
-import { isOpaqueQueryTopicText, resolveQueryTopicRoute } from '../../utils/topicNavigation';
-import { scoreQueryTopicPaper } from '../../utils/queryTopicSearch.js';
-import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.js';
-import { settleWithin } from '../../utils/asyncTiming';
-import { fetchTopicPapers } from '../../services/topicRetrievalService.js';
-import { loadEntityWikiInfo } from '../../services/wikiService';
-import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
-import { getProjectDisplayName } from '../../utils/entityMetadata.js';
-import { getUiErrorMessage } from '../../utils/errorMessages';
-import { safeExternalUrl } from '../../utils/externalUrl.js';
-import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.js';
+import { normalizeScientificMarkup } from '../../utils/latex.ts';
+import { isOpaqueQueryTopicText, resolveQueryTopicRoute } from '../../utils/topicNavigation.ts';
+import { scoreQueryTopicPaper } from '../../utils/queryTopicSearch.ts';
+import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.ts';
+import { settleWithin } from '../../utils/asyncTiming.ts';
+import { fetchTopicPapers } from '../../services/topicRetrievalService.ts';
+import { loadEntityWikiInfo } from '../../services/wikiService.ts';
+import { getLocalizedInstitutionName } from '../../utils/institutionLocalization.ts';
+import { getProjectDisplayName } from '../../utils/entityMetadata.ts';
+import { getUiErrorMessage } from '../../utils/errorMessages.ts';
+import { safeExternalUrl } from '../../utils/externalUrl.ts';
+import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.ts';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
-import { getPublicEntityPath, getPublicEntityUrl } from '../../utils/publicNavigation.js';
+import { getPublicEntityPath, getPublicEntityUrl } from '../../utils/publicNavigation.ts';
 import 'katex/dist/katex.min.css';
 import './EntityExplorer.css';
 

@@ -3,26 +3,26 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowClockwise, ArrowLeft, House } from '@phosphor-icons/react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useFeed } from '../../context/FeedContext.jsx';
-import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.js';
-import { fetchPapersByIds } from '../../services/arxivService.js';
+import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.ts';
+import { fetchPapersByIds } from '../../services/arxivService.ts';
 import {
   enrichPapersBatch,
   fetchPaperByArxivIdViaOpenAlex,
   fetchPaperByWorkId,
   fetchPapersByDois,
-} from '../../services/openAlexService.js';
+} from '../../services/openAlexService.ts';
 import {
   getOpenAlexEnrichmentId,
   mergeOpenAlexEnrichment,
-} from '../../utils/feedEnrichment.js';
+} from '../../utils/feedEnrichment.ts';
 import {
   encodePaperKey,
   getPublicPaperPath,
   parsePaperKey,
-} from '../../utils/publicNavigation.js';
+} from '../../utils/publicNavigation.ts';
 import { paperLegacyAdapter } from '../../models/Paper.ts';
-import { hydrateSeededPaper, seedPaintsWhole } from '../../utils/paperSeed.js';
-import { publicPaperMetadata, readShareSeed } from '../../utils/shareSeed.js';
+import { hydrateSeededPaper, seedPaintsWhole } from '../../utils/paperSeed.ts';
+import { publicPaperMetadata, readShareSeed } from '../../utils/shareSeed.ts';
 import PaperCard from '../Feed/PaperCard.jsx';
 import SkeletonCard from '../Feed/SkeletonCard.jsx';
 import { Button } from '../ui/button.jsx';

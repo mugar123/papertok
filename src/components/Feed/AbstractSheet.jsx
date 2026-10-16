@@ -1,8 +1,8 @@
 import { useRef } from 'react';
 import { X } from '@phosphor-icons/react';
 import ScientificText from '../ScientificText';
-import { usePopupOpenOnMount } from '../../hooks/usePopupOpenOnMount.js';
-import { areaLabelForPaper } from '../../utils/areaAccent.js';
+import { usePopupOpenOnMount } from '../../hooks/usePopupOpenOnMount.ts';
+import { areaLabelForPaper } from '../../utils/areaAccent.ts';
 import { Drawer, DrawerBody, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.jsx';
 import './AbstractSheet.css';
 

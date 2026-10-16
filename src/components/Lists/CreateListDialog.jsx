@@ -28,7 +28,7 @@
  */
 import { useEffect, useId, useReducer, useRef, useState } from 'react';
 import { Check, X } from '@phosphor-icons/react';
-import { AVAILABLE_ICONS, getIcon } from '../../utils/icons.js';
+import { AVAILABLE_ICONS, getIcon } from '../../utils/icons.ts';
 import { Button } from '../ui/button.jsx';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '../ui/dialog.jsx';
 import { Input } from '../ui/input.jsx';
@@ -38,8 +38,8 @@ import {
   canSubmitCreateList,
   createListFormReducer,
   CREATE_LIST_FORM_INITIAL,
-} from '../../utils/createListFormModel.js';
-import { LIST_COLORS, randomListColorId, resolveListColorId } from '../../utils/listColors.js';
+} from '../../utils/createListFormModel.ts';
+import { LIST_COLORS, randomListColorId, resolveListColorId } from '../../utils/listColors.ts';
 import './CreateListDialog.css';
 
 const COPY = {

@@ -1,4 +1,4 @@
-import { cn } from '../../lib/utils.js';
+import { cn } from '../../lib/utils.ts';
 
 /**
  * A field's name. Every field has one (WCAG 3.3.2): `htmlFor` to the

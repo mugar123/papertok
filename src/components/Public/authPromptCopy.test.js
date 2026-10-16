@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { authPromptCopy, normalizeAuthReason } from './authPromptCopy.js';
-import { isSignInRequiredError } from '../../utils/signInRequired.js';
-import { WorkerApiAuthError } from '../../services/workerApiClient.js';
+import { isSignInRequiredError } from '../../utils/signInRequired.ts';
+import { WorkerApiAuthError } from '../../services/workerApiClient.ts';
 
 test('only a known reason is a reason; an event, a paper or nothing is the general door', () => {
   assert.equal(normalizeAuthReason('paper_rewrite'), 'paper_rewrite');

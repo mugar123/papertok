@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { depsAreSame, planHeightSettle } from './heightSettlePlan.js';
+import { depsAreSame, planHeightSettle } from './heightSettlePlan.ts';
 
 /**
  * The hero body's settle used to keep its memory only on the commits whose
@@ -105,7 +105,7 @@ test('suspension is not the same as no change: without it the same commit animat
  * a layout and a running animation. These pin the two decisions it makes on its
  * own, both of which a passing pure suite would otherwise leave free.
  */
-const hookSource = async () => (await readFile(new URL('./useHeightSettle.js', import.meta.url), 'utf8'))
+const hookSource = async () => (await readFile(new URL('./useHeightSettle.ts', import.meta.url), 'utf8'))
   .replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
 
 test('SOURCE: the hook asks whether it is suspended, and hands the answer to the plan', async () => {

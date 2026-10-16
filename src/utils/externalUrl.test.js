@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isTrustedInlinePdfUrl, safeDoiUrl, safeExternalUrl } from './externalUrl.js';
+import { isTrustedInlinePdfUrl, safeDoiUrl, safeExternalUrl } from './externalUrl.ts';
 
 test('accepts only credential-free HTTPS external URLs', () => {
   assert.equal(safeExternalUrl('https://example.org/paper'), 'https://example.org/paper');

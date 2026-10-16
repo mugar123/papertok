@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { canAnnotatePassage, PaperAnnotationError, toAnnotationError } from './paperAnnotationService.js';
-import { WorkerApiAuthError } from './workerApiClient.js';
+import { canAnnotatePassage, PaperAnnotationError, toAnnotationError } from './paperAnnotationService.ts';
+import { WorkerApiAuthError } from './workerApiClient.ts';
 
 test('a selection too short to identify a passage is refused before the request', () => {
   assert.equal(canAnnotatePassage('short'), false);

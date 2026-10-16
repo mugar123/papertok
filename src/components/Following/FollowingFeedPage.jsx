@@ -5,7 +5,7 @@ import FeedContainer from '../Feed/FeedContainer';
 import { useFeed } from '../../context/FeedContext';
 import { useFollowing } from '../../context/FollowingContext';
 import { useFollowingUpdates } from '../../context/FollowingUpdatesContext';
-import { FOLLOWING_ORDER_STORAGE_KEY } from '../../utils/followingOrderStorage.js';
+import { FOLLOWING_ORDER_STORAGE_KEY } from '../../utils/followingOrderStorage.ts';
 import {
   followingFirstLoadPending,
   mergeOrderedPapers,
@@ -13,7 +13,7 @@ import {
   orderKeysOf,
   resumeOrderedPapers,
   withoutNotInterested,
-} from '../../utils/followingFeed';
+} from '../../utils/followingFeed.ts';
 import './FollowingFeedPage.css';
 
 // The order the page left with, as keys, in the tab's own storage: a reload

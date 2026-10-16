@@ -8,7 +8,7 @@ import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { encodePaperKey } from '../src/utils/publicNavigation.js';
+import { encodePaperKey } from '../src/utils/publicNavigation.ts';
 import reportApi from './index.ts';
 import { fetchWithDeadline } from './provider-runtime.ts';
 import { PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';

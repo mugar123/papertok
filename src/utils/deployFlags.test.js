@@ -6,7 +6,7 @@ import {
   describeDeployFlagDrift,
   findDeployFlagDrift,
   isDeployFlagEnabled,
-} from './deployFlags.js';
+} from './deployFlags.ts';
 
 // This is the decision itself, not a detail of it. Scopus was measured against
 // OpenAlex (75 of 75 already held) and retired; flipping the declaration should
@@ -61,6 +61,6 @@ test('names the flag and both values so the build error is actionable', () => {
 // the flag differently, the guard would keep passing builds while the bundle
 // disagreed with the declaration — the exact failure it exists to prevent.
 test('the adapter still reads the flag the way the guard assumes', () => {
-  const source = readFileSync(new URL('../services/adapters/ScopusAdapter.js', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../services/adapters/ScopusAdapter.ts', import.meta.url), 'utf8');
   assert.match(source, /VITE_SCOPUS_ENABLED\s*===\s*'true'/);
 });

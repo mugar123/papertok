@@ -116,7 +116,7 @@ test('SOURCE: PubMed cards get Europe PMC after paint, never before setPapers', 
 });
 
 test('SOURCE: the guest feed enriches its PubMed cards too', async () => {
-  const code = stripComments(await read('../hooks/useGuestFeed.js'));
+  const code = stripComments(await read('../hooks/useGuestFeed.ts'));
   const enrich = bounded(code, 'const enrichVisible = (batch) => {', '};', 'enrichVisible', 22);
   // Each pmid is asked for once per load: `enrichVisible` runs for the early
   // batch and again for the late one, which overlap, and the service has no
@@ -132,7 +132,7 @@ test('SOURCE: the guest feed enriches its PubMed cards too', async () => {
 });
 
 test('SOURCE: the PubMed adapter itself stays free of browser-side enrichment', async () => {
-  const code = stripComments(await read('../services/adapters/PubmedAdapter.js'));
+  const code = stripComments(await read('../services/adapters/PubmedAdapter.ts'));
   assert.doesNotMatch(code, /enrichPubmedIds|openAlexJson/,
     'PubmedAdapter.test.js forbids extra fetches inside fetchSearch');
 });

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { getUiErrorMessage } from '../../utils/errorMessages.js';
+import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import { Button } from '../ui/button.jsx';
 import { Input } from '../ui/input.jsx';
 import { Label } from '../ui/label.jsx';

@@ -18,7 +18,7 @@ function bounded(code, from, to, label, maxLines) {
 }
 
 const load = bounded(
-  stripComments(readFileSync(new URL('./useGuestFeed.js', import.meta.url), 'utf8')),
+  stripComments(readFileSync(new URL('./useGuestFeed.ts', import.meta.url), 'utf8')),
   'const load = useCallback(',
   '}, []);',
   'the guest load',

@@ -14,7 +14,7 @@ import {
   normalizeGuestTopics,
   readGuestInterests,
   saveGuestInterests,
-} from './guestInterests.js';
+} from './guestInterests.ts';
 
 function fakeStorage(initial = {}) {
   const map = new Map(Object.entries(initial));
@@ -155,7 +155,7 @@ test('a narrowed area seeds exactly its topics, and the seed stays under the rul
 });
 
 test('the seed cap is the rules cap', async () => {
-  const { USER_PREFERENCES_MAX } = await import('./accountOnboarding.js');
+  const { USER_PREFERENCES_MAX } = await import('./accountOnboarding.ts');
   assert.equal(GUEST_SEED_MAX, USER_PREFERENCES_MAX);
 });
 

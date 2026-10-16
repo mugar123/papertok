@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { findInstitutionAccess, findInstitutionServices, knownInstitutionServices } from './institutionAccessService.js';
+import { findInstitutionAccess, findInstitutionServices, knownInstitutionServices } from './institutionAccessService.ts';
 
 const API = 'https://api.test';
 const HOUR = 60 * 60 * 1000;

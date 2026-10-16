@@ -5,7 +5,7 @@ import {
   definedFields,
   selectSemanticProfilePositiveIds,
   SEMANTIC_PROFILE_POSITIVE_CAP,
-} from './feedInteractions.js';
+} from './feedInteractions.ts';
 
 test('caps liked+saved ids used for the OpenAlex semantic overlay', () => {
   const liked = Array.from({ length: 40 }, (_, index) => `liked-${index}`);

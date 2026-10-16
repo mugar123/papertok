@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { RERANK_MAX_WAIT_MS, RERANK_SCROLL_QUIET_MS, reRankHoldMs } from './feedReRankTiming.js';
+import { RERANK_MAX_WAIT_MS, RERANK_SCROLL_QUIET_MS, reRankHoldMs } from './feedReRankTiming.ts';
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');

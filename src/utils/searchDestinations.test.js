@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { searchPaperDestination } from './searchDestinations.js';
-import { decodePaperKey } from './publicNavigation.js';
+import { searchPaperDestination } from './searchDestinations.ts';
+import { decodePaperKey } from './publicNavigation.ts';
 
 test('a paper goes to the public paper page, never to the entity explorer', () => {
   // The regression: `/explorer/paper/<id>` is not a route. `/explorer/:type/:id`

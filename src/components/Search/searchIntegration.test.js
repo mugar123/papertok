@@ -20,7 +20,7 @@ async function readCode(relativePath) {
 
 const page = await readCode('./SearchPage.jsx');
 const palette = await readCode('./SearchCommand.jsx');
-const paletteSearch = await readCode('../../hooks/useEntitySearch.js');
+const paletteSearch = await readCode('../../hooks/useEntitySearch.ts');
 
 // The palette is checked as one body of code: the component owns what is
 // painted and the hook owns what is queried, and every rule here is about the
@@ -329,8 +329,8 @@ test('visibleResultCount agrees with hasVisibleResults about a direct ORCID hit,
  * reads the router.
  */
 const app = await readCode('../../App.jsx');
-const destinations = await readCode('../../utils/searchDestinations.js');
-const { PUBLIC_ENTITY_TYPES } = await import('../../utils/publicNavigation.js');
+const destinations = await readCode('../../utils/searchDestinations.ts');
+const { PUBLIC_ENTITY_TYPES } = await import('../../utils/publicNavigation.ts');
 
 /** Route patterns App.jsx declares, minus the catch-all, which matches all. */
 const ROUTES = [...app.matchAll(/path="([^"]+)"/g)]

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { finishLegacyAuthorsMigration } from './followingMigration.js';
+import { finishLegacyAuthorsMigration } from './followingMigration.ts';
 
 const transforms = {
   remove: (...names) => ({ op: 'remove', names }),

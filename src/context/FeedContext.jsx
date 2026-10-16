@@ -1,50 +1,50 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useContext, useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect, startTransition } from 'react';
 import { FeedContext } from './contexts';
-import { IS_DEMO, db } from '../services/firebase';
+import { IS_DEMO, db } from '../services/firebase.ts';
 import { setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import { useFollowing } from './FollowingContext';
-import { ARXIV_FEED_AREAS, fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers } from '../services/arxivService';
-import { getDeviceInfo } from '../utils/device';
+import { ARXIV_FEED_AREAS, fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers } from '../services/arxivService.ts';
+import { getDeviceInfo } from '../utils/device.ts';
 import { CATEGORIES, getAllLeafCategories } from '../data/categories';
-import { PubmedAdapter } from '../services/adapters/PubmedAdapter';
-import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter';
-import { getArxivIdsForOpenAlexWorks, enrichPapersBatch, fetchPapersByDois, getWorksByEntity } from '../services/openAlexService';
-import { getPapersByProject } from '../services/openAireService';
-import { getPaperRecommendations } from '../services/semanticScholarService';
-import { PaperBuilder } from '../services/PaperBuilder';
+import { PubmedAdapter } from '../services/adapters/PubmedAdapter.ts';
+import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter.ts';
+import { getArxivIdsForOpenAlexWorks, enrichPapersBatch, fetchPapersByDois, getWorksByEntity } from '../services/openAlexService.ts';
+import { getPapersByProject } from '../services/openAireService.ts';
+import { getPaperRecommendations } from '../services/semanticScholarService.ts';
+import { PaperBuilder } from '../services/PaperBuilder.ts';
 import {
   applyCategoryAffinityDelta,
   applyRecommendationScore,
   diversifiedWeightedShuffle,
   logRankingBatch,
   readRecommendationWeights,
-} from '../utils/recommendationEngine';
-import { mergeFreshFeedPage, splitFeedForReRank } from '../utils/feedReRankSplit.js';
-import { reRankHoldMs } from '../utils/feedReRankTiming.js';
+} from '../utils/recommendationEngine.ts';
+import { mergeFreshFeedPage, splitFeedForReRank } from '../utils/feedReRankSplit.ts';
+import { reRankHoldMs } from '../utils/feedReRankTiming.ts';
 import {
   readProfileDriftCheckedAt,
   readSeenPaperIds,
   removeLegacySeenPaperIds,
   saveProfileDriftCheckedAt,
   saveSeenPaperIds,
-} from '../utils/userScopedStorage';
-import { serializeLibraryPaper } from '../utils/readingLibrary';
-import { buildInteractionAliasIndex, resolveInteractionId } from '../utils/interactionAliases.js';
-import { isPlaceholderPaperTitle } from '../utils/paperDisplayTitle.js';
+} from '../utils/userScopedStorage.ts';
+import { serializeLibraryPaper } from '../utils/readingLibrary.ts';
+import { buildInteractionAliasIndex, resolveInteractionId } from '../utils/interactionAliases.ts';
+import { isPlaceholderPaperTitle } from '../utils/paperDisplayTitle.ts';
 import {
   createEmptyInteractionProfile,
   curatedIds,
   isPaperKnown,
   readCategorySignals,
   recordInteractionEvent,
-} from '../utils/interactionProfile';
+} from '../utils/interactionProfile.ts';
 import {
   hasInteractionProfile,
   loadInteractionProfile,
   unavailableInteractionProfile,
-} from '../utils/interactionProfileLoader';
+} from '../utils/interactionProfileLoader.ts';
 import {
   createInteractionProfileClient,
   fetchLibraryRecords,
@@ -52,26 +52,26 @@ import {
   flushAllInteractionProfiles,
   flushInteractionProfileNow,
   scheduleInteractionProfileFlush,
-} from '../services/interactionProfileStore';
-import { fetchDomainPapers } from '../services/domainSourceService';
+} from '../services/interactionProfileStore.ts';
+import { fetchDomainPapers } from '../services/domainSourceService.ts';
 import {
   getOpenAlexEnrichmentId,
   mergeOpenAlexEnrichment,
   needsOpenAlexEnrichment,
   takeFeedPage,
-} from '../utils/feedEnrichment';
-import { resolveWithin, settleWithin, settleSourcesForFirstPaint, fulfilledPaperLists } from '../utils/asyncTiming';
-import { shouldAbortFeedLoad } from '../utils/feedLoadGuard';
-import { lateSourceCandidates } from '../utils/feedLateCandidates';
-import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feedInteractions';
-import { rankPreferences } from '../utils/preferenceRanking.js';
-import { fetchICiteMetrics, mergeICiteEnrichment } from '../services/iCiteService';
-import { awaitWithinGate } from '../utils/feedCitationGate.js';
-import { enrichPubmedIds, mergeEuropePmcEnrichment } from '../services/europePmcService';
+} from '../utils/feedEnrichment.ts';
+import { resolveWithin, settleWithin, settleSourcesForFirstPaint, fulfilledPaperLists } from '../utils/asyncTiming.ts';
+import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.ts';
+import { lateSourceCandidates } from '../utils/feedLateCandidates.ts';
+import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feedInteractions.ts';
+import { rankPreferences } from '../utils/preferenceRanking.ts';
+import { fetchICiteMetrics, mergeICiteEnrichment } from '../services/iCiteService.ts';
+import { awaitWithinGate } from '../utils/feedCitationGate.ts';
+import { enrichPubmedIds, mergeEuropePmcEnrichment } from '../services/europePmcService.ts';
 // topicRetrievalService carries a ~32 KB gzip topic table and only matters
 // once a feed load actually ranks followed topics, so it loads on first use
 // instead of riding in the boot graph of every route.
-const loadTopicRetrieval = () => import('../services/topicRetrievalService.js');
+const loadTopicRetrieval = () => import('../services/topicRetrievalService.ts');
 
 const PAGE_SIZE = 15;
 // Per-source cap on the first-render fetch. The slowest healthy source

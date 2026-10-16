@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { directionForNavigationType } from './routeDirection.js';
+import { directionForNavigationType } from './routeDirection.ts';
 
 test('a new entry pushes forward', () => {
   assert.equal(directionForNavigationType('PUSH'), 1);
@@ -37,7 +37,7 @@ test('the first entry in history is an arrival, not a return', () => {
   assert.equal(directionForNavigationType('POP', {}), -1);
 });
 
-import { directionForHistoryIndex } from './routeDirection.js';
+import { directionForHistoryIndex } from './routeDirection.ts';
 
 /**
  * React Router 7.18 reported POP for every navigation here — measured on the

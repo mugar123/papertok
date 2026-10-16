@@ -13,13 +13,13 @@ import {
 import { CATEGORIES } from '../../data/categories.js';
 import { Button } from '../ui/button.jsx';
 import { GithubMark } from '../ui/GithubMark.jsx';
-import { getUiErrorMessage } from '../../utils/errorMessages';
+import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import GoogleMark from './GoogleMark.jsx';
 import { useProviderSignIn } from './useProviderSignIn.js';
 import { CollisionNote, ProviderSpinner } from './ProviderSignIn.jsx';
 import Petri from '../Onboarding/Petri.jsx';
 import PetriStamp from '../Onboarding/PetriStamp.jsx';
-import { normalizeGuestAreas, normalizeGuestTopics } from '../../utils/guestInterests.js';
+import { normalizeGuestAreas, normalizeGuestTopics } from '../../utils/guestInterests.ts';
 import { DigestPreview, WelcomeReadingChoice, WelcomeInboxChoice, WelcomeProjectSupport } from './GuestWelcomePreferences.jsx';
 import { AreaPicker, SubtopicsPicker, WelcomeCopy, WelcomeShell } from './WelcomeShell.jsx';
 import PrivacyPopover from './PrivacyPopover.jsx';

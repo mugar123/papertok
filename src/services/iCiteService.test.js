@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mapICitePublication, mergeICiteEnrichment } from './iCiteService.js';
+import { mapICitePublication, mergeICiteEnrichment } from './iCiteService.ts';
 
 test('maps confirmed NIH iCite zero citations separately from unknown metadata', () => {
   const metrics = mapICitePublication({
@@ -38,7 +38,7 @@ test('merges iCite metrics only into the matching PubMed paper', () => {
 });
 
 test('paper identity survives a late iCite merge that adds nothing new', () => {
-  // Same identity contract as mergeOpenAlexEnrichment (src/utils/feedEnrichment.js):
+  // Same identity contract as mergeOpenAlexEnrichment (src/utils/feedEnrichment.ts):
   // a record that exists but changes no field must still return the original
   // object, or memo(PaperCard) and its IntersectionObserver (keyed on `paper`)
   // get torn down for a card whose content never actually moved.

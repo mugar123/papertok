@@ -5,7 +5,7 @@ import {
   settleWithin,
   withStubbedFetch,
 } from '../test-support/deadlineHarness.js';
-import { extractOrcid, fetchWithTimeout } from './orcidService.js';
+import { extractOrcid, fetchWithTimeout } from './orcidService.ts';
 
 test('extracts a clean ORCID from a bare id, a URL and a checksum ending in X', () => {
   assert.equal(extractOrcid('0000-0002-1825-0097'), '0000-0002-1825-0097');

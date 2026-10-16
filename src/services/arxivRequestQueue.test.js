@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createArxivRequestQueue, DEFAULT_COOLDOWN_MS } from './arxivRequestQueue.js';
+import { createArxivRequestQueue, DEFAULT_COOLDOWN_MS } from './arxivRequestQueue.ts';
 
 // A clock the tests move by hand, and a sleep that moves it instead of waiting.
 function fakeClock(start = 0) {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canonicalArxivIdOf, canonicalDoiOf } from './paperCanonicalKey.js';
+import { canonicalArxivIdOf, canonicalDoiOf } from './paperCanonicalKey.ts';
 
 // The alias table (interactionAliases.js) matches a paper across providers by
 // these spellings, so each block asserts one way the same paper arrives.

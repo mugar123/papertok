@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { accountLooksOnboarded, USER_PREFERENCES_MAX } from './accountOnboarding.js';
+import { accountLooksOnboarded, USER_PREFERENCES_MAX } from './accountOnboarding.ts';
 
 test('the flag is enough, and so are stored preferences without it', () => {
   assert.equal(accountLooksOnboarded({ onboardingComplete: true }), true);

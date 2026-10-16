@@ -77,7 +77,7 @@ and the timing are wrong.**
 
 The reader waits a long time before the fold even starts: 5.1s, 6.5s and 0.78s
 across the runs above. Wikipedia's `action=query&generator=search` endpoint —
-built at `src/services/wikiService.js:75-89` — returns an intermittent 503
+built at `src/services/wikiService.ts:75-89` — returns an intermittent 503
 (`upstream connect error … reset reason: overflow`), verified directly; the same
 query succeeds on retry. So "no explanation" is often a transient upstream
 failure rather than a genuine absence. **That is a loading/retry question, not a

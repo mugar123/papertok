@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildPaperTopicTags } from './paperTopicTags.js';
-import { resolvePaperTopic, topicExplorerPath } from './topicNavigation.js';
+import { buildPaperTopicTags } from './paperTopicTags.ts';
+import { resolvePaperTopic, topicExplorerPath } from './topicNavigation.ts';
 
 test('keeps original arXiv categories ahead of later OpenAlex concepts', () => {
   const basePaper = {

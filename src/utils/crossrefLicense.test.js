@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { licenseSlugFromUrl, openLicenseFromCrossref } from './crossrefLicense.js';
+import { licenseSlugFromUrl, openLicenseFromCrossref } from './crossrefLicense.ts';
 
 // Licence arrays exactly as Crossref served them on 2026-09-23.
 const WILEY_VOR = {

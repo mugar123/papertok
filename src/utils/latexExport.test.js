@@ -9,7 +9,7 @@ import {
   isSafeMath,
   paragraphChunks,
   renderParagraph,
-} from './latexExport.js';
+} from './latexExport.ts';
 
 /**
  * Every expectation here was established by compiling the output with pdfLaTeX

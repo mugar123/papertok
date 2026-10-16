@@ -3,7 +3,7 @@ import test from 'node:test';
 import {
   DEFAULT_READING_PREFERENCES,
   normalizeReadingPreferences,
-} from './userSettings.js';
+} from './userSettings.ts';
 
 test('normalizes the preferred AI explanation level', () => {
   assert.deepEqual(normalizeReadingPreferences({ aiExplanationLevel: 'researcher' }), {

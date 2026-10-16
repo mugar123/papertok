@@ -5,7 +5,7 @@ import {
   getCitationGraphDoi,
   hydrateCitationGraphPaper,
   mapCitationGraphPayload,
-} from './citationGraphService.js';
+} from './citationGraphService.ts';
 
 test('requires a valid DOI before requesting a citation graph', () => {
   assert.equal(getCitationGraphDoi({ doi: 'https://doi.org/10.1000/TEST' }), '10.1000/test');

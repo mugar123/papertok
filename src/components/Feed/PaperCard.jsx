@@ -40,17 +40,17 @@ import {
   UserCheck,
   X,
 } from '@phosphor-icons/react';
-import { useOverlayHistory } from '../../hooks/useOverlayHistory.js';
-import { useIsPageArriving } from '../../hooks/usePageArrival.js';
+import { useOverlayHistory } from '../../hooks/useOverlayHistory.ts';
+import { useIsPageArriving } from '../../hooks/usePageArrival.ts';
 import ScientificText from '../ScientificText';
 import { Button } from '../ui/button.jsx';
 import { Toggle } from '../ui/toggle.jsx';
 import { useFollowing } from '../../context/FollowingContext';
 import { useLanguage } from '../../context/LanguageContext';
-import { getProjectForPaper } from '../../services/openAireService';
-import { authorExplorerPath } from '../../utils/explorerPaths.js';
+import { getProjectForPaper } from '../../services/openAireService.ts';
+import { authorExplorerPath } from '../../utils/explorerPaths.ts';
 import { Link } from 'react-router-dom';
-import { useStableNavigate } from '../../hooks/useStableNavigate.js';
+import { useStableNavigate } from '../../hooks/useStableNavigate.ts';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 // Before the card's own stylesheet on purpose: PaperCard.css restates a few
 // of the drawer's box declarations for the two sheets and has to come later
@@ -60,20 +60,20 @@ import AbstractSheet from './AbstractSheet';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.jsx';
 import './PaperCard.css';
 const RelatedPapersSheet = lazy(() => import('./RelatedPapersSheet'));
-import { findOpenAccessCopy } from '../../services/unpaywallService';
-import { findInstitutionAccess } from '../../services/institutionAccessService.js';
-import { institutionLabel } from '../../services/institutionService.js';
+import { findOpenAccessCopy } from '../../services/unpaywallService.ts';
+import { findInstitutionAccess } from '../../services/institutionAccessService.ts';
+import { institutionLabel } from '../../services/institutionService.ts';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { getRelatedResearchResources } from '../../services/dataCiteService';
-import { getHuggingFaceResearchResources } from '../../services/huggingFaceService';
-import { isOpaqueQueryTopicText, resolvePaperTopic, topicExplorerPath } from '../../utils/topicNavigation';
-import { canRewritePaper } from '../../services/paperRewriteService.js';
-import { getPaperFigures, peekPaperFigures } from '../../services/paperFigureService.js';
-import { CARD_DURATION_MS, tweenScrollTop } from '../../utils/scrollTween.js';
-import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
-import { accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paperStatus.js';
-import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.js';
-import { buildPaperTopicTags } from '../../utils/paperTopicTags.js';
+import { getRelatedResearchResources } from '../../services/dataCiteService.ts';
+import { getHuggingFaceResearchResources } from '../../services/huggingFaceService.ts';
+import { isOpaqueQueryTopicText, resolvePaperTopic, topicExplorerPath } from '../../utils/topicNavigation.ts';
+import { canRewritePaper } from '../../services/paperRewriteService.ts';
+import { getPaperFigures, peekPaperFigures } from '../../services/paperFigureService.ts';
+import { CARD_DURATION_MS, tweenScrollTop } from '../../utils/scrollTween.ts';
+import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper } from '../../utils/areaAccent.ts';
+import { accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paperStatus.ts';
+import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.ts';
+import { buildPaperTopicTags } from '../../utils/paperTopicTags.ts';
 
 /**
  * How still the abstract panel has to be before its clipping is believed: the
@@ -95,21 +95,21 @@ const STATUS_CHIP_ICONS = {
   institution: GraduationCap,
   subscription: Lock,
 };
-import { buildFollowReasonLabel } from '../../utils/followingFeed.js';
-import { isTechnicalClassification } from '../../utils/scientificClassification.js';
-import { getRelatedPaperIdentity } from '../../utils/relatedPaperTransition.js';
-import { hydrateCitationGraphPaper } from '../../services/citationGraphService.js';
-import { resolveWithin } from '../../utils/asyncTiming.js';
+import { buildFollowReasonLabel } from '../../utils/followingFeed.ts';
+import { isTechnicalClassification } from '../../utils/scientificClassification.ts';
+import { getRelatedPaperIdentity } from '../../utils/relatedPaperTransition.ts';
+import { hydrateCitationGraphPaper } from '../../services/citationGraphService.ts';
+import { resolveWithin } from '../../utils/asyncTiming.ts';
 import {
   isTrustedInlinePdfUrl,
   openExternalUrl,
   safeDoiUrl,
   safeExternalUrl,
-} from '../../utils/externalUrl.js';
-import { openFirstTarget, openTargetsForPaper } from '../../utils/paperOpenTargets.js';
+} from '../../utils/externalUrl.ts';
+import { openFirstTarget, openTargetsForPaper } from '../../utils/paperOpenTargets.ts';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
-import { getPublicEntityPath, getPublicPaperUrl } from '../../utils/publicNavigation.js';
-import { paperShareData } from '../../utils/shareLink.js';
+import { getPublicEntityPath, getPublicPaperUrl } from '../../utils/publicNavigation.ts';
+import { paperShareData } from '../../utils/shareLink.ts';
 
 // The reader drags in the annotations layer, LaTeX export and their CSS
 // (PaperReader.css, Annotations.css, Export.css — ~53 KB raw source, ~28 KB

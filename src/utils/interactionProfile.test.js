@@ -17,7 +17,7 @@ import {
   readCategorySignals,
   recordInteractionEvent,
   serializeInteractionProfile,
-} from './interactionProfile.js';
+} from './interactionProfile.ts';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NOW = Date.parse('2026-08-19T12:00:00.000Z');

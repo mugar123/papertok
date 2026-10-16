@@ -58,7 +58,7 @@ test('the hero settles between its heights instead of snapping at the handover',
 });
 
 test('the height settle is a FLIP on one property, decided every commit and re-aimed in flight', async () => {
-  const hookRaw = await read('../../hooks/useHeightSettle.js');
+  const hookRaw = await read('../../hooks/useHeightSettle.ts');
   const hook = hookRaw.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
   assert.match(hook, /import \{ depsAreSame, planHeightSettle \} from '\.\/heightSettlePlan\.js';/);
   // Measured before paint, so the first frame is already the old height —

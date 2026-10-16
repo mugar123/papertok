@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
-import { FIRESTORE_IN_FILTER_MAX } from './firestoreLimits.js';
+import { FIRESTORE_IN_FILTER_MAX } from './firestoreLimits.ts';
 
 test('the measured cap is the one the code was verified against', () => {
   // Emulator, real rules: 30 values return 30 documents, 31 returns

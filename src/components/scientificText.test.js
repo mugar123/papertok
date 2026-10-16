@@ -5,7 +5,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import katex from 'katex';
 import ScientificText from './ScientificText.js';
-import { loadKatex } from '../utils/katexLoader.js';
+import { loadKatex } from '../utils/katexLoader.ts';
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');

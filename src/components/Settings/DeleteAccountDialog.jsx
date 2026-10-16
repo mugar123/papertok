@@ -1,7 +1,7 @@
 import { useId, useRef, useState } from 'react';
 import { CircleNotch, Trash, X } from '@phosphor-icons/react';
-import { deleteAccount } from '../../services/accountDeletionService.js';
-import { getUiErrorMessage } from '../../utils/errorMessages';
+import { deleteAccount } from '../../services/accountDeletionService.ts';
+import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import {
   AlertDialog,
   AlertDialogCancel,

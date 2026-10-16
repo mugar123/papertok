@@ -66,7 +66,7 @@ import {
   publicPaperJoinKey,
   sanitizePublicList,
   sanitizePublicPaper,
-} from '../src/services/publicListPayload.js';
+} from '../src/services/publicListPayload.ts';
 import { verifyFirebaseIdentity } from './firebase-auth.ts';
 import {
   clearFieldsWrite,

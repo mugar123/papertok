@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ScopusAdapter } from './adapters/ScopusAdapter.js';
+import { ScopusAdapter } from './adapters/ScopusAdapter.ts';
 
 test('maps a Scopus result with attributed citations into a PaperTok paper', () => {
   const paper = new ScopusAdapter().mapToStandard({

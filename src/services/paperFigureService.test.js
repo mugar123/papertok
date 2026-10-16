@@ -12,7 +12,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { normalizeArxivFigureId, peekPaperFigures } from './paperFigureService.js';
+import { normalizeArxivFigureId, peekPaperFigures } from './paperFigureService.ts';
 import { isArxivFigureId } from '../../worker/paper-figures.ts';
 
 const IDS = [
@@ -61,7 +61,7 @@ test('the version suffix and the arxiv: prefix are stripped before matching', ()
  */
 test('both files spell the same two patterns', async () => {
   const [client, worker] = await Promise.all([
-    readFile(new URL('./paperFigureService.js', import.meta.url), 'utf8'),
+    readFile(new URL('./paperFigureService.ts', import.meta.url), 'utf8'),
     readFile(new URL('../../worker/paper-figures.ts', import.meta.url), 'utf8'),
   ]);
   const patterns = (source) => (source.match(/\/\^[^\n]*?\$\//g) || [])
@@ -108,7 +108,7 @@ test('peekPaperFigures answers in the same tick, not in a promise', () => {
 });
 
 test('peekPaperFigures reads the same cache getPaperFigures writes, with no waiting', async () => {
-  const source = await readFile(new URL('./paperFigureService.js', import.meta.url), 'utf8');
+  const source = await readFile(new URL('./paperFigureService.ts', import.meta.url), 'utf8');
   const stripped = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   const start = stripped.indexOf('export function peekPaperFigures');
   assert.notEqual(start, -1, 'peekPaperFigures is exported as a plain function');

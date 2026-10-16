@@ -6,7 +6,7 @@ import {
   buildSelectionAnchor,
   resolveHighlightRanges,
   segmentTextChunk,
-} from './textHighlights.js';
+} from './textHighlights.ts';
 
 test('resolves a quote to a range in normalized space', () => {
   const text = 'The model reduced error by 12%.';

@@ -15,7 +15,7 @@ import {
   pinSourcePaper,
   authorIdentityVerified,
   sourceArxivIdFrom,
-} from './entityExplorer.js';
+} from './entityExplorer.ts';
 
 // A name is shared ("Wei Zhang" is 11,284 OpenAlex entities): a page reached
 // by a name alone is only this person when an id or the paper confirms it

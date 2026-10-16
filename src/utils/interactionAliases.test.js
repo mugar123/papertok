@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildInteractionAliasIndex, normalizedProviderId, paperIdentities, resolveInteractionId } from './interactionAliases.js';
+import { buildInteractionAliasIndex, normalizedProviderId, paperIdentities, resolveInteractionId } from './interactionAliases.ts';
 
 test('provider ids that arrive in several shapes normalize to one', () => {
   assert.equal(normalizedProviderId('W2741809807'), 'openalex:W2741809807');

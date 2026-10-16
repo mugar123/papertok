@@ -5,7 +5,7 @@ import {
   accessStatusForPaper,
   reviewTagForPaper,
   accessTagForPaper,
-} from './paperStatus.js';
+} from './paperStatus.ts';
 
 test('either field naming a preprint makes it one', () => {
   assert.equal(reviewStatusForPaper({ publicationStatus: 'preprint' }), 'preprint');

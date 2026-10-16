@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { ArrowRight, Check } from '@phosphor-icons/react';
 import { CATEGORIES } from '../../data/categories.js';
-import { normalizeGuestAreas } from '../../utils/guestInterests.js';
+import { normalizeGuestAreas } from '../../utils/guestInterests.ts';
 import { Button } from '../ui/button.jsx';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.jsx';
 import { Toggle } from '../ui/toggle.jsx';

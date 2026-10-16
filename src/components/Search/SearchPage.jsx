@@ -23,15 +23,15 @@ import {
   searchConcepts,
   searchLocalTopics,
   enrichAuthorInstitutionLocalization,
-} from '../../services/openAlexService';
-import { searchProjects } from '../../services/openAireService';
-import { searchPapersAcrossSources } from '../../services/paperSearchService';
+} from '../../services/openAlexService.ts';
+import { searchProjects } from '../../services/openAireService.ts';
+import { searchPapersAcrossSources } from '../../services/paperSearchService.ts';
 import { useFollowing } from '../../context/FollowingContext';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext';
-import { useOverlayHistory } from '../../hooks/useOverlayHistory.js';
-import { getOpenAlexHealth, isOpenAlexRateLimitError } from '../../services/openAlexClient';
+import { useOverlayHistory } from '../../hooks/useOverlayHistory.ts';
+import { getOpenAlexHealth, isOpenAlexRateLimitError } from '../../services/openAlexClient.ts';
 import {
   SECTION_SOURCES,
   SOURCE_LABELS,
@@ -39,7 +39,7 @@ import {
   formatRetryDelay,
   joinNames,
   outageAffectsFilter,
-} from '../../utils/searchOutage.js';
+} from '../../utils/searchOutage.ts';
 import PaperCard from '../Feed/PaperCard';
 import PaperOverlay from '../Feed/PaperOverlay';
 import PDFViewer from '../PDF/PDFViewer';
@@ -47,8 +47,8 @@ import ScientificText from '../ScientificText';
 import { Input } from '../ui/input.jsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.jsx';
 import { Toggle } from '../ui/toggle.jsx';
-import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
-import { getProjectDisplayName } from '../../utils/entityMetadata.js';
+import { getLocalizedInstitutionName } from '../../utils/institutionLocalization.ts';
+import { getProjectDisplayName } from '../../utils/entityMetadata.ts';
 import {
   authorProminenceWeight,
   buildSearchSectionValues,
@@ -56,7 +56,7 @@ import {
   getSearchSectionOrder,
   isOrganisationAuthorRecord,
   resolvePreferredSearchSection,
-} from '../../utils/searchRelevance';
+} from '../../utils/searchRelevance.ts';
 
 import './SearchPage.css';
 

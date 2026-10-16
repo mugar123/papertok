@@ -11,7 +11,7 @@ import {
   resolvePreferredSearchSection,
   scorePaperSearchMatch,
   scoreSearchMatch,
-} from './searchRelevance.js';
+} from './searchRelevance.ts';
 
 // --- scoring and filtering ---------------------------------------------------
 

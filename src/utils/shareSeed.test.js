@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseShareSeed, publicPaperMetadata, readShareSeed, SHARE_SEED_ELEMENT_ID } from './shareSeed.js';
+import { parseShareSeed, publicPaperMetadata, readShareSeed, SHARE_SEED_ELEMENT_ID } from './shareSeed.ts';
 
 const KEY = 'ZG9pOjEwLjExNDUvMzU1NTE3NA';
 const PAPER = Object.freeze({

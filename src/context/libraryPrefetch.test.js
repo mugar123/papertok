@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { CURATED_SETS } from '../utils/interactionProfile.js';
+import { CURATED_SETS } from '../utils/interactionProfile.ts';
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 

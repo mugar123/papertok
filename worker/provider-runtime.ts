@@ -58,7 +58,7 @@ export const OPENALEX_CALLS = Object.freeze({
 export const SOURCE_CACHE_SECONDS = {
   biorxiv: 10 * 60,
   europepmc: 30 * 60,
-  // Ten minutes is what the browser cache in `src/utils/sourceCache.js` already
+  // Ten minutes is what the browser cache in `src/utils/sourceCache.ts` already
   // considered invisible staleness for a paper feed, and it is short enough that
   // a batch whose efetch half failed heals on its own rather than sitting behind
   // a six-hour TTL.

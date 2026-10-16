@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PaperBuilder } from './PaperBuilder.js';
-import { scorePaperForRecommendation } from '../utils/recommendationEngine.js';
+import { PaperBuilder } from './PaperBuilder.ts';
+import { scorePaperForRecommendation } from '../utils/recommendationEngine.ts';
 
 test('normalizes category and publication metadata used by ranking', () => {
   const paper = PaperBuilder.create({

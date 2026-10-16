@@ -85,7 +85,7 @@ test('SOURCE: the eye and the tick share the slot so one can turn into the other
 test('SOURCE: a stored copy from a list opens on the skeleton', async () => {
   const lists = await read('../Lists/ListsPage.jsx');
   assert.match(lists, /navigate\(path, \{ state: \{ paper, stored: true \} \}\)/);
-  const palette = await read('../../utils/searchDestinations.js');
+  const palette = await read('../../utils/searchDestinations.ts');
   assert.match(palette, /state: \{ paper \}/, 'the palette hands over the paper itself, which does paint');
 });
 

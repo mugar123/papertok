@@ -6,7 +6,7 @@ import {
   identifyOpenAlexUrl,
   isOpenAlexRateLimitError,
   parseRetryAfter,
-} from './openAlexClient.js';
+} from './openAlexClient.ts';
 
 function createStorage() {
   const values = new Map();
@@ -448,7 +448,7 @@ test('the persistent store is read from storage once, and reads hand out copies'
 
 test('SOURCE: a write from another tab lets go of the remembered store', async () => {
   const { readFile } = await import('node:fs/promises');
-  const code = await readFile(new URL('./openAlexClient.js', import.meta.url), 'utf8');
+  const code = await readFile(new URL('./openAlexClient.ts', import.meta.url), 'utf8');
   assert.match(code, /window\.addEventListener\('storage', \(event\) => \{\s*if \(event\.key === null \|\| event\.key === STORAGE_KEY\) this\.forgetPersistentStore\(\);/);
   assert.match(code, /this\.storage === window\.localStorage/, 'only the real localStorage has other tabs');
 });

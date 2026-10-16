@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { usableOpenAlexConcepts } from './openAlexConcepts.js';
-import { mapOpenAlexEnrichmentWork } from '../services/openAlexService.js';
+import { usableOpenAlexConcepts } from './openAlexConcepts.ts';
+import { mapOpenAlexEnrichmentWork } from '../services/openAlexService.ts';
 
 // "MEDLINE" on a PubMed card was OpenAlex concept C2779473830, merged by the
 // enrichment with no score threshold: it sits on 27% of August works and 47%

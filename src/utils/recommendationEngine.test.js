@@ -7,7 +7,7 @@ import {
   FEED_SHUFFLE_POOL_CAP,
   scorePaperForRecommendation,
   trimScoredCandidatePool,
-} from './recommendationEngine.js';
+} from './recommendationEngine.ts';
 
 const NOW = new Date('2026-07-05T12:00:00Z').getTime();
 

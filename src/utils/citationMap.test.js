@@ -5,7 +5,7 @@ import {
   buildCitationMapLayout,
   formatCitationTick,
   isMappableCitationPaper,
-} from './citationMap.js';
+} from './citationMap.ts';
 
 function paper(overrides = {}) {
   return {

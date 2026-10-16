@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { guestFeedLoadDecision } from './useGuestFeed.js';
+import { guestFeedLoadDecision } from './useGuestFeed.ts';
 
 // Behind the mandatory welcome sheet the guest feed used to load the default
 // sample — six fields the visitor never chose, with bioRxiv, enrichment,
@@ -28,7 +28,7 @@ test('the guest page enables its feed once the visitor has answered', () => {
   // The areas sheet keeps what the welcome stored for the account to come.
   assert.match(page, /readingLevel: interests\?\.readingLevel,\s*emailDigest: interests\?\.emailDigest === true,/);
 
-  const hook = stripComments(readFileSync(new URL('./useGuestFeed.js', import.meta.url), 'utf8'));
+  const hook = stripComments(readFileSync(new URL('./useGuestFeed.ts', import.meta.url), 'utf8'));
   assert.match(hook, /export function useGuestFeed\(\{ areas = \[\], topics = \[\], enabled = true \} = \{\}\)/);
   assert.match(hook, /const decision = guestFeedLoadDecision\(\{ enabled, previousKey, planKey: plan\.key \}\);\s*if \(!decision\) return undefined;/);
   assert.match(hook, /load\(plan, decision\.refresh \? \{ refresh: true, forceRefresh: false \} : \{\}\);/);

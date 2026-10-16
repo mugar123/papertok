@@ -5,7 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 import { readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
-import { describeDeployFlagDrift, findDeployFlagDrift } from './src/utils/deployFlags.js'
+import { describeDeployFlagDrift, findDeployFlagDrift } from './src/utils/deployFlags.ts'
 
 // Shared with the `base` field below and with the service-worker precache
 // derivation, which needs to strip this same prefix off every asset URL
@@ -35,7 +35,7 @@ function requireWorkerBaseUrl(env) {
 }
 
 // A flag whose value is a product decision is declared in
-// `src/utils/deployFlags.js`, but the value that reaches the bundle comes from a
+// `src/utils/deployFlags.ts`, but the value that reaches the bundle comes from a
 // GitHub Actions repository variable, which changes with no commit and no
 // review. Nothing used to compare the two, so the bundle could ship the
 // opposite of the decision on record and look entirely healthy doing it —
@@ -46,9 +46,9 @@ function requireDeclaredDeployFlags(env) {
   const drift = findDeployFlagDrift(env)
   if (drift.length === 0) return
   throw new Error(
-    'This build disagrees with the deploy flags declared in src/utils/deployFlags.js:\n'
+    'This build disagrees with the deploy flags declared in src/utils/deployFlags.ts:\n'
     + `${describeDeployFlagDrift(drift)}\n`
-    + 'Change the decision in src/utils/deployFlags.js, in the commit that records why, '
+    + 'Change the decision in src/utils/deployFlags.ts, in the commit that records why, '
     + 'or clear the disagreeing GitHub Actions repository variable (Settings -> Secrets '
     + 'and variables -> Actions -> Variables). Do not change only the variable: the value '
     + 'it carries is the one nobody reviews.',

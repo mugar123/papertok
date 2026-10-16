@@ -10,7 +10,7 @@ import {
   linkSignInProvider,
   providerIdsOf,
   signInWithProvider,
-} from './authIdentityService.js';
+} from './authIdentityService.ts';
 
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
@@ -265,7 +265,7 @@ test('SOURCE: the identity module stays out of Firestore, so a sign-in writes no
   // The door and the account's data are separate acts: this module has no way
   // to write a document, so signing in through either provider stores nothing
   // by itself.
-  const source = await readFile(new URL('./authIdentityService.js', import.meta.url), 'utf8');
+  const source = await readFile(new URL('./authIdentityService.ts', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /firebase\/firestore/, 'the identity module stays out of Firestore');
   assert.doesNotMatch(source, /setDoc|writeBatch/);
 });
@@ -274,7 +274,7 @@ test('SOURCE: the pending credential is deliberately never stashed', async () =>
   // `03-AUTH.md` routes the collision through settings, not through a credential
   // held in memory across a sign-in. If that decision is ever revisited, this
   // test is where it gets revisited on purpose.
-  const source = await readFile(new URL('./authIdentityService.js', import.meta.url), 'utf8');
+  const source = await readFile(new URL('./authIdentityService.ts', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /credentialFromError|linkWithCredential|signInWithCredential/);
 });
 
@@ -284,8 +284,8 @@ test('SOURCE: nothing on the feed path imports the identity service', async () =
     '../context/FeedContext.jsx',
     '../components/Feed/FeedContainer.jsx',
     '../components/Feed/PaperCard.jsx',
-    '../utils/interactionProfileLoader.js',
-    '../services/interactionProfileStore.js',
+    '../utils/interactionProfileLoader.ts',
+    '../services/interactionProfileStore.ts',
   ]) {
     // Comments stripped first: the claim is about code. A file on this path
     // may legitimately NAME a service in prose — PaperCard.jsx does, to say

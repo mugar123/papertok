@@ -6,7 +6,7 @@ import {
   isFetchableDocumentId,
   planMetadataRequests,
   planRetryRequests,
-} from './listPaperMetadataPlan.js';
+} from './listPaperMetadataPlan.ts';
 
 /**
  * The cap is the one number here that cannot be checked by reading code: the
@@ -143,7 +143,7 @@ test('a retry rebatches rather than reissuing the shape that failed', () => {
 /* --- The library read shares the same rule ------------------------------- */
 
 test('planLibraryBatches keeps a legacy arXiv id out of every batch', async () => {
-  const { planLibraryBatches } = await import('./listPaperMetadataPlan.js');
+  const { planLibraryBatches } = await import('./listPaperMetadataPlan.ts');
   const { batches, unfetchable } = planLibraryBatches(
     ['openalex:W1', 'hep-th/0603001', '1807.10247', 'openalex:W2'],
     2,
@@ -153,7 +153,7 @@ test('planLibraryBatches keeps a legacy arXiv id out of every batch', async () =
 });
 
 test('planLibraryBatches has nothing to ask for when every id is illegal', async () => {
-  const { planLibraryBatches } = await import('./listPaperMetadataPlan.js');
+  const { planLibraryBatches } = await import('./listPaperMetadataPlan.ts');
   assert.deepEqual(planLibraryBatches(['hep-th/0603001'], 30), { batches: [], unfetchable: ['hep-th/0603001'] });
   assert.deepEqual(planLibraryBatches(undefined, 30), { batches: [], unfetchable: [] });
 });
@@ -163,7 +163,7 @@ test('planLibraryBatches has nothing to ask for when every id is illegal', async
 // — the whole Liked tab sat on a skeleton, retrying the same rejection.
 test('the library read plans its batches through planLibraryBatches', async () => {
   const { readFile } = await import('node:fs/promises');
-  const source = await readFile(new URL('../services/interactionProfileStore.js', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../services/interactionProfileStore.ts', import.meta.url), 'utf8');
   const body = source.slice(source.indexOf('export async function fetchLibraryRecords'));
   assert.match(body, /planLibraryBatches\(/, 'the batches must come from the plan that drops illegal ids');
   assert.doesNotMatch(body, /paperIds\.slice\(/, 'and never from slicing the raw id list');

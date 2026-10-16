@@ -22,7 +22,7 @@ import {
   INTERACTION_PROFILE_SCHEMA_VERSION,
   buildProfileFromInteractionDocuments,
   serializeInteractionProfile,
-} from '../src/utils/interactionProfile.js';
+} from '../src/utils/interactionProfile.ts';
 
 const DEFAULT_CHECKPOINT = '.backfill-user-profiles.json';
 const USER_PAGE_SIZE = 200;

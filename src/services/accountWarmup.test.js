@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from './accountWarmup.js';
-import { ownListsCache } from '../utils/profileSessionCaches.js';
-import { readStoredLists, saveStoredLists } from '../utils/userScopedStorage.js';
+import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from './accountWarmup.ts';
+import { ownListsCache } from '../utils/profileSessionCaches.ts';
+import { readStoredLists, saveStoredLists } from '../utils/userScopedStorage.ts';
 
 test('hydrateAccountCaches copies this device\'s lists into the session', () => {
   resetAccountWarmup();

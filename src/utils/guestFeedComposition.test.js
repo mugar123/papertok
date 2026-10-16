@@ -5,7 +5,7 @@ import {
   composeGuestPage,
   extendGuestPage,
   guestPageReady,
-} from './guestFeedComposition.js';
+} from './guestFeedComposition.ts';
 
 const PAGE = 12;
 const CS_MED = { key: 'cs+med', areas: ['cs', 'med'] };

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { findOpenAccessCopy, mapUnpaywallResult, normalizeDoi } from './unpaywallService.js';
+import { findOpenAccessCopy, mapUnpaywallResult, normalizeDoi } from './unpaywallService.ts';
 
 // The module caches by DOI for the whole process, so each test uses its own.
 async function withUpstream(respond, callback) {

@@ -6,7 +6,7 @@ import {
   areaKeyForPaper,
   areaAccentForPaper,
   areaLabelForPaper,
-} from './areaAccent.js';
+} from './areaAccent.ts';
 
 /* One resolution, used by the accent ink, the field label and the watermark
    alike. Computing any of them a second way is how a paper ends up inked as

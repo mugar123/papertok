@@ -5,7 +5,7 @@ import {
   arxivCommentSaysPublished,
   openAlexPublicationStatus,
   semanticScholarIsPreprint,
-} from './publicationStatus.js';
+} from './publicationStatus.ts';
 
 // Chapters and accepted papers labelled «Preprint» (audit 2026-09-23, issue
 // 12a): of 31 recent chapters in the guest's six computing categories, 23
@@ -87,19 +87,19 @@ const stripComments = source => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')
 const read = path => readFile(new URL(path, import.meta.url), 'utf8').then(stripComments);
 
 test('SOURCE: arXiv, OpenAlex and Semantic Scholar mappers read their status from these rules', async () => {
-  const arxiv = await read('../services/arxivService.js');
+  const arxiv = await read('../services/arxivService.ts');
   assert.match(arxiv, /const isPublishedInArxiv = !!\(doi \|\| journalRef \|\| arxivCommentSaysPublished\(comment\)\);/);
 
-  const service = await read('../services/openAlexService.js');
+  const service = await read('../services/openAlexService.ts');
   const format = service.slice(service.indexOf('function formatOpenAlexWorkAsPaper('), service.indexOf('function formatOpenAlexWorkAsPaper(') + 3000);
   assert.match(format, /publicationStatus: openAlexPublicationStatus\(work\),/);
   const enrichment = service.slice(service.indexOf('export function mapOpenAlexEnrichmentWork('), service.indexOf('export function mapOpenAlexEnrichmentWork(') + 3000);
   assert.match(enrichment, /publicationStatus: openAlexPublicationStatus\(work\),/);
 
-  const adapter = await read('../services/adapters/OpenAlexAdapter.js');
+  const adapter = await read('../services/adapters/OpenAlexAdapter.ts');
   assert.match(adapter, /const publicationStatus = openAlexPublicationStatus\(work\);/);
 
-  const s2 = await read('../services/adapters/SemanticScholarAdapter.js');
+  const s2 = await read('../services/adapters/SemanticScholarAdapter.ts');
   assert.match(s2, /const isPreprint = semanticScholarIsPreprint\(raw\.publicationTypes\);/);
   assert.doesNotMatch(s2, /includes\('review'\)/);
 });

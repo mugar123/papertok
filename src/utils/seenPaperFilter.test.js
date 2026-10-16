@@ -13,7 +13,7 @@ import {
   hasSeenPaper,
   isSeenFilterEmpty,
   serializeSeenFilter,
-} from './seenPaperFilter.js';
+} from './seenPaperFilter.ts';
 
 function paperId(index) {
   return `arxiv:24${String(index).padStart(6, '0')}`;

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { RULE_BASE_WIDTH_PX, ruleTransform } from './navRule.js';
+import { RULE_BASE_WIDTH_PX, ruleTransform } from './navRule.ts';
 
 test('the rule is translated to the label and scaled to its width', () => {
   assert.equal(ruleTransform({ left: 300, width: 100 }, 200, 10), 'translateX(110px) scaleX(1)');

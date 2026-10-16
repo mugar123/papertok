@@ -176,7 +176,7 @@ El feed pintaba antes de su enriquecimiento a propósito y las tres fuentes que
 traen `citationCount` —OpenAlex, iCite y Europe PMC— llegaban después; en móvil,
 donde la fila de metadatos envuelve, eso no es un chip que aparece sino una
 línea que aparece y empuja. Ahora el primer pintado las espera bajo un techo de
-1200ms (`src/utils/feedCitationGate.js`). El techo es lo que impide que esto sea
+1200ms (`src/utils/feedCitationGate.ts`). El techo es lo que impide que esto sea
 latencia: OpenAlex tiene 6500ms de presupuesto propio, así que sin tope un día
 malo serían seis segundos de velo.
 
@@ -222,7 +222,7 @@ inline que leía `papertok_signed_in` y mandaba a `/feed` ya no existe, ni la
 marca que lo alimentaba (`src/utils/sessionMark.js`, que sólo servía para eso;
 `AuthContext` deja de escribirla). Un `#/…` no necesitaba esa puerta para nada
 más que cruzar de documento: la traducción siempre la hizo
-`src/utils/legacyHashRoute.js` antes de que React pinte. Comprobado sobre el
+`src/utils/legacyHashRoute.ts` antes de que React pinte. Comprobado sobre el
 build servido: `/#/public/paper/abc123` acaba en `/public/paper/abc123`, y `/` a
 secas acaba en el feed por el catch-all de `App.jsx`.
 
@@ -239,7 +239,7 @@ esperar eso.
 El router pasa a `BrowserRouter`, así que `/feed`, `/following`, `/research`,
 `/lists`, `/public/…` y `/explorer/…` son caminos de verdad. Ningún enlace de los
 que ya están ahí fuera muere: la puerta de `index.html` sigue mandando un `#/…`
-a `/feed` con el fragmento intacto y `src/utils/legacyHashRoute.js` reescribe la
+a `/feed` con el fragmento intacto y `src/utils/legacyHashRoute.ts` reescribe la
 entrada con `replaceState` antes de que React pinte. Comprobado en producción con
 la puerta que lo distingue —un paper público, que no está tras `ProtectedRoute`—:
 `/#/public/paper/…` acaba en `/public/paper/…` sin fragmento. Con `/following` o
@@ -593,7 +593,7 @@ un seguidor — y la cache de sesión repetía la mentira en cada reapertura
 hasta recargar. Los contadores de al lado no lo sufrían: `getCountFromServer`
 es un XHR unario con su plazo. Ahora las dos lecturas de la hoja (la página de
 aristas y el perfil de cada fila) van por la API REST de Firestore
-(`src/utils/firestoreRest.js`, `src/services/firestoreRestClient.js`): una
+(`src/utils/firestoreRest.ts`, `src/services/firestoreRestClient.ts`): una
 petición por lectura, un `signal` que la corta de verdad, ninguna cache que
 conteste, y el fallo de red como `unavailable`, que es lo que `patientRead`
 reintenta. Anónimas a propósito — todo lo que leen está abierto a
@@ -759,7 +759,7 @@ hoja de autores —`position: fixed` dentro de una tarjeta con
 `content-visibility` y de un contenedor que recibe `transform` al irse—
 salía disparada con la página (505 → 805 px en 220 ms, con un frame
 congelado de 145 ms).** Ahora el cuerpo del héroe asienta entre alturas con
-`useHeightSettle` (FLIP con Web Animations, `src/hooks/useHeightSettle.js`,
+`useHeightSettle` (FLIP con Web Animations, `src/hooks/useHeightSettle.ts`,
 el mismo ref en el esqueleto y en el vivo; 576 → 400 px en 0,28 s con las
 pestañas siguiéndolo), la tira del esqueleto mide 40 px, la transición es
 opacidad y deslizamiento, y la hoja va por portal al `body` y al elegir un
@@ -1052,7 +1052,7 @@ intermitente, y el arreglo es espaciar las salidas, **no subir el número**.
 
 **La tarjeta de exportación del lector gana un selector de formato: PDF
 (por defecto) además del `.tex`. El PDF se genera íntegro en cliente —
-`buildPdfModel` en `src/utils/pdfExport.js` comparte filtrado, numeración y
+`buildPdfModel` en `src/utils/pdfExport.ts` comparte filtrado, numeración y
 copys con `latexExport.js` (que ahora exporta `documentCopy` y acepta
 extensión en `exportFileName`), y el renderizador pagina divs A4 fuera de
 pantalla, rasteriza con `html2canvas-pro` y ensambla con `jspdf`, ambos como
@@ -1431,11 +1431,11 @@ antes no existía.
   las dos copias **ya habían divergido** en cuatro puntos: acceso abierto (`OA`
   frente a `OA`/`F` + `isOpenAccess`), entidades HTML del resumen, dedupe de
   términos sensible o no a mayúsculas, y qué formas de `descriptorName` se leen.
-  Un solo lector, `src/utils/europePmcRecord.js`; donde discrepaban gana la
+  Un solo lector, `src/utils/europePmcRecord.ts`; donde discrepaban gana la
   unión. **Los dos tests que ya existían siguen verdes sin tocarlos** — esa es
   la prueba de que no cambió nada observable.
 - **La parte pura del feed de invitado** (`GUEST_CATEGORIES`, la etiqueta y la
-  query) sale del hook a `src/utils/guestFeedPlan.js`, al estilo de
+  query) sale del hook a `src/utils/guestFeedPlan.ts`, al estilo de
   `feedEnrichment.js`. `q-bio.NC` no estaba en el esquema, así que la query
   facturada de OpenAlex buscaba el id literal; ahora es `bio.neuro` y avisa en
   dev cuando una etiqueta cae al id. A cambio, arXiv pierde `cat:q-bio.NC` y
@@ -1635,7 +1635,7 @@ Ahora hay un `CreateListDialog` compartido: `<dialog>` nativo, cabecera, campos
 etiquetados, iconos a 22 px, error y estado «Creando…». **Posee el formulario y
 nada más** — la escritura se queda en cada llamante, que es lo que impide que
 vuelvan a divergir. La máquina de estados vive aparte y pura en
-`src/utils/createListFormModel.js`, al estilo de `saveOrganizeModel.js`: nombre
+`src/utils/createListFormModel.ts`, al estilo de `saveOrganizeModel.js`: nombre
 en blanco que no envía, segundo envío en vuelo que no crea dos listas, y estado
 que no sobrevive al cierre.
 
@@ -1906,7 +1906,7 @@ veces en las dos direcciones; esta fue la tercera.
 Es el punto 4 del propio F40 («esta clase de discrepancia ya ha pasado dos veces
 en dos direcciones y no se detecta sola»), y era la causa raíz.
 
-`src/utils/deployFlags.js` declara `VITE_SCOPUS_ENABLED: false` **con su porqué
+`src/utils/deployFlags.ts` declara `VITE_SCOPUS_ENABLED: false` **con su porqué
 al lado**, y `vite.config.js` estrena `requireDeclaredDeployFlags`, hermana de la
 `requireWorkerBaseUrl` que ya paraba el build por esta misma clase de fallo
 (`aa84d6b`). Un build cuyo entorno discrepe de lo declarado se para antes de
@@ -1949,7 +1949,7 @@ encender el flag; ahora apuntan a dónde se cambia la decisión.
 **Hecho y verificado en local, incluido bajo el Node de CI.** Cierra el pendiente
 3 de la sección de G2 de más abajo. Ficheros tocados:
 `src/services/{rorService,dataCiteService,orcidService,openAireService,openAlexService}.js`,
-`src/utils/requestDeadline.js`, sus tests, y `src/test-support/deadlineHarness.js`
+`src/utils/requestDeadline.ts`, sus tests, y `src/test-support/deadlineHarness.js`
 (nuevo). **No se ha tocado `worker/ai-explanation.js`** (G3) ni
 `worker/email-notifications.js` (G1). Tests: 980 → 992.
 
@@ -2083,7 +2083,7 @@ F2, F4, F5, F36 y la parte no-email de F3 — en la rama
 `fix/g1-email-notifications`. Ficheros tocados: `worker/report-api.js`,
 `worker/firebase-auth.js`, `proxy/scopus-proxy.js`,
 `src/services/{workerApiClient,publicListService,domainSourceService,arxivService,openAlexClient}.js`,
-`src/utils/requestDeadline.js` (nuevo) y sus tests. **No se ha tocado
+`src/utils/requestDeadline.ts` (nuevo) y sus tests. **No se ha tocado
 `email-notifications.js`** (G1) ni `ai-explanation.js` (G3).
 
 ### La causa raíz, reproducida antes de tocar nada
@@ -2125,7 +2125,7 @@ el cuerpo se ha leído entero. Ese es el mecanismo que sustituye al par
   Tras el arreglo no queda un solo `fetch(` a pelo en el fichero: el único que
   hay vive dentro del helper.
 - **Cliente:** `withRequestDeadline(options, timeoutMs)` en
-  `src/utils/requestDeadline.js`, con test propio.
+  `src/utils/requestDeadline.ts`, con test propio.
 - **Plazos:** 8 s upstream genérico, 6 s fuentes, 5 s arXiv, 4 s Identity
   Toolkit, 5 s Elsevier desde el proxy Deno (a propósito **más corto** que el
   peldaño de 6 s del Worker, para que el proxy conteste con un estado legible en
@@ -2235,7 +2235,7 @@ que F25 exige `emailVerified`.
    prueba real de F24, y no se puede adelantar.
 2. Vigilar el `EMAIL_SUBSCRIPTION_INVALID` de la pasada de las 13:40Z.
 3. ~~**Fuera del alcance de G2:** el patrón de F2 vive también en
-   `src/services/rorService.js:150-165`, `dataCiteService.js:166-176`,
+   `src/services/rorService.ts:150-165`, `dataCiteService.js:166-176`,
    `orcidService.js:7-21`, y con forma parecida en `openAireService.js` y
    `openAlexService.js`.~~ **Hecho** — ver la sección del 2026-08-23 al principio
    del fichero. Los cinco tenían el fallo; el falso positivo era el otro sitio de
@@ -2548,7 +2548,7 @@ porque es el texto del editor y no una reconstrucción.
 Y la reconstrucción del índice invertido estaba escrita a mano **cuatro** veces,
 ya divergidas: una ordenaba pares y se saltaba la normalización de espacios. Misma
 forma que el filtro `openalex:` que llevaba años devolviendo 400. Unificada en
-`src/utils/openAlexAbstract.js`.
+`src/utils/openAlexAbstract.ts`.
 
 Verificado en producción: la ruta devuelve el índice y se reconstruye texto real
 (1.562, 1.284 y 1.215 caracteres en tres papers). El tercero es
@@ -2745,7 +2745,7 @@ que hablaba por fuentes que no conocía.
   520 ms y cada fuente rezagada se pintaba por su cuenta, con plazos de hasta
   6 s, recalculando `preferredSection` en cada render.
 - **El aviso de caída externa mentía.** `describeSearchOutage`
-  (`src/utils/searchOutage.js`) separa «OpenAlex está implicado» de «OpenAlex
+  (`src/utils/searchOutage.ts`) separa «OpenAlex está implicado» de «OpenAlex
   nos está limitando»: solo el segundo puede prometer una hora. Y el aviso
   sigue al filtro al que afecta en vez de borrarse al cambiar de píldora.
 
@@ -2794,7 +2794,7 @@ reintentable que produce Firestore.
 
 ### Los comentarios (`68a7477`)
 
-`isTransientReadError` (`src/utils/boundedRead.js`) separa «ahora no» de
+`isTransientReadError` (`src/utils/boundedRead.ts`) separa «ahora no» de
 «nunca»: `unavailable`, `deadline-exceeded`, `internal`, `cancelled`,
 `aborted`, `resource-exhausted`, `unknown` merecen paciencia; el resto
 —`permission-denied`, `unauthenticated`, `not-found`…— sigue fallando al
@@ -2842,7 +2842,7 @@ la red en vez de cortocircuitarlo: la pertenencia es por paper, y un atajo
 habría dejado las casillas del paper ANTERIOR en pantalla.
 
 **La obligación que trae la caché**, y es donde estaba el riesgo real:
-`withPaperMembership` (`src/utils/ownLists.js`) refleja en memoria el
+`withPaperMembership` (`src/utils/ownLists.ts`) refleja en memoria el
 `arrayUnion`/`arrayRemove` que el guardado acaba de escribir. Sin eso, reabrir
 enseñaría la casilla anterior al guardado — peor mentira que el spinner que la
 caché quita. Crear una lista y visitar Mis listas también actualizan la caché.
@@ -3020,10 +3020,10 @@ Firestore no aceptó, y el sync publicaría una lista que la cuenta nunca acord�
 
 | Qué | Dónde |
 | --- | --- |
-| `syncPublicList()` (rama de merge); fuera `updatePublicList()`, sin llamantes | `src/services/publicListService.js` |
-| `sanitizePublicPaperForSync()`, `sanitizeSyncPaperIds()` | `src/services/publicListPayload.js` |
-| Motor de cola: debounce, fusión, reintento, cancelación, suscripción | `src/services/publicListSync.js` (nuevo) |
-| `listNeedsPublicSync()`, `toEpochMillis()`, `publicListSyncKey()` | `src/utils/publicListFreshness.js` (nuevo) |
+| `syncPublicList()` (rama de merge); fuera `updatePublicList()`, sin llamantes | `src/services/publicListService.ts` |
+| `sanitizePublicPaperForSync()`, `sanitizeSyncPaperIds()` | `src/services/publicListPayload.ts` |
+| Motor de cola: debounce, fusión, reintento, cancelación, suscripción | `src/services/publicListSync.ts` (nuevo) |
+| `listNeedsPublicSync()`, `toEpochMillis()`, `publicListSyncKey()` | `src/utils/publicListFreshness.ts` (nuevo) |
 | Fuera el botón Actualizar; chapa-indicador, efecto de sync, sellos, cancelación | `src/components/Lists/ListsPage.jsx` (+`.css`) |
 | Sellos `updatedAt` y encolado tras guardar | `src/components/Lists/SaveToListModal.jsx` |
 | El abstract pasa por `ScientificText` (LaTeX) | `src/components/Lists/PublicListPage.jsx` |
@@ -3252,7 +3252,7 @@ cambios sin guardar» con Descartar / Seguir editando.
 
 Las etiquetas son chips de verdad: Enter o coma crean, ✕ o Backspace sobre el
 input vacío quitan, y pegar «a, b, c» se trocea. La lógica pura vive en
-`src/utils/saveOrganizeModel.js` con sus tests, más dos estructurales:
+`src/utils/saveOrganizeModel.ts` con sus tests, más dos estructurales:
 ninguna primitiva de escritura fuera de `handleCreateList` y `handleSave`, y
 el camino de Escape pasa por el guard.
 
@@ -3328,7 +3328,7 @@ regla de borrado aceptan. Por eso la app va en medio.
   el propio test — no una firma con forma de firma.
 - **`worker/public-list-api.js`** (P19). `POST /lists/publish`,
   `/lists/update`, `/lists/unpublish`. **24 tests**.
-- **`src/services/publicListPayload.js`** (nuevo). El saneado y los topes, puro
+- **`src/services/publicListPayload.ts`** (nuevo). El saneado y los topes, puro
   y sin dependencias, importado por el navegador **y** por el Worker. Una sola
   definición de lista pública válida; duplicarlo en `worker/` con un test de
   deriva era la forma silenciosa de reintroducir este fallo.
@@ -3336,7 +3336,7 @@ regla de borrado aceptan. Por eso la app va en medio.
   cliente. Fuera `validPublicPaper`, `validPublicPapers`, `validPublicList`,
   `ownsPublicList`, `ownsPublicListAfter`. `validBoundedStringList` **se queda**:
   la usa `savedPapers`, que es privado y paga una llamada por documento.
-- **`src/services/publicListService.js`** (P21). Las tres mutaciones llaman al
+- **`src/services/publicListService.ts`** (P21). Las tres mutaciones llaman al
   Worker con el ID token. **Leer no cambia**: un `getDoc` directo, una lectura,
   sin sesión y sin pasar por el Worker.
 
@@ -3833,7 +3833,7 @@ búsqueda no lo reabre, lee una colección aparte.
 | --- | --- |
 | Colección `userSearch/{uid}`: `get` cerrado, `list` con sesión y `limit <= 20`, escritura solo del dueño y coherente con su perfil vía `getAfter` | `firestore.rules` |
 | Cláusula a prueba de fallos en `userProfiles/`: toda escritura que deje el perfil privado —y el delete— exige `!existsAfter(userSearch/{uid})` | `firestore.rules` |
-| `userSearchService`: dos queries de prefijo acotadas, fusión y dedupe por uid, mínimo 2 caracteres, debounce 400 ms | `src/services/userSearchService.js` (+17 tests) |
+| `userSearchService`: dos queries de prefijo acotadas, fusión y dedupe por uid, mínimo 2 caracteres, debounce 400 ms | `src/services/userSearchService.ts` (+17 tests) |
 | Los cinco caminos de escritura de perfil mantienen el índice en el mismo batch | `src/services/userProfileService.js` |
 | Página `/search/users` con filas nombre+handle+monograma | `src/components/Search/UserSearchPage.{jsx,css}` |
 | Punto de entrada provisional "Buscar personas en PaperTok" | `src/components/Search/SearchPage.{jsx,css}` |
@@ -3981,12 +3981,12 @@ posible es Google↔GitHub.
 
 | Pieza | Archivo |
 | --- | --- |
-| `GithubAuthProvider` con scope `user:email` explícito | `src/services/firebase.js` |
-| `authIdentityService`: `signInWithProvider`, `linkSignInProvider`, `providerIdsOf`, y tres errores clasificados; inyección de dependencias como el resto de servicios | `src/services/authIdentityService.js` (+21 tests) |
+| `GithubAuthProvider` con scope `user:email` explícito | `src/services/firebase.ts` |
+| `authIdentityService`: `signInWithProvider`, `linkSignInProvider`, `providerIdsOf`, y tres errores clasificados; inyección de dependencias como el resto de servicios | `src/services/authIdentityService.ts` (+21 tests) |
 | `signInWithGitHub`, `linkGitHubAccount` y `signInProviders` en el contexto; Google pasa por el mismo camino | `src/context/AuthContext.jsx` |
 | Botón "Continuar con GitHub" y el aviso de colisión de correo | `src/components/Auth/LoginPage.{jsx,css}` |
 | Sección "Formas de entrar" con "Conectar", y la insignia de la cuenta que ya no dice siempre Google | `src/components/Settings/SettingsPage.{jsx,css}` |
-| `AUTH_LINK_FAILED`, `AUTH_EMAIL_ALREADY_USED`, `AUTH_IDENTITY_TAKEN`, `auth/cancelled-popup-request` | `src/utils/errorMessages.js` |
+| `AUTH_LINK_FAILED`, `AUTH_EMAIL_ALREADY_USED`, `AUTH_IDENTITY_TAKEN`, `auth/cancelled-popup-request` | `src/utils/errorMessages.ts` |
 
 ### Decisiones tomadas al implementar (y por qué)
 
@@ -4123,7 +4123,7 @@ Las lecturas de Firestore **no tienen timeout de cliente**: contra una conexión
 parada —no caída, donde el SDK rechaza al instante, sino abierta y sin
 contestar— la promesa no se resuelve nunca, y una pantalla cuyo estado de carga
 solo termina en `.then`/`.catch` se queda ahí hasta que recargas.
-`withReadTimeout` (`src/utils/boundedRead.js`) la acota, y **un timeout no es
+`withReadTimeout` (`src/utils/boundedRead.ts`) la acota, y **un timeout no es
 una respuesta**: es fallo reintentable, jamás ausencia confirmada. El esqueleto
 de la hoja de comentarios espera 320 ms antes de aparecer (en CSS, sin salir
 del DOM, para que `aria-busy` siga diciendo la verdad a un lector de pantalla),
@@ -4175,7 +4175,7 @@ vivo la parte de visitante y de datos (REST sin auth). La pasada con sesión
 
 | Pieza | Archivo |
 | --- | --- |
-| Clave canónica de paper (P5): `doi:` > `arxiv:` sin versión > id crudo con prefijo; base64url; candidatos duales para el split-brain | `src/utils/paperCanonicalKey.js` (+21 tests, puro) |
+| Clave canónica de paper (P5): `doi:` > `arxiv:` sin versión > id crudo con prefijo; base64url; candidatos duales para el split-brain | `src/utils/paperCanonicalKey.ts` (+21 tests, puro) |
 | Stubs `papers/{paperKey}`: cache mínimo de metadatos, create por el primer comentarista, **inmutable salvo admin**, `list: false` (no hay directorio de papers) | `firestore.rules`, `src/services/paperStubService.js` |
 | Comentarios `papers/{key}/comments/{id}` con hilos de un nivel (`replyTo`), editar/borrar propios, borrado de padre en cascada | rules + `src/services/commentService.js` |
 | Throttle declarativo `users/{uid}/rateLimits/{action}` (comments 15 s, stubs 30 s, reports 60 s), en el mismo batch, con `getAfter` | rules (match top-level aparte, para no tocar el bloque `users/` que edita la otra sesión) |
@@ -4768,9 +4768,9 @@ sintéticos de JS).
 | **Despublicar perfil**: `deleteOwnUserProfile()` borra `userProfiles/{uid}` + `handles/{handle}` en un batch — la forma exacta que exigen las rules (endurecimiento C). Las listas publicadas quedan publicadas y anónimas. Sin tocar rules. | `userProfileService.js` (+3 tests) |
 | Botón atrás con historial (`location.key !== 'default'` → `navigate(-1)`): perfil → Siguiendo → atrás vuelve al **perfil**, no a ajustes (bug reportado); mismo arreglo en el editor | `FollowingSettingsPage.jsx`, `ProfilePage.jsx` |
 | Tarjeta de lista propia en el perfil → abre **la lista en sí**: `navigate('/lists', {state:{openListId}})` y ListsPage la expande al llegar (una vez por id; el estado sobrevive en la entrada de historial a propósito) | `PublicProfilePage.jsx`, `ListsPage.jsx` |
-| "Copy link" → **"Share"** con hoja nativa (`navigator.share`) y fallback a portapapeles; hoja cerrada = silencio, no error; "Publicar y copiar enlace" → "Publicar y compartir" | `ListsPage.jsx`, `src/utils/shareLink.js` (+6 tests) |
+| "Copy link" → **"Share"** con hoja nativa (`navigator.share`) y fallback a portapapeles; hoja cerrada = silencio, no error; "Publicar y copiar enlace" → "Publicar y compartir" | `ListsPage.jsx`, `src/utils/shareLink.ts` (+6 tests) |
 
-`shareOrCopyLink` vive en `src/utils/shareLink.js` con inyección del share
+`shareOrCopyLink` vive en `src/utils/shareLink.ts` con inyección del share
 nativo y del copy, por el detalle de que la activación transitoria puede
 caducar durante el await de publicar (la hoja tira `NotAllowedError` y se cae
 al portapapeles).
@@ -5078,8 +5078,8 @@ es paralelizable.
 | `src/components/Public/PublicProfilePage.{jsx,css}` | Perfil público en `/public/user/:handle`. Sin sesión. |
 | `firestore.rules` | Bloque **aditivo** `userProfiles/` + `handles/` + `isAdmin()`. Cero líneas borradas del bloque anterior. |
 | `tests/firestore.rules.test.js` + `tests/README.md` | 26 tests de comportamiento contra el emulador. `npm run test:rules`. |
-| `src/utils/publicNavigation.js` | `getPublicProfilePath/Url`. |
-| `src/utils/profileImage.js` | `PUBLIC_AVATAR_PRESET` (≤60 KB) y opciones en `prepareProfileImage`; los valores por defecto no cambian. |
+| `src/utils/publicNavigation.ts` | `getPublicProfilePath/Url`. |
+| `src/utils/profileImage.ts` | `PUBLIC_AVATAR_PRESET` (≤60 KB) y opciones en `prepareProfileImage`; los valores por defecto no cambian. |
 | `src/App.jsx`, `src/components/Settings/SettingsPage.jsx` | Rutas y punto de entrada. |
 
 ### Endurecimiento tras la revisión adversarial (2026-08-19)
@@ -5290,7 +5290,7 @@ Detalle en `docs/INTERACTION_PROFILE.md`.
 
 **Dónde:** [src/context/FeedContext.jsx](src/context/FeedContext.jsx), bloque
 "OpenAlex Semantic Profile" dentro de `loadInteractions`, y
-[src/services/openAlexService.js](src/services/openAlexService.js).
+[src/services/openAlexService.ts](src/services/openAlexService.ts).
 
 **Qué pasa:** al cargar el feed se llama a `enrichPapersBatch(positiveIds)` con
 la unión completa de `liked` y `saved` para reconstruir `conceptAffinities`. Es
@@ -5344,7 +5344,7 @@ el modal pintó "no tienes listas" en 42 ms con 4 listas en la cuenta.
 veía un `fulfilled` perfecto y la lista personalizada desaparecía de la
 cuadrícula **sin ningún estado de error**.
 
-**Arreglo.** La regla vive una vez en [src/utils/ownLists.js](src/utils/ownLists.js):
+**Arreglo.** La regla vive una vez en [src/utils/ownLists.ts](src/utils/ownLists.ts):
 *los registros en mano son registros; una ausencia solo cuenta si la confirma el
 servidor*. Más `patientRead` en el modal para el estancamiento, un estado
 `unavailable` con Reintentar que no se confunde con una cuenta vacía, y
@@ -5394,7 +5394,7 @@ que ningún arreglo de los de arriba cubre.
 ## Hecho: el resto de la familia, de una pasada
 
 Cerrados los cinco puntos que quedaban del barrido, ya con la regla extraída a
-[src/utils/cacheAuthority.js](src/utils/cacheAuthority.js) — que ahora cubre
+[src/utils/cacheAuthority.ts](src/utils/cacheAuthority.ts) — que ahora cubre
 consultas (`queryIsAuthoritative`) y documentos sueltos
 (`documentIsAuthoritative`).
 

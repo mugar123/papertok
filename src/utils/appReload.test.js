@@ -9,9 +9,9 @@ import {
   isReloadNavigation,
   markAppForcedReload,
   shouldStartFeedFresh,
-} from './appReload.js';
-import { FEED_RESUME_STORAGE_PREFIX } from './feedResumeMemory.js';
-import { FOLLOWING_ORDER_STORAGE_KEY } from './followingOrderStorage.js';
+} from './appReload.ts';
+import { FEED_RESUME_STORAGE_PREFIX } from './feedResumeMemory.ts';
+import { FOLLOWING_ORDER_STORAGE_KEY } from './followingOrderStorage.ts';
 
 /**
  * A stand-in for Storage. `Object.keys()` over a real Storage lists the keys it

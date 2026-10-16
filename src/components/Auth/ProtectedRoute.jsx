@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { peekAuthReturn } from '../../utils/authReturn.js';
-import { getUiErrorMessage } from '../../utils/errorMessages';
+import { peekAuthReturn } from '../../utils/authReturn.ts';
+import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import AnimatedAtom from '../Feed/AnimatedAtom';
 
 export default function ProtectedRoute({ children, requireOnboarding = true }) {

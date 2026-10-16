@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { buildSavedPaperPayload, canStoreSavedPaper } from './savedPaperPayload.js';
+import { buildSavedPaperPayload, canStoreSavedPaper } from './savedPaperPayload.ts';
 
 const SAVED_AT = '2026-08-27T10:00:00.000Z';
 const full = {

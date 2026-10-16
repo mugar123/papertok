@@ -4,7 +4,7 @@ import {
   buildHighlightsQuery,
   listUserHighlights,
   MAX_HIGHLIGHTS_PER_PAPER,
-} from './userHighlightService.js';
+} from './userHighlightService.ts';
 
 /**
  * Stand-ins for the Firestore builders. They record what the service asked for,

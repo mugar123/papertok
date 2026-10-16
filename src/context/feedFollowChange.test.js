@@ -80,7 +80,7 @@ test('SOURCE: the topic warm-up still runs before the gate, so the prewarm test 
 });
 
 /**
- * The tree no longer remounts when the uid arrives (src/utils/accountScope.js
+ * The tree no longer remounts when the uid arrives (src/utils/accountScope.ts
  * adopts the first account at the same generation), so this effect used to run
  * once with `user` null and `followedEntities` empty, record '' as its baseline,
  * and then read the account's real follows landing as a follow CHANGE — a

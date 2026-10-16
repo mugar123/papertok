@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { ruleTransform } from '../../utils/navRule.js';
+import { ruleTransform } from '../../utils/navRule.ts';
 import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
 import { MagnifyingGlass, Stack, UserCheck } from '@phosphor-icons/react';

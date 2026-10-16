@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CATEGORIES } from '../data/categories.js';
-import { GUEST_CATEGORIES, buildGuestDiscoveryQuery, buildGuestFeedPlan, guestCategoryLabel } from './guestFeedPlan.js';
+import { GUEST_CATEGORIES, buildGuestDiscoveryQuery, buildGuestFeedPlan, guestCategoryLabel } from './guestFeedPlan.ts';
 
 // The root invariant. Four consumers read this list, and an id the schema does
 // not know slips past all of them as a literal string: no label, no domain
@@ -80,7 +80,7 @@ test('the same areas in any order make the same plan', () => {
 });
 
 test('a narrowed area sends its topics, not its first subcategories', async () => {
-  const { buildGuestFeedPlan: build } = await import('./guestFeedPlan.js');
+  const { buildGuestFeedPlan: build } = await import('./guestFeedPlan.ts');
   const whole = build(['cs']);
   const narrowed = build(['cs'], ['cs.CL', 'cs.CR']);
   assert.notEqual(whole.key, narrowed.key, 'a different answer is a different plan');
@@ -95,7 +95,7 @@ test('a narrowed area sends its topics, not its first subcategories', async () =
 });
 
 test('topics outside the chosen areas do not change the plan', async () => {
-  const { buildGuestFeedPlan: build } = await import('./guestFeedPlan.js');
+  const { buildGuestFeedPlan: build } = await import('./guestFeedPlan.ts');
   assert.equal(build(['cs'], ['bio.neuro']).key, build(['cs']).key);
 });
 

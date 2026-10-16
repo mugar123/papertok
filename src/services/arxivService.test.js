@@ -9,7 +9,7 @@ import {
   buildSearchQuery,
   clearCache,
   fetchPapers,
-} from './arxivService.js';
+} from './arxivService.ts';
 
 // Under node the module sees no import.meta.env, so neither the Worker route nor
 // the dev proxy is configured -- exactly the state in which the dead corsproxy.io

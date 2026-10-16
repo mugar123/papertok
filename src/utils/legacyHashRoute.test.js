@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { routeFromLegacyHash, applyLegacyHashRoute } from './legacyHashRoute.js';
+import { routeFromLegacyHash, applyLegacyHashRoute } from './legacyHashRoute.ts';
 
 /**
  * These cover the links that already exist out in the world. The app was a

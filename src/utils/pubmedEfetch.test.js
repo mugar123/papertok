@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseXmlDocument } from '../test-support/xmlDomShim.js';
-import { mergePubmedAuthors, pubmedAbstractText, pubmedAuthors, readPubmedEfetch } from './pubmedEfetch.js';
+import { mergePubmedAuthors, pubmedAbstractText, pubmedAuthors, readPubmedEfetch } from './pubmedEfetch.ts';
 
 // Trimmed from efetch for PMID 42775314 (2026-09-24): the English abstract is
 // four labelled sections under Article/Abstract, and the publisher's Serbian

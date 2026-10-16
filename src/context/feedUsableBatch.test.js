@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { PaperBuilder } from '../services/PaperBuilder.js';
-import { ARXIV_FEED_AREAS } from '../services/arxivService.js';
+import { PaperBuilder } from '../services/PaperBuilder.ts';
+import { ARXIV_FEED_AREAS } from '../services/arxivService.ts';
 import { CATEGORIES } from '../data/categoryTaxonomy.js';
-import { fulfilledPaperLists, resolveWithin, settleSourcesForFirstPaint } from '../utils/asyncTiming.js';
-import { lateSourceCandidates } from '../utils/feedLateCandidates.js';
-import { takeFeedPage } from '../utils/feedEnrichment.js';
-import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.js';
+import { fulfilledPaperLists, resolveWithin, settleSourcesForFirstPaint } from '../utils/asyncTiming.ts';
+import { lateSourceCandidates } from '../utils/feedLateCandidates.ts';
+import { takeFeedPage } from '../utils/feedEnrichment.ts';
+import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.ts';
 
 // Execute the actual loader callback with provider and React-state boundaries
 // injected. Source-pattern tests cannot catch an excluded page ending the feed.

@@ -1,4 +1,4 @@
-import { fetchPapers } from '../../src/services/arxivService.js';
+import { fetchPapers } from '../../src/services/arxivService.ts';
 fetchPapers(['quant-ph'], 0, 5)
   .then(res => {
     console.log('Fetched:', res.length);

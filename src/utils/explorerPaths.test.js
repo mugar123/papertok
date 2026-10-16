@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { authorExplorerPath, openAlexAuthorId } from './explorerPaths.js';
+import { authorExplorerPath, openAlexAuthorId } from './explorerPaths.ts';
 
 test('an author with an OpenAlex id opens by id, name riding along for the masthead', () => {
   assert.equal(

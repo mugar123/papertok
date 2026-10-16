@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { growMountWindow, inMountWindow, initialMountWindow, mountWindowCovers, windowReachingReader } from './feedMountWindow.js';
+import { growMountWindow, inMountWindow, initialMountWindow, mountWindowCovers, windowReachingReader } from './feedMountWindow.ts';
 
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
@@ -15,7 +15,7 @@ test('a feed opens on the card it was on, one neighbour either side', () => {
 });
 
 test('a resumed feed opens on its card alone; a fresh one keeps a neighbour', async () => {
-  const { MOUNT_WINDOW_RADIUS, MOUNT_WINDOW_RESUME_RADIUS, MOUNT_WINDOW_STEP, MOUNT_WINDOW_SETTLE_MS } = await import('./feedMountWindow.js');
+  const { MOUNT_WINDOW_RADIUS, MOUNT_WINDOW_RESUME_RADIUS, MOUNT_WINDOW_STEP, MOUNT_WINDOW_SETTLE_MS } = await import('./feedMountWindow.ts');
   assert.equal(MOUNT_WINDOW_RESUME_RADIUS, 0);
   assert.equal(MOUNT_WINDOW_RADIUS, 1);
   assert.deepEqual(initialMountWindow({ total: 30, anchorIndex: 20, radius: MOUNT_WINDOW_RESUME_RADIUS }), { lo: 20, hi: 21 });
@@ -98,7 +98,7 @@ test('SOURCE: the container mounts a window and grows it off the critical path',
 });
 
 test('a feed resumes on the paper it was on, wherever that paper is now', async () => {
-  const { resumeIndex } = await import('./feedMountWindow.js');
+  const { resumeIndex } = await import('./feedMountWindow.ts');
   const papers = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }];
   assert.equal(resumeIndex({ papers, savedPaperId: 'c', savedIndex: 2 }), 2);
   assert.equal(resumeIndex({ papers, savedPaperId: 'c', savedIndex: 0 }), 2, 'the id wins over a stale index');

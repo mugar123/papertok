@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { PANEL_HIDE_DELAY_MS } from '../../utils/panelReveal.js';
+import { PANEL_HIDE_DELAY_MS } from '../../utils/panelReveal.ts';
 
 /**
  * How the reader's three controls answer a pointer.

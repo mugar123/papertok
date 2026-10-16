@@ -7,7 +7,7 @@ import {
   mapWikipediaSearchResponse,
   resolveEntityWikiIdentity,
   wikidataIdFromOpenAlexIds,
-} from './wikiService.js';
+} from './wikiService.ts';
 
 // Shapes copied from real answers (2026-09-24): wbgetentities keys entities by
 // QID ("-1" when a title is unknown), and the query API keys pages by pageid

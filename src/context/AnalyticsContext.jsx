@@ -17,7 +17,7 @@ import {
   trackDay7Return,
   trackPageView,
   trackProductEvent,
-} from '../services/analyticsService';
+} from '../services/analyticsService.ts';
 
 // Declared once, outside the component: `<Analytics />` re-registers its
 // `beforeSend` on every change of identity, so an inline arrow would re-register

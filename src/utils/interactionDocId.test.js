@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decodeInteractionDocId, encodeInteractionDocId } from './interactionDocId.js';
-import { isFetchableDocumentId } from './listPaperMetadataPlan.js';
+import { decodeInteractionDocId, encodeInteractionDocId } from './interactionDocId.ts';
+import { isFetchableDocumentId } from './listPaperMetadataPlan.ts';
 
 test('a legal id encodes to itself, so existing documents keep their names', () => {
   for (const id of ['openalex:W2029887339', '1807.10247', 'arxiv:2301.00001v2', 'pmid:33301246']) {

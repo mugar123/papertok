@@ -2,8 +2,8 @@
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { FollowingUpdatesContext } from './contexts';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { db, IS_DEMO } from '../services/firebase';
-import { fetchFollowingUpdates } from '../services/followingUpdatesService';
+import { db, IS_DEMO } from '../services/firebase.ts';
+import { fetchFollowingUpdates } from '../services/followingUpdatesService.ts';
 import { useAuth } from './AuthContext';
 import { useFollowing } from './FollowingContext';
 import {
@@ -11,7 +11,7 @@ import {
   getFollowingSignature,
   getFollowingUpdatePaperKey,
   getFollowingUpdatesStorageKey,
-} from '../utils/followingUpdates';
+} from '../utils/followingUpdates.ts';
 
 const CACHE_TTL_MS = 15 * 60 * 1000;
 // How long a seen mark waits before it is written to storage and Firestore.

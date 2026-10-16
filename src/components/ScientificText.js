@@ -1,6 +1,6 @@
 import { createElement, Fragment, memo, useEffect, useMemo, useReducer } from 'react';
-import { displayProse, katexSource, splitLatexText } from '../utils/latex.js';
-import { getKatex, loadKatex } from '../utils/katexLoader.js';
+import { displayProse, katexSource, splitLatexText } from '../utils/latex.ts';
+import { getKatex, loadKatex } from '../utils/katexLoader.ts';
 
 // Rendered formulas, by source. A card re-renders many times while it is
 // arriving on screen (visibility, figures, settle, idle, comment count, the

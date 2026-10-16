@@ -1,5 +1,5 @@
 import { Check } from '@phosphor-icons/react';
-import { cn } from '../../lib/utils.js';
+import { cn } from '../../lib/utils.ts';
 import { Toggle } from './toggle.jsx';
 import './follow-toggle.css';
 

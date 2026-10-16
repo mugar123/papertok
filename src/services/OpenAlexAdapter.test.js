@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { OPENALEX_SEARCH_TYPES, OPENALEX_WORK_SEARCH_FIELDS, OpenAlexAdapter } from './adapters/OpenAlexAdapter.js';
-import { openAlexClient } from './openAlexClient.js';
+import { OPENALEX_SEARCH_TYPES, OPENALEX_WORK_SEARCH_FIELDS, OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
+import { openAlexClient } from './openAlexClient.ts';
 
 test('keeps OpenAlex citations and semantic concepts on discovered papers', () => {
   const paper = new OpenAlexAdapter().mapToStandard({

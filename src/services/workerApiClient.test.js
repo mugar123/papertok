@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { WorkerApiAuthError, fetchWorkerSourceJson, workerSourceUrl } from './workerApiClient.js';
+import { WorkerApiAuthError, fetchWorkerSourceJson, workerSourceUrl } from './workerApiClient.ts';
 
 const WORKER = 'https://papertok-report-api.example';
 

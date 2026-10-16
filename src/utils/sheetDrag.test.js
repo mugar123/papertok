@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sheetDragOffset, shouldSettleOpen, SHEET_DRAG_SLOP } from './sheetDrag.js';
+import { sheetDragOffset, shouldSettleOpen, SHEET_DRAG_SLOP } from './sheetDrag.ts';
 
 /**
  * The two decisions a dragged sheet makes, kept out of the DOM.

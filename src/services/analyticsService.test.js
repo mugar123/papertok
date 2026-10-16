@@ -18,7 +18,7 @@ import {
   setAnalyticsConsent,
   trackAcquisition,
   trackDay7Return,
-} from './analyticsService.js';
+} from './analyticsService.ts';
 
 function memoryStorage(initial = {}) {
   const values = new Map(Object.entries(initial));
@@ -508,7 +508,7 @@ test('a Vercel event is dropped once another tab has turned analytics off', t =>
  */
 test('SOURCE: PostHog starts cookieless, with its own collection off and every event sanitized', async () => {
   const { readFile } = await import('node:fs/promises');
-  const code = (await readFile(new URL('./analyticsService.js', import.meta.url), 'utf8'))
+  const code = (await readFile(new URL('./analyticsService.ts', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
   const options = code.match(/const POSTHOG_OPTIONS = \{([\s\S]*?)\n\};/)?.[1];

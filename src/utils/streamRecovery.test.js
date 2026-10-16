@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createStreamRecovery, MIN_STREAM_RECOVERY_INTERVAL_MS } from './streamRecovery.js';
+import { createStreamRecovery, MIN_STREAM_RECOVERY_INTERVAL_MS } from './streamRecovery.ts';
 
 /** Records the order the SDK's two calls arrive in, and can make either fail. */
 function fakeSdk() {

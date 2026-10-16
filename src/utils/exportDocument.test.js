@@ -11,7 +11,7 @@ import {
   runningTitleText,
   sectionMarkText,
   summarizeExport,
-} from './exportDocument.js';
+} from './exportDocument.ts';
 
 test('annotations are grouped by paragraph in document order', () => {
   const sections = [{ id: 's1' }, { id: 's2' }];

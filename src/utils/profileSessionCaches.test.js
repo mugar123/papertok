@@ -8,7 +8,7 @@ import {
   ownListsCache,
   rememberOwnLists,
   reviseOwnLists,
-} from './profileSessionCaches.js';
+} from './profileSessionCaches.ts';
 
 /**
  * The freshness window on the lists read. Saving fifty papers in a row opened

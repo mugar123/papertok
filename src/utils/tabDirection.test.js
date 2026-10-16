@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TAB_ORDER, lateralTabDirection } from './tabDirection.js';
+import { TAB_ORDER, lateralTabDirection } from './tabDirection.ts';
 
 /** Every test brings its own memory, the way `routeDirection.test.js` does. */
 const fresh = () => ({});

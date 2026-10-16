@@ -16,36 +16,36 @@ import {
   PaperRewriteError,
   rewriteCacheKey,
   rewritePaper,
-} from '../../services/paperRewriteService.js';
-import { indexHighlightsByParagraph } from '../../services/userHighlightService.js';
+} from '../../services/paperRewriteService.ts';
+import { indexHighlightsByParagraph } from '../../services/userHighlightService.ts';
 import ScientificText from '../ScientificText.js';
-import { usePassageAnnotations } from '../../hooks/usePassageAnnotations.js';
+import { usePassageAnnotations } from '../../hooks/usePassageAnnotations.ts';
 import {
   answerSlot,
   buildSectionOrder,
   countAnnotations,
   filterAnnotations,
   sortAnnotations,
-} from '../../utils/annotationOrder.js';
+} from '../../utils/annotationOrder.ts';
 import {
   PANEL_HIDE_DELAY_MS,
   panelShouldShow,
   pointerWakesPanel,
-} from '../../utils/panelReveal.js';
-import { normalizeLatexText, proseSourceOffset } from '../../utils/latex.js';
-import { buildRangeAnchor, buildSelectionAnchor } from '../../utils/textHighlights.js';
-import { buildLatexDocument } from '../../utils/latexExport.js';
+} from '../../utils/panelReveal.ts';
+import { normalizeLatexText, proseSourceOffset } from '../../utils/latex.ts';
+import { buildRangeAnchor, buildSelectionAnchor } from '../../utils/textHighlights.ts';
+import { buildLatexDocument } from '../../utils/latexExport.ts';
 import {
   exportFileName,
   exportableAnnotations,
   summarizeExport,
-} from '../../utils/exportDocument.js';
-import { buildPdfModel, downloadPdfDocument } from '../../utils/pdfExport.js';
+} from '../../utils/exportDocument.ts';
+import { buildPdfModel, downloadPdfDocument } from '../../utils/pdfExport.ts';
 import { useAuth } from '../../context/AuthContext';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext';
-import { pickSelectionRoute } from '../../utils/readerSelection.js';
-import { nextBarVisibility } from '../../utils/scrollDirection.js';
-import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.js';
+import { pickSelectionRoute } from '../../utils/readerSelection.ts';
+import { nextBarVisibility } from '../../utils/scrollDirection.ts';
+import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.ts';
 import { Button } from '../ui/button.jsx';
 import { Dialog, DialogContent } from '../ui/dialog.jsx';
 import { Popover, PopoverTrigger } from '../ui/popover.jsx';

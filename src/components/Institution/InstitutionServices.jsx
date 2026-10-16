@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { findInstitutionServices, knownInstitutionServices } from '../../services/institutionAccessService.js';
+import { findInstitutionServices, knownInstitutionServices } from '../../services/institutionAccessService.ts';
 import { Button } from '../ui/button.jsx';
 import { publisherLogoFor } from './publisherLogos.js';
 import './Institution.css';

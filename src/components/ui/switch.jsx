@@ -1,5 +1,5 @@
 import { Switch as SwitchPrimitive } from '@base-ui/react/switch';
-import { cn } from '../../lib/utils.js';
+import { cn } from '../../lib/utils.ts';
 
 /**
  * An on/off setting (`role="switch"`). A sunken track with a hairline; on,

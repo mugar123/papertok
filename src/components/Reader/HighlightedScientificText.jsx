@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { getKatex, loadKatex } from '../../utils/katexLoader.js';
-import { displayProse, katexSource } from '../../utils/latex.js';
-import { buildHighlightPlan } from '../../utils/textHighlights.js';
+import { getKatex, loadKatex } from '../../utils/katexLoader.ts';
+import { displayProse, katexSource } from '../../utils/latex.ts';
+import { buildHighlightPlan } from '../../utils/textHighlights.ts';
 import {
   hiddenWidth,
   inlineMathNeedsScroll,
   sliderKeyTarget,
   sliderThumbWidth,
   sliderValueText,
-} from '../../utils/wideMath.js';
+} from '../../utils/wideMath.ts';
 
 /**
  * One rendered formula, and the slider it grows when it is wider than the

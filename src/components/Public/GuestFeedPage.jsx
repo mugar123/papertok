@@ -3,12 +3,12 @@ import { AnimatePresence } from 'framer-motion';
 import { SignIn, Sparkle } from '@phosphor-icons/react';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
-import { useGuestFeed } from '../../hooks/useGuestFeed.js';
-import { ANALYTICS_CONSENT } from '../../services/analyticsService.js';
+import { useGuestFeed } from '../../hooks/useGuestFeed.ts';
+import { ANALYTICS_CONSENT } from '../../services/analyticsService.ts';
 import {
   readGuestInterests,
   saveGuestInterests,
-} from '../../utils/guestInterests.js';
+} from '../../utils/guestInterests.ts';
 import FeedContainer from '../Feed/FeedContainer.jsx';
 import ThemeToggle from '../Layout/ThemeToggle.jsx';
 import GuestEndCard from './GuestEndCard.jsx';

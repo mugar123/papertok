@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { hydrateLegacyArxivPapers, isLegacyArxivId } from './likedPaperRecords.js';
+import { hydrateLegacyArxivPapers, isLegacyArxivId } from './likedPaperRecords.ts';
 
 /**
  * A pre-2007 arXiv paper is keyed by an id with a slash (`hep-th/0603001`).

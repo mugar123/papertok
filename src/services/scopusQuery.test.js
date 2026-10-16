@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildScopusSearchQuery } from './scopusQuery.js';
+import { buildScopusSearchQuery } from './scopusQuery.ts';
 
 test('builds a bounded Scopus query without accepting query operators', () => {
   assert.equal(

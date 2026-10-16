@@ -8,7 +8,7 @@ import {
   sliderKeyTarget,
   sliderThumbWidth,
   sliderValueText,
-} from './wideMath.js';
+} from './wideMath.ts';
 
 test('an inline formula that can wrap between its runs stays on the line', () => {
   assert.equal(inlineMathNeedsScroll([120, 200, 180], 320), false);

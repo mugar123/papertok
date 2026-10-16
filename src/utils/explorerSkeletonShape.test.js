@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { hasAuthorsTab, explorerSkeletonShape } from './explorerSkeletonShape.js';
+import { hasAuthorsTab, explorerSkeletonShape } from './explorerSkeletonShape.ts';
 
 test('an author page has no Authors tab', () => {
   assert.equal(hasAuthorsTab('author'), false);

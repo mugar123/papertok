@@ -13,8 +13,8 @@ import {
   ARXIV_SEARCH_TIMEOUT_MS,
   DEFAULT_PAPER_SEARCH_PROVIDERS,
   searchPapersAcrossSources,
-} from './paperSearchService.js';
-import { OPENALEX_SEARCH_TYPES } from './adapters/OpenAlexAdapter.js';
+} from './paperSearchService.ts';
+import { OPENALEX_SEARCH_TYPES } from './adapters/OpenAlexAdapter.ts';
 
 const openAlexPaper = (id, title, extra = {}) => ({
   id: `openalex:${id}`,

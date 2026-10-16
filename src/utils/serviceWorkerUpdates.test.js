@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { watchServiceWorkerUpdates } from './serviceWorkerUpdates.js'
+import { watchServiceWorkerUpdates } from './serviceWorkerUpdates.ts'
 
 function setup(update = async () => {}) {
   const windowTarget = new EventTarget()

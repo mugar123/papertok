@@ -18,7 +18,7 @@ export interface AIProviderPayload {
 type PdfResult = { bytes: Uint8Array<ArrayBuffer>; reason: '' }
   | { bytes: null; reason: 'unreachable' | 'not_pdf' | 'too_large' };
 
-import { hasUsableAIAbstract, isAIReadablePdfUrl } from '../src/utils/aiExplanationAccess.js';
+import { hasUsableAIAbstract, isAIReadablePdfUrl } from '../src/utils/aiExplanationAccess.ts';
 import { getMonthlyBudgetReset } from './kimi-budget-ledger.ts';
 import { readBoundedBytes } from './bounded-body.ts';
 import { peekRequestQuota, releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.ts';

@@ -8,8 +8,8 @@ import {
   rewriteCacheKey,
   rewritePaper,
   toRewriteError,
-} from './paperRewriteService.js';
-import { WorkerApiAuthError } from './workerApiClient.js';
+} from './paperRewriteService.ts';
+import { WorkerApiAuthError } from './workerApiClient.ts';
 
 test('assembles events only once their line closes', () => {
   const parser = createNdjsonParser();

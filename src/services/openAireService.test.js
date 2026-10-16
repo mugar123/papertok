@@ -12,7 +12,7 @@ import {
   getProjectDetails,
   getProjectForPaper,
   searchProjects,
-} from './openAireService.js';
+} from './openAireService.ts';
 
 test('the deadline covers an OpenAIRE body that never finishes', async () => {
   // The worst shape of the family: the response comes back unread and

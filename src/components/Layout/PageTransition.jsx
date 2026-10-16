@@ -1,8 +1,8 @@
 import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { usePresence, usePresenceData } from 'framer-motion';
-import { usePageTransitionCustomValue } from '../../hooks/usePageTransitionCustom.js';
-import { PageArrivalProvider } from '../../hooks/usePageArrival.js';
+import { usePageTransitionCustomValue } from '../../hooks/usePageTransitionCustom.ts';
+import { PageArrivalProvider } from '../../hooks/usePageArrival.ts';
 import RouteFallback from './RouteFallback.jsx';
 import { EXIT_SAFETY_MS, isArrivalMotion, pageMotionFor } from './pageMotion.js';
 import './PageTransition.css';

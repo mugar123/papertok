@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildPdfModel, lineStartIndices } from './pdfExport.js';
-import { buildLatexDocument } from './latexExport.js';
+import { buildPdfModel, lineStartIndices } from './pdfExport.ts';
+import { buildLatexDocument } from './latexExport.ts';
 
 /**
  * Only the model is tested here: the paginator and the rasterizer need a DOM

@@ -1,5 +1,5 @@
 import { Tabs as TabsPrimitive } from '@base-ui/react/tabs';
-import { cn } from '../../lib/utils.js';
+import { cn } from '../../lib/utils.ts';
 
 /**
  * Tabs in the app's two shapes. `line` (default): a row over a hairline,

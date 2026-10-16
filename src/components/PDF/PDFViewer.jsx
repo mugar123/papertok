@@ -3,8 +3,8 @@ import { useFeed } from '../../context/FeedContext';
 import { ArrowSquareOut, X } from '@phosphor-icons/react';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.jsx';
 import './PDFViewer.css';
-import { safeDoiUrl } from '../../utils/externalUrl.js';
-import { pdfLinksForPaper, pdfRelayUrl } from '../../utils/paperOpenTargets.js';
+import { safeDoiUrl } from '../../utils/externalUrl.ts';
+import { pdfLinksForPaper, pdfRelayUrl } from '../../utils/paperOpenTargets.ts';
 
 // pdf.js is about 1.8 MB with its worker, and only a touch screen draws pages
 // itself: a desktop never downloads it.

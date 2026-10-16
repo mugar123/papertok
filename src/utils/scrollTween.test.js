@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CARD_DURATION_MS, CARD_EASE, cubicBezier, tweenScrollTop } from './scrollTween.js';
+import { CARD_DURATION_MS, CARD_EASE, cubicBezier, tweenScrollTop } from './scrollTween.ts';
 
 /** A stand-in for the abstract: the tween only ever touches `scrollTop`. */
 function node(scrollTop = 0) {

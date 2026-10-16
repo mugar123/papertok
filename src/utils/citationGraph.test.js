@@ -6,7 +6,7 @@ import {
   extractCitationOpenAlexId,
   normalizeCitationDoi,
   normalizeCitationRows,
-} from './citationGraph.js';
+} from './citationGraph.ts';
 
 test('normalizes DOI URLs and extracts identifiers from OpenCitations rows', () => {
   assert.equal(normalizeCitationDoi('https://doi.org/10.1000/TEST.1'), '10.1000/test.1');

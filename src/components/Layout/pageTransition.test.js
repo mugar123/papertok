@@ -52,7 +52,7 @@ test('the leaving page reads the navigation that ejects it, and never computes o
 });
 
 test('a move between navbar tabs takes its direction from the bar, not from history', async () => {
-  const hook = await read('../../hooks/usePageTransitionCustom.js');
+  const hook = await read('../../hooks/usePageTransitionCustom.ts');
   assert.match(hook, /import \{ lateralTabDirection \} from '\.\.\/utils\/tabDirection\.js';/);
   // The lateral answer wins; history is the fallback, not the other way round.
   assert.match(hook, /const lateral = lateralTabDirection\(useLocation\(\)\.pathname\);/);

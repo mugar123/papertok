@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { ArrowUpRight, ShieldCheck } from '@phosphor-icons/react';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
-import { cn } from '../../lib/utils.js';
-import { ANALYTICS_CONSENT } from '../../services/analyticsService.js';
+import { cn } from '../../lib/utils.ts';
+import { ANALYTICS_CONSENT } from '../../services/analyticsService.ts';
 import { buttonVariants } from '../ui/button-variants.js';
 import { Label } from '../ui/label.jsx';
 import {

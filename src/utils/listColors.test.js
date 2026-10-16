@@ -8,7 +8,7 @@ import {
   randomListColorId,
   resolveListColor,
   resolveListColorId,
-} from './listColors.js';
+} from './listColors.ts';
 
 const tokens = async () => readFile(new URL('../styles/variables.css', import.meta.url), 'utf8');
 

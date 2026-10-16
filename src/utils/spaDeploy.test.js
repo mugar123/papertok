@@ -4,8 +4,8 @@ import { readFile } from 'node:fs/promises';
 
 const VERCEL = new URL('../../vercel.json', import.meta.url);
 const MAIN = new URL('../main.jsx', import.meta.url);
-const FIREBASE = new URL('../services/firebase.js', import.meta.url);
-const ANALYTICS = new URL('../services/analyticsService.js', import.meta.url);
+const FIREBASE = new URL('../services/firebase.ts', import.meta.url);
+const ANALYTICS = new URL('../services/analyticsService.ts', import.meta.url);
 
 test('the SPA rewrite never answers a missing chunk with the app document', async () => {
   const config = JSON.parse(await readFile(VERCEL, 'utf8'));

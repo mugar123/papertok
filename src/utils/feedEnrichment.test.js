@@ -5,7 +5,7 @@ import {
   mergeOpenAlexEnrichment,
   needsOpenAlexEnrichment,
   takeFeedPage,
-} from './feedEnrichment.js';
+} from './feedEnrichment.ts';
 
 test('normalizes arXiv versions for OpenAlex enrichment', () => {
   assert.equal(getOpenAlexEnrichmentId('arxiv:2607.12345v2'), '2607.12345');

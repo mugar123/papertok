@@ -5,7 +5,7 @@ import {
   canSubmitCreateList,
   createListFormReducer,
   CREATE_LIST_FORM_INITIAL,
-} from './createListFormModel.js';
+} from './createListFormModel.ts';
 
 const typed = name => createListFormReducer(CREATE_LIST_FORM_INITIAL, { type: 'name', value: name });
 

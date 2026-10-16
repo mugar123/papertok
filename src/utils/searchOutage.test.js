@@ -6,7 +6,7 @@ import {
   formatRetryDelay,
   joinNames,
   outageAffectsFilter,
-} from './searchOutage.js';
+} from './searchOutage.ts';
 
 /* --- Attribution ------------------------------------------------------------
    The banner named OpenAlex for failures that belonged to other providers.

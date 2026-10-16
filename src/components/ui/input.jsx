@@ -1,5 +1,5 @@
 import { Input as InputPrimitive } from '@base-ui/react/input';
-import { cn } from '../../lib/utils.js';
+import { cn } from '../../lib/utils.ts';
 
 /**
  * A text field in the app's marking vocabulary: a hairline box, near-square,

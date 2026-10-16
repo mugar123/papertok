@@ -1,7 +1,7 @@
 import type { WorkerEnv } from './env.ts';
 
 import { fetchPaperPdfBytes } from './ai-explanation.ts';
-import { isAIReadablePdfUrl } from '../src/utils/aiExplanationAccess.js';
+import { isAIReadablePdfUrl } from '../src/utils/aiExplanationAccess.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { reserveSharedMinuteQuota, serveCached } from './provider-runtime.ts';
 

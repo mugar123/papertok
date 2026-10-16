@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decodeFirestoreDocId, encodeFirestoreDocId } from './firestoreDocId.js';
-import { decodeInteractionDocId, encodeInteractionDocId } from './interactionDocId.js';
+import { decodeFirestoreDocId, encodeFirestoreDocId } from './firestoreDocId.ts';
+import { decodeInteractionDocId, encodeInteractionDocId } from './interactionDocId.ts';
 
 test('the generic encoder is the one the interaction documents already use', () => {
   assert.equal(encodeInteractionDocId, encodeFirestoreDocId);

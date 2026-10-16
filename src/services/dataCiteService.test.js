@@ -5,7 +5,7 @@ import {
   settleWithin,
   withStubbedFetch,
 } from '../test-support/deadlineHarness.js';
-import { fetchJson, mapDataCiteDirectRelations, mapDataCiteRecord } from './dataCiteService.js';
+import { fetchJson, mapDataCiteDirectRelations, mapDataCiteRecord } from './dataCiteService.ts';
 
 test('maps a reverse DataCite dataset relationship to a paper DOI', () => {
   const resource = mapDataCiteRecord({

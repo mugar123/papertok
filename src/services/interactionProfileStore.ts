@@ -1,0 +1,260 @@
+/**
+ * Firestore wiring for the interaction profile aggregate.
+ *
+ * Kept apart from the pure logic in utils/interactionProfile* so those modules
+ * stay unit-testable under `node --test` without the Firebase SDK.
+ *
+ * The browser writes this document directly, like every other write in the app.
+ * A Worker round trip would add latency to every swipe and needs a secret this
+ * document does not justify, and the security rules can already bound its shape
+ * and size completely. What makes direct writes safe is that the document is
+ * derived: the interaction subcollection stays the source of truth, so a
+ * corrupt aggregate self-heals through the same bounded rebuild that a missing
+ * one triggers.
+ */
+import {
+  collection,
+  doc,
+  documentId,
+  getCountFromServer,
+  getDoc,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  setDoc,
+  startAfter,
+  where,
+} from 'firebase/firestore';
+import { db } from './firebase.ts';
+import { patientRead } from '../utils/boundedRead.ts';
+import { documentIsAuthoritative, queryIsAuthoritative } from '../utils/cacheAuthority.ts';
+import { serializeInteractionProfile } from '../utils/interactionProfile.ts';
+import { mapWithConcurrency } from '../utils/mapWithConcurrency.ts';
+import { FIRESTORE_IN_FILTER_MAX } from '../utils/firestoreLimits.ts';
+import { planLibraryBatches } from '../utils/listPaperMetadataPlan.ts';
+import { decodeInteractionDocId, encodeInteractionDocId } from '../utils/interactionDocId.ts';
+
+export const INTERACTION_PROFILE_COLLECTION = 'aggregates';
+export const INTERACTION_PROFILE_DOC_ID = 'interactions';
+
+// Writes are coalesced: a fast scroll produces a burst of skip and view-time
+// events and the aggregate only has to be durable, not instantaneous. The
+// in-memory profile is updated synchronously, so nothing the user sees waits.
+const FLUSH_DELAY_MS = 4000;
+const LIBRARY_BATCH_SIZE = FIRESTORE_IN_FILTER_MAX;
+/**
+ * How many library batches may be in flight at once.
+ *
+ * The batch size is capped by the `in` operator (firestoreLimits.js owns that
+ * number, and this comment deliberately does not repeat it — the last two that
+ * did were still quoting a cap Firestore had already raised). The number of
+ * batches is not capped: it scales with the account, up to
+ * PERSONAL_LIBRARY_MAX_RECORDS worth of ids. All of them used to start together
+ * on the one WebChannel the app has, and the reads belonging to whatever screen
+ * asked for the library queued behind them. Six at a time keeps a large library
+ * from monopolising the connection while still covering the common case in one
+ * round.
+ */
+export const LIBRARY_READ_CONCURRENCY = 6;
+
+const pendingFlushes = new Map();
+
+/**
+ * Development-only read counter.
+ *
+ * Firestore traffic rides a WebChannel, so the number of documents a page load
+ * actually billed is not readable from the network panel. This records it at the
+ * only layer that knows: expose `window.__papertokReads` in `npm run dev` and it
+ * is stripped from production builds.
+ */
+function countReads(kind, count) {
+  if (!import.meta.env?.DEV || count <= 0) return;
+  const stats = (globalThis.__papertokReads ??= {
+    aggregate: 0,
+    interactions: 0,
+    library: 0,
+    driftCheck: 0,
+    log: [],
+    reset() {
+      this.aggregate = 0;
+      this.interactions = 0;
+      this.library = 0;
+      this.driftCheck = 0;
+      this.log = [];
+      return 'reset';
+    },
+    get interactionDataTotal() {
+      return this.aggregate + this.interactions + this.driftCheck;
+    },
+  });
+  stats[kind] += count;
+  stats.log.push({ kind, count, at: new Date().toISOString() });
+}
+
+export function interactionProfileRef(userId) {
+  return doc(db, 'users', userId, INTERACTION_PROFILE_COLLECTION, INTERACTION_PROFILE_DOC_ID);
+}
+
+export function interactionsRef(userId) {
+  return collection(db, 'users', userId, 'interactions');
+}
+
+/**
+ * The one way to address a paper's interaction document. The id is encoded
+ * (see utils/interactionDocId.js): a raw `doc(..., 'hep-th/0603001')` threw on
+ * the slash after the aggregate had already recorded the interaction, which is
+ * what left likes the Liked tab could not name.
+ */
+export function interactionDocRef(userId, paperId) {
+  return doc(interactionsRef(userId), encodeInteractionDocId(paperId));
+}
+
+/**
+ * A page of the subcollection that came from the cache instead of the server.
+ *
+ * Only a rebuild reads pages, and a rebuild WRITES what it reads: an empty
+ * page the SDK served locally — the network disabled for a stream kick, or
+ * the client latched offline — would end the scan early and put an aggregate
+ * with nothing in it over the real one. `unavailable` is what a rebuild
+ * already treats as "could not be determined", so the profile stays as it was.
+ */
+function unconfirmedPage() {
+  return Object.assign(
+    new Error('The interaction page came from the cache, not the server.'),
+    { code: 'unavailable' },
+  );
+}
+
+export function createInteractionProfileClient(userId) {
+  return {
+    userId,
+    async readAggregate() {
+      // The feed's whole personalisation waits on this one read, and it used
+      // to be a bare getDoc: against a listen stream that had died under the
+      // client it never answered, the feed's budget expired, and the account
+      // scrolled an unpersonalised feed with none of its likes until a
+      // reload. `patientRead` kicks the stream at DEFAULT_STALL_MS and asks
+      // again; `isAnswer` refuses the cache-served absence the kick flushes
+      // — an absence the server has not confirmed would start a rebuild.
+      const snapshot = await patientRead(() => getDoc(interactionProfileRef(userId)), {
+        attempts: 3,
+        label: 'interaction profile',
+        isAnswer: documentIsAuthoritative,
+      });
+      countReads('aggregate', 1);
+      return { exists: snapshot.exists(), data: snapshot.exists() ? snapshot.data() : null };
+    },
+    async listInteractionPage({ pageSize, startAfterId }) {
+      // Paginating by document id rather than by timestamp: timestamp is an
+      // optional field and an orderBy on it would silently drop any document
+      // that never received one.
+      const constraints = [orderBy(documentId()), limit(pageSize)];
+      if (startAfterId) constraints.splice(1, 0, startAfter(encodeInteractionDocId(startAfterId)));
+      const snapshot = await getDocs(query(interactionsRef(userId), ...constraints));
+      if (!queryIsAuthoritative(snapshot)) throw unconfirmedPage();
+      // Decoded: the rebuilt aggregate must carry paper ids, never document names.
+      const documents = snapshot.docs.map(item => ({ id: decodeInteractionDocId(item.id), data: item.data() }));
+      countReads('interactions', documents.length);
+      return { documents, hasMore: documents.length === pageSize };
+    },
+    /**
+     * Counts the interaction documents without reading them. Firestore bills a
+     * count aggregation per batch of index entries rather than per document, so
+     * this is far cheaper than the scan it may avoid — but it is not free, which
+     * is why the caller only asks for it occasionally rather than every load.
+     */
+    async countInteractions() {
+      const snapshot = await getCountFromServer(interactionsRef(userId));
+      const count = snapshot.data().count;
+      const reads = Math.max(1, Math.ceil(count / 1000));
+      countReads('driftCheck', reads);
+      return { count, reads };
+    },
+    async writeAggregate(document) {
+      await setDoc(interactionProfileRef(userId), document);
+    },
+  };
+}
+
+export async function writeInteractionProfile(userId, profile) {
+  if (!userId || !profile) return;
+  await setDoc(interactionProfileRef(userId), serializeInteractionProfile(profile));
+}
+
+export function scheduleInteractionProfileFlush(userId, profile) {
+  if (!userId || !profile) return;
+  const existing = pendingFlushes.get(userId);
+  if (existing) clearTimeout(existing.timeoutId);
+
+  const timeoutId = setTimeout(() => {
+    pendingFlushes.delete(userId);
+    writeInteractionProfile(userId, profile).catch((error) => {
+      console.warn('Could not persist the interaction profile:', error);
+    });
+  }, FLUSH_DELAY_MS);
+
+  pendingFlushes.set(userId, { timeoutId, profile });
+}
+
+export function flushInteractionProfileNow(userId) {
+  const pending = userId ? pendingFlushes.get(userId) : null;
+  if (!pending) return Promise.resolve();
+  clearTimeout(pending.timeoutId);
+  pendingFlushes.delete(userId);
+  return writeInteractionProfile(userId, pending.profile).catch((error) => {
+    console.warn('Could not persist the interaction profile:', error);
+  });
+}
+
+export function flushAllInteractionProfiles() {
+  return Promise.all([...pendingFlushes.keys()].map(flushInteractionProfileNow));
+}
+
+/**
+ * Fetches the library records for a bounded list of paper ids.
+ *
+ * The reading library used to arrive as a side effect of scanning every
+ * interaction document on feed load. It is now loaded on demand by the screens
+ * that render it, from the ids the aggregate already holds, in the largest
+ * batches the `in` operator accepts.
+ */
+/**
+ * Returns `{ records, fromCache }`, not a bare array, because the caller has
+ * to know how much the answer is worth. With the backend unreachable,
+ * `getDocs` does not reject — it resolves against the local cache, and this
+ * app keeps Firestore's default in-memory cache, so on a fresh page that
+ * answer is an empty success. Treating it as "these ids have no records"
+ * is what turned a connectivity blip into a page of untitled rows.
+ * `fromCache` is true if ANY batch was served locally: absence is only
+ * trustworthy when every batch heard back from the server.
+ */
+export async function fetchLibraryRecords(userId, paperIds) {
+  if (!userId || !paperIds?.length) return { records: [], fromCache: false };
+  // Ids are encoded into document names first (utils/interactionDocId.js), so
+  // a pre-2007 arXiv id is a batch member like any other; the plan still keeps
+  // out what no encoding can save (`..`, `__x__`). A slash in an `in` filter
+  // used to reject the whole query and blank every paper in its batch.
+  const { batches } = planLibraryBatches(paperIds.map(encodeInteractionDocId), LIBRARY_BATCH_SIZE);
+  if (batches.length === 0) return { records: [], fromCache: false };
+
+  const settled = await mapWithConcurrency(batches, LIBRARY_READ_CONCURRENCY, async (batch) => {
+    const snapshot = await getDocs(
+      query(interactionsRef(userId), where(documentId(), 'in', batch)),
+    );
+    return {
+      fromCache: snapshot.metadata.fromCache,
+      records: snapshot.docs.map(item => ({ id: decodeInteractionDocId(item.id), data: item.data() })),
+    };
+  });
+  // A bounded pool cannot abandon its in-flight workers the way Promise.all
+  // does, so failures arrive settled. The caller's contract is unchanged: one
+  // failed batch means the answer is not trustworthy, and it must reject rather
+  // than hand back a partial library that looks complete.
+  const failure = settled.find(result => result.status === 'rejected');
+  if (failure) throw failure.reason;
+  const results = settled.map(result => result.value);
+  const records = results.flatMap(result => result.records);
+  countReads('library', records.length);
+  return { records, fromCache: results.some(result => result.fromCache) };
+}

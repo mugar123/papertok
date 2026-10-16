@@ -5,7 +5,7 @@ import {
   listNeedsPublicSync,
   publicListSyncKey,
   toEpochMillis,
-} from './publicListFreshness.js';
+} from './publicListFreshness.ts';
 
 const SHARE_ID = '07070707070707070707070707070707';
 

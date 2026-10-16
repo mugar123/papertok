@@ -5,7 +5,7 @@ import {
   SIGNED_OUT_ACCOUNT,
   accountScopeKey,
   nextAccountScope,
-} from './accountScope.js';
+} from './accountScope.ts';
 
 /**
  * These run the real sequences an auth session produces, in order, and assert on

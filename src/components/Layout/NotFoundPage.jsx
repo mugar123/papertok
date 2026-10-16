@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { House } from '@phosphor-icons/react';
-import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.js';
+import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.ts';
 import './NotFoundPage.css';
 
 // An address the app does not declare. It used to land on /feed without a

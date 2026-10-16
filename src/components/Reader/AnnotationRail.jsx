@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { CaretUp, PencilLine, Sparkle, Trash, WarningCircle } from '@phosphor-icons/react';
-import { ANNOTATION_FILTERS } from '../../utils/annotationOrder.js';
-import { revealScrollDelta } from '../../utils/railReveal.js';
-import { SHEET_DRAG_SLOP, sheetDragOffset, shouldSettleOpen } from '../../utils/sheetDrag.js';
+import { ANNOTATION_FILTERS } from '../../utils/annotationOrder.ts';
+import { revealScrollDelta } from '../../utils/railReveal.ts';
+import { SHEET_DRAG_SLOP, sheetDragOffset, shouldSettleOpen } from '../../utils/sheetDrag.ts';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.jsx';
 import ScientificText from '../ScientificText.js';
 import ThinkingDots from './ThinkingDots.jsx';

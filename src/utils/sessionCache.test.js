@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createSessionCache } from './sessionCache.js';
+import { createSessionCache } from './sessionCache.ts';
 
 test('stores and returns values by key', () => {
   const cache = createSessionCache();

@@ -1,5 +1,5 @@
 import { Button as ButtonPrimitive } from '@base-ui/react/button';
-import { cn } from '../../lib/utils.js';
+import { cn } from '../../lib/utils.ts';
 import { buttonVariants } from './button-variants.js';
 import './button.css';
 

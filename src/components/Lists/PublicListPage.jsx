@@ -6,13 +6,13 @@ import ScientificText from '../ScientificText.js';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
-import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.js';
-import { readPublicList } from '../../services/publicListService.js';
-import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.js';
-import { getPublicListPath, getPublicListUrl, getPublicPaperPath } from '../../utils/publicNavigation.js';
-import { isReadTimeout, patientRead, slowNoticeStatus } from '../../utils/boundedRead.js';
-import { shareOrCopyLink } from '../../utils/shareLink.js';
-import { copyText } from '../../utils/clipboard.js';
+import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.ts';
+import { readPublicList } from '../../services/publicListService.ts';
+import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.ts';
+import { getPublicListPath, getPublicListUrl, getPublicPaperPath } from '../../utils/publicNavigation.ts';
+import { isReadTimeout, patientRead, slowNoticeStatus } from '../../utils/boundedRead.ts';
+import { shareOrCopyLink } from '../../utils/shareLink.ts';
+import { copyText } from '../../utils/clipboard.ts';
 import './PublicListPage.css';
 
 function arxivUrl(arxivId) {

@@ -1,6 +1,6 @@
 import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
 import { X } from '@phosphor-icons/react';
-import { cn } from '../../lib/utils.js';
+import { cn } from '../../lib/utils.ts';
 
 /**
  * The modal dialog — shadcn's Base UI dialog, drawn in this project's

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { X } from '@phosphor-icons/react';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { getUiErrorMessage } from '../../utils/errorMessages';
+import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import { authPromptCopy } from './authPromptCopy.js';
 import { Button } from '../ui/button.jsx';
 import GoogleMark from './GoogleMark.jsx';

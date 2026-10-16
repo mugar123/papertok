@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { hydrateSeededPaper, hydratedAbstract, hydratedAuthors, seedPaintsWhole } from './paperSeed.js';
-import { LEGACY_STORED_SUMMARY_CAP, STORED_AUTHOR_CAP, STORED_SUMMARY_CAP } from './readingLibrary.js';
+import { hydrateSeededPaper, hydratedAbstract, hydratedAuthors, seedPaintsWhole } from './paperSeed.ts';
+import { LEGACY_STORED_SUMMARY_CAP, STORED_AUTHOR_CAP, STORED_SUMMARY_CAP } from './readingLibrary.ts';
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');

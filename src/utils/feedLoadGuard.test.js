@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { shouldAbortFeedLoad } from './feedLoadGuard.js';
+import { shouldAbortFeedLoad } from './feedLoadGuard.ts';
 
 test('does not abort when any pool still has papers, even with failed sources', () => {
   const sourceResults = [{ status: 'timed_out' }, { status: 'rejected' }];

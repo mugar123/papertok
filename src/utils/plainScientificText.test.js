@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { plainScientificText } from './plainScientificText.js';
+import { plainScientificText } from './plainScientificText.ts';
 
 // Where these strings go: a share preview's title, a `<title>`, the text a
 // share sheet sends. None of them renders KaTeX, so a title that reached them

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { documentIsAuthoritative, queryIsAuthoritative } from './cacheAuthority.js';
+import { documentIsAuthoritative, queryIsAuthoritative } from './cacheAuthority.ts';
 
 /**
  * Measured against the live backend with the connection down and a target the

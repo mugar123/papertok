@@ -15,7 +15,7 @@ import {
   readCachedStarCount,
   readDismissedNudges,
   rememberNudgeDismissal,
-} from '../../utils/nudges.js';
+} from '../../utils/nudges.ts';
 import NudgePanel from './NudgePanel.jsx';
 
 // The one place that decides whether anybody is asked anything, and when.

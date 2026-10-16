@@ -11,9 +11,9 @@ import {
   sanitizePublicPaper,
   syncPublicList,
   unpublishPublicList,
-} from './publicListService.js';
-import { createFirestoreRest } from '../utils/firestoreRest.js';
-import { isTransientReadError } from '../utils/boundedRead.js';
+} from './publicListService.ts';
+import { createFirestoreRest } from '../utils/firestoreRest.ts';
+import { isTransientReadError } from '../utils/boundedRead.ts';
 
 const privatePaper = {
   id: 'provider-secret-id',
@@ -372,7 +372,7 @@ test('Firestore rules keep public lists readable and shut to every client', asyn
  * the three things the page can say — and it is what `getDoc` did: it
  * resolved a stalled read against the in-memory cache, so a missing document
  * and an unreachable backend were the same value. The read is REST now
- * (src/utils/firestoreRest.js): a 404 is the only absence, and a request that
+ * (src/utils/firestoreRest.ts): a 404 is the only absence, and a request that
  * never arrives is a retryable rejection.
  */
 function restReader(fetchImpl) {

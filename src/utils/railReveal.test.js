@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { revealScrollDelta } from './railReveal.js';
+import { revealScrollDelta } from './railReveal.ts';
 
 /**
  * How far the annotation list scrolls to show a card: the model's answer as it

@@ -12,19 +12,19 @@ import {
   X,
 } from '@phosphor-icons/react';
 import { useReducedMotion } from 'framer-motion';
-import { getCitationGraph, getCitationGraphDoi } from '../../services/citationGraphService';
-import { getRelatedPapers } from '../../services/relatedPapersService';
-import { isSignInRequiredError } from '../../utils/signInRequired.js';
-import { buildCitationMapLayout } from '../../utils/citationMap.js';
-import { areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
+import { getCitationGraph, getCitationGraphDoi } from '../../services/citationGraphService.ts';
+import { getRelatedPapers } from '../../services/relatedPapersService.ts';
+import { isSignInRequiredError } from '../../utils/signInRequired.ts';
+import { buildCitationMapLayout } from '../../utils/citationMap.ts';
+import { areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.ts';
 import {
   buildRelatedPaperEntries,
   getRelatedPaperIdentity,
-} from '../../utils/relatedPaperTransition.js';
+} from '../../utils/relatedPaperTransition.ts';
 import ScientificText from '../ScientificText';
 import { Toggle } from '../ui/toggle.jsx';
 import { useLanguage } from '../../context/LanguageContext';
-import { usePopupOpenOnMount } from '../../hooks/usePopupOpenOnMount.js';
+import { usePopupOpenOnMount } from '../../hooks/usePopupOpenOnMount.ts';
 import { Drawer, DrawerClose, DrawerContent, DrawerTitle } from '../ui/drawer.jsx';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs.jsx';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.jsx';

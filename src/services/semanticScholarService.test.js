@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { clearRecommendationCache, getPaperRecommendations } from './semanticScholarService.js';
-import { getSemanticScholarPaperId } from './relatedPapersService.js';
+import { clearRecommendationCache, getPaperRecommendations } from './semanticScholarService.ts';
+import { getSemanticScholarPaperId } from './relatedPapersService.ts';
 
 // The recommendations used to leave the browser for `api.semanticscholar.org`
 // behind a module-variable limiter that did not even serialize: it read

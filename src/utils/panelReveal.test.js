@@ -4,7 +4,7 @@ import {
   PANEL_REVEAL_ZONE_PX,
   panelShouldShow,
   pointerWakesPanel,
-} from './panelReveal.js';
+} from './panelReveal.ts';
 
 test('the panel is up before the first scroll, so it can be found', () => {
   assert.equal(panelShouldShow({ canHover: true, hasScrolled: false }), true);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildRelatedPaperEntries,
   getRelatedPaperIdentity,
-} from './relatedPaperTransition.js';
+} from './relatedPaperTransition.ts';
 
 test('prefers normalized stable identifiers for related paper identity', () => {
   assert.equal(

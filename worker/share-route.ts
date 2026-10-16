@@ -4,7 +4,7 @@ import type { UpstreamError } from './provider-runtime.ts';
 import type { QuotaRequest } from './request-quota-ledger.ts';
 import type { WorkerEnv } from './env.ts';
 
-import { createFirestoreRest } from '../src/utils/firestoreRest.js';
+import { createFirestoreRest } from '../src/utils/firestoreRest.ts';
 import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_PACE_PERIOD_MS, ARXIV_UPSTREAM_TIMEOUT_MS } from './arxiv-api.ts';
 import { addOpenAlexCredentials } from './openalex-api.ts';
 import { fetchWithDeadline, OPENALEX_CALLS, releaseHeld, reserveOpenAlexBudget } from './provider-runtime.ts';

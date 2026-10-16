@@ -1,6 +1,6 @@
 import { Checkbox as CheckboxPrimitive } from '@base-ui/react/checkbox';
 import { Check, Minus } from '@phosphor-icons/react';
-import { cn } from '../../lib/utils.js';
+import { cn } from '../../lib/utils.ts';
 
 /**
  * A near-square box (rule 4) that fills with ink when checked. Base UI

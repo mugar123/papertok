@@ -13,8 +13,8 @@ import {
 } from '@phosphor-icons/react';
 import { useFollowing } from '../../context/FollowingContext';
 import { useLanguage } from '../../context/LanguageContext';
-import { getFollowedEntityPath } from '../../utils/followingNavigation';
-import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
+import { getFollowedEntityPath } from '../../utils/followingNavigation.ts';
+import { getLocalizedInstitutionName } from '../../utils/institutionLocalization.ts';
 import SettingsSubheader from './SettingsSubheader.jsx';
 import { SETTINGS_BREADCRUMB } from './settingsBreadcrumb.js';
 import './FollowingSettingsPage.css';

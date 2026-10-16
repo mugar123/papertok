@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createFeedResumeMemory, FEED_RESUME_STORAGE_PREFIX } from './feedResumeMemory.js';
+import { createFeedResumeMemory, FEED_RESUME_STORAGE_PREFIX } from './feedResumeMemory.ts';
 
 function fakeStorage(initial = {}) {
   const data = { ...initial };

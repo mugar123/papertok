@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getLocalizedInstitutionName } from './institutionLocalization.js';
+import { getLocalizedInstitutionName } from './institutionLocalization.ts';
 
 test('uses a verified English ROR label', () => {
   const institution = {

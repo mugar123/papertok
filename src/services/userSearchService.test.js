@@ -15,7 +15,7 @@ import {
   toIndexedName,
   userSearchEntry,
   userSearchReference,
-} from './userSearchService.js';
+} from './userSearchService.ts';
 
 // --- the indexed name -------------------------------------------------------
 

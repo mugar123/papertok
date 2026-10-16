@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from './feedLoadingState.js';
+import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from './feedLoadingState.ts';
 
 const baseState = {
   hasPapers: false,

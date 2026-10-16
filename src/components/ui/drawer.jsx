@@ -1,5 +1,5 @@
 import { Drawer as DrawerPrimitive } from '@base-ui/react/drawer';
-import { cn } from '../../lib/utils.js';
+import { cn } from '../../lib/utils.ts';
 import './drawer.css';
 
 /**

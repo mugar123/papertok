@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PubmedAdapter } from './PubmedAdapter.js';
-import { PaperBuilder } from '../PaperBuilder.js';
-import { reviewStatusForPaper } from '../../utils/paperStatus.js';
+import { PubmedAdapter } from './PubmedAdapter.ts';
+import { PaperBuilder } from '../PaperBuilder.ts';
+import { reviewStatusForPaper } from '../../utils/paperStatus.ts';
 
 const adapter = new PubmedAdapter();
 

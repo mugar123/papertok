@@ -6,7 +6,7 @@ import {
   readOwnLists,
   snapshotIsAuthoritative,
   withPaperMembership,
-} from './ownLists.js';
+} from './ownLists.ts';
 
 /**
  * The save-and-organize modal told an account with four lists that it had none

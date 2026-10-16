@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement, Suspense } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { lazyWithPreload } from './lazyPreload.js';
+import { lazyWithPreload } from './lazyPreload.ts';
 
 /**
  * Under `AnimatePresence mode="wait"` the incoming screen first renders the

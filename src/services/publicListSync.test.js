@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-import { createPublicListSyncEngine } from './publicListSync.js';
+import { createPublicListSyncEngine } from './publicListSync.ts';
 
 /** A hand-cranked clock, so the tests never wait in real time. */
 function fakeTimers() {

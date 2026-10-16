@@ -12,7 +12,7 @@ import {
   readCachedStarCount,
   readDismissedNudges,
   rememberNudgeDismissal,
-} from './nudges.js';
+} from './nudges.ts';
 
 const fakeStorage = (seed = {}) => {
   const map = new Map(Object.entries(seed));

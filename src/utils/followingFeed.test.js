@@ -4,7 +4,7 @@ import {
   buildFollowReasonLabel,
   getFollowingFeedRelevanceScore,
   orderFollowingFeedPapers,
-} from './followingFeed.js';
+} from './followingFeed.ts';
 
 const NOW = Date.parse('2026-07-28T12:00:00Z');
 
@@ -153,7 +153,7 @@ test('breaks otherwise equal relevance with citations and tolerates empty input'
 });
 
 import { readFile } from 'node:fs/promises';
-import { followingFirstLoadPending, mergeOrderedPapers } from './followingFeed.js';
+import { followingFirstLoadPending, mergeOrderedPapers } from './followingFeed.ts';
 
 const readSource = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 
@@ -226,7 +226,7 @@ test('SOURCE: the container honours a source\'s own first-load flag, and Followi
  * The feed the reader left is the feed they come back to.
  */
 test('the Following feed resumes the order it left with, and merges a refresh into it', async () => {
-  const { resumeOrderedPapers } = await import('./followingFeed.js');
+  const { resumeOrderedPapers } = await import('./followingFeed.ts');
   const items = [{ id: 'a', title: 'A', citationCount: 1 }, { id: 'b', title: 'B', citationCount: 9 }];
   const first = resumeOrderedPapers({ items: null, ordered: [] }, items, new Set());
   assert.deepEqual(first.map(paper => paper.id), ['b', 'a'], 'the first visit ranks');
@@ -244,8 +244,8 @@ test('SOURCE: the Following page resumes from the order it left, kept at module 
   assert.match(code, /lastOrder\.items = items;\s*lastOrder\.ordered = orderedPapers;/);
 });
 
-import { orderFromKeys, orderKeysOf, resumeOrderedPapers as resumeFromKeys } from './followingFeed.js';
-import { getFollowingUpdatePaperKey } from './followingUpdates.js';
+import { orderFromKeys, orderKeysOf, resumeOrderedPapers as resumeFromKeys } from './followingFeed.ts';
+import { getFollowingUpdatePaperKey } from './followingUpdates.ts';
 
 test('after a reload the order the reader left is rebuilt from its keys over the items that came back', () => {
   const a = followedPaper('a', 'x', { published: '2026-07-01' });
@@ -277,7 +277,7 @@ test('after a reload the order the reader left is rebuilt from its keys over the
  * the paper from coming back on the next refresh or the next visit.
  */
 test('the Following feed drops what the reader skipped, and keeps the array when it drops nothing', async () => {
-  const { withoutNotInterested } = await import('./followingFeed.js');
+  const { withoutNotInterested } = await import('./followingFeed.ts');
   const papers = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
 
   assert.deepEqual(

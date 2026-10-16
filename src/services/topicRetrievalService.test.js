@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolvePaperTopic } from '../utils/topicNavigation.js';
+import { resolvePaperTopic } from '../utils/topicNavigation.ts';
 import {
   fetchTopicPapers,
   getFollowedTopicCategoryIds,
   resolveTopicRetrievalPlan,
-} from './topicRetrievalService.js';
+} from './topicRetrievalService.ts';
 
 test('resolves exact ids and categories before stored query and legacy display names', () => {
   assert.deepEqual(resolveTopicRetrievalPlan({

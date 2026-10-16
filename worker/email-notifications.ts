@@ -77,9 +77,9 @@ import type { WorkerEnv } from './env.ts';
 
 import { XMLParser } from 'fast-xml-parser';
 import { CATEGORIES } from '../src/data/categoryTaxonomy.js';
-import { areaKeyForPaper } from '../src/utils/areaAccent.js';
-import { usableOpenAlexAbstract } from '../src/utils/openAlexAbstract.js';
-import { filterRelevantQueryTopicPapers } from '../src/utils/queryTopicSearch.js';
+import { areaKeyForPaper } from '../src/utils/areaAccent.ts';
+import { usableOpenAlexAbstract } from '../src/utils/openAlexAbstract.ts';
+import { filterRelevantQueryTopicPapers } from '../src/utils/queryTopicSearch.ts';
 import { applyEmailDeliveryLedgerAction } from './email-delivery-ledger.ts';
 import { readBoundedJson as readBoundedRequestJson } from './bounded-body.ts';
 

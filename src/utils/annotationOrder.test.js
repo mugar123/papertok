@@ -7,7 +7,7 @@ import {
   filterAnnotations,
   isAnnotationFilter,
   sortAnnotations,
-} from './annotationOrder.js';
+} from './annotationOrder.ts';
 
 const SECTIONS = [{ id: 'abstract' }, { id: 'methods' }, { id: 'results' }];
 

@@ -2,8 +2,8 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { FollowingContext } from './contexts';
 import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
-import { db, IS_DEMO } from '../services/firebase';
-import { getRorInstitution, normalizeRorId } from '../services/rorService';
+import { db, IS_DEMO } from '../services/firebase.ts';
+import { getRorInstitution, normalizeRorId } from '../services/rorService.ts';
 import { useAuth } from './AuthContext';
 import { useAnalyticsConsent } from './AnalyticsContext';
 import {
@@ -12,8 +12,8 @@ import {
   followsEntity,
   getFollowingStorageKey,
   migrateLegacyAuthors,
-} from '../utils/following';
-import { finishLegacyAuthorsMigration } from '../utils/followingMigration';
+} from '../utils/following.ts';
+import { finishLegacyAuthorsMigration } from '../utils/followingMigration.ts';
 
 const EMPTY_LOCALIZED_INSTITUTION_NAMES = Object.freeze({});
 

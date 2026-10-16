@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isTransientReadError } from './boundedRead.js';
+import { isTransientReadError } from './boundedRead.ts';
 import {
   FIRESTORE_REST_BASE,
   FirestoreRestError,
   createFirestoreRest,
   decodeFields,
-} from './firestoreRest.js';
+} from './firestoreRest.ts';
 
 const PROJECT = 'demo-project';
 const ROOT = 'projects/demo-project/databases/(default)/documents';

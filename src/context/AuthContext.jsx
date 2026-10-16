@@ -1,34 +1,34 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AuthContext } from './contexts';
-import { IS_DEMO, auth, db } from '../services/firebase';
+import { IS_DEMO, auth, db } from '../services/firebase.ts';
 import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import {
   SIGN_IN_PROVIDERS,
   linkSignInProvider,
   providerIdsOf,
   signInWithProvider,
-} from '../services/authIdentityService';
+} from '../services/authIdentityService.ts';
 import { deleteField, doc, getDoc, getDocFromCache, setDoc } from 'firebase/firestore';
 import {
   linkInstitution as linkInstitutionAccount,
   normalizeInstitution,
   unlinkInstitution as unlinkInstitutionAccount,
-} from '../services/institutionService.js';
+} from '../services/institutionService.ts';
 import {
   DEFAULT_READING_PREFERENCES,
   normalizeReadingPreferences,
-} from '../utils/userSettings';
-import { settleWithin } from '../utils/asyncTiming';
-import { isReadTimeout, patientRead } from '../utils/boundedRead.js';
-import { documentIsAuthoritative } from '../utils/cacheAuthority.js';
-import { normalizeProfilePhoto } from '../utils/profileImage';
-import { clearUserScopedStorage, readStoredOnboarding, saveStoredOnboarding } from '../utils/userScopedStorage';
-import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from '../services/accountWarmup.js';
-import { forgetOwnLists } from '../utils/profileSessionCaches.js';
-import { accountLooksOnboarded } from '../utils/accountOnboarding.js';
-import { clearGuestInterests, readGuestInterests } from '../utils/guestInterests.js';
-import { toggleFollowedAuthor } from '../utils/followedAuthors.js';
+} from '../utils/userSettings.ts';
+import { settleWithin } from '../utils/asyncTiming.ts';
+import { isReadTimeout, patientRead } from '../utils/boundedRead.ts';
+import { documentIsAuthoritative } from '../utils/cacheAuthority.ts';
+import { normalizeProfilePhoto } from '../utils/profileImage.ts';
+import { clearUserScopedStorage, readStoredOnboarding, saveStoredOnboarding } from '../utils/userScopedStorage.ts';
+import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from '../services/accountWarmup.ts';
+import { forgetOwnLists } from '../utils/profileSessionCaches.ts';
+import { accountLooksOnboarded } from '../utils/accountOnboarding.ts';
+import { clearGuestInterests, readGuestInterests } from '../utils/guestInterests.ts';
+import { toggleFollowedAuthor } from '../utils/followedAuthors.ts';
 
 const PROFILE_CACHE_TIMEOUT_MS = 800;
 const PROFILE_NETWORK_TIMEOUT_MS = 7000;

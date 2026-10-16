@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RERANK_LOOKAHEAD, mergeFreshFeedPage, splitFeedForReRank } from './feedReRankSplit.js';
+import { RERANK_LOOKAHEAD, mergeFreshFeedPage, splitFeedForReRank } from './feedReRankSplit.ts';
 
 const papers = (n) => Array.from({ length: n }, (_, i) => ({ id: `p${i}` }));
 const ids = (list) => list.map(paper => paper.id);

@@ -14,7 +14,7 @@ import {
   getViteBasePath,
   parsePaperKey,
   encodePaperKey,
-} from './publicNavigation.js';
+} from './publicNavigation.ts';
 
 const URL_OPTIONS = { origin: 'https://example.test', base: '/papertok/' };
 

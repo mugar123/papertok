@@ -62,7 +62,7 @@ The plan named `tabDirection.js`, `PageTransition.jsx` and their tests. Two
 things forced more:
 
 1. **`PageTransition.jsx` may not export a function.** `react-refresh/only-export-components`
-   fails the build's lint. The hook moved to `src/hooks/usePageTransitionCustom.js`.
+   fails the build's lint. The hook moved to `src/hooks/usePageTransitionCustom.ts`.
 2. **The page on its way out could not be told.** `AnimatePresence` keeps the
    previous element mounted rather than re-rendering it, so the outgoing
    `PageTransition` resolved its exit against the `custom` it mounted with —
@@ -147,7 +147,7 @@ Neither is a motion problem; both surfaced from the same runs and are recorded
 here so they are not lost.
 
 1. **Wikipedia's search endpoint fails intermittently.**
-   `src/services/wikiService.js:75-89` builds an
+   `src/services/wikiService.ts:75-89` builds an
    `action=query&generator=search` request. Verified directly: it returned
    `503 upstream connect error … reset reason: overflow`, and the identical query
    succeeded on retry moments later. Across four probe runs the explanation

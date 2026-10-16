@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { IS_DEMO, db } from '../../services/firebase';
-import { savedPaperDocRef } from '../../services/savedPaperStore.js';
+import { IS_DEMO, db } from '../../services/firebase.ts';
+import { savedPaperDocRef } from '../../services/savedPaperStore.ts';
 import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, serverTimestamp, setDoc, limit, query } from 'firebase/firestore';
-import { isReadTimeout, patientRead } from '../../utils/boundedRead';
+import { isReadTimeout, patientRead } from '../../utils/boundedRead.ts';
 import {
   OWN_LISTS_PAGE_SIZE, listsHolding, mergeCreatedLists, readOwnLists, withPaperMembership,
-} from '../../utils/ownLists';
-import { queuePublicListSync } from '../../services/publicListSync.js';
-import { publicListSyncKey } from '../../utils/publicListFreshness.js';
+} from '../../utils/ownLists.ts';
+import { queuePublicListSync } from '../../services/publicListSync.ts';
+import { publicListSyncKey } from '../../utils/publicListFreshness.ts';
 import {
   commitTagInput,
   diffListSelection,
@@ -17,12 +17,12 @@ import {
   removeTag,
   resolveSelection,
   toggleListIntent,
-} from '../../utils/saveOrganizeModel.js';
+} from '../../utils/saveOrganizeModel.ts';
 import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext';
-import { getIcon } from '../../utils/icons';
+import { getIcon } from '../../utils/icons.ts';
 import CreateListDialog from './CreateListDialog.jsx';
 import ScientificText from '../ScientificText.js';
 import { BookOpen, Check, DownloadSimple, Note, Plus, Tag, X } from '@phosphor-icons/react';
@@ -32,15 +32,15 @@ import { Dialog, DialogClose, DialogContent, DialogTitle } from '../ui/dialog.js
 import { Input } from '../ui/input.jsx';
 import { Label } from '../ui/label.jsx';
 import { Textarea } from '../ui/textarea.jsx';
-import { downloadCitationFile } from '../../utils/readingLibrary';
-import { buildSavedPaperPayload } from '../../utils/savedPaperPayload.js';
+import { downloadCitationFile } from '../../utils/readingLibrary.ts';
+import { buildSavedPaperPayload } from '../../utils/savedPaperPayload.ts';
 import {
   ownListsAreFresh,
   ownListsCache,
   rememberOwnLists,
   reviseOwnLists,
-} from '../../utils/profileSessionCaches.js';
-import { readStoredLists, saveStoredLists } from '../../utils/userScopedStorage.js';
+} from '../../utils/profileSessionCaches.ts';
+import { readStoredLists, saveStoredLists } from '../../utils/userScopedStorage.ts';
 import './SaveToListModal.css';
 import { Toggle } from '../ui/toggle.jsx';
 

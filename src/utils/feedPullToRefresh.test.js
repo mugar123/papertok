@@ -13,7 +13,7 @@ import {
   PULL_MAX_TRAVEL_PX,
   pullTravelPx,
   pullOutcome,
-} from './feedPullToRefresh.js';
+} from './feedPullToRefresh.ts';
 
 const plain = { closest: () => null };
 const insideAbstract = { closest: (sel) => (sel === PULL_BLOCKING_SCROLLERS ? {} : null) };

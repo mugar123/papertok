@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CATEGORIES } from '../data/categories.js';
-import { rankPreferences } from './preferenceRanking.js';
+import { rankPreferences } from './preferenceRanking.ts';
 
 const firstN = (area, n) => Object.keys(CATEGORIES[area].subcategories).slice(0, n);
 

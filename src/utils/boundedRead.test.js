@@ -11,7 +11,7 @@ import {
   patientRead,
   registerStallRecovery,
   slowNoticeStatus,
-} from './boundedRead.js';
+} from './boundedRead.ts';
 
 /** A hand-cranked clock, so the tests never wait in real time. */
 function fakeTimers() {

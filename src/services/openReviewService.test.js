@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mapOpenReviewNote } from './openReviewService.js';
+import { mapOpenReviewNote } from './openReviewService.ts';
 
 test('maps an accepted OpenReview submission as a reviewed conference paper', () => {
   const paper = mapOpenReviewNote({

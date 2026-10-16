@@ -4,7 +4,7 @@ import {
   buildNotificationPreferencesPayload,
   serializeFollowForNotifications,
   serializeUpdateForNotifications,
-} from './emailNotificationService.js';
+} from './emailNotificationService.ts';
 
 test('a preview names its paper\'s field the way the card does, or not at all', () => {
   // The digest inks each paper with its field, so it needs the card's answer.

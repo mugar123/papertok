@@ -11,7 +11,7 @@ import {
   normalizeRorId,
   normalizeRorInstitution,
   searchRorInstitutions,
-} from './rorService.js';
+} from './rorService.ts';
 
 const ROR_RECORD = {
   id: 'https://ror.org/02f40zc51',

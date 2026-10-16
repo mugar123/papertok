@@ -1,6 +1,6 @@
 import { Select as SelectPrimitive } from '@base-ui/react/select';
 import { CaretDown, CaretUp, Check } from '@phosphor-icons/react';
-import { cn } from '../../lib/utils.js';
+import { cn } from '../../lib/utils.ts';
 
 /**
  * A listbox behind a field-shaped trigger. Base UI keeps the native form

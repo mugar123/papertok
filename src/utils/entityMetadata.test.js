@@ -7,7 +7,7 @@ import {
   deduplicateProjectParticipants,
   getRecentImpactConfig,
   getRecentImpactPeriod,
-} from './entityMetadata.js';
+} from './entityMetadata.ts';
 
 test('replaces misleading zero institution metrics with a verified works count', () => {
   const institution = applyInstitutionWorksFallback({

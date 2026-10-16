@@ -9,7 +9,7 @@ import {
   resolveSelection,
   toggleListIntent,
   removeTag,
-} from './saveOrganizeModel.js';
+} from './saveOrganizeModel.ts';
 
 /* --- The two-direction diff ------------------------------------------------
    The paper can already live in lists when the modal opens. Save must add to

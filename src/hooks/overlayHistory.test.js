@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
-import { clearStaleOverlayMarker, createOverlayHistory } from './useOverlayHistory.js';
+import { clearStaleOverlayMarker, createOverlayHistory } from './useOverlayHistory.ts';
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
@@ -228,7 +228,7 @@ test('SOURCE: main.jsx limpia el marcador antes de renderizar', async () => {
 });
 
 test('SOURCE: useOverlayHistory arma en el frame siguiente y cancela en la limpieza', async () => {
-  const code = stripComments(await read('./useOverlayHistory.js'));
+  const code = stripComments(await read('./useOverlayHistory.ts'));
   const hookBody = code.match(/export function useOverlayHistory\(open, onClose, tag\) \{[\s\S]*?\n\}/);
   assert.ok(hookBody, 'useOverlayHistory must still have this exact signature');
   const body = hookBody[0];

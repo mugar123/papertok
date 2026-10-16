@@ -4,7 +4,7 @@ import {
   getInstitutionAuthorsFromCrossref,
   getInstitutionWorksFromCrossref,
   mapCrossrefInstitutionWork,
-} from './crossrefInstitutionService.js';
+} from './crossrefInstitutionService.ts';
 
 test('builds a searchable institution author fallback from Crossref works', async () => {
   let requestedUrl = '';

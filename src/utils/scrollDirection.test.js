@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nextBarVisibility } from './scrollDirection.js';
+import { nextBarVisibility } from './scrollDirection.ts';
 
 const T = 8;
 

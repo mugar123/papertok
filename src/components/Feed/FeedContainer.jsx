@@ -3,7 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowsClockwise, Check, CloudSlash } from '@phosphor-icons/react';
 import { Button } from '../ui/button.jsx';
 import { useFeed } from '../../context/FeedContext';
-import { getUiErrorMessage } from '../../utils/errorMessages';
+import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 
 import PaperCard from './PaperCard';
 import SkeletonCard from './SkeletonCard';
@@ -18,12 +18,12 @@ import {
   mountWindowCovers,
   resumeIndex,
   windowReachingReader,
-} from '../../utils/feedMountWindow.js';
+} from '../../utils/feedMountWindow.ts';
 import AnimatedAtom from './AnimatedAtom';
-import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feedLoadingState';
-import { createFeedResumeMemory } from '../../utils/feedResumeMemory.js';
-import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feedPullToRefresh.js';
-import { SKIP_EXIT_MS, skipExitSlot } from '../../utils/feedSkipExit.js';
+import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feedLoadingState.ts';
+import { createFeedResumeMemory } from '../../utils/feedResumeMemory.ts';
+import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feedPullToRefresh.ts';
+import { SKIP_EXIT_MS, skipExitSlot } from '../../utils/feedSkipExit.ts';
 import './FeedContainer.css';
 
 // Per-surface memory of the card each feed was left on: the Siguiendo feed

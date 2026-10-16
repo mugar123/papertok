@@ -12,7 +12,7 @@ import {
 } from '@phosphor-icons/react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import useIsPhone from '../../hooks/useIsPhone.js';
+import useIsPhone from '../../hooks/useIsPhone.ts';
 import { GithubMark } from '../ui/GithubMark.jsx';
 import { Drawer, DrawerContent, DrawerHandle, DrawerTrigger } from '../ui/drawer.jsx';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group.jsx';

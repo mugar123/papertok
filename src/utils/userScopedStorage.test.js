@@ -14,7 +14,7 @@ import {
   saveSeenPaperIds,
   saveStoredLists,
   saveStoredOnboarding,
-} from './userScopedStorage.js';
+} from './userScopedStorage.ts';
 
 function createStorage() {
   const values = new Map();

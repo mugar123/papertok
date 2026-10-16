@@ -17,7 +17,7 @@ test('SOURCE: the feed card does not subscribe to the location', async () => {
 });
 
 test('SOURCE: the stable navigator reads NavigationContext only, never the location', async () => {
-  const hook = strip(await read('./useStableNavigate.js'));
+  const hook = strip(await read('./useStableNavigate.ts'));
   assert.match(hook, /useContext\(UNSAFE_NavigationContext\)/);
   assert.doesNotMatch(hook, /useLocation|LocationContext/);
   assert.match(hook, /\}, \[navigator\]\);/, 'one callback per navigator, which never changes');
