@@ -29,7 +29,7 @@ function SheetOverlay({ className, ...props }) {
     <SheetPrimitive.Backdrop
       data-slot="sheet-overlay"
       className={cn(
-        'fixed inset-0 z-[12050] bg-[rgba(17,19,24,0.4)]',
+        'fixed inset-0 z-[12050] bg-[var(--scrim)]',
         'motion-safe:data-open:[animation:fadeIn_150ms_ease]',
         'motion-safe:data-closed:[animation:fadeOut_150ms_ease_both]',
         className,

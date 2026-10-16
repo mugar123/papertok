@@ -12,9 +12,9 @@
 .create-list-scrim {
   /* No `backdrop-filter`: this scrim fades in with `fadeIn`, and animating
      opacity over a blurred layer forces the blur to be re-resolved every
-     frame — the worst case for a mobile GPU. The rgba scrim alone reads as
+     frame — the worst case for a mobile GPU. The flat scrim alone reads as
      the backdrop; its 3px blur was invisible under it. */
-  background: rgba(17, 19, 24, 0.4);
+  background: var(--scrim);
 }
 
 .create-list-scrim[data-open] {

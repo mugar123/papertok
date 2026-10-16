@@ -1,0 +1,48 @@
+/* The two patterned variants of ui/button (button-variants.js: `engraved`,
+   `halftone`), drawn here rather than in utilities: each is two pseudo-element
+   layers, and the hatch's hover animates a registered custom property, which
+   only a stylesheet can declare. Imported by button.jsx, so the button owns its
+   look. In the components layer, so a caller's utility still wins. The label
+   never sits on a pattern: it is always on a solid plate drawn in a
+   pseudo-element under it.
+
+   The layer order is restated here, the same statement as global.css's. This
+   file can load first (in dev it does), and the first file to name a layer
+   fixes its place: naming `components` before global.css named `base` put the
+   components under the base resets, and `button { background: none; border: 0 }`
+   wiped the engraved button's hatch and frame. Restating an identical order is
+   a no-op wherever it loads. */
+@layer theme, base, components, utilities;
+
+@property --hatch { syntax: '<length>'; inherits: false; initial-value: 1px; }
+
+@layer components {
+  /* Engraved, the primary: a hatched ink frame around a solid spot plate. */
+  .btn-engraved {
+    --hatch: 1px; --frame: var(--border-ink); --plate: var(--brand-yellow);
+    position: relative; isolation: isolate; color: var(--text-on-brand);
+    border: 1px solid var(--frame);
+    background: repeating-linear-gradient(-45deg, var(--frame) 0 var(--hatch), transparent var(--hatch) 4px);
+  }
+  .btn-engraved::before {
+    content: ''; position: absolute; inset: 3px; z-index: -1; border-radius: var(--radius-sm);
+    background: var(--plate); box-shadow: 0 0 0 1px var(--frame);
+  }
+  /* Hover and press fill the hatch solid: 4px is the hatch period, so no gap is left. */
+  @media (hover: hover) and (pointer: fine) { .btn-engraved:hover { --hatch: 4px; } }
+  .btn-engraved:active { --hatch: 4px; }
+
+  /* Halftone, the outline: a paper plate over a 1-bit checker shadow, 4px down-right. */
+  .btn-halftone { position: relative; isolation: isolate; color: var(--text-primary); background: transparent; }
+  .btn-halftone::before, .btn-halftone::after { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; }
+  .btn-halftone::before {
+    translate: 4px 4px; transition: opacity 120ms ease-out;
+    background: repeating-conic-gradient(var(--border-ink) 0 25%, transparent 0 50%) 0 0 / 4px 4px;
+  }
+  .btn-halftone::after { border: 1px solid var(--border-ink); background: var(--bg-card); transition: background-color 150ms ease-out; }
+  @media (hover: hover) and (pointer: fine) { .btn-halftone:hover::after { background: var(--bg-secondary); } }
+  .btn-halftone[aria-expanded='true']::after { background: var(--bg-secondary); }
+  /* While its menu or popover is open the trigger lies flat: one patterned thing on screen at a time. */
+  .btn-halftone[data-popup-open]::before { opacity: 0; }
+  .btn-halftone[data-popup-open]::after { background: var(--bg-secondary); }
+}

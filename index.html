@@ -12,7 +12,7 @@
     <meta name="apple-mobile-web-app-title" content="PaperTok" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="PaperTok is an application for exploring and discovering scientific papers from multiple sources." />
-    <meta name="theme-color" content="#ffffff" />
+    <meta name="theme-color" content="#fbf8f0" />
     <!-- The address of the page never leaves in a request header.
 
          Measured in a browser, not assumed: with the default policy,
@@ -49,7 +49,7 @@
             : (prefersDark ? 'dark' : 'light');
           document.documentElement.setAttribute('data-theme', theme);
           var meta = document.querySelector('meta[name="theme-color"]');
-          if (meta) meta.setAttribute('content', theme === 'dark' ? '#111318' : '#ffffff');
+          if (meta) meta.setAttribute('content', theme === 'dark' ? '#14161d' : '#fbf8f0');
         } catch (error) {
           document.documentElement.setAttribute('data-theme', 'light');
         }

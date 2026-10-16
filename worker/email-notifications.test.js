@@ -2859,7 +2859,7 @@ test('the field inks are the app\'s own light-theme inks', async () => {
   const css = await readFile(new URL('../src/styles/variables.css', import.meta.url), 'utf8');
   const lightStart = css.indexOf(':root {');
   const lightTheme = css.slice(lightStart, css.indexOf('\n}', lightStart));
-  assert.ok(lightTheme.includes('--bg-primary: #ffffff'), 'the first :root block is the light theme');
+  assert.ok(lightTheme.includes('--bg-primary: #fbf8f0'), 'the first :root block is the light theme');
   for (const [area, { gradient }] of Object.entries(CATEGORIES)) {
     const token = gradient.match(/var\((--gradient-[a-z]+)\)/)[1];
     const value = lightTheme.match(new RegExp(`${token}:\\s*(#[0-9a-fA-F]{6})`))?.[1];

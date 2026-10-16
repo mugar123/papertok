@@ -3,7 +3,7 @@
    plays its own enter/leave on `[data-open]`/`[data-closed]`. An alert
    dialog does not dismiss on the scrim — the answer is one of its buttons. */
 .delete-account-backdrop {
-  background: rgba(17, 19, 24, 0.5);
+  background: var(--scrim);
 }
 
 .delete-account-dialog {
