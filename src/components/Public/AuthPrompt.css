@@ -46,6 +46,11 @@
   margin-bottom: var(--space-4);
 }
 
+/* The dialog arrives on its own; Petri is already standing in it. */
+.petri.auth-modal-petri .onboarding-petri-body {
+  animation: none;
+}
+
 /* ── Copy ── */
 .auth-modal-title {
   margin: 0 0 var(--space-2);
