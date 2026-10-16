@@ -73,8 +73,7 @@ export function areaAccentForCategory(categoryId) {
 /**
  * OpenAlex's field ids, back to this app's areas.
  *
- * The inverse of `REPORT_OPENALEX_FIELDS`, which maps the other way for the
- * report's filters. It is not a bijection — field 24 feeds both `med` and
+ * Fields and areas do not map one to one — field 24 feeds both `med` and
  * `bio`, 22 feeds three engineering areas — so each id names the area it should
  * be read as when a paper only tells us its field, most specific first.
  *

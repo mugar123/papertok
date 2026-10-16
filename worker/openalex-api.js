@@ -1,8 +1,6 @@
-import { buildOpenAlexTrendFilter, normalizeReportFilters } from '../src/services/openAlexReportQuery.js';
 import { allowedOrigins, corsHeaders, json } from './http.js';
 import {
   boundedText,
-  cacheResponse,
   canonicalCacheKey,
   fetchJsonWithTimeout,
   fetchWithDeadline,
@@ -13,7 +11,6 @@ import {
   SOURCE_UPSTREAM_TIMEOUT_MS,
 } from './provider-runtime.js';
 
-const CACHE_SECONDS = 6 * 60 * 60;
 const OPENALEX_CACHE_SECONDS = 6 * 60 * 60;
 // OpenAlex bills per call against a daily budget, so the browser can no longer
 // hold the credential. These are the entities and parameters the app actually
@@ -56,71 +53,6 @@ const OPENALEX_RATE_LIMIT_HEADERS = [
   'x-ratelimit-limit-usd',
   'x-ratelimit-remaining-usd',
 ];
-
-function isDate(value) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value || '') && Number.isFinite(Date.parse(`${value}T00:00:00Z`));
-}
-
-async function fetchOpenAlexPeriod(period, filters, env) {
-  const url = new URL('https://api.openalex.org/works');
-  url.searchParams.set('filter', buildOpenAlexTrendFilter(period, filters));
-  url.searchParams.set('group_by', 'topics.id');
-  url.searchParams.set('per_page', '100');
-  url.searchParams.set('mailto', 'app@papertok.io');
-  if (env.OPENALEX_API_KEY) url.searchParams.set('api_key', env.OPENALEX_API_KEY);
-
-  const response = await fetchWithDeadline(url, { headers: { accept: 'application/json' } });
-  if (!response.ok) throw new Error(`OpenAlex error: ${response.status}`);
-  const data = await response.json();
-  return {
-    total: Math.max(0, Number(data?.meta?.count) || 0),
-    groups: Array.isArray(data?.group_by) ? data.group_by : [],
-  };
-}
-
-export async function handleTrends(request, env, identity) {
-  const requestUrl = new URL(request.url);
-  const origin = request.headers.get('origin') || '';
-  if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
-
-  const dates = {
-    from: requestUrl.searchParams.get('from'),
-    to: requestUrl.searchParams.get('to'),
-    previousFrom: requestUrl.searchParams.get('previous_from'),
-    previousTo: requestUrl.searchParams.get('previous_to'),
-  };
-  if (!Object.values(dates).every(isDate)) return json({ error: 'Invalid date range' }, 400, corsHeaders(origin, env));
-
-  const filters = normalizeReportFilters({
-    categories: (requestUrl.searchParams.get('categories') || '').split(',').filter(Boolean).slice(0, 12),
-    countries: (requestUrl.searchParams.get('countries') || '').split(',').filter(Boolean).slice(0, 20),
-  });
-
-  return cacheResponse(request, origin, env, CACHE_SECONDS, async () => {
-    const [current, previous] = await Promise.all([
-      fetchOpenAlexPeriod({ fromStr: dates.from, toStr: dates.to }, filters, env),
-      fetchOpenAlexPeriod({ fromStr: dates.previousFrom, toStr: dates.previousTo }, filters, env),
-    ]);
-    return { current, previous };
-  }, {
-    identity,
-    openAlexCalls: OPENALEX_CALLS.trends,
-    canonicalParams: {
-      // The dates are exact by `isDate`, so they are already canonical. The
-      // filters are not: `normalizeReportFilters` drops anything outside
-      // `REPORT_OPENALEX_FIELDS` and anything that is not ISO-2, then sorts and
-      // deduplicates what is left. Keying on what arrived meant `categories=zzz1`
-      // and `zzz2` -- and `cs,math` against `math,cs` -- were separate misses for
-      // one identical upstream query, at two billed OpenAlex calls each.
-      from: dates.from,
-      to: dates.to,
-      previous_from: dates.previousFrom,
-      previous_to: dates.previousTo,
-      categories: filters.categories.join(','),
-      countries: filters.countries.join(','),
-    },
-  });
-}
 
 export function addOpenAlexCredentials(url, env) {
   url.searchParams.set('mailto', 'app@papertok.io');

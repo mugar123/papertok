@@ -63,7 +63,7 @@ test('unsubscribe PUT still goes through the notification Origin gate', async ()
   assert.deepEqual(await response.json(), { code: 'EMAIL_ORIGIN_NOT_ALLOWED' });
 });
 
-for (const path of ['/report/trends', '/related', '/citation-graph', '/sources/core', '/sources/physics', '/sources/scopus']) {
+for (const path of ['/related', '/citation-graph', '/sources/core', '/sources/physics', '/sources/scopus']) {
   test(`${path} requires identity before validating a query or reading the cache`, async () => {
     const response = await worker.fetch(request(path), { FIREBASE_WEB_API_KEY: 'test-key' });
     assert.equal(response.status, 401);

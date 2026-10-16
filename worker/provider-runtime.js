@@ -4,8 +4,8 @@ import { awaitUpstreamSlot, PACE_RETRY_AFTER_SECONDS } from './upstream-pace.js'
 
 // The default upstream deadlines for the provider modules; some modules set their
 // own. The ceiling on any of them is what the browser is willing to wait: the
-// client gives `/report/trends` 10 s and the specialist sources 10 s, so a
-// Worker that outlasts that is answering nobody.
+// client gives the specialist sources 10 s, so a Worker that outlasts that is
+// answering nobody.
 const UPSTREAM_TIMEOUT_MS = 8000;
 export const SOURCE_UPSTREAM_TIMEOUT_MS = 6000;
 
@@ -26,8 +26,6 @@ const DEFAULT_OPENALEX_GLOBAL_DAILY_LIMIT = 8_000;
 // route the daily ceiling does not actually cover.
 export const OPENALEX_CALLS = Object.freeze({
   relay: 1,
-  // The two periods the report compares.
-  trends: 2,
   // One `works/doi:` lookup, then up to two batches of twenty for each of the two
   // reference filters and the same again for citations.
   citationGraph: 9,
@@ -87,11 +85,11 @@ const SHARED_MINUTE_CEILINGS = Object.freeze({
 
 // The key is built from the values the handler is about to send upstream, never
 // from the ones that arrived. Those are two different things everywhere in this
-// file -- `limit=99` is clamped to 10, `categories=zzz` is dropped, a DOI is
-// lowercased, a filter is trimmed -- and keying on the raw ones made every
-// variant of a discarded parameter a fresh miss for one identical upstream call.
-// On the routes OpenAlex bills that was money: `categories=zzz1`, `zzz2`, ...
-// each cost two calls against a $1/day budget.
+// file -- `limit=99` is clamped to 10, a DOI is lowercased, a filter is
+// trimmed -- and keying on the raw ones made every variant of a discarded or
+// normalised parameter a fresh miss for one identical upstream call. On the
+// routes OpenAlex bills that was money: every spelling of one DOI on
+// `/citation-graph` paid for the same calls again.
 //
 // The contract this puts on callers is the reverse of the old parameter
 // allowlist, and stricter: whatever affects the answer must appear here, because
