@@ -206,8 +206,7 @@ service cloud.firestore {
     // is what retires the expression-budget spiral of validPinnedLists.
     //
     // `is string` survives mutation: without it, .matches() on a non-string
-    // blows the evaluation and denies anyway. Kept as house style — the same
-    // documented redundancy as validFollowEdge's hasAll.
+    // blows the evaluation and denies anyway. Kept as house style.
     function validPinnedShareIds(entries) {
       return entries is list
         && entries.size() <= 3
@@ -251,65 +250,6 @@ service cloud.firestore {
     // outcome this design refuses.
     function profileIsPublic(data) {
       return !('visibility' in data) || data.visibility == 'public';
-    }
-
-    // The search index (F9) and the profile it mirrors are kept coherent from
-    // both sides. This is the fail-safe side: a profile that is private after
-    // the write must have no index document after the write either, so going
-    // private cannot leave a stale entry behind. `existsAfter` looks at the
-    // post-batch state, which is what makes "leave and delist in one batch"
-    // the only accepted shape.
-    function searchIndexAbsentAfter(uid) {
-      return !existsAfter(/databases/$(database)/documents/userSearch/$(uid));
-    }
-
-    // And this is the other side, which the first version of F9 left open.
-    //
-    // `validUserSearchEntry` checks `nameLower == displayName.lower()` when the
-    // ENTRY is written. On its own that is a gate you walk through once and then
-    // walk away from: index yourself legally as "taylor swift" while your
-    // profile really says it, then rename the profile without touching the
-    // entry. Nothing refused either write, and the index kept advertising a name
-    // the profile no longer held — the exact name-stuffing the equality exists
-    // to stop, executed in two writes instead of one. The same two-step drifted
-    // the handle, leaving a row that opens somebody else's profile once the
-    // freed handle is claimed.
-    //
-    // So a public write now has to leave the entry agreeing with the profile it
-    // produces. The comparison is `displayName.lower()`, byte for byte the one
-    // already inside validUserSearchEntry: no second derivation exists that
-    // could disagree with toIndexedName.
-    //
-    // An account with no entry is untouched — `existsAfter` is false and the
-    // clause passes — which is what keeps every profile written before F9
-    // saveable, and what makes this deployable without waiting for the app.
-    function searchIndexCoherentAfter(uid) {
-      return !existsAfter(/databases/$(database)/documents/userSearch/$(uid))
-        || (getAfter(/databases/$(database)/documents/userSearch/$(uid)).data.nameLower
-              == request.resource.data.displayName.lower()
-            && getAfter(/databases/$(database)/documents/userSearch/$(uid)).data.handle
-              == request.resource.data.handle);
-    }
-
-    // Measured, because this is where the expression budget goes. With the
-    // coherence branch in place the heaviest legitimate profile write — rename
-    // the handle, six pins, entry carried along — tops out at SIX pinned lists;
-    // without it, seven. The cap stays at six and every legitimate write at the
-    // cap still passes, but the one entry of slack F1 deliberately left is now
-    // spent: the next clause added here takes the cap to five.
-    // `tests/firestore.rules.test.js` measures both numbers so neither can move
-    // unnoticed.
-    //
-    // Re-measured 2026-09-10 (validPinnedLists unrolled to ten): swapping the
-    // create's `existsAfter(handles)` for `getAfter(handles).data.uid` left
-    // both ceilings at six — create and rename. A `.matches()` on `photo` in
-    // validPublicProfile, on the other hand, took the rename-with-photo
-    // ceiling to FIVE, which is why the photo allowlist stays in the client
-    // (`cleanPhoto`, userProfileService.js) and is not enforced here.
-    function profileSearchStateValid(uid) {
-      return profileIsPublic(request.resource.data)
-        ? searchIndexCoherentAfter(uid)
-        : searchIndexAbsentAfter(uid);
     }
 
     function validPublicProfile() {
@@ -387,10 +327,9 @@ service cloud.firestore {
       //
       // Not covered by going private, deliberately and stated in the UI: the
       // handle reservation stays readable (uniqueness has to be answerable, and
-      // freeing the handle would make the switch one-way), lists published from
-      // Mis listas stay public (they are anonymous by design — going private
-      // removes the attribution, not the list), and the follow edges pointing
-      // at this uid stay countable.
+      // freeing the handle would make the switch one-way), and lists published
+      // from Mis listas stay public (they are anonymous by design — going
+      // private removes the attribution, not the list).
       allow get: if profileIsPublic(resource.data)
         || (request.auth != null && request.auth.uid == profileUid);
       allow list: if false;
@@ -416,18 +355,11 @@ service cloud.firestore {
         // comparison; the pin cap measured six before and after (Task 2).
         && getAfter(
           /databases/$(database)/documents/handles/$(request.resource.data.handle)
-        ).data.uid == request.auth.uid
-        // A profile born private must not be born indexed, and one born public
-        // must not inherit an entry that says something else (F9).
-        && profileSearchStateValid(profileUid);
+        ).data.uid == request.auth.uid;
       allow update: if request.auth != null
         && request.auth.uid == profileUid
         && validPublicProfile()
         && publicProfileServiceFieldsUnchanged()
-        // Going private and staying in the search index is not an unlikely
-        // bug: it is a write this database refuses. Neither is renaming out
-        // from under an entry that keeps serving the old name (F9).
-        && profileSearchStateValid(profileUid)
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.updatedAt == request.time
         && (
@@ -452,10 +384,7 @@ service cloud.firestore {
           && request.auth.uid == profileUid
           && !existsAfter(
             /databases/$(database)/documents/handles/$(resource.data.handle)
-          )
-          // ...and takes its search entry with it, or the index keeps serving
-          // a name whose profile no longer exists (F9).
-          && searchIndexAbsentAfter(profileUid))
+          ))
         || isAdmin();
     }
 
@@ -480,181 +409,6 @@ service cloud.firestore {
       allow delete: if (request.auth != null
           && resource.data.uid == request.auth.uid)
         || isAdmin();
-    }
-
-    // ---------------------------------------------------------------------
-    // User search index (F9). Additive: nothing above this line changes
-    // except the two `profilePublicOrDelisted` clauses on userProfiles/.
-    // ---------------------------------------------------------------------
-    //
-    // Searching is enumerating — rules see a query's `limit` and `orderBy`, never
-    // the values of its `where` — so this collection is designed around what an
-    // enumerator walks away with, not around pretending they cannot walk. The
-    // prize here is handle + lowercased name of people who chose to be public,
-    // which `allow get` on the profile already serves one by one. No photo, no
-    // bio: those are exactly what the F1 review closed `list` on userProfiles/
-    // to protect, and they stay closed.
-    //
-    // Keyed by uid rather than by handle so the coherence checks below address
-    // userProfiles/$(uid) through the same path segment, and so renaming a
-    // handle is an update in place instead of a third delete+create in a batch
-    // that already touches three documents.
-
-    function searchProfileAfter(uid) {
-      return getAfter(/databases/$(database)/documents/userProfiles/$(uid)).data;
-    }
-
-    function validUserSearchEntry(uid) {
-      // The mutation pass is explicit about which clauses here carry weight
-      // today. `hasOnly` does — deleting it lets a photo back in. `hasAll` does
-      // not: it is covered by `hasOnly` plus the dereferences below (a missing
-      // key errors and denies, the same belt-and-braces noted on
-      // validFollowEdge). Neither do the two size checks, which are implied by
-      // the equalities at the bottom — the profile fields they are compared
-      // against are themselves bounded by validPublicProfile. The redundant ones
-      // stay because they stop being redundant the moment a document arrives by
-      // any path that did not go through those clauses: the service identity of
-      // F6 writes profiles this ruleset does not validate.
-      //
-      // Two fields, and no timestamp. The entry used to carry `createdAt ==
-      // request.time`, which the client rewrote on every profile save: a field
-      // named for creation that actually moved on every edit, readable and
-      // ORDERABLE by anyone who can query the collection. That is a
-      // "who edited their profile most recently" listing the product never
-      // offers, handed out for free. Nothing read it — `readRow` takes the
-      // handle and the name — so it is gone rather than frozen.
-      return request.resource.data.keys().hasOnly(['handle', 'nameLower'])
-        && request.resource.data.keys().hasAll(['handle', 'nameLower'])
-        && validString(request.resource.data.handle, 40)
-        && validString(request.resource.data.nameLower, 80)
-        // Only public profiles are in the index, checked after the batch: this
-        // is the direction that makes "a private profile does not appear in
-        // results" a property of the data instead of a filter a modified client
-        // could skip. `getAfter` on a profile that does not exist yields null
-        // and denies the write, so an entry can never outlive its profile.
-        //
-        // Explicitly public, not public-by-absence. A profile written before F8
-        // has no `visibility` field and reads as public — correct for opening
-        // its page, which was always public, and wrong for this: being listed in
-        // a searchable index is a thing to be asked about, and that account was
-        // never asked. It answers the one-time prompt F8 already shows, and then
-        // it is indexed. Silence is not consent, so silence is not an entry.
-        //
-        // The presence check is redundant today and the mutation pass says so:
-        // on a profile with no `visibility`, the equality below dereferences a
-        // key that is not there, which errors and denies on its own. Removing
-        // BOTH lines is killed, and removing only the equality is killed; only
-        // this line is a free-standing survivor. It stays because the thing it
-        // guards against is a refactor rather than a caller — the day
-        // `searchProfileAfter` grows a `.get('visibility', 'public')` default,
-        // the error disappears and public-by-absence walks silently back in.
-        && 'visibility' in searchProfileAfter(uid)
-        && searchProfileAfter(uid).visibility == 'public'
-        && request.resource.data.handle == searchProfileAfter(uid).handle
-        // The one clause without which this whole collection would be a
-        // name-stuffing surface: the indexed name has to BE the real display
-        // name, lowercased. Otherwise anyone could index themselves under
-        // somebody else's name and surface in searches for them.
-        && request.resource.data.nameLower == searchProfileAfter(uid).displayName.lower();
-    }
-
-    match /userSearch/{searchUid} {
-      // `get` buys nothing: the profile itself is the document to read, by uid
-      // or through handles/. Leaving it open would only add a second oracle for
-      // "does this uid have a public profile".
-      allow get: if false;
-      // `list` IS the feature, and it is the only read here. A session is
-      // required — it makes scraping cost a real account, which is blockable by
-      // uid — and the server imposes the ceiling, the follows/ pattern, so no
-      // caller can page the index at this project's expense.
-      allow list: if request.auth != null
-        && request.query.limit <= 20;
-      allow create, update: if request.auth != null
-        && request.auth.uid == searchUid
-        && validUserSearchEntry(searchUid);
-      // Always available to the owner, unconditionally: leaving the index has
-      // to be possible in the same batch that takes the profile private, and a
-      // delete that could be refused would make that batch unwritable.
-      //
-      // And to the admin, which the first version of F9 forgot. The admin
-      // branch of the profile delete carries no delisting requirement, so a
-      // profile removed by moderation left its entry behind — still serving
-      // that account's name and handle to every searcher, still linking to a
-      // profile that no longer exists. With no admin delete here, the only
-      // account that could clear it was the one that had just been moderated
-      // away. Same shape as the admin delete already on handles/.
-      allow delete: if (request.auth != null && request.auth.uid == searchUid)
-        || isAdmin();
-    }
-
-    // ---------------------------------------------------------------------
-    // User follows (F2). Additive: nothing above this line changes.
-    // ---------------------------------------------------------------------
-    //
-    // One document per edge, `follows/{followerUid}_{targetUid}`. The composite
-    // id is the whole design: an edge cannot be duplicated (the second create
-    // hits an existing document), unfollowing is a delete by id with no query,
-    // and "does A follow B" is a single get rather than a search.
-    //
-    // Deliberately NOT `users/{uid}/following`: that subcollection is private,
-    // owner-only, and models external entities (authors, topics) for the feed.
-    // Follower lists have to be readable by other people, which a private
-    // subcollection cannot offer without breaking its current contract.
-
-    // A uid that cannot contain the separator, so `{follower}_{target}` maps
-    // back to exactly one pair. Firebase Auth mints 28-character alphanumeric
-    // uids, so this rejects nothing real; without it an account whose uid ended
-    // in `_x` could squat the document another pair needs and permanently block
-    // that follow.
-    function validFollowUid(uid) {
-      return uid is string && uid.matches('^[A-Za-z0-9-]{1,128}$');
-    }
-
-    function validFollowEdge(edgeId) {
-      // `hasAll` is the house shape (02-SECURITY.md) but it is belt-and-braces
-      // here, and the mutation pass says so: deleting it changes no outcome,
-      // because every required key is dereferenced below and a missing key
-      // denies the write on its own. Kept for the shape, not load-bearing.
-      return request.resource.data.keys().hasOnly(['followerUid', 'targetUid', 'createdAt'])
-        && request.resource.data.keys().hasAll(['followerUid', 'targetUid', 'createdAt'])
-        && validFollowUid(request.resource.data.followerUid)
-        && validFollowUid(request.resource.data.targetUid)
-        // The follower is the caller, and the id agrees with the body: the id
-        // is what makes the edge idempotent, so the two must not diverge.
-        && request.resource.data.followerUid == request.auth.uid
-        && edgeId == request.resource.data.followerUid + '_' + request.resource.data.targetUid
-        // Following yourself would be a free +1 on your own follower count.
-        && request.resource.data.targetUid != request.auth.uid
-        // Only accounts with a public profile can be followed. There is no page
-        // to follow otherwise, and it keeps the graph from filling with edges
-        // pointing at uids that were never users.
-        && exists(/databases/$(database)/documents/userProfiles/$(request.resource.data.targetUid))
-        // ...and a profile that has gone private is not a page either. Edges
-        // that already exist are left alone — this only stops new ones, so
-        // going private never silently deletes somebody's follows. Unfollowing
-        // stays open in every case: you must always be able to leave.
-        && profileIsPublic(
-          get(/databases/$(database)/documents/userProfiles/$(request.resource.data.targetUid)).data
-        )
-        && request.resource.data.createdAt == request.time;
-    }
-
-    match /follows/{edgeId} {
-      // Both directions are public: a follower list is a public fact about a
-      // public profile, and "do I follow this person" has to answer for the
-      // signed-in visitor. Unlike userProfiles, `list` stays open — paging the
-      // follower list IS the feature — but every query must carry a ceiling,
-      // so no caller can ask for the whole graph on this project's bill.
-      allow get: if true;
-      allow list: if request.query.limit <= 1000;
-      // The `!= null` is the same belt-and-braces as `hasAll`: a signed-out
-      // caller already dies on `request.auth.uid` inside validFollowEdge.
-      allow create: if request.auth != null && validFollowEdge(edgeId);
-      // An edge has no mutable state. Re-following is a create against a
-      // document that already exists, which Firestore refuses on its own.
-      allow update: if false;
-      allow delete: if request.auth != null
-        && resource.data.followerUid == request.auth.uid;
     }
 
     match /users/{userId} {
@@ -945,8 +699,8 @@ service cloud.firestore {
       // selection. The consequence is that a partial `updateDoc` — say, to edit
       // `note` — has to re-stamp `createdAt` too, since a merged write carrying
       // the stored value forward is not `request.time`. Nothing does that today.
-      // The field is private to its owner, so the "who edited most recently"
-      // leak that removed a createdAt from `userSearchIndex` does not apply.
+      // The field is private to its owner, so a timestamp here cannot tell
+      // anyone else who edited most recently.
       match /highlights/{highlightId} {
         allow get, delete: if ownsUserTree(userId);
         // Every sibling collection under this tree carries its page ceiling in
