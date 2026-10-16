@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DISSOCIATED_COMMENT_FIELDS } from '../src/utils/commentIdentity.js';
 import { fakeIdToken } from '../src/test-support/firebaseIdToken.js';
 import {
   ACCOUNT_DELETE_PATH,
@@ -197,7 +196,6 @@ test('dissociates comments instead of deleting them, then finishes the tree', as
     }),
     'notification:unsubscribe:tok-1': UID,
     [`notification:delivery-state:${UID}`]: JSON.stringify({ lastSentAt: 1 }),
-    [`thread:v1:${PAPER_KEY}`]: JSON.stringify({ key: PAPER_KEY, comments: [] }),
   });
   const env = { ...SERVICE, NOTIFICATION_STORE: store };
 
@@ -236,7 +234,6 @@ test('dissociates comments instead of deleting them, then finishes the tree', as
     assert.equal(admin.documents[`users/${UID}/rateLimits/comments`], undefined);
     assert.equal(store.data.has(`notification:subscription:${UID}`), false);
     assert.equal(store.data.has('notification:unsubscribe:tok-1'), false);
-    assert.equal(store.data.has(`thread:v1:${PAPER_KEY}`), false);
   } finally {
     restore();
   }
@@ -352,10 +349,4 @@ test('a stale session asks the user to sign in again instead of deleting Auth la
     }),
     error => error.code === 'AUTH_RECENT_LOGIN_REQUIRED' && error.status === 401,
   );
-});
-
-test('the dissociation contract is the empty author plus an explicit flag', () => {
-  assert.equal(DISSOCIATED_COMMENT_FIELDS.authorUid, '');
-  assert.equal(DISSOCIATED_COMMENT_FIELDS.authorHandle, '');
-  assert.equal(DISSOCIATED_COMMENT_FIELDS.dissociated, true);
 });

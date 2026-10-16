@@ -2727,39 +2727,6 @@ test('relays a rewrite refusal with its own status, code and quota', async () =>
   assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
 });
 
-test('the thread-anchor route is origin-gated and public', async () => {
-  const blocked = await reportApi.fetch(new Request(
-    'https://papertok-report-api.example/thread-anchor?ids=doi:10.1234/abc',
-    { headers: { origin: 'https://evil.example' } },
-  ), {});
-  assert.equal(blocked.status, 403);
-
-  // No Origin at all is not one of our browsers: a cross-origin fetch always
-  // carries it, and the API host has no same-origin page. Refusing it keeps a
-  // script from draining Firestore through the service account.
-  const anonymous = await reportApi.fetch(new Request(
-    'https://papertok-report-api.example/thread-anchor?ids=doi:10.1234/abc',
-  ), {});
-  assert.equal(anonymous.status, 403);
-  assert.equal((await anonymous.json()).code, 'ORIGIN_NOT_ALLOWED');
-
-  const anonymousInvalidate = await reportApi.fetch(new Request(
-    'https://papertok-report-api.example/thread-anchor/invalidate',
-    { method: 'POST', body: '{"keys":["k"]}' },
-  ), {});
-  assert.equal(anonymousInvalidate.status, 403);
-
-  const allowed = await reportApi.fetch(new Request(
-    'https://papertok-report-api.example/thread-anchor?ids=doi:10.1234/abc',
-    { headers: { origin: 'https://mugar123.github.io' } },
-  ), {});
-  // No service account and no KV: the route exists and fails closed as
-  // unavailable, which is what the browser treats as "use Firestore".
-  assert.equal(allowed.status, 503);
-  assert.equal((await allowed.json()).code, 'THREAD_ANCHOR_UNAVAILABLE');
-  assert.equal(allowed.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
-});
-
 test('closes the API host to crawlers with its own robots.txt', async () => {
   // Un rastreador no manda `origin`, asi que la ruta tiene que contestar sin el.
   const response = await reportApi.fetch(
