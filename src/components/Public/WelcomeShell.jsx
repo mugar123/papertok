@@ -1,8 +1,9 @@
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeft, ArrowRight, CaretDown, Check, SkipForward } from '@phosphor-icons/react';
 import { CATEGORIES } from '../../data/categories.js';
 import ThemeToggle from '../Layout/ThemeToggle.jsx';
+import ProgressDots from './ProgressDots.jsx';
 import { Button } from '../ui/button.jsx';
 import { Toggle } from '../ui/toggle.jsx';
 import './GuestWelcome.css';
@@ -41,73 +42,6 @@ import './GuestWelcome.css';
 // mounts, but not on first paint (see `focusNewHeading`).
 
 const AREA_ENTRIES = Object.entries(CATEGORIES);
-
-// The progress dots: a dot added grows in place with a light bounce, one taken
-// away shrinks in place over the same time, no bounce; each waits DOT_STAGGER
-// after its neighbour, so they come and go one at a time.
-const DOT_GROW = { type: 'spring', duration: 0.36, bounce: 0.3 };
-const DOT_FOLD = { duration: 0.36, ease: [0.33, 1, 0.68, 1] };
-const DOT_STAGGER = 0.08;
-// The row's geometry: a dot is 6px, the current screen's bar 22px, 6px apart.
-const DOT = 6;
-const BAR = 22;
-const DOT_GAP = 6;
-
-// The progress dots, keyed by place along the row: the dots ahead are all the
-// same grey, so when a choice adds screens (the public profile's handle and
-// page) the row simply gains dots at its end, each scaling up in its own place
-// after the one before it; when it loses them they scale away, the last first.
-// Given `dots.max`, the row is laid out at the width of its longest version and
-// starts from the left of it, so dots coming and going leave the rest in place
-// (at the cost of sitting a few pixels left of centre while it is shorter).
-// Refused motion just redraws.
-function ProgressDots({ dots, still }) {
-  // The count before the last change: where the new dots start counting from.
-  const [counts, setCounts] = useState({ now: dots.count, before: dots.count });
-  if (counts.now !== dots.count) setCounts({ now: dots.count, before: counts.now });
-  const { before } = counts;
-  // One bar and the rest dots, a gap after each but the last.
-  const span = (count) => (count - 1) * (DOT + DOT_GAP) + BAR;
-  return (
-    <ol
-      className={`gw-dots${dots.max ? ' gw-dots--fixed' : ''}`}
-      aria-label={dots.ariaLabel}
-      style={dots.max ? { width: span(dots.max) } : undefined}
-    >
-      <AnimatePresence initial={false} custom={before}>
-        {Array.from({ length: dots.count }, (_, index) => (
-          <motion.li
-            key={index}
-            className={`gw-dot${index === dots.index ? ' is-active' : ''}${index < dots.index ? ' is-done' : ''}`}
-            aria-current={index === dots.index ? 'step' : undefined}
-            variants={{
-              born: { opacity: 0, scale: 0 },
-              shown: {
-                opacity: 1,
-                scale: 1,
-                width: index === dots.index ? BAR : DOT,
-                transition: still
-                  ? { duration: 0 }
-                  : { default: { ...DOT_GROW, delay: Math.max(0, index - before) * DOT_STAGGER }, width: DOT_FOLD },
-              },
-              // `custom` is the count before the change, so the last dot goes first.
-              folded: (previousCount) => ({
-                opacity: 0,
-                scale: 0,
-                transition: still ? { duration: 0 } : { ...DOT_FOLD, delay: Math.max(0, previousCount - 1 - index) * DOT_STAGGER },
-              }),
-            }}
-            initial="born"
-            animate="shown"
-            exit="folded"
-          >
-            <span className="gw-dot-label">{dots.label(index + 1, dots.count)}</span>
-          </motion.li>
-        ))}
-      </AnimatePresence>
-    </ol>
-  );
-}
 
 // How many of an area's topics show before "Show more": two rows of the
 // three-column grid. An area with only a couple past that shows them all —
@@ -155,11 +89,7 @@ export function WelcomeShell({
     shownSection.current = section;
   }, []);
 
-  // The key of the screen that will be shown, read when the exit completes.
-  // AnimatePresence can call back with the handler from an earlier render: two
-  // quick presses (back, back) changed the step again mid-exit, and a caller
-  // closing over its own `step` was told the screen in between, so the landing
-  // came up wearing the footer and Sign in of the screen after it.
+
   const latestStepKey = useRef(stepKey);
   useLayoutEffect(() => { latestStepKey.current = stepKey; }, [stepKey]);
 
@@ -328,8 +258,6 @@ export function AreaPicker({ selected, onToggle, label }) {
 // `onToggleTopic(id)` flips one; `expandedAreas` is a Set of area keys whose
 // fold is open and `onToggleExpanded(key)` opens or closes one.
 export function SubtopicsPicker({ selectedAreas, selectedTopics, onToggleTopic, expandedAreas, onToggleExpanded }) {
-  // Each group arrives whole, heading and cards together, one after the other
-  // down the screen; `--i` is the group's place (GuestWelcome.css .gw-subtopics).
   return AREA_ENTRIES.filter(([key]) => selectedAreas.has(key)).map(([key, area], groupIndex) => {
     const areaLabel = area.label;
     const entries = Object.entries(area.subcategories);

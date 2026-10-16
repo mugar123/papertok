@@ -15,14 +15,15 @@ import { Button } from '../ui/button.jsx';
 import { GithubMark } from '../ui/GithubMark.jsx';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import GoogleMark from './GoogleMark.jsx';
-import { COLLISION_NOTE, useProviderSignIn } from './useProviderSignIn.js';
+import { useProviderSignIn } from './useProviderSignIn.js';
+import { CollisionNote, ProviderSpinner } from './ProviderSignIn.jsx';
 import Petri from '../Onboarding/Petri.jsx';
 import PetriStamp from '../Onboarding/PetriStamp.jsx';
 import { normalizeGuestAreas, normalizeGuestTopics } from '../../utils/guestInterests.js';
 import { DigestPreview, WelcomeReadingChoice, WelcomeInboxChoice, WelcomeProjectSupport } from './GuestWelcomePreferences.jsx';
 import { AreaPicker, SubtopicsPicker, WelcomeCopy, WelcomeShell } from './WelcomeShell.jsx';
 import PrivacyPopover from './PrivacyPopover.jsx';
-import './AuthPrompt.css'; // .auth-spinner, the provider in flight
+import Stars from './Stars.jsx';
 import './GuestWelcome.css';
 
 // The first thing a visitor sees: a page, not a sheet over a feed they have
@@ -48,11 +49,6 @@ import './GuestWelcome.css';
 // is drawn at all.
 
 const STEPS = ['welcome', 'how', 'topics', 'subtopics', 'reading', 'inbox', 'support'];
-// Petri in place of the kicker, as on the account onboarding: looking into a
-// flask over the areas, and dressed for the level picked (PetriReading) over
-// how deep to read. The other screens
-// carry their own illustrations or a long list, and leave her out.
-// What you do here opens on her holding up a card that says hello.
 const STEP_PETRI = { how: 'welcome', topics: 'flask', reading: 'reading' };
 // Where the intro's skip lands: the question, not past it.
 const TOPICS_INDEX = STEPS.indexOf('topics');
@@ -78,7 +74,6 @@ const COPY = {
       google: 'Continue with Google',
     },
     how: {
-      // Petri holds this up on a card in place of a kicker (STEP_PETRI).
       kicker: 'Hello',
       title: 'You read science the way you scroll.',
       beats: [
@@ -121,56 +116,6 @@ const COPY = {
     },
   },
 };
-
-// The welcome's stars: one four-point glint at a time fades up, turns and fades
-// out somewhere on the page, then the next, never over the hero. No glint
-// starts after STARS_LAST_MS and none lasts over 2.2s, so the sky is still
-// inside five seconds. Decoration only, so the layer is hidden from assistive
-// tech; nothing at all with motion refused. Drawn with the Web Animations API,
-// so no state re-renders the page.
-const STARS_LAST_MS = 2800;
-const STAR_PATH = 'M12 0C12.8 7 17 11.2 24 12C17 12.8 12.8 17 12 24C11.2 17 7 12.8 0 12C7 11.2 11.2 7 12 0Z';
-
-function Stars({ avoid }) {
-  const sky = useRef(null);
-  useEffect(() => {
-    let timer;
-    const until = performance.now() + STARS_LAST_MS;
-    const twinkle = () => {
-      const delay = 500 + Math.random() * 1000;
-      if (performance.now() + delay < until) timer = window.setTimeout(twinkle, delay);
-      const box = sky.current?.getBoundingClientRect();
-      const hero = avoid.current?.getBoundingClientRect();
-      if (!box || !hero) return;
-      let x;
-      let y;
-      let tries = 0;
-      do {
-        x = Math.random() * box.width;
-        y = Math.random() * box.height;
-        tries += 1;
-      } while (tries < 8 && x > hero.left - box.left - 24 && x < hero.right - box.left + 24
-        && y > hero.top - box.top - 24 && y < hero.bottom - box.top + 24);
-      const size = 10 + Math.random() * 12;
-      const star = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      star.setAttribute('viewBox', '0 0 24 24');
-      if (Math.random() < 0.5) star.classList.add('is-spot');
-      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      path.setAttribute('d', STAR_PATH);
-      star.append(path);
-      Object.assign(star.style, { left: `${x - size / 2}px`, top: `${y - size / 2}px`, width: `${size}px`, height: `${size}px` });
-      sky.current.append(star);
-      star.animate([
-        { opacity: 0, transform: 'scale(0.4) rotate(0deg)' },
-        { opacity: 0.9, transform: 'scale(1) rotate(45deg)', offset: 0.4 },
-        { opacity: 0, transform: 'scale(0.6) rotate(90deg)' },
-      ], { duration: 1400 + Math.random() * 800, easing: 'ease-in-out' }).finished.then(() => star.remove(), () => star.remove());
-    };
-    timer = window.setTimeout(twinkle, 800);
-    return () => window.clearTimeout(timer);
-  }, [avoid]);
-  return <div ref={sky} className="gw-stars" aria-hidden="true" />;
-}
 
 // ── The three gestures, one per screen, each playing its point once ──
 
@@ -354,9 +299,7 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
   const [direction, setDirection] = useState(1);
   const [leaving, setLeaving] = useState(false);
   const hero = useRef(null);
-  // The screen actually on show. The page around it (the landing's engravings,
-  // its missing foot, the bar's Sign in) follows this rather than `step`, so it
-  // changes as the old screen finishes leaving, not under it mid-fade.
+
   const [shownStep, setShownStep] = useState(STEPS[0]);
   const onLanding = shownStep === 'welcome';
   // The landing's account button opens the two providers under it, in place.
@@ -434,8 +377,7 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
   const primaryDisabled = isQuestion && selected.size === 0;
 
   const petriPose = STEP_PETRI[step];
-  // The inbox screen opens on its envelope, over the title where the kicker
-  // was, stamped with Petri like the university screen's paper.
+
   const copyBlock = (
     <>
       {step === 'inbox' && <DigestPreview still={still} stamp={<PetriStamp />} />}
@@ -459,15 +401,12 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
       className={onLanding ? 'gw--landing' : undefined}
       landing={onLanding}
       onStepShown={setShownStep}
-      // Follows the screen on show, like the landing's chrome above.
       stageClassName={STEPS.indexOf(shownStep) >= TOPICS_INDEX ? 'gw-stage--topics' : undefined}
       dots={{ count: STEPS.length, index: stepIndex, label: copy.stepOf, ariaLabel: copy.progress }}
       primary={{ label: stepCopy.cta, onClick: primary, disabled: primaryDisabled }}
       back={stepIndex > 0 ? { onClick: () => goTo(stepIndex - 1), label: copy.back } : null}
       // The intro's skip lands on the question, wherever there is intro left.
       skip={stepIndex < TOPICS_INDEX ? { onClick: () => goTo(TOPICS_INDEX), label: copy.skip } : null}
-      // The engravings and stars sit against the whole page, outside the
-      // screen's entrance, so they are in their corners from the first frame.
       backdrop={onLanding && (
         <>
           <span className="gw-plate gw-plate--scrolls" aria-hidden="true" />
@@ -518,18 +457,18 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
               <div id="gw-providers" className="gw-providers" data-open={accountOpen ? '' : undefined} inert={!accountOpen}>
                 <div>
                   <Button variant="outline" size="lg" className="w-full" onClick={() => signIn('github')}>
-                    {pendingProvider === 'github' ? <span className="auth-spinner" aria-hidden="true" /> : <GithubMark size={18} />}
+                    {pendingProvider === 'github' ? <ProviderSpinner /> : <GithubMark size={18} />}
                     {copy.welcome.github}
                   </Button>
                   <Button variant="outline" size="lg" className="w-full" onClick={() => signIn('google')}>
-                    {pendingProvider === 'google' ? <span className="auth-spinner" aria-hidden="true" /> : <GoogleMark size={18} />}
+                    {pendingProvider === 'google' ? <ProviderSpinner /> : <GoogleMark size={18} />}
                     {copy.welcome.google}
                   </Button>
                   {/* Always mounted and displayed, even empty, so the alert is a
                       live region before its text arrives. */}
                   <p className="gw-providers-note" role="alert">
                     {collision
-                      ? <>{collision.email ? <strong>{collision.email}</strong> : 'That address'} {COLLISION_NOTE}</>
+                      ? <CollisionNote email={collision.email} />
                       : signInError ? getUiErrorMessage(signInError, 'AUTH_FAILED') : ''}
                   </p>
                 </div>

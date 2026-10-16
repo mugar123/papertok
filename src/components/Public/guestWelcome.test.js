@@ -11,6 +11,7 @@ const jsxPromise = read('./GuestWelcome.jsx').then(stripComments);
 // The page, its foot and the pickers the welcome draws through.
 const shellPromise = read('./WelcomeShell.jsx').then(stripComments);
 const cssPromise = read('./GuestWelcome.css').then(stripComments);
+const starsPromise = read('./Stars.jsx').then(stripComments);
 
 /**
  * SOURCE test for the shape of the welcome: four screens in order — what
@@ -140,7 +141,9 @@ test('with motion refused the illustrations are drawn finished and the columns h
   assert.match(jsx, /if \(still\) onComplete\?\.\(/, 'with no leave to wait for, the answer is handed over at once');
   assert.match(jsx, /\{!still && <Stars avoid=\{hero\} \/>\}/, 'no stars when motion is refused');
   // WCAG 2.2.2: with no pause control, the stars stop scheduling themselves too.
-  assert.match(jsx, /if \(performance\.now\(\) \+ delay < until\) timer = window\.setTimeout\(twinkle, delay\);/, 'the stars stop on their own');
+  const stars = await starsPromise;
+  assert.match(stars, /const until = performance\.now\(\) \+ STARS_LAST_MS;/, 'the stars have a deadline');
+  assert.match(stars, /if \(.*< until\) timer = window\.setTimeout\(twinkle\b/, 'no glint is scheduled past it');
   const css = await cssPromise;
   const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/)?.[0] ?? '';
   assert.match(reduced, /\.gw-area \{\s*animation: none;/);
@@ -156,18 +159,18 @@ test('with motion refused the illustrations are drawn finished and the columns h
 test('the welcome is the landing page, with its own way forward and decorative engravings', async () => {
   const [jsx, css] = await Promise.all([jsxPromise, cssPromise]);
   const welcome = jsx.slice(jsx.indexOf("{step === 'welcome' ? ("), jsx.indexOf(') : copyBlock}'));
-  // The engravings ride the page, not the screen's entrance: placed against a
-  // section that slides in, they would start out bunched at its middle.
+
   const backdrop = jsx.slice(jsx.indexOf('backdrop={onLanding && ('), jsx.indexOf('barAction={'));
   assert.match(welcome, /<Button variant="engraved" size="lg" className="w-full" onClick=\{primary\}>/, 'Get started moves to the next screen');
   assert.match(welcome, /aria-expanded=\{accountOpen\}\s+aria-controls="gw-providers"/, 'the account button says whether the providers are open');
   assert.match(welcome, /id="gw-providers"[^>]*inert=\{!accountOpen\}/, 'closed, the providers cannot take focus');
-  assert.match(welcome, /onClick=\{\(\) => signIn\('github'\)\}/);
-  assert.match(welcome, /onClick=\{\(\) => signIn\('google'\)\}/);
+  for (const provider of ['github', 'google']) {
+    assert.match(welcome, new RegExp(`signIn\\('${provider}'\\)`), `the landing signs in with ${provider}`);
+  }
   for (const plate of ['scrolls', 'microscope', 'lab']) {
     assert.match(backdrop, new RegExp(`<span className="gw-plate gw-plate--${plate}" aria-hidden="true" />`));
   }
-  assert.match(jsx, /<div ref=\{sky\} className="gw-stars" aria-hidden="true" \/>/);
+  assert.match(await starsPromise, /<div ref=\{sky\} className="gw-stars" aria-hidden="true" \/>/);
   assert.match(css, /\.gw--landing \.gw-foot \{\s*display: none;/, 'one way forward on the landing, not two');
 });
 

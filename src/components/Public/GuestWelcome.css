@@ -17,15 +17,11 @@
   width: 100%;
   min-height: 100vh;
   min-height: 100dvh;
-  /* No ground of its own: the page under it paints the paper and its grain,
-     for the welcome and for the account onboarding drawn in this shell. */
+
   background: transparent;
 }
 
-/* The bar and the foot stay put over the page, so they paint their own paper
-   and carry the grain on it. Their grain is the page's own, dot for dot: fixed
-   to the viewport like the page's (global.css), and cut to the bar's or the
-   foot's box by its clip-path, so no edge of either shows in the noise. */
+
 .gw-bar::before,
 .gw-foot::before {
   content: '';
@@ -39,16 +35,15 @@
   mask-composite: add;
 }
 
-/* No elastic bounce at either end of these screens: rubber-banding slid the
-   bar and the foot away from the paper behind them. */
+
 :root:has(.gw) {
   overscroll-behavior-y: none;
 }
 
 /* ── Bar ── */
 .gw-bar {
-  isolation: isolate; /* keeps the grain (below) under its content */
-  clip-path: inset(0); /* cuts the viewport-fixed grain to this box */
+  isolation: isolate;
+  clip-path: inset(0);
   position: sticky;
   top: 0;
   z-index: 3;
@@ -104,6 +99,10 @@
   align-items: center;
   gap: 6px;
   height: 36px;
+  /* The icon buttons beside it are bare glyphs in 36px boxes, so their
+     visible gap is the gap plus their padding; this framed button adds the
+     same space back, keeping the three evenly apart. */
+  margin-left: var(--space-2);
   padding: 0 var(--space-3);
   border: 1px solid var(--border-ink);
   border-radius: var(--radius-md);
@@ -172,10 +171,7 @@
   padding-top: clamp(16px, 4vh, 40px);
 }
 
-/* The areas, and the account's public-profile, handle, about and university
-   screens, fit on one screen, so they sit in its middle like the other
-   screens; `safe` puts them back at the top the moment they do not fit (a
-   short window), instead of pushing the heading off above the bar. */
+
 .gw-stage--topics:has(> .gw-step--topics),
 .gw-stage--topics:has(> .gw-step--profile),
 .gw-stage--topics:has(> .gw-step--handle),
@@ -185,7 +181,6 @@
 .gw-stage--topics:has(> .gw-step--inbox),
 .gw-stage--topics:has(> .gw-step--support) {
   justify-content: safe center;
-  /* The same air under as over (.gw-stage--topics), so the middle is the middle. */
   padding-bottom: clamp(16px, 4vh, 40px);
 }
 
@@ -464,9 +459,7 @@
   max-width: none;
 }
 
-/* Their questions are one line too where the screen allows: the heading may
-   run past the column (centred over it) up to 820px, so "Do you read through
-   a university library?" is not folded in two inside the 640px column. */
+
 .gw-step--profile .gw-title,
 .gw-step--handle .gw-title,
 .gw-step--about .gw-title,
@@ -475,10 +468,7 @@
   max-width: min(820px, calc(100vw - 2 * var(--space-5)));
 }
 
-/* ── The welcome: the landing page ──
-   The hero centred on the paper, its own way forward under the lede, and three
-   engravings (alpha masks painted in the ink, so they turn over with the theme)
-   in the corners. The shell's foot has nothing to add here, so it is not drawn. */
+
 .gw--landing {
   overflow: hidden;
   isolation: isolate;
@@ -488,8 +478,7 @@
   display: none;
 }
 
-/* The bar's height again under the hero, plus a little, so the hero centres on
-   the screen a touch high rather than on the space under the bar. */
+
 .gw--landing .gw-stage {
   padding-bottom: 104px;
 }
@@ -526,11 +515,7 @@
   margin-inline: auto;
 }
 
-/* The account button's providers drop open under it. They hang below the hero
-   rather than growing it: the hero is centred on the screen, so a taller hero
-   would lift everything above the button as the list opened. The list is
-   revealed top to bottom, and each provider settles in, 40ms after the one
-   before. */
+
 .gw-cta {
   position: relative;
 }
@@ -552,8 +537,7 @@
   right: 0;
 }
 
-/* The reveal runs down from the button; open, the clip widens past the box so
-   the halftone offsets and focus rings are not cut. */
+
 .gw-providers > div {
   display: grid;
   gap: var(--space-2);
@@ -590,10 +574,7 @@
   color: var(--accent-danger);
 }
 
-/* The bar's theme switch as a halftone plate: its checker shadow sticks out
-   4px, so the plate keeps that much clear of the edge. At 40px the plate is
-   its own touch target, so ThemeToggle's 44px hit area, which also lives on
-   ::after, gives that pseudo-element back to the plate. */
+
 .gw-bar-button.btn-halftone.theme-toggle {
   width: 40px;
   height: 40px;
@@ -641,8 +622,7 @@
   background: var(--border-subtle);
 }
 
-/* The engravings. Exactly half size below 1440px: on a 2x screen each pixel of
-   the engraving lands on one device pixel, so the line screen stays crisp. */
+
 .gw-plate {
   position: absolute;
   z-index: -1;
@@ -662,7 +642,7 @@
   left: 0;
 }
 
-/* The microscope leans in toward the hero and runs a little larger. */
+
 .gw-plate--microscope {
   --img: url('../../assets/welcome/microscope.png');
   --w: 281px;
@@ -681,8 +661,6 @@
   --h: 316px;
   bottom: 0;
   right: 0;
-  /* Tucked into its corner and turned so the glass points up and away, at
-     the top-left corner of the page. */
   rotate: -16deg;
   transform-origin: bottom right;
 }
@@ -694,8 +672,7 @@
   .gw-plate--lab { bottom: 32px; right: -32px; }
 }
 
-/* Tablets and phones: the hero fills the width, so the engravings only peek in
-   from two corners. */
+
 @media (max-width: 1100px) {
   .gw-plate--scrolls { top: -50px; left: -70px; }
   .gw-plate--microscope { display: none; }
@@ -707,9 +684,7 @@
   .gw-plate--lab { bottom: -12px; right: -32px; }
 }
 
-/* Stars: a four-point glint fades up and out at a random spot every second or so
-   (GuestWelcome.jsx), never over the hero. Every other one is printed in the
-   yellow, outlined in ink so it still reads on the paper. */
+
 .gw-stars {
   position: absolute;
   inset: 0;
@@ -730,9 +705,7 @@
   stroke-linejoin: round;
 }
 
-/* "Anything more specific?": each area's group arrives as one block, heading
-   and cards together, 60ms after the group above it; the cards inside do not
-   arrive on their own. */
+
 .gw-subtopics {
   animation: gwAreaIn 200ms var(--ease-out-expo) calc(var(--i, 0) * 60ms) backwards;
 }
@@ -741,42 +714,9 @@
   animation: none;
 }
 
-/* Petri over a screen's title, in place of its kicker (the drawings live in
-   components/Onboarding). She rises onto her dish with a small overshoot. */
-.gw-petri {
-  display: block;
-  width: 8.5rem;
-  height: 8.25rem; /* the drawing's crop, 128 × 124 */
-  margin: 0 auto var(--space-2);
-  overflow: visible;
-  color: var(--text-primary);
-}
-
-/* She stands in the kicker's paragraph: its capitals and tracking stay off
-   whatever she holds up. */
 .gw-petri text {
   text-transform: none;
   letter-spacing: normal;
-}
-
-.gw-petri .onboarding-petri-body {
-  transform-box: fill-box;
-  transform-origin: 50% 100%;
-  animation: gwPetriRise 500ms cubic-bezier(0.34, 1.56, 0.64, 1) 100ms backwards;
-}
-
-@keyframes gwPetriRise {
-  from { opacity: 0; translate: 0 24px; scale: 1 0.7; }
-}
-
-/* Picking another reading level swaps her outfit with a sideways slide, from
-   the side of the level picked (--petri-from: 1 deeper, -1 back). */
-.gw-petri .onboarding-petri-body.petri-swap {
-  animation: gwPetriSlide 240ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-@keyframes gwPetriSlide {
-  from { opacity: 0; translate: calc(var(--petri-from, 1) * 28px) 0; }
 }
 
 /* ── What you do here: three gestures in a row ── */
@@ -866,8 +806,6 @@
     background var(--transition-fast),
     box-shadow var(--transition-fast),
     scale 150ms ease-out;
-  /* 150ms each, 20ms apart in reading order (`--i`), the wait capped at 300ms
-     so a long list, or cards a "Show more" adds, never queue up behind it. */
   animation: gwAreaIn 150ms var(--ease-out-expo) min(calc(var(--i, 0) * 20ms), 300ms) backwards;
 }
 
@@ -1022,7 +960,7 @@
 }
 
 .gw-dots {
-  position: relative; /* a dot on its way out is laid over the row (popLayout) */
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1108,7 +1046,6 @@
     padding: var(--space-4) var(--space-4);
   }
 
-  /* Even padding here, so the centred screens keep it even too. */
   .gw-stage.gw-stage--topics {
     padding-bottom: var(--space-4);
   }
@@ -1180,11 +1117,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .gw-petri .onboarding-petri-body,
-  .gw-petri .onboarding-petri-body.petri-swap {
-    animation: none;
-  }
-
   .gw-providers > div,
   .gw-account-caret {
     transition: none;
@@ -1223,37 +1155,32 @@
 .gw-preferences { width: 100%; margin-top: var(--space-6); }
 .gw-levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); margin: 0; padding: 0; border: 0; }
 .gw-level { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); padding: var(--space-5); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--bg-card); text-align: left; cursor: pointer; }
-/* The radio is drawn here, not left to the browser: with a light accent (the
-   ink at night) Chrome backs a checked native radio with a dark square plate.
-   An ink ring, filled with ink around a paper dot once chosen, switching in
-   one frame (a fade read as a blink on the one let go); still the real input,
-   so the keyboard and assistive tech are untouched. */
+
 .gw-level input { appearance: none; box-sizing: border-box; position: absolute; top: var(--space-5); right: var(--space-5); width: 18px; min-width: 0; height: 18px; margin: 0; padding: 0; border: 1.5px solid var(--border-ink); border-radius: var(--radius-full); background: transparent; }
 .gw-level input:checked { background: var(--text-primary); box-shadow: inset 0 0 0 3.5px var(--bg-card); }
 .gw-level input,
 .gw-level input:checked { transition: none; }
 .gw-level strong { font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
 .gw-level > span { font-size: var(--fs-xs); line-height: 1.7; color: var(--text-secondary); }
-/* Chosen: the ink frame and its rule, on the card's own paper (a sunken fill read as a dark square at night). */
+
 .gw-level:has(input:checked) { border-color: var(--border-ink); box-shadow: inset 0 -3px 0 var(--text-primary); }
 .gw-level:has(input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
 .gw-preference-note { margin: var(--space-4) 0 0; font-size: var(--fs-xs); line-height: 1.8; color: var(--text-secondary); }
 /* The digest arriving: an envelope on a sunken panel. Stage 260 × 410, the
    envelope the bottom 240 × 150 of it; the letters rise from inside and the
-   slot clips them at the envelope's foot. Order, back to front: inside, flap
-   once open, letters, pocket, flap while closed, seal. */
+   slot clips them at the envelope's foot. Order, back to front: inside, the open
+   flap, letters, pocket. */
 .gw-inbox { margin-top: var(--space-2); }
-/* The stage keeps headroom for the sparks; let it sit under the lede. */
+/* Pulled up to sit close under the lede. */
 .gw-digest-preview { display: grid; place-items: center; margin-top: -32px; pointer-events: none; }
 .gw-env { position: relative; width: 260px; height: 410px; perspective: 900px; zoom: 0.85; }
-/* Over the title now (the inbox screen's kicker is gone), so it keeps its
-   distance below instead of tucking up under the copy. */
+
 .gw-step--inbox > .gw-digest-preview { margin: 0 0 var(--space-6); }
-/* Petri stamped on the envelope's front, top right, like postage. */
+
 .gw-env > .onboarding-petri-stamp { top: 268px; right: 6px; z-index: 5; }
 .gw-env-back,.gw-env-flap,.gw-env-pocket { position: absolute; left: 10px; right: 10px; bottom: 0; height: 150px; }
 .gw-env-back { z-index: 0; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--text-primary) 7%, var(--bg-elevated)); }
-.gw-env-flap { clip-path: polygon(0 0, 100% 0, 50% 62%); transform-origin: 50% 0; backface-visibility: visible; background: color-mix(in srgb, var(--text-primary) 3%, var(--bg-elevated)); }
+.gw-env-flap { z-index: 1; clip-path: polygon(0 0, 100% 0, 50% 62%); transform: rotateX(180deg); transform-origin: 50% 0; backface-visibility: visible; background: color-mix(in srgb, var(--text-primary) 3%, var(--bg-elevated)); }
 .gw-env-back svg,.gw-env-flap svg,.gw-env-pocket svg { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: var(--border-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .gw-env-flap path,.gw-env-pocket path { vector-effect: non-scaling-stroke; }
 .gw-env-slot { position: absolute; inset: 0; z-index: 2; overflow: hidden; }
@@ -1346,9 +1273,7 @@
   .gw-gh { zoom: 1; }
 }
 @media (max-width: 380px) { .gw-gh { zoom: 0.84; } }
-/* A phone: the buttons a size down in height (44 → 40px, still well over the
-   24px target minimum), and the star demo a shorter window on the repository,
-   so the open-source screen fits without a scroll. */
+
 @media (max-width: 640px) {
   .gw [data-slot=button].h-11,
   .gw-icon-action {

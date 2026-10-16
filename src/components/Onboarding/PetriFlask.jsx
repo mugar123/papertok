@@ -1,13 +1,7 @@
 import { useId } from 'react';
-import PetriFrame from './PetriFrame.jsx';
+import PetriFrame, { ANTENNAE, Hatch } from './PetriFrame.jsx';
 
-// Petri, the mascot, experimenting (obradither/landing/petri.html,
-// `petri-flask`): on its dish, one pseudopod holding up a flask, eyes on it
-// and a curious little "o". The topics screen's prop, drawn like the
-// greeting's (PetriWelcome): body and arm outlined in their own yellow, the
-// dish and the face in ink, the flask outlined in the face's ink
-// (--text-on-brand) in both themes and its glass paper on both. It stands where the screen's kicker was, so it carries the kicker
-// as its name (`label`).
+
 export default function PetriFlask({ label, className }) {
   const liquid = useId();
   return (
@@ -16,14 +10,10 @@ export default function PetriFlask({ label, className }) {
       className={className}
       // The flask's glass is paper at night too, so what is inside it is
       // drawn in the card's ink (--text-on-brand), not the page's.
-      defs={(
-        <pattern id={liquid} width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
-          <rect width="1.4" height="4" fill="var(--text-on-brand)" />
-        </pattern>
-      )}
+      defs={<Hatch id={liquid} fill="var(--text-on-brand)" />}
       behind={<path d="M104 100q10-6 10-32" fill="none" stroke="var(--brand-yellow)" strokeWidth="9" />}
     >
-      <path d="M62 66l-4-8M78 62l-1-9M94 64l3-8" fill="none" strokeWidth="2" />
+      <path d={ANTENNAE} fill="none" strokeWidth="2" />
       <circle cx="74" cy="86" r="3.4" fill="var(--text-on-brand)" stroke="none" />
       <circle cx="92" cy="86" r="3.4" fill="var(--text-on-brand)" stroke="none" />
       <path d="M86 77q5-3 10 0" fill="none" stroke="var(--text-on-brand)" strokeWidth="2" />

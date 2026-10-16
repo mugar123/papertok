@@ -33,13 +33,7 @@ import Petri from './Petri.jsx';
 import PetriStamp from './PetriStamp.jsx';
 import './OnboardingFlow.css';
 
-// Petri on the screens that show her in place of the kicker: looking into a
-// flask over the topics, dark glasses for a private profile (PetriProfile
-// reads `visibility`; the others ignore it), and thinking, a question mark
-// over her head, for what to say about yourself. The handle and university
-// screens open on a prop over the title instead, with Petri in it: the
-// avatar in the handle's browser window (AddressWindow), a stamp on the
-// university's paper (PetriStamp).
+
 const STEP_PETRI = {
   topics: 'flask',
   profile: 'profile',
@@ -200,8 +194,6 @@ function AddressWindow({ handle, valid, still }) {
         </span>
       </div>
       <div className="onboarding-window-page">
-        {/* The page's avatar is Petri, smiling: a close-up of her face that
-            fills the circle, as a profile picture would. */}
         <span className="onboarding-window-avatar">
           <svg viewBox="54 74 52 52" focusable="false">
             <rect x="54" y="74" width="52" height="52" fill="var(--brand-yellow)" />
@@ -233,7 +225,7 @@ function AddressWindow({ handle, valid, still }) {
 // a short lift. Then the brand underline draws. Done by about 1.7 s, once.
 // With motion refused the title is drawn whole and the underline in place.
 // The SVG is decoration; the heading's text is the visually hidden span.
-// The pen starts as Petri has risen onto its dish (OnboardingFlow.css).
+
 const WRITE_START = 0.6;
 const WRITE_SECONDS = 1;
 const CAPITAL_WEIGHT = 1.25;
@@ -592,15 +584,11 @@ export default function OnboardingFlow() {
           ? { onClick: () => { if (!saving) void handleFinish(); }, label: COPY.university.skip }
           : null}
     >
-      {/* The handle and university screens open on their prop, over the
-          title where the other screens' kicker is: the page the handle makes,
-          and the paper a library opens, stamped with Petri. */}
       {step === 'handle' && <AddressWindow handle={handleDraft} valid={handleCheck.valid && !handleTaken} still={still} />}
       {step === 'university' && <LibraryPreview still={still} stamp={<PetriStamp />} />}
 
       {step === 'welcome' ? (
         <WelcomeCopy
-          // Petri holds up the reader's first name, and says the hello for it.
           kicker={<Petri pose="welcome" name={firstName} label={COPY.welcome.kicker(firstName)} className="onboarding-petri" />}
           title={(
             <>
@@ -612,7 +600,6 @@ export default function OnboardingFlow() {
         />
       ) : (
         <WelcomeCopy
-          // On these screens Petri stands in for the kicker (STEP_PETRI).
           kicker={petriPose
             ? <Petri pose={petriPose} visibility={visibilityDraft} label={stepCopy.kicker} className="onboarding-petri" />
             : step === 'handle' || step === 'university' ? null : stepCopy.kicker}
@@ -710,14 +697,11 @@ export default function OnboardingFlow() {
       )}
 
       {/* The about screen: the photo is the object, landing as the welcome's
-          library card does, with the name it will stand beside; the switch
-          and the bio are the controls under it. */}
+          library card does; the switch and the bio are the controls under it. */}
       {step === 'about' && (
         <div className="gw-preferences onboarding-about">
           <motion.div
             className="onboarding-avatar"
-            // The screens' own arrival (ARRIVE), like the handle's window
-            // and the university's paper.
             initial={still ? false : { opacity: 0, transform: 'translateY(16px)' }}
             animate={{ opacity: 1, transform: 'translateY(0px)' }}
             transition={ARRIVE}
@@ -728,12 +712,11 @@ export default function OnboardingFlow() {
               value={photo}
               fallbackSrc={showAccountPhoto ? accountPhoto : ''}
               initial={resolvedDisplayName.trim().charAt(0).toUpperCase()}
-              size={120}
+              size={88}
               disabled={saving}
               onChange={setPhoto}
             />
           </motion.div>
-          <p className="onboarding-about-name">{resolvedDisplayName}</p>
           <Fields still={still}>
             {/* The editor's switch, with its copy: a chosen photo replaces it. */}
             {accountPhoto && !photo && (

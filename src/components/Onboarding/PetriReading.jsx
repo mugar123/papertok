@@ -1,18 +1,15 @@
 import { useState } from 'react';
-import PetriFrame from './PetriFrame.jsx';
+import PetriFrame, { ANTENNAE } from './PetriFrame.jsx';
 
 const ORDER = ['beginner', 'university', 'researcher'];
 
 const ink = 'var(--text-on-brand)';
 
-// What Petri wears for each reading level (obradither/landing/petri.html):
-// as herself for Beginner (`petri-idle`), in her mortarboard for University
-// (`petri-graduate`, the cap following her head) and in lab goggles for
-// Researcher. Each draws its face and props over the shared body.
+
 const LOOKS = {
   beginner: (
     <>
-      <path d="M62 66l-4-8M78 62l-1-9M94 64l3-8" fill="none" strokeWidth="2" />
+      <path d={ANTENNAE} fill="none" strokeWidth="2" />
       <circle cx="70" cy="90" r="3.4" fill={ink} stroke="none" />
       <circle cx="90" cy="90" r="3.4" fill={ink} stroke="none" />
       <path d="M74 99q6 5 12 0" fill="none" stroke={ink} strokeWidth="2" />
@@ -32,7 +29,7 @@ const LOOKS = {
   ),
   researcher: (
     <>
-      <path d="M62 66l-4-8M78 62l-1-9M94 64l3-8" fill="none" strokeWidth="2" />
+      <path d={ANTENNAE} fill="none" strokeWidth="2" />
       {/* Lab goggles: the strap round her head, two lenses over her eyes. */}
       <path d="M47 88q33-6 68 0" fill="none" stroke={ink} strokeWidth="3" />
       <circle cx="70" cy="89" r="8.5" fill="var(--bg-figure-plate)" stroke={ink} strokeWidth="3" />

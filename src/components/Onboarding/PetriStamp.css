@@ -1,7 +1,6 @@
-/* PetriStamp, wherever it is stamped: by default on the corner of the
-   university screen's paper, tilted and half off the edge; a host moves it
-   with its own rule. It lands with a small thump once the prop under it has
-   settled. */
+/* PetriStamp: by default on the corner of the paper it stamps, tilted and
+   half off the edge; a host moves it with its own rule. It lands with a small
+   thump once the prop under it has settled. */
 .onboarding-petri-stamp {
   position: absolute;
   top: -18px;

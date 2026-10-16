@@ -9,11 +9,11 @@ import PetriWelcome from './PetriWelcome.jsx';
 // The stamp (PetriStamp.jsx) is a different drawing — Petri small inside a
 // rubber-stamp ring, no dish — and stays its own component.
 const POSES = {
-  welcome: PetriWelcome, // holding up a card with the reader's name: `name`
-  flask: PetriFlask, // experimenting, a flask held up
-  reading: PetriReading, // dressed for a reading level: `level`
-  profile: PetriProfile, // smiling, or in shades when private: `visibility`
-  thinking: PetriThinking, // a question mark over her
+  welcome: PetriWelcome,
+  flask: PetriFlask,
+  reading: PetriReading,
+  profile: PetriProfile,
+  thinking: PetriThinking,
 };
 
 /**

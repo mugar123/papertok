@@ -14,8 +14,6 @@ import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
  * again opens a fresh window, Firebase cancels the old one, and only the
  * latest attempt decides what the buttons show.
  */
-// After the address (or "That address") when `collision` is set.
-export const COLLISION_NOTE = 'already signs in another way. Use that method, then connect the other from Settings.';
 
 export function useProviderSignIn(surface) {
   const { signInWithGoogle, signInWithGitHub, error } = useAuth();

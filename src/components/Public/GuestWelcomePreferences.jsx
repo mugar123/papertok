@@ -48,8 +48,7 @@ const ARRIVE_EASE = [0.16, 1, 0.3, 1];
 const FLAP_EASE = [0.77, 0, 0.175, 1];
 
 // The digest: an envelope, open, a paper out of it with two more behind.
-// Only its arrival moves (like the other screens' props); the rest is drawn
-// as it ends. `stamp`, optional, is stuck on the envelope's front corner.
+
 export function DigestPreview({ still, stamp }) {
   const field = CATEGORIES[DIGEST_LETTER.field];
   return <div className="gw-digest-preview" aria-hidden="true">
@@ -60,7 +59,7 @@ export function DigestPreview({ still, stamp }) {
       transition={{ duration: 0.45, ease: ARRIVE_EASE, delay: 0.1 }}
     >
       <div className="gw-env-back"/>
-      <div className="gw-env-flap" style={{ zIndex: 1, transform: 'rotateX(180deg)' }}>
+      <div className="gw-env-flap">
         <svg viewBox="0 0 240 150" preserveAspectRatio="none"><path d="M0 0.5 L120 93 L240 0.5"/></svg>
       </div>
       <div className="gw-env-slot">
@@ -128,8 +127,7 @@ const CARD_SETTLE = 0.85;
 // turns into "Via your library". Plays once and is still by two seconds
 // (WCAG 2.2.2); with motion refused it is drawn opened, the card in place.
 // Only the account onboarding's university screen (OnboardingFlow) draws it.
-// `stamp`, optional, is drawn on the paper's corner (the account onboarding
-// stamps Petri there).
+
 export function LibraryPreview({ still, stamp }) {
   const field = CATEGORIES[LIBRARY_PAPER.field];
   const [opened, setOpened] = useState(still);

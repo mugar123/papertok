@@ -1,15 +1,6 @@
 import PetriFrame from './PetriFrame.jsx';
 
-// Petri, the mascot, in its welcome pose (obradither/landing/petri.html,
-// `petri-welcome`): on its dish, both pseudopods up, holding a card with the
-// reader's first name like someone waiting at an arrivals gate. Body and arms
-// are outlined in their own yellow, so Petri reads as one flat shape; the
-// dish and the face keep the ink, and the card is outlined in the face's
-// ink (--text-on-brand) in both themes, like a printed object. The card is
-// paper on both themes (--bg-figure-plate) with ink on it, so the name reads
-// the same at night. The drawing is the greeting, so it carries the greeting
-// as its name (`label`, the onboarding's own greeting copy): assistive tech
-// hears "Hello, Ada", not a picture.
+
 export default function PetriWelcome({ name, label, className }) {
   const card = name || 'Hello';
   // 19 units fits about eight letters on the card; a longer name gets smaller

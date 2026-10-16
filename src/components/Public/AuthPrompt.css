@@ -107,19 +107,6 @@
   flex: 0 0 auto;
 }
 
-.auth-spinner {
-  width: 18px;
-  height: 18px;
-  border: 2px solid var(--border-default);
-  border-top-color: var(--text-primary);
-  border-radius: var(--radius-full);
-  animation: authSpin 0.7s linear infinite;
-}
-
-@keyframes authSpin {
-  to { transform: rotate(360deg); }
-}
-
 /* ── States ── */
 .auth-modal-note {
   margin: var(--space-4) 0 0;
@@ -144,10 +131,4 @@
 
 .auth-modal-note strong {
   font-weight: var(--fw-semibold);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .auth-spinner {
-    animation: none;
-  }
 }

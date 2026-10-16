@@ -5,7 +5,8 @@ import { getUiErrorMessage } from '../../utils/errorMessages';
 import { authPromptCopy } from './authPromptCopy.js';
 import { Button } from '../ui/button.jsx';
 import GoogleMark from './GoogleMark.jsx';
-import { COLLISION_NOTE, useProviderSignIn } from './useProviderSignIn.js';
+import { useProviderSignIn } from './useProviderSignIn.js';
+import { CollisionNote, ProviderSpinner } from './ProviderSignIn.jsx';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.jsx';
 import './AuthPrompt.css';
 
@@ -78,7 +79,7 @@ export default function AuthPrompt({ onClose, reason = 'default' }) {
             id="google-sign-in-btn"
           >
             {pendingProvider === 'google' ? (
-              <span className="auth-spinner" aria-hidden="true" />
+              <ProviderSpinner />
             ) : (
               <GoogleMark className="auth-provider-icon" />
             )}
@@ -93,7 +94,7 @@ export default function AuthPrompt({ onClose, reason = 'default' }) {
             id="github-sign-in-btn"
           >
             {pendingProvider === 'github' ? (
-              <span className="auth-spinner" aria-hidden="true" />
+              <ProviderSpinner />
             ) : (
               <svg className="auth-provider-icon" viewBox="0 0 16 16" width="19" height="19" aria-hidden="true">
                 <path
@@ -108,7 +109,7 @@ export default function AuthPrompt({ onClose, reason = 'default' }) {
 
         {collision ? (
           <div className="auth-modal-note auth-modal-note--warn" role="alert">
-            {collision.email ? <strong>{collision.email}</strong> : 'That address'} {COLLISION_NOTE}
+            <CollisionNote email={collision.email} />
           </div>
         ) : error ? (
           <p className="auth-modal-note auth-modal-note--error" role="alert">
