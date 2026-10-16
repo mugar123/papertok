@@ -1,102 +1,89 @@
+/* The settings pages, kept quiet: a plain list of pages beside a column of
+   sections, each one a title over a sunken panel of rows. Serif for the
+   titles, Inter for the controls, mono for what a machine produced (the
+   address you sign in with, a state). Colour only where it means something:
+   a field ink on an interest, the rose tint on what cannot be undone
+   (design.md). */
+
 .settings-page {
+  /* The panel's edge and the rules between its rows. In the dark theme the
+     hairline all but vanishes on ink (1.16:1), so it steps up to the strong
+     rule, as ProfileEditor.css does for its own lines. */
+  --settings-panel-line: var(--border-subtle);
   min-height: 100vh;
   min-height: 100dvh;
-  padding: 104px 24px 72px;
+  padding: calc(var(--nav-total) + var(--space-10)) var(--space-6) var(--space-16);
   background: var(--bg-primary);
 }
 
+:root[data-theme='dark'] .settings-page {
+  --settings-panel-line: var(--border-strong);
+}
+
 .settings-shell {
-  width: min(1040px, 100%);
+  width: min(60rem, 100%);
   margin: 0 auto;
 }
 
+/* ── The page title ── */
 .settings-heading {
-  margin-bottom: 26px;
-}
-
-.settings-heading > span {
-  color: var(--gradient-physics);
-  font-size: 12px;
-  font-weight: 750;
-  letter-spacing: 0;
-  text-transform: uppercase;
+  margin-bottom: var(--space-10);
 }
 
 .settings-heading h1 {
-  margin-top: 6px;
-  font-size: 34px;
-  letter-spacing: 0;
+  font-family: var(--font-serif);
+  font-size: clamp(1.9rem, 4.2vw, 2.6rem);
+  font-weight: var(--fw-semibold);
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
 }
 
 .settings-heading p {
-  max-width: 660px;
-  margin-top: 7px;
+  max-width: 40rem;
+  margin-top: var(--space-2);
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
 }
-
 
 .settings-layout {
   display: grid;
-  grid-template-columns: 208px minmax(0, 1fr);
-  gap: 56px;
+  grid-template-columns: 11rem minmax(0, 1fr);
+  gap: var(--space-12);
   align-items: start;
 }
 
+/* ── The pages: an icon and a name each. The page you are on sits on the
+   ink wash, in ink, its icon filled — a change of shape and of ground, so
+   colour is never the only sign. ── */
 .settings-index {
   position: sticky;
   top: calc(var(--nav-total) + var(--space-6));
-  display: flex;
-  flex-direction: column;
-  border-top: 1px solid var(--border-default);
-  padding-top: 14px;
 }
 
-.settings-index-title {
-  padding: 0 10px 10px;
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-
-/* Every row is exactly --settings-index-row tall, which is what lets the
-   marker find its place with one multiplication instead of measuring. */
 .settings-index-list {
-  --settings-index-row: 36px;
-  position: relative;
   display: flex;
   flex-direction: column;
-}
-
-.settings-index-marker {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 3px;
-  height: var(--settings-index-row);
-  background: var(--brand-yellow);
-  transform: translateY(calc(var(--settings-active, 0) * var(--settings-index-row)));
-  transition: transform var(--transition-spring);
+  gap: 2px;
 }
 
 .settings-index-list a {
   display: flex;
-  height: var(--settings-index-row);
+  min-height: 40px;
   align-items: center;
-  gap: 10px;
-  padding: 0 10px;
-  color: var(--text-secondary);
-  font-size: 13px;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-lg);
+  color: var(--text-tertiary);
+  font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   text-decoration: none;
   transition: color var(--transition-fast), background var(--transition-fast);
 }
 
-.settings-index-list a > span {
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  color: var(--text-tertiary);
+.settings-index-list a > svg {
+  flex: 0 0 auto;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -112,27 +99,14 @@
   font-weight: var(--fw-semibold);
 }
 
-.settings-rail-link {
-  display: flex;
-  min-height: 32px;
-  align-items: center;
-  gap: 8px;
-  margin-top: 14px;
-  padding: 12px 10px 0;
-  border-top: 1px solid var(--border-default);
-  color: var(--text-secondary);
-  font-size: 12px;
-  text-decoration: none;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .settings-rail-link:hover {
-    color: var(--text-primary);
-  }
+.settings-index-list a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
 }
 
 .settings-content > :first-child,
-.settings-content > form:first-child > .settings-section:first-child {
+.settings-content > form:first-child > .settings-section:first-child,
+.settings-content > .profile-form:first-child > .settings-section:first-child {
   margin-top: 0;
 }
 
@@ -141,7 +115,7 @@
   display: grid;
   grid-template-columns: 56px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 14px;
+  gap: var(--space-4);
 }
 
 .settings-photo-copy {
@@ -150,7 +124,7 @@
 }
 
 .settings-photo-label {
-  font-size: 14px;
+  font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
 }
 
@@ -165,7 +139,7 @@
   width: 56px;
   height: 56px;
   border: 1px solid var(--border-strong);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   object-fit: cover;
 }
 
@@ -178,8 +152,8 @@
   place-items: center;
   background: var(--gradient-brand);
   color: var(--text-inverse);
-  font-family: var(--font-mono);
-  font-size: 20px;
+  font-family: var(--font-serif);
+  font-size: var(--fs-2xl);
   font-weight: var(--fw-semibold);
 }
 
@@ -188,10 +162,10 @@
   inset: 0;
   display: grid;
   place-items: center;
-  border-radius: 50%;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
   color: var(--text-primary);
   background: var(--bg-card);
-  border: 1px solid var(--border-default);
 }
 
 .settings-profile-loading svg,
@@ -201,142 +175,75 @@
 
 .settings-profile-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-2);
 }
 
 .settings-profile-actions input {
   display: none;
 }
 
-/* The shared Button carries this class for layout; its fixed height yields
-   to the min-height here. */
-.settings-photo-button {
-  display: inline-flex;
-  height: auto;
-  min-height: 40px;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 9px 13px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
-  color: var(--text-primary);
-  background: var(--bg-elevated);
-  font-size: 12px;
-  font-weight: 700;
-  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
-}
-
-.settings-photo-button.settings-photo-remove {
+.settings-photo-remove.settings-photo-remove {
   color: var(--tint-red-fg);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .settings-photo-button:hover {
-    border-color: var(--border-ink);
-    color: var(--accent-primary);
-    background: var(--bg-secondary);
-  }
-}
-
-.settings-photo-button:disabled {
-  opacity: 0.55;
-}
-
-/* ── Sections and rows ── */
+/* ── Sections: a title, one line, then the panel ── */
 .settings-section {
-  margin-top: 38px;
+  margin-top: var(--space-10);
 }
 
 .settings-section-heading {
-  display: flex;
-  align-items: flex-start;
-  gap: 11px;
-  margin-bottom: 13px;
-}
-
-.settings-section-heading > svg {
-  flex: 0 0 auto;
-  margin-top: 2px;
-  color: var(--gradient-physics);
+  margin-bottom: var(--space-4);
 }
 
 .settings-section-heading h2 {
-  font-size: 17px;
-  letter-spacing: 0;
+  font-family: var(--font-serif);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  letter-spacing: -0.01em;
 }
 
 .settings-section-heading p {
-  margin-top: 3px;
+  max-width: 40rem;
+  margin-top: var(--space-1);
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+
+/* The panel: sunken paper in a hairline, the wells of design.md. The
+   profile editor's sections (.profile-fields) are panels too. */
+.settings-list,
+.settings-levels,
+.profile-fields {
+  border: 1px solid var(--settings-panel-line);
+  border-radius: var(--radius-2xl);
+  background: var(--bg-sunken);
+}
+
+.profile-fields {
+  padding: var(--space-5);
 }
 
 .settings-list {
-  overflow: hidden;
-  border-top: 1px solid var(--border-default);
-  border-bottom: 1px solid var(--border-default);
-}
-
-/* The closing rule under a list is a separator: the last section on a page
-   has nothing below it to separate from. */
-.settings-content > section:last-of-type .settings-list {
-  border-bottom: 0;
+  padding: 0 var(--space-5);
 }
 
 /* Each page is a destination, not a reveal: rows are there on arrival. */
 .settings-row {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 14px;
-  min-height: 86px;
-  padding: 17px 4px;
-  border-bottom: 1px solid var(--border-subtle);
+  column-gap: var(--space-5);
+  min-height: 72px;
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--settings-panel-line);
 }
 
 .settings-row:last-child {
   border-bottom: 0;
-}
-
-.settings-row-icon {
-  display: grid;
-  width: 38px;
-  height: 38px;
-  place-items: center;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
-}
-
-.settings-row-icon.is-green {
-  color: var(--tint-green-fg);
-  background: var(--tint-green-bg);
-}
-
-.settings-row-icon.is-purple {
-  color: var(--gradient-physics);
-  background: var(--bg-secondary);
-}
-
-.settings-row-icon.is-amber {
-  color: var(--tint-amber-fg);
-  background: rgba(245, 158, 11, 0.07);
-}
-
-.settings-row-icon.is-cyan {
-  color: var(--gradient-qfin);
-  background: rgba(6, 182, 212, 0.07);
-}
-
-.settings-row-icon.is-rose {
-  color: var(--tint-red-fg);
-  background: var(--tint-red-bg);
-}
-
-.settings-row-icon--github {
-  color: var(--text-secondary);
-  background: var(--bg-sunken);
 }
 
 .settings-row-content {
@@ -344,34 +251,29 @@
 }
 
 .settings-row-content h3 {
-  font-size: 14px;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
   letter-spacing: 0;
 }
 
 .settings-row-content > p {
-  margin-top: 4px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.5;
+  max-width: 34rem;
+  margin-top: 2px;
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
 }
 
 .settings-row-title-line {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 9px;
+  gap: var(--space-2);
 }
 
-/* An icon-only row action. Doubled class: it has to outrank the shared
-   Button's size utilities. */
-.settings-icon-action.settings-icon-action {
+/* Doubled class: it has to outrank the shared Button's size utilities. */
+.settings-row-action.settings-row-action {
   flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-}
-
-.settings-danger-icon.settings-danger-icon {
-  color: var(--tint-red-fg);
 }
 
 /* Disabled buttons say so under the pointer. The shared Button drops
@@ -386,30 +288,37 @@
 /* Tags sit on their own line under the row, in the text column only: they
    wrap before reaching the action's column instead of running under it. */
 .settings-row:has(.settings-row-tags) {
-  row-gap: 10px;
+  row-gap: var(--space-3);
 }
 
 .settings-row-tags {
-  grid-column: 2;
+  grid-column: 1;
 }
 
-/* ── Sign-in methods: the account each one opens, then the action ── */
+/* ── Sign-in methods: the provider's own mark, its account, the action ── */
+.settings-method-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .settings-method-actions {
   display: inline-flex;
   min-width: 0;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .settings-account-id {
   display: inline-flex;
   min-width: 0;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   overflow: hidden;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -418,81 +327,87 @@
   flex: 0 0 auto;
   width: 7px;
   height: 7px;
-  border-radius: 50%;
-  background: var(--tint-green-fg);
+  border-radius: var(--radius-full);
+  background: var(--accent-success);
 }
 
-.settings-follow-summary,
+/* ── The fields you read, each in its own field ink (design.md, rule 2):
+   in its text and in a field rule down the inner edge. No tinted fill — the
+   lightest inks (eess, chemeng, bio, cs) sit just above 4.5:1 on paper and
+   an 8% wash took cs below it. ── */
 .settings-interest-summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
-.settings-follow-summary > span,
 .settings-interest-summary > span {
   display: inline-flex;
   min-height: 26px;
   align-items: center;
-  gap: 6px;
-  padding: 4px 7px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  background: var(--bg-sunken);
-  font-size: 10px;
-}
-
-.settings-follow-summary > span > svg {
-  color: var(--gradient-physics);
-}
-
-.settings-follow-summary strong,
-.settings-interest-summary small {
-  display: grid;
-  min-width: 16px;
-  height: 16px;
-  place-items: center;
-  padding: 0 4px;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--area-accent) 35%, var(--bg-card));
+  border-left: 3px solid var(--area-accent);
   border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  background: var(--bg-secondary);
-  font-size: 9px;
-  font-weight: 750;
+  color: var(--area-accent);
+  background: var(--bg-card);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
 }
 
-/* ── Default AI level: the stacked radio list Privacy uses ── */
+.settings-interest-summary small {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Default AI level: three choices in the panel, the chosen one on paper ── */
 .settings-levels {
   display: grid;
-  overflow: hidden;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
-  background: var(--bg-card);
-}
-
-.settings-level + .settings-level {
-  border-top: 1px solid var(--border-default);
-}
-
-.settings-level.is-checked {
-  background: var(--bg-secondary);
+  gap: var(--space-1);
+  padding: var(--space-1);
 }
 
 .settings-levels button {
   display: flex;
   width: 100%;
-  min-height: 52px;
+  min-height: 60px;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-xl);
   color: var(--text-primary);
   text-align: left;
   cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.settings-levels button[data-checked] {
+  border-color: var(--settings-panel-line);
+  background: var(--bg-card);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .settings-levels button:not([data-checked]):hover {
+    background: var(--bg-secondary);
+  }
 }
 
 .settings-levels button:focus-visible {
-  outline: 2px solid var(--accent-primary);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
+}
+
+.settings-levels button > svg {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+.settings-levels button[data-checked] > svg {
+  color: var(--text-primary);
 }
 
 .settings-level-radio {
@@ -500,7 +415,8 @@
   width: 16px;
   height: 16px;
   border: 1.5px solid var(--border-strong);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
+  background: var(--bg-card);
 }
 
 /* Each row is a Base UI radio rendered as a button: "on" is `data-checked`. */
@@ -510,72 +426,51 @@
 
 .settings-level-copy {
   display: grid;
-  gap: 1px;
+  gap: 2px;
 }
 
 .settings-level-copy strong {
-  font-size: 13px;
+  font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
 }
 
 .settings-level-copy span {
-  color: var(--text-secondary);
-  font-size: 12px;
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
 }
 
+/* ── A state, set as a mono stamp ── */
 .settings-status {
   display: inline-flex;
-  min-height: 21px;
+  min-height: 20px;
   align-items: center;
-  padding: 3px 7px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  background: var(--bg-sunken);
-  font-size: 9px;
-  font-weight: 750;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--tint-neutral-line);
+  border-radius: var(--radius-sm);
+  color: var(--tint-neutral-fg);
+  background: var(--tint-neutral-bg);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
   text-transform: uppercase;
 }
 
 .settings-status.is-success {
-  border-color: rgba(16, 185, 129, 0.28);
+  border-color: var(--tint-green-line);
   color: var(--tint-green-fg);
   background: var(--tint-green-bg);
 }
 
+/* The service being down is said in words too, so amber is not alone. */
 .settings-status.is-warning {
-  border-color: rgba(245, 158, 11, 0.26);
+  border-color: var(--tint-amber-line);
   color: var(--tint-amber-fg);
-  background: rgba(245, 158, 11, 0.06);
+  background: var(--tint-amber-bg);
 }
 
 /* The switch itself is the shared Switch primitive; only its place in the
    row is set here. */
 .settings-toggle {
   flex: 0 0 auto;
-}
-
-.settings-signout {
-  display: inline-flex;
-  height: auto;
-  min-height: 40px;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 13px;
-  border: 1px solid rgba(239, 68, 68, 0.24);
-  border-radius: var(--radius-lg);
-  color: var(--tint-red-fg);
-  font-size: 12px;
-  font-weight: 700;
-  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .settings-signout:hover {
-    border-color: rgba(239, 68, 68, 0.42);
-    color: var(--tint-red-fg);
-    background: rgba(239, 68, 68, 0.07);
-  }
 }
 
 /* A confirmation on the shared AlertDialog: the sheet's spacing, then the
@@ -600,110 +495,83 @@
 }
 
 @media (max-width: 900px) {
-  /* No room for a rail beside the content: the pages become a strip of
-     chips above it, scrolled sideways. The marker is a vertical device, so
-     it goes — the active chip carries the state instead. */
+  /* No room for a column beside the content: the pages become one line
+     above it, scrolled sideways, each page the same icon and name. */
   .settings-layout {
     grid-template-columns: minmax(0, 1fr);
     gap: 0;
   }
 
-  .settings-index {
-    position: static;
-    margin: 0 -24px 26px;
-    padding: 14px 24px 0;
-    border-top: 0;
+  .settings-heading {
+    margin-bottom: var(--space-5);
   }
 
-  .settings-index-title {
-    display: none;
+  .settings-index {
+    position: static;
+    margin: 0 calc(-1 * var(--space-6)) var(--space-8);
+    padding: 0 var(--space-6);
   }
 
   .settings-index-list {
     flex-direction: row;
-    gap: 6px;
+    gap: var(--space-1);
     overflow-x: auto;
+    overscroll-behavior-inline: contain;
     scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
+    mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
   }
 
   .settings-index-list::-webkit-scrollbar {
     display: none;
   }
 
-  .settings-index-marker {
-    display: none;
-  }
-
   .settings-index-list a {
-    height: auto;
     min-height: 44px;
     flex: 0 0 auto;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-lg);
-    padding: 10px 13px;
-    font-weight: var(--fw-semibold);
-  }
-
-  .settings-index-list a.is-active {
-    border-color: var(--border-ink);
-    box-shadow: inset 0 -3px 0 var(--brand-yellow);
-  }
-
-  /* Under the strip of chips rather than under a rail. */
-  .settings-rail-link {
-    margin-top: 10px;
-    padding: 0;
-    border-top: 0;
+    gap: var(--space-2);
   }
 }
 
-@media (max-width: 700px) {
+@media (max-width: 640px) {
   .settings-page {
-    padding: 88px 16px 54px;
+    padding: calc(var(--nav-total) + var(--space-6)) var(--space-4) var(--space-12);
   }
 
-  .settings-heading {
-    margin-bottom: 22px;
-  }
-
-  .settings-heading h1 {
-    font-size: 28px;
-  }
-
-  .settings-row {
-    grid-template-columns: 38px minmax(0, 1fr) auto;
-    gap: 11px;
-  }
-}
-
-@media (max-width: 520px) {
-  .settings-page {
-    padding-right: 12px;
-    padding-left: 12px;
+  .settings-index {
+    margin-right: calc(-1 * var(--space-4));
+    margin-left: calc(-1 * var(--space-4));
+    padding: 0 var(--space-4);
   }
 
   .settings-section {
-    margin-top: 32px;
+    margin-top: var(--space-8);
   }
 
+  .settings-list,
+  .profile-fields {
+    padding: var(--space-4);
+  }
+
+  .settings-list {
+    padding-block: 0;
+  }
+
+  /* The action drops under the text, so a long description keeps the
+     row's width. */
   .settings-row {
-    grid-template-columns: 38px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--space-3);
   }
 
-  /* An icon button is small enough to stay on the row's line on a phone. */
-  .settings-row:has(> .settings-icon-action) {
-    grid-template-columns: 38px minmax(0, 1fr) auto;
-  }
-
-  .settings-signout {
-    width: 100%;
-    grid-column: 1 / -1;
-    justify-content: center;
+  .settings-row > .settings-row-action,
+  .settings-row > .settings-method-actions {
+    justify-self: start;
   }
 
   .settings-method-actions {
-    grid-column: 1 / -1;
-    justify-content: space-between;
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
   .settings-photo-field {
@@ -713,15 +581,6 @@
   .settings-photo-field .settings-profile-actions {
     grid-column: 1 / -1;
   }
-
-  .settings-photo-button {
-    flex: 1 1 auto;
-  }
-
-  .settings-follow-summary > span {
-    flex: 1 1 calc(50% - 3px);
-    justify-content: space-between;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -730,10 +589,8 @@
     animation: none;
   }
 
-  .settings-photo-button,
   .settings-index-list a,
-  .settings-index-marker,
-  .settings-signout {
+  .settings-levels button {
     transition: none;
   }
 }

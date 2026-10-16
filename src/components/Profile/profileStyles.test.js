@@ -25,10 +25,6 @@ const INJECTED_PROPERTIES = new Map([
   ['--stagger-index', '../Lists/ListsPage.jsx'],
   ['--loading-row-index', '../Search/SearchPage.jsx'],
   ['--search-item-index', '../Search/SearchPage.jsx'],
-  // Which entry of the settings rail the marker sits on, set on the list
-  // itself so the marker's travel is a multiplication rather than a
-  // measurement.
-  ['--settings-active', '../Settings/SettingsPage.jsx'],
   ['--follow-rows', '../Public/FollowSheet.jsx'],
   // A row takes the research field of its paper, the same way a card or an
   // entity header does, so its rules are tinted by the data rather than by a
@@ -88,8 +84,8 @@ test('every design token used by the profile screens is actually defined', async
     const stylesheet = await readFile(new URL(path, import.meta.url), 'utf8');
     // A property the stylesheet declares itself is not a missing token: it is
     // a local measure kept in one place so the rules that share it cannot
-    // drift apart (the settings index rail sizes its rows and positions its
-    // marker off one value). Only the ones nobody defines are the bug.
+    // drift apart (the settings pages draw every panel edge and row rule off
+    // one line). Only the ones nobody defines are the bug.
     const selfDefined = new Set(
       (stylesheet.match(/^\s*(--[a-z0-9-]+)\s*:/gim) || [])
         .map(line => line.trim().replace(/\s*:$/, '')),
@@ -134,12 +130,12 @@ function rules(css) {
   return css.replace(/\/\*[\s\S]*?\*\//g, '');
 }
 
-test('the editor is split across the settings pages, with the live preview on top of Profile', async () => {
+test('the editor is split across the settings pages, with the identity first on Profile', async () => {
   const settings = await readFile(new URL('../Settings/SettingsPage.jsx', import.meta.url), 'utf8');
   const sections = await readFile(new URL('./ProfileEditor.jsx', import.meta.url), 'utf8');
-  // The public page as its link shows it opens the Profile page, above the
-  // identity it previews; who can see it and what it shows live in Privacy.
-  assert.match(settings, /<ProfilePreview preview=\{editor\.preview\} \/>\s*<IdentitySection form=\{editor\.form\}/);
+  // The identity opens the Profile page; who can see it and what it shows
+  // live in Privacy.
+  assert.match(settings, /editor\.read\.ready \? \(\s*<>\s*<IdentitySection form=\{editor\.form\}/);
   assert.match(settings, /<PublicPageSection form=\{editor\.form\} visibility=\{editor\.visibility\} \/>/);
   // Each section gets the part of the editor it renders, never all of it.
   assert.doesNotMatch(settings, /editor=\{editor\}/);
@@ -147,11 +143,11 @@ test('the editor is split across the settings pages, with the live preview on to
   // Each page is a route of its own, so the rail is links, not a scroll spy.
   assert.match(settings, /<NavLink\s+key=\{entry\.slug\}\s+to=\{`\/settings\/\$\{entry\.slug\}`\}\s+replace/);
   assert.doesNotMatch(settings, /useSectionSpy|scrollIntoView/);
-  // The way to the public page is the preview card's foot.
-  assert.match(sections, /className="profile-preview-open"/);
-  assert.doesNotMatch(sections, /className="profile-public-link"/);
-  const css = rules(await readFile(new URL('./ProfileEditor.css', import.meta.url), 'utf8'));
-  assert.match(css, /\.profile-preview-chrome/);
+  // The way to the public page is a named link beside the handle that makes
+  // its address, shown only once there is a saved profile to open. A real
+  // link: a Button rendered as one would be announced as a button.
+  assert.doesNotMatch(sections, /ProfilePreview|profile-preview/);
+  assert.match(sections, /\{form\.publicPath && \(\s*<a\s+href=\{form\.publicPath\}\s+target="_blank"[\s\S]*?aria-label=\{copy\.viewPublicNewTab\}/);
 });
 
 test('in the dark theme, what sits on the soft yellow is the ink that flips with it, not the fixed one', async () => {
@@ -190,7 +186,9 @@ test('the list toggles answer the pointer: a hover, a press, and a pop when thei
   // flashes with the same soft yellow the preview uses for a committed save.
   assert.match(css, /@keyframes profile-pin-pop/);
   assert.match(css, /\.profile-pin-toggle\.is-settling\s*\{[^}]*animation:\s*profile-pin-pop/);
-  assert.match(css, /@keyframes profile-row-flash\s*\{[^}]*0%\s*\{\s*background:\s*var\(--bg-card\)/);
+  // From and back to transparent: the row sits on the settings panel, so
+  // any fixed surface would jump when the flash lets go.
+  assert.match(css, /@keyframes profile-row-flash\s*\{[^}]*0%\s*\{\s*background:\s*transparent/);
   assert.match(css, /\.profile-pin-list li\.is-flashing\s*\{[^}]*animation:\s*profile-row-flash/);
   // And none of it moves for a reader who asked for less motion.
   const reduced = css.match(/@media \(prefers-reduced-motion: reduce\)\s*\{[^{}]*\.profile-pin-toggle\.is-settling[^{}]*\{[^}]*animation:\s*none/);
@@ -263,14 +261,14 @@ test('the dark theme gets stronger lines for fields and rules, the light theme k
   // onboarding inputs drew no edge. Each is redefined for the dark side.
   const light = css.match(/\.settings-page,\s*\.ob\s*\{[^}]*\}/);
   assert.ok(light, 'ProfileEditor.css lost its .settings-page / .ob lines');
-  assert.match(light[0], /--profile-rule:\s*var\(--border-default\)/);
+  assert.match(light[0], /--profile-card-line:\s*var\(--border-subtle\)/);
   assert.match(light[0], /--profile-line-field:\s*var\(--border-default\)/);
   const dark = css.match(/:root\[data-theme='dark'\] \.settings-page,\s*:root\[data-theme='dark'\] \.ob\s*\{[^}]*\}/);
   assert.ok(dark, 'ProfileEditor.css has no dark-theme block for .settings-page / .ob');
-  assert.match(dark[0], /--profile-rule:\s*var\(--border-strong\)/);
+  assert.match(dark[0], /--profile-card-line:\s*var\(--border-strong\)/);
   assert.match(dark[0], /--profile-line-field:\s*color-mix\(in srgb, var\(--text-tertiary\) 70%, var\(--bg-card\)\)/);
   // And the rules that draw structure use them rather than the raw tokens.
-  assert.match(css, /\.profile-preview-card\s*\{[^}]*border:\s*1px solid var\(--profile-rule\)/);
+  assert.match(css, /\.profile-pin-list li\s*\{[^}]*border-bottom:\s*1px solid var\(--profile-card-line\)/);
   assert.match(css, /\.profile-field textarea\s*\{[^}]*border:\s*1px solid var\(--profile-line-field\)/);
 });
 

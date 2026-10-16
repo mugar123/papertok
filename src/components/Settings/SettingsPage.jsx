@@ -1,32 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
-  ArrowSquareOut,
   Bell,
   BookOpen,
-  Briefcase,
-  Buildings,
   CaretRight,
-  ChartBar,
   CircleNotch,
-  Envelope,
+  Compass,
   Flask,
   GearSix,
   GlobeHemisphereWest,
   GraduationCap,
-  Key,
-  LinkBreak,
   LinkSimple,
   PencilSimple,
-  SlidersHorizontal,
+  ShieldCheck,
   Sparkle,
-  Tag,
   Trash,
   UploadSimple,
-  User,
-  UserMinus,
-  UsersThree,
-  Warning,
+  UserCircle,
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { toastError } from '../ui/toast.js';
@@ -49,13 +39,11 @@ import { settleWithin } from '../../utils/asyncTiming';
 import {
   IdentitySection,
   ProfileListsSection,
-  ProfilePreview,
   ProfileReadState,
   ProfileVisibilityPrompt,
   PublicPageSection,
 } from '../Profile/ProfileEditor.jsx';
 import { useProfileEditor } from '../Profile/useProfileEditor.js';
-import { PAPERTOK_REPO_URL } from '../Layout/AccountMenu.jsx';
 import EditInterestsModal from './EditInterestsModal';
 import {
   AlertDialog,
@@ -78,11 +66,11 @@ import './SettingsPage.css';
  * no scroll position to track and nothing to spy on. Order is the rail's.
  */
 const SETTINGS_PAGES = [
-  { slug: 'profile', label: 'Profile & account' },
-  { slug: 'discovery', label: 'Discovery' },
-  { slug: 'reading', label: 'Reading & AI' },
-  { slug: 'notifications', label: 'Notifications' },
-  { slug: 'privacy', label: 'Privacy' },
+  { slug: 'profile', label: 'Profile & account', Icon: UserCircle },
+  { slug: 'discovery', label: 'Discovery', Icon: Compass },
+  { slug: 'reading', label: 'Reading & AI', Icon: Sparkle },
+  { slug: 'notifications', label: 'Notifications', Icon: Bell },
+  { slug: 'privacy', label: 'Privacy', Icon: ShieldCheck },
 ];
 
 const LEVEL_DETAILS = {
@@ -103,13 +91,6 @@ const LEVEL_DETAILS = {
   },
 };
 
-const FOLLOW_SUMMARY = [
-  { type: 'author', label: 'Authors', Icon: User },
-  { type: 'topic', label: 'Topics', Icon: Tag },
-  { type: 'institution', label: 'Institutions', Icon: Buildings },
-  { type: 'project', label: 'Projects', Icon: Briefcase },
-];
-
 /**
  * The public copy's whole budget: the patient read (PUBLIC_PHOTO_READ_TIMEOUT_MS,
  * 8 s, with the stream kick at 3 s), the second compression and the commit.
@@ -117,10 +98,8 @@ const FOLLOW_SUMMARY = [
 const PUBLIC_PHOTO_MIRROR_TIMEOUT_MS = 12_000;
 
 const SETTINGS_COPY = {
-  eyebrow: 'User settings',
   title: 'Settings',
   subtitle: 'Your account, discovery preferences, and reading tools.',
-  pagesTitle: 'Pages',
   pagesLabel: 'Settings pages',
   photo: 'Photo',
   photoHint: 'PNG, JPEG or WebP. Saved as soon as you choose it.',
@@ -143,9 +122,8 @@ const SETTINGS_COPY = {
   followedOne: 'followed entity',
   followedMany: 'followed entities',
   recommendationsSuffix: 'influence your recommendations',
-  followingSummary: 'Summary of followed content',
   viewAll: 'View all',
-  viewAllFollowing: 'View everything you follow',
+  viewAllFollowing: 'View all you follow',
   scientificInterests: 'Scientific interests',
   selectedOne: 'selected subcategory',
   selectedMany: 'selected subcategories',
@@ -178,14 +156,14 @@ const SETTINGS_COPY = {
   institution: 'University',
   institutionDescription: 'Verify where you study or work by signing in with your university\'s Google account.',
   institutionLinked: name => `Verified with ${name}.`,
+  link: 'Link',
+  manage: 'Manage',
   institutionLink: 'Link your university',
   institutionManage: 'Manage your university',
   dangerZone: 'Danger zone',
   dangerZoneDescription: 'Irreversible actions.',
   deleteAccount: 'Delete account',
   deleteAccountDescription: 'Permanently deletes your account and everything in it.',
-  openSource: 'PaperTok is open source',
-  opensNewTab: '(opens in a new tab)',
   access: 'Access',
   accessDescription: 'The ways you sign in. Each one opens the same account and the same data.',
   connectedAs: 'Connected as ',
@@ -193,7 +171,7 @@ const SETTINGS_COPY = {
   onlyMethod: 'Your only way to sign in, so it cannot be disconnected.',
   methodLinked: 'You can sign in with it.',
   methodUnlinked: 'Connect it and you can sign in with it as well as the way you sign in today.',
-  disconnect: label => `Disconnect ${label}`,
+  connectShort: 'Connect',
   connect: label => `Connect ${label}`,
   connecting: label => `Connecting ${label}…`,
   alreadyLinked: label => ({ title: 'Already connected', description: `You can sign in with ${label} now.` }),
@@ -213,23 +191,25 @@ const notify = (kind, { title, description }) => (kind === 'error'
   ? toastError(title, { description })
   : toast[kind](title, { description }));
 
-function SectionHeading({ id, Icon, title, description }) {
+function SectionHeading({ id, title, description }) {
   return (
     <div className="settings-section-heading">
-      <Icon size={18} aria-hidden="true" />
-      <div>
-        <h2 id={id}>{title}</h2>
-        {description && <p>{description}</p>}
-      </div>
+      <h2 id={id}>{title}</h2>
+      {description && <p>{description}</p>}
     </div>
   );
 }
 
-/** An icon-only row action: the name is the label, the title its tooltip. */
-function IconAction({ label, title = label, Icon, className = '', ...props }) {
+/**
+ * A row's action. The visible text is short because the row's heading says
+ * what it acts on; the accessible name repeats that subject, and starts with
+ * the visible text so speech input can still reach it (WCAG 2.5.3).
+ */
+function RowAction({ label, text = label, Icon, variant = 'outline', ...props }) {
   return (
-    <Button variant="outline" size="icon" className={`settings-icon-action ${className}`} aria-label={label} title={title} {...props}>
-      <Icon size={17} aria-hidden="true" />
+    <Button variant={variant} size="sm" className="settings-row-action" aria-label={label === text ? undefined : label} {...props}>
+      <Icon size={15} aria-hidden="true" />
+      {text}
     </Button>
   );
 }
@@ -277,9 +257,8 @@ function ProfileAccountPage() {
 
   const gitHubLinked = signInProviders.includes(SIGN_IN_PROVIDERS.github);
   const googleLinked = signInProviders.includes(SIGN_IN_PROVIDERS.google);
-  // ponytail: AuthContext has no unlink, so Disconnect only renders, disabled,
-  // where it would be refused anyway (the only way in). Add unlinking before
-  // offering it with two methods connected.
+  // AuthContext has no unlink, so a connected method offers no Disconnect;
+  // the only way in says why it never could.
   const onlyMethod = [gitHubLinked, googleLinked].filter(Boolean).length === 1;
   const visibleProfilePhoto = profilePhoto || user?.photoURL;
 
@@ -417,8 +396,8 @@ function ProfileAccountPage() {
           tabIndex={-1}
           aria-hidden="true"
         />
-        <Button type="button" variant="outline" className="settings-photo-button" disabled={savingPhoto} onClick={() => profileInputRef.current?.click()}>
-          <UploadSimple size={17} aria-hidden="true" />
+        <Button type="button" variant="outline" size="sm" disabled={savingPhoto} onClick={() => profileInputRef.current?.click()}>
+          <UploadSimple size={15} aria-hidden="true" />
           {profilePhoto ? copy.changePhoto : copy.uploadPhoto}
         </Button>
         {/* Only an uploaded photo can be removed; removing it falls back to
@@ -426,13 +405,14 @@ function ProfileAccountPage() {
         {profilePhoto && (
           <Button
             type="button"
-            variant="outline"
-            className="settings-photo-button settings-photo-remove"
+            variant="ghost"
+            size="sm"
+            className="settings-photo-remove"
             disabled={savingPhoto}
             onClick={handleRestorePhoto}
             title={user?.photoURL ? copy.removeToSignInPhoto : copy.removeToInitial}
           >
-            <Trash size={17} aria-hidden="true" />
+            <Trash size={15} aria-hidden="true" />
             {copy.removePhoto}
           </Button>
         )}
@@ -444,7 +424,6 @@ function ProfileAccountPage() {
     <>
       {editor.read.ready ? (
         <>
-          <ProfilePreview preview={editor.preview} />
           <IdentitySection form={editor.form} photo={photoField} />
           {/* Which published lists the page shows: part of what it says
               about you, so it sits with the identity, not with Privacy. */}
@@ -455,19 +434,16 @@ function ProfileAccountPage() {
       )}
 
       <section className="settings-section" aria-labelledby="settings-access-heading">
-        <SectionHeading id="settings-access-heading" Icon={Key} title={copy.access} description={copy.accessDescription} />
+        <SectionHeading id="settings-access-heading" title={copy.access} description={copy.accessDescription} />
         <div className="settings-list">
           {/* Every way in, the ones in use included. A method that is the
               only way in cannot be disconnected: the account would have no
               door. */}
           {methods.map(method => (
             <div key={method.id} className="settings-row">
-              <span className={`settings-row-icon${method.id === 'github' ? ' settings-row-icon--github' : ''}`}>
-                <method.Icon size={20} aria-hidden="true" />
-              </span>
               <div className="settings-row-content">
-                <h3>{method.label}</h3>
-                <p id={`settings-${method.id}-method`}>
+                <h3 className="settings-method-name"><method.Icon size={16} aria-hidden="true" />{method.label}</h3>
+                <p>
                   {method.linked
                     ? (onlyMethod ? copy.onlyMethod : copy.methodLinked)
                     : copy.methodUnlinked}
@@ -480,34 +456,25 @@ function ProfileAccountPage() {
                     <span className="visually-hidden">{copy.connectedAs}</span>
                     {identityFor(method.providerId) || copy.connected}
                   </span>
-                  {onlyMethod && (
-                    <IconAction
-                      Icon={LinkBreak}
-                      label={copy.disconnect(method.label)}
-                      disabled
-                      aria-describedby={`settings-${method.id}-method`}
-                    />
-                  )}
                 </span>
               ) : (
                 <Button
                   variant="outline"
-                  size="icon"
-                  className="settings-icon-action"
+                  size="sm"
+                  className="settings-row-action"
                   onClick={() => handleLink(method)}
                   disabled={Boolean(linking)}
                   aria-label={linking === method.id ? copy.connecting(method.label) : copy.connect(method.label)}
-                  title={copy.connect(method.label)}
                 >
                   {linking === method.id
-                    ? <CircleNotch size={17} className="settings-spin" aria-hidden="true" />
-                    : <LinkSimple size={17} aria-hidden="true" />}
+                    ? <CircleNotch size={15} className="settings-spin" aria-hidden="true" />
+                    : <LinkSimple size={15} aria-hidden="true" />}
+                  {copy.connectShort}
                 </Button>
               )}
             </div>
           ))}
           <div className="settings-row">
-            <span className="settings-row-icon is-cyan"><GraduationCap size={20} aria-hidden="true" /></span>
             <div className="settings-row-content">
               <div className="settings-row-title-line">
                 <h3>{copy.institution}</h3>
@@ -515,9 +482,10 @@ function ProfileAccountPage() {
               </div>
               <p>{institution ? copy.institutionLinked(institution.name) : copy.institutionDescription}</p>
             </div>
-            <IconAction
+            <RowAction
               Icon={institution ? GearSix : LinkSimple}
               label={institution ? copy.institutionManage : copy.institutionLink}
+              text={institution ? copy.manage : copy.link}
               onClick={() => setInstitutionOpen(true)}
               aria-haspopup="dialog"
             />
@@ -527,15 +495,14 @@ function ProfileAccountPage() {
       </section>
 
       <section className="settings-section" aria-labelledby="settings-danger-heading">
-        <SectionHeading id="settings-danger-heading" Icon={Warning} title={copy.dangerZone} description={copy.dangerZoneDescription} />
+        <SectionHeading id="settings-danger-heading" title={copy.dangerZone} description={copy.dangerZoneDescription} />
         <div className="settings-list">
           <div className="settings-row">
-            <span className="settings-row-icon is-rose"><UserMinus size={20} aria-hidden="true" /></span>
             <div className="settings-row-content">
               <h3>{copy.deleteAccount}</h3>
               <p>{copy.deleteAccountDescription}</p>
             </div>
-            <IconAction Icon={Trash} label={copy.deleteAccount} className="settings-danger-icon" onClick={() => setDeleteAccountOpen(true)} />
+            <RowAction Icon={Trash} variant="rose" label={copy.deleteAccount} onClick={() => setDeleteAccountOpen(true)} />
           </div>
         </div>
       </section>
@@ -566,7 +533,7 @@ function UnpublishDialog({ unpublish, open, onOpenChange }) {
         <AlertDialogDescription>{copy.unpublishConfirmBody(unpublish.handle ?? '')}</AlertDialogDescription>
         <div className="settings-confirm-actions">
           <AlertDialogCancel disabled={unpublish.busy}>{copy.cancel}</AlertDialogCancel>
-          <Button variant="outline" className="settings-signout" onClick={confirm} disabled={unpublish.busy}>
+          <Button variant="rose" onClick={confirm} disabled={unpublish.busy}>
             {unpublish.busy ? copy.unpublishing : copy.unpublish}
           </Button>
         </div>
@@ -588,7 +555,7 @@ function PrivacyPage() {
 
       {/* The account's, not the profile's: it works with or without one. */}
       <section className="settings-section" aria-labelledby="settings-analytics-heading">
-        <SectionHeading id="settings-analytics-heading" Icon={ChartBar} title={copy.usageAnalytics} description={copy.usageAnalyticsDescription} />
+        <SectionHeading id="settings-analytics-heading" title={copy.usageAnalytics} description={copy.usageAnalyticsDescription} />
         <div className="profile-fields">
           <Label className="profile-switch">
             <span className="profile-switch-copy">
@@ -609,17 +576,20 @@ function PrivacyPage() {
 
       {editor.unpublish.handle && (
         <section className="settings-section" aria-labelledby="settings-unpublish-heading">
-          <SectionHeading id="settings-unpublish-heading" Icon={Warning} title={copy.unpublish} description={copy.unpublishDescription} />
+          <SectionHeading id="settings-unpublish-heading" title={copy.unpublish} description={copy.unpublishDescription} />
           <div className="settings-list">
             <div className="settings-row">
-              <span className="settings-row-icon is-amber"><GlobeHemisphereWest size={20} aria-hidden="true" /></span>
               <div className="settings-row-content">
                 <h3>{copy.unpublishTitle}</h3>
                 <p>{copy.unpublishBody(editor.unpublish.handle)}</p>
               </div>
-              <Button variant="outline" className="settings-signout" onClick={() => setUnpublishOpen(true)} disabled={editor.unpublish.blocked}>
-                {copy.unpublish}
-              </Button>
+              <RowAction
+                Icon={GlobeHemisphereWest}
+                variant="rose"
+                label={copy.unpublish}
+                onClick={() => setUnpublishOpen(true)}
+                disabled={editor.unpublish.blocked}
+              />
             </div>
           </div>
         </section>
@@ -634,7 +604,7 @@ function PrivacyPage() {
 function DiscoveryPage() {
   const navigate = useNavigate();
   const { userPreferences } = useAuth();
-  const { followedEntities, followedByType, loading: followingLoading } = useFollowing();
+  const { followedEntities, loading: followingLoading } = useFollowing();
   const [isInterestsOpen, setIsInterestsOpen] = useState(false);
   const selectedInterestCount = Array.isArray(userPreferences) ? userPreferences.length : 0;
 
@@ -643,22 +613,17 @@ function DiscoveryPage() {
     return Object.entries(CATEGORIES)
       .map(([id, area]) => {
         const count = Object.keys(area.subcategories).filter(key => selected.has(key)).length;
-        return count > 0 ? { id, label: area.label, count } : null;
+        return count > 0 ? { id, label: area.label, accent: area.gradient, count } : null;
       })
       .filter(Boolean);
   }, [userPreferences]);
 
-  // Only the kinds actually followed: four zeros in a row are noise, and
-  // "0 followed entities" already says it all.
-  const followedKinds = FOLLOW_SUMMARY.filter(({ type }) => (followedByType[type]?.length || 0) > 0);
-
   return (
     <>
       <section className="settings-section" aria-labelledby="settings-discovery-heading">
-        <SectionHeading id="settings-discovery-heading" Icon={SlidersHorizontal} title={copy.discovery} description={copy.discoveryDescription} />
+        <SectionHeading id="settings-discovery-heading" title={copy.discovery} description={copy.discoveryDescription} />
         <div className="settings-list">
           <div className="settings-row">
-            <span className="settings-row-icon is-purple"><UsersThree size={20} aria-hidden="true" /></span>
             <div className="settings-row-content">
               <h3>{copy.followedContent}</h3>
               <p>
@@ -667,18 +632,10 @@ function DiscoveryPage() {
                   : `${followedEntities.length} ${followedEntities.length === 1 ? copy.followedOne : copy.followedMany} ${copy.recommendationsSuffix}`}
               </p>
             </div>
-            <IconAction Icon={CaretRight} label={copy.viewAllFollowing} title={copy.viewAll} onClick={() => navigate('/settings/following')} />
-            {followedKinds.length > 0 && (
-              <div className="settings-follow-summary settings-row-tags" role="group" aria-label={copy.followingSummary}>
-                {followedKinds.map(({ type, label, Icon }) => (
-                  <span key={type}><Icon size={12} aria-hidden="true" />{label}<strong>{followedByType[type].length}</strong></span>
-                ))}
-              </div>
-            )}
+            <RowAction Icon={CaretRight} label={copy.viewAllFollowing} text={copy.viewAll} onClick={() => navigate('/settings/following')} />
           </div>
 
           <div className="settings-row">
-            <span className="settings-row-icon is-green"><SlidersHorizontal size={20} aria-hidden="true" /></span>
             <div className="settings-row-content">
               <h3>{copy.scientificInterests}</h3>
               <p>
@@ -686,10 +643,13 @@ function DiscoveryPage() {
                 {selectedInterestCount === 1 ? copy.selectedOne : copy.selectedMany} {copy.trainFeed}
               </p>
             </div>
-            <IconAction Icon={PencilSimple} label={copy.editInterests} title={copy.edit} onClick={() => setIsInterestsOpen(true)} />
+            <RowAction Icon={PencilSimple} label={copy.editInterests} text={copy.edit} onClick={() => setIsInterestsOpen(true)} />
             {selectedAreas.length > 0 && (
               <div className="settings-interest-summary settings-row-tags" role="group" aria-label={copy.selectedAreas}>
-                {selectedAreas.map(area => <span key={area.id}>{area.label} <small>{area.count}</small></span>)}
+                {/* Each area in its own field ink (design.md, rule 2). */}
+                {selectedAreas.map(area => (
+                  <span key={area.id} style={{ '--area-accent': area.accent }}>{area.label} <small>{area.count}</small></span>
+                ))}
               </div>
             )}
           </div>
@@ -719,40 +679,38 @@ function ReadingPage() {
 
   return (
     <section className="settings-section" aria-labelledby="settings-reading-heading">
-      <SectionHeading id="settings-reading-heading" Icon={Sparkle} title={copy.readingAi} description={copy.readingAiDescription} />
-      <div className="profile-fields">
-        {/* The same stacked radio list as Privacy's public/private choice. */}
-        <RadioGroup
-          className="settings-levels"
-          aria-label={copy.aiLevelLabel}
-          value={readingPreferences.aiExplanationLevel}
-          onValueChange={handleLevelChange}
-          disabled={Boolean(savingLevel)}
-          aria-busy={Boolean(savingLevel)}
-        >
-          {PAPER_REWRITE_LEVELS.map(({ id }) => {
-            const { label, description, Icon } = LEVEL_DETAILS[id];
-            const checked = readingPreferences.aiExplanationLevel === id;
-            return (
-              <div key={id} className={`settings-level${checked ? ' is-checked' : ''}`}>
-                <RadioGroupItem
-                  value={id}
-                  render={<button type="button" />}
-                  nativeButton
-                  disabled={Boolean(savingLevel)}
-                >
-                  <span className="settings-level-radio" aria-hidden="true" />
-                  <Icon size={18} weight={checked ? 'fill' : 'regular'} aria-hidden="true" />
-                  <span className="settings-level-copy">
-                    <strong>{label}</strong>
-                    <span>{description}</span>
-                  </span>
-                </RadioGroupItem>
-              </div>
-            );
-          })}
-        </RadioGroup>
-      </div>
+      <SectionHeading id="settings-reading-heading" title={copy.readingAi} description={copy.readingAiDescription} />
+      {/* A ruled list of the three levels, like the rows on the other pages. */}
+      <RadioGroup
+        className="settings-levels"
+        aria-label={copy.aiLevelLabel}
+        value={readingPreferences.aiExplanationLevel}
+        onValueChange={handleLevelChange}
+        // Busy, not disabled: disabling the radio that holds focus dropped a
+        // keyboard user onto <body>. handleLevelChange ignores a choice made
+        // while another is saving.
+        aria-busy={Boolean(savingLevel)}
+      >
+        {PAPER_REWRITE_LEVELS.map(({ id }) => {
+          const { label, description, Icon } = LEVEL_DETAILS[id];
+          const checked = readingPreferences.aiExplanationLevel === id;
+          return (
+            <RadioGroupItem
+              key={id}
+              value={id}
+              render={<button type="button" />}
+              nativeButton
+            >
+              <span className="settings-level-radio" aria-hidden="true" />
+              <Icon size={18} weight={checked ? 'fill' : 'regular'} aria-hidden="true" />
+              <span className="settings-level-copy">
+                <strong>{label}</strong>
+                <span>{description}</span>
+              </span>
+            </RadioGroupItem>
+          );
+        })}
+      </RadioGroup>
     </section>
   );
 }
@@ -765,14 +723,9 @@ function NotificationsPage() {
   return (
     <>
       <section className="settings-section" aria-labelledby="settings-notifications-heading">
-        <SectionHeading id="settings-notifications-heading" Icon={Bell} title={copy.notifications} description={copy.notificationsDescription} />
+        <SectionHeading id="settings-notifications-heading" title={copy.notifications} description={copy.notificationsDescription} />
         <div className="settings-list">
           <div className="settings-row">
-            {/* Amber, the app's warning tint, only while the service is down;
-                the status pill says the same, so colour is not alone. */}
-            <span className={`settings-row-icon ${status.tone === 'warning' ? 'is-amber' : 'is-purple'}`}>
-              <Envelope size={20} aria-hidden="true" />
-            </span>
             <div className="settings-row-content">
               <div className="settings-row-title-line">
                 <h3>{copy.emailUpdates}</h3>
@@ -780,7 +733,7 @@ function NotificationsPage() {
               </div>
               <p>{status.description}</p>
             </div>
-            <IconAction Icon={GearSix} label={copy.configureEmail} title={copy.configure} onClick={() => setIsOpen(true)} />
+            <RowAction Icon={GearSix} label={copy.configureEmail} text={copy.configure} onClick={() => setIsOpen(true)} />
           </div>
         </div>
       </section>
@@ -797,35 +750,19 @@ const PAGE_COMPONENTS = {
   privacy: PrivacyPage,
 };
 
-/*
- * Which rail row the marker sat on, kept outside the component: every
- * settings page is its own route and remounts the rail, so without this the
- * marker would appear on the new row instead of sliding to it. Forgotten when
- * the last settings page unmounts, so a later visit does not slide in from
- * wherever the previous one ended. (The incoming page mounts beside the
- * outgoing one, so a rail click never drops the count to zero.)
- */
-let lastMarkerIndex = null;
-let mountedRails = 0;
-
 export default function SettingsPage({ page = 'profile' }) {
   const activeIndex = Math.max(0, SETTINGS_PAGES.findIndex(entry => entry.slug === page));
   const active = SETTINGS_PAGES[activeIndex];
   const Page = PAGE_COMPONENTS[active.slug];
-  // First paint on the previous row, then move: the rail's own transition
-  // (SettingsPage.css, off under reduced motion) does the slide.
-  const [markerIndex, setMarkerIndex] = useState(() => lastMarkerIndex ?? activeIndex);
-  useEffect(() => {
-    mountedRails += 1;
-    return () => {
-      mountedRails -= 1;
-      if (mountedRails === 0) lastMarkerIndex = null;
-    };
-  }, []);
-  useEffect(() => {
-    lastMarkerIndex = activeIndex;
-    const frame = requestAnimationFrame(() => setMarkerIndex(activeIndex));
-    return () => cancelAnimationFrame(frame);
+  // Below 900px the rail is a sideways strip, and every page remounts it
+  // scrolled to the start, which hid a later page's own tab past the edge.
+  // Brought in just clear of the strip's fading edge (28px, SettingsPage.css).
+  const indexListRef = useRef(null);
+  useLayoutEffect(() => {
+    const list = indexListRef.current;
+    const link = list?.querySelector('a.is-active');
+    if (!link) return;
+    list.scrollLeft = Math.max(0, link.offsetLeft + link.offsetWidth - list.clientWidth + 28);
   }, [activeIndex]);
 
   // The tab keeps saying which page this is; restored on the way out so the
@@ -843,7 +780,6 @@ export default function SettingsPage({ page = 'profile' }) {
     <main className="settings-page">
       <div className="settings-shell">
         <header className="settings-heading">
-          <span>{copy.eyebrow}</span>
           <h1>{copy.title}</h1>
           <p>{copy.subtitle}</p>
         </header>
@@ -851,28 +787,25 @@ export default function SettingsPage({ page = 'profile' }) {
         <div className="settings-layout">
 
           <nav className="settings-index" aria-label={copy.pagesLabel}>
-            <span className="settings-index-title">{copy.pagesTitle}</span>
-            <div className="settings-index-list" style={{ '--settings-active': markerIndex }}>
-              <span className="settings-index-marker" aria-hidden="true" />
-              {SETTINGS_PAGES.map((entry, position) => (
+            <div ref={indexListRef} className="settings-index-list">
+              {SETTINGS_PAGES.map(entry => (
                 <NavLink
                   key={entry.slug}
                   to={`/settings/${entry.slug}`}
                   replace
                   className={({ isActive }) => (isActive ? 'is-active' : '')}
                 >
-                  <span aria-hidden="true">{String(position + 1).padStart(2, '0')}</span>
-                  {entry.label}
+                  {/* Filled on the page you are on: the shape changes, not
+                      only the colour. */}
+                  {({ isActive }) => (
+                    <>
+                      <entry.Icon size={18} weight={isActive ? 'fill' : 'regular'} aria-hidden="true" />
+                      {entry.label}
+                    </>
+                  )}
                 </NavLink>
               ))}
             </div>
-
-            <a className="settings-rail-link" href={PAPERTOK_REPO_URL} target="_blank" rel="noreferrer">
-              <GithubMark size={15} />
-              <span>{copy.openSource}</span>
-              <ArrowSquareOut size={13} aria-hidden="true" />
-              <span className="visually-hidden">{copy.opensNewTab}</span>
-            </a>
           </nav>
 
           <div className="settings-content">
