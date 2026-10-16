@@ -270,11 +270,12 @@ export function mergePreparedPayload({ header, byRawId, requestIds }, existing, 
 }
 
 /**
- * The showcase (F12): `profileLists/{uid}`, the one document a profile's
- * Listas tab reads. Only this Worker writes it — `firestore.rules` refuses
- * every client write — and always inside the same commit as the list
- * operation it mirrors, so a card can never disagree with the list it
- * denormalizes the way the old best-effort pin refresh could.
+ * The showcase (F12): `profileLists/{uid}`, the attributed-list cards that
+ * public profiles used to show. No client can read or write it any more
+ * (`firestore.rules` has no rule for it, so the catch-all denies both). Only
+ * this Worker writes it, always inside the same commit as the list operation
+ * it mirrors, so a card can never disagree with the list it denormalizes the
+ * way the old best-effort pin refresh could. Account deletion removes it.
  */
 function projectionEntries(projection) {
   return Array.isArray(projection?.data?.lists) ? projection.data.lists : [];
@@ -346,9 +347,9 @@ async function requireOwnedShare(admin, uid, shareId) {
  * used to be a snapshot taken when the owner clicked Pin: grow the list from
  * 12 papers to 19 and the profile kept saying 12 until a manual re-pin. Now
  * `/lists/update` refreshes the card's title and count, and `/lists/unpublish`
- * removes the card outright — an unpublished share id fails the ownership
- * check in the rules, so a card left behind would veto every later profile
- * write from the client (the "something went wrong" family).
+ * removes the card outright, so no legacy card points at a share that no
+ * longer exists. Clients can no longer write profiles; only the Worker's
+ * service account does.
  *
  * Pins hidden by the owner are parked verbatim in
  * `users/{uid}/profileStash/pinnedLists` (F8), so when the profile does not
@@ -357,11 +358,11 @@ async function requireOwnedShare(admin, uid, shareId) {
  *
  * Strictly best-effort, and the failure direction is chosen: the list
  * operation has already committed, so nothing here may throw past it. The
- * write carries an `updateTime` precondition — a pin toggled in the same
- * instant wins and the refresh retries once from a fresh read, then gives up
- * as 'skipped', which leaves exactly the staleness we have today, never a
- * clobbered pin. Cost when the list is not pinned: 1 read (+1 with pins
- * hidden), no writes.
+ * write carries an `updateTime` precondition — a write to the profile in the
+ * same instant wins and the refresh retries once from a fresh read, then
+ * gives up as 'skipped', which leaves exactly the staleness we have today,
+ * never a clobbered pin. Cost when the list is not pinned: 1 read (+1 with
+ * pins hidden), no writes.
  */
 export async function refreshPinnedCard(admin, uid, shareId, card, { now }) {
   try {
@@ -594,7 +595,7 @@ async function update(admin, uid, { shareId, merge, body }, { now }) {
     }
     // Transitional (F12 migration window): profiles that still hold legacy
     // pinned CARDS get them refreshed best-effort, exactly as before. Retired
-    // with rules v2, when no profile holds cards any more.
+    // with the Worker's pin and attribution machinery.
     const pinCard = await refreshPinnedCard(admin, uid, shareId, {
       title: payload.title, paperCount: payload.paperCount,
     }, { now });
@@ -651,9 +652,9 @@ async function unpublish(admin, uid, { shareId }, { now }) {
     ));
   }
   await admin.commit(writes);
-  // Transitional, like update's: a legacy pinned CARD pointing at the dead
-  // share id would fail ownsPinnedShare() and veto every profile write the
-  // client tries next. Unpinning here closes the orphan at its source.
+  // Transitional, like update's: clients can no longer write profiles
+  // (firestore.rules has no userProfiles rule), so this only removes a legacy
+  // pinned CARD that would otherwise point at a dead share id.
   const pinCard = await refreshPinnedCard(admin, uid, shareId, null, { now });
   return { shareId, unpublished: true, pinCard };
 }
