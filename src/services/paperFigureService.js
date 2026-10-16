@@ -20,7 +20,7 @@ const REQUEST_TIMEOUT_MS = 10_000;
 
 /**
  * The two identifier shapes arXiv has issued, mirroring `isArxivFigureId` in
- * `worker/paper-figures.js`. They have to move together: a client filter that
+ * `worker/paper-figures.ts`. They have to move together: a client filter that
  * is narrower than the Worker's silently withholds papers the Worker would
  * happily serve, which is how the back catalogue stayed invisible even though
  * ar5iv exists precisely to render it. `paperFigureService.test.js` pins the

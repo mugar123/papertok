@@ -100,6 +100,6 @@ test('SOURCE: there is no second publish workflow, and nothing publishes to GitH
   // And the Pages site itself stays up on purpose: it is what redirects the
   // old origin to the new one, so an old link still lands somewhere. What was
   // retired is publishing to it, not the redirect.
-  const worker = await readFile(new URL('../../worker/http.js', import.meta.url), 'utf8');
+  const worker = await readFile(new URL('../../worker/http.ts', import.meta.url), 'utf8');
   assert.match(worker, /https:\/\/mugar123\.github\.io/, 'the old origin left the allowlist without anyone saying so');
 });

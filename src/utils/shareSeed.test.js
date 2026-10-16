@@ -12,7 +12,7 @@ const PAPER = Object.freeze({
 });
 const SEED = JSON.stringify({ key: KEY, paper: PAPER });
 
-// The document a crawler got from the Worker (worker/share-pages.js) carries
+// The document a crawler got from the Worker (worker/share-pages.ts) carries
 // the paper; only a crawler that runs JavaScript — Googlebot — reads it, and
 // the API it would otherwise load from is closed to it by robots.txt.
 

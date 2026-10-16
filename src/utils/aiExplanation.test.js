@@ -7,7 +7,7 @@ import {
   getProviderRetry,
   normalizePaperForExplanation,
   shouldRefundAIQuota,
-} from '../../worker/ai-explanation.js';
+} from '../../worker/ai-explanation.ts';
 
 test('gives the daily use back only when the provider did no work', () => {
   const refunds = code => shouldRefundAIQuota(new AIExplanationError(code, 502));

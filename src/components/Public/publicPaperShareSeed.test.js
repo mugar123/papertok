@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 /**
  * The paper page and the seed a shared link's document carries
- * (worker/share-pages.js → src/utils/shareSeed.js).
+ * (worker/share-pages.ts → src/utils/shareSeed.js).
  *
  * Googlebot renders JavaScript but may not reach api.papertok.app, whose
  * robots.txt is `Disallow: /`. Without the seed its render ended on the

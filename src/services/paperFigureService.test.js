@@ -13,7 +13,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { normalizeArxivFigureId, peekPaperFigures } from './paperFigureService.js';
-import { isArxivFigureId } from '../../worker/paper-figures.js';
+import { isArxivFigureId } from '../../worker/paper-figures.ts';
 
 const IDS = [
   // Modern, since April 2007.
@@ -62,7 +62,7 @@ test('the version suffix and the arxiv: prefix are stripped before matching', ()
 test('both files spell the same two patterns', async () => {
   const [client, worker] = await Promise.all([
     readFile(new URL('./paperFigureService.js', import.meta.url), 'utf8'),
-    readFile(new URL('../../worker/paper-figures.js', import.meta.url), 'utf8'),
+    readFile(new URL('../../worker/paper-figures.ts', import.meta.url), 'utf8'),
   ]);
   const patterns = (source) => (source.match(/\/\^[^\n]*?\$\//g) || [])
     .map(value => value.trim())

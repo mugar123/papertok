@@ -1,5 +1,5 @@
 name = "papertok-report-api"
-main = "worker/index.js"
+main = "worker/index.ts"
 compatibility_date = "2026-07-16"
 
 # Declarar `[[routes]]` hace que wrangler apague workers.dev por defecto, y esa
@@ -82,7 +82,7 @@ id = "45c1519982dd48f8a0ea08403c159ae1"
 # id = "<id from wrangler kv namespace create>"
 
 # Workers AI, for toMarkdown only: it turns a paper's PDF into the text NaN
-# reads in /ai/rewrite (worker/paper-text.js). No model runs on it.
+# reads in /ai/rewrite (worker/paper-text.ts). No model runs on it.
 [ai]
 binding = "AI"
 

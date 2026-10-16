@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import test from 'node:test';
-import { SERVICE_CATALOGUE } from '../../../worker/institution-services.js';
+import { SERVICE_CATALOGUE } from '../../../worker/institution-services.ts';
 
 // The module imports the logo files through Vite, so node reads its source instead.
 const source = readFileSync(new URL('./publisherLogos.js', import.meta.url), 'utf8');

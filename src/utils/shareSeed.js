@@ -4,7 +4,7 @@ import { plainScientificText } from './plainScientificText.js';
  * The paper a shared link's document was sent with.
  *
  * A crawler opening /public/paper/<key> gets the page from the Worker
- * (worker/share-pages.js), with the paper written into the document as JSON.
+ * (worker/share-pages.ts), with the paper written into the document as JSON.
  * Googlebot renders JavaScript but may not reach the API the page loads from
  * (api.papertok.app's robots.txt is `Disallow: /`), so without this its
  * render ended on the loading or error state — both noindex — for a paper the

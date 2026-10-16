@@ -1274,7 +1274,7 @@ test('the email digest opt-in is a bool the owner can set and then delete', asyn
   await assertSucceeds(setDoc(ref, { emailDigestOptIn: deleteField() }, { merge: true }));
 });
 
-// The institution the Worker verified (worker/institution-link.js) rides on
+// The institution the Worker verified (worker/institution-link.ts) rides on
 // the same document and is frozen the same way: carried along, never written.
 const INSTITUTION = {
   domain: 'usal.es',

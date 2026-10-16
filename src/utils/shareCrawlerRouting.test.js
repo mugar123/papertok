@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 /**
  * vercel.json sends crawlers of public pages to the Worker's share pages
- * (worker/share-pages.js), and leaves people on the static app.
+ * (worker/share-pages.ts), and leaves people on the static app.
  *
  * Measured 2026-09-23 (audit, issue 5): WhatsApp, Twitterbot,
  * facebookexternalhit and Googlebot all received the one static index.html

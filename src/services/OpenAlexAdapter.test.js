@@ -94,7 +94,7 @@ test('uses current OpenAlex topics when legacy concepts are missing', () => {
 // A works page came back at 455 KB uncompressed, 65–82 KB on the wire, and the
 // mapper reads sixteen top-level fields of it. `select=` asks OpenAlex for
 // those alone (measured 2026-09-16: 326 KB / 45–49 KB), and the Worker relays
-// the parameter as it is (OPENALEX_PARAMS in worker/openalex-api.js).
+// the parameter as it is (OPENALEX_PARAMS in worker/openalex-api.ts).
 test('the search asks OpenAlex for the fields the mapper reads, and nothing else', () => {
   const url = new URL(new OpenAlexAdapter().buildSearchUrl('"Quantum Physics" OR "Cosmology"', 3));
   assert.equal(url.origin + url.pathname, 'https://api.openalex.org/works');

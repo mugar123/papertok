@@ -2,7 +2,7 @@
  * The one lane every arXiv request of this tab goes through.
  *
  * arXiv asks for one request every three seconds and one connection, and the
- * Worker now keeps that beat for the whole app (worker/arxiv-api.js: a miss
+ * Worker now keeps that beat for the whole app (worker/arxiv-api.ts: a miss
  * takes a seat, a seat further than four seconds away is refused with 429).
  * This lane is the tab's side of the same bargain:
  *
