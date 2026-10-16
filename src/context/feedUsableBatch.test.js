@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PaperBuilder } from '../services/PaperBuilder.js';
+import { ARXIV_FEED_AREAS } from '../services/arxivService.js';
+import { CATEGORIES } from '../data/categoryTaxonomy.js';
 import { fulfilledPaperLists, resolveWithin, settleSourcesForFirstPaint } from '../utils/asyncTiming.js';
 import { lateSourceCandidates } from '../utils/feedLateCandidates.js';
 import { takeFeedPage } from '../utils/feedEnrichment.js';
@@ -42,7 +44,7 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     getAllLeafCategories: () => [{ id: 'cs.AI', label: 'Artificial Intelligence', area: 'cs' }],
     followedEntities: [], categoryAffinities: ref({}), temporalPreference: ref(0),
     rankPreferences: values => values, CATEGORIES: { cs: { subcategories: { 'cs.AI': 'Artificial Intelligence' } } },
-    fetchPapers: () => Promise.resolve(fast), PubmedAdapter: class {},
+    ARXIV_FEED_AREAS, fetchPapers: () => Promise.resolve(fast), PubmedAdapter: class {},
     OpenAlexAdapter: class { search() { return Promise.resolve(slow).then(papers => ({ papers })); } },
     fetchDomainPapers: () => Promise.resolve([]), relatedCandidates: ref([]),
     FEED_SOURCE_RENDER_BUDGET_MS: 5, OPTIONAL_SOURCE_RENDER_BUDGET_MS: 5,
@@ -172,3 +174,42 @@ test('automatic top-up respects the existing pagination ceiling', async () => {
   assert.equal(state.papers.length, 2);
   assert.deepEqual(state.continuations, []);
 });
+
+for (const category of ['econ.EM', 'q-fin.RM', 'q-fin.GN']) {
+  test(`the personalized feed displays arXiv papers for ${category}`, async () => {
+    const { state, env, run } = feed({ fast: [] });
+    env.userPreferences = [category];
+    env.CATEGORIES = CATEGORIES;
+    env.fetchPapers = async (categories) => categories.map(id => ({
+      ...records(id, 1)[0], primaryCategory: id,
+    }));
+
+    await run(true);
+    assert.equal(state.error, null);
+    assert.deepEqual(state.papers.map(paper => paper.primaryCategory), [category]);
+  });
+}
+
+for (const [name, preference, boredom] of [
+  ['nearby', 'q-fin.RM', 0],
+  ['random', 'econ.EM', 8],
+]) {
+  test(`the ${name} exploration branch can add a General Finance paper`, async () => {
+    const { state, env, run } = feed({ fast: [], page: 1 });
+    env.userPreferences = [preference];
+    env.CATEGORIES = CATEGORIES;
+    env.boredomLevel.current = boredom;
+    env.getAllLeafCategories = () => [
+      { id: preference, label: 'Selected topic', area: preference.split('.')[0] },
+      { id: 'q-fin.GN', label: 'General Finance', area: 'q-fin' },
+    ];
+    env.fetchPapers = async (categories) => categories.map(id => ({
+      ...records(id, 1)[0], primaryCategory: id,
+    }));
+
+    await run(false);
+    assert.equal(state.error, null);
+    assert.ok(state.papers.some(paper => paper.primaryCategory === 'q-fin.GN'),
+      'the finance paper must reach the displayed batch');
+  });
+}

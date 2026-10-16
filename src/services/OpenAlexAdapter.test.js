@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { OPENALEX_SEARCH_TYPES, OPENALEX_WORK_SEARCH_FIELDS, OpenAlexAdapter } from './adapters/OpenAlexAdapter.js';
+import { openAlexClient } from './openAlexClient.js';
 
 test('keeps OpenAlex citations and semantic concepts on discovered papers', () => {
   const paper = new OpenAlexAdapter().mapToStandard({
@@ -177,4 +178,61 @@ test('dropping every unselected field changes nothing the mapper produces', () =
   assert.equal(fromSelected.arxivId, '1706.03762');
   assert.equal(fromSelected.authors[0].affiliation, 'Google (United States)');
   assert.equal(fromSelected.abstract, 'The dominant sequence transduction models are based on recurrent networks');
+});
+
+test('economics and finance discovery includes preprints without changing other fields or explicit type filters', () => {
+  const adapter = new OpenAlexAdapter();
+  const filterFor = (options) => new URL(adapter.buildSearchUrl('risk management', 1, options))
+    .searchParams.get('filter');
+
+  for (const internalCategories of [['econ.EM'], ['q-fin.RM'], ['cs.LG', 'q-fin.PM']]) {
+    assert.equal(filterFor({ internalCategories }),
+      'default.search:risk management,type:article|conference-paper|preprint');
+  }
+  assert.equal(filterFor({ internalCategories: ['cs.LG'] }),
+    'default.search:risk management,type:article|conference-paper');
+  assert.equal(filterFor({ internalCategories: ['econ.GN'], types: ['article'] }),
+    'default.search:risk management,type:article');
+  assert.equal(filterFor({ internalCategories: ['q-fin.RM'], types: OPENALEX_SEARCH_TYPES }),
+    'default.search:risk management,type:article|conference-paper|preprint|review');
+});
+
+test('category discovery returns working papers and preserves their preprint status', async (t) => {
+  // Synthetic OpenAlex records. The stub applies the upstream type filter so
+  // a request that still excludes preprints cannot return the working paper.
+  const records = [
+    {
+      id: 'https://openalex.org/W1001',
+      title: 'Risk Management Working Paper',
+      type: 'preprint',
+      authorships: [{ author: { display_name: 'Alex Smith' } }],
+      primary_location: { is_published: false, source: { type: 'repository' } },
+    },
+    {
+      id: 'https://openalex.org/W1002',
+      title: 'Risk Management Journal Article',
+      type: 'article',
+      primary_location: { is_published: true, source: { type: 'journal' } },
+    },
+  ];
+  let requests = 0;
+  t.mock.method(openAlexClient, 'fetch', async (url) => {
+    requests += 1;
+    const filter = new URL(url).searchParams.get('filter');
+    const types = filter.match(/(?:^|,)type:([^,]+)/)[1].split('|');
+    const results = records.filter(record => types.includes(record.type));
+    return Response.json({ meta: { count: results.length }, results });
+  });
+
+  const adapter = new OpenAlexAdapter();
+  for (const category of ['econ.EM', 'q-fin.RM']) {
+    const result = await adapter.search('risk management', 1, { internalCategories: [category] });
+    assert.deepEqual(result.papers.map(paper => paper.id), ['openalex:W1001', 'openalex:W1002']);
+    assert.equal(result.papers[0].publicationType, 'preprint');
+    assert.equal(result.papers[0].publicationStatus, 'preprint');
+    assert.equal(result.papers[0].primaryCategory, category);
+    assert.equal(result.papers[0].arxivId, undefined);
+    assert.equal(result.papers[1].publicationStatus, 'published');
+  }
+  assert.equal(requests, 2, 'each category search still makes one upstream request');
 });

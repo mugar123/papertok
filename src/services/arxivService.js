@@ -16,6 +16,13 @@ const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, 
 
 const cache = new Map();
 const CACHE_TTL = 5 * 60 * 1000;
+
+// Biology and medicine use their specialist sources in the feed. Engineering
+// stays eligible through label searches when it has no native arXiv category.
+export const ARXIV_FEED_AREAS = Object.freeze([
+  'physics', 'math', 'cs', 'q-fin', 'eess', 'stat', 'econ', 'mech', 'civil', 'chemeng',
+]);
+
 const ARXIV_PREFIXES = ['cs', 'math', 'physics', 'eess', 'q-bio', 'q-fin', 'stat', 'econ', 'astro-ph', 'cond-mat', 'gr-qc', 'hep-ex', 'hep-lat', 'hep-ph', 'hep-th', 'nlin', 'nucl-ex', 'nucl-th', 'quant-ph', 'math-ph'];
 const CATEGORY_DEFINITIONS = new Map(
   Object.values(CATEGORIES).flatMap(area =>

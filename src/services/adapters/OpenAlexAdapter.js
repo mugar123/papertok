@@ -1,4 +1,5 @@
 import { assignRequestedCategories } from '../arxivService.js';
+import { getCategoryArea } from '../../data/categoryTaxonomy.js';
 import { openAlexFetch } from '../openAlexClient.js';
 import { getArxivIdFromWork } from '../openAlexService.js';
 import { usableOpenAlexAbstract } from '../../utils/openAlexAbstract.js';
@@ -46,8 +47,9 @@ export const OPENALEX_PUBLISHED_TYPES = Object.freeze(['article', 'conference-pa
 // What a paper SEARCH accepts. A reader looking up a specific paper expects the
 // arXiv preprint when that is the record OpenAlex carries -- FC-CLIP's most
 // cited record is the preprint (W4385645314) -- and a survey when the title is
-// a survey. The feed keeps the narrower list: preprints reach it from arXiv
-// directly, and datasets, theses, and paratext are still left out here.
+// a survey. Category discovery also includes economics and finance preprints,
+// whose working papers may have no arXiv copy. Queries without those categories
+// keep the narrower list; datasets, theses, and paratext are still left out here.
 export const OPENALEX_SEARCH_TYPES = Object.freeze([...OPENALEX_PUBLISHED_TYPES, 'preprint', 'review']);
 
 export class OpenAlexAdapter {
@@ -57,19 +59,23 @@ export class OpenAlexAdapter {
     this.mailto = 'app@papertok.io';
   }
 
-  buildSearchUrl(query, page = 1, { types = OPENALEX_PUBLISHED_TYPES } = {}) {
+  buildSearchUrl(query, page = 1, { types, internalCategories = [] } = {}) {
     const perPage = 25;
 
     // Convert query to OpenAlex default.search format
     const searchParam = encodeURIComponent(query);
 
-    const typeFilter = `type:${types.join('|')}`;
+    const economicCategories = internalCategories.some(category => ['econ', 'q-fin'].includes(getCategoryArea(category)));
+    const workTypes = types || (economicCategories
+      ? [...OPENALEX_PUBLISHED_TYPES, 'preprint']
+      : OPENALEX_PUBLISHED_TYPES);
+    const typeFilter = `type:${workTypes.join('|')}`;
 
     return `${this.baseUrl}?filter=default.search:${searchParam},${typeFilter}&page=${page}&per-page=${perPage}&mailto=${this.mailto}&select=${OPENALEX_WORK_SEARCH_FIELDS.join(',')}`;
   }
 
   async search(query, page = 1, filters = {}) {
-    const url = this.buildSearchUrl(query, page, { types: filters.types || OPENALEX_PUBLISHED_TYPES });
+    const url = this.buildSearchUrl(query, page, filters);
 
     try {
       const response = await openAlexFetch(url, {

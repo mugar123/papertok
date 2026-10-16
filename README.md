@@ -81,6 +81,8 @@ Core sources include:
 - **NIH iCite** — citation and translation metrics for PubMed-indexed papers
 - **Hugging Face Hub** — AI papers and their linked models, datasets, code and project pages
 
+Economics and quantitative finance use arXiv in both the personalized and guest feeds. Their category searches also include OpenAlex preprints, so working papers can appear even when they have no arXiv copy. Paper status follows the provider metadata. Queries without economics or finance categories keep the article and conference-paper filter for OpenAlex discovery.
+
 The project also contains integrations and enrichment tools for additional scientific services and domain-specific sources.
 
 PaperTok does not host research papers itself. Links to papers, PDFs and metadata are obtained from their respective providers.

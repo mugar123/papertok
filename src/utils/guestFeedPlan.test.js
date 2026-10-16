@@ -98,3 +98,28 @@ test('topics outside the chosen areas do not change the plan', async () => {
   const { buildGuestFeedPlan: build } = await import('./guestFeedPlan.js');
   assert.equal(build(['cs'], ['bio.neuro']).key, build(['cs']).key);
 });
+
+test('finance guests receive native arXiv categories within the existing request cap', () => {
+  const plan = buildGuestFeedPlan(['q-fin']);
+
+  assert.deepEqual(plan.arxivCategories, [
+    'q-fin.ST', 'q-fin.CP', 'q-fin.PM', 'q-fin.RM', 'q-fin.MF', 'q-fin.PR',
+  ]);
+  assert.equal(plan.pubmedQuery, '');
+});
+
+test('economics and finance both get arXiv slots when selected together', () => {
+  const plan = buildGuestFeedPlan(['econ', 'q-fin']);
+
+  assert.deepEqual(plan.arxivCategories, [
+    'econ.EM', 'q-fin.ST', 'econ.GN', 'q-fin.CP', 'econ.TH', 'q-fin.PM',
+  ]);
+});
+
+test('General Finance can be selected and queried by its native arXiv category', () => {
+  const plan = buildGuestFeedPlan(['q-fin'], ['q-fin.GN']);
+
+  assert.deepEqual(plan.categories, ['q-fin.GN']);
+  assert.deepEqual(plan.arxivCategories, ['q-fin.GN']);
+  assert.equal(plan.discoveryQuery, '"General Finance"');
+});

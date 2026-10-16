@@ -128,6 +128,7 @@ export const CATEGORIES = {
       'q-fin.MF': { label: 'Mathematical Finance' },
       'q-fin.PR': { label: 'Pricing of Securities' },
       'q-fin.TR': { label: 'Trading and Market Microstructure' },
+      'q-fin.GN': { label: 'General Finance' },
     },
   },
   eess: {

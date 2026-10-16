@@ -5,7 +5,7 @@ import { IS_DEMO, db } from '../services/firebase';
 import { setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import { useFollowing } from './FollowingContext';
-import { fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers } from '../services/arxivService';
+import { ARXIV_FEED_AREAS, fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers } from '../services/arxivService';
 import { getDeviceInfo } from '../utils/device';
 import { CATEGORIES, getAllLeafCategories } from '../data/categories';
 import { PubmedAdapter } from '../services/adapters/PubmedAdapter';
@@ -1104,8 +1104,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
              return null;
           };
 
-          const arxivAllowedAreas = ['physics', 'math', 'cs', 'quant', 'eess', 'stat', 'econ', 'elec', 'mech', 'civil', 'chemeng'];
-          const arxivCats = rankedPreferences.filter(c => arxivAllowedAreas.includes(getParentArea(c))).slice(0, 5);
+          const arxivCats = rankedPreferences.filter(c => ARXIV_FEED_AREAS.includes(getParentArea(c))).slice(0, 5);
 
           let arxivProm = Promise.resolve([]);
           if (arxivCats.length > 0) {
@@ -1238,7 +1237,6 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           
           let fetchedExplore = [];
           try {
-            const arxivAllowedAreas = ['physics', 'math', 'cs', 'quant', 'eess', 'stat', 'econ', 'elec', 'mech', 'civil', 'chemeng'];
             const pubmedAllowedAreas = ['med', 'bio', 'q-bio'];
 
             const getParentArea = (catId) => {
@@ -1248,7 +1246,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
                return null;
             };
 
-            const arxivNearby = nearbyCats.filter(c => arxivAllowedAreas.includes(getParentArea(c)));
+            const arxivNearby = nearbyCats.filter(c => ARXIV_FEED_AREAS.includes(getParentArea(c)));
             let arxivProm = Promise.resolve([]);
             if (arxivNearby.length > 0) {
                arxivProm = fetchPapers(arxivNearby, randomStart, exploreCount, queryMode).catch(() => []);
@@ -1313,7 +1311,6 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           
           if (randomCats.length > 0) {
             const randomStart = Math.floor(Math.random() * 30);
-            const arxivAllowedAreas = ['physics', 'math', 'cs', 'quant', 'eess', 'stat', 'econ', 'elec', 'mech', 'civil', 'chemeng'];
             const pubmedAllowedAreas = ['med', 'bio', 'q-bio'];
             
             const getParentArea = (catId) => {
@@ -1323,7 +1320,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
                return null;
             };
 
-            const arxivRandom = randomCats.filter(c => arxivAllowedAreas.includes(getParentArea(c)));
+            const arxivRandom = randomCats.filter(c => ARXIV_FEED_AREAS.includes(getParentArea(c)));
             let arxivProm = Promise.resolve([]);
             if (arxivRandom.length > 0) {
                 arxivProm = fetchPapers(arxivRandom, randomStart, 2, queryMode).catch(() => []);
