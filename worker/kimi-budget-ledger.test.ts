@@ -1,3 +1,4 @@
+import type { ListedLedgerTransaction } from './ledger-storage.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -11,22 +12,22 @@ import {
 } from './kimi-budget-ledger.ts';
 
 /** The Durable Object over in-memory storage, `list` included. */
-function ledgerHarness(seed = {}) {
+function ledgerHarness(seed: Record<string, unknown> = {}) {
   const store = new Map(Object.entries(seed));
   const transaction = {
-    get: async key => store.get(key),
-    put: async (key, value) => { store.set(key, value); },
-    delete: async key => { store.delete(key); },
-    list: async ({ prefix = '' } = {}) => new Map(
-      [...store].filter(([key]) => String(key).startsWith(prefix)),
+    get: async <T>(key: string) => store.get(key) as T | undefined,
+    put: async (key: string, value: unknown) => { store.set(key, value); },
+    delete: async (key: string) => { store.delete(key); },
+    list: async <T>({ prefix = '' } = {}): Promise<Map<string, T>> => new Map(
+      [...store].filter(([key]) => String(key).startsWith(prefix)) as Array<[string, T]>,
     ),
   };
-  const ledger = new KimiBudgetLedger({ storage: { transaction: run => run(transaction) } });
+  const ledger = new KimiBudgetLedger({ storage: { transaction: <T>(run: (transaction: ListedLedgerTransaction) => Promise<T>) => run(transaction) } });
   return {
     store,
-    call: payload => ledger
+    call: (payload: Record<string, unknown>) => ledger
       .fetch(new Request('https://internal', { method: 'POST', body: JSON.stringify(payload) }))
-      .then(response => response.json()),
+      .then(response => response.json<{ accepted: boolean; code: string; remainingMicros: number; spentMicros: number; reservedMicros: number }>()),
   };
 }
 
@@ -115,8 +116,8 @@ test('a reservation written before expiries existed is dated, not dropped', asyn
   // Dropping it on sight would cancel a reservation that may still be in flight
   // during the deploy that introduced expiries.
   assert.equal(result.reservedMicros, 300_000);
-  assert.ok(harness.store.get('reservation:legacy').expiresAt > Date.now());
-  assert.equal(harness.store.get('reservation:legacy').amountMicros, 150_000);
+  assert.ok((harness.store.get('reservation:legacy') as { expiresAt: number; amountMicros: number }).expiresAt > Date.now());
+  assert.equal((harness.store.get('reservation:legacy') as { expiresAt: number; amountMicros: number }).amountMicros, 150_000);
 });
 
 test('settle understands both reservation shapes', async () => {

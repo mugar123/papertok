@@ -1,10 +1,13 @@
+import type { WorkerEnv } from './env.ts';
+import type { VerifiedIdentity } from './firebase-auth.ts';
+
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { cacheResponse, fetchJsonUpstream, safeSourceQuery, sourceCacheParams, sourceRequestContext, SOURCE_CACHE_SECONDS } from './provider-runtime.ts';
 
 const RELATED_CACHE_SECONDS = 24 * 60 * 60;
 const RELATED_UPSTREAM_LIMIT = 20;
 
-export async function handleRelated(request, env, identity) {
+export async function handleRelated(request: Request, env: WorkerEnv, identity?: Pick<VerifiedIdentity, 'uid'> | null) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -50,7 +53,7 @@ const S2_MAX_OFFSET = 1_000;
 // counts per tab rather than per provider: N tabs were N times the allowance, and
 // the two browser callers did not even share the one counter. The limit belongs
 // where there is a single copy of it, next to the API key, which is here.
-export async function handleSemanticScholar(request, env) {
+export async function handleSemanticScholar(request: Request, env: WorkerEnv) {
   const context = sourceRequestContext(request, env, {
     limitFallback: S2_MAX_LIMIT,
     limitMax: S2_MAX_LIMIT,
@@ -68,7 +71,7 @@ export async function handleSemanticScholar(request, env) {
     url.searchParams.set('offset', String(Math.min((context.page - 1) * context.limit, S2_MAX_OFFSET - context.limit)));
     url.searchParams.set('limit', String(context.limit));
     url.searchParams.set('fields', S2_SEARCH_FIELDS);
-    const headers = env.SEMANTIC_SCHOLAR_API_KEY ? { 'x-api-key': env.SEMANTIC_SCHOLAR_API_KEY } : {};
+    const headers: Record<string, string> = env.SEMANTIC_SCHOLAR_API_KEY ? { 'x-api-key': env.SEMANTIC_SCHOLAR_API_KEY } : {};
     return fetchJsonUpstream(url, headers);
   }, { canonicalParams: sourceCacheParams(context, { q: query }) });
 }

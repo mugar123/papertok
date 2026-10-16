@@ -1,3 +1,4 @@
+import type { FirestoreData, FirestoreWrite } from './firestore-admin.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fakeIdToken } from '../src/test-support/firebaseIdToken.js';
@@ -42,23 +43,23 @@ const MDQ_USAL = [
   { title: 'Universidad de Salamanca', entityID: 'https://www.rediris.es/sir/usalidp', scope: 'usal.es' },
 ];
 
-function memoryAdmin(seed = {}) {
-  const documents = { ...seed };
-  const commits = [];
+function memoryAdmin<Documents extends Record<string, FirestoreData>>(seed: Documents = {} as Documents) {
+  const documents: Record<string, FirestoreData> = { ...seed };
+  const commits: FirestoreWrite[][] = [];
   return {
-    documents,
+    documents: documents as Documents & Record<string, FirestoreData>,
     commits,
-    name: segments => `projects/${PROJECT_ID}/databases/(default)/documents/${segments.join('/')}`,
-    async commit(writes) {
+    name: (segments: string[]) => `projects/${PROJECT_ID}/databases/(default)/documents/${segments.join('/')}`,
+    async commit(writes: FirestoreWrite[]) {
       commits.push(writes);
       for (const write of writes) {
-        const key = write.update.name.split('/documents/')[1];
+        const key = write.update!.name.split('/documents/')[1];
         if (write.currentDocument?.exists === true && documents[key] == null) {
           throw new FirestoreAdminError('FIRESTORE_PRECONDITION_FAILED', 409, 'NOT_FOUND');
         }
-        const patch = decodeFields(write.update.fields);
+        const patch = decodeFields(write.update!.fields);
         const next = { ...(documents[key] || {}) };
-        for (const field of write.updateMask.fieldPaths) {
+        for (const field of write.updateMask!.fieldPaths) {
           if (field in patch) next[field] = patch[field];
           else delete next[field];
         }
@@ -77,14 +78,14 @@ function stubUpstreams({
   users = {},
   ror = () => new Response(JSON.stringify(ROR_USAL), { status: 200 }),
   mdq = () => new Response(JSON.stringify(MDQ_USAL), { status: 200 }),
-} = {}) {
-  const calls = [];
+}: { users?: Record<string, Record<string, unknown>>; ror?: (url: string) => Response; mdq?: (url: string) => Response } = {}) {
+  const calls: string[] = [];
   const original = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
     const target = String(url);
     calls.push(target);
     if (target.includes('accounts:lookup')) {
-      const { idToken } = JSON.parse(init.body);
+      const { idToken } = JSON.parse(init!.body as string);
       const user = users[idToken];
       return user
         ? new Response(JSON.stringify({ users: [user] }), { status: 200 })
@@ -97,7 +98,7 @@ function stubUpstreams({
   return { calls, restore: () => { globalThis.fetch = original; } };
 }
 
-function linkRequest(body, { path = INSTITUTION_LINK_PATH, method = 'POST', token = SESSION_TOKEN } = {}) {
+function linkRequest(body: { institutionToken?: string|number; }, { path = INSTITUTION_LINK_PATH, method = 'POST', token = SESSION_TOKEN } = {}) {
   return new Request(`https://worker.test${path}`, {
     method,
     headers: {
@@ -113,9 +114,9 @@ const SESSION_USAL = { localId: UID, email: 'alice@usal.es', emailVerified: true
 const SESSION_GMAIL = { localId: UID, email: 'alice@gmail.com', emailVerified: true };
 const UNIVERSITY_USAL = { localId: 'other-uid', email: 'alice@usal.es', emailVerified: true };
 
-async function rejectsWith(promise, code, status) {
+async function rejectsWith(promise: Promise<unknown>|(() => Promise<unknown>), code: string, status: number) {
   await assert.rejects(promise, (error) => {
-    assert.ok(error instanceof InstitutionLinkError, `expected InstitutionLinkError, got ${error?.name}: ${error?.message}`);
+    assert.ok(error instanceof InstitutionLinkError, `expected InstitutionLinkError, got ${(error as Error)?.name}: ${(error as Error)?.message}`);
     assert.equal(error.code, code);
     assert.equal(error.status, status);
     return true;
@@ -164,9 +165,9 @@ test('a second account\'s token proves the institution for a session on another 
       SERVICE,
       { admin },
     );
-    assert.equal(payload.institution.domain, 'usal.es');
+    assert.equal(payload.institution!.domain, 'usal.es');
     // Written to the SESSION's document, never to the proving account's.
-    assert.equal(admin.documents[`users/${UID}`].institution.domain, 'usal.es');
+    assert.equal((admin.documents[`users/${UID}`] as { onboardingComplete: boolean; institution: { domain: string } }).institution.domain, 'usal.es');
     assert.equal(admin.documents[`users/${UID}`].onboardingComplete, true);
     assert.equal(admin.documents['users/other-uid'], undefined);
     // And copied to the public profile, which the page shows to everyone.
@@ -243,8 +244,8 @@ test('the federation metadata being down leaves the entityID unknown but still l
   const admin = memoryAdmin();
   try {
     const payload = await handleInstitutionLinkRequest(linkRequest({}), SERVICE, { admin });
-    assert.equal(payload.institution.rorId, 'https://ror.org/02f40zc51');
-    assert.equal(payload.institution.entityId, null);
+    assert.equal(payload.institution!.rorId, 'https://ror.org/02f40zc51');
+    assert.equal(payload.institution!.entityId, null);
   } finally {
     upstream.restore();
   }
@@ -285,10 +286,10 @@ test('refuses other methods and a Worker without the service account', async () 
 });
 
 test('a resolved institution is served from the cache; a miss is not remembered', async () => {
-  const store = new Map();
+  const store = new Map<string, Response>();
   const cache = {
-    async match(request) { return store.get(request.url)?.clone() || null; },
-    async put(request, response) { store.set(request.url, response); },
+    async match(request: RequestInfo | URL) { return store.get((request as Request).url)?.clone() || null; },
+    async put(request: RequestInfo | URL, response: Response) { store.set((request as Request).url, response); },
   };
   let rorCalls = 0;
   const upstream = stubUpstreams({

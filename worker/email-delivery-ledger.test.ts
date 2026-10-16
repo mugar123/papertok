@@ -1,17 +1,23 @@
+import type { DeliveryLedgerPayload } from './email-delivery-ledger.ts';
+import type { LedgerTransaction } from './ledger-storage.ts';
+import type { DeliveryLedgerResult } from './email-delivery-ledger.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EmailDeliveryLedger } from './email-delivery-ledger.ts';
 
 class MemoryDurableObjectStorage {
+  declare values: Map<string, unknown>;
+  declare queue: Promise<unknown>;
+  declare alarmAt: number | null;
   constructor() {
     this.values = new Map();
     this.queue = Promise.resolve();
     this.alarmAt = null;
   }
 
-  transaction(operation) {
+  transaction<T>(operation: (transaction: LedgerTransaction) => Promise<T>) {
     const run = this.queue.then(() => operation({
-      get: async key => this.values.get(key),
+      get: async <T>(key: string) => this.values.get(key) as T | undefined,
       put: async (key, value) => { this.values.set(key, value); },
       delete: async (key) => { this.values.delete(key); },
     }));
@@ -19,7 +25,7 @@ class MemoryDurableObjectStorage {
     return run;
   }
 
-  async setAlarm(timestamp) {
+  async setAlarm(timestamp: number) {
     this.alarmAt = timestamp;
   }
 
@@ -29,13 +35,13 @@ class MemoryDurableObjectStorage {
   }
 }
 
-async function callLedger(ledger, payload) {
+async function callLedger(ledger: EmailDeliveryLedger, payload: DeliveryLedgerPayload) {
   const response = await ledger.fetch(new Request('https://papertok.internal/email-delivery', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
   }));
-  return { status: response.status, body: await response.json() };
+  return { status: response.status, body: await response.json<DeliveryLedgerResult>() };
 }
 
 function deliveryDraft(id = 'paper') {
@@ -61,7 +67,7 @@ test('serializes concurrent reservations against the daily delivery limit', asyn
 
   assert.equal([first.body.accepted, second.body.accepted].filter(Boolean).length, 1);
   assert.equal([first.body.accepted, second.body.accepted].filter(value => !value).length, 1);
-  assert.equal(Math.max(first.body.reserved, second.body.reserved), 1);
+  assert.equal(Math.max(first.body.reserved!, second.body.reserved!), 1);
 });
 
 test('returns duplicate reservations without consuming quota or committing twice', async () => {
@@ -102,7 +108,7 @@ test('returns duplicate reservations without consuming quota or committing twice
   assert.equal(committed.body.committedCount, 1);
   assert.equal(duplicateCommitted.body.duplicate, true);
   assert.equal(duplicateCommitted.body.status, 'committed');
-  assert.deepEqual(duplicateCommitted.body.delivery.paperKeys, ['doi:10.1/paper']);
+  assert.deepEqual(duplicateCommitted.body.delivery!.paperKeys, ['doi:10.1/paper']);
   assert.equal(secondCommit.body.duplicate, true);
   assert.equal(secondCommit.body.committedCount, 1);
 });
@@ -174,7 +180,7 @@ test('stores high-volume reservations in separate values below the Durable Objec
     new TextEncoder().encode(JSON.stringify(value)).byteLength
   ));
   assert.equal(storage.values.has('ledger'), false);
-  assert.equal(storage.values.get('meta').committed, 290);
+  assert.equal((storage.values.get('meta') as { committed: number }).committed, 290);
   assert.equal(storage.values.size, 291);
   assert.equal(Math.max(...sizes) < 2 * 1024 * 1024, true);
 });

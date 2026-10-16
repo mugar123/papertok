@@ -11,10 +11,10 @@ const PASSAGE = {
   paper: { title: 'Correlators of Worldline Proper Length' },
   quote: 'that quantity stops being a number',
   context: 'The authors compute how much proper time elapses, and find that that quantity stops being a number as soon as quantum gravity comes into play.',
-  level: 'university',
+  level: 'university' as const,
 };
 
-function payloadOf(text) {
+function payloadOf(text: string) {
   return { candidates: [{ content: { parts: [{ text }] } }] };
 }
 

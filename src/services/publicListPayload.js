@@ -128,6 +128,11 @@ function sourcePaperId(paper, id) {
   return raw && raw !== id ? raw : '';
 }
 
+/**
+ * @typedef {Pick<import('../models/Paper.ts').Paper, 'id' | 'title'> &
+ * { authors: string[]; concepts?: string[]; date?: string; citations?: number; openUrl?: string; sourceId?: string } &
+ * Partial<Pick<import('../models/Paper.ts').Paper, 'abstract' | 'year' | 'category' | 'doi' | 'arxivId'>>} PublicListPaper
+ */
 export function sanitizePublicPaper(paper) {
   if (!paper || typeof paper !== 'object') return null;
 
@@ -137,6 +142,7 @@ export function sanitizePublicPaper(paper) {
   const title = cleanString(paper.title, PUBLIC_LIST_LIMITS.paperTitle);
   if (!id || !title) return null;
 
+  /** @type {PublicListPaper} */
   const result = {
     id,
     title,

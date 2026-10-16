@@ -1,3 +1,48 @@
+import type { WorkerEnv } from './env.ts';
+import type { Paper } from '../src/models/Paper.ts';
+import type { AIProviderPayload } from './ai-explanation.ts';
+
+type RewriteLevel = keyof typeof REWRITE_LEVELS;
+type ExplanationContext = ReturnType<typeof normalizePaperForExplanation>;
+interface RewriteHighlight { paragraphIndex: number; quote: string; kind: string }
+export interface RewriteSection {
+  id: string;
+  kind: string;
+  heading: string;
+  originalHeading: string;
+  paragraphs: string[];
+  highlights: RewriteHighlight[];
+}
+interface RewriteMeta {
+  level: string;
+  language: string;
+  model: string;
+  provider: string;
+  promptVersion: string;
+  sourceBasis: string;
+  title: string;
+  doi: string;
+  pdfUrl: string;
+}
+interface CachedRewrite { meta: RewriteMeta; sections: RewriteSection[]; truncated?: boolean }
+type RewriteSource = { text: string; truncated: boolean; textReason: string; pdfBase64?: never }
+  | { pdfBase64: string; textReason?: string; text?: never; truncated?: never };
+interface ModelRequest {
+  env: WorkerEnv;
+  paper: ExplanationContext;
+  level: RewriteLevel;
+  language: string;
+  source: RewriteSource;
+  model: string;
+  signal: AbortSignal;
+}
+type ModelSectionEvent = { type: 'section'; section: RewriteSection }
+  | { type: 'end'; rawText: string; finishReason: string; firstTextAtMs: number; droppedSections: number };
+interface SsePayload extends AIProviderPayload {
+  choices?: Array<{ delta?: { content?: unknown }; finish_reason?: unknown }>;
+}
+
+
 /**
  * Paper rewrite — the same paper, in plainer words, at the reader's level.
  *
@@ -117,7 +162,9 @@ const REWRITE_LEVELS = {
 
 export const REWRITE_LEVEL_IDS = Object.freeze(Object.keys(REWRITE_LEVELS));
 
-export function isRewriteLevel(level) {
+export function isRewriteLevel(level: string): level is RewriteLevel;
+export function isRewriteLevel(level: unknown): boolean;
+export function isRewriteLevel(level: unknown) {
   return Object.hasOwn(REWRITE_LEVELS, String(level));
 }
 
@@ -127,8 +174,9 @@ export function isRewriteLevel(level) {
 
 // Callers may still pass a trailing `language` argument; it is ignored because
 // the product is English-only.
-export function buildRewritePrompt(paper, level) {
-  const config = REWRITE_LEVELS[level];
+export function buildRewritePrompt(paper: Pick<Paper, 'title' | 'year' | 'doi'>, level: string, language?: unknown): string;
+export function buildRewritePrompt(paper: Pick<Paper, 'title' | 'year' | 'doi'>, level: string) {
+  const config = REWRITE_LEVELS[level as RewriteLevel];
   if (!config) throw new AIExplanationError('AI_INVALID_LEVEL', 400);
   // Identity only. Authors, journal and categories arrive from the client and
   // are not part of the cache key, so a poisoned list would steer a rewrite that
@@ -171,6 +219,7 @@ Output format — this matters:
 - Each line must be independently parseable and must be written in English.`;
 }
 
+export function buildRewriteSystemInstruction(language?: unknown): string;
 export function buildRewriteSystemInstruction() {
   return `You are PaperTok's paper rewriter. You restate a document; you never extend it.
 - Use only the attached document. Never fill a gap with outside knowledge.
@@ -186,7 +235,7 @@ export function buildRewriteSystemInstruction() {
    Section parsing
    ============================================================ */
 
-function normalizeHighlights(value, paragraphCount) {
+function normalizeHighlights(value: unknown, paragraphCount: number): RewriteHighlight[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set();
   return value
@@ -206,7 +255,7 @@ function normalizeHighlights(value, paragraphCount) {
       };
     })
     .filter(Boolean)
-    .slice(0, MAX_HIGHLIGHTS_PER_SECTION);
+    .slice(0, MAX_HIGHLIGHTS_PER_SECTION) as RewriteHighlight[];
 }
 
 /**
@@ -214,7 +263,7 @@ function normalizeHighlights(value, paragraphCount) {
  * trusted. A dropped line costs one section; a thrown error would cost the
  * whole rewrite, so parsing stays deliberately forgiving.
  */
-export function parseRewriteSectionLine(line, index) {
+export function parseRewriteSectionLine(line: unknown, index: number): RewriteSection | null {
   const trimmed = String(line || '').trim();
   if (!trimmed || trimmed.startsWith('```') || trimmed === '[' || trimmed === ']') return null;
   // A model that ignores the "no array wrapper" rule still produces valid
@@ -222,7 +271,7 @@ export function parseRewriteSectionLine(line, index) {
   const unwrapped = trimmed.replace(/^,/, '').replace(/,$/, '').trim();
   if (!unwrapped.startsWith('{')) return null;
 
-  let parsed;
+  let parsed: { paragraphs?: unknown[]; kind?: unknown; heading?: unknown; originalHeading?: unknown; highlights?: unknown } | null;
   try {
     parsed = JSON.parse(escapeLatexBackslashesInJson(unwrapped));
   } catch {
@@ -269,9 +318,9 @@ export function parseRewriteSectionLine(line, index) {
  * is the same count the line reader keeps: an overflow must not go quiet just
  * because the model also ignored the format.
  */
-export function salvageSections(rawText) {
+export function salvageSections(rawText: unknown) {
   const text = String(rawText || '');
-  const sections = [];
+  const sections: RewriteSection[] = [];
   let dropped = 0;
   let depth = 0;
   let start = -1;
@@ -323,7 +372,7 @@ export function createSectionAssembler() {
   let buffer = '';
   let index = 0;
   let dropped = 0;
-  const take = (line) => {
+  const take = (line: string) => {
     const section = parseRewriteSectionLine(line, index);
     if (!section) return null;
     if (index >= MAX_SECTIONS) {
@@ -334,9 +383,9 @@ export function createSectionAssembler() {
     return section;
   };
   return {
-    push(text) {
+    push(text: string) {
       buffer += text;
-      const sections = [];
+      const sections: RewriteSection[] = [];
       let newlineAt = buffer.indexOf('\n');
       while (newlineAt !== -1) {
         const line = buffer.slice(0, newlineAt);
@@ -374,13 +423,13 @@ export function createSectionAssembler() {
  * so a line is a sufficient unit. NaN's is the OpenAI chunk, where a reasoning
  * delta travels apart from the answer and is not part of the rewrite.
  */
-export function extractSseTextDelta(line) {
+export function extractSseTextDelta(line: unknown) {
   const trimmed = String(line || '').trim();
   if (!trimmed.startsWith('data:')) return '';
   const payload = trimmed.slice(5).trim();
   if (!payload || payload === '[DONE]') return '';
   try {
-    const parsed = JSON.parse(payload);
+    const parsed: SsePayload = JSON.parse(payload);
     if (Array.isArray(parsed?.choices)) {
       const content = parsed.choices[0]?.delta?.content;
       return typeof content === 'string' ? content : '';
@@ -397,18 +446,18 @@ export function extractSseTextDelta(line) {
  * OpenAI's finish reasons in Gemini's words, which are the ones
  * `cacheableFinish` and the logs already speak.
  */
-const OPENAI_FINISH_REASONS = Object.freeze({
+const OPENAI_FINISH_REASONS: Readonly<Partial<Record<string, string>>> = Object.freeze({
   stop: 'STOP',
   length: 'MAX_TOKENS',
   content_filter: 'SAFETY',
 });
 
 /** Reads why the model stopped, so an empty rewrite can be explained. */
-export function extractSseFinishReason(line) {
+export function extractSseFinishReason(line: unknown) {
   const trimmed = String(line || '').trim();
   if (!trimmed.startsWith('data:')) return '';
   try {
-    const parsed = JSON.parse(trimmed.slice(5).trim());
+    const parsed: SsePayload = JSON.parse(trimmed.slice(5).trim());
     const openAIReason = cleanText(parsed?.choices?.[0]?.finish_reason, 40);
     if (openAIReason) return OPENAI_FINISH_REASONS[openAIReason] || openAIReason.toUpperCase();
     return cleanText(parsed?.candidates?.[0]?.finishReason, 40);
@@ -420,7 +469,7 @@ export function extractSseFinishReason(line) {
 /** Splits an SSE byte stream into lines, tolerating LF and CRLF endings. */
 export function createSseLineSplitter() {
   let buffer = '';
-  return (chunk) => {
+  return (chunk: unknown) => {
     buffer += String(chunk).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     const lines = [];
     let newlineAt = buffer.indexOf('\n');
@@ -441,7 +490,7 @@ export function createSseLineSplitter() {
  * Separated from the response plumbing so the whole SSE-to-sections path can be
  * exercised against a synthetic body, line endings included.
  */
-export async function* streamModelSections(upstreamBody) {
+export async function* streamModelSections(upstreamBody: { getReader(): Pick<ReadableStreamDefaultReader<Uint8Array | string>, 'read' | 'releaseLock'> & Partial<Pick<ReadableStreamDefaultReader<Uint8Array | string>, 'cancel'>> }): AsyncGenerator<ModelSectionEvent> {
   const decoder = new TextDecoder();
   const splitLines = createSseLineSplitter();
   const assembler = createSectionAssembler();
@@ -490,7 +539,7 @@ export async function* streamModelSections(upstreamBody) {
  * notification namespace is used with a prefix when none is bound, so the
  * cache works before any extra provisioning.
  */
-function rewriteStore(env) {
+function rewriteStore(env: WorkerEnv) {
   if (env?.AI_REWRITE_STORE?.get) return { store: env.AI_REWRITE_STORE, prefix: '' };
   if (env?.NOTIFICATION_STORE?.get) return { store: env.NOTIFICATION_STORE, prefix: 'rewrite:' };
   return null;
@@ -511,13 +560,13 @@ function rewriteStore(env) {
  * file at all only because of `?pdf=render` — so anything else comes back
  * untouched.
  */
-export function canonicalPdfUrl(url) {
+export function canonicalPdfUrl(url: unknown) {
   const value = String(url || '');
   const match = value.match(/^https:\/\/(?:export\.)?arxiv\.org\/pdf\/([\w.\-/]+?)(?:v\d+)?(?:\.pdf)?$/i);
   return match ? `https://arxiv.org/pdf/${match[1].toLowerCase()}` : value;
 }
 
-export async function rewriteCacheKey(paper, level, language, model) {
+export async function rewriteCacheKey(paper: Partial<Pick<Paper, 'title' | 'doi' | 'arxivId' | 'pdfUrl' | 'year'>>, level: string, language: string, model: string) {
   const fingerprint = await sha256(JSON.stringify({
     title: paper.title,
     doi: paper.doi,
@@ -527,11 +576,11 @@ export async function rewriteCacheKey(paper, level, language, model) {
   return `${REWRITE_PROMPT_VERSION}:${model}:${language}:${level}:${fingerprint}`;
 }
 
-async function readCachedRewrite(env, key) {
+async function readCachedRewrite(env: WorkerEnv, key: string) {
   const target = rewriteStore(env);
   if (!target) return null;
   try {
-    const raw = await target.store.get(`${target.prefix}${key}`, { type: 'json' });
+    const raw = await target.store.get<CachedRewrite>(`${target.prefix}${key}`, { type: 'json' });
     return raw && Array.isArray(raw.sections) && raw.sections.length > 0 ? raw : null;
   } catch {
     return null;
@@ -571,14 +620,14 @@ async function readCachedRewrite(env, key) {
  * closes with `done` and no `error` line, so a half paper stored without the
  * flag is served as a whole one.
  */
-export function cacheableFinish(finishReason, droppedSections = 0) {
+export function cacheableFinish(finishReason: unknown, droppedSections = 0) {
   const reason = cleanText(finishReason, 40).toUpperCase();
   if (reason === 'STOP') return droppedSections > 0 ? 'truncated' : 'complete';
   if (reason === 'MAX_TOKENS') return 'truncated';
   return null;
 }
 
-async function writeCachedRewrite(env, key, value) {
+async function writeCachedRewrite(env: WorkerEnv, key: string, value: CachedRewrite) {
   const target = rewriteStore(env);
   if (!target) return;
   try {
@@ -594,11 +643,11 @@ async function writeCachedRewrite(env, key, value) {
    Handler
    ============================================================ */
 
-function ndjsonLine(value) {
+function ndjsonLine(value: unknown) {
   return `${JSON.stringify(value)}\n`;
 }
 
-function streamHeaders(extraHeaders) {
+function streamHeaders(extraHeaders: Record<string, string>) {
   return {
     'content-type': 'application/x-ndjson; charset=utf-8',
     'cache-control': 'private, no-store',
@@ -610,7 +659,7 @@ function streamHeaders(extraHeaders) {
   };
 }
 
-function replayCachedRewrite(cached, level, language, extraHeaders) {
+function replayCachedRewrite(cached: CachedRewrite, level: string, language: string, extraHeaders: Record<string, string>) {
   // The cheap path has to be visible in the same stream as the expensive one:
   // without a line of its own a cache hit is indistinguishable from a request
   // that never happened, and the hit rate is the whole point of the cache.
@@ -646,12 +695,12 @@ function replayCachedRewrite(cached, level, language, extraHeaders) {
  * stops the stream from starting, so one catch upstream can turn every refusal
  * into the same `error` line.
  */
-async function requestModelStream({ provider, ...request }) {
+async function requestModelStream({ provider, ...request }: ModelRequest & { provider: string }) {
   return provider === 'nan' ? requestNanStream(request) : requestGeminiStream(request);
 }
 
-function streamRequestFailed(error) {
-  return error?.name === 'AbortError'
+function streamRequestFailed(error: unknown) {
+  return (error as Error)?.name === 'AbortError'
     ? new AIExplanationError('AI_TIMEOUT', 504)
     : new AIExplanationError('AI_UNAVAILABLE', 502);
 }
@@ -661,12 +710,12 @@ function streamRequestFailed(error) {
  * attached PDF when it could not. Same prompt either way: the text is the
  * PDF's, so "the attached paper" is still what it rewrites.
  */
-async function requestNanStream({ env, paper, level, source, model, signal }) {
-  const config = REWRITE_LEVELS[level];
+async function requestNanStream({ env, paper, level, source, model, signal }: ModelRequest) {
+  const config = REWRITE_LEVELS[level as RewriteLevel];
   const prompt = buildRewritePrompt(paper, level);
   const content = source.text
     ? `${prompt}\n\n${formatPaperTextForPrompt(source.text, { truncated: source.truncated })}`
-    : [{ type: 'text', text: prompt }, nanPdfPart(source.pdfBase64)];
+    : [{ type: 'text', text: prompt }, nanPdfPart(source.pdfBase64!)];
   let upstream;
   try {
     upstream = await fetch(NAN_CHAT_COMPLETIONS_URL, {
@@ -689,14 +738,14 @@ async function requestNanStream({ env, paper, level, source, model, signal }) {
   }
 
   if (!upstream.ok || !upstream.body) {
-    const payload = await upstream.json().catch(() => ({}));
+    const payload = await upstream.json<AIProviderPayload>().catch(() => ({}));
     throw nanProviderError(upstream, payload);
   }
   return upstream;
 }
 
-async function requestGeminiStream({ env, paper, level, language, source, model, signal }) {
-  const config = REWRITE_LEVELS[level];
+async function requestGeminiStream({ env, paper, level, language, source, model, signal }: ModelRequest) {
+  const config = REWRITE_LEVELS[level as RewriteLevel];
   let upstream;
   try {
     upstream = await fetch(
@@ -706,7 +755,7 @@ async function requestGeminiStream({ env, paper, level, language, source, model,
         signal,
         headers: {
           'content-type': 'application/json',
-          'x-goog-api-key': env.GEMINI_API_KEY,
+          'x-goog-api-key': env.GEMINI_API_KEY!,
         },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: buildRewriteSystemInstruction(language) }] },
@@ -730,7 +779,7 @@ async function requestGeminiStream({ env, paper, level, language, source, model,
   }
 
   if (!upstream.ok || !upstream.body) {
-    const payload = await upstream.json().catch(() => ({}));
+    const payload = await upstream.json<AIProviderPayload>().catch(() => ({}));
     const code = classifyGeminiError(upstream.status, payload);
     throw new AIExplanationError(
       code,
@@ -763,7 +812,7 @@ const RETRY_ON_FALLBACK_MODEL = new Set(['AI_BUSY', 'AI_UNAVAILABLE', 'AI_QUOTA_
  * Workers AI extracted, and the PDF only when that failed: NaN reads it too,
  * but at about 45 s before the first token instead of two or three.
  */
-async function paperSourceFor(provider, env, pdfData) {
+async function paperSourceFor(provider: string, env: WorkerEnv, pdfData: Uint8Array<ArrayBuffer>): Promise<RewriteSource> {
   if (provider !== 'nan') return { pdfBase64: bytesToBase64(pdfData) };
   const extracted = await extractPaperText(env, pdfData);
   if (extracted.text) return { text: extracted.text, truncated: extracted.truncated, textReason: '' };
@@ -787,7 +836,11 @@ async function paperSourceFor(provider, env, pdfData) {
  * on: every throw below becomes an `error` line instead, refunding the day's use
  * through the same predicate the pre-commit path used.
  */
-function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, extraHeaders }) {
+function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, extraHeaders }: {
+  env: WorkerEnv; paper: ExplanationContext; level: RewriteLevel; language: string;
+  meta: RewriteMeta; cacheKey: string; quota: Awaited<ReturnType<typeof reserveAIQuota>>;
+  extraHeaders: Record<string, string>;
+}) {
   const model = meta.model;
   const provider = meta.provider;
   const encoder = new TextEncoder();
@@ -798,11 +851,11 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
   // the response body until then — which delivered the entire rewrite in one
   // burst instead of section by section. Writing into a transform's writable
   // from a detached pump flushes each line as it is produced.
-  const { readable, writable } = new TransformStream();
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
   const writer = writable.getWriter();
 
   const pump = async () => {
-    const sections = [];
+    const sections: RewriteSection[] = [];
     let rawLength = 0;
     let firstTextAt = 0;
     let finishReason = '';
@@ -824,7 +877,7 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
     let upstreamStatus = 0;
     // What the model was handed, for NaN: how much extracted text, or why it
     // got the PDF instead — the one fact that explains a slow first section.
-    let source = null;
+    let source: RewriteSource | null = null;
     const sourceFields = () => (provider === 'nan'
       ? {
         textChars: source?.text ? source.text.length : 0,
@@ -836,7 +889,7 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
     // waiting either way and only one of them is worth staying for.
     let stage = 'source';
 
-    const send = async (value) => {
+    const send = async (value: unknown) => {
       if (closed) return;
       try {
         await writer.write(encoder.encode(ndjsonLine(value)));
@@ -858,7 +911,7 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
      * matters because a broken pipe can fail a `send` after a refund already
      * ran and drop us into the catch, and a use credited twice is a use minted.
      */
-    const refund = async (error) => {
+    const refund = async (error: unknown) => {
       if (refunded || !shouldRefundAIQuota(error)) return;
       refunded = true;
       await releaseAIQuota(env, quota);
@@ -873,7 +926,7 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
     // would let a slow mirror eat the time the rewrite itself needs. Declared
     // before the heartbeat because the heartbeat is what aborts it.
     const modelDeadline = new AbortController();
-    let modelTimer = null;
+    let modelTimer: ReturnType<typeof setTimeout> | null = null;
 
     const heartbeat = setInterval(() => {
       void send({ type: 'ping', stage, elapsedMs: Date.now() - startedAt })
@@ -906,13 +959,13 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
       // has its own ceiling and must not eat the time the rewrite needs.
       source = await paperSourceFor(provider, env, pdfData);
       modelTimer = setTimeout(() => modelDeadline.abort(), STREAM_BUDGET_MS);
-      const askModel = candidate => requestModelStream({
+      const askModel = (candidate: string) => requestModelStream({
         provider,
         env,
         paper,
         level,
         language,
-        source,
+        source: source!,
         model: candidate,
         signal: modelDeadline.signal,
       });
@@ -944,7 +997,7 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
       upstreamStatus = upstream.status;
 
       stage = 'writing';
-      for await (const event of streamModelSections(upstream.body)) {
+      for await (const event of streamModelSections(upstream.body!)) {
         if (event.type === 'section') {
           await send({ type: 'section', index: sections.length, ...event.section });
           sections.push(event.section);
@@ -1055,7 +1108,7 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
       const known = error instanceof AIExplanationError;
       const code = known
         ? error.code
-        : error?.name === 'AbortError' ? 'AI_TIMEOUT' : 'AI_UNAVAILABLE';
+        : (error as Error)?.name === 'AbortError' ? 'AI_TIMEOUT' : 'AI_UNAVAILABLE';
       await send({
         type: 'error',
         code,
@@ -1102,7 +1155,7 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
 }
 
 
-export async function handlePaperRewrite(request, env, extraHeaders = {}) {
+export async function handlePaperRewrite(request: Request, env: WorkerEnv, extraHeaders: Record<string, string> = {}) {
   const contentLength = Number(request.headers.get('content-length') || 0);
   if (contentLength > MAX_REQUEST_BYTES) throw new AIExplanationError('AI_REQUEST_TOO_LARGE', 413);
   const provider = isNanPrimary(env) ? 'nan' : 'gemini';
@@ -1112,7 +1165,7 @@ export async function handlePaperRewrite(request, env, extraHeaders = {}) {
 
   const account = await verifyFirebaseAccount(request, env);
   const uid = account.uid;
-  const payload = await readBoundedJson(request, MAX_REQUEST_BYTES, {
+  const payload = await readBoundedJson<{ level?: unknown; language?: unknown; paper?: Parameters<typeof normalizePaperForExplanation>[0] }>(request, MAX_REQUEST_BYTES, {
     tooLarge: () => new AIExplanationError('AI_REQUEST_TOO_LARGE', 413),
     invalid: () => new AIExplanationError('AI_INVALID_REQUEST', 400),
   });

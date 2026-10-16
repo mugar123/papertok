@@ -1,3 +1,15 @@
+import type { WorkerEnv } from './env.ts';
+import type { Paper } from '../src/models/Paper.ts';
+import type { AIProviderPayload } from './ai-explanation.ts';
+import type { NanCompletion } from './nan-client.ts';
+
+interface AnnotationCall {
+  provider: string;
+  env: WorkerEnv;
+  model: string;
+  prompt: string;
+}
+
 import {
   AIExplanationError,
   classifyGeminiError,
@@ -51,8 +63,8 @@ const LEVEL_VOICE = {
   researcher: 'Write for someone doing research in a neighbouring field: standard vocabulary can be assumed.',
 };
 
-export function isAnnotationLevel(level) {
-  return Object.prototype.hasOwnProperty.call(LEVEL_VOICE, level);
+export function isAnnotationLevel(level: unknown): level is keyof typeof LEVEL_VOICE {
+  return Object.prototype.hasOwnProperty.call(LEVEL_VOICE, level as PropertyKey);
 }
 
 /**
@@ -65,7 +77,13 @@ export function isAnnotationLevel(level) {
  *
  * The product is English-only: any incoming `language` is ignored here.
  */
-export function buildAnnotationPrompt({ paper, quote, context, level }) {
+export function buildAnnotationPrompt({ paper, quote, context, level }: {
+  paper: Pick<Paper, 'title'>;
+  quote: string;
+  context: string;
+  level: keyof typeof LEVEL_VOICE;
+  language?: string;
+}) {
   const voice = LEVEL_VOICE[level];
   const title = cleanText(paper?.title, 500);
 
@@ -88,7 +106,7 @@ Rules:
 }
 
 /** Pulls the answer out of Gemini's envelope; see `cleanAnnotationNote`. */
-export function parseAnnotationPayload(payload) {
+export function parseAnnotationPayload(payload: AIProviderPayload | null) {
   const parts = payload?.candidates?.[0]?.content?.parts;
   const raw = Array.isArray(parts)
     ? parts.map(part => (typeof part?.text === 'string' ? part.text : '')).join('')
@@ -100,7 +118,7 @@ export function parseAnnotationPayload(payload) {
  * Holds an answer, whichever provider wrote it, to the shape the margin can
  * show: one paragraph, no markdown scaffolding, bounded length.
  */
-export function cleanAnnotationNote(raw) {
+export function cleanAnnotationNote(raw: unknown) {
   const note = String(raw)
     // Models reach for a bullet or a bold lead even when told not to; stripping
     // is kinder than refusing an answer that is otherwise correct.
@@ -122,7 +140,7 @@ export function cleanAnnotationNote(raw) {
  * all (see `NAN_REASONING_OFF`), which is the same choice the Gemini call makes
  * with its lowest thinking level: the reader is waiting mid-sentence.
  */
-function annotationCall({ provider, env, model, prompt }) {
+function annotationCall({ provider, env, model, prompt }: AnnotationCall) {
   if (provider === 'nan') {
     return {
       url: NAN_CHAT_COMPLETIONS_URL,
@@ -139,7 +157,7 @@ function annotationCall({ provider, env, model, prompt }) {
     url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
     headers: {
       'content-type': 'application/json',
-      'x-goog-api-key': env.GEMINI_API_KEY,
+      'x-goog-api-key': env.GEMINI_API_KEY!,
     },
     body: {
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -154,7 +172,7 @@ function annotationCall({ provider, env, model, prompt }) {
   };
 }
 
-async function requestAnnotation({ provider, env, model, prompt, language, timeoutMs }) {
+async function requestAnnotation({ provider, env, model, prompt, language, timeoutMs }: AnnotationCall & { language: string; timeoutMs: number }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = Date.now();
@@ -166,7 +184,7 @@ async function requestAnnotation({ provider, env, model, prompt, language, timeo
       headers: call.headers,
       body: JSON.stringify(call.body),
     });
-    const payload = await response.json().catch(() => ({}));
+    const payload = await response.json<AIProviderPayload & NanCompletion>().catch(() => ({}));
     if (!response.ok && provider === 'nan') throw nanProviderError(response, payload);
     if (!response.ok) {
       const code = classifyGeminiError(response.status, payload);
@@ -198,7 +216,7 @@ async function requestAnnotation({ provider, env, model, prompt, language, timeo
       ? error
       // An abort here is the budget, not the caller: the reader's own abort
       // never reaches the Worker.
-      : new AIExplanationError(error?.name === 'AbortError' ? 'AI_TIMEOUT' : 'AI_UNAVAILABLE', 502);
+      : new AIExplanationError((error as Error)?.name === 'AbortError' ? 'AI_TIMEOUT' : 'AI_UNAVAILABLE', 502);
     console.warn('AI annotation', JSON.stringify({
       provider,
       model,
@@ -212,11 +230,13 @@ async function requestAnnotation({ provider, env, model, prompt, language, timeo
   }
 }
 
-export async function handlePassageAnnotation(request, env) {
+export async function handlePassageAnnotation(request: Request, env: WorkerEnv) {
   const contentLength = Number(request.headers.get('content-length') || 0);
   if (contentLength > MAX_REQUEST_BYTES) throw new AIExplanationError('AI_REQUEST_TOO_LARGE', 413);
   const account = await verifyFirebaseAccount(request, env);
-  const payload = await readBoundedJson(request, MAX_REQUEST_BYTES, {
+  const payload = await readBoundedJson<{
+    level?: unknown; language?: unknown; quote?: unknown; context?: unknown; paper?: Partial<Record<keyof Paper, unknown>>;
+  }>(request, MAX_REQUEST_BYTES, {
     tooLarge: () => new AIExplanationError('AI_REQUEST_TOO_LARGE', 413),
     invalid: () => new AIExplanationError('AI_INVALID_REQUEST', 400),
   });

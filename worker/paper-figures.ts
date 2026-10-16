@@ -20,8 +20,8 @@
  */
 
 const RENDERERS = [
-  { id: 'arxiv', origin: 'https://arxiv.org', url: (id) => `https://arxiv.org/html/${id}` },
-  { id: 'ar5iv', origin: 'https://ar5iv.labs.arxiv.org', url: (id) => `https://ar5iv.labs.arxiv.org/html/${id}` },
+  { id: 'arxiv', origin: 'https://arxiv.org', url: (id: string) => `https://arxiv.org/html/${id}` },
+  { id: 'ar5iv', origin: 'https://ar5iv.labs.arxiv.org', url: (id: string) => `https://ar5iv.labs.arxiv.org/html/${id}` },
 ];
 
 const MAX_FIGURES = 6;
@@ -47,7 +47,7 @@ const MODERN_ID = /^\d{4}\.\d{4,5}$/;
  */
 const LEGACY_ID = /^[a-z]+(?:-[a-z]+)?(?:\.[A-Za-z]+(?:-[A-Za-z]+)?)?\/\d{7}$/;
 
-export function isArxivFigureId(value) {
+export function isArxivFigureId(value: unknown) {
   const id = String(value || '').trim();
   return MODERN_ID.test(id) || LEGACY_ID.test(id);
 }
@@ -58,7 +58,7 @@ export function isArxivFigureId(value) {
  * a value out of range or on a lone surrogate half, so both are screened here
  * and a malformed entity is left as literal text rather than taken as an error.
  */
-function codePointToText(code) {
+function codePointToText(code: number) {
   if (!Number.isInteger(code) || code < 0 || code > 0x10ffff) return null;
   if (code >= 0xd800 && code <= 0xdfff) return null;
   return String.fromCodePoint(code);
@@ -73,7 +73,7 @@ function codePointToText(code) {
  * what it just wrote, leaving `&amp;` for the end decodes each entity exactly
  * once.
  */
-function decodeEntities(text) {
+function decodeEntities(text: unknown) {
   return String(text || '')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
@@ -84,7 +84,7 @@ function decodeEntities(text) {
     .replace(/&amp;/g, '&');
 }
 
-function stripTags(html) {
+function stripTags(html: unknown) {
   return decodeEntities(String(html || '').replace(/<[^>]+>/g, ' '))
     .replace(/\s+/g, ' ')
     .trim();
@@ -98,7 +98,7 @@ function stripTags(html) {
  * Only same-origin image files are accepted, so a rewritten page cannot point
  * the feed at an arbitrary host.
  */
-function resolveAssetUrl(src, baseUrl, origin) {
+function resolveAssetUrl(src: string, baseUrl: string, origin: string) {
   const raw = decodeEntities(src).trim();
   if (!raw) return '';
   try {
@@ -124,7 +124,7 @@ function resolveAssetUrl(src, baseUrl, origin) {
  * `<object type="image/svg+xml" data="...">`, and those are the diagrams worth
  * showing most. Both forms load fine from an <img> on the client.
  */
-export function extractFiguresFromHtml(html, baseUrl, origin) {
+export function extractFiguresFromHtml(html: unknown, baseUrl: string, origin: string) {
   const figures = [];
   const seen = new Set();
 
@@ -161,7 +161,7 @@ export function extractFiguresFromHtml(html, baseUrl, origin) {
  * and the renderer answers 404. Each segment is escaped on its own, which keeps
  * the separator meaningful and still escapes anything unexpected.
  */
-function rendererUrl(renderer, arxivId) {
+function rendererUrl(renderer: typeof RENDERERS[number], arxivId: string) {
   return renderer.url(String(arxivId).split('/').map(encodeURIComponent).join('/'));
 }
 
@@ -180,7 +180,7 @@ function rendererUrl(renderer, arxivId) {
  * truncated document cuts figures in half, and that damage would be cached for
  * a month.
  */
-export async function readHtmlWithinLimit(response, limit = MAX_HTML_BYTES) {
+export async function readHtmlWithinLimit(response: Pick<Response, 'headers' | 'body' | 'text'>, limit = MAX_HTML_BYTES) {
   // Still worth checking: a declared size spares us reading the body at all.
   const declared = Number(response.headers?.get('content-length'));
   if (Number.isFinite(declared) && declared > limit) return null;
@@ -213,7 +213,7 @@ export async function readHtmlWithinLimit(response, limit = MAX_HTML_BYTES) {
   }
 }
 
-async function fetchFromRenderer(renderer, arxivId) {
+async function fetchFromRenderer(renderer: typeof RENDERERS[number], arxivId: string) {
   const url = rendererUrl(renderer, arxivId);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -256,7 +256,7 @@ async function fetchFromRenderer(renderer, arxivId) {
  * left is the one preference actually requires: ar5iv's figures cannot be
  * accepted until it is known that arXiv has none.
  */
-export async function fetchPaperFigures(arxivId) {
+export async function fetchPaperFigures(arxivId: string) {
   if (!isArxivFigureId(arxivId)) return { id: arxivId, figures: [], source: null };
 
   // Started before the first await, so all of them are in flight together.

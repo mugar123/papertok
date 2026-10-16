@@ -1,21 +1,24 @@
+import type { LedgerTransaction } from './ledger-storage.ts';
+import type { QuotaReading } from './request-quota-ledger.ts';
+import type { TestNamespace } from './test-types.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { RequestQuotaLedger, releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.ts';
 
 function storageHarness() {
-  const values = new Map();
-  let alarm = null;
+  const values = new Map<string, unknown>();
+  let alarm: number | null = null;
   const transaction = {
-    get: key => values.get(key),
-    put: (key, value) => values.set(key, value),
-    delete: key => values.delete(key),
+    get: <T>(key: string) => values.get(key) as T | undefined,
+    put: (key: string, value: unknown) => values.set(key, value),
+    delete: (key: string) => values.delete(key),
   };
   return {
     values,
     storage: {
-      transaction: callback => callback(transaction),
+      transaction: <T>(callback: (transaction: LedgerTransaction) => Promise<T>) => callback(transaction),
       getAlarm: async () => alarm,
-      setAlarm: async value => { alarm = value; },
+      setAlarm: async (value: number) => { alarm = value; },
       deleteAll: async () => values.clear(),
     },
   };
@@ -41,28 +44,28 @@ test('reserves subject and global quota atomically', async () => {
     method: 'POST', body: JSON.stringify(payload),
   }));
 
-  assert.deepEqual(await first.json(), {
+  assert.deepEqual(await first.json<QuotaReading>(), {
     accepted: true, subjectUsage: 1, globalUsage: 1, remaining: 1,
   });
-  assert.equal((await second.json()).accepted, true);
-  assert.deepEqual(await third.json(), {
+  assert.equal((await second.json<{ accepted: boolean }>()).accepted, true);
+  assert.deepEqual(await third.json<QuotaReading>(), {
     accepted: false, scope: 'user', subjectUsage: 2, globalUsage: 2,
   });
 });
 
 test('quota client hashes the user identity before sending it to storage', async () => {
   let body;
-  const namespace = {
-    idFromName: value => value,
-    get: () => ({
+  const namespace: TestNamespace = {
+    idFromName: (value: string): unknown => value,
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({
       fetch: async (_url, options) => {
-        body = JSON.parse(options.body);
+        body = JSON.parse(options!.body as string);
         return new Response(JSON.stringify({ accepted: true, remaining: 3 }));
       },
-    }),
-  };
+    })) as TestNamespace['get'],
+  } as Env['REQUEST_QUOTA_LEDGER'];
 
-  const result = await reserveRequestQuota(namespace, {
+  const result = await reserveRequestQuota(namespace as Env['REQUEST_QUOTA_LEDGER'], {
     periodKey: 'ai:2026-08-13',
     subject: 'firebase-user-id',
     subjectLimit: 4,
@@ -70,8 +73,8 @@ test('quota client hashes the user identity before sending it to storage', async
   });
 
   assert.equal(result.accepted, true);
-  assert.match(body.subjectKey, /^[a-f0-9]{64}$/);
-  assert.equal(body.subjectKey.includes('firebase-user-id'), false);
+  assert.match(body!.subjectKey, /^[a-f0-9]{64}$/);
+  assert.equal(body!.subjectKey.includes('firebase-user-id'), false);
 });
 
 test('a released use goes back to the subject and to the global counter', async () => {
@@ -82,9 +85,9 @@ test('a released use goes back to the subject and to the global counter', async 
     subjectLimit: 2,
     globalLimit: 10,
   };
-  const call = action => ledger.fetch(new Request('https://internal', {
+  const call = (action: string) => ledger.fetch(new Request('https://internal', {
     method: 'POST', body: JSON.stringify({ ...payload, action }),
-  })).then(response => response.json());
+  })).then(response => response.json<QuotaReading>());
 
   await call('reserve');
   await call('reserve');
@@ -101,10 +104,10 @@ test('a released use goes back to the subject and to the global counter', async 
 test('a release cannot mint quota that was never reserved', async () => {
   const harness = storageHarness();
   const ledger = new RequestQuotaLedger({ storage: harness.storage });
-  const call = action => ledger.fetch(new Request('https://internal', {
+  const call = (action: string) => ledger.fetch(new Request('https://internal', {
     method: 'POST',
     body: JSON.stringify({ action, subjectKey: 'c'.repeat(64), subjectLimit: 2, globalLimit: 10 }),
-  })).then(response => response.json());
+  })).then(response => response.json<QuotaReading>());
 
   await call('release');
   await call('release');
@@ -122,21 +125,21 @@ test('an action the ledger does not know is still refused', async () => {
   }));
 
   assert.equal(response.status, 400);
-  assert.deepEqual(await response.json(), { code: 'INVALID_REQUEST' });
+  assert.deepEqual(await response.json<QuotaReading>(), { code: 'INVALID_REQUEST' });
 });
 
 test('the release client hides the identity exactly like the reserve one', async () => {
-  const bodies = [];
-  const periods = [];
-  const namespace = {
-    idFromName: value => { periods.push(value); return value; },
-    get: () => ({
+  const bodies: Array<{ action: string; subjectKey: string }> = [];
+  const periods: string[] = [];
+  const namespace: TestNamespace = {
+    idFromName: (value: string): unknown => { periods.push(value); return value; },
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({
       fetch: async (_url, options) => {
-        bodies.push(JSON.parse(options.body));
+        bodies.push(JSON.parse(options!.body as string));
         return new Response(JSON.stringify({ released: true }));
       },
-    }),
-  };
+    })) as TestNamespace['get'],
+  } as Env['REQUEST_QUOTA_LEDGER'];
   const options = {
     periodKey: 'ai:2026-08-23',
     subject: 'ai:firebase-user-id',
@@ -144,8 +147,8 @@ test('the release client hides the identity exactly like the reserve one', async
     globalLimit: 1_000,
   };
 
-  await reserveRequestQuota(namespace, options);
-  await releaseRequestQuota(namespace, options);
+  await reserveRequestQuota(namespace as Env['REQUEST_QUOTA_LEDGER'], options);
+  await releaseRequestQuota(namespace as Env['REQUEST_QUOTA_LEDGER'], options);
 
   assert.deepEqual(bodies.map(body => body.action), ['reserve', 'release']);
   assert.equal(bodies[0].subjectKey, bodies[1].subjectKey);
@@ -155,12 +158,12 @@ test('the release client hides the identity exactly like the reserve one', async
 });
 
 test('an unreachable ledger is reported as unavailable, not as unconfigured', async () => {
-  const namespace = {
-    idFromName: value => value,
-    get: () => ({ fetch: async () => new Response('boom', { status: 500 }) }),
-  };
+  const namespace: TestNamespace = {
+    idFromName: (value: string): unknown => value,
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({ fetch: async () => new Response('boom', { status: 500 }) })) as TestNamespace['get'],
+  } as Env['REQUEST_QUOTA_LEDGER'];
 
-  assert.deepEqual(await reserveRequestQuota(namespace, {
+  assert.deepEqual(await reserveRequestQuota(namespace as Env['REQUEST_QUOTA_LEDGER'], {
     periodKey: 'ai:2026-08-23', subject: 'ai:uid', subjectLimit: 10, globalLimit: 1_000,
   }), { accepted: false, code: 'QUOTA_LEDGER_UNAVAILABLE' });
   assert.deepEqual(await reserveRequestQuota(null, {
@@ -179,29 +182,29 @@ test('reserves several units in one round trip and refuses the one that would cr
   // be answered by the check it is aiming at: with both set to ten, the global
   // one alone refuses everything the subject one would have, and a subject check
   // that ignored the amount would pass unnoticed.
-  const reserve = (amount, limits = { subjectLimit: 10, globalLimit: 100 }) => ledger.fetch(
+  const reserve = (amount: number, limits = { subjectLimit: 10, globalLimit: 100 }) => ledger.fetch(
     new Request('https://internal', {
       method: 'POST',
       body: JSON.stringify({ action: 'reserve', subjectKey: 'a'.repeat(64), ...limits, amount }),
     }),
   );
 
-  assert.deepEqual(await (await reserve(4)).json(), {
+  assert.deepEqual(await (await reserve(4)).json<QuotaReading>(), {
     accepted: true, subjectUsage: 4, globalUsage: 4, remaining: 6,
   });
-  const refused = await (await reserve(7)).json();
+  const refused = await (await reserve(7)).json<{ accepted: boolean; scope: string; subjectUsage: number }>();
   assert.equal(refused.accepted, false);
   assert.equal(refused.scope, 'user');
   // Refused, not clamped: the usage stays where it was, so a rejected reservation
   // never leaves a partial spend behind.
   assert.equal(refused.subjectUsage, 4);
-  assert.equal((await (await reserve(6)).json()).accepted, true);
+  assert.equal((await (await reserve(6)).json<{ accepted: boolean }>()).accepted, true);
 });
 
 test('the global ceiling also refuses on what the reservation would spend', async () => {
   const harness = storageHarness();
   const ledger = new RequestQuotaLedger({ storage: harness.storage });
-  const reserve = amount => ledger.fetch(new Request('https://internal', {
+  const reserve = (amount: number) => ledger.fetch(new Request('https://internal', {
     method: 'POST',
     body: JSON.stringify({
       action: 'reserve',
@@ -212,8 +215,8 @@ test('the global ceiling also refuses on what the reservation would spend', asyn
     }),
   }));
 
-  assert.equal((await (await reserve(9)).json()).accepted, true);
-  const refused = await (await reserve(4)).json();
+  assert.equal((await (await reserve(9)).json<{ accepted: boolean }>()).accepted, true);
+  const refused = await (await reserve(4)).json<{ accepted: boolean; scope: string; globalUsage: number }>();
   assert.equal(refused.accepted, false);
   assert.equal(refused.scope, 'global');
   assert.equal(refused.globalUsage, 9);
@@ -232,7 +235,7 @@ test('a reservation that names no amount still spends exactly one', async () => 
     }),
   }));
 
-  assert.deepEqual(await response.json(), {
+  assert.deepEqual(await response.json<QuotaReading>(), {
     accepted: true, subjectUsage: 1, globalUsage: 1, remaining: 0,
   });
 });
@@ -261,7 +264,7 @@ test('a release gives back as much as was reserved, not one unit of it', async (
   // on every refund.
   const harness = storageHarness();
   const ledger = new RequestQuotaLedger({ storage: harness.storage });
-  const call = (action, amount) => ledger.fetch(new Request('https://internal', {
+  const call = (action: string, amount: number) => ledger.fetch(new Request('https://internal', {
     method: 'POST',
     body: JSON.stringify({
       action,
@@ -273,7 +276,7 @@ test('a release gives back as much as was reserved, not one unit of it', async (
   }));
 
   await call('reserve', 9);
-  const released = await (await call('release', 9)).json();
+  const released = await (await call('release', 9)).json<{ subjectUsage: number; globalUsage: number }>();
 
   assert.equal(released.subjectUsage, 0);
   assert.equal(released.globalUsage, 0);
@@ -283,15 +286,15 @@ test('peeking reports the allowance without spending any of it', async () => {
   const harness = storageHarness();
   const ledger = new RequestQuotaLedger({ storage: harness.storage });
   const subjectKey = 'b'.repeat(64);
-  const call = body => ledger.fetch(new Request('https://internal', {
+  const call = (body: { action: string; }) => ledger.fetch(new Request('https://internal', {
     method: 'POST', body: JSON.stringify({ subjectKey, subjectLimit: 10, globalLimit: 100, ...body }),
   }));
 
   await call({ action: 'reserve' });
   await call({ action: 'reserve' });
 
-  const first = await (await call({ action: 'peek' })).json();
-  const second = await (await call({ action: 'peek' })).json();
+  const first = await (await call({ action: 'peek' })).json<QuotaReading>();
+  const second = await (await call({ action: 'peek' })).json<QuotaReading>();
 
   assert.deepEqual(first, { accepted: true, subjectUsage: 2, globalUsage: 2, remaining: 8 });
   // The number the reader is shown must not move because the reader looked at
@@ -305,7 +308,7 @@ test('a peek past the ceiling reports nothing left rather than a negative', asyn
   const harness = storageHarness();
   const ledger = new RequestQuotaLedger({ storage: harness.storage });
   const subjectKey = 'c'.repeat(64);
-  const call = body => ledger.fetch(new Request('https://internal', {
+  const call = (body: { action: string; }) => ledger.fetch(new Request('https://internal', {
     method: 'POST', body: JSON.stringify({ subjectKey, subjectLimit: 1, globalLimit: 100, ...body }),
   }));
 
@@ -314,5 +317,5 @@ test('a peek past the ceiling reports nothing left rather than a negative', asyn
   // is not a thing the reader can render.
   harness.values.set(`subject:${subjectKey}`, 4);
 
-  assert.equal((await (await call({ action: 'peek' })).json()).remaining, 0);
+  assert.equal((await (await call({ action: 'peek' })).json<{ remaining: number }>()).remaining, 0);
 });

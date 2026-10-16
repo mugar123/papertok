@@ -1,3 +1,5 @@
+import type { WorkerEnv } from './env.ts';
+
 import { fetchPaperPdfBytes } from './ai-explanation.ts';
 import { isAIReadablePdfUrl } from '../src/utils/aiExplanationAccess.js';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
@@ -23,7 +25,7 @@ const PDF_PROXY_FETCH_BUDGET_MS = 20_000;
 const PDF_PROXY_CACHE_SECONDS = 24 * 60 * 60;
 const PDF_PROXY_FAILURE_STATUS = Object.freeze({ not_pdf: 415, too_large: 413, unreachable: 502 });
 
-export async function handlePdfProxy(request, env) {
+export async function handlePdfProxy(request: Request, env: WorkerEnv) {
   const origin = request.headers.get('origin') || '';
   if (!origin || !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
   const noStore = { ...corsHeaders(origin, env), 'cache-control': 'no-store' };

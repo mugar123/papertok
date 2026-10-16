@@ -89,6 +89,7 @@ export interface Paper {
   sources: PaperSources;
   title: string;
   abstract: string;
+  language?: string;
   // The builder preserves older name-only arrays; enrichment must accept both.
   authors: Array<PaperAuthor | string>;
   year?: number | null;

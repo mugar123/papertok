@@ -1,16 +1,18 @@
+import type { WorkerEnv } from './env.ts';
+type FetchCall = { url: string; headers: HeadersInit; body: unknown };
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { checkAIProviderHealth } from './ai-explanation.ts';
 
-function stubFetch(handlers) {
-  const calls = [];
+function stubFetch(handlers: Record<string, (call: FetchCall) => Response>) {
+  const calls: FetchCall[] = [];
   globalThis.fetch = async (input, init = {}) => {
-    const url = String(input?.url || input);
+    const url = String((input as Request)?.url || input);
     const call = {
       url,
       headers: init.headers || {},
       body: (() => {
-        try { return JSON.parse(init.body); } catch { return null; }
+        try { return JSON.parse(init.body as string); } catch { return null; }
       })(),
     };
     calls.push(call);
@@ -21,7 +23,7 @@ function stubFetch(handlers) {
   return calls;
 }
 
-const json = (payload, status = 200) => new Response(JSON.stringify(payload), {
+const json = (payload: unknown, status = 200) => new Response(JSON.stringify(payload), {
   status,
   headers: { 'content-type': 'application/json; charset=utf-8' },
 });
@@ -34,7 +36,7 @@ test('/health/ai checks that NaN serves the configured model, not merely that th
   const healthy = await checkAIProviderHealth({
     AI_PROVIDER: 'nan',
     NAN_API_KEY: 'sk-test-key',
-    AI: { toMarkdown: async () => ({}) },
+    AI: { toMarkdown: async (): Promise<import('./paper-text.ts').PaperTextConversion> => ({} as import('./paper-text.ts').PaperTextConversion) } as WorkerEnv['AI'],
   });
   assert.equal(healthy.provider, 'nan');
   assert.equal(healthy.model, 'deepseek-v4-flash');
@@ -71,7 +73,7 @@ test('/health/ai reports a NaN outage even while the retired fallback secrets ar
     MODAL_PROXY_TOKEN_SECRET: 'ws-test-secret',
     MODAL_KIMI_BASE_URL: 'https://papertok--kimi.modal.run/v1',
     AI_FALLBACK_PROVIDER: 'nvidia-deepseek,modal-kimi',
-  });
+  } as WorkerEnv);
   assert.equal(health.provider, 'nan');
   assert.equal(health.available, false);
   assert.equal(health.code, 'AI_BUSY');

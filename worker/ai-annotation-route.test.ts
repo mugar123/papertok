@@ -1,3 +1,6 @@
+import type { TestNamespace } from './test-types.ts';
+import type { WorkerEnv } from './env.ts';
+import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import reportApi from './index.ts';
@@ -27,26 +30,26 @@ const PASSAGE = {
 };
 
 function recordingLedger({ accepted = true, remaining = 6 } = {}) {
-  const actions = [];
+  const actions: string[] = [];
   return {
     actions,
-    idFromName: () => 'quota-id',
-    get: () => ({
-      fetch: async (_url, options) => {
-        actions.push(JSON.parse(options.body).action);
+    idFromName: ((): unknown => 'quota-id') as TestNamespace['idFromName'],
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({
+      fetch: async (_url: RequestInfo | URL, options?: RequestInit) => {
+        actions.push(JSON.parse(options!.body as string).action);
         return new Response(JSON.stringify({ accepted, remaining, subjectUsage: 4, globalUsage: 9 }));
       },
-    }),
-  };
+    })) as TestNamespace['get'],
+  } as Env['REQUEST_QUOTA_LEDGER'] & { actions: typeof actions };
 }
 
-function annotationEnv(ledger, overrides = {}) {
+function annotationEnv(ledger: TestNamespace | undefined, overrides = {}) {
   return {
     FIREBASE_WEB_API_KEY: 'firebase-test-key',
     GEMINI_API_KEY: 'gemini-test-key',
     AI_DAILY_USER_LIMIT: '10',
     AI_DAILY_GLOBAL_LIMIT: '1000',
-    REQUEST_QUOTA_LEDGER: ledger,
+    REQUEST_QUOTA_LEDGER: ledger as WorkerEnv['REQUEST_QUOTA_LEDGER'],
     ...overrides,
   };
 }
@@ -56,7 +59,7 @@ function annotationRequest({
   method = 'POST',
   origin = ORIGIN,
   authorization = 'Bearer test-token',
-} = {}) {
+}: { body?: unknown; method?: string; origin?: string; authorization?: string | null } = {}) {
   return new Request(ROUTE, {
     method,
     headers: {
@@ -69,30 +72,30 @@ function annotationRequest({
 }
 
 /** A signed-in caller without an Identity Toolkit round trip. */
-async function withCachedIdentity(callback) {
-  const originalCaches = globalThis.caches;
-  globalThis.caches = {
+async function withCachedIdentity<Result>(callback: () => Promise<Result>) {
+  const originalCaches = (globalThis as TestGlobals).caches;
+  (globalThis as TestGlobals).caches = {
     default: {
-      match: async request => (String(request.url).includes('/auth/')
+      match: async (request): Promise<Response | null | undefined> => (String((request as Request).url).includes('/auth/')
         ? new Response(JSON.stringify({ uid: 'user-1' }), { headers: { 'content-type': 'application/json' } })
         : null),
-      put: async () => undefined,
+      put: async (): Promise<unknown> => undefined,
     },
   };
   try {
     return await callback();
   } finally {
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 }
 
 /** Stands in for Gemini, and records what it was actually asked. */
-async function withModel(reply, callback) {
+async function withModel<Result>(reply: () => Response, callback: () => Promise<Result>) {
   const originalFetch = globalThis.fetch;
-  const calls = [];
+  const calls: Array<{ url: string; body: { contents: Array<{ parts: Array<{ text: string }> }>; model: string; chat_template_kwargs: { enable_thinking: boolean }; messages: Array<{ content: string }> } }> = [];
   globalThis.fetch = async (url, options) => {
-    calls.push({ url: String(url), body: JSON.parse(options.body) });
+    calls.push({ url: String(url), body: JSON.parse(options!.body as string) });
     return reply();
   };
   try {
@@ -102,7 +105,7 @@ async function withModel(reply, callback) {
   }
 }
 
-function modelSaid(text) {
+function modelSaid(text: string) {
   return () => new Response(JSON.stringify({
     candidates: [{ content: { parts: [{ text }] }, finishReason: 'STOP' }],
   }), { status: 200, headers: { 'content-type': 'application/json' } });
@@ -119,7 +122,7 @@ test('the router actually serves POST /ai/annotate', async () => {
   assert.notEqual(response.status, 405, 'the route is not registered in the router');
   assert.equal(response.status, 200);
 
-  const payload = await response.json();
+  const payload = await response.json<{ code: string; remainingUses: number; dailyLimit: number; note: string; language: string; model: string; unlimited: boolean }>();
   assert.equal(payload.note, 'Antes medías un tiempo y salía un valor. Ahora sale un abanico de valores.');
   assert.equal(payload.remainingUses, 6);
   // A legacy `language: 'es'` is accepted and ignored: the answer is English.
@@ -154,7 +157,7 @@ test('a provider failure hands the use back', async () => {
 
   // A 503 from the provider is congestion, not a broken request, so it comes
   // back as the code that tells the reader to try again in a moment.
-  assert.equal((await response.json()).code, 'AI_BUSY');
+  assert.equal((await response.json<{ code: string; remainingUses: number; dailyLimit: number; note: string; language: string; model: string; unlimited: boolean }>()).code, 'AI_BUSY');
   // Reserved, then released: an outage at the provider must not cost the reader
   // one of ten daily uses.
   assert.deepEqual(ledger.actions, ['reserve', 'release']);
@@ -168,7 +171,7 @@ test('an exhausted allowance is refused before the model is asked', async () => 
   );
 
   assert.equal(response.status, 429);
-  assert.equal((await response.json()).code, 'AI_QUOTA_EXHAUSTED');
+  assert.equal((await response.json<{ code: string; remainingUses: number; dailyLimit: number; note: string; language: string; model: string; unlimited: boolean }>()).code, 'AI_QUOTA_EXHAUSTED');
   assert.equal(calls.length, 0);
   // Nothing to refund: the reservation never succeeded.
   assert.deepEqual(ledger.actions, ['reserve']);
@@ -181,7 +184,7 @@ test('it needs a session, and says so with the code the reader knows', async () 
   );
 
   assert.equal(response.status, 401);
-  assert.equal((await response.json()).code, 'AI_AUTH_REQUIRED');
+  assert.equal((await response.json<{ code: string; remainingUses: number; dailyLimit: number; note: string; language: string; model: string; unlimited: boolean }>()).code, 'AI_AUTH_REQUIRED');
 });
 
 test('it refuses an origin that is not on the list, before touching the ledger', async () => {
@@ -206,7 +209,7 @@ test('a selection too short to identify a passage is refused, and costs nothing'
   );
 
   assert.equal(response.status, 400);
-  assert.equal((await response.json()).code, 'AI_INVALID_REQUEST');
+  assert.equal((await response.json<{ code: string; remainingUses: number; dailyLimit: number; note: string; language: string; model: string; unlimited: boolean }>()).code, 'AI_INVALID_REQUEST');
   assert.equal(calls.length, 0);
   assert.deepEqual(ledger.actions, []);
 });
@@ -219,15 +222,15 @@ test('without a provider key it is not configured, rather than broken', async ()
   ));
 
   assert.equal(response.status, 503);
-  assert.equal((await response.json()).code, 'AI_NOT_CONFIGURED');
+  assert.equal((await response.json<{ code: string; remainingUses: number; dailyLimit: number; note: string; language: string; model: string; unlimited: boolean }>()).code, 'AI_NOT_CONFIGURED');
   assert.deepEqual(ledger.actions, []);
 });
 
 test('a quota ledger that is merely unreachable is not «not configured»', async () => {
   const unreachable = {
-    idFromName: () => 'quota-id',
-    get: () => ({ fetch: async () => new Response('boom', { status: 500 }) }),
-  };
+    idFromName: ((): unknown => 'quota-id') as TestNamespace['idFromName'],
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({ fetch: async () => new Response('boom', { status: 500 }) })) as TestNamespace['get'],
+  } as Env['REQUEST_QUOTA_LEDGER'];
   const { result: [outage, missing], calls } = await withModel(
     modelSaid('no debería llegar aquí'),
     () => withCachedIdentity(async () => [
@@ -238,9 +241,9 @@ test('a quota ledger that is merely unreachable is not «not configured»', asyn
 
   // Transient: the reader gets a retry button instead of «not available yet».
   assert.equal(outage.status, 503);
-  assert.equal((await outage.json()).code, 'AI_UNAVAILABLE');
+  assert.equal((await outage.json<{ code: string }>()).code, 'AI_UNAVAILABLE');
   assert.equal(missing.status, 503);
-  assert.equal((await missing.json()).code, 'AI_NOT_CONFIGURED');
+  assert.equal((await missing.json<{ code: string }>()).code, 'AI_NOT_CONFIGURED');
   assert.equal(calls.length, 0);
 });
 
@@ -253,7 +256,7 @@ test('GET is not how you ask for an annotation', async () => {
 });
 
 /** A body that arrives in pieces, which is how a `content-length` cap is dodged. */
-function chunked(bytes, size = 8_192) {
+function chunked(bytes: Uint8Array, size = 8_192) {
   return new ReadableStream({
     start(controller) {
       for (let i = 0; i < bytes.length; i += size) controller.enqueue(bytes.subarray(i, i + size));
@@ -270,7 +273,7 @@ test('an oversized chunked passage is cut off at the cap', { timeout: 10_000 }, 
     headers: { origin: ORIGIN, authorization: 'Bearer test-token' },
     body: chunked(bytes),
     duplex: 'half',
-  });
+  } as RequestInit & { duplex: 'half' });
 
   // The model double is the watchdog here: without it a body that gets through
   // reaches the real Gemini endpoint and the run hangs on the open internet.
@@ -283,7 +286,7 @@ test('an oversized chunked passage is cut off at the cap', { timeout: 10_000 }, 
   // nothing: the reader of the body is what has to stop.
   assert.equal(calls.length, 0);
   assert.equal(response.status, 413);
-  assert.equal((await response.json()).code, 'AI_REQUEST_TOO_LARGE');
+  assert.equal((await response.json<{ code: string; remainingUses: number; dailyLimit: number; note: string; language: string; model: string; unlimited: boolean }>()).code, 'AI_REQUEST_TOO_LARGE');
   assert.deepEqual(ledger.actions, []);
 });
 
@@ -292,7 +295,7 @@ test('an oversized chunked passage is cut off at the cap', { timeout: 10_000 }, 
 const NAN = { AI_PROVIDER: 'nan', NAN_API_KEY: 'sk-test-key' };
 
 /** Stands in for NaN: an OpenAI chat completion whose answer is `text`. */
-function nanSaid(text) {
+function nanSaid(text: string) {
   return () => new Response(JSON.stringify({
     choices: [{
       index: 0,
@@ -310,7 +313,7 @@ test('with NaN as the provider the passage goes to NaN, reasoning off', async ()
   );
 
   assert.equal(response.status, 200);
-  const payload = await response.json();
+  const payload = await response.json<{ code: string; remainingUses: number; dailyLimit: number; note: string; language: string; model: string; unlimited: boolean }>();
   // The same cleaning as Gemini's answers: no markdown in a margin.
   assert.equal(payload.note, 'It means the length stops being one number.');
   assert.equal(payload.model, 'deepseek-v4-flash');
@@ -332,7 +335,7 @@ test('a busy NaN hands the use back', async () => {
   );
 
   assert.equal(response.status, 429);
-  assert.equal((await response.json()).code, 'AI_BUSY');
+  assert.equal((await response.json<{ code: string; remainingUses: number; dailyLimit: number; note: string; language: string; model: string; unlimited: boolean }>()).code, 'AI_BUSY');
   assert.deepEqual(ledger.actions, ['reserve', 'release']);
 });
 
@@ -344,6 +347,6 @@ test('NaN chosen without a NaN key is not configured, and costs nothing', async 
   ));
 
   assert.equal(response.status, 503);
-  assert.equal((await response.json()).code, 'AI_NOT_CONFIGURED');
+  assert.equal((await response.json<{ code: string; remainingUses: number; dailyLimit: number; note: string; language: string; model: string; unlimited: boolean }>()).code, 'AI_NOT_CONFIGURED');
   assert.deepEqual(ledger.actions, []);
 });

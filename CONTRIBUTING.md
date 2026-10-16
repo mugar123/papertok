@@ -52,7 +52,8 @@ regenerate them with `npm run worker:types` after changing Worker bindings.
 | --- | --- |
 | `tsconfig.json` | Frontend sources; DOM, React and Vite |
 | `worker/tsconfig.json` | Worker sources; Wrangler-generated bindings and runtime |
-| `tsconfig.node.json` | Colocated tests, `tests/`, maintained scripts and root tool configs; Node 22 |
+| `worker/tsconfig.test.json` | Worker tests and frontend tests that import Worker modules; Node 22 plus Wrangler runtime types |
+| `tsconfig.node.json` | Remaining colocated tests, `tests/`, maintained scripts and root tool configs; Node 22 |
 | `proxy/tsconfig.json` | Proxy sources; Deno and Web Worker web APIs |
 
 Each environment uses `strict: true`. During the incremental migration, `allowJs`
@@ -78,7 +79,12 @@ Missing metadata stays optional. In particular, a zero citation count with
 The legacy adapter can pass through a partial stored record without normalizing
 it, so its return type does not promise a complete `Paper` for that input.
 
-Only the paper model has moved to TypeScript; tests still use `.test.js`.
+The paper model and all Worker modules now use TypeScript. Worker tests use
+`.test.ts`; the frontend, proxy and rules tests remain JavaScript until their phases.
+`worker/env.ts` derives optional local bindings from generated `Env` and adds the
+secrets read by the Worker. It does not replace Wrangler's binding declarations.
+Worker production types exclude Node; only the Worker test configuration combines
+Node with Cloudflare APIs for the in-process test doubles.
 Tailwind's `@source` in `src/styles/global.css` still scans `.js` and `.jsx`;
 add `.ts` and `.tsx` and compare production CSS when components are first renamed.
 

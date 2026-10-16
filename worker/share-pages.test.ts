@@ -12,6 +12,8 @@ import {
   matchShareRoute,
   renderSharePage,
   sharePageModel,
+  type ShareRoute,
+  type ShareProviders,
 } from './share-pages.ts';
 
 // The app shell as the repository builds it. Vite leaves the head tags as
@@ -20,8 +22,8 @@ import {
 // title «PaperTok», og:url and canonical at /feed, an empty #root.
 const SHELL = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
-function invertedIndex(text) {
-  const index = {};
+function invertedIndex(text: string) {
+  const index: Record<string, number[]> = {};
   text.split(' ').forEach((word, position) => {
     (index[word] ||= []).push(position);
   });
@@ -77,7 +79,7 @@ const ARXIV_FEED = `<?xml version="1.0" encoding="UTF-8"?>
 </feed>`;
 
 function paperRoute(key = DOI_KEY) {
-  return matchShareRoute(new URL(`https://api.papertok.app/share/paper/${key}`));
+  return matchShareRoute(new URL(`https://api.papertok.app/share/paper/${key}`)) as Extract<ShareRoute, { kind: 'paper' }>;
 }
 
 function foundPaper() {
@@ -89,50 +91,50 @@ function foundPaper() {
   })(paperRoute());
 }
 
-function headOf(html) {
+function headOf(html: string) {
   return html.slice(0, html.indexOf('</head>'));
 }
 
-function metaContent(html, attribute, key) {
+function metaContent(html: string, attribute: string, key: string) {
   const match = headOf(html).match(new RegExp(`<meta\\s+${attribute}="${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"\\s+content="([^"]*)"`));
   return match ? match[1] : null;
 }
 
-function canonicalOf(html) {
+function canonicalOf(html: string) {
   const match = headOf(html).match(/<link rel="canonical" href="([^"]*)"/);
   return match ? match[1] : null;
 }
 
-function titleOf(html) {
+function titleOf(html: string) {
   const match = html.match(/<title>([^<]*)<\/title>/);
   return match ? match[1] : null;
 }
 
-function jsonLdOf(html) {
+function jsonLdOf(html: string) {
   const match = html.match(/<script id="papertok-jsonld" type="application\/ld\+json">([\s\S]*?)<\/script>/);
   return match ? JSON.parse(match[1]) : null;
 }
 
-function seedOf(html) {
+function seedOf(html: string) {
   const match = html.match(/<script type="application\/json" id="papertok-share-seed">([\s\S]*?)<\/script>/);
   return match ? JSON.parse(match[1]) : null;
 }
 
 function memoryCache() {
-  const stored = new Map();
+  const stored = new Map<string, Response>();
   return {
     stored,
-    async match(request) {
-      const hit = stored.get(String(request.url));
+    async match(request: Request<unknown,CfProperties<unknown>>) {
+      const hit = stored.get(String((request as Request).url));
       return hit ? hit.clone() : undefined;
     },
-    async put(request, response) {
-      stored.set(String(request.url), response.clone());
+    async put(request: Request<unknown,CfProperties<unknown>>, response: Response) {
+      stored.set(String((request as Request).url), response.clone());
     },
   };
 }
 
-function shareRequest(path, { method = 'GET', language } = {}) {
+function shareRequest(path: string, { method = 'GET', language }: { method?: string; language?: string } = {}) {
   return new Request(`https://api.papertok.app${path}`, {
     method,
     headers: {
@@ -146,18 +148,18 @@ function shareRequest(path, { method = 'GET', language } = {}) {
 
 test('a share path names its kind, its identity and the public page it stands for', () => {
   const paper = paperRoute();
-  assert.equal(paper.kind, 'paper');
-  assert.deepEqual(paper.identity, { type: 'doi', value: '10.1145/3555174' });
-  assert.equal(paper.canonicalPath, `/public/paper/${DOI_KEY}`);
+  assert.equal(paper!.kind, 'paper');
+  assert.deepEqual(paper!.identity, { type: 'doi', value: '10.1145/3555174' });
+  assert.equal(paper!.canonicalPath, `/public/paper/${DOI_KEY}`);
 
-  const list = matchShareRoute(new URL(`https://api.papertok.app/share/list/${SHARE_ID}`));
-  assert.equal(list.kind, 'list');
-  assert.equal(list.canonicalPath, `/public/list/${SHARE_ID}`);
+  const list = matchShareRoute(new URL(`https://api.papertok.app/share/list/${SHARE_ID}`)) as Extract<ShareRoute, { kind: 'list' }>;
+  assert.equal(list!.kind, 'list');
+  assert.equal(list!.canonicalPath, `/public/list/${SHARE_ID}`);
 
-  const author = matchShareRoute(new URL('https://api.papertok.app/share/entity/author/A5018713931'));
-  assert.equal(author.kind, 'entity');
-  assert.equal(author.type, 'author');
-  assert.equal(author.canonicalPath, '/public/entity/author/A5018713931');
+  const author = matchShareRoute(new URL('https://api.papertok.app/share/entity/author/A5018713931')) as Extract<ShareRoute, { kind: 'entity' }>;
+  assert.equal(author!.kind, 'entity');
+  assert.equal(author!.type, 'author');
+  assert.equal(author!.canonicalPath, '/public/entity/author/A5018713931');
 });
 
 test('a share path that cannot name a page is refused before anything is fetched', () => {
@@ -169,7 +171,7 @@ test('a share path that cannot name a page is refused before anything is fetched
     '/share/entity/author',
     '/share/nothing/here',
   ]) {
-    assert.equal(matchShareRoute(new URL(`https://api.papertok.app${path}`)).invalid, true, path);
+    assert.equal(matchShareRoute(new URL(`https://api.papertok.app${path}`))!.invalid, true, path);
   }
   assert.equal(matchShareRoute(new URL('https://api.papertok.app/openalex/works')), null);
 });
@@ -196,7 +198,7 @@ test('a paper page carries its own title, description, canonical, og and twitter
   assert.equal(titleOf(html), 'Characterizing Alternative Monetization Strategies on YouTube');
   assert.equal(metaContent(html, 'property', 'og:title'), 'Characterizing Alternative Monetization Strategies on YouTube');
   assert.equal(metaContent(html, 'name', 'twitter:title'), 'Characterizing Alternative Monetization Strategies on YouTube');
-  assert.match(metaContent(html, 'name', 'description'), /^We study how video creators earn money/);
+  assert.match(metaContent(html, 'name', 'description')!, /^We study how video creators earn money/);
   assert.equal(metaContent(html, 'property', 'og:description'), metaContent(html, 'name', 'description'));
   assert.equal(canonicalOf(html), url);
   assert.equal(metaContent(html, 'property', 'og:url'), url);
@@ -210,7 +212,7 @@ test('a paper page carries its own title, description, canonical, og and twitter
   const jsonLd = jsonLdOf(html);
   assert.equal(jsonLd['@type'], 'ScholarlyArticle');
   assert.equal(jsonLd.name, 'Characterizing Alternative Monetization Strategies on YouTube');
-  assert.deepEqual(jsonLd.author.map(author => author.name), ['Yiqing Hua', 'Manoel Horta Ribeiro']);
+  assert.deepEqual(jsonLd.author.map((author: { name: string }) => author.name), ['Yiqing Hua', 'Manoel Horta Ribeiro']);
   assert.equal(jsonLd.datePublished, '2022-11-07');
   assert.equal(jsonLd.url, url);
 
@@ -259,7 +261,7 @@ test('a list page names the list and links every paper in it', async () => {
 
 test('an entity page names the entity and what kind of entity it is', async () => {
   const route = matchShareRoute(new URL('https://api.papertok.app/share/entity/author/A5018713931'));
-  const asked = [];
+  const asked: Array<{ path: string; params: Record<string, string> }> = [];
   const outcome = await createShareLoader({
     openAlex: async (path, params) => {
       asked.push({ path, params });
@@ -323,8 +325,8 @@ test('everything from a provider or a user is escaped, and no replacement patter
 
   assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
   assert.equal(titleOf(html), 'Ada &quot;&lt;/title&gt;&lt;script&gt;alert(1)&lt;/script&gt; | PaperTok public list');
-  assert.match(metaContent(html, 'name', 'description'), /^Costs \$&amp; and \$1 &amp; &lt;b&gt;bold&lt;\/b&gt;/);
-  const jsonLd = html.match(/<script id="papertok-jsonld" type="application\/ld\+json">([\s\S]*?)<\/script>/)[1];
+  assert.match(metaContent(html, 'name', 'description')!, /^Costs \$&amp; and \$1 &amp; &lt;b&gt;bold&lt;\/b&gt;/);
+  const jsonLd = html.match(/<script id="papertok-jsonld" type="application\/ld\+json">([\s\S]*?)<\/script>/)![1];
   assert.doesNotMatch(jsonLd, /<\/script|<b>/i, 'the JSON-LD cannot close its own script element');
   assert.doesNotMatch(jsonLd, /\u2028/, 'nor carry a raw line separator');
   assert.equal(JSON.parse(jsonLd).description.startsWith('Costs $& and $1 & <b>bold</b>'), true);
@@ -365,8 +367,8 @@ test('the page reads back the seed the Worker writes, paints from it and indexes
   // through the same adapter and paint rule as a seed handed over in-app.
   const outcome = await foundPaper();
   const html = renderSharePage(SHELL, sharePageModel(paperRoute(), outcome));
-  const text = html.match(/<script type="application\/json" id="papertok-share-seed">([\s\S]*?)<\/script>/)[1];
-  const documentStub = { getElementById: id => (id === 'papertok-share-seed' ? { textContent: text } : null) };
+  const text = html.match(/<script type="application\/json" id="papertok-share-seed">([\s\S]*?)<\/script>/)![1];
+  const documentStub = { getElementById: (id: string) => (id === 'papertok-share-seed' ? { textContent: text } : null) };
   const paper = readShareSeed(DOI_KEY, documentStub);
   assert.ok(paper, 'read for its own key');
   assert.equal(readShareSeed(ARXIV_KEY, documentStub), null, 'and for no other');
@@ -386,7 +388,7 @@ function handlerDeps(overrides = {}) {
   let loads = 0;
   const deps = {
     loadShell: async () => SHELL,
-    loadRecord: async (route) => {
+    loadRecord: async (route: ShareRoute|{ kind: string; invalid: true; }|null) => {
       loads += 1;
       return createShareLoader({ openAlex: async () => OPENALEX_WORK })(route);
     },
@@ -401,11 +403,11 @@ test('a found page answers 200 English HTML even to a Spanish-speaking browser',
   const { deps } = handlerDeps();
   const response = await handleSharePage(shareRequest(`/share/paper/${DOI_KEY}`, { language: 'es-ES,es;q=0.9' }), deps);
   assert.equal(response.status, 200);
-  assert.match(response.headers.get('content-type'), /^text\/html; charset=utf-8/);
+  assert.match(response.headers.get('content-type')!, /^text\/html; charset=utf-8/);
   // One language, so nothing downstream needs to keep variants apart.
   assert.equal(response.headers.get('vary'), null);
   assert.equal(response.headers.get('content-language'), 'en');
-  assert.match(response.headers.get('cache-control'), /max-age=300/);
+  assert.match(response.headers.get('cache-control')!, /max-age=300/);
   assert.equal(titleOf(await response.text()), 'Characterizing Alternative Monetization Strategies on YouTube');
 });
 
@@ -473,13 +475,13 @@ test('a DOI or a PMID OpenAlex has not indexed yet previews as PaperTok, not as 
     const { deps } = handlerDeps({ loadRecord: createShareLoader({ openAlex: async () => null }) });
     const response = await handleSharePage(shareRequest(`/share/paper/${key}`, { language: 'en' }), deps);
     const html = await response.text();
-    assert.equal(response.status, 200, key);
+    assert.equal(response.status, 200, key!);
     assert.equal(titleOf(html), 'PaperTok — Discover scientific research');
     assert.equal(canonicalOf(html), `https://papertok.app/public/paper/${key}`);
     assert.equal(metaContent(html, 'name', 'robots'), null);
     assert.equal(response.headers.get('x-robots-tag'), null);
     const [kept] = [...deps.cache.stored.values()];
-    assert.match(kept.headers.get('cache-control'), /s-maxage=3600\b/, 'asked again within the hour');
+    assert.match(kept.headers.get('cache-control')!, /s-maxage=3600\b/, 'asked again within the hour');
   }
 });
 
@@ -487,15 +489,15 @@ test('a DOI or a PMID OpenAlex has not indexed yet previews as PaperTok, not as 
 // outlived unpublishing a list or deleting the account by a day (review of
 // 2026-09-25).
 test('a list is kept five minutes, so its owner\'s switch reaches the preview', async () => {
-  const pages = [
+  const pages: Array<[string, NonNullable<ShareProviders['firestore']>]> = [
     [`/share/list/${SHARE_ID}`, { getDocument: async () => ({ exists: true, id: SHARE_ID, data: { title: 'Tutoring', papers: [] } }) }],
   ];
   for (const [path, firestore] of pages) {
     const { deps } = handlerDeps({ loadRecord: createShareLoader({ firestore }) });
     const response = await handleSharePage(shareRequest(path), deps);
     const [kept] = [...deps.cache.stored.values()];
-    assert.match(kept.headers.get('cache-control'), /s-maxage=300\b/, path);
-    assert.match(response.headers.get('cache-control'), /max-age=60\b/, path);
+    assert.match(kept.headers.get('cache-control')!, /s-maxage=300\b/, path);
+    assert.match(response.headers.get('cache-control')!, /max-age=60\b/, path);
   }
 });
 
@@ -535,7 +537,7 @@ test('an upstream failure gives the generic head at the page address, briefly re
   assert.equal(canonicalOf(html), `https://papertok.app/public/paper/${DOI_KEY}`);
   assert.equal(metaContent(html, 'name', 'robots'), null, 'an outage is not a reason to drop the page from an index');
   assert.equal(seedOf(html), null);
-  assert.match(first.headers.get('cache-control'), /max-age=60/);
+  assert.match(first.headers.get('cache-control')!, /max-age=60/);
 
   await handleSharePage(shareRequest(`/share/paper/${DOI_KEY}`, { language: 'en' }), deps);
   assert.equal(loads, 1, 'the failure is remembered, so a burst of bots is one upstream call');
@@ -582,16 +584,16 @@ test('a failure never replaces a record another lookup wrote meanwhile', async (
   });
   const response = await handleSharePage(shareRequest(`/share/paper/${DOI_KEY}`, { language: 'en' }), deps);
   assert.equal(titleOf(await response.text()), 'Found elsewhere');
-  const kept = await (await cache.match(new Request(recordKey))).json();
+  const kept = await (await cache.match(new Request(recordKey)))!.json<{ found: boolean }>();
   assert.equal(kept.found, true, 'the found record is still the one kept');
 });
 
 test('identical requests at once share one lookup', async () => {
   let loads = 0;
-  let release;
+  let release!: (value?: unknown) => void;
   const gate = new Promise(resolve => { release = resolve; });
   const { deps } = handlerDeps({
-    loadRecord: async (route) => {
+    loadRecord: async (route: ShareRoute|{ kind: string; invalid: true; }|null) => {
       loads += 1;
       await gate;
       return createShareLoader({ openAlex: async () => OPENALEX_WORK })(route);
@@ -613,7 +615,7 @@ test('a page found once is served from the record cache the next time', async ()
   await handleSharePage(shareRequest(`/share/paper/${DOI_KEY}`), deps);
   assert.equal(loads(), 1);
   const [cached] = [...deps.cache.stored.values()];
-  assert.match(cached.headers.get('cache-control'), /s-maxage=86400/);
+  assert.match(cached.headers.get('cache-control')!, /s-maxage=86400/);
 });
 
 test('without its shell the page still answers a minimal document with the same head', async () => {
@@ -628,7 +630,7 @@ test('without its shell the page still answers a minimal document with the same 
 // -------------------------------------------------------------- loaders
 
 test('a DOI key asks OpenAlex for the work by DOI', async () => {
-  const asked = [];
+  const asked: Array<{ path: string; params: Record<string, string> }> = [];
   await createShareLoader({ openAlex: async (path, params) => { asked.push({ path, params }); return OPENALEX_WORK; } })(paperRoute());
   assert.equal(asked.length, 1);
   assert.equal(asked[0].path, 'works/doi:10.1145/3555174');
@@ -636,7 +638,7 @@ test('a DOI key asks OpenAlex for the work by DOI', async () => {
 });
 
 test('an arXiv key asks OpenAlex by landing page, then arXiv when OpenAlex has not indexed it yet', async () => {
-  const asked = [];
+  const asked: unknown[] = [];
   const outcome = await createShareLoader({
     openAlex: async (path, params) => { asked.push(['openalex', path, params.filter]); return { results: [] }; },
     arxiv: async (id) => { asked.push(['arxiv', id]); return ARXIV_FEED; },
@@ -647,10 +649,10 @@ test('an arXiv key asks OpenAlex by landing page, then arXiv when OpenAlex has n
     ['arxiv', '2609.28470'],
   ]);
   assert.equal(outcome.found, true);
-  assert.equal(outcome.record.paper.title, 'StudentBench: AI and human tutoring yield equivalent GRE learning gains');
-  assert.deepEqual(outcome.record.paper.authors, ['Curtis Northcutt', 'Inaara Hasmani']);
-  assert.match(outcome.record.paper.abstract, /\(all p < \.002\)\.$/);
-  assert.equal(outcome.record.paper.published, '2026-09-23');
+  assert.equal(outcome.record!.paper!.title, 'StudentBench: AI and human tutoring yield equivalent GRE learning gains');
+  assert.deepEqual(outcome.record!.paper!.authors, ['Curtis Northcutt', 'Inaara Hasmani']);
+  assert.match(outcome.record!.paper!.abstract!, /\(all p < \.002\)\.$/);
+  assert.equal(outcome.record!.paper!.published, '2026-09-23');
 });
 
 test('an arXiv answer with no entry is a paper that does not exist', async () => {
@@ -663,7 +665,7 @@ test('an arXiv answer with no entry is a paper that does not exist', async () =>
 
 test('a project is looked up in OpenAIRE by its OpenAIRE id', async () => {
   const route = matchShareRoute(new URL('https://api.papertok.app/share/entity/project/corda__h2020%3A%3Ab9871e3e08a9db98aaa42bf321ed0f1a'));
-  const asked = [];
+  const asked: unknown[] = [];
   const outcome = await createShareLoader({
     openAire: async (params) => {
       asked.push(params);
@@ -706,7 +708,7 @@ test('the shell is fetched once and kept for five minutes', async () => {
   assert.equal(await loadShell(), SHELL);
   assert.equal(await loadShell(), SHELL);
   assert.equal(fetches, 1);
-  assert.match([...cache.stored.values()][0].headers.get('cache-control'), /s-maxage=300/);
+  assert.match([...cache.stored.values()][0].headers.get('cache-control')!, /s-maxage=300/);
 });
 
 test('a shell that is not the app is refused rather than dressed up', async () => {

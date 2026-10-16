@@ -1,3 +1,12 @@
+import type { WorkerEnv } from './env.ts';
+import type { Paper } from '../src/models/Paper.ts';
+import type { OpenAlexWork } from './openalex-api.ts';
+import type { VerifiedIdentity } from './firebase-auth.ts';
+import type { UpstreamError } from './provider-runtime.ts';
+
+type CitationConnection = { doi?: string; openAlexId?: string; relation?: string };
+
+
 import {
   deduplicateCitationGraphPapers,
   extractCitationDoi,
@@ -11,16 +20,16 @@ import { cacheResponse, DEGRADED_CACHE_SECONDS, fetchJsonWithTimeout, getSafeLim
 
 const CITATION_GRAPH_CACHE_SECONDS = 7 * 24 * 60 * 60;
 
-function reconstructOpenAlexAbstract(invertedIndex) {
+function reconstructOpenAlexAbstract(invertedIndex: OpenAlexWork['abstract_inverted_index']) {
   if (!invertedIndex || typeof invertedIndex !== 'object') return '';
   return Object.entries(invertedIndex)
-    .flatMap(([word, positions]) => (Array.isArray(positions) ? positions : []).map(position => [position, word]))
+    .flatMap(([word, positions]) => (Array.isArray(positions) ? positions : []).map((position): [number, string] => [position, word]))
     .sort(([positionA], [positionB]) => positionA - positionB)
     .map(([, word]) => word)
     .join(' ');
 }
 
-function mapCitationGraphWork(work) {
+function mapCitationGraphWork(work: OpenAlexWork | null): Paper | null {
   if (!work?.id || !work?.title) return null;
   const doi = normalizeCitationDoi(work.doi || work.ids?.doi);
   const openAlexId = String(work.id).split('/').pop();
@@ -48,7 +57,7 @@ function mapCitationGraphWork(work) {
     openAccess: Boolean(work.open_access?.is_oa || bestLocation.pdf_url),
     pdfUrl: bestLocation.pdf_url || undefined,
     landingPageUrl: bestLocation.landing_page_url || (doi ? `https://doi.org/${doi}` : work.id),
-    citationCount: Number.isFinite(work.cited_by_count) ? work.cited_by_count : 0,
+    citationCount: Number.isFinite(work.cited_by_count) ? work.cited_by_count! : 0,
     citationCountKnown: Number.isFinite(work.cited_by_count),
     concepts: (work.concepts || []).filter(concept => (concept.score ?? 1) > 0).slice(0, 8),
     topics: (work.topics || []).slice(0, 3),
@@ -56,7 +65,7 @@ function mapCitationGraphWork(work) {
   };
 }
 
-function mapOpenCitationsMetaWork(work) {
+function mapOpenCitationsMetaWork(work: Record<string, string> | null): Paper | null {
   const doi = extractCitationDoi(work?.id);
   if (!doi || !work?.title) return null;
   const openAlexId = extractCitationOpenAlexId(work.id);
@@ -107,23 +116,23 @@ const CITATION_GRAPH_OPENALEX_SELECT = [
   'primary_topic',
 ].join(',');
 
-async function fetchOpenAlexCurrentWork(doi, env) {
+async function fetchOpenAlexCurrentWork(doi: string, env: WorkerEnv) {
   const url = addOpenAlexCredentials(
     new URL(`https://api.openalex.org/works/doi:${encodeURIComponent(doi)}`),
     env,
   );
   url.searchParams.set('select', 'id,referenced_works,cited_by_count');
   try {
-    return { work: await fetchOpenAlexJsonWithFallback(url, env, 6500), failed: false };
+    return { work: await fetchOpenAlexJsonWithFallback<OpenAlexWork>(url, env, 6500), failed: false };
   } catch (error) {
     // A DOI OpenAlex has never heard of is an answer, and the graph built without
     // it is the real one. Anything else is an outage, and the difference decides
     // whether the result may own its cache entry for a week.
-    return { work: null, failed: error?.status !== 404 };
+    return { work: null, failed: (error as UpstreamError)?.status !== 404 };
   }
 }
 
-async function fetchOpenAlexWorksByFilter(filterName, values, env) {
+async function fetchOpenAlexWorksByFilter(filterName: string, values: Array<string | undefined>, env: WorkerEnv) {
   const uniqueValues = [...new Set(values.filter(Boolean))].slice(0, 40);
   const chunks = [];
   for (let index = 0; index < uniqueValues.length; index += 20) {
@@ -134,7 +143,7 @@ async function fetchOpenAlexWorksByFilter(filterName, values, env) {
     url.searchParams.set('filter', `${filterName}:${chunk.join('|')}`);
     url.searchParams.set('per-page', String(chunk.length));
     url.searchParams.set('select', CITATION_GRAPH_OPENALEX_SELECT);
-    const payload = await fetchOpenAlexJsonWithFallback(url, env, 7500);
+    const payload = await fetchOpenAlexJsonWithFallback<{ results?: OpenAlexWork[] }>(url, env, 7500);
     return payload?.results || [];
   }));
   // A rejected batch is a shorter answer, and until now it was a shorter answer
@@ -145,15 +154,15 @@ async function fetchOpenAlexWorksByFilter(filterName, values, env) {
   };
 }
 
-async function fetchOpenCitationsMetadata(connections, env) {
+async function fetchOpenCitationsMetadata(connections: CitationConnection[], env: WorkerEnv) {
   const dois = [...new Set(connections.map(item => item.doi).filter(Boolean))].slice(0, 16);
   const chunks = [];
   for (let index = 0; index < dois.length; index += 5) chunks.push(dois.slice(index, index + 5));
-  const headers = { accept: 'application/json' };
+  const headers: Record<string, string> = { accept: 'application/json' };
   if (env.OPENCITATIONS_ACCESS_TOKEN) headers.authorization = env.OPENCITATIONS_ACCESS_TOKEN;
   const batches = await Promise.allSettled(chunks.map(chunk => {
-    const ids = chunk.map(doi => `doi:${encodeURIComponent(doi)}`).join('__');
-    return fetchJsonWithTimeout(`https://api.opencitations.net/meta/v1/metadata/${ids}`, { headers }, 9000);
+    const ids = chunk.map(doi => `doi:${encodeURIComponent(doi!)}`).join('__');
+    return fetchJsonWithTimeout<Array<Record<string, string>>>(`https://api.opencitations.net/meta/v1/metadata/${ids}`, { headers }, 9000);
   }));
   return batches
     .flatMap(batch => batch.status === 'fulfilled' ? batch.value : [])
@@ -161,7 +170,7 @@ async function fetchOpenCitationsMetadata(connections, env) {
     .filter(Boolean);
 }
 
-async function resolveCitationConnections(connections, env, limit, relation) {
+async function resolveCitationConnections(connections: CitationConnection[], env: WorkerEnv, limit: number, relation: string) {
   const candidates = connections.slice(0, Math.min(40, limit * 5));
   const openAlexIds = candidates.map(item => item.openAlexId).filter(Boolean);
   const doisWithoutOpenAlexId = candidates.filter(item => !item.openAlexId).map(item => item.doi).filter(Boolean);
@@ -192,14 +201,14 @@ async function resolveCitationConnections(connections, env, limit, relation) {
   return { papers: mapped.slice(0, limit), failed };
 }
 
-async function fetchOpenAlexCitingWorks(openAlexId, env, limit) {
+async function fetchOpenAlexCitingWorks(openAlexId: string | undefined, env: WorkerEnv, limit: number) {
   if (!openAlexId) return [];
   const url = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
   url.searchParams.set('filter', `cites:${openAlexId}`);
   url.searchParams.set('sort', 'publication_date:desc');
   url.searchParams.set('per-page', String(Math.min(40, limit * 4)));
   url.searchParams.set('select', CITATION_GRAPH_OPENALEX_SELECT);
-  const payload = await fetchOpenAlexJsonWithFallback(url, env, 7500);
+  const payload = await fetchOpenAlexJsonWithFallback<{ results?: OpenAlexWork[] }>(url, env, 7500);
   return deduplicateCitationGraphPapers(
     (payload?.results || []).map(mapCitationGraphWork).filter(Boolean),
     limit,
@@ -212,20 +221,20 @@ async function fetchOpenAlexCitingWorks(openAlexId, env, limit) {
 // like, because past three hundred citations the route asks OpenAlex on purpose.
 // `degraded` says something upstream failed. Only the second one is a reason to
 // refuse the seven-day TTL.
-function citationGraphCacheSeconds(payload) {
+function citationGraphCacheSeconds(payload: { degraded?: boolean }) {
   return payload?.degraded ? DEGRADED_CACHE_SECONDS : CITATION_GRAPH_CACHE_SECONDS;
 }
 
-async function fetchOpenCitationsRows(doi, relation, env) {
+async function fetchOpenCitationsRows(doi: string, relation: string, env: WorkerEnv) {
   const url = new URL(`https://api.opencitations.net/index/v2/${relation}/doi:${encodeURIComponent(doi)}`);
   url.searchParams.set('format', 'json');
   if (relation === 'citations') url.searchParams.set('sort', 'desc(creation)');
-  const headers = { accept: 'application/json' };
+  const headers: Record<string, string> = { accept: 'application/json' };
   if (env.OPENCITATIONS_ACCESS_TOKEN) headers.authorization = env.OPENCITATIONS_ACCESS_TOKEN;
   return fetchJsonWithTimeout(url, { headers }, 7500);
 }
 
-export async function handleCitationGraph(request, env, identity) {
+export async function handleCitationGraph(request: Request, env: WorkerEnv, identity?: Pick<VerifiedIdentity, 'uid'> | null) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -252,12 +261,12 @@ export async function handleCitationGraph(request, env, identity) {
     // OpenCitations was empty too the route answered `{references: [],
     // citations: [], partial: false}` -- and cached that for a week.
     let degraded = currentWorkFailed || partial;
-    let referenceConnections = normalizeCitationRows(
+    let referenceConnections: CitationConnection[] = normalizeCitationRows(
       referenceResult.status === 'fulfilled' ? referenceResult.value : [],
       'reference',
       doi,
     );
-    let citationConnections = normalizeCitationRows(
+    const citationConnections: CitationConnection[] = normalizeCitationRows(
       citationResult.status === 'fulfilled' ? citationResult.value : [],
       'citation',
       doi,

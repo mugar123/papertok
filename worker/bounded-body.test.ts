@@ -12,7 +12,7 @@ const errors = {
  * single `arrayBuffer()` has already spent the memory by the time anything can
  * look at how much of it there was.
  */
-function chunked(bytes, size = 65_536) {
+function chunked(bytes: Uint8Array, size = 65_536) {
   return new ReadableStream({
     start(controller) {
       for (let i = 0; i < bytes.length; i += size) controller.enqueue(bytes.subarray(i, i + size));
@@ -21,8 +21,8 @@ function chunked(bytes, size = 65_536) {
   });
 }
 
-function chunkedRequest(bytes) {
-  return new Request('https://w/ai/explain', { method: 'POST', body: chunked(bytes), duplex: 'half' });
+function chunkedRequest(bytes: Uint8Array) {
+  return new Request('https://w/ai/explain', { method: 'POST', body: chunked(bytes), duplex: 'half' } as RequestInit & { duplex: 'half' });
 }
 
 test('a chunked body over the cap is rejected before it is buffered', { timeout: 10_000 }, async () => {
@@ -38,7 +38,7 @@ test('a body that declares itself too large never gets read', { timeout: 10_000 
     headers: new Headers({ 'content-length': '400000' }),
     body: { getReader: () => { throw new Error('an honest oversized upload must not be read'); } },
   };
-  await assert.rejects(readBoundedJson(request, 100_000, errors), /TOO_LARGE/);
+  await assert.rejects(readBoundedJson(request as typeof request & Request, 100_000, errors), /TOO_LARGE/);
 });
 
 test('a body inside the cap parses', { timeout: 10_000 }, async () => {
@@ -60,6 +60,6 @@ test('readBoundedBytes stops a 9 MiB PDF at the cap', { timeout: 10_000 }, async
 test('readBoundedBytes returns a PDF that fits, whole', { timeout: 10_000 }, async () => {
   const pdf = new Uint8Array(200_000).fill(7);
   const bytes = await readBoundedBytes(new Response(chunked(pdf)), 8 * 1024 * 1024);
-  assert.equal(bytes.byteLength, 200_000);
-  assert.equal(bytes[199_999], 7);
+  assert.equal(bytes!.byteLength, 200_000);
+  assert.equal(bytes![199_999], 7);
 });

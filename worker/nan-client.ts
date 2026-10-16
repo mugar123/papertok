@@ -1,3 +1,14 @@
+import type { WorkerEnv } from './env.ts';
+
+export interface NanMessage {
+  role: string;
+  content: string | Array<{ type: string; text?: string; file?: { filename: string; file_data: string } }>;
+}
+
+export interface NanCompletion {
+  choices?: Array<{ message?: { content?: string | Array<string | { text?: string; type?: string }> | null; reasoning_content?: string } }>;
+}
+
 /**
  * NaN Builders (nan.builders): open models on a shared EU inference cluster,
  * behind an OpenAI-compatible API. PaperTok's primary AI provider since
@@ -28,25 +39,25 @@ export const DEFAULT_NAN_MODEL = 'deepseek-v4-flash';
  */
 export const NAN_REASONING_OFF = Object.freeze({ thinking: false, enable_thinking: false });
 
-function setting(value, maxLength) {
+function setting(value: unknown, maxLength: number) {
   return String(value ?? '').trim().slice(0, maxLength);
 }
 
 /** Whether NaN, rather than Gemini, answers the AI routes. */
-export function isNanPrimary(env) {
+export function isNanPrimary(env: WorkerEnv) {
   return setting(env?.AI_PROVIDER, 40).toLowerCase() === 'nan';
 }
 
 /** NaN keys are personal `sk-…` keys; anything else is a misplaced secret. */
-export function isNanConfigured(env) {
+export function isNanConfigured(env: WorkerEnv) {
   return /^sk-/.test(setting(env?.NAN_API_KEY, 200));
 }
 
-export function nanModel(env) {
+export function nanModel(env: WorkerEnv) {
   return setting(env?.NAN_MODEL, 100) || DEFAULT_NAN_MODEL;
 }
 
-export function nanHeaders(env) {
+export function nanHeaders(env: WorkerEnv) {
   return {
     'content-type': 'application/json',
     authorization: `Bearer ${setting(env?.NAN_API_KEY, 200)}`,
@@ -61,7 +72,14 @@ export function nanHeaders(env) {
  * shape has to be written into the prompt. `json_schema` is rejected on this
  * model outright.
  */
-export function buildNanChatBody({ model, messages, maxTokens, temperature, json = false, stream = false }) {
+export function buildNanChatBody({ model, messages, maxTokens, temperature, json = false, stream = false }: {
+  model: string;
+  messages: NanMessage[];
+  maxTokens: number;
+  temperature: number;
+  json?: boolean;
+  stream?: boolean;
+}) {
   return {
     model,
     messages,
@@ -82,7 +100,7 @@ export function buildNanChatBody({ model, messages, maxTokens, temperature, json
  * 2026-10-06) — so it is only the fallback for when the Worker could not
  * extract the text first.
  */
-export function nanPdfPart(pdfBase64) {
+export function nanPdfPart(pdfBase64: string) {
   return {
     type: 'file',
     file: { filename: 'paper.pdf', file_data: `data:application/pdf;base64,${pdfBase64}` },
@@ -97,7 +115,7 @@ export function nanPdfPart(pdfBase64) {
  * ceiling that clears in seconds. 401, 403 and 404 are a key, tier or model
  * name that no retry will fix, and a 400 is the request itself.
  */
-export function classifyNanError(status) {
+export function classifyNanError(status: number) {
   if (status === 402) return 'AI_QUOTA_EXHAUSTED';
   if (status === 429 || status === 503 || status === 529) return 'AI_BUSY';
   if (status === 401 || status === 403 || status === 404) return 'AI_NOT_CONFIGURED';
@@ -106,7 +124,7 @@ export function classifyNanError(status) {
 }
 
 /** The answer of a non-streamed completion. Reasoning is never part of it. */
-export function chatCompletionText(payload) {
+export function chatCompletionText(payload: NanCompletion | null) {
   const content = payload?.choices?.[0]?.message?.content;
   if (Array.isArray(content)) {
     return content.map(part => (typeof part === 'string' ? part : part?.text || '')).join('');

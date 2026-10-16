@@ -1,3 +1,10 @@
+import type { UpstreamError } from './provider-runtime.ts';
+import type { VerifiedIdentity } from './firebase-auth.ts';
+
+type ProviderError = UpstreamError & { resetAt?: string };
+type SourceHandler = (request: Request, env: WorkerEnv, identity?: VerifiedIdentity | null) => Promise<Response>;
+import type { WorkerEnv } from './env.ts';
+
 import {
   AIExplanationError,
   peekAIQuota,
@@ -57,13 +64,13 @@ const PROTECTED_PROVIDER_PATHS = new Set([
 // request per second and refuses the rest of that second at once, so a minute
 // is fifty-nine seconds of a reader waiting for a slot that opened long ago. A
 // minute stays the answer everywhere else, where the window really is a minute.
-const UPSTREAM_RETRY_AFTER_FALLBACK_SECONDS = Object.freeze({
+const UPSTREAM_RETRY_AFTER_FALLBACK_SECONDS = Object.freeze<Record<string, string>>({
   '/sources/s2': '2',
   '/related': '2',
 });
 const DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS = '60';
 
-function upstreamRetryAfter(pathname, error) {
+function upstreamRetryAfter(pathname: string, error: ProviderError) {
   return error?.retryAfter
     || UPSTREAM_RETRY_AFTER_FALLBACK_SECONDS[pathname]
     || DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS;
@@ -74,7 +81,7 @@ function upstreamRetryAfter(pathname, error) {
 // one route as `429 UPSTREAM_RATE_LIMITED retry-after` and from the other as
 // `502 Related papers unavailable` -- the one shape a client retries at once,
 // which is the one thing that makes a rate limit worse.
-function upstreamFailureResponse(pathname, error, origin, env, label) {
+function upstreamFailureResponse(pathname: string, error: ProviderError, origin: string, env: WorkerEnv, label: string) {
   const isScopus = pathname === '/sources/scopus';
   const rateLimited = error?.status === 429;
   // `AbortSignal.timeout` rejects with a `TimeoutError`, and a stall has no
@@ -97,12 +104,12 @@ function upstreamFailureResponse(pathname, error, origin, env, label) {
   });
 }
 
-async function authenticateProtectedProviderRequest(request, env, pathname) {
+async function authenticateProtectedProviderRequest(request: Request, env: WorkerEnv, pathname: string) {
   if (!PROTECTED_PROVIDER_PATHS.has(pathname)) return null;
   return verifyFirebaseIdentity(request, env);
 }
 
-const DOMAIN_SOURCE_HANDLERS = {
+const DOMAIN_SOURCE_HANDLERS: Record<string, SourceHandler> = {
   '/sources/biorxiv': handleBioRxiv,
   '/sources/europepmc': handleEuropePmc,
   '/sources/pubmed': handlePubmed,
@@ -119,7 +126,7 @@ const DOMAIN_SOURCE_HANDLERS = {
   '/resources/figures': handlePaperFigures,
 };
 
-export async function handleRequest(request, env) {
+export async function handleRequest(request: Request, env: WorkerEnv) {
   const url = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (request.method === 'OPTIONS') {
@@ -413,7 +420,7 @@ export async function handleRequest(request, env) {
       return await handleRelated(request, env, protectedIdentity);
     } catch (error) {
       console.error('Related papers failed', error);
-      return upstreamFailureResponse('/related', error, origin, env, 'Related papers unavailable');
+      return upstreamFailureResponse('/related', error as ProviderError, origin, env, 'Related papers unavailable');
     }
   }
   if (url.pathname === '/citation-graph') {
@@ -428,7 +435,7 @@ export async function handleRequest(request, env) {
     try {
       return await handleOpenAccess(request, env);
     } catch (error) {
-      return upstreamFailureResponse('/oa', error, origin, env, 'Open-access lookup unavailable');
+      return upstreamFailureResponse('/oa', error as ProviderError, origin, env, 'Open-access lookup unavailable');
     }
   }
   if (url.pathname === '/pdf') {
@@ -444,7 +451,7 @@ export async function handleRequest(request, env) {
       return await handleArxiv(request, env);
     } catch (error) {
       console.error('arXiv route failed', error);
-      return upstreamFailureResponse('/arxiv', error, origin, env, 'arXiv unavailable');
+      return upstreamFailureResponse('/arxiv', error as ProviderError, origin, env, 'arXiv unavailable');
     }
   }
   if (DOMAIN_SOURCE_HANDLERS[url.pathname]) {
@@ -453,7 +460,7 @@ export async function handleRequest(request, env) {
     } catch (error) {
       console.error(`Specialist source failed: ${url.pathname}`, error);
       const label = url.pathname === '/sources/scopus' ? 'Scopus unavailable' : 'Specialist source unavailable';
-      return upstreamFailureResponse(url.pathname, error, origin, env, label);
+      return upstreamFailureResponse(url.pathname, error as ProviderError, origin, env, label);
     }
   }
   return json({ error: 'Not found' }, 404, corsHeaders(origin, env));

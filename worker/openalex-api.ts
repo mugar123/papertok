@@ -1,3 +1,39 @@
+import type { WorkerEnv } from './env.ts';
+import type { UpstreamError } from './provider-runtime.ts';
+import type { PaperSubject } from '../src/models/Paper.ts';
+
+// The upstream envelope is decoded here; normalized results use Paper.
+export interface OpenAlexWork {
+  id?: string;
+  title?: string;
+  display_name?: string;
+  language?: string;
+  doi?: string | null;
+  ids?: { doi?: string | null; pmid?: string | null; [key: string]: string | null | undefined };
+  abstract_inverted_index?: Record<string, number[]> | null;
+  authorships?: Array<{ raw_author_name?: string; author?: { id?: string; display_name?: string }; institutions?: Array<{ id?: string; display_name?: string; ror?: string | null }> }>;
+  publication_year?: number | null;
+  publication_date?: string;
+  type?: string;
+  primary_location?: OpenAlexLocation | null;
+  best_oa_location?: OpenAlexLocation | null;
+  locations?: OpenAlexLocation[];
+  open_access?: { is_oa?: boolean; oa_url?: string | null; oa_status?: string };
+  cited_by_count?: number | null;
+  referenced_works?: string[];
+  concepts?: PaperSubject[];
+  topics?: PaperSubject[];
+  primary_topic?: PaperSubject | null;
+}
+
+interface OpenAlexLocation {
+  pdf_url?: string | null;
+  landing_page_url?: string | null;
+  source?: { id?: string; display_name?: string; type?: string; host_organization_name?: string } | null;
+  is_oa?: boolean;
+  license?: string | null;
+}
+
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import {
   boundedText,
@@ -54,20 +90,20 @@ const OPENALEX_RATE_LIMIT_HEADERS = [
   'x-ratelimit-remaining-usd',
 ];
 
-export function addOpenAlexCredentials(url, env) {
+export function addOpenAlexCredentials(url: URL, env: WorkerEnv) {
   url.searchParams.set('mailto', 'app@papertok.io');
   if (env.OPENALEX_API_KEY) url.searchParams.set('api_key', env.OPENALEX_API_KEY);
   return url;
 }
 
-export async function fetchOpenAlexJsonWithFallback(url, env, timeoutMs) {
+export async function fetchOpenAlexJsonWithFallback<T = unknown>(url: URL, env: WorkerEnv, timeoutMs: number) {
   try {
-    return await fetchJsonWithTimeout(url, { headers: { accept: 'application/json' } }, timeoutMs);
+    return await fetchJsonWithTimeout<T>(url, { headers: { accept: 'application/json' } }, timeoutMs);
   } catch (error) {
     if (!env.OPENALEX_API_KEY || !url.searchParams.has('api_key')) throw error;
     const anonymousUrl = new URL(url);
     anonymousUrl.searchParams.delete('api_key');
-    return fetchJsonWithTimeout(anonymousUrl, { headers: { accept: 'application/json' } }, timeoutMs);
+    return fetchJsonWithTimeout<T>(anonymousUrl, { headers: { accept: 'application/json' } }, timeoutMs);
   }
 }
 
@@ -75,7 +111,7 @@ export async function fetchOpenAlexJsonWithFallback(url, env, timeoutMs) {
 // Nothing the caller sends reaches OpenAlex verbatim -- in particular an
 // `api_key` in the query is dropped, so a caller cannot spend someone else's
 // budget or pin a key of their own.
-function openAlexTargetUrl(pathname, searchParams) {
+function openAlexTargetUrl(pathname: string, searchParams: URLSearchParams) {
   const [entity, ...idSegments] = pathname.slice('/openalex/'.length).split('/');
   if (!OPENALEX_ENTITIES.has(entity)) return null;
 
@@ -111,7 +147,7 @@ function openAlexTargetUrl(pathname, searchParams) {
   return url;
 }
 
-function openAlexResponseHeaders(upstream, origin, env) {
+function openAlexResponseHeaders(upstream: Response, origin: string, env: WorkerEnv) {
   const headers = new Headers({
     'content-type': 'application/json; charset=utf-8',
     'x-content-type-options': 'nosniff',
@@ -130,7 +166,7 @@ function openAlexResponseHeaders(upstream, origin, env) {
   return headers;
 }
 
-export async function handleOpenAlex(request, env) {
+export async function handleOpenAlex(request: Request, env: WorkerEnv) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -168,7 +204,7 @@ export async function handleOpenAlex(request, env) {
 // OpenAlex reports the remaining daily budget on every response. With the quota
 // now denominated in money, that number is worth being able to read directly
 // instead of inferring it from a feed that stopped working.
-export async function checkOpenAlexHealth(env) {
+export async function checkOpenAlexHealth(env: WorkerEnv) {
   const base = { provider: 'openalex', configured: Boolean(env.OPENALEX_API_KEY) };
   try {
     const url = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
@@ -182,7 +218,7 @@ export async function checkOpenAlexHealth(env) {
       resetSeconds: numberOrNull(response.headers.get('x-ratelimit-reset')),
     };
     if (response.ok) return { ...base, available: true, status: 200, code: '', budget };
-    const payload = await response.json().catch(() => null);
+    const payload = await response.json<{ error?: unknown; message?: unknown }>().catch(() => null);
     return {
       ...base,
       available: false,
@@ -197,7 +233,7 @@ export async function checkOpenAlexHealth(env) {
       available: false,
       status: null,
       code: 'OPENALEX_UNREACHABLE',
-      message: boundedText(error?.message, 160),
+      message: boundedText((error as UpstreamError)?.message, 160),
       budget: null,
     };
   }

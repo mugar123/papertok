@@ -1,3 +1,9 @@
+import type { OpenAlexWork } from './openalex-api.ts';
+import type { ShareProviders, OpenAireProjects } from './share-pages.ts';
+import type { UpstreamError } from './provider-runtime.ts';
+import type { QuotaRequest } from './request-quota-ledger.ts';
+import type { WorkerEnv } from './env.ts';
+
 import { createFirestoreRest } from '../src/utils/firestoreRest.js';
 import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_PACE_PERIOD_MS, ARXIV_UPSTREAM_TIMEOUT_MS } from './arxiv-api.ts';
 import { addOpenAlexCredentials } from './openalex-api.ts';
@@ -24,8 +30,8 @@ const SHARE_UPSTREAM_TIMEOUT_MS = 6_000;
 
 // What was reserved, for whoever has to give it back, or null when a ceiling
 // refused (having given back what it had taken).
-async function reserveShareCeilings(env, periods) {
-  const taken = [];
+async function reserveShareCeilings(env: WorkerEnv, periods: Array<[string, number]>) {
+  const taken: QuotaRequest[] = [];
   for (const [periodKey, limit] of periods) {
     const ledgerRequest = { periodKey, subject: 'share:pages', subjectLimit: limit, globalLimit: limit, amount: 1 };
     const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
@@ -38,7 +44,7 @@ async function reserveShareCeilings(env, periods) {
   return taken;
 }
 
-async function admitShareLookup(env) {
+async function admitShareLookup(env: WorkerEnv) {
   const now = new Date().toISOString();
   return Boolean(await reserveShareCeilings(env, [
     [`share:${now.slice(0, 16)}`, SHARE_LOOKUP_MINUTE_LIMIT],
@@ -46,14 +52,14 @@ async function admitShareLookup(env) {
   ]));
 }
 
-function shareUpstreamError(provider, response) {
-  const error = new Error(`${provider} answered ${response.status} for a share page`);
+function shareUpstreamError(provider: string, response: Response) {
+  const error: UpstreamError = new Error(`${provider} answered ${response.status} for a share page`);
   error.status = response.status;
   return error;
 }
 
-function shareProviders(env) {
-  let firestore = null;
+function shareProviders(env: WorkerEnv): ShareProviders {
+  let firestore: ReturnType<typeof createFirestoreRest> | null = null;
   return {
     async openAlex(path, params = {}) {
       const url = addOpenAlexCredentials(new URL(`https://api.openalex.org/${path}`), env);
@@ -63,7 +69,7 @@ function shareProviders(env) {
       const response = await fetchWithDeadline(url, { headers: { accept: 'application/json' } }, SHARE_UPSTREAM_TIMEOUT_MS);
       if (response.status === 404) return null;
       if (!response.ok) throw shareUpstreamError('OpenAlex', response);
-      return response.json();
+      return response.json<OpenAlexWork & { results?: OpenAlexWork[] }>();
     },
     async arxiv(id) {
       const hour = new Date().toISOString().slice(0, 13);
@@ -100,7 +106,7 @@ function shareProviders(env) {
       for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
       const response = await fetchWithDeadline(url, { headers: { accept: 'application/json' } }, SHARE_UPSTREAM_TIMEOUT_MS);
       if (!response.ok) throw shareUpstreamError('OpenAIRE', response);
-      return response.json();
+      return response.json<OpenAireProjects>();
     },
     // Anonymous, on purpose: with no credential the rules decide exactly as
     // they do for a visitor.
@@ -116,7 +122,7 @@ function shareProviders(env) {
   };
 }
 
-export async function handleShareRoute(request, env) {
+export async function handleShareRoute(request: Request, env: WorkerEnv) {
   try {
     return await handleSharePage(request, {
       loadShell: createShellLoader({

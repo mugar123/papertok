@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import worker from './index.ts';
+import type { runEmailNotificationSchedule } from './email-notifications.ts';
+type ScheduleSummary = Awaited<ReturnType<typeof runEmailNotificationSchedule>>;
 
 const ORIGIN = 'http://localhost:5173';
-const request = (path, method = 'GET', origin = ORIGIN) => new Request(`https://api.papertok.test${path}`, {
+const request = (path: string, method = 'GET', origin = ORIGIN) => new Request(`https://api.papertok.test${path}`, {
   method,
   headers: origin ? { origin } : {},
 });
@@ -40,17 +42,17 @@ test('unknown paths preserve GET 404 and other-method 405 with allowed-origin CO
 test('the public configuration health route does not become origin-gated', async () => {
   const response = await worker.fetch(request('/health', 'GET', 'https://other.example'), {});
   assert.equal(response.status, 200);
-  assert.equal((await response.json()).ok, true);
+  assert.equal((await response.json<{ ok: boolean }>()).ok, true);
   assert.equal(response.headers.get('access-control-allow-origin'), null);
 });
 
 for (const method of ['GET', 'POST']) {
   test(`unsubscribe ${method} bypasses the notification Origin gate and stays HTML`, async () => {
     const response = await worker.fetch(request('/notifications/unsubscribe', method, 'https://other.example'), {
-      NOTIFICATION_STORE: { get: async () => null },
+      NOTIFICATION_STORE: { get: async () => null } as KVNamespace & { get(): Promise<null> },
     });
     assert.equal(response.status, 400);
-    assert.match(response.headers.get('content-type'), /^text\/html/);
+    assert.match(response.headers.get('content-type')!, /^text\/html/);
     assert.equal(response.headers.get('cache-control'), 'no-store');
     assert.equal(response.headers.get('access-control-allow-origin'), null);
     assert.match(await response.text(), /<html lang="en">/);
@@ -74,11 +76,11 @@ for (const path of ['/related', '/citation-graph', '/sources/core', '/sources/ph
 }
 
 test('the scheduled entry point passes the event time and keeps the job alive with waitUntil', async () => {
-  const jobs = [];
-  const saved = [];
+  const jobs: Promise<ScheduleSummary>[] = [];
+  const saved: Array<{ key: string; value: ScheduleSummary }> = [];
   const scheduledTime = Date.parse('2026-10-13T07:20:00Z');
   await worker.scheduled({ scheduledTime }, {
-    NOTIFICATION_STORE: { put: async (key, value) => saved.push({ key, value: JSON.parse(value) }) },
+    NOTIFICATION_STORE: { put: async (key: string, value: string) => saved.push({ key, value: JSON.parse(value) }) } as KVNamespace & { put(key: string, value: string): Promise<number> },
   }, { waitUntil: job => jobs.push(job) });
   assert.equal(jobs.length, 1);
   const [summary] = await Promise.all(jobs);

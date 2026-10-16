@@ -1,3 +1,50 @@
+import type { Paper } from '../src/models/Paper.ts';
+import type { OpenAlexWork } from './openalex-api.ts';
+import type { WorkerGlobals } from './env.ts';
+
+type EntityType = keyof typeof SCHEMA_TYPES;
+type EntityLookup = { provider: 'openalex'; path: string; params?: never }
+  | { provider: 'openaire'; params: Record<string, string>; path?: never };
+type PaperIdentity = NonNullable<ReturnType<typeof parsePaperKey>>;
+type RouteBase = { canonicalPath: string; cacheId: string; invalid?: false };
+export type ShareRoute = RouteBase & (
+  { kind: 'paper'; key: string; identity: PaperIdentity }
+  | { kind: 'list'; shareId: string }
+  | { kind: 'entity'; type: EntityType; id: string; params: { name: string; funder: string }; lookup: EntityLookup | null }
+);
+type InvalidRoute = { kind: string; invalid: true };
+interface ShareList { title: string; description?: string; language?: string; papers?: Array<{ title: string; key?: string }> }
+interface ShareEntity { name: string; nameOnly?: boolean }
+interface ShareRecord { paper?: Partial<Paper> & { authors?: string[] }; list?: ShareList; entity?: ShareEntity }
+export interface ShareOutcome { found?: boolean; unknown?: boolean; failed?: boolean; record?: ShareRecord }
+type ShareCache = Pick<Cache, 'match' | 'put'>;
+export interface ShareDependencies {
+  loadShell?: () => Promise<string>;
+  loadRecord?: (route: ShareRoute) => Promise<ShareOutcome>;
+  admit?: (route: ShareRoute) => Promise<boolean>;
+  cache?: ShareCache | null;
+}
+interface ProjectMetadata { acronym?: { $?: unknown }; title?: { $?: unknown } }
+export interface OpenAireProjects { response?: { results?: { result?: { metadata?: { 'oaf:entity'?: { 'oaf:project'?: ProjectMetadata } } }[] } } }
+export interface ShareProviders {
+  openAlex?: (path: string, params: Record<string, string>) => Promise<(OpenAlexWork & { results?: OpenAlexWork[] }) | null>;
+  arxiv?: (id: string) => Promise<string>;
+  openAire?: (params: Record<string, string>) => Promise<OpenAireProjects | null>;
+  firestore?: { getDocument: (path: string) => Promise<{ exists: boolean; data?: { title?: unknown; description?: unknown; language?: unknown; papers?: Partial<Paper>[] } } | null> };
+}
+interface SharePage {
+  status: number; language: string; title: string; description: string; imageAlt: string;
+  ogType: string; canonicalUrl: string | null; pageUrl: string; noIndex: boolean;
+  jsonLd: Record<string, unknown> | null; fallbackHtml: string;
+  seed: { key: string; paper: Partial<Paper> } | null;
+  maxAge: number;
+}
+type XmlText = string | { '#text'?: string };
+interface ArxivEntry {
+  id?: XmlText; title?: XmlText; summary?: XmlText; published?: XmlText; doi?: XmlText; journal_ref?: XmlText;
+  author?: { name?: XmlText } | Array<{ name?: XmlText }>;
+}
+
 import { XMLParser } from 'fast-xml-parser';
 import { usableOpenAlexAbstract } from '../src/utils/openAlexAbstract.js';
 import { plainScientificText } from '../src/utils/plainScientificText.js';
@@ -149,7 +196,7 @@ const COPY = Object.freeze({
   nameOnlyAuthor: 'Found by name: these results may mix people who share it.',
 });
 
-function entityDescription(name) {
+function entityDescription(name: string) {
   return `Explore scientific papers, citations, and research connected to ${name} on PaperTok.`;
 }
 
@@ -157,8 +204,8 @@ function entityDescription(name) {
 
 const HTML_ESCAPES = Object.freeze({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' });
 
-export function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, character => HTML_ESCAPES[character]);
+export function escapeHtml(value: unknown) {
+  return String(value ?? '').replace(/[&<>"']/g, character => HTML_ESCAPES[character as keyof typeof HTML_ESCAPES]);
 }
 
 /**
@@ -166,7 +213,7 @@ export function escapeHtml(value) {
  * or open a comment, and the two line separators JavaScript once refused in a
  * string literal are escaped too.
  */
-function scriptJson(value) {
+function scriptJson(value: unknown) {
   return JSON.stringify(value)
     .replace(/</g, '\\u003c')
     .replace(/>/g, '\\u003e')
@@ -175,20 +222,20 @@ function scriptJson(value) {
     .replace(/\u2029/g, '\\u2029');
 }
 
-function isControlCharacter(character) {
+function isControlCharacter(character: string) {
   const code = character.charCodeAt(0);
   return code < 32 || code === 127;
 }
 
 // The marks and overrides that reorder text on screen: from a URL they can
 // make a name read as something else.
-function isDirectionControl(character) {
+function isDirectionControl(character: string) {
   const code = character.charCodeAt(0);
   return code === 0x061c || code === 0x200e || code === 0x200f
     || (code >= 0x202a && code <= 0x202e) || (code >= 0x2066 && code <= 0x2069);
 }
 
-function cleanText(value, limit = 500) {
+function cleanText(value: unknown, limit = 500) {
   if (value === null || value === undefined) return '';
   const text = [...String(value)]
     .map(character => (isControlCharacter(character) || isDirectionControl(character) ? ' ' : character))
@@ -198,7 +245,7 @@ function cleanText(value, limit = 500) {
   return text.length > limit ? text.slice(0, limit).trim() : text;
 }
 
-function truncate(text, limit) {
+function truncate(text: string, limit: number) {
   if (text.length <= limit) return text;
   const cut = text.slice(0, limit - 1);
   const space = cut.lastIndexOf(' ');
@@ -206,17 +253,17 @@ function truncate(text, limit) {
   return `${whole.replace(/[\s,.;:]+$/, '')}…`;
 }
 
-function authorLine(names, shown) {
+function authorLine(names: string[], shown: number) {
   return names.length > shown ? `${names.slice(0, shown).join(', ')} et al.` : names.join(', ');
 }
 
-function compact(object) {
+function compact<T extends object>(object: T): Partial<T> {
   return Object.fromEntries(Object.entries(object).filter(([, value]) => (
     value !== undefined && value !== null && value !== '' && !(Array.isArray(value) && value.length === 0)
-  )));
+  ))) as Partial<T>;
 }
 
-function httpUrl(value) {
+function httpUrl(value: unknown) {
   try {
     const url = new URL(String(value || ''));
     return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : '';
@@ -225,34 +272,34 @@ function httpUrl(value) {
   }
 }
 
-function bareDoi(value) {
+function bareDoi(value: unknown) {
   const doi = cleanText(value, 300)
     .replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '')
     .replace(/^doi:\s*/i, '');
   return /^10\.\d{4,9}\/\S+$/i.test(doi) ? doi.toLowerCase() : '';
 }
 
-function pmidOf(value) {
+function pmidOf(value: unknown) {
   const match = cleanText(value, 120).match(/(?:^|\/)(\d{1,10})\/?$/);
   return match ? match[1] : '';
 }
 
-function absoluteUrl(path) {
+function absoluteUrl(path: string) {
   return `${DEFAULT_PUBLIC_ORIGIN}${path}`;
 }
 
-function asArray(value) {
+function asArray<T>(value: T | T[] | null | undefined): T[] {
   if (value === undefined || value === null) return [];
   return Array.isArray(value) ? value : [value];
 }
 
-function textOf(value) {
+function textOf(value: XmlText | null | undefined) {
   return value && typeof value === 'object' ? value['#text'] : value;
 }
 
 // ------------------------------------------------------------------ routes
 
-function cleanRouteId(value) {
+function cleanRouteId(value: unknown) {
   const text = String(value || '').trim();
   if (!text || text.length > MAX_ENTITY_ID_LENGTH) return '';
   return [...text].some(isControlCharacter) ? '' : text;
@@ -264,7 +311,7 @@ function cleanRouteId(value) {
  * turned into a topic. A name is not an identity (issue 4 of the same audit),
  * so it is never sent to a provider.
  */
-function entityLookup(type, id, params) {
+function entityLookup(type: EntityType, id: string, params: { funder?: string }): EntityLookup | null {
   if (type === 'project') {
     if (id.includes('::')) return { provider: 'openaire', params: { openaireProjectID: id } };
     if (!/^[\w.\-/]{1,80}$/.test(id)) return null;
@@ -293,7 +340,7 @@ function entityLookup(type, id, params) {
  * `/share/`, and `{ invalid: true }` for one that names no page — refused
  * before anything is fetched.
  */
-export function matchShareRoute(url) {
+export function matchShareRoute(url: URL): ShareRoute | InvalidRoute | null {
   const pathname = url.pathname;
   if (!pathname.startsWith('/share/')) return null;
   let segments;
@@ -303,12 +350,12 @@ export function matchShareRoute(url) {
     return { kind: 'unknown', invalid: true };
   }
   const [kind, ...rest] = segments;
-  const invalid = { kind: KINDS.has(kind) ? kind : 'unknown', invalid: true };
+  const invalid: InvalidRoute = { kind: KINDS.has(kind) ? kind : 'unknown', invalid: true };
 
   if (kind === 'paper' && rest.length === 1) {
     const identity = parsePaperKey(rest[0]);
     if (!identity) return invalid;
-    const canonicalPath = getPublicPaperPath(identity.type, identity.value);
+    const canonicalPath = getPublicPaperPath(identity.type, identity.value)!;
     return {
       kind,
       key: rest[0],
@@ -318,10 +365,10 @@ export function matchShareRoute(url) {
     };
   }
   if (kind === 'list' && rest.length === 1 && LIST_ID.test(rest[0])) {
-    return { kind, shareId: rest[0], canonicalPath: getPublicListPath(rest[0]), cacheId: `list/${rest[0]}` };
+    return { kind, shareId: rest[0], canonicalPath: getPublicListPath(rest[0])!, cacheId: `list/${rest[0]}` };
   }
   if (kind === 'entity' && rest.length === 2) {
-    const type = rest[0].toLowerCase();
+    const type = rest[0].toLowerCase() as EntityType;
     const id = cleanRouteId(rest[1]);
     if (!ENTITY_TYPES.has(type) || !id) return invalid;
     const params = {
@@ -336,7 +383,7 @@ export function matchShareRoute(url) {
       id,
       params,
       lookup,
-      canonicalPath: getPublicEntityPath(type, id),
+      canonicalPath: getPublicEntityPath(type, id)!,
       cacheId: `entity/${type}/${encodeURIComponent(id)}${funderKey}`,
     };
   }
@@ -353,13 +400,13 @@ const ARXIV_XML = new XMLParser({
   trimValues: true,
 });
 
-const notFound = () => ({ found: false });
+const notFound = (): ShareOutcome => ({ found: false });
 // Not found by a provider whose silence proves nothing: OpenAlex indexes a DOI
 // or a PMID days after it appears.
-const unknown = () => ({ found: false, unknown: true });
-const found = record => ({ found: true, record });
+const unknown = (): ShareOutcome => ({ found: false, unknown: true });
+const found = (record: ShareRecord): ShareOutcome => ({ found: true, record });
 
-function paperFromOpenAlex(work, identity) {
+function paperFromOpenAlex(work: OpenAlexWork, identity: PaperIdentity) {
   const title = cleanText(work.title || work.display_name, 1000);
   if (!title) return null;
   const doi = bareDoi(work.doi) || (identity.type === 'doi' ? identity.value : '');
@@ -383,10 +430,10 @@ function paperFromOpenAlex(work, identity) {
   };
 }
 
-function paperFromArxivFeed(xml, requestedId) {
+function paperFromArxivFeed(xml: unknown, requestedId: string) {
   const text = String(xml || '');
   if (!text.includes('<feed')) throw new Error('arXiv answered something that is not a feed');
-  const entry = asArray(ARXIV_XML.parse(text)?.feed?.entry)
+  const entry = asArray((ARXIV_XML.parse(text) as { feed?: { entry?: ArxivEntry | ArxivEntry[] } })?.feed?.entry)
     .find(candidate => /arxiv\.org\/abs\//i.test(String(textOf(candidate?.id) || '')));
   if (!entry) return null;
   const title = cleanText(textOf(entry.title), 1000);
@@ -414,7 +461,7 @@ function paperFromArxivFeed(xml, requestedId) {
   };
 }
 
-async function loadPaper(route, { openAlex, arxiv }) {
+async function loadPaper(route: Extract<ShareRoute, { kind: 'paper' }>, { openAlex, arxiv }: ShareProviders) {
   const { type, value } = route.identity;
   if (type === 'arxiv') {
     const bare = value.replace(/v\d+$/i, '');
@@ -422,7 +469,7 @@ async function loadPaper(route, { openAlex, arxiv }) {
     // it has no arXiv id field. A preprint from the last days is not in
     // OpenAlex by any route (2609.28470, measured 2026-09-24), and those are
     // most of what the feed shows, so arXiv answers for them.
-    const page = await openAlex('works', {
+    const page = await openAlex!('works', {
       filter: `locations.landing_page_url:http://arxiv.org/abs/${bare}|https://arxiv.org/abs/${bare}`,
       'per-page': '1',
       select: WORK_SELECT,
@@ -430,13 +477,13 @@ async function loadPaper(route, { openAlex, arxiv }) {
     const work = asArray(page?.results)[0];
     const fromOpenAlex = work?.id ? paperFromOpenAlex(work, route.identity) : null;
     if (fromOpenAlex) return found({ paper: fromOpenAlex });
-    const fromArxiv = paperFromArxivFeed(await arxiv(value), value);
+    const fromArxiv = paperFromArxivFeed(await arxiv!(value), value);
     return fromArxiv ? found({ paper: fromArxiv }) : notFound();
   }
   const path = type === 'doi'
     ? `works/doi:${encodeURIComponent(value).replace(/%2F/gi, '/')}`
     : type === 'openalex' ? `works/${value}` : `works/pmid:${value}`;
-  const work = await openAlex(path, { select: WORK_SELECT });
+  const work = await openAlex!(path, { select: WORK_SELECT });
   const paper = work?.id ? paperFromOpenAlex(work, route.identity) : null;
   if (paper) return found({ paper });
   // An OpenAlex work id OpenAlex does not have is final. A DOI or a PMID it
@@ -445,8 +492,8 @@ async function loadPaper(route, { openAlex, arxiv }) {
   return type === 'openalex' ? notFound() : unknown();
 }
 
-async function loadList(route, { firestore }) {
-  const document = await firestore.getDocument(`publicLists/${route.shareId}`);
+async function loadList(route: Extract<ShareRoute, { kind: 'list' }>, { firestore }: ShareProviders) {
+  const document = await firestore!.getDocument(`publicLists/${route.shareId}`);
   if (!document?.exists) return notFound();
   const data = document.data || {};
   const title = cleanText(data.title, 200);
@@ -466,23 +513,23 @@ async function loadList(route, { firestore }) {
   });
 }
 
-function projectName(project) {
+function projectName(project: ProjectMetadata | undefined) {
   const acronym = cleanText(project?.acronym?.$, 120);
   const title = cleanText(project?.title?.$, 400);
   return acronym && title ? `${acronym}: ${title}` : acronym || title;
 }
 
-async function loadEntity(route, { openAlex, openAire }) {
+async function loadEntity(route: Extract<ShareRoute, { kind: 'entity' }>, { openAlex, openAire }: ShareProviders) {
   if (!route.lookup) {
     return found({ entity: { name: route.params.name || cleanText(route.id, 200), nameOnly: true } });
   }
   if (route.lookup.provider === 'openaire') {
-    const data = await openAire(route.lookup.params);
+    const data = await openAire!(route.lookup.params);
     const result = asArray(data?.response?.results?.result)[0];
     const name = projectName(result?.metadata?.['oaf:entity']?.['oaf:project']);
     return name ? found({ entity: { name } }) : notFound();
   }
-  const data = await openAlex(route.lookup.path, { select: ENTITY_SELECT });
+  const data = await openAlex!(route.lookup.path, { select: ENTITY_SELECT });
   const name = cleanText(data?.display_name, 300);
   return data?.id && name ? found({ entity: { name } }) : notFound();
 }
@@ -499,8 +546,8 @@ async function loadEntity(route, { openAlex, openAire }) {
  * - `firestore.getDocument(path)` → `{ exists, id, data }`, read anonymously
  *   so the rules decide exactly as they do for a visitor.
  */
-export function createShareLoader(providers = {}) {
-  return async function loadShareRecord(route) {
+export function createShareLoader(providers: ShareProviders = {}) {
+  return async function loadShareRecord(route: ShareRoute | InvalidRoute | null) {
     if (!route || route.invalid) return notFound();
     if (route.kind === 'paper') return loadPaper(route, providers);
     if (route.kind === 'list') return loadList(route, providers);
@@ -514,7 +561,7 @@ export function createShareLoader(providers = {}) {
 // Every share page is English: PaperTok is English-only.
 const PAGE_LANGUAGE = 'en';
 
-function basePage(overrides = {}) {
+function basePage(overrides: Partial<SharePage> = {}): SharePage {
   return {
     status: 200,
     language: PAGE_LANGUAGE,
@@ -533,7 +580,7 @@ function basePage(overrides = {}) {
   };
 }
 
-function webPage({ name, description, url, extra = {} }) {
+function webPage({ name, description, url, extra = {} }: { name: string; description: string; url: string; extra?: Record<string, unknown> }) {
   return compact({
     '@context': 'https://schema.org',
     '@type': 'WebPage',
@@ -547,8 +594,8 @@ function webPage({ name, description, url, extra = {} }) {
   });
 }
 
-function notFoundPage(kind) {
-  const heading = (COPY.notFound[kind] || COPY.notFound.entity);
+function notFoundPage(kind: string) {
+  const heading = (COPY.notFound[kind as keyof typeof COPY.notFound] || COPY.notFound.entity);
   const description = COPY.notFoundDescription;
   return basePage({
     status: 404,
@@ -564,7 +611,7 @@ function notFoundPage(kind) {
 // What a page says while its provider is down: PaperTok's own head, at the
 // page's own address. Not a 404, and not `noindex` — an outage is not a reason
 // for a preview to show nothing or for an index to drop the page.
-function unavailablePage(route, maxAge = FAILURE_MAX_AGE_SECONDS) {
+function unavailablePage(route: ShareRoute, maxAge = FAILURE_MAX_AGE_SECONDS) {
   const pageUrl = absoluteUrl(route.canonicalPath);
   return basePage({
     canonicalUrl: pageUrl,
@@ -574,7 +621,7 @@ function unavailablePage(route, maxAge = FAILURE_MAX_AGE_SECONDS) {
   });
 }
 
-function paperPage(route, paper) {
+function paperPage(route: Extract<ShareRoute, { kind: 'paper' }>, paper: NonNullable<ShareRecord['paper']>) {
   const pageUrl = absoluteUrl(route.canonicalPath);
   const title = plainScientificText(paper.title) || COPY.siteTitle;
   const abstract = plainScientificText(paper.abstract);
@@ -589,7 +636,7 @@ function paperPage(route, paper) {
     doiUrl && { href: doiUrl, label: `DOI: ${paper.doi}` },
     arxivUrl && { href: arxivUrl, label: `arXiv: ${paper.arxivId}` },
     !doiUrl && !arxivUrl && paper.landingPageUrl && { href: paper.landingPageUrl, label: paper.landingPageUrl },
-  ].filter(Boolean);
+  ].filter(Boolean) as Array<{ href: string; label: string }>;
 
   const jsonLd = compact({
     '@context': 'https://schema.org',
@@ -648,7 +695,7 @@ function paperPage(route, paper) {
   });
 }
 
-function listPage(route, list) {
+function listPage(route: Extract<ShareRoute, { kind: 'list' }>, list: ShareList) {
   const pageUrl = absoluteUrl(route.canonicalPath);
   const description = list.description || COPY.listFallback;
   const papers = asArray(list.papers).map(paper => ({ ...paper, title: plainScientificText(paper.title) }));
@@ -691,7 +738,7 @@ function listPage(route, list) {
   });
 }
 
-function entityPage(route, entity) {
+function entityPage(route: Extract<ShareRoute, { kind: 'entity' }>, entity: ShareEntity) {
   const pageUrl = absoluteUrl(route.canonicalPath);
   const typeLabel = COPY.entityTypes[route.type];
   if (entity.nameOnly) {
@@ -732,8 +779,9 @@ function entityPage(route, entity) {
  * The page for a route and what its lookup gave: `{ found, record }`,
  * `{ found: false }`, or `{ failed: true }`.
  */
-export function sharePageModel(route, outcome) {
-  const kind = KINDS.has(route?.kind) ? route.kind : 'entity';
+export function sharePageModel(route: ShareRoute | InvalidRoute | null, outcome: ShareOutcome | null, language?: string): SharePage;
+export function sharePageModel(route: ShareRoute | InvalidRoute | null, outcome: ShareOutcome | null) {
+  const kind = KINDS.has(route?.kind as string) ? route!.kind : 'entity';
   if (!route || route.invalid || !outcome || (!outcome.found && !outcome.failed && !outcome.unknown)) {
     return notFoundPage(kind);
   }
@@ -753,20 +801,20 @@ const TITLE_TAG = /<title>[\s\S]*?<\/title>/i;
 const CANONICAL_TAG = /<link\s+rel="canonical"\s+href="[^"]*"\s*\/?>/i;
 const JSON_LD_TAG = /<script\s+id="papertok-jsonld"\s+type="application\/ld\+json">[\s\S]*?<\/script>/i;
 
-function escapeRegExp(value) {
+function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // Replacements are functions throughout: a string replacement reads `$&`,
 // `$1` and `$'` as patterns, and a list's title or description can contain
 // any of them.
-function setElement(html, pattern, element) {
+function setElement(html: string, pattern: RegExp, element: string | null) {
   if (pattern.test(html)) return html.replace(pattern, () => element || '');
   if (!element) return html;
   return html.replace(/<\/head>/i, () => `  ${element}\n  </head>`);
 }
 
-function setMeta(html, attribute, key, value) {
+function setMeta(html: string, attribute: string, key: string, value: unknown) {
   const pattern = new RegExp(`<meta\\s+${attribute}="${escapeRegExp(key)}"\\s+content="[^"]*"\\s*\\/?>`, 'i');
   const element = value === null || value === undefined
     ? null
@@ -775,7 +823,7 @@ function setMeta(html, attribute, key, value) {
 }
 
 /** The shell with the page's head, its static copy in #root and its seed. */
-export function renderSharePage(shell, page) {
+export function renderSharePage(shell: string, page: SharePage) {
   let html = typeof shell === 'string' && shell.includes(ROOT_ELEMENT) ? shell : MINIMAL_SHELL;
   html = html.replace(/<html\b[^>]*>/i, () => `<html lang="${page.language}">`);
   html = setElement(html, TITLE_TAG, `<title>${escapeHtml(page.title)}</title>`);
@@ -812,16 +860,16 @@ export function renderSharePage(shell, page) {
 
 // ------------------------------------------------------------------ caches
 
-async function cachedJson(cache, key) {
+async function cachedJson(cache: ShareCache | null | undefined, key: Request) {
   try {
     const hit = await cache?.match(key);
-    return hit ? await hit.json() : null;
+    return hit ? await hit.json<ShareOutcome>() : null;
   } catch {
     return null;
   }
 }
 
-async function cachedText(cache, key) {
+async function cachedText(cache: ShareCache | null | undefined, key: Request) {
   try {
     const hit = await cache?.match(key);
     return hit ? await hit.text() : null;
@@ -830,7 +878,7 @@ async function cachedText(cache, key) {
   }
 }
 
-async function keep(cache, key, body, contentType, seconds) {
+async function keep(cache: ShareCache | null | undefined, key: Request, body: string, contentType: string, seconds: number) {
   try {
     await cache?.put(key, new Response(body, {
       headers: { 'content-type': contentType, 'cache-control': `public, s-maxage=${seconds}` },
@@ -841,12 +889,12 @@ async function keep(cache, key, body, contentType, seconds) {
 }
 
 /** The deployed app shell, kept five minutes (see the module comment). */
-export function createShellLoader({ fetchShell, cache = globalThis.caches?.default, url = SHELL_URL } = {}) {
+export function createShellLoader({ fetchShell, cache = (globalThis as WorkerGlobals).caches?.default, url = SHELL_URL }: { fetchShell?: (url: string) => Promise<Response>; cache?: ShareCache | null; url?: string } = {}) {
   const key = new Request(`${CACHE_ROOT}/shell`);
   return async function loadShell() {
     const cached = await cachedText(cache, key);
     if (cached) return cached;
-    const response = await fetchShell(url);
+    const response = await fetchShell!(url);
     if (!response?.ok) throw new Error(`The app shell answered ${response?.status}`);
     const html = await response.text();
     // A maintenance page or an error document is not dressed up as the app.
@@ -859,11 +907,11 @@ export function createShellLoader({ fetchShell, cache = globalThis.caches?.defau
 // Lookups in flight in this isolate, by record. A fan-out of crawlers for one
 // link — a Mastodon post reaches hundreds of servers at once — used to spend a
 // lookup each and run the ceilings dry (review of 2026-09-25).
-const lookupsInFlight = new Map();
+const lookupsInFlight = new Map<string, Promise<ShareOutcome>>();
 
-async function readRecord(route, deps) {
+async function readRecord(route: ShareRoute, deps: ShareDependencies) {
   // A page known only by its name costs nothing to answer, and asks nobody.
-  if (route.kind === 'entity' && !route.lookup) return deps.loadRecord(route);
+  if (route.kind === 'entity' && !route.lookup) return deps.loadRecord!(route);
   const key = new Request(`${CACHE_ROOT}/record/${route.cacheId}`);
   const cached = await cachedJson(deps.cache, key);
   if (cached) return cached;
@@ -879,12 +927,12 @@ async function readRecord(route, deps) {
   }
 }
 
-async function lookUpRecord(route, key, { loadRecord, admit, cache }) {
+async function lookUpRecord(route: ShareRoute, key: Request, { loadRecord, admit, cache }: ShareDependencies): Promise<ShareOutcome> {
   let admitted = false;
   try {
-    admitted = await admit(route);
+    admitted = await admit!(route);
   } catch (error) {
-    console.warn(`Share page admission failed (${route.kind})`, error?.message || error);
+    console.warn(`Share page admission failed (${route.kind})`, (error as Error)?.message || error);
   }
   // A refusal is about this minute, not about the page: kept, it answered for
   // the page long after the minute it was true in.
@@ -893,7 +941,7 @@ async function lookUpRecord(route, key, { loadRecord, admit, cache }) {
   let outcome;
   let seconds;
   try {
-    const loaded = await loadRecord(route);
+    const loaded = await loadRecord!(route);
     if (loaded?.found) {
       outcome = { found: true, record: loaded.record };
       seconds = OWNED_KINDS.has(route.kind) ? OWNED_FOUND_CACHE_SECONDS : FOUND_CACHE_SECONDS;
@@ -902,7 +950,7 @@ async function lookUpRecord(route, key, { loadRecord, admit, cache }) {
       seconds = MISSING_CACHE_SECONDS;
     }
   } catch (error) {
-    console.warn(`Share page lookup failed (${route.kind})`, error?.message || error);
+    console.warn(`Share page lookup failed (${route.kind})`, (error as Error)?.message || error);
     // Another lookup may have found the page while this one was failing; a
     // failure never takes the place of what it found.
     const current = await cachedJson(cache, key);
@@ -922,12 +970,12 @@ async function lookUpRecord(route, key, { loadRecord, admit, cache }) {
  * - `loadRecord(route)` → the page's record (`createShareLoader`);
  * - `admit(route)` → whether a lookup may be spent now, asked only on a miss.
  */
-export async function handleSharePage(request, {
+export async function handleSharePage(request: Request, {
   loadShell,
   loadRecord,
   admit = async () => true,
-  cache = globalThis.caches?.default,
-} = {}) {
+  cache = (globalThis as WorkerGlobals).caches?.default,
+}: ShareDependencies = {}) {
   const route = matchShareRoute(new URL(request.url));
   const outcome = route && !route.invalid
     ? await readRecord(route, { loadRecord, admit, cache })
@@ -946,9 +994,9 @@ export async function handleSharePage(request, {
 
   let shell = MINIMAL_SHELL;
   try {
-    shell = await loadShell();
+    shell = await loadShell!();
   } catch (error) {
-    console.warn('Share page shell unavailable', error?.message || error);
+    console.warn('Share page shell unavailable', (error as Error)?.message || error);
   }
   return new Response(renderSharePage(shell, page), { status: page.status, headers });
 }

@@ -1,3 +1,7 @@
+import type { TestNamespace } from './test-types.ts';
+import type { FirestoreData, FirestoreWrite } from './firestore-admin.ts';
+import type { OperationResults } from './public-list-api.ts';
+import type { WorkerEnv } from './env.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -10,6 +14,8 @@ import {
 } from './public-list-api.ts';
 import { decodeFields, FirestoreAdminError } from './firestore-admin.ts';
 import { fakeIdToken } from '../src/test-support/firebaseIdToken.js';
+
+type TestListCard = { shareId: string; title: string; paperCount: number; emoji?: string; publishedAt?: Date };
 
 const UID = 'alice-uid';
 const OTHER = 'mallory-uid';
@@ -25,19 +31,19 @@ const TOKEN = fakeIdToken({ aud: PROJECT_ID });
 // ---------------------------------------------------------------------------
 
 /** A quota ledger that accepts `capacity` reservations and then refuses. */
-function ledger(capacity = 10) {
+function ledger(capacity = 10): TestNamespace {
   let used = 0;
   return {
-    idFromName: name => name,
-    get: () => ({
+    idFromName: (name: string): unknown => name,
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({
       fetch: async () => {
         used += 1;
         return new Response(JSON.stringify(
           used <= capacity ? { accepted: true } : { accepted: false },
         ), { status: 200 });
       },
-    }),
-  };
+    })) as TestNamespace['get'],
+  } as Env['REQUEST_QUOTA_LEDGER'];
 }
 
 function envWith(overrides = {}) {
@@ -46,7 +52,7 @@ function envWith(overrides = {}) {
     FIREBASE_SERVICE_ACCOUNT_EMAIL: 'papertok-worker@papertok-168df.iam.gserviceaccount.com',
     FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----',
     FIREBASE_PROJECT_ID: PROJECT_ID,
-    REQUEST_QUOTA_LEDGER: ledger(),
+    REQUEST_QUOTA_LEDGER: ledger() as WorkerEnv['REQUEST_QUOTA_LEDGER'],
     ...overrides,
   };
 }
@@ -58,24 +64,24 @@ function envWith(overrides = {}) {
  * client raises on a lost precondition; a failed attempt records nothing,
  * like the real thing. `commits` keeps only the successes.
  */
-function fakeAdmin(documents = {}, { updateTimes = {}, failOn = [] } = {}) {
-  const commits = [];
+function fakeAdmin(documents: Record<string, object> = {}, { updateTimes = {}, failOn = [] }: { updateTimes?: Record<string, string>; failOn?: number[] } = {}) {
+  const commits: FirestoreWrite[][] = [];
   let attempts = 0;
   return {
     commits,
     documents,
     projectId: 'papertok-168df',
-    name: segments => `projects/papertok-168df/databases/(default)/documents/${segments.join('/')}`,
-    async getDocument(segments, { withMeta = false } = {}) {
+    name: (segments: string[]) => `projects/papertok-168df/databases/(default)/documents/${segments.join('/')}`,
+    async getDocument<T extends object = FirestoreData, Meta extends boolean = false>(segments: string[], { withMeta = false as Meta }: { withMeta?: Meta } = {}): Promise<(Meta extends true ? { data: T; updateTime?: string } : T) | null> {
       const data = documents[segments.join('/')] ?? null;
-      if (!withMeta) return data;
+      if (!withMeta) return data as (Meta extends true ? { data: T; updateTime?: string } : T) | null;
       if (data === null) return null;
       return {
         data,
         updateTime: updateTimes[segments.join('/')] ?? '2026-08-20T00:00:00.000000Z',
-      };
+      } as (Meta extends true ? { data: T; updateTime?: string } : T);
     },
-    async commit(writes) {
+    async commit(writes: FirestoreWrite[]) {
       attempts += 1;
       if (failOn.includes(attempts)) {
         throw new FirestoreAdminError('FIRESTORE_PRECONDITION_FAILED', 409);
@@ -100,7 +106,7 @@ function stubIdentity({ uid = UID, ok = true } = {}) {
   };
 }
 
-function post(pathname, body, { token = TOKEN } = {}) {
+function post(pathname: string, body: unknown, { token = TOKEN } = {}) {
   return new Request(`https://worker.test${pathname}`, {
     method: 'POST',
     headers: {
@@ -115,7 +121,7 @@ function post(pathname, body, { token = TOKEN } = {}) {
  * A POST whose body arrives chunked, so no `content-length` rides along and the
  * only thing standing between the caller and the isolate is the size check.
  */
-function streamedPost(pathname, text) {
+function streamedPost(pathname: string, text: string) {
   const bytes = new TextEncoder().encode(text);
   return new Request(`https://worker.test${pathname}`, {
     method: 'POST',
@@ -127,10 +133,10 @@ function streamedPost(pathname, text) {
       },
     }),
     duplex: 'half',
-  });
+  } as RequestInit & { duplex: 'half' });
 }
 
-const paper = (i, overrides = {}) => ({
+const paper = (i: number, overrides: Record<string, unknown> = {}) => ({
   id: `arxiv:2608.${18000 + i}`,
   title: `Paper ${i}`,
   authors: ['Ada Lovelace', 'Grace Hopper'],
@@ -142,19 +148,19 @@ const paper = (i, overrides = {}) => ({
   ...overrides,
 });
 
-const listOf = count => Array.from({ length: count }, (_, i) => paper(i));
+const listOf = (count: number) => Array.from({ length: count }, (_, i) => paper(i));
 
 /** Runs the real entry point with the doubles wired in. */
-async function run(pathname, body, { admin = fakeAdmin(), env = envWith(), cryptoApi, request } = {}) {
+async function run<Path extends string>(pathname: Path, body: unknown, { admin = fakeAdmin(), env = envWith(), cryptoApi, request }: { admin?: ReturnType<typeof fakeAdmin>; env?: WorkerEnv; cryptoApi?: Parameters<typeof createShareId>[0]; request?: Request } = {}) {
   return handlePublicListRequest(request || post(pathname, body), env, pathname, {
     admin,
     now: () => NOW,
     cryptoApi: cryptoApi || { getRandomValues: bytes => bytes.fill(0xaa) },
-  });
+  }) as Promise<Path extends keyof OperationResults ? OperationResults[Path] : OperationResults[keyof OperationResults]>;
 }
 
-function fieldsOf(write) {
-  return decodeFields(write.update.fields);
+function fieldsOf(write: FirestoreWrite) {
+  return decodeFields<Partial<ReturnType<typeof buildPublicListPayload>> & { createdAt?: Date; updatedAt?: Date; publicSyncedAt?: Date; lists?: TestListCard[]; pinnedLists?: TestListCard[]; [key: string]: unknown }>(write.update!.fields);
 }
 
 // ---------------------------------------------------------------------------
@@ -165,12 +171,12 @@ test('an unknown path and a non-POST are refused before anything else runs', asy
   stubIdentity();
   await assert.rejects(
     () => handlePublicListRequest(post('/lists/publish', {}), envWith(), '/lists/nope', {}),
-    error => error.code === 'NOT_FOUND' && error.status === 404,
+    error => (error as Error & { code?: string; status?: number }).code === 'NOT_FOUND' && (error as Error & { code?: string; status?: number }).status === 404,
   );
   const get = new Request('https://worker.test/lists/publish', { method: 'GET' });
   await assert.rejects(
     () => handlePublicListRequest(get, envWith(), '/lists/publish', {}),
-    error => error.code === 'METHOD_NOT_ALLOWED' && error.status === 405,
+    error => (error as Error & { code?: string; status?: number }).code === 'METHOD_NOT_ALLOWED' && (error as Error & { code?: string; status?: number }).status === 405,
   );
 });
 
@@ -179,7 +185,7 @@ test('without the service account the route says so instead of half-working', as
   await assert.rejects(
     () => run('/lists/publish', { listId: 'l1', title: 'T', papers: [] },
       { env: envWith({ FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: '' }) }),
-    error => error.code === 'PUBLISHING_NOT_CONFIGURED' && error.status === 503,
+    error => (error as Error & { code?: string; status?: number }).code === 'PUBLISHING_NOT_CONFIGURED' && (error as Error & { code?: string; status?: number }).status === 503,
   );
 });
 
@@ -188,7 +194,7 @@ test('a bad token is refused and never reaches Firestore', async () => {
   const admin = fakeAdmin();
   await assert.rejects(
     () => run('/lists/publish', { listId: 'l1', title: 'T', papers: [] }, { admin }),
-    error => error.code === 'AUTH_REQUIRED' && error.status === 401,
+    error => (error as Error & { code?: string; status?: number }).code === 'AUTH_REQUIRED' && (error as Error & { code?: string; status?: number }).status === 401,
   );
   assert.equal(admin.commits.length, 0);
 });
@@ -211,7 +217,7 @@ test('the body ceiling counts bytes, not UTF-16 code units', async () => {
     () => run('/lists/publish', null, {
       request: streamedPost('/lists/publish', oversized),
     }),
-    error => error.code === 'PAYLOAD_TOO_LARGE' && error.status === 413,
+    error => (error as Error & { code?: string; status?: number }).code === 'PAYLOAD_TOO_LARGE' && (error as Error & { code?: string; status?: number }).status === 413,
   );
 });
 
@@ -234,7 +240,7 @@ test('an unwired quota ledger fails closed rather than uncapping the route', asy
   await assert.rejects(
     () => run('/lists/publish', { listId: 'l1', title: 'T', papers: [] },
       { env: envWith({ REQUEST_QUOTA_LEDGER: null }) }),
-    error => error.code === 'PUBLISH_QUOTA_NOT_CONFIGURED' && error.status === 503,
+    error => (error as Error & { code?: string; status?: number }).code === 'PUBLISH_QUOTA_NOT_CONFIGURED' && (error as Error & { code?: string; status?: number }).status === 503,
   );
 });
 
@@ -242,7 +248,7 @@ test('a body that never reaches Firestore does not spend a unit of the daily cap
   stubIdentity();
   const env = envWith({ REQUEST_QUOTA_LEDGER: ledger(1) });
   const admin = fakeAdmin({ [`users/${UID}/lists/l1`]: { id: 'l1' } });
-  const refused = [
+  const refused: Array<[string, Record<string, unknown>]> = [
     ['/lists/publish', { listId: '', title: 'T', papers: [] }],
     ['/lists/publish', { listId: 'l1', title: '', papers: [] }],
     ['/lists/publish', { listId: 'l1', title: 'T', papers: listOf(51) }],
@@ -272,14 +278,14 @@ test('a failure that did reach Firestore still spends its unit', async () => {
   });
   await assert.rejects(
     () => run('/lists/publish', { listId: 'l1', title: 'T', papers: [] }, { admin, env }),
-    error => error.code === 'ALREADY_PUBLISHED' && error.status === 409,
+    error => (error as Error & { code?: string; status?: number }).code === 'ALREADY_PUBLISHED' && (error as Error & { code?: string; status?: number }).status === 409,
   );
   // Deliberate, and the reason the discriminator is "did it read Firestore"
   // rather than "is it a 409": that refusal spent a read of the free-tier
   // allowance, and this cap is the only thing bounding that allowance.
   await assert.rejects(
     () => run('/lists/publish', { listId: 'l2', title: 'T', papers: [] }, { admin, env }),
-    error => error.code === 'PUBLISH_QUOTA_EXCEEDED' && error.status === 429,
+    error => (error as Error & { code?: string; status?: number }).code === 'PUBLISH_QUOTA_EXCEEDED' && (error as Error & { code?: string; status?: number }).status === 429,
   );
 });
 
@@ -293,7 +299,7 @@ test('over the daily cap the caller gets 429 and nothing is written', async () =
   await run('/lists/publish', { listId: 'l1', title: 'T', papers: [] }, { admin, env });
   await assert.rejects(
     () => run('/lists/publish', { listId: 'l2', title: 'T', papers: [] }, { admin, env }),
-    error => error.code === 'PUBLISH_QUOTA_EXCEEDED' && error.status === 429,
+    error => (error as Error & { code?: string; status?: number }).code === 'PUBLISH_QUOTA_EXCEEDED' && (error as Error & { code?: string; status?: number }).status === 429,
   );
   assert.equal(admin.commits.length, 1);
 });
@@ -321,9 +327,9 @@ test('publishing writes owner, list, pointer and showcase card in ONE commit', a
 
   const published = fieldsOf(listWrite);
   assert.equal(published.paperCount, 12);
-  assert.equal(published.papers.length, 12);
-  assert.equal(published.createdAt.getTime(), NOW);
-  assert.equal(published.updatedAt.getTime(), NOW);
+  assert.equal(published.papers!.length, 12);
+  assert.equal(published.createdAt!.getTime(), NOW);
+  assert.equal(published.updatedAt!.getTime(), NOW);
 
   // The pointer now carries the F12 stamps: the attribution mirror and the
   // in-step marker, born in the same commit as the copy they describe.
@@ -335,7 +341,7 @@ test('publishing writes owner, list, pointer and showcase card in ONE commit', a
   });
 
   // And the showcase card is part of the SAME commit, not a courtesy after it.
-  assert.match(cardWrite.update.name, new RegExp(`profileLists/${UID}$`));
+  assert.match(cardWrite.update!.name, new RegExp(`profileLists/${UID}$`));
   const showcase = fieldsOf(cardWrite);
   assert.deepEqual(showcase.lists, [{
     shareId: result.shareId, title: 'Mi lista', emoji: 'Folder',
@@ -372,7 +378,7 @@ test('a full showcase refuses the 31st attributed publish, not the anonymous one
   };
   await assert.rejects(
     () => run('/lists/publish', { listId: 'l1', title: 'T', papers: listOf(1) }, { admin: fakeAdmin(documents) }),
-    error => error.code === 'PROFILE_LISTS_FULL' && error.status === 409,
+    error => (error as Error & { code?: string; status?: number }).code === 'PROFILE_LISTS_FULL' && (error as Error & { code?: string; status?: number }).status === 409,
   );
   const admin = fakeAdmin(documents);
   const result = await run('/lists/publish', {
@@ -389,7 +395,7 @@ test('the 12-paper ceiling is gone: 50 papers publish', async () => {
     listId: 'l1', title: 'Bibliografía', papers: listOf(50),
   }, { admin });
   assert.equal(result.paperCount, 50);
-  assert.equal(fieldsOf(admin.commits[0][1]).papers.length, 50);
+  assert.equal(fieldsOf(admin.commits[0][1]).papers!.length, 50);
 });
 
 test('past the cap the caller is told, not quietly truncated', async () => {
@@ -397,7 +403,7 @@ test('past the cap the caller is told, not quietly truncated', async () => {
   const admin = fakeAdmin({ [`users/${UID}/lists/l1`]: { id: 'l1' } });
   await assert.rejects(
     () => run('/lists/publish', { listId: 'l1', title: 'T', papers: listOf(51) }, { admin }),
-    error => error.code === 'PAPERS_REJECTED' && error.status === 400,
+    error => (error as Error & { code?: string; status?: number }).code === 'PAPERS_REJECTED' && (error as Error & { code?: string; status?: number }).status === 400,
   );
   assert.equal(admin.commits.length, 0);
 });
@@ -407,7 +413,7 @@ test('publishing a list that is not yours, or does not exist, is a 404', async (
   const admin = fakeAdmin({ [`users/${OTHER}/lists/l1`]: { id: 'l1' } });
   await assert.rejects(
     () => run('/lists/publish', { listId: 'l1', title: 'T', papers: [] }, { admin }),
-    error => error.code === 'LIST_NOT_FOUND' && error.status === 404,
+    error => (error as Error & { code?: string; status?: number }).code === 'LIST_NOT_FOUND' && (error as Error & { code?: string; status?: number }).status === 404,
   );
   assert.equal(admin.commits.length, 0);
 });
@@ -419,7 +425,7 @@ test('publishing twice is refused instead of orphaning the first share', async (
   });
   await assert.rejects(
     () => run('/lists/publish', { listId: 'l1', title: 'T', papers: [] }, { admin }),
-    error => error.code === 'ALREADY_PUBLISHED' && error.status === 409,
+    error => (error as Error & { code?: string; status?: number }).code === 'ALREADY_PUBLISHED' && (error as Error & { code?: string; status?: number }).status === 409,
   );
 });
 
@@ -431,7 +437,7 @@ test('a hostile list id cannot walk out of the caller own subtree', async () => 
   for (const listId of ['../../publicLists', 'a/b', '', 'x'.repeat(161), '.', '..']) {
     await assert.rejects(
       () => run('/lists/publish', { listId, title: 'T', papers: [] }),
-      error => error.code === 'INVALID_LIST_ID',
+      error => (error as Error & { code?: string; status?: number }).code === 'INVALID_LIST_ID',
       `must refuse ${JSON.stringify(listId)}`,
     );
   }
@@ -443,7 +449,7 @@ test('a dotted list id still publishes: only the bare dot segments are refused',
   const admin = fakeAdmin({ [`users/${UID}/lists/${listId}`]: { id: listId } });
   await run('/lists/publish', { listId, title: 'T', papers: [] }, { admin });
   assert.equal(fieldsOf(admin.commits[0][0]).listId, listId);
-  assert.match(admin.commits[0][2].update.name, /arxiv\.2608\.18000$/);
+  assert.match(admin.commits[0][2].update!.name, /arxiv\.2608\.18000$/);
 });
 
 test('a javascript: link never reaches the public document', async () => {
@@ -454,7 +460,7 @@ test('a javascript: link never reaches the public document', async () => {
     title: 'T',
     papers: [paper(0, { landingPageUrl: 'javascript:alert(1)', doi: '', id: 'plain-id' })],
   }, { admin });
-  const [published] = fieldsOf(admin.commits[0][1]).papers;
+  const [published] = fieldsOf(admin.commits[0][1]).papers!;
   assert.ok(!('openUrl' in published), 'a non-https link is dropped, not stored');
 });
 
@@ -469,15 +475,15 @@ test('unknown keys are dropped rather than published', async () => {
   }, { admin });
   const stored = fieldsOf(admin.commits[0][1]);
   assert.ok(!('secretField' in stored));
-  assert.ok(!('note' in stored.papers[0]));
-  assert.ok(!('email' in stored.papers[0]));
+  assert.ok(!('note' in stored.papers![0]));
+  assert.ok(!('email' in stored.papers![0]));
 });
 
 test('a list with no title is refused', async () => {
   stubIdentity();
   await assert.rejects(
     () => run('/lists/publish', { listId: 'l1', title: '   ', papers: [] }),
-    error => error.code === 'TITLE_REQUIRED',
+    error => (error as Error & { code?: string; status?: number }).code === 'TITLE_REQUIRED',
   );
 });
 
@@ -495,8 +501,8 @@ test('an update moves updatedAt and cannot move createdAt', async () => {
   const [write] = admin.commits[0];
   const fields = fieldsOf(write);
   assert.ok(!('createdAt' in fields), 'createdAt is never sent');
-  assert.ok(!write.updateMask.fieldPaths.includes('createdAt'), 'nor named in the mask');
-  assert.equal(fields.updatedAt.getTime(), NOW);
+  assert.ok(!write.updateMask!.fieldPaths.includes('createdAt'), 'nor named in the mask');
+  assert.equal(fields.updatedAt!.getTime(), NOW);
   assert.deepEqual(write.currentDocument, { exists: true }, 'update must not create');
 });
 
@@ -505,8 +511,8 @@ test('dropping the description removes it from the public document', async () =>
   const admin = fakeAdmin({ [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' } });
   await run('/lists/update', { shareId: SHARE, listId: 'l1', title: 'T', papers: [] }, { admin });
   const [write] = admin.commits[0];
-  assert.ok(write.updateMask.fieldPaths.includes('description'), 'named in the mask...');
-  assert.ok(!('description' in write.update.fields), '...and absent from the fields, so it is deleted');
+  assert.ok(write.updateMask!.fieldPaths.includes('description'), 'named in the mask...');
+  assert.ok(!('description' in write.update!.fields), '...and absent from the fields, so it is deleted');
 });
 
 test('updating someone else public list is a 403', async () => {
@@ -514,7 +520,7 @@ test('updating someone else public list is a 403', async () => {
   const admin = fakeAdmin({ [`publicListOwners/${SHARE}`]: { ownerId: OTHER, listId: 'l1' } });
   await assert.rejects(
     () => run('/lists/update', { shareId: SHARE, listId: 'l1', title: 'T', papers: [] }, { admin }),
-    error => error.code === 'NOT_THE_OWNER' && error.status === 403,
+    error => (error as Error & { code?: string; status?: number }).code === 'NOT_THE_OWNER' && (error as Error & { code?: string; status?: number }).status === 403,
   );
   assert.equal(admin.commits.length, 0);
 });
@@ -523,12 +529,12 @@ test('an unknown share is a 404, and a malformed one never gets that far', async
   stubIdentity();
   await assert.rejects(
     () => run('/lists/update', { shareId: SHARE, listId: 'l1', title: 'T', papers: [] }),
-    error => error.code === 'SHARE_NOT_FOUND' && error.status === 404,
+    error => (error as Error & { code?: string; status?: number }).code === 'SHARE_NOT_FOUND' && (error as Error & { code?: string; status?: number }).status === 404,
   );
   for (const shareId of ['', 'ZZZ', 'a'.repeat(31), `${'a'.repeat(32)}b`]) {
     await assert.rejects(
       () => run('/lists/update', { shareId, listId: 'l1', title: 'T', papers: [] }),
-      error => error.code === 'INVALID_SHARE_ID',
+      error => (error as Error & { code?: string; status?: number }).code === 'INVALID_SHARE_ID',
       `must refuse ${JSON.stringify(shareId)}`,
     );
   }
@@ -544,16 +550,16 @@ test('unpublishing removes both public documents AND the private pointer', async
   await run('/lists/unpublish', { shareId: SHARE, listId: 'l1' }, { admin });
 
   const [dropList, dropOwner, clearPointer] = admin.commits[0];
-  assert.match(dropList.delete, /publicLists\/a{32}$/);
-  assert.match(dropOwner.delete, /publicListOwners\/a{32}$/);
+  assert.match(dropList.delete!, /publicLists\/a{32}$/);
+  assert.match(dropOwner.delete!, /publicListOwners\/a{32}$/);
   // Without this the owner keeps a list that claims to be published and a
   // delete rule that will not let it go. The F12 stamps leave with the
   // pointer: an unpublished list is on no profile and in step with nothing.
-  assert.match(clearPointer.update.name, new RegExp(`users/${UID}/lists/l1$`));
+  assert.match(clearPointer.update!.name, new RegExp(`users/${UID}/lists/l1$`));
   assert.deepEqual(clearPointer.updateMask, {
     fieldPaths: ['publicShareId', 'onProfile', 'publicSyncedAt'],
   });
-  assert.deepEqual(clearPointer.update.fields, {});
+  assert.deepEqual(clearPointer.update!.fields, {});
 });
 
 test('the pointer cleared is the share own list, not the one the body names', async () => {
@@ -564,7 +570,7 @@ test('the pointer cleared is the share own list, not the one the body names', as
   // copy at the same time.
   await run('/lists/unpublish', { shareId: SHARE, listId: 'l2' }, { admin });
   const [, , clearPointer] = admin.commits[0];
-  assert.match(clearPointer.update.name, new RegExp(`users/${UID}/lists/l1$`));
+  assert.match(clearPointer.update!.name, new RegExp(`users/${UID}/lists/l1$`));
 });
 
 test('unpublishing someone else share is a 403', async () => {
@@ -572,7 +578,7 @@ test('unpublishing someone else share is a 403', async () => {
   const admin = fakeAdmin({ [`publicListOwners/${SHARE}`]: { ownerId: OTHER, listId: 'l1' } });
   await assert.rejects(
     () => run('/lists/unpublish', { shareId: SHARE, listId: 'l1' }, { admin }),
-    error => error.code === 'NOT_THE_OWNER',
+    error => (error as Error & { code?: string; status?: number }).code === 'NOT_THE_OWNER',
   );
   assert.equal(admin.commits.length, 0);
 });
@@ -611,13 +617,13 @@ test('updating a pinned list refreshes its card: count, title, and nothing else'
   assert.equal(result.pinCard, 'refreshed');
   assert.equal(admin.commits.length, 2, 'the list commit and the card commit are separate');
   const [write] = admin.commits[1];
-  assert.match(write.update.name, new RegExp(`userProfiles/${UID}$`));
+  assert.match(write.update!.name, new RegExp(`userProfiles/${UID}$`));
   assert.deepEqual(write.updateMask, { fieldPaths: ['pinnedLists', 'updatedAt'] });
   // The refresh must lose a race against a concurrent pin toggle, not win it.
   assert.deepEqual(write.currentDocument, { updateTime: '2026-08-20T19:00:00.123456Z' });
   const pins = fieldsOf(write).pinnedLists;
-  assert.deepEqual(pins[0], { shareId: OTHER_SHARE, title: 'Otra', paperCount: 2 }, 'other pins ride along untouched');
-  assert.deepEqual(pins[1], {
+  assert.deepEqual(pins![0], { shareId: OTHER_SHARE, title: 'Otra', paperCount: 2 }, 'other pins ride along untouched');
+  assert.deepEqual(pins![1], {
     shareId: SHARE, title: 'Relatividad numérica', emoji: 'Folder', paperCount: 19,
   }, 'count and title follow the list; the emoji is the pin\'s own and stays');
 });
@@ -661,8 +667,8 @@ test('hidden pins are refreshed in the stash, where F8 parked them', async () =>
   }, { admin });
   assert.equal(result.pinCard, 'refreshed');
   const [write] = admin.commits[1];
-  assert.match(write.update.name, new RegExp(`users/${UID}/profileStash/pinnedLists$`));
-  assert.equal(fieldsOf(write).pinnedLists[0].paperCount, 19);
+  assert.match(write.update!.name, new RegExp(`users/${UID}/profileStash/pinnedLists$`));
+  assert.equal(fieldsOf(write).pinnedLists![0].paperCount, 19);
 });
 
 test('unpublishing a pinned list removes its card and keeps the others', async () => {
@@ -698,10 +704,10 @@ test('the card is a courtesy: when every refresh attempt fails, the update still
 test('a broken profile read cannot break the unpublish that already committed', async () => {
   stubIdentity();
   const admin = fakeAdmin({ [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' } });
-  admin.getDocument = async (segments, options) => {
+  admin.getDocument = async <T extends object, Meta extends boolean = false>(segments: string[], options?: { withMeta?: Meta }) => {
     if (segments[0] === 'userProfiles') throw new FirestoreAdminError('FIRESTORE_READ_FAILED', 502);
     if (options?.withMeta) return null;
-    return admin.documents[segments.join('/')] ?? null;
+    return (admin.documents[segments.join('/')] ?? null) as (Meta extends true ? { data: T; updateTime?: string } : T) | null;
   };
   const result = await run('/lists/unpublish', { shareId: SHARE, listId: 'l1' }, { admin });
   assert.equal(result.unpublished, true);
@@ -714,9 +720,9 @@ test('a broken profile read cannot break the unpublish that already committed', 
 
 test('buildPublicListPayload refuses what sanitizing would have silently fixed', () => {
   assert.throws(() => buildPublicListPayload({ title: 'T', papers: listOf(51) }),
-    error => error.code === 'PAPERS_REJECTED');
+    error => (error as Error & { code?: string; status?: number }).code === 'PAPERS_REJECTED');
   assert.throws(() => buildPublicListPayload({ title: '', papers: [] }),
-    error => error.code === 'TITLE_REQUIRED');
+    error => (error as Error & { code?: string; status?: number }).code === 'TITLE_REQUIRED');
   // A paper with no usable id or title is dropped by the sanitizer, so the
   // counts diverge and the caller hears about it.
   assert.throws(() => buildPublicListPayload({ title: 'T', papers: [{ title: '' }] }),
@@ -767,13 +773,13 @@ test('F12: updating an attributed list refreshes its showcase card in the SAME c
   assert.equal(writes.length, 3, 'public doc + sync stamp + showcase, one commit');
 
   const stamp = writes[1];
-  assert.match(stamp.update.name, new RegExp(`users/${UID}/lists/l1$`));
+  assert.match(stamp.update!.name, new RegExp(`users/${UID}/lists/l1$`));
   assert.deepEqual(fieldsOf(stamp), { publicSyncedAt: new Date(NOW) });
 
   const showcase = writes[2];
-  assert.match(showcase.update.name, new RegExp(`profileLists/${UID}$`));
-  const cards = fieldsOf(showcase).lists;
-  assert.deepEqual(cards.map(card => [card.shareId, card.title, card.paperCount]), [
+  assert.match(showcase.update!.name, new RegExp(`profileLists/${UID}$`));
+  const cards = fieldsOf(showcase!).lists;
+  assert.deepEqual(cards!.map(card => [card.shareId, card.title, card.paperCount]), [
     [OTHER_SHARE, 'Otra', 2],
     [SHARE, 'Relatividad', 19],
   ]);
@@ -819,7 +825,7 @@ test('F12 merge: unhydrated papers survive from the published copy, removals sti
     papers: [paper(99, { doi: undefined, listPaperId: 'arxiv:2608.18099' })],
   }, { admin });
 
-  assert.deepEqual(result.papers.map(p => p.id), [
+  assert.deepEqual(result.papers.map((p: NonNullable<ReturnType<typeof buildPublicListPayload>>['papers'][number]) => p.id), [
     'arxiv:2608.18000', 'arxiv:2608.18001', 'arxiv:2608.18099',
   ]);
   assert.equal(result.paperCount, 3);
@@ -878,7 +884,7 @@ test('THE BUG: a stale membership from the client cannot shrink a published list
   }, { admin });
 
   assert.equal(result.paperCount, 12, 'the list has twelve; the public copy must too');
-  assert.deepEqual(result.papers.map(entry => entry.sourceId ?? entry.id), ids);
+  assert.deepEqual(result.papers.map((entry: NonNullable<ReturnType<typeof buildPublicListPayload>>['papers'][number]) => entry.sourceId ?? entry.id), ids);
   assert.equal(result.skipped, 0);
 });
 
@@ -1005,7 +1011,7 @@ test('F12: unpublishing an attributed list removes its showcase card in the SAME
   const writes = admin.commits[0];
   assert.equal(writes.length, 4, 'two deletes + pointer clear + showcase');
   const cards = fieldsOf(writes[3]).lists;
-  assert.deepEqual(cards.map(card => card.shareId), [OTHER_SHARE]);
+  assert.deepEqual(cards!.map(card => card.shareId), [OTHER_SHARE]);
 });
 
 test('F12: attributing a published list adds its card and mirrors onProfile', async () => {
@@ -1022,7 +1028,7 @@ test('F12: attributing a published list adds its card and mirrors onProfile', as
   assert.deepEqual(result, { shareId: SHARE, attributed: true });
   const [mirror, showcase] = admin.commits[0];
   assert.deepEqual(fieldsOf(mirror), { onProfile: true });
-  assert.deepEqual(fieldsOf(showcase).lists, [{
+  assert.deepEqual(fieldsOf(showcase!).lists, [{
     shareId: SHARE, title: 'Relatividad', emoji: 'Star', paperCount: 19,
     publishedAt: new Date(NOW - 9000),
   }]);
@@ -1036,7 +1042,7 @@ test('F12: de-attributing removes the card and flips the mirror', async () => {
   assert.deepEqual(result, { shareId: SHARE, attributed: false });
   const [mirror, showcase] = admin.commits[0];
   assert.deepEqual(fieldsOf(mirror), { onProfile: false });
-  assert.deepEqual(fieldsOf(showcase).lists.map(card => card.shareId), [OTHER_SHARE]);
+  assert.deepEqual(fieldsOf(showcase!).lists!.map(card => card.shareId), [OTHER_SHARE]);
 });
 
 test('F12: asking for what is already true is success and heals the mirror', async () => {
@@ -1056,7 +1062,7 @@ test('F12: attributing somebody else\'s share is a 403, a full showcase a 409, a
     () => run('/lists/attribute', { shareId: SHARE, attributed: true }, {
       admin: fakeAdmin({ [`publicListOwners/${SHARE}`]: { ownerId: OTHER, listId: 'l1' } }),
     }),
-    error => error.code === 'NOT_THE_OWNER' && error.status === 403,
+    error => (error as Error & { code?: string; status?: number }).code === 'NOT_THE_OWNER' && (error as Error & { code?: string; status?: number }).status === 403,
   );
   await assert.rejects(
     () => run('/lists/attribute', { shareId: SHARE, attributed: true }, {
@@ -1069,13 +1075,13 @@ test('F12: attributing somebody else\'s share is a 403, a full showcase a 409, a
         },
       }),
     }),
-    error => error.code === 'PROFILE_LISTS_FULL' && error.status === 409,
+    error => (error as Error & { code?: string; status?: number }).code === 'PROFILE_LISTS_FULL' && (error as Error & { code?: string; status?: number }).status === 409,
   );
   await assert.rejects(
     () => run('/lists/attribute', { shareId: SHARE, attributed: 'yes' }, {
       admin: fakeAdmin({ [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' } }),
     }),
-    error => error.code === 'INVALID_BODY' && error.status === 400,
+    error => (error as Error & { code?: string; status?: number }).code === 'INVALID_BODY' && (error as Error & { code?: string; status?: number }).status === 400,
   );
 });
 
@@ -1146,13 +1152,13 @@ test('past the cap the merge truncates and counts, rather than refusing to sync 
 
 test('preparing the input is pure: no membership needed, and a bad paper is refused there', () => {
   assert.throws(() => prepareMergeInput({ title: '', papers: [] }),
-    error => error.code === 'TITLE_REQUIRED');
+    error => (error as Error & { code?: string; status?: number }).code === 'TITLE_REQUIRED');
   assert.throws(() => prepareMergeInput({ title: 'T', papers: [{ title: '' }] }),
-    error => error.code === 'PAPERS_REJECTED');
+    error => (error as Error & { code?: string; status?: number }).code === 'PAPERS_REJECTED');
   // No id source at all is the caller's problem, and only mergePreparedPayload
   // can know it, because the membership arrives from Firestore.
   assert.throws(() => mergePreparedPayload(prepareMergeInput(HEADER_ONLY), { papers: [] }, null),
-    error => error.code === 'INVALID_BODY');
+    error => (error as Error & { code?: string; status?: number }).code === 'INVALID_BODY');
 });
 
 // ---------------------------------------------------------------------------
@@ -1165,7 +1171,7 @@ test('preparing the input is pure: no membership needed, and a bad paper is refu
  * A fake whose documents change the instant a commit is refused — the winner of
  * the race landing between the loser's read and its retry.
  */
-function racingAdmin(documents, { updateTimes = {}, afterRace = {} } = {}) {
+function racingAdmin(documents: Record<string,FirestoreData>|undefined, { updateTimes = {}, afterRace = {} } = {}) {
   const admin = fakeAdmin(documents, { updateTimes, failOn: [1] });
   const commit = admin.commit;
   admin.commit = async (writes) => {
@@ -1179,8 +1185,8 @@ function racingAdmin(documents, { updateTimes = {}, afterRace = {} } = {}) {
   return admin;
 }
 
-const published = i => ({ id: `a${i}`, sourceId: `p${i}`, title: `A${i}`, authors: ['Ada'] });
-const showcaseEntry = (shareId, title, paperCount) => ({
+const published = (i: number) => ({ id: `a${i}`, sourceId: `p${i}`, title: `A${i}`, authors: ['Ada'] });
+const showcaseEntry = (shareId: string, title: string, paperCount: number) => ({
   shareId, title, paperCount, publishedAt: new Date(NOW - 1000),
 });
 
@@ -1230,7 +1236,7 @@ test('a lost race is re-merged from the fresh copy, not re-committed from the st
     shareId: SHARE, listId: 'l1', title: 'V', papers: [],
   }, { admin });
 
-  assert.deepEqual(result.papers.map(entry => entry.id), ['a1', 'a2', 'a3']);
+  assert.deepEqual(result.papers.map((entry: NonNullable<ReturnType<typeof buildPublicListPayload>>['papers'][number]) => entry.id), ['a1', 'a2', 'a3']);
   assert.equal(result.skipped, 0, 'p3 is in the list and in the fresh copy: nothing to skip');
   assert.equal(admin.commits.length, 1, 'the first attempt was refused, the second landed');
 });
@@ -1252,7 +1258,7 @@ test('the retry re-reads the membership, not just the published copy', async () 
     shareId: SHARE, listId: 'l1', title: 'V', papers: [],
   }, { admin });
 
-  assert.deepEqual(result.papers.map(entry => entry.id), ['a1', 'a2', 'a3']);
+  assert.deepEqual(result.papers.map((entry: NonNullable<ReturnType<typeof buildPublicListPayload>>['papers'][number]) => entry.id), ['a1', 'a2', 'a3']);
   assert.deepEqual([result.listCount, result.skipped], [3, 0]);
 });
 
@@ -1281,7 +1287,7 @@ test('the retry rebuilds the showcase too, so a card added mid-flight survives',
   }, { admin });
 
   const showcase = admin.commits[0].find(write => write.update?.name.endsWith(`profileLists/${UID}`));
-  assert.deepEqual(fieldsOf(showcase).lists.map(entry => entry.shareId),
+  assert.deepEqual(fieldsOf(showcase!).lists!.map(entry => entry.shareId),
     [OTHER_SHARE, SHARE, THIRD_SHARE],
     'carrying the first attempt cards over would delete the one just published');
 });
@@ -1313,7 +1319,7 @@ test('losing twice is the caller turn to retry, and it is told so', async () => 
   const admin = fakeAdmin(mergeFixture(), { failOn: [1, 2] });
   await assert.rejects(
     () => run('/lists/update', { shareId: SHARE, listId: 'l1', title: 'V', papers: [] }, { admin }),
-    error => error.code === 'PUBLISH_CONFLICT' && error.status === 409,
+    error => (error as Error & { code?: string; status?: number }).code === 'PUBLISH_CONFLICT' && (error as Error & { code?: string; status?: number }).status === 409,
   );
   assert.equal(admin.commits.length, 0);
 });
@@ -1336,7 +1342,7 @@ test('losing the pointer to another publish is reported as already published', a
   });
   await assert.rejects(
     () => run('/lists/publish', { listId: 'l1', title: 'T', papers: [] }, { admin }),
-    error => error.code === 'ALREADY_PUBLISHED' && error.status === 409,
+    error => (error as Error & { code?: string; status?: number }).code === 'ALREADY_PUBLISHED' && (error as Error & { code?: string; status?: number }).status === 409,
   );
   assert.equal(admin.commits.length, 0, 'the second share was never created');
 });

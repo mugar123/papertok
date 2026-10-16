@@ -1,3 +1,6 @@
+import type { TestNamespace } from './test-types.ts';
+import type { WorkerEnv } from './env.ts';
+import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { hasUnlimitedAI } from './ai-explanation.ts';
@@ -79,48 +82,48 @@ test('an unset or empty list exempts nobody', () => {
 
 /** A ledger that records the ceilings it was asked to enforce. */
 function ceilingLedger() {
-  const seen = [];
+  const seen: Array<{ action: string; subjectLimit: number; globalLimit: number }> = [];
   return {
     seen,
-    idFromName: () => 'quota-id',
-    get: () => ({
-      fetch: async (_url, options) => {
-        const body = JSON.parse(options.body);
+    idFromName: ((): unknown => 'quota-id') as TestNamespace['idFromName'],
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({
+      fetch: async (_url: RequestInfo | URL, options?: RequestInit) => {
+        const body = JSON.parse(options!.body as string);
         seen.push({ action: body.action, subjectLimit: body.subjectLimit, globalLimit: body.globalLimit });
         return new Response(JSON.stringify({ accepted: true, remaining: 993, subjectUsage: 7, globalUsage: 7 }));
       },
-    }),
-  };
+    })) as TestNamespace['get'],
+  } as Env['REQUEST_QUOTA_LEDGER'] & { seen: typeof seen };
 }
 
-function quotaEnv(ledger, extra = {}) {
+function quotaEnv(ledger: TestNamespace | undefined, extra = {}) {
   return {
     FIREBASE_WEB_API_KEY: 'firebase-test-key',
     AI_DAILY_USER_LIMIT: '10',
     AI_DAILY_GLOBAL_LIMIT: '1000',
     AI_UNLIMITED_EMAILS: ALLOWED,
-    REQUEST_QUOTA_LEDGER: ledger,
+    REQUEST_QUOTA_LEDGER: ledger as WorkerEnv['REQUEST_QUOTA_LEDGER'],
     ...extra,
   };
 }
 
-async function asAccount(email, emailVerified, callback) {
-  const originalCaches = globalThis.caches;
-  globalThis.caches = {
+async function asAccount<Result>(email: string, emailVerified: boolean, callback: () => Promise<Result>) {
+  const originalCaches = (globalThis as TestGlobals).caches;
+  (globalThis as TestGlobals).caches = {
     default: {
-      match: async request => (String(request.url).includes('/auth/')
+      match: async (request): Promise<Response | null | undefined> => (String((request as Request).url).includes('/auth/')
         ? new Response(JSON.stringify({ uid: 'owner-uid', email, emailVerified }), {
           headers: { 'content-type': 'application/json' },
         })
         : null),
-      put: async () => undefined,
+      put: async (): Promise<unknown> => undefined,
     },
   };
   try {
     return await callback();
   } finally {
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 }
 
@@ -135,7 +138,7 @@ test('GET /ai/quota tells an exempt account that it is exempt', async () => {
   const response = await asAccount('nicomg60@gmail.com', true, () => reportApi.fetch(quotaRequest(), quotaEnv(ledger)));
 
   assert.equal(response.status, 200);
-  const payload = await response.json();
+  const payload = await response.json<{ code: string; remainingUses: number; dailyLimit: number; note: string; language: string; model: string; unlimited: boolean }>();
   assert.equal(payload.unlimited, true);
   // The per-user ceiling handed to the ledger is the global one: the ledger
   // still counts what the account spends, it just stops being what refuses it.
@@ -147,7 +150,7 @@ test('everybody else still gets ten a day', async () => {
   const ledger = ceilingLedger();
   const response = await asAccount('someone@example.com', true, () => reportApi.fetch(quotaRequest(), quotaEnv(ledger)));
 
-  const payload = await response.json();
+  const payload = await response.json<{ code: string; remainingUses: number; dailyLimit: number; note: string; language: string; model: string; unlimited: boolean }>();
   assert.equal(payload.unlimited, undefined);
   assert.equal(payload.dailyLimit, 10);
   assert.equal(ledger.seen[0].subjectLimit, 10);
@@ -157,7 +160,7 @@ test('an unverified address on the list still gets ten a day', async () => {
   const ledger = ceilingLedger();
   const response = await asAccount('nicomg60@gmail.com', false, () => reportApi.fetch(quotaRequest(), quotaEnv(ledger)));
 
-  assert.equal((await response.json()).dailyLimit, 10);
+  assert.equal((await response.json<{ code: string; remainingUses: number; dailyLimit: number; note: string; language: string; model: string; unlimited: boolean }>()).dailyLimit, 10);
   assert.equal(ledger.seen[0].subjectLimit, 10);
 });
 

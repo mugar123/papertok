@@ -1,3 +1,4 @@
+import type { FirestoreData, FirestoreWrite, QueryOptions } from './firestore-admin.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fakeIdToken } from '../src/test-support/firebaseIdToken.js';
@@ -23,30 +24,30 @@ const SERVICE = {
   FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----',
 };
 
-function pathFromName(name) {
+function pathFromName(name: string) {
   const marker = '/documents/';
   const index = String(name).indexOf(marker);
   return name.slice(index + marker.length);
 }
 
-function memoryAdmin(seed = {}) {
-  const documents = { ...seed };
-  const commits = [];
+function memoryAdmin<Documents extends Record<string, FirestoreData>>(seed: Documents = {} as Documents) {
+  const documents: Record<string, FirestoreData> = { ...seed };
+  const commits: FirestoreWrite[][] = [];
   return {
-    documents,
+    documents: documents as Documents & Record<string, FirestoreData>,
     commits,
     projectId: PROJECT_ID,
-    name: segments => `projects/${PROJECT_ID}/databases/(default)/documents/${segments.join('/')}`,
-    async getDocument(segments) {
-      return documents[segments.join('/')] ?? null;
+    name: (segments: string[]) => `projects/${PROJECT_ID}/databases/(default)/documents/${segments.join('/')}`,
+    async getDocument<T extends object = FirestoreData>(segments: string[]) {
+      return (documents[segments.join('/')] ?? null) as T | null;
     },
-    async runQuery({
+    async runQuery<T extends object = FirestoreData>({
       parentSegments = [],
       collectionId,
       where: whereFilter,
       allDescendants = false,
       limit: pageSize = 80,
-    } = {}) {
+    }: QueryOptions = {}) {
       const rows = [];
       for (const [key, data] of Object.entries(documents)) {
         const path = key.split('/');
@@ -62,9 +63,9 @@ function memoryAdmin(seed = {}) {
         if (whereFilter?.field && data?.[whereFilter.field] !== whereFilter.value) continue;
         rows.push({ id: path[path.length - 1], data, path });
       }
-      return rows.slice(0, pageSize);
+      return rows.slice(0, pageSize) as Array<{ id: string; path: string[]; data: T }>;
     },
-    async commit(writes) {
+    async commit(writes: FirestoreWrite[]) {
       commits.push(writes);
       for (const write of writes) {
         if (write.delete) {
@@ -77,10 +78,10 @@ function memoryAdmin(seed = {}) {
         if (write.currentDocument?.exists === true && documents[key] == null) {
           throw new FirestoreAdminError('FIRESTORE_PRECONDITION_FAILED', 409, 'NOT_FOUND');
         }
-        const patch = decodeFields(write.update.fields);
+        const patch = decodeFields(write.update!.fields);
         if (write.updateMask) {
           const next = { ...(documents[key] || {}) };
-          for (const field of write.updateMask.fieldPaths) {
+          for (const field of write.updateMask!.fieldPaths) {
             if (field in patch) next[field] = patch[field];
             else delete next[field];
           }
@@ -93,17 +94,17 @@ function memoryAdmin(seed = {}) {
   };
 }
 
-function kvStore(seed = {}) {
+function kvStore(seed: Record<string, string> = {}) {
   const data = new Map(Object.entries(seed));
   return {
     data,
-    get: async (key, type) => {
+    get: async (key: string, type?: string) => {
       const value = data.get(key);
       if (value === undefined) return null;
       return type === 'json' ? JSON.parse(value) : value;
     },
-    put: async (key, value) => { data.set(key, value); },
-    delete: async (key) => { data.delete(key); },
+    put: async (key: string, value: string) => { data.set(key, value); },
+    delete: async (key: string) => { data.delete(key); },
   };
 }
 
@@ -180,7 +181,7 @@ test('dissociates comments instead of deleting them, then finishes the tree', as
     [`profileLists/${UID}`]: { lists: [{ shareId: SHARE }] },
     [`users/${UID}/highlights/h1`]: { quote: 'a finding' },
     [`users/${UID}/interactions/p1`]: { liked: true },
-    [`users/${UID}/following/a1`]: { type: 'author' },
+    [`users/${UID}/following/a1`]: { type: 'author' as const },
     [`users/${UID}/savedPapers/p1`]: { title: 'A paper' },
     [`users/${UID}/settings/followingUpdates`]: { seenIds: [] },
     [`users/${UID}/profileStash/pins`]: { pinnedLists: [] },
@@ -197,7 +198,7 @@ test('dissociates comments instead of deleting them, then finishes the tree', as
     'notification:unsubscribe:tok-1': UID,
     [`notification:delivery-state:${UID}`]: JSON.stringify({ lastSentAt: 1 }),
   });
-  const env = { ...SERVICE, NOTIFICATION_STORE: store };
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace };
 
   try {
     let result;
@@ -211,8 +212,8 @@ test('dissociates comments instead of deleting them, then finishes the tree', as
       });
       if (result.complete) break;
     }
-    assert.equal(result.complete, true);
-    assert.equal(result.stage, 'auth');
+    assert.equal(result!.complete, true);
+    assert.equal(result!.stage, 'auth');
     assert.deepEqual(admin.documents[`papers/${PAPER_KEY}/comments/c1`], {
       authorUid: '',
       authorHandle: '',
@@ -240,7 +241,7 @@ test('dissociates comments instead of deleting them, then finishes the tree', as
 });
 
 test('a full comment page stops the slice so the next POST can continue', async () => {
-  const comments = {};
+  const comments: Record<string, FirestoreData> = {};
   for (let i = 0; i < 80; i += 1) {
     comments[`papers/${PAPER_KEY}/comments/c${i}`] = {
       authorUid: UID,
@@ -298,7 +299,7 @@ test('a write that lands between the sweep and the Auth delete is swept too', as
     if (result.complete) break;
   }
 
-  assert.equal(result.complete, true);
+  assert.equal(result!.complete, true);
   assert.equal(admin.documents[`users/${UID}/highlights/late`], undefined);
 });
 
@@ -318,7 +319,7 @@ test('paper stubs lose their createdBy attribution', async () => {
     if (result.complete) break;
   }
 
-  assert.equal(result.complete, true);
+  assert.equal(result!.complete, true);
   // The stub is shared: everybody else's saves point at it. Only the name goes.
   assert.equal(admin.documents['papers/p1'].createdBy, undefined);
   assert.equal(admin.documents['papers/p1'].title, 'T');
@@ -347,6 +348,6 @@ test('a stale session asks the user to sign in again instead of deleting Auth la
         { status: 400 },
       ),
     }),
-    error => error.code === 'AUTH_RECENT_LOGIN_REQUIRED' && error.status === 401,
+    error => (error as Error & { code?: string; status?: number }).code === 'AUTH_RECENT_LOGIN_REQUIRED' && (error as Error & { code?: string; status?: number }).status === 401,
   );
 });

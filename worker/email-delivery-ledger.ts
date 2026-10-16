@@ -1,3 +1,74 @@
+import type { LedgerStorage } from './ledger-storage.ts';
+export interface SourceSummaryInput {
+  attempted?: unknown;
+  succeeded?: unknown;
+  failed?: unknown;
+  requestAttempts?: unknown;
+  retried?: unknown;
+  requiredFailed?: unknown;
+  bySource?: Record<string, Omit<SourceSummaryInput, 'bySource' | 'failureCodes'>>;
+  failureCodes?: Record<string, unknown>;
+}
+
+export interface DeliveryInput {
+  kind?: unknown;
+  sentAt?: unknown;
+  paperCount?: unknown;
+  paperKeys?: unknown[];
+  partial?: unknown;
+  sources?: SourceSummaryInput;
+}
+
+export interface DeliveryDraftInput {
+  provider?: unknown;
+  recipient?: { email?: unknown; displayName?: unknown };
+  content?: { subject?: unknown; html?: unknown; text?: unknown };
+  unsubscribeUrl?: unknown;
+  delivery?: DeliveryInput;
+}
+
+export type Delivery = ReturnType<typeof sanitizeDelivery>;
+export type DeliveryDraft = NonNullable<ReturnType<typeof sanitizeDraft>>;
+interface LedgerMeta { committed?: unknown; reserved?: unknown }
+export interface DeliveryReservation {
+  status: string;
+  attempts?: number;
+  reservedAt?: string;
+  committedAt?: string;
+  draft?: DeliveryDraft;
+  delivery?: Delivery;
+}
+export interface DeliveryLedgerState extends LedgerMeta {
+  reservations?: Record<string, DeliveryReservation>;
+}
+export interface DeliveryLedgerPayload {
+  action?: string;
+  reservationId?: unknown;
+  limit?: unknown;
+  now?: string;
+  retryMinAgeMs?: unknown;
+  retryWindowMs?: unknown;
+  draft?: DeliveryDraftInput;
+  delivery?: DeliveryInput;
+}
+export interface DeliveryLedgerResult {
+  accepted?: boolean;
+  duplicate?: boolean;
+  retry?: boolean;
+  released?: boolean;
+  status?: string;
+  committed?: number | boolean;
+  committedCount?: number;
+  reserved?: number;
+  limit?: number;
+  attempts?: number;
+  reservedAt?: string;
+  committedAt?: string;
+  draft?: DeliveryDraft;
+  delivery?: Delivery;
+  code?: string;
+}
+
 const MAX_RESERVATION_ID_LENGTH = 220;
 const MAX_DELIVERY_PAPER_KEYS = 400;
 const MAX_RESERVATION_ATTEMPTS = 2;
@@ -5,18 +76,18 @@ const LEDGER_META_KEY = 'meta';
 const LEDGER_RESERVATION_PREFIX = 'reservation:';
 const LEDGER_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
 
-function positiveInteger(value, fallback = 0) {
+function positiveInteger(value: unknown, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : fallback;
 }
 
-function boundedString(value, maxLength) {
+function boundedString(value: unknown, maxLength: number) {
   return String(value || '').trim().slice(0, maxLength);
 }
 
-function boundedCounts(value = {}, maxEntries = 24) {
+function boundedCounts(value: Record<string, unknown> = {}, maxEntries = 24) {
   return Object.fromEntries(Object.entries(value || {})
-    .map(([key, count]) => [
+    .map(([key, count]): [string, number] => [
       boundedString(key, 80).replace(/[^a-zA-Z0-9:_-]/g, '_'),
       positiveInteger(count),
     ])
@@ -24,9 +95,9 @@ function boundedCounts(value = {}, maxEntries = 24) {
     .slice(0, maxEntries));
 }
 
-function sanitizeSourceSummary(value = {}) {
+function sanitizeSourceSummary(value: SourceSummaryInput = {}) {
   const bySource = Object.fromEntries(Object.entries(value.bySource || {})
-    .map(([source, counts]) => [
+    .map(([source, counts]): [string, { attempted: number; succeeded: number; failed: number; requestAttempts: number; retried: number }] => [
       boundedString(source, 40).replace(/[^a-zA-Z0-9_-]/g, '_'),
       {
         attempted: positiveInteger(counts?.attempted),
@@ -50,7 +121,7 @@ function sanitizeSourceSummary(value = {}) {
   };
 }
 
-function sanitizeDelivery(value = {}) {
+function sanitizeDelivery(value: DeliveryInput = {}) {
   const paperKeys = Array.isArray(value.paperKeys)
     ? [...new Set(value.paperKeys
       .map(key => boundedString(key, 700))
@@ -66,7 +137,7 @@ function sanitizeDelivery(value = {}) {
   };
 }
 
-function sanitizeDraft(value = {}) {
+function sanitizeDraft(value: DeliveryDraftInput = {}) {
   if (!value || typeof value !== 'object') return null;
   const provider = value.provider === 'resend' ? 'resend' : value.provider === 'brevo' ? 'brevo' : '';
   const email = boundedString(value.recipient?.email, 320);
@@ -88,14 +159,14 @@ function sanitizeDraft(value = {}) {
   };
 }
 
-function normalizeMeta(value = {}) {
+function normalizeMeta(value: LedgerMeta | null = {}) {
   return {
     committed: positiveInteger(value?.committed),
     reserved: positiveInteger(value?.reserved),
   };
 }
 
-function normalizeFallbackState(value = {}) {
+function normalizeFallbackState(value: DeliveryLedgerState | null = {}) {
   return {
     ...normalizeMeta(value),
     reservations: value?.reservations && typeof value.reservations === 'object'
@@ -104,11 +175,11 @@ function normalizeFallbackState(value = {}) {
   };
 }
 
-function reservationKey(reservationId) {
+function reservationKey(reservationId: string) {
   return `${LEDGER_RESERVATION_PREFIX}${reservationId}`;
 }
 
-function publicReservation(existing, meta, extra = {}) {
+function publicReservation(existing: DeliveryReservation, meta: ReturnType<typeof normalizeMeta>, extra: Partial<DeliveryLedgerResult> = {}): DeliveryLedgerResult {
   return {
     accepted: true,
     duplicate: true,
@@ -125,7 +196,13 @@ function publicReservation(existing, meta, extra = {}) {
   };
 }
 
-function applyReservationAction(metaInput, existingInput, payload = {}) {
+function applyReservationAction(metaInput: LedgerMeta | null | undefined, existingInput: DeliveryReservation | null | undefined, payload: DeliveryLedgerPayload = {}): {
+  status: number;
+  meta: ReturnType<typeof normalizeMeta>;
+  reservation: DeliveryReservation | null;
+  result: DeliveryLedgerResult;
+  deleteReservation?: boolean;
+} {
   const meta = normalizeMeta(metaInput);
   const existing = existingInput && typeof existingInput === 'object' ? { ...existingInput } : null;
   const action = payload.action;
@@ -294,10 +371,10 @@ function applyReservationAction(metaInput, existingInput, payload = {}) {
   return { status: 400, meta, reservation: existing, result: { code: 'INVALID_REQUEST' } };
 }
 
-export function applyEmailDeliveryLedgerAction(currentState, payload = {}) {
+export function applyEmailDeliveryLedgerAction(currentState: DeliveryLedgerState | null | undefined, payload: DeliveryLedgerPayload = {}) {
   const state = normalizeFallbackState(currentState);
   const reservationId = boundedString(payload.reservationId, MAX_RESERVATION_ID_LENGTH);
-  if (!reservationId || !['inspect', 'reserve', 'commit', 'release'].includes(payload.action)) {
+  if (!reservationId || !['inspect', 'reserve', 'commit', 'release'].includes(payload.action!)) {
     return { status: 400, state, result: { code: 'INVALID_REQUEST' } };
   }
   const outcome = applyReservationAction(state, state.reservations[reservationId], payload);
@@ -311,7 +388,7 @@ export function applyEmailDeliveryLedgerAction(currentState, payload = {}) {
   return { status: outcome.status, state: nextState, result: outcome.result };
 }
 
-function json(payload, status = 200) {
+function json(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
     headers: { 'content-type': 'application/json; charset=utf-8' },
@@ -319,23 +396,25 @@ function json(payload, status = 200) {
 }
 
 export class EmailDeliveryLedger {
-  constructor(state) {
+  declare state: { storage: LedgerStorage & Pick<DurableObjectStorage, 'setAlarm' | 'deleteAll'> };
+
+  constructor(state: { storage: LedgerStorage & Pick<DurableObjectStorage, 'setAlarm' | 'deleteAll'> }) {
     this.state = state;
   }
 
-  async fetch(request) {
+  async fetch(request: Request) {
     if (request.method !== 'POST') return json({ code: 'METHOD_NOT_ALLOWED' }, 405);
-    const payload = await request.json().catch(() => null);
+    const payload = await request.json<DeliveryLedgerPayload>().catch(() => null);
     const reservationId = boundedString(payload?.reservationId, MAX_RESERVATION_ID_LENGTH);
-    if (!payload || !reservationId || !['inspect', 'reserve', 'commit', 'release'].includes(payload.action)) {
+    if (!payload || !reservationId || !['inspect', 'reserve', 'commit', 'release'].includes(payload.action!)) {
       return json({ code: 'INVALID_REQUEST' }, 400);
     }
 
     const storageKey = reservationKey(reservationId);
     const outcome = await this.state.storage.transaction(async (transaction) => {
       const [meta, existing] = await Promise.all([
-        transaction.get(LEDGER_META_KEY),
-        transaction.get(storageKey),
+        transaction.get<LedgerMeta>(LEDGER_META_KEY),
+        transaction.get<DeliveryReservation>(storageKey),
       ]);
       const next = applyReservationAction(meta, existing, payload);
       if (next.status < 400 && payload.action !== 'inspect') {

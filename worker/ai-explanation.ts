@@ -1,3 +1,23 @@
+import type { WorkerEnv } from './env.ts';
+import type { Paper } from '../src/models/Paper.ts';
+import type { VerifiedIdentity } from './firebase-auth.ts';
+import type { QuotaRequest } from './request-quota-ledger.ts';
+
+export interface AIQuota {
+  resetAt: string;
+  retryAfterSeconds: number;
+  scope: string;
+  remainingUses?: number;
+}
+
+export interface AIProviderPayload {
+  error?: { details?: Array<{ retryDelay?: unknown; [key: string]: unknown }>; [key: string]: unknown };
+  candidates?: Array<{ content?: { parts?: Array<{ text?: unknown; thought?: boolean }> }; finishReason?: string }>;
+}
+
+type PdfResult = { bytes: Uint8Array<ArrayBuffer>; reason: '' }
+  | { bytes: null; reason: 'unreachable' | 'not_pdf' | 'too_large' };
+
 import { hasUsableAIAbstract, isAIReadablePdfUrl } from '../src/utils/aiExplanationAccess.js';
 import { getMonthlyBudgetReset } from './kimi-budget-ledger.ts';
 import { readBoundedBytes } from './bounded-body.ts';
@@ -37,12 +57,18 @@ const LATEX_JSON_COMMANDS = new Set([
  * from an old client or a cached request — is accepted and ignored. The value
  * is still returned (and kept in cache keys) so the key format stays stable.
  */
+export function normalizeExplanationLanguage(language?: unknown): 'en';
 export function normalizeExplanationLanguage() {
   return 'en';
 }
 
 export class AIExplanationError extends Error {
-  constructor(code, status = 500, message = code, quota = null) {
+  declare code: string;
+  declare status: number;
+  declare quota: AIQuota | null;
+  declare detail?: string;
+
+  constructor(code: string, status = 500, message = code, quota: AIQuota | null = null) {
     super(message);
     this.name = 'AIExplanationError';
     this.code = code;
@@ -51,15 +77,15 @@ export class AIExplanationError extends Error {
   }
 }
 
-export function cleanText(value, maxLength) {
+export function cleanText(value: unknown, maxLength: number) {
   return String(value || '').replace(/\0/g, '').trim().slice(0, maxLength);
 }
 
-function normalizeDoi(value) {
+function normalizeDoi(value: unknown) {
   return cleanText(value, 300).replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '');
 }
 
-function normalizeUrl(value) {
+function normalizeUrl(value: unknown) {
   const text = cleanText(value, 2_000);
   if (!text) return '';
   try {
@@ -70,7 +96,7 @@ function normalizeUrl(value) {
   }
 }
 
-export function normalizePaperForExplanation(input = {}) {
+export function normalizePaperForExplanation(input: Partial<Record<keyof Paper, unknown>> = {}) {
   const authors = Array.isArray(input.authors)
     ? input.authors.map(author => cleanText(author?.name || author, 160)).filter(Boolean).slice(0, 30)
     : [];
@@ -103,12 +129,12 @@ export function normalizePaperForExplanation(input = {}) {
   return paper;
 }
 
-function safeInteger(value, fallback, minimum, maximum) {
-  const parsed = Number.parseInt(value, 10);
+function safeInteger(value: unknown, fallback: number, minimum: number, maximum: number) {
+  const parsed = Number.parseInt(value as string, 10);
   return Number.isFinite(parsed) ? Math.max(minimum, Math.min(maximum, parsed)) : fallback;
 }
 
-export function bytesToBase64(bytes) {
+export function bytesToBase64(bytes: Uint8Array) {
   let binary = '';
   const chunkSize = 0x8000;
   for (let offset = 0; offset < bytes.length; offset += chunkSize) {
@@ -127,8 +153,8 @@ export function bytesToBase64(bytes) {
  * is a paper this endpoint will never read. They were indistinguishable in the
  * logs, which is how PMC's interstitial hid behind arXiv's timeouts.
  */
-export async function fetchPaperPdfBytes(pdfUrl, timeoutMs) {
-  const failed = reason => ({ bytes: null, reason });
+export async function fetchPaperPdfBytes(pdfUrl: string, timeoutMs: number): Promise<PdfResult> {
+  const failed = (reason: 'unreachable' | 'not_pdf' | 'too_large'): PdfResult => ({ bytes: null, reason });
   if (!isAIReadablePdfUrl(pdfUrl)) return failed('unreachable');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -166,13 +192,13 @@ export async function fetchPaperPdfBytes(pdfUrl, timeoutMs) {
   }
 }
 
-function hasOddEscapingBackslash(text, index) {
+function hasOddEscapingBackslash(text: string, index: number) {
   let count = 0;
   for (let cursor = index - 1; cursor >= 0 && text[cursor] === '\\'; cursor -= 1) count += 1;
   return count % 2 === 1;
 }
 
-export function escapeLatexBackslashesInJson(value, { broad = false } = {}) {
+export function escapeLatexBackslashesInJson(value: unknown, { broad = false } = {}) {
   const text = String(value || '');
   let output = '';
   let mathDelimiter = '';
@@ -215,24 +241,24 @@ export function escapeLatexBackslashesInJson(value, { broad = false } = {}) {
   return output;
 }
 
-function providerQuotaCode(payload) {
+function providerQuotaCode(payload: unknown) {
   const detail = JSON.stringify(payload || {}).toLowerCase();
   return /per.?day|requests.?per.?day|rpd|generatedrequestsperday/.test(detail)
     ? 'AI_QUOTA_EXHAUSTED'
     : 'AI_BUSY';
 }
 
-function parseRetryDelay(value) {
+function parseRetryDelay(value: unknown) {
   const match = String(value || '').trim().match(/^(\d+(?:\.\d+)?)s$/i);
   return match ? Math.max(1, Math.ceil(Number(match[1]))) : 0;
 }
 
-export function getProviderRetry(payload, retryAfterHeader = '', now = Date.now()) {
+export function getProviderRetry(payload: AIProviderPayload | null, retryAfterHeader: string | null = '', now = Date.now()) {
   const details = Array.isArray(payload?.error?.details) ? payload.error.details : [];
   const detailDelay = details
     .map(detail => parseRetryDelay(detail?.retryDelay))
     .find(Boolean);
-  const headerSeconds = Number.parseInt(retryAfterHeader, 10);
+  const headerSeconds = Number.parseInt(retryAfterHeader!, 10);
   const retryAfterSeconds = detailDelay || (Number.isFinite(headerSeconds) && headerSeconds > 0 ? headerSeconds : 60);
   return {
     resetAt: new Date(now + retryAfterSeconds * 1_000).toISOString(),
@@ -241,7 +267,7 @@ export function getProviderRetry(payload, retryAfterHeader = '', now = Date.now(
   };
 }
 
-export function classifyGeminiError(status, payload) {
+export function classifyGeminiError(status: number, payload: unknown) {
   if (status === 429) return providerQuotaCode(payload);
   const detail = JSON.stringify(payload || {}).toLowerCase();
   if ([400, 401, 403, 404].includes(status) && /api.?key|permission|model.+not found|not found.+model|unsupported model/.test(detail)) {
@@ -259,7 +285,7 @@ export function classifyGeminiError(status, payload) {
  * is monthly, not daily like Gemini's, so the reset the reader is shown is
  * the first of next month (UTC).
  */
-export function nanProviderError(response, payload) {
+export function nanProviderError(response: Response, payload: AIProviderPayload | null) {
   const code = classifyNanError(response.status);
   const status = code === 'AI_NOT_CONFIGURED' ? 503 : code === 'AI_QUOTA_EXHAUSTED' || response.status === 429 ? 429 : 502;
   const quota = code === 'AI_QUOTA_EXHAUSTED'
@@ -270,7 +296,7 @@ export function nanProviderError(response, payload) {
   return new AIExplanationError(code, status, code, quota);
 }
 
-async function checkGeminiHealth(env) {
+async function checkGeminiHealth(env: WorkerEnv) {
   const provider = 'gemini';
   const model = cleanText(env.AI_MODEL || DEFAULT_MODEL, 100) || DEFAULT_MODEL;
   if (!env.GEMINI_API_KEY) {
@@ -305,7 +331,7 @@ async function checkGeminiHealth(env) {
  * Workers AI binding that turns PDFs into text is there: without it every
  * rewrite falls back to NaN reading the PDF itself, which works but is slow.
  */
-async function checkNanHealth(env) {
+async function checkNanHealth(env: WorkerEnv) {
   const provider = 'nan';
   const model = nanModel(env);
   const paperText = typeof env.AI?.toMarkdown === 'function';
@@ -322,7 +348,7 @@ async function checkNanHealth(env) {
     if (!response.ok) {
       return { provider, model, paperText, configured: true, available: false, code: classifyNanError(response.status) };
     }
-    const payload = await response.json().catch(() => ({}));
+    const payload = await response.json<{ data?: Array<{ id?: unknown }> }>().catch(() => ({} as { data?: Array<{ id?: unknown }> }));
     const served = Array.isArray(payload?.data) && payload.data.some(entry => entry?.id === model);
     return {
       provider,
@@ -339,15 +365,15 @@ async function checkNanHealth(env) {
   }
 }
 
-const HEALTH_CHECKS = {
+const HEALTH_CHECKS: Partial<Record<string, typeof checkGeminiHealth | typeof checkNanHealth>> = {
   gemini: checkGeminiHealth,
   nan: checkNanHealth,
 };
 
-export async function checkAIProviderHealth(env) {
+export async function checkAIProviderHealth(env: WorkerEnv): Promise<{ provider: string; model: string; configured: boolean; available: boolean; code: string | null; paperText?: boolean }> {
   const provider = cleanText(env.AI_PROVIDER || 'gemini', 40).toLowerCase();
   return HEALTH_CHECKS[provider]
-    ? HEALTH_CHECKS[provider](env)
+    ? HEALTH_CHECKS[provider]!(env)
     : { provider, model: '', configured: false, available: false, code: 'AI_NOT_CONFIGURED' };
 }
 
@@ -364,7 +390,7 @@ export async function checkAIProviderHealth(env) {
  * the cost ceiling on the provider key, and an exemption from it is how a
  * runaway loop becomes a bill.
  */
-export function hasUnlimitedAI(env, identity) {
+export function hasUnlimitedAI(env: WorkerEnv, identity: Partial<VerifiedIdentity> | null | undefined) {
   if (!identity?.emailVerified || !identity.email) return false;
   const allowed = String(env.AI_UNLIMITED_EMAILS || '')
     .split(',')
@@ -381,7 +407,7 @@ export function hasUnlimitedAI(env, identity) {
  * second lookup to find out would have doubled the Identity Toolkit traffic in
  * front of every protected route.
  */
-export async function verifyFirebaseAccount(request, env) {
+export async function verifyFirebaseAccount(request: Request, env: WorkerEnv) {
   try {
     const identity = await verifyFirebaseIdentity(request, env);
     return { ...identity, unlimitedAI: hasUnlimitedAI(env, identity) };
@@ -440,7 +466,7 @@ const REFUNDABLE_AI_CODES = new Set([
   // refunding would make hanging up the cheapest way to retry for free.
 ]);
 
-export function shouldRefundAIQuota(error) {
+export function shouldRefundAIQuota(error: unknown) {
   // A crash of ours is never the user's fault either.
   if (!(error instanceof AIExplanationError)) return true;
   // Past the reservation this can only be the provider's daily wall, never the
@@ -458,7 +484,7 @@ export function shouldRefundAIQuota(error) {
  * travels with the answer so the client does not have to hardcode a ten it does
  * not own.
  */
-export async function peekAIQuota(env, uid, { unlimited = false } = {}) {
+export async function peekAIQuota(env: WorkerEnv, uid: string, { unlimited = false } = {}) {
   const globalLimit = safeInteger(env.AI_DAILY_GLOBAL_LIMIT, DEFAULT_GLOBAL_DAILY_LIMIT, 1, 100_000);
   // An exempt account is not given a separate code path: its per-user ceiling is
   // simply raised to the global one, so the ledger still counts what it spends
@@ -488,7 +514,7 @@ export async function peekAIQuota(env, uid, { unlimited = false } = {}) {
   };
 }
 
-export async function reserveAIQuota(env, uid, { unlimited = false } = {}) {
+export async function reserveAIQuota(env: WorkerEnv, uid: string, { unlimited = false } = {}) {
   const globalLimit = safeInteger(env.AI_DAILY_GLOBAL_LIMIT, DEFAULT_GLOBAL_DAILY_LIMIT, 1, 100_000);
   // The day is fixed once and travels with the reservation: recomputing it at
   // release time would refund against tomorrow's ledger for a request that
@@ -528,7 +554,7 @@ export async function reserveAIQuota(env, uid, { unlimited = false } = {}) {
  * Exported because `/ai/rewrite` and `/ai/annotate` reserve against the same
  * daily ledger.
  */
-export async function releaseAIQuota(env, quota) {
+export async function releaseAIQuota(env: WorkerEnv, quota: { ledgerRequest: QuotaRequest }) {
   try {
     await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER, quota.ledgerRequest);
   } catch {
@@ -536,7 +562,7 @@ export async function releaseAIQuota(env, quota) {
   }
 }
 
-export async function sha256(value) {
+export async function sha256(value: string) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
 }

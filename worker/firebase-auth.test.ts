@@ -24,14 +24,14 @@ function stubUpstream({ ok = true } = {}) {
   };
 }
 
-function bearing(token) {
+function bearing(token: string) {
   return new Request('https://worker.test/lists/publish', {
     method: 'POST',
     headers: { authorization: `Bearer ${token}` },
   });
 }
 
-const verify = (token, env = ENV) => verifyFirebaseIdentity(bearing(token), env, { allowCache: false });
+const verify = (token: string, env: Partial<typeof ENV> = ENV) => verifyFirebaseIdentity(bearing(token), env, { allowCache: false });
 
 // ---------------------------------------------------------------------------
 // The local pre-filter: what Google never has to be asked about.
@@ -61,7 +61,7 @@ test('a string that is not shaped like an ID token never costs a call to Google'
   for (const [why, token] of Object.entries(refused)) {
     await assert.rejects(
       () => verify(token),
-      error => error.code === 'AUTH_REQUIRED' && error.status === 401,
+      error => (error as { code: string; status: number }).code === 'AUTH_REQUIRED' && (error as { code: string; status: number }).status === 401,
       `must refuse ${why}`,
     );
   }
@@ -87,7 +87,7 @@ test('an unsigned token is still refused: the signature is Google job, not ours'
   stubUpstream({ ok: false });
   await assert.rejects(
     () => verify(fakeIdToken({ aud: PROJECT_ID })),
-    error => error.code === 'AUTH_REQUIRED' && error.status === 401,
+    error => (error as { code: string; status: number }).code === 'AUTH_REQUIRED' && (error as { code: string; status: number }).status === 401,
   );
   assert.equal(lookups, 1);
 });
@@ -106,7 +106,7 @@ test('the length and Bearer checks still come first', async () => {
   for (const token of ['', 'x'.repeat(8_193)]) {
     await assert.rejects(
       () => verify(token),
-      error => error.code === 'AUTH_REQUIRED' && error.status === 401,
+      error => (error as { code: string; status: number }).code === 'AUTH_REQUIRED' && (error as { code: string; status: number }).status === 401,
       `must refuse a token of ${token.length} characters`,
     );
   }
@@ -114,7 +114,7 @@ test('the length and Bearer checks still come first', async () => {
 });
 
 /** Identity Toolkit answering with a specific account record. */
-function stubUser(user) {
+function stubUser(user: Record<string, unknown>) {
   lookups = 0;
   globalThis.fetch = async (url) => {
     if (!String(url).includes('identitytoolkit')) throw new Error(`unexpected fetch: ${url}`);

@@ -1,33 +1,56 @@
-const LEDGER_ACTIONS = new Set(['reserve', 'release', 'peek']);
+import type { LedgerStorage } from './ledger-storage.ts';
+import type { WorkerEnv } from './env.ts';
+
+export interface QuotaRequest {
+  periodKey: string;
+  subject: string;
+  subjectLimit: number;
+  globalLimit: number;
+  amount?: number;
+}
+
+export interface QuotaReading {
+  accepted?: boolean;
+  released?: boolean;
+  code?: string;
+  scope?: string;
+  subjectUsage?: number;
+  globalUsage?: number;
+  remaining?: number;
+}
+
+const LEDGER_ACTIONS = new Set<unknown>(['reserve', 'release', 'peek']);
 const MAX_SUBJECT_KEY_LENGTH = 96;
 const MAX_LIMIT = 1_000_000;
 const RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
 
-function json(payload, status = 200) {
+function json(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
     headers: { 'content-type': 'application/json; charset=utf-8' },
   });
 }
 
-function positiveInteger(value) {
+function positiveInteger(value: unknown) {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 && parsed <= MAX_LIMIT ? parsed : 0;
 }
 
-function safeSubjectKey(value) {
+function safeSubjectKey(value: unknown) {
   const key = String(value || '').trim();
   return /^[a-f0-9]{64}$/.test(key) && key.length <= MAX_SUBJECT_KEY_LENGTH ? key : '';
 }
 
 export class RequestQuotaLedger {
-  constructor(state) {
+  declare state: { storage: LedgerStorage & Pick<DurableObjectStorage, 'getAlarm' | 'setAlarm' | 'deleteAll'> };
+
+  constructor(state: { storage: LedgerStorage & Pick<DurableObjectStorage, 'getAlarm' | 'setAlarm' | 'deleteAll'> }) {
     this.state = state;
   }
 
-  async fetch(request) {
+  async fetch(request: Request) {
     if (request.method !== 'POST') return json({ code: 'METHOD_NOT_ALLOWED' }, 405);
-    const payload = await request.json().catch(() => null);
+    const payload = await request.json<Record<string, unknown>>().catch(() => null);
     const subjectKey = safeSubjectKey(payload?.subjectKey);
     const subjectLimit = positiveInteger(payload?.subjectLimit);
     const globalLimit = positiveInteger(payload?.globalLimit);
@@ -117,19 +140,19 @@ export class RequestQuotaLedger {
   }
 }
 
-async function sha256(value) {
+async function sha256(value: unknown) {
   const bytes = new TextEncoder().encode(String(value));
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-async function callRequestQuotaLedger(namespace, action, {
+async function callRequestQuotaLedger(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER'] | null, action: string, {
   periodKey,
   subject,
   subjectLimit,
   globalLimit,
   amount = 1,
-}) {
+}: QuotaRequest): Promise<QuotaReading> {
   if (!namespace?.idFromName || !namespace?.get) {
     return { accepted: false, code: 'QUOTA_LEDGER_NOT_CONFIGURED' };
   }
@@ -147,10 +170,10 @@ async function callRequestQuotaLedger(namespace, action, {
     }),
   });
   if (!response.ok) return { accepted: false, code: 'QUOTA_LEDGER_UNAVAILABLE' };
-  return response.json();
+  return response.json<QuotaReading>();
 }
 
-export function reserveRequestQuota(namespace, options) {
+export function reserveRequestQuota(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER'] | null, options: QuotaRequest) {
   return callRequestQuotaLedger(namespace, 'reserve', options);
 }
 
@@ -159,7 +182,7 @@ export function reserveRequestQuota(namespace, options) {
  * uses before you spend one, and the only other way to learn the number was to
  * reserve — which is to say, to make it wrong by asking.
  */
-export function peekRequestQuota(namespace, options) {
+export function peekRequestQuota(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER'] | null, options: QuotaRequest) {
   return callRequestQuotaLedger(namespace, 'peek', options);
 }
 
@@ -169,6 +192,6 @@ export function peekRequestQuota(namespace, options) {
  * tomorrow's ledger for a request that crossed UTC midnight — and the same
  * `amount`, for the same reason in the other direction.
  */
-export function releaseRequestQuota(namespace, options) {
+export function releaseRequestQuota(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER'] | null, options: QuotaRequest) {
   return callRequestQuotaLedger(namespace, 'release', options);
 }

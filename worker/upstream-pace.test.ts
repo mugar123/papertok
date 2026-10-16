@@ -1,5 +1,9 @@
+import type { TestNamespace } from './test-types.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { QuotaReading } from './request-quota-ledger.ts';
+
+interface SeenReservations { periodKeys: string[]; calls: number; reservations?: Array<{ subjectKey: string; subjectLimit: number }> }
 import { awaitUpstreamSlot, DEFAULT_MAX_WAIT_MS, PACE_RETRY_AFTER_SECONDS, paceRetryAfterSeconds } from './upstream-pace.ts';
 
 // A ledger that answers each `reserve` from a script, and remembers what it was
@@ -8,13 +12,13 @@ import { awaitUpstreamSlot, DEFAULT_MAX_WAIT_MS, PACE_RETRY_AFTER_SECONDS, paceR
 // not whether two calls asked for the same one -- distinctness is what a
 // per-second subject actually depends on, so that survives the hash and is
 // what the fake records.
-function scriptedLedger(answers, seen) {
+function scriptedLedger(answers: QuotaReading[], seen: SeenReservations) {
   let call = 0;
   return {
-    idFromName: name => { seen.periodKeys.push(String(name)); return `quota-${name}`; },
-    get: () => ({
+    idFromName: (name: string): unknown => { seen.periodKeys.push(String(name)); return `quota-${name}`; },
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({
       fetch: async (_url, options) => {
-        const body = JSON.parse(options.body);
+        const body = JSON.parse(options!.body as string);
         seen.reservations ??= [];
         seen.reservations.push({ subjectKey: body.subjectKey, subjectLimit: body.subjectLimit });
         const answer = answers[Math.min(call, answers.length - 1)];
@@ -22,8 +26,8 @@ function scriptedLedger(answers, seen) {
         seen.calls = call;
         return new Response(JSON.stringify(answer));
       },
-    }),
-  };
+    })) as TestNamespace['get'],
+  } as Env['REQUEST_QUOTA_LEDGER'];
 }
 
 // The clock is pinned at the start of second 10, so the first slot asked for is
@@ -31,8 +35,8 @@ function scriptedLedger(answers, seen) {
 const AT_SECOND_TEN = () => 10_000;
 
 test('sends at once when the current second is free', async () => {
-  const seen = { periodKeys: [], calls: 0 };
-  const slept = [];
+  const seen: SeenReservations = { periodKeys: [], calls: 0 };
+  const slept: number[] = [];
   const slot = await awaitUpstreamSlot(scriptedLedger([{ accepted: true }], seen), {
     namespace: 's2', now: AT_SECOND_TEN, sleep: async ms => { slept.push(ms); },
   });
@@ -43,8 +47,8 @@ test('sends at once when the current second is free', async () => {
 });
 
 test('takes the next second and waits for it when the current one is taken', async () => {
-  const seen = { periodKeys: [], calls: 0 };
-  const slept = [];
+  const seen: SeenReservations = { periodKeys: [], calls: 0 };
+  const slept: number[] = [];
   const slot = await awaitUpstreamSlot(
     scriptedLedger([{ accepted: false, scope: 'user' }, { accepted: true }], seen),
     { namespace: 's2', now: AT_SECOND_TEN, sleep: async ms => { slept.push(ms); } },
@@ -58,15 +62,15 @@ test('takes the next second and waits for it when the current one is taken', asy
   // out every later one until the ledger's own retention alarm clears it days
   // later. And the limit has to be one: a subject that admits sixty is the
   // defect this module exists to remove, reinstated one call away.
-  const [first, second] = seen.reservations;
+  const [first, second] = seen.reservations!;
   assert.notEqual(first.subjectKey, second.subjectKey, 'each second must reserve a different subject');
   assert.equal(first.subjectLimit, 1);
   assert.equal(second.subjectLimit, 1);
 });
 
 test('gives up within the wait budget instead of queueing forever', async () => {
-  const seen = { periodKeys: [], calls: 0 };
-  const slept = [];
+  const seen: SeenReservations = { periodKeys: [], calls: 0 };
+  const slept: number[] = [];
   const slot = await awaitUpstreamSlot(
     scriptedLedger([{ accepted: false, scope: 'user' }], seen),
     { namespace: 's2', maxWaitMs: 2_500, now: AT_SECOND_TEN, sleep: async ms => { slept.push(ms); } },
@@ -79,7 +83,7 @@ test('gives up within the wait budget instead of queueing forever', async () => 
 });
 
 test('relays a ledger that is not there instead of treating it as a full second', async () => {
-  const seen = { periodKeys: [], calls: 0 };
+  const seen: SeenReservations = { periodKeys: [], calls: 0 };
   const slot = await awaitUpstreamSlot(
     scriptedLedger([{ accepted: false, code: 'QUOTA_LEDGER_UNAVAILABLE' }], seen),
     { namespace: 's2', now: AT_SECOND_TEN, sleep: async () => {} },
@@ -95,14 +99,14 @@ test('relays a ledger that is not there instead of treating it as a full second'
 // instead advances a shared clock by a scripted amount on each round trip, the
 // way a real Durable Object fetch costs real time, so the test below can
 // reproduce what a slow round trip actually does to that arithmetic.
-function advancingLedger(answers, roundTripsMs, clock, seen) {
+function advancingLedger(answers: QuotaReading[], roundTripsMs: number[], clock: { value: number }, seen: SeenReservations) {
   let call = 0;
   return {
-    idFromName: name => { seen.periodKeys.push(String(name)); return `quota-${name}`; },
-    get: () => ({
+    idFromName: (name: string): unknown => { seen.periodKeys.push(String(name)); return `quota-${name}`; },
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({
       fetch: async (_url, options) => {
         clock.value += roundTripsMs[Math.min(call, roundTripsMs.length - 1)];
-        const body = JSON.parse(options.body);
+        const body = JSON.parse(options!.body as string);
         seen.reservations ??= [];
         seen.reservations.push({ subjectKey: body.subjectKey, subjectLimit: body.subjectLimit });
         const answer = answers[Math.min(call, answers.length - 1)];
@@ -110,12 +114,12 @@ function advancingLedger(answers, roundTripsMs, clock, seen) {
         seen.calls = call;
         return new Response(JSON.stringify(answer));
       },
-    }),
-  };
+    })) as TestNamespace['get'],
+  } as Env['REQUEST_QUOTA_LEDGER'];
 }
 
 test('a reservation confirmed after its second has closed is not spent -- the caller retries for the second that is actually current', async () => {
-  const seen = { periodKeys: [], calls: 0 };
+  const seen: SeenReservations = { periodKeys: [], calls: 0 };
   const clock = { value: 10_000 }; // same baseline as AT_SECOND_TEN, but this one moves
   // Second 10 is refused fast (200 ms round trip). Second 11 is accepted, but
   // that round trip alone takes 2 s, landing the clock at 12 200 -- already
@@ -126,7 +130,7 @@ test('a reservation confirmed after its second has closed is not spent -- the ca
   // while the clock is still inside second 12 -- the correct, non-stale slot.
   const roundTripsMs = [200, 2000, 100];
   const answers = [{ accepted: false, scope: 'user' }, { accepted: true }, { accepted: true }];
-  const slept = [];
+  const slept: number[] = [];
 
   const slot = await awaitUpstreamSlot(advancingLedger(answers, roundTripsMs, clock, seen), {
     namespace: 's2', now: () => clock.value, sleep: async ms => { slept.push(ms); },
@@ -155,8 +159,8 @@ test('tells a refused caller to come back no sooner than the wait budget it just
 // with a longer period: the clock at 10 000 ms is inside period 3 (9 000 to
 // 11 999), the next period starts at 12 000.
 test('a three-second beat reserves one slot per three seconds and waits for the next one', async () => {
-  const seen = { periodKeys: [], calls: 0 };
-  const slept = [];
+  const seen: SeenReservations = { periodKeys: [], calls: 0 };
+  const slept: number[] = [];
   const slot = await awaitUpstreamSlot(
     scriptedLedger([{ accepted: false, scope: 'user' }, { accepted: true }], seen),
     { namespace: 'arxiv', periodMs: 3_000, maxWaitMs: 4_000, now: AT_SECOND_TEN, sleep: async ms => { slept.push(ms); } },
@@ -165,14 +169,14 @@ test('a three-second beat reserves one slot per three seconds and waits for the 
   assert.deepEqual(slot, { accepted: true, slot: 4, waitedMs: 2_000 });
   assert.deepEqual(slept, [2_000]);
   assert.deepEqual(seen.periodKeys, ['arxiv:pace', 'arxiv:pace']);
-  const [first, second] = seen.reservations;
+  const [first, second] = seen.reservations!;
   assert.notEqual(first.subjectKey, second.subjectKey, 'each period must reserve a different subject');
   assert.equal(first.subjectLimit, 1);
 });
 
 test('a three-second beat gives up inside its own wait budget', async () => {
-  const seen = { periodKeys: [], calls: 0 };
-  const slept = [];
+  const seen: SeenReservations = { periodKeys: [], calls: 0 };
+  const slept: number[] = [];
   const slot = await awaitUpstreamSlot(
     scriptedLedger([{ accepted: false, scope: 'user' }], seen),
     { namespace: 'arxiv', periodMs: 3_000, maxWaitMs: 4_000, now: AT_SECOND_TEN, sleep: async ms => { slept.push(ms); } },

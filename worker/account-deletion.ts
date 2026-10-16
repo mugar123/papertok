@@ -1,3 +1,10 @@
+import type { WorkerEnv } from './env.ts';
+import type { FirestoreAdmin, FirestoreWrite } from './firestore-admin.ts';
+
+type DeletionAdmin = Pick<FirestoreAdmin, 'name' | 'runQuery' | 'getDocument'> & { commit(writes: FirestoreWrite[]): Promise<unknown> };
+interface DeletionOptions { admin?: DeletionAdmin; fetchImpl?: typeof fetch; idToken?: string }
+
+
 /**
  * Account deletion, orchestrated by the Worker.
  *
@@ -51,7 +58,10 @@ const MAX_WRITES = 240;
 const IDENTITY_TOOLKIT_TIMEOUT_MS = 8000;
 
 export class AccountDeletionError extends Error {
-  constructor(code, status = 400) {
+  declare code: string;
+  declare status: number;
+
+  constructor(code: string, status = 400) {
     super(code);
     this.name = 'AccountDeletionError';
     this.code = code;
@@ -59,7 +69,7 @@ export class AccountDeletionError extends Error {
   }
 }
 
-function requireUid(value) {
+function requireUid(value: unknown) {
   const uid = String(value || '').trim();
   if (!uid || uid.length > 128 || uid.includes('/') || uid === '.' || uid === '..') {
     throw new AccountDeletionError('INVALID_USER', 400);
@@ -67,17 +77,17 @@ function requireUid(value) {
   return uid;
 }
 
-function bearerToken(request) {
+function bearerToken(request: Request) {
   return (request.headers.get('authorization') || '').match(/^Bearer\s+([^\s]+)$/i)?.[1] || '';
 }
 
-async function readConfirmBody(request) {
+async function readConfirmBody(request: Request) {
   const declared = Number(request.headers.get('content-length') || 0);
   if (declared > 4096) throw new AccountDeletionError('PAYLOAD_TOO_LARGE', 413);
   const buffer = await request.arrayBuffer();
   if (buffer.byteLength > 4096) throw new AccountDeletionError('PAYLOAD_TOO_LARGE', 413);
   const text = new TextDecoder().decode(buffer);
-  let body;
+  let body: { confirm?: unknown } | null;
   try {
     body = JSON.parse(text);
   } catch {
@@ -88,7 +98,7 @@ async function readConfirmBody(request) {
   }
 }
 
-async function commitBestEffort(admin, writes) {
+async function commitBestEffort(admin: DeletionAdmin, writes: FirestoreWrite[]) {
   if (!Array.isArray(writes) || writes.length === 0) return;
   try {
     await admin.commit(writes);
@@ -104,7 +114,7 @@ async function commitBestEffort(admin, writes) {
   }
 }
 
-async function dissociateComments(admin, uid) {
+async function dissociateComments(admin: DeletionAdmin, uid: string) {
   const rows = await admin.runQuery({
     collectionId: 'comments',
     allDescendants: true,
@@ -121,7 +131,7 @@ async function dissociateComments(admin, uid) {
   return rows.length >= PAGE_SIZE;
 }
 
-async function deleteOwnedPublicLists(admin, uid) {
+async function deleteOwnedPublicLists(admin: DeletionAdmin, uid: string) {
   const rows = await admin.runQuery({
     collectionId: 'publicListOwners',
     where: { field: 'ownerId', op: 'EQUAL', value: uid },
@@ -145,7 +155,7 @@ async function deleteOwnedPublicLists(admin, uid) {
   return rows.length >= PAGE_SIZE;
 }
 
-async function deleteFollows(admin, uid, field) {
+async function deleteFollows(admin: DeletionAdmin, uid: string, field: string) {
   const rows = await admin.runQuery({
     collectionId: 'follows',
     where: { field, op: 'EQUAL', value: uid },
@@ -164,7 +174,7 @@ async function deleteFollows(admin, uid, field) {
  * they are the moderation record of a decision that outlives the account.
  * Nothing in the app reads them since the moderation console was removed.
  */
-async function dissociatePapers(admin, uid) {
+async function dissociatePapers(admin: DeletionAdmin, uid: string) {
   const rows = await admin.runQuery({
     collectionId: 'papers',
     where: { field: 'createdBy', op: 'EQUAL', value: uid },
@@ -178,7 +188,7 @@ async function dissociatePapers(admin, uid) {
   return rows.length >= PAGE_SIZE;
 }
 
-async function deleteProfile(admin, uid) {
+async function deleteProfile(admin: DeletionAdmin, uid: string) {
   const [profile, search, showcase] = await Promise.all([
     admin.getDocument(['userProfiles', uid]),
     admin.getDocument(['userSearch', uid]),
@@ -201,7 +211,7 @@ async function deleteProfile(admin, uid) {
   return false;
 }
 
-async function deleteUserTree(admin, uid) {
+async function deleteUserTree(admin: DeletionAdmin, uid: string) {
   for (const collectionId of USER_SUBCOLLECTIONS) {
     const rows = await admin.runQuery({
       parentSegments: ['users', uid],
@@ -231,7 +241,7 @@ async function deleteUserTree(admin, uid) {
   return false;
 }
 
-async function deleteAuthAccount(env, idToken, { fetchImpl = fetch } = {}) {
+async function deleteAuthAccount(env: WorkerEnv, idToken: string | undefined, { fetchImpl = fetch } = {}) {
   const apiKey = String(env.FIREBASE_WEB_API_KEY || '').trim();
   if (!apiKey) throw new AccountDeletionError('AUTH_NOT_CONFIGURED', 503);
   if (!idToken) throw new WorkerAuthError('AUTH_REQUIRED', 401);
@@ -249,7 +259,7 @@ async function deleteAuthAccount(env, idToken, { fetchImpl = fetch } = {}) {
   } catch {
     throw new AccountDeletionError('AUTH_DELETE_UNAVAILABLE', 503);
   }
-  const payload = await response.json().catch(() => ({}));
+  const payload = await response.json<{ error?: { message?: unknown } }>().catch(() => ({} as { error?: { message?: unknown } }));
   if (response.ok) return;
   const message = String(payload?.error?.message || '');
   if (message.includes('USER_NOT_FOUND')) return;
@@ -264,10 +274,10 @@ async function deleteAuthAccount(env, idToken, { fetchImpl = fetch } = {}) {
  * again until `complete` is true without the Worker holding the request
  * across a large tree.
  */
-export async function runAccountDeletionSlice(admin, uid, env, {
+export async function runAccountDeletionSlice(admin: DeletionAdmin, uid: string, env: WorkerEnv, {
   idToken,
   fetchImpl = fetch,
-} = {}) {
+}: DeletionOptions = {}) {
   if (await dissociateComments(admin, uid)) {
     return { complete: false, stage: 'comments' };
   }
@@ -298,7 +308,7 @@ export async function runAccountDeletionSlice(admin, uid, env, {
   return { complete: true, stage: 'auth' };
 }
 
-export async function handleAccountDeletionRequest(request, env, options = {}) {
+export async function handleAccountDeletionRequest(request: Request, env: WorkerEnv, options: DeletionOptions = {}) {
   if (request.method !== 'POST') throw new AccountDeletionError('METHOD_NOT_ALLOWED', 405);
   if (!isServiceAccountConfigured(env)) {
     throw new AccountDeletionError('ACCOUNT_DELETION_NOT_CONFIGURED', 503);

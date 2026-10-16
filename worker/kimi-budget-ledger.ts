@@ -1,22 +1,40 @@
+import type { LedgerStorage, ListedLedgerTransaction } from './ledger-storage.ts';
+interface KimiPricing {
+  promptUsdPerMillion?: number;
+  cachedPromptUsdPerMillion?: number;
+  outputUsdPerMillion?: number;
+}
+
+interface KimiUsage {
+  prompt_tokens?: unknown;
+  cached_prompt_tokens?: unknown;
+  prompt_tokens_details?: { cached_tokens?: unknown };
+  completion_tokens?: unknown;
+  reasoning_tokens?: unknown;
+  completion_tokens_details?: { reasoning_tokens?: unknown };
+}
+
+type StoredReservation = { amountMicros?: unknown; expiresAt?: unknown };
+
 const MICROS_PER_USD = 1_000_000;
 const DEFAULT_PROMPT_USD_PER_MILLION = 3;
 const DEFAULT_CACHED_PROMPT_USD_PER_MILLION = 0.3;
 const DEFAULT_OUTPUT_USD_PER_MILLION = 15;
 
-function finiteNumber(value, fallback = 0) {
+function finiteNumber(value: unknown, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function positiveInteger(value, fallback = 0) {
+function positiveInteger(value: unknown, fallback = 0) {
   return Math.max(0, Math.ceil(finiteNumber(value, fallback)));
 }
 
-export function usdToMicros(value) {
+export function usdToMicros(value: unknown) {
   return Math.max(0, Math.ceil(finiteNumber(value) * MICROS_PER_USD));
 }
 
-export function microsToUsd(value) {
+export function microsToUsd(value: unknown) {
   return Math.max(0, finiteNumber(value)) / MICROS_PER_USD;
 }
 
@@ -34,7 +52,7 @@ export function estimateKimiReservationMicros({
   maxOutputTokens,
   promptUsdPerMillion = DEFAULT_PROMPT_USD_PER_MILLION,
   outputUsdPerMillion = DEFAULT_OUTPUT_USD_PER_MILLION,
-}) {
+}: KimiPricing & { promptBytes: number; maxOutputTokens: number }) {
   // One UTF-8 byte per prompt token is a deliberately high upper bound. Kimi's
   // output cap includes reasoning, but reserving it twice protects against
   // providers reporting/billing visible completion and reasoning separately.
@@ -47,11 +65,11 @@ export function estimateKimiReservationMicros({
   return usdToMicros(costUsd);
 }
 
-export function calculateKimiUsageMicros(usage = {}, {
+export function calculateKimiUsageMicros(usage: KimiUsage = {}, {
   promptUsdPerMillion = DEFAULT_PROMPT_USD_PER_MILLION,
   cachedPromptUsdPerMillion = DEFAULT_CACHED_PROMPT_USD_PER_MILLION,
   outputUsdPerMillion = DEFAULT_OUTPUT_USD_PER_MILLION,
-} = {}) {
+}: KimiPricing = {}) {
   const promptTokens = positiveInteger(usage.prompt_tokens);
   const cachedPromptTokens = Math.min(
     promptTokens,
@@ -90,12 +108,12 @@ export const RESERVATION_TTL_MS = 5 * 60 * 1000;
  * not dropped on sight — that could cancel a reservation still in flight during
  * a deploy — it is handed a full TTL counted from now.
  */
-function reservationRecord(value, now) {
+function reservationRecord(value: unknown, now: number) {
   const isObject = value !== null && typeof value === 'object';
-  const expiresAt = isObject ? Number(value.expiresAt) : Number.NaN;
+  const expiresAt = isObject ? Number((value as StoredReservation).expiresAt) : Number.NaN;
   const dated = Number.isFinite(expiresAt);
   return {
-    amountMicros: positiveInteger(isObject ? value.amountMicros : value),
+    amountMicros: positiveInteger(isObject ? (value as StoredReservation).amountMicros : value),
     expiresAt: dated ? expiresAt : now + RESERVATION_TTL_MS,
     dated,
   };
@@ -108,7 +126,7 @@ function reservationRecord(value, now) {
  * `reservedMicros`, which is what `releasedMicros` measures, and lands in
  * `spentMicros`, which is what `chargedMicros` measures. It is not forgiven.
  */
-async function sweepExpiredReservations(transaction, now) {
+async function sweepExpiredReservations(transaction: ListedLedgerTransaction, now: number) {
   const entries = await transaction.list({ prefix: RESERVATION_PREFIX });
   let releasedMicros = 0;
   let chargedMicros = 0;
@@ -125,7 +143,7 @@ async function sweepExpiredReservations(transaction, now) {
   return { releasedMicros, chargedMicros };
 }
 
-function json(payload, status = 200) {
+function json(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
     headers: { 'content-type': 'application/json; charset=utf-8' },
@@ -133,16 +151,18 @@ function json(payload, status = 200) {
 }
 
 export class KimiBudgetLedger {
-  constructor(state) {
+  declare state: { storage: LedgerStorage<ListedLedgerTransaction> };
+
+  constructor(state: { storage: LedgerStorage<ListedLedgerTransaction> }) {
     this.state = state;
   }
 
-  async fetch(request) {
+  async fetch(request: Request) {
     if (request.method !== 'POST') return json({ code: 'METHOD_NOT_ALLOWED' }, 405);
-    const payload = await request.json().catch(() => null);
+    const payload = await request.json<{ action: string; reservationId?: unknown; amountMicros?: unknown; hardCapMicros?: unknown; chargedMicros?: unknown }>().catch(() => null);
     const action = payload?.action;
     const reservationId = String(payload?.reservationId || '').slice(0, 160);
-    if (!reservationId || !['reserve', 'settle'].includes(action)) {
+    if (!reservationId || !['reserve', 'settle'].includes(action!)) {
       return json({ code: 'INVALID_REQUEST' }, 400);
     }
 
@@ -176,8 +196,8 @@ export class KimiBudgetLedger {
           spentMicros += chargedMicros;
           await transaction.put('spentMicros', spentMicros);
         }
-        const amountMicros = positiveInteger(payload.amountMicros);
-        const hardCapMicros = positiveInteger(payload.hardCapMicros);
+        const amountMicros = positiveInteger(payload!.amountMicros);
+        const hardCapMicros = positiveInteger(payload!.hardCapMicros);
         if (!amountMicros || !hardCapMicros || spentMicros + liveReservedMicros + amountMicros > hardCapMicros) {
           return { accepted: false, spentMicros, reservedMicros: liveReservedMicros, hardCapMicros };
         }
@@ -206,7 +226,7 @@ export class KimiBudgetLedger {
       const reservationMicros = reservationRecord(existingReservation, now).amountMicros;
       const chargedMicros = Math.min(
         reservationMicros,
-        positiveInteger(payload.chargedMicros, reservationMicros),
+        positiveInteger(payload!.chargedMicros, reservationMicros),
       );
       const nextSpentMicros = spentMicros + chargedMicros;
       const nextReservedMicros = Math.max(0, reservedMicros - reservationMicros);

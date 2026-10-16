@@ -1,5 +1,20 @@
+import type { WorkerEnv } from './env.ts';
+
+export interface VerifiedIdentity {
+  uid: string;
+  email: string;
+  emailVerified: boolean;
+}
+
+interface IdentityLookup {
+  users?: Array<{ localId?: string; email?: unknown; emailVerified?: unknown }>;
+}
+
 export class WorkerAuthError extends Error {
-  constructor(code, status) {
+  declare code: string;
+  declare status: number;
+
+  constructor(code: string, status: number) {
     super(code);
     this.name = 'WorkerAuthError';
     this.code = code;
@@ -7,7 +22,7 @@ export class WorkerAuthError extends Error {
   }
 }
 
-async function sha256(value) {
+async function sha256(value: string) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
 }
@@ -25,7 +40,7 @@ const IDENTITY_TOOLKIT_TIMEOUT_MS = 4000;
 /** A token this close to expiry is still worth asking Google about. */
 const CLOCK_SKEW_SECONDS = 60;
 
-function decodeSegment(segment) {
+function decodeSegment(segment: string): { exp?: unknown; aud?: unknown } | null {
   const binary = atob(segment.replace(/-/g, '+').replace(/_/g, '/'));
   const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
   return JSON.parse(new TextDecoder().decode(bytes));
@@ -48,7 +63,7 @@ function decodeSegment(segment) {
  * the project id is configured — a Worker that does not know its own project
  * must not answer 401 to everybody.
  */
-function looksLikeIdToken(token, env, nowSeconds) {
+function looksLikeIdToken(token: string, env: WorkerEnv, nowSeconds: number) {
   const segments = token.split('.');
   if (segments.length !== 3 || segments.some(segment => !segment)) return false;
   let claims;
@@ -59,14 +74,14 @@ function looksLikeIdToken(token, env, nowSeconds) {
     return false;
   }
   if (!claims || typeof claims !== 'object') return false;
-  if (!Number.isFinite(claims.exp) || claims.exp + CLOCK_SKEW_SECONDS < nowSeconds) return false;
+  if (!Number.isFinite(claims.exp) || (claims.exp as number) + CLOCK_SKEW_SECONDS < nowSeconds) return false;
   const projectId = String(env.FIREBASE_PROJECT_ID || '').trim();
   return !projectId || claims.aud === projectId;
 }
 
-async function lookupIdentity(token, env) {
+async function lookupIdentity(token: string, env: WorkerEnv) {
   const response = await fetch(
-    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(env.FIREBASE_WEB_API_KEY)}`,
+    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(env.FIREBASE_WEB_API_KEY!)}`,
     {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -75,7 +90,7 @@ async function lookupIdentity(token, env) {
     },
   );
   const body = await response.text();
-  let payload;
+  let payload: IdentityLookup | null;
   try {
     payload = JSON.parse(body);
   } catch {
@@ -91,7 +106,7 @@ async function lookupIdentity(token, env) {
  * which a just-revoked token still passes; a route that publishes a document to
  * the open web does not, so those routes ask Identity Toolkit every time.
  */
-export async function verifyFirebaseIdentity(request, env, options) {
+export async function verifyFirebaseIdentity(request: Request, env: WorkerEnv, options?: { allowCache?: boolean }) {
   const authorization = request.headers.get('authorization') || '';
   const token = authorization.match(/^Bearer\s+([^\s]+)$/i)?.[1] || '';
   return verifyIdToken(token, env, options);
@@ -103,14 +118,14 @@ export async function verifyFirebaseIdentity(request, env, options) {
  * body, and that token has to be checked exactly like the first one, including
  * the local screen that keeps junk strings away from Identity Toolkit.
  */
-export async function verifyIdToken(token, env, { allowCache = true } = {}) {
+export async function verifyIdToken(token: string, env: WorkerEnv, { allowCache = true } = {}): Promise<VerifiedIdentity> {
   if (!token || token.length > 8_192) throw new WorkerAuthError('AUTH_REQUIRED', 401);
   if (!env.FIREBASE_WEB_API_KEY) throw new WorkerAuthError('AUTH_NOT_CONFIGURED', 503);
 
   const cacheKey = new Request(`https://papertok.internal/auth/${await sha256(token)}`);
   if (allowCache) {
     const cached = await caches.default.match(cacheKey);
-    if (cached) return cached.json();
+    if (cached) return cached.json<VerifiedIdentity>();
   }
 
   // After the cache, not before it: only a verified identity is ever cached, so

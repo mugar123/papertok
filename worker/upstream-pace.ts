@@ -1,4 +1,5 @@
 import { reserveRequestQuota } from './request-quota-ledger.ts';
+import type { WorkerEnv } from './env.ts';
 
 // Semantic Scholar admits one request per second per key and refuses the rest
 // of that second at once (measured 2026-09-03: five in parallel, one 200; the
@@ -23,7 +24,7 @@ export const DEFAULT_MAX_WAIT_MS = 2_500;
 // because no slot was free inside that window, so "come back" means "after it".
 // Not the same number as the router's fallback for a *provider* refusal, which
 // speaks for the provider's own window.
-export function paceRetryAfterSeconds(maxWaitMs) {
+export function paceRetryAfterSeconds(maxWaitMs: number) {
   return String(Math.ceil(maxWaitMs / 1000));
 }
 export const PACE_RETRY_AFTER_SECONDS = paceRetryAfterSeconds(DEFAULT_MAX_WAIT_MS);
@@ -34,19 +35,25 @@ export const PACE_RETRY_AFTER_SECONDS = paceRetryAfterSeconds(DEFAULT_MAX_WAIT_M
 // Raise the two together, or not at all.
 const PACE_GLOBAL_LIMIT = 1_000_000;
 
-const realSleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const realSleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
 // `periodMs` is the beat's period: one slot per period, app-wide. Semantic
 // Scholar takes the default second; arXiv asks for one request every three
 // seconds (its published policy), so it passes 3 000. The slot index is the
 // period the clock is in, `floor(t / periodMs)`, which for a one-second beat is
 // the second itself -- the arithmetic below is unchanged, only the unit.
-export async function awaitUpstreamSlot(ledger, {
+export async function awaitUpstreamSlot(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'], {
   namespace,
   periodMs = 1000,
   maxWaitMs = DEFAULT_MAX_WAIT_MS,
   now = Date.now,
   sleep = realSleep,
+}: {
+  namespace?: string;
+  periodMs?: number;
+  maxWaitMs?: number;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
 } = {}) {
   const started = now();
   // The bound stays expressed in `slot` against `started`, never against a

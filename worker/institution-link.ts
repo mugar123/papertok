@@ -1,3 +1,17 @@
+import type { WorkerEnv, WorkerGlobals } from './env.ts';
+import type { VerifiedIdentity } from './firebase-auth.ts';
+import type { FirestoreAdmin, FirestoreWrite } from './firestore-admin.ts';
+
+interface RorRecord { id?: unknown; domains?: unknown[]; names?: Array<{ types?: unknown[]; value?: unknown }> }
+export interface ResolvedInstitution { domain: string; rorId: string; name: string; acronym: string | null; entityId: string | null }
+interface InstitutionLinkOptions {
+  admin?: Pick<FirestoreAdmin, 'name'> & { commit(writes: FirestoreWrite[]): Promise<unknown> };
+  fetchImpl?: typeof fetch;
+  cache?: { match(request: RequestInfo | URL): Promise<Response | null | undefined>; put(request: RequestInfo | URL, response: Response): Promise<void> } | null;
+  now?: () => number;
+}
+
+
 /**
  * Links a verified university email to the signed-in account.
  *
@@ -40,7 +54,10 @@ const FEDERATION_MDQ = 'https://md.seamlessaccess.org/entities/';
 const INSTITUTION_CACHE_SECONDS = 7 * 24 * 3600;
 
 export class InstitutionLinkError extends Error {
-  constructor(code, status = 400) {
+  declare code: string;
+  declare status: number;
+
+  constructor(code: string, status = 400) {
     super(code);
     this.name = 'InstitutionLinkError';
     this.code = code;
@@ -52,7 +69,7 @@ export class InstitutionLinkError extends Error {
  * Reads the body inside the deadline as well: a registry that sends its
  * headers and then stalls is as unavailable as one that never answered.
  */
-async function fetchJson(url, fetchImpl) {
+async function fetchJson<T>(url: string, fetchImpl: typeof fetch): Promise<T> {
   const response = await fetchImpl(url, {
     headers: { accept: 'application/json' },
     signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
@@ -62,7 +79,7 @@ async function fetchJson(url, fetchImpl) {
   return JSON.parse(text);
 }
 
-function rorName(record, type) {
+function rorName(record: RorRecord, type: string) {
   const names = Array.isArray(record?.names) ? record.names : [];
   const match = names.find(name => Array.isArray(name?.types) && name.types.includes(type));
   return typeof match?.value === 'string' && match.value.trim() ? match.value.trim() : null;
@@ -73,11 +90,11 @@ function rorName(record, type) {
  * a text query, so the answer is filtered again on the `domains` field: a
  * record that merely mentions the domain somewhere is not a match.
  */
-async function lookupRor(domain, fetchImpl) {
+async function lookupRor(domain: string, fetchImpl: typeof fetch) {
   const url = `${ROR_API}?query.advanced=${encodeURIComponent(`domains:${domain}`)}`;
   let payload;
   try {
-    payload = await fetchJson(url, fetchImpl);
+    payload = await fetchJson<{ items?: RorRecord[] }>(url, fetchImpl);
   } catch {
     throw new InstitutionLinkError('INSTITUTION_LOOKUP_UNAVAILABLE', 502);
   }
@@ -98,9 +115,9 @@ async function lookupRor(domain, fetchImpl) {
  * federation, or a metadata service that is down, leaves it null rather than
  * blocking the link. Null here means "not found now", not "has none".
  */
-async function lookupEntityId(domain, fetchImpl) {
+async function lookupEntityId(domain: string, fetchImpl: typeof fetch) {
   try {
-    const entries = await fetchJson(`${FEDERATION_MDQ}?q=${encodeURIComponent(domain)}`, fetchImpl);
+    const entries = await fetchJson<Array<{ scope?: unknown; entityID?: unknown }>>(`${FEDERATION_MDQ}?q=${encodeURIComponent(domain)}`, fetchImpl);
     const entry = (Array.isArray(entries) ? entries : []).find(candidate => String(candidate?.scope || '')
       .split(',')
       .map(scope => scope.trim().toLowerCase())
@@ -111,7 +128,7 @@ async function lookupEntityId(domain, fetchImpl) {
   }
 }
 
-function cacheRequest(domain) {
+function cacheRequest(domain: string) {
   return new Request(`https://papertok.internal/institution/${encodeURIComponent(domain)}`);
 }
 
@@ -121,10 +138,10 @@ function cacheRequest(domain) {
  * found and unavailable are not cached, so a registry outage or a record
  * added tomorrow is not remembered as a refusal.
  */
-export async function resolveInstitution(domain, { fetchImpl = fetch, cache = globalThis.caches?.default } = {}) {
+export async function resolveInstitution(domain: string, { fetchImpl = fetch, cache = (globalThis as WorkerGlobals).caches?.default }: Pick<InstitutionLinkOptions, 'fetchImpl' | 'cache'> = {}): Promise<ResolvedInstitution> {
   const key = cacheRequest(domain);
   const cached = cache ? await cache.match(key) : null;
-  if (cached) return cached.json();
+  if (cached) return cached.json<ResolvedInstitution>();
 
   const ror = await lookupRor(domain, fetchImpl);
   const institution = { domain, ...ror, entityId: await lookupEntityId(domain, fetchImpl) };
@@ -145,8 +162,8 @@ export async function resolveInstitution(domain, { fetchImpl = fetch, cache = gl
  * exactly like the first, but its failures are reported as a bad proof rather
  * than as a lost session, which is what a 401 would tell the browser.
  */
-async function proofHolder(request, env, identity) {
-  const body = await readBoundedJson(request, BODY_LIMIT_BYTES, {
+async function proofHolder(request: Request, env: WorkerEnv, identity: VerifiedIdentity) {
+  const body = await readBoundedJson<{ institutionToken?: unknown }>(request, BODY_LIMIT_BYTES, {
     tooLarge: () => new InstitutionLinkError('BODY_TOO_LARGE', 413),
     invalid: () => new InstitutionLinkError('INVALID_BODY', 400),
   });
@@ -166,11 +183,11 @@ async function proofHolder(request, env, identity) {
   }
 }
 
-function userDocument(admin, uid) {
+function userDocument(admin: Pick<FirestoreAdmin, 'name'>, uid: string) {
   return admin.name(['users', uid]);
 }
 
-function profileDocument(admin, uid) {
+function profileDocument(admin: Pick<FirestoreAdmin, 'name'>, uid: string) {
   return admin.name(['userProfiles', uid]);
 }
 
@@ -180,7 +197,7 @@ function profileDocument(admin, uid) {
  * onboarding, and `createUserProfile` copies the field then), so its write is
  * a separate commit whose "no such document" is not a failure.
  */
-async function writeProfileCopy(admin, uid, write) {
+async function writeProfileCopy(admin: { commit(writes: FirestoreWrite[]): Promise<unknown> }, uid: string, write: FirestoreWrite) {
   try {
     await admin.commit([write]);
   } catch (error) {
@@ -188,7 +205,7 @@ async function writeProfileCopy(admin, uid, write) {
   }
 }
 
-export async function handleInstitutionLinkRequest(request, env, options = {}) {
+export async function handleInstitutionLinkRequest(request: Request, env: WorkerEnv, options: InstitutionLinkOptions = {}) {
   if (request.method !== 'POST') throw new InstitutionLinkError('METHOD_NOT_ALLOWED', 405);
   if (!isServiceAccountConfigured(env)) {
     throw new InstitutionLinkError('INSTITUTION_LINK_NOT_CONFIGURED', 503);

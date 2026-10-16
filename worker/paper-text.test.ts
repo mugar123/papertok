@@ -1,3 +1,4 @@
+import type { PaperTextConversion } from './paper-text.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
@@ -12,11 +13,11 @@ const PDF_BYTES = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
 const BODY = 'We measure the cooling of an ultracold gas under an alternating field. '.repeat(20);
 
 /** A Workers AI binding that converts every PDF into `data`, and records the call. */
-function workersAI(data, { format = 'markdown', reply } = {}) {
-  const calls = [];
+function workersAI(data: string, { format = 'markdown', reply }: { format?: PaperTextConversion['format']; reply?: () => PaperTextConversion | PaperTextConversion[] } = {}) {
+  const calls: Array<{ file: MarkdownDocument; options?: ConversionRequestOptions }> = [];
   return {
     calls,
-    toMarkdown: async (file, options) => {
+    toMarkdown: async (file: MarkdownDocument, options?: ConversionRequestOptions) => {
       calls.push({ file, options });
       if (reply) return reply();
       return { name: file.name, format, mimetype: 'application/pdf', tokens: 10, data };
@@ -81,7 +82,7 @@ test('a failed conversion is a reason, never an error', async () => {
 });
 
 test('a conversion that never answers is given up on', async () => {
-  const AI = { toMarkdown: () => new Promise(() => {}) };
+  const AI = { toMarkdown: () => new Promise<never>(() => {}) };
   const result = await extractPaperText({ AI }, PDF_BYTES, { timeoutMs: 20 });
   assert.equal(result.reason, 'conversion_failed');
 });

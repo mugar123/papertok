@@ -1,3 +1,36 @@
+import type { WorkerEnv } from './env.ts';
+import type { FirestoreAdmin } from './firestore-admin.ts';
+
+type ListEntry = NonNullable<ReturnType<typeof sanitizePublicPaper>>;
+type ListPayload = Omit<ReturnType<typeof sanitizePublicList>, 'papers'> & { papers: ListEntry[] };
+type ListBody = Record<string, unknown>;
+type ListAdmin = Pick<FirestoreAdmin, 'name' | 'commit' | 'getDocument'>;
+interface ListCard { shareId: string; title: string; emoji?: string; paperCount: number; publishedAt?: Date }
+interface ListProjection { data: { lists?: ListCard[] }; updateTime?: string }
+interface PrivateList { publicShareId?: unknown; paperIds?: unknown[]; emoji?: unknown }
+interface PinnedListProfile { pinnedLists?: ListCard[]; showPinnedLists?: boolean }
+interface OperationSettings { cryptoApi: ShareIdCrypto; now: () => number }
+interface ListOptions { admin?: ListAdmin; cryptoApi?: ShareIdCrypto; now?: () => number }
+interface PreparedOperations {
+  '/lists/publish': ReturnType<typeof validatePublish>;
+  '/lists/update': ReturnType<typeof validateUpdate>;
+  '/lists/unpublish': ReturnType<typeof validateUnpublish>;
+  '/lists/attribute': ReturnType<typeof validateAttribute>;
+}
+type OperationPath = keyof PreparedOperations;
+type ShareIdCrypto = { getRandomValues(bytes: Uint8Array<ArrayBuffer>): unknown };
+export interface OperationResults {
+  '/lists/publish': Awaited<ReturnType<typeof publish>>;
+  '/lists/update': Awaited<ReturnType<typeof update>>;
+  '/lists/unpublish': Awaited<ReturnType<typeof unpublish>>;
+  '/lists/attribute': Awaited<ReturnType<typeof attribute>>;
+}
+interface ListOperation<Key extends OperationPath> {
+  validate(body: ListBody): PreparedOperations[Key];
+  run(admin: ListAdmin, uid: string, prepared: PreparedOperations[Key], settings: OperationSettings): Promise<OperationResults[Key]>;
+}
+
+
 /**
  * Publishing a list (P19).
  *
@@ -64,7 +97,10 @@ const SHARE_ID_PATTERN = /^[a-f0-9]{32}$/;
 export const PROFILE_LISTS_LIMIT = 30;
 
 export class PublicListApiError extends Error {
-  constructor(code, status = 400) {
+  declare code: string;
+  declare status: number;
+
+  constructor(code: string, status = 400) {
     super(code);
     this.name = 'PublicListApiError';
     this.code = code;
@@ -72,18 +108,18 @@ export class PublicListApiError extends Error {
   }
 }
 
-function boundedLimit(value, fallback, maximum) {
-  const parsed = Number.parseInt(value, 10);
+function boundedLimit(value: unknown, fallback: number, maximum: number) {
+  const parsed = Number.parseInt(value as string, 10);
   return Number.isInteger(parsed) ? Math.max(1, Math.min(maximum, parsed)) : fallback;
 }
 
-export function createShareId(cryptoApi = crypto) {
+export function createShareId(cryptoApi: ShareIdCrypto = crypto) {
   const bytes = new Uint8Array(16);
   cryptoApi.getRandomValues(bytes);
   return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-function requireShareId(value) {
+function requireShareId(value: unknown) {
   const shareId = String(value || '').trim();
   if (!SHARE_ID_PATTERN.test(shareId)) throw new PublicListApiError('INVALID_SHARE_ID', 400);
   return shareId;
@@ -97,7 +133,7 @@ function requireShareId(value) {
  * check answered by the wrong document, and a quota unit spent on it. Exact
  * equality rather than a dot search: `arxiv:2608.18000` is a perfectly good id.
  */
-function requireListId(value) {
+function requireListId(value: unknown) {
   const listId = String(value || '').trim();
   if (!listId || listId.length > 160 || listId.includes('/')
     || listId === '.' || listId === '..') {
@@ -113,7 +149,7 @@ function requireListId(value) {
  * `content-length` catches any ordinary client, but a chunked body carries no
  * such header, which is precisely the shape a caller who cared would send.
  */
-async function readBody(request) {
+async function readBody(request: Request): Promise<ListBody> {
   const declared = Number(request.headers.get('content-length') || 0);
   if (declared > MAX_BODY_BYTES) throw new PublicListApiError('PAYLOAD_TOO_LARGE', 413);
   const buffer = await request.arrayBuffer();
@@ -139,7 +175,7 @@ async function readBody(request) {
  * and wrong for a request off the network: a caller that sent 80 papers should
  * be told, not quietly published with 50.
  */
-export function buildPublicListPayload(body) {
+export function buildPublicListPayload(body: ListBody): ListPayload {
   let payload;
   try {
     payload = sanitizePublicList(body);
@@ -188,7 +224,7 @@ export function buildPublicListPayload(body) {
  * papers again on the second attempt would be pure waste, and the result cannot
  * have changed.
  */
-export function prepareMergeInput(body) {
+export function prepareMergeInput(body: ListBody) {
   let header;
   try {
     header = sanitizePublicList({ ...body, papers: [] });
@@ -198,7 +234,7 @@ export function prepareMergeInput(body) {
 
   // Refused rather than coerced, like buildPublicListPayload: a paper the
   // sanitizer would drop is a caller that must be told.
-  const byRawId = new Map();
+  const byRawId = new Map<string, ListEntry>();
   for (const raw of Array.isArray(body.papers) ? body.papers : []) {
     const clean = sanitizePublicPaper(raw);
     if (!clean) throw new PublicListApiError('PAPERS_REJECTED', 400);
@@ -213,7 +249,7 @@ export function prepareMergeInput(body) {
 }
 
 /** The other half: everything that needs the two documents to be read first. */
-export function mergePreparedPayload({ header, byRawId, requestIds }, existing, membership) {
+export function mergePreparedPayload({ header, byRawId, requestIds }: ReturnType<typeof prepareMergeInput>, existing: Partial<ListPayload> | null, membership?: unknown) {
   const source = Array.isArray(membership) ? membership : requestIds;
   if (!Array.isArray(source)) throw new PublicListApiError('INVALID_BODY', 400);
   const ids = source
@@ -221,7 +257,7 @@ export function mergePreparedPayload({ header, byRawId, requestIds }, existing, 
     .filter(Boolean);
   if (ids.length > 500) throw new PublicListApiError('INVALID_BODY', 400);
 
-  const byPublishedKey = new Map();
+  const byPublishedKey = new Map<string, ListEntry>();
   for (const paper of Array.isArray(existing?.papers) ? existing.papers : []) {
     if (!paper || typeof paper.id !== 'string') continue;
     // `sourceId` first: it is the recorded truth. The rest are the guesses
@@ -237,7 +273,7 @@ export function mergePreparedPayload({ header, byRawId, requestIds }, existing, 
   }
 
   const seen = new Set();
-  const papers = [];
+  const papers: ListEntry[] = [];
   let skipped = 0;
   for (const id of ids) {
     // The cap TRUNCATES rather than rejecting. The membership is the Worker's
@@ -276,7 +312,7 @@ export function mergePreparedPayload({ header, byRawId, requestIds }, existing, 
  * operation it mirrors, so a card can never disagree with the list it
  * denormalizes the way the old best-effort pin refresh could.
  */
-function projectionEntries(projection) {
+function projectionEntries(projection: ListProjection | null) {
   return Array.isArray(projection?.data?.lists) ? projection.data.lists : [];
 }
 
@@ -285,7 +321,7 @@ function projectionEntries(projection) {
  * whole commit with 409 instead of silently dropping a card; the caller
  * retries. `mustExist: false` lets the first attributed publish create it.
  */
-function projectionWrite(admin, uid, lists, timestamp, projection) {
+function projectionWrite(admin: ListAdmin, uid: string, lists: ListCard[], timestamp: Date, projection: ListProjection | null) {
   return mergeWrite(
     admin.name(['profileLists', uid]),
     { lists, updatedAt: timestamp },
@@ -293,15 +329,15 @@ function projectionWrite(admin, uid, lists, timestamp, projection) {
   );
 }
 
-function cleanEmoji(value) {
+function cleanEmoji(value: unknown) {
   return typeof value === 'string' ? value.trim().slice(0, 40) : '';
 }
 
-function showcaseCard(shareId, { title, emoji, paperCount, publishedAt }) {
+function showcaseCard(shareId: string, { title, emoji, paperCount, publishedAt }: Omit<ListCard, 'shareId'>): ListCard {
   return { shareId, title, ...(emoji ? { emoji } : {}), paperCount, publishedAt };
 }
 
-async function reservePublishQuota(env, uid) {
+async function reservePublishQuota(env: WorkerEnv, uid: string) {
   const day = new Date().toISOString().slice(0, 10);
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
     periodKey: `publiclist:${day}`,
@@ -326,14 +362,14 @@ async function reservePublishQuota(env, uid) {
  * "is it already published?" check and the write that answers it have to be
  * talking about the same version of the document.
  */
-async function requireOwnedList(admin, uid, listId) {
-  const list = await admin.getDocument(['users', uid, 'lists', listId], { withMeta: true });
+async function requireOwnedList(admin: ListAdmin, uid: string, listId: string) {
+  const list = await admin.getDocument<PrivateList, true>(['users', uid, 'lists', listId], { withMeta: true });
   if (!list) throw new PublicListApiError('LIST_NOT_FOUND', 404);
   return list;
 }
 
-async function requireOwnedShare(admin, uid, shareId) {
-  const owner = await admin.getDocument(['publicListOwners', shareId]);
+async function requireOwnedShare(admin: ListAdmin, uid: string, shareId: string) {
+  const owner = await admin.getDocument<{ ownerId: string; listId: string }>(['publicListOwners', shareId]);
   if (!owner) throw new PublicListApiError('SHARE_NOT_FOUND', 404);
   if (owner.ownerId !== uid) throw new PublicListApiError('NOT_THE_OWNER', 403);
   return owner;
@@ -363,10 +399,10 @@ async function requireOwnedShare(admin, uid, shareId) {
  * clobbered pin. Cost when the list is not pinned: 1 read (+1 with pins
  * hidden), no writes.
  */
-export async function refreshPinnedCard(admin, uid, shareId, card, { now }) {
+export async function refreshPinnedCard(admin: ListAdmin, uid: string, shareId: string, card: Pick<ListCard, 'title' | 'paperCount'> | null, { now }: Pick<OperationSettings, 'now'>) {
   try {
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const profile = await admin.getDocument(['userProfiles', uid], { withMeta: true });
+      const profile = await admin.getDocument<PinnedListProfile, true>(['userProfiles', uid], { withMeta: true });
       if (!profile) return 'not-pinned';
 
       let segments = ['userProfiles', uid];
@@ -374,16 +410,16 @@ export async function refreshPinnedCard(admin, uid, shareId, card, { now }) {
       let entries = Array.isArray(profile.data.pinnedLists) ? profile.data.pinnedLists : [];
       if (!entries.some(entry => entry?.shareId === shareId)) {
         if (profile.data.showPinnedLists !== false) return 'not-pinned';
-        const stash = await admin.getDocument(['users', uid, 'profileStash', 'pinnedLists'], { withMeta: true });
+        const stash = await admin.getDocument<PinnedListProfile, true>(['users', uid, 'profileStash', 'pinnedLists'], { withMeta: true });
         const stashed = Array.isArray(stash?.data?.pinnedLists) ? stash.data.pinnedLists : [];
         if (!stashed.some(entry => entry?.shareId === shareId)) return 'not-pinned';
         segments = ['users', uid, 'profileStash', 'pinnedLists'];
-        holder = stash;
+        holder = stash!;
         entries = stashed;
       }
 
       const current = entries.find(entry => entry?.shareId === shareId);
-      if (card && current.title === card.title && current.paperCount === card.paperCount) {
+      if (card && current!.title === card.title && current!.paperCount === card.paperCount) {
         return 'unchanged';
       }
       const next = card
@@ -418,7 +454,7 @@ export async function refreshPinnedCard(admin, uid, shareId, card, { now }) {
 // never reaches Firestore cannot spend one.
 // ---------------------------------------------------------------------------
 
-function validatePublish(body) {
+function validatePublish(body: ListBody) {
   const listId = requireListId(body.listId);
   // Attributed by default (F12): publishing puts the list on your profile,
   // and the UI says so before the click. `attributed: false` is the per-list
@@ -442,7 +478,7 @@ function validatePublish(body) {
  * `publicShareId` that is now set means a real double publish and is reported as
  * such; anything else was benign churn and simply commits.
  */
-async function publish(admin, uid, { listId, attributed, payload }, { cryptoApi, now }) {
+async function publish(admin: ListAdmin, uid: string, { listId, attributed, payload }: PreparedOperations['/lists/publish'], { cryptoApi, now }: OperationSettings) {
   // Minted once: a refused commit is atomic, so it wrote nothing and the id it
   // would have used is still free.
   const shareId = createShareId(cryptoApi);
@@ -467,7 +503,7 @@ async function publish(admin, uid, { listId, attributed, payload }, { cryptoApi,
       }, { updateTime: list.updateTime }),
     ];
     if (attributed) {
-      const projection = await admin.getDocument(['profileLists', uid], { withMeta: true });
+      const projection = await admin.getDocument<ListProjection['data'], true>(['profileLists', uid], { withMeta: true });
       const entries = projectionEntries(projection);
       if (entries.length >= PROFILE_LISTS_LIMIT) {
         throw new PublicListApiError('PROFILE_LISTS_FULL', 409);
@@ -492,7 +528,7 @@ async function publish(admin, uid, { listId, attributed, payload }, { cryptoApi,
   throw new PublicListApiError('PUBLISH_CONFLICT', 409);
 }
 
-function validateUpdate(body) {
+function validateUpdate(body: ListBody) {
   return {
     shareId: requireShareId(body.shareId),
     merge: prepareMergeInput(body),
@@ -518,7 +554,7 @@ function validateUpdate(body) {
  * attempt's cards into a write pinned to the new version would delete a card
  * that a concurrent publish had just added — worse than the bug being fixed.
  */
-async function update(admin, uid, { shareId, merge, body }, { now }) {
+async function update(admin: ListAdmin, uid: string, { shareId, merge, body }: PreparedOperations['/lists/update'], { now }: OperationSettings) {
   const owner = await requireOwnedShare(admin, uid, shareId);
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -526,15 +562,15 @@ async function update(admin, uid, { shareId, merge, body }, { now }) {
     // extra read — the same document `publish` already reads — and in exchange
     // no client version, present or past, can shrink a published list by
     // sending a stale idea of what is in it.
-    const list = await admin.getDocument(['users', uid, 'lists', owner.listId]);
+    const list = await admin.getDocument<PrivateList>(['users', uid, 'lists', owner.listId]);
     const membership = Array.isArray(list?.paperIds) ? list.paperIds : null;
 
     let payload;
     let listCount = null;
     let skipped = 0;
-    let pinnedTo = null;
+    let pinnedTo: string | null | undefined = null;
     if (membership || merge.requestIds) {
-      const existing = await admin.getDocument(['publicLists', shareId], { withMeta: true });
+      const existing = await admin.getDocument<ListPayload, true>(['publicLists', shareId], { withMeta: true });
       if (!existing) throw new PublicListApiError('SHARE_NOT_FOUND', 404);
       const merged = mergePreparedPayload(merge, existing.data, membership);
       payload = merged.payload;
@@ -570,7 +606,7 @@ async function update(admin, uid, { shareId, merge, body }, { now }) {
     ];
     // The showcase card travels in the SAME commit as the list it mirrors —
     // the atomicity the best-effort pin refresh below never had.
-    const projection = await admin.getDocument(['profileLists', uid], { withMeta: true });
+    const projection = await admin.getDocument<ListProjection['data'], true>(['profileLists', uid], { withMeta: true });
     const entries = projectionEntries(projection);
     const held = entries.find(entry => entry?.shareId === shareId);
     if (held && (held.title !== payload.title || held.paperCount !== payload.paperCount)) {
@@ -611,7 +647,7 @@ async function update(admin, uid, { shareId, merge, body }, { now }) {
   throw new PublicListApiError('PUBLISH_CONFLICT', 409);
 }
 
-function validateUnpublish(body) {
+function validateUnpublish(body: ListBody) {
   // `body.listId` is read no more. The share document already records which
   // private list it belongs to, and that record is the only one that can be
   // trusted here: a client working from a stale idea of its own lists could
@@ -623,7 +659,7 @@ function validateUnpublish(body) {
   return { shareId: requireShareId(body.shareId) };
 }
 
-async function unpublish(admin, uid, { shareId }, { now }) {
+async function unpublish(admin: ListAdmin, uid: string, { shareId }: PreparedOperations['/lists/unpublish'], { now }: OperationSettings) {
   const owner = await requireOwnedShare(admin, uid, shareId);
 
   const timestamp = new Date(now());
@@ -639,7 +675,7 @@ async function unpublish(admin, uid, { shareId }, { now }) {
       'publicShareId', 'onProfile', 'publicSyncedAt',
     ]),
   ];
-  const projection = await admin.getDocument(['profileLists', uid], { withMeta: true });
+  const projection = await admin.getDocument<ListProjection['data'], true>(['profileLists', uid], { withMeta: true });
   const entries = projectionEntries(projection);
   if (entries.some(entry => entry?.shareId === shareId)) {
     writes.push(projectionWrite(
@@ -665,17 +701,17 @@ async function unpublish(admin, uid, { shareId }, { now }) {
  * migration path — a legacy pinned card becomes an attributed list through
  * this exact door, consent having been given by the pin itself.
  */
-function validateAttribute(body) {
+function validateAttribute(body: ListBody) {
   const shareId = requireShareId(body.shareId);
   if (typeof body.attributed !== 'boolean') throw new PublicListApiError('INVALID_BODY', 400);
   return { shareId, attributed: body.attributed };
 }
 
-async function attribute(admin, uid, { shareId, attributed }, { now }) {
+async function attribute(admin: ListAdmin, uid: string, { shareId, attributed }: PreparedOperations['/lists/attribute'], { now }: OperationSettings) {
   const owner = await requireOwnedShare(admin, uid, shareId);
 
   const timestamp = new Date(now());
-  const projection = await admin.getDocument(['profileLists', uid], { withMeta: true });
+  const projection = await admin.getDocument<ListProjection['data'], true>(['profileLists', uid], { withMeta: true });
   const entries = projectionEntries(projection);
   const held = entries.some(entry => entry?.shareId === shareId);
 
@@ -695,9 +731,9 @@ async function attribute(admin, uid, { shareId, attributed }, { now }) {
     if (entries.length >= PROFILE_LISTS_LIMIT) {
       throw new PublicListApiError('PROFILE_LISTS_FULL', 409);
     }
-    const publicList = await admin.getDocument(['publicLists', shareId]);
+    const publicList = await admin.getDocument<ListPayload & { createdAt?: Date }>(['publicLists', shareId]);
     if (!publicList) throw new PublicListApiError('SHARE_NOT_FOUND', 404);
-    const privateList = await admin.getDocument(['users', uid, 'lists', owner.listId]);
+    const privateList = await admin.getDocument<PrivateList>(['users', uid, 'lists', owner.listId]);
     const card = showcaseCard(shareId, {
       title: publicList.title,
       emoji: cleanEmoji(privateList?.emoji),
@@ -718,14 +754,16 @@ async function attribute(admin, uid, { shareId, attributed }, { now }) {
   return { shareId, attributed };
 }
 
-const OPERATIONS = {
+const OPERATIONS: { [Key in OperationPath]: ListOperation<Key> } = {
   '/lists/publish': { validate: validatePublish, run: publish },
   '/lists/update': { validate: validateUpdate, run: update },
   '/lists/unpublish': { validate: validateUnpublish, run: unpublish },
   '/lists/attribute': { validate: validateAttribute, run: attribute },
 };
 
-export async function handlePublicListRequest(request, env, pathname, options = {}) {
+export function handlePublicListRequest<Path extends OperationPath>(request: Request, env: WorkerEnv, pathname: Path, options?: ListOptions): Promise<OperationResults[Path]>;
+export function handlePublicListRequest(request: Request, env: WorkerEnv, pathname: string, options?: ListOptions): Promise<OperationResults[OperationPath]>;
+export async function handlePublicListRequest(request: Request, env: WorkerEnv, pathname: string, options: ListOptions = {}) {
   if (!PUBLIC_LIST_PATHS.has(pathname)) throw new PublicListApiError('NOT_FOUND', 404);
   if (request.method !== 'POST') throw new PublicListApiError('METHOD_NOT_ALLOWED', 405);
   if (!isServiceAccountConfigured(env)) {
@@ -735,7 +773,7 @@ export async function handlePublicListRequest(request, env, pathname, options = 
   // No cached identity here: this route publishes to the open web.
   const identity = await verifyFirebaseIdentity(request, env, { allowCache: false });
   const body = await readBody(request);
-  const operation = OPERATIONS[pathname];
+  const operation: ListOperation<OperationPath> = OPERATIONS[pathname as OperationPath];
 
   // Syntax first, quota second. Refusing a malformed body costs nothing, and
   // charging for it meant a handful of Firebase accounts could spend the whole

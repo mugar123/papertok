@@ -8,7 +8,7 @@
     "dev:emulators": "firebase emulators:exec \"vite --mode emulators\" --only auth,firestore --import .firebase-emulators --export-on-exit",
     "build": "vite build",
     "lint": "eslint .",
-    "typecheck": "npm run worker:types && tsc --noEmit -p tsconfig.json && tsc --noEmit -p worker/tsconfig.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p proxy/tsconfig.json",
+    "typecheck": "npm run worker:types && tsc --noEmit -p tsconfig.json && tsc --noEmit -p worker/tsconfig.json && tsc --noEmit -p worker/tsconfig.test.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p proxy/tsconfig.json",
     "build:welcome-title": "node scripts/build-welcome-title.mjs",
     "security:secrets": "node scripts/check-secrets.mjs",
     "test": "node --test \"src/**/*.test.{js,ts}\" \"worker/**/*.test.{js,ts}\" \"proxy/**/*.test.{js,ts}\"",

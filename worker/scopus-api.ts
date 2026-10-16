@@ -1,3 +1,14 @@
+import type { WorkerEnv } from './env.ts';
+import type { VerifiedIdentity } from './firebase-auth.ts';
+import type { UpstreamError } from './provider-runtime.ts';
+
+interface ScopusPayload {
+  'service-error'?: { status?: { statusCode?: unknown; statusText?: unknown }; statusCode?: unknown };
+  'error-response'?: { 'error-code'?: unknown; 'error-message'?: unknown };
+  'search-results'?: { entry?: Array<Record<string, unknown>>; 'opensearch:totalResults'?: unknown };
+}
+
+
 import { buildScopusSearchQuery } from '../src/services/scopusQuery.js';
 import { corsHeaders, json } from './http.ts';
 import { boundedText, cacheResponse, fetchWithDeadline, safeSourceQuery, sourceCacheParams, sourceRequestContext, SOURCE_CACHE_SECONDS, SOURCE_UPSTREAM_TIMEOUT_MS } from './provider-runtime.ts';
@@ -19,14 +30,14 @@ const SCOPUS_VIEW_FALLBACK_STATUSES = [400, 401, 403, 406, 500];
 // Trying a view the account cannot have costs a doomed upstream call on every
 // cache miss, so once `/health/scopus` names the view that answers, pinning it
 // here halves what a search spends against the weekly Scopus allowance.
-function scopusViewLadder(env) {
+function scopusViewLadder(env: WorkerEnv) {
   const pinned = String(env.SCOPUS_VIEW || '').trim().toUpperCase();
   if (pinned === 'DEFAULT') return [''];
   return SCOPUS_VIEWS.includes(pinned) && pinned ? [pinned] : SCOPUS_VIEWS;
 }
 
-async function scopusFailure(response, view) {
-  let payload;
+async function scopusFailure(response: Response, view: string) {
+  let payload: ScopusPayload | null;
   try {
     payload = JSON.parse(await response.text());
   } catch {
@@ -48,11 +59,11 @@ async function scopusFailure(response, view) {
 // API key at all, while the same request from any other network answers
 // normally. So Scopus is reached through `proxy/scopus-proxy.js` on Deno Deploy,
 // which is where the Elsevier key lives; this Worker never holds it.
-export function isScopusEgressConfigured(env) {
+export function isScopusEgressConfigured(env: WorkerEnv) {
   return Boolean(env.SCOPUS_PROXY_URL) && Boolean(env.SCOPUS_PROXY_SECRET);
 }
 
-async function fetchScopusSearch(env, { query, start = 0, count = 1 }) {
+async function fetchScopusSearch(env: WorkerEnv, { query, start = 0, count = 1 }: { query: string; start?: number; count?: number }) {
   const url = new URL(`${String(env.SCOPUS_PROXY_URL).replace(/\/$/, '')}/scopus`);
   url.searchParams.set('query', query);
   url.searchParams.set('start', String(start));
@@ -81,10 +92,10 @@ async function fetchScopusSearch(env, { query, start = 0, count = 1 }) {
     attempts.push(await scopusFailure(response, view));
     if (!SCOPUS_VIEW_FALLBACK_STATUSES.includes(response.status)) break;
   }
-  return { response, view, attempts };
+  return { response: response!, view, attempts };
 }
 
-function scopusQuota(response) {
+function scopusQuota(response: Response) {
   return {
     limit: Number(response.headers.get('X-RateLimit-Limit')) || null,
     remaining: Number(response.headers.get('X-RateLimit-Remaining')) || null,
@@ -92,7 +103,7 @@ function scopusQuota(response) {
   };
 }
 
-function scopusErrorDetail(payload) {
+function scopusErrorDetail(payload: ScopusPayload | null) {
   const code = payload?.['service-error']?.status?.statusCode
     || payload?.['error-response']?.['error-code']
     || payload?.['service-error']?.statusCode
@@ -108,7 +119,7 @@ function scopusErrorDetail(payload) {
 
 // Reports whether the configured key authenticates from Cloudflare's network and
 // which view it grants, without ever echoing the key or the institutional token.
-export async function checkScopusHealth(env) {
+export async function checkScopusHealth(env: WorkerEnv) {
   const base = {
     provider: 'scopus',
     configured: isScopusEgressConfigured(env),
@@ -142,7 +153,7 @@ export async function checkScopusHealth(env) {
       };
     }
 
-    const payload = await response.json().catch(() => null);
+    const payload = await response.json<ScopusPayload>().catch(() => null);
     const results = payload?.['search-results'] || {};
     const entry = Array.isArray(results.entry) ? results.entry[0] : null;
     return {
@@ -163,13 +174,13 @@ export async function checkScopusHealth(env) {
       ...base,
       available: false,
       code: 'SCOPUS_UNREACHABLE',
-      message: boundedText(error?.message, 160),
+      message: boundedText((error as UpstreamError)?.message, 160),
       attempts: [],
     };
   }
 }
 
-export async function handleScopus(request, env, identity) {
+export async function handleScopus(request: Request, env: WorkerEnv, identity?: Pick<VerifiedIdentity, 'uid'> | null) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
   if (!isScopusEgressConfigured(env)) {
@@ -192,13 +203,13 @@ export async function handleScopus(request, env, identity) {
       count: context.limit,
     });
     if (!response.ok) {
-      const error = new Error(`Scopus error: ${response.status}`);
+      const error: UpstreamError & { resetAt?: string | null } = new Error(`Scopus error: ${response.status}`);
       error.status = response.status;
       error.resetAt = response.headers.get('X-RateLimit-Reset') || null;
       throw error;
     }
 
-    const data = await response.json();
+    const data = await response.json<Record<string, unknown>>();
     return {
       ...data,
       _papertok: {

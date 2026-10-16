@@ -1,3 +1,28 @@
+import type { WorkerEnv } from './env.ts';
+import type { VerifiedIdentity } from './firebase-auth.ts';
+import type { QuotaRequest } from './request-quota-ledger.ts';
+
+export interface UpstreamError extends Error {
+  status?: number;
+  retryAfter?: string;
+  code?: string;
+}
+
+export interface MinuteCeiling {
+  namespace: string;
+  variable: keyof WorkerEnv;
+  fallback: number;
+  paced?: boolean;
+}
+
+interface CacheOptions {
+  identity?: Pick<VerifiedIdentity, 'uid'> | null;
+  canonicalParams?: Record<string, unknown>;
+  openAlexCalls?: number;
+}
+
+type QuotaGate = { error?: Response; reservation?: QuotaRequest };
+
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.ts';
 import { awaitUpstreamSlot, PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
@@ -70,7 +95,7 @@ const DEFAULT_PROVIDER_GLOBAL_MINUTE_LIMIT = 2_000;
 // a second and `withPubmedRetry` absorbs the burst.
 const DEFAULT_PUBMED_GLOBAL_MINUTE_LIMIT = 60;
 const DEFAULT_S2_GLOBAL_MINUTE_LIMIT = 60;
-const SHARED_MINUTE_CEILINGS = Object.freeze({
+const SHARED_MINUTE_CEILINGS: Readonly<Partial<Record<string, MinuteCeiling>>> = Object.freeze({
   // Each miss spends three E-utilities calls, six if every one is refused once
   // and retried -- what NCBI actually refuses is per-second bursts, which no
   // per-minute ceiling can see; `withPubmedRetry` is what absorbs those. So 60
@@ -102,7 +127,7 @@ const SHARED_MINUTE_CEILINGS = Object.freeze({
 // upstream call per origin -- and for `/health/scopus`, cached precisely to
 // guard a weekly allowance, a monitor with no `Origin` and a browser with one
 // were two calls for one answer. `serveCached` rebuilds the header instead.
-export function canonicalCacheKey(request, canonicalParams = {}) {
+export function canonicalCacheKey(request: Pick<Request, 'url'>, canonicalParams: Record<string, unknown> = {}) {
   const cacheUrl = new URL(`https://papertok.internal/cache${new URL(request.url).pathname}`);
   for (const [name, value] of Object.entries(canonicalParams)) {
     if (value !== null && value !== undefined && value !== '') {
@@ -116,7 +141,7 @@ export function canonicalCacheKey(request, canonicalParams = {}) {
 // back for whoever is asking now. `vary: Origin` travels with it so the caches
 // downstream of this one -- the browser's, any intermediary's -- do not
 // cross-serve what this one no longer needs to keep apart.
-export function serveCached(cached, origin, env) {
+export function serveCached(cached: Response, origin: string, env: WorkerEnv) {
   const headers = new Headers(cached.headers);
   headers.delete('access-control-allow-origin');
   headers.delete('vary');
@@ -124,15 +149,15 @@ export function serveCached(cached, origin, env) {
   return new Response(cached.body, { status: cached.status, headers });
 }
 
-function boundedLimit(value, fallback, maximum) {
-  const parsed = Number.parseInt(value, 10);
+function boundedLimit(value: unknown, fallback: number, maximum: number) {
+  const parsed = Number.parseInt(value as string, 10);
   return Number.isInteger(parsed) ? Math.max(1, Math.min(maximum, parsed)) : fallback;
 }
 
 // Returns the ledger request it reserved with, not just a verdict: a later gate
 // may refuse this caller after this unit is spent, and the refund has to name
 // this unit -- this minute, this user -- rather than one recomputed later.
-async function reserveProtectedProviderQuota(identity, env, origin) {
+async function reserveProtectedProviderQuota(identity: CacheOptions['identity'], env: WorkerEnv, origin: string): Promise<QuotaGate> {
   if (!identity) return {};
   const minute = new Date().toISOString().slice(0, 16);
   const ledgerRequest = {
@@ -166,8 +191,8 @@ async function reserveProtectedProviderQuota(identity, env, origin) {
   return { reservation: ledgerRequest };
 }
 
-export function getSafeLimit(value, fallback = 8, max = 10) {
-  const parsed = Number.parseInt(value, 10);
+export function getSafeLimit(value: unknown, fallback = 8, max = 10) {
+  const parsed = Number.parseInt(value as string, 10);
   return Number.isFinite(parsed) ? Math.max(1, Math.min(max, parsed)) : fallback;
 }
 
@@ -183,7 +208,7 @@ export function getSafeLimit(value, fallback = 8, max = 10) {
 // beat behind it may refuse the caller after this unit is spent and has to give
 // back *this* unit: the same minute, the same subject. Recomputing the minute at
 // release time credits the next one whenever the request straddled the boundary.
-export async function reserveSharedMinuteQuota(ceiling, env, origin) {
+export async function reserveSharedMinuteQuota(ceiling: MinuteCeiling, env: WorkerEnv, origin: string): Promise<QuotaGate> {
   const minute = new Date().toISOString().slice(0, 16);
   const limit = boundedLimit(env[ceiling.variable], ceiling.fallback, 100_000);
   const ledgerRequest = {
@@ -227,7 +252,7 @@ export async function reserveSharedMinuteQuota(ceiling, env, origin) {
 // accepted beat today -- the paced routes, `/sources/s2` and `/related`,
 // never pass `openAlexCalls` -- but a route that combined both would leak
 // this seat, with nothing left downstream to catch it.
-async function awaitSharedPace(ceiling, env, origin) {
+async function awaitSharedPace(ceiling: MinuteCeiling | undefined, env: WorkerEnv, origin: string) {
   if (!ceiling?.paced) return null;
   const slot = await awaitUpstreamSlot(env.REQUEST_QUOTA_LEDGER, { namespace: ceiling.namespace });
   if (slot.accepted) return null;
@@ -254,7 +279,7 @@ async function awaitSharedPace(ceiling, env, origin) {
 // reversing means that is the oldest -- and cheapest to lose -- unit. Same
 // shape as `releaseAIQuota`: a refund that cannot be delivered is a leak, not
 // a reason to change the answer the caller is owed.
-export async function releaseHeld(env, held) {
+export async function releaseHeld(env: WorkerEnv, held: QuotaRequest[]) {
   for (const reservation of [...held].reverse()) {
     try {
       await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER, reservation);
@@ -271,7 +296,7 @@ export async function releaseHeld(env, held) {
 // earlier ones already spent. The fetcher is deliberately not inside this: a
 // fetch that fails may still have reached the provider, and the ledger counts
 // provider calls, not answers.
-async function reserveGates(origin, env, options, ceiling, held) {
+async function reserveGates(origin: string, env: WorkerEnv, options: CacheOptions, ceiling: MinuteCeiling | undefined, held: QuotaRequest[]) {
   try {
     const minute = ceiling ? await reserveSharedMinuteQuota(ceiling, env, origin) : {};
     if (minute.error) return minute.error;
@@ -296,14 +321,14 @@ async function reserveGates(origin, env, options, ceiling, held) {
 // `ttl` may be a function of the payload, because whether an answer deserves its
 // full TTL is something only the fetcher's result can say: a 200 assembled from a
 // fallback after the real provider refused is not worth six hours.
-export async function cacheResponse(request, origin, env, ttl, fetcher, options = {}) {
+export async function cacheResponse<T>(request: Request, origin: string, env: WorkerEnv, ttl: number | ((payload: T) => number), fetcher: () => Promise<T>, options: CacheOptions = {}) {
   const cacheKey = canonicalCacheKey(request, options.canonicalParams);
   const cached = await caches.default.match(cacheKey);
   if (cached) return serveCached(cached, origin, env);
   // Resolved once here and handed to both gates: the beat used to re-parse the
   // URL to find the same ceiling the minute reservation had just looked up.
   const ceiling = SHARED_MINUTE_CEILINGS[new URL(request.url).pathname];
-  const held = [];
+  const held: QuotaRequest[] = [];
   const refusal = await reserveGates(origin, env, options, ceiling, held);
   if (refusal) {
     await releaseHeld(env, held);
@@ -345,7 +370,7 @@ export async function cacheResponse(request, origin, env, ttl, fetcher, options 
 // so a cancellation still surfaces as `AbortError` and only a real deadline as
 // `TimeoutError`. `email-notifications.js` keeps a private copy with the same
 // signal rule; change both together.
-export function fetchWithDeadline(url, options = {}, timeoutMs = UPSTREAM_TIMEOUT_MS) {
+export function fetchWithDeadline(url: RequestInfo | URL, options: RequestInit = {}, timeoutMs = UPSTREAM_TIMEOUT_MS) {
   const deadline = AbortSignal.timeout(timeoutMs);
   return fetch(url, {
     ...options,
@@ -353,22 +378,22 @@ export function fetchWithDeadline(url, options = {}, timeoutMs = UPSTREAM_TIMEOU
   });
 }
 
-export async function fetchJsonWithTimeout(url, options = {}, timeoutMs = UPSTREAM_TIMEOUT_MS) {
+export async function fetchJsonWithTimeout<T = unknown>(url: RequestInfo | URL, options: RequestInit = {}, timeoutMs = UPSTREAM_TIMEOUT_MS): Promise<T> {
   const response = await fetchWithDeadline(url, options, timeoutMs);
   if (!response.ok) {
     // The status travels on the error because callers need to tell a provider
     // that answered "I do not have this" from one that did not answer at all.
-    const error = new Error(`Upstream error: ${response.status}`);
+    const error: UpstreamError = new Error(`Upstream error: ${response.status}`);
     error.status = response.status;
     // And the provider's own backoff, when it gave one. Inventing a number here
     // would be guessing at somebody else's window.
     error.retryAfter = response.headers.get('retry-after') || '';
     throw error;
   }
-  return response.json();
+  return response.json<T>();
 }
 
-export function safeSourceQuery(value) {
+export function safeSourceQuery(value: unknown) {
   const query = [...String(value || '')]
     .map(character => {
       const code = character.charCodeAt(0);
@@ -384,7 +409,7 @@ export function safeSourceQuery(value) {
 // agree with the other nine. PubMed and Semantic Scholar were read straight from
 // the browser in batches of 25, and capping them at the 10 the domain sources use
 // would quietly shrink every result set that migrates here.
-export function sourceRequestContext(request, env, { limitFallback = 8, limitMax = 10 } = {}) {
+export function sourceRequestContext(request: Request, env: WorkerEnv, { limitFallback = 8, limitMax = 10 } = {}) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) {
@@ -404,7 +429,7 @@ export function sourceRequestContext(request, env, { limitFallback = 8, limitMax
 // not folded in here: three of these routes never send it upstream, and a key
 // that carries an input the answer does not depend on is just a second entry for
 // one response.
-export function sourceCacheParams(context, extra) {
+export function sourceCacheParams(context: { page: number; limit: number }, extra?: Record<string, unknown>) {
   return { page: String(context.page), limit: String(context.limit), ...extra };
 }
 
@@ -415,8 +440,8 @@ export function sourceCacheParams(context, extra) {
 // upstream measured is OpenReview at 5.2 s cold, and letting it finish still
 // pays off because the answer lands in the edge cache for the next reader,
 // even though the reader who triggered it has moved on.
-export function fetchJsonUpstream(url, headers = {}) {
-  return fetchJsonWithTimeout(url, {
+export function fetchJsonUpstream<T = unknown>(url: RequestInfo | URL, headers: Record<string, string> = {}) {
+  return fetchJsonWithTimeout<T>(url, {
     headers: {
       accept: 'application/json',
       'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
@@ -425,12 +450,12 @@ export function fetchJsonUpstream(url, headers = {}) {
   }, SOURCE_UPSTREAM_TIMEOUT_MS);
 }
 
-export function numberOrNull(value) {
+export function numberOrNull(value: unknown) {
   const parsed = Number(value);
   return value !== null && value !== '' && Number.isFinite(parsed) ? parsed : null;
 }
 
-export function boundedText(value, maxLength) {
+export function boundedText(value: unknown, maxLength: number) {
   return [...String(value || '')]
     .map(character => (character.charCodeAt(0) <= 31 || character.charCodeAt(0) === 127 ? ' ' : character))
     .join('')
@@ -452,9 +477,9 @@ export function boundedText(value, maxLength) {
 // before giving a unit back was a pattern here; now nothing is left spent for
 // a call that was never made. What was taken travels back to the caller, the
 // same shape as every other gate, so whoever owns the refund can name it.
-export async function reserveOpenAlexBudget(env, origin, amount) {
+export async function reserveOpenAlexBudget(env: WorkerEnv, origin: string, amount: number) {
   const now = new Date().toISOString();
-  const periods = [
+  const periods: Array<[string, number, string]> = [
     [`openalex:${now.slice(0, 16)}`, boundedLimit(
       env.OPENALEX_GLOBAL_MINUTE_LIMIT,
       DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT,
@@ -469,7 +494,7 @@ export async function reserveOpenAlexBudget(env, origin, amount) {
       1_000_000,
     ), '300'],
   ];
-  const taken = [];
+  const taken: QuotaRequest[] = [];
   for (const [periodKey, limit, retryAfter] of periods) {
     const ledgerRequest = {
       periodKey,

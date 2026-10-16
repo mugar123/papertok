@@ -8,8 +8,6 @@
   "include": [
     "src/**/*.test.js",
     "src/**/*.test.ts",
-    "worker/**/*.test.js",
-    "worker/**/*.test.ts",
     "proxy/**/*.test.js",
     "proxy/**/*.test.ts",
     "tests/**/*.js",
@@ -20,5 +18,10 @@
     "*.config.js",
     "*.config.ts"
   ],
-  "exclude": ["scripts/diagnostics"]
+  "exclude": [
+    "scripts/diagnostics",
+    "src/services/paperFigureService.test.js",
+    "src/components/Institution/publisherLogos.test.js",
+    "src/utils/aiExplanation.test.js"
+  ]
 }

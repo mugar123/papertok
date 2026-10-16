@@ -1,3 +1,4 @@
+import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import reportApi from './index.ts';
@@ -12,7 +13,7 @@ const UNPAYWALL_NOT_FOUND = () => new Response(
   { status: 404, headers: { 'content-type': 'text/html; charset=utf-8' } },
 );
 
-const crossrefWork = (license) => new Response(JSON.stringify({
+const crossrefWork = (license: typeof CC_BY_VOR) => new Response(JSON.stringify({
   status: 'ok',
   'message-type': 'work',
   'message-version': '1.0.0',
@@ -38,11 +39,11 @@ const TDM_ONLY = [{
   URL: 'https://www.elsevier.com/tdm/userlicense/1.0/',
 }];
 
-async function lookUp(upstream) {
-  const calls = [];
-  const puts = [];
+async function lookUp(upstream: { unpaywall: () => Response; crossref: () => Response }) {
+  const calls: string[] = [];
+  const puts: Response[] = [];
   const originalFetch = globalThis.fetch;
-  const originalCaches = globalThis.caches;
+  const originalCaches = (globalThis as TestGlobals).caches;
   globalThis.fetch = async (input) => {
     const url = String(input instanceof Request ? input.url : input);
     calls.push(url);
@@ -50,10 +51,10 @@ async function lookUp(upstream) {
     if (url.startsWith('https://api.crossref.org/')) return upstream.crossref();
     throw new Error(`unexpected upstream ${url}`);
   };
-  globalThis.caches = {
+  (globalThis as TestGlobals).caches = {
     default: {
-      match: async () => null,
-      put: async (key, response) => { puts.push(response); },
+      match: async (): Promise<Response | null | undefined> => null,
+      put: async (key, response): Promise<void> => { puts.push(response); },
     },
   };
   try {
@@ -61,11 +62,11 @@ async function lookUp(upstream) {
       `https://papertok-report-api.example/oa?doi=${encodeURIComponent(DOI)}`,
       { headers: { origin: ORIGIN } },
     ), {});
-    return { response, body: await response.json(), calls, puts };
+    return { response, body: await response.json<{ is_oa: boolean; source: string; best_oa_location: { url_for_pdf: string | null }; code: string; upstreamStatus: number }>(), calls, puts };
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 }
 
@@ -89,7 +90,7 @@ test('a DOI Unpaywall has not indexed yet is answered from its Crossref licence'
     is_best: true,
   });
   assert.equal(calls.filter(url => url.startsWith('https://api.crossref.org/')).length, 1);
-  assert.match(response.headers.get('cache-control'), /s-maxage=604800\b/);
+  assert.match(response.headers.get('cache-control')!, /s-maxage=604800\b/);
   assert.equal(puts.length, 1);
 });
 
@@ -105,7 +106,7 @@ test('a DOI nobody can answer for yet is cached briefly as unresolved, not faile
   assert.equal(body.best_oa_location, null);
   // Six hours: long enough to stop a card asking on every visit, short enough
   // to pick the paper up the day Unpaywall indexes it.
-  assert.match(response.headers.get('cache-control'), /s-maxage=21600\b/);
+  assert.match(response.headers.get('cache-control')!, /s-maxage=21600\b/);
   assert.equal(puts.length, 1);
 });
 
@@ -162,5 +163,5 @@ test('a DOI Unpaywall knows is relayed as it answered, without asking Crossref',
   assert.equal(response.status, 200);
   assert.deepEqual(body, unpaywallPayload);
   assert.equal(calls.some(url => url.startsWith('https://api.crossref.org/')), false);
-  assert.match(response.headers.get('cache-control'), /s-maxage=604800\b/);
+  assert.match(response.headers.get('cache-control')!, /s-maxage=604800\b/);
 });

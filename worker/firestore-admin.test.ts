@@ -27,8 +27,8 @@ const pair = await crypto.subtle.generateKey(
   { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
   true,
   ['sign', 'verify'],
-);
-const pkcs8 = new Uint8Array(await crypto.subtle.exportKey('pkcs8', pair.privateKey));
+) as CryptoKeyPair;
+const pkcs8 = new Uint8Array(await crypto.subtle.exportKey('pkcs8', pair.privateKey) as ArrayBuffer);
 const PEM = [
   '-----BEGIN PRIVATE KEY-----',
   ...(btoa(String.fromCharCode(...pkcs8)).match(/.{1,64}/g) || []),
@@ -41,7 +41,7 @@ const ENV = {
   FIREBASE_PROJECT_ID: 'papertok-168df',
 };
 
-function decodeSegment(segment) {
+function decodeSegment(segment: string) {
   return JSON.parse(atob(segment.replace(/-/g, '+').replace(/_/g, '/')));
 }
 
@@ -177,7 +177,7 @@ test('timestamps encode as RFC 3339 and decode back to a Date', () => {
   const when = new Date('2026-08-20T10:00:00.000Z');
   const fields = encodeFields({ createdAt: when });
   assert.deepEqual(fields.createdAt, { timestampValue: '2026-08-20T10:00:00.000Z' });
-  assert.equal(decodeFields(fields).createdAt.getTime(), when.getTime());
+  assert.equal(decodeFields<{ createdAt: Date }>(fields).createdAt.getTime(), when.getTime());
 });
 
 // ---------------------------------------------------------------------------
@@ -222,7 +222,7 @@ test('createWrite refuses to overwrite, replaceWrite refuses to create', () => {
 test('a merge names its fields, so createdAt is untouched without reading it', () => {
   const write = mergeWrite('n', { title: 'x', updatedAt: new Date(0) });
   assert.deepEqual(write.updateMask, { fieldPaths: ['title', 'updatedAt'] });
-  assert.ok(!('createdAt' in write.update.fields));
+  assert.ok(!('createdAt' in write.update!.fields));
 });
 
 test('a merge pinned to a version trades the exists check for that version', () => {
@@ -236,7 +236,7 @@ test('a merge pinned to a version trades the exists check for that version', () 
 test('clearing a field sends the mask and no value', () => {
   const write = clearFieldsWrite('n', ['publicShareId']);
   assert.deepEqual(write.updateMask, { fieldPaths: ['publicShareId'] });
-  assert.deepEqual(write.update.fields, {});
+  assert.deepEqual(write.update!.fields, {});
 });
 
 test('deleteWrite is just the name', () => {
@@ -247,18 +247,18 @@ test('deleteWrite is just the name', () => {
 // The client.
 // ---------------------------------------------------------------------------
 
-function adminWith(responder, { tokens = ['tok'] } = {}) {
+function adminWith(responder: (url: RequestInfo | URL, init: RequestInit) => Promise<Response>, { tokens = ['tok'] } = {}) {
   resetAccessTokenCache();
-  const calls = [];
+  const calls: Array<{ url: string; init: RequestInit & { headers: Record<string, string> } }> = [];
   let mints = 0;
-  const fetchImpl = async (url, init) => {
+  const fetchImpl: typeof fetch = async (url, init) => {
     if (url === 'https://oauth2.googleapis.com/token') {
       const token = tokens[Math.min(mints, tokens.length - 1)];
       mints += 1;
       return new Response(JSON.stringify({ access_token: token, expires_in: 3600 }), { status: 200 });
     }
-    calls.push({ url, init });
-    return responder(url, init);
+    calls.push({ url: url as string, init: init as RequestInit & { headers: Record<string, string> } });
+    return responder(url, init!);
   };
   return {
     calls,
@@ -278,7 +278,7 @@ test('a document reads back decoded, with the bearer token attached', async () =
     { status: 200 },
   ));
   assert.deepEqual(await admin.getDocument(['publicListOwners', 'abc']), { ownerId: 'alice' });
-  assert.equal(calls[0].init.headers.authorization, 'Bearer tok');
+  assert.equal(calls[0].init.headers!.authorization, 'Bearer tok');
 });
 
 test('withMeta pairs the data with the version a precondition needs', async () => {
@@ -305,7 +305,7 @@ test('a failed precondition is a 409 for the caller, not a 502 outage', async ()
   ));
   await assert.rejects(
     () => admin.commit([createWrite('n', {})]),
-    error => error.code === 'FIRESTORE_PRECONDITION_FAILED' && error.status === 409,
+    error => (error as Error & { code?: string; status?: number }).code === 'FIRESTORE_PRECONDITION_FAILED' && (error as Error & { code?: string; status?: number }).status === 409,
   );
 });
 
@@ -316,7 +316,7 @@ test('an upstream failure stays a 502', async () => {
   ));
   await assert.rejects(
     () => admin.commit([createWrite('n', {})]),
-    error => error.code === 'FIRESTORE_WRITE_FAILED' && error.status === 502,
+    error => (error as Error & { code?: string; status?: number }).code === 'FIRESTORE_WRITE_FAILED' && (error as Error & { code?: string; status?: number }).status === 502,
   );
 });
 
@@ -325,7 +325,7 @@ test('commit sends every write in one request, so a publish is atomic', async ()
   await admin.commit([createWrite('a', { x: 1 }), deleteWrite('b')]);
   assert.equal(calls.length, 1, 'one commit, not one request per document');
   assert.match(calls[0].url, /:commit$/);
-  assert.equal(JSON.parse(calls[0].init.body).writes.length, 2);
+  assert.equal(JSON.parse(calls[0].init.body as string).writes.length, 2);
 });
 
 test('batchGet keeps caller order and maps missing names to null', async () => {
@@ -364,7 +364,7 @@ test('runQuery returns id plus decoded fields, skipping readTime-only rows', asy
 test('runQuery sends a field filter and collection-group descendants', async () => {
   let body;
   const { admin } = adminWith(async (_url, init) => {
-    body = JSON.parse(init.body);
+    body = JSON.parse(init.body as string);
     return new Response(JSON.stringify([]), { status: 200 });
   });
   await admin.runQuery({
@@ -373,11 +373,11 @@ test('runQuery sends a field filter and collection-group descendants', async () 
     where: { field: 'authorUid', op: 'EQUAL', value: 'uid-1' },
     limit: 80,
   });
-  assert.equal(body.structuredQuery.from[0].allDescendants, true);
-  assert.equal(body.structuredQuery.where.fieldFilter.field.fieldPath, 'authorUid');
-  assert.equal(body.structuredQuery.where.fieldFilter.op, 'EQUAL');
-  assert.equal(body.structuredQuery.where.fieldFilter.value.stringValue, 'uid-1');
-  assert.equal(body.structuredQuery.limit, 80);
+  assert.equal(body!.structuredQuery.from[0].allDescendants, true);
+  assert.equal(body!.structuredQuery.where.fieldFilter.field.fieldPath, 'authorUid');
+  assert.equal(body!.structuredQuery.where.fieldFilter.op, 'EQUAL');
+  assert.equal(body!.structuredQuery.where.fieldFilter.value.stringValue, 'uid-1');
+  assert.equal(body!.structuredQuery.limit, 80);
 });
 
 test('countQuery reads the integer aggregation alias', async () => {
@@ -404,8 +404,8 @@ test('a 401 drops the isolate cached token and retries once with a fresh one', a
   // hour, and every request in that window leaves as a 502.
   assert.deepEqual(await admin.getDocument(['publicLists', 'abc']), { title: 'Ok' });
   assert.equal(calls.length, 2);
-  assert.equal(calls[0].init.headers.authorization, 'Bearer token-1');
-  assert.equal(calls[1].init.headers.authorization, 'Bearer token-2');
+  assert.equal(calls[0].init.headers!.authorization, 'Bearer token-1');
+  assert.equal(calls[1].init.headers!.authorization, 'Bearer token-2');
   assert.equal(mints(), 2);
 });
 
@@ -417,7 +417,7 @@ test('a 403 answers about permissions, not about the token, so nothing is re-min
 
   await assert.rejects(
     () => admin.getDocument(['publicLists', 'abc']),
-    error => error.code === 'FIRESTORE_READ_FAILED' && error.status === 502,
+    error => (error as Error & { code?: string; status?: number }).code === 'FIRESTORE_READ_FAILED' && (error as Error & { code?: string; status?: number }).status === 502,
   );
   assert.equal(calls.length, 1);
   assert.equal(mints(), 1, 'a 403 per request would mean an RS256 signature per request');

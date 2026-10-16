@@ -1,3 +1,11 @@
+import type { WorkerEnv } from './env.ts';
+import type { InstitutionQuery, InstitutionResolver, LookupOptions } from './institution-access.ts';
+
+type ServiceEntry = typeof SERVICE_CATALOGUE[number];
+type ServiceSubscription = { collection: string | null | undefined; ownPlatform: boolean };
+type ServiceOutcome = ServiceSubscription | null | undefined | typeof FAILED | typeof UNCHECKED;
+
+
 /**
  * Which publisher platforms a reader's library subscribes to.
  *
@@ -25,11 +33,11 @@ import { cacheResponse } from './provider-runtime.ts';
 export const INSTITUTION_SERVICES_PATH = '/institution/services';
 const SERVICES_PARTIAL_CACHE_SECONDS = 60 * 60;
 
-export async function handleInstitutionServices(request, env) {
+export async function handleInstitutionServices(request: Request, env: WorkerEnv) {
   const url = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   const query = readInstitutionQuery(url.searchParams);
-  const ttl = payload => (payload.partial ? SERVICES_PARTIAL_CACHE_SECONDS : ACCESS_CACHE_SECONDS);
+  const ttl = (payload: { partial: boolean }) => (payload.partial ? SERVICES_PARTIAL_CACHE_SECONDS : ACCESS_CACHE_SECONDS);
   return cacheResponse(request, origin, env, ttl, () => lookupInstitutionServices(query, { env }), {
     canonicalParams: servicesCacheParams(query, env),
   });
@@ -142,7 +150,7 @@ export const SERVICE_CATALOGUE = Object.freeze([
  * A short fingerprint of what a list depends on besides the library: the
  * catalogue entries and the budget. FNV-1a over the ids and DOIs, as hex.
  */
-export function catalogueFingerprint(entries, budget) {
+export function catalogueFingerprint(entries: ReadonlyArray<Pick<ServiceEntry, 'id' | 'doi'>>, budget: number) {
   let hash = 0x811c9dc5;
   for (const char of `${budget}|${entries.map(entry => `${entry.id}:${entry.doi}`).join(',')}`) {
     hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193) >>> 0;
@@ -157,12 +165,12 @@ export function catalogueFingerprint(entries, budget) {
  * Seen on 2026-10-14: the catalogue grew from 14 to 66 platforms and USAL
  * kept seeing yesterday's 12 until the entry expired.
  */
-export function servicesCacheParams(query, env) {
+export function servicesCacheParams(query: InstitutionQuery, env: WorkerEnv) {
   return { ...upstreamParams(query, env), catalogue: catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET) };
 }
 
 /** Whether a package name is the platform's or its publisher's own. */
-function namesPlatform(packageName, entry) {
+function namesPlatform(packageName: unknown, entry: ServiceEntry) {
   return String(packageName || '').toLowerCase().includes(entry.packageHint.toLowerCase());
 }
 
@@ -172,7 +180,7 @@ function namesPlatform(packageName, entry) {
  * Throws when the resolver could not answer, so the caller can report the
  * list as partial.
  */
-async function probeResolver(entry, resolver, fetchImpl, signal) {
+async function probeResolver(entry: ServiceEntry, resolver: InstitutionResolver, fetchImpl: typeof fetch, signal: AbortSignal) {
   const answer = await askResolver(resolver, entry.issn, entry.year, fetchImpl, signal);
   if (!answer) throw new Error('unreadable resolver answer');
   // A free service is open access, which says nothing about the library. Among
@@ -193,10 +201,10 @@ async function probeResolver(entry, resolver, fetchImpl, signal) {
  * request that fails leaves its platforms to the resolver too, or FAILED
  * without one. Returns the number of requests made.
  */
-async function askGetFtrForCatalogue(outcomes, { resolver, entityId, rorId, env, fetchImpl, signal }) {
+async function askGetFtrForCatalogue(outcomes: ServiceOutcome[], { resolver, entityId, rorId, env, fetchImpl, signal }: Pick<InstitutionQuery, 'entityId' | 'rorId'> & { resolver: InstitutionResolver | null | undefined; env: WorkerEnv; fetchImpl: typeof fetch; signal: AbortSignal }) {
   const batches = [];
   for (let start = 0; start < SERVICE_CATALOGUE.length; start += GETFTR_BATCH_SIZE) {
-    batches.push(SERVICE_CATALOGUE.slice(start, start + GETFTR_BATCH_SIZE).map((entry, offset) => [start + offset, entry]));
+    batches.push(SERVICE_CATALOGUE.slice(start, start + GETFTR_BATCH_SIZE).map((entry, offset): [number, ServiceEntry] => [start + offset, entry]));
   }
   await Promise.all(batches.map(async (batch) => {
     let verdicts = null;
@@ -216,8 +224,8 @@ async function askGetFtrForCatalogue(outcomes, { resolver, entityId, rorId, env,
 }
 
 export async function lookupInstitutionServices(
-  { domain, entityId = null, rorId = null },
-  { fetchImpl = (...args) => fetch(...args), env = {}, now = Date.now } = {},
+  { domain, entityId = null, rorId = null }: InstitutionQuery,
+  { fetchImpl = (...args) => fetch(...args), env = {}, now = Date.now }: LookupOptions = {},
 ) {
   const resolver = Object.hasOwn(INSTITUTION_RESOLVERS, domain) ? INSTITUTION_RESOLVERS[domain] : null;
   const getFtr = Boolean(env.GETFTR_API_KEY) && Boolean(entityId || rorId);
@@ -226,7 +234,7 @@ export async function lookupInstitutionServices(
 
   // `undefined` is a platform still to be asked about (filled: a hole would
   // be skipped by the iteration below).
-  const outcomes = new Array(SERVICE_CATALOGUE.length).fill(undefined);
+  const outcomes = new Array<ServiceOutcome>(SERVICE_CATALOGUE.length).fill(undefined);
   let budget = SUBREQUEST_BUDGET;
   if (getFtr) {
     budget -= await askGetFtrForCatalogue(outcomes, { resolver, entityId, rorId, env, fetchImpl, signal });
@@ -235,7 +243,7 @@ export async function lookupInstitutionServices(
   // The resolver, one journal per request, for what is still undecided and
   // fits the budget; the rest is unchecked, in catalogue order, so the
   // platforms most libraries hold are the ones asked about.
-  const pending = [];
+  const pending: number[] = [];
   outcomes.forEach((outcome, index) => {
     if (outcome !== undefined) return;
     if (resolver && pending.length < budget) pending.push(index);
@@ -245,7 +253,7 @@ export async function lookupInstitutionServices(
   const drain = async () => {
     while (next < pending.length) {
       const index = pending[next++];
-      outcomes[index] = await probeResolver(SERVICE_CATALOGUE[index], resolver, fetchImpl, signal).catch(() => FAILED);
+      outcomes[index] = await probeResolver(SERVICE_CATALOGUE[index], resolver!, fetchImpl, signal).catch(() => FAILED);
     }
   };
   await Promise.all(Array.from({ length: PROBE_CONCURRENCY }, drain));
@@ -254,7 +262,7 @@ export async function lookupInstitutionServices(
   if (asked.length > 0 && asked.every(outcome => outcome === FAILED)) {
     throw new InstitutionAccessError('ACCESS_LOOKUP_UNAVAILABLE', 502);
   }
-  const services = [];
+  const services: Array<Pick<ServiceEntry, 'id' | 'name' | 'publisher' | 'url' | 'monogram' | 'color'> & ServiceSubscription> = [];
   SERVICE_CATALOGUE.forEach(({ id, name, publisher, url, monogram, color }, index) => {
     const outcome = outcomes[index];
     if (outcome && outcome !== FAILED && outcome !== UNCHECKED) {

@@ -16,6 +16,7 @@ function normalizePhrase(value) {
     .slice(0, 120);
 }
 
+/** @param {{ terms?: unknown[], author?: unknown }} [input] */
 export function buildScopusSearchQuery({ terms = [], author = '' } = {}) {
   const normalizedAuthor = normalizePhrase(author);
   if (normalizedAuthor) return `AUTH("${normalizedAuthor}")`;

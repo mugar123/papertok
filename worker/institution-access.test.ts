@@ -1,4 +1,10 @@
+import type { TestGlobals } from './test-types.ts';
 import test from 'node:test';
+import type { WorkerEnv } from './env.ts';
+import type { InstitutionQuery } from './institution-access.ts';
+type AccessOptions = { token?: string | null; method?: string; resolver?: () => Response | Promise<Response> };
+type Resolver = (issn: string, target?: URL) => Response | Promise<Response>;
+
 import assert from 'node:assert/strict';
 import {
   InstitutionAccessError,
@@ -165,8 +171,8 @@ const ENTITY_ID = 'https://idp.usal.es/entity';
 const ROR_ID = 'https://ror.org/02f40zc51';
 const GETFTR_ENV = { GETFTR_API_KEY: 'getftr-test-key' };
 
-const xml = body => new Response(body, { status: 200, headers: { 'content-type': 'text/xml;charset=UTF-8' } });
-const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), { status });
+const xml = (body: BodyInit|null|undefined) => new Response(body, { status: 200, headers: { 'content-type': 'text/xml;charset=UTF-8' } });
+const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
 /**
  * Crossref, the resolver and GetFTR, each answering per call. `resolver`
@@ -176,17 +182,17 @@ function upstreams({
   crossref = () => jsonResponse({ message: CELL_WORK }),
   resolver = () => xml(CTO_CELL),
   getftr = () => jsonResponse({ entitlements: [] }),
-} = {}) {
-  const calls = [];
-  const fetchImpl = async (url, init = {}) => {
+}: { crossref?: (target: URL) => Response | Promise<Response>; resolver?: Resolver; getftr?: (body: unknown, init: RequestInit) => Response | Promise<Response> } = {}) {
+  const calls: Array<{ url: URL; init: RequestInit & { headers?: Record<string, string> } }> = [];
+  const fetchImpl: typeof fetch = async (url, init = {}) => {
     const target = new URL(String(url));
-    calls.push({ url: target, init });
+    calls.push({ url: target, init: init as RequestInit & { headers?: Record<string, string> } });
     if (target.host === 'api.crossref.org') return crossref(target);
-    if (target.host === 'eu01.alma.exlibrisgroup.com') return resolver(target.searchParams.get('rft.issn'), target);
-    if (target.host === 'entitlements.prod.getft.io') return getftr(JSON.parse(init.body), init);
+    if (target.host === 'eu01.alma.exlibrisgroup.com') return resolver(target.searchParams.get('rft.issn')!, target);
+    if (target.host === 'entitlements.prod.getft.io') return getftr(JSON.parse(init.body as string), init);
     throw new Error(`unexpected fetch ${target}`);
   };
-  const of = host => calls.filter(call => call.url.host === host);
+  const of = (host: string) => calls.filter(call => call.url.host === host);
   return {
     fetchImpl,
     calls,
@@ -196,16 +202,16 @@ function upstreams({
   };
 }
 
-async function rejectsWith(promise, code, status) {
+async function rejectsWith(promise: Promise<unknown>|(() => Promise<unknown>), code: string, status: number) {
   await assert.rejects(promise, (error) => {
-    assert.ok(error instanceof InstitutionAccessError, `expected InstitutionAccessError, got ${error?.name}: ${error?.message}`);
+    assert.ok(error instanceof InstitutionAccessError, `expected InstitutionAccessError, got ${(error as Error)?.name}: ${(error as Error)?.message}`);
     assert.equal(error.code, code);
     assert.equal(error.status, status);
     return true;
   });
 }
 
-const query = (params) => readAccessQuery(new URLSearchParams(params));
+const query = (params: string|Record<string,string>|Iterable<Iterable<string>>|undefined) => readAccessQuery(new URLSearchParams(params));
 
 test('parses the captured Cell answer into its two full-text services, unescaped', () => {
   assert.deepEqual(parseResolverAnswer(CTO_CELL), {
@@ -238,16 +244,16 @@ test('reports the subscription service rather than the free archive for an entit
   assert.equal(stub.resolverCalls().length, 1);
   assert.equal(call.url.pathname, '/view/uresolver/34BUC_USAL/openurl');
   assert.equal(call.url.searchParams.get('svc_dat'), 'CTO');
-  assert.equal(call.url.searchParams.get('rft.issn'), '1097-4172');
+  assert.equal(call.url.searchParams.get('rft.issn')!, '1097-4172');
   assert.equal(call.url.searchParams.get('rft.date'), '2020');
   assert.equal(call.url.searchParams.has('u.ignore_date_coverage'), false);
 });
 
 test('asks the electronic ISSN first and the print one when the first has no full text', async () => {
-  const stub = upstreams({ resolver: issn => xml(issn === '0092-8674' ? CTO_CELL : CTO_CONTROL) });
+  const stub = upstreams({ resolver: (issn: string) => xml(issn === '0092-8674' ? CTO_CELL : CTO_CONTROL) });
   const result = await lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
   assert.equal(result.status, 'entitled');
-  assert.deepEqual(stub.resolverCalls().map(call => call.url.searchParams.get('rft.issn')), ['1097-4172', '0092-8674']);
+  assert.deepEqual(stub.resolverCalls().map(call => call.url.searchParams.get('rft.issn')!), ['1097-4172', '0092-8674']);
 });
 
 test('is not entitled when every ISSN asked answers without full text', async () => {
@@ -261,7 +267,7 @@ test('a resolver answer that cannot be read is an outage, not an unknown to reme
   const stub = upstreams({ resolver: () => xml('<uresolver_content/>') });
   await assert.rejects(
     lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl }),
-    error => error.code === 'ACCESS_LOOKUP_UNAVAILABLE' && error.status === 502,
+    error => (error as Error & { code?: string; status?: number }).code === 'ACCESS_LOOKUP_UNAVAILABLE' && (error as Error & { code?: string; status?: number }).status === 502,
   );
 });
 
@@ -377,9 +383,9 @@ test('GetFTR entitled answers with its version-of-record link and skips Crossref
   const [call] = stub.getftrCalls();
   assert.equal(call.url.pathname, '/v2.1/entitlements');
   assert.equal(call.init.method, 'POST');
-  assert.equal(call.init.headers['X-API-KEY'], 'getftr-test-key');
-  assert.match(call.init.headers['X-REQUEST-ID'], /^[0-9a-f-]{36}$/);
-  assert.deepEqual(JSON.parse(call.init.body), { org: { entityID: ENTITY_ID }, dois: [DOI] });
+  assert.equal(call.init.headers!['X-API-KEY'], 'getftr-test-key');
+  assert.match(call.init.headers!['X-REQUEST-ID'], /^[0-9a-f-]{36}$/);
+  assert.deepEqual(JSON.parse(call.init.body as string), { org: { entityID: ENTITY_ID }, dois: [DOI] });
 });
 
 test('GetFTR not entitled is the answer, even for a library with a resolver', async () => {
@@ -392,7 +398,7 @@ test('GetFTR not entitled is the answer, even for a library with a resolver', as
   );
   assert.deepEqual(result, { status: 'not-entitled', collection: null, url: null });
   assert.equal(stub.resolverCalls().length, 0);
-  assert.deepEqual(JSON.parse(stub.getftrCalls()[0].init.body).org, { entityID: ENTITY_ID, rorID: ROR_ID });
+  assert.deepEqual(JSON.parse(stub.getftrCalls()[0].init.body as string).org, { entityID: ENTITY_ID, rorID: ROR_ID });
 });
 
 test('GetFTR maybe, an unsupported publisher or an outage leave the question to the resolver', async () => {
@@ -431,7 +437,7 @@ test('GetFTR is not asked without a key or without an institution id', async () 
   for (const [params, env] of [
     [{ doi: DOI, domain: 'usal.es', entityId: ENTITY_ID }, {}],
     [{ doi: DOI, domain: 'usal.es' }, GETFTR_ENV],
-  ]) {
+  ] as Array<[InstitutionQuery & { doi: string }, WorkerEnv]>) {
     const stub = upstreams();
     const result = await lookupInstitutionAccess(params, { fetchImpl: stub.fetchImpl, env });
     assert.equal(result.status, 'entitled');
@@ -445,11 +451,11 @@ const TOKEN = fakeIdToken({ aud: PROJECT_ID });
 const ROUTE_ENV = { FIREBASE_WEB_API_KEY: 'web-key', FIREBASE_PROJECT_ID: PROJECT_ID };
 
 /** The route through the Worker's own dispatch, with the edge cache recorded. */
-async function requestAccess(search, { token = TOKEN, method = 'GET', resolver = () => xml(CTO_CELL) } = {}) {
-  const calls = [];
-  const puts = [];
+async function requestAccess(search: string, { token = TOKEN, method = 'GET', resolver = () => xml(CTO_CELL) }: AccessOptions = {}) {
+  const calls: string[] = [];
+  const puts: Array<{ key: string; response: Response }> = [];
   const originalFetch = globalThis.fetch;
-  const originalCaches = globalThis.caches;
+  const originalCaches = (globalThis as TestGlobals).caches;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
     calls.push(url.host);
@@ -458,10 +464,10 @@ async function requestAccess(search, { token = TOKEN, method = 'GET', resolver =
     if (url.host === 'eu01.alma.exlibrisgroup.com') return resolver();
     throw new Error(`unexpected upstream ${url}`);
   };
-  globalThis.caches = {
+  (globalThis as TestGlobals).caches = {
     default: {
-      match: async () => null,
-      put: async (key, response) => { puts.push({ key: key.url, response }); },
+      match: async (): Promise<Response | null | undefined> => null,
+      put: async (key, response): Promise<void> => { puts.push({ key: (key as Request).url, response }); },
     },
   };
   try {
@@ -473,8 +479,8 @@ async function requestAccess(search, { token = TOKEN, method = 'GET', resolver =
     return { response, body: await response.json(), calls, accessPuts };
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 }
 
@@ -486,7 +492,7 @@ test('the route answers a signed-in reader and caches under the normalized DOI a
   assert.equal(accessPuts.length, 1);
   const key = new URL(accessPuts[0].key);
   assert.deepEqual([...key.searchParams], [['doi', DOI], ['domain', 'usal.es']]);
-  assert.match(accessPuts[0].response.headers.get('cache-control'), /s-maxage=604800/);
+  assert.match(accessPuts[0].response.headers.get('cache-control')!, /s-maxage=604800/);
 });
 
 test('the route refuses a request without a session before reaching any provider', async () => {
@@ -501,7 +507,7 @@ test('the route maps validation, unsupported institutions and outages to codes i
     ['doi=nope&domain=usal.es', {}, 400, 'INVALID_DOI'],
     [`doi=${encodeURIComponent(DOI)}&domain=uam.es`, {}, 404, 'INSTITUTION_NOT_SUPPORTED'],
     [`doi=${encodeURIComponent(DOI)}&domain=usal.es`, { resolver: () => new Response('down', { status: 503 }) }, 502, 'ACCESS_LOOKUP_UNAVAILABLE'],
-  ]) {
+  ] as Array<[string, AccessOptions, number, string]>) {
     const { response, body, accessPuts } = await requestAccess(search, options);
     assert.equal(response.status, status, search);
     assert.deepEqual(body, { code });

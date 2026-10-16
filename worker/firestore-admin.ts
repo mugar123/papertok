@@ -1,3 +1,50 @@
+import type { WorkerEnv } from './env.ts';
+
+export type FirestoreValue =
+  | { nullValue: null }
+  | { booleanValue: boolean }
+  | { integerValue: string }
+  | { doubleValue: number }
+  | { stringValue: string }
+  | { timestampValue: string }
+  | { arrayValue: { values?: FirestoreValue[] } }
+  | { mapValue: { fields?: Record<string, FirestoreValue> } }
+  | { referenceValue: string }
+  | { geoPointValue: { latitude: number; longitude: number } }
+  | { bytesValue: string };
+
+export type FirestoreDataValue = null | boolean | number | string | Date | FirestoreDataValue[] | FirestoreData;
+export interface FirestoreData { [field: string]: FirestoreDataValue }
+interface FirestoreFailure { error?: { status?: string } }
+interface FirestoreDocument extends FirestoreFailure {
+  name: string;
+  fields?: Record<string, FirestoreValue>;
+  updateTime?: string;
+}
+interface FirestoreRow {
+  found?: FirestoreDocument;
+  missing?: string;
+  document?: FirestoreDocument;
+  result?: { aggregateFields?: { count?: { integerValue?: string; doubleValue?: number } } };
+}
+export interface QueryOptions {
+  parentSegments?: string[];
+  collectionId?: string;
+  orderByField?: string;
+  orderDirection?: string;
+  limit?: number;
+  where?: { field: string; op?: string; value: unknown };
+  allDescendants?: boolean;
+}
+export interface FirestoreWrite {
+  update?: { name: string; fields: Record<string, FirestoreValue> };
+  delete?: string;
+  updateMask?: { fieldPaths: string[] };
+  currentDocument?: { exists?: boolean; updateTime?: string };
+}
+type DocumentResult<T, Meta extends boolean> = Meta extends true ? { data: T; updateTime?: string } : T;
+export type FirestoreAdmin = ReturnType<typeof createFirestoreAdmin>;
+
 /**
  * Firestore with the Worker's own service identity (P18/P10).
  *
@@ -25,7 +72,10 @@ const JWT_LIFETIME_SECONDS = 3600;
 const TOKEN_REFRESH_MARGIN_SECONDS = 300;
 
 export class FirestoreAdminError extends Error {
-  constructor(code, status = 502, detail = '') {
+  declare code: string;
+  declare status: number;
+
+  constructor(code: string, status = 502, detail = '') {
     super(detail ? `${code}: ${detail}` : code);
     this.name = 'FirestoreAdminError';
     this.code = code;
@@ -44,18 +94,18 @@ export class FirestoreAdminError extends Error {
  * loading the secret cannot fail in a way that only shows up at the first
  * publish.
  */
-export function normalizePrivateKey(value) {
+export function normalizePrivateKey(value: unknown) {
   return String(value || '').replace(/\\n/g, '\n').trim();
 }
 
-function base64UrlEncode(bytes) {
+function base64UrlEncode(bytes: string | ArrayBuffer) {
   const binary = typeof bytes === 'string'
     ? bytes
     : String.fromCharCode(...new Uint8Array(bytes));
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-function pemToArrayBuffer(pem) {
+function pemToArrayBuffer(pem: string) {
   const body = pem
     .replace(/-----BEGIN [^-]+-----/, '')
     .replace(/-----END [^-]+-----/, '')
@@ -67,7 +117,7 @@ function pemToArrayBuffer(pem) {
   return bytes.buffer;
 }
 
-export function readServiceAccount(env) {
+export function readServiceAccount(env: WorkerEnv) {
   const email = String(env.FIREBASE_SERVICE_ACCOUNT_EMAIL || '').trim();
   const privateKey = normalizePrivateKey(env.FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY);
   const projectId = String(env.FIREBASE_PROJECT_ID || '').trim();
@@ -77,7 +127,7 @@ export function readServiceAccount(env) {
   return { email, privateKey, projectId };
 }
 
-export function isServiceAccountConfigured(env) {
+export function isServiceAccountConfigured(env: WorkerEnv) {
   try {
     readServiceAccount(env);
     return true;
@@ -90,14 +140,14 @@ export function isServiceAccountConfigured(env) {
 // Token minting, cached per isolate.
 // ---------------------------------------------------------------------------
 
-const tokenCache = new Map();
+const tokenCache = new Map<string, { token: string; expiresAt: number }>();
 
 /** Test seam: drops the cached token so a test can observe a fresh mint. */
 export function resetAccessTokenCache() {
   tokenCache.clear();
 }
 
-export async function buildAssertion(account, nowSeconds) {
+export async function buildAssertion(account: Pick<ReturnType<typeof readServiceAccount>, 'email' | 'privateKey'>, nowSeconds: number) {
   const header = base64UrlEncode(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
   const claims = base64UrlEncode(JSON.stringify({
     iss: account.email,
@@ -122,7 +172,7 @@ export async function buildAssertion(account, nowSeconds) {
   return `${signingInput}.${base64UrlEncode(signature)}`;
 }
 
-export async function getAccessToken(env, { fetchImpl = fetch, now = () => Date.now() } = {}) {
+export async function getAccessToken(env: WorkerEnv, { fetchImpl = fetch, now = () => Date.now() } = {}) {
   const account = readServiceAccount(env);
   const nowSeconds = Math.floor(now() / 1000);
   const cached = tokenCache.get(account.email);
@@ -137,7 +187,7 @@ export async function getAccessToken(env, { fetchImpl = fetch, now = () => Date.
       assertion,
     }).toString(),
   });
-  const payload = await response.json().catch(() => ({}));
+  const payload = await response.json<{ access_token?: string; expires_in?: unknown; error?: string }>().catch(() => ({} as { access_token?: string; expires_in?: unknown; error?: string }));
   if (!response.ok || !payload?.access_token) {
     throw new FirestoreAdminError('SERVICE_TOKEN_REFUSED', 502, payload?.error || '');
   }
@@ -152,7 +202,7 @@ export async function getAccessToken(env, { fetchImpl = fetch, now = () => Date.
 // The value codec. Firestore REST speaks tagged values, JavaScript does not.
 // ---------------------------------------------------------------------------
 
-export function encodeValue(value) {
+export function encodeValue(value: unknown): FirestoreValue {
   if (value === null || value === undefined) return { nullValue: null };
   if (typeof value === 'boolean') return { booleanValue: value };
   if (typeof value === 'number') {
@@ -171,13 +221,13 @@ export function encodeValue(value) {
   throw new FirestoreAdminError('UNENCODABLE_VALUE', 500, typeof value);
 }
 
-export function encodeFields(data) {
+export function encodeFields(data: object): Record<string, FirestoreValue> {
   return Object.fromEntries(
     Object.entries(data).map(([key, value]) => [key, encodeValue(value)]),
   );
 }
 
-export function decodeValue(value) {
+export function decodeValue(value: FirestoreValue | null | undefined): FirestoreDataValue {
   if (!value || typeof value !== 'object') return null;
   if ('nullValue' in value) return null;
   if ('booleanValue' in value) return value.booleanValue;
@@ -192,17 +242,17 @@ export function decodeValue(value) {
   return null;
 }
 
-export function decodeFields(fields) {
+export function decodeFields<T extends object = FirestoreData>(fields: Record<string, FirestoreValue> | null | undefined): T {
   return Object.fromEntries(
     Object.entries(fields || {}).map(([key, value]) => [key, decodeValue(value)]),
-  );
+  ) as T;
 }
 
 // ---------------------------------------------------------------------------
 // The client.
 // ---------------------------------------------------------------------------
 
-function documentRoot(projectId) {
+function documentRoot(projectId: string) {
   return `projects/${projectId}/databases/(default)/documents`;
 }
 
@@ -216,17 +266,17 @@ function documentRoot(projectId) {
  * `publicListOwners/{shareId}`, recorded by a publish that ran before those
  * validators existed, so it is never re-checked upstream.
  */
-export function documentName(projectId, segments) {
+export function documentName(projectId: string, segments: unknown[]) {
   for (const segment of segments) {
     if (typeof segment !== 'string' || !segment || segment.includes('/')
       || segment === '.' || segment === '..') {
       throw new FirestoreAdminError('INVALID_DOCUMENT_PATH', 400);
     }
   }
-  return `${documentRoot(projectId)}/${segments.map(encodeURIComponent).join('/')}`;
+  return `${documentRoot(projectId)}/${(segments as string[]).map(encodeURIComponent).join('/')}`;
 }
 
-export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.now() } = {}) {
+export function createFirestoreAdmin(env: WorkerEnv, { fetchImpl = fetch, now = () => Date.now() } = {}) {
   const { email, projectId } = readServiceAccount(env);
 
   /**
@@ -248,7 +298,7 @@ export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.
    * token exchange to every single request for as long as the misconfiguration
    * lasted.
    */
-  async function authorizedFetch(url, init) {
+  async function authorizedFetch(url: string, init: RequestInit) {
     const send = async () => {
       const token = await getAccessToken(env, { fetchImpl, now });
       return fetchImpl(url, {
@@ -264,7 +314,7 @@ export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.
 
   return {
     projectId,
-    name: segments => documentName(projectId, segments),
+    name: (segments: string[]) => documentName(projectId, segments),
 
     /**
      * Returns the decoded document, or null when it does not exist.
@@ -274,23 +324,23 @@ export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.
      * `currentDocument.updateTime` precondition needs, so a read-modify-write
      * can refuse to clobber a document that moved under it.
      */
-    async getDocument(segments, { withMeta = false } = {}) {
+    async getDocument<T extends object = FirestoreData, Meta extends boolean = false>(segments: string[], { withMeta = false as Meta }: { withMeta?: Meta } = {}): Promise<DocumentResult<T, Meta> | null> {
       const url = `https://firestore.googleapis.com/v1/${documentName(projectId, segments)}`;
       const response = await authorizedFetch(url, { method: 'GET' });
       if (response.status === 404) return null;
-      const payload = await response.json().catch(() => ({}));
+      const payload = await response.json<Partial<FirestoreDocument>>().catch(() => ({} as Partial<FirestoreDocument>));
       if (!response.ok) {
         throw new FirestoreAdminError('FIRESTORE_READ_FAILED', 502, payload?.error?.status || '');
       }
-      const data = decodeFields(payload.fields);
-      return withMeta ? { data, updateTime: payload.updateTime } : data;
+      const data = decodeFields<T>(payload.fields);
+      return (withMeta ? { data, updateTime: payload.updateTime } : data) as DocumentResult<T, Meta>;
     },
 
     /**
      * Several documents in one round trip. Missing names come back as `null`
      * rather than throwing, matching `getDocument`. Order follows `docs`.
      */
-    async batchGet(docs) {
+    async batchGet<T extends object = FirestoreData>(docs: string[][]): Promise<Array<T | null>> {
       const names = (Array.isArray(docs) ? docs : []).map(segments => documentName(projectId, segments));
       if (names.length === 0) return [];
       const url = `https://firestore.googleapis.com/v1/${documentRoot(projectId)}:batchGet`;
@@ -299,24 +349,24 @@ export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ documents: names }),
       });
-      const payload = await response.json().catch(() => null);
+      const payload = await response.json<FirestoreRow[] | FirestoreFailure>().catch(() => null);
       if (!response.ok) {
         throw new FirestoreAdminError(
           'FIRESTORE_READ_FAILED',
           502,
-          payload?.error?.status || '',
+          (payload as FirestoreFailure | null)?.error?.status || '',
         );
       }
       const rows = Array.isArray(payload) ? payload : [];
-      const byName = new Map();
+      const byName = new Map<string, T | null>();
       for (const row of rows) {
         if (row?.found?.name) {
-          byName.set(row.found.name, decodeFields(row.found.fields));
+          byName.set(row.found.name, decodeFields<T>(row.found.fields));
         } else if (typeof row?.missing === 'string') {
           byName.set(row.missing, null);
         }
       }
-      return names.map(name => (byName.has(name) ? byName.get(name) : null));
+      return names.map(name => (byName.has(name) ? byName.get(name)! : null));
     },
 
     /**
@@ -328,7 +378,7 @@ export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.
      * the id. `where` is a single field filter (`EQUAL` and friends).
      * `allDescendants: true` is a collection-group query.
      */
-    async runQuery({
+    async runQuery<T extends object = FirestoreData>({
       parentSegments = [],
       collectionId,
       orderByField,
@@ -336,7 +386,7 @@ export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.
       limit: pageSize,
       where: whereFilter,
       allDescendants = false,
-    } = {}) {
+    }: QueryOptions = {}) {
       if (typeof collectionId !== 'string' || !collectionId || collectionId.includes('/')) {
         throw new FirestoreAdminError('INVALID_DOCUMENT_PATH', 400);
       }
@@ -361,19 +411,19 @@ export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.
             direction: orderDirection === 'DESCENDING' ? 'DESCENDING' : 'ASCENDING',
           }],
         } : {}),
-        ...(Number.isInteger(pageSize) && pageSize > 0 ? { limit: pageSize } : {}),
+        ...(Number.isInteger(pageSize) && pageSize! > 0 ? { limit: pageSize } : {}),
       };
       const response = await authorizedFetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ structuredQuery }),
       });
-      const payload = await response.json().catch(() => null);
+      const payload = await response.json<FirestoreRow[] | FirestoreFailure>().catch(() => null);
       if (!response.ok) {
         throw new FirestoreAdminError(
           'FIRESTORE_READ_FAILED',
           502,
-          payload?.error?.status || '',
+          (payload as FirestoreFailure | null)?.error?.status || '',
         );
       }
       const rows = Array.isArray(payload) ? payload : [];
@@ -387,7 +437,7 @@ export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.
           ? rest.split('/').map(segment => decodeURIComponent(segment))
           : [name.slice(name.lastIndexOf('/') + 1)];
         const id = path[path.length - 1];
-        return [{ id, data: decodeFields(row.document.fields), path }];
+        return [{ id, data: decodeFields<T>(row.document!.fields), path }];
       });
     },
 
@@ -395,7 +445,7 @@ export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.
      * A capped `count()` aggregation. Same parent/collection shape as
      * `runQuery`. Returns an integer; a missing alias is zero.
      */
-    async countQuery({ parentSegments = [], collectionId, limit: cap } = {}) {
+    async countQuery({ parentSegments = [], collectionId, limit: cap }: Pick<QueryOptions, 'parentSegments' | 'collectionId' | 'limit'> = {}) {
       if (typeof collectionId !== 'string' || !collectionId || collectionId.includes('/')) {
         throw new FirestoreAdminError('INVALID_DOCUMENT_PATH', 400);
       }
@@ -405,7 +455,7 @@ export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.
       const url = `https://firestore.googleapis.com/v1/${parent}:runAggregationQuery`;
       const structuredQuery = {
         from: [{ collectionId }],
-        ...(Number.isInteger(cap) && cap > 0 ? { limit: cap } : {}),
+        ...(Number.isInteger(cap) && cap! > 0 ? { limit: cap } : {}),
       };
       const response = await authorizedFetch(url, {
         method: 'POST',
@@ -415,12 +465,12 @@ export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.
           aggregations: [{ alias: 'count', count: {} }],
         }),
       });
-      const payload = await response.json().catch(() => null);
+      const payload = await response.json<FirestoreRow[] | (FirestoreRow & FirestoreFailure)>().catch(() => null);
       if (!response.ok) {
         throw new FirestoreAdminError(
           'FIRESTORE_READ_FAILED',
           502,
-          payload?.error?.status || '',
+          (payload as FirestoreFailure | null)?.error?.status || '',
         );
       }
       const rows = Array.isArray(payload) ? payload : [payload];
@@ -438,14 +488,14 @@ export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.
      * below, so a publish either lands whole or not at all — which is the
      * property the client-side batch had and must not lose.
      */
-    async commit(writes) {
+    async commit(writes: FirestoreWrite[]) {
       const url = `https://firestore.googleapis.com/v1/${documentRoot(projectId)}:commit`;
       const response = await authorizedFetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ writes }),
       });
-      const payload = await response.json().catch(() => ({}));
+      const payload = await response.json<FirestoreFailure & { commitTime?: string; writeResults?: unknown[] }>().catch(() => ({} as FirestoreFailure));
       if (!response.ok) {
         const status = payload?.error?.status || '';
         // A failed precondition is the caller's problem (already published,
@@ -465,7 +515,7 @@ export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.
 // ---------------------------------------------------------------------------
 
 /** Creates a document and fails if it already exists. */
-export function createWrite(name, data) {
+export function createWrite(name: string, data: object): FirestoreWrite {
   return {
     update: { name, fields: encodeFields(data) },
     currentDocument: { exists: false },
@@ -483,7 +533,7 @@ export function createWrite(name, data) {
  * write. Firestore accepts one precondition, so it replaces `mustExist`
  * rather than joining it; a version match implies existence anyway.
  */
-export function mergeWrite(name, data, { mustExist = true, updateTime = null } = {}) {
+export function mergeWrite(name: string, data: object, { mustExist = true, updateTime = null }: { mustExist?: boolean; updateTime?: string | null } = {}): FirestoreWrite {
   return {
     update: { name, fields: encodeFields(data) },
     updateMask: { fieldPaths: Object.keys(data) },
@@ -494,7 +544,7 @@ export function mergeWrite(name, data, { mustExist = true, updateTime = null } =
 }
 
 /** Clears named fields without touching the rest of the document. */
-export function clearFieldsWrite(name, fieldPaths) {
+export function clearFieldsWrite(name: string, fieldPaths: string[]): FirestoreWrite {
   return {
     update: { name, fields: {} },
     updateMask: { fieldPaths },
@@ -502,6 +552,6 @@ export function clearFieldsWrite(name, fieldPaths) {
   };
 }
 
-export function deleteWrite(name) {
+export function deleteWrite(name: string): FirestoreWrite {
   return { delete: name };
 }

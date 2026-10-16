@@ -1,3 +1,10 @@
+import type { TestNamespace } from './test-types.ts';
+import type { QuotaReading } from './request-quota-ledger.ts';
+type MockProvider = (url: string, options?: RequestInit) => Response | Promise<Response>;
+type QuotaAction = { action: string; periodKey: string; subjectKey: string };
+type QuotaState = { reservations: number; releases?: number; periodKeys: string[] };
+type QuotaScriptState = { actions: QuotaAction[] };
+import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -7,23 +14,24 @@ import { fetchWithDeadline } from './provider-runtime.ts';
 import { PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.js';
 import { fakeIdToken } from '../src/test-support/firebaseIdToken.js';
+import type { WorkerEnv } from './env.ts';
 
-async function withWorkerFetchMock(fetchImplementation, callback) {
+async function withWorkerFetchMock<Result>(fetchImplementation: typeof fetch, callback: () => Promise<Result>) {
   const originalFetch = globalThis.fetch;
-  const originalCaches = globalThis.caches;
+  const originalCaches = (globalThis as TestGlobals).caches;
   globalThis.fetch = fetchImplementation;
-  globalThis.caches = {
+  (globalThis as TestGlobals).caches = {
     default: {
-      match: async () => null,
-      put: async () => undefined,
+      match: async (): Promise<Response | null | undefined> => null,
+      put: async (): Promise<unknown> => undefined,
     },
   };
   try {
     return await callback();
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 }
 
@@ -41,7 +49,7 @@ test('allows the notification preferences PUT request through CORS', async () =>
 
   assert.equal(response.status, 204);
   assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
-  assert.match(response.headers.get('access-control-allow-methods'), /(?:^|,\s*)PUT(?:,|$)/);
+  assert.match(response.headers.get('access-control-allow-methods')!, /(?:^|,\s*)PUT(?:,|$)/);
 });
 
 test('the retired /locale route no longer reveals the caller\'s country', async () => {
@@ -59,7 +67,7 @@ test('the retired /locale route no longer reveals the caller\'s country', async 
 
 test('the retired /ai/hooks and /ai/explain routes answer 405 and spend nothing', async () => {
   const ledger = recordingLedger();
-  const fetched = [];
+  const fetched: string[] = [];
   const env = {
     FIREBASE_WEB_API_KEY: 'firebase-test-key',
     AI_PROVIDER: 'nan',
@@ -68,7 +76,7 @@ test('the retired /ai/hooks and /ai/explain routes answer 405 and spend nothing'
     REQUEST_QUOTA_LEDGER: ledger.binding,
   };
   await withWorkerFetchMock(async input => {
-    fetched.push(String(input?.url || input));
+    fetched.push(String((input as Request)?.url || input));
     return new Response('{}');
   }, async () => {
     for (const path of ['/ai/hooks', '/ai/explain']) {
@@ -104,7 +112,7 @@ test('returns an unhealthy status when the email provider works but the schedule
         completedAt: '2026-01-01T07:01:00.000Z',
         scanned: 1,
       }),
-    },
+    } as KVNamespace & { get(): Promise<object> },
   };
   const response = await withWorkerFetchMock(async () => new Response(JSON.stringify({
     senders: [{ active: true, email: 'papertok@example.com' }],
@@ -114,7 +122,7 @@ test('returns an unhealthy status when the email provider works but the schedule
   ), env));
 
   assert.equal(response.status, 503);
-  const payload = await response.json();
+  const payload = await response.json<{ available: boolean; schedule: { fresh: boolean; code: string } }>();
   assert.equal(payload.available, true);
   assert.equal(payload.schedule.fresh, false);
   assert.equal(payload.schedule.code, 'EMAIL_SCHEDULE_STALE');
@@ -128,26 +136,26 @@ test('serves the email health probe from the edge cache', async () => {
     EMAIL_PROVIDER: 'brevo',
     BREVO_API_KEY: 'xkeysib-test',
     BREVO_FROM_EMAIL: 'papertok@example.com',
-    EMAIL_DELIVERY_LEDGER: { idFromName: () => 'day', get: () => ({ fetch: async () => new Response('{}') }) },
+    EMAIL_DELIVERY_LEDGER: { idFromName: ((): unknown => 'day') as TestNamespace['idFromName'], get: ((): Pick<DurableObjectStub, 'fetch'> => ({ fetch: async () => new Response('{}') })) as TestNamespace['get'] } as Env['REQUEST_QUOTA_LEDGER'],
     NOTIFICATION_STORE: {
       get: async () => ({
         scheduledAt: new Date().toISOString(),
         completedAt: new Date().toISOString(),
         scanned: 1,
       }),
-    },
+    } as KVNamespace & { get(): Promise<object> },
   };
   const originalFetch = globalThis.fetch;
-  const originalCaches = globalThis.caches;
-  const stored = new Map();
-  globalThis.caches = {
+  const originalCaches = (globalThis as TestGlobals).caches;
+  const stored = new Map<string, Response>();
+  (globalThis as TestGlobals).caches = {
     default: {
-      async match(key) {
-        const hit = stored.get(String(key.url));
+      async match(key): Promise<Response | null | undefined> {
+        const hit = stored.get(String((key as Request).url));
         return hit ? hit.clone() : null;
       },
-      async put(key, response) {
-        stored.set(String(key.url), response.clone());
+      async put(key, response): Promise<void> {
+        stored.set(String((key as Request).url), response.clone());
       },
     },
   };
@@ -167,14 +175,14 @@ test('serves the email health probe from the edge cache', async () => {
     const second = await reportApi.fetch(emailHealthRequest(), env);
 
     assert.equal(first.status, 200);
-    assert.match(first.headers.get('cache-control'), /s-maxage=300/);
+    assert.match(first.headers.get('cache-control')!, /s-maxage=300/);
     assert.equal(second.status, 200);
     assert.equal(providerCalls, 1);
-    assert.equal((await second.json()).available, true);
+    assert.equal((await second.json<{ available: boolean }>()).available, true);
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 });
 
@@ -189,7 +197,7 @@ test('reports a missing email delivery ledger binding as unhealthy', async () =>
         completedAt: new Date().toISOString(),
         scanned: 1,
       }),
-    },
+    } as KVNamespace & { get(): Promise<object> },
   };
   const response = await withWorkerFetchMock(async () => new Response(JSON.stringify({
     senders: [{ active: true, email: 'papertok@example.com' }],
@@ -199,7 +207,7 @@ test('reports a missing email delivery ledger binding as unhealthy', async () =>
   ), env));
 
   assert.equal(response.status, 503);
-  const payload = await response.json();
+  const payload = await response.json<{ available: boolean; schedule: { fresh: boolean }; ledger: { ok: boolean; code: string } }>();
   assert.equal(payload.available, true);
   assert.equal(payload.schedule.fresh, true);
   assert.equal(payload.ledger.ok, false);
@@ -233,7 +241,7 @@ test('proxies OpenReview forum papers while excluding imported public records', 
   // api2 refuses `query` with a 400 (measured 2026-10-16); the search text is `term`.
   assert.equal(new URL(upstreamUrl).searchParams.get('term'), 'machine learning');
   assert.equal(new URL(upstreamUrl).searchParams.has('query'), false);
-  const payload = await response.json();
+  const payload = await response.json<{ notes: Array<{ id: string }> }>();
   assert.equal(payload.notes.length, 1);
   assert.equal(payload.notes[0].id, 'submission');
 });
@@ -257,8 +265,8 @@ test('orders OpenReview by date itself because api2 accepts the sort and ignores
       content: { title: { value: 'Published late' } },
     },
   ];
-  const upstream = [];
-  const fetchMock = async url => {
+  const upstream: { searchParams: { has: (arg0: string) => unknown; }; }[]|URL[] = [];
+  const fetchMock: typeof fetch = async url => {
     upstream.push(new URL(String(url)));
     return new Response(JSON.stringify({ count: 3, notes }), {
       headers: { 'content-type': 'application/json' },
@@ -272,7 +280,7 @@ test('orders OpenReview by date itself because api2 accepts the sort and ignores
 
   assert.equal(recent.status, 200);
   assert.equal(upstream[0].searchParams.has('sort'), false, 'a sort api2 ignores is not worth sending');
-  assert.deepEqual((await recent.json()).notes.map(note => note.id), ['published-late', 'newest', 'older']);
+  assert.deepEqual((await recent.json<{ notes: Array<{ id: unknown }> }>()).notes.map(note => note.id), ['published-late', 'newest', 'older']);
 
   const relevance = await withWorkerFetchMock(fetchMock, () => reportApi.fetch(new Request(
     'https://papertok-report-api.example/sources/openreview?q=neuroscience&limit=5',
@@ -280,7 +288,7 @@ test('orders OpenReview by date itself because api2 accepts the sort and ignores
   ), {}));
 
   assert.equal(relevance.status, 200);
-  assert.deepEqual((await relevance.json()).notes.map(note => note.id), ['older', 'newest', 'published-late'], 'relevance keeps the upstream order');
+  assert.deepEqual((await relevance.json<{ notes: Array<{ id: unknown }> }>()).notes.map(note => note.id), ['older', 'newest', 'published-late'], 'relevance keeps the upstream order');
 });
 
 test('proxies Hugging Face paper search through the specialist source contract', async () => {
@@ -295,12 +303,12 @@ test('proxies Hugging Face paper search through the specialist source contract',
   ), {}));
 
   assert.equal(response.status, 200);
-  const payload = await response.json();
+  const payload = await response.json<{ papers: Array<{ paper: { id: string } }> }>();
   assert.equal(payload.papers[0].paper.id, '2607.12345');
 });
 
 test('gives every source upstream a deadline it can be cut with', async () => {
-  let seenSignal;
+  let seenSignal: AbortSignal | null | undefined;
   const response = await withWorkerFetchMock(async (url, options) => {
     assert.match(String(url), /ebi\.ac\.uk\/europepmc/);
     seenSignal = options?.signal;
@@ -358,9 +366,9 @@ function openAlexEnv(extra = {}) {
   return {
     OPENALEX_API_KEY: 'worker-key',
     REQUEST_QUOTA_LEDGER: {
-      idFromName: () => 'quota-id',
-      get: () => ({ fetch: async () => new Response(JSON.stringify({ accepted: true })) }),
-    },
+      idFromName: ((): unknown => 'quota-id') as TestNamespace['idFromName'],
+      get: ((): Pick<DurableObjectStub, 'fetch'> => ({ fetch: async () => new Response(JSON.stringify({ accepted: true })) })) as TestNamespace['get'],
+    } as Env['REQUEST_QUOTA_LEDGER'],
     ...extra,
   };
 }
@@ -447,8 +455,8 @@ test('relays an OpenAlex refusal with its own wait instead of flattening it', as
   assert.equal(response.headers.get('retry-after'), '3564');
   assert.equal(response.headers.get('cache-control'), 'no-store');
   // Not simple response headers: without this the browser hides them.
-  assert.match(response.headers.get('access-control-expose-headers'), /retry-after/);
-  assert.match(response.headers.get('access-control-expose-headers'), /x-ratelimit-remaining-usd/);
+  assert.match(response.headers.get('access-control-expose-headers')!, /retry-after/);
+  assert.match(response.headers.get('access-control-expose-headers')!, /x-ratelimit-remaining-usd/);
 });
 
 test('reports the remaining OpenAlex budget as a number', async () => {
@@ -464,7 +472,7 @@ test('reports the remaining OpenAlex budget as a number', async () => {
   );
 
   assert.equal(response.status, 200);
-  const health = await response.json();
+  const health = await response.json<{ configured: boolean; available: boolean; budget: { remainingUsd: number; limitUsd: number; remainingCalls: number } }>();
   assert.equal(health.configured, true);
   assert.equal(health.available, true);
   assert.equal(health.budget.remainingUsd, 0.87);
@@ -485,7 +493,7 @@ test('reports an exhausted OpenAlex budget as unhealthy, naming the shortfall', 
   );
 
   assert.equal(response.status, 503);
-  const health = await response.json();
+  const health = await response.json<{ configured: boolean; available: boolean; status: number; budget: { remainingUsd: number }; message: string }>();
   assert.equal(health.configured, false);
   assert.equal(health.available, false);
   assert.equal(health.status, 429);
@@ -502,7 +510,7 @@ test('reports Scopus as unconfigured without contacting the egress', async () =>
   ), {}));
 
   assert.equal(response.status, 503);
-  const health = await response.json();
+  const health = await response.json<{ configured: boolean; available: boolean; code: string }>();
   assert.equal(health.configured, false);
   assert.equal(health.available, false);
   assert.equal(health.code, 'SCOPUS_NOT_CONFIGURED');
@@ -521,7 +529,7 @@ test('names the Elsevier error code when the key is refused from this network', 
   );
 
   assert.equal(response.status, 503);
-  const health = await response.json();
+  const health = await response.json<{ available: boolean; status: number; code: string; message: string; insttoken: boolean }>();
   assert.equal(health.available, false);
   assert.equal(health.status, 401);
   assert.equal(health.code, 'AUTHENTICATION_ERROR');
@@ -530,10 +538,10 @@ test('names the Elsevier error code when the key is refused from this network', 
 });
 
 test('falls back to the STANDARD view and reports that the abstract is missing', async () => {
-  const requestedViews = [];
+  const requestedViews: Array<string | null> = [];
   const response = await withWorkerFetchMock(
     async url => {
-      const view = new URL(url).searchParams.get('view');
+      const view = new URL(url as string | URL).searchParams.get('view');
       requestedViews.push(view);
       if (view === 'COMPLETE') return new Response('{}', { status: 403 });
       return new Response(
@@ -554,7 +562,7 @@ test('falls back to the STANDARD view and reports that the abstract is missing',
 
   assert.deepEqual(requestedViews, ['COMPLETE', 'STANDARD']);
   assert.equal(response.status, 200);
-  const health = await response.json();
+  const health = await response.json<{ available: boolean; view: string; hasAbstract: boolean; results: number; insttoken: boolean; quota: { remaining: number }; attempts: Array<{ view: unknown; status: unknown }> }>();
   assert.equal(health.available, true);
   assert.equal(health.view, 'STANDARD');
   assert.equal(health.hasAbstract, false);
@@ -577,7 +585,7 @@ test('records what every view answered when Scopus refuses both of them', async 
   );
 
   assert.equal(response.status, 503);
-  const health = await response.json();
+  const health = await response.json<{ available: boolean; view: unknown; code: string; attempts: Array<{ view: unknown; requestId: string }> }>();
   assert.equal(health.available, false);
   assert.equal(health.view, null);
   assert.equal(health.code, 'GENERAL_SYSTEM_ERROR');
@@ -603,17 +611,17 @@ test('reports a COMPLETE view that carries the abstract', async () => {
   );
 
   assert.equal(response.status, 200);
-  const health = await response.json();
+  const health = await response.json<{ available: boolean; view: string; hasAbstract: boolean }>();
   assert.equal(health.available, true);
   assert.equal(health.view, 'COMPLETE');
   assert.equal(health.hasAbstract, true);
 });
 
 test('falls past a view the account is not entitled to, which Scopus refuses with 401', async () => {
-  const requestedViews = [];
+  const requestedViews: Array<string | null> = [];
   const response = await withWorkerFetchMock(
     async url => {
-      const view = new URL(url).searchParams.get('view');
+      const view = new URL(url as string | URL).searchParams.get('view');
       requestedViews.push(view);
       if (view === 'COMPLETE') {
         return new Response(
@@ -634,17 +642,17 @@ test('falls past a view the account is not entitled to, which Scopus refuses wit
 
   assert.deepEqual(requestedViews, ['COMPLETE', 'STANDARD']);
   assert.equal(response.status, 200);
-  const health = await response.json();
+  const health = await response.json<{ available: boolean; view: string; hasAbstract: boolean }>();
   assert.equal(health.available, true);
   assert.equal(health.view, 'STANDARD');
   assert.equal(health.hasAbstract, false);
 });
 
 test('spends a single upstream call when the answering view is pinned', async () => {
-  const requestedViews = [];
+  const requestedViews: Array<string | null> = [];
   await withWorkerFetchMock(
     async url => {
-      requestedViews.push(new URL(url).searchParams.get('view'));
+      requestedViews.push(new URL(url as string | URL).searchParams.get('view'));
       return new Response(
         JSON.stringify({ 'search-results': { entry: [{ 'dc:title': 'A STANDARD result' }] } }),
         { status: 200 },
@@ -665,7 +673,7 @@ test('reaches Scopus through the egress and never contacts Elsevier itself', asy
   await withWorkerFetchMock(
     async (url, options) => {
       upstreamUrl = String(url);
-      sentHeaders = new Headers(options.headers);
+      sentHeaders = new Headers(options!.headers);
       return new Response(
         JSON.stringify({ 'search-results': { entry: [{ 'dc:title': 'A result' }] } }),
         { status: 200 },
@@ -680,9 +688,9 @@ test('reaches Scopus through the egress and never contacts Elsevier itself', asy
   const target = new URL(upstreamUrl);
   assert.equal(target.origin, 'https://scopus-proxy.example');
   assert.equal(target.pathname, '/scopus');
-  assert.equal(sentHeaders.get('authorization'), `Bearer ${SCOPUS_EGRESS.SCOPUS_PROXY_SECRET}`);
+  assert.equal(sentHeaders!.get('authorization'), `Bearer ${SCOPUS_EGRESS.SCOPUS_PROXY_SECRET}`);
   // The Elsevier key lives on the egress; this Worker must not carry one.
-  assert.equal(sentHeaders.get('X-ELS-APIKey'), null);
+  assert.equal(sentHeaders!.get('X-ELS-APIKey'), null);
 });
 
 test('requires Firebase authentication before a secret-backed source can be used', async () => {
@@ -699,13 +707,13 @@ test('requires Firebase authentication before a secret-backed source can be used
 
 test('does not spend protected-provider quota for an invalid authenticated query', async () => {
   let quotaReservations = 0;
-  const originalCaches = globalThis.caches;
-  globalThis.caches = {
+  const originalCaches = (globalThis as TestGlobals).caches;
+  (globalThis as TestGlobals).caches = {
     default: {
-      match: async request => request.url.includes('/auth/')
+      match: async (request): Promise<Response | null | undefined> => (request as Request).url.includes('/auth/')
         ? new Response(JSON.stringify({ uid: 'user-1' }), { headers: { 'content-type': 'application/json' } })
         : null,
-      put: async () => undefined,
+      put: async (): Promise<unknown> => undefined,
     },
   };
   try {
@@ -720,21 +728,21 @@ test('does not spend protected-provider quota for an invalid authenticated query
     ), {
       FIREBASE_WEB_API_KEY: 'firebase-test-key',
       REQUEST_QUOTA_LEDGER: {
-        idFromName: () => 'quota-id',
-        get: () => ({
+        idFromName: ((): unknown => 'quota-id') as TestNamespace['idFromName'],
+        get: ((): Pick<DurableObjectStub, 'fetch'> => ({
           fetch: async () => {
             quotaReservations += 1;
             return new Response(JSON.stringify({ accepted: true }));
           },
-        }),
-      },
+        })) as TestNamespace['get'],
+      } as Env['REQUEST_QUOTA_LEDGER'],
     });
 
     assert.equal(response.status, 400);
     assert.equal(quotaReservations, 0);
   } finally {
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 });
 
@@ -742,25 +750,25 @@ test('does not spend protected-provider quota for an authenticated cache hit', a
   let quotaReservations = 0;
   let upstreamCalls = 0;
   const originalFetch = globalThis.fetch;
-  const originalCaches = globalThis.caches;
+  const originalCaches = (globalThis as TestGlobals).caches;
   globalThis.fetch = async () => {
     upstreamCalls += 1;
     throw new Error('No upstream request should be made');
   };
-  globalThis.caches = {
+  (globalThis as TestGlobals).caches = {
     default: {
-      match: async request => {
-        if (request.url.includes('/auth/')) {
+      match: async (request): Promise<Response | null | undefined> => {
+        if ((request as Request).url.includes('/auth/')) {
           return new Response(JSON.stringify({ uid: 'user-1' }), { headers: { 'content-type': 'application/json' } });
         }
-        if (request.url.includes('/cache/sources/core')) {
+        if ((request as Request).url.includes('/cache/sources/core')) {
           return new Response(JSON.stringify({ results: [{ id: 'cached-paper' }] }), {
             headers: { 'content-type': 'application/json' },
           });
         }
         return null;
       },
-      put: async () => undefined,
+      put: async (): Promise<unknown> => undefined,
     },
   };
   try {
@@ -775,14 +783,14 @@ test('does not spend protected-provider quota for an authenticated cache hit', a
     ), {
       FIREBASE_WEB_API_KEY: 'firebase-test-key',
       REQUEST_QUOTA_LEDGER: {
-        idFromName: () => 'quota-id',
-        get: () => ({
+        idFromName: ((): unknown => 'quota-id') as TestNamespace['idFromName'],
+        get: ((): Pick<DurableObjectStub, 'fetch'> => ({
           fetch: async () => {
             quotaReservations += 1;
             return new Response(JSON.stringify({ accepted: true }));
           },
-        }),
-      },
+        })) as TestNamespace['get'],
+      } as Env['REQUEST_QUOTA_LEDGER'],
     });
 
     assert.equal(response.status, 200);
@@ -791,8 +799,8 @@ test('does not spend protected-provider quota for an authenticated cache hit', a
     assert.equal(upstreamCalls, 0);
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 });
 
@@ -800,17 +808,17 @@ test('canonical source cache keys ignore unknown query parameters', async () => 
   const responses = new Map();
   let upstreamCalls = 0;
   const originalFetch = globalThis.fetch;
-  const originalCaches = globalThis.caches;
+  const originalCaches = (globalThis as TestGlobals).caches;
   globalThis.fetch = async () => {
     upstreamCalls += 1;
     return new Response(JSON.stringify({ notes: [] }), {
       headers: { 'content-type': 'application/json' },
     });
   };
-  globalThis.caches = {
+  (globalThis as TestGlobals).caches = {
     default: {
-      match: async request => responses.get(request.url)?.clone() || null,
-      put: async (request, response) => responses.set(request.url, response.clone()),
+      match: async (request): Promise<Response | null | undefined> => responses.get((request as Request).url)?.clone() || null,
+      put: async (request, response): Promise<unknown> => responses.set((request as Request).url, response.clone()),
     },
   };
   try {
@@ -823,8 +831,8 @@ test('canonical source cache keys ignore unknown query parameters', async () => 
     assert.equal(upstreamCalls, 1);
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 });
 
@@ -832,17 +840,17 @@ test('duplicate cache parameters cannot create cache variants for one upstream r
   const responses = new Map();
   let upstreamCalls = 0;
   const originalFetch = globalThis.fetch;
-  const originalCaches = globalThis.caches;
+  const originalCaches = (globalThis as TestGlobals).caches;
   globalThis.fetch = async () => {
     upstreamCalls += 1;
     return new Response(JSON.stringify({ notes: [] }), {
       headers: { 'content-type': 'application/json' },
     });
   };
-  globalThis.caches = {
+  (globalThis as TestGlobals).caches = {
     default: {
-      match: async request => responses.get(request.url)?.clone() || null,
-      put: async (request, response) => responses.set(request.url, response.clone()),
+      match: async (request): Promise<Response | null | undefined> => responses.get((request as Request).url)?.clone() || null,
+      put: async (request, response): Promise<unknown> => responses.set((request as Request).url, response.clone()),
     },
   };
   try {
@@ -855,8 +863,8 @@ test('duplicate cache parameters cannot create cache variants for one upstream r
     assert.equal(upstreamCalls, 1);
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 });
 
@@ -865,10 +873,10 @@ test('duplicate cache parameters cannot create cache variants for one upstream r
 // refused by the anonymous pool, so a flag that reported "configured" regardless
 // of the environment would hide a dead source behind a green check.
 test('/health reports whether the Semantic Scholar key is configured', async () => {
-  const read = async env => (await (await reportApi.fetch(
+  const read = async (env: WorkerEnv) => (await (await reportApi.fetch(
     new Request('https://papertok-report-api.example/health'),
     env,
-  )).json()).semanticScholarKeyConfigured;
+  )).json<{ semanticScholarKeyConfigured: unknown }>()).semanticScholarKeyConfigured;
 
   assert.equal(await read({ SEMANTIC_SCHOLAR_API_KEY: 's2-test-key' }), true);
   assert.equal(await read({ SEMANTIC_SCHOLAR_API_KEY: '' }), false);
@@ -879,7 +887,7 @@ test('adds baseline browser hardening headers to JSON responses', async () => {
   const response = await reportApi.fetch(new Request('https://papertok-report-api.example/health'), {});
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
   assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
-  assert.match(response.headers.get('permissions-policy'), /camera=\(\)/);
+  assert.match(response.headers.get('permissions-policy')!, /camera=\(\)/);
 });
 
 // --- G2: plazos de red -------------------------------------------------------
@@ -887,7 +895,7 @@ test('adds baseline browser hardening headers to JSON responses', async () => {
 // An upstream that answers its headers and then never finishes the body. The
 // stream fails only when the caller's own deadline cuts it, which is the whole
 // point: a deadline that stops at the headers leaves this hanging forever.
-function stalledBodyResponse(signal, contentType = 'application/json') {
+function stalledBodyResponse(signal: AbortSignal|null|undefined, contentType = 'application/json') {
   return new Response(new ReadableStream({
     start(controller) {
       controller.enqueue(new TextEncoder().encode('{"partial":'));
@@ -902,7 +910,7 @@ function stalledBodyResponse(signal, contentType = 'application/json') {
 // fire without paying six real seconds for it. Patching `AbortSignal.timeout`
 // also pins the mechanism: a timer cleared in a `finally` ignores this patch and
 // the request hangs, which is exactly the failure these tests exist to catch.
-async function withShortDeadlines(ms, callback) {
+async function withShortDeadlines<Result>(ms: number, callback: () => Promise<Result>) {
   const original = AbortSignal.timeout;
   AbortSignal.timeout = () => original.call(AbortSignal, ms);
   try {
@@ -914,13 +922,13 @@ async function withShortDeadlines(ms, callback) {
 
 const HUNG = Symbol('hung');
 
-async function answeredWithin(ms, promise) {
+async function answeredWithin(ms: number|undefined, promise: Promise<Response>) {
   const result = await Promise.race([
     promise,
-    new Promise(resolve => setTimeout(() => resolve(HUNG), ms)),
+    new Promise<typeof HUNG>(resolve => setTimeout(() => resolve(HUNG), ms)),
   ]);
   assert.notEqual(result, HUNG, `the request was still hanging after ${ms}ms`);
-  return result;
+  return result as Response;
 }
 
 test('cuts a source upstream that sends its headers and then stalls the body', async () => {
@@ -949,17 +957,17 @@ test('cuts an arXiv upstream that sends its headers and then stalls the body', a
 
 const ARXIV_URL = 'https://papertok-report-api.example/arxiv?search_query=all:malaria';
 const ATOM_FEED = '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"></feed>';
-const arxivThrough = (env, upstream) => withWorkerFetchMock(upstream, () => reportApi.fetch(new Request(
+const arxivThrough = (env: WorkerEnv, upstream: typeof fetch) => withWorkerFetchMock(upstream, () => reportApi.fetch(new Request(
   ARXIV_URL, { headers: { origin: 'https://mugar123.github.io' } },
 ), env));
-const IS_ARXIV_PACE = key => key === 'arxiv:pace';
+const IS_ARXIV_PACE = (key: string) => key === 'arxiv:pace';
 
 // One request every three seconds is arXiv's published policy, and the Worker
 // is the one client arXiv sees. A miss takes a seat on the beat before it goes
 // upstream; a seat that is not free within the wait budget is refused here,
 // with no arXiv call spent.
 test('an arXiv miss takes a seat on the three-second beat before going upstream', async () => {
-  const state = { actions: [] };
+  const state: QuotaScriptState = { actions: [] };
   let upstreamCalls = 0;
   const response = await arxivThrough(
     { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state) },
@@ -973,7 +981,7 @@ test('an arXiv miss takes a seat on the three-second beat before going upstream'
 });
 
 test('refuses an arXiv miss with 429 and retry-after when the beat has no seat, without calling arXiv', async () => {
-  const state = { actions: [] };
+  const state: QuotaScriptState = { actions: [] };
   let upstreamCalls = 0;
   const response = await arxivThrough(
     { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_ARXIV_PACE }) },
@@ -981,7 +989,7 @@ test('refuses an arXiv miss with 429 and retry-after when the beat has no seat, 
   );
 
   assert.equal(response.status, 429);
-  assert.equal((await response.json()).code, 'PROVIDER_RATE_LIMITED');
+  assert.equal((await response.json<{ code: string }>()).code, 'PROVIDER_RATE_LIMITED');
   assert.equal(response.headers.get('retry-after'), '4');
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.equal(upstreamCalls, 0);
@@ -1010,10 +1018,10 @@ test('relays an arXiv refusal as 429 UPSTREAM_RATE_LIMITED with the status that 
   );
 
   assert.equal(response.status, 429);
-  const body = await response.json();
+  const body = await response.json<{ code: string; upstreamStatus: number }>();
   assert.equal(body.code, 'UPSTREAM_RATE_LIMITED');
   assert.equal(body.upstreamStatus, 429);
-  assert.match(response.headers.get('retry-after'), /^\d+$/);
+  assert.match(response.headers.get('retry-after')!, /^\d+$/);
 });
 
 test('names an arXiv stall as UPSTREAM_TIMEOUT', async () => {
@@ -1023,7 +1031,7 @@ test('names an arXiv stall as UPSTREAM_TIMEOUT', async () => {
   ));
 
   assert.equal(response.status, 502);
-  assert.equal((await response.json()).code, 'UPSTREAM_TIMEOUT');
+  assert.equal((await response.json<{ code: string }>()).code, 'UPSTREAM_TIMEOUT');
 });
 
 test('caches an arXiv answer for an hour at the edge', async () => {
@@ -1032,14 +1040,14 @@ test('caches an arXiv answer for an hour at the edge', async () => {
     async () => new Response(ATOM_FEED, { headers: { 'content-type': 'application/atom+xml' } }),
   );
 
-  assert.match(response.headers.get('cache-control'), /s-maxage=3600\b/);
+  assert.match(response.headers.get('cache-control')!, /s-maxage=3600\b/);
 });
 
 // Every specialist route, not just the one that happened to be covered when this
 // suite was written. `/sources/scopus` and `/sources/physics` do not go through
 // `fetchJsonUpstream`, and that is precisely how they kept their unbounded waits
 // through a fix that was supposed to have closed them.
-const SOURCE_ROUTES = [
+const SOURCE_ROUTES: Array<[string, WorkerEnv]> = [
   ['/sources/biorxiv?category=neuroscience', {}],
   ['/sources/europepmc?q=malaria', {}],
   ['/sources/pubmed?q=malaria', {}],
@@ -1058,34 +1066,34 @@ const SOURCE_ROUTES = [
 const AUTHENTICATED_ENV = {
   FIREBASE_WEB_API_KEY: 'firebase-test-key',
   REQUEST_QUOTA_LEDGER: {
-    idFromName: () => 'quota-id',
-    get: () => ({ fetch: async () => new Response(JSON.stringify({ accepted: true })) }),
-  },
+    idFromName: ((): unknown => 'quota-id') as TestNamespace['idFromName'],
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({ fetch: async () => new Response(JSON.stringify({ accepted: true })) })) as TestNamespace['get'],
+  } as Env['REQUEST_QUOTA_LEDGER'],
 };
 
 // A signed-in caller without an Identity Toolkit round trip: the Worker caches a
 // verified identity, so seeding that cache is how a protected route is reached.
-async function withCachedIdentity(callback) {
-  const originalCaches = globalThis.caches;
-  globalThis.caches = {
+async function withCachedIdentity<Result>(callback: () => Promise<Result>) {
+  const originalCaches = (globalThis as TestGlobals).caches;
+  (globalThis as TestGlobals).caches = {
     default: {
-      match: async request => (String(request.url).includes('/auth/')
+      match: async (request): Promise<Response | null | undefined> => (String((request as Request).url).includes('/auth/')
         ? new Response(JSON.stringify({ uid: 'user-1' }), { headers: { 'content-type': 'application/json' } })
         : null),
-      put: async () => undefined,
+      put: async (): Promise<unknown> => undefined,
     },
   };
   try {
     return await callback();
   } finally {
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 }
 
 for (const [route, extraEnv] of SOURCE_ROUTES) {
   test(`gives ${route.split('?')[0]} an upstream deadline it can be cut with`, async () => {
-    let seenSignal;
+    let seenSignal: AbortSignal | null | undefined;
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async (_url, options) => {
       seenSignal ??= options?.signal;
@@ -1127,7 +1135,7 @@ test('falls back to INSPIRE when NASA ADS stalls instead of waiting on it', asyn
     assert.match(inspireQuery, /inspirehep\.net/);
     // The reason names the stall rather than hiding it behind a generic
     // "unavailable": a hung provider and a refusing one need different answers.
-    assert.equal((await response.json())._papertok.fallbackReason, 'ads_timeout');
+    assert.equal((await response.json<{ _papertok: { fallbackReason: string } }>())._papertok.fallbackReason, 'ads_timeout');
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1217,34 +1225,34 @@ test('still lets a caller cancellation be told apart from its own deadline', asy
 // A cache that actually remembers, plus a signed-in caller. `withCachedIdentity`
 // answers the auth lookup but stores nothing, and what these tests measure is
 // whether the second request finds what the first one put away.
-async function withIdentityAndCacheStore(callback) {
-  const originalCaches = globalThis.caches;
-  const stored = new Map();
-  globalThis.caches = {
+async function withIdentityAndCacheStore<Result>(callback: (stored: Map<string, Response>) => Promise<Result>) {
+  const originalCaches = (globalThis as TestGlobals).caches;
+  const stored = new Map<string, Response>();
+  (globalThis as TestGlobals).caches = {
     default: {
-      async match(request) {
-        if (String(request.url).includes('/auth/')) {
+      async match(request): Promise<Response | null | undefined> {
+        if (String((request as Request).url).includes('/auth/')) {
           return new Response(JSON.stringify({ uid: 'user-1' }), {
             headers: { 'content-type': 'application/json' },
           });
         }
-        return stored.get(String(request.url))?.clone() || null;
+        return stored.get(String((request as Request).url))?.clone() || null;
       },
-      async put(request, response) {
-        stored.set(String(request.url), response.clone());
+      async put(request, response): Promise<void> {
+        stored.set(String((request as Request).url), response.clone());
       },
     },
   };
   try {
     return await callback(stored);
   } finally {
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 }
 
-async function withCountedUpstream(handler, callback) {
-  const calls = [];
+async function withCountedUpstream<Result>(handler: MockProvider, callback: (calls: string[]) => Promise<Result>) {
+  const calls: string[] = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, options) => {
     calls.push(String(url));
@@ -1263,13 +1271,13 @@ const SIGNED_IN = Object.freeze({ ...BROWSER, authorization: 'Bearer test-token'
 // The citation graph is the route that reaches `cacheResponse` with both an
 // identity and a billed OpenAlex spend, so the budget tests below run on it.
 const CITATION_GRAPH_URL = 'https://papertok-report-api.example/citation-graph?doi=10.1234/abc&limit=8';
-const citationGraphPage = async url => new Response(
+const citationGraphPage = async (url: RequestInfo | URL) => new Response(
   JSON.stringify(String(url).includes('opencitations') ? [] : { id: 'https://openalex.org/W1', results: [] }),
   { headers: { 'content-type': 'application/json' } },
 );
 
 test('the same DOI in a different shape is the same citation graph', async () => {
-  const citationGraphUpstream = async url => new Response(
+  const citationGraphUpstream = async (url: string|string[]) => new Response(
     JSON.stringify(url.includes('opencitations') ? [] : { id: 'https://openalex.org/W1', results: [] }),
     { headers: { 'content-type': 'application/json' } },
   );
@@ -1365,11 +1373,11 @@ test('a repeated PubMed identifier does not buy a second iCite entry', async () 
 
 // --- G5: a degraded answer does not own its entry for the full TTL ----------
 
-function maxAgeSeconds(response) {
-  return Number(response.headers.get('cache-control').match(/s-maxage=(\d+)/)[1]);
+function maxAgeSeconds(response: Response) {
+  return Number(response.headers.get('cache-control')!.match(/s-maxage=(\d+)/)![1]);
 }
 
-async function physicsAnswer(env, adsHandler) {
+async function physicsAnswer(env: WorkerEnv, adsHandler: () => Response | PromiseLike<Response>) {
   return withIdentityAndCacheStore(async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async url => (String(url).includes('adsabs')
@@ -1395,14 +1403,14 @@ test('a transient NASA ADS failure does not own the physics entry for six hours'
   );
 
   assert.equal(response.status, 200);
-  assert.equal((await response.json())._papertok.fallbackReason, 'ads_500');
+  assert.equal((await response.json<{ _papertok: { fallbackReason: string } }>())._papertok.fallbackReason, 'ads_500');
   // A one-second hiccup used to blank that query for everybody until the
   // afternoon, because `cacheResponse` gave the fallback the full 21600.
   assert.equal(maxAgeSeconds(response), 120);
   // And it does not get to be served stale for a day on top of that, nor to sit
   // in the browser longer than it sits at the edge.
-  assert.doesNotMatch(response.headers.get('cache-control'), /stale-while-revalidate/);
-  assert.equal(Number(response.headers.get('cache-control').match(/max-age=(\d+)/)[1]), 120);
+  assert.doesNotMatch(response.headers.get('cache-control')!, /stale-while-revalidate/);
+  assert.equal(Number(response.headers.get('cache-control')!.match(/max-age=(\d+)/)![1]), 120);
 });
 
 test('a healthy NASA ADS answer keeps the full physics TTL', async () => {
@@ -1421,14 +1429,14 @@ test('NASA ADS being unconfigured is a steady state, not a degraded one', async 
     throw new Error('NASA ADS should not be contacted without a token');
   });
 
-  const payload = await response.json();
+  const payload = await response.json<{ _papertok: { fallbackReason: string } }>();
   assert.equal(payload._papertok.fallbackReason, 'ads_not_configured');
   // INSPIRE is then the real answer, not a consolation prize, and it earns the
   // same six hours the primary provider would have.
   assert.equal(maxAgeSeconds(response), 21600);
 });
 
-async function citationGraphAnswer(upstream) {
+async function citationGraphAnswer(upstream: MockProvider) {
   return withIdentityAndCacheStore(async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async url => upstream(String(url));
@@ -1444,13 +1452,13 @@ async function citationGraphAnswer(upstream) {
 }
 
 test('an OpenCitations failure does not own the citation graph for a week', async () => {
-  const response = await citationGraphAnswer(url => (url.includes('opencitations')
+  const response = await citationGraphAnswer((url: string|string[]) => (url.includes('opencitations')
     ? new Response('gateway timeout', { status: 504 })
     : new Response(JSON.stringify({ id: 'https://openalex.org/W1', results: [] }), {
       headers: { 'content-type': 'application/json' },
     })));
 
-  const payload = await response.json();
+  const payload = await response.json<{ degraded: boolean }>();
   assert.equal(payload.degraded, true);
   assert.equal(maxAgeSeconds(response), 120);
 });
@@ -1460,7 +1468,7 @@ test('a heavily cited paper is partial by design and keeps its week', async () =
   // answer looks like. Past three hundred citations the route asks OpenAlex for
   // citing works on purpose, and shortening the TTL of the most-cited papers in
   // the corpus because nothing failed would be a fix worse than the fault.
-  const response = await citationGraphAnswer(url => {
+  const response = await citationGraphAnswer((url: string|string[]) => {
     if (url.includes('opencitations')) {
       return new Response(JSON.stringify([]), { headers: { 'content-type': 'application/json' } });
     }
@@ -1471,7 +1479,7 @@ test('a heavily cited paper is partial by design and keeps its week', async () =
     }), { headers: { 'content-type': 'application/json' } });
   });
 
-  const payload = await response.json();
+  const payload = await response.json<{ partial: boolean; degraded: boolean }>();
   assert.equal(payload.partial, true);
   assert.equal(payload.degraded, false);
   assert.equal(maxAgeSeconds(response), 604800);
@@ -1479,20 +1487,20 @@ test('a heavily cited paper is partial by design and keeps its week', async () =
 
 // --- G5: billed spend reaches the ledger, with a daily ceiling --------------
 
-function recordingLedger(answer = () => ({ accepted: true })) {
-  const reservations = [];
+function recordingLedger(answer: (key: string) => QuotaReading = () => ({ accepted: true })) {
+  const reservations: Array<{ periodKey: string; amount: number; limit: number }> = [];
   return {
     reservations,
     binding: {
-      idFromName: periodKey => periodKey,
-      get: periodKey => ({
+      idFromName: (periodKey: string): unknown => periodKey,
+      get: (periodKey: unknown): Pick<DurableObjectStub, 'fetch'> => ({
         fetch: async (_url, options) => {
-          const body = JSON.parse(options.body);
-          reservations.push({ periodKey, amount: body.amount, limit: body.globalLimit });
-          return new Response(JSON.stringify(answer(periodKey)));
+          const body = JSON.parse(options!.body as string);
+          reservations.push({ periodKey: periodKey as string, amount: body.amount, limit: body.globalLimit });
+          return new Response(JSON.stringify(answer(periodKey as string)));
         },
       }),
-    },
+    } as Env['REQUEST_QUOTA_LEDGER'],
   };
 }
 
@@ -1520,7 +1528,7 @@ test('a cold citation graph reserves both OpenAlex periods for what it may spend
 });
 
 test('the daily OpenAlex ceiling refuses a request the per-minute one would allow', async () => {
-  const ledger = recordingLedger(periodKey => ({ accepted: !periodKey.startsWith('openalex:day:') }));
+  const ledger = recordingLedger((periodKey: string) => ({ accepted: !periodKey.startsWith('openalex:day:') }));
   const response = await withIdentityAndCacheStore(() => reportApi.fetch(new Request(
     'https://papertok-report-api.example/openalex/works?filter=doi:10.1/x',
     { headers: BROWSER },
@@ -1561,27 +1569,27 @@ test('an OpenAlex outage on the current work degrades the graph, a 404 does not'
   // swallows every error and answers `null`, so with OpenCitations empty too the
   // route used to return `{references: [], citations: [], partial: false}` -- and
   // cache that for seven days.
-  const graphWith = status => citationGraphAnswer(url => (url.includes('/works/doi:')
+  const graphWith = (status: number) => citationGraphAnswer((url: string|string[]) => (url.includes('/works/doi:')
     ? new Response('nope', { status })
     : new Response(JSON.stringify(url.includes('opencitations') ? [] : { results: [] }), {
       headers: { 'content-type': 'application/json' },
     })));
 
   const outage = await graphWith(503);
-  assert.equal((await outage.json()).degraded, true);
+  assert.equal((await outage.json<{ degraded: boolean }>()).degraded, true);
   assert.equal(maxAgeSeconds(outage), 120);
 
   // A DOI OpenAlex has never heard of is an answer, not an outage: the graph
   // built without it is the real one and keeps its week.
   const unknown = await graphWith(404);
-  assert.equal((await unknown.json()).degraded, false);
+  assert.equal((await unknown.json<{ degraded: boolean }>()).degraded, false);
   assert.equal(maxAgeSeconds(unknown), 604800);
 });
 
 test('a rejected OpenAlex batch is a short answer, not a complete one', async () => {
   // `Promise.allSettled` over the batches means a rejected chunk returns fewer
   // papers and looks exactly like a full result. Seven days of looking like one.
-  const response = await citationGraphAnswer(url => {
+  const response = await citationGraphAnswer((url: string|string[]) => {
     if (url.includes('/works/doi:')) {
       return new Response(JSON.stringify({ id: 'https://openalex.org/W1' }), {
         headers: { 'content-type': 'application/json' },
@@ -1603,7 +1611,7 @@ test('a rejected OpenAlex batch is a short answer, not a complete one', async ()
     return new Response('upstream exploded', { status: 500 });
   });
 
-  const payload = await response.json();
+  const payload = await response.json<{ degraded: boolean; references: unknown }>();
   assert.equal(payload.degraded, true);
   assert.deepEqual(payload.references, []);
   assert.equal(maxAgeSeconds(response), 120);
@@ -1620,29 +1628,29 @@ test('a rejected OpenAlex batch is a short answer, not a complete one', async ()
 // one, and production supplies it through `wrangler.toml`.
 const OPEN_ROUTE_ENV = {
   REQUEST_QUOTA_LEDGER: {
-    idFromName: () => 'quota-id',
-    get: () => ({ fetch: async () => new Response(JSON.stringify({ accepted: true })) }),
-  },
+    idFromName: ((): unknown => 'quota-id') as TestNamespace['idFromName'],
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({ fetch: async () => new Response(JSON.stringify({ accepted: true })) })) as TestNamespace['get'],
+  } as Env['REQUEST_QUOTA_LEDGER'],
 };
 
-function countingQuotaLedger(state, accepted = true) {
+function countingQuotaLedger(state: QuotaState, accepted = true) {
   return {
-    idFromName: name => {
+    idFromName: (name: string): unknown => {
       state.periodKeys.push(String(name));
       return `quota-${name}`;
     },
-    get: () => ({
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({
       fetch: async (url) => {
         state.reservations += 1;
         if (String(url).endsWith('/release')) state.releases = (state.releases ?? 0) + 1;
         return new Response(JSON.stringify(accepted ? { accepted: true } : { accepted: false, scope: 'global' }));
       },
-    }),
-  };
+    })) as TestNamespace['get'],
+  } as Env['REQUEST_QUOTA_LEDGER'];
 }
 
 test('runs the whole PubMed chain in the Worker and returns the three payloads', async () => {
-  const upstream = [];
+  const upstream: URL[] = [];
   const response = await withWorkerFetchMock(async url => {
     const requested = new URL(String(url));
     upstream.push(requested);
@@ -1665,7 +1673,7 @@ test('runs the whole PubMed chain in the Worker and returns the three payloads',
   ), OPEN_ROUTE_ENV));
 
   assert.equal(response.status, 200);
-  const payload = await response.json();
+  const payload = await response.json<{ esearchresult: { idlist: unknown; count: string }; result: Array<{ title: string }>; efetch: string; _papertok: { efetch: string } }>();
   assert.deepEqual(payload.esearchresult.idlist, ['31000001', '31000002']);
   assert.equal(payload.esearchresult.count, '412');
   assert.equal(payload.result['31000001'].title, 'One');
@@ -1686,7 +1694,7 @@ test('runs the whole PubMed chain in the Worker and returns the three payloads',
 });
 
 test('attaches the NCBI key only when configured and never one the caller sent', async () => {
-  const withoutKey = [];
+  const withoutKey: string[] = [];
   await withWorkerFetchMock(async url => {
     withoutKey.push(String(url));
     return new Response(JSON.stringify({ esearchresult: { count: '0', idlist: [] } }), {
@@ -1702,7 +1710,7 @@ test('attaches the NCBI key only when configured and never one the caller sent',
   assert.equal(withoutKey.length, 1);
   assert.ok(!withoutKey[0].includes('api_key'), `caller api_key reached NCBI: ${withoutKey[0]}`);
 
-  const withKey = [];
+  const withKey: string[] = [];
   await withWorkerFetchMock(async url => {
     withKey.push(String(url));
     return new Response(JSON.stringify({ esearchresult: { count: '0', idlist: [] } }), {
@@ -1738,15 +1746,15 @@ test('keeps the PubMed summaries when only the abstract half fails', async () =>
   // Losing efetch loses the abstracts, which the client can still get from
   // OpenAlex and Europe PMC. Losing the records too would lose the batch.
   assert.equal(response.status, 200);
-  const payload = await response.json();
+  const payload = await response.json<{ result: Array<{ title: string }>; efetch: string; _papertok: { efetch: string } }>();
   assert.equal(payload.result['31000001'].title, 'One');
   assert.equal(payload.efetch, '');
   assert.equal(payload._papertok.efetch, 'unavailable');
   // ...but a degraded answer does not get the healthy answer's ten minutes. A
   // one-second hiccup at NCBI must not leave a whole category without abstracts
   // for everybody until the TTL runs out.
-  assert.match(response.headers.get('cache-control'), /s-maxage=120\b/);
-  assert.doesNotMatch(response.headers.get('cache-control'), /stale-while-revalidate/);
+  assert.match(response.headers.get('cache-control')!, /s-maxage=120\b/);
+  assert.doesNotMatch(response.headers.get('cache-control')!, /stale-while-revalidate/);
 });
 
 // NCBI counts per second. A burst of route misses spends esearch calls all at
@@ -1756,9 +1764,9 @@ test('keeps the PubMed summaries when only the abstract half fails', async () =>
 // a short wait lands in the next one. `retry-after: 0` here so the test does not
 // sleep; in production NCBI sends none and the route waits 300-800 ms.
 test('retries a PubMed call NCBI refused for a second instead of losing the batch', async () => {
-  const calls = [];
+  const calls: string[] = [];
   const response = await withWorkerFetchMock(async url => {
-    const endpoint = new URL(String(url)).pathname.split('/').pop();
+    const endpoint = new URL(String(url)).pathname.split('/').pop()!;
     calls.push(endpoint);
     if (endpoint === 'esearch.fcgi') {
       return new Response(JSON.stringify({ esearchresult: { count: '1', idlist: ['31000001'] } }), {
@@ -1785,7 +1793,7 @@ test('retries a PubMed call NCBI refused for a second instead of losing the batc
   ), OPEN_ROUTE_ENV));
 
   assert.equal(response.status, 200);
-  const payload = await response.json();
+  const payload = await response.json<{ result: Array<{ title: string }>; _papertok: { efetch: string } }>();
   assert.equal(payload.result['31000001'].title, 'One');
   assert.equal(payload._papertok.efetch, 'ok');
   assert.equal(calls.filter(name => name === 'esummary.fcgi').length, 2, 'refused once, retried once');
@@ -1806,7 +1814,7 @@ test('a second PubMed refusal is relayed as a refusal, not retried again', async
   ), OPEN_ROUTE_ENV));
 
   assert.equal(response.status, 429);
-  assert.equal((await response.json()).code, 'UPSTREAM_RATE_LIMITED');
+  assert.equal((await response.json<{ code: string }>()).code, 'UPSTREAM_RATE_LIMITED');
   assert.equal(attempts, 2, 'esearch: one refusal, one retry, then the refusal is relayed');
 });
 
@@ -1829,7 +1837,7 @@ test('does not retry a PubMed refusal whose advertised wait the route cannot aff
 });
 
 test('drops identifiers PubMed did not answer with before putting them in a URL', async () => {
-  const upstream = [];
+  const upstream: URL[] = [];
   await withWorkerFetchMock(async url => {
     const requested = new URL(String(url));
     upstream.push(requested);
@@ -1845,13 +1853,13 @@ test('drops identifiers PubMed did not answer with before putting them in a URL'
   ), OPEN_ROUTE_ENV));
 
   const summary = upstream.find(url => url.pathname.endsWith('esummary.fcgi'));
-  assert.equal(summary.searchParams.get('id'), '31000001');
+  assert.equal(summary!.searchParams.get('id'), '31000001');
 });
 
 test('refuses a PubMed request with no query without spending the shared ceiling', async () => {
-  const state = { reservations: 0, periodKeys: [] };
-  const originalCaches = globalThis.caches;
-  globalThis.caches = { default: { match: async () => null, put: async () => undefined } };
+  const state: QuotaState = { reservations: 0, periodKeys: [] };
+  const originalCaches = (globalThis as TestGlobals).caches;
+  (globalThis as TestGlobals).caches = { default: { match: async (): Promise<Response | null | undefined> => null, put: async (): Promise<unknown> => undefined } };
   try {
     const response = await reportApi.fetch(new Request(
       'https://papertok-report-api.example/sources/pubmed',
@@ -1861,26 +1869,26 @@ test('refuses a PubMed request with no query without spending the shared ceiling
     assert.equal(response.status, 400);
     assert.equal(state.reservations, 0);
   } finally {
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 });
 
 test('serves a cached PubMed answer without an upstream call or a reservation', async () => {
-  const state = { reservations: 0, periodKeys: [] };
+  const state: QuotaState = { reservations: 0, periodKeys: [] };
   let upstreamCalls = 0;
   const originalFetch = globalThis.fetch;
-  const originalCaches = globalThis.caches;
+  const originalCaches = (globalThis as TestGlobals).caches;
   globalThis.fetch = async () => {
     upstreamCalls += 1;
     throw new Error('No upstream request should be made');
   };
-  globalThis.caches = {
+  (globalThis as TestGlobals).caches = {
     default: {
-      match: async request => (request.url.includes('/cache/sources/pubmed')
+      match: async (request): Promise<Response | null | undefined> => ((request as Request).url.includes('/cache/sources/pubmed')
         ? new Response(JSON.stringify({ esearchresult: { idlist: ['1'] } }), { headers: { 'content-type': 'application/json' } })
         : null),
-      put: async () => undefined,
+      put: async (): Promise<unknown> => undefined,
     },
   };
   try {
@@ -1896,21 +1904,21 @@ test('serves a cached PubMed answer without an upstream call or a reservation', 
     assert.equal(state.reservations, 0);
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 });
 
 test('refuses PubMed with retry-after once the shared per-minute ceiling is full', async () => {
-  const state = { reservations: 0, periodKeys: [] };
+  const state: QuotaState = { reservations: 0, periodKeys: [] };
   let upstreamCalls = 0;
   const originalFetch = globalThis.fetch;
-  const originalCaches = globalThis.caches;
+  const originalCaches = (globalThis as TestGlobals).caches;
   globalThis.fetch = async () => {
     upstreamCalls += 1;
     throw new Error('No upstream request should be made');
   };
-  globalThis.caches = { default: { match: async () => null, put: async () => undefined } };
+  (globalThis as TestGlobals).caches = { default: { match: async (): Promise<Response | null | undefined> => null, put: async (): Promise<unknown> => undefined } };
   try {
     const response = await reportApi.fetch(new Request(
       'https://papertok-report-api.example/sources/pubmed?q=malaria',
@@ -1919,22 +1927,22 @@ test('refuses PubMed with retry-after once the shared per-minute ceiling is full
 
     assert.equal(response.status, 429);
     assert.equal(response.headers.get('retry-after'), '60');
-    assert.equal((await response.json()).code, 'PROVIDER_RATE_LIMITED');
+    assert.equal((await response.json<{ code: string }>()).code, 'PROVIDER_RATE_LIMITED');
     assert.equal(upstreamCalls, 0);
     assert.match(state.periodKeys[0], /^pubmed:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 });
 
 test('proxies Semantic Scholar search with the Worker key and a bounded offset', async () => {
   let upstreamUrl = '';
-  let upstreamHeaders = {};
+  let upstreamHeaders: Record<string, string> = {};
   const response = await withWorkerFetchMock(async (url, options) => {
     upstreamUrl = String(url);
-    upstreamHeaders = options?.headers || {};
+    upstreamHeaders = options?.headers as Record<string, string> || {};
     return new Response(JSON.stringify({ total: 3, data: [{ paperId: 'abc', title: 'One' }] }), {
       headers: { 'content-type': 'application/json' },
     });
@@ -1944,7 +1952,7 @@ test('proxies Semantic Scholar search with the Worker key and a bounded offset',
   ), { ...OPEN_ROUTE_ENV, SEMANTIC_SCHOLAR_API_KEY: 's2-test-key' }));
 
   assert.equal(response.status, 200);
-  assert.equal((await response.json()).data[0].paperId, 'abc');
+  assert.equal((await response.json<{ data: Array<{ paperId: string }> }>()).data[0].paperId, 'abc');
   assert.match(upstreamUrl, /graph\/v1\/paper\/search/);
   assert.equal(upstreamHeaders['x-api-key'], 's2-test-key');
   // Semantic Scholar answers offset + limit past a thousand with a 400. Paging
@@ -1955,10 +1963,10 @@ test('proxies Semantic Scholar search with the Worker key and a bounded offset',
 
 test('leaves the Semantic Scholar key off entirely when none is configured', async () => {
   let upstreamCalls = 0;
-  let upstreamHeaders = {};
+  let upstreamHeaders: Record<string, string> = {};
   await withWorkerFetchMock(async (_url, options) => {
     upstreamCalls += 1;
-    upstreamHeaders = options?.headers || {};
+    upstreamHeaders = options?.headers as Record<string, string> || {};
     return new Response(JSON.stringify({ data: [] }), { headers: { 'content-type': 'application/json' } });
   }, () => reportApi.fetch(new Request(
     'https://papertok-report-api.example/sources/s2?q=malaria',
@@ -1970,7 +1978,7 @@ test('leaves the Semantic Scholar key off entirely when none is configured', asy
 });
 
 test('charges /related and /sources/s2 to the same Semantic Scholar ceiling', async () => {
-  const state = { reservations: 0, periodKeys: [] };
+  const state: QuotaState = { reservations: 0, periodKeys: [] };
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({ recommendedPapers: [] }), {
     headers: { 'content-type': 'application/json' },
@@ -2024,24 +2032,24 @@ test('asks Semantic Scholar for twenty whatever the client asked, so one paper i
 });
 
 test('serves the sheet and the feed the same /related entry for one paper', async () => {
-  const stored = new Map();
+  const stored = new Map<string, Response>();
   let upstreamCalls = 0;
   const originalFetch = globalThis.fetch;
-  const originalCaches = globalThis.caches;
+  const originalCaches = (globalThis as TestGlobals).caches;
   globalThis.fetch = async () => {
     upstreamCalls += 1;
     return new Response(JSON.stringify({ recommendedPapers: [] }), { headers: { 'content-type': 'application/json' } });
   };
-  globalThis.caches = {
+  (globalThis as TestGlobals).caches = {
     default: {
-      match: async request => (String(request.url).includes('/auth/')
+      match: async (request): Promise<Response | null | undefined> => (String((request as Request).url).includes('/auth/')
         ? new Response(JSON.stringify({ uid: 'user-1' }), { headers: { 'content-type': 'application/json' } })
-        : stored.get(request.url)?.clone() || null),
-      put: async (request, response) => stored.set(request.url, response.clone()),
+        : stored.get((request as Request).url)?.clone() || null),
+      put: async (request, response): Promise<unknown> => stored.set((request as Request).url, response.clone()),
     },
   };
   try {
-    const ask = limit => reportApi.fetch(new Request(
+    const ask = (limit: number) => reportApi.fetch(new Request(
       `https://papertok-report-api.example/related?paper_id=ARXIV:2607.12345&limit=${limit}`,
       { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
     ), AUTHENTICATED_ENV);
@@ -2051,8 +2059,8 @@ test('serves the sheet and the feed the same /related entry for one paper', asyn
     await ask(20);
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 
   assert.equal(upstreamCalls, 1);
@@ -2072,7 +2080,7 @@ test('/related relays a Semantic Scholar refusal with its code, its status and a
   );
 
   assert.equal(response.status, 429);
-  const body = await response.json();
+  const body = await response.json<{ code: string; upstreamStatus: number }>();
   assert.equal(body.code, 'UPSTREAM_RATE_LIMITED');
   assert.equal(body.upstreamStatus, 429);
   // Semantic Scholar names no wait and its window is one second: a minute here
@@ -2090,7 +2098,7 @@ test('/related names a stalled Semantic Scholar instead of dressing it as a gene
   );
 
   assert.equal(response.status, 502);
-  const body = await response.json();
+  const body = await response.json<{ error: string; code: string; upstreamStatus: unknown }>();
   assert.equal(body.error, 'Related papers unavailable');
   assert.equal(body.code, 'UPSTREAM_TIMEOUT');
   assert.equal(body.upstreamStatus, undefined, 'a stall has no status to relay');
@@ -2111,24 +2119,24 @@ test('tells a client refused by Semantic Scholar search to wait a second, not a 
 
 // The ledger accepts the minute and refuses every second: what the route must do
 // then is answer 429 itself, with the short wait, and never call the provider.
-function paceRefusingLedger(state) {
+function paceRefusingLedger(state: { periodKeys: string[] }) {
   let lastName = '';
   return {
-    idFromName: name => {
+    idFromName: (name: string): unknown => {
       lastName = String(name);
       state.periodKeys.push(lastName);
       return `quota-${lastName}`;
     },
-    get: () => ({
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({
       fetch: async () => new Response(JSON.stringify(
         lastName.endsWith(':pace') ? { accepted: false, scope: 'user' } : { accepted: true },
       )),
-    }),
-  };
+    })) as TestNamespace['get'],
+  } as Env['REQUEST_QUOTA_LEDGER'];
 }
 
 test('refuses a Semantic Scholar search itself when no second is free, without spending the provider', async () => {
-  const state = { periodKeys: [] };
+  const state: { periodKeys: string[] } = { periodKeys: [] };
   let upstreamCalls = 0;
   const response = await withWorkerFetchMock(
     async () => { upstreamCalls += 1; return new Response('{"data":[]}', { headers: { 'content-type': 'application/json' } }); },
@@ -2139,7 +2147,7 @@ test('refuses a Semantic Scholar search itself when no second is free, without s
   );
 
   assert.equal(response.status, 429);
-  assert.equal((await response.json()).code, 'PROVIDER_RATE_LIMITED');
+  assert.equal((await response.json<{ code: string }>()).code, 'PROVIDER_RATE_LIMITED');
   // Not a literal: the same constant the beat derives from its own wait budget,
   // so raising the budget cannot leave this header quietly lying.
   assert.equal(response.headers.get('retry-after'), PACE_RETRY_AFTER_SECONDS);
@@ -2153,14 +2161,14 @@ test('refuses a Semantic Scholar search itself when no second is free, without s
 // throws (a Durable Object that cannot be reached at all) -- and it records
 // every reserve and every release with the key it was aimed at, so a test can
 // assert that a refund names exactly the key and subject the reserve named.
-function scriptedQuotaLedger(state, { refuse = () => false, unavailable = () => false, broken = () => false } = {}) {
+function scriptedQuotaLedger(state: QuotaScriptState, { refuse = () => false, unavailable = () => false, broken = () => false }: { refuse?: (key: string) => boolean; unavailable?: (key: string) => boolean; broken?: (key: string) => boolean } = {}) {
   let lastName = '';
   return {
-    idFromName: name => { lastName = String(name); return `quota-${lastName}`; },
-    get: () => ({
+    idFromName: (name: string): unknown => { lastName = String(name); return `quota-${lastName}`; },
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({
       fetch: async (url, options) => {
-        const action = String(url).split('/').pop();
-        const body = JSON.parse(options.body);
+        const action = String(url).split('/').pop()!;
+        const body = JSON.parse(options!.body as string);
         state.actions.push({ action, periodKey: lastName, subjectKey: body.subjectKey });
         if (action === 'release') return new Response(JSON.stringify({ released: true }));
         if (broken(lastName)) throw new Error(`ledger unreachable: ${lastName}`);
@@ -2168,25 +2176,25 @@ function scriptedQuotaLedger(state, { refuse = () => false, unavailable = () => 
         if (refuse(lastName)) return new Response(JSON.stringify({ accepted: false, scope: 'user' }));
         return new Response(JSON.stringify({ accepted: true }));
       },
-    }),
-  };
+    })) as TestNamespace['get'],
+  } as Env['REQUEST_QUOTA_LEDGER'];
 }
 
 // The period keys the gates use, as predicates: the minute ceiling is
 // `s2:<minute>`, the beat is `s2:pace`, identity is `provider:<minute>`, and
 // OpenAlex is `openalex:<minute>` then `openalex:day:<date>`.
-const IS_MINUTE = key => key.startsWith('s2:') && !key.endsWith(':pace');
-const IS_PACE = key => key.endsWith(':pace');
-const IS_IDENTITY = key => key.startsWith('provider:');
-const IS_OPENALEX_MINUTE = key => key.startsWith('openalex:') && !key.includes(':day:');
-const IS_OPENALEX_DAY = key => key.startsWith('openalex:day:');
+const IS_MINUTE = (key: string) => key.startsWith('s2:') && !key.endsWith(':pace');
+const IS_PACE = (key: string) => key.endsWith(':pace');
+const IS_IDENTITY = (key: string) => key.startsWith('provider:');
+const IS_OPENALEX_MINUTE = (key: string) => key.startsWith('openalex:') && !key.includes(':day:');
+const IS_OPENALEX_DAY = (key: string) => key.startsWith('openalex:day:');
 
-const releasesOf = state => state.actions.filter(a => a.action === 'release');
+const releasesOf = (state: QuotaScriptState) => state.actions.filter((a: { action: string; }) => a.action === 'release');
 
 // A refund is a refund only if it names the key and the subject the reserve
 // named: a recomputed key credits the next period, a different subject credits
 // somebody else.
-function assertRefunded(state, isKey) {
+function assertRefunded(state: QuotaScriptState, isKey: (key: string) => boolean) {
   const reserve = state.actions.find(a => a.action === 'reserve' && isKey(a.periodKey));
   const release = releasesOf(state).find(a => isKey(a.periodKey));
   assert.ok(reserve, `no reserve matched: ${JSON.stringify(state.actions)}`);
@@ -2196,7 +2204,7 @@ function assertRefunded(state, isKey) {
 }
 
 test('gives the minute back when the beat refuses, to the same minute it was taken from', async () => {
-  const state = { actions: [] };
+  const state: QuotaScriptState = { actions: [] };
   const response = await withWorkerFetchMock(
     async () => new Response('{"data":[]}', { headers: { 'content-type': 'application/json' } }),
     () => reportApi.fetch(new Request(
@@ -2206,7 +2214,7 @@ test('gives the minute back when the beat refuses, to the same minute it was tak
   );
 
   assert.equal(response.status, 429);
-  assert.equal((await response.json()).code, 'PROVIDER_RATE_LIMITED');
+  assert.equal((await response.json<{ code: string }>()).code, 'PROVIDER_RATE_LIMITED');
   const minuteReserve = state.actions.find(a => a.action === 'reserve' && !a.periodKey.endsWith(':pace'));
   const releases = state.actions.filter(a => a.action === 'release');
   assert.ok(minuteReserve, `no minute reservation seen: ${JSON.stringify(state.actions)}`);
@@ -2220,7 +2228,7 @@ test('gives the minute back when the beat refuses, to the same minute it was tak
 
 const RELATED_URL = 'https://papertok-report-api.example/related?paper_id=ARXIV:2607.12345';
 const RELAY_WORKS_URL = 'https://papertok-report-api.example/openalex/works?filter=doi:10.1%2Fa&per-page=50';
-const relatedThrough = (ledger, upstream = async () => new Response(
+const relatedThrough = (ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'], upstream: typeof fetch = async () => new Response(
   JSON.stringify({ recommendedPapers: [] }), { headers: { 'content-type': 'application/json' } },
 )) => withWorkerFetchMock(upstream, () => withCachedIdentity(() => reportApi.fetch(new Request(RELATED_URL, {
   headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' },
@@ -2228,11 +2236,11 @@ const relatedThrough = (ledger, upstream = async () => new Response(
 
 // L1: the identity gate refuses after the minute unit was already taken.
 test('gives the minute unit back when the identity quota refuses after it', async () => {
-  const state = { actions: [] };
+  const state: QuotaScriptState = { actions: [] };
   const response = await relatedThrough(scriptedQuotaLedger(state, { refuse: IS_IDENTITY }));
 
   assert.equal(response.status, 429);
-  assert.equal((await response.json()).code, 'PROVIDER_RATE_LIMITED');
+  assert.equal((await response.json<{ code: string }>()).code, 'PROVIDER_RATE_LIMITED');
   assertRefunded(state, IS_MINUTE);
   assert.equal(releasesOf(state).length, 1, 'only the minute unit was held');
 });
@@ -2241,11 +2249,11 @@ test('gives the minute unit back when the identity quota refuses after it', asyn
 // taken. The beat used to refund the minute on its own and had no way to know
 // the identity unit existed; now the owner of both refunds both.
 test('gives the minute unit and the identity unit back when the beat refuses after them', async () => {
-  const state = { actions: [] };
+  const state: QuotaScriptState = { actions: [] };
   const response = await relatedThrough(scriptedQuotaLedger(state, { refuse: IS_PACE }));
 
   assert.equal(response.status, 429);
-  assert.equal((await response.json()).code, 'PROVIDER_RATE_LIMITED');
+  assert.equal((await response.json<{ code: string }>()).code, 'PROVIDER_RATE_LIMITED');
   assertRefunded(state, IS_MINUTE);
   assertRefunded(state, IS_IDENTITY);
   assert.equal(releasesOf(state).length, 2, 'the minute and identity units were held');
@@ -2255,7 +2263,7 @@ test('gives the minute unit and the identity unit back when the beat refuses aft
 // citation graph has no minute ceiling entry, so the identity unit is the only
 // thing at risk.
 test('gives the identity unit back when the OpenAlex budget refuses after it', async () => {
-  const state = { actions: [] };
+  const state: QuotaScriptState = { actions: [] };
   const response = await withWorkerFetchMock(citationGraphPage, () => withCachedIdentity(() => reportApi.fetch(
     new Request(CITATION_GRAPH_URL, { headers: SIGNED_IN }),
     { ...AUTHENTICATED_ENV, REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_OPENALEX_MINUTE }) },
@@ -2272,7 +2280,7 @@ test('gives the identity unit back when the OpenAlex budget refuses after it', a
 // minute bucket, which is thrown away sixty seconds later" -- as the lesser of
 // two leaks, before giving a unit back was a pattern in this file.
 test('gives the OpenAlex minute unit back when the day ceiling refuses after it', async () => {
-  const state = { actions: [] };
+  const state: QuotaScriptState = { actions: [] };
   const response = await withWorkerFetchMock(citationGraphPage, () => withCachedIdentity(() => reportApi.fetch(
     new Request(CITATION_GRAPH_URL, { headers: SIGNED_IN }),
     { ...AUTHENTICATED_ENV, REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_OPENALEX_DAY }) },
@@ -2289,7 +2297,7 @@ test('gives the OpenAlex minute unit back when the day ceiling refuses after it'
 // The relay reaches the budget without `cacheResponse`, so the refund inside
 // the function is the only one it gets.
 test('the /openalex relay gives the minute unit back when the day ceiling refuses', async () => {
-  const state = { actions: [] };
+  const state: QuotaScriptState = { actions: [] };
   const response = await withWorkerFetchMock(
     async () => new Response('{"results":[]}', { headers: { 'content-type': 'application/json' } }),
     () => reportApi.fetch(new Request(
@@ -2306,7 +2314,7 @@ test('the /openalex relay gives the minute unit back when the day ceiling refuse
 // The accepted path gives nothing back: every unit taken was spent on a real
 // provider call. A refund here would mint quota out of nothing.
 test('gives nothing back when every gate accepts', async () => {
-  const state = { actions: [] };
+  const state: QuotaScriptState = { actions: [] };
   const response = await relatedThrough(scriptedQuotaLedger(state));
 
   assert.equal(response.status, 200);
@@ -2317,7 +2325,7 @@ test('gives nothing back when every gate accepts', async () => {
 // unit already taken. The throw reaches the router's catch and becomes a 502;
 // the unit has to come back on the way.
 test('gives the minute unit back when the identity ledger throws after it', async () => {
-  const state = { actions: [] };
+  const state: QuotaScriptState = { actions: [] };
   const response = await relatedThrough(scriptedQuotaLedger(state, { broken: IS_IDENTITY }));
 
   assert.equal(response.status, 502);
@@ -2327,7 +2335,7 @@ test('gives the minute unit back when the identity ledger throws after it', asyn
 
 // L2b: the beat's Durable Object cannot be reached, with both units taken.
 test('gives both units back when the pace ledger throws after them', async () => {
-  const state = { actions: [] };
+  const state: QuotaScriptState = { actions: [] };
   const response = await relatedThrough(scriptedQuotaLedger(state, { broken: IS_PACE }));
 
   assert.equal(response.status, 502);
@@ -2340,11 +2348,11 @@ test('gives both units back when the pace ledger throws after them', async () =>
 // -- which `awaitSharedPace` reports as a 503. `s2:pace` is a different object
 // from `s2:<minute>`, so it can fail with the minute unit already accepted.
 test('gives both units back when the pace ledger is unavailable after them', async () => {
-  const state = { actions: [] };
+  const state: QuotaScriptState = { actions: [] };
   const response = await relatedThrough(scriptedQuotaLedger(state, { unavailable: IS_PACE }));
 
   assert.equal(response.status, 503);
-  assert.equal((await response.json()).code, 'PROVIDER_QUOTA_NOT_CONFIGURED');
+  assert.equal((await response.json<{ code: string }>()).code, 'PROVIDER_QUOTA_NOT_CONFIGURED');
   assertRefunded(state, IS_MINUTE);
   assertRefunded(state, IS_IDENTITY);
   assert.equal(releasesOf(state).length, 2, 'the minute and identity units were held before the pace ledger was unavailable');
@@ -2356,7 +2364,7 @@ test('gives both units back when the pace ledger is unavailable after them', asy
 // made, and under sustained pressure exceed the one-a-second the beat exists
 // to keep. So the units stay spent. This test is the decision, pinned.
 test('gives nothing back when the fetcher fails, because the send may have happened', async () => {
-  const state = { actions: [] };
+  const state: QuotaScriptState = { actions: [] };
   const response = await withWorkerFetchMock(
     async () => { throw new Error('provider hung up'); },
     () => reportApi.fetch(new Request(
@@ -2371,7 +2379,7 @@ test('gives nothing back when the fetcher fails, because the send may have happe
 });
 
 test('does not put PubMed on the Semantic Scholar beat', async () => {
-  const state = { periodKeys: [], reservations: 0 };
+  const state: QuotaState = { periodKeys: [], reservations: 0 };
   await withWorkerFetchMock(
     async () => new Response(JSON.stringify({ esearchresult: { count: '0', idlist: [] } }), { headers: { 'content-type': 'application/json' } }),
     () => reportApi.fetch(new Request(
@@ -2384,24 +2392,24 @@ test('does not put PubMed on the Semantic Scholar beat', async () => {
 });
 
 test('keeps two different PubMed queries in two different cache entries', async () => {
-  const stored = new Map();
+  const stored = new Map<string, Response>();
   let upstreamCalls = 0;
   const originalFetch = globalThis.fetch;
-  const originalCaches = globalThis.caches;
+  const originalCaches = (globalThis as TestGlobals).caches;
   globalThis.fetch = async () => {
     upstreamCalls += 1;
     return new Response(JSON.stringify({ esearchresult: { count: '0', idlist: [] } }), {
       headers: { 'content-type': 'application/json' },
     });
   };
-  globalThis.caches = {
+  (globalThis as TestGlobals).caches = {
     default: {
-      match: async request => stored.get(request.url)?.clone() || null,
-      put: async (request, response) => stored.set(request.url, response.clone()),
+      match: async (request): Promise<Response | null | undefined> => stored.get((request as Request).url)?.clone() || null,
+      put: async (request, response): Promise<unknown> => stored.set((request as Request).url, response.clone()),
     },
   };
   try {
-    const ask = query => reportApi.fetch(new Request(
+    const ask = (query: string) => reportApi.fetch(new Request(
       `https://papertok-report-api.example/sources/pubmed?q=${query}&limit=25`,
       { headers: { origin: 'https://mugar123.github.io' } },
     ), OPEN_ROUTE_ENV);
@@ -2417,8 +2425,8 @@ test('keeps two different PubMed queries in two different cache entries', async 
     assert.equal(stored.size, 2);
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 });
 
@@ -2429,23 +2437,23 @@ test('keeps two different PubMed queries in two different cache entries', async 
 // which is cached precisely to guard a weekly provider allowance, a monitor
 // without an `Origin` and a browser with one were two calls for one answer.
 test('one cached answer serves every allowed origin, each with its own CORS header', async () => {
-  const stored = new Map();
+  const stored = new Map<string, Response>();
   let upstreamCalls = 0;
   const originalFetch = globalThis.fetch;
-  const originalCaches = globalThis.caches;
+  const originalCaches = (globalThis as TestGlobals).caches;
   globalThis.fetch = async () => {
     upstreamCalls += 1;
     return new Response('{"data":[]}', { headers: { 'content-type': 'application/json' } });
   };
-  globalThis.caches = {
+  (globalThis as TestGlobals).caches = {
     default: {
-      match: async request => stored.get(request.url)?.clone() || null,
-      put: async (request, response) => stored.set(request.url, response.clone()),
+      match: async (request): Promise<Response | null | undefined> => stored.get((request as Request).url)?.clone() || null,
+      put: async (request, response): Promise<unknown> => stored.set((request as Request).url, response.clone()),
     },
   };
   try {
     const url = 'https://papertok-report-api.example/sources/s2?q=malaria';
-    const ask = headers => reportApi.fetch(new Request(url, { headers }), OPEN_ROUTE_ENV);
+    const ask = (headers: { origin?: string; }) => reportApi.fetch(new Request(url, { headers }), OPEN_ROUTE_ENV);
 
     const bare = await ask({});
     const apex = await ask({ origin: 'https://papertok.app' });
@@ -2461,8 +2469,8 @@ test('one cached answer serves every allowed origin, each with its own CORS head
     assert.deepEqual(await www.json(), { data: [] }, 'the shared body is the body');
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 });
 
@@ -2477,17 +2485,17 @@ test('one cached answer serves every allowed origin, each with its own CORS head
 // make the probe report unhealthy -- `checkScopusHealth` returns before it
 // ever reaches the network, so this needs no fetch mock to fake a bad answer.
 test('serves a cached unhealthy Scopus probe as 503, not a false-positive 200, to a different origin', async () => {
-  const stored = new Map();
+  const stored = new Map<string, Response>();
   const originalFetch = globalThis.fetch;
-  const originalCaches = globalThis.caches;
-  globalThis.caches = {
+  const originalCaches = (globalThis as TestGlobals).caches;
+  (globalThis as TestGlobals).caches = {
     default: {
-      async match(key) {
-        const hit = stored.get(String(key.url));
+      async match(key): Promise<Response | null | undefined> {
+        const hit = stored.get(String((key as Request).url));
         return hit ? hit.clone() : null;
       },
-      async put(key, response) {
-        stored.set(String(key.url), response.clone());
+      async put(key, response): Promise<void> {
+        stored.set(String((key as Request).url), response.clone());
       },
     },
   };
@@ -2497,7 +2505,7 @@ test('serves a cached unhealthy Scopus probe as 503, not a false-positive 200, t
     throw new Error('unexpected upstream call for an unconfigured Scopus egress');
   };
   try {
-    const scopusHealthRequest = origin => new Request(
+    const scopusHealthRequest = (origin: string) => new Request(
       'https://papertok-report-api.example/health/scopus',
       { headers: { origin } },
     );
@@ -2513,11 +2521,11 @@ test('serves a cached unhealthy Scopus probe as 503, not a false-positive 200, t
       'https://www.papertok.app',
       "the second, different origin gets its own header, not the first caller's",
     );
-    assert.equal((await second.json()).code, 'SCOPUS_NOT_CONFIGURED');
+    assert.equal((await second.json<{ code: string }>()).code, 'SCOPUS_NOT_CONFIGURED');
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 });
 
@@ -2537,7 +2545,7 @@ test('relays an upstream refusal as a refusal instead of flattening it to 502', 
   // straight away -- which is the one thing that makes a rate limit worse.
   assert.equal(response.status, 429);
   assert.equal(response.headers.get('retry-after'), '30');
-  assert.equal((await response.json()).code, 'UPSTREAM_RATE_LIMITED');
+  assert.equal((await response.json<{ code: string }>()).code, 'UPSTREAM_RATE_LIMITED');
 });
 
 test('falls back to a minute when the upstream refused without saying for how long', async () => {
@@ -2571,7 +2579,7 @@ test('names the upstream status on every source so a 400 of ours is not a 502 of
   );
 
   assert.equal(response.status, 502);
-  const body = await response.json();
+  const body = await response.json<{ error: string; upstreamStatus: number; code: unknown }>();
   assert.equal(body.error, 'Specialist source unavailable');
   assert.equal(body.upstreamStatus, 400);
   assert.equal(body.code, undefined, 'a plain upstream error carries no code, only its status');
@@ -2587,7 +2595,7 @@ test('names a timed-out upstream instead of dressing it as a generic failure', a
   );
 
   assert.equal(response.status, 502);
-  const body = await response.json();
+  const body = await response.json<{ code: string; upstreamStatus: unknown }>();
   assert.equal(body.code, 'UPSTREAM_TIMEOUT');
   assert.equal(body.upstreamStatus, undefined, 'a stall has no status to relay');
 });
@@ -2628,13 +2636,13 @@ function rewriteRequest(method = 'POST', origin = 'https://mugar123.github.io') 
 }
 
 /** One Gemini SSE line, in the CRLF form the real endpoint sends. */
-function geminiFrame(text, extra = {}) {
+function geminiFrame(text: string, extra = {}) {
   return `data: ${JSON.stringify({
     candidates: [{ content: { parts: [{ text }] }, ...extra }],
   })}\r\n\r\n`;
 }
 
-function rewriteUpstream(url, frames) {
+function rewriteUpstream(url: RequestInfo | URL, frames: string[]) {
   return String(url).includes('generativelanguage.googleapis.com')
     ? new Response(frames.join(''), { headers: { 'content-type': 'text/event-stream' } })
     // Anything else on this route is the PDF download.
@@ -2668,7 +2676,7 @@ test('the router serves POST /ai/rewrite instead of dropping it into the 404', a
   assert.equal(response.status, 200);
   // Streamed, not wrapped in `json()`: the first line has to leave before the
   // last one exists.
-  assert.match(response.headers.get('content-type'), /application\/x-ndjson/);
+  assert.match(response.headers.get('content-type')!, /application\/x-ndjson/);
   assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
 
   const events = body.trim().split('\n').map(line => JSON.parse(line));
@@ -2696,8 +2704,8 @@ test('the /ai/rewrite preflight is answered before the route is reached', async 
   }), REWRITE_ENV);
 
   assert.equal(response.status, 204);
-  assert.match(response.headers.get('access-control-allow-methods'), /(?:^|,\s*)POST(?:,|$)/);
-  assert.match(response.headers.get('access-control-allow-headers'), /authorization/);
+  assert.match(response.headers.get('access-control-allow-methods')!, /(?:^|,\s*)POST(?:,|$)/);
+  assert.match(response.headers.get('access-control-allow-headers')!, /authorization/);
 });
 
 test('/ai/rewrite refuses an origin that is not on the list', async () => {
@@ -2715,15 +2723,15 @@ test('relays a rewrite refusal with its own status, code and quota', async () =>
   }, () => withCachedIdentity(() => reportApi.fetch(rewriteRequest(), {
     ...REWRITE_ENV,
     REQUEST_QUOTA_LEDGER: {
-      idFromName: () => 'quota-id',
-      get: () => ({ fetch: async () => new Response(JSON.stringify({ accepted: false, scope: 'user' })) }),
-    },
+      idFromName: ((): unknown => 'quota-id') as TestNamespace['idFromName'],
+      get: ((): Pick<DurableObjectStub, 'fetch'> => ({ fetch: async () => new Response(JSON.stringify({ accepted: false, scope: 'user' })) })) as TestNamespace['get'],
+    } as Env['REQUEST_QUOTA_LEDGER'],
   })));
 
   // The quota block is what tells the reader when the uses come back; flattening
   // this to a bare 502 would lose both the reason and the reset time.
   assert.equal(response.status, 429);
-  const payload = await response.json();
+  const payload = await response.json<{ code: string; quota: { scope: string; resetAt: unknown } }>();
   assert.equal(payload.code, 'AI_QUOTA_EXHAUSTED');
   assert.equal(payload.quota.scope, 'user');
   assert.ok(payload.quota.resetAt);
@@ -2738,7 +2746,7 @@ test('closes the API host to crawlers with its own robots.txt', async () => {
   );
 
   assert.equal(response.status, 200);
-  assert.match(response.headers.get('content-type'), /^text\/plain/);
+  assert.match(response.headers.get('content-type')!, /^text\/plain/);
   const body = await response.text();
   assert.match(body, /^User-agent: \*$/m);
   assert.match(body, /^Disallow: \/$/m);
@@ -2751,7 +2759,7 @@ test('closes the API host to crawlers with its own robots.txt', async () => {
 // as an uncached 502, so each cold visit paid the six-second deadline again
 // (audit 2026-09-23, issue 11b). It is now a degraded, briefly cached answer.
 
-async function bioRxivAnswer(upstream) {
+async function bioRxivAnswer(upstream: typeof fetch) {
   return withWorkerFetchMock(upstream, () => reportApi.fetch(new Request(
     'https://papertok-report-api.example/sources/biorxiv?category=neuroscience&page=1&limit=10',
     { headers: { origin: 'https://mugar123.github.io' } },
@@ -2764,20 +2772,20 @@ test('a bioRxiv timeout is a degraded empty answer, cached for two minutes', asy
   });
 
   assert.equal(response.status, 200);
-  const payload = await response.json();
+  const payload = await response.json<{ collection: unknown; _papertok: { degraded: string } }>();
   assert.deepEqual(payload.collection, []);
   assert.equal(payload._papertok.degraded, 'UPSTREAM_TIMEOUT');
   assert.equal(maxAgeSeconds(response), 120);
-  assert.doesNotMatch(response.headers.get('cache-control'), /stale-while-revalidate/);
+  assert.doesNotMatch(response.headers.get('cache-control')!, /stale-while-revalidate/);
 });
 
 test('an empty or non-JSON bioRxiv body and a bioRxiv 5xx are degraded too', async () => {
   const empty = await bioRxivAnswer(async () => new Response('', { status: 200, headers: { 'content-type': 'application/json' } }));
-  assert.equal((await empty.json())._papertok.degraded, 'UPSTREAM_INVALID');
+  assert.equal((await empty.json<{ _papertok: { degraded: string } }>())._papertok.degraded, 'UPSTREAM_INVALID');
   assert.equal(maxAgeSeconds(empty), 120);
 
   const outage = await bioRxivAnswer(async () => new Response('down', { status: 503 }));
-  assert.equal((await outage.json())._papertok.degraded, 'UPSTREAM_503');
+  assert.equal((await outage.json<{ _papertok: { degraded: string } }>())._papertok.degraded, 'UPSTREAM_503');
 });
 
 test('a healthy bioRxiv answer keeps its ten minutes and says nothing is degraded', async () => {
@@ -2786,7 +2794,7 @@ test('a healthy bioRxiv answer keeps its ten minutes and says nothing is degrade
     collection: [{ doi: '10.1101/2026.09.01.000001', title: 'A preprint', category: 'neuroscience' }],
   }), { headers: { 'content-type': 'application/json' } }));
 
-  const payload = await response.json();
+  const payload = await response.json<{ collection: { length: number }; _papertok: { degraded: unknown } }>();
   assert.equal(payload.collection.length, 1);
   assert.equal(payload._papertok?.degraded, undefined);
   assert.equal(maxAgeSeconds(response), 600);
@@ -2810,7 +2818,7 @@ const SHARED_WORK = {
   authorships: [{ author: { display_name: 'Yiqing Hua' } }],
 };
 
-function crawlerRequest(path, { method = 'GET' } = {}) {
+function crawlerRequest(path: string, { method = 'GET' } = {}) {
   return new Request(`https://papertok-report-api.example${path}`, {
     method,
     // A Spanish-speaking crawler still gets the English page: PaperTok is English-only.
@@ -2818,8 +2826,8 @@ function crawlerRequest(path, { method = 'GET' } = {}) {
   });
 }
 
-function shareUpstream(urls, { work = SHARED_WORK } = {}) {
-  return async (url, init = {}) => {
+function shareUpstream(urls: Array<{ address: string; authorization: string | null }>, { work = SHARED_WORK } = {}) {
+  return async (url: RequestInfo | URL, init: RequestInit = {}) => {
     const address = String(url);
     urls.push({ address, authorization: new Headers(init.headers).get('authorization') });
     if (address === 'https://papertok.app/index.html') {
@@ -2833,7 +2841,7 @@ function shareUpstream(urls, { work = SHARED_WORK } = {}) {
 }
 
 test('a crawler gets a paper page with no Origin, from OpenAlex under the Worker key', async () => {
-  const urls = [];
+  const urls: Array<{ address: string; authorization: string | null }> = [];
   const response = await withWorkerFetchMock(
     shareUpstream(urls),
     () => reportApi.fetch(crawlerRequest(`/share/paper/${SHARED_DOI_KEY}`), openAlexEnv()),
@@ -2841,7 +2849,7 @@ test('a crawler gets a paper page with no Origin, from OpenAlex under the Worker
   const html = await response.text();
 
   assert.equal(response.status, 200);
-  assert.match(response.headers.get('content-type'), /^text\/html/);
+  assert.match(response.headers.get('content-type')!, /^text\/html/);
   assert.match(html, /<title>Characterizing Alternative Monetization Strategies on YouTube<\/title>/);
   assert.match(html, /<html lang="en">/);
   const openAlex = urls.find(entry => entry.address.startsWith('https://api.openalex.org/'));
@@ -2851,7 +2859,7 @@ test('a crawler gets a paper page with no Origin, from OpenAlex under the Worker
 });
 
 test('a share page answers HEAD without a body and refuses anything but GET and HEAD', async () => {
-  const urls = [];
+  const urls: never[] = [];
   const head = await withWorkerFetchMock(
     shareUpstream(urls),
     () => reportApi.fetch(crawlerRequest(`/share/paper/${SHARED_DOI_KEY}`, { method: 'HEAD' }), openAlexEnv()),
@@ -2867,13 +2875,13 @@ test('a share page answers HEAD without a body and refuses anything but GET and 
 });
 
 test('a share lookup its ceiling refuses spends nothing upstream and answers the generic head', async () => {
-  const urls = [];
-  const state = { actions: [] };
+  const urls: Array<{ address: string; authorization: string | null }> = [];
+  const state: QuotaScriptState = { actions: [] };
   const response = await withWorkerFetchMock(
     shareUpstream(urls),
     () => reportApi.fetch(crawlerRequest(`/share/paper/${SHARED_DOI_KEY}`), {
       ...openAlexEnv(),
-      REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: key => key.startsWith('share:') }),
+      REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: (key: string) => key.startsWith('share:') }),
     }),
   );
   assert.equal(response.status, 200);
@@ -2890,8 +2898,8 @@ test('a share lookup its ceiling refuses spends nothing upstream and answers the
 // so a burst of previews for a fresh preprint drained the hour without a
 // single call to arXiv (review of 2026-09-25).
 test('an arXiv call a share page could not seat gives its hourly unit back', async () => {
-  const urls = [];
-  const state = { actions: [] };
+  const urls: string[] = [];
+  const state: QuotaScriptState = { actions: [] };
   const response = await withWorkerFetchMock(
     async (url) => {
       const address = String(url);
@@ -2918,9 +2926,9 @@ test('an arXiv call a share page could not seat gives its hourly unit back', asy
 });
 
 test('a list page reads the public document anonymously, as a visitor would', async () => {
-  const urls = [];
+  const urls: { address: string; authorization: string|null; }[] = [];
   const shareId = '0123456789abcdef0123456789abcdef';
-  const documents = {
+  const documents: Record<string, Record<string, unknown>> = {
     [`publicLists/${shareId}`]: {
       title: { stringValue: 'Tutoring with language models' },
       papers: { arrayValue: {} },
@@ -2952,20 +2960,20 @@ test('a list page reads the public document anonymously, as a visitor would', as
 // The PDF relay behind the touch-screen viewer. It must stay a relay for the
 // hosts the AI routes already read, never a general proxy.
 const PDF_BYTES = new TextEncoder().encode('%PDF-1.7\n%fake\n');
-const pdfRelay = (target, env, upstream, origin = 'https://mugar123.github.io') => withWorkerFetchMock(
+const pdfRelay = (target: string, env: WorkerEnv, upstream: typeof fetch, origin = 'https://mugar123.github.io') => withWorkerFetchMock(
   upstream,
   () => reportApi.fetch(new Request(
     `https://papertok-report-api.example/pdf?url=${encodeURIComponent(target)}`,
     { headers: origin ? { origin } : {} },
   ), env),
 );
-const pdfUpstream = calls => async (url) => {
+const pdfUpstream = (calls: string[]) => async (url: RequestInfo | URL) => {
   calls.push(String(url));
   return new Response(PDF_BYTES, { headers: { 'content-type': 'application/pdf' } });
 };
 
 test('relays an arXiv PDF to the app with CORS and an edge-cacheable answer', async () => {
-  const calls = [];
+  const calls: string[] = [];
   const response = await pdfRelay(
     'https://arxiv.org/pdf/2601.00001',
     { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger({ actions: [] }) },
@@ -2975,23 +2983,23 @@ test('relays an arXiv PDF to the app with CORS and an edge-cacheable answer', as
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('content-type'), 'application/pdf');
   assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
-  assert.match(response.headers.get('cache-control'), /s-maxage=86400/);
+  assert.match(response.headers.get('cache-control')!, /s-maxage=86400/);
   assert.deepEqual(new Uint8Array(await response.arrayBuffer()), PDF_BYTES);
   assert.deepEqual(calls, ['https://arxiv.org/pdf/2601.00001']);
 });
 
 test('refuses to relay a PDF from a host outside the allowlist, without fetching it', async () => {
-  const calls = [];
+  const calls: string[] = [];
   for (const target of ['https://evil.example/paper.pdf', 'http://arxiv.org/pdf/2601.00001', 'not a url']) {
     const response = await pdfRelay(target, { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger({ actions: [] }) }, pdfUpstream(calls));
     assert.equal(response.status, 400, target);
-    assert.equal((await response.json()).code, 'PDF_HOST_NOT_ALLOWED');
+    assert.equal((await response.json<{ code: string }>()).code, 'PDF_HOST_NOT_ALLOWED');
   }
   assert.equal(calls.length, 0);
 });
 
 test('refuses a PDF relay request without the app as its origin', async () => {
-  const calls = [];
+  const calls: string[] = [];
   for (const origin of ['', 'https://evil.example']) {
     const response = await pdfRelay(
       'https://arxiv.org/pdf/2601.00001',
@@ -3005,7 +3013,7 @@ test('refuses a PDF relay request without the app as its origin', async () => {
 });
 
 test('does not follow a redirect off the PDF allowlist', async () => {
-  const calls = [];
+  const calls: string[] = [];
   const response = await pdfRelay(
     'https://arxiv.org/pdf/2601.00001',
     { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger({ actions: [] }) },
@@ -3027,15 +3035,15 @@ test('refuses to relay an answer that is not a PDF', async () => {
   );
 
   assert.equal(response.status, 415);
-  assert.equal((await response.json()).reason, 'not_pdf');
+  assert.equal((await response.json<{ reason: string }>()).reason, 'not_pdf');
   assert.equal(response.headers.get('cache-control'), 'no-store');
 });
 
 test('a PDF relay miss is refused with 429 when the shared minute ceiling is spent, without fetching', async () => {
-  const calls = [];
+  const calls: string[] = [];
   const response = await pdfRelay(
     'https://arxiv.org/pdf/2601.00001',
-    { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger({ actions: [] }, { refuse: key => key.startsWith('pdf:') }) },
+    { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger({ actions: [] }, { refuse: (key: string) => key.startsWith('pdf:') }) },
     pdfUpstream(calls),
   );
 
@@ -3044,7 +3052,7 @@ test('a PDF relay miss is refused with 429 when the shared minute ceiling is spe
 });
 
 test('a PDF relay closes when there is no ledger to bound it', async () => {
-  const calls = [];
+  const calls: string[] = [];
   const response = await pdfRelay('https://arxiv.org/pdf/2601.00001', {}, pdfUpstream(calls));
 
   assert.equal(response.status, 503);

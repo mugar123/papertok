@@ -1,3 +1,6 @@
+type DigestUpstream = { openAlex: { total: number; byQuery: Record<string, number> }; emailsTo: Record<string, { htmlContent: string; textContent: string; subject: string; headers: Record<string, string> }>; hosts: string[] };
+import type { WorkerEnv } from './env.ts';
+import type { DigestPaper, Follow, Subscription } from './email-notifications.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -46,29 +49,29 @@ const {
   scheduleStatusKey,
 } = emailNotificationInternals;
 
-function stubFetch(response) {
+function stubFetch(response: Response|PromiseLike<Response>) {
   const original = globalThis.fetch;
   globalThis.fetch = async () => response;
   return () => { globalThis.fetch = original; };
 }
 
-function jsonResponse(status, body) {
+function jsonResponse(status: number, body: unknown) {
   return {
     status,
     ok: status >= 200 && status < 300,
-    json: async () => body,
-  };
+    json: async <T>() => body as T,
+  } as Response;
 }
 
-function textResponse(status, body) {
+function textResponse(status: number, body: string) {
   return {
     status,
     ok: status >= 200 && status < 300,
     text: async () => body,
-  };
+  } as Response;
 }
 
-function createMemoryKv(entries = {}) {
+function createMemoryKv(entries: Record<string, unknown> = {}) {
   const values = new Map(Object.entries(entries).map(([key, value]) => [
     key,
     typeof value === 'string' ? value : JSON.stringify(value),
@@ -76,18 +79,18 @@ function createMemoryKv(entries = {}) {
 
   return {
     values,
-    async get(key, type) {
+    async get(key: string, type?: string) {
       const value = values.get(key);
       if (value === undefined) return null;
       return type === 'json' ? JSON.parse(value) : value;
     },
-    async put(key, value) {
+    async put(key: string, value: string) {
       values.set(key, String(value));
     },
-    async delete(key) {
+    async delete(key: string) {
       values.delete(key);
     },
-    async list({ prefix = '', cursor, limit = 1_000 } = {}) {
+    async list({ prefix = '', cursor, limit = 1_000 }: { prefix?: string; cursor?: string; limit?: number } = {}) {
       const matchingKeys = [...values.keys()].filter(key => key.startsWith(prefix)).sort();
       const start = Math.max(0, Number(cursor) || 0);
       const end = Math.min(matchingKeys.length, start + limit);
@@ -97,12 +100,12 @@ function createMemoryKv(entries = {}) {
         ...(end < matchingKeys.length ? { cursor: String(end) } : {}),
       };
     },
-  };
+  } as KVNamespace & { values: typeof values };
 }
 
-function digestFollow(canonicalId = 'A1', displayName = 'Ada Author') {
+function digestFollow(canonicalId = 'A1', displayName = 'Ada Author'): Follow {
   return {
-    type: 'author',
+    type: 'author' as const,
     canonicalId,
     displayName,
     externalIds: {},
@@ -130,7 +133,7 @@ function digestPaper({
   };
 }
 
-function digestSubscription(overrides = {}) {
+function digestSubscription(overrides: Partial<Subscription> = {}): Subscription {
   return {
     uid: 'reader-1',
     email: 'reader@example.com',
@@ -145,7 +148,7 @@ function digestSubscription(overrides = {}) {
   };
 }
 
-function emailEnvironment(kv) {
+function emailEnvironment(kv: KVNamespace): WorkerEnv {
   return {
     NOTIFICATION_STORE: kv,
     EMAIL_PROVIDER: 'brevo',
@@ -157,14 +160,14 @@ function emailEnvironment(kv) {
   };
 }
 
-async function storedSubscriptionWithState(kv, subscriptionKey) {
-  const subscription = await kv.get(subscriptionKey, 'json');
+async function storedSubscriptionWithState(kv: KVNamespace, subscriptionKey: string) {
+  const subscription = await kv.get<Subscription>(subscriptionKey, 'json');
   if (!subscription) return null;
   const uid = subscriptionKey.replace(/^notification:subscription:/, '');
   const stateKey = subscription.stateId
     ? `${deliveryStatePrefix}${uid}:${subscription.stateId}`
     : `${deliveryStatePrefix}${uid}`;
-  const state = await kv.get(stateKey, 'json');
+  const state = await kv.get<Subscription>(stateKey, 'json');
   return { ...subscription, ...(state || {}) };
 }
 
@@ -182,12 +185,12 @@ test('sanitizes notification preferences and followed entities', () => {
   // A legacy Spanish preference from an old client is stored as English.
   assert.equal(sanitizePreferences({ language: 'es' }).language, 'en');
   assert.deepEqual(sanitizeFollow({
-    type: 'institution',
+    type: 'institution' as const,
     canonicalId: 'https://ror.org/02f40zc51',
     displayName: 'Leiden University',
     externalIds: { ror: 'https://ror.org/02f40zc51' },
   }), {
-    type: 'institution',
+    type: 'institution' as const,
     canonicalId: '02f40zc51',
     displayName: 'Leiden University',
     externalIds: { ror: '02f40zc51' },
@@ -197,7 +200,7 @@ test('sanitizes notification preferences and followed entities', () => {
 
 test('round-trips bounded query-topic metadata and rejects malformed query ids', () => {
   assert.deepEqual(sanitizeFollow({
-    type: 'topic',
+    type: 'topic' as const,
     canonicalId: 'query-1234abcd',
     displayName: 'Spatial transcriptomics',
     metadata: {
@@ -207,7 +210,7 @@ test('round-trips bounded query-topic metadata and rejects malformed query ids',
       ignored: 'not persisted',
     },
   }), {
-    type: 'topic',
+    type: 'topic' as const,
     canonicalId: 'query-1234abcd',
     displayName: 'Spatial transcriptomics',
     externalIds: {},
@@ -218,7 +221,7 @@ test('round-trips bounded query-topic metadata and rejects malformed query ids',
     },
   });
   assert.equal(sanitizeFollow({
-    type: 'topic',
+    type: 'topic' as const,
     canonicalId: 'query-not-valid',
     displayName: 'query-not-valid',
   }), null);
@@ -244,7 +247,7 @@ test('uses stored query metadata before legacy display names and never uses a qu
 
 test('relevance-filters query-topic OpenAlex results before attaching a match', async () => {
   const follow = {
-    type: 'topic',
+    type: 'topic' as const,
     canonicalId: 'query-1234abcd',
     displayName: 'Legacy display',
     externalIds: {},
@@ -280,15 +283,15 @@ test('relevance-filters query-topic OpenAlex results before attaching a match', 
   try {
     const papers = await fetchOpenAlexUpdates(follow, {}, Date.parse('2026-08-03T07:00:00Z'));
     assert.equal(requestedSearch, 'Spatial transcriptomics');
-    assert.deepEqual(papers.map(paper => paper.id), ['W1']);
-    assert.equal(papers[0].matches[0].canonicalId, 'query-1234abcd');
+    assert.deepEqual(papers.map(paper => paper!.id), ['W1']);
+    assert.equal(papers[0]!.matches[0].canonicalId, 'query-1234abcd');
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-function invertedIndex(text) {
-  const index = {};
+function invertedIndex(text: string) {
+  const index: Record<string, number[]> = {};
   text.split(' ').forEach((word, position) => {
     (index[word] ||= []).push(position);
   });
@@ -332,11 +335,11 @@ test('an OpenAlex work carries its field and a usable abstract into the digest',
 
   try {
     const papers = await fetchOpenAlexUpdates(digestFollow(), {}, Date.parse('2026-08-03T07:00:00Z'));
-    const byId = Object.fromEntries(papers.map(paper => [paper.id, paper]));
-    assert.equal(byId.WFIELD.area, 'cs');
-    assert.equal(byId.WFIELD.abstract, abstract);
-    assert.equal(byId.WNAMED.area, 'chemeng');
-    assert.equal('abstract' in byId.WNAMED, false);
+    const byId = Object.fromEntries(papers.map(paper => [paper!.id, paper]));
+    assert.equal(byId.WFIELD!.area, 'cs');
+    assert.equal(byId.WFIELD!.abstract, abstract);
+    assert.equal(byId.WNAMED!.area, 'chemeng');
+    assert.equal('abstract' in byId.WNAMED!, false);
   } finally {
     restore();
   }
@@ -364,8 +367,8 @@ test('the app may name a paper\'s field, but only one the digest knows', async (
     displayName: 'Reader',
   });
 
-  const stored = await kv.get('notification:subscription:field-reader', 'json');
-  assert.deepEqual(stored.previewItems.map(paper => paper.area), ['bio', undefined, undefined]);
+  const stored = await kv.get<Subscription>('notification:subscription:field-reader', 'json');
+  assert.deepEqual(stored!.previewItems!.map(paper => paper.area), ['bio', undefined, undefined]);
 });
 
 test('merging two records of one paper keeps the field and the longer abstract', () => {
@@ -387,12 +390,12 @@ test('merging two records of one paper keeps the field and the longer abstract',
 
 test('deduplicates digest papers while preserving every follow reason', () => {
   const papers = mergePapers([
-    { id: 'one', doi: '10.1/same', title: 'Paper', matches: [{ type: 'author', canonicalId: 'A1', displayName: 'Ada' }] },
-    { id: 'two', doi: 'https://doi.org/10.1/SAME', title: 'Paper', citationCount: 8, matches: [{ type: 'topic', canonicalId: 'T1', displayName: 'Physics' }] },
+    { id: 'one', doi: '10.1/same', title: 'Paper', matches: [{ type: 'author' as const, canonicalId: 'A1', displayName: 'Ada' }] },
+    { id: 'two', doi: 'https://doi.org/10.1/SAME', title: 'Paper', citationCount: 8, matches: [{ type: 'topic' as const, canonicalId: 'T1', displayName: 'Physics' }] },
   ]);
   assert.equal(papers.length, 1);
   assert.equal(papers[0].citationCount, 8);
-  assert.deepEqual(papers[0].matches.map(match => match.type), ['author', 'topic']);
+  assert.deepEqual(papers[0].matches!.map(match => match.type), ['author', 'topic']);
 });
 
 test('deduplicates newsletter records with different provider ids by title and author', () => {
@@ -401,26 +404,26 @@ test('deduplicates newsletter records with different provider ids by title and a
       id: 'openalex:W1',
       title: 'On the Origin of the Universe',
       authors: ['Francisco Anderson de Sousa Oliveira'],
-      matches: [{ type: 'topic', canonicalId: 'T1', displayName: 'Astrophysics' }],
+      matches: [{ type: 'topic' as const, canonicalId: 'T1', displayName: 'Astrophysics' }],
     },
     {
       id: 'zenodo:1',
       title: 'On the Origin of the Universe',
       authors: ['Francisco Anderson de Sousa Oliveira'],
       citationCount: 4,
-      matches: [{ type: 'institution', canonicalId: 'I1', displayName: 'CERN' }],
+      matches: [{ type: 'institution' as const, canonicalId: 'I1', displayName: 'CERN' }],
     },
   ]);
 
   assert.equal(papers.length, 1);
   assert.equal(papers[0].id, 'openalex:W1');
   assert.equal(papers[0].citationCount, 4);
-  assert.deepEqual(papers[0].matches.map(match => match.type), ['topic', 'institution']);
+  assert.deepEqual(papers[0].matches!.map(match => match.type), ['topic', 'institution']);
 });
 
 test('treats the configured paper count as a maximum and does not backfill weak results', () => {
   const now = Date.parse('2026-07-28T07:00:00Z');
-  const followedMatch = [{ type: 'topic', canonicalId: 'T1', displayName: 'Astrophysics' }];
+  const followedMatch = [{ type: 'topic' as const, canonicalId: 'T1', displayName: 'Astrophysics' }];
   const qualityPaper = {
     authors: ['Ada Lovelace'],
     published: '2026-07-28',
@@ -519,7 +522,7 @@ test('uses at most one strong exploration paper when followed selection is empty
   try {
     const result = await collectDigestPapers(digestSubscription(), {}, { now });
     assert.deepEqual(result.papers.map(paper => paper.id), ['WEXPLORE']);
-    assert.equal(result.papers[0].matches.length, 0);
+    assert.equal(result.papers[0].matches!.length, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -548,13 +551,13 @@ test('every subscription is due once on Monday, including one saved as daily', (
 
 test('maps native arXiv categories to their exact followed topics', () => {
   const galacticFollow = {
-    type: 'topic',
+    type: 'topic' as const,
     canonicalId: 'astro-ph.GA',
     displayName: 'Astrofísica Galáctica',
     metadata: { categoryIds: ['astro-ph.GA'] },
   };
   const quantumFollow = {
-    type: 'topic',
+    type: 'topic' as const,
     canonicalId: 'quant-ph',
     displayName: 'Física Cuántica',
     metadata: { categoryIds: ['quant-ph'] },
@@ -575,16 +578,16 @@ test('maps native arXiv categories to their exact followed topics', () => {
   assert.deepEqual(arxivCategoriesForFollow(galacticFollow), ['astro-ph.GA']);
   const papers = parseArxivDigestFeed(xml, [galacticFollow, quantumFollow]);
   assert.equal(papers.length, 1);
-  assert.equal(papers[0].id, '2607.26058');
-  assert.equal(papers[0].published, '2026-07-28T17:59:59Z');
-  assert.equal(papers[0].matches[0].canonicalId, 'astro-ph.GA');
-  assert.equal(papers[0].url, 'https://arxiv.org/abs/2607.26058v1');
+  assert.equal(papers[0]!.id, '2607.26058');
+  assert.equal(papers[0]!.published, '2026-07-28T17:59:59Z');
+  assert.equal(papers[0]!.matches[0].canonicalId, 'astro-ph.GA');
+  assert.equal(papers[0]!.url, 'https://arxiv.org/abs/2607.26058v1');
 });
 
 test('an arXiv entry carries its primary field and its summary into the digest', () => {
   const follows = [
-    { type: 'topic', canonicalId: 'math-ph', displayName: 'Mathematical Physics', metadata: { categoryIds: ['math-ph'] } },
-    { type: 'topic', canonicalId: 'cs.LG', displayName: 'Machine Learning', metadata: { categoryIds: ['cs.LG'] } },
+    { type: 'topic' as const, canonicalId: 'math-ph', displayName: 'Mathematical Physics', metadata: { categoryIds: ['math-ph'] } },
+    { type: 'topic' as const, canonicalId: 'cs.LG', displayName: 'Machine Learning', metadata: { categoryIds: ['cs.LG'] } },
   ];
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
     <feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
@@ -612,13 +615,13 @@ test('an arXiv entry carries its primary field and its summary into the digest',
       </entry>
     </feed>`;
 
-  const byId = Object.fromEntries(parseArxivDigestFeed(xml, follows).map(paper => [paper.id, paper]));
+  const byId = Object.fromEntries(parseArxivDigestFeed(xml, follows).map(paper => [paper!.id, paper]));
   // math-ph is filed under physics, though its name starts with "math".
-  assert.equal(byId['2608.00001'].area, 'physics');
-  assert.equal(byId['2608.00001'].abstract, 'Integrable spin chains admit exact solutions.');
+  assert.equal(byId['2608.00001']!.area, 'physics');
+  assert.equal(byId['2608.00001']!.abstract, 'Integrable spin chains admit exact solutions.');
   // The primary category decides, not the cross-list that happens to come first.
-  assert.equal(byId['2608.00002'].area, 'cs');
-  assert.equal('abstract' in byId['2608.00002'], false);
+  assert.equal(byId['2608.00002']!.area, 'cs');
+  assert.equal('abstract' in byId['2608.00002']!, false);
 });
 
 test('scheduled digest fetches native arXiv follows before OpenAlex indexes them', async () => {
@@ -636,7 +639,7 @@ test('scheduled digest fetches native arXiv follows before OpenAlex indexes them
       lastSentAt: '2026-07-27T07:00:00Z',
       sentPaperKeys: [],
       follows: [{
-        type: 'topic',
+        type: 'topic' as const,
         canonicalId: 'astro-ph.GA',
         displayName: 'Astrofísica Galáctica',
         externalIds: {},
@@ -668,7 +671,7 @@ test('scheduled digest fetches native arXiv follows before OpenAlex indexes them
     }
     if (url.hostname === 'api.openalex.org') return jsonResponse(200, { results: [] });
     if (url.hostname === 'api.brevo.com' && url.pathname === '/v3/smtp/email') {
-      brevoPayload = JSON.parse(options.body);
+      brevoPayload = JSON.parse(options.body as string);
       return jsonResponse(201, { messageId: 'arxiv-email-id' });
     }
     throw new Error(`Unexpected request: ${url}`);
@@ -687,20 +690,20 @@ test('scheduled digest fetches native arXiv follows before OpenAlex indexes them
     assert.equal(result.failed, 0);
     assert.equal(result.empty, 0);
     assert.equal(arxivQuery, 'cat:astro-ph.GA');
-    assert.equal(brevoPayload.subject, 'The evolution of galaxy dust scaling relations');
+    assert.equal(brevoPayload!.subject, 'The evolution of galaxy dust scaling relations');
     assert.equal(
-      brevoPayload.htmlContent.includes('The evolution of galaxy dust scaling relations'),
+      brevoPayload!.htmlContent.includes('The evolution of galaxy dust scaling relations'),
       true,
     );
     const storedSubscription = await storedSubscriptionWithState(kv, subscriptionKey);
-    assert.equal(storedSubscription.lastSentAt, now.toISOString());
-    assert.equal(storedSubscription.sentPaperKeys.includes('id:2607.26058'), true);
-    const rawSubscription = await kv.get(subscriptionKey, 'json');
-    const deliveryState = await kv.get(`${deliveryStatePrefix}arxiv-reader`, 'json');
-    assert.equal(rawSubscription.lastSentAt, '2026-07-27T07:00:00Z');
-    assert.notEqual(rawSubscription.lastSentAt, now.toISOString());
-    assert.equal(rawSubscription.lastDelivery, undefined);
-    assert.equal(deliveryState.lastSentAt, now.toISOString());
+    assert.equal(storedSubscription!.lastSentAt, now.toISOString());
+    assert.equal(storedSubscription!.sentPaperKeys!.includes('id:2607.26058'), true);
+    const rawSubscription = await kv.get<Subscription>(subscriptionKey, 'json');
+    const deliveryState = await kv.get<Subscription>(`${deliveryStatePrefix}arxiv-reader`, 'json');
+    assert.equal(rawSubscription!.lastSentAt, '2026-07-27T07:00:00Z');
+    assert.notEqual(rawSubscription!.lastSentAt, now.toISOString());
+    assert.equal(rawSubscription!.lastDelivery, undefined);
+    assert.equal(deliveryState!.lastSentAt, now.toISOString());
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -720,16 +723,16 @@ test('scheduled digest fetches and emails papers from every followed entity type
       maxPapers: 10,
       unsubscribeToken: 'unsubscribe-token',
       follows: [
-        { type: 'author', canonicalId: 'A1', displayName: 'Ada Author', externalIds: {}, metadata: { categoryIds: [] } },
-        { type: 'institution', canonicalId: 'I2', displayName: 'Research University', externalIds: {}, metadata: { categoryIds: [] } },
-        { type: 'topic', canonicalId: 'T3', displayName: 'Cosmology', externalIds: {}, metadata: { categoryIds: [] } },
-        { type: 'project', canonicalId: 'project-4', displayName: 'Discovery Project', externalIds: {}, metadata: { categoryIds: [] } },
+        { type: 'author' as const, canonicalId: 'A1', displayName: 'Ada Author', externalIds: {}, metadata: { categoryIds: [] } },
+        { type: 'institution' as const, canonicalId: 'I2', displayName: 'Research University', externalIds: {}, metadata: { categoryIds: [] } },
+        { type: 'topic' as const, canonicalId: 'T3', displayName: 'Cosmology', externalIds: {}, metadata: { categoryIds: [] } },
+        { type: 'project' as const, canonicalId: 'project-4', displayName: 'Discovery Project', externalIds: {}, metadata: { categoryIds: [] } },
       ],
       previewItems: [],
     },
   });
-  const requests = [];
-  let brevoPayload;
+  const requests: string[] = [];
+  let brevoPayload!: { sender: unknown; to: unknown; headers: { idempotencyKey: string; }; subject: unknown; htmlContent: string|string[]; };
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, options = {}) => {
     const url = new URL(String(input));
@@ -780,7 +783,7 @@ test('scheduled digest fetches and emails papers from every followed entity type
     }
 
     if (url.hostname === 'api.brevo.com' && url.pathname === '/v3/smtp/email') {
-      brevoPayload = JSON.parse(options.body);
+      brevoPayload = JSON.parse(options.body as string);
       return jsonResponse(201, { messageId: 'email-provider-id' });
     }
 
@@ -819,9 +822,9 @@ test('scheduled digest fetches and emails papers from every followed entity type
     assert.equal(requests.filter(url => url.startsWith('https://api.brevo.com/v3/smtp/email')).length, 1);
 
     const storedSubscription = await storedSubscriptionWithState(kv, subscriptionKey);
-    assert.equal(storedSubscription.lastSentAt, now.toISOString());
-    assert.equal(storedSubscription.lastCheckedAt, now.toISOString());
-    assert.equal(storedSubscription.sentPaperKeys.includes('doi:10.1234/author'), true);
+    assert.equal(storedSubscription!.lastSentAt, now.toISOString());
+    assert.equal(storedSubscription!.lastCheckedAt, now.toISOString());
+    assert.equal(storedSubscription!.sentPaperKeys!.includes('doi:10.1234/author'), true);
     assert.equal(
       [...kv.values.keys()].some(key => key.startsWith(deliveryLedgerPrefix)),
       true,
@@ -835,11 +838,11 @@ test('scheduled digest fetches and emails papers from every followed entity type
 
 const DIGEST_RUN = new Date('2026-08-10T07:00:00.000Z');
 
-function scheduledFollow(type, canonicalId, displayName, metadata = {}) {
+function scheduledFollow(type: Follow['type'], canonicalId: string, displayName: string, metadata: Follow['metadata'] = {}): Follow {
   return { type, canonicalId, displayName, externalIds: {}, metadata: { categoryIds: [], ...metadata } };
 }
 
-function readerSubscription(uid, overrides = {}) {
+function readerSubscription(uid: string, overrides: Partial<Subscription> = {}): Subscription {
   return digestSubscription({
     uid,
     email: `${uid}@example.com`,
@@ -848,14 +851,14 @@ function readerSubscription(uid, overrides = {}) {
   });
 }
 
-function readersKv(readers) {
+function readersKv(readers: Record<string, Subscription>) {
   return createMemoryKv(Object.fromEntries(Object.entries(readers).map(([uid, overrides]) => [
     `notification:subscription:${uid}`,
     readerSubscription(uid, overrides),
   ])));
 }
 
-function recentOpenAlexWork(entityId, overrides = {}) {
+function recentOpenAlexWork(entityId: string, overrides = {}) {
   return {
     id: `https://openalex.org/W${entityId}`,
     display_name: `Recent paper for ${entityId}`,
@@ -873,29 +876,29 @@ function recentOpenAlexWork(entityId, overrides = {}) {
 
 // The question a digest's OpenAlex request asks: the exploration pick, a
 // search string, or the last filter clause (the followed entity or DOI list).
-function digestOpenAlexQuery(url) {
+function digestOpenAlexQuery(url: URL) {
   const filter = url.searchParams.get('filter') || '';
   if (filter.includes('is_retracted:false')) return 'exploration';
   const search = url.searchParams.get('search');
-  return search ? `search:${search}` : filter.split(',').at(-1);
+  return search ? `search:${search}` : filter.split(',').at(-1)!;
 }
 
-function answerWithOneRecentWork(url, query) {
+function answerWithOneRecentWork(url: URL, query: string | null) {
   if (!query) throw new Error(`Unexpected request: ${url}`);
   if (query === 'exploration') return jsonResponse(200, { results: [] });
-  return jsonResponse(200, { results: [recentOpenAlexWork(query.split(':').at(-1))] });
+  return jsonResponse(200, { results: [recentOpenAlexWork(query.split(':').at(-1)!)] });
 }
 
 // Counts every OpenAlex request by the question it asks, keeps each digest
 // email by recipient, and hands every other request to `respond`.
-async function withDigestUpstream(respond, callback) {
-  const upstream = { openAlex: { total: 0, byQuery: {} }, emailsTo: {}, hosts: [] };
+async function withDigestUpstream<Result>(respond: (url: URL, query: string | null) => Response | PromiseLike<Response>, callback: (upstream: DigestUpstream) => Promise<Result>) {
+  const upstream: DigestUpstream = { openAlex: { total: 0, byQuery: {} }, emailsTo: {}, hosts: [] };
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, options = {}) => {
     const url = new URL(String(input));
     upstream.hosts.push(url.hostname);
     if (url.hostname === 'api.brevo.com') {
-      const email = JSON.parse(options.body);
+      const email = JSON.parse(options.body as string);
       upstream.emailsTo[email.to[0].email] = email;
       return jsonResponse(201, { messageId: `digest-${email.to[0].email}` });
     }
@@ -925,7 +928,7 @@ test('one schedule run asks OpenAlex once for a query that several subscribers s
     'reader-5': { follows: [scheduledFollow('topic', 'T1', 'Topic One'), scheduledFollow('author', 'A1', 'Ada Author')] },
   });
 
-  await withDigestUpstream(answerWithOneRecentWork, async (upstream) => {
+  await withDigestUpstream(answerWithOneRecentWork, async (upstream: { openAlex: unknown; }) => {
     const summary = await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
 
     assert.equal(summary.sent, 5);
@@ -957,12 +960,12 @@ test('readers in one page share an OpenAlex request that is still in flight', as
     uid,
     { follows: [scheduledFollow('author', 'A1', 'Ada Author')] },
   ])));
-  const slowly = async (url, query) => {
+  const slowly = async (url: URL, query: string | null) => {
     if (query === 'author.id:A1') await new Promise(resolve => setTimeout(resolve, 25));
     return answerWithOneRecentWork(url, query);
   };
 
-  await withDigestUpstream(slowly, async (upstream) => {
+  await withDigestUpstream(slowly, async (upstream: { openAlex: { byQuery: unknown; }; }) => {
     const summary = await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
 
     assert.equal(summary.sent, 3);
@@ -980,7 +983,7 @@ test('a failed shared request is dropped so a later page asks again, and every H
     { follows: [scheduledFollow('author', 'A1', 'Ada Author')] },
   ])));
   let refusalsLeft = 2;
-  const refusingTwice = (url, query) => {
+  const refusingTwice = (url: URL, query: string | null) => {
     if (query === 'author.id:A1' && refusalsLeft > 0) {
       refusalsLeft -= 1;
       return jsonResponse(503, {});
@@ -988,7 +991,7 @@ test('a failed shared request is dropped so a later page asks again, and every H
     return answerWithOneRecentWork(url, query);
   };
 
-  await withDigestUpstream(refusingTwice, async (upstream) => {
+  await withDigestUpstream(refusingTwice, async (upstream: { openAlex: { byQuery: unknown; }; }) => {
     const summary = await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
 
     assert.equal(summary.failed, 3);
@@ -1013,14 +1016,14 @@ test('malformed shared OpenAlex payloads are dropped so a later page can recover
     ['null payload', null],
     ['missing results', {}],
     ['non-array results', { results: {} }],
-  ]) {
+  ] as Array<[string, unknown]>) {
     await t.test(name, async () => {
       const kv = readersKv(Object.fromEntries(['reader-1', 'reader-2', 'reader-3', 'reader-4', 'reader-5'].map(uid => [
         uid,
         { follows: [scheduledFollow('author', 'A1', 'Ada Author')] },
       ])));
       let malformed = true;
-      const malformedThenHealthy = async (url, query) => {
+      const malformedThenHealthy = async (url: URL, query: string | null) => {
         if (query === 'author.id:A1' && malformed) {
           malformed = false;
           await new Promise(resolve => setTimeout(resolve, 25));
@@ -1029,7 +1032,7 @@ test('malformed shared OpenAlex payloads are dropped so a later page can recover
         return answerWithOneRecentWork(url, query);
       };
 
-      await withDigestUpstream(malformedThenHealthy, async (upstream) => {
+      await withDigestUpstream(malformedThenHealthy, async (upstream: { openAlex: { byQuery: unknown; }; }) => {
         const summary = await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
 
         assert.equal(summary.failed, 3);
@@ -1054,9 +1057,9 @@ test('readers who share an OpenAlex answer keep their own follow names and sent 
     },
   });
 
-  await withDigestUpstream(answerWithOneRecentWork, async (upstream) => {
+  await withDigestUpstream(answerWithOneRecentWork, async (upstream: { emailsTo: { [x: string]: { htmlContent: string; }; }; openAlex: { byQuery: { [x: string]: unknown; }; }; }) => {
     const summary = await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
-    const html = uid => upstream.emailsTo[`${uid}@example.com`].htmlContent;
+    const html = (uid: string) => upstream.emailsTo[`${uid}@example.com`].htmlContent;
 
     assert.equal(summary.sent, 3);
     assert.equal(upstream.openAlex.byQuery['author.id:A1'], 1);
@@ -1080,7 +1083,7 @@ test('readers who share an OpenAlex search keep their own relevance filter', asy
     },
     'reader-2': { follows: [scheduledFollow('topic', 'query-5678abcd', query, { query })] },
   });
-  const searchAnswer = (url, question) => {
+  const searchAnswer = (url: URL, question: string | null) => {
     if (question !== `search:${query}`) return answerWithOneRecentWork(url, question);
     return jsonResponse(200, {
       results: [
@@ -1093,9 +1096,9 @@ test('readers who share an OpenAlex search keep their own relevance filter', asy
     });
   };
 
-  await withDigestUpstream(searchAnswer, async (upstream) => {
+  await withDigestUpstream(searchAnswer, async (upstream: { emailsTo: { [x: string]: { htmlContent: string; }; }; openAlex: { byQuery: { [x: string]: unknown; }; }; }) => {
     const summary = await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
-    const html = uid => upstream.emailsTo[`${uid}@example.com`].htmlContent;
+    const html = (uid: string) => upstream.emailsTo[`${uid}@example.com`].htmlContent;
 
     assert.equal(summary.sent, 2);
     assert.equal(upstream.openAlex.byQuery[`search:${query}`], 1);
@@ -1111,7 +1114,7 @@ test('each schedule run starts without shared OpenAlex answers', async () => {
   // would answer the second one from memory.
   const kv = readersKv({ 'reader-1': { follows: [scheduledFollow('author', 'A1', 'Ada Author')] } });
 
-  await withDigestUpstream(answerWithOneRecentWork, async (upstream) => {
+  await withDigestUpstream(answerWithOneRecentWork, async (upstream: { openAlex: { byQuery: unknown; }; }) => {
     const first = await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
     await kv.put('notification:subscription:reader-2', JSON.stringify(readerSubscription('reader-2', {
       follows: [scheduledFollow('author', 'A1', 'Ada Author')],
@@ -1134,7 +1137,7 @@ test('readers who follow the same project share its OpenAlex lookup', async () =
     'reader-1': { follows: [scheduledFollow('project', 'project-4', 'Discovery Project')] },
     'reader-2': { follows: [scheduledFollow('project', 'project-4', 'Discovery Project')] },
   });
-  const projectAnswer = (url, query) => {
+  const projectAnswer = (url: URL, query: string | null) => {
     if (url.hostname === 'api.openaire.eu') {
       return jsonResponse(200, {
         response: {
@@ -1158,13 +1161,13 @@ test('readers who follow the same project share its OpenAlex lookup', async () =
     const summary = await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
 
     assert.equal(summary.sent, 2);
-    assert.equal(upstream.hosts.filter(host => host === 'api.openaire.eu').length, 2);
+    assert.equal(upstream.hosts.filter((host: string) => host === 'api.openaire.eu').length, 2);
     assert.deepEqual(upstream.openAlex.byQuery, { 'doi:10.1234/project-paper': 1, exploration: 1 });
   });
 });
 
 test('the shared OpenAlex map stops growing at its limit and never keys on the API key', async () => {
-  const requested = [];
+  const requested: string[] = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     requested.push(String(input));
@@ -1199,7 +1202,7 @@ test('does not overwrite an enabled subscription when the client sends zero foll
     enabled: true,
     frequency: 'daily',
     maxPapers: 5,
-    follows: [{ type: 'topic', canonicalId: 'T1', displayName: 'Physics' }],
+    follows: [{ type: 'topic' as const, canonicalId: 'T1', displayName: 'Physics' }],
     previewItems: [],
     unsubscribeToken: 'existing-token',
   };
@@ -1216,9 +1219,9 @@ test('does not overwrite an enabled subscription when the client sends zero foll
       email: 'reader@example.com',
       displayName: 'Reader',
     }),
-    error => error?.code === 'EMAIL_FOLLOWS_REQUIRED' && error?.status === 409,
+    error => (error as Error & { code?: string; status?: number })?.code === 'EMAIL_FOLLOWS_REQUIRED' && (error as Error & { code?: string; status?: number })?.status === 409,
   );
-  assert.deepEqual(await kv.get(subscriptionKey, 'json'), existing);
+  assert.deepEqual(await kv.get<Subscription>(subscriptionKey, 'json'), existing);
 });
 
 test('rejects oversized notification preference payloads before parsing them', async () => {
@@ -1234,7 +1237,7 @@ test('rejects oversized notification preference payloads before parsing them', a
       email: 'reader@example.com',
       displayName: 'Reader',
     }),
-    error => error?.code === 'EMAIL_REQUEST_TOO_LARGE' && error?.status === 413,
+    error => (error as Error & { code?: string; status?: number })?.code === 'EMAIL_REQUEST_TOO_LARGE' && (error as Error & { code?: string; status?: number })?.status === 413,
   );
 });
 
@@ -1256,7 +1259,7 @@ test('unsubscribe GET confirms without mutating and POST removes the subscriptio
   const confirmation = await handleEmailUnsubscribe(new Request(url), { NOTIFICATION_STORE: kv });
   assert.equal(confirmation.status, 200);
   assert.match(await confirmation.text(), /Confirm unsubscribe/);
-  assert.deepEqual(await kv.get('notification:subscription:reader', 'json'), subscription);
+  assert.deepEqual(await kv.get<Subscription>('notification:subscription:reader', 'json'), subscription);
 
   const result = await handleEmailUnsubscribe(new Request(url, { method: 'POST' }), {
     NOTIFICATION_STORE: kv,
@@ -1287,7 +1290,7 @@ test('a stale unsubscribe token cannot delete a newer subscription generation', 
   ), { NOTIFICATION_STORE: kv });
 
   assert.equal(response.status, 400);
-  assert.ok(await kv.get('notification:subscription:reader', 'json'));
+  assert.ok(await kv.get<Subscription>('notification:subscription:reader', 'json'));
   assert.equal(await kv.get(`notification:unsubscribe:${staleToken}`), null);
 });
 
@@ -1389,10 +1392,10 @@ test('keeps delivery state separate and intact when notification preferences cha
     displayName: 'Reader',
   });
 
-  const rawSubscription = await kv.get(subscriptionKey, 'json');
-  assert.equal(rawSubscription.frequency, 'weekly');
-  assert.equal(rawSubscription.lastSentAt, undefined);
-  assert.equal(rawSubscription.lastDelivery, undefined);
+  const rawSubscription = await kv.get<Subscription>(subscriptionKey, 'json');
+  assert.equal(rawSubscription!.frequency, 'weekly');
+  assert.equal(rawSubscription!.lastSentAt, undefined);
+  assert.equal(rawSubscription!.lastDelivery, undefined);
   assert.deepEqual(await kv.get(deliveryStateKey, 'json'), newerDeliveryState);
 });
 
@@ -1440,12 +1443,12 @@ test('does not attach a completed send from an old subscription generation to a 
     assert.equal(result.sent, 1);
     assert.equal(providerCalls, 1);
     assert.equal(resubscribedDuringOldStateWrite, true);
-    assert.equal((await kv.get(oldStateKey, 'json')).lastDelivery.status, 'sent');
+    assert.equal((await kv.get<Subscription>(oldStateKey, 'json'))!.lastDelivery!.status, 'sent');
     assert.equal(await kv.get(newStateKey, 'json'), null);
     const current = await storedSubscriptionWithState(kv, subscriptionKey);
-    assert.equal(current.stateId, 'new-generation');
-    assert.equal(current.lastSentAt, undefined);
-    assert.deepEqual(current.sentPaperKeys, []);
+    assert.equal(current!.stateId, 'new-generation');
+    assert.equal(current!.lastSentAt, undefined);
+    assert.deepEqual(current!.sentPaperKeys, []);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1543,14 +1546,14 @@ test('marks a legacy enabled subscription with zero follows invalid without call
     assert.equal(result.invalid, 1);
     assert.equal(result.failed, 0);
     const storedSubscription = await storedSubscriptionWithState(kv, subscriptionKey);
-    assert.equal(storedSubscription.lastCheckedAt, now.toISOString());
-    assert.equal(storedSubscription.lastSentAt, undefined);
-    assert.equal(storedSubscription.lastDelivery.status, 'invalid');
+    assert.equal(storedSubscription!.lastCheckedAt, now.toISOString());
+    assert.equal(storedSubscription!.lastSentAt, undefined);
+    assert.equal(storedSubscription!.lastDelivery!.status, 'invalid');
     assert.equal([...kv.values.keys()].some(key => key.startsWith(deliveryLedgerPrefix)), false);
-    const storedOutcome = await kv.get(scheduleStatusKey, 'json');
-    assert.equal(storedOutcome.scheduledAt, now.toISOString());
-    assert.equal(storedOutcome.invalid, 1);
-    assert.equal(storedOutcome.failed, 0);
+    const storedOutcome = await kv.get<Awaited<ReturnType<typeof runEmailNotificationSchedule>>>(scheduleStatusKey, 'json');
+    assert.equal(storedOutcome!.scheduledAt, now.toISOString());
+    assert.equal(storedOutcome!.invalid, 1);
+    assert.equal(storedOutcome!.failed, 0);
     assert.equal(
       [...kv.values.keys()].some(key => key.startsWith(scheduleHistoryPrefix)),
       true,
@@ -1585,8 +1588,8 @@ test('counts all required source failures as failed rather than empty and never 
     assert.equal(result.sources.requiredFailed, 1);
     assert.equal(result.sources.failed, 1);
     const stored = await storedSubscriptionWithState(kv, subscriptionKey);
-    assert.equal(stored.lastDelivery.status, 'failed');
-    assert.equal(stored.lastDelivery.code, 'EMAIL_DIGEST_SOURCES_UNAVAILABLE');
+    assert.equal(stored!.lastDelivery!.status, 'failed');
+    assert.equal(stored!.lastDelivery!.code, 'EMAIL_DIGEST_SOURCES_UNAVAILABLE');
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1615,9 +1618,9 @@ test('counts authoritative successful source responses with no papers as empty',
     assert.equal(result.sources.succeeded, 2);
     assert.equal(result.sources.failed, 0);
     const stored = await storedSubscriptionWithState(kv, subscriptionKey);
-    assert.equal(stored.lastDelivery.status, 'empty');
-    assert.equal(stored.lastDelivery.sources.succeeded, 2);
-    assert.equal(stored.lastDelivery.sources.failed, 0);
+    assert.equal(stored!.lastDelivery!.status, 'empty');
+    assert.equal(stored!.lastDelivery!.sources!.succeeded, 2);
+    assert.equal(stored!.lastDelivery!.sources!.failed, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1670,9 +1673,9 @@ test('retries an empty weekly selection in a later cron window and sends when pa
     assert.equal(retry.empty, 0);
     assert.equal(providerCalls, 1);
     const stored = await storedSubscriptionWithState(kv, subscriptionKey);
-    assert.equal(stored.lastSentAt, retryWindow.toISOString());
-    assert.equal(stored.lastDelivery.status, 'sent');
-    assert.equal(stored.sentPaperKeys.includes('id:wretry'), true);
+    assert.equal(stored!.lastSentAt, retryWindow.toISOString());
+    assert.equal(stored!.lastDelivery!.status, 'sent');
+    assert.equal(stored!.sentPaperKeys!.includes('id:wretry'), true);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1727,9 +1730,9 @@ test('sends usable papers after a partial source failure and records the partial
     assert.equal(result.sources.failed, 1);
     assert.equal(result.sources.requiredFailed, 1);
     const stored = await storedSubscriptionWithState(kv, subscriptionKey);
-    assert.equal(stored.lastDelivery.status, 'sent');
-    assert.equal(stored.lastDelivery.partial, true);
-    assert.equal(stored.lastDelivery.sources.requiredFailed, 1);
+    assert.equal(stored!.lastDelivery!.status, 'sent');
+    assert.equal(stored!.lastDelivery!.partial, true);
+    assert.equal(stored!.lastDelivery!.sources!.requiredFailed, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1803,7 +1806,7 @@ test('two cron windows cannot duplicate a successful weekly digest', async () =>
     assert.equal(later.sent, 0);
     assert.equal(later.skipped, 1);
     const stored = await storedSubscriptionWithState(kv, subscriptionKey);
-    assert.equal(stored.lastDelivery.status, 'sent');
+    assert.equal(stored!.lastDelivery!.status, 'sent');
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1820,15 +1823,15 @@ test('retries one unknown provider outcome inside the idempotency window', async
       previewItems: [digestPaper({ id: 'network-retry-paper', published: '2026-08-08' })],
     }),
   });
-  const providerKeys = [];
-  const providerBodies = [];
+  const providerKeys: Array<string | null> = [];
+  const providerBodies: unknown[] = [];
   let rejectSourceCalls = false;
   const originalFetch = globalThis.fetch;
   const originalDateNow = Date.now;
   globalThis.fetch = async (input, options = {}) => {
     const url = new URL(String(input));
     if (url.hostname === 'api.brevo.com') {
-      const body = JSON.parse(options.body);
+      const body = JSON.parse(options.body as string);
       providerBodies.push(body);
       providerKeys.push(body.headers.idempotencyKey);
       if (providerKeys.length === 1) throw new TypeError('simulated response loss');
@@ -1841,8 +1844,8 @@ test('retries one unknown provider outcome inside the idempotency window', async
   try {
     Date.now = () => firstAttemptAt.getTime();
     const first = await runEmailNotificationSchedule(emailEnvironment(kv), firstWindow.getTime());
-    const changed = await kv.get(subscriptionKey, 'json');
-    changed.previewItems = [digestPaper({ id: 'different-paper', published: '2026-08-09' })];
+    const changed = await kv.get<Subscription>(subscriptionKey, 'json');
+    changed!.previewItems = [digestPaper({ id: 'different-paper', published: '2026-08-09' })];
     await kv.put(subscriptionKey, JSON.stringify(changed));
     rejectSourceCalls = true;
     Date.now = () => retryWindow.getTime();
@@ -1854,8 +1857,8 @@ test('retries one unknown provider outcome inside the idempotency window', async
     assert.equal(providerKeys[0], providerKeys[1]);
     assert.deepEqual(providerBodies[0], providerBodies[1]);
     const stored = await storedSubscriptionWithState(kv, subscriptionKey);
-    assert.equal(stored.lastDelivery.status, 'sent');
-    assert.equal(stored.lastSentAt, firstWindow.toISOString());
+    assert.equal(stored!.lastDelivery!.status, 'sent');
+    assert.equal(stored!.lastSentAt, firstWindow.toISOString());
   } finally {
     Date.now = originalDateNow;
     globalThis.fetch = originalFetch;
@@ -1873,14 +1876,14 @@ test('uses the final cron window only to replay a late uncertain provider respon
       previewItems: [digestPaper({ id: 'late-retry-paper', published: '2026-08-09' })],
     }),
   });
-  const providerBodies = [];
+  const providerBodies: unknown[] = [];
   let rejectSourceCalls = false;
   const originalFetch = globalThis.fetch;
   const originalDateNow = Date.now;
   globalThis.fetch = async (input, options = {}) => {
     const url = new URL(String(input));
     if (url.hostname === 'api.brevo.com') {
-      providerBodies.push(JSON.parse(options.body));
+      providerBodies.push(JSON.parse(options.body as string));
       return providerBodies.length === 1
         ? jsonResponse(503, { message: 'upstream response uncertain' })
         : jsonResponse(201, { messageId: 'late-retry-delivery' });
@@ -1928,8 +1931,8 @@ test('does not start a new digest in the final recovery-only cron window', async
     assert.equal(result.due, 0);
     assert.equal(result.skipped, 1);
     const stored = await storedSubscriptionWithState(kv, subscriptionKey);
-    assert.equal(stored.lastSentAt, undefined);
-    assert.equal(stored.lastDelivery, undefined);
+    assert.equal(stored!.lastSentAt, undefined);
+    assert.equal(stored!.lastDelivery, undefined);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1953,7 +1956,7 @@ const SCHEDULED_WORK = {
 // One reader following one author, run cron window by cron window. Each test
 // switches OpenAlex on and off and scripts what Brevo answers. `Date.now` is
 // pinned to the window because reservation recovery measures age with it.
-function digestScheduleHarness(subscription = {}) {
+function digestScheduleHarness(subscription: Subscription = {}) {
   const subscriptionKey = 'notification:subscription:schedule-reader';
   const kv = createMemoryKv({
     [subscriptionKey]: digestSubscription({ uid: 'schedule-reader', frequency: 'weekly', ...subscription }),
@@ -1961,13 +1964,13 @@ function digestScheduleHarness(subscription = {}) {
   const upstream = {
     sourcesUp: false,
     sourceRequests: 0,
-    providerBodies: [],
+    providerBodies: [] as Array<{ headers: { idempotencyKey: string } }>,
     provider: () => jsonResponse(201, { messageId: 'scheduled-digest' }),
   };
-  async function fetchUpstream(input, options = {}) {
+  async function fetchUpstream(input: RequestInfo | URL, options: RequestInit = {}) {
     const url = new URL(String(input));
     if (url.hostname === 'api.brevo.com') {
-      upstream.providerBodies.push(JSON.parse(options.body));
+      upstream.providerBodies.push(JSON.parse(options.body as string));
       return upstream.provider();
     }
     if (url.hostname !== 'api.openalex.org') throw new Error(`Unexpected request: ${url}`);
@@ -1976,7 +1979,7 @@ function digestScheduleHarness(subscription = {}) {
     const followed = (url.searchParams.get('filter') || '').includes('author.id:A1');
     return jsonResponse(200, { results: followed ? [SCHEDULED_WORK] : [] });
   }
-  async function run(isoWindow) {
+  async function run(isoWindow: string) {
     const at = Date.parse(isoWindow);
     const originalFetch = globalThis.fetch;
     const originalDateNow = Date.now;
@@ -1992,7 +1995,7 @@ function digestScheduleHarness(subscription = {}) {
   return { upstream, run, state: () => storedSubscriptionWithState(kv, subscriptionKey) };
 }
 
-function weeklySubscriptionState(lastDelivery, extra = {}) {
+function weeklySubscriptionState(lastDelivery: Subscription['lastDelivery'], extra: Partial<Subscription> = {}) {
   return { enabled: true, frequency: 'weekly', lastDelivery, ...extra };
 }
 
@@ -2006,7 +2009,7 @@ test('a weekly digest whose sources failed late on Monday is retried on Tuesday'
   const { upstream, run, state } = digestScheduleHarness();
 
   const failedMonday = await run('2026-07-27T13:00:00Z');
-  const failure = (await state()).lastDelivery;
+  const failure = (await state())!.lastDelivery;
   upstream.sourcesUp = true;
   const tooSoon = await run('2026-07-27T13:20:00Z');
   const recoveryOnly = await run('2026-07-27T13:40:00Z');
@@ -2016,8 +2019,8 @@ test('a weekly digest whose sources failed late on Monday is retried on Tuesday'
   // Monday, as the schedule is designed: one failed attempt (both of its
   // OpenAlex requests refused), then two windows that may not start one.
   assert.equal(failedMonday.failed, 1);
-  assert.equal(failure.status, 'failed');
-  assert.equal(failure.code, 'EMAIL_DIGEST_SOURCES_UNAVAILABLE');
+  assert.equal(failure!.status, 'failed');
+  assert.equal(failure!.code, 'EMAIL_DIGEST_SOURCES_UNAVAILABLE');
   assert.equal(requestsOnMonday, 2);
   assert.equal(tooSoon.sent + recoveryOnly.sent, 0);
   // Tuesday: the sources answer, so the week's digest goes out -- once.
@@ -2032,7 +2035,7 @@ test('a weekly digest whose sources failed late on Monday is retried on Tuesday'
     askedSourcesOnTuesday: true,
     emailsThisWeek: 1,
   });
-  assert.equal((await state()).lastSentAt, '2026-07-28T07:00:00.000Z');
+  assert.equal((await state())!.lastSentAt, '2026-07-28T07:00:00.000Z');
 });
 
 test('a Tuesday retry that fails on its sources again waits the usual 40 minutes', async () => {
@@ -2085,7 +2088,7 @@ test('a weekly send failure is never retried on Tuesday as a new digest', () => 
   // carry a new idempotency key, so the provider could not tell it was a
   // repeat.
   const tuesday = new Date('2026-07-28T07:00:00Z');
-  const failedMonday = code => weeklySubscriptionState({
+  const failedMonday = (code: string) => weeklySubscriptionState({
     status: 'failed',
     kind: 'digest',
     at: '2026-07-27T13:00:00.000Z',
@@ -2123,19 +2126,19 @@ test('a Monday send with an unknown outcome is reconciled on Tuesday, not resent
   };
 
   const monday = await run('2026-07-27T13:20:00Z');
-  const failure = (await state()).lastDelivery;
+  const failure = (await state())!.lastDelivery;
   upstream.provider = () => jsonResponse(201, { messageId: 'must-not-be-sent' });
   const requestsBefore = upstream.sourceRequests;
   const tuesday = await run('2026-07-28T07:00:00Z');
   const laterTuesday = await run('2026-07-28T07:40:00Z');
 
   assert.equal(monday.failed, 1);
-  assert.equal(failure.code, 'EMAIL_SEND_OUTCOME_UNKNOWN');
+  assert.equal(failure!.code, 'EMAIL_SEND_OUTCOME_UNKNOWN');
   assert.equal(tuesday.uncertain, 1);
   assert.equal(laterTuesday.sent + laterTuesday.uncertain, 0);
   assert.equal(upstream.sourceRequests, requestsBefore);
   assert.equal(upstream.providerBodies.length, 1);
-  assert.equal((await state()).lastDelivery.status, 'uncertain');
+  assert.equal((await state())!.lastDelivery!.status, 'uncertain');
 });
 
 test('a weekly digest sent this week is not sent again on Tuesday', async () => {
@@ -2179,7 +2182,7 @@ test('a daily digest keeps its schedule around a Monday source failure', async (
 
 test('a weekly source failure from an earlier week is not retried on Tuesday', () => {
   const tuesday = new Date('2026-07-28T07:00:00Z');
-  const failedAt = at => weeklySubscriptionState({
+  const failedAt = (at: string) => weeklySubscriptionState({
     status: 'failed',
     code: 'EMAIL_DIGEST_SOURCES_UNAVAILABLE',
     at,
@@ -2195,7 +2198,7 @@ test('a weekly source failure stamped after now does not make Tuesday due', () =
   // Checked on the calendar rule itself: `isSubscriptionDue` would refuse a
   // future failure anyway, because its 40-minute spacing sees negative time.
   const tuesday = new Date('2026-07-28T07:00:00Z');
-  const failedAt = at => weeklySubscriptionState({
+  const failedAt = (at: string) => weeklySubscriptionState({
     status: 'failed',
     code: 'EMAIL_DIGEST_SOURCES_UNAVAILABLE',
     at,
@@ -2219,7 +2222,7 @@ test('a Tuesday retry whose email provider fails keeps the existing duplicate pr
     throw new TypeError('simulated response loss');
   };
   const tuesday = await run('2026-07-28T07:00:00Z');
-  const failure = (await state()).lastDelivery;
+  const failure = (await state())!.lastDelivery;
   upstream.provider = () => jsonResponse(201, { messageId: 'scheduled-digest' });
   const requestsBefore = upstream.sourceRequests;
   const replay = await run('2026-07-28T07:20:00Z');
@@ -2230,7 +2233,7 @@ test('a Tuesday retry whose email provider fails keeps the existing duplicate pr
   ];
 
   assert.equal(tuesday.failed, 1);
-  assert.equal(failure.code, 'EMAIL_SEND_OUTCOME_UNKNOWN');
+  assert.equal(failure!.code, 'EMAIL_SEND_OUTCOME_UNKNOWN');
   assert.equal(replay.sent, 1);
   assert.equal(upstream.sourceRequests, requestsBefore);
   assert.equal(upstream.providerBodies.length, 2);
@@ -2240,7 +2243,7 @@ test('a Tuesday retry whose email provider fails keeps the existing duplicate pr
   );
   assert.deepEqual(upstream.providerBodies[0], upstream.providerBodies[1]);
   assert.equal(afterwards.reduce((total, summary) => total + summary.sent + summary.uncertain, 0), 0);
-  assert.equal((await state()).lastSentAt, '2026-07-28T07:00:00.000Z');
+  assert.equal((await state())!.lastSentAt, '2026-07-28T07:00:00.000Z');
 });
 
 test('a late Tuesday delivery with an unknown outcome is reconciled on Wednesday without repeating papers', async () => {
@@ -2266,9 +2269,9 @@ test('a late Tuesday delivery with an unknown outcome is reconciled on Wednesday
   assert.equal(upstream.sourceRequests, requestsBeforeRecovery);
   assert.equal(upstream.providerBodies.length, 2);
   assert.deepEqual(upstream.providerBodies[0], upstream.providerBodies[1]);
-  assert.equal(recovered.lastDelivery.status, 'uncertain');
-  assert.equal(recovered.lastSentAt, '2026-07-28T13:20:00.000Z');
-  assert.ok(recovered.sentPaperKeys.length > 0);
+  assert.equal(recovered!.lastDelivery!.status, 'uncertain');
+  assert.equal(recovered!.lastSentAt, '2026-07-28T13:20:00.000Z');
+  assert.ok(recovered!.sentPaperKeys!.length > 0);
   assert.equal(laterWednesday.skipped, 1);
 
   // The same paper is still in next Monday's rolling publication window,
@@ -2321,9 +2324,9 @@ test('provider success followed by state reconciliation failure does not resend'
     assert.equal(retry.reconciled, 1);
     assert.equal(providerCalls, 1);
     const stored = await storedSubscriptionWithState(kv, subscriptionKey);
-    assert.equal(stored.lastDelivery.status, 'reconciled');
-    assert.equal(stored.lastSentAt, firstWindow.toISOString());
-    assert.equal(stored.sentPaperKeys.includes('id:reconcile-paper'), true);
+    assert.equal(stored!.lastDelivery!.status, 'reconciled');
+    assert.equal(stored!.lastSentAt, firstWindow.toISOString());
+    assert.equal(stored!.sentPaperKeys!.includes('id:reconcile-paper'), true);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -2356,8 +2359,8 @@ test('a settled Monday digest is not replayed on Tuesday and does not swallow th
     // Tuesday looks back at Monday's ledger. A reservation the delivery state
     // already records must be left alone, not replayed as a reconciliation.
     const tuesday = await runEmailNotificationSchedule(emailEnvironment(kv), tuesdayWindow.getTime());
-    const stored = await kv.get(subscriptionKey, 'json');
-    stored.previewItems = [digestPaper({ id: 'paper-week-two', published: '2026-08-16' })];
+    const stored = await kv.get<Subscription>(subscriptionKey, 'json');
+    stored!.previewItems = [digestPaper({ id: 'paper-week-two', published: '2026-08-16' })];
     await kv.put(subscriptionKey, JSON.stringify(stored));
     const second = await runEmailNotificationSchedule(emailEnvironment(kv), secondWindow.getTime());
 
@@ -2368,9 +2371,9 @@ test('a settled Monday digest is not replayed on Tuesday and does not swallow th
     assert.equal(second.reconciled, 0);
     assert.equal(providerCalls, 2);
     const state = await storedSubscriptionWithState(kv, subscriptionKey);
-    assert.equal(state.lastSentAt, secondWindow.toISOString());
-    assert.equal(state.lastDelivery.status, 'sent');
-    assert.equal(state.sentPaperKeys.includes('id:paper-week-two'), true);
+    assert.equal(state!.lastSentAt, secondWindow.toISOString());
+    assert.equal(state!.lastDelivery!.status, 'sent');
+    assert.equal(state!.sentPaperKeys!.includes('id:paper-week-two'), true);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -2443,8 +2446,8 @@ test('an expired reservation already reflected in delivery state does not replac
     assert.equal(summary.uncertain, 0);
     assert.equal(providerCalls, 1);
     const state = await storedSubscriptionWithState(kv, subscriptionKey);
-    assert.equal(state.lastSentAt, todayWindow.toISOString());
-    assert.equal(state.sentPaperKeys.includes('id:paper-today'), true);
+    assert.equal(state!.lastSentAt, todayWindow.toISOString());
+    assert.equal(state!.sentPaperKeys!.includes('id:paper-today'), true);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -2589,7 +2592,7 @@ test('fails closed when a 401 body is not valid JSON', async () => {
     status: 401,
     ok: false,
     json: async () => { throw new Error('not json'); },
-  });
+  } as Response & { json(): Promise<never> });
   try {
     const health = await checkEmailProviderHealth({ RESEND_API_KEY: 're_weird' });
     assert.equal(health.available, false);
@@ -2668,11 +2671,11 @@ const ON_A_MONDAY = { now: Date.parse('2026-08-10T07:00:00Z') };
 
 // The page as read: the hidden preheader above the nameplate repeats the
 // headlines, so order is measured from the nameplate down.
-function pageBody(html) {
+function pageBody(html: string) {
   return html.slice(html.indexOf('<h1'));
 }
 
-function frontPagePaper(overrides = {}) {
+function frontPagePaper(overrides: Partial<DigestPaper> = {}): DigestPaper {
   return {
     id: 'lead',
     title: 'Below-threshold surface-code memory',
@@ -2684,12 +2687,12 @@ function frontPagePaper(overrides = {}) {
     url: 'https://example.com/lead',
     area: 'physics',
     abstract: 'Quantum error correction only pays off once adding qubits lowers the error rate.',
-    matches: [{ type: 'topic', canonicalId: 'quant-ph', displayName: 'Quantum Computing' }],
+    matches: [{ type: 'topic' as const, canonicalId: 'quant-ph', displayName: 'Quantum Computing' }],
     ...overrides,
   };
 }
 
-function briefPaper(overrides = {}) {
+function briefPaper(overrides: Partial<DigestPaper> = {}): DigestPaper {
   return frontPagePaper({
     id: 'brief',
     title: 'Sparse attention at scale',
@@ -2701,7 +2704,7 @@ function briefPaper(overrides = {}) {
     url: 'https://example.com/brief',
     area: 'cs',
     abstract: 'A brief keeps its abstract to itself.',
-    matches: [{ type: 'topic', canonicalId: 'cs.LG', displayName: 'Machine Learning' }],
+    matches: [{ type: 'topic' as const, canonicalId: 'cs.LG', displayName: 'Machine Learning' }],
     ...overrides,
   });
 }
@@ -2744,7 +2747,7 @@ test('each paper wears its field ink and name; one of no known field wears ink a
     title: 'Annual report on photonic interconnects',
     url: 'https://example.com/unknown',
     area: undefined,
-    matches: [{ type: 'project', canonicalId: 'P1', displayName: 'QUANTERA' }],
+    matches: [{ type: 'project' as const, canonicalId: 'P1', displayName: 'QUANTERA' }],
   });
   const digest = renderDigest({}, [frontPagePaper(), unknown], UNSUBSCRIBE_URL, false, ON_A_MONDAY);
 
@@ -2793,7 +2796,7 @@ test('the subject is the lead headline and how many papers follow it', () => {
     briefPaper(),
     briefPaper({ id: 'third', title: 'Third paper', url: 'https://example.com/third' }),
   ];
-  const subjectOf = list => renderDigest({}, list, UNSUBSCRIBE_URL, false, ON_A_MONDAY).subject;
+  const subjectOf = (list: DigestPaper[]) => renderDigest({}, list, UNSUBSCRIBE_URL, false, ON_A_MONDAY).subject;
 
   assert.equal(subjectOf(papers), 'Below-threshold surface-code memory, and 2 more');
   assert.equal(subjectOf(papers.slice(0, 1)), 'Below-threshold surface-code memory');
@@ -2809,8 +2812,8 @@ test('the lead excerpt ends on a whole word and never inside a formula', () => {
   const plainAbstract = 'word x^2 '.repeat(100).trim();
   const excerpt = digest.text.split('\n').find(line => line.startsWith('word'));
 
-  assert.ok(excerpt.endsWith('…'), excerpt);
-  const kept = excerpt.slice(0, -1);
+  assert.ok(excerpt!.endsWith('…'), excerpt);
+  const kept = excerpt!.slice(0, -1);
   assert.ok(plainAbstract.startsWith(kept), excerpt);
   assert.equal(plainAbstract[kept.length], ' ');
   assert.ok(kept.length < plainAbstract.length);
@@ -2845,7 +2848,7 @@ test('a full edition stays inside the delivery ledger draft limits', () => {
     abstract: 'word '.repeat(120).trim(),
     url: `https://example.com/${'p'.repeat(200)}${index}`,
     matches: Array.from({ length: 4 }, (_, follow) => ({
-      type: 'topic',
+      type: 'topic' as const,
       canonicalId: `T${follow}`,
       displayName: 'F'.repeat(200),
     })),
@@ -2861,9 +2864,9 @@ test('the field inks are the app\'s own light-theme inks', async () => {
   const lightTheme = css.slice(lightStart, css.indexOf('\n}', lightStart));
   assert.ok(lightTheme.includes('--bg-primary: #fbf8f0'), 'the first :root block is the light theme');
   for (const [area, { gradient }] of Object.entries(CATEGORIES)) {
-    const token = gradient.match(/var\((--gradient-[a-z]+)\)/)[1];
+    const token = gradient.match(/var\((--gradient-[a-z]+)\)/)![1];
     const value = lightTheme.match(new RegExp(`${token}:\\s*(#[0-9a-fA-F]{6})`))?.[1];
-    assert.equal(fieldInks[area], value?.toLowerCase(), area);
+    assert.equal(fieldInks[area as keyof typeof fieldInks], value?.toLowerCase(), area);
   }
   assert.deepEqual(Object.keys(fieldInks).sort(), Object.keys(CATEGORIES).sort());
 });
@@ -2981,7 +2984,7 @@ test('the test email is the same edition, says it is a test, and keeps its own s
   assert.match(withPaper.html, /<h2[^>]*><a [^>]*>Below-threshold surface-code memory<\/a><\/h2>/);
 });
 
-function identityEnvironment(kv) {
+function identityEnvironment(kv: KVNamespace) {
   return { ...emailEnvironment(kv), FIREBASE_WEB_API_KEY: 'firebase-web-key' };
 }
 
@@ -2991,7 +2994,7 @@ function preferencesRequest() {
   });
 }
 
-async function readPreferencesAs(account) {
+async function readPreferencesAs(account: { localId: string; email: string; emailVerified?: boolean; providerUserInfo?: { providerId: string; email: string; }[]|{ providerId: string; email: string; }[]; }) {
   const restore = stubFetch(jsonResponse(200, { users: [account] }));
   try {
     return await handleEmailNotificationRequest(
@@ -3009,7 +3012,7 @@ test('refuses to configure notifications for an address the account never proved
   // unverified-IdP sign-up would let anyone subscribe a stranger's inbox.
   await assert.rejects(
     () => readPreferencesAs({ localId: 'attacker', email: 'victim@example.com' }),
-    error => error.code === 'EMAIL_ADDRESS_NOT_VERIFIED' && error.status === 403,
+    error => (error as Error & { code?: string; status?: number }).code === 'EMAIL_ADDRESS_NOT_VERIFIED' && (error as Error & { code?: string; status?: number }).status === 403,
   );
   await assert.rejects(
     () => readPreferencesAs({
@@ -3018,7 +3021,7 @@ test('refuses to configure notifications for an address the account never proved
       emailVerified: false,
       providerUserInfo: [{ providerId: 'google.com', email: 'attacker@example.com' }],
     }),
-    error => error.code === 'EMAIL_ADDRESS_NOT_VERIFIED' && error.status === 403,
+    error => (error as Error & { code?: string; status?: number }).code === 'EMAIL_ADDRESS_NOT_VERIFIED' && (error as Error & { code?: string; status?: number }).status === 403,
   );
 });
 
@@ -3084,11 +3087,11 @@ test('an older client that still asks for daily emails is subscribed weekly', as
   });
 
   assert.equal(saved.frequency, 'weekly');
-  assert.equal((await kv.get('notification:subscription:old-client', 'json')).frequency, 'weekly');
+  assert.equal((await kv.get<Subscription>('notification:subscription:old-client', 'json'))!.frequency, 'weekly');
 });
 
 test('gives the identity lookup and both provider probes a deadline', async () => {
-  const calls = [];
+  const calls: { host: string; signal: AbortSignal|null|undefined; }[] = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, options = {}) => {
     const url = new URL(String(input));
@@ -3142,7 +3145,7 @@ test('sends the Brevo digest with one-click unsubscribe headers', async () => {
   globalThis.fetch = async (input, options = {}) => {
     const url = new URL(String(input));
     if (url.hostname === 'api.brevo.com') {
-      payload = JSON.parse(options.body);
+      payload = JSON.parse(options.body as string);
       return jsonResponse(201, { messageId: 'brevo-delivery' });
     }
     return jsonResponse(200, { results: [] });
@@ -3155,10 +3158,10 @@ test('sends the Brevo digest with one-click unsubscribe headers', async () => {
     // Gmail and Yahoo score sender reputation on RFC 8058 one-click, which the
     // Resend branch already sent and the production Brevo branch did not.
     const unsubscribeUrl = 'https://api.papertok.app/notifications/unsubscribe?token=unsubscribe-token';
-    assert.equal(payload.headers['List-Unsubscribe'], `<${unsubscribeUrl}>`);
-    assert.equal(payload.headers['List-Unsubscribe-Post'], 'List-Unsubscribe=One-Click');
-    assert.equal(typeof payload.headers.idempotencyKey, 'string');
-    assert.equal(payload.textContent.includes(unsubscribeUrl), true);
+    assert.equal(payload!.headers['List-Unsubscribe'], `<${unsubscribeUrl}>`);
+    assert.equal(payload!.headers['List-Unsubscribe-Post'], 'List-Unsubscribe=One-Click');
+    assert.equal(typeof payload!.headers.idempotencyKey, 'string');
+    assert.equal(payload!.textContent.includes(unsubscribeUrl), true);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -3193,7 +3196,7 @@ test('refuses to run the schedule without an atomic delivery ledger', async () =
     assert.equal(summary.scanned, 0);
     assert.equal(summary.failureCodes.EMAIL_DELIVERY_LEDGER_MISSING, 1);
     const stored = await storedSubscriptionWithState(kv, subscriptionKey);
-    assert.equal(stored.lastSentAt, undefined);
+    assert.equal(stored!.lastSentAt, undefined);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -3272,6 +3275,6 @@ test('a source that runs out of deadline is still reported as a TIMEOUT', async 
   };
   await withStubbedFetch(timingOut, () => assert.rejects(
     fetchDigestSource('https://upstream.example/', {}, { source: 'openalex', timeoutMs: 25 }),
-    error => error.code === 'EMAIL_SOURCE_OPENALEX_TIMEOUT',
+    error => (error as Error & { code?: string; status?: number }).code === 'EMAIL_SOURCE_OPENALEX_TIMEOUT',
   ));
 });

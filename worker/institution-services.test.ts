@@ -1,4 +1,10 @@
+import type { TestGlobals } from './test-types.ts';
 import test from 'node:test';
+import type { WorkerEnv } from './env.ts';
+import type { InstitutionQuery } from './institution-access.ts';
+type ServicesOptions = { token?: string | null; resolver?: Resolver };
+type Resolver = (issn: string, target?: URL) => Response | Promise<Response>;
+
 import assert from 'node:assert/strict';
 import { GETFTR_BATCH_SIZE, InstitutionAccessError } from './institution-access.ts';
 import { SERVICE_CATALOGUE, SUBREQUEST_BUDGET, catalogueFingerprint, lookupInstitutionServices, servicesCacheParams } from './institution-services.ts';
@@ -37,7 +43,7 @@ const CTO_NONE = `<uresolver_content xmlns="http://com/exlibris/urm/uresolver/xm
 const CTO_FREE_ONLY = CTO_ENTITLED.replace(/<context_service service_type="getFullTxt" context_service_id="8714574410005773">[\s\S]*?<\/context_service>/, '');
 
 /** A resolver answer listing the given paid packages, shaped like the captures. */
-const ctoWith = (...packages) => `<uresolver_content xmlns="http://com/exlibris/urm/uresolver/xmlbeans/u">
+const ctoWith = (...packages: string[]) => `<uresolver_content xmlns="http://com/exlibris/urm/uresolver/xmlbeans/u">
   <context_object><keys><key id="full_text_indicator">true</key></keys></context_object>
   <context_services>${packages.map((name, index) => `
     <context_service service_type="getFullTxt" context_service_id="87145744${index}0005773">
@@ -59,31 +65,31 @@ const ENTITY_ID = 'https://idp.usal.es/entity';
 const GETFTR_ENV = { GETFTR_API_KEY: 'getftr-test-key' };
 const ISSN_OF = Object.fromEntries(SERVICE_CATALOGUE.map(entry => [entry.id, entry.issn]));
 
-const xml = body => new Response(body, { status: 200, headers: { 'content-type': 'text/xml;charset=UTF-8' } });
-const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), { status });
+const xml = (body: BodyInit|null|undefined) => new Response(body, { status: 200, headers: { 'content-type': 'text/xml;charset=UTF-8' } });
+const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 const timeout = () => Promise.reject(new DOMException('The operation timed out.', 'TimeoutError'));
 
 /** A GetFTR response answering each DOI of a request through `verdict(doi)`. */
-const getftrAnswering = verdict => dois => jsonResponse({ entitlements: dois.map(doi => ({ doi, ...verdict(doi) })) });
+const getftrAnswering = (verdict: (doi: string) => Record<string, unknown>) => (dois: string[]) => jsonResponse({ entitlements: dois.map(doi => ({ doi, ...verdict(doi) })) });
 
 /**
  * The resolver answering per journal and GetFTR per request (its `dois`
  * array), with overlapping calls counted.
  */
-function upstreams({ resolver = () => xml(CTO_NONE), getftr = () => jsonResponse({ entitlements: [] }) } = {}) {
-  const calls = [];
+function upstreams({ resolver = () => xml(CTO_NONE), getftr = () => jsonResponse({ entitlements: [] }) }: { resolver?: Resolver; getftr?: (dois: string[], init: RequestInit) => Response | Promise<Response> } = {}) {
+  const calls: Array<{ url: URL; init: RequestInit & { headers?: Record<string, string> } }> = [];
   let inFlight = 0;
   let maxInFlight = 0;
-  const fetchImpl = async (url, init = {}) => {
+  const fetchImpl: typeof fetch = async (url, init = {}) => {
     const target = new URL(String(url));
-    calls.push({ url: target, init });
+    calls.push({ url: target, init: init as RequestInit & { headers?: Record<string, string> } });
     inFlight += 1;
     maxInFlight = Math.max(maxInFlight, inFlight);
     try {
       await new Promise(resolve => setTimeout(resolve, 1));
-      if (target.host === 'eu01.alma.exlibrisgroup.com') return await resolver(target.searchParams.get('rft.issn'), target);
+      if (target.host === 'eu01.alma.exlibrisgroup.com') return await resolver(target.searchParams.get('rft.issn')!, target);
       if (target.host === 'entitlements.prod.getft.io') {
-        const { dois } = JSON.parse(init.body);
+        const { dois } = JSON.parse(init.body as string);
         const answer = await getftr(dois, init);
         return answer;
       }
@@ -104,7 +110,7 @@ test('lists the subscribed platforms in catalogue order with their collections',
     [ISSN_OF.cambridge]: CTO_AGGREGATOR,
     [ISSN_OF.nature]: CTO_FREE_ONLY,
   };
-  const stub = upstreams({ resolver: issn => xml(subscribed[issn] || CTO_NONE) });
+  const stub = upstreams({ resolver: (issn: string|number) => xml(subscribed[issn] || CTO_NONE) });
   const result = await lookupInstitutionServices({ domain: 'usal.es' }, { fetchImpl: stub.fetchImpl, now: NOW });
   assert.deepEqual(result, {
     services: [
@@ -117,15 +123,15 @@ test('lists the subscribed platforms in catalogue order with their collections',
     checkedAt: '2026-10-13T12:00:00.000Z',
   });
   assert.equal(stub.calls.length, SUBREQUEST_BUDGET);
-  const wiley = stub.calls.find(call => call.url.searchParams.get('rft.issn') === '1521-4095');
-  assert.equal(wiley.url.pathname, '/view/uresolver/34BUC_USAL/openurl');
-  assert.equal(wiley.url.searchParams.get('svc_dat'), 'CTO');
-  assert.equal(wiley.url.searchParams.get('rft.date'), '2021');
+  const wiley = stub.calls.find(call => call.url.searchParams.get('rft.issn')! === '1521-4095');
+  assert.equal(wiley!.url.pathname, '/view/uresolver/34BUC_USAL/openurl');
+  assert.equal(wiley!.url.searchParams.get('svc_dat'), 'CTO');
+  assert.equal(wiley!.url.searchParams.get('rft.date'), '2021');
 });
 
 test('the publisher\'s own package outranks an aggregator listed before it', async () => {
   const stub = upstreams({
-    resolver: issn => xml(issn === ISSN_OF.nature ? ctoWith('Proquest Central', 'Nature') : CTO_NONE),
+    resolver: (issn: string) => xml(issn === ISSN_OF.nature ? ctoWith('Proquest Central', 'Nature') : CTO_NONE),
   });
   const result = await lookupInstitutionServices({ domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
   assert.deepEqual(result.services.map(service => [service.id, service.collection, service.ownPlatform]), [['nature', 'Nature', true]]);
@@ -133,7 +139,7 @@ test('the publisher\'s own package outranks an aggregator listed before it', asy
 
 test('a probe cut short leaves its platform out and marks the list partial', async () => {
   const stub = upstreams({
-    resolver: issn => (issn === ISSN_OF.wiley ? timeout() : xml(issn === ISSN_OF.ieee || issn === ISSN_OF.sciencedirect ? CTO_ENTITLED : CTO_NONE)),
+    resolver: (issn: string) => (issn === ISSN_OF.wiley ? timeout() : xml(issn === ISSN_OF.ieee || issn === ISSN_OF.sciencedirect ? CTO_ENTITLED : CTO_NONE)),
   });
   const result = await lookupInstitutionServices({ domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
   assert.equal(result.partial, true);
@@ -141,7 +147,7 @@ test('a probe cut short leaves its platform out and marks the list partial', asy
 });
 
 test('an unreadable resolver answer is a failed probe, not a missing subscription', async () => {
-  const stub = upstreams({ resolver: issn => xml(issn === ISSN_OF.acs ? '<html>Maintenance</html>' : CTO_NONE) });
+  const stub = upstreams({ resolver: (issn: string) => xml(issn === ISSN_OF.acs ? '<html>Maintenance</html>' : CTO_NONE) });
   const result = await lookupInstitutionServices({ domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
   assert.deepEqual(result.services, []);
   assert.equal(result.partial, true);
@@ -159,11 +165,11 @@ test('refuses an institution no provider can answer for, without asking anyone',
   for (const [params, env] of [
     [{ domain: 'uam.es', entityId: ENTITY_ID }, {}],
     [{ domain: 'uam.es' }, GETFTR_ENV],
-  ]) {
+  ] as Array<[InstitutionQuery, WorkerEnv]>) {
     const stub = upstreams();
     await assert.rejects(
       lookupInstitutionServices(params, { fetchImpl: stub.fetchImpl, env }),
-      error => error.code === 'INSTITUTION_NOT_SUPPORTED' && error.status === 404,
+      error => (error as Error & { code?: string; status?: number }).code === 'INSTITUTION_NOT_SUPPORTED' && (error as Error & { code?: string; status?: number }).status === 404,
     );
     assert.equal(stub.calls.length, 0);
   }
@@ -175,9 +181,9 @@ const GETFTR_BATCHES = Math.ceil(SERVICE_CATALOGUE.length / GETFTR_BATCH_SIZE);
 test('GetFTR is asked about the whole catalogue in batches of twenty DOIs, and its yes carries no collection', async () => {
   const nature = SERVICE_CATALOGUE.find(entry => entry.id === 'nature');
   const stub = upstreams({
-    getftr: getftrAnswering(doi => ({
+    getftr: getftrAnswering((doi: string) => ({
       statusCode: 200,
-      entitled: doi === nature.doi ? 'yes' : 'no',
+      entitled: doi === nature!.doi ? 'yes' : 'no',
       vor: [{ contentType: 'html', url: `https://www.nature.com/articles/${doi}` }],
     })),
   });
@@ -187,7 +193,7 @@ test('GetFTR is asked about the whole catalogue in batches of twenty DOIs, and i
   ]);
   assert.equal(result.partial, false);
   assert.equal(result.unchecked, 0);
-  const bodies = stub.calls.map(call => JSON.parse(call.init.body));
+  const bodies = stub.calls.map(call => JSON.parse(call.init.body as string));
   assert.equal(bodies.length, GETFTR_BATCHES);
   assert.ok(bodies.length < SUBREQUEST_BUDGET);
   for (const body of bodies) {
@@ -200,7 +206,7 @@ test('GetFTR is asked about the whole catalogue in batches of twenty DOIs, and i
 test('a GetFTR outage falls through to the resolver when the library has one', async () => {
   const stub = upstreams({
     getftr: () => jsonResponse({}, 503),
-    resolver: issn => xml(issn === ISSN_OF.rsc ? ctoWith('Royal Society of Chemistry') : CTO_NONE),
+    resolver: (issn: string) => xml(issn === ISSN_OF.rsc ? ctoWith('Royal Society of Chemistry') : CTO_NONE),
   });
   const result = await lookupInstitutionServices({ domain: 'usal.es', entityId: ENTITY_ID }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV });
   assert.deepEqual(result.services.map(service => [service.id, service.collection, service.ownPlatform]), [['rsc', 'Royal Society of Chemistry', true]]);
@@ -219,7 +225,7 @@ test('a GetFTR answer that decides nothing, with no resolver behind it, is unche
     [SERVICE_CATALOGUE[3].doi]: { statusCode: 200, entitled: 'yes' },
   };
   const stub = upstreams({
-    getftr: getftrAnswering(doi => undecided[doi] || { statusCode: 200, entitled: 'no' }),
+    getftr: getftrAnswering((doi: string|number) => undecided[doi] || { statusCode: 200, entitled: 'no' }),
   });
   const result = await lookupInstitutionServices({ domain: 'uam.es', rorId: 'https://ror.org/02f40zc51' }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV });
   assert.deepEqual(result.services, []);
@@ -230,7 +236,7 @@ test('a GetFTR answer that decides nothing, with no resolver behind it, is unche
 test('a GetFTR maybe goes to the resolver when the library has one, which decides it', async () => {
   const stub = upstreams({
     getftr: getftrAnswering(() => ({ statusCode: 200, entitled: 'maybe' })),
-    resolver: issn => xml(issn === ISSN_OF.wiley ? CTO_WILEY : CTO_NONE),
+    resolver: (issn: string) => xml(issn === ISSN_OF.wiley ? CTO_WILEY : CTO_NONE),
   });
   const result = await lookupInstitutionServices({ domain: 'usal.es', entityId: ENTITY_ID }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV });
   assert.deepEqual(result.services.map(service => service.id), ['wiley']);
@@ -252,7 +258,7 @@ test('a GetFTR outage with no resolver behind it is a failure, not an empty libr
   const stub = upstreams({ getftr: () => jsonResponse({}, 503) });
   await assert.rejects(
     lookupInstitutionServices({ domain: 'uam.es', entityId: ENTITY_ID }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV }),
-    error => error.code === 'ACCESS_LOOKUP_UNAVAILABLE' && error.status === 502,
+    error => (error as Error & { code?: string; status?: number }).code === 'ACCESS_LOOKUP_UNAVAILABLE' && (error as Error & { code?: string; status?: number }).status === 502,
   );
 });
 
@@ -264,7 +270,7 @@ test('without GetFTR the resolver is asked the budget\'s worth of platforms, fou
   assert.equal(stub.maxInFlight(), 4);
   // In catalogue order: the platforms most libraries hold are asked first.
   assert.deepEqual(
-    stub.calls.map(call => call.url.searchParams.get('rft.issn')),
+    stub.calls.map(call => call.url.searchParams.get('rft.issn')!),
     SERVICE_CATALOGUE.slice(0, SUBREQUEST_BUDGET).map(entry => entry.issn),
   );
   assert.equal(result.unchecked, SERVICE_CATALOGUE.length - SUBREQUEST_BUDGET);
@@ -292,22 +298,22 @@ const TOKEN = fakeIdToken({ aud: PROJECT_ID });
 const ROUTE_ENV = { FIREBASE_WEB_API_KEY: 'web-key', FIREBASE_PROJECT_ID: PROJECT_ID };
 
 /** The route through the Worker's own dispatch, with the edge cache recorded. */
-async function requestServices(search, { token = TOKEN, resolver = () => xml(CTO_ENTITLED) } = {}) {
-  const calls = [];
-  const puts = [];
+async function requestServices(search: string, { token = TOKEN, resolver = () => xml(CTO_ENTITLED) }: ServicesOptions = {}) {
+  const calls: string[] = [];
+  const puts: Array<{ key: string; response: Response }> = [];
   const originalFetch = globalThis.fetch;
-  const originalCaches = globalThis.caches;
+  const originalCaches = (globalThis as TestGlobals).caches;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
     calls.push(url.host);
     if (url.pathname.endsWith('accounts:lookup')) return jsonResponse({ users: [{ localId: 'alice-uid' }] });
-    if (url.host === 'eu01.alma.exlibrisgroup.com') return resolver(url.searchParams.get('rft.issn'));
+    if (url.host === 'eu01.alma.exlibrisgroup.com') return resolver(url.searchParams.get('rft.issn')!);
     throw new Error(`unexpected upstream ${url}`);
   };
-  globalThis.caches = {
+  (globalThis as TestGlobals).caches = {
     default: {
-      match: async () => null,
-      put: async (key, response) => { puts.push({ key: key.url, response }); },
+      match: async (): Promise<Response | null | undefined> => null,
+      put: async (key, response): Promise<void> => { puts.push({ key: (key as Request).url, response }); },
     },
   };
   try {
@@ -315,11 +321,11 @@ async function requestServices(search, { token = TOKEN, resolver = () => xml(CTO
       headers: { origin: 'https://papertok.app', ...(token ? { authorization: `Bearer ${token}` } : {}) },
     }), ROUTE_ENV);
     const servicePuts = puts.filter(put => put.key.startsWith('https://papertok.internal/cache/institution/services'));
-    return { response, body: await response.json(), calls, servicePuts };
+    return { response, body: await response.json<Awaited<ReturnType<typeof lookupInstitutionServices>>>(), calls, servicePuts };
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 }
 
@@ -338,7 +344,7 @@ test('the route caches a complete list for seven days under the normalized domai
     ['domain', 'usal.es'],
     ['catalogue', catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET)],
   ]);
-  assert.match(servicePuts[0].response.headers.get('cache-control'), /s-maxage=604800/);
+  assert.match(servicePuts[0].response.headers.get('cache-control')!, /s-maxage=604800/);
 });
 
 test('the cache key changes with the catalogue and the budget, and with nothing else', () => {
@@ -358,12 +364,12 @@ test('the cache key changes with the catalogue and the budget, and with nothing 
 
 test('the route caches a partial list for an hour', async () => {
   const { response, body, servicePuts } = await requestServices('domain=usal.es', {
-    resolver: issn => (issn === ISSN_OF.oup ? timeout() : xml(CTO_NONE)),
+    resolver: (issn: string) => (issn === ISSN_OF.oup ? timeout() : xml(CTO_NONE)),
   });
   assert.equal(response.status, 200);
   assert.deepEqual(body.services, []);
   assert.equal(body.partial, true);
-  assert.match(servicePuts[0].response.headers.get('cache-control'), /s-maxage=3600\b/);
+  assert.match(servicePuts[0].response.headers.get('cache-control')!, /s-maxage=3600\b/);
 });
 
 test('the route refuses a missing session or a malformed domain before any provider, uncached', async () => {
@@ -371,7 +377,7 @@ test('the route refuses a missing session or a malformed domain before any provi
     ['domain=usal.es', { token: null }, 401, 'AUTH_REQUIRED', []],
     ['domain=localhost', {}, 400, 'INVALID_DOMAIN', null],
     ['domain=usal.es', { resolver: () => new Response('down', { status: 503 }) }, 502, 'ACCESS_LOOKUP_UNAVAILABLE', null],
-  ]) {
+  ] as Array<[string, ServicesOptions, number, string, string[] | null]>) {
     const { response, body, calls, servicePuts } = await requestServices(search, options);
     assert.equal(response.status, status, search);
     assert.deepEqual(body, { code });

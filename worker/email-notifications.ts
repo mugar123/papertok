@@ -1,3 +1,80 @@
+import type { Paper, PaperFollowMatch } from '../src/models/Paper.ts';
+import type { OpenAlexWork } from './openalex-api.ts';
+import type { Delivery, DeliveryDraft, DeliveryDraftInput, DeliveryLedgerPayload, DeliveryLedgerResult, DeliveryLedgerState } from './email-delivery-ledger.ts';
+
+type FollowInput = Partial<Record<keyof PaperFollowMatch | 'id' | 'display_name' | 'name' | 'label', unknown>> & {
+  externalIds?: { ror?: unknown; orcid?: unknown };
+  metadata?: { query?: unknown; source?: unknown; categoryIds?: unknown[]; [key: string]: unknown };
+};
+export type Follow = Omit<PaperFollowMatch, 'metadata'> & { metadata?: { query?: string; source?: string; categoryIds?: string[] } };
+type PaperInput = Partial<Record<keyof Paper | 'publishedDate' | 'area', unknown>> & {
+  authors?: Array<string | { name?: unknown; display_name?: unknown }>;
+  _followedEntityMatches?: FollowInput[];
+  matches?: FollowInput[];
+};
+type SourceReportInput = Partial<Omit<SourceReport, 'bySource'>> & { bySource?: Record<string, Partial<SourceCounts>> };
+export type DigestPaper = Partial<Omit<NonNullable<ReturnType<typeof sanitizePaper>>, 'matches'>> & { matches?: Partial<Follow>[] };
+type IdentityPaper = Pick<PaperInput, 'title' | 'authors' | 'doi' | 'id'>;
+type PreferencesInput = Partial<Record<'maxPapers' | 'enabled' | 'frequency' | 'language', unknown>>;
+type PreferencesBody = PreferencesInput & { follows?: FollowInput[]; previewItems?: PaperInput[] };
+type Preferences = ReturnType<typeof sanitizePreferences>;
+interface SourceCounts { attempted: number; succeeded: number; failed: number; requestAttempts: number; retried: number }
+export interface SourceReport extends SourceCounts {
+  requiredFailed: number;
+  bySource: Record<string, SourceCounts>;
+  failureCodes: Record<string, number>;
+}
+interface DeliveryState {
+  lastCheckedAt?: string; lastSentAt?: string; lastTestAt?: string; sentPaperKeys?: string[];
+  lastDelivery?: Partial<ReturnType<typeof lastDeliveryStatus>>;
+  lastTestDelivery?: Partial<ReturnType<typeof lastDeliveryStatus>>;
+}
+export interface Subscription extends Partial<Preferences>, DeliveryState {
+  uid?: string; email?: string; displayName?: string; follows?: Follow[]; previewItems?: DigestPaper[];
+  unsubscribeToken?: string; stateId?: string; createdAt?: string; updatedAt?: string;
+}
+interface EmailAccount {
+  localId?: string; email?: string; displayName?: unknown; emailVerified?: boolean;
+  providerUserInfo?: Array<{ providerId?: unknown; email?: unknown }>;
+}
+type EmailIdentity = Awaited<ReturnType<typeof verifyFirebaseIdentity>>;
+interface ArxivEntry {
+  id?: unknown; title?: unknown; summary?: unknown; doi?: unknown; published?: unknown; updated?: unknown; journal_ref?: unknown;
+  category?: { '@_term'?: unknown } | Array<{ '@_term'?: unknown }>;
+  primary_category?: { '@_term'?: unknown };
+  author?: { name?: unknown } | Array<{ name?: unknown }>;
+  link?: { '@_rel'?: string; '@_href'?: string } | Array<{ '@_rel'?: string; '@_href'?: string }>;
+}
+type DigestOpenAlexWork = OpenAlexWork & { keywords?: unknown[]; categories?: unknown[] };
+interface OpenAlexPayload { results: DigestOpenAlexWork[] }
+export type OpenAlexRequests = Map<string, Promise<OpenAlexPayload>>;
+type OpenAirePid = { '@classname'?: unknown; '$'?: unknown };
+type OpenAireResult = { metadata?: { 'oaf:entity'?: { 'oaf:result'?: { pid?: OpenAirePid | OpenAirePid[] } } } };
+interface OpenAirePayload { response?: { results?: { result?: OpenAireResult | OpenAireResult[] } } }
+interface DeliveryOptions { test?: boolean; now?: number }
+interface CollectOptions extends DeliveryOptions { openAlexRequests?: OpenAlexRequests | null }
+interface SendOptions extends DeliveryOptions { key?: string; sourceReport?: SourceReport }
+interface StatusOptions { kind?: string; paperCount?: number; partial?: boolean; code?: string; sourceReport?: SourceReportInput }
+interface ProviderPayload { name?: string; code?: string; message?: string; id?: string; messageId?: string; messageIds?: string[] }
+interface DeliveryOutcome {
+  sent?: boolean; reconciled?: boolean; uncertain?: boolean; providerId?: string | null;
+  pending?: boolean; cancelled?: boolean; invalid?: boolean; delivery?: Delivery;
+}
+interface ScheduledOutcome {
+  sent?: boolean; empty?: boolean; invalid?: boolean; reconciled?: boolean; uncertain?: boolean;
+  partial?: boolean; skipped?: boolean; failed?: boolean;
+  sources?: ReturnType<typeof compactSourceReport>; failureCodes?: Record<string, number>;
+}
+interface ScheduleSummary {
+  scheduledAt: string; completedAt: string; provider: string | null;
+  scanned: number; processed: number; deferred: number; due: number;
+  sent: number; empty: number; invalid: number; reconciled: number; uncertain: number;
+  partial: number; skipped: number; failed: number; disabled?: boolean;
+  sources: ReturnType<typeof compactSourceReport>; failureCodes: Record<string, number>;
+}
+
+import type { WorkerEnv } from './env.ts';
+
 import { XMLParser } from 'fast-xml-parser';
 import { CATEGORIES } from '../src/data/categoryTaxonomy.js';
 import { areaKeyForPaper } from '../src/utils/areaAccent.js';
@@ -96,7 +173,12 @@ const ARXIV_XML_PARSER = new XMLParser({
 });
 
 export class EmailNotificationError extends Error {
-  constructor(code, status = 400, message = code) {
+  declare code: string;
+  declare status: number;
+  declare transient?: boolean;
+  declare deliveryRejected?: boolean;
+  declare sourceReport?: SourceReport;
+  constructor(code: string, status = 400, message = code) {
     super(message);
     this.name = 'EmailNotificationError';
     this.code = code;
@@ -105,7 +187,7 @@ export class EmailNotificationError extends Error {
 }
 
 export class EmailDigestTransientError extends EmailNotificationError {
-  constructor(sourceReport) {
+  constructor(sourceReport: SourceReport) {
     super(DIGEST_SOURCES_UNAVAILABLE, 503);
     this.name = 'EmailDigestTransientError';
     this.transient = true;
@@ -114,7 +196,10 @@ export class EmailDigestTransientError extends EmailNotificationError {
 }
 
 class DigestSourceError extends Error {
-  constructor(source, code, message = code) {
+  declare source: string | undefined;
+  declare code: string;
+  declare transient: boolean;
+  constructor(source: string | undefined, code: string, message = code) {
     super(message);
     this.name = 'DigestSourceError';
     this.source = source;
@@ -123,12 +208,12 @@ class DigestSourceError extends Error {
   }
 }
 
-function cleanText(value, maxLength = 300) {
+function cleanText(value: unknown, maxLength = 300) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
 }
 
-async function readBoundedJson(request, maximumBytes = MAX_PREFERENCES_REQUEST_BYTES) {
-  return readBoundedRequestJson(request, maximumBytes, {
+async function readBoundedJson(request: Request, maximumBytes = MAX_PREFERENCES_REQUEST_BYTES) {
+  return readBoundedRequestJson<PreferencesBody>(request, maximumBytes, {
     tooLarge: () => new EmailNotificationError('EMAIL_REQUEST_TOO_LARGE', 413),
     invalid: () => new EmailNotificationError('EMAIL_INVALID_REQUEST', 400),
   });
@@ -137,7 +222,7 @@ async function readBoundedJson(request, maximumBytes = MAX_PREFERENCES_REQUEST_B
 // Escapes without trimming. A fragment between two formulas begins or ends
 // with the space that separates them, and trimming it glued "Density of" to
 // the Ω that followed.
-function escapeHtmlCharacters(value) {
+function escapeHtmlCharacters(value: unknown) {
   return String(value)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -146,7 +231,7 @@ function escapeHtmlCharacters(value) {
     .replace(/'/g, '&#039;');
 }
 
-function escapeHtml(value) {
+function escapeHtml(value: unknown) {
   return escapeHtmlCharacters(cleanText(value, 5_000));
 }
 
@@ -157,7 +242,7 @@ const EMAIL_LATEX_DELIMITERS = [
   { left: '$', right: '$' },
 ];
 
-const EMAIL_LATEX_SYMBOLS = {
+const EMAIL_LATEX_SYMBOLS: Record<string, string> = {
   alpha: 'α',
   beta: 'β',
   gamma: 'γ',
@@ -204,14 +289,14 @@ const EMAIL_LATEX_SYMBOLS = {
   ell: 'ℓ',
 };
 
-function isEscaped(text, index) {
+function isEscaped(text: string, index: number) {
   let slashCount = 0;
   for (let cursor = index - 1; cursor >= 0 && text[cursor] === '\\'; cursor -= 1) slashCount += 1;
   return slashCount % 2 === 1;
 }
 
-function findEmailLatexDelimiter(text, startIndex) {
-  let next = null;
+function findEmailLatexDelimiter(text: string, startIndex: number): { index: number; delimiter: typeof EMAIL_LATEX_DELIMITERS[number] } | null {
+  let next: { index: number; delimiter: typeof EMAIL_LATEX_DELIMITERS[number] } | null = null;
   EMAIL_LATEX_DELIMITERS.forEach((delimiter) => {
     let index = text.indexOf(delimiter.left, startIndex);
     while (index !== -1 && isEscaped(text, index)) {
@@ -226,7 +311,7 @@ function findEmailLatexDelimiter(text, startIndex) {
   return next;
 }
 
-function splitEmailScientificText(value) {
+function splitEmailScientificText(value: unknown) {
   const text = cleanText(value, 5_000);
   const chunks = [];
   let cursor = 0;
@@ -252,7 +337,7 @@ function splitEmailScientificText(value) {
   return chunks;
 }
 
-function simplifyEmailLatex(value) {
+function simplifyEmailLatex(value: unknown) {
   let expression = String(value || '');
   for (let pass = 0; pass < 4; pass += 1) {
     const previous = expression;
@@ -271,13 +356,13 @@ function simplifyEmailLatex(value) {
     .trim();
 }
 
-function renderEmailMath(value) {
+function renderEmailMath(value: unknown) {
   const expression = simplifyEmailLatex(value);
   let html = '';
   let plain = '';
   let cursor = 0;
 
-  const appendText = (text) => {
+  const appendText = (text: string) => {
     html += escapeHtmlCharacters(text);
     plain += text;
   };
@@ -314,57 +399,57 @@ function renderEmailMath(value) {
   return { html, plain };
 }
 
-function mathSpan(html) {
+function mathSpan(html: string) {
   return `<span style="font-family:Arial,sans-serif;white-space:nowrap">${html}</span>`;
 }
 
 // splitEmailScientificText has already collapsed the whitespace, so each
 // fragment keeps exactly the spaces that separate it from its formulas.
-function renderScientificHtml(value) {
+function renderScientificHtml(value: unknown) {
   return splitEmailScientificText(value).map((chunk) => {
     if (chunk.type === 'text') return escapeHtmlCharacters(chunk.value);
     return mathSpan(renderEmailMath(chunk.value).html);
   }).join('');
 }
 
-function renderScientificText(value) {
+function renderScientificText(value: unknown) {
   return splitEmailScientificText(value).map(chunk => (
     chunk.type === 'text' ? chunk.value : renderEmailMath(chunk.value).plain
   )).join('');
 }
 
-function safeUrl(value) {
+function safeUrl(value: unknown) {
   try {
-    const url = new URL(value);
+    const url = new URL(value as string);
     return url.protocol === 'https:' ? url.toString() : '';
   } catch {
     return '';
   }
 }
 
-function normalizeId(value) {
+function normalizeId(value: unknown) {
   return cleanText(value, 300)
     .replace(/^https?:\/\/(?:api\.)?openalex\.org\//i, '')
     .replace(/^https?:\/\/ror\.org\//i, '')
     .replace(/^\/+|\/+$/g, '');
 }
 
-function isOpaqueQueryText(value) {
+function isOpaqueQueryText(value: unknown) {
   return /^query(?:-|$)/i.test(cleanText(value, 300));
 }
 
-function isQueryTopicId(value) {
+function isQueryTopicId(value: unknown) {
   return /^query-[a-f0-9]{8}$/i.test(normalizeId(value));
 }
 
-function topicSearchQuery(follow = {}) {
+function topicSearchQuery(follow: FollowInput = {}) {
   const storedQuery = cleanText(follow.metadata?.query, 180);
   if (storedQuery && !isOpaqueQueryText(storedQuery)) return storedQuery;
   const displayName = cleanText(follow.displayName, 200);
   return displayName && !isOpaqueQueryText(displayName) ? displayName : '';
 }
 
-function normalizePaperTitle(value) {
+function normalizePaperTitle(value: unknown) {
   return cleanText(value, 500)
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -373,7 +458,7 @@ function normalizePaperTitle(value) {
     .trim();
 }
 
-function normalizePaperAuthor(value) {
+function normalizePaperAuthor(value: unknown) {
   return cleanText(value, 160)
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -382,7 +467,7 @@ function normalizePaperAuthor(value) {
     .trim();
 }
 
-function sanitizeFollow(input = {}) {
+function sanitizeFollow(input: FollowInput = {}) {
   const type = input.type === 'concept' ? 'topic' : cleanText(input.type, 20);
   if (!['author', 'topic', 'institution', 'project'].includes(type)) return null;
   const canonicalId = normalizeId(input.canonicalId || input.id);
@@ -397,7 +482,7 @@ function sanitizeFollow(input = {}) {
   if (isOpaqueQueryText(displayName)) displayName = query;
   if (!canonicalId || !displayName) return null;
   return {
-    type,
+    type: type as PaperFollowMatch['type'],
     canonicalId,
     displayName,
     externalIds: {
@@ -416,17 +501,17 @@ function sanitizeFollow(input = {}) {
   };
 }
 
-function normalizePaperDoi(value) {
+function normalizePaperDoi(value: unknown) {
   return cleanText(value, 300).toLowerCase().replace(/^https?:\/\/(?:dx\.)?doi\.org\//, '');
 }
 
-function paperWorkKey(paper = {}) {
+function paperWorkKey(paper: IdentityPaper = {}) {
   const title = normalizePaperTitle(paper.title);
-  const firstAuthor = normalizePaperAuthor(paper.authors?.[0]?.name || paper.authors?.[0]);
+  const firstAuthor = normalizePaperAuthor((paper.authors?.[0] as { name?: unknown } | undefined)?.name || paper.authors?.[0]);
   return title && firstAuthor ? `work:${title}|${firstAuthor}` : '';
 }
 
-function paperIdentityKeys(paper = {}) {
+function paperIdentityKeys(paper: IdentityPaper = {}) {
   const doi = normalizePaperDoi(paper.doi);
   const id = cleanText(paper.id, 300).toLowerCase();
   return [...new Set([
@@ -436,19 +521,19 @@ function paperIdentityKeys(paper = {}) {
   ].filter(Boolean))];
 }
 
-function paperKey(paper = {}) {
+function paperKey(paper: IdentityPaper = {}) {
   const identities = paperIdentityKeys(paper);
   return identities[0] || `title:${normalizePaperTitle(paper.title)}`;
 }
 
-function sanitizePaper(input = {}) {
+function sanitizePaper(input: PaperInput = {}) {
   const title = cleanText(input.title, 500);
   if (!title) return null;
   const authors = Array.isArray(input.authors)
-    ? input.authors.map(author => cleanText(author?.name || author?.display_name || author, 120)).filter(Boolean).slice(0, 6)
+    ? input.authors.map(author => cleanText((author as { name?: unknown })?.name || (author as { display_name?: unknown })?.display_name || author, 120)).filter(Boolean).slice(0, 6)
     : [];
   const matches = Array.isArray(input._followedEntityMatches || input.matches)
-    ? (input._followedEntityMatches || input.matches).map(sanitizeFollow).filter(Boolean).slice(0, 4)
+    ? ((input._followedEntityMatches || input.matches)!.map(sanitizeFollow).filter(Boolean) as Follow[]).slice(0, 4)
     : [];
   const area = cleanText(input.area, 20);
   const abstract = cleanText(input.abstract, DIGEST_ABSTRACT_MAX_LENGTH);
@@ -478,7 +563,7 @@ function sanitizePaper(input = {}) {
  */
 const DIGEST_FREQUENCY = 'weekly';
 
-function sanitizePreferences(input = {}) {
+function sanitizePreferences(input: PreferencesInput = {}) {
   const requestedMax = Number(input.maxPapers);
   const maxPapers = [3, 5, 10].includes(requestedMax) ? requestedMax : 5;
   return {
@@ -490,12 +575,12 @@ function sanitizePreferences(input = {}) {
   };
 }
 
-function asArray(value) {
+function asArray<T>(value: T | T[] | null | undefined): T[] {
   if (value === undefined || value === null) return [];
   return Array.isArray(value) ? value : [value];
 }
 
-function createSourceReport() {
+function createSourceReport(): SourceReport {
   return {
     attempted: 0,
     succeeded: 0,
@@ -508,11 +593,11 @@ function createSourceReport() {
   };
 }
 
-function sourceCodeName(source) {
+function sourceCodeName(source: string | undefined) {
   return cleanText(source, 40).toUpperCase().replace(/[^A-Z0-9]+/g, '_') || 'UNKNOWN';
 }
 
-function sourceBucket(report, source) {
+function sourceBucket(report: SourceReport | null | undefined, source: string) {
   if (!report) return null;
   // `attempted`, `succeeded` and `failed` count the questions a digest asked;
   // `requestAttempts` and `retried` count the HTTP calls actually made, which
@@ -521,23 +606,23 @@ function sourceBucket(report, source) {
   return report.bySource[source];
 }
 
-function recordSourceFailure(report, source, code) {
+function recordSourceFailure(report: SourceReport | null | undefined, source: string, code: string) {
   if (!report) return;
   report.failed += 1;
-  sourceBucket(report, source).failed += 1;
+  sourceBucket(report, source!)!.failed += 1;
   report.failureCodes[code] = (report.failureCodes[code] || 0) + 1;
 }
 
-function digestSourceError(source, error) {
+function digestSourceError(source: string, error: unknown) {
   if (error instanceof DigestSourceError) return error;
   return new DigestSourceError(
     source,
     `EMAIL_SOURCE_${sourceCodeName(source)}_INVALID_RESPONSE`,
-    error?.message,
+    (error as EmailNotificationError)?.message,
   );
 }
 
-function retryDelayMs(response, attempt) {
+function retryDelayMs(response: Response | undefined, attempt: number) {
   const retryAfter = response?.headers?.get?.('retry-after');
   if (retryAfter) {
     const seconds = Number(retryAfter);
@@ -551,19 +636,19 @@ function retryDelayMs(response, attempt) {
   return Math.min(150 * (2 ** attempt), DIGEST_SOURCE_RETRY_MAX_DELAY_MS);
 }
 
-function wait(delayMs) {
-  return new Promise(resolve => setTimeout(resolve, delayMs));
+function wait(delayMs: number) {
+  return new Promise<void>(resolve => setTimeout(resolve, delayMs));
 }
 
-async function fetchDigestSource(input, init, {
+async function fetchDigestSource(input: RequestInfo | URL, init: RequestInit | undefined, {
   source,
   report,
   timeoutMs = DIGEST_SOURCE_TIMEOUT_MS,
-} = {}) {
+}: { source?: string; report?: SourceReport | null; timeoutMs?: number } = {}) {
   let lastError;
   for (let attempt = 0; attempt < DIGEST_SOURCE_MAX_ATTEMPTS; attempt += 1) {
     if (report) {
-      const bucket = sourceBucket(report, source);
+      const bucket = sourceBucket(report, source!)!;
       report.requestAttempts += 1;
       bucket.requestAttempts += 1;
       if (attempt > 0) {
@@ -583,11 +668,11 @@ async function fetchDigestSource(input, init, {
       // only the latter would recode every real deadline as `_UNAVAILABLE` and
       // lose the distinction the digest report publishes; `AbortError` stays
       // because a runtime that cuts the request is a deadline all the same.
-      const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+      const timedOut = (error as EmailNotificationError)?.name === 'TimeoutError' || (error as EmailNotificationError)?.name === 'AbortError';
       lastError = new DigestSourceError(
         source,
         `EMAIL_SOURCE_${sourceCodeName(source)}_${timedOut ? 'TIMEOUT' : 'UNAVAILABLE'}`,
-        error?.message,
+        (error as EmailNotificationError)?.message,
       );
     }
 
@@ -615,16 +700,16 @@ async function fetchDigestSource(input, init, {
   );
 }
 
-async function trackDigestSource(report, source, operation) {
+async function trackDigestSource<T>(report: SourceReport | null | undefined, source: string, operation: () => Promise<T>) {
   if (report) {
     report.attempted += 1;
-    sourceBucket(report, source).attempted += 1;
+    sourceBucket(report, source!)!.attempted += 1;
   }
   try {
     const result = await operation();
     if (report) {
       report.succeeded += 1;
-      sourceBucket(report, source).succeeded += 1;
+      sourceBucket(report, source!)!.succeeded += 1;
     }
     return result;
   } catch (error) {
@@ -634,7 +719,7 @@ async function trackDigestSource(report, source, operation) {
   }
 }
 
-function isArxivCategory(value) {
+function isArxivCategory(value: unknown) {
   const category = cleanText(value, 80);
   if (!/^[a-z-]+(?:\.[A-Za-z-]+)?$/.test(category)) return false;
   return ARXIV_CATEGORY_PREFIXES.some(prefix => (
@@ -642,7 +727,7 @@ function isArxivCategory(value) {
   ));
 }
 
-function arxivCategoriesForFollow(follow = {}) {
+function arxivCategoriesForFollow(follow: FollowInput = {}) {
   const metadataCategories = Array.isArray(follow.metadata?.categoryIds)
     ? follow.metadata.categoryIds
     : [];
@@ -650,10 +735,10 @@ function arxivCategoriesForFollow(follow = {}) {
   return [...new Set(candidates.map(category => cleanText(category, 80)).filter(isArxivCategory))];
 }
 
-function parseArxivDigestFeed(xml, follows = []) {
-  const parsed = ARXIV_XML_PARSER.parse(String(xml || ''));
+function parseArxivDigestFeed(xml: unknown, follows: Follow[] = []) {
+  const parsed: { feed?: { entry?: ArxivEntry | ArxivEntry[] } } = ARXIV_XML_PARSER.parse(String(xml || ''));
   const entries = asArray(parsed?.feed?.entry);
-  const followsByCategory = new Map();
+  const followsByCategory = new Map<string, Follow[]>();
 
   follows.forEach((follow) => {
     arxivCategoriesForFollow(follow).forEach((category) => {
@@ -705,7 +790,7 @@ function parseArxivDigestFeed(xml, follows = []) {
   }).filter(Boolean);
 }
 
-async function fetchArxivTopicUpdates(follows, sourceReport) {
+async function fetchArxivTopicUpdates(follows: Follow[], sourceReport?: SourceReport | null) {
   const categories = [...new Set(
     follows.flatMap(arxivCategoriesForFollow),
   )].slice(0, MAX_ARXIV_DIGEST_CATEGORIES);
@@ -742,7 +827,7 @@ const TRUSTED_EMAIL_PROVIDERS = new Set(['google.com', 'github.com']);
  * Firebase does not always flag federated sign-ins as verified, so an identity
  * provider that vouched for the same address counts as proof of possession.
  */
-function accountOwnsEmail(account) {
+function accountOwnsEmail(account: EmailAccount) {
   if (account?.emailVerified === true) return true;
   const email = cleanText(account?.email, 320).toLowerCase();
   return (account?.providerUserInfo || []).some(provider => (
@@ -751,7 +836,7 @@ function accountOwnsEmail(account) {
   ));
 }
 
-async function verifyFirebaseIdentity(request, env) {
+async function verifyFirebaseIdentity(request: Request, env: WorkerEnv) {
   const authorization = request.headers.get('authorization') || '';
   const token = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
   if (!token) throw new EmailNotificationError('EMAIL_AUTH_REQUIRED', 401);
@@ -762,7 +847,7 @@ async function verifyFirebaseIdentity(request, env) {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ idToken: token }),
   }, EMAIL_IDENTITY_TIMEOUT_MS);
-  const payload = await response.json().catch(() => ({}));
+  const payload = await response.json<{ users?: EmailAccount[] }>().catch(() => ({} as { users?: EmailAccount[] }));
   const account = payload?.users?.[0];
   if (!response.ok || !account?.localId || !account?.email) {
     throw new EmailNotificationError('EMAIL_AUTH_REQUIRED', 401);
@@ -777,7 +862,7 @@ async function verifyFirebaseIdentity(request, env) {
   };
 }
 
-function publicSubscription(subscription, email) {
+function publicSubscription(subscription: Subscription | null, email: string) {
   return {
     enabled: Boolean(subscription?.enabled),
     frequency: DIGEST_FREQUENCY,
@@ -789,7 +874,7 @@ function publicSubscription(subscription, email) {
   };
 }
 
-const DELIVERY_STATE_FIELDS = [
+const DELIVERY_STATE_FIELDS: Array<keyof DeliveryState> = [
   'lastCheckedAt',
   'lastSentAt',
   'lastTestAt',
@@ -798,7 +883,7 @@ const DELIVERY_STATE_FIELDS = [
   'lastTestDelivery',
 ];
 
-function deliveryStateKey(subscriptionKey, subscription) {
+function deliveryStateKey(subscriptionKey: string, subscription: Subscription | null) {
   const uid = String(subscriptionKey || '').startsWith(SUBSCRIPTION_PREFIX)
     ? String(subscriptionKey).slice(SUBSCRIPTION_PREFIX.length)
     : String(subscriptionKey || '');
@@ -808,19 +893,19 @@ function deliveryStateKey(subscriptionKey, subscription) {
     : `${DELIVERY_STATE_PREFIX}${uid}`;
 }
 
-function deliveryStateFromSubscription(subscription = {}) {
+function deliveryStateFromSubscription(subscription: Subscription = {}): DeliveryState {
   return Object.fromEntries(DELIVERY_STATE_FIELDS
     .filter(field => subscription?.[field] !== undefined)
     .map(field => [field, subscription[field]]));
 }
 
-function stripDeliveryState(subscription = {}) {
+function stripDeliveryState(subscription: Subscription = {}) {
   const clean = { ...subscription };
   DELIVERY_STATE_FIELDS.forEach(field => { delete clean[field]; });
   return clean;
 }
 
-function subscriptionGeneration(subscription = {}) {
+function subscriptionGeneration(subscription: Subscription = {}) {
   const stateId = cleanText(subscription.stateId, 80);
   if (stateId) return `state:${stateId}`;
   return `legacy:${cleanText(
@@ -829,15 +914,15 @@ function subscriptionGeneration(subscription = {}) {
   )}`;
 }
 
-async function loadSubscriptionRecord(env, key) {
-  const subscription = await env.NOTIFICATION_STORE.get(key, 'json');
+async function loadSubscriptionRecord(env: WorkerEnv, key: string) {
+  const subscription = await env.NOTIFICATION_STORE!.get<Subscription>(key, 'json');
   if (!subscription) return null;
   const stateKey = deliveryStateKey(key, subscription);
-  const state = await env.NOTIFICATION_STORE.get(stateKey, 'json');
+  const state = await env.NOTIFICATION_STORE!.get<DeliveryState>(stateKey, 'json');
   return { subscription, state, stateKey };
 }
 
-async function loadSubscriptionWithState(env, key) {
+async function loadSubscriptionWithState(env: WorkerEnv, key: string) {
   const record = await loadSubscriptionRecord(env, key);
   if (!record) return null;
   return {
@@ -847,8 +932,8 @@ async function loadSubscriptionWithState(env, key) {
   };
 }
 
-async function updateDeliveryState(env, key, expectedSubscription, buildPatch) {
-  const subscription = await env.NOTIFICATION_STORE.get(key, 'json');
+async function updateDeliveryState(env: WorkerEnv, key: string, expectedSubscription: Subscription | null, buildPatch: (state: DeliveryState, subscription: Subscription) => DeliveryState) {
+  const subscription = await env.NOTIFICATION_STORE!.get<Subscription>(key, 'json');
   if (!subscription) return null;
   if (
     expectedSubscription
@@ -857,19 +942,19 @@ async function updateDeliveryState(env, key, expectedSubscription, buildPatch) {
     return null;
   }
   const stateKey = deliveryStateKey(key, subscription);
-  const storedState = await env.NOTIFICATION_STORE.get(stateKey, 'json');
+  const storedState = await env.NOTIFICATION_STORE!.get<DeliveryState>(stateKey, 'json');
   const currentState = {
     ...deliveryStateFromSubscription(subscription),
     ...(storedState || {}),
   };
   const mergedState = { ...currentState, ...buildPatch(currentState, subscription) };
-  await env.NOTIFICATION_STORE.put(stateKey, JSON.stringify(mergedState), {
+  await env.NOTIFICATION_STORE!.put(stateKey, JSON.stringify(mergedState), {
     expirationTtl: DELIVERY_STATE_TTL_SECONDS,
   });
   return { ...subscription, ...mergedState };
 }
 
-async function deleteSubscription(env, uid, subscription) {
+async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Subscription | null) {
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   await Promise.all([
     env.NOTIFICATION_STORE.delete(`${SUBSCRIPTION_PREFIX}${uid}`),
@@ -884,10 +969,10 @@ async function deleteSubscription(env, uid, subscription) {
  * Account deletion: drop the newsletter records even when the account never
  * subscribed. Missing KV is not a failure here — there is nothing to erase.
  */
-export async function purgeEmailSubscription(env, uid) {
+export async function purgeEmailSubscription(env: WorkerEnv, uid: string) {
   if (!env?.NOTIFICATION_STORE || !uid) return { purged: false };
   const key = `${SUBSCRIPTION_PREFIX}${uid}`;
-  const subscription = await env.NOTIFICATION_STORE.get(key, 'json');
+  const subscription = await env.NOTIFICATION_STORE!.get<Subscription>(key, 'json');
   await Promise.all([
     env.NOTIFICATION_STORE.delete(key),
     env.NOTIFICATION_STORE.delete(deliveryStateKey(uid, subscription || { uid })),
@@ -898,7 +983,7 @@ export async function purgeEmailSubscription(env, uid) {
   return { purged: true };
 }
 
-async function saveSubscription(request, env, identity) {
+async function saveSubscription(request: Request, env: WorkerEnv, identity: EmailIdentity) {
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const body = await readBoundedJson(request);
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
@@ -911,7 +996,7 @@ async function saveSubscription(request, env, identity) {
   const existing = existingRaw ? {
     ...existingRaw,
     ...deliveryStateFromSubscription(existingRaw),
-    ...(existingRecord.state || {}),
+    ...(existingRecord!.state || {}),
   } : null;
 
   if (!preferences.enabled) {
@@ -920,10 +1005,10 @@ async function saveSubscription(request, env, identity) {
   }
 
   const follows = Array.isArray(body.follows)
-    ? body.follows.map(sanitizeFollow).filter(Boolean).slice(0, MAX_FOLLOWS)
+    ? (body.follows.map(sanitizeFollow).filter(Boolean) as Follow[]).slice(0, MAX_FOLLOWS)
     : [];
   const previewItems = Array.isArray(body.previewItems)
-    ? body.previewItems.map(sanitizePaper).filter(Boolean).slice(0, MAX_PREVIEW_ITEMS)
+    ? (body.previewItems.map(sanitizePaper).filter(Boolean) as DigestPaper[]).slice(0, MAX_PREVIEW_ITEMS)
     : [];
   if (!follows.length) {
     throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
@@ -931,7 +1016,7 @@ async function saveSubscription(request, env, identity) {
   const unsubscribeToken = existing?.unsubscribeToken || crypto.randomUUID().replace(/-/g, '');
   const now = new Date().toISOString();
   const persistedBase = existingRecord?.state
-    ? stripDeliveryState(existingRaw)
+    ? stripDeliveryState(existingRaw!)
     : (existingRaw || {});
   const subscription = {
     ...persistedBase,
@@ -953,19 +1038,19 @@ async function saveSubscription(request, env, identity) {
   return publicSubscription({ ...subscription, ...(existingRecord?.state || {}) }, identity.email);
 }
 
-function addOpenAlexCredentials(url, env) {
+function addOpenAlexCredentials(url: URL, env: WorkerEnv) {
   url.searchParams.set('mailto', 'app@papertok.io');
   if (env.OPENALEX_API_KEY) url.searchParams.set('api_key', env.OPENALEX_API_KEY);
   return url;
 }
 
-function mapOpenAlexPaper(work, follow) {
+function mapOpenAlexPaper(work: DigestOpenAlexWork, follow: Follow | null) {
   const doi = cleanText(work?.doi, 300).replace(/^https?:\/\/doi\.org\//i, '');
   return sanitizePaper({
     id: normalizeId(work?.id) || doi,
     doi,
     title: work?.display_name || work?.title,
-    authors: (work?.authorships || []).map(authorship => authorship?.author?.display_name).filter(Boolean),
+    authors: (work?.authorships || []).map(authorship => authorship?.author?.display_name).filter(Boolean) as string[],
     published: work?.publication_date,
     journal: work?.primary_location?.source?.display_name,
     citationCount: work?.cited_by_count,
@@ -981,15 +1066,15 @@ function mapOpenAlexPaper(work, follow) {
   });
 }
 
-function reconstructOpenAlexAbstract(index = {}) {
-  const words = [];
+function reconstructOpenAlexAbstract(index: Record<string, number[]> | null = {}) {
+  const words: string[] = [];
   Object.entries(index || {}).forEach(([word, positions]) => {
     (positions || []).forEach(position => { words[position] = word; });
   });
   return words.filter(Boolean).join(' ');
 }
 
-function openAlexWorkForTopicRelevance(work = {}) {
+function openAlexWorkForTopicRelevance(work: DigestOpenAlexWork = {}) {
   return {
     title: work.display_name || work.title,
     abstract: reconstructOpenAlexAbstract(work.abstract_inverted_index),
@@ -1001,7 +1086,7 @@ function openAlexWorkForTopicRelevance(work = {}) {
   };
 }
 
-function openAlexRequestKey(url) {
+function openAlexRequestKey(url: string | URL) {
   const key = new URL(url);
   key.searchParams.delete('api_key');
   return key.toString();
@@ -1017,9 +1102,9 @@ function openAlexRequestKey(url) {
 // of the run, so the map is capped; once full, a new question is asked unshared
 // rather than pushing out an answer a later reader may still need.
 function fetchOpenAlexDigestPayload(
-  url,
-  sourceReport,
-  openAlexRequests,
+  url: URL,
+  sourceReport: SourceReport | null | undefined,
+  openAlexRequests: OpenAlexRequests | null,
   limit = MAX_SHARED_OPENALEX_REQUESTS,
 ) {
   const request = async () => {
@@ -1027,7 +1112,7 @@ function fetchOpenAlexDigestPayload(
       source: 'openalex',
       report: sourceReport,
     });
-    const payload = await response.json();
+    const payload = await response.json<OpenAlexPayload>();
     if (!Array.isArray(payload?.results)) {
       throw new DigestSourceError('openalex', 'EMAIL_SOURCE_OPENALEX_INVALID_RESPONSE');
     }
@@ -1046,7 +1131,7 @@ function fetchOpenAlexDigestPayload(
   return shared;
 }
 
-async function fetchOpenAlexUpdates(follow, env, now = Date.now(), sourceReport, openAlexRequests = null) {
+async function fetchOpenAlexUpdates(follow: Follow, env: WorkerEnv, now = Date.now(), sourceReport?: SourceReport | null, openAlexRequests: OpenAlexRequests | null = null) {
   const id = normalizeId(follow.canonicalId);
   const url = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
   const cutoff = new Date(now - DIGEST_FRESHNESS_DAYS * DAY_MS).toISOString().slice(0, 10);
@@ -1084,7 +1169,7 @@ async function fetchOpenAlexUpdates(follow, env, now = Date.now(), sourceReport,
   });
 }
 
-async function fetchExplorationUpdates(env, now = Date.now(), sourceReport, openAlexRequests = null) {
+async function fetchExplorationUpdates(env: WorkerEnv, now = Date.now(), sourceReport?: SourceReport | null, openAlexRequests: OpenAlexRequests | null = null) {
   const url = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
   const cutoff = new Date(now - 4 * DAY_MS).toISOString().slice(0, 10);
   const today = new Date(now).toISOString().slice(0, 10);
@@ -1100,7 +1185,7 @@ async function fetchExplorationUpdates(env, now = Date.now(), sourceReport, open
   });
 }
 
-async function fetchProjectUpdates(follow, env, sourceReport, openAlexRequests = null) {
+async function fetchProjectUpdates(follow: Follow, env: WorkerEnv, sourceReport?: SourceReport | null, openAlexRequests: OpenAlexRequests | null = null) {
   const requestUrl = new URL('https://api.openaire.eu/search/publications');
   requestUrl.searchParams.set('format', 'json');
   requestUrl.searchParams.set('size', '10');
@@ -1111,7 +1196,7 @@ async function fetchProjectUpdates(follow, env, sourceReport, openAlexRequests =
       source: 'openaire',
       report: sourceReport,
     });
-    return response.json();
+    return response.json<OpenAirePayload>();
   });
   let rows = payload?.response?.results?.result || [];
   if (!Array.isArray(rows)) rows = [rows];
@@ -1134,8 +1219,8 @@ async function fetchProjectUpdates(follow, env, sourceReport, openAlexRequests =
   });
 }
 
-async function mapWithConcurrency(items, concurrency, mapper) {
-  const output = new Array(items.length);
+async function mapWithConcurrency<T, Result>(items: T[], concurrency: number, mapper: (item: T) => Promise<Result>) {
+  const output = new Array<PromiseSettledResult<Result>>(items.length);
   let nextIndex = 0;
   async function worker() {
     while (nextIndex < items.length) {
@@ -1152,12 +1237,12 @@ async function mapWithConcurrency(items, concurrency, mapper) {
   return output;
 }
 
-function publicationTime(paper) {
+function publicationTime(paper: DigestPaper) {
   const value = Date.parse(paper.published || '');
   return Number.isFinite(value) ? value : 0;
 }
 
-function mergePaperRecords(current, paper) {
+function mergePaperRecords(current: DigestPaper, paper: DigestPaper) {
   const matches = [...(current.matches || []), ...(paper.matches || [])];
   const area = current.area || paper.area;
   const abstract = (current.abstract?.length || 0) >= (paper.abstract?.length || 0)
@@ -1168,8 +1253,8 @@ function mergePaperRecords(current, paper) {
     ...paper,
     id: current.id || paper.id,
     doi: current.doi || paper.doi,
-    title: current.title?.length >= (paper.title?.length || 0) ? current.title : paper.title,
-    authors: current.authors?.length >= (paper.authors?.length || 0) ? current.authors : paper.authors,
+    title: (current.title?.length as number) >= (paper.title?.length || 0) ? current.title : paper.title,
+    authors: (current.authors?.length as number) >= (paper.authors?.length || 0) ? current.authors : paper.authors,
     published: current.published || paper.published,
     journal: current.journal || paper.journal,
     url: current.url || paper.url,
@@ -1183,13 +1268,13 @@ function mergePaperRecords(current, paper) {
   };
 }
 
-function mergePapers(papers) {
-  const mergedByIdentity = new Map();
-  papers.filter(Boolean).forEach((paper) => {
+function mergePapers(papers: Array<DigestPaper | null>) {
+  const mergedByIdentity = new Map<string, DigestPaper>();
+  (papers.filter(Boolean) as DigestPaper[]).forEach((paper) => {
     const identityKeys = paperIdentityKeys(paper);
     const existingRecords = [...new Set(identityKeys
       .map(key => mergedByIdentity.get(key))
-      .filter(Boolean))];
+      .filter(Boolean) as DigestPaper[])];
     if (!existingRecords.length) {
       identityKeys.forEach(key => mergedByIdentity.set(key, paper));
       return;
@@ -1209,7 +1294,7 @@ function mergePapers(papers) {
     .sort((a, b) => publicationTime(b) - publicationTime(a));
 }
 
-function digestPaperScore(paper, now = Date.now()) {
+function digestPaperScore(paper: DigestPaper, now = Date.now()) {
   const publishedAt = publicationTime(paper);
   if (
     !publishedAt
@@ -1231,30 +1316,30 @@ function digestPaperScore(paper, now = Date.now()) {
   return recencyScore + citationScore + followingScore + metadataScore;
 }
 
-function getPaperFollowKeys(paper = {}) {
+function getPaperFollowKeys(paper: Partial<DigestPaper> = {}) {
   return [...new Set((paper.matches || []).map(match => (
     `${match.type}:${match.canonicalId}`
   )))];
 }
 
-function sharesFollow(left, right) {
+function sharesFollow(left: DigestPaper, right?: DigestPaper) {
   const rightKeys = new Set(getPaperFollowKeys(right));
   return getPaperFollowKeys(left).some(key => rightKeys.has(key));
 }
 
-function blockedFollowKeys(selected) {
+function blockedFollowKeys(selected: DigestPaper[]) {
   if (selected.length < 2) return new Set();
   const previous = new Set(getPaperFollowKeys(selected.at(-1)));
   const beforePrevious = new Set(getPaperFollowKeys(selected.at(-2)));
   return new Set([...previous].filter(key => beforePrevious.has(key)));
 }
 
-function selectDigestPapers(papers, {
+function selectDigestPapers(papers: Array<DigestPaper | null>, {
   limit = 5,
   now = Date.now(),
   exploration = false,
   excludedKeys = [],
-} = {}) {
+}: { limit?: number; now?: number; exploration?: boolean; excludedKeys?: string[] | Set<string> } = {}) {
   const excluded = excludedKeys instanceof Set ? excludedKeys : new Set(excludedKeys);
   const minimumScore = exploration ? EXPLORATION_PAPER_MIN_SCORE : FOLLOWED_PAPER_MIN_SCORE;
   const ranked = mergePapers(papers)
@@ -1264,7 +1349,7 @@ function selectDigestPapers(papers, {
     .filter(candidate => (
       Number.isFinite(candidate.score)
       && candidate.score >= minimumScore
-      && (!exploration || candidate.paper.citationCount >= EXPLORATION_MIN_CITATIONS)
+      && (!exploration || (candidate.paper.citationCount as number) >= EXPLORATION_MIN_CITATIONS)
     ))
     .sort((left, right) => (
       right.score - left.score
@@ -1274,7 +1359,7 @@ function selectDigestPapers(papers, {
 
   if (exploration) return ranked.slice(0, Math.max(0, limit)).map(candidate => candidate.paper);
 
-  const selected = [];
+  const selected: DigestPaper[] = [];
   while (ranked.length && selected.length < limit) {
     const blocked = blockedFollowKeys(selected);
     const hasAlternative = blocked.size > 0 && ranked.some(candidate => (
@@ -1296,7 +1381,7 @@ function selectDigestPapers(papers, {
   return selected;
 }
 
-function digestFollowsForWindow(follows, now = Date.now()) {
+function digestFollowsForWindow(follows: Follow[] | undefined, now = Date.now()) {
   const allFollows = Array.isArray(follows) ? follows : [];
   if (allFollows.length <= MAX_QUERIED_FOLLOWS) return allFollows;
   const dayIndex = Math.floor(now / DAY_MS);
@@ -1304,11 +1389,11 @@ function digestFollowsForWindow(follows, now = Date.now()) {
   return allFollows.slice(offset).concat(allFollows.slice(0, offset)).slice(0, MAX_QUERIED_FOLLOWS);
 }
 
-async function collectDigestPapers(subscription, env, {
+async function collectDigestPapers(subscription: Subscription, env: WorkerEnv, {
   test = false,
   now = Date.now(),
   openAlexRequests = null,
-} = {}) {
+}: CollectOptions = {}) {
   const follows = digestFollowsForWindow(subscription.follows, now);
   const sourceReport = createSourceReport();
   if (!follows.length) return { papers: [], sourceReport };
@@ -1327,7 +1412,7 @@ async function collectDigestPapers(subscription, env, {
         requiredFailed: 0,
       };
     } catch (error) {
-      console.warn('arXiv digest unavailable, using OpenAlex fallback', error?.code || 'EMAIL_SOURCE_ARXIV_UNAVAILABLE');
+      console.warn('arXiv digest unavailable, using OpenAlex fallback', (error as EmailNotificationError)?.code || 'EMAIL_SOURCE_ARXIV_UNAVAILABLE');
       const fallbackResults = await mapWithConcurrency(
         arxivFollows,
         2,
@@ -1356,12 +1441,12 @@ async function collectDigestPapers(subscription, env, {
   ]);
   const cutoff = now - DIGEST_FRESHNESS_DAYS * DAY_MS;
   const maximum = subscription.maxPapers || 5;
-  const sentKeys = test ? new Set() : new Set(subscription.sentPaperKeys || []);
+  const sentKeys = test ? new Set<string>() : new Set(subscription.sentPaperKeys || []);
   const followedSelection = selectDigestPapers(
     combined.filter(paper => publicationTime(paper) >= cutoff),
     { limit: maximum, now, excludedKeys: sentKeys },
   );
-  let discovery = [];
+  let discovery: DigestPaper[] = [];
   if (
     !test
     && followedSelection.length < maximum
@@ -1380,7 +1465,7 @@ async function collectDigestPapers(subscription, env, {
         excludedKeys: selectedKeys,
       });
     } catch (error) {
-      console.warn('Digest exploration unavailable', error?.code || 'EMAIL_SOURCE_OPENALEX_UNAVAILABLE');
+      console.warn('Digest exploration unavailable', (error as EmailNotificationError)?.code || 'EMAIL_SOURCE_OPENALEX_UNAVAILABLE');
     }
   }
   const papers = [...followedSelection, ...discovery].slice(0, maximum);
@@ -1390,7 +1475,7 @@ async function collectDigestPapers(subscription, env, {
   return { papers, sourceReport };
 }
 
-function requestedEmailProvider(env) {
+function requestedEmailProvider(env: WorkerEnv) {
   const requested = cleanText(env.EMAIL_PROVIDER, 20).toLowerCase();
   if (requested === 'brevo' || requested === 'resend') return requested;
   if (env.BREVO_API_KEY) return 'brevo';
@@ -1398,40 +1483,40 @@ function requestedEmailProvider(env) {
   return '';
 }
 
-function configuredEmailProvider(env) {
+function configuredEmailProvider(env: WorkerEnv) {
   const provider = requestedEmailProvider(env);
   if (provider === 'brevo' && env.BREVO_API_KEY && env.BREVO_FROM_EMAIL) return provider;
   if (provider === 'resend' && env.RESEND_API_KEY) return provider;
   return '';
 }
 
-function resolveBrevoSender(env) {
+function resolveBrevoSender(env: WorkerEnv) {
   return {
     name: cleanText(env.BREVO_FROM_NAME, 70) || 'PaperTok',
     email: cleanText(env.BREVO_FROM_EMAIL, 320),
   };
 }
 
-async function resolveResendSender(env) {
+async function resolveResendSender(env: WorkerEnv) {
   if (env.RESEND_FROM_EMAIL) return cleanText(env.RESEND_FROM_EMAIL, 320);
   return 'PaperTok <onboarding@resend.dev>';
 }
 
-const kvDeliveryLedgerLocks = new WeakMap();
+const kvDeliveryLedgerLocks = new WeakMap<KVNamespace, Map<string, Promise<unknown>>>();
 
 function utcDay(now = Date.now()) {
   const timestamp = Number.isFinite(Number(now)) ? Number(now) : Date.now();
   return new Date(timestamp).toISOString().slice(0, 10);
 }
 
-function dailySendLimit(env) {
+function dailySendLimit(env: WorkerEnv) {
   const configuredLimit = Number(env.EMAIL_DAILY_SEND_LIMIT);
   return Number.isFinite(configuredLimit) && configuredLimit > 0
     ? Math.floor(configuredLimit)
     : DEFAULT_DAILY_SEND_LIMIT;
 }
 
-function deliveryReservationSeed(subscription, { test = false, now = Date.now() } = {}) {
+function deliveryReservationSeed(subscription: Subscription, { test = false, now = Date.now() }: DeliveryOptions = {}) {
   const timestamp = Number.isFinite(Number(now)) ? Number(now) : Date.now();
   const uid = cleanText(subscription?.uid, 160) || 'unknown';
   const window = test
@@ -1440,7 +1525,7 @@ function deliveryReservationSeed(subscription, { test = false, now = Date.now() 
   return `papertok:${window}:${uid}:${subscriptionGeneration(subscription)}`;
 }
 
-async function buildDeliveryReservationId(subscription, options = {}) {
+async function buildDeliveryReservationId(subscription: Subscription, options: DeliveryOptions = {}) {
   const digest = new Uint8Array(await crypto.subtle.digest(
     'SHA-256',
     new TextEncoder().encode(deliveryReservationSeed(subscription, options)),
@@ -1452,7 +1537,7 @@ async function buildDeliveryReservationId(subscription, options = {}) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-function withKvDeliveryLedgerLock(store, key, operation) {
+function withKvDeliveryLedgerLock<T>(store: KVNamespace, key: string, operation: () => Promise<T>) {
   let locks = kvDeliveryLedgerLocks.get(store);
   if (!locks) {
     locks = new Map();
@@ -1473,13 +1558,13 @@ function withKvDeliveryLedgerLock(store, key, operation) {
  * behind an explicit opt-in; a deployment that loses the Durable Object binding
  * must fail loudly instead of degrading into a mode with no guarantees.
  */
-function emailDeliveryLedgerMode(env) {
-  if (env?.EMAIL_DELIVERY_LEDGER?.idFromName && env?.EMAIL_DELIVERY_LEDGER?.get) return 'durable';
+function emailDeliveryLedgerMode(env: WorkerEnv) {
+  if (env?.EMAIL_DELIVERY_LEDGER?.idFromName && (env?.EMAIL_DELIVERY_LEDGER as Partial<Env['EMAIL_DELIVERY_LEDGER']> | undefined)?.get) return 'durable';
   if (cleanText(env?.EMAIL_DELIVERY_LEDGER_FALLBACK, 20).toLowerCase() === 'kv') return 'kv';
   return 'missing';
 }
 
-export function getEmailDeliveryLedgerHealth(env) {
+export function getEmailDeliveryLedgerHealth(env: WorkerEnv) {
   const mode = emailDeliveryLedgerMode(env);
   if (mode === 'durable') return { mode, ok: true };
   return {
@@ -1489,7 +1574,7 @@ export function getEmailDeliveryLedgerHealth(env) {
   };
 }
 
-async function callEmailDeliveryLedger(env, payload, now = Date.now()) {
+async function callEmailDeliveryLedger(env: WorkerEnv, payload: DeliveryLedgerPayload, now = Date.now()): Promise<DeliveryLedgerResult> {
   const day = utcDay(now);
   const ledgerNow = Date.now();
   const mode = emailDeliveryLedgerMode(env);
@@ -1497,14 +1582,14 @@ async function callEmailDeliveryLedger(env, payload, now = Date.now()) {
     throw new EmailNotificationError('EMAIL_DELIVERY_LEDGER_UNAVAILABLE', 503);
   }
   if (mode === 'durable') {
-    const id = env.EMAIL_DELIVERY_LEDGER.idFromName(day);
-    const stub = env.EMAIL_DELIVERY_LEDGER.get(id);
+    const id = env.EMAIL_DELIVERY_LEDGER!.idFromName(day);
+    const stub = env.EMAIL_DELIVERY_LEDGER!.get(id);
     const response = await stub.fetch('https://papertok.internal/email-delivery', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ ...payload, now: new Date(ledgerNow).toISOString() }),
     });
-    const result = await response.json().catch(() => null);
+    const result = await response.json<DeliveryLedgerResult>().catch(() => null);
     if (!response.ok || !result) {
       throw new EmailNotificationError('EMAIL_DELIVERY_LEDGER_UNAVAILABLE', 503);
     }
@@ -1514,7 +1599,7 @@ async function callEmailDeliveryLedger(env, payload, now = Date.now()) {
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const key = `${DELIVERY_LEDGER_PREFIX}${day}`;
   return withKvDeliveryLedgerLock(env.NOTIFICATION_STORE, key, async () => {
-    const current = await env.NOTIFICATION_STORE.get(key, 'json');
+    const current = await env.NOTIFICATION_STORE!.get<DeliveryLedgerState>(key, 'json');
     const outcome = applyEmailDeliveryLedgerAction(current, {
       ...payload,
       now: new Date(ledgerNow).toISOString(),
@@ -1523,7 +1608,7 @@ async function callEmailDeliveryLedger(env, payload, now = Date.now()) {
       throw new EmailNotificationError('EMAIL_DELIVERY_LEDGER_UNAVAILABLE', 503);
     }
     if (payload.action !== 'inspect') {
-      await env.NOTIFICATION_STORE.put(key, JSON.stringify(outcome.state), {
+      await env.NOTIFICATION_STORE!.put(key, JSON.stringify(outcome.state), {
         expirationTtl: DELIVERY_LEDGER_TTL_SECONDS,
       });
     }
@@ -1531,14 +1616,14 @@ async function callEmailDeliveryLedger(env, payload, now = Date.now()) {
   });
 }
 
-async function inspectEmailDelivery(env, reservationId, now) {
+async function inspectEmailDelivery(env: WorkerEnv, reservationId: string, now: number) {
   return callEmailDeliveryLedger(env, {
     action: 'inspect',
     reservationId,
   }, now);
 }
 
-async function reserveEmailDelivery(env, reservationId, now, draft) {
+async function reserveEmailDelivery(env: WorkerEnv, reservationId: string, now: number, draft?: DeliveryDraftInput) {
   const result = await callEmailDeliveryLedger(env, {
     action: 'reserve',
     reservationId,
@@ -1551,7 +1636,7 @@ async function reserveEmailDelivery(env, reservationId, now, draft) {
   return result;
 }
 
-async function commitEmailDelivery(env, reservationId, delivery, now) {
+async function commitEmailDelivery(env: WorkerEnv, reservationId: string, delivery: Delivery, now: number) {
   return callEmailDeliveryLedger(env, {
     action: 'commit',
     reservationId,
@@ -1559,19 +1644,19 @@ async function commitEmailDelivery(env, reservationId, delivery, now) {
   }, now);
 }
 
-async function releaseEmailDelivery(env, reservationId, now) {
+async function releaseEmailDelivery(env: WorkerEnv, reservationId: string, now: number) {
   try {
     await callEmailDeliveryLedger(env, { action: 'release', reservationId }, now);
   } catch (error) {
-    console.warn('Could not release email delivery reservation', error?.code || 'EMAIL_DELIVERY_LEDGER_UNAVAILABLE');
+    console.warn('Could not release email delivery reservation', (error as EmailNotificationError)?.code || 'EMAIL_DELIVERY_LEDGER_UNAVAILABLE');
   }
 }
 
-async function buildProviderIdempotencyKey(subscription, options = {}) {
+async function buildProviderIdempotencyKey(subscription: Subscription, options: DeliveryOptions = {}) {
   return buildDeliveryReservationId(subscription, options);
 }
 
-function buildResendIdempotencyKey(subscription, { test = false, now = Date.now() } = {}) {
+function buildResendIdempotencyKey(subscription: Subscription, { test = false, now = Date.now() }: DeliveryOptions = {}) {
   const timestamp = Number.isFinite(Number(now)) ? Number(now) : Date.now();
   const sendWindow = test
     ? Math.floor(timestamp / TEST_IDEMPOTENCY_WINDOW_MS)
@@ -1580,7 +1665,7 @@ function buildResendIdempotencyKey(subscription, { test = false, now = Date.now(
   return `${test ? 'test' : 'digest'}-${uid}-${sendWindow}`.slice(0, 256);
 }
 
-function resendSendErrorCode(status, payload = {}) {
+function resendSendErrorCode(status: number, payload: ProviderPayload = {}) {
   const providerMessage = cleanText(`${payload?.name || ''} ${payload?.message || ''}`, 1_000);
   const testRecipientRestricted = status === 403 && (
     /only send testing emails/i.test(providerMessage)
@@ -1594,7 +1679,7 @@ function resendSendErrorCode(status, payload = {}) {
   return 'EMAIL_SEND_FAILED';
 }
 
-function brevoSendErrorCode(status, payload = {}) {
+function brevoSendErrorCode(status: number, payload: ProviderPayload = {}) {
   const providerMessage = cleanText(`${payload?.code || ''} ${payload?.message || ''}`, 1_000);
   if (status === 401 || status === 403) return 'EMAIL_PROVIDER_AUTH_FAILED';
   if (status === 429) return 'EMAIL_PROVIDER_LIMIT';
@@ -1604,7 +1689,7 @@ function brevoSendErrorCode(status, payload = {}) {
   return 'EMAIL_SEND_FAILED';
 }
 
-function providerOutcomeDefinitelyRejected(status) {
+function providerOutcomeDefinitelyRejected(status: number) {
   if (status === 429) return true;
   if ([408, 409, 425].includes(status) || status >= 500) return false;
   return status >= 400 && status < 500;
@@ -1614,18 +1699,18 @@ const EMAIL_COPY = {
   nameplate: 'The PaperTok Weekly',
   standfirst: 'New research from the people, topics and places you follow',
   edition: 'Weekly edition',
-  editionFor: name => `Weekly edition for ${name}`,
-  paperCount: count => (count === 1 ? '1 paper' : `${count} papers`),
-  followReason: names => `You follow ${names.slice(0, 2).join(' and ')}`,
+  editionFor: (name: string) => `Weekly edition for ${name}`,
+  paperCount: (count: number) => (count === 1 ? '1 paper' : `${count} papers`),
+  followReason: (names: string[]) => `You follow ${names.slice(0, 2).join(' and ')}`,
   outsideFollows: 'Outside your follows',
   alsoInEdition: 'Also in this edition',
-  byline: authors => `By ${authors}`,
+  byline: (authors: string) => `By ${authors}`,
   andOthers: 'and others',
   authorUnavailable: 'Authors unavailable',
-  citations: count => `${count} ${count === 1 ? 'citation' : 'citations'}`,
+  citations: (count: number) => `${count} ${count === 1 ? 'citation' : 'citations'}`,
   openAccess: 'Open access',
   readPaper: 'Read the paper',
-  andMore: count => `, and ${count} more`,
+  andMore: (count: number) => `, and ${count} more`,
   testSubject: 'PaperTok: test email',
   testKicker: 'Test email',
   testBody: 'Your PaperTok email works. The weekly edition arrives on Monday mornings when there is something new from what you follow.',
@@ -1652,6 +1737,7 @@ const EMAIL_COPY = {
  * PaperTok is English-only. Stored subscriptions may still carry a legacy
  * `language: 'es'`; they simply receive English email now.
  */
+function subscriptionLanguage(subscription?: Subscription | null): string;
 function subscriptionLanguage() {
   return 'en';
 }
@@ -1689,19 +1775,19 @@ const MONTH_NAMES = [
 
 // Spelled out by hand rather than through Intl, so the dateline cannot change
 // with whatever locale data the runtime ships.
-function editionDate(now) {
+function editionDate(now: number) {
   const date = new Date(now);
   return `${WEEKDAY_NAMES[date.getUTCDay()]}, ${date.getUTCDate()} ${MONTH_NAMES[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
 }
 
-function publicationLabel(value) {
+function publicationLabel(value: string | undefined) {
   const time = Date.parse(value || '');
   if (!Number.isFinite(time)) return '';
   const date = new Date(time);
   return `${date.getUTCDate()} ${MONTH_NAMES[date.getUTCMonth()].slice(0, 3)} ${date.getUTCFullYear()}`;
 }
 
-function truncateAtWord(value, maxLength) {
+function truncateAtWord(value: string, maxLength: number) {
   if (value.length <= maxLength) return value;
   const head = value.slice(0, maxLength);
   const boundary = head.lastIndexOf(' ');
@@ -1714,8 +1800,8 @@ function truncateAtWord(value, maxLength) {
  * kept whole or left out, never cut, so no `$` and no half `<sub>` reaches
  * the reader.
  */
-function renderScientificExcerpt(value, maxLength = DIGEST_EXCERPT_LENGTH) {
-  const parts = [];
+function renderScientificExcerpt(value: unknown, maxLength = DIGEST_EXCERPT_LENGTH) {
+  const parts: Array<{ text: string; html?: string }> = [];
   let length = 0;
   let cut = false;
   for (const chunk of splitEmailScientificText(value)) {
@@ -1740,8 +1826,8 @@ function renderScientificExcerpt(value, maxLength = DIGEST_EXCERPT_LENGTH) {
     cut = true;
     break;
   }
-  if (cut && parts.length && !parts.at(-1).html) {
-    parts.at(-1).text = parts.at(-1).text.replace(/[\s,;:.]+$/, '');
+  if (cut && parts.length && !parts.at(-1)!.html) {
+    parts.at(-1)!.text = parts.at(-1)!.text.replace(/[\s,;:.]+$/, '');
   }
   const text = parts.map(part => part.text).join('');
   if (!text.trim()) return { html: '', text: '' };
@@ -1749,21 +1835,21 @@ function renderScientificExcerpt(value, maxLength = DIGEST_EXCERPT_LENGTH) {
   return cut ? { html: `${html}…`, text: `${text}…` } : { html, text };
 }
 
-function isDiscovery(paper) {
+function isDiscovery(paper: DigestPaper) {
   return !(paper.matches || []).length;
 }
 
-function paperReason(paper) {
-  const names = (paper.matches || []).map(match => match.displayName).filter(Boolean);
+function paperReason(paper: DigestPaper) {
+  const names = (paper.matches || []).map(match => match.displayName).filter(Boolean) as string[];
   return names.length ? EMAIL_COPY.followReason(names) : EMAIL_COPY.outsideFollows;
 }
 
-function paperField(paper) {
+function paperField(paper: DigestPaper) {
   if (!Object.hasOwn(FIELD_INKS, paper.area || '')) return { label: '', ink: EMAIL_PALETTE.ink };
-  return { label: CATEGORIES[paper.area].label, ink: FIELD_INKS[paper.area] };
+  return { label: CATEGORIES[paper.area as keyof typeof FIELD_INKS].label, ink: FIELD_INKS[paper.area as keyof typeof FIELD_INKS] };
 }
 
-function paperByline(paper, { lead = false } = {}) {
+function paperByline(paper: DigestPaper, { lead = false } = {}) {
   const authors = (paper.authors || []).filter(Boolean);
   if (!authors.length) return EMAIL_COPY.authorUnavailable;
   const names = authors.length <= 3
@@ -1772,7 +1858,7 @@ function paperByline(paper, { lead = false } = {}) {
   return lead ? EMAIL_COPY.byline(names) : names;
 }
 
-function paperMeta(paper) {
+function paperMeta(paper: DigestPaper) {
   return [
     publicationLabel(paper.published),
     paper.journal,
@@ -1781,33 +1867,33 @@ function paperMeta(paper) {
   ].filter(Boolean).join(' · ');
 }
 
-function textKicker(paper) {
+function textKicker(paper: DigestPaper) {
   const field = paperField(paper).label.toUpperCase();
   return isDiscovery(paper)
     ? [EMAIL_COPY.outsideFollows.toUpperCase(), field].filter(Boolean).join(' · ')
     : [field, paperReason(paper)].filter(Boolean).join(' · ');
 }
 
-function digestSubject(lead, count) {
+function digestSubject(lead: DigestPaper | null, count: number) {
   if (!lead) return EMAIL_COPY.nameplate;
   const more = count > 1 ? EMAIL_COPY.andMore(count - 1) : '';
   return `${truncateAtWord(renderScientificText(lead.title), DIGEST_SUBJECT_MAX_LENGTH - more.length)}${more}`;
 }
 
-function monoStyle({ size = 11, color = EMAIL_PALETTE.tertiary, weight = 600, tracking = '0.06em' } = {}) {
+function monoStyle({ size = 11, color = EMAIL_PALETTE.tertiary, weight = 600, tracking = '0.06em' }: { size?: number; color?: string; weight?: number; tracking?: string } = {}) {
   return `font:${weight} ${size}px/1.5 ${EMAIL_FONTS.mono};letter-spacing:${tracking};text-transform:uppercase;color:${color}`;
 }
 
 // The field rule: the 34 × 3 bar the app sets above a headline.
-function fieldRule(ink) {
+function fieldRule(ink: string) {
   return `<div style="width:34px;height:3px;background:${ink};line-height:3px;font-size:0">&nbsp;</div>`;
 }
 
-function storyLink(paper, style) {
+function storyLink(paper: DigestPaper, style: string) {
   return `<a href="${escapeHtml(paper.url || PAPER_TOK_URL)}" style="${style}">${renderScientificHtml(paper.title)}</a>`;
 }
 
-function renderLeadStory(paper) {
+function renderLeadStory(paper: DigestPaper) {
   const field = paperField(paper);
   const reason = `<span style="color:${EMAIL_PALETTE.tertiary}">${escapeHtml(isDiscovery(paper) ? EMAIL_COPY.outsideFollows : paperReason(paper))}</span>`;
   const label = field.label ? `<span style="color:${field.ink}">${escapeHtml(field.label)}</span> · ` : '';
@@ -1825,7 +1911,7 @@ ${meta ? `<p style="margin:6px 0 0;${monoStyle({ tracking: '0.04em' })}">${escap
 </td></tr></table>`;
 }
 
-function renderBrief(paper) {
+function renderBrief(paper: DigestPaper) {
   const field = paperField(paper);
   const meta = paperMeta(paper);
   const small = { size: 10.5 };
@@ -1848,7 +1934,7 @@ ${meta ? `<p style="margin:5px 0 0;${monoStyle({ ...small, tracking: '0.04em' })
 }
 
 // Two columns of briefs; a phone stacks them (the media query in the head).
-function renderBriefs(papers) {
+function renderBriefs(papers: DigestPaper[]) {
   const rows = [];
   for (let index = 0; index < papers.length; index += 2) {
     const [first, second] = papers.slice(index, index + 2);
@@ -1865,11 +1951,11 @@ ${second
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${rows.join('')}</table>`;
 }
 
-function editionIndex(papers) {
+function editionIndex(papers: DigestPaper[]) {
   const fields = [...new Set(papers.map(paper => paper.area).filter(area => Object.hasOwn(FIELD_INKS, area || '')))];
   return [
     escapeHtml(EMAIL_COPY.paperCount(papers.length)),
-    ...fields.map(area => `<span style="color:${FIELD_INKS[area]}">${escapeHtml(CATEGORIES[area].label)}</span>`),
+    ...fields.map(area => `<span style="color:${FIELD_INKS[area as keyof typeof FIELD_INKS]}">${escapeHtml(CATEGORIES[area as keyof typeof FIELD_INKS].label)}</span>`),
   ].join('&nbsp;&nbsp;·&nbsp;&nbsp;');
 }
 
@@ -1883,7 +1969,7 @@ function editionIndex(papers) {
  * Tables and inline styles, because that is what mail clients render; the
  * one stylesheet only stacks the columns on a phone.
  */
-function renderDigest(subscription, papers, unsubscribeUrl, test, { now = Date.now() } = {}) {
+function renderDigest(subscription: Subscription, papers: DigestPaper[], unsubscribeUrl: string, test: boolean, { now = Date.now() } = {}) {
   const firstName = cleanText(subscription?.displayName, 160).split(' ')[0];
   const edition = firstName ? EMAIL_COPY.editionFor(firstName) : EMAIL_COPY.edition;
   const dateline = editionDate(now);
@@ -1960,7 +2046,7 @@ ${stories}
 </td></tr></table>
 </body></html>`;
 
-  const storyText = (paper, { isLead = false } = {}) => {
+  const storyText = (paper: DigestPaper, { isLead = false } = {}) => {
     const lines = [textKicker(paper), renderScientificText(paper.title)];
     if (isLead) {
       const excerpt = renderScientificExcerpt(paper.abstract).text;
@@ -1993,7 +2079,7 @@ ${stories}
 // shape survive a sweep for exactly this bug, so the contracts now match: a
 // caller signal is *added* to the deadline, never a replacement for it, and
 // `AbortSignal.any` keeps whichever fired first as the reason.
-function fetchWithDeadline(input, init, timeoutMs) {
+function fetchWithDeadline(input: RequestInfo | URL, init: RequestInit | undefined, timeoutMs: number) {
   const deadline = AbortSignal.timeout(timeoutMs);
   return fetch(input, {
     ...init,
@@ -2001,16 +2087,16 @@ function fetchWithDeadline(input, init, timeoutMs) {
   });
 }
 
-async function fetchEmailProvider(input, init) {
+async function fetchEmailProvider(input: RequestInfo | URL, init: RequestInit) {
   return fetchWithDeadline(input, init, EMAIL_PROVIDER_TIMEOUT_MS);
 }
 
-async function sendWithBrevo(subscription, content, unsubscribeUrl, env, { test = false, idempotencyKey } = {}) {
+async function sendWithBrevo(subscription: Subscription, content: DeliveryDraft['content'], unsubscribeUrl: string, env: WorkerEnv, { test = false, idempotencyKey }: { test?: boolean; idempotencyKey?: string } = {}) {
   const sender = resolveBrevoSender(env);
   const response = await fetchEmailProvider(`${BREVO_API}/smtp/email`, {
     method: 'POST',
     headers: {
-      'api-key': env.BREVO_API_KEY,
+      'api-key': env.BREVO_API_KEY!,
       accept: 'application/json',
       'content-type': 'application/json',
       'user-agent': 'PaperTok/1.0',
@@ -2034,7 +2120,7 @@ async function sendWithBrevo(subscription, content, unsubscribeUrl, env, { test 
       tags: [test ? 'papertok-test' : 'papertok-following-digest'],
     }),
   });
-  const payload = await response.json().catch(() => ({}));
+  const payload = await response.json<ProviderPayload>().catch((): ProviderPayload => ({}));
   if (!response.ok) {
     if (response.status === 400 && /duplicate_parameter/i.test(cleanText(
       `${payload?.code || ''} ${payload?.message || ''}`,
@@ -2051,7 +2137,7 @@ async function sendWithBrevo(subscription, content, unsubscribeUrl, env, { test 
   return payload?.messageId || payload?.messageIds?.[0] || null;
 }
 
-async function sendWithResend(subscription, content, unsubscribeUrl, env, { idempotencyKey } = {}) {
+async function sendWithResend(subscription: Subscription, content: DeliveryDraft['content'], unsubscribeUrl: string, env: WorkerEnv, { idempotencyKey }: { test?: boolean; idempotencyKey?: string } = {}) {
   const from = await resolveResendSender(env);
   const response = await fetchEmailProvider(`${RESEND_API}/emails`, {
     method: 'POST',
@@ -2059,7 +2145,7 @@ async function sendWithResend(subscription, content, unsubscribeUrl, env, { idem
       authorization: `Bearer ${env.RESEND_API_KEY}`,
       'content-type': 'application/json',
       'user-agent': 'PaperTok/1.0',
-      'idempotency-key': idempotencyKey,
+      'idempotency-key': idempotencyKey!,
     },
     body: JSON.stringify({
       from,
@@ -2073,7 +2159,7 @@ async function sendWithResend(subscription, content, unsubscribeUrl, env, { idem
       },
     }),
   });
-  const payload = await response.json().catch(() => ({}));
+  const payload = await response.json<ProviderPayload>().catch((): ProviderPayload => ({}));
   if (!response.ok) {
     const code = resendSendErrorCode(response.status, payload);
     console.error('Resend rejected digest', response.status, code);
@@ -2084,7 +2170,7 @@ async function sendWithResend(subscription, content, unsubscribeUrl, env, { idem
   return payload?.id || null;
 }
 
-function compactSourceReport(report = {}) {
+function compactSourceReport(report: SourceReportInput = {}) {
   return {
     attempted: Math.max(0, Number(report.attempted) || 0),
     succeeded: Math.max(0, Number(report.succeeded) || 0),
@@ -2104,13 +2190,13 @@ function compactSourceReport(report = {}) {
   };
 }
 
-function lastDeliveryStatus(status, at, {
+function lastDeliveryStatus(status: string, at: string, {
   kind = 'digest',
   paperCount = 0,
   partial = false,
   code,
   sourceReport,
-} = {}) {
+}: StatusOptions = {}) {
   return {
     status,
     kind,
@@ -2122,7 +2208,7 @@ function lastDeliveryStatus(status, at, {
   };
 }
 
-function deliveryStatePatch(currentState, delivery, status = 'sent') {
+function deliveryStatePatch(currentState: DeliveryState, delivery: Delivery, status = 'sent') {
   const sentAt = delivery.sentAt || new Date().toISOString();
   if (delivery.kind === 'test') {
     return {
@@ -2151,8 +2237,8 @@ function deliveryStatePatch(currentState, delivery, status = 'sent') {
   };
 }
 
-function papersForCurrentSubscription(papers, subscription, test) {
-  const sentKeys = test ? new Set() : new Set(subscription.sentPaperKeys || []);
+function papersForCurrentSubscription(papers: DigestPaper[], subscription: Subscription, test: boolean) {
+  const sentKeys = test ? new Set<string>() : new Set(subscription.sentPaperKeys || []);
   const followKeys = new Set((subscription.follows || []).map(follow => (
     `${follow.type}:${follow.canonicalId}`
   )));
@@ -2162,14 +2248,14 @@ function papersForCurrentSubscription(papers, subscription, test) {
   )).slice(0, subscription.maxPapers || 5);
 }
 
-function buildDeliveryDraft(subscription, papers, provider, env, {
+function buildDeliveryDraft(subscription: Subscription, papers: DigestPaper[], provider: string, env: WorkerEnv, {
   test = false,
   now = Date.now(),
   sourceReport = createSourceReport(),
-} = {}) {
+}: SendOptions = {}) {
   const workerBase = cleanText(env.WORKER_PUBLIC_URL, 500)
     || 'https://api.papertok.app';
-  const unsubscribeUrl = `${workerBase}/notifications/unsubscribe?token=${encodeURIComponent(subscription.unsubscribeToken)}`;
+  const unsubscribeUrl = `${workerBase}/notifications/unsubscribe?token=${encodeURIComponent(subscription.unsubscribeToken!)}`;
   return {
     provider,
     recipient: {
@@ -2189,10 +2275,10 @@ function buildDeliveryDraft(subscription, papers, provider, env, {
   };
 }
 
-async function deliverReservedDraft(env, reservationId, draft, now, {
+async function deliverReservedDraft(env: WorkerEnv, reservationId: string, draft: Omit<DeliveryDraft, 'recipient'> & { recipient: Pick<Subscription, 'email' | 'displayName'> }, now: number, {
   test = false,
   ledgerTime = now,
-} = {}) {
+}: { test?: boolean; ledgerTime?: number } = {}): Promise<DeliveryOutcome> {
   const idempotencyKey = reservationId;
   let providerId;
   try {
@@ -2206,7 +2292,7 @@ async function deliverReservedDraft(env, reservationId, draft, now, {
         { test, idempotencyKey },
       );
   } catch (error) {
-    if (error?.deliveryRejected) await releaseEmailDelivery(env, reservationId, now);
+    if ((error as EmailNotificationError)?.deliveryRejected) await releaseEmailDelivery(env, reservationId, now);
     if (error instanceof EmailNotificationError) throw error;
     const unknown = new EmailNotificationError('EMAIL_SEND_OUTCOME_UNKNOWN', 502);
     unknown.transient = true;
@@ -2222,16 +2308,16 @@ async function deliverReservedDraft(env, reservationId, draft, now, {
  * treating it as pending work spent every cron window of the following day
  * replaying a delivery that was already recorded.
  */
-function deliveryAlreadySettled(subscription, deliveredAt) {
+function deliveryAlreadySettled(subscription: Subscription, deliveredAt?: string) {
   const settled = Date.parse(subscription?.lastSentAt || '');
   const delivered = Date.parse(deliveredAt || '');
   return Number.isFinite(settled) && Number.isFinite(delivered) && settled >= delivered;
 }
 
-async function resumeScheduledDelivery(subscription, env, {
+async function resumeScheduledDelivery(subscription: Subscription, env: WorkerEnv, {
   now = Date.now(),
   key = `${SUBSCRIPTION_PREFIX}${subscription.uid}`,
-} = {}) {
+}: { now?: number; key?: string } = {}): Promise<DeliveryOutcome | null> {
   const ledgerTimes = [now, now - DAY_MS];
   for (const ledgerTime of ledgerTimes) {
     const reservationId = await buildDeliveryReservationId(subscription, { now: ledgerTime });
@@ -2272,12 +2358,12 @@ async function resumeScheduledDelivery(subscription, env, {
   return null;
 }
 
-async function sendDigest(subscription, papers, env, {
+async function sendDigest(subscription: Subscription, papers: DigestPaper[], env: WorkerEnv, {
   test = false,
   now = Date.now(),
   key = `${SUBSCRIPTION_PREFIX}${subscription.uid}`,
   sourceReport = createSourceReport(),
-} = {}) {
+}: SendOptions = {}): Promise<DeliveryOutcome> {
   const provider = configuredEmailProvider(env);
   if (!provider) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const reservationId = await buildDeliveryReservationId(subscription, { test, now });
@@ -2319,13 +2405,13 @@ async function sendDigest(subscription, papers, env, {
   return deliverReservedDraft(env, reservationId, reservedDraft, now, { test });
 }
 
-async function testSubscription(env, identity) {
+async function testSubscription(env: WorkerEnv, identity: EmailIdentity) {
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
   const subscription = await loadSubscriptionWithState(env, key);
   if (!subscription?.enabled) throw new EmailNotificationError('EMAIL_SUBSCRIPTION_REQUIRED', 409);
   if (!(subscription.follows || []).length) throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
-  const lastTestAt = Date.parse(subscription.lastTestAt || 0);
+  const lastTestAt = Date.parse((subscription.lastTestAt || 0) as string);
   if (lastTestAt && Date.now() - lastTestAt < 60_000) {
     throw new EmailNotificationError('EMAIL_TEST_RATE_LIMIT', 429);
   }
@@ -2343,19 +2429,19 @@ async function testSubscription(env, identity) {
     env,
     key,
     subscription,
-    state => deliveryStatePatch(state, result.delivery, result.reconciled ? 'reconciled' : 'sent'),
+    state => deliveryStatePatch(state, result.delivery!, result.reconciled ? 'reconciled' : 'sent'),
   );
   if (!updated) throw new EmailNotificationError('EMAIL_SUBSCRIPTION_REQUIRED', 409);
   return {
     ok: true,
     providerId: result.providerId || null,
-    paperCount: result.delivery.paperCount,
+    paperCount: result.delivery!.paperCount,
     followCount: updated.follows?.length || 0,
     preferences: publicSubscription(updated, identity.email),
   };
 }
 
-export async function handleEmailNotificationRequest(request, env, pathname) {
+export async function handleEmailNotificationRequest(request: Request, env: WorkerEnv, pathname: string) {
   const identity = await verifyFirebaseIdentity(request, env);
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
@@ -2392,7 +2478,7 @@ const UNSUBSCRIBE_PAGE_HEADERS = Object.freeze({
  * size). The CSP admits nothing else: no script and no web fonts, so each
  * voice falls back through its stack, as it does in most mail clients.
  */
-function unsubscribePage(status, { title, body, action }) {
+function unsubscribePage(status: number, { title, body, action }: { title: string; body: string; action: string }) {
   const { page, sheet, ink, inkHover, secondary, tertiary, frame, brand } = EMAIL_PALETTE;
   const { serif, sans, mono } = EMAIL_FONTS;
   const html = `<!doctype html><html lang="en"><head>
@@ -2435,11 +2521,11 @@ h1{margin:8px 0 12px;font:600 34px/1.12 ${serif};letter-spacing:-0.02em;text-wra
   return new Response(html, { status, headers: UNSUBSCRIBE_PAGE_HEADERS });
 }
 
-function pageButtonLink(href, label) {
+function pageButtonLink(href: string, label: string) {
   return `<a class="pt-button" href="${href}">${escapeHtml(label)}</a>`;
 }
 
-export async function handleEmailUnsubscribe(request, env) {
+export async function handleEmailUnsubscribe(request: Request, env: WorkerEnv) {
   const requestUrl = new URL(request.url);
   // English-only: a legacy `lang` query parameter (e.g. `lang=es` in links from
   // older emails) and the Accept-Language header are ignored.
@@ -2482,17 +2568,17 @@ export async function handleEmailUnsubscribe(request, env) {
   return unsubscribePage(200, { title, body, action });
 }
 
-export async function getEmailScheduleHealth(env, now = Date.now()) {
+export async function getEmailScheduleHealth(env: WorkerEnv, now = Date.now()): Promise<{ available: boolean; fresh: boolean; code?: string; scheduledAt?: string | null; completedAt?: string | null } & Partial<Omit<ScheduleSummary, 'scheduledAt' | 'completedAt'>>> {
   if (!env.NOTIFICATION_STORE) {
     return { available: false, fresh: false, code: 'EMAIL_SCHEDULE_NOT_CONFIGURED' };
   }
   try {
-    const summary = await env.NOTIFICATION_STORE.get(SCHEDULE_STATUS_KEY, 'json');
+    const summary = await env.NOTIFICATION_STORE.get<ScheduleSummary>(SCHEDULE_STATUS_KEY, 'json');
     if (!summary) return { available: false, fresh: false, code: 'EMAIL_SCHEDULE_NOT_RUN' };
     const completedAt = cleanText(summary.completedAt, 40);
     const completedTime = Date.parse(completedAt);
     const fresh = Number.isFinite(completedTime) && now - completedTime <= 30 * 60 * 60 * 1000;
-    const count = field => Math.max(0, Number(summary[field]) || 0);
+    const count = (field: keyof ScheduleSummary) => Math.max(0, Number(summary[field]) || 0);
     return {
       available: true,
       fresh,
@@ -2512,7 +2598,7 @@ export async function getEmailScheduleHealth(env, now = Date.now()) {
       skipped: count('skipped'),
       failed: count('failed'),
       failureCodes: Object.fromEntries(Object.entries(summary.failureCodes || {})
-        .map(([code, value]) => [cleanText(code, 100), Math.max(0, Number(value) || 0)])
+        .map(([code, value]): [string, number] => [cleanText(code, 100), Math.max(0, Number(value) || 0)])
         .filter(([code, value]) => code && value > 0)
         .slice(0, 24)),
     };
@@ -2521,7 +2607,7 @@ export async function getEmailScheduleHealth(env, now = Date.now()) {
   }
 }
 
-export async function checkEmailProviderHealth(env) {
+export async function checkEmailProviderHealth(env: WorkerEnv) {
   const provider = requestedEmailProvider(env);
   if (!configuredEmailProvider(env)) {
     return { configured: false, available: false, provider: provider || null, code: 'EMAIL_NOT_CONFIGURED' };
@@ -2531,7 +2617,7 @@ export async function checkEmailProviderHealth(env) {
     try {
       const response = await fetchWithDeadline(`${BREVO_API}/senders`, {
         headers: {
-          'api-key': env.BREVO_API_KEY,
+          'api-key': env.BREVO_API_KEY!,
           accept: 'application/json',
           'user-agent': 'PaperTok/1.0',
         },
@@ -2542,7 +2628,7 @@ export async function checkEmailProviderHealth(env) {
       if (!response.ok) {
         return { configured: true, available: false, provider, code: 'EMAIL_PROVIDER_UNAVAILABLE' };
       }
-      const payload = await response.json().catch(() => ({}));
+      const payload = await response.json<{ senders?: Array<{ active?: boolean; email?: string }> }>().catch(() => ({} as { senders?: Array<{ active?: boolean; email?: string }> }));
       const senderEmail = cleanText(env.BREVO_FROM_EMAIL, 320).toLowerCase();
       const activeSender = (payload?.senders || []).some(sender => (
         sender?.active && cleanText(sender.email, 320).toLowerCase() === senderEmail
@@ -2571,7 +2657,7 @@ export async function checkEmailProviderHealth(env) {
       },
     }, EMAIL_HEALTH_TIMEOUT_MS);
     if (response.status === 401 || response.status === 403) {
-      const errorPayload = await response.json().catch(() => ({}));
+      const errorPayload = await response.json<ProviderPayload>().catch((): ProviderPayload => ({}));
       // A "sending access" (restricted) Resend key can send emails but is not
       // allowed to list domains, so this probe comes back as 401 with
       // name "restricted_api_key". That is a VALID credential — the provider is
@@ -2594,7 +2680,7 @@ export async function checkEmailProviderHealth(env) {
       return { configured: true, available: false, provider, code: 'EMAIL_PROVIDER_AUTH_FAILED' };
     }
     if (!response.ok) return { configured: true, available: false, provider, code: 'EMAIL_PROVIDER_UNAVAILABLE' };
-    const payload = await response.json().catch(() => ({}));
+    const payload = await response.json<{ data?: Array<{ status?: string }> }>().catch(() => ({} as { data?: Array<{ status?: string }> }));
     const verified = (payload?.data || []).some(domain => domain.status === 'verified');
     return {
       configured: true,
@@ -2615,7 +2701,7 @@ export async function checkEmailProviderHealth(env) {
 // is not this week's digest: none of them starts a new digest before next
 // Monday. Wednesday remains recovery-only for Tuesday's reservations. A
 // failure stamped after `now` is not a failure of this week's past.
-function isWeeklySourceFailureRetry(subscription, now, dayStart) {
+function isWeeklySourceFailureRetry(subscription: Subscription, now: Date, dayStart: number) {
   if (now.getUTCDay() !== 2) return false;
   const weekStart = dayStart - DAY_MS;
   const lastSent = Date.parse(subscription.lastSentAt || '');
@@ -2630,18 +2716,18 @@ function isWeeklySourceFailureRetry(subscription, now, dayStart) {
 }
 
 // Monday, whatever frequency the record stored: see DIGEST_FREQUENCY.
-function isSubscriptionCalendarDue(subscription, now) {
+function isSubscriptionCalendarDue(subscription: Subscription, now: Date) {
   if (!subscription?.enabled) return false;
-  const lastSent = Date.parse(subscription.lastSentAt || 0);
+  const lastSent = Date.parse((subscription.lastSentAt || 0) as string);
   const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   return (now.getUTCDay() === 1 && (!lastSent || lastSent < dayStart))
     || isWeeklySourceFailureRetry(subscription, now, dayStart);
 }
 
-function isSubscriptionDue(subscription, now) {
+function isSubscriptionDue(subscription: Subscription, now: Date) {
   if (!isSubscriptionCalendarDue(subscription, now)) return false;
   const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const lastDeliveryAt = Date.parse(subscription.lastDelivery?.at || 0);
+  const lastDeliveryAt = Date.parse((subscription.lastDelivery?.at || 0) as string);
   if (!Number.isFinite(lastDeliveryAt) || lastDeliveryAt < dayStart) return true;
   const elapsed = now.getTime() - lastDeliveryAt;
   if (subscription.lastDelivery?.status === 'invalid') return false;
@@ -2650,15 +2736,15 @@ function isSubscriptionDue(subscription, now) {
   return true;
 }
 
-function shouldInspectPreviousDay(subscription, now) {
+function shouldInspectPreviousDay(subscription: Subscription, now: Date) {
   return isSubscriptionCalendarDue(subscription, now) || [2, 3].includes(now.getUTCDay());
 }
 
-function allowsNewScheduledDelivery(now) {
+function allowsNewScheduledDelivery(now: Date) {
   return !(now.getUTCHours() === 13 && now.getUTCMinutes() >= 40);
 }
 
-async function loadScheduleCursor(store) {
+async function loadScheduleCursor(store: KVNamespace) {
   try {
     return cleanText(await store.get(SCHEDULE_CURSOR_KEY), 2_000) || undefined;
   } catch {
@@ -2666,25 +2752,25 @@ async function loadScheduleCursor(store) {
   }
 }
 
-async function persistScheduleCursor(store, cursor) {
+async function persistScheduleCursor(store: KVNamespace, cursor: string | undefined) {
   if (cursor) await store.put(SCHEDULE_CURSOR_KEY, cursor);
   else await store.delete(SCHEDULE_CURSOR_KEY);
 }
 
-function failureCodeCounts(sourceReport, code) {
+function failureCodeCounts(sourceReport?: SourceReportInput, code?: string) {
   const counts = { ...(sourceReport?.failureCodes || {}) };
   if (code) counts[code] = (counts[code] || 0) + 1;
   return counts;
 }
 
-function mergeSourceReports(target, report) {
+function mergeSourceReports(target: SourceReport, report?: SourceReportInput) {
   if (!report) return target;
-  ['attempted', 'succeeded', 'failed', 'requestAttempts', 'retried', 'requiredFailed'].forEach((field) => {
+  (['attempted', 'succeeded', 'failed', 'requestAttempts', 'retried', 'requiredFailed'] as const).forEach((field) => {
     target[field] += Math.max(0, Number(report[field]) || 0);
   });
   Object.entries(report.bySource || {}).forEach(([source, counts]) => {
-    const bucket = sourceBucket(target, source);
-    ['attempted', 'succeeded', 'failed', 'requestAttempts', 'retried'].forEach((field) => {
+    const bucket = sourceBucket(target, source)!;
+    (['attempted', 'succeeded', 'failed', 'requestAttempts', 'retried'] as const).forEach((field) => {
       bucket[field] += Math.max(0, Number(counts?.[field]) || 0);
     });
   });
@@ -2694,12 +2780,12 @@ function mergeSourceReports(target, report) {
   return target;
 }
 
-async function recordSubscriptionOutcome(env, key, subscription, status, at, {
+async function recordSubscriptionOutcome(env: WorkerEnv, key: string, subscription: Subscription, status: string, at: string, {
   code,
   paperCount = 0,
   partial = false,
   sourceReport,
-} = {}) {
+}: StatusOptions = {}) {
   return updateDeliveryState(env, key, subscription, () => ({
     lastCheckedAt: at,
     lastDelivery: lastDeliveryStatus(status, at, {
@@ -2711,35 +2797,35 @@ async function recordSubscriptionOutcome(env, key, subscription, status, at, {
   }));
 }
 
-async function persistScheduledDelivery(env, key, subscription, delivery) {
+async function persistScheduledDelivery(env: WorkerEnv, key: string, subscription: Subscription, delivery: DeliveryOutcome): Promise<ScheduledOutcome> {
   const status = delivery.uncertain ? 'uncertain' : delivery.reconciled ? 'reconciled' : 'sent';
   const updated = await updateDeliveryState(
     env,
     key,
     subscription,
-    state => deliveryStatePatch(state, delivery.delivery, status),
+    state => deliveryStatePatch(state, delivery.delivery!, status),
   );
   if (!updated && delivery.sent) {
     return {
       sent: true,
-      partial: Boolean(delivery.delivery.partial),
-      sources: compactSourceReport(delivery.delivery.sources),
-      failureCodes: failureCodeCounts(delivery.delivery.sources),
+      partial: Boolean(delivery.delivery!.partial),
+      sources: compactSourceReport(delivery.delivery!.sources),
+      failureCodes: failureCodeCounts(delivery.delivery!.sources),
     };
   }
   if (!updated) return { skipped: true };
   return {
     [status]: true,
-    partial: Boolean(delivery.delivery.partial),
-    sources: compactSourceReport(delivery.delivery.sources),
+    partial: Boolean(delivery.delivery!.partial),
+    sources: compactSourceReport(delivery.delivery!.sources),
     failureCodes: failureCodeCounts(
-      delivery.delivery.sources,
+      delivery.delivery!.sources,
       delivery.uncertain ? 'EMAIL_SEND_OUTCOME_UNCONFIRMED' : undefined,
     ),
   };
 }
 
-async function processScheduledSubscription(env, key, now, openAlexRequests) {
+async function processScheduledSubscription(env: WorkerEnv, key: { name: string }, now: Date, openAlexRequests: OpenAlexRequests): Promise<ScheduledOutcome> {
   const subscription = await loadSubscriptionWithState(env, key.name);
   if (!subscription?.enabled || !shouldInspectPreviousDay(subscription, now)) return { skipped: true };
   const checkedAt = now.toISOString();
@@ -2801,8 +2887,8 @@ async function processScheduledSubscription(env, key, now, openAlexRequests) {
     if (delivery.cancelled) return { skipped: true, sources: compactSourceReport(sourceReport) };
     return persistScheduledDelivery(env, key.name, subscription, delivery);
   } catch (error) {
-    sourceReport ||= error?.sourceReport;
-    const code = cleanText(error?.code, 100) || 'EMAIL_SCHEDULE_PROCESSING_FAILED';
+    sourceReport ||= (error as EmailNotificationError)?.sourceReport;
+    const code = cleanText((error as EmailNotificationError)?.code, 100) || 'EMAIL_SCHEDULE_PROCESSING_FAILED';
     console.warn('Scheduled email subscription failed', code);
     try {
       await recordSubscriptionOutcome(
@@ -2814,7 +2900,7 @@ async function processScheduledSubscription(env, key, now, openAlexRequests) {
         { code, sourceReport },
       );
     } catch (recordError) {
-      console.warn('Could not persist subscription delivery failure', recordError?.message || recordError);
+      console.warn('Could not persist subscription delivery failure', (recordError as Error)?.message || recordError);
     }
     return {
       failed: true,
@@ -2825,13 +2911,13 @@ async function processScheduledSubscription(env, key, now, openAlexRequests) {
   }
 }
 
-async function recordScheduleOutcome(env, summary) {
+async function recordScheduleOutcome(env: WorkerEnv, summary: ScheduleSummary) {
   console.info('Email notification schedule completed', JSON.stringify(summary));
   if (!env.NOTIFICATION_STORE) return;
   try {
     await env.NOTIFICATION_STORE.put(SCHEDULE_STATUS_KEY, JSON.stringify(summary));
   } catch (error) {
-    console.warn('Could not persist email notification schedule outcome', error?.message || error);
+    console.warn('Could not persist email notification schedule outcome', (error as EmailNotificationError)?.message || error);
   }
   try {
     const historyKey = `${SCHEDULE_HISTORY_PREFIX}${summary.scheduledAt}`;
@@ -2839,11 +2925,11 @@ async function recordScheduleOutcome(env, summary) {
       expirationTtl: SCHEDULE_HISTORY_TTL_SECONDS,
     });
   } catch (error) {
-    console.warn('Could not persist email notification schedule history', error?.message || error);
+    console.warn('Could not persist email notification schedule history', (error as EmailNotificationError)?.message || error);
   }
 }
 
-export async function runEmailNotificationSchedule(env, scheduledTime = Date.now()) {
+export async function runEmailNotificationSchedule(env: WorkerEnv, scheduledTime = Date.now()) {
   const now = new Date(scheduledTime);
   const startedAt = Date.now();
   const provider = configuredEmailProvider(env);
@@ -2852,7 +2938,7 @@ export async function runEmailNotificationSchedule(env, scheduledTime = Date.now
     console.error('Email delivery ledger binding is missing; refusing to send without an atomic daily limit');
   }
   if (!env.NOTIFICATION_STORE || !provider || ledgerMissing) {
-    const summary = {
+    const summary: ScheduleSummary = {
       scheduledAt: now.toISOString(),
       completedAt: new Date().toISOString(),
       provider: provider || null,
@@ -2888,10 +2974,10 @@ export async function runEmailNotificationSchedule(env, scheduledTime = Date.now
   let skipped = 0;
   let failed = 0;
   const sources = createSourceReport();
-  const failureCodes = {};
+  const failureCodes: Record<string, number> = {};
   // One per run, never module-level: the isolate outlives the run, so a shared
   // map would hand one run's answers to the next and grow without bound.
-  const openAlexRequests = new Map();
+  const openAlexRequests: OpenAlexRequests = new Map();
   let inventoryComplete = false;
   while (!inventoryComplete) {
     const elapsed = Date.now() - startedAt;
@@ -2948,11 +3034,11 @@ export async function runEmailNotificationSchedule(env, scheduledTime = Date.now
     try {
       await persistScheduleCursor(env.NOTIFICATION_STORE, cursor);
     } catch (error) {
-      console.warn('Could not persist email schedule cursor', error?.message || error);
+      console.warn('Could not persist email schedule cursor', (error as EmailNotificationError)?.message || error);
     }
     if (!batch.length && !cursor) inventoryComplete = true;
   }
-  const summary = {
+  const summary: ScheduleSummary = {
     scheduledAt: now.toISOString(),
     completedAt: new Date().toISOString(),
     provider,

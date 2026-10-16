@@ -43,6 +43,10 @@ export function normalizeCitationRows(rows, relation, currentDoi = '') {
   });
 }
 
+/**
+ * @param {Array<import('../models/Paper.ts').Paper | null>} papers
+ * @returns {import('../models/Paper.ts').Paper[]}
+ */
 export function deduplicateCitationGraphPapers(papers, limit = 8) {
   const seen = new Set();
   return (Array.isArray(papers) ? papers : []).filter(paper => {

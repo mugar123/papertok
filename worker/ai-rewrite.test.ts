@@ -1,3 +1,19 @@
+import type { TestNamespace } from './test-types.ts';
+import type { WorkerEnv } from './env.ts';
+import type { RewriteSection } from './ai-rewrite.ts';
+import type { PaperTextConversion } from './paper-text.ts';
+import type { NanMessage } from './nan-client.ts';
+type MockProvider = (url: RequestInfo | URL, options?: RequestInit) => Response | Promise<Response>;
+type HarnessOptions = { pdf?: MockProvider; provider?: MockProvider };
+type RewriteEvent = Partial<RewriteSection> & {
+  type: string; language?: string; code?: string; detail?: string; partial?: boolean; truncated?: boolean;
+  finishReason?: string; sectionCount?: number; cached?: boolean; model?: string; provider?: string;
+  sourceBasis?: string; remainingUses?: number; quota?: { remainingUses?: number; resetAt?: string; scope?: string; retryAfterSeconds?: number };
+};
+type ModelBody = { stream?: boolean; model: string; messages: NanMessage[]; chat_template_kwargs: { enable_thinking: boolean }; contents: Array<{ parts: Array<{ text: string; inlineData?: { mimeType: string; data: string } }> }> };
+type LedgerState = { reserve: number; release: number; periodKeys: string[] };
+type RewriteLog = Record<string, unknown>;
+import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
@@ -87,11 +103,11 @@ test('parses a section line and keeps only known kinds', () => {
     highlights: [{ paragraphIndex: 0, quote: 'They used a laser.', kind: 'method' }],
   }), 0);
 
-  assert.equal(section.id, 's0');
-  assert.equal(section.kind, 'methods');
-  assert.equal(section.originalHeading, '2. Methods');
-  assert.deepEqual(section.paragraphs, ['They used a laser.', 'Twice.']);
-  assert.equal(section.highlights.length, 1);
+  assert.equal(section!.id, 's0');
+  assert.equal(section!.kind, 'methods');
+  assert.equal(section!.originalHeading, '2. Methods');
+  assert.deepEqual(section!.paragraphs, ['They used a laser.', 'Twice.']);
+  assert.equal(section!.highlights.length, 1);
 });
 
 test('an unknown section kind degrades to other rather than being dropped', () => {
@@ -99,8 +115,8 @@ test('an unknown section kind degrades to other rather than being dropped', () =
     kind: 'appendix-b',
     paragraphs: ['Content.'],
   }), 3);
-  assert.equal(section.kind, 'other');
-  assert.equal(section.id, 's3');
+  assert.equal(section!.kind, 'other');
+  assert.equal(section!.id, 's3');
 });
 
 test('discards highlights that point outside the section paragraphs', () => {
@@ -112,8 +128,8 @@ test('discards highlights that point outside the section paragraphs', () => {
       { paragraphIndex: 0, quote: 'Only one paragraph here.' },
     ],
   }), 0);
-  assert.equal(section.highlights.length, 1);
-  assert.equal(section.highlights[0].paragraphIndex, 0);
+  assert.equal(section!.highlights.length, 1);
+  assert.equal(section!.highlights[0].paragraphIndex, 0);
 });
 
 test('a section with no paragraphs is not a section', () => {
@@ -125,12 +141,12 @@ test('a section with no paragraphs is not a section', () => {
 test('survives a model that wraps the lines in an array anyway', () => {
   assert.equal(parseRewriteSectionLine('[', 0), null);
   const section = parseRewriteSectionLine(`  ${JSON.stringify({ paragraphs: ['Kept.'] })},`, 0);
-  assert.deepEqual(section.paragraphs, ['Kept.']);
+  assert.deepEqual(section!.paragraphs, ['Kept.']);
 });
 
 test('repairs LaTeX backslashes the model failed to escape', () => {
   const section = parseRewriteSectionLine('{"paragraphs":["The value $\\omega_b$ is fixed."]}', 0);
-  assert.equal(section.paragraphs[0], 'The value $\\omega_b$ is fixed.');
+  assert.equal(section!.paragraphs[0], 'The value $\\omega_b$ is fixed.');
 });
 
 // `\theta` opens with `\t`, which JSON.parse would read as a tab; the `\n`
@@ -140,8 +156,8 @@ test('repairs raw LaTeX backslashes without corrupting valid JSON escapes', () =
     String.raw`{"paragraphs":["Uses $X_\theta = \omega_b$ and \mathrm{Re}(A).","Line one\nLine two"]}`,
     0,
   );
-  assert.equal(section.paragraphs[0], String.raw`Uses $X_\theta = \omega_b$ and \mathrm{Re}(A).`);
-  assert.equal(section.paragraphs[1], 'Line one\nLine two');
+  assert.equal(section!.paragraphs[0], String.raw`Uses $X_\theta = \omega_b$ and \mathrm{Re}(A).`);
+  assert.equal(section!.paragraphs[1], 'Line one\nLine two');
 });
 
 test('a malformed line costs one section, not the whole rewrite', () => {
@@ -192,7 +208,7 @@ test('stops at the section cap', () => {
  */
 test('counts the parseable lines it drops past the section cap, and only those', () => {
   const assembler = createSectionAssembler();
-  const line = text => JSON.stringify({ paragraphs: [text] });
+  const line = (text: string) => JSON.stringify({ paragraphs: [text] });
   const kept = assembler.push([
     ...Array.from({ length: 14 }, (_, index) => line(`Section ${index}.`)),
     // Past the cap, but not a section: there was nothing to lose.
@@ -261,7 +277,7 @@ test('holds a partial SSE line until its newline arrives', () => {
 test('a CRLF stream yields sections end to end', () => {
   const split = createSseLineSplitter();
   const assembler = createSectionAssembler();
-  const frame = (text) => `data: ${JSON.stringify({
+  const frame = (text: string) => `data: ${JSON.stringify({
     candidates: [{ content: { parts: [{ text }] } }],
   })}\r\n\r\n`;
 
@@ -306,7 +322,7 @@ test('the same paper and settings reuse one cache key', async () => {
  */
 test('the same arXiv paper hashes to one key whatever mirror named it', async () => {
   const base = { title: 'T', arxivId: '2401.00001' };
-  const key = url => rewriteCacheKey({ ...base, pdfUrl: url }, 'simple', 'en', 'm');
+  const key = (url: string) => rewriteCacheKey({ ...base, pdfUrl: url }, 'simple', 'en', 'm');
 
   const canonical = await key('https://arxiv.org/pdf/2401.00001');
   assert.equal(await key('https://arxiv.org/pdf/2401.00001v2.pdf'), canonical);
@@ -384,7 +400,7 @@ test('salvage respects the section cap', () => {
 });
 
 test('salvage counts the sections it drops past the cap, and only those', () => {
-  const objects = Array.from({ length: 16 }, (_, index) => ({ paragraphs: [`Section ${index}.`] }));
+  const objects: Array<{ paragraphs?: string[]; heading?: string }> = Array.from({ length: 16 }, (_, index) => ({ paragraphs: [`Section ${index}.`] }));
   // Past the cap, but not a section: there was nothing to lose.
   objects.splice(15, 0, { heading: 'No paragraphs' });
   const { sections, dropped } = salvageSections(JSON.stringify(objects, null, 2));
@@ -393,12 +409,12 @@ test('salvage counts the sections it drops past the cap, and only those', () => 
 });
 
 /** A provider body that hands over one chunk at a time, like a real socket. */
-function fakeSseBody(chunks) {
+function fakeSseBody(chunks: string[]) {
   let index = 0;
   return {
     getReader() {
       return {
-        read: async () => index < chunks.length
+        read: async (): Promise<ReadableStreamReadResult<Uint8Array>> => index < chunks.length
           ? { done: false, value: new TextEncoder().encode(chunks[index++]) }
           : { done: true, value: undefined },
         releaseLock() {},
@@ -407,7 +423,7 @@ function fakeSseBody(chunks) {
   };
 }
 
-function sseFrame(text, extra = {}) {
+function sseFrame(text: string, extra = {}) {
   return `data: ${JSON.stringify({
     candidates: [{ content: { parts: [{ text }] }, ...extra }],
   })}\r\n\r\n`;
@@ -439,7 +455,7 @@ test('reassembles a section split across provider chunks', async () => {
   }
   assert.equal(sections.length, 1);
   assert.equal(sections[0].paragraphs[0], 'Split across two frames.');
-  assert.equal(end.rawText, line);
+  assert.equal(end!.rawText, line);
 });
 
 test('reports the finish reason and raw text when nothing parses', async () => {
@@ -473,42 +489,42 @@ const REWRITE_ENV = {
  * and records the period it was asked for: a refund charged to tomorrow's day is
  * indistinguishable from no refund at all for the reader who lost the use.
  */
-function countingQuotaLedger(state, accepted = true) {
+function countingQuotaLedger(state: LedgerState, accepted = true) {
   return {
-    idFromName: name => {
+    idFromName: (name: string): unknown => {
       state.periodKeys.push(String(name));
       return `quota-${name}`;
     },
-    get: () => ({
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({
       fetch: async (_url, options) => {
-        const { action } = JSON.parse(options.body);
-        state[action] += 1;
+        const { action } = JSON.parse(options!.body as string);
+        state[action as keyof Pick<LedgerState, 'reserve' | 'release'>] += 1;
         return new Response(JSON.stringify(accepted
           ? { accepted: true, remaining: 4 }
           : { accepted: false, scope: 'global' }));
       },
-    }),
-  };
+    })) as TestNamespace['get'],
+  } as Env['REQUEST_QUOTA_LEDGER'];
 }
 
-function newLedgerState() {
+function newLedgerState(): LedgerState {
   return { reserve: 0, release: 0, periodKeys: [] };
 }
 
 /** A KV namespace that remembers what the rewrite decided was worth keeping. */
 function fakeRewriteStore() {
-  const entries = new Map();
+  const entries = new Map<string, { value: string; ttl?: number }>();
   return {
     entries,
-    get: async (key, options) => {
+    get: async (key: string, options?: { type?: string }) => {
       const stored = entries.get(key);
       if (stored === undefined) return null;
       return options?.type === 'json' ? JSON.parse(stored.value) : stored.value;
     },
-    put: async (key, value, options) => {
+    put: async (key: string, value: string, options?: { expirationTtl?: number }) => {
       entries.set(key, { value, ttl: options?.expirationTtl });
     },
-  };
+  } as KVNamespace & { entries: typeof entries };
 }
 
 function rewriteRequest(overrides = {}) {
@@ -528,11 +544,11 @@ const readablePdf = () => new Response(new Uint8Array([0x25, 0x50, 0x44, 0x46]),
   headers: { 'content-type': 'application/pdf' },
 });
 
-const sseResponse = frames => new Response(frames.join(''), {
+const sseResponse = (frames: string[]) => new Response(frames.join(''), {
   headers: { 'content-type': 'text/event-stream' },
 });
 
-const sectionLine = (kind, text) => `${JSON.stringify({ kind, paragraphs: [text] })}\n`;
+const sectionLine = (kind: string, text: string) => `${JSON.stringify({ kind, paragraphs: [text] })}\n`;
 
 /**
  * The handler with nothing real behind it: a signed-in caller seeded into the
@@ -542,7 +558,7 @@ const sectionLine = (kind, text) => `${JSON.stringify({ kind, paragraphs: [text]
 /**
  * Every rewrite waits for its own summary line before the next test starts.
  *
- * The line is written by the stream's PRODUCER (ai-rewrite.js), which can
+ * The line is written by the stream's PRODUCER (ai-rewrite.ts), which can
  * still be finishing after the reader has seen the last chunk — so the test's
  * `await` is not the moment the logging is over. A line left behind this way
  * lands in the NEXT test's capture, and a test that asserts one line sees
@@ -561,30 +577,30 @@ const sectionLine = (kind, text) => `${JSON.stringify({ kind, paragraphs: [text]
  * from spinning. It chains onto whatever console is installed, so a capture
  * set up around it still receives everything.
  */
-async function withRewriteHarness({ pdf = readablePdf, provider }, callback) {
+async function withRewriteHarness<Result>({ pdf = readablePdf, provider }: HarnessOptions, callback: () => Promise<Result>) {
   const originalFetch = globalThis.fetch;
-  const originalCaches = globalThis.caches;
+  const originalCaches = (globalThis as TestGlobals).caches;
   const outerInfo = console.info;
   const outerWarn = console.warn;
   let logged = 0;
-  const watch = (prior) => (label, payload) => {
+  const watch = (prior: typeof console.info) => (label: string, payload: string) => {
     if (label === 'AI rewrite') logged += 1;
     prior(label, payload);
   };
   console.info = watch(outerInfo);
   console.warn = watch(outerWarn);
-  globalThis.caches = {
+  (globalThis as TestGlobals).caches = {
     default: {
-      match: async request => (String(request.url).includes('/auth/')
+      match: async (request): Promise<Response | null | undefined> => (String((request as Request).url).includes('/auth/')
         ? new Response(JSON.stringify({ uid: 'user-1' }), { headers: { 'content-type': 'application/json' } })
         : null),
-      put: async () => undefined,
+      put: async (): Promise<unknown> => undefined,
     },
   };
-  const isProvider = url => ['generativelanguage.googleapis.com', 'api.nan.builders']
+  const isProvider = (url: RequestInfo<unknown,CfProperties<unknown>>|URL) => ['generativelanguage.googleapis.com', 'api.nan.builders']
     .some(host => String(url).includes(host));
   globalThis.fetch = async (url, options) => (isProvider(url)
-    ? provider(url, options)
+    ? provider!(url, options)
     : pdf(url, options));
   try {
     const result = await callback();
@@ -599,13 +615,13 @@ async function withRewriteHarness({ pdf = readablePdf, provider }, callback) {
     console.info = outerInfo;
     console.warn = outerWarn;
     globalThis.fetch = originalFetch;
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 }
 
-async function readNdjson(response) {
-  return (await response.text()).trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+async function readNdjson(response: Response): Promise<RewriteEvent[]> {
+  return (await response.text()).trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
 }
 
 /**
@@ -617,7 +633,7 @@ async function readNdjson(response) {
  * underneath a rewrite that has not started working yet, and the test then
  * measures the open internet.
  */
-async function runRewrite(harnessOptions, env, requestOverrides) {
+async function runRewrite(harnessOptions: HarnessOptions, env: WorkerEnv, requestOverrides?: Record<string, unknown>) {
   return withRewriteHarness(harnessOptions, async () => {
     const response = await handlePaperRewrite(rewriteRequest(requestOverrides), env);
     return { response, events: await readNdjson(response) };
@@ -636,7 +652,7 @@ async function runRewrite(harnessOptions, env, requestOverrides) {
  * duration.
  */
 function heldOpen() {
-  let release;
+  let release!: (value?: unknown) => void;
   const gate = new Promise(resolve => { release = resolve; });
   return { gate, release };
 }
@@ -650,11 +666,11 @@ const SILENCE = Symbol('nothing reached the reader');
  * arrive, so a rewrite fails at 45s not because the model is slow but because
  * nothing at all came back while it worked. That is what this measures.
  */
-async function firstEventWithin(pending, ms) {
-  let timer;
+async function firstEventWithin(pending: Promise<Response>, ms: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const silence = new Promise(resolve => { timer = setTimeout(() => resolve(SILENCE), ms); });
-  const firstEvent = pending.then(async (response) => {
-    const reader = response.body.getReader();
+  const firstEvent = pending.then(async (response: Response) => {
+    const reader = response.body!.getReader();
     const { value } = await reader.read();
     reader.releaseLock();
     return JSON.parse(new TextDecoder().decode(value).trim().split('\n')[0]);
@@ -697,7 +713,7 @@ test('the reader hears from the worker while the model is still thinking', async
       // Draining matters: a transform nobody reads blocks its writer on the
       // second line, and the pump then never reaches the `close` that lets the
       // test runner exit.
-      await pending.then(response => response.body.cancel()).catch(() => {});
+      await pending.then(response => response.body!.cancel()).catch(() => {});
     }
   });
 });
@@ -723,7 +739,7 @@ test('the reader hears from the worker while the PDF is still downloading', asyn
       assert.equal(first.type, 'meta');
     } finally {
       download.release();
-      await pending.then(response => response.body.cancel()).catch(() => {});
+      await pending.then(response => response.body!.cancel()).catch(() => {});
     }
   });
 });
@@ -742,7 +758,7 @@ test('gives the daily use back when the PDF never downloads', async () => {
   // The download happens behind the committed 200 now, so its refusal is a line
   // rather than a 422. The reader reads `code` either way.
   assert.equal(response.status, 200);
-  assert.equal(events.at(-1).code, 'AI_REWRITE_NEEDS_FULL_TEXT');
+  assert.equal(events.at(-1)!.code, 'AI_REWRITE_NEEDS_FULL_TEXT');
   assert.equal(state.reserve, 1);
   // The paper was accepted on its PDF before anything was counted, so a download
   // that fails is the source being unreachable — and Gemini was never asked, so
@@ -774,9 +790,9 @@ test('an HTML interstitial in place of the PDF is reported as such', async () =>
     REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
   });
 
-  const error = events.find(event => event.type === 'error');
-  assert.equal(error.code, 'AI_REWRITE_NEEDS_FULL_TEXT');
-  assert.equal(error.detail, 'not_pdf');
+  const error = events.find((event) => event.type === 'error');
+  assert.equal(error!.code, 'AI_REWRITE_NEEDS_FULL_TEXT');
+  assert.equal(error!.detail, 'not_pdf');
 });
 
 test('a source that never answers is told apart from one that answered wrong', async () => {
@@ -788,7 +804,7 @@ test('a source that never answers is told apart from one that answered wrong', a
     REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
   });
 
-  assert.equal(events.at(-1).detail, 'unreachable');
+  assert.equal(events.at(-1)!.detail, 'unreachable');
 });
 
 test('gives the daily use back when the provider refuses before the stream starts', async () => {
@@ -801,7 +817,7 @@ test('gives the daily use back when the provider refuses before the stream start
     REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
   });
 
-  assert.equal(events.at(-1).code, 'AI_BUSY');
+  assert.equal(events.at(-1)!.code, 'AI_BUSY');
   assert.equal(state.release, 1);
 });
 
@@ -821,8 +837,8 @@ test('gives the daily use back when the provider hits its own daily wall', async
   // The scope has to survive the move into the stream: without it the reader
   // cannot tell somebody else's ceiling from its own, and its own is the one
   // that means "come back tomorrow".
-  assert.equal(events.at(-1).code, 'AI_QUOTA_EXHAUSTED');
-  assert.equal(events.at(-1).quota.scope, 'provider');
+  assert.equal(events.at(-1)!.code, 'AI_QUOTA_EXHAUSTED');
+  assert.equal(events.at(-1)!.quota!.scope, 'provider');
   // Somebody else's ceiling, not this reader's: their own use is still theirs.
   assert.equal(state.release, 1);
 });
@@ -855,8 +871,8 @@ test('gives the daily use back when the stream dies after the 200 has committed'
   // stream — but the reservation is exactly as unspent as it would have been a
   // millisecond earlier, when there was still a status line to fail with.
   assert.equal(response.status, 200);
-  assert.equal(events.at(-1).type, 'error');
-  assert.equal(events.at(-1).partial, true);
+  assert.equal(events.at(-1)!.type, 'error');
+  assert.equal(events.at(-1)!.partial, true);
   assert.equal(state.release, 1);
   assert.equal(store.entries.size, 0);
 });
@@ -871,7 +887,7 @@ test('does not refund a rewrite the provider actually produced', async () => {
     REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
   });
 
-  assert.equal(events.at(-1).code, 'AI_INVALID_RESPONSE');
+  assert.equal(events.at(-1)!.code, 'AI_INVALID_RESPONSE');
   // Gemini read the PDF and billed for it. Refunding this would buy unlimited
   // free retries against the provider's own quota.
   assert.equal(state.release, 0);
@@ -927,8 +943,8 @@ test('does not cache a rewrite a filter cut short, and says so on the wire', asy
   // well produce the whole thing, so parking this one for thirty days would
   // freeze a transient refusal into the answer everybody gets.
   assert.equal(store.entries.size, 0);
-  assert.equal(events.at(-1).truncated, true);
-  assert.equal(events.at(-1).finishReason, 'SAFETY');
+  assert.equal(events.at(-1)!.truncated, true);
+  assert.equal(events.at(-1)!.finishReason, 'SAFETY');
   // The model did the work it was asked for; the use is not coming back.
   assert.equal(state.release, 0);
 });
@@ -959,9 +975,9 @@ test('a rewrite cut off at the token ceiling is cached, and replayed as the half
     ]),
   }, env);
 
-  assert.equal(first.at(-1).type, 'done');
-  assert.equal(first.at(-1).truncated, true);
-  assert.equal(first.at(-1).finishReason, 'MAX_TOKENS');
+  assert.equal(first.at(-1)!.type, 'done');
+  assert.equal(first.at(-1)!.truncated, true);
+  assert.equal(first.at(-1)!.finishReason, 'MAX_TOKENS');
   assert.equal(store.entries.size, 1);
 
   const { events: second } = await runRewrite({
@@ -971,8 +987,8 @@ test('a rewrite cut off at the token ceiling is cached, and replayed as the half
 
   assert.deepEqual(second.map(event => event.type), ['meta', 'section', 'done']);
   assert.equal(second[0].cached, true);
-  assert.equal(second[1].paragraphs[0], 'The setup.');
-  assert.equal(second.at(-1).truncated, true);
+  assert.equal(second[1].paragraphs![0], 'The setup.');
+  assert.equal(second.at(-1)!.truncated, true);
   // Served from KV: the second reader pays nothing and waits for nothing.
   assert.equal(state.reserve, 1);
   assert.equal(state.release, 0);
@@ -997,7 +1013,7 @@ test('a rewrite that finished is not replayed as truncated', async () => {
     provider: async () => { throw new Error('A cache hit must not reach the model'); },
   }, env);
 
-  assert.equal(events.at(-1).truncated, undefined);
+  assert.equal(events.at(-1)!.truncated, undefined);
 });
 
 test('caches a rewrite that finished, and replays it without a second reservation', async () => {
@@ -1016,8 +1032,8 @@ test('caches a rewrite that finished, and replays it without a second reservatio
     ]),
   }, env);
 
-  assert.equal(first.at(-1).type, 'done');
-  assert.equal(first.at(-1).truncated, undefined);
+  assert.equal(first.at(-1)!.type, 'done');
+  assert.equal(first.at(-1)!.truncated, undefined);
   assert.equal(store.entries.size, 1);
   assert.equal([...store.entries.values()][0].ttl, 30 * 24 * 60 * 60);
 
@@ -1028,7 +1044,7 @@ test('caches a rewrite that finished, and replays it without a second reservatio
 
   assert.deepEqual(second.map(event => event.type), ['meta', 'section', 'done']);
   assert.equal(second[0].cached, true);
-  assert.equal(second[1].paragraphs[0], 'The setup.');
+  assert.equal(second[1].paragraphs![0], 'The setup.');
   // A rewrite served from KV costs the provider nothing, so it must cost the
   // reader nothing either.
   assert.equal(state.reserve, 1);
@@ -1040,7 +1056,7 @@ test('caches a rewrite that finished, and replays it without a second reservatio
    ============================================================ */
 
 /** Which model a provider call was addressed to. */
-const modelFromUrl = url => String(url).match(/\/models\/([^:]+):/)?.[1] || '';
+const modelFromUrl = (url: unknown) => String(url).match(/\/models\/([^:]+):/)?.[1] || '';
 
 /**
  * A provider that fails the primary model and answers on any other one.
@@ -1049,8 +1065,8 @@ const modelFromUrl = url => String(url).match(/\/models\/([^:]+):/)?.[1] || '';
  * "it retried" and "it retried on the lighter model" are different claims and
  * only the sequence separates them.
  */
-function failingPrimary(models, status = 503, body = { error: { message: 'overloaded' } }) {
-  return async (url) => {
+function failingPrimary(models: string[], status = 503, body = { error: { message: 'overloaded' } }) {
+  return async (url: RequestInfo | URL) => {
     const model = modelFromUrl(url);
     models.push(model);
     return model === 'gemini-3.5-flash'
@@ -1069,7 +1085,7 @@ function failingPrimary(models, status = 503, body = { error: { message: 'overlo
  */
 test('a 503 from flash before any token is retried once on the fallback model', async () => {
   const state = newLedgerState();
-  const models = [];
+  const models: string[] = [];
 
   const { events } = await runRewrite({ provider: failingPrimary(models) }, {
     ...REWRITE_ENV,
@@ -1078,17 +1094,17 @@ test('a 503 from flash before any token is retried once on the fallback model', 
   });
 
   assert.deepEqual(models, ['gemini-3.5-flash', 'gemini-3.5-flash-lite']);
-  assert.equal(events.at(-1).type, 'done');
+  assert.equal(events.at(-1)!.type, 'done');
   // Said on the wire, because `meta` went out before anybody knew which model
   // would write the paper.
-  assert.equal(events.at(-1).model, 'gemini-3.5-flash-lite');
-  assert.equal(events.some(event => event.type === 'ping' && event.model === 'gemini-3.5-flash-lite'), true);
+  assert.equal(events.at(-1)!.model, 'gemini-3.5-flash-lite');
+  assert.equal(events.some((event) => event.type === 'ping' && event.model === 'gemini-3.5-flash-lite'), true);
   // The rewrite arrived: there is nothing to give back.
   assert.equal(state.release, 0);
 });
 
 test('the provider own daily wall on flash is worth trying on flash-lite', async () => {
-  const models = [];
+  const models: string[] = [];
 
   const { events } = await runRewrite({
     provider: failingPrimary(models, 429, { error: { message: 'Quota exceeded for GenerateRequestsPerDay' } }),
@@ -1099,11 +1115,11 @@ test('the provider own daily wall on flash is worth trying on flash-lite', async
   });
 
   assert.deepEqual(models, ['gemini-3.5-flash', 'gemini-3.5-flash-lite']);
-  assert.equal(events.at(-1).type, 'done');
+  assert.equal(events.at(-1)!.type, 'done');
 });
 
 test('a refusal the lighter model would repeat is not retried', async () => {
-  const models = [];
+  const models: string[] = [];
 
   // A 400 is deterministic: the same body gets the same no. Retrying it would
   // buy a second wait for the identical answer.
@@ -1116,11 +1132,11 @@ test('a refusal the lighter model would repeat is not retried', async () => {
   });
 
   assert.deepEqual(models, ['gemini-3.5-flash']);
-  assert.equal(events.at(-1).code, 'AI_INVALID_REQUEST_UPSTREAM');
+  assert.equal(events.at(-1)!.code, 'AI_INVALID_REQUEST_UPSTREAM');
 });
 
 test('with no fallback configured the first refusal is the answer', async () => {
-  const models = [];
+  const models: string[] = [];
 
   const { events } = await runRewrite({ provider: failingPrimary(models) }, {
     ...REWRITE_ENV,
@@ -1128,11 +1144,11 @@ test('with no fallback configured the first refusal is the answer', async () => 
   });
 
   assert.deepEqual(models, ['gemini-3.5-flash']);
-  assert.equal(events.at(-1).code, 'AI_BUSY');
+  assert.equal(events.at(-1)!.code, 'AI_BUSY');
 });
 
 test('a fallback that is the same model is not a fallback', async () => {
-  const models = [];
+  const models: string[] = [];
 
   const { events } = await runRewrite({ provider: failingPrimary(models) }, {
     ...REWRITE_ENV,
@@ -1141,7 +1157,7 @@ test('a fallback that is the same model is not a fallback', async () => {
   });
 
   assert.deepEqual(models, ['gemini-3.5-flash']);
-  assert.equal(events.at(-1).code, 'AI_BUSY');
+  assert.equal(events.at(-1)!.code, 'AI_BUSY');
 });
 
 /* ============================================================
@@ -1155,8 +1171,8 @@ test('a fallback that is the same model is not a fallback', async () => {
  * never sees, so the only way to know what ends up inside it is to read the
  * request that left.
  */
-async function runRewriteCapturingBodies(harnessOptions, env, requestOverrides) {
-  const bodies = [];
+async function runRewriteCapturingBodies(harnessOptions: HarnessOptions, env: WorkerEnv, requestOverrides?: Record<string, unknown>) {
+  const bodies: ModelBody[] = [];
   const provider = harnessOptions.provider ?? (async () => sseResponse([
     sseFrame(sectionLine('intro', 'It began.')),
     sseFrame('', { finishReason: 'STOP' }),
@@ -1164,7 +1180,7 @@ async function runRewriteCapturingBodies(harnessOptions, env, requestOverrides) 
   const result = await runRewrite({
     ...harnessOptions,
     provider: async (url, options) => {
-      bodies.push(JSON.parse(options.body));
+      bodies.push(JSON.parse(options!.body as string));
       return provider(url, options);
     },
   }, env, requestOverrides);
@@ -1194,7 +1210,7 @@ test('the rewrite prompt carries only identity metadata, never client-controlled
 });
 
 /** A body that arrives in pieces, which is how a `content-length` cap is dodged. */
-function chunkedBody(bytes, size = 65_536) {
+function chunkedBody(bytes: Uint8Array<ArrayBufferLike>, size = 65_536) {
   return new ReadableStream({
     start(controller) {
       for (let i = 0; i < bytes.length; i += size) controller.enqueue(bytes.subarray(i, i + size));
@@ -1214,13 +1230,13 @@ test('an oversized chunked rewrite body is cut off at the cap', { timeout: 10_00
     headers: { authorization: 'Bearer test-token' },
     body: chunkedBody(bytes),
     duplex: 'half',
-  });
+  } as RequestInit & { duplex: 'half' });
 
   await withRewriteHarness({
     provider: async () => { throw new Error('a refused body must never reach the model'); },
   }, () => assert.rejects(
     handlePaperRewrite(request, REWRITE_ENV),
-    error => error.code === 'AI_REQUEST_TOO_LARGE' && error.status === 413,
+    error => (error as Error & { code?: string; status?: number }).code === 'AI_REQUEST_TOO_LARGE' && (error as Error & { code?: string; status?: number }).status === 413,
   ));
 });
 
@@ -1229,11 +1245,11 @@ test('an oversized chunked rewrite body is cut off at the cap', { timeout: 10_00
    ============================================================ */
 
 /** Every `AI rewrite` line a run wrote, parsed. */
-async function runRewriteCapturingLogs(harnessOptions, env, requestOverrides) {
-  const lines = [];
+async function runRewriteCapturingLogs(harnessOptions: HarnessOptions, env: WorkerEnv, requestOverrides?: Record<string, unknown>) {
+  const lines: RewriteLog[] = [];
   const originalInfo = console.info;
   const originalWarn = console.warn;
-  const capture = (label, payload) => {
+  const capture = (label: string, payload: string) => {
     if (label === 'AI rewrite') {
       try {
         lines.push(JSON.parse(payload));
@@ -1315,10 +1331,10 @@ test('a legacy Spanish rewrite request is answered in English', async () => {
     AI_REWRITE_STORE: fakeRewriteStore(),
     REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
   };
-  let asked = null;
+  let asked: (ModelBody & { systemInstruction: { parts: Array<{ text: string }> } }) | null = null;
   const { events } = await runRewrite({
     provider: async (_url, options) => {
-      asked = JSON.parse(options.body);
+      asked = JSON.parse(options!.body as string);
       return sseResponse([
         sseFrame(sectionLine('intro', 'It began.')),
         sseFrame('', { finishReason: 'STOP' }),
@@ -1326,9 +1342,9 @@ test('a legacy Spanish rewrite request is answered in English', async () => {
     },
   }, env, { language: 'es' });
 
-  assert.equal(events.find(event => event.type === 'meta').language, 'en');
-  assert.match(asked.systemInstruction.parts[0].text, /Respond entirely in English/);
-  const promptText = asked.contents[0].parts.map(part => part.text || '').join('\n');
+  assert.equal(events.find((event) => event.type === 'meta')!.language, 'en');
+  assert.match(asked!.systemInstruction.parts[0].text, /Respond entirely in English/);
+  const promptText = asked!.contents[0].parts.map(part => part.text || '').join('\n');
   assert.match(promptText, /must be written in English/);
   assert.doesNotMatch(promptText, /Tarea|español/);
 });
@@ -1381,7 +1397,7 @@ test('a refund shows up in the line that reports the failure', async () => {
    The reader who leaves
    ============================================================ */
 
-const settle = ms => new Promise(resolve => { setTimeout(resolve, ms); });
+const settle = (ms: number|undefined) => new Promise(resolve => { setTimeout(resolve, ms); });
 
 /**
  * A provider that keeps producing sections until somebody cancels it.
@@ -1389,7 +1405,7 @@ const settle = ms => new Promise(resolve => { setTimeout(resolve, ms); });
  * Bounded at two hundred frames on purpose: if the hang-up goes unnoticed the
  * pump writes them all and the test fails, rather than spinning forever.
  */
-function endlessSseStream(onCancel) {
+function endlessSseStream(onCancel: { (): void; (): void; }) {
   let produced = 0;
   return new Response(new ReadableStream({
     pull(controller) {
@@ -1417,7 +1433,7 @@ test('a reader that hangs up after content keeps its use and cancels the model',
       ...REWRITE_ENV,
       REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
     });
-    const reader = response.body.getReader();
+    const reader = response.body!.getReader();
     await reader.read(); // meta
     await reader.read(); // the first section
     await reader.cancel();
@@ -1439,14 +1455,14 @@ test('a reader that hangs up after content keeps its use and cancels the model',
 const PAPER_TEXT = 'We measure the cooling of an ultracold gas under an alternating field. '.repeat(30);
 
 /** A Workers AI binding whose every conversion yields `data`, recording the calls. */
-function workersAI(data = PAPER_TEXT, { reply } = {}) {
-  const calls = [];
+function workersAI(data = PAPER_TEXT, { reply }: { reply?: () => PaperTextConversion | PaperTextConversion[] } = {}) {
+  const calls: Array<{ file: MarkdownDocument; options?: ConversionRequestOptions }> = [];
   return {
     calls,
-    toMarkdown: async (file, options) => {
+    toMarkdown: async (file: MarkdownDocument, options?: ConversionRequestOptions) => {
       calls.push({ file, options });
       if (reply) return reply();
-      return { name: file.name, format: 'markdown', data };
+      return { name: file.name, format: 'markdown' as const, data };
     },
   };
 }
@@ -1462,7 +1478,7 @@ function nanEnv(overrides = {}) {
 }
 
 /** One OpenAI chat-completion chunk on its own SSE line, the way NaN streams. */
-function chunkFrame(content, finishReason = null) {
+function chunkFrame(content: string|null, finishReason: string | null = null) {
   return `data: ${JSON.stringify({
     object: 'chat.completion.chunk',
     choices: [{ index: 0, delta: content === null ? {} : { content }, finish_reason: finishReason }],
@@ -1493,11 +1509,11 @@ test('with NaN the paper goes as extracted text, reasoning off, and streams in s
   const store = fakeRewriteStore();
   const state = newLedgerState();
   const env = nanEnv({ AI_REWRITE_STORE: store, REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) });
-  const asked = [];
+  const asked: Array<{ url: string; headers: Record<string, string>; body: ModelBody }> = [];
 
   const { events } = await runRewrite({
     provider: async (url, options) => {
-      asked.push({ url: String(url), headers: options.headers, body: JSON.parse(options.body) });
+      asked.push({ url: String(url), headers: options!.headers as Record<string, string>, body: JSON.parse(options!.body as string) });
       return nanRewrite();
     },
   }, env);
@@ -1510,20 +1526,20 @@ test('with NaN the paper goes as extracted text, reasoning off, and streams in s
   assert.equal(call.body.stream, true);
   // With reasoning on, the same rewrite spent its whole budget thinking.
   assert.deepEqual(call.body.chat_template_kwargs, { thinking: false, enable_thinking: false });
-  assert.match(call.body.messages[0].content, /never extend it/);
+  assert.match(call.body.messages[0].content as string, /never extend it/);
   // Text, not the PDF: the gateway takes ~45 s to read a PDF itself.
   const userContent = call.body.messages[1].content;
   assert.equal(typeof userContent, 'string');
-  assert.match(userContent, /JSON Lines/);
-  assert.match(userContent, /<paper>\nWe measure the cooling/);
+  assert.match(userContent as string, /JSON Lines/);
+  assert.match(userContent as string, /<paper>\nWe measure the cooling/);
   assert.equal(env.AI.calls.length, 1);
 
-  const meta = events.find(event => event.type === 'meta');
-  assert.equal(meta.provider, 'nan');
-  assert.equal(meta.model, 'deepseek-v4-flash');
-  assert.deepEqual(events.filter(event => event.type === 'section').map(event => event.kind), ['intro', 'results']);
-  assert.equal(events.at(-1).type, 'done');
-  assert.equal(events.at(-1).truncated, undefined);
+  const meta = events.find((event) => event.type === 'meta');
+  assert.equal(meta!.provider, 'nan');
+  assert.equal(meta!.model, 'deepseek-v4-flash');
+  assert.deepEqual(events.filter((event) => event.type === 'section').map(event => event.kind), ['intro', 'results']);
+  assert.equal(events.at(-1)!.type, 'done');
+  assert.equal(events.at(-1)!.truncated, undefined);
   // Finished, so kept for the next reader, whole.
   assert.equal(store.entries.size, 1);
   assert.equal(JSON.parse([...store.entries.values()][0].value).truncated, false);
@@ -1531,10 +1547,10 @@ test('with NaN the paper goes as extracted text, reasoning off, and streams in s
 });
 
 test('when the PDF will not convert, NaN is handed the PDF itself', async () => {
-  const asked = [];
+  const asked: ModelBody[] = [];
   const { events } = await runRewrite({
     provider: async (_url, options) => {
-      asked.push(JSON.parse(options.body));
+      asked.push(JSON.parse(options!.body as string));
       return nanRewrite();
     },
   }, nanEnv({
@@ -1544,13 +1560,13 @@ test('when the PDF will not convert, NaN is handed the PDF itself', async () => 
 
   const content = asked[0].messages[1].content;
   assert.ok(Array.isArray(content));
-  assert.match(content[0].text, /JSON Lines/);
+  assert.match(content[0].text!, /JSON Lines/);
   // `readablePdf` is the four bytes "%PDF".
   assert.deepEqual(content[1], {
     type: 'file',
     file: { filename: 'paper.pdf', file_data: 'data:application/pdf;base64,JVBERg==' },
   });
-  assert.equal(events.at(-1).type, 'done');
+  assert.equal(events.at(-1)!.type, 'done');
 });
 
 test('the log says how much text NaN read, or why it got the PDF instead', async () => {
@@ -1579,9 +1595,9 @@ test('a NaN rewrite cut at the token ceiling is kept as the half paper it is', a
   }, nanEnv({ AI_REWRITE_STORE: store, REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()) }));
 
   const done = events.at(-1);
-  assert.equal(done.type, 'done');
-  assert.equal(done.truncated, true);
-  assert.equal(done.finishReason, 'MAX_TOKENS');
+  assert.equal(done!.type, 'done');
+  assert.equal(done!.truncated, true);
+  assert.equal(done!.finishReason, 'MAX_TOKENS');
   assert.equal(JSON.parse([...store.entries.values()][0].value).truncated, true);
 });
 
@@ -1591,7 +1607,7 @@ test('a NaN rewrite cut at the token ceiling is kept as the half paper it is', a
  * fourteen methods subsections fill the cap, and the two sections that say
  * what the paper found fall past it under a `finish_reason` of `stop`.
  */
-const nanRewriteOf = count => sseResponse([
+const nanRewriteOf = (count: number) => sseResponse([
   ...Array.from({ length: count - 2 }, (_, index) => chunkFrame(sectionLine('methods', `Subsection ${index + 1}.`))),
   chunkFrame(sectionLine('results', 'It worked.')),
   chunkFrame(sectionLine('conclusion', 'It matters.')),
@@ -1604,16 +1620,16 @@ test('a rewrite that overflows the section cap ends truncated, not complete', as
     REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
   }));
 
-  const sections = events.filter(event => event.type === 'section');
+  const sections = events.filter((event) => event.type === 'section');
   assert.equal(sections.length, 14);
-  assert.equal(sections.at(-1).kind, 'methods');
+  assert.equal(sections.at(-1)!.kind, 'methods');
   const done = events.at(-1);
-  assert.equal(done.type, 'done');
-  assert.equal(done.sectionCount, 14);
+  assert.equal(done!.type, 'done');
+  assert.equal(done!.sectionCount, 14);
   // The model said `stop`, which is what kept this silent: the cut is ours, so
   // the reason on the wire has to be ours as well.
-  assert.equal(done.truncated, true);
-  assert.equal(done.finishReason, 'SECTION_CAP');
+  assert.equal(done!.truncated, true);
+  assert.equal(done!.finishReason, 'SECTION_CAP');
 });
 
 test('a rewrite that overflowed the cap is kept, and replayed, as the half paper it is', async () => {
@@ -1632,7 +1648,7 @@ test('a rewrite that overflowed the cap is kept, and replayed, as the half paper
   assert.equal(events[0].cached, true);
   // The incident's real cost was the replay: thirty days of the half served as
   // the whole paper.
-  assert.equal(events.at(-1).truncated, true);
+  assert.equal(events.at(-1)!.truncated, true);
   assert.equal(state.reserve, 1);
 });
 
@@ -1659,8 +1675,8 @@ test('a rewrite that fills the cap exactly is complete', async () => {
   // Fourteen sections is the cap reached, not the cap overflowed: deciding by the
   // section count instead of the dropped lines would flag every paper that uses
   // all fourteen.
-  assert.equal(events.at(-1).sectionCount, 14);
-  assert.equal(events.at(-1).truncated, undefined);
+  assert.equal(events.at(-1)!.sectionCount, 14);
+  assert.equal(events.at(-1)!.truncated, undefined);
   assert.equal(JSON.parse([...store.entries.values()][0].value).truncated, false);
   assert.equal(lines[0].droppedSections, 0);
 });
@@ -1678,16 +1694,16 @@ test('sections the salvage drops past the cap truncate the rewrite as well', asy
     provider: async () => sseResponse([chunkFrame(array), chunkFrame(null, 'stop')]),
   }, nanEnv({ AI_REWRITE_STORE: store, REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()) }));
 
-  assert.equal(events.filter(event => event.type === 'section').length, 14);
-  assert.equal(events.at(-1).truncated, true);
-  assert.equal(events.at(-1).finishReason, 'SECTION_CAP');
+  assert.equal(events.filter((event) => event.type === 'section').length, 14);
+  assert.equal(events.at(-1)!.truncated, true);
+  assert.equal(events.at(-1)!.finishReason, 'SECTION_CAP');
   assert.equal(lines[0].droppedSections, 2);
   assert.equal(JSON.parse([...store.entries.values()][0].value).truncated, true);
 });
 
 test('a busy NaN is not retried on the Gemini fallback model, and the use comes back', async () => {
   const state = newLedgerState();
-  const asked = [];
+  const asked: string[] = [];
   const { events } = await runRewrite({
     provider: async (url) => {
       asked.push(String(url));
@@ -1701,8 +1717,8 @@ test('a busy NaN is not retried on the Gemini fallback model, and the use comes 
   // AI_FALLBACK_MODEL names a Gemini model: NaN would only 404 it.
   assert.deepEqual(asked, ['https://api.nan.builders/v1/chat/completions']);
   const error = events.at(-1);
-  assert.equal(error.code, 'AI_BUSY');
-  assert.equal(error.quota.retryAfterSeconds, 7);
+  assert.equal(error!.code, 'AI_BUSY');
+  assert.equal(error!.quota!.retryAfterSeconds, 7);
   assert.equal(state.release, 1);
 });
 
@@ -1713,10 +1729,10 @@ test('a spent NaN month says when it comes back, and gives the use back', async 
   }, nanEnv({ REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) }));
 
   const error = events.at(-1);
-  assert.equal(error.code, 'AI_QUOTA_EXHAUSTED');
-  assert.equal(error.quota.scope, 'provider');
+  assert.equal(error!.code, 'AI_QUOTA_EXHAUSTED');
+  assert.equal(error!.quota!.scope, 'provider');
   // NaN's allowance is per calendar month, not per day like Gemini's.
-  assert.match(error.quota.resetAt, /^\d{4}-\d{2}-01T00:00:00\.000Z$/);
+  assert.match(error!.quota!.resetAt!, /^\d{4}-\d{2}-01T00:00:00\.000Z$/);
   assert.equal(state.release, 1);
 });
 
@@ -1725,6 +1741,6 @@ test('NaN chosen without a NaN key is not configured, even with a Gemini key', a
     provider: async () => { throw new Error('an unconfigured rewrite must not reach a model'); },
   }, () => assert.rejects(
     handlePaperRewrite(rewriteRequest(), nanEnv({ NAN_API_KEY: '', GEMINI_API_KEY: 'gemini-test-key' })),
-    error => error.code === 'AI_NOT_CONFIGURED' && error.status === 503,
+    error => (error as Error & { code?: string; status?: number }).code === 'AI_NOT_CONFIGURED' && (error as Error & { code?: string; status?: number }).status === 503,
   ));
 });

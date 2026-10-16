@@ -1,3 +1,19 @@
+import type { WorkerEnv } from './env.ts';
+import type { UpstreamError } from './provider-runtime.ts';
+
+export interface InstitutionQuery { domain: string; entityId?: string | null; rorId?: string | null }
+export interface InstitutionResolver { host: string; institution: string }
+type InstitutionIds = Pick<InstitutionQuery, 'entityId' | 'rorId'>;
+export interface LookupOptions { fetchImpl?: typeof fetch; env?: WorkerEnv; now?: () => number }
+interface GetFtrEntry {
+  doi?: unknown; statusCode?: unknown; source?: unknown; entitled?: unknown;
+  vor?: Array<{ url?: string }>; document?: string;
+}
+type CrossrefWork = Partial<Record<'issued' | 'published-online' | 'published-print', { 'date-parts'?: number[][] }>> & {
+  'issn-type'?: Array<{ type?: string; value?: unknown }>; ISSN?: unknown[];
+};
+
+
 /**
  * Whether a reader's library gives access to a paper.
  *
@@ -20,11 +36,11 @@ import { cacheResponse } from './provider-runtime.ts';
 export const ACCESS_CACHE_SECONDS = 7 * 24 * 60 * 60;
 const ACCESS_UNKNOWN_CACHE_SECONDS = 6 * 60 * 60;
 
-export async function handleInstitutionAccess(request, env) {
+export async function handleInstitutionAccess(request: Request, env: WorkerEnv) {
   const url = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   const query = readAccessQuery(url.searchParams);
-  const ttl = payload => (payload.status === 'unknown' ? ACCESS_UNKNOWN_CACHE_SECONDS : ACCESS_CACHE_SECONDS);
+  const ttl = (payload: { status: string }) => (payload.status === 'unknown' ? ACCESS_UNKNOWN_CACHE_SECONDS : ACCESS_CACHE_SECONDS);
   return cacheResponse(request, origin, env, ttl, () => lookupInstitutionAccess(query, { env }), {
     canonicalParams: upstreamParams(query, env),
   });
@@ -34,7 +50,7 @@ export const INSTITUTION_ACCESS_PATH = '/access';
 
 // Two configuration strings per library; no public registry maps a ROR id to
 // its Alma instance, so each institution is added here by hand.
-export const INSTITUTION_RESOLVERS = Object.freeze({
+export const INSTITUTION_RESOLVERS: Readonly<Partial<Record<string, InstitutionResolver>>> = Object.freeze({
   'usal.es': { host: 'eu01.alma.exlibrisgroup.com', institution: '34BUC_USAL' },
 });
 
@@ -50,7 +66,10 @@ const ROR_ID_PATTERN = /^https:\/\/ror\.org\/0[a-z0-9]{6}\d{2}$/;
 const ISSN_PATTERN = /^\d{4}-\d{3}[\dX]$/;
 
 export class InstitutionAccessError extends Error {
-  constructor(code, status) {
+  declare code: string;
+  declare status: number;
+
+  constructor(code: string, status: number) {
     super(code);
     this.name = 'InstitutionAccessError';
     this.code = code;
@@ -58,23 +77,23 @@ export class InstitutionAccessError extends Error {
   }
 }
 
-function httpsUrl(value) {
+function httpsUrl(value: string | null | undefined) {
   try {
-    return new URL(value).protocol === 'https:' ? value : null;
+    return new URL(value!).protocol === 'https:' ? value : null;
   } catch {
     return null;
   }
 }
 
 /** The normalized query, or a 400 naming the first malformed parameter. */
-export function readAccessQuery(searchParams) {
+export function readAccessQuery(searchParams: URLSearchParams) {
   const doi = (searchParams.get('doi') || '').trim().toLowerCase();
   if (!DOI_PATTERN.test(doi) || doi.length > 300) throw new InstitutionAccessError('INVALID_DOI', 400);
   return { doi, ...readInstitutionQuery(searchParams) };
 }
 
 /** The institution half of the query, shared with `/institution/services`. */
-export function readInstitutionQuery(searchParams) {
+export function readInstitutionQuery(searchParams: URLSearchParams) {
   const domain = institutionDomainOf(`x@${searchParams.get('domain') || ''}`);
   if (!domain) throw new InstitutionAccessError('INVALID_DOMAIN', 400);
   const entityId = (searchParams.get('entityId') || '').trim();
@@ -90,14 +109,14 @@ export function readInstitutionQuery(searchParams) {
  * Reads the body inside the deadline as well: a resolver that sends its
  * headers and then stalls is as unavailable as one that never answered.
  */
-async function fetchText(url, init, fetchImpl, signal) {
+async function fetchText(url: string, init: RequestInit, fetchImpl: typeof fetch, signal: AbortSignal) {
   const response = await fetchImpl(url, { ...init, signal });
   const text = await response.text();
   if (!response.ok) throw Object.assign(new Error(`${new URL(url).host} returned ${response.status}`), { status: response.status });
   return text;
 }
 
-function unescapeXml(value) {
+function unescapeXml(value: string) {
   return value
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
@@ -106,7 +125,7 @@ function unescapeXml(value) {
     .replace(/&amp;/g, '&');
 }
 
-function xmlKey(xml, id) {
+function xmlKey(xml: string, id: string) {
   const match = xml.match(new RegExp(`<key id="${id}">([^<]*)</key>`));
   return match ? unescapeXml(match[1]) : null;
 }
@@ -115,7 +134,7 @@ function xmlKey(xml, id) {
  * The resolver's `svc_dat=CTO` answer. Null when it carries no
  * `full_text_indicator`, which is not an answer about the journal at all.
  */
-export function parseResolverAnswer(xml) {
+export function parseResolverAnswer(xml: unknown) {
   const indicator = xmlKey(String(xml), 'full_text_indicator');
   if (indicator !== 'true' && indicator !== 'false') return null;
   const services = [];
@@ -143,24 +162,24 @@ export const GETFTR_BATCH_SIZE = 20;
  * invocation has a subrequest budget, and the services list asks about
  * every catalogue platform at once.
  */
-export async function askGetFtrBatch({ dois, entityId, rorId }, env, fetchImpl, signal) {
+export async function askGetFtrBatch({ dois, entityId, rorId }: InstitutionIds & { dois: string[] }, env: WorkerEnv, fetchImpl: typeof fetch, signal: AbortSignal) {
   if (dois.length > GETFTR_BATCH_SIZE) throw new RangeError(`GetFTR takes at most ${GETFTR_BATCH_SIZE} DOIs per request`);
-  const org = {};
+  const org: { entityID?: string; rorID?: string } = {};
   if (entityId) org.entityID = entityId;
   if (rorId) org.rorID = rorId;
   const text = await fetchText(`${env.GETFTR_API_URL || GETFTR_API}/v2.1/entitlements`, {
     method: 'POST',
     headers: {
-      'X-API-KEY': env.GETFTR_API_KEY,
+      'X-API-KEY': env.GETFTR_API_KEY!,
       'X-REQUEST-ID': crypto.randomUUID(),
       'content-type': 'application/json',
       accept: 'application/json',
     },
     body: JSON.stringify({ org, dois }),
   }, fetchImpl, signal);
-  const payload = JSON.parse(text);
+  const payload: { entitlements?: GetFtrEntry[] } = JSON.parse(text);
   const entries = Array.isArray(payload?.entitlements) ? payload.entitlements : [];
-  const verdicts = new Map();
+  const verdicts = new Map<string, ReturnType<typeof verdictOf>>();
   for (const doi of dois) {
     const entry = entries.find(item => String(item?.doi || '').toLowerCase() === doi);
     verdicts.set(doi, verdictOf(entry));
@@ -168,7 +187,7 @@ export async function askGetFtrBatch({ dois, entityId, rorId }, env, fetchImpl, 
   return verdicts;
 }
 
-function verdictOf(entry) {
+function verdictOf(entry: GetFtrEntry | undefined) {
   if (!entry || entry.statusCode !== 200 || entry.source === 'publisher_not_supported') return null;
   if (entry.entitled === 'no') return { status: 'not-entitled', collection: null, url: null };
   if (entry.entitled !== 'yes') return null;
@@ -177,13 +196,13 @@ function verdictOf(entry) {
 }
 
 /** GetFTR's verdict on one DOI, or null (see `askGetFtrBatch`). */
-export async function askGetFtr({ doi, entityId, rorId }, env, fetchImpl, signal) {
+export async function askGetFtr({ doi, entityId, rorId }: InstitutionIds & { doi: string }, env: WorkerEnv, fetchImpl: typeof fetch, signal: AbortSignal) {
   const verdicts = await askGetFtrBatch({ dois: [doi], entityId, rorId }, env, fetchImpl, signal);
   return verdicts.get(doi) ?? null;
 }
 
-function crossrefYear(work) {
-  for (const field of ['issued', 'published-online', 'published-print']) {
+function crossrefYear(work: CrossrefWork | null) {
+  for (const field of ['issued', 'published-online', 'published-print'] as const) {
     const year = work?.[field]?.['date-parts']?.[0]?.[0];
     if (Number.isInteger(year)) return year;
   }
@@ -191,7 +210,7 @@ function crossrefYear(work) {
 }
 
 /** Electronic before print: Alma's portfolios are electronic holdings. */
-function crossrefIssns(work) {
+function crossrefIssns(work: CrossrefWork | null) {
   const typed = Array.isArray(work?.['issn-type']) ? work['issn-type'] : [];
   const ordered = [
     ...typed.filter(entry => entry?.type === 'electronic').map(entry => entry.value),
@@ -201,7 +220,7 @@ function crossrefIssns(work) {
   return [...new Set(ordered)].slice(0, MAX_ISSNS);
 }
 
-export async function askResolver(resolver, issn, year, fetchImpl, signal) {
+export async function askResolver(resolver: InstitutionResolver, issn: string, year: number | null | undefined, fetchImpl: typeof fetch, signal: AbortSignal) {
   const params = new URLSearchParams({ svc_dat: 'CTO', 'rft.genre': 'article', 'rft.issn': issn });
   if (year) params.set('rft.date', String(year));
   else params.set('u.ignore_date_coverage', 'true');
@@ -216,7 +235,7 @@ const UNKNOWN = Object.freeze({ status: 'unknown', collection: null, url: null }
  * the institution ids only reach GetFTR, so without a key they must not
  * split the cache, and the domain only picks a resolver.
  */
-export function upstreamParams({ doi = null, domain, entityId = null, rorId = null }, env = {}) {
+export function upstreamParams({ doi = null, domain, entityId = null, rorId = null }: InstitutionQuery & { doi?: string | null }, env: WorkerEnv = {}) {
   const getFtr = Boolean(env.GETFTR_API_KEY);
   return {
     ...(doi ? { doi } : {}),
@@ -227,8 +246,8 @@ export function upstreamParams({ doi = null, domain, entityId = null, rorId = nu
 }
 
 export async function lookupInstitutionAccess(
-  { doi, domain, entityId = null, rorId = null },
-  { fetchImpl = (...args) => fetch(...args), env = {} } = {},
+  { doi, domain, entityId = null, rorId = null }: InstitutionQuery & { doi: string },
+  { fetchImpl = (...args) => fetch(...args), env = {} }: LookupOptions = {},
 ) {
   const resolver = Object.hasOwn(INSTITUTION_RESOLVERS, domain) ? INSTITUTION_RESOLVERS[domain] : null;
   const getFtr = Boolean(env.GETFTR_API_KEY) && Boolean(entityId || rorId);
@@ -240,13 +259,13 @@ export async function lookupInstitutionAccess(
     try {
       verdict = await askGetFtr({ doi, entityId, rorId }, env, fetchImpl, signal);
     } catch (error) {
-      console.warn('GetFTR unavailable', error?.message);
+      console.warn('GetFTR unavailable', (error as UpstreamError)?.message);
     }
     if (verdict) return verdict;
     if (!resolver) return UNKNOWN;
   }
 
-  let work;
+  let work: CrossrefWork | null;
   try {
     const text = await fetchText(`https://api.crossref.org/works/${encodeURIComponent(doi)}?mailto=app@papertok.io`, {
       headers: { accept: 'application/json' },
@@ -254,7 +273,7 @@ export async function lookupInstitutionAccess(
     work = JSON.parse(text)?.message || null;
   } catch (error) {
     // A DOI registered with DataCite or mEDRA is simply not in Crossref.
-    if (error?.status === 404) return UNKNOWN;
+    if ((error as UpstreamError)?.status === 404) return UNKNOWN;
     throw new InstitutionAccessError('ACCESS_LOOKUP_UNAVAILABLE', 502);
   }
 
@@ -264,7 +283,7 @@ export async function lookupInstitutionAccess(
   for (const issn of issns) {
     let answer;
     try {
-      answer = await askResolver(resolver, issn, year, fetchImpl, signal);
+      answer = await askResolver(resolver!, issn, year, fetchImpl, signal);
     } catch {
       throw new InstitutionAccessError('ACCESS_LOOKUP_UNAVAILABLE', 502);
     }

@@ -1,3 +1,15 @@
+import type { WorkerEnv } from './env.ts';
+import type { UpstreamError } from './provider-runtime.ts';
+import type { VerifiedIdentity } from './firebase-auth.ts';
+
+interface OpenReviewNote extends Record<string, unknown> { content?: Record<string, unknown> }
+interface HuggingFaceEntry { paper?: { publishedAt?: string }; publishedAt?: string }
+interface HuggingFaceResources extends Record<string, unknown> {
+  linkedModels?: Array<Record<string, unknown>>;
+  linkedDatasets?: Array<Record<string, unknown>>;
+}
+
+
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import {
   cacheResponse,
@@ -12,21 +24,21 @@ import {
 } from './provider-runtime.ts';
 import { fetchPaperFigures, FIGURE_CACHE_SECONDS, FIGURE_EMPTY_CACHE_SECONDS, isArxivFigureId } from './paper-figures.ts';
 
-function utcDateOffset(days) {
+function utcDateOffset(days: number) {
   const date = new Date();
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
 }
 
-function bioRxivDegradedCode(error) {
-  if (error?.name === 'TimeoutError' || error?.name === 'AbortError') return 'UPSTREAM_TIMEOUT';
-  if (error?.status === 429) return 'UPSTREAM_RATE_LIMITED';
-  if (error?.status) return `UPSTREAM_${error.status}`;
+function bioRxivDegradedCode(error: unknown) {
+  if ((error as UpstreamError)?.name === 'TimeoutError' || (error as UpstreamError)?.name === 'AbortError') return 'UPSTREAM_TIMEOUT';
+  if ((error as UpstreamError)?.status === 429) return 'UPSTREAM_RATE_LIMITED';
+  if ((error as UpstreamError)?.status) return `UPSTREAM_${(error as UpstreamError).status}`;
   // An empty or non-JSON body fails `response.json()` with a SyntaxError.
   return 'UPSTREAM_INVALID';
 }
 
-export async function handleBioRxiv(request, env) {
+export async function handleBioRxiv(request: Request, env: WorkerEnv) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
   const category = String(context.requestUrl.searchParams.get('category') || '').trim().toLowerCase();
@@ -35,7 +47,7 @@ export async function handleBioRxiv(request, env) {
   }
 
   // A degraded answer holds its entry for two minutes, not ten.
-  const ttl = payload => (payload?._papertok?.degraded ? DEGRADED_CACHE_SECONDS : SOURCE_CACHE_SECONDS.biorxiv);
+  const ttl = (payload: { _papertok?: { degraded?: string } }) => (payload?._papertok?.degraded ? DEGRADED_CACHE_SECONDS : SOURCE_CACHE_SECONDS.biorxiv);
 
   return cacheResponse(request, context.origin, env, ttl, async () => {
     // bioRxiv pages in fixed groups of 30, so request the matching cursor and trim client-side.
@@ -43,7 +55,7 @@ export async function handleBioRxiv(request, env) {
     const encodedCategory = encodeURIComponent(category.replace(/\s+/g, '_'));
     const url = `https://api.biorxiv.org/details/biorxiv/${utcDateOffset(-180)}/${utcDateOffset(0)}/${cursor}/json?category=${encodedCategory}`;
     try {
-      const data = await fetchJsonUpstream(url);
+      const data = await fetchJsonUpstream<{ collection?: unknown[]; _papertok?: { degraded?: string } }>(url);
       return { ...data, collection: (data?.collection || []).slice(0, context.limit) };
     } catch (error) {
       // bioRxiv hangs on some calls (4 of 6 over 20 s on 2026-09-23) and on
@@ -56,7 +68,7 @@ export async function handleBioRxiv(request, env) {
   }, { canonicalParams: sourceCacheParams(context, { category }) });
 }
 
-export async function handleEuropePmc(request, env) {
+export async function handleEuropePmc(request: Request, env: WorkerEnv) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
   const query = safeSourceQuery(context.requestUrl.searchParams.get('q'));
@@ -81,7 +93,7 @@ const PUBMED_DEFAULT_LIMIT = 25;
 // and rate-limits by API key when one is present and by source IP when it is not.
 // The key is optional here for the same reason `CORE_API_KEY` is: without it the
 // route still answers, just against the anonymous 3 req/s allowance.
-function pubmedUrl(endpoint, env, params) {
+function pubmedUrl(endpoint: string, env: WorkerEnv, params: Record<string, string>) {
   const url = new URL(`${PUBMED_EUTILS_BASE}/${endpoint}`);
   for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
   url.searchParams.set('tool', 'papertok');
@@ -108,11 +120,11 @@ const PUBMED_RETRY_BASE_MS = 300;
 const PUBMED_RETRY_JITTER_MS = 500;
 const PUBMED_RETRY_MAX_MS = 2_000;
 
-function pubmedRetryDelayMs(error) {
-  if (error?.status !== 429) return null;
+function pubmedRetryDelayMs(error: unknown) {
+  if ((error as UpstreamError)?.status !== 429) return null;
   // Trimmed so a whitespace-only value takes the empty branch instead of
   // coercing to the number 0 and reading as an advertised instant retry.
-  const advertised = String(error.retryAfter ?? '').trim();
+  const advertised = String((error as UpstreamError).retryAfter ?? '').trim();
   if (advertised !== '') {
     const advertisedMs = Number(advertised) * 1000;
     // A negative number is nonsense from upstream, not a request to retry
@@ -123,13 +135,13 @@ function pubmedRetryDelayMs(error) {
   return PUBMED_RETRY_BASE_MS + Math.random() * PUBMED_RETRY_JITTER_MS;
 }
 
-async function withPubmedRetry(attempt) {
+async function withPubmedRetry<T>(attempt: () => Promise<T>): Promise<T> {
   try {
     return await attempt();
   } catch (error) {
     const delayMs = pubmedRetryDelayMs(error);
     if (delayMs === null) throw error;
-    await new Promise(resolve => setTimeout(resolve, delayMs));
+    await new Promise<void>(resolve => setTimeout(resolve, delayMs));
     return attempt();
   }
 }
@@ -140,7 +152,7 @@ async function withPubmedRetry(attempt) {
 // with nothing cacheable in between -- the measured floor under every guest load.
 // Here the chain is two hops, because esummary and efetch only depend on esearch
 // and not on each other, and the whole thing lands in one edge-cache entry.
-export async function handlePubmed(request, env) {
+export async function handlePubmed(request: Request, env: WorkerEnv) {
   const context = sourceRequestContext(request, env, {
     limitFallback: PUBMED_DEFAULT_LIMIT,
     limitMax: PUBMED_MAX_LIMIT,
@@ -151,12 +163,12 @@ export async function handlePubmed(request, env) {
 
   // A batch that lost its abstracts is exactly the case the payload-dependent TTL
   // was added for: it is a real answer, but not one worth serving for ten minutes.
-  const ttl = payload => (payload?._papertok?.efetch === 'unavailable'
+  const ttl = (payload: { _papertok?: { efetch?: string } }) => (payload?._papertok?.efetch === 'unavailable'
     ? DEGRADED_CACHE_SECONDS
     : SOURCE_CACHE_SECONDS.pubmed);
 
   return cacheResponse(request, context.origin, env, ttl, async () => {
-    const search = await withPubmedRetry(() => fetchJsonUpstream(pubmedUrl('esearch.fcgi', env, {
+    const search = await withPubmedRetry(() => fetchJsonUpstream<{ esearchresult?: { idlist?: unknown[] } }>(pubmedUrl('esearch.fcgi', env, {
       db: 'pubmed',
       term: query,
       retmode: 'json',
@@ -174,7 +186,7 @@ export async function handlePubmed(request, env) {
     }
 
     const [summary, efetch] = await Promise.all([
-      withPubmedRetry(() => fetchJsonUpstream(pubmedUrl('esummary.fcgi', env, {
+      withPubmedRetry(() => fetchJsonUpstream<{ result?: Record<string, unknown> }>(pubmedUrl('esummary.fcgi', env, {
         db: 'pubmed',
         id: pmids.join(','),
         retmode: 'json',
@@ -195,7 +207,7 @@ export async function handlePubmed(request, env) {
   }, { canonicalParams: sourceCacheParams(context, { q: query }) });
 }
 
-async function fetchPubmedArticleXml(pmids, env) {
+async function fetchPubmedArticleXml(pmids: string[], env: WorkerEnv) {
   const url = pubmedUrl('efetch.fcgi', env, { db: 'pubmed', id: pmids.join(','), retmode: 'xml' });
   const response = await fetchWithDeadline(url, {
     headers: {
@@ -206,7 +218,7 @@ async function fetchPubmedArticleXml(pmids, env) {
   if (!response.ok) {
     // Same shape as `fetchJsonWithTimeout`'s error, so the retry can tell a 429
     // from a 503 and honour the wait NCBI advertised, if it advertised one.
-    const error = new Error(`PubMed efetch error: ${response.status}`);
+    const error: UpstreamError = new Error(`PubMed efetch error: ${response.status}`);
     error.status = response.status;
     error.retryAfter = response.headers.get('retry-after') || '';
     throw error;
@@ -217,7 +229,7 @@ async function fetchPubmedArticleXml(pmids, env) {
   return response.text();
 }
 
-function compactOpenReviewNote(note) {
+function compactOpenReviewNote(note: OpenReviewNote) {
   const allowedContent = [
     'title',
     'abstract',
@@ -242,11 +254,11 @@ function compactOpenReviewNote(note) {
     pdate: note?.pdate,
     content: Object.fromEntries(allowedContent
       .filter(key => note?.content?.[key] !== undefined)
-      .map(key => [key, note.content[key]])),
+      .map(key => [key, note.content![key]])),
   };
 }
 
-function isOpenReviewSubmission(note) {
+function isOpenReviewSubmission(note: OpenReviewNote) {
   const domain = String(note?.domain || '').toLowerCase();
   return ![
     'dblp.org',
@@ -259,11 +271,11 @@ function isOpenReviewSubmission(note) {
 // The date the card shows. `mapOpenReviewNote` builds `published` from `pdate`,
 // then `cdate`, then `tcdate`; an order that disagrees with the date printed on
 // the card reads as no order at all, so the Worker sorts by the same precedence.
-function openReviewNoteDate(note) {
+function openReviewNoteDate(note: OpenReviewNote) {
   return Number(note?.pdate || note?.cdate || note?.tcdate) || 0;
 }
 
-export async function handleOpenReview(request, env) {
+export async function handleOpenReview(request: Request, env: WorkerEnv) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
   const query = safeSourceQuery(context.requestUrl.searchParams.get('q'));
@@ -280,7 +292,7 @@ export async function handleOpenReview(request, env) {
     // 2026-09-02, `cdate:asc`, `cdate:desc`, `tmdate:*` and no sort at all
     // returned the same sequence for three different queries. Recency is
     // therefore ours to produce, over the relevance pool `limit * 3` fetches.
-    const payload = await fetchJsonUpstream(url);
+    const payload = await fetchJsonUpstream<{ notes?: OpenReviewNote[]; count?: unknown }>(url);
     const notes = (payload?.notes || []).filter(isOpenReviewSubmission);
     if (context.sort === 'recent') {
       notes.sort((a, b) => openReviewNoteDate(b) - openReviewNoteDate(a));
@@ -292,7 +304,7 @@ export async function handleOpenReview(request, env) {
   }, { canonicalParams: sourceCacheParams(context, { q: query, sort: context.sort }) });
 }
 
-export async function handleHuggingFacePapers(request, env) {
+export async function handleHuggingFacePapers(request: Request, env: WorkerEnv) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
   const query = safeSourceQuery(context.requestUrl.searchParams.get('q'));
@@ -303,17 +315,17 @@ export async function handleHuggingFacePapers(request, env) {
     url.searchParams.set('q', query);
     url.searchParams.set('limit', String(context.limit));
     url.searchParams.set('p', String(context.page - 1));
-    const payload = await fetchJsonUpstream(url);
+    const payload = await fetchJsonUpstream<HuggingFaceEntry[] | { papers?: HuggingFaceEntry[] }>(url);
     const papers = Array.isArray(payload) ? payload : payload?.papers || [];
     if (context.sort === 'recent') {
-      papers.sort((a, b) => Date.parse(b?.paper?.publishedAt || b?.publishedAt || 0)
-        - Date.parse(a?.paper?.publishedAt || a?.publishedAt || 0));
+      papers.sort((a, b) => Date.parse((b?.paper?.publishedAt || b?.publishedAt || 0) as string)
+        - Date.parse((a?.paper?.publishedAt || a?.publishedAt || 0) as string));
     }
     return { papers: papers.slice(0, context.limit) };
   }, { canonicalParams: sourceCacheParams(context, { q: query, sort: context.sort }) });
 }
 
-export async function handleICite(request, env) {
+export async function handleICite(request: Request, env: WorkerEnv) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -339,12 +351,12 @@ export async function handleICite(request, env) {
       'is_clinical',
       'provisional',
     ].join(','));
-    const payload = await fetchJsonUpstream(url);
+    const payload = await fetchJsonUpstream<{ data?: unknown[] }>(url);
     return { data: Array.isArray(payload?.data) ? payload.data : [] };
   }, { canonicalParams: { pmids: pmids.join(',') } });
 }
 
-export async function handleHuggingFaceResources(request, env) {
+export async function handleHuggingFaceResources(request: Request, env: WorkerEnv) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -354,7 +366,7 @@ export async function handleHuggingFaceResources(request, env) {
   }
 
   return cacheResponse(request, origin, env, SOURCE_CACHE_SECONDS.huggingFaceResources, async () => {
-    const payload = await fetchJsonUpstream(`https://huggingface.co/api/papers/${encodeURIComponent(arxivId)}`);
+    const payload = await fetchJsonUpstream<HuggingFaceResources>(`https://huggingface.co/api/papers/${encodeURIComponent(arxivId)}`);
     return {
       id: payload?.id || arxivId,
       githubRepo: payload?.githubRepo || null,
@@ -374,7 +386,7 @@ export async function handleHuggingFaceResources(request, env) {
   }, { canonicalParams: { arxiv_id: arxivId } });
 }
 
-export async function handlePaperFigures(request, env) {
+export async function handlePaperFigures(request: Request, env: WorkerEnv) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -395,7 +407,7 @@ export async function handlePaperFigures(request, env) {
   );
 }
 
-export async function handleCore(request, env, identity) {
+export async function handleCore(request: Request, env: WorkerEnv, identity?: Pick<VerifiedIdentity, 'uid'> | null) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
   const query = safeSourceQuery(context.requestUrl.searchParams.get('q'));
@@ -406,14 +418,14 @@ export async function handleCore(request, env, identity) {
     url.searchParams.set('q', query);
     url.searchParams.set('limit', String(context.limit));
     url.searchParams.set('offset', String((context.page - 1) * context.limit));
-    const headers = env.CORE_API_KEY ? { authorization: `Bearer ${env.CORE_API_KEY}` } : {};
+    const headers: Record<string, string> = env.CORE_API_KEY ? { authorization: `Bearer ${env.CORE_API_KEY}` } : {};
     return fetchJsonUpstream(url, headers);
     // No `sort`: this handler never sends it upstream, so two entries would hold
     // one identical answer.
   }, { identity, canonicalParams: sourceCacheParams(context, { q: query }) });
 }
 
-export async function handleOsti(request, env) {
+export async function handleOsti(request: Request, env: WorkerEnv) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
   const query = safeSourceQuery(context.requestUrl.searchParams.get('q'));
@@ -432,7 +444,7 @@ export async function handleOsti(request, env) {
   }, { canonicalParams: sourceCacheParams(context, { q: query, sort: context.sort }) });
 }
 
-export async function handleNasa(request, env) {
+export async function handleNasa(request: Request, env: WorkerEnv) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
   const query = safeSourceQuery(context.requestUrl.searchParams.get('q'));

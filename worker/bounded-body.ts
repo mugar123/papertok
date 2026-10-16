@@ -13,7 +13,7 @@
  * about what a route calls "too large".
  */
 
-function concatenate(chunks, byteLength) {
+function concatenate(chunks: Uint8Array[], byteLength: number) {
   const bytes = new Uint8Array(byteLength);
   let offset = 0;
   for (const chunk of chunks) {
@@ -29,7 +29,11 @@ function concatenate(chunks, byteLength) {
  * A declared length over the cap is refused without reading anything at all —
  * an honest oversized upload should not be paid for twice.
  */
-export async function readBoundedJson(request, maximumBytes, { tooLarge, invalid }) {
+export async function readBoundedJson<T = unknown>(
+  request: Pick<Request, 'headers' | 'body' | 'text'>,
+  maximumBytes: number,
+  { tooLarge, invalid }: { tooLarge: () => Error; invalid: () => Error },
+): Promise<T> {
   const declaredLength = Number(request.headers.get('content-length') || 0);
   if (Number.isFinite(declaredLength) && declaredLength > maximumBytes) throw tooLarge();
 
@@ -62,7 +66,7 @@ export async function readBoundedJson(request, maximumBytes, { tooLarge, invalid
   }
 
   try {
-    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true } as TextDecoderConstructorOptions).decode(bytes));
   } catch {
     throw invalid();
   }
@@ -74,7 +78,7 @@ export async function readBoundedJson(request, maximumBytes, { tooLarge, invalid
  * `null` rather than a throw because every caller of this treats an unusable
  * download the same way it treats a missing one.
  */
-export async function readBoundedBytes(response, maximumBytes) {
+export async function readBoundedBytes(response: Pick<Response, 'body' | 'arrayBuffer'>, maximumBytes: number) {
   if (!response?.body?.getReader) {
     const bytes = new Uint8Array(await response.arrayBuffer());
     return bytes.byteLength > maximumBytes ? null : bytes;

@@ -1,3 +1,5 @@
+import type { WorkerEnv } from './env.ts';
+
 import { checkAIProviderHealth } from './ai-explanation.ts';
 import { checkEmailProviderHealth, getEmailDeliveryLedgerHealth, getEmailScheduleHealth } from './email-notifications.ts';
 import { corsHeaders, json } from './http.ts';
@@ -9,7 +11,7 @@ const EMAIL_HEALTH_CACHE_SECONDS = 5 * 60;
 const SCOPUS_HEALTH_CACHE_SECONDS = 10 * 60;
 const OPENALEX_HEALTH_CACHE_SECONDS = 10 * 60;
 
-export async function handleEmailHealth(request, env) {
+export async function handleEmailHealth(request: Request, env: WorkerEnv) {
   const origin = request.headers.get('origin') || '';
   // Brevo shares one rate limit between this probe and real delivery, so the
   // answer is served from the edge cache like its Scopus and OpenAlex
@@ -35,7 +37,7 @@ export async function handleEmailHealth(request, env) {
   return response;
 }
 
-export async function handleOpenAlexHealth(request, env) {
+export async function handleOpenAlexHealth(request: Request, env: WorkerEnv) {
   const origin = request.headers.get('origin') || '';
   const cacheKey = canonicalCacheKey(request);
   const cached = await caches.default.match(cacheKey);
@@ -53,7 +55,7 @@ export async function handleOpenAlexHealth(request, env) {
   return response;
 }
 
-export async function handleScopusHealth(request, env) {
+export async function handleScopusHealth(request: Request, env: WorkerEnv) {
   const origin = request.headers.get('origin') || '';
   // The probe costs one upstream Scopus call, so it is served from the edge
   // cache: hammering the route cannot drain the weekly provider allowance.
@@ -73,7 +75,7 @@ export async function handleScopusHealth(request, env) {
   return response;
 }
 
-export async function handleAIHealth(request, env) {
+export async function handleAIHealth(request: Request, env: WorkerEnv) {
   const origin = request.headers.get('origin') || '';
   const health = await checkAIProviderHealth(env);
   return json(health, health.available ? 200 : 503, {

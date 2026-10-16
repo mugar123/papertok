@@ -13,15 +13,15 @@ const BASE = 'https://arxiv.org/html/2608.20340';
 const HTML_HEADERS = { 'content-type': 'text/html' };
 
 /** The shape a renderer actually answers with: chunked, no declared length. */
-function htmlResponse(html) {
+function htmlResponse(html: string) {
   return new Response(html, { headers: HTML_HEADERS });
 }
 
-function figureHtml(name) {
+function figureHtml(name: string) {
   return `<figure class="ltx_figure"><img src="${name}"><figcaption>Figure 1: ${name}</figcaption></figure>`;
 }
 
-function rendererOf(url) {
+function rendererOf(url: string) {
   return String(url).startsWith(ARXIV) ? 'arxiv' : 'ar5iv';
 }
 
@@ -31,8 +31,8 @@ function rendererOf(url) {
  * reader actually asked for, which is what separates a cap enforced while
  * reading from one that measures a document already held in memory.
  */
-function chunkedBody(chunkBytes, chunkCount) {
-  const body = { pulled: 0 };
+function chunkedBody(chunkBytes: number, chunkCount: number) {
+  const body: { pulled: number; stream?: ReadableStream<Uint8Array> } = { pulled: 0 };
   const chunk = new Uint8Array(chunkBytes).fill(0x78);
   body.stream = new ReadableStream({
     pull(controller) {
@@ -234,7 +234,7 @@ test('abandons a renderer page that runs past the ceiling without buffering it',
   // 10 MiB on offer against the module's 4 MiB ceiling, chunked so nothing
   // declares a length. ar5iv is a community service, so an oversized document
   // is a real possibility, and buffering it first costs the worker its memory.
-  const bodies = [];
+  const bodies: Array<ReturnType<typeof chunkedBody>> = [];
   const stub = async () => {
     const body = chunkedBody(256 * 1024, 40);
     bodies.push(body);
@@ -250,9 +250,9 @@ test('abandons a renderer page that runs past the ceiling without buffering it',
 });
 
 test('asks both renderers at once and still prefers arXiv', async () => {
-  const asked = [];
+  const asked: string[] = [];
   let bothInFlight = false;
-  const stub = async (url) => {
+  const stub = async (url: string) => {
     asked.push(rendererOf(url));
     if (rendererOf(url) === 'ar5iv') return htmlResponse(figureHtml('ar5iv-copy.png'));
     // arXiv is the slow one here, and ar5iv has long since answered with
@@ -271,8 +271,8 @@ test('asks both renderers at once and still prefers arXiv', async () => {
 });
 
 test('falls back to ar5iv when arXiv has not rendered the paper', async () => {
-  const asked = [];
-  const stub = async (url) => {
+  const asked: string[] = [];
+  const stub = async (url: string) => {
     asked.push(String(url));
     if (rendererOf(url) === 'arxiv') return new Response('', { status: 404 });
     return htmlResponse(figureHtml('phase-diagram.png'));

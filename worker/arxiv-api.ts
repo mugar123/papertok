@@ -1,3 +1,6 @@
+import type { WorkerEnv } from './env.ts';
+import type { UpstreamError } from './provider-runtime.ts';
+
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { canonicalCacheKey, fetchWithDeadline, serveCached } from './provider-runtime.ts';
 import { awaitUpstreamSlot, paceRetryAfterSeconds } from './upstream-pace.ts';
@@ -20,7 +23,7 @@ export const ARXIV_PACE_MAX_WAIT_MS = 4_000;
 const ARXIV_CACHE_SECONDS = 60 * 60;
 const ARXIV_PARAMS = ['search_query', 'id_list', 'start', 'max_results', 'sortBy', 'sortOrder'];
 
-function safeArxivParam(name, rawValue) {
+function safeArxivParam(name: string, rawValue: unknown) {
   // Trimmed here rather than only on the way into the cache key: the two used to
   // disagree, so `search_query=x` and `search_query=%20x%20` shared one entry
   // while asking arXiv two different questions.
@@ -37,7 +40,7 @@ function safeArxivParam(name, rawValue) {
   return value;
 }
 
-export async function handleArxiv(request, env) {
+export async function handleArxiv(request: Request, env: WorkerEnv) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -85,7 +88,7 @@ export async function handleArxiv(request, env) {
   if (!response.ok) {
     // The status travels on the error so the router can tell arXiv's own 429
     // from an outage -- they used to leave as the same 502.
-    const error = new Error(`arXiv error: ${response.status}`);
+    const error: UpstreamError = new Error(`arXiv error: ${response.status}`);
     error.status = response.status;
     error.retryAfter = response.headers.get('retry-after') || '';
     throw error;

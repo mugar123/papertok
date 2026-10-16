@@ -1,3 +1,6 @@
+import type { TestNamespace } from './test-types.ts';
+import type { WorkerEnv } from './env.ts';
+import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import reportApi from './index.ts';
@@ -20,29 +23,29 @@ const ORIGIN = 'https://mugar123.github.io';
 
 /** A ledger that records every action it is asked for. */
 function recordingLedger(reading = { accepted: true, subjectUsage: 3, globalUsage: 9, remaining: 7 }) {
-  const actions = [];
+  const actions: string[] = [];
   return {
     actions,
-    idFromName: () => 'quota-id',
-    get: () => ({
-      fetch: async (_url, options) => {
-        actions.push(JSON.parse(options.body).action);
+    idFromName: ((): unknown => 'quota-id') as TestNamespace['idFromName'],
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({
+      fetch: async (_url: RequestInfo | URL, options?: RequestInit) => {
+        actions.push(JSON.parse(options!.body as string).action);
         return new Response(JSON.stringify(reading));
       },
-    }),
-  };
+    })) as TestNamespace['get'],
+  } as Env['REQUEST_QUOTA_LEDGER'] & { actions: typeof actions };
 }
 
-function quotaEnv(ledger) {
+function quotaEnv(ledger: TestNamespace | undefined) {
   return {
     FIREBASE_WEB_API_KEY: 'firebase-test-key',
     AI_DAILY_USER_LIMIT: '10',
     AI_DAILY_GLOBAL_LIMIT: '1000',
-    REQUEST_QUOTA_LEDGER: ledger,
+    REQUEST_QUOTA_LEDGER: ledger as WorkerEnv['REQUEST_QUOTA_LEDGER'],
   };
 }
 
-function quotaRequest({ method = 'GET', origin = ORIGIN, authorization = 'Bearer test-token' } = {}) {
+function quotaRequest({ method = 'GET', origin = ORIGIN, authorization = 'Bearer test-token' }: { method?: string; origin?: string; authorization?: string | null } = {}) {
   return new Request(QUOTA_ROUTE, {
     method,
     headers: { origin, ...(authorization ? { authorization } : {}) },
@@ -51,21 +54,21 @@ function quotaRequest({ method = 'GET', origin = ORIGIN, authorization = 'Bearer
 
 // A signed-in caller without an Identity Toolkit round trip: the Worker caches a
 // verified identity, so seeding that cache is how a protected route is reached.
-async function withCachedIdentity(callback) {
-  const originalCaches = globalThis.caches;
-  globalThis.caches = {
+async function withCachedIdentity<Result>(callback: () => Promise<Result>) {
+  const originalCaches = (globalThis as TestGlobals).caches;
+  (globalThis as TestGlobals).caches = {
     default: {
-      match: async request => (String(request.url).includes('/auth/')
+      match: async (request): Promise<Response | null | undefined> => (String((request as Request).url).includes('/auth/')
         ? new Response(JSON.stringify({ uid: 'user-1' }), { headers: { 'content-type': 'application/json' } })
         : null),
-      put: async () => undefined,
+      put: async (): Promise<unknown> => undefined,
     },
   };
   try {
     return await callback();
   } finally {
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 }
 
@@ -74,7 +77,7 @@ test('the router serves GET /ai/quota with what is left and the ceiling it is ou
   const response = await withCachedIdentity(() => reportApi.fetch(quotaRequest(), quotaEnv(ledger)));
 
   assert.equal(response.status, 200);
-  const payload = await response.json();
+  const payload = await response.json<{ code: string; remainingUses: number; dailyLimit: number; note: string; language: string; model: string; unlimited: boolean }>();
   assert.equal(payload.remainingUses, 7);
   // The limit travels with the answer. A reader that hardcoded ten would be
   // wrong the day `AI_DAILY_USER_LIMIT` changes, and would say so confidently.
@@ -99,7 +102,7 @@ test('/ai/quota needs a session, and says so with the code the reader knows', as
   );
 
   assert.equal(response.status, 401);
-  assert.equal((await response.json()).code, 'AI_AUTH_REQUIRED');
+  assert.equal((await response.json<{ code: string; remainingUses: number; dailyLimit: number; note: string; language: string; model: string; unlimited: boolean }>()).code, 'AI_AUTH_REQUIRED');
 });
 
 test('/ai/quota refuses an origin that is not on the list', async () => {
@@ -120,15 +123,15 @@ test('an unreachable ledger is an outage, not an empty allowance', async () => {
   const response = await withCachedIdentity(() => reportApi.fetch(quotaRequest(), {
     ...quotaEnv(recordingLedger()),
     REQUEST_QUOTA_LEDGER: {
-      idFromName: () => 'quota-id',
-      get: () => ({ fetch: async () => new Response('nope', { status: 500 }) }),
-    },
+      idFromName: ((): unknown => 'quota-id') as TestNamespace['idFromName'],
+      get: ((): Pick<DurableObjectStub, 'fetch'> => ({ fetch: async () => new Response('nope', { status: 500 }) })) as TestNamespace['get'],
+    } as WorkerEnv['REQUEST_QUOTA_LEDGER'],
   }));
 
   // Answering `remainingUses: 0` here would tell a reader with ten uses left
   // that it had none, and the reader would believe it.
   assert.equal(response.status, 503);
-  assert.equal((await response.json()).code, 'AI_UNAVAILABLE');
+  assert.equal((await response.json<{ code: string; remainingUses: number; dailyLimit: number; note: string; language: string; model: string; unlimited: boolean }>()).code, 'AI_UNAVAILABLE');
 });
 
 test('a missing ledger binding reads as not configured rather than as an outage', async () => {
@@ -138,5 +141,5 @@ test('a missing ledger binding reads as not configured rather than as an outage'
   }));
 
   assert.equal(response.status, 503);
-  assert.equal((await response.json()).code, 'AI_NOT_CONFIGURED');
+  assert.equal((await response.json<{ code: string; remainingUses: number; dailyLimit: number; note: string; language: string; model: string; unlimited: boolean }>()).code, 'AI_NOT_CONFIGURED');
 });

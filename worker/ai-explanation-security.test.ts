@@ -1,3 +1,4 @@
+import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { verifyFirebaseAccount } from './ai-explanation.ts';
@@ -8,17 +9,17 @@ import { fakeIdToken } from '../src/test-support/firebaseIdToken.js';
    ============================================================ */
 
 /** A cold identity cache: every token has to be asked about. */
-async function withColdIdentity(callback) {
-  const originalCaches = globalThis.caches;
+async function withColdIdentity<Result>(callback: () => Promise<Result>) {
+  const originalCaches = (globalThis as TestGlobals).caches;
   const originalFetch = globalThis.fetch;
-  globalThis.caches = { default: { match: async () => null, put: async () => undefined } };
+  (globalThis as TestGlobals).caches = { default: { match: async (): Promise<Response | null | undefined> => null, put: async (): Promise<unknown> => undefined } };
   globalThis.fetch = async () => { throw new Error('identitytoolkit is unreachable'); };
   try {
     return await callback();
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalCaches === undefined) delete globalThis.caches;
-    else globalThis.caches = originalCaches;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
   }
 }
 
@@ -37,14 +38,14 @@ const authRequest = () => new Request('https://papertok-report-api.example/ai/re
 test('an Identity Toolkit outage is AI_UNAVAILABLE, not "not configured"', async () => {
   await withColdIdentity(() => assert.rejects(
     verifyFirebaseAccount(authRequest(), { FIREBASE_WEB_API_KEY: 'firebase-test-key' }),
-    error => error.code === 'AI_UNAVAILABLE' && error.status === 503,
+    error => (error as { code: string; status: number }).code === 'AI_UNAVAILABLE' && (error as { code: string; status: number }).status === 503,
   ));
 });
 
 test('a worker with no Firebase key really is not configured', async () => {
   await withColdIdentity(() => assert.rejects(
     verifyFirebaseAccount(authRequest(), {}),
-    error => error.code === 'AI_NOT_CONFIGURED' && error.status === 503,
+    error => (error as { code: string; status: number }).code === 'AI_NOT_CONFIGURED' && (error as { code: string; status: number }).status === 503,
   ));
 });
 
@@ -54,6 +55,6 @@ test('a token Google rejects is still the reader signing in again', async () => 
       new Request('https://papertok-report-api.example/ai/rewrite', { method: 'POST' }),
       { FIREBASE_WEB_API_KEY: 'firebase-test-key' },
     ),
-    error => error.code === 'AI_AUTH_REQUIRED' && error.status === 401,
+    error => (error as { code: string; status: number }).code === 'AI_AUTH_REQUIRED' && (error as { code: string; status: number }).status === 401,
   ));
 });

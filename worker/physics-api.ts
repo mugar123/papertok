@@ -1,11 +1,31 @@
+import type { WorkerEnv } from './env.ts';
+import type { UpstreamError } from './provider-runtime.ts';
+import type { VerifiedIdentity } from './firebase-auth.ts';
+
+type SourceContext = { page: number; limit: number; sort: string };
+interface AdsDocument extends Record<string, unknown> {
+  author?: unknown[];
+  keyword?: unknown[];
+  reference?: unknown[];
+  data?: unknown[];
+}
+interface AdsPayload { response?: { docs?: AdsDocument[] } }
+type InspireMetadata = Record<string, unknown> & Partial<Record<
+  'titles' | 'abstracts' | 'authors' | 'arxiv_eprints' | 'dois' | 'publication_info'
+  | 'documents' | 'keywords' | 'inspire_categories' | 'imprints',
+  Array<Record<string, unknown>>
+>>;
+interface InspireHit { id?: unknown; metadata?: InspireMetadata }
+
+
 import { corsHeaders, json } from './http.ts';
 import { cacheResponse, DEGRADED_CACHE_SECONDS, fetchJsonUpstream, fetchWithDeadline, safeSourceQuery, sourceCacheParams, sourceRequestContext, SOURCE_CACHE_SECONDS, SOURCE_UPSTREAM_TIMEOUT_MS } from './provider-runtime.ts';
 
-function adsQueryFromTerms(query) {
+function adsQueryFromTerms(query: string) {
   return `abs:(${query}) AND database:(astronomy OR physics)`;
 }
 
-async function fetchAdsLiterature(context, query, env) {
+async function fetchAdsLiterature(context: SourceContext, query: string, env: WorkerEnv) {
   const url = new URL('https://api.adsabs.harvard.edu/v1/search/query');
   url.searchParams.set('q', adsQueryFromTerms(query));
   url.searchParams.set('rows', String(context.limit));
@@ -39,11 +59,11 @@ async function fetchAdsLiterature(context, query, env) {
     },
   }, SOURCE_UPSTREAM_TIMEOUT_MS);
   if (!response.ok) {
-    const error = new Error(`NASA ADS error: ${response.status}`);
+    const error: UpstreamError = new Error(`NASA ADS error: ${response.status}`);
     error.status = response.status;
     throw error;
   }
-  const data = await response.json();
+  const data = await response.json<AdsPayload>();
   const compactDocs = (data?.response?.docs || []).map(document => ({
     bibcode: document.bibcode,
     title: document.title,
@@ -78,7 +98,7 @@ async function fetchAdsLiterature(context, query, env) {
   };
 }
 
-function compactInspireHit(hit) {
+function compactInspireHit(hit: InspireHit) {
   const metadata = hit?.metadata || {};
   return {
     id: hit?.id,
@@ -112,13 +132,13 @@ function compactInspireHit(hit) {
   };
 }
 
-async function fetchInspireLiterature(context, query, fallbackReason) {
+async function fetchInspireLiterature(context: SourceContext, query: string, fallbackReason: string) {
   const url = new URL('https://inspirehep.net/api/literature');
   url.searchParams.set('q', query);
   url.searchParams.set('size', String(context.limit));
   url.searchParams.set('page', String(context.page));
   if (context.sort === 'recent') url.searchParams.set('sort', 'mostrecent');
-  const data = await fetchJsonUpstream(url);
+  const data = await fetchJsonUpstream<{ hits?: { hits?: InspireHit[]; total?: unknown } }>(url);
   const compactHits = (data?.hits?.hits || []).map(compactInspireHit);
   return {
     hits: {
@@ -133,7 +153,7 @@ async function fetchInspireLiterature(context, query, fallbackReason) {
   };
 }
 
-function emptyPhysicsLiterature(fallbackReason) {
+function emptyPhysicsLiterature(fallbackReason: string) {
   return {
     hits: { hits: [], total: 0 },
     _papertok: {
@@ -146,23 +166,23 @@ function emptyPhysicsLiterature(fallbackReason) {
 
 // A provider that refused and a provider that never answered are different
 // failures, and the fallback reason is the only place the difference survives.
-function adsFallbackReason(error) {
-  if (error?.name === 'TimeoutError' || error?.name === 'AbortError') return 'ads_timeout';
-  return `ads_${error?.status || 'unavailable'}`;
+function adsFallbackReason(error: unknown) {
+  if ((error as UpstreamError)?.name === 'TimeoutError' || (error as UpstreamError)?.name === 'AbortError') return 'ads_timeout';
+  return `ads_${(error as UpstreamError)?.status || 'unavailable'}`;
 }
 
 // A fallback that exists because ADS is not configured is a steady state, and
 // INSPIRE is then the real answer: it earns the full six hours. A fallback that
 // exists because ADS timed out or answered 500 is a one-second hiccup that used
 // to blank that query for everybody until the afternoon.
-function physicsCacheSeconds(payload) {
+function physicsCacheSeconds(payload: { _papertok?: { fallback?: boolean; fallbackReason?: string } }) {
   const info = payload?._papertok || {};
   return info.fallback === true && info.fallbackReason !== 'ads_not_configured'
     ? DEGRADED_CACHE_SECONDS
     : SOURCE_CACHE_SECONDS.physics;
 }
 
-export async function handlePhysicsLiterature(request, env, identity) {
+export async function handlePhysicsLiterature(request: Request, env: WorkerEnv, identity?: Pick<VerifiedIdentity, 'uid'> | null) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
   const query = safeSourceQuery(context.requestUrl.searchParams.get('q'));

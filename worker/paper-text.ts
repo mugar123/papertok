@@ -1,3 +1,11 @@
+export type PaperTextConversion = Pick<Extract<ConversionResponse, { data: string }>, 'format' | 'data'>
+  | Pick<Extract<ConversionResponse, { format: 'error' }>, 'format'>;
+export type TextExtractionEnv = {
+  AI?: {
+    toMarkdown: (file: MarkdownDocument, options?: ConversionRequestOptions) => Promise<PaperTextConversion | PaperTextConversion[]>;
+  };
+};
+
 /**
  * A paper's PDF as plain text, for a model that should not read the PDF itself.
  *
@@ -30,7 +38,7 @@ const CONVERSION_BUDGET_MS = 20_000;
  * `### Page N` heading per page, which a model following "the paper's own
  * sections" could mistake for sections.
  */
-export function cleanConvertedPaperText(markdown) {
+export function cleanConvertedPaperText(markdown: unknown) {
   let text = String(markdown || '');
   const contents = text.indexOf('## Contents');
   if (contents !== -1) text = text.slice(contents + '## Contents'.length);
@@ -44,10 +52,10 @@ export function cleanConvertedPaperText(markdown) {
  * `{ text, truncated, reason }`. `text` is empty whenever `reason` says why:
  * `unavailable` (no Workers AI binding), `conversion_failed`, or `no_text`.
  */
-export async function extractPaperText(env, bytes, { timeoutMs = CONVERSION_BUDGET_MS } = {}) {
-  const failed = reason => ({ text: '', truncated: false, reason });
+export async function extractPaperText(env: TextExtractionEnv, bytes: Uint8Array<ArrayBuffer>, { timeoutMs = CONVERSION_BUDGET_MS } = {}) {
+  const failed = (reason: string) => ({ text: '', truncated: false, reason });
   if (typeof env?.AI?.toMarkdown !== 'function' || !bytes?.length) return failed('unavailable');
-  let timer;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const conversion = env.AI.toMarkdown(
       { name: 'paper.pdf', blob: new Blob([bytes], { type: 'application/pdf' }) },
@@ -55,7 +63,7 @@ export async function extractPaperText(env, bytes, { timeoutMs = CONVERSION_BUDG
     );
     // The call cannot be aborted, only stopped being waited for: the model
     // still needs the rest of the request's time.
-    const timeout = new Promise((_, reject) => {
+    const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error('conversion timed out')), timeoutMs);
     });
     const result = await Promise.race([conversion, timeout]);
@@ -69,7 +77,7 @@ export async function extractPaperText(env, bytes, { timeoutMs = CONVERSION_BUDG
   } catch {
     return failed('conversion_failed');
   } finally {
-    clearTimeout(timer);
+    clearTimeout(timer!);
   }
 }
 
@@ -79,7 +87,7 @@ export async function extractPaperText(env, bytes, { timeoutMs = CONVERSION_BUDG
  * authors' prose. A truncated text says so, so the model stops where the text
  * does instead of inventing the rest.
  */
-export function formatPaperTextForPrompt(text, { truncated = false } = {}) {
+export function formatPaperTextForPrompt(text: string, { truncated = false } = {}) {
   return [
     "The attached PDF's text, as extracted from its pages, is between the <paper> tags below. Line breaks, running headers, page numbers and figure labels come from the PDF layout, not from the authors.",
     '<paper>',

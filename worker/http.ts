@@ -1,3 +1,5 @@
+import type { WorkerEnv } from './env.ts';
+
 // `mugar123.github.io` sigue en la lista: GitHub Pages redirige el sitio viejo
 // al dominio nuevo, pero un service worker ya instalado alli puede servir el
 // bundle cacheado una vez mas antes de ver la redireccion. El 18-09-2026 se
@@ -14,7 +16,7 @@ const DEFAULT_ALLOWED_ORIGINS = [
   'http://127.0.0.1:5173',
 ];
 
-export function json(data, status = 200, headers = {}) {
+export function json(data: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
@@ -27,14 +29,14 @@ export function json(data, status = 200, headers = {}) {
   });
 }
 
-export function allowedOrigins(env) {
+export function allowedOrigins(env: Pick<WorkerEnv, 'ALLOWED_ORIGINS'>) {
   return new Set([
     ...DEFAULT_ALLOWED_ORIGINS,
     ...String(env.ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean),
   ]);
 }
 
-export function corsHeaders(origin, env) {
+export function corsHeaders(origin: string, env: Pick<WorkerEnv, 'ALLOWED_ORIGINS'>): Record<string, string> {
   return allowedOrigins(env).has(origin)
     ? { 'access-control-allow-origin': origin, vary: 'Origin' }
     : {};
