@@ -230,6 +230,9 @@ test('proxies OpenReview forum papers while excluding imported public records', 
   assert.equal(response.status, 200);
   assert.match(upstreamUrl, /api2\.openreview\.net\/notes\/search/);
   assert.match(upstreamUrl, /source=forum/);
+  // api2 refuses `query` with a 400 (measured 2026-10-16); the search text is `term`.
+  assert.equal(new URL(upstreamUrl).searchParams.get('term'), 'machine learning');
+  assert.equal(new URL(upstreamUrl).searchParams.has('query'), false);
   const payload = await response.json();
   assert.equal(payload.notes.length, 1);
   assert.equal(payload.notes[0].id, 'submission');

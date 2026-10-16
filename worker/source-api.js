@@ -271,7 +271,7 @@ export async function handleOpenReview(request, env) {
 
   return cacheResponse(request, context.origin, env, SOURCE_CACHE_SECONDS.openreview, async () => {
     const url = new URL('https://api2.openreview.net/notes/search');
-    url.searchParams.set('query', query);
+    url.searchParams.set('term', query);
     url.searchParams.set('source', 'forum');
     url.searchParams.set('limit', String(Math.min(50, context.limit * 3)));
     url.searchParams.set('offset', String((context.page - 1) * context.limit));
