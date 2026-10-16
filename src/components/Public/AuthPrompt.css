@@ -40,36 +40,10 @@
 }
 
 /* ── Brand ── */
-.auth-modal-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-5);
-}
-
-.auth-modal-mark {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-sm);
-  background: var(--brand-yellow);
-  color: var(--text-on-brand);
-  font: 600 0.8125rem/1 var(--font-mono);
-  letter-spacing: 0.02em;
-  box-shadow: 2px 2px 0 var(--text-primary);
-}
-
-.auth-modal-wordmark {
-  font-size: 1.0625rem;
-  font-weight: var(--fw-bold);
-  letter-spacing: -0.02em;
-  color: var(--text-primary);
-}
-
-/* The yellow only underlines the mark; it never carries the text colour. */
-.auth-modal-wordmark span {
-  box-shadow: inset 0 -0.32em 0 var(--brand-yellow);
+.petri.auth-modal-petri {
+  width: 6.5rem;
+  height: 6.3rem;
+  margin-bottom: var(--space-4);
 }
 
 /* ── Copy ── */

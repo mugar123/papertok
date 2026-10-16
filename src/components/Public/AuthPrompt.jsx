@@ -7,6 +7,7 @@ import { Button } from '../ui/button.jsx';
 import GoogleMark from './GoogleMark.jsx';
 import { useProviderSignIn } from './useProviderSignIn.js';
 import { CollisionNote, ProviderSpinner } from './ProviderSignIn.jsx';
+import Petri from '../Onboarding/Petri.jsx';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.jsx';
 import './AuthPrompt.css';
 
@@ -58,10 +59,7 @@ export default function AuthPrompt({ onClose, reason = 'default' }) {
           <X size={16} />
         </DialogClose>
 
-        <div className="auth-modal-brand">
-          <span className="auth-modal-mark" aria-hidden="true">P</span>
-          <span className="auth-modal-wordmark">Paper<span>Tok</span></span>
-        </div>
+        <Petri pose="key" className="auth-modal-petri" />
 
         <DialogTitle className="auth-modal-title">
           {copy.title}

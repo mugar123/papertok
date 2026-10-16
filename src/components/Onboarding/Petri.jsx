@@ -1,4 +1,5 @@
 import PetriFlask from './PetriFlask.jsx';
+import PetriKey from './PetriKey.jsx';
 import PetriProfile from './PetriProfile.jsx';
 import PetriReading from './PetriReading.jsx';
 import PetriThinking from './PetriThinking.jsx';
@@ -11,6 +12,7 @@ import PetriWelcome from './PetriWelcome.jsx';
 const POSES = {
   welcome: PetriWelcome,
   flask: PetriFlask,
+  key: PetriKey,
   reading: PetriReading,
   profile: PetriProfile,
   thinking: PetriThinking,
