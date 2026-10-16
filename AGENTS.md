@@ -91,6 +91,10 @@ establish conformance; report manual evidence and anything not verified.
 
 ## Verification and delivery
 
+- Check signed-in behavior locally against the Firebase emulators, not a real account
+  ([setup](worker/README.md#local-testing)). They sign in a disposable test user and keep
+  Firestore writes off production. Worker routes that require identity reject emulator
+  tokens, so report those flows as unverified; check guest flows with `npm run dev`.
 - Add or modify tests only for behavior introduced or fixed by this task. Assert observable
   results through the existing test tools, using colocated `*.test.js` files; do not pin
   the implementation's own constants or add production APIs just to satisfy a mock.

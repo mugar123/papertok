@@ -6,8 +6,8 @@
 export const IS_DEMO = false;
 
 import { initializeApp } from 'firebase/app';
-import { getAuth, GithubAuthProvider, GoogleAuthProvider } from 'firebase/auth';
-import { disableNetwork, enableNetwork, getFirestore } from 'firebase/firestore';
+import { connectAuthEmulator, getAuth, GithubAuthProvider, GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+import { connectFirestoreEmulator, disableNetwork, enableNetwork, getFirestore } from 'firebase/firestore';
 import { isOffline, registerStallRecovery } from '../utils/boundedRead.js';
 import { createStreamRecovery } from '../utils/streamRecovery.js';
 
@@ -49,6 +49,41 @@ githubProvider.addScope('user:email');
 // fatal internal assertion. PaperTok already keeps its bounded feed snapshot
 // separately, so database persistence is unnecessary here.
 const db = getFirestore(app);
+
+// `npm run dev:emulators` starts the Firebase emulators and runs Vite in
+// `emulators` mode, which points both SDKs at them, so every account and every
+// Firestore read and write stays on this machine. Ports match firebase.json.
+//
+// A page load with nobody signed in signs in as `tester@example.com`, and
+// `?as=<name>` switches to `<name>@example.com`. The Auth emulator accepts an
+// unsigned JSON claim set as a Google credential, so the same name always
+// reopens the same account, and a new one goes through onboarding like any
+// first sign-in. The production build drops this whole block.
+if (import.meta.env?.MODE === 'emulators') {
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+  connectFirestoreEmulator(db, '127.0.0.1', 8080);
+
+  const url = new URL(window.location.href);
+  const requested = url.searchParams.get('as')?.trim().toLowerCase();
+  if (requested && !/^[a-z0-9._-]+$/.test(requested)) {
+    console.error(`?as=${requested} is not usable as an email local part; use letters, digits, ".", "_" or "-".`);
+  } else {
+    if (requested) {
+      url.searchParams.delete('as');
+      window.history.replaceState(window.history.state, '', url);
+    }
+    auth.authStateReady().then(() => {
+      const name = requested || (auth.currentUser ? '' : 'tester');
+      if (!name || auth.currentUser?.email === `${name}@example.com`) return undefined;
+      return signInWithCredential(auth, GoogleAuthProvider.credential(JSON.stringify({
+        sub: name,
+        email: `${name}@example.com`,
+        email_verified: true,
+        name,
+      })));
+    }).catch(error => console.error('Emulator sign-in failed', error));
+  }
+}
 
 // The one listen stream every SDK read rides can die under a live client and
 // the SDK will never notice (utils/streamRecovery.js: 96 s unanswered,

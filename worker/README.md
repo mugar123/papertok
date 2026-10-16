@@ -22,6 +22,8 @@ From the repository root, install dependencies with `npm ci`. Run the Worker wit
 
 For the frontend, copy `.env.example` to `.env.local` and run `npm run dev -- --port 5173` in another terminal. The example points both API variables to `http://localhost:8787`. Firebase web configuration is already in `src/services/firebase.js`; signing in uses the configured Firebase project.
 
+To use the app with made-up accounts instead of real Google or GitHub sign-in, run `npm run dev:emulators` instead of `npm run dev` (`PORT=5174 npm run dev:emulators` picks another port). It starts the Firebase Auth and Firestore emulators, which need firebase-tools on `PATH` and Java 21 or later (see [`tests/README.md`](../tests/README.md)), and runs Vite in `emulators` mode against them. The app then signs in as `tester@example.com` whenever a page loads with nobody signed in. A new account starts at onboarding. Add `?as=<name>` to any URL, for example `http://localhost:5173/feed?as=alice`, to switch to `<name>@example.com`; the same name always reopens the same account. Guest screens show only between logging out and the next page load, so test them with `npm run dev`. Accounts and Firestore documents stay on this machine and are saved to the untracked `.firebase-emulators/` directory when you stop the command with Ctrl+C. The Worker still checks tokens against the real Firebase project, so routes that require a signed-in user answer 401 for emulator accounts: plain-words rewrites, passage explanations, related papers, the citation graph, the CORE, physics and Scopus sources, institution access, public lists, notifications and account deletion.
+
 Run the entry-point and routing tests without credentials or live provider calls:
 
 ```bash
