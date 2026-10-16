@@ -98,8 +98,8 @@ test('the private user tree stays private', async () => {
 // =========================================================================
 // Comments, paper stubs, reports and the moderation switch are closed. The app
 // no longer has comments; what earlier versions wrote is left to the Worker's
-// service account, which account deletion uses to dissociate a user's
-// comments and which the rules do not govern.
+// service account, which account deletion uses to delete a user's comments
+// and the reports that name them, and which the rules do not govern.
 // =========================================================================
 
 const DAVE = 'dave-uid'; // signed in, never created a profile
