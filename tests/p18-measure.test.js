@@ -15,7 +15,8 @@
  * fixture means the question "could we not just slim the validator down?" can
  * be re-answered with numbers in a couple of minutes rather than re-derived.
  *
- * Method calqued from p17-measure.test.js: variants are built by string surgery
+ * Method (from the former p17-measure.test.js, removed with the follows
+ * rules): variants are built by string surgery
  * with anchors asserted verbatim, and the only trusted signal is
  * allowed/denied — denial traces mention "1000 expressions" for unrelated
  * reasons, so classifying by message lies.
