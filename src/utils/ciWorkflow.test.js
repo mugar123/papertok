@@ -63,7 +63,7 @@ test('SOURCE: the check job is deploy.yml\'s Verify plus the build, on Node 22, 
 
   // `npm run check` must not be weaker than what deploy.yml verifies.
   const pkg = JSON.parse(await readFile(PACKAGE, 'utf8'));
-  for (const script of ['security:secrets', 'lint', 'test', 'build', 'worker:deploy:dry-run']) {
+  for (const script of ['security:secrets', 'lint', 'typecheck', 'test', 'build', 'worker:deploy:dry-run']) {
     assert.ok(pkg.scripts.check.includes(script), `npm run check no longer runs ${script}`);
   }
 });

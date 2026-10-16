@@ -23,6 +23,10 @@ as `VITE_*` values.
 npm run check
 ```
 
+This runs the secret scan, ESLint, TypeScript checks, Node tests, Vite build and
+Worker dry-run. Run `npm run test:rules` separately with Java and firebase-tools
+as described in [`tests/README.md`](tests/README.md).
+
 The check also runs on Windows, in PowerShell or cmd. `.gitattributes` checks text files out
 with LF, which some source tests expect. A working tree checked out before that file existed
 keeps its CRLF files, and so can one that later checks out an older branch; each worktree has
@@ -36,6 +40,38 @@ git reset --hard
 
 Also verify the affected workflow manually when the change involves navigation, animations,
 loading states, authentication, or responsive layout.
+
+### TypeScript migration
+
+`npm run typecheck` generates Worker declarations from `wrangler.toml`, then runs
+`tsc --noEmit` for each environment. Vite and Wrangler still compile the application.
+Generated Worker declarations live in the ignored `worker-configuration.d.ts` file;
+regenerate them with `npm run worker:types` after changing Worker bindings.
+
+| Configuration | Files and runtime types |
+| --- | --- |
+| `tsconfig.json` | Frontend sources; DOM, React and Vite |
+| `worker/tsconfig.json` | Worker sources; Wrangler-generated bindings and runtime |
+| `tsconfig.node.json` | Colocated tests, `tests/`, maintained scripts and root tool configs; Node 22 |
+| `proxy/tsconfig.json` | Proxy sources; Deno and Web Worker web APIs |
+
+Each environment uses `strict: true`. During the incremental migration, `allowJs`
+and `checkJs: false` let existing JavaScript participate in module resolution without
+requiring annotations. TypeScript files are checked immediately. Manual provider
+probes in `scripts/diagnostics/` remain outside the automated checks.
+
+Use Node 22.18 or later for native `.ts` test execution. CI selects Node 22;
+Node 22.23.3 was verified to run `.ts` tests without a stripping flag. `npm test`
+discovers both `.test.js` and `.test.ts` under `src/`, `worker/` and `proxy/`.
+Use explicit relative extensions such as `./helper.ts` and `import type` for types.
+`erasableSyntaxOnly` rejects enums, value namespaces and parameter properties.
+Node does not execute `.tsx`; tests must import modules without JSX or inspect
+component source as text. Update source-reading paths and extension filters with
+every rename, and verify those assertions with a failing control mutation.
+
+No application or test files have been renamed in the setup phase. Tailwind's
+`@source` in `src/styles/global.css` still scans `.js` and `.jsx`; add `.ts` and
+`.tsx` and compare production CSS when components are first renamed.
 
 ## Pull Request Scope
 

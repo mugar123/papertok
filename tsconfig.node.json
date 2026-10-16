@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"]
+  },
+  "include": [
+    "src/**/*.test.js",
+    "src/**/*.test.ts",
+    "worker/**/*.test.js",
+    "worker/**/*.test.ts",
+    "proxy/**/*.test.js",
+    "proxy/**/*.test.ts",
+    "tests/**/*.js",
+    "tests/**/*.ts",
+    "scripts/**/*.js",
+    "scripts/**/*.mjs",
+    "scripts/**/*.ts",
+    "*.config.js",
+    "*.config.ts"
+  ],
+  "exclude": ["scripts/diagnostics"]
+}
