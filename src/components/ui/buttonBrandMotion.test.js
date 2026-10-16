@@ -9,7 +9,7 @@ const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
  *
  * Until 2026-10-15 the brand button lifted 2px with a shadow under the pointer
  * (restored 2026-09-17 after e56a7ea had dropped `.pc-ai-btn`'s lift). The
- * riso system took the movement away: the page does not float, every shadow
+ * PaperTok design system took the movement away: the page does not float, every shadow
  * token is `none`, and a button sliding up was the one thing on the card that
  * did. What moves now is only the sparkle icon, turning and growing a touch;
  * the button takes the full spot plate in an ink frame, the engraved
@@ -28,7 +28,7 @@ test('the brand button stays on the page under the pointer; only its icon moves'
   for (const cls of ['[&:hover_svg]:scale-110', '[&:hover_svg]:rotate-[8deg]', 'motion-reduce:[&:hover_svg]:scale-100', 'motion-reduce:[&:hover_svg]:rotate-0']) {
     assert.ok(classes.includes(cls), `${cls} is on the brand variant`);
   }
-  // Riso colours only: spot yellow at rest, the yellow plate framed in ink on
+  // Design-system colours only: spot yellow at rest, the yellow plate framed in ink on
   // hover. No orange, no status tint.
   assert.ok(classes.includes('border-[var(--brand-yellow)]'));
   assert.ok(classes.includes('hover:bg-brand'));

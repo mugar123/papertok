@@ -222,7 +222,7 @@ test('Save changes is the shared Button, drawn by the design system alone', asyn
   const jsx = await readFile(new URL('./ProfileEditor.jsx', import.meta.url), 'utf8');
   // Colour, hover, press and focus all come from ui/button (the engraved
   // primary); the page adds no look of its own on top.
-  assert.match(jsx, /<Button\s+type="submit"\s+disabled=/);
+  assert.match(jsx, /<Button\b[^>]*\btype="submit"/);
   assert.doesNotMatch(jsx, /<button\b/, 'a hand-rolled button came back');
   const css = rules(await readFile(new URL('./ProfileEditor.css', import.meta.url), 'utf8'));
   assert.doesNotMatch(css, /\.profile-primary/, 'a page-level skin came back over the shared button');

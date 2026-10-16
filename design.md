@@ -1,8 +1,8 @@
 ---
 name: PaperTok
-description: Today's science in one feed, printed like a riso index over editorial content.
+description: Today's science in one feed, printed like an index over editorial content.
 colors:
-  riso-navy-ink: "#1d2b53"
+  navy-ink: "#1d2b53"
   ink-hover: "#3e4a6b"
   spot-yellow: "#ffd21e"
   spot-yellow-soft: "#fff4c9"
@@ -92,7 +92,7 @@ spacing:
   "16": "4rem"
 components:
   button-primary:
-    backgroundColor: "{colors.riso-navy-ink}"
+    backgroundColor: "{colors.navy-ink}"
     textColor: "{colors.warm-proof-paper}"
     rounded: "{rounded.md}"
     height: "40px"
@@ -101,7 +101,7 @@ components:
     backgroundColor: "{colors.ink-hover}"
   button-outline:
     backgroundColor: "{colors.warm-proof-paper}"
-    textColor: "{colors.riso-navy-ink}"
+    textColor: "{colors.navy-ink}"
     rounded: "{rounded.md}"
     height: "40px"
     padding: "0 16px"
@@ -112,7 +112,7 @@ components:
     rounded: "{rounded.md}"
   button-brand:
     backgroundColor: "{colors.spot-yellow-soft}"
-    textColor: "{colors.riso-navy-ink}"
+    textColor: "{colors.navy-ink}"
     rounded: "{rounded.md}"
   button-brand-hover:
     backgroundColor: "{colors.spot-yellow}"
@@ -125,7 +125,7 @@ components:
     size: "40px"
   menu:
     backgroundColor: "{colors.warm-proof-paper}"
-    textColor: "{colors.riso-navy-ink}"
+    textColor: "{colors.navy-ink}"
     rounded: "{rounded.lg}"
     padding: "6px"
   menu-item-highlighted:
@@ -161,9 +161,9 @@ The seven numbered rules below are cited from code comments as
 
 ## Overview
 
-**Creative North Star: "The Riso Index"**
+**Creative North Star: "The PaperTok Index"**
 
-A document-first product printed like a riso page — one navy ink on warm paper,
+A document-first product printed like a single-ink page — one navy ink on warm paper,
 a spot yellow and a faint paper grain — that reads like a machine-generated
 index over editorial content. The tone is sober, editorial and curious: serious
 with the science, with a spark of play (Petri the mascot, the engravings, the
@@ -180,7 +180,7 @@ turns to ink (`night-paper`), the ink to paper (`night-ink`), and the spot
 yellow does not flip — a mark that changes value stops being a mark.
 
 **Key Characteristics:**
-- One ink (Riso Navy) on Warm Proof Paper, with a paper grain over the page.
+- One ink (Navy) on Warm Proof Paper, with a paper grain over the page.
 - Three voices: serif prose, mono machine data, Inter controls.
 - Colour only from the data (the twelve field inks) or from an action's meaning.
 - Spot Yellow as a thread, never a highlight reel.
@@ -193,7 +193,7 @@ One ink on warm paper, a single spot colour, and a register of flat print inks
 that only the data is allowed to pick.
 
 ### Primary
-- **Riso Navy Ink** (`riso-navy-ink`): text, solid primary buttons, the active
+- **Navy Ink** (`navy-ink`): text, solid primary buttons, the active
   state, the focus ring (`--focus-ring`) and the ink frame of an outline
   button. Holds ~17:1 on paper. **Ink Hover** (`ink-hover`) is its pressed and
   hovered step.
@@ -229,7 +229,7 @@ that only the data is allowed to pick.
   supporting text and mono labels. There is **no `--text-muted`**; use
   `--text-tertiary` (5.48:1 on paper).
 - **Rules** (`rule-subtle`, `rule-default`, `rule-strong`, plus
-  `--border-ink`): hairlines from faint to ink. `rule-subtle` is the riso rule
+  `--border-ink`): hairlines from faint to ink. `rule-subtle` is the hairline rule
   between rows.
 - **Status tints** (`--tint-{blue,green,amber,red,violet,neutral}-{bg,fg,line}`):
   badges and inline messages only.
@@ -336,8 +336,9 @@ Nothing floats. The system is flat: every elevation `--shadow-*` token
 3px focus ring on fields, not elevation, and stay. Depth is conveyed by
 hairline rules, by the step between paper and Ink Wash, and by a faint paper grain printed over the page (`--grain`, two
 offset blue-noise tiles in the ink, 0.22 light / 0.18 dark). An overlay is set
-apart by its `rule-default` hairline over a flat ink scrim (`--scrim`, ink at
-30%, no blur).
+apart by its `rule-default` hairline over a flat scrim (`--scrim`, no blur): the ink
+at 30% on light paper, black at 50% in dark, where the cream ink would lift the
+page instead of dimming it.
 
 ### Named Rules
 

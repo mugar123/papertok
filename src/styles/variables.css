@@ -1,7 +1,7 @@
 /* ============================================
    PaperTok Design System — CSS Variables
 
-   Riso print, document-first. One ink (navy) on warm paper with a spot yellow,
+   Print, document-first. One ink (navy) on warm paper with a spot yellow,
    the landing's palette (obradither/design-system). Structure comes from
    hairline rules instead of shadows, and metadata is set in mono so the
    interface reads like a machine-generated index over editorial content.
@@ -115,11 +115,11 @@
   --tint-neutral-line: #e4dccb;
 
   /* ── Borders ── */
-  --border-subtle: #e4dccb; /* the riso rule */
+  --border-subtle: #e4dccb; /* the hairline rule */
   --border-default: #d6ccb6;
   --border-strong: #a59c88;
   --border-ink: #1d2b53;
-  /* The scrim under a modal: the ink at 30%, flat — no blur (the riso system prints, it does not frost). */
+  /* The scrim under a modal: the ink at 30%, flat — no blur (the PaperTok design system prints, it does not frost). */
   --scrim: rgba(29, 43, 83, 0.3);
   /* Paper grain over the page: sparse blue-noise dots in the ink (public/grain*.png), this strong. */
   --grain: 0.22;
@@ -244,7 +244,7 @@
   --radius-full: 9999px;
 
   /* ── Shadows ──
-     None. A riso page prints, it does not float: an overlay is set apart by its
+     None. The page prints, it does not float: an overlay is set apart by its
      --border-default hairline, the same as the account menu. The tokens stay so
      every caller resolves to nothing rather than to an undefined value. The
      two glows are not elevation: they are the focus ring on fields. */
@@ -430,7 +430,7 @@
   --tint-neutral-line: #363d4b;
 
   /* ── Borders ── */
-  --border-subtle: #2c2f3a; /* the riso rule */
+  --border-subtle: #2c2f3a; /* the hairline rule */
   --border-default: #383b47;
   --border-strong: #535766;
   --border-ink: #f4ecd8;
