@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { hasUnlimitedAI } from './ai-explanation.js';
-import reportApi from './report-api.js';
+import reportApi from './index.js';
 
 /**
  * Accounts the daily allowance does not apply to.

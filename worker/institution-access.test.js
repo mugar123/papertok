@@ -6,7 +6,7 @@ import {
   parseResolverAnswer,
   readAccessQuery,
 } from './institution-access.js';
-import reportApi from './report-api.js';
+import reportApi from './index.js';
 import { fakeIdToken } from '../src/test-support/firebaseIdToken.js';
 
 // Captured 2026-10-13 from the USAL Alma resolver (svc_dat=CTO), with the

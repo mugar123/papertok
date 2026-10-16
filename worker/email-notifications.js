@@ -1982,7 +1982,7 @@ ${stories}
   return { html, text: blocks.join('\n\n'), subject };
 }
 
-// Deliberately the same shape as `fetchWithDeadline` in `report-api.js`, down
+// Deliberately the same shape as `fetchWithDeadline` in `provider-runtime.js`, down
 // to the caller-signal rule. This one used to arm an `AbortController` and clear
 // its timer in a `finally`, which reads as bounded and is not: `fetch` resolves
 // when the **headers** arrive, so the timer was gone before a byte of the body

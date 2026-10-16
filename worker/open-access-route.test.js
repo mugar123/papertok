@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import reportApi from './report-api.js';
+import reportApi from './index.js';
 
 const DOI = '10.1080/07853890.2026.2726635';
 const ORIGIN = 'https://papertok.app';

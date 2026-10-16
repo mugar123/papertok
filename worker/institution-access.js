@@ -13,6 +13,22 @@
  */
 
 import { institutionDomainOf } from '../src/utils/institutionDomain.js';
+import { cacheResponse } from './provider-runtime.js';
+
+// A library's holdings change slowly; `unknown` (no ISSN, or GetFTR down with
+// no resolver behind it) may be an outage, so it is asked again sooner.
+export const ACCESS_CACHE_SECONDS = 7 * 24 * 60 * 60;
+const ACCESS_UNKNOWN_CACHE_SECONDS = 6 * 60 * 60;
+
+export async function handleInstitutionAccess(request, env) {
+  const url = new URL(request.url);
+  const origin = request.headers.get('origin') || '';
+  const query = readAccessQuery(url.searchParams);
+  const ttl = payload => (payload.status === 'unknown' ? ACCESS_UNKNOWN_CACHE_SECONDS : ACCESS_CACHE_SECONDS);
+  return cacheResponse(request, origin, env, ttl, () => lookupInstitutionAccess(query, { env }), {
+    canonicalParams: upstreamParams(query, env),
+  });
+}
 
 export const INSTITUTION_ACCESS_PATH = '/access';
 

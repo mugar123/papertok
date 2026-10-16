@@ -1,6 +1,36 @@
-# PaperTok report API
+# PaperTok Worker API
 
-This Cloudflare Worker protects provider keys and caches trend, related-paper and open-access queries.
+This Cloudflare Worker protects provider keys and serves scientific queries, AI, account, institution, notification, comment and share routes.
+
+## Source structure
+
+Wrangler loads `worker/index.js`. It delegates HTTP requests to `handleRequest(request, env)` in `router.js`, runs the email schedule, and exports the three Durable Object classes.
+
+- `router.js` owns dispatch order, the Origin checks for the feature and health routes (`/health` and `/notifications/unsubscribe` have none), Firebase identity for `PROTECTED_PROVIDER_PATHS`, institution access and `/ai/quota`, a GET-only check for every route after the AI POST routes, and error responses. Most feature handlers check their own methods.
+- Provider handlers refuse a disallowed Origin themselves. A request without an Origin passes, except on `/pdf`, which requires one. The `/sources/*` handlers check through `sourceRequestContext` in `provider-runtime.js`. `/share/*` has no Origin check because it serves crawlers.
+- `http.js` owns JSON responses, allowed Origins and CORS headers.
+- `provider-runtime.js` owns canonical cache keys, provider quota reservations and refunds, the shared OpenAlex budget, the Semantic Scholar beat, the default upstream deadlines and `fetchWithDeadline`.
+- `arxiv-api.js` and `share-route.js` keep the arXiv beat through `upstream-pace.js`, and `share-route.js` reserves its own `share:` ceilings in the request-quota ledger. arXiv, share, the PDF proxy, the citation graph and paper figures set their own deadlines; the PDF proxy and paper figures fetch with their own timers instead of `fetchWithDeadline`.
+- `openalex-api.js`, `citation-graph.js`, `open-access.js`, `arxiv-api.js`, `pdf-proxy.js`, `semantic-scholar.js`, `scopus-api.js`, `physics-api.js` and `share-route.js` own their provider handlers. Small source handlers are in `source-api.js`; health responses are in `health-api.js`.
+- Existing feature modules own AI, accounts, institutions, notifications, lists, comments and ledgers.
+
+Provider modules use the shared runtime and HTTP helpers. `http.js` imports nothing; `provider-runtime.js` imports `http.js`, the request-quota ledger and `upstream-pace.js`. Neither imports the router or a provider module. OpenAlex relay, trend, graph and share requests reserve against the same budget in `provider-runtime.js`.
+
+## Local testing
+
+From the repository root, install dependencies with `npm ci`. Run the Worker with `npx wrangler dev --local --port 8787`. Local provider credentials belong in the untracked root `.dev.vars` file; never put them in `VITE_*` variables. Local mode emulates KV and Durable Objects, but provider requests still reach live services and can consume quota. `--local` also turns off remote bindings, so the Workers AI binding cannot reach Cloudflare: the PDF-to-text conversion for NaN rewrites fails, and NaN is handed the PDF itself (about 45 s to the first token). To test the conversion, run `npx wrangler login` and then `npx wrangler dev --port 8787` without `--local`. Wrangler then runs the AI binding on the Cloudflare account and warns that this may incur usage charges.
+
+For the frontend, copy `.env.example` to `.env.local` and run `npm run dev -- --port 5173` in another terminal. The example points both API variables to `http://localhost:8787`. Firebase web configuration is already in `src/services/firebase.js`; signing in uses the configured Firebase project.
+
+Run the entry-point and routing tests without credentials or live provider calls:
+
+```bash
+node --test worker/index.test.js worker/router.test.js
+```
+
+Before opening a PR, run `npm run check`. It includes the secret scan, lint, Node tests, frontend build and Worker dry-run. The build needs the API variables from `.env.local`. A dry-run packages the Worker without deploying it.
+
+## Deployment
 
 ```bash
 npx wrangler secret put OPENALEX_API_KEY # required since Feb 2026; without it OpenAlex runs on the $0.10/day anonymous budget

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import reportApi from './report-api.js';
+import reportApi from './index.js';
 
 /**
  * `POST /ai/annotate` — one passage, explained where the reader is standing.

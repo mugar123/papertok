@@ -1,5 +1,5 @@
 name = "papertok-report-api"
-main = "worker/report-api.js"
+main = "worker/index.js"
 compatibility_date = "2026-07-16"
 
 # Declarar `[[routes]]` hace que wrangler apague workers.dev por defecto, y esa

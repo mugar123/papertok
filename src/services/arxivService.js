@@ -174,7 +174,7 @@ function safeDateISO(dateStr) {
 }
 
 
-// The Worker holds arXiv to ARXIV_UPSTREAM_TIMEOUT_MS (5 s, worker/report-api.js)
+// The Worker holds arXiv to ARXIV_UPSTREAM_TIMEOUT_MS (5 s, worker/arxiv-api.js)
 // and answers 502 when that passes. The client used to leave at 4 s, before the
 // Worker could say anything: a `sortBy=relevance` query, which arXiv takes 5 s+
 // to answer, could never succeed however healthy the route. One second above
