@@ -13,7 +13,7 @@ import {
   readAccessQuery,
 } from './institution-access.ts';
 import reportApi from './index.ts';
-import { fakeIdToken } from '../src/test-support/firebaseIdToken.js';
+import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
 
 // Captured 2026-10-13 from the USAL Alma resolver (svc_dat=CTO), with the
 // performance counters removed: Cell, ISSN 0092-8674, 2020.

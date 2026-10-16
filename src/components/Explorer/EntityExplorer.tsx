@@ -78,7 +78,7 @@ import { useHeightSettle } from '../../hooks/useHeightSettle.ts';
 import { useActiveTabRule } from '../../hooks/useActiveTabRule.ts';
 import { useIsPageArriving, useAfterPageArrival } from '../../hooks/usePageArrival.ts';
 import { useOverlayHistory } from '../../hooks/useOverlayHistory.ts';
-import { CATEGORIES } from '../../data/categories.js';
+import { CATEGORIES } from '../../data/categories.ts';
 import { areaAccentForCategory as getAreaGradient, areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.ts';
 import { explorerSkeletonShape, hasAuthorsTab } from '../../utils/explorerSkeletonShape.ts';
 import { handedEntityFor, handoverFromSearchRow } from '../../utils/explorerHandover.ts';

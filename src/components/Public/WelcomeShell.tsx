@@ -13,7 +13,7 @@ interface WelcomeShellProps extends PropsWithChildren {
 import { useCallback, useLayoutEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeft, ArrowRight, CaretDown, Check, SkipForward } from '@phosphor-icons/react';
-import { CATEGORIES } from '../../data/categories.js';
+import { CATEGORIES } from '../../data/categories.ts';
 import ThemeToggle from '../Layout/ThemeToggle.tsx';
 import ProgressDots from './ProgressDots.tsx';
 import { Button } from '../ui/button.tsx';

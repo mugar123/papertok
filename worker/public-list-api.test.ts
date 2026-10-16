@@ -13,7 +13,7 @@ import {
   PublicListApiError,
 } from './public-list-api.ts';
 import { decodeFields, FirestoreAdminError } from './firestore-admin.ts';
-import { fakeIdToken } from '../src/test-support/firebaseIdToken.js';
+import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
 
 type TestListCard = { shareId: string; title: string; paperCount: number; emoji?: string; publishedAt?: Date };
 

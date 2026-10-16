@@ -57,7 +57,7 @@ async function scopusFailure(response: Response, view: string) {
 // to a hostname Cloudflare already fronts never leaves its network, and Elsevier
 // answers it with `500 GENERAL_SYSTEM_ERROR` -- measured, and reproduced with no
 // API key at all, while the same request from any other network answers
-// normally. So Scopus is reached through `proxy/scopus-proxy.js` on Deno Deploy,
+// normally. So Scopus is reached through `proxy/scopus-proxy.ts` on Deno Deploy,
 // which is where the Elsevier key lives; this Worker never holds it.
 export function isScopusEgressConfigured(env: WorkerEnv) {
   return Boolean(env.SCOPUS_PROXY_URL) && Boolean(env.SCOPUS_PROXY_SECRET);

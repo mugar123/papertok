@@ -28,7 +28,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { useFeed } from '../../context/FeedContext.tsx';
 import { useLanguage } from '../../context/LanguageContext.tsx';
-import { getCategoryLabel } from '../../data/categories.js';
+import { getCategoryLabel } from '../../data/categories.ts';
 import { getIcon } from '../../utils/icons.ts';
 import CreateListDialog from './CreateListDialog.tsx';
 import { Button } from '../ui/button.tsx';

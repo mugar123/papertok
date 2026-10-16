@@ -5,7 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { useLanguage } from '../../context/LanguageContext.tsx';
-import { CATEGORIES } from '../../data/categories.js';
+import { CATEGORIES } from '../../data/categories.ts';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import InstitutionLink from '../Institution/InstitutionLink.tsx';
 import { AreaPicker, SubtopicsPicker, WelcomeCopy, WelcomeShell } from '../Public/WelcomeShell.tsx';
@@ -13,7 +13,7 @@ import { LibraryPreview } from '../Public/GuestWelcomePreferences.tsx';
 import { GUEST_SEED_PER_AREA, guestSeedCategoriesForAreas, guestSeedSizeForAreas, readGuestInterests } from '../../utils/guestInterests.ts';
 import { USER_PREFERENCES_MAX } from '../../utils/accountOnboarding.ts';
 import { Button } from '../ui/button.tsx';
-import WELCOME_TITLE from './welcomeTitlePaths.js';
+import WELCOME_TITLE from './welcomeTitlePaths.ts';
 import Petri from './Petri.tsx';
 import PetriStamp from './PetriStamp.tsx';
 import './OnboardingFlow.css';
@@ -80,7 +80,7 @@ const COPY = {
 const UNIVERSITY_FORM_ID = 'onboarding-institution-form';
 
 // The greeting's title, written out once as if by hand: Pinyon Script
-// outlines baked into SVG (scripts/build-welcome-title.mjs), so no script
+// outlines baked into SVG (scripts/build-welcome-title.ts), so no script
 // face is loaded. Each glyph is drawn filled under its own mask, a band
 // leaning with the script that slides across the glyph with a soft leading
 // edge, so the ink arrives stroke by stroke rather than as an outline.

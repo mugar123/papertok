@@ -4,7 +4,7 @@ import type { OpenAlexWork } from './openAlexTypes.ts';
 import type { OpenAlexRequestError } from '../openAlexClient.ts';
 
 import { assignRequestedCategories } from '../arxivService.ts';
-import { getCategoryArea } from '../../data/categoryTaxonomy.js';
+import { getCategoryArea } from '../../data/categoryTaxonomy.ts';
 import { openAlexFetch } from '../openAlexClient.ts';
 import { getArxivIdFromWork } from '../openAlexService.ts';
 import { usableOpenAlexAbstract } from '../../utils/openAlexAbstract.ts';
@@ -18,7 +18,7 @@ import { openAlexPublicationStatus } from '../../utils/publicationStatus.ts';
 // half of `authorships`). Measured 2026-09-16 with this list: 326 KB and
 // 45–49 KB. The Worker relays `select` untouched (OPENALEX_PARAMS). Nested
 // selection is not something OpenAlex offers, so `authorships` and
-// `locations` still travel whole. OpenAlexAdapter.test.js holds the guard:
+// `locations` still travel whole. OpenAlexAdapter.test.ts holds the guard:
 // a work stripped to these fields must map to the same paper as the full one.
 export const OPENALEX_WORK_SEARCH_FIELDS = Object.freeze([
   'id',

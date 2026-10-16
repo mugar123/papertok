@@ -3,9 +3,9 @@
   "include": [
     "**/*.test.ts",
     "../worker-configuration.d.ts",
-    "../src/services/paperFigureService.test.js",
-    "../src/components/Institution/publisherLogos.test.js",
-    "../src/utils/aiExplanation.test.js",
+    "../src/services/paperFigureService.test.ts",
+    "../src/components/Institution/publisherLogos.test.ts",
+    "../src/utils/aiExplanation.test.ts",
     "../src/types/**/*.d.ts"
   ],
   "exclude": []

@@ -2,7 +2,7 @@ import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { verifyFirebaseAccount } from './ai-explanation.ts';
-import { fakeIdToken } from '../src/test-support/firebaseIdToken.js';
+import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
 
 /* ============================================================
    What an auth failure is actually saying

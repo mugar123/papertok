@@ -4,8 +4,8 @@ import type { DigestPaper, Follow, Subscription } from './email-notifications.ts
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { CATEGORIES } from '../src/data/categoryTaxonomy.js';
-import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.js';
+import { CATEGORIES } from '../src/data/categoryTaxonomy.ts';
+import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.ts';
 import {
   emailNotificationInternals,
   checkEmailProviderHealth,

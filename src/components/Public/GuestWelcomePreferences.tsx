@@ -4,7 +4,7 @@ import type { ReadingLevel } from '../../utils/userSettings.ts';
 import { useEffect, useState } from 'react';
 import { animate, cubicBezier, motion, useMotionValue, useMotionValueEvent, useReducedMotion, useTransform } from 'framer-motion';
 import { ArrowUpRight, BookOpen, Check, Cursor, FileText, Flask, Folder, GithubLogo, GraduationCap, LockSimple, LockSimpleOpen, Star } from '@phosphor-icons/react';
-import { CATEGORIES } from '../../data/categories.js';
+import { CATEGORIES } from '../../data/categories.ts';
 import { Button } from '../ui/button.tsx';
 import { Switch } from '../ui/switch.tsx';
 

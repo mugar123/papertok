@@ -54,7 +54,7 @@ import './styles/global.css'
 // The app ships a complete PWA manifest but, until now, registered no
 // service worker at all -- installable, zero offline capability, and every
 // repeat visit re-fetching the whole chunk graph behind a 10-minute
-// max-age. `registerType: 'autoUpdate'` (vite.config.js) means: when a new
+// max-age. `registerType: 'autoUpdate'` (vite.config.ts) means: when a new
 // deploy's service worker is detected, skip waiting and take control
 // automatically.
 //
@@ -158,7 +158,7 @@ registerSW({
   },
 })
 
-// The phone-side record of the tab bar's taps (diagnostics/tapDiagnostics.js):
+// The phone-side record of the tab bar's taps (diagnostics/tapDiagnostics.ts):
 // behind `?tapdiag=1`, remembered for the tab's session so the app's own
 // reloads keep it, `?tapdiag=0` to stop. A separate chunk that never loads
 // otherwise. The flag is read from the search AND the hash: the routes live in
@@ -169,7 +169,7 @@ try {
   const flag = /[?&]tapdiag=([01])\b/.exec(`${window.location.search} ${window.location.hash}`)
   if (flag) sessionStorage.setItem('papertok_tapdiag', flag[1])
   if (sessionStorage.getItem('papertok_tapdiag') === '1') {
-    import('./diagnostics/tapDiagnostics.js').then((m) => m.start()).catch(() => {})
+    import('./diagnostics/tapDiagnostics.ts').then((m) => m.start()).catch(() => {})
   }
 } catch {
   // No session storage: no diagnostics either.

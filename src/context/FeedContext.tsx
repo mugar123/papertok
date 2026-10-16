@@ -50,7 +50,7 @@ import { useAuth } from './AuthContext.tsx';
 import { useFollowing } from './FollowingContext.tsx';
 import { ARXIV_FEED_AREAS, fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers } from '../services/arxivService.ts';
 import { getDeviceInfo } from '../utils/device.ts';
-import { CATEGORIES, getAllLeafCategories } from '../data/categories.js';
+import { CATEGORIES, getAllLeafCategories } from '../data/categories.ts';
 import { PubmedAdapter } from '../services/adapters/PubmedAdapter.ts';
 import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter.ts';
 import { getArxivIdsForOpenAlexWorks, enrichPapersBatch, fetchPapersByDois, getWorksByEntity } from '../services/openAlexService.ts';

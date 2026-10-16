@@ -51,7 +51,7 @@ export interface InteractionDocument { id: string; data: InteractionDocumentData
  * a single aged accumulator weighted at the flat 0.2, and the bucket is
  * dropped. That bounds a category at ~50 numbers regardless of history.
  */
-import { CATEGORIES, getCategorySimilarity } from '../data/categories.js';
+import { CATEGORIES, getCategorySimilarity } from '../data/categories.ts';
 import {
   addSeenPaper,
   createSeenFilter,

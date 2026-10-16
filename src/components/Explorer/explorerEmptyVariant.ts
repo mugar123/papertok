@@ -3,7 +3,7 @@
 // itself failed), then an active search/filter, then the project-specific
 // "OpenAIRE hasn't indexed this yet" case, and only then the generic empty.
 // Kept in its own non-JSX module so a plain `node --test` run can import it
-// without a JSX-capable loader — see explorerEmptyState.test.js.
+// without a JSX-capable loader — see explorerEmptyState.test.ts.
 export function pickEmptyVariant({ papersError, hasActiveFilters, type }: { papersError?: unknown; hasActiveFilters?: boolean; type?: string }) {
   if (papersError) return 'error';
   if (hasActiveFilters) return 'filtered';

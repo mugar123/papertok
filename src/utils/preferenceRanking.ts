@@ -1,4 +1,4 @@
-import { getCategoryArea } from '../data/categories.js';
+import { getCategoryArea } from '../data/categories.ts';
 
 /**
  * The order the feed asks its sources in — and, since each source only takes

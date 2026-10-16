@@ -25,7 +25,7 @@ const REQUEST_TIMEOUT_MS = 10_000;
  * `worker/paper-figures.ts`. They have to move together: a client filter that
  * is narrower than the Worker's silently withholds papers the Worker would
  * happily serve, which is how the back catalogue stayed invisible even though
- * ar5iv exists precisely to render it. `paperFigureService.test.js` pins the
+ * ar5iv exists precisely to render it. `paperFigureService.test.ts` pins the
  * two against each other so they cannot diverge in silence.
  */
 const MODERN_ARXIV_ID = /^\d{4}\.\d{4,5}$/;

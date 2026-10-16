@@ -47,7 +47,7 @@ interface InspireRecord {
 interface PhysicsResponse { _papertok?: { source?: string }; response?: { docs?: AdsRecord[] }; hits?: { hits?: InspireRecord[] }; }
 type SourceRequest<T> = { path: string; promise: Promise<T> };
 
-import { CATEGORIES } from '../data/categories.js';
+import { CATEGORIES } from '../data/categories.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
 import { isScopusEnabled, ScopusAdapter } from './adapters/ScopusAdapter.ts';
 import { isTechnicalClassification } from '../utils/scientificClassification.ts';

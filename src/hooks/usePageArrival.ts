@@ -25,7 +25,7 @@ import { createContext, useCallback, useContext } from 'react';
  * animates from then on.
  *
  * It lives in its own module, with no component and no JSX, for the reason
- * `contextIdentity.test.js` enforces: a `createContext()` sharing a module with
+ * `contextIdentity.test.ts` enforces: a `createContext()` sharing a module with
  * a component is re-created by Fast Refresh, and consumers holding the previous
  * object silently read the default.
  */

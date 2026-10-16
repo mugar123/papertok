@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { withStubbedFetch } from '../src/test-support/deadlineHarness.js';
+import { withStubbedFetch } from '../src/test-support/deadlineHarness.ts';
 import {
   extractFiguresFromHtml,
   fetchPaperFigures,

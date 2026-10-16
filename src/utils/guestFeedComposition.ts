@@ -1,6 +1,6 @@
 import type { Paper } from '../models/Paper.ts';
 interface AreaPlan { areas?: string[] }
-import { CATEGORIES } from '../data/categories.js';
+import { CATEGORIES } from '../data/categories.ts';
 
 /**
  * How the guest page is dealt out among the areas a visitor picked.

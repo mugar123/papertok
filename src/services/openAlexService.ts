@@ -19,7 +19,7 @@ export type RecentImpact = Partial<ReturnType<typeof calculateEntityRecentImpact
  * Handles semantic enrichment, concept extraction, and citation graphs.
  */
 
-import { CATEGORIES } from '../data/categories.js';
+import { CATEGORIES } from '../data/categories.ts';
 import { usableOpenAlexAbstract } from '../utils/openAlexAbstract.ts';
 import { openAlexPublicationStatus } from '../utils/publicationStatus.ts';
 import { usableOpenAlexConcepts } from '../utils/openAlexConcepts.ts';

@@ -4,7 +4,7 @@ import type { PublicListPaper } from '../../services/publicListPayload.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowsClockwise, BookOpen, Check, Quotes, ShareNetwork } from '@phosphor-icons/react';
-import { getCategoryLabel } from '../../data/categories.js';
+import { getCategoryLabel } from '../../data/categories.ts';
 import ScientificText from '../ScientificText.ts';
 import { useLanguage } from '../../context/LanguageContext.tsx';
 import { useAuth } from '../../context/AuthContext.tsx';

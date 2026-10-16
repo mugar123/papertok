@@ -1,7 +1,7 @@
 import type { FirestoreData, FirestoreWrite } from './firestore-admin.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fakeIdToken } from '../src/test-support/firebaseIdToken.js';
+import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
 import {
   INSTITUTION_LINK_PATH,
   INSTITUTION_UNLINK_PATH,

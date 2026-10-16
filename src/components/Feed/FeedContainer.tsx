@@ -75,7 +75,7 @@ const resumeMemory = createFeedResumeMemory();
  * body the moment the scroll event lands (PaperCard.css).
  *
  * The restore effect below keeps its own inline read of the same two lines
- * rather than calling this: feedResume.test.js pins that exact text as the
+ * rather than calling this: feedResume.test.ts pins that exact text as the
  * contract for reporting the visible paper before the profile re-rank.
  */
 function resumeAnchor(papers: Paper[], scrollKey: string) {
@@ -86,7 +86,7 @@ function resumeAnchor(papers: Paper[], scrollKey: string) {
 const REFRESH_HOVER_BAND_PX = 120;
 // How long the feed takes to dip out of sight when a refresh starts. The same
 // 180ms is written in FeedContainer.css (`.feed-container--refreshing`), and
-// feedRefresh.test.js holds the two together: everything this number is used
+// feedRefresh.test.ts holds the two together: everything this number is used
 // for here is about waiting until the cover is actually down.
 const REFRESH_DIP_MS = 180;
 // Cuánto se sostiene la pose de aterrizaje del tirón (`landPull`). Sólo tiene
@@ -885,13 +885,13 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
    * `activeIndex` in any form. Nothing visual depends on it (clips enter
    * through an IntersectionObserver at 15% and `pcArrive` has no condition),
    * so a value that lands a frame or two late makes nothing flicker.
-   * feedScrollPriority.test.js pins that the card takes no active flag.
+   * feedScrollPriority.test.ts pins that the card takes no active flag.
    *
    * El `setActiveIndex` del efecto de resume NO va en transición: allí el valor
    * tiene que estar puesto antes de que la ventana de montaje decida, o la
    * tarjeta a la que se vuelve monta sola y refunde su cuerpo entero.
    *
-   * El comentario vive aquí arriba, y no dentro, porque feedResume.test.js
+   * El comentario vive aquí arriba, y no dentro, porque feedResume.test.ts
    * acota el cuerpo de este handler a 32 líneas y `stripComments` deja las
    * líneas en blanco: el handler ya estaba justo en ese tope.
    */

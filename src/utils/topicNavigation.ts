@@ -7,7 +7,7 @@ export interface TopicTarget extends TopicInput {
   id: string; label: string; type: string; reliable: boolean; _queryTopic?: boolean;
 }
 
-import { CATEGORIES } from '../data/categories.js';
+import { CATEGORIES } from '../data/categories.ts';
 import { isTechnicalClassification } from './scientificClassification.ts';
 
 const QUERY_TOPIC_PREFIX = 'query-';

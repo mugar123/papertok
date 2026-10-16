@@ -14,7 +14,7 @@ import {
   Sparkle,
   UserPlus,
 } from '@phosphor-icons/react';
-import { CATEGORIES } from '../../data/categories.js';
+import { CATEGORIES } from '../../data/categories.ts';
 import { Button } from '../ui/button.tsx';
 import { GithubMark } from '../ui/GithubMark.tsx';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';

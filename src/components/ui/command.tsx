@@ -175,7 +175,7 @@ function CommandGroup({ className, ...props }: StyledProps<typeof CommandPrimiti
  * selected row (2026-10-10). What marks it now is an "↵" at the row's end —
  * the palette's own "Enter opens this" — in `var(--focus-ring)`, the token
  * whose job is "you are here" and whose value stays above 3:1 on every
- * surface in both themes (contrast.test.js measures it). A stronger tint and
+ * surface in both themes (contrast.test.ts measures it). A stronger tint and
  * semibold text make the row read as one object; neither is the indicator.
  * The "↵" carries empty alt text (`content: '↵' / ''`), so it is seen but
  * never read into the option's name.

@@ -27,7 +27,7 @@ export interface PaperCardProps {
 }
 import { Fragment, useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useId, memo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { CATEGORIES } from '../../data/categories.js';
+import { CATEGORIES } from '../../data/categories.ts';
 import {
   ArrowLeft,
   ArrowSquareOut,

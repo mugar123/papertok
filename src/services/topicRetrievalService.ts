@@ -18,7 +18,7 @@ export interface TopicRetrievalOptions {
   timeoutMs?: number; excludeProviders?: string[];
 }
 
-import { CATEGORIES, getCategoryLabel } from '../data/categories.js';
+import { CATEGORIES, getCategoryLabel } from '../data/categories.ts';
 import { filterRelevantQueryTopicPapers } from '../utils/queryTopicSearch.ts';
 import {
   createQueryTopic,

@@ -26,7 +26,7 @@ const NAME_MAX = 80;
  * "Nicolás MUÑOZ" lowers to "nicolás muÑoz" there, keeping the Ñ. Using
  * JavaScript's `toLowerCase()` here would produce "muñoz", the equality would
  * fail, and an account with an accented capital in its name could not save its
- * profile at all. `tests/firestore.rules.test.js` pins the agreement by running
+ * profile at all. `tests/firestore.rules.test.ts` pins the agreement by running
  * this very function against the deployed clauses.
  *
  * Nothing else happens here: no accent folding, no punctuation stripping, no

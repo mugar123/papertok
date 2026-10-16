@@ -66,7 +66,7 @@ import wolterskluwer from '../../assets/publishers/wolterskluwer.svg';
 import worldscientific from '../../assets/publishers/worldscientific.png';
 
 // Keyed by the Worker catalogue's platform id. Each import is named after its
-// file, which `publisherLogos.test.js` relies on to check the map from source.
+// file, which `publisherLogos.test.ts` relies on to check the map from source.
 const LOGOS = {
   aaa,
   aacr,

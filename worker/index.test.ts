@@ -12,8 +12,8 @@ import { encodePaperKey } from '../src/utils/publicNavigation.ts';
 import reportApi from './index.ts';
 import { fetchWithDeadline } from './provider-runtime.ts';
 import { PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
-import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.js';
-import { fakeIdToken } from '../src/test-support/firebaseIdToken.js';
+import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.ts';
+import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
 import type { WorkerEnv } from './env.ts';
 
 async function withWorkerFetchMock<Result>(fetchImplementation: typeof fetch, callback: () => Promise<Result>) {

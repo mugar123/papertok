@@ -16,7 +16,7 @@ interface PubmedResponse {
   efetch?: string;
 }
 
-import { CATEGORIES } from '../../data/categories.js';
+import { CATEGORIES } from '../../data/categories.ts';
 import { readSourceCache, writeSourceCache } from '../../utils/sourceCache.ts';
 import { mergePubmedAuthors, readPubmedEfetch } from '../../utils/pubmedEfetch.ts';
 import { fetchWorkerSourceJson } from '../workerApiClient.ts';

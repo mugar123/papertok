@@ -83,7 +83,7 @@ function demoSet(key: string, value: unknown) {
  * every close path (✕, backdrop, Escape) funnels through `requestClose`,
  * which swaps the save bar for a discard confirmation while changes exist.
  *
- * Structural contract, pinned by saveOrganizeModel.test.js: the ONLY
+ * Structural contract, pinned by saveOrganizeModel.test.ts: the ONLY
  * handlers that write are `handleCreateList` (its own explicit button; it
  * creates an EMPTY list — the paper joins it on Save) and `handleSave`, and
  * they are defined last, after every write-free handler.

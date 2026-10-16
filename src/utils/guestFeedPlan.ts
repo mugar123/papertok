@@ -1,5 +1,5 @@
 export type GuestFeedPlan = ReturnType<typeof buildGuestFeedPlan>;
-import { CATEGORIES } from '../data/categories.js';
+import { CATEGORIES } from '../data/categories.ts';
 import { ARXIV_FEED_AREAS } from '../services/arxivService.ts';
 import { guestCategoriesForAreas, guestTopicListsForAreas, normalizeGuestAreas, normalizeGuestTopics } from './guestInterests.ts';
 

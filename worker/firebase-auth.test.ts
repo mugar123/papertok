@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { verifyFirebaseIdentity } from './firebase-auth.ts';
-import { fakeIdToken } from '../src/test-support/firebaseIdToken.js';
+import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
 
 const UID = 'alice-uid';
 const EMAIL = 'alice@example.com';

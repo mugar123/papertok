@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Check } from '@phosphor-icons/react';
 import { useAuth } from '../../context/AuthContext.tsx';
-import { CATEGORIES } from '../../data/categories.js';
+import { CATEGORIES } from '../../data/categories.ts';
 import { USER_PREFERENCES_MAX } from '../../utils/accountOnboarding.ts';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.tsx';
 import { Button } from '../ui/button.tsx';

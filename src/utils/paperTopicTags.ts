@@ -1,7 +1,7 @@
 import type { Paper } from '../models/Paper.ts';
 import type { TopicInput, TopicTarget } from './topicNavigation.ts';
 
-import { getCategoryLabel } from '../data/categories.js';
+import { getCategoryLabel } from '../data/categories.ts';
 import { isTechnicalClassification } from './scientificClassification.ts';
 import { resolvePaperTopic } from './topicNavigation.ts';
 

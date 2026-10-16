@@ -29,7 +29,7 @@ import { useEmailNotifications } from '../../context/EmailNotificationsContext.t
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import { ANALYTICS_CONSENT } from '../../services/analyticsService.ts';
 import { PAPER_REWRITE_LEVELS } from '../../services/paperRewriteService.ts';
-import { CATEGORIES } from '../../data/categories.js';
+import { CATEGORIES } from '../../data/categories.ts';
 import { prepareProfileImage } from '../../utils/profileImage.ts';
 import { SIGN_IN_PROVIDERS } from '../../services/authIdentityService.ts';
 import GoogleMark from '../Public/GoogleMark.tsx';

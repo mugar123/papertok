@@ -76,7 +76,7 @@ interface ScheduleSummary {
 import type { WorkerEnv } from './env.ts';
 
 import { XMLParser } from 'fast-xml-parser';
-import { CATEGORIES } from '../src/data/categoryTaxonomy.js';
+import { CATEGORIES } from '../src/data/categoryTaxonomy.ts';
 import { areaKeyForPaper } from '../src/utils/areaAccent.ts';
 import { usableOpenAlexAbstract } from '../src/utils/openAlexAbstract.ts';
 import { filterRelevantQueryTopicPapers } from '../src/utils/queryTopicSearch.ts';

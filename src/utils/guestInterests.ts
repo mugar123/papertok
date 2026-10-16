@@ -1,6 +1,6 @@
 type GuestAnswer = { areas?: unknown; topics?: unknown; readingLevel?: unknown; emailDigest?: unknown };
 
-import { CATEGORIES } from '../data/categories.js';
+import { CATEGORIES } from '../data/categories.ts';
 import { normalizeReadingPreferences } from './userSettings.ts';
 
 /**
@@ -100,7 +100,7 @@ export function guestCategoriesForAreas(areas: readonly string[], topics: readon
 export const GUEST_SEED_PER_AREA = 5;
 
 // The rules' cap on a profile's preferences (firestore.rules), restated here
-// so this module stays free of the onboarding's imports; guestInterests.test.js
+// so this module stays free of the onboarding's imports; guestInterests.test.ts
 // holds the two to the same value.
 export const GUEST_SEED_MAX = 100;
 

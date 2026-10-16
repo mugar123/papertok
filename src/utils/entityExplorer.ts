@@ -1,6 +1,6 @@
 import type { Paper, PaperAuthor } from '../models/Paper.ts';
 
-import { CATEGORIES } from '../data/categories.js';
+import { CATEGORIES } from '../data/categories.ts';
 
 function getPaperTimestamp(paper: Partial<Paper>) {
   const timestamp = new Date(paper.published || paper.publicationDate || '').getTime();
