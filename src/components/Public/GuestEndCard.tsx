@@ -17,7 +17,7 @@ import './GuestEndCard.css';
 const COPY = {
   en: {
     end: 'End of the preview',
-    count: count => `${count} ${count === 1 ? 'paper' : 'papers'}`,
+    count: (count: number) => `${count} ${count === 1 ? 'paper' : 'papers'}`,
     heading: 'Want to keep going?',
     lede: 'This is everything you get without an account. On the other side, the feed does not end.',
     perks: [
@@ -33,11 +33,11 @@ const COPY = {
 
 const PERK_ICONS = [InfinityIcon, BookmarkSimple, Users];
 
-export default function GuestEndCard({ paperCount = 0, position = 0, onSignUp }) {
+export default function GuestEndCard({ paperCount = 0, position = 0, onSignUp }: { paperCount?: number; position?: number; onSignUp?: () => void }) {
   const { language } = useLanguage();
   const { trackEvent } = useAnalyticsConsent();
   const copy = COPY.en;
-  const cardRef = useRef(null);
+  const cardRef = useRef<HTMLElement | null>(null);
   const trackedRef = useRef(false);
 
   // Mounting proves nothing: the card is built while it is still a screen below

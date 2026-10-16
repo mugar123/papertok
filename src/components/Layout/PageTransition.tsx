@@ -1,3 +1,4 @@
+import type { AnimationEvent, PropsWithChildren } from 'react';
 import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { usePresence, usePresenceData } from 'framer-motion';
@@ -27,12 +28,12 @@ if (typeof window !== 'undefined' && 'scrollRestoration' in window.history) {
   window.history.scrollRestoration = 'manual';
 }
 const SCROLL_MEMORY_MAX = 32;
-const scrollMemory = new Map();
-function rememberScroll(key, top) {
+const scrollMemory = new Map<string, number>();
+function rememberScroll(key: string, top: number) {
   if (!key) return;
   scrollMemory.delete(key);
   scrollMemory.set(key, top);
-  if (scrollMemory.size > SCROLL_MEMORY_MAX) scrollMemory.delete(scrollMemory.keys().next().value);
+  if (scrollMemory.size > SCROLL_MEMORY_MAX) scrollMemory.delete(scrollMemory.keys().next().value!);
 }
 
 /**
@@ -52,7 +53,7 @@ function rememberScroll(key, top) {
  * with no page painted between the feed going and the entity arriving, the
  * exit accelerated on an ease-in, and the whole handover took ~500ms.
  */
-export default function PageTransition({ children }) {
+export default function PageTransition({ children }: PropsWithChildren) {
   // `present` flips to false the moment the router leaves this page;
   // AnimatePresence keeps it mounted until `safeToRemove` is called.
   const [present, safeToRemove] = usePresence();
@@ -63,11 +64,11 @@ export default function PageTransition({ children }) {
   // never computes a direction itself: the page leaving is kept mounted under
   // a <Routes location={…}> that still names the route it came from, and
   // asking there answered for the wrong one (see usePageTransitionCustom.js).
-  const presenceCustom = usePresenceData();
+  const presenceCustom = usePresenceData() as ReturnType<typeof usePageTransitionCustomValue> | undefined;
   const providerCustom = usePageTransitionCustomValue();
   const { direction, lateral } = presenceCustom ?? providerCustom;
 
-  const rootRef = useRef(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   // The history entry this page belongs to, frozen at mount: a replace can
   // change the key under a mounted page, and the scroll it remembers on the
   // way out has to be filed under the entry the reader will come back to.
@@ -142,7 +143,7 @@ export default function PageTransition({ children }) {
   // would turn either into a visible glide.
   useLayoutEffect(() => {
     if (arrivalDirection.current === 0) return;
-    const top = arrivalDirection.current < 0 ? (scrollMemory.get(locationKeyRef.current) ?? 0) : 0;
+    const top = arrivalDirection.current! < 0 ? (scrollMemory.get(locationKeyRef.current) ?? 0) : 0;
     window.scrollTo({ top, behavior: 'instant' });
   }, []);
 
@@ -197,7 +198,7 @@ export default function PageTransition({ children }) {
 
   // The cards and the hero animate too, and their `animationend` bubbles up
   // here; only the root's own counts.
-  const handleAnimationEnd = useCallback((event) => {
+  const handleAnimationEnd = useCallback((event: AnimationEvent<HTMLDivElement>) => {
     if (event.target !== rootRef.current) return;
     // The root now runs TWO animations at once: the travel, which owns the
     // clock and the tuned per-frame curve, and a shorter fade that covers or
@@ -206,7 +207,7 @@ export default function PageTransition({ children }) {
     // still moving and hand a leaving page back halfway out. Ask the element
     // which of its own animations are still running rather than naming them:
     // a fade added later is then handled without touching this.
-    const stillMoving = rootRef.current
+    const stillMoving = rootRef.current!
       .getAnimations()
       .some((animation) => animation.playState === 'running');
     if (stillMoving) return;
@@ -215,7 +216,7 @@ export default function PageTransition({ children }) {
       // Nested motion elements may keep this presence context mounted after
       // the route finishes. Hide its held frame before the arriving page
       // drops its stacking context, even if removal has to wait for them.
-      rootRef.current.style.visibility = 'hidden';
+      rootRef.current!.style.visibility = 'hidden';
       if (safeToRemove) safeToRemove();
     }
   }, [present, safeToRemove]);

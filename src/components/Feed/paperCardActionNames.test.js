@@ -31,7 +31,7 @@ const stripComments = (source) => source
 /** El trozo de JSX de un botón, desde su apertura hasta su `</Button>`. */
 const bloque = (jsx, ancla, cierre = '</Button>') => {
   const desde = jsx.indexOf(ancla);
-  assert.notEqual(desde, -1, `no encuentro «${ancla}» en PaperCard.jsx`);
+  assert.notEqual(desde, -1, `no encuentro «${ancla}» en PaperCard.tsx`);
   const hasta = jsx.indexOf(cierre, desde);
   assert.notEqual(hasta, -1, `«${ancla}» ya no está dentro de un ${cierre}`);
   return jsx.slice(desde, hasta);

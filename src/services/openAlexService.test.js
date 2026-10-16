@@ -948,7 +948,7 @@ function slowOpenAlexThenCrossref(openAlexDelayMs, crossrefDelayMs) {
 }
 
 /**
- * The institution page cuts its own wait at 7000 ms (`EntityExplorer.jsx`), and
+ * The institution page cuts its own wait at 7000 ms (`EntityExplorer.tsx`), and
  * OpenAlex was allowed all seven of them before the Crossref fallback was even
  * asked. The fallback existed and could never arrive in time: the reader got the
  * empty state on every institution OpenAlex was slow about. 3500 + 3250 leaves

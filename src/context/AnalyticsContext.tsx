@@ -1,3 +1,11 @@
+import type { ComponentProps, PropsWithChildren } from 'react';
+export interface AnalyticsContextValue {
+  consent: ReturnType<typeof readAnalyticsConsent>;
+  updateConsent: (value: string) => Promise<boolean>;
+  trackEvent: typeof trackProductEvent;
+  markActivation: () => ReturnType<typeof markAnalyticsActivation>;
+}
+
 /* eslint-disable react-refresh/only-export-components */
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Analytics } from '@vercel/analytics/react';
@@ -23,9 +31,9 @@ import {
 // `beforeSend` on every change of identity, so an inline arrow would re-register
 // it on every render of the whole app. It takes only the event, so the stored
 // choice is read at send time (`sanitizeVercelEvent`).
-const sanitizeOutgoingEvent = event => sanitizeVercelEvent(event);
+const sanitizeOutgoingEvent = (event: Parameters<NonNullable<ComponentProps<typeof Analytics>['beforeSend']>>[0]) => sanitizeVercelEvent(event);
 
-export function AnalyticsProvider({ children }) {
+export function AnalyticsProvider({ children }: PropsWithChildren) {
   const location = useLocation();
   const { language } = useLanguage();
   const [consent, setConsent] = useState(readAnalyticsConsent);
@@ -66,14 +74,14 @@ export function AnalyticsProvider({ children }) {
     trackDay7Return();
   }, [consent, location.pathname]);
 
-  const updateConsent = useCallback(async value => {
-    if (!Object.values(ANALYTICS_CONSENT).includes(value)) return false;
+  const updateConsent = useCallback(async (value: string) => {
+    if (!(Object.values(ANALYTICS_CONSENT) as string[]).includes(value)) return false;
     const persisted = await setAnalyticsConsent(value);
     if (persisted) setConsent(value);
     return persisted;
   }, []);
 
-  const trackEvent = useCallback((eventName, params) => trackProductEvent(eventName, params), []);
+  const trackEvent = useCallback((eventName: string, params?: Record<string, unknown>) => trackProductEvent(eventName, params), []);
   const markActivation = useCallback(() => markAnalyticsActivation(), []);
 
   const value = useMemo(

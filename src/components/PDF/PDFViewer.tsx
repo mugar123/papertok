@@ -1,3 +1,5 @@
+import type { Ref } from 'react';
+import type { Paper } from '../../models/Paper.ts';
 import { lazy, Suspense, useEffect, useImperativeHandle, useMemo, useState, useRef, useCallback } from 'react';
 import { useFeed } from '../../context/FeedContext.tsx';
 import { ArrowSquareOut, X } from '@phosphor-icons/react';
@@ -19,7 +21,7 @@ const PAPER_API_BASE_URL = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/
  * also owns what the old overlay did by hand — the focus trap, Escape, the
  * scroll lock and the restore to the button that opened it.
  */
-export default function PDFViewer({ paper, onClose, closeRef = null }) {
+export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: Paper; onClose: () => void; closeRef?: Ref<() => void> | null }) {
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
   const [open, setOpen] = useState(true);
@@ -48,13 +50,13 @@ export default function PDFViewer({ paper, onClose, closeRef = null }) {
   const handleRelayUnavailable = useCallback(() => setRelayFailed(true), []);
 
   const { trackPdfBounce } = useFeed();
-  const startTimeRef = useRef(null);
+  const startTimeRef = useRef<number | null>(null);
 
   // Every way out — the X, Escape — lands here, so the bounce is counted
   // once, whichever it was.
   const handleClose = useCallback(() => {
     if (!open) return;
-    const elapsed = (Date.now() - startTimeRef.current) / 1000;
+    const elapsed = (Date.now() - startTimeRef.current!) / 1000;
     if (elapsed < 5) {
       trackPdfBounce(paper);
     }

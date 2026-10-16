@@ -1,3 +1,5 @@
+import type { StyledProps } from './props.ts';
+
 import { Input as InputPrimitive } from '@base-ui/react/input';
 import { cn } from '../../lib/utils.ts';
 
@@ -10,7 +12,7 @@ import { cn } from '../../lib/utils.ts';
  *
  * `text-base` (16px) on purpose: iOS zooms into any field smaller than that.
  */
-function Input({ className, type = 'text', ...props }) {
+function Input({ className, type = 'text', ...props }: StyledProps<typeof InputPrimitive>) {
   return (
     <InputPrimitive
       type={type}

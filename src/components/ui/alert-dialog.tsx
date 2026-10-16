@@ -1,3 +1,6 @@
+import type { StyledProps } from './props.ts';
+import type { ComponentProps } from 'react';
+
 import { AlertDialog as AlertDialogPrimitive } from '@base-ui/react/alert-dialog';
 import { cn } from '../../lib/utils.ts';
 import { Button } from './button.tsx';
@@ -7,15 +10,15 @@ import { Button } from './button.tsx';
  * the answer has to be one of its buttons. For confirmations with a cost —
  * deleting an account, discarding a draft. Same sheet and motion as Dialog.
  */
-function AlertDialog(props) {
+function AlertDialog(props: ComponentProps<typeof AlertDialogPrimitive.Root>) {
   return <AlertDialogPrimitive.Root data-slot="alert-dialog" {...props} />;
 }
 
-function AlertDialogPortal(props) {
+function AlertDialogPortal(props: ComponentProps<typeof AlertDialogPrimitive.Portal>) {
   return <AlertDialogPrimitive.Portal data-slot="alert-dialog-portal" {...props} />;
 }
 
-function AlertDialogOverlay({ className, ...props }) {
+function AlertDialogOverlay({ className, ...props }: StyledProps<typeof AlertDialogPrimitive.Backdrop>) {
   return (
     <AlertDialogPrimitive.Backdrop
       data-slot="alert-dialog-overlay"
@@ -30,7 +33,7 @@ function AlertDialogOverlay({ className, ...props }) {
   );
 }
 
-function AlertDialogContent({ className, overlayClassName, ...props }) {
+function AlertDialogContent({ className, overlayClassName, ...props }: StyledProps<typeof AlertDialogPrimitive.Popup> & { overlayClassName?: string }) {
   return (
     <AlertDialogPortal>
       <AlertDialogOverlay className={overlayClassName} />
@@ -50,7 +53,7 @@ function AlertDialogContent({ className, overlayClassName, ...props }) {
   );
 }
 
-function AlertDialogTitle({ className, ...props }) {
+function AlertDialogTitle({ className, ...props }: StyledProps<typeof AlertDialogPrimitive.Title>) {
   return (
     <AlertDialogPrimitive.Title
       data-slot="alert-dialog-title"
@@ -60,7 +63,7 @@ function AlertDialogTitle({ className, ...props }) {
   );
 }
 
-function AlertDialogDescription({ className, ...props }) {
+function AlertDialogDescription({ className, ...props }: StyledProps<typeof AlertDialogPrimitive.Description>) {
   return (
     <AlertDialogPrimitive.Description
       data-slot="alert-dialog-description"
@@ -71,7 +74,7 @@ function AlertDialogDescription({ className, ...props }) {
 }
 
 /* `variant` passes through to the shared Button. */
-function AlertDialogCancel({ variant = 'outline', ...props }) {
+function AlertDialogCancel({ variant = 'outline', ...props }: ComponentProps<typeof AlertDialogPrimitive.Close> & Pick<ComponentProps<typeof Button>, 'variant' | 'size'>) {
   return (
     <AlertDialogPrimitive.Close
       data-slot="alert-dialog-cancel"

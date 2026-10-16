@@ -22,13 +22,13 @@ import './AuthPrompt.css';
 // Escape, the scrim, or a session appearing — flips it, Base UI plays the
 // leave, and only then `onOpenChangeComplete(false)` tells the parent to
 // unmount. That is the one place `onClose` is called, so it reaches App once.
-export default function AuthPrompt({ onClose, reason = 'default' }) {
+export default function AuthPrompt({ onClose, reason = 'default' }: { onClose: () => void; reason?: unknown }) {
   const { user } = useAuth();
   // What opened the door decides what it says (authPromptCopy.js).
   const copy = authPromptCopy(reason);
   const [open, setOpen] = useState(true);
   const { pendingProvider, collision, error, signIn: handleSignIn } = useProviderSignIn('auth_prompt');
-  const closeButtonRef = useRef(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
 
   // Once a session exists the prompt has done its job: routing takes the user on
   // to onboarding or the feed, so the modal steps out of the way. Derived, not

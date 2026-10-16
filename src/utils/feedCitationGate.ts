@@ -48,6 +48,7 @@ export const CITATION_GATE_MAX_WAIT_MS = 1200;
  * the timer is always cleared — a pending one would keep the process (and a
  * test run) alive past its work.
  */
+export function awaitWithinGate<const T extends readonly unknown[]>(promises: T, options?: { maxWaitMs?: number }): Promise<{ -readonly [K in keyof T]: Awaited<T[K]> | null }>;
 export async function awaitWithinGate<T>(promises: Array<PromiseLike<T> | T>, { maxWaitMs = CITATION_GATE_MAX_WAIT_MS } = {}) {
   const list = Array.isArray(promises) ? promises : [];
   if (list.length === 0) return [];

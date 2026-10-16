@@ -44,7 +44,7 @@ export function readShareSeed(paperKey: string | null, doc: SeedDocument | undef
  * and summary as plain text, as the Worker writes them, since a tab title and
  * a search snippet render no LaTeX.
  */
-export function publicPaperMetadata(paper: Partial<Pick<Paper, 'title' | 'abstract'>> | null | undefined, route: string) {
+export function publicPaperMetadata(paper: Partial<Pick<Paper, 'title' | 'abstract'>> | null | undefined, route: string | null) {
   if (!paper) return { route, noIndex: true };
   const title = plainScientificText(paper.title) || String(paper.title || '');
   const description = plainScientificText(paper.abstract) || String(paper.abstract || '');

@@ -9,7 +9,7 @@ const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
  */
 test('the explorer paints the name a link handed over before the entity answers', async () => {
   const jsx = await read('./EntityExplorer.tsx');
-  assert.match(jsx, /const seedName = useMemo\(/);
+  assert.match(jsx, /const seedName = useMemo(?:<[^;\n]+>)?\(/);
   assert.match(jsx, /seedName\s*\?\s*<h1 className="ehc-name"[^>]*>\{seedName\}<\/h1>\s*:\s*<div className="ex-skel ex-skel-name"><\/div>/);
   const css = await read('./EntityExplorer.css');
   assert.match(css, /\.explorer-hero-content\.is-skeleton \{\s*animation: none;\s*\}/, 'the skeleton does not fade on top of the page transition');
@@ -40,7 +40,7 @@ test('the hero settles between its heights instead of snapping at the handover',
   assert.match(jsx, /import \{ useHeightSettle \} from '\.\.\/\.\.\/hooks\/useHeightSettle\.ts';/);
   // `suspended` is the route transition's own gate: a settle under a page that
   // is still travelling is a second owner of the same displacement.
-  assert.match(jsx, /const heroBodyRef = useRef\(null\);[\s\S]*?useHeightSettle\(\s*heroBodyRef,\s*\[isLoadingEntity, entity, orcidInfo, isLoadingOrcid, recentImpact, hasLoadedWikiImage, showWikiBlock, wikiDescription, isWikiRequestPending, wikiFoldExits\],\s*\{ enabled: !prefersReducedMotion, suspended: isPageArriving, easing: 'cubic-bezier\(0\.4, 0, 0\.2, 1\)' \},\s*\);/);
+  assert.match(jsx, /const heroBodyRef = useRef(?:<[^;\n]+>)?\(null\);[\s\S]*?useHeightSettle\(\s*heroBodyRef,\s*\[isLoadingEntity, entity, orcidInfo, isLoadingOrcid, recentImpact, hasLoadedWikiImage, showWikiBlock, wikiDescription, isWikiRequestPending, wikiFoldExits\],\s*\{ enabled: !prefersReducedMotion, suspended: isPageArriving, easing: 'cubic-bezier\(0\.4, 0, 0\.2, 1\)' \},\s*\);/);
   // The easing is passed here, not changed in the hook: the hook's expo-out
   // default is right for a box that appears, and this is the one box whose
   // growth moves everything beneath it. Measured on a phone opening an author:
@@ -91,9 +91,9 @@ test('the explorer is born with the entity a link handed over, and treats its ow
   const jsx = (await read('./EntityExplorer.tsx')).replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
   assert.match(jsx, /import \{ useParams, useNavigate, useSearchParams, useLocation \} from 'react-router-dom';/);
   assert.match(jsx, /import \{ handedEntityFor, handoverFromSearchRow \} from '\.\.\/\.\.\/utils\/explorerHandover\.ts';/);
-  assert.match(jsx, /const handedEntity = useMemo\(\(\) => handedEntityFor\(type, id, location\.state\), \[id, location\.state, type\]\);/);
+  assert.match(jsx, /const handedEntity = useMemo(?:<[^;\n]+>)?\(\(\) => handedEntityFor\(type, id, location\.state\), \[id, location\.state, type\]\);/);
   assert.match(jsx, /const bornResolved = Boolean\(handedEntity\) \|\| Boolean\(localTopic\) \|\| Boolean\(cachedEntity\) \|\| \(type === 'topic' && isOpaqueQueryTopicText\(id\)\);/);
-  assert.match(jsx, /useState\(\(\) => \(bornResolved \? \(handedEntity \|\| localTopic \|\| cachedEntity \|\| resolveQueryTopicRoute\(id, searchParams\)\) : null\)\)/);
+  assert.match(jsx, /useState(?:<[^;\n]+>)?\(\(\) => \(bornResolved \? \(handedEntity \|\| localTopic \|\| cachedEntity \|\| resolveQueryTopicRoute\(id, searchParams\)\) : null\)\)/);
   // The load never puts a handed or cached page back into the skeleton.
   assert.match(jsx, /const bornWith = handedEntity \|\| cachedEntity;\s*if \(bornWith\) \{\s*setEntity\(bornWith\);\s*setIsLoadingEntity\(false\);\s*\} else \{\s*setIsLoadingEntity\(true\);\s*setEntity\(null\);\s*\}/);
   assert.match(jsx, /setEntity\(data \|\| handedEntity \|\| cachedEntity\);/);
@@ -119,9 +119,9 @@ test('a thrown fetch keeps the hero the palette already painted, instead of demo
 test('an entity already in the persistent cache is born resolved, like one handed over from the palette', async () => {
   const jsx = (await read('./EntityExplorer.tsx')).replace(/^\s*\/\/.*$/gm, '');
   assert.match(jsx, /import \{[^}]*\bpeekEntity\b[^}]*\} from '\.\.\/\.\.\/services\/openAlexService/);
-  assert.match(jsx, /const cachedEntity = useMemo\(\(\) => peekEntity\(type, id\), \[id, type\]\);/);
+  assert.match(jsx, /const cachedEntity = useMemo(?:<[^;\n]+>)?\(\(\) => peekEntity\(type, id\), \[id, type\]\);/);
   assert.match(jsx, /const bornResolved = Boolean\(handedEntity\) \|\| Boolean\(localTopic\) \|\| Boolean\(cachedEntity\) \|\| \(type === 'topic' && isOpaqueQueryTopicText\(id\)\);/);
-  assert.match(jsx, /useState\(\(\) => \(bornResolved \? \(handedEntity \|\| localTopic \|\| cachedEntity \|\| resolveQueryTopicRoute\(id, searchParams\)\) : null\)\)/,
+  assert.match(jsx, /useState(?:<[^;\n]+>)?\(\(\) => \(bornResolved \? \(handedEntity \|\| localTopic \|\| cachedEntity \|\| resolveQueryTopicRoute\(id, searchParams\)\) : null\)\)/,
     'the handed entity still wins — it is the fresher of the two');
 });
 

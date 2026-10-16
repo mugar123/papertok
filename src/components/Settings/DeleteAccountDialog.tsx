@@ -38,7 +38,7 @@ const COPY = {
  * is the one call to the parent's `onClose`. While the deletion runs nothing
  * closes it: the outcome is either `onDeleted` or an error to read.
  */
-export default function DeleteAccountDialog({ open: openOnMount = true, onClose, onDeleted }) {
+export default function DeleteAccountDialog({ open: openOnMount = true, onClose, onDeleted }: { open?: boolean; onClose: () => void; onDeleted: () => void | Promise<void>; language?: string }) {
   const copy = COPY['en'];
   const inputId = useId();
   const errorId = useId();
@@ -46,11 +46,11 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
   const [typed, setTyped] = useState('');
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
-  const inputRef = useRef(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   const confirmed = typed.trim() === copy.phrase;
 
-  const handleOpenChange = (nextOpen) => {
+  const handleOpenChange = (nextOpen: boolean) => {
     if (working) return;
     setOpen(nextOpen);
   };

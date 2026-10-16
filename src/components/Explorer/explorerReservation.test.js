@@ -47,10 +47,10 @@ test('a query topic is born resolved rather than loading', async () => {
   // A local topic — the id a category pill on a card navigates to — resolves
   // from CATEGORIES with no fetch either. Born loading, it painted the skeleton
   // for one commit and settled 109→146 DURING the page's own entrance.
-  assert.match(jsx, /const localTopic = useMemo\(\s*\(\) => \(type === 'topic' \|\| type === 'concept' \? getLocalTopicEntity\(id\) : null\),\s*\[id, type\],\s*\);/);
+  assert.match(jsx, /const localTopic = useMemo(?:<[^;\n]+>)?\(\s*\(\) => \(type === 'topic' \|\| type === 'concept' \? getLocalTopicEntity\(id\) : null\),\s*\[id, type\],\s*\);/);
   assert.match(jsx, /const bornResolved = Boolean\(handedEntity\) \|\| Boolean\(localTopic\) \|\| Boolean\(cachedEntity\) \|\| \(type === 'topic' && isOpaqueQueryTopicText\(id\)\);/);
-  assert.match(jsx, /useState\(\(\) => \(bornResolved \? \(handedEntity \|\| localTopic \|\| cachedEntity \|\| resolveQueryTopicRoute\(id, searchParams\)\) : null\)\)/);
-  assert.match(jsx, /const \[isLoadingEntity, setIsLoadingEntity\] = useState\(\(\) => !bornResolved\);/);
+  assert.match(jsx, /useState(?:<[^;\n]+>)?\(\(\) => \(bornResolved \? \(handedEntity \|\| localTopic \|\| cachedEntity \|\| resolveQueryTopicRoute\(id, searchParams\)\) : null\)\)/);
+  assert.match(jsx, /const \[isLoadingEntity, setIsLoadingEntity\] = useState(?:<[^;\n]+>)?\(\(\) => !bornResolved\);/);
   // And a navigation between entities takes the same shortcut, in the same
   // batch as the reset, so no skeleton commit ever paints.
   assert.match(jsx, /const local = type === 'topic' \|\| type === 'concept' \? getLocalTopicEntity\(id\) : null;\s*if \(local\) \{\s*setEntity\(local\);\s*setIsLoadingEntity\(false\);\s*return;\s*\}/);

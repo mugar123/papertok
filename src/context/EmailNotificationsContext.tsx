@@ -1,3 +1,14 @@
+import type { PropsWithChildren } from 'react';
+import type { NotificationPreferences } from '../services/emailNotificationService.ts';
+export interface EmailNotificationsContextValue {
+  preferences: Required<NotificationPreferences>;
+  loading: boolean; saving: boolean; testing: boolean; error: unknown;
+  health: Awaited<ReturnType<typeof getEmailNotificationHealth>>;
+  notificationDataReady: boolean; hasFollows: boolean;
+  savePreferences: (preferences: NotificationPreferences) => Promise<Required<NotificationPreferences>>;
+  sendTest: (preferences?: NotificationPreferences) => Promise<Awaited<ReturnType<typeof sendEmailNotificationTest>>>;
+}
+
 /* eslint-disable react-refresh/only-export-components */
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { EmailNotificationsContext } from './contexts.ts';
@@ -15,7 +26,7 @@ import {
 } from '../services/emailNotificationService.ts';
 import { getFollowingSignature } from '../utils/followingUpdates.ts';
 
-const DEFAULT_PREFERENCES = {
+const DEFAULT_PREFERENCES: Required<NotificationPreferences> = {
   enabled: false,
   frequency: 'weekly',
   maxPapers: 5,
@@ -25,19 +36,19 @@ const DEFAULT_PREFERENCES = {
   lastTestAt: null,
 };
 
-export function EmailNotificationsProvider({ children }) {
+export function EmailNotificationsProvider({ children }: PropsWithChildren) {
   const { user, emailDigestPending, settleEmailDigestOptIn } = useAuth();
   const { language } = useLanguage();
   const { trackEvent, markActivation } = useAnalyticsConsent();
   const userEmail = user?.email || '';
   const { followedEntities, loading: followsLoading, error: followsError } = useFollowing();
   const { items, loading: updatesLoading } = useFollowingUpdates();
-  const [preferences, setPreferences] = useState({ ...DEFAULT_PREFERENCES, language, email: userEmail });
+  const [preferences, setPreferences] = useState<Required<NotificationPreferences>>({ ...DEFAULT_PREFERENCES, language, email: userEmail });
   const [loading, setLoading] = useState(Boolean(user));
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [error, setError] = useState(null);
-  const [health, setHealth] = useState({
+  const [error, setError] = useState<unknown>(null);
+  const [health, setHealth] = useState<Awaited<ReturnType<typeof getEmailNotificationHealth>>>({
     configured: false,
     available: false,
     provider: null,
@@ -45,7 +56,7 @@ export function EmailNotificationsProvider({ children }) {
     senderMode: null,
     permissionLimited: false,
   });
-  const loadedForUser = useRef(null);
+  const loadedForUser = useRef<string | null>(null);
   const userId = user?.uid || null;
   const followSignature = useMemo(() => getFollowingSignature(followedEntities), [followedEntities]);
   const previewSignature = useMemo(() => items.slice(0, 20).map(item => item.updateKey || item.id || item.doi).join('|'), [items]);
@@ -97,7 +108,7 @@ export function EmailNotificationsProvider({ children }) {
    * saved response through here keeps the two ends of that decision in one
    * place.
    */
-  const applySavedPreferences = useCallback((saved, wasEnabled) => {
+  const applySavedPreferences = useCallback((saved: NotificationPreferences, wasEnabled: boolean) => {
     const normalized = { ...DEFAULT_PREFERENCES, ...saved, language, email: saved.email || userEmail };
     setPreferences(normalized);
     if (normalized.enabled !== wasEnabled) {
@@ -109,7 +120,7 @@ export function EmailNotificationsProvider({ children }) {
     return normalized;
   }, [language, markActivation, trackEvent, userEmail]);
 
-  const savePreferences = useCallback(async (nextPreferences) => {
+  const savePreferences = useCallback(async (nextPreferences: NotificationPreferences) => {
     if (!notificationDataReady) throw new EmailNotificationServiceError('EMAIL_DATA_LOADING');
     if (nextPreferences.enabled && !hasFollows) {
       throw new EmailNotificationServiceError('EMAIL_FOLLOWS_REQUIRED', 409);
@@ -132,7 +143,7 @@ export function EmailNotificationsProvider({ children }) {
     }
   }, [applySavedPreferences, followedEntities, hasFollows, items, language, notificationDataReady, preferences.enabled]);
 
-  const sendTest = useCallback(async (nextPreferences = preferences) => {
+  const sendTest = useCallback(async (nextPreferences: NotificationPreferences = preferences) => {
     if (!notificationDataReady) throw new EmailNotificationServiceError('EMAIL_DATA_LOADING');
     if (!hasFollows) throw new EmailNotificationServiceError('EMAIL_FOLLOWS_REQUIRED', 409);
     setTesting(true);
@@ -165,7 +176,7 @@ export function EmailNotificationsProvider({ children }) {
   // keeps the flag and the next session tries again. Once it exists — or the
   // reader already turned email on themselves — the flag is spent, so a later
   // unsubscribe in Settings is never undone.
-  const optInAttemptedFor = useRef(null);
+  const optInAttemptedFor = useRef<string | null>(null);
   useEffect(() => {
     if (
       !emailDigestPending

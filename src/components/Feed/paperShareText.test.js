@@ -20,7 +20,7 @@ function handlerSlice(code, start, maxLines) {
 
 test('SOURCE: the card shares its paper with the title as text', async () => {
   const code = stripComments(await readFile(new URL('./PaperCard.tsx', import.meta.url), 'utf8'));
-  const handler = handlerSlice(code, 'const handleShare = async (event) => {', 30);
+  const handler = handlerSlice(code, 'const handleShare = async (event: MouseEvent) => {', 30);
   assert.match(handler, /await navigator\.share\(paperShareData\(\{ title: paper\.title, url: shareUrl \}\)\);/);
   assert.doesNotMatch(handler, /navigator\.share\(\{/, 'no hand-built payload beside it');
 });

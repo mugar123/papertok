@@ -1,7 +1,8 @@
+import type { PetriProps } from './PetriFrame.tsx';
 import PetriFrame, { ANTENNAE } from './PetriFrame.tsx';
 
 // The sign-in dialog's Petri: smiling, a key held up by its bow.
-export default function PetriKey({ label, className }) {
+export default function PetriKey({ label, className }: PetriProps) {
   return (
     <PetriFrame
       label={label}

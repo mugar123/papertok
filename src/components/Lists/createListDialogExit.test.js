@@ -35,7 +35,7 @@ const read = async (path) => stripComments(await readFile(new URL(path, import.m
 test('the window keeps the list it was opened with until its exit has played', async () => {
   const jsx = await read('./CreateListDialog.tsx');
 
-  assert.match(jsx, /const \[openedWith, setOpenedWith\] = useState\(list\);/, 'the list it was opened with is not held anywhere');
+  assert.match(jsx, /const \[openedWith, setOpenedWith\] = useState(?:<[^;\n]+>)?\(list\);/, 'the list it was opened with is not held anywhere');
   // Written while rendering, not from an effect: an effect runs after the
   // paint, so the window would show one frame of the wrong list on the way
   // in. React re-renders before painting when a component sets its own state

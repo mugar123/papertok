@@ -13,7 +13,7 @@ const read = name => readFile(new URL(name, import.meta.url), 'utf8').then(strip
 
 test('the email modal is a modal Dialog whose only way out is the parent\'s onClose', async () => {
   const jsx = await read('./EmailNotificationModal.tsx');
-  assert.match(jsx, /from '\.\.\/ui\/dialog\.jsx'/);
+  assert.match(jsx, /from '\.\.\/ui\/dialog\.tsx'/);
   assert.match(jsx, /<Dialog open=\{isOpen\} onOpenChange=\{nextOpen => \{ if \(!nextOpen\) onClose\(\); \}\} modal>/);
   assert.match(jsx, /closeLabel=(?:"Close"|\{'Close'\})/);
   assert.doesNotMatch(jsx, /closeOnEscape|addEventListener|role="dialog"|aria-modal=|useReducedMotion/);

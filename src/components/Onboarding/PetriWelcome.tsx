@@ -1,7 +1,8 @@
+import type { PetriProps } from './PetriFrame.tsx';
 import PetriFrame from './PetriFrame.tsx';
 
 
-export default function PetriWelcome({ name, label, className }) {
+export default function PetriWelcome({ name, label, className }: PetriProps & { name?: string }) {
   const card = name || 'Hello';
   // 19 units fits about eight letters on the card; a longer name gets smaller
   // rather than spilling past its edges.

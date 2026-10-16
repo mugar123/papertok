@@ -48,6 +48,8 @@ export function hydratedAbstract(seedAbstract: Paper['abstract'] | null | undefi
  * The author list to show: the copy's, in the form the feed printed it, unless
  * the copy was cut at the cap and the provider knows more of them.
  */
+export function hydratedAuthors(seedAuthors: Paper['authors'] | undefined, providerAuthors: Paper['authors'] | undefined): Paper['authors'] | undefined;
+export function hydratedAuthors(seedAuthors: Paper['authors'] | null | undefined, providerAuthors: Paper['authors'] | null | undefined): Paper['authors'] | null | undefined;
 export function hydratedAuthors(seedAuthors: Paper['authors'] | null | undefined, providerAuthors: Paper['authors'] | null | undefined) {
   if (!present(seedAuthors)) return providerAuthors;
   const providerCount = Array.isArray(providerAuthors) ? providerAuthors.length : 0;

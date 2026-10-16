@@ -1,3 +1,5 @@
+import type { StyledProps } from './props.ts';
+
 import { Switch as SwitchPrimitive } from '@base-ui/react/switch';
 import { cn } from '../../lib/utils.ts';
 
@@ -6,7 +8,7 @@ import { cn } from '../../lib/utils.ts';
  * the track fills with ink and the thumb crosses. Pair it with a `<Label>`
  * (`htmlFor` to the switch's `id`) or wrap both in one.
  */
-function Switch({ className, size = 'default', ...props }) {
+function Switch({ className, size = 'default', ...props }: StyledProps<typeof SwitchPrimitive.Root> & { size?: 'default' | 'sm' }) {
   return (
     <SwitchPrimitive.Root
       data-slot="switch"

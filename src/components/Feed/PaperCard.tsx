@@ -1,3 +1,30 @@
+import type { ComponentProps, MouseEvent, SyntheticEvent, TransitionEvent } from 'react';
+import type { Paper, PaperAuthor, PaperResearchResource } from '../../models/Paper.ts';
+
+type OpenCopy = Awaited<ReturnType<typeof findOpenAccessCopy>>;
+export interface PaperCardProps {
+  paper: Paper;
+  isLiked?: boolean;
+  isSaved?: boolean;
+  isRead?: boolean;
+  onLike?: (paper: Paper) => void;
+  onNotInterested?: (paper: Paper) => void;
+  onGuestNotInterested?: (paperId: string) => void;
+  onMarkAsRead?: (paper: Paper) => void;
+  onUnmarkAsRead?: (paperId: string) => void;
+  trackViewTime?: (paper: Paper, seconds: number) => void;
+  trackSkip?: (paper: Paper) => void;
+  onOpenPdf?: (paper: Paper) => void;
+  onSaveToList?: (paper: Paper) => void;
+  getInteractionState?: (paper: Paper) => { isLiked?: boolean; isSaved?: boolean; isRead?: boolean };
+  hideScrollHint?: boolean;
+  showFollowReason?: boolean;
+  titleAs?: 'h1' | 'h2';
+  publicMode?: boolean;
+  onAuthRequired?: (reason: string) => void;
+  analyticsSurface?: string;
+  position?: number;
+}
 import { Fragment, useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useId, memo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories.js';
@@ -195,7 +222,7 @@ const FIGURE_ENTRANCE_STAGGER_MS = 60;
 
 /** FNV-1a, the same one `buildHighlightId` uses: short, stable, and enough to
  *  tell four slots of one paper apart. */
-function figureHash(fingerprint) {
+function figureHash(fingerprint: string) {
   let hash = 0x811c9dc5;
   for (let index = 0; index < fingerprint.length; index += 1) {
     hash ^= fingerprint.charCodeAt(index);
@@ -212,15 +239,15 @@ function figureHash(fingerprint) {
  * someone is reading. Two hashes because five values need more than the four
  * bytes one gives.
  */
-function figureScatterStyle(identity, index, total) {
+function figureScatterStyle(identity: string, index: number, total: number) {
   // The slot goes in front of the identity, not behind it. FNV-1a only
   // avalanches forwards: with the index last, four figures of one paper came
   // out with the same middle bytes and so with the same shift — measured, not
   // assumed. Fed in first, it stirs the whole hash.
   const angles = figureHash(`${index}#${identity}`);
   const motion = figureHash(`${index}#drift#${identity}`);
-  const unit = (hash, shift) => ((hash >>> shift) & 0xff) / 255;
-  const signed = (hash, shift) => unit(hash, shift) * 2 - 1;
+  const unit = (hash: number, shift: number) => ((hash >>> shift) & 0xff) / 255;
+  const signed = (hash: number, shift: number) => unit(hash, shift) * 2 - 1;
   // Slots one and two hug the left edge of the card, three and four the right,
   // so the shift always pushes inward and no amount of jitter can walk a
   // clipping off the page or over the text column. The exception is the pair:
@@ -249,7 +276,7 @@ function figureScatterStyle(identity, index, total) {
   };
 }
 
-function mergeResearchResources(...groups) {
+function mergeResearchResources(...groups: PaperResearchResource[][]) {
   const seen = new Set();
   return groups.flat().filter(Boolean).filter(resource => {
     const key = `${resource.kind || ''}:${resource.url || resource.id || ''}`.toLowerCase();
@@ -259,7 +286,7 @@ function mergeResearchResources(...groups) {
   }).slice(0, 8);
 }
 
-function RelatedPaperCardSkeleton({ label }) {
+function RelatedPaperCardSkeleton({ label }: { label: string }) {
   return (
     <div className="related-card-loading" role="status" aria-live="polite">
       <span className="visually-hidden">{label}</span>
@@ -287,7 +314,7 @@ const READ_RELEASE_MS = 450;
  * press on like, save or read is theirs alone. Base UI runs this before its
  * own click handler, so the state still flips through `onPressedChange`.
  */
-const swallowClick = (event) => event.stopPropagation();
+const swallowClick = (event: SyntheticEvent) => event.stopPropagation();
 
 const PaperCard = memo(function PaperCard({ 
   paper, 
@@ -316,7 +343,7 @@ const PaperCard = memo(function PaperCard({
   onAuthRequired,
   analyticsSurface = 'feed',
   position,
-}) {
+}: PaperCardProps) {
   // `position` is optional and PaperCard renders on five different surfaces,
   // so it cannot anchor a stable, collision-free id for aria-controls.
   const abstractId = useId();
@@ -330,7 +357,7 @@ const PaperCard = memo(function PaperCard({
   // a long abstract — the common case — never has one ease in over words that
   // were already painted clear. The toggle keeps treating anything but a firm
   // `true` as "nothing hidden", exactly as it did.
-  const [abstractClipped, setAbstractClipped] = useState(null);
+  const [abstractClipped, setAbstractClipped] = useState<boolean | null>(null);
   // On a phone a clipped abstract is read in a sheet rather than unfolded in
   // place (AbstractSheet). Gated by pointer type, never by width, like the
   // reader's selection route: shrinking a laptop window must not send a mouse
@@ -349,8 +376,8 @@ const PaperCard = memo(function PaperCard({
   // True for the moment after a read mark is taken back, so the slot can
   // play its release (PaperCard.css) — a class the resting state cannot carry.
   const [releasingRead, setReleasingRead] = useState(false);
-  const releaseTimerRef = useRef(null);
-  useEffect(() => () => clearTimeout(releaseTimerRef.current), []);
+  const releaseTimerRef = useRef<number | null>(null);
+  useEffect(() => () => clearTimeout(releaseTimerRef.current!), []);
   const [copied, setCopied] = useState(false);
   const [showAuthorsModal, setShowAuthorsModal] = useState(false);
   // The sheet is leaving with the page: an author was picked from it. It
@@ -367,7 +394,7 @@ const PaperCard = memo(function PaperCard({
   // tells this card only once its leave has played. `setShowReader(false)` is
   // the fallback for the one window where there is nothing to ask: the lazy
   // chunk has not mounted yet, so the ref is still empty.
-  const readerCloseRef = useRef(null);
+  const readerCloseRef = useRef<(() => void) | null>(null);
   const requestReaderClose = useCallback(() => {
     if (readerCloseRef.current) readerCloseRef.current();
     else setShowReader(false);
@@ -376,16 +403,16 @@ const PaperCard = memo(function PaperCard({
   /* Where the reader should grow from. The rewrite button's rectangle at the
      moment it was pressed, so the full-screen reader can open out of it and
      collapse back into it rather than appearing from nowhere. */
-  const [readerOrigin, setReaderOrigin] = useState(null);
-  const [pendingRelatedPaper, setPendingRelatedPaper] = useState(null);
-  const [selectedRelatedPaper, setSelectedRelatedPaper] = useState(null);
+  const [readerOrigin, setReaderOrigin] = useState<ComponentProps<typeof PaperReader>['originRect']>(null);
+  const [pendingRelatedPaper, setPendingRelatedPaper] = useState<Paper | null>(null);
+  const [selectedRelatedPaper, setSelectedRelatedPaper] = useState<Paper | null>(null);
   const [isClosingRelatedCard, setIsClosingRelatedCard] = useState(false);
   const [isResolvingAccess, setIsResolvingAccess] = useState(false);
-  const [resolvedAccess, setResolvedAccess] = useState({ paperId: null, copy: null });
+  const [resolvedAccess, setResolvedAccess] = useState<{ paperId: string | null; copy: OpenCopy }>({ paperId: null, copy: null });
   // The reader's library's answer, for this paper at this institution. Keyed by
   // both, so unlinking or switching accounts discards it without an effect.
-  const [institutionAccess, setInstitutionAccess] = useState({ paperId: null, domain: null, access: null });
-  const [linkedResources, setLinkedResources] = useState({ paperId: null, items: [] });
+  const [institutionAccess, setInstitutionAccess] = useState<{ paperId: string | null; domain: string | null; access: Awaited<ReturnType<typeof findInstitutionAccess>> }>({ paperId: null, domain: null, access: null });
+  const [linkedResources, setLinkedResources] = useState<{ paperId: string | null; items: PaperResearchResource[] }>({ paperId: null, items: [] });
   const [isCardVisible, setIsCardVisible] = useState(false);
   // Whether the clippings are lit. Deliberately NOT `isCardVisible`: the two
   // ends of a card's turn on screen want different thresholds, and one flag
@@ -418,26 +445,26 @@ const PaperCard = memo(function PaperCard({
     if (!paper?.authors?.length || !followedByType.author?.length) return false;
     return paper.authors.some(author => isFollowing({
       type: 'author',
-      id: author?.id || author?.name || author,
-      name: author?.name || author,
+      id: (author as PaperAuthor)?.id || (author as PaperAuthor)?.name || author as string,
+      name: (author as PaperAuthor)?.name || author as string,
     }));
   }, [followedByType.author, isFollowing, paper]);
 
   const lastTap = useRef(0);
-  const abstractRef = useRef(null);
+  const abstractRef = useRef<HTMLDivElement | null>(null);
   // Cancels the in-flight return to the first line, if there is one.
-  const stopAbstractScroll = useRef(null);
+  const stopAbstractScroll = useRef<(() => void) | null>(null);
 
   // A card swiped away mid-collapse would otherwise leave its frame loop
   // running against a node nobody can see any more.
   useEffect(() => () => stopAbstractScroll.current?.(), []);
-  const cardRef = useRef(null);
-  const viewStartTime = useRef(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const viewStartTime = useRef<number | null>(null);
   const totalViewTime = useRef(0);
   const relatedCardClosingRef = useRef(false);
-  const relatedPreparationRef = useRef(null);
+  const relatedPreparationRef = useRef<{ identity: string; promise: Promise<Partial<Paper> | null> } | null>(null);
   const relatedHydrationRequestRef = useRef(0);
-  const analyticsViewedPaperRef = useRef(null);
+  const analyticsViewedPaperRef = useRef<string | null>(null);
   const paperViewKey = paper?.id || paper?.doi || paper?.arxivId || 'paper';
 
   // A NEW paper in the same card. The feed keys its cards by paper so this
@@ -598,13 +625,13 @@ const PaperCard = memo(function PaperCard({
   // an animation again is what restarts it. This is also what the rest of the
   // card already does: `pcArrive` is on the pieces unconditionally and plays
   // every time they mount, rather than once per paper.
-  const [loadedFigures, setLoadedFigures] = useState(() => new Set());
+  const [loadedFigures, setLoadedFigures] = useState(() => new Set<string>());
 
   // A new paper means new URLs; carrying the old set over would flash the next
   // paper's frames in before their images.
   useEffect(() => { setLoadedFigures(new Set()); }, [paperViewKey]);
 
-  const markFigureLoaded = useCallback((url) => {
+  const markFigureLoaded = useCallback((url: string) => {
     setLoadedFigures(current => (current.has(url) ? current : new Set(current).add(url)));
   }, []);
 
@@ -649,7 +676,7 @@ const PaperCard = memo(function PaperCard({
     if (isPageArriving()) setFiguresResumed(true);
   }, [figuresShown, isPageArriving]);
 
-  const [project, setProject] = useState(null);
+  const [project, setProject] = useState<Awaited<ReturnType<typeof getProjectForPaper>>>(null);
   const prefersReducedMotion = useReducedMotion();
 
   useEffect(() => {
@@ -663,7 +690,7 @@ const PaperCard = memo(function PaperCard({
     return () => { isMounted = false; };
   }, [isCardIdle, paper]);
 
-  const toggleExpanded = (e, newState) => {
+  const toggleExpanded = (e: SyntheticEvent, newState: boolean) => {
     e.stopPropagation();
     // A panel that hides nothing has nothing to open. Without this, tapping an
     // abstract that fits whole flipped `expanded` on, and the toggle — reserved
@@ -686,7 +713,7 @@ const PaperCard = memo(function PaperCard({
     if (!newState && abstractRef.current) {
       stopAbstractScroll.current = tweenScrollTop(abstractRef.current, 0, {
         durationMs: CARD_DURATION_MS,
-        immediate: prefersReducedMotion,
+        immediate: prefersReducedMotion!,
       });
     }
   };
@@ -711,9 +738,9 @@ const PaperCard = memo(function PaperCard({
 
   // The paragraph the panel is showing, the height it stands at, and the way to
   // end a resize that is still running.
-  const lastAbstractParagraph = useRef(null);
-  const lastAbstractHeight = useRef(null);
-  const settleAbstractResize = useRef(null);
+  const lastAbstractParagraph = useRef<HTMLParagraphElement | null>(null);
+  const lastAbstractHeight = useRef<number | null>(null);
+  const settleAbstractResize = useRef<(() => void) | null>(null);
 
   /**
    * The height is tracked by an observer rather than measured on every render,
@@ -765,7 +792,7 @@ const PaperCard = memo(function PaperCard({
       return undefined;
     }
     let alive = true;
-    let settleTimer = null;
+    let settleTimer: number | null = null;
     const read = () => {
       const node = abstractRef.current;
       if (!alive || !node || expandedRef.current) return;
@@ -807,7 +834,7 @@ const PaperCard = memo(function PaperCard({
    * same breath, so what is painted is the first frame of the transition rather
    * than the jump.
    */
-  const attachAbstractBody = useCallback((paragraph) => {
+  const attachAbstractBody = useCallback((paragraph: HTMLParagraphElement | null) => {
     const previous = lastAbstractParagraph.current;
     // Detaching. `previous` has to survive it: it is what the attach of the
     // paragraph replacing this one compares itself against.
@@ -837,9 +864,9 @@ const PaperCard = memo(function PaperCard({
     void node.offsetHeight;
     node.style.height = `${target}px`;
 
-    let backstop = null;
+    let backstop: number | null = null;
     const settle = () => {
-      clearTimeout(backstop);
+      clearTimeout(backstop!);
       settleAbstractResize.current = null;
       node.style.height = '';
       node.classList.remove('pc-abstract--resizing');
@@ -855,7 +882,7 @@ const PaperCard = memo(function PaperCard({
   // The clipped abstract's door on a phone: the sheet, not the fold. Once the
   // panel is open (a fine pointer got it there) the toggle closes it as ever.
   const readsInSheet = coarsePointer && abstractClipped === true && !expanded;
-  const openAbstract = (e) => {
+  const openAbstract = (e: SyntheticEvent) => {
     if (readsInSheet) {
       e.stopPropagation();
       setShowAbstractSheet(true);
@@ -864,7 +891,7 @@ const PaperCard = memo(function PaperCard({
     toggleExpanded(e, !expanded);
   };
 
-  const handleAbstractTransitionEnd = (event) => {
+  const handleAbstractTransitionEnd = (event: TransitionEvent) => {
     // The panel has finished travelling between two abstracts: hand its height
     // back to the layout before anything else moves it.
     if (event.propertyName === 'height') settleAbstractResize.current?.();
@@ -919,7 +946,7 @@ const PaperCard = memo(function PaperCard({
     setShowRelated(false);
   }, []);
 
-  const prepareRelatedPaper = useCallback((relatedPaper) => {
+  const prepareRelatedPaper = useCallback((relatedPaper: Paper) => {
     const identity = getRelatedPaperIdentity(relatedPaper);
     const promise = resolveWithin(
       hydrateCitationGraphPaper(relatedPaper),
@@ -930,7 +957,7 @@ const PaperCard = memo(function PaperCard({
     return promise;
   }, []);
 
-  const selectRelatedPaper = useCallback((relatedPaper) => {
+  const selectRelatedPaper = useCallback((relatedPaper: Paper) => {
     trackEvent('select_content', {
       content_type: 'paper',
       surface: analyticsSurface,
@@ -950,12 +977,12 @@ const PaperCard = memo(function PaperCard({
     relatedHydrationRequestRef.current = requestId;
     Promise.resolve(preparation).then(preparedPaper => {
       if (relatedHydrationRequestRef.current !== requestId || relatedCardClosingRef.current) return;
-      setSelectedRelatedPaper(preparedPaper || relatedPaper);
+      setSelectedRelatedPaper((preparedPaper || relatedPaper) as Paper);
       setPendingRelatedPaper(null);
     });
   }, [analyticsSurface, position, prepareRelatedPaper, trackEvent]);
 
-  const requireAuthentication = useCallback((action) => {
+  const requireAuthentication = useCallback((action: string) => {
     onAuthRequired?.(action);
   }, [onAuthRequired]);
   // Describes «Leer en simple» to a guest: it needs an account. A
@@ -978,7 +1005,7 @@ const PaperCard = memo(function PaperCard({
     if (isRead) {
       onUnmarkAsRead(paper.id);
       setReleasingRead(true);
-      clearTimeout(releaseTimerRef.current);
+      clearTimeout(releaseTimerRef.current!);
       releaseTimerRef.current = setTimeout(() => setReleasingRead(false), READ_RELEASE_MS);
       return;
     }
@@ -988,9 +1015,9 @@ const PaperCard = memo(function PaperCard({
   // Get area info for the gradient background
   const getCategoryLabelText = () => {
     const cat = visiblePrimaryCategory;
-    const area = Object.values(CATEGORIES).find(a => a.subcategories && a.subcategories[cat]);
+    const area = Object.values(CATEGORIES).find(a => a.subcategories && (a.subcategories as Record<string, { label: string }>)[cat]);
     if (area) {
-      return area.subcategories[cat].label || area.subcategories[cat].label;
+      return (area.subcategories as Record<string, { label: string }>)[cat].label || (area.subcategories as Record<string, { label: string }>)[cat].label;
     }
     // Not `cat` raw. For anything from OpenAlex that is a concept, not a
     // field — "QUBIT", "Toric code" — so the kicker announced a keyword where
@@ -1022,7 +1049,7 @@ const PaperCard = memo(function PaperCard({
     [paper.categories, paper.concepts, paper.primaryCategory]
   );
 
-  const openTopic = useCallback((event, topic) => {
+  const openTopic = useCallback((event: MouseEvent, topic: NonNullable<ReturnType<typeof resolvePaperTopic>>) => {
     event.stopPropagation();
     const path = publicMode
       ? getPublicEntityPath(topic.type, topic.id)
@@ -1044,7 +1071,7 @@ const PaperCard = memo(function PaperCard({
    * and the colour cannot disagree, and nothing is drawn at all when the branch
    * is genuinely unknown: a wrong field is worse than no field. */
   const WatermarkIcon = useMemo(
-    () => AREA_WATERMARK_ICONS[areaKeyForPaper(paper)] || null,
+    () => AREA_WATERMARK_ICONS[areaKeyForPaper(paper) as keyof typeof AREA_WATERMARK_ICONS] || null,
     [paper],
   );
 
@@ -1052,7 +1079,7 @@ const PaperCard = memo(function PaperCard({
   // reader are portaled to the body, and React still bubbles their clicks
   // up this tree — the old overlays stopped propagation by hand; the DOM
   // check covers every surface at once.
-  const handleDoubleTap = useCallback((event) => {
+  const handleDoubleTap = useCallback((event: MouseEvent) => {
     if (event?.target instanceof Node && !cardRef.current?.contains(event.target)) return;
     const now = Date.now();
     if (now - lastTap.current < 300) {
@@ -1082,7 +1109,7 @@ const PaperCard = memo(function PaperCard({
     }
   };
 
-  const handleNotInterested = (e) => {
+  const handleNotInterested = (e: MouseEvent) => {
     e.stopPropagation();
     if (publicMode) {
       if (onGuestNotInterested) {
@@ -1131,7 +1158,7 @@ const PaperCard = memo(function PaperCard({
     return () => { active = false; };
   }, [institution, isCardIdle, isOpenByRecord, paper?.doi, paper?.id]);
 
-  const handleOpenPaper = async (event) => {
+  const handleOpenPaper = async (event: MouseEvent) => {
     event.stopPropagation();
     // The library's resolver lands on the publisher's version of record.
     const destination = currentInstitutionAccess?.status === 'entitled'
@@ -1153,7 +1180,7 @@ const PaperCard = memo(function PaperCard({
     // la cascada daba por bueno el primer candidato con URL: si el navegador la
     // rechazaba -- un `http://` de repositorio, lo más común en las copias que
     // este botón ofrece -- el clic terminaba ahí, en silencio.
-    const openBestTarget = (openCopy) => openFirstTarget(openTargetsForPaper(paper, openCopy, currentInstitutionAccess), {
+    const openBestTarget = (openCopy: OpenCopy) => openFirstTarget(openTargetsForPaper(paper, openCopy, currentInstitutionAccess), {
       inline: (target) => {
         onOpenPdf({ ...paper, ...(openCopy || {}), pdfUrl: target.url, openAccess: true });
         return true;
@@ -1208,7 +1235,7 @@ const PaperCard = memo(function PaperCard({
     || bestAvailableUrl
     || (paper.arxivId ? `https://arxiv.org/abs/${encodeURIComponent(paper.arxivId)}` : '');
 
-  const handleShare = async (event) => {
+  const handleShare = async (event: MouseEvent) => {
     event.stopPropagation();
     if (!shareUrl) return;
 
@@ -1217,7 +1244,7 @@ const PaperCard = memo(function PaperCard({
         await navigator.share(paperShareData({ title: paper.title, url: shareUrl }));
         trackEvent('share', { method: 'native', content_type: 'paper', surface: analyticsSurface });
       } catch (error) {
-        if (error?.name !== 'AbortError') console.error('Paper share failed', error);
+        if ((error as Error | null)?.name !== 'AbortError') console.error('Paper share failed', error);
       }
       return;
     }
@@ -1253,22 +1280,22 @@ const PaperCard = memo(function PaperCard({
       {/* DEBUG PANEL */}
       {SHOW_RANKING_DEBUG && paper._debugScore && (
         <div className="pc-debug-panel">
-          <div><strong>TOTAL SCORE: {paper._debugScore.total.toFixed(2)}</strong></div>
+          <div><strong>TOTAL SCORE: {paper._debugScore.total!.toFixed(2)}</strong></div>
           <div>Why: {paper._debugScore.explanation}</div>
-          <div>Affinity: {paper._debugScore.affinity.toFixed(2)}</div>
-          <div>Preference Match: {paper._debugScore.preference.toFixed(2)}</div>
-          <div>Recency Boost: {paper._debugScore.recency.toFixed(2)}</div>
-          {paper._debugScore.semantic > 0 && (
-            <div style={{color: 'var(--brand)'}}>Semantic: {paper._debugScore.semantic.toFixed(2)}</div>
+          <div>Affinity: {paper._debugScore.affinity!.toFixed(2)}</div>
+          <div>Preference Match: {paper._debugScore.preference!.toFixed(2)}</div>
+          <div>Recency Boost: {paper._debugScore.recency!.toFixed(2)}</div>
+          {paper._debugScore.semantic! > 0 && (
+            <div style={{color: 'var(--brand)'}}>Semantic: {paper._debugScore.semantic!.toFixed(2)}</div>
           )}
-          {paper._debugScore.citations > 0 && (
-            <div style={{color: 'var(--primary)'}}>Citation Boost: {paper._debugScore.citations.toFixed(2)}</div>
+          {paper._debugScore.citations! > 0 && (
+            <div style={{color: 'var(--primary)'}}>Citation Boost: {paper._debugScore.citations!.toFixed(2)}</div>
           )}
-          {paper._debugScore.graphBoost > 0 && (
-            <div style={{color: 'var(--warning)'}}>Graph Connection: {paper._debugScore.graphBoost.toFixed(2)}</div>
+          {paper._debugScore.graphBoost! > 0 && (
+            <div style={{color: 'var(--warning)'}}>Graph Connection: {paper._debugScore.graphBoost!.toFixed(2)}</div>
           )}
-          {paper._debugScore.cooldownMultiplier < 1.0 && (
-            <div style={{color: 'var(--danger)'}}>Cooldown: x{paper._debugScore.cooldownMultiplier.toFixed(2)}</div>
+          {paper._debugScore.cooldownMultiplier! < 1.0 && (
+            <div style={{color: 'var(--danger)'}}>Cooldown: x{paper._debugScore.cooldownMultiplier!.toFixed(2)}</div>
           )}
           <div>Exploration: {paper._debugScore.isExploration ? 'YES' : 'NO'}</div>
         </div>
@@ -1359,7 +1386,7 @@ const PaperCard = memo(function PaperCard({
           <span className="pc-meta-dot">·</span>
           <span className="pc-date">{paper.year}</span>
 
-          {(paper.citationCountKnown || paper.citationCount > 0) && (
+          {(paper.citationCountKnown || paper.citationCount! > 0) && (
             <>
               {/* El modificador es lo que le da a este punto el mismo fundido
                   que al chip: los dos montan juntos, y cuando el
@@ -1393,7 +1420,7 @@ const PaperCard = memo(function PaperCard({
             "Preprint" is not a word a reader outside academia arrives knowing. */}
         <div className="pc-chips">
           {reviewTag && (() => {
-            const Glyph = STATUS_CHIP_ICONS[reviewTag.key];
+            const Glyph = STATUS_CHIP_ICONS[reviewTag.key as keyof typeof STATUS_CHIP_ICONS];
             return (
               <span className="pc-chip" data-tone={reviewTag.tone} title={reviewTag.hint}>
                 <Glyph size={12} /> {reviewTag.label}
@@ -1407,7 +1434,7 @@ const PaperCard = memo(function PaperCard({
               word outright reads as a glitch, so the slot cross-fades. */}
           <AnimatePresence mode="wait" initial={false}>
             {accessTag && (() => {
-              const Glyph = STATUS_CHIP_ICONS[accessTag.key];
+              const Glyph = STATUS_CHIP_ICONS[accessTag.key as keyof typeof STATUS_CHIP_ICONS];
               return (
                 <motion.span
                   key={accessTag.key}
@@ -1538,7 +1565,7 @@ const PaperCard = memo(function PaperCard({
                       // identifier is the OpenAIRE id, which names one project.
                       const path = publicMode
                         ? getPublicEntityPath('project', projectRouteId, { includeName: true, name: project.acronym })
-                        : `/explorer/project/${encodeURIComponent(projectRouteId)}?name=${encodeURIComponent(project.acronym)}&funder=${encodeURIComponent(project.funder)}&arxivId=${paperId}`;
+                        : `/explorer/project/${encodeURIComponent(projectRouteId!)}?name=${encodeURIComponent(project.acronym!)}&funder=${encodeURIComponent(project.funder!)}&arxivId=${paperId}`;
                       trackEvent('select_content', {
                         content_type: 'project',
                         surface: analyticsSurface,
@@ -1580,7 +1607,7 @@ const PaperCard = memo(function PaperCard({
           <div className="pc-author-avatars" aria-hidden="true">
             {(paper.authors || []).slice(0, 3).map((author, i) => (
               <div key={i} className="pc-author-avatar" style={{ '--i': i }}>
-                {(author.name || author).charAt(0).toUpperCase()}
+                {((author as PaperAuthor).name || author as string).charAt(0).toUpperCase()}
               </div>
             ))}
           </div>
@@ -1591,7 +1618,7 @@ const PaperCard = memo(function PaperCard({
                 render as "Kramer,Alexander". Keeping the separator out also
                 keeps it out of each button's accessible name. */}
             {(paper.authors || []).slice(0, 3).map((author, index) => {
-               const authorName = author.name || author;
+               const authorName = (author as PaperAuthor).name || author as string;
                // `path` now doubles as the <Link to> destination, so it has to
                // be known at render time — a <Link> can't compute where it
                // goes lazily inside its own onClick the way the old <button>
@@ -1770,7 +1797,7 @@ const PaperCard = memo(function PaperCard({
                     <span className="pc-linked-resources-label"><Database size={14} /> {'Resources'}</span>
                     <div className="pc-linked-resources-list">
                       {researchResources.map((resource, index) => {
-                        const config = RESOURCE_KIND_CONFIG[resource.kind] || RESOURCE_KIND_CONFIG.material;
+                        const config = RESOURCE_KIND_CONFIG[resource.kind as keyof typeof RESOURCE_KIND_CONFIG] || RESOURCE_KIND_CONFIG.material;
                         const ResourceIcon = config.Icon;
                         const resourceLabel = config.label[language];
                         const resourceKey = resource.id || `${resource.kind}:${resource.url || resource.title}`;
@@ -2042,9 +2069,9 @@ const PaperCard = memo(function PaperCard({
                 }}
               >
                 <div className="pc-author-avatar-large" style={{ '--i': idx }} aria-hidden="true">
-                  {(author.name || author).charAt(0).toUpperCase()}
+                  {((author as PaperAuthor).name || author as string).charAt(0).toUpperCase()}
                 </div>
-                <span>{author.name || author}</span>
+                <span>{(author as PaperAuthor).name || author as string}</span>
               </button>
             ))}
           </div>

@@ -1,3 +1,4 @@
+import type { LinkedInstitution } from '../../services/institutionService.ts';
 import { GraduationCap } from '@phosphor-icons/react';
 import { institutionLabel } from '../../services/institutionService.ts';
 import './Institution.css';
@@ -7,7 +8,7 @@ import './Institution.css';
  * read out, so a screen reader hears "Institution: Universidad de Salamanca"
  * rather than four letters.
  */
-export default function InstitutionPill({ institution, className = '' }) {
+export default function InstitutionPill({ institution, className = '' }: { institution?: LinkedInstitution | null; className?: string }) {
   if (!institution) return null;
   const label = institutionLabel(institution);
   return (

@@ -12,10 +12,10 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '
  */
 test('SOURCE: the lists page opens a paper with no address as a card from the stored copy', async () => {
   const code = stripComments(await read('./ListsPage.tsx'));
-  const start = code.indexOf('const openPaperCard = (paper) => {');
+  const start = code.indexOf('const openPaperCard = (paper: Partial<Paper>) => {');
   const body = code.slice(start, code.indexOf('};', start));
   assert.match(body, /const path = getPublicPaperPath\(paper\) \|\| getPublicPaperPath\(paper\.id\)/);
-  assert.match(body, /if \(!path\) \{\s*setOverlayPaper\(paper\);\s*return;\s*\}/,
+  assert.match(body, /if \(!path\) \{\s*setOverlayPaper\(paper as Paper\);\s*return;\s*\}/,
     'no address: the card opens in the overlay, painted from what was saved');
   assert.match(body, /navigate\(path, \{ state: \{ paper, stored: true \} \}\)/, 'an address: the paper page, the stored copy riding along as the fallback');
   assert.doesNotMatch(body, /arxivId: paper\.arxivId \|\| paper\.id/,

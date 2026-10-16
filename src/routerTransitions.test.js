@@ -6,7 +6,7 @@ const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 /**
- * SOURCE test: the router is mounted in main.jsx, which node cannot run.
+ * SOURCE test: the router is mounted in main.tsx, which node cannot run.
  *
  * React Router 7 wraps every navigation's state update in
  * `React.startTransition`. A transition renders in the background, sliced and
@@ -23,7 +23,7 @@ test('SOURCE: the router updates its location synchronously, so a tab tap is ack
 });
 
 /**
- * SOURCE test: the router is mounted in main.jsx, which node cannot run.
+ * SOURCE test: the router is mounted in main.tsx, which node cannot run.
  *
  * Every route in this app used to live in the URL fragment, because nothing
  * on the server knew about `/following`. vercel.json rewrites `/feed` and
@@ -42,7 +42,7 @@ test('SOURCE: the router reads the path, not the fragment', async () => {
   assert.match(
     code,
     /import \{ BrowserRouter \} from 'react-router-dom'/,
-    'main.jsx must mount the router that reads the pathname',
+    'main.tsx must mount the router that reads the pathname',
   );
   assert.doesNotMatch(code, /HashRouter/, 'no HashRouter may be left mounted or imported');
   assert.doesNotMatch(code, /basename=/, 'the site is served from the domain root');

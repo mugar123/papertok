@@ -1,3 +1,51 @@
+import type { Dispatch, PropsWithChildren, SetStateAction } from 'react';
+import type { User } from 'firebase/auth';
+import type { DocumentReference, DocumentSnapshot } from 'firebase/firestore';
+
+export type AppUser = Pick<User, 'uid' | 'displayName' | 'email' | 'photoURL'> & {
+  providerData: Array<Pick<User['providerData'][number], 'providerId'> & Partial<Pick<User['providerData'][number], 'email' | 'displayName'>>>;
+};
+type ReadingPreferences = ReturnType<typeof normalizeReadingPreferences>;
+interface StoredProfile {
+  onboardingComplete?: boolean;
+  preferences?: string[];
+  selectedCategories?: string[];
+  followedAuthors?: string[];
+  readingPreferences?: Parameters<typeof normalizeReadingPreferences>[0];
+  profilePhoto?: unknown;
+  emailDigestOptIn?: boolean;
+  institution?: Parameters<typeof normalizeInstitution>[0];
+}
+export interface AuthContextValue {
+  user: AppUser | null;
+  loading: boolean;
+  error: string | null;
+  onboardingComplete: boolean;
+  userPreferences: string[] | null;
+  followedAuthors: string[];
+  readingPreferences: ReadingPreferences;
+  profilePhoto: ReturnType<typeof normalizeProfilePhoto>;
+  emailDigestPending: boolean;
+  profileLoadError: string | null;
+  signInProviders: string[];
+  institution: ReturnType<typeof normalizeInstitution>;
+  signInWithGoogle: () => Promise<{ isNewUser: boolean; providerId: string }>;
+  signInWithGitHub: () => Promise<{ isNewUser: boolean; providerId: string }>;
+  linkSignInMethod: typeof linkSignInProvider;
+  linkInstitution: typeof linkInstitutionAccount;
+  unlinkInstitution: () => Promise<void>;
+  signOut: () => Promise<void>;
+  completeOnboarding: (preferences: string[]) => Promise<void>;
+  settleEmailDigestOptIn: () => Promise<void>;
+  updatePreferences: (preferences: string[]) => Promise<void>;
+  setUserPreferences: Dispatch<SetStateAction<string[] | null>>;
+  toggleFollowAuthor: (authorName: string) => Promise<void>;
+  updateReadingPreferences: (updates: Partial<ReadingPreferences>) => Promise<ReadingPreferences>;
+  updateProfilePhoto: (value: unknown) => Promise<ReturnType<typeof normalizeProfilePhoto>>;
+  retryProfileLoad: () => void;
+  isDemo: boolean;
+}
+
 /* eslint-disable react-refresh/only-export-components */
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AuthContext } from './contexts.ts';
@@ -34,46 +82,46 @@ const PROFILE_CACHE_TIMEOUT_MS = 800;
 const PROFILE_NETWORK_TIMEOUT_MS = 7000;
 
 // ── Demo mode storage helpers ──
-function demoGet(key, fallback) {
+function demoGet<T>(key: string, fallback: T): T {
   try {
     const v = localStorage.getItem(`papertok_${key}`);
     return v ? JSON.parse(v) : fallback;
   } catch { return fallback; }
 }
-function demoSet(key, value) {
+function demoSet(key: string, value: unknown) {
   localStorage.setItem(`papertok_${key}`, JSON.stringify(value));
 }
 
-export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+export function AuthProvider({ children }: PropsWithChildren) {
+  const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
-  const [userPreferences, setUserPreferences] = useState(null);
-  const [followedAuthors, setFollowedAuthors] = useState([]);
-  const [readingPreferences, setReadingPreferences] = useState(DEFAULT_READING_PREFERENCES);
-  const [profilePhoto, setProfilePhoto] = useState(null);
+  const [userPreferences, setUserPreferences] = useState<string[] | null>(null);
+  const [followedAuthors, setFollowedAuthors] = useState<string[]>([]);
+  const [readingPreferences, setReadingPreferences] = useState<ReadingPreferences>(DEFAULT_READING_PREFERENCES);
+  const [profilePhoto, setProfilePhoto] = useState<ReturnType<typeof normalizeProfilePhoto>>(null);
   // A yes to the email digest given in the guest welcome, saved on the
   // account at onboarding and waiting for the first follow: the digest is
   // built from follows, so EmailNotificationsContext turns the subscription
   // on then and settles this flag.
   const [emailDigestPending, setEmailDigestPending] = useState(false);
-  const [profileLoadError, setProfileLoadError] = useState(null);
+  const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
   // Which doors this account has (F5). Kept in state rather than read from
   // `user.providerData` at render time because linking does not always
   // re-emit an auth state change, and a settings row that still says
   // "Connect" right after connecting is a row nobody trusts.
-  const [signInProviders, setSignInProviders] = useState([]);
+  const [signInProviders, setSignInProviders] = useState<string[]>([]);
   // The university a verified address resolved to, written by the Worker
   // (institution-link.js) and read here with the rest of the user document.
-  const [institution, setInstitution] = useState(null);
+  const [institution, setInstitution] = useState<ReturnType<typeof normalizeInstitution>>(null);
   const [profileReloadKey, setProfileReloadKey] = useState(0);
 
   useEffect(() => {
     if (IS_DEMO) {
       setTimeout(() => {
         // Demo mode: check if user has "logged in" before
-        const demoUser = demoGet('user', null);
+        const demoUser = demoGet<AppUser | null>('user', null);
         if (demoUser) {
           setUser(demoUser);
           setOnboardingComplete(demoGet('onboardingComplete', false));
@@ -115,9 +163,9 @@ export function AuthProvider({ children }) {
           setOnboardingComplete(false);
           setUserPreferences(null);
         }
-        const userRef = doc(db, 'users', currentUser.uid);
+        const userRef = doc(db, 'users', currentUser.uid) as DocumentReference<StoredProfile>;
         const isCurrent = () => !disposed && changeId === authChangeId;
-        const applyProfile = (snapshot) => {
+        const applyProfile = (snapshot: DocumentSnapshot<StoredProfile>) => {
           if (!snapshot?.exists() || !isCurrent()) return false;
           const data = snapshot.data();
           const onboarded = accountLooksOnboarded(data);
@@ -154,7 +202,7 @@ export function AuthProvider({ children }) {
         // The server is the authority on whether the document exists. A
         // remembered onboarding only decided the paint while this read was
         // in flight; it does not get to overrule a missing document.
-        const applyRemote = (snapshot) => {
+        const applyRemote = (snapshot: DocumentSnapshot<StoredProfile>) => {
           if (!applyProfile(snapshot)) {
             setOnboardingComplete(false);
             saveStoredOnboarding(currentUser.uid, { complete: false, preferences: [] });
@@ -218,7 +266,7 @@ export function AuthProvider({ children }) {
   // No reactive read besides state setters and module-level constants, so this
   // never needs to be recreated — every context consumer that depends on it
   // (both sign-in buttons below) inherits that stability.
-  const signInWith = useCallback(async (providerId) => {
+  const signInWith = useCallback(async (providerId: string) => {
     setError(null);
     if (IS_DEMO) {
       setTimeout(() => {
@@ -240,8 +288,8 @@ export function AuthProvider({ children }) {
     } catch (err) {
       // Closing the window, or pressing again so a new one replaces it, is the
       // reader's own choice, not a failure to report.
-      if (err?.code !== 'auth/popup-closed-by-user' && err?.code !== 'auth/cancelled-popup-request') {
-        setError(err?.code || 'AUTH_FAILED');
+      if ((err as { code?: string } | null)?.code !== 'auth/popup-closed-by-user' && (err as { code?: string } | null)?.code !== 'auth/cancelled-popup-request') {
+        setError((err as { code?: string } | null)?.code || 'AUTH_FAILED');
       }
       throw err;
     }
@@ -264,7 +312,7 @@ export function AuthProvider({ children }) {
    * rather than in the page-wide banner meant for a failed sign-in.
    */
 
-  const linkSignInMethod = useCallback(async (providerId) => {
+  const linkSignInMethod = useCallback(async (providerId: string) => {
     const result = await linkSignInProvider(providerId);
     setSignInProviders(providerIdsOf(result.user || auth.currentUser));
     return result;
@@ -273,7 +321,7 @@ export function AuthProvider({ children }) {
   // The Worker writes the field and answers with what it wrote; that answer is
   // applied here, guarded by uid like the profile writes below, so an account
   // switched while the Google window was open cannot inherit the other's.
-  const linkInstitution = useCallback(async (email) => {
+  const linkInstitution = useCallback(async (email: string) => {
     const userId = user?.uid;
     const linked = await linkInstitutionAccount(email);
     if (auth.currentUser?.uid === userId) setInstitution(linked);
@@ -314,7 +362,7 @@ export function AuthProvider({ children }) {
       forgetOwnLists(signingOutUserId);
       resetAccountWarmup(signingOutUserId);
     } catch (err) {
-      setError(err?.code || 'AUTH_FAILED');
+      setError((err as { code?: string } | null)?.code || 'AUTH_FAILED');
     }
   }, [user?.uid]);
 
@@ -326,7 +374,7 @@ export function AuthProvider({ children }) {
   // the same questions again: an onboarding that never ended
   // (docs/AUDITORIA-ONBOARDING-INTERESES-2026-09-16.md, hallazgo 4). Now the
   // failure reaches handleFinish's catch, on screen, with the pick intact.
-  const completeOnboarding = useCallback(async (preferences) => {
+  const completeOnboarding = useCallback(async (preferences: string[]) => {
     const guestAnswer = readGuestInterests();
     const guestLevel = guestAnswer?.readingLevel;
     // Only an explicit yes reaches the account; demo mode has no Worker to
@@ -372,7 +420,7 @@ export function AuthProvider({ children }) {
       // already guarantees for a rules refusal.
       if (settled.status !== 'fulfilled') {
         if (settled.status === 'timed_out') {
-          const timeoutError = new Error('completeOnboarding: the write did not settle in time');
+          const timeoutError = new Error('completeOnboarding: the write did not settle in time') as Error & { code?: string };
           timeoutError.code = 'ONBOARDING_WRITE_TIMEOUT';
           throw timeoutError;
         }
@@ -390,7 +438,7 @@ export function AuthProvider({ children }) {
           PROFILE_NETWORK_TIMEOUT_MS,
         ).then((optIn) => {
           if (optIn.status !== 'fulfilled') {
-            console.warn('Could not save the email digest opt-in', optIn.reason || optIn.status);
+            console.warn('Could not save the email digest opt-in', (optIn as { reason?: unknown }).reason || optIn.status);
             return;
           }
           if (auth.currentUser?.uid === userId) setEmailDigestPending(true);
@@ -405,7 +453,7 @@ export function AuthProvider({ children }) {
     setOnboardingComplete(true);
   }, [readingPreferences, user?.uid]);
 
-  const updatePreferences = useCallback(async (newPreferences) => {
+  const updatePreferences = useCallback(async (newPreferences: string[]) => {
     setUserPreferences(newPreferences);
 
     if (IS_DEMO) {
@@ -425,7 +473,7 @@ export function AuthProvider({ children }) {
   // Needs the previous list itself, not just its owner's id: the new array is
   // both written to Firestore and (in demo mode) to storage in this same call,
   // so a functional state update alone would not hand it back for that.
-  const toggleFollowAuthor = useCallback(async (authorName) => {
+  const toggleFollowAuthor = useCallback(async (authorName: string) => {
     const { next, patch } = toggleFollowedAuthor(followedAuthors, authorName);
     setFollowedAuthors(next);
 
@@ -443,7 +491,7 @@ export function AuthProvider({ children }) {
   // Same reasoning: `previous` is what a failed write rolls back to, read from
   // the closure rather than from a functional update the error path could not
   // reach.
-  const updateReadingPreferences = useCallback(async (updates) => {
+  const updateReadingPreferences = useCallback(async (updates: Partial<ReadingPreferences>) => {
     const userId = user?.uid;
     const previous = readingPreferences;
     const next = normalizeReadingPreferences({ ...readingPreferences, ...updates });
@@ -478,7 +526,7 @@ export function AuthProvider({ children }) {
     if (auth.currentUser?.uid === userId) setEmailDigestPending(false);
   }, [user?.uid]);
 
-  const updateProfilePhoto = useCallback(async (value) => {
+  const updateProfilePhoto = useCallback(async (value: unknown) => {
     const userId = user?.uid;
     const previous = profilePhoto;
     const next = normalizeProfilePhoto(value);
@@ -504,7 +552,7 @@ export function AuthProvider({ children }) {
           PROFILE_NETWORK_TIMEOUT_MS,
         );
         if (settled.status === 'timed_out') {
-          const timeoutError = new Error('updateProfilePhoto: the write did not settle in time');
+          const timeoutError = new Error('updateProfilePhoto: the write did not settle in time') as Error & { code?: string };
           timeoutError.code = 'PROFILE_PHOTO_WRITE_TIMEOUT';
           throw timeoutError;
         }

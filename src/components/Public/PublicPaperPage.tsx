@@ -1,3 +1,6 @@
+import type { Variants } from 'framer-motion';
+import type { Paper } from '../../models/Paper.ts';
+import type { PaperCardProps } from '../Feed/PaperCard.tsx';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowClockwise, ArrowLeft, House } from '@phosphor-icons/react';
@@ -55,7 +58,7 @@ const COPY = {
   },
 };
 
-async function loadPaper(identity) {
+async function loadPaper(identity: NonNullable<ReturnType<typeof parsePaperKey>>) {
   if (identity.type === 'doi') {
     const papers = await fetchPapersByDois([identity.value], { throwOnProviderError: true });
     return papers[0] || null;
@@ -105,7 +108,7 @@ export default function PublicPaperPage({
   onOpenPdf,
   onSaveToList,
   isAuthenticated = false,
-}) {
+}: Pick<PaperCardProps, 'onAuthRequired' | 'onOpenPdf' | 'onSaveToList'> & { isAuthenticated?: boolean }) {
   const { paperKey = '' } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -124,7 +127,7 @@ export default function PublicPaperPage({
     trackSkip,
     trackPdfOpened,
   } = useFeed();
-  const [result, setResult] = useState({ requestKey: '', paper: null, status: 'loading' });
+  const [result, setResult] = useState<{ requestKey: string; paper: Partial<Paper> | null; status: string }>({ requestKey: '', paper: null, status: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const requestIdRef = useRef(0);
   const identity = useMemo(() => parsePaperKey(paperKey), [paperKey]);
@@ -194,7 +197,7 @@ export default function PublicPaperPage({
   const status = hasCurrentResult
     ? result.status
     : (seedPainted || sharePainted ? 'ready' : (identity ? 'loading' : 'not-found'));
-  const text = useCallback((entry) => entry.en, []);
+  const text = useCallback((entry: { en: string }) => entry.en, []);
 
   // The card arrives in up to two beats: the copy handed over by the link,
   // then the full paper once the providers answer. Declared as variants rather
@@ -206,7 +209,7 @@ export default function PublicPaperPage({
   // this render is the upgrade. Without a seed the card is simply entering.
   const cardPhase = hasCurrentResult && (seedPainted || sharePainted) ? 'dissolve' : 'shown';
 
-  const cardVariants = useMemo(() => ({
+  const cardVariants = useMemo<Variants>(() => ({
     hidden: { opacity: 0, y: prefersReducedMotion ? 0 : 10 },
     shown: {
       opacity: 1,
@@ -292,12 +295,12 @@ export default function PublicPaperPage({
   }, [navigate]);
 
   const retry = useCallback(() => setAttempt(current => current + 1), []);
-  const getInteractionState = useCallback(candidate => ({
+  const getInteractionState = useCallback((candidate: Paper) => ({
     isLiked: likedPaperIds.has(candidate.id),
     isSaved: savedPaperIds.has(candidate.id),
     isRead: readPaperIds.has(candidate.id),
   }), [likedPaperIds, readPaperIds, savedPaperIds]);
-  const handleOpenPdf = useCallback(candidate => {
+  const handleOpenPdf = useCallback((candidate: Paper) => {
     if (isAuthenticated) trackPdfOpened(candidate);
     onOpenPdf?.(candidate);
   }, [isAuthenticated, onOpenPdf, trackPdfOpened]);
@@ -365,10 +368,10 @@ export default function PublicPaperPage({
           onAnimationComplete={() => setCardRevealed(true)}
         >
           <PaperCard
-            paper={paper}
-            isLiked={isAuthenticated && likedPaperIds.has(paper.id)}
-            isSaved={isAuthenticated && savedPaperIds.has(paper.id)}
-            isRead={isAuthenticated && readPaperIds.has(paper.id)}
+            paper={paper as Paper}
+            isLiked={isAuthenticated && likedPaperIds.has(paper.id!)}
+            isSaved={isAuthenticated && savedPaperIds.has(paper.id!)}
+            isRead={isAuthenticated && readPaperIds.has(paper.id!)}
             onLike={toggleLike}
             onNotInterested={markNotInterested}
             onMarkAsRead={markAsRead}

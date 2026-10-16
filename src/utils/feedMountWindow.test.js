@@ -77,7 +77,7 @@ test('SOURCE: the container mounts a window and grows it off the critical path',
   // one puts the feed back on whatever card the offset now points at.
   assert.match(code, /initialMountWindow\(\{\s*total: papers\.length,\s*anchorIndex: index,/,
     'the first window is around the paper the feed was left on');
-  assert.match(code, /function resumeAnchor\(papers, scrollKey\) \{\s*const saved = resumeMemory\.get\(scrollKey\);\s*return \{ saved, index: resumeIndex\(\{ papers, savedPaperId: saved\.paperId, savedIndex: saved\.index \}\) \};\s*\}/,
+  assert.match(code, /function resumeAnchor\(papers: Paper\[\], scrollKey: string\) \{\s*const saved = resumeMemory\.get\(scrollKey\);\s*return \{ saved, index: resumeIndex\(\{ papers, savedPaperId: saved\.paperId, savedIndex: saved\.index \}\) \};\s*\}/,
     'and that index is the saved paper looked up by id, with the saved offset only as a fallback');
   assert.match(code, /const \{ saved, index \} = resumeAnchor\(papers, scrollKey\);\s*return initialMountWindow\(/,
     'the window seed reads the helper, not a copy of it');

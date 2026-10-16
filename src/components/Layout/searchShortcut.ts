@@ -19,9 +19,9 @@
  * question can be asked without a DOM; in a browser nothing but an Element
  * has it.
  */
-export function shouldOpenSearchOnSlash(event, doc) {
+export function shouldOpenSearchOnSlash(event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'target'> | null, doc: Pick<Document, 'querySelector'> | null) {
   if (!event || event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return false;
-  const target = event.target;
+  const target = event.target as Element | null;
   if (target && typeof target.closest === 'function'
     && target.closest('input, textarea, select, [contenteditable="true"]')) return false;
   if (typeof doc?.querySelector === 'function' && doc.querySelector('[aria-modal="true"]')) return false;

@@ -32,7 +32,7 @@ test('the scrim is the palette\'s own, timed with the sheet', async () => {
   const palette = await read('./SearchCommand.tsx');
   assert.match(palette, /<CommandDialog [^>]*overlayClassName=\{`sc-scrim\$\{leavingBySelect \? ' sc-scrim--select' : ''\}`\}/);
   const command = await read('../ui/command.tsx');
-  assert.match(command, /function CommandDialog\(\{ children, className, overlayClassName, finalFocus, title = 'Search', \.\.\.props \}\)/);
+  assert.match(command, /function CommandDialog\(\{ children, className, overlayClassName, finalFocus, title = 'Search', \.\.\.props \}: Omit<ComponentProps<typeof Dialog>, 'children'> & \{ children\?: ReactNode \} & Pick<ComponentProps<typeof DialogContent>, 'className' \| 'overlayClassName' \| 'finalFocus'> & \{ title\?: string \}\)/);
   assert.match(command, /overlayClassName=\{overlayClassName\}/);
   const dialog = await read('../ui/dialog.tsx');
   assert.match(dialog, /<DialogOverlay className=\{overlayClassName\} \/>/);
@@ -49,7 +49,7 @@ test('the scrim is the palette\'s own, timed with the sheet', async () => {
  */
 test('a picked result closes the palette in 100ms of opacity, with no travel', async () => {
   const palette = await read('./SearchCommand.tsx');
-  assert.match(palette, /const \[leavingBySelect, setLeavingBySelect\] = useState\(false\);/);
+  assert.match(palette, /const \[leavingBySelect, setLeavingBySelect\] = useState(?:<[^;\n]+>)?\(false\);/);
   assert.match(palette, /setLeavingBySelect\(true\);\s*onOpenChange\(false\);/);
   assert.match(palette, /if \(open\) \{\s*reset\(\);\s*setLeavingBySelect\(false\);\s*\}/);
   assert.match(palette, /className=\{`sc-sheet\$\{leavingBySelect \? ' sc-sheet--select' : ''\}`\}/);

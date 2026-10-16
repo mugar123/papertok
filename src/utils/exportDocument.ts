@@ -7,7 +7,7 @@ interface ExportCounts { marks: number; mine: number; ai: number }
 export interface ExportOptions {
   paper?: Partial<Paper> | null;
   sections?: RewriteSection[];
-  annotations?: ExportAnnotation[];
+  annotations?: readonly ExportAnnotation[];
   language?: string;
   level?: string;
   kindLabels?: Record<string, string>;
@@ -305,7 +305,7 @@ export function numberAnnotations<T extends ExportAnnotation>(sections: RewriteS
  * highlight with words on it is a note — the two switches are separate
  * because wanting one is not wanting the other.
  */
-export function exportableAnnotations<T extends ExportAnnotation>(annotations: T[] = [], {
+export function exportableAnnotations<T extends ExportAnnotation>(annotations: readonly T[] = [], {
   sections = [], level, include = {},
 }: ExportOptions = {}) {
   const known = new Set(sections.map(section => String(section?.id)));

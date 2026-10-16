@@ -23,7 +23,7 @@ test('SOURCE: a remembered onboarding never stands in for a profile that failed 
   // document that is not there is an account without onboarding.
   assert.match(
     code,
-    /const applyRemote = \(snapshot\) => \{\s*if \(!applyProfile\(snapshot\)\) \{\s*setOnboardingComplete\(false\);\s*saveStoredOnboarding\(currentUser\.uid, \{ complete: false, preferences: \[\] \}\);/,
+    /const applyRemote = \(snapshot: DocumentSnapshot<StoredProfile>\) => \{\s*if \(!applyProfile\(snapshot\)\) \{\s*setOnboardingComplete\(false\);\s*saveStoredOnboarding\(currentUser\.uid, \{ complete: false, preferences: \[\] \}\);/,
   );
   assert.match(code, /if \(remote\.status === 'fulfilled'\) \{\s*applyRemote\(remote\.value\);/);
   assert.match(code, /\} else if \(!hydratedFromCache\) \{\s*setProfileLoadError\('PROFILE_LOAD_FAILED'\);/);
@@ -45,7 +45,7 @@ test('SOURCE: a follow toggle writes a field transform, not the list this sessio
   // real setDoc call, inside toggleFollowAuthor's own body, to `patch`: the
   // field transform toggleFollowedAuthor returned.
   const fn = code.match(
-    /const toggleFollowAuthor = useCallback\(async \(authorName\) => \{[\s\S]*?\n {2}\}, \[followedAuthors, user\?\.uid\]\);/,
+    /const toggleFollowAuthor = useCallback(?:<[^;\n]+>)?\(async \(authorName: string\) => \{[\s\S]*?\n {2}\}, \[followedAuthors, user\?\.uid\]\);/,
   );
   assert.ok(fn, 'toggleFollowAuthor is gone');
   // The real function is well under twenty lines. A much longer capture means

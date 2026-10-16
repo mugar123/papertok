@@ -1,6 +1,7 @@
+import type { PetriProps } from './PetriFrame.tsx';
 import PetriFrame, { ANTENNAE } from './PetriFrame.tsx';
 
-export default function PetriThinking({ label, className }) {
+export default function PetriThinking({ label, className }: PetriProps) {
   return (
     <PetriFrame label={label} className={className}>
       <path d={ANTENNAE} fill="none" strokeWidth="2" />

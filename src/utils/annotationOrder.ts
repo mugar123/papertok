@@ -36,7 +36,7 @@ export function buildSectionOrder(sections: Array<{ id?: string }> = []) {
  * regenerated the paper with other headings — sorts to the end rather than
  * being dropped. It is still the reader's note; it has simply lost its place.
  */
-export function sortAnnotations<T extends AnnotationPosition>(annotations: T[] = [], sectionOrder = new Map<string, number>()) {
+export function sortAnnotations<T extends AnnotationPosition>(annotations: readonly T[] = [], sectionOrder = new Map<string, number>()) {
   const placed = annotations.map((annotation, arrival) => ({ annotation, arrival }));
   placed.sort((left, right) => {
     const leftSection = sectionOrder.has(String(left.annotation?.sectionId))
@@ -73,7 +73,7 @@ export function answerSlot(visible: AnnotationPosition[] = [], passage: Annotati
  * `mine` is everything you made — a bare highlight and a highlight you wrote on
  * are both yours — and `ai` is only what the model answered.
  */
-export function filterAnnotations<T extends { kind?: string }>(annotations: T[] = [], filter = 'all') {
+export function filterAnnotations<T extends { kind?: string }>(annotations: readonly T[] = [], filter = 'all') {
   if (filter === 'ai') return annotations.filter(item => item?.kind === 'ai');
   if (filter === 'mine') return annotations.filter(item => item?.kind !== 'ai');
   return annotations.slice();

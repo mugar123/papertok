@@ -1,3 +1,6 @@
+import type { StyledProps } from './props.ts';
+import type { ComponentProps } from 'react';
+
 import { Select as SelectPrimitive } from '@base-ui/react/select';
 import { CaretDown, CaretUp, Check } from '@phosphor-icons/react';
 import { cn } from '../../lib/utils.ts';
@@ -10,11 +13,11 @@ import { cn } from '../../lib/utils.ts';
  */
 const Select = SelectPrimitive.Root;
 
-function SelectValue({ className, ...props }) {
+function SelectValue({ className, ...props }: StyledProps<typeof SelectPrimitive.Value>) {
   return <SelectPrimitive.Value data-slot="select-value" className={cn('flex flex-1 truncate text-left', className)} {...props} />;
 }
 
-function SelectTrigger({ className, size = 'default', children, ...props }) {
+function SelectTrigger({ className, size = 'default', children, ...props }: StyledProps<typeof SelectPrimitive.Trigger> & { size?: 'default' | 'sm' }) {
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
@@ -44,7 +47,7 @@ function SelectContent({
   alignOffset = 0,
   alignItemWithTrigger = true,
   ...props
-}) {
+}: StyledProps<typeof SelectPrimitive.Popup> & Pick<ComponentProps<typeof SelectPrimitive.Positioner>, 'align' | 'alignOffset' | 'side' | 'sideOffset' | 'alignItemWithTrigger'>) {
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Positioner
@@ -79,7 +82,7 @@ function SelectContent({
   );
 }
 
-function SelectItem({ className, children, ...props }) {
+function SelectItem({ className, children, ...props }: StyledProps<typeof SelectPrimitive.Item>) {
   return (
     <SelectPrimitive.Item
       data-slot="select-item"

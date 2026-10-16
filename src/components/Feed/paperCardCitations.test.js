@@ -128,7 +128,7 @@ test('SOURCE: a late citation chip fades in, and so does its separator', async (
 
 test('SOURCE: the dot before the chip is the one that carries the modifier', async () => {
   const code = stripComments(await read('./PaperCard.tsx'));
-  const chip = bounded(code, '{(paper.citationCountKnown || paper.citationCount > 0) && (', 'pc-citations', 'the citation chip', 8);
+  const chip = bounded(code, '{(paper.citationCountKnown || paper.citationCount! > 0) && (', 'pc-citations', 'the citation chip', 8);
 
   assert.match(chip, /className="pc-meta-dot pc-meta-dot--citations"/,
     'the separator inside this fragment, and no other, gets the fade');

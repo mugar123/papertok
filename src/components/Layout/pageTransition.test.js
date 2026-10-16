@@ -32,7 +32,7 @@ test('a page is a plain element the stylesheet moves, not a motion component', a
   const jsx = await read('./PageTransition.tsx');
   assert.match(jsx, /^import \{ usePresence, usePresenceData \} from 'framer-motion';$/m, 'framer is the bookkeeper, nothing more');
   assert.match(jsx, /^import '\.\/PageTransition\.css';$/m);
-  assert.match(jsx, /^import \{ EXIT_SAFETY_MS, isArrivalMotion, pageMotionFor \} from '\.\/pageMotion\.js';$/m);
+  assert.match(jsx, /^import \{ EXIT_SAFETY_MS, isArrivalMotion, pageMotionFor \} from '\.\/pageMotion\.ts';$/m);
   for (const gone of [/\bmotion\./, /useReducedMotion/, /variants/, /\bx:/, /ease/, /TRAVEL_PX/, /duration/]) {
     assert.doesNotMatch(jsx, gone, `${gone} left with the old transition`);
   }
@@ -43,12 +43,12 @@ test('a page is a plain element the stylesheet moves, not a motion component', a
 test('the leaving page reads the navigation that ejects it, and never computes one', async () => {
   const jsx = await read('./PageTransition.tsx');
   assert.match(jsx, /const \[present, safeToRemove\] = usePresence\(\);/);
-  assert.match(jsx, /const presenceCustom = usePresenceData\(\);/);
+  assert.match(jsx, /const presenceCustom = usePresenceData\(\) as ReturnType<typeof usePageTransitionCustomValue> \| undefined;/);
   assert.match(jsx, /const providerCustom = usePageTransitionCustomValue\(\);/);
   assert.match(jsx, /const \{ direction, lateral \} = presenceCustom \?\? providerCustom;/);
   assert.doesNotMatch(jsx, /usePageTransitionCustom\(\)/, 'the component never computes the direction itself');
   // A component file that also exports a function breaks Fast Refresh.
-  assert.doesNotMatch(jsx, /export function/, 'PageTransition.jsx exports only its component');
+  assert.doesNotMatch(jsx, /export function/, 'PageTransition.tsx exports only its component');
 });
 
 test('a move between navbar tabs takes its direction from the bar, not from history', async () => {
@@ -61,16 +61,16 @@ test('a move between navbar tabs takes its direction from the bar, not from hist
 
 test('the leaving page hands itself back when its own animation ends, or when the clock runs out', async () => {
   const jsx = await read('./PageTransition.tsx');
-  const handler = jsx.match(/const handleAnimationEnd = useCallback\(\(event\) => \{([\s\S]*?)\n {2}\}, \[present, safeToRemove\]\);/);
+  const handler = jsx.match(/const handleAnimationEnd = useCallback(?:<[^;\n]+>)?\(\(event: AnimationEvent<HTMLDivElement>\) => \{([\s\S]*?)\n {2}\}, \[present, safeToRemove\]\);/);
   assert.ok(handler, 'one animationend handler, keyed on presence');
   assert.match(handler[1], /if \(event\.target !== rootRef\.current\) return;/, 'the cards\' and the hero\'s animationend bubble here too');
   assert.match(handler[1], /if \(present\) setSettled\(true\);/);
-  assert.match(handler[1], /else \{[\s\S]*?rootRef\.current\.style\.visibility = 'hidden';\s*if \(safeToRemove\) safeToRemove\(\);/, 'the held frame is hidden even while nested exits delay unmounting');
+  assert.match(handler[1], /else \{[\s\S]*?rootRef\.current!\.style\.visibility = 'hidden';\s*if \(safeToRemove\) safeToRemove\(\);/, 'the held frame is hidden even while nested exits delay unmounting');
   const clock = jsx.match(/useEffect\(\(\) => \{\s*if \(present\) return undefined;([\s\S]*?)\}, \[present\]\);/);
   assert.ok(clock, 'the safety clock is keyed on presence alone');
   assert.match(clock[1], /const timer = window\.setTimeout\(\(\) => \{\s*if \(root\) root\.style\.visibility = 'hidden';\s*if \(safeToRemoveRef\.current\) safeToRemoveRef\.current\(\);\s*\}, EXIT_SAFETY_MS\);/, 'a page nobody removes is at least hidden');
   assert.match(clock[1], /return \(\) => window\.clearTimeout\(timer\);/);
-  assert.match(jsx, /const safeToRemoveRef = useRef\(safeToRemove\);/);
+  assert.match(jsx, /const safeToRemoveRef = useRef(?:<[^;\n]+>)?\(safeToRemove\);/);
   assert.match(jsx, /if \(present\) root\.style\.visibility = '';/, 'a page present again is visible again');
 });
 
@@ -85,8 +85,8 @@ test('the leaving page is lifted by the scroll it had, tracked only while presen
 
 test('a new page starts at the top, a page come back to starts where it was left, both instantly', async () => {
   const jsx = await read('./PageTransition.tsx');
-  assert.match(jsx, /const arrivalDirection = useRef\(direction\);/);
-  assert.match(jsx, /useLayoutEffect\(\(\) => \{\s*if \(arrivalDirection\.current === 0\) return;\s*const top = arrivalDirection\.current < 0 \? \(scrollMemory\.get\(locationKeyRef\.current\) \?\? 0\) : 0;\s*window\.scrollTo\(\{ top, behavior: 'instant' \}\);\s*\}, \[\]\);/);
+  assert.match(jsx, /const arrivalDirection = useRef(?:<[^;\n]+>)?\(direction\);/);
+  assert.match(jsx, /useLayoutEffect\(\(\) => \{\s*if \(arrivalDirection\.current === 0\) return;\s*const top = arrivalDirection\.current! < 0 \? \(scrollMemory\.get\(locationKeyRef\.current\) \?\? 0\) : 0;\s*window\.scrollTo\(\{ top, behavior: 'instant' \}\);\s*\}, \[\]\);/);
 });
 
 /**
@@ -101,16 +101,16 @@ test('a new page starts at the top, a page come back to starts where it was left
 test('scroll restoration is the transition\'s own: remembered by entry on the way out, manual for the browser', async () => {
   const jsx = await read('./PageTransition.tsx');
   assert.match(jsx, /window\.history\.scrollRestoration = 'manual';/);
-  assert.match(jsx, /const scrollMemory = new Map\(\);/);
-  assert.match(jsx, /const \{ key: locationKey \} = useLocation\(\);\s*const locationKeyRef = useRef\(locationKey\);/);
+  assert.match(jsx, /const scrollMemory = new Map(?:<[^;\n]+>)?\(\);/);
+  assert.match(jsx, /const \{ key: locationKey \} = useLocation\(\);\s*const locationKeyRef = useRef(?:<[^;\n]+>)?\(locationKey\);/);
   assert.match(jsx, /else rememberScroll\(locationKeyRef\.current, scrollYRef\.current\);/);
   // Bounded: a long session does not keep every entry it ever left.
-  assert.match(jsx, /if \(scrollMemory\.size > SCROLL_MEMORY_MAX\) scrollMemory\.delete\(scrollMemory\.keys\(\)\.next\(\)\.value\);/);
+  assert.match(jsx, /if \(scrollMemory\.size > SCROLL_MEMORY_MAX\) scrollMemory\.delete\(scrollMemory\.keys\(\)\.next\(\)\.value!\);/);
 });
 
 test('a cold chunk suspends inside the page arriving', async () => {
   const jsx = await read('./PageTransition.tsx');
-  assert.match(jsx, /^import RouteFallback from '\.\/RouteFallback\.jsx';$/m);
+  assert.match(jsx, /^import RouteFallback from '\.\/RouteFallback\.tsx';$/m);
   assert.match(jsx, /<Suspense fallback=\{<RouteFallback \/>\}>\{children\}<\/Suspense>/);
   const app = await read('../../App.tsx');
   // The outer boundary stays as the net for anything that suspends outside a page.
@@ -119,8 +119,8 @@ test('a cold chunk suspends inside the page arriving', async () => {
 
 test('a page re-entered while leaving arrives again instead of snapping to rest', async () => {
   const jsx = await read('./PageTransition.tsx');
-  assert.match(jsx, /const \[wasPresent, setWasPresent\] = useState\(present\);\s*if \(present !== wasPresent\) \{\s*setWasPresent\(present\);\s*if \(present\) \{\s*setSettled\(false\);\s*setArrivedWith\(direction\);\s*setArrivedLateral\(lateral\);\s*\}\s*\}/);
-  assert.match(jsx, /const \[arrivedWith, setArrivedWith\] = useState\(direction\);/);
+  assert.match(jsx, /const \[wasPresent, setWasPresent\] = useState(?:<[^;\n]+>)?\(present\);\s*if \(present !== wasPresent\) \{\s*setWasPresent\(present\);\s*if \(present\) \{\s*setSettled\(false\);\s*setArrivedWith\(direction\);\s*setArrivedLateral\(lateral\);\s*\}\s*\}/);
+  assert.match(jsx, /const \[arrivedWith, setArrivedWith\] = useState(?:<[^;\n]+>)?\(direction\);/);
   // Before the reset: the motion formula still keys on `settled`.
   assert.match(jsx, /const motion = present && settled \? 'rest' : pageMotionFor\(\{ direction, lateral, present \}\);/);
 });
@@ -154,7 +154,7 @@ test('the leaving page keeps the direction it arrived with, so the held feed\'s 
  */
 test('a step between tabs resumes the cards at rest in both directions, like the way back', async () => {
   const jsx = await read('./PageTransition.tsx');
-  assert.match(jsx, /const \[arrivedLateral, setArrivedLateral\] = useState\(lateral\);/);
+  assert.match(jsx, /const \[arrivedLateral, setArrivedLateral\] = useState(?:<[^;\n]+>)?\(lateral\);/);
   assert.match(jsx, /data-nav-lateral=\{\(present \? lateral : arrivedLateral\) \|\| undefined\}/);
   assert.doesNotMatch(jsx, /data-nav-lateral=\{lateral/);
   const css = await read('../Feed/PaperCard.css');

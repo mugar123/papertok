@@ -90,7 +90,7 @@ test('SOURCE: every screen that reads the lists collection seeds from the sessio
     // Seeded in the initialiser, not in an effect: a seed that lands after the
     // first commit still paints the empty state for a frame, which is the
     // flicker this exists to remove.
-    assert.match(source, /useState\(\(\)\s*=>\s*seededLists\s*\?\?\s*\[\]\)/,
+    assert.match(source, /useState(?:<[^;\n]+>)?\(\(\)\s*=>\s*seededLists\s*\?\?\s*\[\]\)/,
       `${path}: the seed belongs in the useState initialiser`);
   }
 });

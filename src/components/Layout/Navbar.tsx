@@ -1,3 +1,4 @@
+import type { AnimationEvent, MouseEvent, PointerEvent, RefObject } from 'react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { ruleTransform } from '../../utils/navRule.ts';
@@ -25,7 +26,7 @@ import './Navbar.css';
  * measurement is applied without a transition, so the rule does not slide in
  * from the row's left edge on load.
  */
-function useActiveTabRule(rowRef, tab, activeKey) {
+function useActiveTabRule(rowRef: RefObject<HTMLDivElement | null>, tab: string, activeKey: string) {
   const [rule, setRule] = useState({ transform: '', measured: false });
 
   useLayoutEffect(() => {
@@ -69,7 +70,7 @@ let navbarHasArrived = false;
 export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) {
   const { user } = useAuth();
   const [arriving, setArriving] = useState(() => !navbarHasArrived);
-  const handleArrived = (event) => {
+  const handleArrived = (event: AnimationEvent<HTMLElement>) => {
     // Children animate too (the preferences sheet, the search state); only
     // the bar's own animationend retires the class, and mid-arrival a
     // child's would otherwise cut it short.
@@ -83,7 +84,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
   const pathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '');
 
   useEffect(() => {
-    const handleShortcut = (event) => {
+    const handleShortcut = (event: KeyboardEvent) => {
       // Bound on `window`, so a modal dialog's inertness does not filter it:
       // the guard has to be asked explicitly (searchShortcut.js).
       if (!shouldOpenSearchOnSlash(event, document)) return;
@@ -110,7 +111,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
   // together: a `className` callback suppresses the appended class, but nothing
   // in NavLink's plain API gates `aria-current`.
   const activeTab = isHomeActive ? 'home' : isFollowingActive ? 'following' : '';
-  const linksRef = useRef(null);
+  const linksRef = useRef<HTMLDivElement | null>(null);
   /**
    * The press is remembered only to decide, on `pointerup`, whether the finger
    * lifted on the tab it pressed.
@@ -128,9 +129,9 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
    * is, so the mark slowed, sped up and eased again — the glitch the reader
    * saw. One measurement, one curve.
    */
-  const touchRef = useRef(null);
+  const touchRef = useRef<{ tab: string; x: number; y: number; at: number } | null>(null);
   const handledRef = useRef(0);
-  const pressTab = (event, tab) => {
+  const pressTab = (event: PointerEvent<HTMLAnchorElement>, tab: string) => {
     if (event.button !== 0 || event.pointerType !== 'touch') return;
     touchRef.current = { tab, x: event.clientX, y: event.clientY, at: Date.now() };
   };
@@ -157,7 +158,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
    * synthesise one, or react-router would push the same route twice and Back
    * would need two presses.
    */
-  const liftTab = (event, tab, to) => {
+  const liftTab = (event: PointerEvent<HTMLAnchorElement>, tab: string, to: string) => {
     const start = touchRef.current;
     touchRef.current = null;
     if (event.pointerType !== 'touch' || !start || start.tab !== tab) return;
@@ -167,7 +168,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
     if (tab === 'home') setFeedMode('top');
     if (pathname !== to) navigate(to);
   };
-  const swallowSynthesisedClick = (event) => {
+  const swallowSynthesisedClick = (event: MouseEvent<HTMLAnchorElement>) => {
     if (Date.now() - handledRef.current > 1500) return;
     handledRef.current = 0;
     event.preventDefault();

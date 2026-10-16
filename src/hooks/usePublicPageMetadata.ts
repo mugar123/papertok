@@ -1,7 +1,7 @@
 import type { ShareOptions } from '../utils/publicNavigation.ts';
 type LocalizedText = string | Record<string, string | undefined> | null;
 interface MetadataOptions extends ShareOptions {
-  title?: LocalizedText; description?: LocalizedText; imageAlt?: LocalizedText; url?: string; route?: string; image?: string;
+  title?: LocalizedText; description?: LocalizedText; imageAlt?: LocalizedText; url?: string; route?: string | null; image?: string;
   ogType?: string; type?: string; jsonLd?: unknown; structuredData?: unknown; noIndex?: boolean; robots?: string;
 }
 interface NodeRecord { node: Element; existed: boolean; content: string | null; href: string | null; textContent: string | null; }

@@ -1,3 +1,4 @@
+import type { PropsWithChildren } from 'react';
 import { ArrowLeft } from '@phosphor-icons/react';
 import './SettingsSubheader.css';
 
@@ -19,7 +20,7 @@ export default function SettingsSubheader({
   backLabel,
   onBack,
   children,
-}) {
+}: PropsWithChildren<{ eyebrow: string; title: string; subtitle?: string; backLabel: string; onBack: () => void }>) {
   return (
     <header className="settings-subheader">
       <button

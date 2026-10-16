@@ -1,3 +1,12 @@
+import type { SyntheticEvent } from 'react';
+import type { ReaderCopy } from './PaperReader.tsx';
+type SelectionRect = Pick<DOMRect, 'top' | 'bottom' | 'left' | 'right'>;
+interface SelectionMenuProps {
+  open?: boolean; anchor?: SelectionRect | null; copy: ReaderCopy;
+  usesLeft?: number | null; unlimited?: boolean; canAsk?: boolean; busy?: boolean;
+  onHighlight: () => void; onSaveNote: (note: string) => void;
+  onAsk: () => void; onClose: () => void;
+}
 import { useEffect, useId, useRef, useState } from 'react';
 import { Popover as PopoverPrimitive } from '@base-ui/react/popover';
 import { CircleNotch, Highlighter, PencilLine, Sparkle } from '@phosphor-icons/react';
@@ -29,7 +38,7 @@ import { Textarea } from '../ui/textarea.tsx';
  */
 
 /** A floating-ui virtual element over a viewport rectangle captured at selection time. */
-function virtualAnchor(rect) {
+function virtualAnchor(rect: SelectionRect | null | undefined) {
   if (!rect) return null;
   const width = rect.right - rect.left;
   const height = rect.bottom - rect.top;
@@ -60,15 +69,15 @@ export default function SelectionMenu({
   onSaveNote,
   onAsk,
   onClose,
-}) {
+}: SelectionMenuProps) {
   const noteFieldId = useId();
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState('');
-  const textareaRef = useRef(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   // Where focus lands on open: the first action. The keyboard route into this
   // menu (Enter on a focused paragraph) leaves focus on the paragraph, so
   // without this the menu opened and the reader could not reach it.
-  const firstActionRef = useRef(null);
+  const firstActionRef = useRef<HTMLButtonElement | null>(null);
   // The rectangle the menu is anchored to, as a value Base UI re-reads. It
   // was a stable function returning the latest rectangle, and Base UI only
   // resolves a function anchor when the popup mounts: select another sentence
@@ -91,7 +100,7 @@ export default function SelectionMenu({
     if (composing) textareaRef.current?.focus();
   }, [composing]);
 
-  const submit = (event) => {
+  const submit = (event: SyntheticEvent) => {
     event.preventDefault();
     const note = draft.trim();
     if (note) onSaveNote(note);

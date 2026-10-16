@@ -1,3 +1,5 @@
+import type { PropsWithChildren } from 'react';
+
 /* eslint-disable react-refresh/only-export-components */
 import { useContext, useEffect } from 'react';
 import { LanguageContext } from './contexts.ts';
@@ -6,9 +8,11 @@ import { LanguageContext } from './contexts.ts';
 // that pass the language on — the Worker's AI explanations and emails, date
 // and number formatting, Wikipedia lookups — keep one source for it instead
 // of a literal scattered through the code.
+export type LanguageContextValue = typeof VALUE;
+
 const VALUE = Object.freeze({ language: 'en', locale: 'en-US' });
 
-export function LanguageProvider({ children }) {
+export function LanguageProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     document.documentElement.lang = VALUE.language;
   }, []);

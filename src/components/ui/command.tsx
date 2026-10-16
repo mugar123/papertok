@@ -1,9 +1,12 @@
+import type { StyledProps } from './props.ts';
+import type { ComponentProps, CSSProperties, ReactNode } from 'react';
+
 import { Command as CommandPrimitive } from 'cmdk';
 import { MagnifyingGlass } from '@phosphor-icons/react';
 import { cn } from '../../lib/utils.ts';
 import { Dialog, DialogContent, DialogTitle } from './dialog.tsx';
 
-function Command({ className, ...props }) {
+function Command({ className, ...props }: StyledProps<typeof CommandPrimitive>) {
   return (
     <CommandPrimitive
       className={cn('flex h-full w-full flex-col overflow-hidden bg-card text-foreground', className)}
@@ -36,7 +39,7 @@ function Command({ className, ...props }) {
  * elsewhere in this codebase (the sheet's `max-height` in `drawer.css`) and
  * has near-universal support, so going bare here matches that precedent.
  */
-function CommandDialog({ children, className, overlayClassName, finalFocus, title = 'Search', ...props }) {
+function CommandDialog({ children, className, overlayClassName, finalFocus, title = 'Search', ...props }: Omit<ComponentProps<typeof Dialog>, 'children'> & { children?: ReactNode } & Pick<ComponentProps<typeof DialogContent>, 'className' | 'overlayClassName' | 'finalFocus'> & { title?: string }) {
   return (
     <Dialog {...props}>
       <DialogContent
@@ -92,7 +95,7 @@ function CommandDialog({ children, className, overlayClassName, finalFocus, titl
  * no Escape key and the full-screen sheet leaves no scrim to tap — can sit
  * without becoming a second row.
  */
-function CommandInput({ className, wrapperClassName, wrapperStyle, children, ...props }) {
+function CommandInput({ className, wrapperClassName, wrapperStyle, children, ...props }: StyledProps<typeof CommandPrimitive.Input> & { wrapperClassName?: string; wrapperStyle?: CSSProperties; children?: ReactNode }) {
   return (
     <div
       className={cn('flex items-center gap-1.5 border-b border-border px-4 pt-3 pb-1.5', wrapperClassName)}
@@ -126,7 +129,7 @@ function CommandInput({ className, wrapperClassName, wrapperStyle, children, ...
  * open, actively-scrolled list, at the cost of not reclaiming the extra room
  * once the bar hides — the safer trade for a live scroll container.
  */
-function CommandList({ className, ...props }) {
+function CommandList({ className, ...props }: StyledProps<typeof CommandPrimitive.List>) {
   return (
     <CommandPrimitive.List
       className={cn('max-h-[60svh] overflow-y-auto overflow-x-hidden p-1', className)}
@@ -135,11 +138,11 @@ function CommandList({ className, ...props }) {
   );
 }
 
-function CommandEmpty(props) {
+function CommandEmpty(props: ComponentProps<typeof CommandPrimitive.Empty>) {
   return <CommandPrimitive.Empty className="px-4 py-8 text-center text-sm text-muted-foreground" {...props} />;
 }
 
-function CommandGroup({ className, ...props }) {
+function CommandGroup({ className, ...props }: StyledProps<typeof CommandPrimitive.Group>) {
   return (
     <CommandPrimitive.Group
       className={cn(
@@ -180,7 +183,7 @@ function CommandGroup({ className, ...props }) {
  * on the field and moves rows via `aria-activedescendant`, so no real focus
  * ring is being hidden.
  */
-function CommandItem({ className, ...props }) {
+function CommandItem({ className, ...props }: StyledProps<typeof CommandPrimitive.Item>) {
   return (
     <CommandPrimitive.Item
       className={cn(

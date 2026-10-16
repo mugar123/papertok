@@ -1,3 +1,4 @@
+import type { ComponentProps } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.tsx';
 import InstitutionLink from './InstitutionLink.tsx';
 import './Institution.css';
@@ -8,7 +9,7 @@ import './Institution.css';
  * Escape and restoration; the form lands focus on the field, the first thing
  * in it. The same window manages a linked institution (Unlink).
  */
-export default function InstitutionDialog({ open, onOpenChange }) {
+export default function InstitutionDialog({ open, onOpenChange }: Pick<ComponentProps<typeof Dialog>, 'open' | 'onOpenChange'>) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="institution-dialog" closeLabel="Close">

@@ -20,7 +20,7 @@ test('la navbar no dibuja el botón de recargar ni escucha al informe', async ()
   const jsx = await navbarJsx;
   // Both names of the reload glyph: Lucide's, and Phosphor's since the switch.
   for (const resto of ['RotateCw', 'ArrowClockwise', 'refreshScientificReport', 'reportLoadingStart', 'reportLoadingEnd', 'showReloadButton', 'handleReload']) {
-    assert.ok(!jsx.includes(resto), `\`${resto}\` sigue en Navbar.jsx`);
+    assert.ok(!jsx.includes(resto), `\`${resto}\` sigue en Navbar.tsx`);
   }
 });
 
@@ -32,7 +32,7 @@ test('el spinner de la navbar se fue con su botón', async () => {
 
 test('the navbar opens the account menu from the avatar, with no separate preferences button', async () => {
   const jsx = await navbarJsx;
-  assert.match(jsx, /import AccountMenu from '\.\/AccountMenu\.jsx';/);
+  assert.match(jsx, /import AccountMenu from '\.\/AccountMenu\.tsx';/);
   assert.match(jsx, /<AccountMenu \/>/);
   assert.ok(!jsx.includes('NavPreferencesMenu'), 'the preferences button came back beside the avatar');
   assert.ok(!jsx.includes('<ThemeToggle'), 'el ThemeToggle suelto sigue en la navbar');
@@ -58,7 +58,7 @@ test('on a phone the avatar opens the same entries as a bottom sheet', async () 
   // shared Drawer instead, with the same links, theme and sign-out.
   const jsx = await accountJsx;
   assert.match(jsx, /if \(isPhone\) \{\s*return \(\s*<AccountSheet/);
-  assert.match(jsx, /from '\.\.\/ui\/drawer\.jsx'/);
+  assert.match(jsx, /from '\.\.\/ui\/drawer\.tsx'/);
   assert.match(jsx, /<DrawerTrigger className="navbar-avatar-btn"/);
   const sheet = jsx.match(/function AccountSheet[\s\S]*?\n\}/)[0];
   assert.match(sheet, /LINKS\.map\([\s\S]*?<Link key=\{to\}[^>]*\bto=\{to\} className="account-sheet-row" onClick=\{close\}>/);
@@ -86,7 +86,7 @@ test('the account menu animates in and out with CSS, and keeps its items focusab
 test('el interruptor de tema del header invitado es el Toggle de ui/', async () => {
   const jsx = await readFile(new URL('./ThemeToggle.tsx', import.meta.url), 'utf8');
   const css = await readFile(new URL('./ThemeToggle.css', import.meta.url), 'utf8');
-  assert.match(jsx, /from '\.\.\/ui\/toggle\.jsx'/);
+  assert.match(jsx, /from '\.\.\/ui\/toggle\.tsx'/);
   assert.match(jsx, /<Toggle[\s\S]*?pressed=\{isDark\}[\s\S]*?onPressedChange=\{\(\) => toggleTheme\(buttonRef\.current\)\}/);
   assert.doesNotMatch(jsx, /aria-pressed=/, 'Base UI escribe aria-pressed');
   // The morph keys off the attribute Base UI writes, so the drawing and the
@@ -101,7 +101,7 @@ test('el interruptor de tema del header invitado es el Toggle de ui/', async () 
  * inferior de cada enlace. Medido: 2,5 px más alto bajo «Para ti». Una sola
  * line-height para los tres, fijada en la regla, y el filete corre a nivel.
  *
- * Desde el 05-09-2026 las tres son <a> (Navbar.jsx), así que la declaración ya
+ * Desde el 05-09-2026 las tres son <a> (Navbar.tsx), así que la declaración ya
  * no reconcilia nada: --lh-normal es 1.5 y el body ya lo aplica, de modo que
  * fija justo lo que las anclas heredarían. Se queda como pin defensivo —
  * vuelve a hacer trabajo el día que una pestaña deje de ser un <a> o un padre
@@ -139,7 +139,7 @@ test('los tres enlaces de la navbar comparten line-height, o el filete viaja en 
 test('la marca se llama por su propio texto, no por un aria-label que lo contradiga', async () => {
   const jsx = await navbarJsx;
   const desde = jsx.indexOf('className="navbar-brand"');
-  assert.notEqual(desde, -1, 'no encuentro el botón de la marca en Navbar.jsx');
+  assert.notEqual(desde, -1, 'no encuentro el botón de la marca en Navbar.tsx');
   const boton = jsx.slice(desde, jsx.indexOf('</button>', desde));
 
   assert.doesNotMatch(boton, /aria-label=/,

@@ -37,7 +37,7 @@ test('the overlay tells its caller when the leave has actually finished', async 
   const src = strip(await read('./PaperOverlay.tsx'));
   assert.match(
     src,
-    /export default function PaperOverlay\(\{[^}]*\bonExitComplete\b[^}]*\}\)/,
+    /export default function PaperOverlay\(\{[^}]*\bonExitComplete\b[^}]*\}: PropsWithChildren<\{ open: boolean; onClose: \(\) => void; onExitComplete\?: \(\) => void; label\?: string \}>\)/,
     'the caller needs a way to hear the end of the exit',
   );
   assert.match(

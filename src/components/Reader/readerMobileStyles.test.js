@@ -198,7 +198,7 @@ test('the reader title is rendered like every other title in the app', async () 
 
   // It was the one printed raw, so a paper called "the $\mu$-Deformed Model"
   // arrived here still wearing its dollars.
-  assert.match(jsx, /import ScientificText from '\.\.\/ScientificText\.js';/);
+  assert.match(jsx, /import ScientificText from '\.\.\/ScientificText\.ts';/);
   assert.match(jsx, /<h1 className="rd-doc-title" lang="en"><ScientificText>\{paper\?\.title\}<\/ScientificText><\/h1>/);
 });
 
@@ -304,7 +304,7 @@ test('el camino de escritorio sigue intacto: el mouse-up del documento llama a h
   // What has to hold here is the fact, not the byte layout: the mouse-up
   // still hands the selection to `handleSelection`, not to some other path.
   assert.match(jsx, /document\.addEventListener\('mouseup', handleDocumentMouseUp\)/);
-  assert.match(jsx, /handleSelection\(paragraph\.dataset\.section, paragraphIndex, text, paragraph\)/);
+  assert.match(jsx, /handleSelection\(paragraph\.dataset\.section!, paragraphIndex, text, paragraph\)/);
   assert.doesNotMatch(jsx, /onMouseUp=\{\s*\(event\)\s*=>\s*handleSelection\(/);
 });
 

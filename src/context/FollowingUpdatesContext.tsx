@@ -1,3 +1,17 @@
+import type { PropsWithChildren } from 'react';
+import type { Paper } from '../models/Paper.ts';
+type FollowingResult = Awaited<ReturnType<typeof fetchFollowingUpdates>>;
+interface StoredUpdates {
+  items?: Paper[]; seenIds?: string[]; signature?: string;
+  meta?: Omit<FollowingResult, 'papers'>; savedAt?: string;
+}
+export interface FollowingUpdatesContextValue {
+  items: Paper[]; seenIds: Set<string>; loading: boolean; refreshing: boolean;
+  error: unknown; meta: Omit<FollowingResult, 'papers'>; lastUpdatedAt: string | null;
+  refresh: (options?: { silent?: boolean }) => Promise<void>;
+  markSeen: (paper: string | Partial<Paper>) => void;
+}
+
 /* eslint-disable react-refresh/only-export-components */
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { FollowingUpdatesContext } from './contexts.ts';
@@ -19,9 +33,9 @@ const CACHE_TTL_MS = 15 * 60 * 1000;
 // lands on a still feed; short enough that a reader leaving the page a
 // moment later still finds the write done (and pagehide flushes anyway).
 const SEEN_PERSIST_DELAY_MS = 1500;
-const requestsInFlight = new Map();
+const requestsInFlight = new Map<string, ReturnType<typeof fetchFollowingUpdates>>();
 
-function readLocalState(userId) {
+function readLocalState(userId: string | null): StoredUpdates {
   try {
     return JSON.parse(localStorage.getItem(getFollowingUpdatesStorageKey(userId)) || '{}');
   } catch {
@@ -29,7 +43,7 @@ function readLocalState(userId) {
   }
 }
 
-function writeLocalState(userId, value) {
+function writeLocalState(userId: string, value: StoredUpdates) {
   try {
     localStorage.setItem(getFollowingUpdatesStorageKey(userId), JSON.stringify(value));
   } catch {
@@ -37,12 +51,12 @@ function writeLocalState(userId, value) {
   }
 }
 
-export function FollowingUpdatesProvider({ children }) {
+export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
   const { user } = useAuth();
   const userId = user?.uid || null;
   const { followedEntities, loading: followsLoading } = useFollowing();
-  const [items, setItems] = useState([]);
-  const [seenIds, setSeenIds] = useState(new Set());
+  const [items, setItems] = useState<Paper[]>([]);
+  const [seenIds, setSeenIds] = useState(new Set<string>());
   // Mirrors `seenIds` synchronously — assigned at every `setSeenIds` call
   // site in this file, in the same statement/microtask that produces the
   // next value, never via an effect. That's what makes it safe to read as
@@ -53,10 +67,10 @@ export function FollowingUpdatesProvider({ children }) {
   const seenIdsRef = useRef(seenIds);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<unknown>(null);
   const [meta, setMeta] = useState({ checkedEntities: 0, totalEntities: 0, failedEntities: 0 });
-  const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
-  const initializedForUser = useRef(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
+  const initializedForUser = useRef<string | null>(null);
   const activeUserIdRef = useRef(userId);
   const signature = useMemo(() => getFollowingSignature(followedEntities), [followedEntities]);
 
@@ -73,7 +87,7 @@ export function FollowingUpdatesProvider({ children }) {
       if (cancelled) return;
       if (!userId) {
         setItems([]);
-        const emptySeen = new Set();
+        const emptySeen = new Set<string>();
         seenIdsRef.current = emptySeen;
         setSeenIds(emptySeen);
         initializedForUser.current = null;
@@ -121,7 +135,7 @@ export function FollowingUpdatesProvider({ children }) {
   // screen for 6.5 s and then every card at once; the first follow answers
   // in ~300 ms. `loading` stays up until the last delivery, which is also the
   // one that writes the cache and sets `lastUpdatedAt`.
-  const applyProgress = useCallback((partial) => {
+  const applyProgress = useCallback((partial: FollowingResult) => {
     if (activeUserIdRef.current !== userId) return;
     if (!partial?.papers?.length) return;
     setItems(partial.papers);
@@ -193,13 +207,13 @@ export function FollowingUpdatesProvider({ children }) {
     if (!userId || followsLoading) return undefined;
     const local = readLocalState(userId);
     const cacheIsFresh = local.signature === signature
-      && Date.now() - Date.parse(local.savedAt || 0) < CACHE_TTL_MS;
+      && Date.now() - Date.parse((local.savedAt || 0) as string) < CACHE_TTL_MS;
     if (cacheIsFresh) return undefined;
     const refreshTimeout = setTimeout(() => refresh({ silent: true }), 0);
     return () => clearTimeout(refreshTimeout);
   }, [followsLoading, refresh, signature, userId]);
 
-  const persistSeenIds = useCallback(async (nextSeenIds) => {
+  const persistSeenIds = useCallback(async (nextSeenIds: string[]) => {
     if (!userId) return;
     const compact = compactSeenIds(nextSeenIds);
     const local = readLocalState(userId);
@@ -224,7 +238,7 @@ export function FollowingUpdatesProvider({ children }) {
   // freshest set, so a fling across several cards is one write, taken after
   // the feed has come to rest. A tab hidden or closed inside that window
   // flushes first, the way FeedContext flushes its own debounced writes.
-  const pendingSeenPersistRef = useRef(null);
+  const pendingSeenPersistRef = useRef<{ timer: ReturnType<typeof setTimeout> } | null>(null);
   const flushSeenPersist = useCallback(() => {
     const pending = pendingSeenPersistRef.current;
     if (!pending) return;
@@ -290,14 +304,14 @@ export function FollowingUpdatesProvider({ children }) {
   // throttle): two full-feed renders per swipe, 100-135 ms each, inside the
   // snap animation. The state update below still happens, once per batch;
   // what no longer happens is the function changing under its consumers.
-  const pendingSeenRef = useRef(null);
-  const markSeen = useCallback((paper) => {
+  const pendingSeenRef = useRef<Set<string> | null>(null);
+  const markSeen = useCallback((paper: string | Partial<Paper>) => {
     const key = typeof paper === 'string' ? paper : getFollowingUpdatePaperKey(paper);
     if (!key || seenIdsRef.current.has(key)) return;
     if (!pendingSeenRef.current) {
-      pendingSeenRef.current = new Set();
+      pendingSeenRef.current = new Set<string>();
       queueMicrotask(() => {
-        const pending = pendingSeenRef.current;
+        const pending = pendingSeenRef.current!;
         pendingSeenRef.current = null;
         const next = new Set(seenIdsRef.current);
         let changed = false;

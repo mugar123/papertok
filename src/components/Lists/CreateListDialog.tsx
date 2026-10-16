@@ -1,3 +1,4 @@
+import type { OwnList } from '../../utils/ownLists.ts';
 /**
  * The one window that creates a list — and, since the palette landed, the one
  * that edits it.
@@ -88,11 +89,11 @@ export default function CreateListDialog({
   onClose,
   onCreate,
   onSave,
-}) {
+}: { open: boolean; list?: OwnList | null; onClose: () => void; onCreate?: (name: string, icon: string, color: string) => Promise<void>; onSave?: (id: string, fields: { name: string; icon: string; color: string }) => Promise<void> }) {
   const [state, dispatch] = useReducer(createListFormReducer, CREATE_LIST_FORM_INITIAL);
   // Ties the name field to its error message (aria-describedby).
   const nameErrorId = useId();
-  const inputRef = useRef(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   // A ref rather than `state.busy`: two Enters can land before React re-renders,
   // and both would read a stale `busy: false` and write two lists.
   const inFlight = useRef(false);
@@ -135,7 +136,7 @@ export default function CreateListDialog({
     dispatch({
       type: 'open',
       preset: editing
-        ? { name: listName, icon: listIcon, color: listColor }
+        ? { name: listName!, icon: listIcon!, color: listColor! }
         : { color: randomListColorId() },
     });
   }, [open, editing, listName, listIcon, listColor]);
@@ -159,8 +160,8 @@ export default function CreateListDialog({
     dispatch({ type: 'submit' });
     try {
       const fields = { name: state.name.trim(), icon: state.icon, color: state.color };
-      if (editing) await onSave(listId, fields);
-      else await onCreate(fields.name, fields.icon, fields.color);
+      if (editing) await onSave!(listId!, fields);
+      else await onCreate!(fields.name, fields.icon, fields.color);
       inFlight.current = false;
       onClose();
     } catch (err) {
@@ -251,8 +252,8 @@ export default function CreateListDialog({
               <RadioGroupItem
                 key={colorId}
                 value={colorId}
-                aria-label={copy.colors[colorId]}
-                title={copy.colors[colorId]}
+                aria-label={copy.colors[colorId as keyof typeof copy.colors]}
+                title={copy.colors[colorId as keyof typeof copy.colors]}
                 nativeButton
                 render={(
                   <button

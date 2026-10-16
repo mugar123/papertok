@@ -86,7 +86,7 @@ test('the three gestures sit in a row and arrive one after another', async () =>
   const stagger = Number(/const BEAT_STAGGER_MS = (\d+);/.exec(jsx)[1]);
   assert.ok(stagger * 2 + 2500 <= 5000, 'the third gesture still finishes inside five seconds');
   assert.match(jsx, /\{landed \? <Demo still=\{still\} \/> : <div className="gw-demo" aria-hidden="true" \/>\}/);
-  assert.match(jsx, /const \[landed, setLanded\] = useState\(still\);/, 'refused motion shows all three at once');
+  assert.match(jsx, /const \[landed, setLanded\] = useState(?:<[^;\n]+>)?\(still\);/, 'refused motion shows all three at once');
   const css = await cssPromise;
   assert.match(css.match(/\.gw-beats \{[^}]*\}/)?.[0] ?? '', /flex-direction: row;/);
 });
@@ -105,7 +105,7 @@ test('each step heading takes focus when the reader moves to it', async () => {
   // Each new screen's section, as it mounts, focuses its heading; the first
   // section to mount is the first paint and does not steal focus.
   assert.match(shell, /ref=\{focusNewHeading\}/);
-  assert.match(shell, /if \(shownSection\.current && shownSection\.current !== section\) \{\s*section\.querySelector\('\.gw-title'\)\?\.focus\(\{ preventScroll: true \}\);/);
+  assert.match(shell, /if \(shownSection\.current && shownSection\.current !== section\) \{\s*section\.querySelector<HTMLElement>\('\.gw-title'\)\?\.focus\(\{ preventScroll: true \}\);/);
   const css = await cssPromise;
   assert.match(css, /\.gw-title:focus-visible \{\s*outline: none;\s*\}/);
 });
@@ -126,7 +126,7 @@ test('the steps presence does not switch off the illustrations’ entrance', asy
     assert.doesNotMatch(tag, /initial=\{false\}/, `${tag} would freeze every illustration on its last frame`);
   }
   // And the leaving step reads the direction of the move happening now.
-  assert.match(shell, /exit: \(dir\) => \(\{ opacity: 0, x: dir \* -28/);
+  assert.match(shell, /exit: \(dir: number\) => \(\{ opacity: 0, x: dir \* -28/);
   assert.match(shell, /custom=\{direction\}\s+variants=\{stepVariants\}/);
 });
 
@@ -137,7 +137,7 @@ test('the steps presence does not switch off the illustrations’ entrance', asy
 test('with motion refused the illustrations are drawn finished and the columns hold still', async () => {
   const jsx = await jsxPromise;
   assert.match(jsx, /const still = Boolean\(prefersReducedMotion\);/);
-  assert.match(jsx, /const \[order, setOrder\] = useState\(still \? \['b', 'a', 'c'\] : \['a', 'b', 'c'\]\);/);
+  assert.match(jsx, /const \[order, setOrder\] = useState(?:<[^;\n]+>)?\(still \? \['b', 'a', 'c'\] : \['a', 'b', 'c'\]\);/);
   assert.match(jsx, /if \(still\) onComplete\?\.\(/, 'with no leave to wait for, the answer is handed over at once');
   assert.match(jsx, /\{!still && <Stars avoid=\{hero\} \/>\}/, 'no stars when motion is refused');
   // WCAG 2.2.2: with no pause control, the stars stop scheduling themselves too.
@@ -212,7 +212,7 @@ test('long topic groups fold behind show more without hiding a pick', async () =
   assert.match(shell, /const SUBTOPICS_FOLD_MIN = SUBTOPICS_SHOWN \+ \d+;/, 'no "show 1 more"');
   assert.match(shell, /entries\.filter\(\(\[id\], index\) => index < SUBTOPICS_SHOWN \|\| selectedTopics\.has\(id\)\)/);
   assert.match(shell, /className="gw-more"\s+aria-expanded=\{expanded\}\s+aria-controls=\{gridId\}/);
-  assert.match(shell, /showMore: n => `Show \$\{n\} more`/);
+  assert.match(shell, /showMore: \(n: number\) => `Show \$\{n\} more`/);
 });
 
 

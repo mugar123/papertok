@@ -1,3 +1,4 @@
+import { stripTypeScriptTypes } from 'node:module';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -11,19 +12,19 @@ test('SOURCE: first-run onboarding opens on a greeting, asks for topics only wit
   assert.doesNotMatch(code, /userProfileService|createUserProfile|updateProfilePhoto|userHandle/);
   // One screen per question, in this order. The pickers only without a
   // guest answer; the greeting first, the university last.
-  const list = code.match(/function onboardingSteps\(\{ asksTopics \}\) \{[\s\S]*?\n\}/);
+  const list = code.match(/function onboardingSteps\(\{ asksTopics \}: \{ asksTopics: boolean \}\) \{[\s\S]*?\n\}/);
   assert.ok(list, 'the step list is gone or reshaped');
   assert.match(
     list[0],
     /return \[\s*'welcome',\s*\.\.\.\(asksTopics \? \['topics', 'subtopics'\] : \[\]\),\s*'university',\s*\];/,
   );
   // The lists that come out of it, stated independently.
-  const onboardingSteps = new Function(`${list[0]}; return onboardingSteps;`)();
+  const onboardingSteps = new Function(`${stripTypeScriptTypes(list[0])}; return onboardingSteps;`)();
   assert.deepEqual(onboardingSteps({ asksTopics: true }), ['welcome', 'topics', 'subtopics', 'university']);
   assert.deepEqual(onboardingSteps({ asksTopics: false }), ['welcome', 'university']);
   assert.match(code, /const asksTopics = !guestSeed;/, 'a guest answer never sees the pickers, not even through Back');
   assert.match(code, /const steps = onboardingSteps\(\{ asksTopics \}\);/);
-  assert.match(code, /const \[stepIndex, setStep\] = useState\(0\);/, 'every account starts on the greeting');
+  assert.match(code, /const \[stepIndex, setStep\] = useState(?:<[^;\n]+>)?\(0\);/, 'every account starts on the greeting');
   // The dots are the list the reader will see.
   assert.match(code, /dots=\{\{ count: steps\.length, index: stepIndex,/);
   // The last screen of either list is the one that finishes.
@@ -35,7 +36,7 @@ test('SOURCE: first-run onboarding opens on a greeting, asks for topics only wit
 test('SOURCE: the onboarding is drawn in the welcome\'s shell, with the welcome\'s pickers', async () => {
   const source = await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-  assert.match(code, /import \{ AreaPicker, SubtopicsPicker, WelcomeCopy, WelcomeShell \} from '\.\.\/Public\/WelcomeShell\.jsx';/);
+  assert.match(code, /import \{ AreaPicker, SubtopicsPicker, WelcomeCopy, WelcomeShell \} from '\.\.\/Public\/WelcomeShell\.tsx';/);
   assert.equal((code.match(/<WelcomeShell\b/g) || []).length, 1);
   assert.match(code, /<AreaPicker\b/);
   assert.match(code, /<SubtopicsPicker\b/);
@@ -46,7 +47,7 @@ test('SOURCE: the onboarding is drawn in the welcome\'s shell, with the welcome\
 test('SOURCE: the greeting writes its title glyph by glyph once, and draws it whole when motion is refused', async () => {
   const source = await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-  assert.match(code, /kicker: firstName => \(firstName \? `Hello, \$\{firstName\}` : 'Hello'\)/);
+  assert.match(code, /kicker: \(firstName: string\) => \(firstName \? `Hello, \$\{firstName\}` : 'Hello'\)/);
   assert.match(code, /title: 'Welcome to PaperTok',/);
   // No step count: the dots under the screen show it.
   assert.match(code, /lede: 'Your feed is ready to be yours\. A few short steps and you are in\.',/);
@@ -55,7 +56,7 @@ test('SOURCE: the greeting writes its title glyph by glyph once, and draws it wh
   // The heading's name is the hidden text; the drawing is hidden from it.
   assert.match(code, /<span className="sr-only">\{COPY\.welcome\.title\}<\/span>\s*<ScriptTitle still=\{still\} \/>/);
   assert.match(code, /const still = Boolean\(useReducedMotion\(\)\);/);
-  const title = code.match(/function ScriptTitle\(\{ still \}\) \{[\s\S]*?\n\}/);
+  const title = code.match(/function ScriptTitle\(\{ still \}: \{ still: boolean \}\) \{[\s\S]*?\n\}/);
   assert.ok(title, 'ScriptTitle is gone or reshaped');
   assert.match(title[0], /<span className="onboarding-script" aria-hidden="true">/);
   assert.match(title[0], /<svg className="onboarding-script-svg" viewBox=\{WELCOME_TITLE\.viewBox\}/);
@@ -130,7 +131,7 @@ test('SOURCE: there is no sign-in page; a guest off a protected route gets the f
   // The state is one object per destination (a literal re-issued the redirect
   // on every render), and it still carries the full requested path.
   assert.match(guard, /const requestedPath = `\$\{location\.pathname\}\$\{location\.search\}`;/);
-  assert.match(guard, /const signInState = useMemo\(\(\) => \(\{ authRequired: true, returnTo: requestedPath \}\), \[requestedPath\]\);/);
+  assert.match(guard, /const signInState = useMemo(?:<[^;\n]+>)?\(\(\) => \(\{ authRequired: true, returnTo: requestedPath \}\), \[requestedPath\]\);/);
   assert.match(guard, /<Navigate to="\/feed" replace state=\{signInState\} \/>/);
   assert.doesNotMatch(guard, /to="\/login"/);
   const app = await readFile(new URL('../../App.tsx', import.meta.url), 'utf8');
@@ -153,7 +154,7 @@ test('SOURCE: the onboarding is seeded from the guest answer', async () => {
   const source = await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   // Read once, in one place.
-  assert.match(code, /const \[guestAnswer\] = useState\(\(\) => readGuestInterests\(\)\);/);
+  assert.match(code, /const \[guestAnswer\] = useState(?:<[^;\n]+>)?\(\(\) => readGuestInterests\(\)\);/);
   assert.equal((code.match(/readGuestInterests\(/g) || []).length, 1);
   assert.match(code, /new Set\(guestSeed \?\? \[\]\)/, 'the areas are pre-selected');
   assert.match(code, /new Set\(guestAnswer\?\.topics \?\? \[\]\)/, 'and so are the topics');
@@ -173,7 +174,7 @@ test('SOURCE: the onboarding is seeded from the guest answer', async () => {
 test('SOURCE: the university screen asks for the address itself, in a field that starts empty', async () => {
   const source = await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-  assert.match(code, /const \[institutionEmail, setInstitutionEmail\] = useState\(''\);/);
+  assert.match(code, /const \[institutionEmail, setInstitutionEmail\] = useState(?:<[^;\n]+>)?\(''\);/);
   assert.doesNotMatch(code, /guestAnswer\?\.institutionEmail/, 'the welcome no longer carries an address');
   assert.match(
     code,
@@ -189,7 +190,7 @@ test('SOURCE: the university screen asks for the address itself, in a field that
 test('SOURCE: the guest answer is cleared where the profile takes over', async () => {
   const source = await readFile(new URL('../../context/AuthContext.tsx', import.meta.url), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-  const complete = code.match(/const completeOnboarding = useCallback\(async \(preferences\) => \{[\s\S]*?\n {2}\}, \[readingPreferences, user\?\.uid\]\);/);
+  const complete = code.match(/const completeOnboarding = useCallback(?:<[^;\n]+>)?\(async \(preferences: string\[\]\) => \{[\s\S]*?\n {2}\}, \[readingPreferences, user\?\.uid\]\);/);
   assert.ok(complete, 'completeOnboarding is gone or reshaped');
   assert.match(
     complete[0],
@@ -226,7 +227,7 @@ test('SOURCE: handleFinish tells a write timeout apart from a generic save failu
   assert.ok(catchBlock, 'handleFinish lost its catch block');
   assert.match(
     catchBlock[0],
-    /if \(err\?\.code === 'ONBOARDING_WRITE_TIMEOUT'\) \{[\s\S]*?\}/,
+    /if \(\(err as \{ code\?: string \} \| null\)\?\.code === 'ONBOARDING_WRITE_TIMEOUT'\) \{[\s\S]*?\}/,
     'a write timeout is branched on its stable code, not on a message string',
   );
   assert.match(catchBlock[0], /Still saving\. Check your connection and try again\./);
@@ -251,7 +252,7 @@ test('SOURCE: on the university screen a typed address makes the primary the lin
   // With no address, or once linked, it is the screen's own: Start exploring.
   assert.match(primary[0], /label: saving \? COPY\.saving : stepCopy\.cta,/);
   assert.match(code, /<LibraryPreview still=\{still\} stamp=\{<PetriStamp \/>\} \/>/);
-  assert.match(code, /import \{ LibraryPreview \} from '\.\.\/Public\/GuestWelcomePreferences\.jsx';/);
+  assert.match(code, /import \{ LibraryPreview \} from '\.\.\/Public\/GuestWelcomePreferences\.tsx';/);
 
   const shell = (await readFile(new URL('../Public/WelcomeShell.tsx', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');

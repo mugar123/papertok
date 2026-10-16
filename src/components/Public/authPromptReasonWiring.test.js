@@ -21,7 +21,7 @@ function bounded(code, from, to, label, maxLines) {
 test('App keeps the reason it was asked for and hands it to the dialog', () => {
   const app = read('../../App.tsx');
   const request = bounded(app, 'const requestAuthentication = useCallback(', '}, [])', 'requestAuthentication', 8);
-  assert.match(request, /\(reason\) => \{\s*clearAuthReturn\(\)\s*setAuthPromptOpen\(true\)\s*setAuthPromptReason\(normalizeAuthReason\(reason\)\)/);
+  assert.match(request, /\(reason\?: unknown\) => \{\s*clearAuthReturn\(\)\s*setAuthPromptOpen\(true\)\s*setAuthPromptReason\(normalizeAuthReason\(reason\)\)/);
   assert.match(app, /<AuthPrompt\s+reason=\{authPromptReason\}/);
 });
 
@@ -40,7 +40,7 @@ test('the guest page forwards the action it was given', () => {
 
 test('the dialog reads its headline and lede from the reason', () => {
   const prompt = read('./AuthPrompt.tsx');
-  assert.match(prompt, /export default function AuthPrompt\(\{ onClose, reason = 'default' \}\)/);
+  assert.match(prompt, /export default function AuthPrompt\(\{ onClose, reason = 'default' \}: \{ onClose: \(\) => void; reason\?: unknown \}\)/);
   assert.match(prompt, /const copy = authPromptCopy\(reason\);/);
   assert.match(prompt, /<DialogTitle className="auth-modal-title">\s*\{copy\.title\}\s*<\/DialogTitle>/);
   assert.match(prompt, /<DialogDescription className="auth-modal-lede">\s*\{copy\.lede\}\s*<\/DialogDescription>/);

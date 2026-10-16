@@ -56,7 +56,7 @@ test('a focused paragraph opens the annotation menu on Enter', async () => {
   );
 
   const handler = jsx.match(
-    /const handleParagraphKeyDown = useCallback\(\(event, sectionId, paragraphIndex, paragraphText\) => \{[\s\S]*?\}, \[beginAnnotation, uid\]\);/,
+    /const handleParagraphKeyDown = useCallback(?:<[^;\n]+>)?\(\(event: KeyboardEvent<HTMLParagraphElement>, sectionId: string, paragraphIndex: number, paragraphText: string\) => \{[\s\S]*?\}, \[beginAnnotation, uid\]\);/,
   );
   assert.ok(
     handler,
@@ -89,7 +89,7 @@ test('the mouse route is unchanged in shape: handleSelection keeps its signature
 
   assert.match(
     jsx,
-    /const handleSelection = useCallback\(\(sectionId, paragraphIndex, paragraphText, paragraphNode\) => \{/,
+    /const handleSelection = useCallback(?:<[^;\n]+>)?\(\(sectionId: string, paragraphIndex: number, paragraphText: string, paragraphNode: HTMLElement\) => \{/,
     'handleSelection changed shape; update this test alongside it',
   );
 });

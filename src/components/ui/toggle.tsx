@@ -1,3 +1,6 @@
+import type { StyledProps } from './props.ts';
+import type { VariantProps } from 'class-variance-authority';
+
 import { Toggle as TogglePrimitive } from '@base-ui/react/toggle';
 import { cn } from '../../lib/utils.ts';
 import { toggleVariants } from './toggle-variants.ts';
@@ -7,7 +10,7 @@ import { toggleVariants } from './toggle-variants.ts';
  * "show map" switch. Base UI sets `data-pressed`, which is what the
  * variants style. Inside a ToggleGroup use ToggleGroupItem instead.
  */
-export function Toggle({ className, variant, size, ...props }) {
+export function Toggle({ className, variant, size, ...props }: StyledProps<typeof TogglePrimitive> & VariantProps<typeof toggleVariants>) {
   return (
     <TogglePrimitive
       data-slot="toggle"

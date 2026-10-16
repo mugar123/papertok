@@ -73,7 +73,7 @@ export function pdfRelayUrl(sourceUrl: string, apiBase: unknown) {
  * hosts que dejan enmarcar su PDF; `external`, una pestaña nueva.
  * `institutionAccess` is the answer from `findInstitutionAccess`.
  */
-export function openTargetsForPaper(paper: Partial<Paper> | null | undefined, openCopy: Partial<Paper> | null = null, institutionAccess: { status?: string; url?: string } | null = null): OpenTarget[] {
+export function openTargetsForPaper(paper: Partial<Paper> | null | undefined, openCopy: Partial<Paper> | null = null, institutionAccess: { status?: string; url?: string | null } | null = null): OpenTarget[] {
   // `findInstitutionAccess` only ever hands over an entitlement with a safe link.
   const libraryUrl = institutionAccess?.status === 'entitled' ? institutionAccess.url : '';
   const candidates = [

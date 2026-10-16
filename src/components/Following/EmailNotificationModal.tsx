@@ -38,7 +38,7 @@ const ERROR_COPY = {
 const MIN_TEST_SENDING_MS = 900;
 const TEST_SENT_VISIBLE_MS = 5000;
 
-const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+const wait = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds));
 
 /* The digest can carry three, five or ten papers. `items` gives the Select
    the label to show for the chosen value, so the trigger reads "5" and not
@@ -51,7 +51,7 @@ const MAX_PAPERS_OPTIONS = [3, 5, 10].map(value => ({ value, label: String(value
  * scrim) reports `onOpenChange(false)`, which is the parent's `onClose`, and
  * Base UI plays the leave before the popup goes.
  */
-export default function EmailNotificationModal({ isOpen, onClose }) {
+export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const { language } = useLanguage();
   const { emailDigestPending } = useAuth();
   const enabledId = useId();
@@ -68,10 +68,10 @@ export default function EmailNotificationModal({ isOpen, onClose }) {
     sendTest,
   } = useEmailNotifications();
   const [draft, setDraft] = useState(preferences);
-  const [feedback, setFeedback] = useState(null);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [testState, setTestState] = useState('idle');
   const preferencesRef = useRef(preferences);
-  const testFeedbackTimerRef = useRef(null);
+  const testFeedbackTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     preferencesRef.current = preferences;
@@ -88,7 +88,7 @@ export default function EmailNotificationModal({ isOpen, onClose }) {
     }, 0);
     return () => {
       clearTimeout(timeoutId);
-      clearTimeout(testFeedbackTimerRef.current);
+      clearTimeout(testFeedbackTimerRef.current!);
     };
   }, [isOpen]);
 
@@ -103,7 +103,7 @@ export default function EmailNotificationModal({ isOpen, onClose }) {
           : ('Email updates disabled.'),
       });
     } catch (error) {
-      setFeedback({ type: 'error', text: ERROR_COPY[language][error.code] || ERROR_COPY[language].EMAIL_UNAVAILABLE });
+      setFeedback({ type: 'error', text: ERROR_COPY[language][(error as { code?: string }).code as keyof typeof ERROR_COPY.en] || ERROR_COPY[language].EMAIL_UNAVAILABLE });
     }
   };
 
@@ -111,7 +111,7 @@ export default function EmailNotificationModal({ isOpen, onClose }) {
     const startedAt = Date.now();
     setFeedback(null);
     setTestState('sending');
-    clearTimeout(testFeedbackTimerRef.current);
+    clearTimeout(testFeedbackTimerRef.current!);
     try {
       const result = await sendTest({ ...draft, enabled: true });
       const remainingSendingTime = MIN_TEST_SENDING_MS - (Date.now() - startedAt);
@@ -126,7 +126,7 @@ export default function EmailNotificationModal({ isOpen, onClose }) {
       testFeedbackTimerRef.current = setTimeout(() => setTestState('idle'), TEST_SENT_VISIBLE_MS);
     } catch (error) {
       setTestState('idle');
-      setFeedback({ type: 'error', text: ERROR_COPY[language][error.code] || ERROR_COPY[language].EMAIL_UNAVAILABLE });
+      setFeedback({ type: 'error', text: ERROR_COPY[language][(error as { code?: string }).code as keyof typeof ERROR_COPY.en] || ERROR_COPY[language].EMAIL_UNAVAILABLE });
     }
   };
 

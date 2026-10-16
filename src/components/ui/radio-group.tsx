@@ -1,3 +1,5 @@
+import type { StyledProps } from './props.ts';
+
 import { Radio as RadioPrimitive } from '@base-ui/react/radio';
 import { RadioGroup as RadioGroupPrimitive } from '@base-ui/react/radio-group';
 import { cn } from '../../lib/utils.ts';
@@ -10,11 +12,11 @@ import { cn } from '../../lib/utils.ts';
  *
  *   <RadioGroupItem value="public" render={<div className="choice-card" />}>…</RadioGroupItem>
  */
-function RadioGroup({ className, ...props }) {
+function RadioGroup<Value>({ className, ...props }: Omit<RadioGroupPrimitive.Props<Value>, 'className'> & { className?: string }) {
   return <RadioGroupPrimitive data-slot="radio-group" className={cn('grid gap-2', className)} {...props} />;
 }
 
-function RadioGroupItem({ className, children, render, ...props }) {
+function RadioGroupItem({ className, children, render, ...props }: StyledProps<typeof RadioPrimitive.Root>) {
   return (
     <RadioPrimitive.Root
       data-slot="radio-group-item"

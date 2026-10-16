@@ -1,3 +1,16 @@
+import type { PropsWithChildren } from 'react';
+import type { CollectionReference } from 'firebase/firestore';
+import type { FollowEntity, FollowInput } from '../utils/following.ts';
+export interface FollowingContextValue {
+  followedEntities: FollowEntity[];
+  followedByType: Record<string, FollowEntity[]>;
+  loading: boolean;
+  error: unknown;
+  isFollowing: (entity: FollowInput) => boolean;
+  isFollowPending: (entity: FollowInput) => boolean;
+  toggleFollow: (entity: FollowInput) => Promise<boolean>;
+}
+
 /* eslint-disable react-refresh/only-export-components */
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { FollowingContext } from './contexts.ts';
@@ -15,7 +28,7 @@ import {
 } from '../utils/following.ts';
 import { finishLegacyAuthorsMigration } from '../utils/followingMigration.ts';
 
-const EMPTY_LOCALIZED_INSTITUTION_NAMES = Object.freeze({});
+const EMPTY_LOCALIZED_INSTITUTION_NAMES = Object.freeze<Record<string, Record<string, string>>>({});
 
 /**
  * How long the app waits for the first snapshot of `following` before it stops
@@ -32,6 +45,8 @@ const FIRST_SNAPSHOT_GRACE_MS = 6500;
  * whether it is safe to write notification preferences derived from the list.
  */
 export class FollowsUnavailableError extends Error {
+  declare code: string;
+  declare retryable: boolean;
   constructor() {
     super('The follow list has not arrived yet.');
     this.name = 'FollowsUnavailableError';
@@ -40,7 +55,7 @@ export class FollowsUnavailableError extends Error {
   }
 }
 
-function readDemoFollowing(userId) {
+function readDemoFollowing(userId: string): FollowEntity[] {
   try {
     return JSON.parse(localStorage.getItem(getFollowingStorageKey(userId)) || '[]');
   } catch {
@@ -48,23 +63,23 @@ function readDemoFollowing(userId) {
   }
 }
 
-function writeDemoFollowing(userId, follows) {
+function writeDemoFollowing(userId: string, follows: FollowEntity[]) {
   localStorage.setItem(getFollowingStorageKey(userId), JSON.stringify(follows));
 }
 
-export function FollowingProvider({ children }) {
+export function FollowingProvider({ children }: PropsWithChildren) {
   const { user, followedAuthors } = useAuth();
   const { trackEvent, markActivation } = useAnalyticsConsent();
-  const [followedEntities, setFollowedEntities] = useState([]);
+  const [followedEntities, setFollowedEntities] = useState<FollowEntity[]>([]);
   const [loading, setLoading] = useState(Boolean(user));
-  const [error, setError] = useState(null);
-  const [pendingFollowKeys, setPendingFollowKeys] = useState(new Set());
+  const [error, setError] = useState<unknown>(null);
+  const [pendingFollowKeys, setPendingFollowKeys] = useState(new Set<string>());
   const [institutionLocalizationState, setInstitutionLocalizationState] = useState({
     userId: '',
     names: EMPTY_LOCALIZED_INSTITUTION_NAMES,
   });
   const legacyMigrationAttempted = useRef(false);
-  const institutionLocalizationPending = useRef(new Set());
+  const institutionLocalizationPending = useRef(new Set<string>());
   // The legacy authors, reachable from inside the subscription without being a
   // dependency of it. See the two effects below.
   const followedAuthorsRef = useRef(followedAuthors);
@@ -127,7 +142,7 @@ export function FollowingProvider({ children }) {
 
     followsArrived.current = false;
     legacyMigrationAttempted.current = false;
-    const followsCollection = collection(db, 'users', user.uid, 'following');
+    const followsCollection = collection(db, 'users', user.uid, 'following') as CollectionReference<FollowEntity>;
     /**
      * The grace period before the app stops waiting for the first snapshot.
      *
@@ -238,7 +253,7 @@ export function FollowingProvider({ children }) {
       try {
         const institution = await getRorInstitution(follow.externalIds?.ror || follow.canonicalId);
         return institution?.localized_names
-          ? [followKey, institution.localized_names]
+          ? [followKey, institution.localized_names] as const
           : null;
       } catch {
         return null;
@@ -247,7 +262,7 @@ export function FollowingProvider({ children }) {
       }
     })).then((entries) => {
       if (cancelled) return;
-      const validEntries = entries.filter(Boolean);
+      const validEntries = entries.filter(Boolean) as (readonly [string, Record<string, string>])[];
       if (validEntries.length === 0) return;
       setInstitutionLocalizationState(current => ({
         userId,
@@ -263,13 +278,13 @@ export function FollowingProvider({ children }) {
     };
   }, [followedEntities, localizedInstitutionNames, user?.uid]);
 
-  const isFollowing = useCallback((entity) => followsEntity(followedEntities, entity), [followedEntities]);
-  const isFollowPending = useCallback((input) => {
+  const isFollowing = useCallback((entity: FollowInput) => followsEntity(followedEntities, entity), [followedEntities]);
+  const isFollowPending = useCallback((input: FollowInput) => {
     const entity = createFollowEntity(input);
     return entity ? pendingFollowKeys.has(createFollowKey(entity.type, entity.canonicalId)) : false;
   }, [pendingFollowKeys]);
 
-  const toggleFollow = useCallback(async (input) => {
+  const toggleFollow = useCallback(async (input: FollowInput) => {
     const entity = createFollowEntity(input);
     if (!entity || !user?.uid) return false;
     const pendingKey = createFollowKey(entity.type, entity.canonicalId);
@@ -291,7 +306,7 @@ export function FollowingProvider({ children }) {
       } else {
         const followRef = doc(db, 'users', user.uid, 'following', createFollowKey(entity.type, entity.canonicalId));
         if (wasFollowing) {
-          const existingKey = existingFollow.followKey || createFollowKey(existingFollow.type, existingFollow.canonicalId);
+          const existingKey = existingFollow!.followKey || createFollowKey(existingFollow!.type, existingFollow!.canonicalId);
           await deleteDoc(doc(db, 'users', user.uid, 'following', existingKey));
         }
         else await setDoc(followRef, { ...entity, followedAt: serverTimestamp() });
@@ -331,7 +346,7 @@ export function FollowingProvider({ children }) {
       : entity;
   }), [followedEntities, localizedInstitutionNames]);
 
-  const followedByType = useMemo(() => localizedFollowedEntities.reduce((groups, entity) => {
+  const followedByType = useMemo(() => localizedFollowedEntities.reduce<Record<string, FollowEntity[]>>((groups, entity) => {
     groups[entity.type] = [...(groups[entity.type] || []), entity];
     return groups;
   }, {}), [localizedFollowedEntities]);

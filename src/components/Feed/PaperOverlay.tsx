@@ -1,3 +1,4 @@
+import type { PropsWithChildren } from 'react';
 import { ArrowLeft } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
@@ -27,7 +28,7 @@ import './PaperOverlay.css';
  * for 200ms. It is `onOpenChangeComplete(false)` from the primitive, the same
  * signal `PaperReader` and `SelectionMenu` already listen to.
  */
-export default function PaperOverlay({ open, onClose, onExitComplete, label, children }) {
+export default function PaperOverlay({ open, onClose, onExitComplete, label, children }: PropsWithChildren<{ open: boolean; onClose: () => void; onExitComplete?: () => void; label?: string }>) {
   return (
     <Dialog
       open={Boolean(open)}

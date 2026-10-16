@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 /**
- * public/sitemap.xml and public/robots.txt against the routes App.jsx
+ * public/sitemap.xml and public/robots.txt against the routes App.tsx
  * declares. The sitemap listed /, /following and /research: / is not
  * canonical (the shell's canonical is /feed), and the other two send a
  * visitor, and so a crawler, back to /feed (audit 2026-09-23, issue 5).

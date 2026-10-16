@@ -1,3 +1,9 @@
+import type { Dispatch, KeyboardEvent, MouseEvent, PropsWithChildren, ReactElement, SetStateAction } from 'react';
+import type { Paper, PaperAuthor } from '../../models/Paper.ts';
+import type { FollowInput } from '../../utils/following.ts';
+import type { useEntitySearch } from '../../hooks/useEntitySearch.ts';
+type SearchResults = ReturnType<typeof useEntitySearch>['results'];
+interface SearchOutcome<T> { value: T; status: 'fulfilled' | 'timeout' | 'rejected'; error: unknown }
 import { Children, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   ArrowClockwise,
@@ -73,7 +79,7 @@ const SEARCH_FILTER_OPTIONS = [
   { id: 'topics', label: 'Topics', Icon: Lightbulb },
 ];
 
-const wait = (delayMs) => new Promise(resolve => setTimeout(resolve, delayMs));
+const wait = (delayMs: number) => new Promise(resolve => setTimeout(resolve, delayMs));
 
 /**
  * Never rejects: a failed source resolves with its fallback and a status.
@@ -83,14 +89,14 @@ const wait = (delayMs) => new Promise(resolve => setTimeout(resolve, delayMs));
  * limit from a timeout — `retryAfterMs`, which the OpenAlex client had already
  * parsed out of `Retry-After`.
  */
-function settleSearch(promise, fallback = [], timeoutMs = SEARCH_TIMEOUT_MS) {
-  return new Promise((resolve) => {
+function settleSearch<T>(promise: Promise<T[]>, fallback: T[] = [], timeoutMs = SEARCH_TIMEOUT_MS): Promise<SearchOutcome<T[]>> {
+  return new Promise<SearchOutcome<T[]>>((resolve) => {
     let settled = false;
-    let timeoutId = null;
-    const finish = (value, status, error = null) => {
+    let timeoutId: number | null = null;
+    const finish = (value: T[], status: SearchOutcome<T[]>['status'], error: unknown = null) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timeoutId);
+      clearTimeout(timeoutId!);
       resolve({ value, status, error });
     };
     timeoutId = setTimeout(() => finish(fallback, 'timeout'), timeoutMs);
@@ -100,7 +106,7 @@ function settleSearch(promise, fallback = [], timeoutMs = SEARCH_TIMEOUT_MS) {
   });
 }
 
-function handleSearchItemKeyDown(event, action) {
+function handleSearchItemKeyDown(event: KeyboardEvent, action: () => void) {
   if (event.target !== event.currentTarget) return;
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault();
@@ -122,14 +128,14 @@ function handleSearchItemKeyDown(event, action) {
  * also stop the restarts, but at the price of a reading order that no longer
  * matches the visual one.
  */
-function OrderedSearchSections({ children, preferredSection }) {
-  return Children.toArray(children).sort((left, right) => (
+function OrderedSearchSections({ children, preferredSection }: PropsWithChildren<{ preferredSection: string | null }>) {
+  return (Children.toArray(children) as ReactElement<{ 'data-section': string }>[]).sort((left, right) => (
     getSearchSectionOrder(left.props['data-section'], preferredSection)
     - getSearchSectionOrder(right.props['data-section'], preferredSection)
   ));
 }
 
-function FollowButton({ entity, isFollowing, isPending, onToggle }) {
+function FollowButton({ entity, isFollowing, isPending, onToggle }: { entity: FollowInput; isFollowing: (entity: FollowInput) => boolean; isPending: (entity: FollowInput) => boolean; onToggle: (event: MouseEvent, entity: FollowInput) => void }) {
   const following = isFollowing(entity);
   const pending = isPending(entity);
   const label = following
@@ -157,7 +163,7 @@ function FollowButton({ entity, isFollowing, isPending, onToggle }) {
   );
 }
 
-function formatPaperDate(paper, locale) {
+function formatPaperDate(paper: Paper, locale: string) {
   const dateValue = paper.published || paper.publishedDate;
   if (dateValue) {
     const date = new Date(dateValue);
@@ -166,7 +172,7 @@ function formatPaperDate(paper, locale) {
   return paper.year ? String(paper.year) : null;
 }
 
-export default function SearchPage({ onSaveToList = () => {} }) {
+export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?: (paper: Paper) => void }) {
   const navigate = useNavigate();
   const { language, locale } = useLanguage();
   const { trackEvent } = useAnalyticsConsent();
@@ -186,25 +192,25 @@ export default function SearchPage({ onSaveToList = () => {} }) {
   const [query, setQuery] = useState(() => searchParams.get('q')?.trim() || '');
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [searchIntent, setSearchIntent] = useState(null);
+  const [searchIntent, setSearchIntent] = useState<string | null>(null);
   const [activeSearchFilter, setActiveSearchFilter] = useState('all');
-  const [searchIssue, setSearchIssue] = useState(null);
+  const [searchIssue, setSearchIssue] = useState<ReturnType<typeof describeSearchOutage>>(null);
 
-  const [paperResults, setPaperResults] = useState([]);
-  const [authorResults, setAuthorResults] = useState([]);
-  const [institutionResults, setInstitutionResults] = useState([]);
-  const [conceptResults, setConceptResults] = useState([]);
-  const [projectResults, setProjectResults] = useState([]);
+  const [paperResults, setPaperResults] = useState<SearchResults['papers']>([]);
+  const [authorResults, setAuthorResults] = useState<SearchResults['authors']>([]);
+  const [institutionResults, setInstitutionResults] = useState<SearchResults['institutions']>([]);
+  const [conceptResults, setConceptResults] = useState<SearchResults['topics']>([]);
+  const [projectResults, setProjectResults] = useState<SearchResults['projects']>([]);
 
-  const [selectedPaper, setSelectedPaper] = useState(null);
-  const [pdfPaper, setPdfPaper] = useState(null);
+  const [selectedPaper, setSelectedPaper] = useState<Paper | null>(null);
+  const [pdfPaper, setPdfPaper] = useState<Paper | null>(null);
   // Back closes this PDF viewer instead of leaving PaperTok: see useOverlayHistory.js.
   // Through the viewer's own close, the one the X uses — it owns `open` and
   // reports back only when its leave has played; `setPdfPaper(null)` is just
   // the fallback for the sub-frame gap before PDFViewer's own
   // `useImperativeHandle` has populated the ref — this import (above) is
   // plain, not lazy, so there is no chunk boundary to blame it on here.
-  const pdfCloseRef = useRef(null);
+  const pdfCloseRef = useRef<(() => void) | null>(null);
   const requestPdfClose = useCallback(() => {
     if (pdfCloseRef.current) pdfCloseRef.current();
     else setPdfPaper(null);
@@ -220,16 +226,16 @@ export default function SearchPage({ onSaveToList = () => {} }) {
   // Adjusted during render rather than in an effect: a paper opened while
   // another is still leaving has to take over in the same commit, or the
   // window shows the wrong paper for a frame.
-  const [shownPaper, setShownPaper] = useState(null);
+  const [shownPaper, setShownPaper] = useState<Paper | null>(null);
   if (selectedPaper && selectedPaper !== shownPaper) {
     setShownPaper(selectedPaper);
   }
 
   
-  const timeoutRef = useRef(null);
-  const requestAbortRef = useRef(null);
+  const timeoutRef = useRef<number | null>(null);
+  const requestAbortRef = useRef<AbortController | null>(null);
   const searchIdRef = useRef(0);
-  const getInteractionState = useCallback((paper) => ({
+  const getInteractionState = useCallback((paper: Paper) => ({
     isLiked: likedPaperIds.has(paper.id),
     isSaved: savedPaperIds.has(paper.id),
     isRead: readPaperIds.has(paper.id),
@@ -242,7 +248,7 @@ export default function SearchPage({ onSaveToList = () => {} }) {
     setProjectResults([]);
   }, []);
 
-  const performSearch = useCallback(async (searchTerm) => {
+  const performSearch = useCallback(async (searchTerm: string) => {
     const searchStartedAt = Date.now();
     const searchId = ++searchIdRef.current;
     requestAbortRef.current?.abort();
@@ -254,7 +260,7 @@ export default function SearchPage({ onSaveToList = () => {} }) {
     setHasSearched(true);
     setSearchIssue(null);
 
-    const sectionSetters = {
+    const sectionSetters: { [K in keyof SearchResults]: Dispatch<SetStateAction<SearchResults[K]>> } = {
       papers: setPaperResults,
       authors: setAuthorResults,
       institutions: setInstitutionResults,
@@ -267,7 +273,7 @@ export default function SearchPage({ onSaveToList = () => {} }) {
     // Only tags the outcome with its section. Painting used to happen here, one
     // straggler at a time, which is what assembled the page on screen over
     // several seconds; the whole search now lands in a single commit below.
-    const track = (section, promise) => promise.then(outcome => ({ ...outcome, section }));
+    const track = <K extends keyof SearchResults,>(section: K, promise: Promise<SearchOutcome<SearchResults[K]>>) => promise.then(outcome => ({ ...outcome, section }));
 
     const tasks = [
       // OpenAlex and arXiv, merged and ranked by title match
@@ -360,12 +366,12 @@ export default function SearchPage({ onSaveToList = () => {} }) {
     const retryAfterMs = Math.max(
       health.retryAfterMs || 0,
       ...openAlexOutcomes.map(outcome => (
-        isOpenAlexRateLimitError(outcome.error) ? outcome.error?.retryAfterMs || 0 : 0
+        isOpenAlexRateLimitError(outcome.error) ? (outcome.error as { retryAfterMs?: number } | null)?.retryAfterMs || 0 : 0
       )),
     );
     const issue = describeSearchOutage({ sections: failedSections, rateLimited, retryAfterMs });
 
-    outcomes.forEach(outcome => sectionSetters[outcome.section](outcome.value));
+    outcomes.forEach(<K extends keyof SearchResults,>(outcome: SearchOutcome<SearchResults[K]> & { section: K }) => sectionSetters[outcome.section](outcome.value));
     setSearchIssue(issue);
     setIsSearching(false);
     if (requestAbortRef.current === requestController) {
@@ -397,19 +403,19 @@ export default function SearchPage({ onSaveToList = () => {} }) {
 
     requestAbortRef.current?.abort();
     searchIdRef.current += 1;
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current!);
     
     timeoutRef.current = setTimeout(() => {
       performSearch(query.trim());
     }, SEARCH_DEBOUNCE_MS);
     
     return () => {
-      clearTimeout(timeoutRef.current);
+      clearTimeout(timeoutRef.current!);
       requestAbortRef.current?.abort();
     };
   }, [clearResults, query, performSearch]);
 
-  const handleToggleFollow = async (e, entity) => {
+  const handleToggleFollow = async (e: MouseEvent, entity: FollowInput) => {
     e.stopPropagation();
     try {
       await toggleFollow(entity);
@@ -538,7 +544,7 @@ export default function SearchPage({ onSaveToList = () => {} }) {
   // countdown catches up instead of resuming from a stale value.
   useEffect(() => {
     if (!outageRetryAt) return undefined;
-    let timer = null;
+    let timer: number | null = null;
 
     const clearPending = () => {
       if (timer) clearTimeout(timer);
@@ -577,7 +583,7 @@ export default function SearchPage({ onSaveToList = () => {} }) {
 
   // The notice names whoever went down and what is missing because of it, in
   // the same words the filter pills use.
-  const sectionWord = (section) => {
+  const sectionWord = (section: string) => {
     const option = SEARCH_FILTER_OPTIONS.find(entry => entry.id === section);
     return option ? (option.label).toLowerCase() : null;
   };
@@ -628,7 +634,7 @@ export default function SearchPage({ onSaveToList = () => {} }) {
     },
   ];
 
-  const updateQuery = (nextQuery, intent = null, filter = activeSearchFilter) => {
+  const updateQuery = (nextQuery: string, intent: string | null = null, filter = activeSearchFilter) => {
     requestAbortRef.current?.abort();
     clearResults();
     setQuery(nextQuery);
@@ -639,11 +645,11 @@ export default function SearchPage({ onSaveToList = () => {} }) {
     setIsSearching(Boolean(nextQuery.trim()));
   };
 
-  const handleSuggestedSearch = (suggestion) => {
+  const handleSuggestedSearch = (suggestion: { query: string; section: string }) => {
     updateQuery(suggestion.query, suggestion.section, suggestion.section);
   };
 
-  const handleSearchFilterChange = (filterId) => {
+  const handleSearchFilterChange = (filterId: string) => {
     setActiveSearchFilter(filterId);
     setSearchIntent(filterId === 'all' ? null : filterId);
     // The notice belongs to the sections the previous view was showing. Kept
@@ -921,7 +927,7 @@ export default function SearchPage({ onSaveToList = () => {} }) {
                     key={project.id}
                     className="search-item search-item-enter"
                     style={{ '--search-item-index': Math.min(index, 6) }}
-                    onClick={() => navigate(`/explorer/project/${encodeURIComponent(project.id)}?name=${encodeURIComponent(getProjectDisplayName(project))}&funder=${encodeURIComponent(project.funder)}`)}
+                    onClick={() => navigate(`/explorer/project/${encodeURIComponent(project.id!)}?name=${encodeURIComponent(getProjectDisplayName(project))}&funder=${encodeURIComponent(project.funder!)}`)}
                   >
                     <div className="search-item-icon"><Briefcase size={22} /></div>
                     <div className="search-item-info">
@@ -929,12 +935,12 @@ export default function SearchPage({ onSaveToList = () => {} }) {
                         <button
                           type="button"
                           className="search-item-title-btn"
-                          onClick={(e) => { e.stopPropagation(); navigate(`/explorer/project/${encodeURIComponent(project.id)}?name=${encodeURIComponent(getProjectDisplayName(project))}&funder=${encodeURIComponent(project.funder)}`); }}
+                          onClick={(e) => { e.stopPropagation(); navigate(`/explorer/project/${encodeURIComponent(project.id!)}?name=${encodeURIComponent(getProjectDisplayName(project))}&funder=${encodeURIComponent(project.funder!)}`); }}
                         >
                           {getProjectDisplayName(project)}
                         </button>
                       </h4>
-                      <p>{project.funder}{project.budget > 0 ? (() => { try { return ` • ${new Intl.NumberFormat(locale, { style: 'currency', currency: project.currency, maximumFractionDigits: 0 }).format(project.budget)}`; } catch { return ` • ${project.budget.toLocaleString(locale)} €`; } })() : ''}</p>
+                      <p>{project.funder}{project.budget! > 0 ? (() => { try { return ` • ${new Intl.NumberFormat(locale, { style: 'currency', currency: project.currency, maximumFractionDigits: 0 }).format(project.budget!)}`; } catch { return ` • ${project.budget!.toLocaleString(locale)} €`; } })() : ''}</p>
                     </div>
                     <FollowButton
                       entity={{ type: 'project', id: project.id, displayName: getProjectDisplayName(project), source: 'openaire', metadata: { funder: project.funder } }}
@@ -955,7 +961,7 @@ export default function SearchPage({ onSaveToList = () => {} }) {
                     key={concept.id}
                     className="search-item search-topic-item search-item-enter"
                     style={{ '--search-item-index': Math.min(index, 6) }}
-                    onClick={() => navigate(`/explorer/topic/${encodeURIComponent(String(concept.id).split('/').pop())}`)}
+                    onClick={() => navigate(`/explorer/topic/${encodeURIComponent(String(concept.id).split('/').pop()!)}`)}
                   >
                     <div className="search-item-icon search-topic-icon"><Lightbulb size={22} /></div>
                     <div className="search-item-info">
@@ -963,7 +969,7 @@ export default function SearchPage({ onSaveToList = () => {} }) {
                         <button
                           type="button"
                           className="search-item-title-btn"
-                          onClick={(e) => { e.stopPropagation(); navigate(`/explorer/topic/${encodeURIComponent(String(concept.id).split('/').pop())}`); }}
+                          onClick={(e) => { e.stopPropagation(); navigate(`/explorer/topic/${encodeURIComponent(String(concept.id).split('/').pop()!)}`); }}
                         >
                           {concept.display_name}
                         </button>
@@ -976,7 +982,7 @@ export default function SearchPage({ onSaveToList = () => {} }) {
                             : [
                                 concept.field_display_name || ('OpenAlex topic'),
                                 Number.isFinite(concept.works_count)
-                                  ? `${concept.works_count.toLocaleString(locale)} ${'works'}`
+                                  ? `${concept.works_count!.toLocaleString(locale)} ${'works'}`
                                   : '',
                               ].filter(Boolean).join(' • ')}
                       </p>
@@ -1007,7 +1013,7 @@ export default function SearchPage({ onSaveToList = () => {} }) {
               <div className="search-section" data-section="authors">
                 <h3 className="search-section-title">{'Authors'}</h3>
                 {authorResults.map((author, index) => {
-                  const authorFollow = { type: 'author', id: author.id, displayName: author.display_name, source: 'openalex', externalIds: { orcid: author.orcid } };
+                  const authorFollow = { type: 'author' as const, id: author.id, displayName: author.display_name, source: 'openalex', externalIds: { orcid: author.orcid } };
                   const authorInstitution = getLocalizedInstitutionName(
                     author.institutionData || { display_name: author.institution },
                   );
@@ -1049,7 +1055,7 @@ export default function SearchPage({ onSaveToList = () => {} }) {
               <div className="search-section" data-section="papers">
                 <h3 className="search-section-title">{'Publications'}</h3>
                 {paperResults.map((paper, index) => {
-                  const authors = (paper.authors || []).map(author => author.name || author);
+                  const authors = (paper.authors || []).map(author => (author as PaperAuthor).name || author as string);
                   return (
                     <div
                       key={paper.id}
@@ -1093,9 +1099,9 @@ export default function SearchPage({ onSaveToList = () => {} }) {
         {shownPaper && (
           <PaperCard
             paper={shownPaper}
-            isLiked={likedPaperIds.has(interactionIdFor(shownPaper))}
-            isSaved={savedPaperIds.has(interactionIdFor(shownPaper))}
-            isRead={readPaperIds.has(interactionIdFor(shownPaper))}
+            isLiked={likedPaperIds.has(interactionIdFor(shownPaper)!)}
+            isSaved={savedPaperIds.has(interactionIdFor(shownPaper)!)}
+            isRead={readPaperIds.has(interactionIdFor(shownPaper)!)}
             onLike={toggleLike}
             onNotInterested={(paper) => { markNotInterested(paper); setSelectedPaper(null); }}
             onMarkAsRead={markAsRead}

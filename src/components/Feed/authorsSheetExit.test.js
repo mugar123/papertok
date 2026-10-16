@@ -12,7 +12,7 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '
  * author there: the names take no pointer events under 768px, a tap on the
  * row opens the sheet, and the author is picked from it.
  *
- * The sheet is a Base UI Drawer (ui/drawer.jsx) now. What these protect is
+ * The sheet is a Base UI Drawer (ui/drawer.tsx) now. What these protect is
  * what the old framer-motion sheet protected: it lives outside the page the
  * transition transforms, a dismissal springs it back down, and picking an
  * author moves it to its leaving pose in phase with the page.
@@ -36,7 +36,7 @@ test('the authors sheet is a Base UI Drawer, which lives on the body, outside th
 
 test('picking an author moves the sheet to its leaving pose and lets the page take it; dismissing it slides it back down', async () => {
   const jsx = stripComments(await read('./PaperCard.tsx'));
-  assert.match(jsx, /const \[authorsSheetLeaving, setAuthorsSheetLeaving\] = useState\(false\);/);
+  assert.match(jsx, /const \[authorsSheetLeaving, setAuthorsSheetLeaving\] = useState(?:<[^;\n]+>)?\(false\);/);
   // Somewhere to go: the sheet closes in its leaving pose, in the same
   // render, so the primitive's `data-ending-style` lands with the class;
   // nowhere: dismissed as if by the scrim, on the drawer's own slide.

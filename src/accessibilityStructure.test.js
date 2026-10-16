@@ -47,15 +47,15 @@ async function stylesheets() {
   return entries.filter(name => name.endsWith('.css')).sort();
 }
 
-// ── The page skeleton: App.jsx ──────────────────────────────────────────────
+// ── The page skeleton: App.tsx ──────────────────────────────────────────────
 
-test('App.jsx renders a skip link that targets #main-content', async () => {
+test('App.tsx renders a skip link that targets #main-content', async () => {
   const app = await readSource(APP_JSX);
 
   const link = app.match(/<a\b[^>]*className="skip-link"[^>]*>/);
   assert.ok(
     link,
-    'App.jsx no longer renders `<a className="skip-link">`. That link is the only '
+    'App.tsx no longer renders `<a className="skip-link">`. That link is the only '
     + 'mechanism this app has for skipping the repeated chrome (WCAG 2.4.1 Bypass '
     + 'Blocks), and it is the first thing every keyboard user meets.',
   );
@@ -94,7 +94,7 @@ test('the skip link handles its own click instead of leaving the jump to the bro
   const app = stripComments(rawApp);
 
   const link = app.match(/<a\b[^>]*className="skip-link"[^>]*>/);
-  assert.ok(link, 'App.jsx no longer renders `<a className="skip-link">`.');
+  assert.ok(link, 'App.tsx no longer renders `<a className="skip-link">`.');
 
   const handlerName = link[0].match(/onClick=\{(\w+)\}/);
   assert.ok(
@@ -110,7 +110,7 @@ test('the skip link handles its own click instead of leaving the jump to the bro
   assert.notEqual(
     handlerDeclAt,
     -1,
-    `could not find where ${handlerName[1]} is defined in App.jsx to check its body.`,
+    `could not find where ${handlerName[1]} is defined in App.tsx to check its body.`,
   );
   const handlerBody = app.slice(handlerDeclAt, handlerDeclAt + 400);
 
@@ -129,7 +129,7 @@ test('the skip link handles its own click instead of leaving the jump to the bro
     + 'hand once the browser is prevented from following the href itself.',
   );
 
-  // The assertion that used to sit here required App.jsx to NAME `HashRouter`
+  // The assertion that used to sit here required App.tsx to NAME `HashRouter`
   // in a comment, because the handler then existed to stop the fragment from
   // being read as a route: following href="#main-content" rewrote the whole
   // hash, react-router read "/main-content" as the pathname, matched nothing,
@@ -150,13 +150,13 @@ test('the skip link handles its own click instead of leaving the jump to the bro
   );
 });
 
-test('App.jsx mounts RouteAnnouncer', async () => {
+test('App.tsx mounts RouteAnnouncer', async () => {
   const app = await readSource(APP_JSX);
 
   assert.match(
     app,
-    /import\s+RouteAnnouncer\s+from\s+'\.\/components\/Layout\/RouteAnnouncer'/,
-    'App.jsx stopped importing RouteAnnouncer.',
+    /import\s+RouteAnnouncer\s+from\s+'\.\/components\/Layout\/RouteAnnouncer\.tsx'/,
+    'App.tsx stopped importing RouteAnnouncer.',
   );
   assert.match(
     app,
@@ -168,13 +168,13 @@ test('App.jsx mounts RouteAnnouncer', async () => {
   );
 });
 
-// ── The navigation landmark: Navbar.jsx ─────────────────────────────────────
+// ── The navigation landmark: Navbar.tsx ─────────────────────────────────────
 
 test('the navbar exposes a name and marks the active route', async () => {
   const navbar = await readSource(NAVBAR_JSX);
 
   const nav = navbar.match(/<nav\b[^>]*>/);
-  assert.ok(nav, 'Navbar.jsx no longer renders a `<nav>` element.');
+  assert.ok(nav, 'Navbar.tsx no longer renders a `<nav>` element.');
   assert.match(
     nav[0],
     /aria-label=/,
@@ -184,7 +184,7 @@ test('the navbar exposes a name and marks the active route', async () => {
   );
 
   const forYouAt = navbar.search(/\{'For you'\}/);
-  assert.notEqual(forYouAt, -1, 'the "For you" control is gone from Navbar.jsx.');
+  assert.notEqual(forYouAt, -1, 'the "For you" control is gone from Navbar.tsx.');
   const openingTagAt = navbar.lastIndexOf('<NavLink', forYouAt);
   assert.notEqual(
     openingTagAt,
@@ -199,7 +199,7 @@ test('the navbar exposes a name and marks the active route', async () => {
   );
 });
 
-// ── The feed landmark, and why it is opt-in: FeedContainer.jsx ──────────────
+// ── The feed landmark, and why it is opt-in: FeedContainer.tsx ──────────────
 
 test('FeedContainer renders its landmark as <main> with a visually hidden h1', async () => {
   const feed = await readSource(FEED_CONTAINER_JSX);
@@ -231,7 +231,7 @@ test('the feed landmark stays opt-in, or the guest route nests two <main> elemen
 
   assert.match(
     feed,
-    /function FeedLandmark\(\{ landmark, className = 'feed-wrapper', children \}\) \{\s*if \(!landmark\) \{\s*return <div className=\{className\}>\{children\}<\/div>;/,
+    /function FeedLandmark\(\{ landmark, className = 'feed-wrapper', children \}: PropsWithChildren<\{ landmark: FeedContainerProps\['landmark'\]; className\?: string \}>\) \{\s*if \(!landmark\) \{\s*return <div className=\{className\}>\{children\}<\/div>;/,
     'FeedLandmark no longer falls back to a plain `<div>` when no `landmark` prop is '
     + 'passed. This branch is not defensive coding: GuestFeedPage renders its own '
     + '`<main className="guest-feed-page">` around this component, so an unconditional '
@@ -297,7 +297,7 @@ test('`/following` passes its own landmark, with its own heading', async () => {
   assert.ok(
     prop,
     'FollowingFeedPage stopped passing `landmark` to FeedContainer. `/following` has been '
-    + 'its own route since 2026-09-17 and nobody else sets it: App.jsx only passes it to '
+    + 'its own route since 2026-09-17 and nobody else sets it: App.tsx only passes it to '
     + '`/feed`. Without it the page has neither a main region nor a level-1 heading.',
   );
   for (const [pos, chunk] of [['label', prop[1]], ['heading', prop[2]]]) {
@@ -421,7 +421,7 @@ test('the focus ring is never painted in the brand orange again', async () => {
   // declaration, so the same mistake hides in a different syntax here.
   const variants = await readSource(BUTTON_VARIANTS);
   if (/outline-\[var\(--brand-orange\)\]/.test(variants)) {
-    offenders.push('components/ui/button-variants.js');
+    offenders.push('components/ui/button-variants.ts');
   }
 
   assert.deepEqual(
@@ -462,7 +462,7 @@ test('the palette marks its selected row with the enter mark, not only a tint', 
   const item = command.match(/function CommandItem\(\{[\s\S]*?\n\}/);
   assert.ok(
     item,
-    'components/ui/command.jsx no longer defines CommandItem. It is the only place '
+    'components/ui/command.tsx no longer defines CommandItem. It is the only place '
     + 'the search palette styles a result row, so whatever replaced it now owns the '
     + 'selected-row indicator this test is about.',
   );
@@ -495,9 +495,9 @@ test('the palette marks its selected row with the enter mark, not only a tint', 
 
 /**
  * The scan above reads stylesheets, and a review pointed out what it therefore
- * cannot see: `components/ui/command.jsx` carries a Tailwind `outline-none` on
+ * cannot see: `components/ui/command.tsx` carries a Tailwind `outline-none` on
  * the search palette's field, and no `.css` file mentions it. The palette is
- * real and reachable — `App.jsx` mounts `SearchCommand` for every signed-in
+ * real and reachable — `App.tsx` mounts `SearchCommand` for every signed-in
  * user and `/` opens it.
  *
  * Measured in the browser, signed in, with the palette open (originally with
@@ -572,7 +572,7 @@ test('the global focus ring stays outside every cascade layer', async () => {
     + 'Tailwind generates `.outline-none` into `@layer utilities`, and a layered rule '
     + 'loses to a later layer however specific it is — so from inside `@layer base` '
     + 'this rule stops drawing a ring on every element carrying `outline-none`, which '
-    + 'today includes the search palette\'s field (`components/ui/command.jsx`). '
+    + 'today includes the search palette\'s field (`components/ui/command.tsx`). '
     + 'Nothing about that failure is visible in a stylesheet: the class list, the '
     + 'rule and its colour all still read correctly (WCAG 2.4.7).',
   );
@@ -665,7 +665,7 @@ test('a public paper is headed by its own title, as the page h1', async () => {
     /const TitleTag = titleAs === 'h1' \? 'h1' : 'h2';[\s\S]{0,40000}?<TitleTag className="pc-title" lang="en">\s*<ScientificText>\{paper\.title\}<\/ScientificText>\s*<\/TitleTag>/,
   );
   const page = await readSource(new URL('./components/Public/PublicPaperPage.tsx', import.meta.url));
-  const cardCall = page.slice(page.indexOf('<PaperCard'), page.indexOf('/>', page.indexOf('<PaperCard')));
+  const cardCall = page.slice(page.indexOf('<PaperCard\n'), page.indexOf('/>', page.indexOf('<PaperCard\n')));
   assert.match(cardCall, /\btitleAs="h1"/, 'the paper page passes its title up to h1');
 });
 

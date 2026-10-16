@@ -36,7 +36,7 @@ test('SOURCE: la píldora no existe para el invitado, y el tirón tampoco', asyn
 
 test('SOURCE: el tirón escribe su progreso en el elemento, no en el estado del feed', async () => {
   const src = strip(await read('./FeedContainer.tsx'));
-  const move = src.slice(src.indexOf('const onMove = (event) => {'), src.indexOf('const onEnd = (event) => {'));
+  const move = src.slice(src.indexOf('const onMove = (event: TouchEvent) => {'), src.indexOf('const onEnd = (event: TouchEvent) => {'));
   assert.match(move, /setPull\(\s*pullProgress\(/);
   assert.match(move, /pullTravelPx\(\{ startY: state\.startY, currentY: touch\.clientY \}\)/,
     'el recorrido resistido viaja con el progreso: es lo que siguen los papers');
@@ -102,13 +102,13 @@ test('SOURCE: al tirar, los papers vienen con el dedo y sin reloj de por medio',
  */
 test('SOURCE: el tirón que refresca aterriza; el que no, vuelve con la goma', async () => {
   const src = strip(await read('./FeedContainer.tsx'));
-  const end = src.slice(src.indexOf('const onEnd = (event) => {'), src.indexOf('const onCancel ='));
+  const end = src.slice(src.indexOf('const onEnd = (event: TouchEvent) => {'), src.indexOf('const onCancel ='));
   assert.match(end, /if \(outcome === 'refresh' && !busy && !running\) \{\s*landPull\(\);\s*refresh\?\.\(\);\s*\} else \{\s*setPull\(0, 0\);\s*\}/,
     'las dos salidas son distintas a propósito: entregar y cancelar no significan lo mismo');
   const land = src.slice(src.indexOf('const landPull = useCallback('), src.indexOf('}, []);', src.indexOf('const landPull = useCallback(')));
   assert.match(land, /wrapper\.setAttribute\('data-pull', 'landing'\);/);
-  assert.match(land, /clearTimeout\(pullLandingTimerRef\.current\);/, 'dos aterrizajes seguidos no se pisan el temporizador');
-  assert.match(src, /useEffect\(\(\) => \(\) => clearTimeout\(pullLandingTimerRef\.current\), \[\]\);/,
+  assert.match(land, /clearTimeout\(pullLandingTimerRef\.current!\);/, 'dos aterrizajes seguidos no se pisan el temporizador');
+  assert.match(src, /useEffect\(\(\) => \(\) => clearTimeout\(pullLandingTimerRef\.current!\), \[\]\);/,
     'ni queda vivo tras desmontar');
 
   const css = strip(await read('./FeedContainer.css'));
@@ -157,9 +157,9 @@ test('SOURCE: la primera visita es la bienvenida, en el primer render y sin carg
  */
 test('SOURCE: el tirón se decide en el primer movimiento y entonces detiene el feed', async () => {
   const src = strip(await read('./FeedContainer.tsx'));
-  const start = src.slice(src.indexOf('const onStart = (event) => {'), src.indexOf('const onMove = (event) => {'));
+  const start = src.slice(src.indexOf('const onStart = (event: TouchEvent) => {'), src.indexOf('const onMove = (event: TouchEvent) => {'));
   assert.match(start, /containerTop: box\.top,\s*containerHeight: box\.height,/, 'la franja se mide desde el borde del scroller y escala con su alto');
-  const move = src.slice(src.indexOf('const onMove = (event) => {'), src.indexOf('const onEnd = (event) => {'));
+  const move = src.slice(src.indexOf('const onMove = (event: TouchEvent) => {'), src.indexOf('const onEnd = (event: TouchEvent) => {'));
   assert.match(move, /if \(!pullTakesOver\(\{[\s\S]{0,200}\}\)\) \{\s*state\.phase = 'idle';/,
     'un primer movimiento hacia arriba suelta el gesto para el resto del arrastre');
   assert.ok(move.indexOf("state.phase = 'owning';") < move.indexOf('event.preventDefault()'),
@@ -360,7 +360,7 @@ test('SOURCE: el beat de Actualizado deja sitio al crossfade de salida', async (
 
 test('SOURCE: la píldora no asoma solo porque el cursor ya estaba en la franja', async () => {
   const src = strip(await read('./FeedContainer.tsx'));
-  assert.match(src, /refreshHoverLockedRef = useRef\(true\)/, 'el hover nace cerrado');
+  assert.match(src, /refreshHoverLockedRef = useRef(?:<[^;\n]+>)?\(true\)/, 'el hover nace cerrado');
   const hover = src.slice(src.indexOf('const handleMouseMove = useCallback('), src.indexOf('}, [handleMouseMove, publicMode]);'));
   assert.match(hover, /refreshHoverLockedRef\.current/, 'mientras está cerrado, la franja no enciende la píldora');
   assert.match(hover, /refreshHoverLockedRef\.current = false/, 'sólo se abre al salir de la franja');
@@ -457,9 +457,9 @@ test('SOURCE: el refresco salta arriba bajo el velo, no viaja a la vista', async
  */
 test('SOURCE: el hover se engancha al envoltorio vivo, no al del primer commit', async () => {
   const src = strip(await read('./FeedContainer.tsx'));
-  const attach = src.slice(src.indexOf('const feedRef = useRef(null);'), src.indexOf('const sentinelRef'));
+  const attach = src.slice(src.indexOf('const feedRef = useRef<HTMLDivElement | null>(null);'), src.indexOf('const sentinelRef'));
   assert.ok(attach.length > 0 && attach.length < 700, 'el ref del scroller y su publicación viven juntos');
-  assert.match(attach, /const \[feedNode, setFeedNode\] = useState\(null\);/,
+  assert.match(attach, /const \[feedNode, setFeedNode\] = useState(?:<[^;\n]+>)?\(null\);/,
     'el nodo vive en un estado: un ref no avisa a nadie cuando cambia');
   assert.match(attach, /feedRef\.current = node;\s*setFeedNode\(node\);/,
     'y el ref se sigue poniendo, que es de donde leen el scroll, el resume y el tirón');

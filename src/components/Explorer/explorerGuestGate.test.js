@@ -85,7 +85,7 @@ test('la puerta del Explorer pasa su motivo al diálogo', async () => {
   const jsx = await explorerJsx;
   const start = jsx.indexOf('const requestAccount = useCallback(');
   const block = jsx.slice(start, jsx.indexOf('}, [', start));
-  assert.match(block, /\(reason\) => \{\s*trackEvent\([^)]*\);\s*onAuthRequired\(reason\);/);
+  assert.match(block, /\(reason\?: string\) => \{\s*trackEvent\([^)]*\);\s*onAuthRequired\(reason\);/);
 });
 
 test('the gate has English copy for both lists', async () => {

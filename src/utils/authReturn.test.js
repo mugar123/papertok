@@ -37,7 +37,7 @@ test('SOURCE: a door opened from the page drops the trip an earlier bounce left'
 
 test('SOURCE: every redirect to the onboarding carries the destination the sign-in brought', async () => {
   const code = stripComments(await read('../components/Auth/ProtectedRoute.tsx'));
-  assert.match(code, /const \[carriedDestination\] = useState\(peekAuthReturn\);\s*const onboardingReturnTo = carriedDestination \?\? requestedPath;\s*const onboardingState = useMemo\(\(\) => \(\{ returnTo: onboardingReturnTo \}\), \[onboardingReturnTo\]\);/);
+  assert.match(code, /const \[carriedDestination\] = useState(?:<[^;\n]+>)?\(peekAuthReturn\);\s*const onboardingReturnTo = carriedDestination \?\? requestedPath;\s*const onboardingState = useMemo(?:<[^;\n]+>)?\(\(\) => \(\{ returnTo: onboardingReturnTo \}\), \[onboardingReturnTo\]\);/);
   assert.match(code, /<Navigate to="\/onboarding" replace state=\{onboardingState\} \/>/);
 });
 

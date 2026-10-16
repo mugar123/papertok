@@ -122,14 +122,14 @@ function emailFromError(error: unknown) {
 }
 
 /** Every door this account already has, as Firebase provider ids. */
-export function providerIdsOf(user: Pick<User, 'providerData'> | null | undefined) {
+export function providerIdsOf(user: { providerData: Array<Pick<User['providerData'][number], 'providerId'>> } | null | undefined) {
   const entries = Array.isArray(user?.providerData) ? user.providerData : [];
   return entries
     .map(entry => entry?.providerId)
     .filter(providerId => typeof providerId === 'string' && providerId);
 }
 
-export function hasSignInProvider(user: Pick<User, 'providerData'> | null | undefined, providerId: string) {
+export function hasSignInProvider(user: { providerData: Array<Pick<User['providerData'][number], 'providerId'>> } | null | undefined, providerId: string) {
   return providerIdsOf(user).includes(providerId);
 }
 

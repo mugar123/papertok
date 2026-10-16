@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 /**
- * The SPA rewrite in vercel.json names the route prefixes App.jsx declares,
+ * The SPA rewrite in vercel.json names the route prefixes App.tsx declares,
  * so an address nobody declared is a real HTTP 404 (public/404.html) instead
  * of the app answering 200 for anything (audit 2026-09-23, issue 12). The
  * danger of narrowing is the other way round, so this derives the routes from
- * App.jsx and checks each one still reaches the app.
+ * App.tsx and checks each one still reaches the app.
  */
 
 const VERCEL = new URL('../../vercel.json', import.meta.url);
@@ -42,7 +42,7 @@ function sample(path) {
     .replace(':id', 'A5018713931');
 }
 
-test('every route App.jsx declares still reaches the app', async () => {
+test('every route App.tsx declares still reaches the app', async () => {
   const matches = await spaMatcher();
   for (const route of await declaredRoutes()) {
     const path = sample(route);

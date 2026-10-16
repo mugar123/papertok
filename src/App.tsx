@@ -1,3 +1,6 @@
+import type { MouseEvent } from 'react'
+import type { Paper } from './models/Paper.ts'
+
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
@@ -65,7 +68,7 @@ const SearchCommand = lazyWithPreload(() => import('./components/Search/SearchCo
 // new account right there, and none of them is behind ProtectedRoute, so App
 // itself has to take it to the onboarding (the effect below).
 const PUBLIC_ROUTE_PREFIXES = ['/public/', '/explorer/']
-function isPublicRoute(path) {
+function isPublicRoute(path: string) {
   return PUBLIC_ROUTE_PREFIXES.some(prefix => path.startsWith(prefix))
 }
 
@@ -82,12 +85,12 @@ function LoginRedirect() {
 }
 
 function AppContent() {
-  const [pdfPaper, setPdfPaper] = useState(null)
+  const [pdfPaper, setPdfPaper] = useState<Paper | null>(null)
   // Back closes the PDF viewer instead of leaving PaperTok: see useOverlayHistory.js.
   // Through the viewer's own close, the one the X uses — it owns `open` and
   // reports back only when its leave has played; `setPdfPaper(null)` is just
   // the fallback for before the lazy chunk has mounted.
-  const pdfCloseRef = useRef(null)
+  const pdfCloseRef = useRef<(() => void) | null>(null)
   const requestPdfClose = useCallback(() => {
     if (pdfCloseRef.current) pdfCloseRef.current()
     else setPdfPaper(null)
@@ -99,7 +102,7 @@ function AppContent() {
   // touch screen (PdfPages.jsx), so the paper stays in PaperTok on a phone as
   // it does on a desktop (2026-10-09).
   const openPdf = setPdfPaper
-  const [saveModalPaper, setSaveModalPaper] = useState(null)
+  const [saveModalPaper, setSaveModalPaper] = useState<Paper | null>(null)
   const [authPromptOpen, setAuthPromptOpen] = useState(false)
   const [authPromptReason, setAuthPromptReason] = useState('default')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -117,7 +120,7 @@ function AppContent() {
   // shortcut all call this — so the dialog has nothing to return focus to on
   // its own; measured 2026-09-22, Escape left the focus on `body`. A ref,
   // read at close time, so a button that re-rendered meanwhile still counts.
-  const searchOpenerRef = useRef(null)
+  const searchOpenerRef = useRef<HTMLElement | null>(null)
   const openSearch = useCallback(() => {
     searchOpenerRef.current = document.activeElement instanceof HTMLElement
       && document.activeElement !== document.body
@@ -155,7 +158,7 @@ function AppContent() {
   // The door says why it opened: `reason` is one of authPromptCopy's keys,
   // and anything else — the click event of an `onClick={requestAuthentication}`,
   // the paper of an `onSaveToList` — is the general door.
-  const requestAuthentication = useCallback((reason) => {
+  const requestAuthentication = useCallback((reason?: unknown) => {
     clearAuthReturn()
     setAuthPromptOpen(true)
     setAuthPromptReason(normalizeAuthReason(reason))
@@ -172,7 +175,7 @@ function AppContent() {
   const navigate = useNavigate()
   const authArrivalKey = location.state?.authRequired ? location.key : null
   const arrivalReturnTo = authArrivalKey ? location.state?.returnTo : undefined
-  const [consumedAuthArrival, setConsumedAuthArrival] = useState(null)
+  const [consumedAuthArrival, setConsumedAuthArrival] = useState<string | null>(null)
   if (authArrivalKey && authArrivalKey !== consumedAuthArrival) {
     setConsumedAuthArrival(authArrivalKey)
     if (!user) setAuthPromptOpen(true)
@@ -222,7 +225,7 @@ function AppContent() {
   useEffect(() => {
     if (!sessionUid) return
     const prefetch = () => {
-      const conn = navigator.connection
+      const conn = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection
       const frugal = conn && (conn.saveData || /2g/.test(conn.effectiveType || ''))
       if (frugal) return
       // Everything goes through `preload()`, not a bare `import()`: the
@@ -274,7 +277,7 @@ function AppContent() {
   //     person using it. `focus()` is the guarantee, not a nicety;
   //   - and it keeps `#main-content` out of the address, so nothing the reader
   //     copies or shares carries it.
-  const handleSkipLinkClick = (event) => {
+  const handleSkipLinkClick = (event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault()
     document.getElementById('main-content')?.focus()
   }
@@ -565,7 +568,7 @@ function UserScopedAppContent() {
   // State adjusted during render, the documented way to derive state from a
   // prop; the key reads `scope` rather than the state so this render already
   // mounts under the right one.
-  const [previousScope, setPreviousScope] = useState(INITIAL_ACCOUNT_SCOPE)
+  const [previousScope, setPreviousScope] = useState<ReturnType<typeof nextAccountScope>>(INITIAL_ACCOUNT_SCOPE)
   const scope = nextAccountScope(previousScope, { uid: user?.uid, authLoading })
   if (scope !== previousScope) setPreviousScope(scope)
   return (

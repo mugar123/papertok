@@ -1,3 +1,4 @@
+import type { FollowEntity } from '../../utils/following.ts';
 import { useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -33,7 +34,7 @@ const SOURCE_LABELS = {
   legacy: 'Perfil anterior',
 };
 
-function getFollowDisplayName(entity) {
+function getFollowDisplayName(entity: FollowEntity) {
   return entity.type === 'institution'
     ? getLocalizedInstitutionName(entity)
     : entity.displayName;
@@ -56,7 +57,7 @@ export default function FollowingSettingsPage() {
     isFollowPending,
     toggleFollow,
   } = useFollowing();
-  const [selectedType, setSelectedType] = useState(null);
+  const [selectedType, setSelectedType] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
 
   const activeType = selectedType
@@ -72,7 +73,7 @@ export default function FollowingSettingsPage() {
     [activeType, followedByType, locale],
   );
 
-  const handleUnfollow = async (entity) => {
+  const handleUnfollow = async (entity: FollowEntity) => {
     setActionError('');
     try {
       await toggleFollow(entity);
@@ -159,7 +160,7 @@ export default function FollowingSettingsPage() {
                         <small>
                           {activeTab.singular[language].charAt(0).toUpperCase() + activeTab.singular[language].slice(1)}
                           {' · '}
-                          {SOURCE_LABELS[entity.source] || 'PaperTok'}
+                          {SOURCE_LABELS[entity.source as keyof typeof SOURCE_LABELS] || 'PaperTok'}
                         </small>
                       </span>
                       <CaretRight size={18} aria-hidden="true" />

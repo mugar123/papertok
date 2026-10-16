@@ -23,7 +23,7 @@ test('el visor no monta el iframe en puntero grueso: dibuja las páginas con pdf
   assert.match(source, /\{drawsPages && \(/);
   assert.match(source, /<PdfPages src=\{relayUrl\}/);
   // pdf.js llega en su propio trozo: un escritorio no lo descarga.
-  assert.match(source, /lazy\(\(\) => import\('\.\/PdfPages\.jsx'\)\)/);
+  assert.match(source, /lazy\(\(\) => import\('\.\/PdfPages\.tsx'\)\)/);
   assert.doesNotMatch(source, /^import .*PdfPages/m);
   // Lo que no se puede dibujar sigue teniendo su traspaso, y el «no hay PDF»
   // sigue llegando al táctil sin PDF.
@@ -37,7 +37,7 @@ test('las páginas usan la build legacy de pdf.js', async () => {
   // iPhone para los que existe este visor no tienen.
   assert.match(source, /from 'pdfjs-dist\/legacy\/build\/pdf\.min\.mjs'/);
   assert.match(source, /'pdfjs-dist\/legacy\/build\/pdf\.worker\.min\.mjs\?url'/);
-  assert.doesNotMatch(source, /from 'pdfjs-dist'/);
+  assert.doesNotMatch(source, /^(?!import type ).*from 'pdfjs-dist'/m);
   assert.match(source, /isEvalSupported: false/);
 });
 

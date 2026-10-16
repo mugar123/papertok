@@ -49,14 +49,14 @@ export const OWN_LISTS_FRESH_MS = 30_000;
 const ownListsReadAt = new Map<string, number>();
 
 /** Caches a lists read and stamps it fresh. Both readers of the collection use it. */
-export function rememberOwnLists(uid: string, lists: OwnList[]) {
+export function rememberOwnLists(uid: string | undefined, lists: OwnList[]) {
   if (!uid || !Array.isArray(lists)) return;
   ownListsCache.set(uid, lists);
   ownListsReadAt.set(uid, Date.now());
 }
 
 /** Updates the cached lists in place, without claiming they were re-read. */
-export function reviseOwnLists(uid: string, lists: OwnList[]) {
+export function reviseOwnLists(uid: string | undefined, lists: OwnList[]) {
   if (!uid || !Array.isArray(lists)) return;
   ownListsCache.set(uid, lists);
 }
@@ -71,7 +71,7 @@ export function ownListsAreFresh(uid: string, now = Date.now(), ttlMs = OWN_LIST
   return typeof readAt === 'number' && now - readAt < ttlMs;
 }
 
-export function forgetOwnLists(uid: string) {
+export function forgetOwnLists(uid: string | undefined) {
   if (!uid) return;
   ownListsCache.delete(uid);
   ownListsReadAt.delete(uid);

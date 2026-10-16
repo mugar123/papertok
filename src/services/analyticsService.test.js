@@ -758,7 +758,7 @@ test('every event the app emits is registered, with a surface that survives', as
  * months there, together the third most viewed "page" on the site, and nothing
  * about the report said which pages they were.
  *
- * Reading the routes out of `App.jsx` rather than restating them here is the
+ * Reading the routes out of `App.tsx` rather than restating them here is the
  * point: the list cannot pass by being edited alongside the router, only by
  * matching it.
  */

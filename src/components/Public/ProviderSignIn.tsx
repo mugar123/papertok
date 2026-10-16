@@ -4,7 +4,7 @@ import './ProviderSignIn.css';
 // modal and the welcome's disclosure), next to useProviderSignIn.js.
 
 // One account per email address: the address already signs in some other way.
-export function CollisionNote({ email }) {
+export function CollisionNote({ email }: { email?: string }) {
   return <>{email ? <strong>{email}</strong> : 'That address'} already signs in another way. Use that method, then connect the other from Settings.</>;
 }
 

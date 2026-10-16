@@ -64,6 +64,6 @@ test('the sheet still mounts open, and that is not the bug', () => {
   // `onOpenChangeComplete` handshake for nothing. What was missing was the
   // direction of the motion, not the motion.
   const jsx = readFileSync(new URL('./GuestInterestsPrompt.tsx', import.meta.url), 'utf8');
-  assert.match(jsx, /useState\(true\)/, 'if this sheet stops mounting open, check its arrival still plays');
+  assert.match(jsx, /useState(?:<[^;\n]+>)?\(true\)/, 'if this sheet stops mounting open, check its arrival still plays');
   assert.doesNotMatch(jsx, /usePopupOpenOnMount/);
 });

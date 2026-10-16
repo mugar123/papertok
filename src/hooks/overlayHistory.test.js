@@ -156,7 +156,7 @@ test('desarmar con una entrada ajena encima no toca la pila', () => {
   // The branch this pins: `if (history.state?.overlay === tag)` in disarm().
   // Neither double models it above, so deleting that line left all ten of the
   // original tests green. The reachable route to it is a REAL navigation taken
-  // while an overlay is armed — the `/` shortcut was one until searchShortcut.js
+  // while an overlay is armed — the `/` shortcut was one until searchShortcut.ts
   // gated it — which pushes idx k+1 on top and unmounts the overlay with it.
   // Without the guard, that unmount's disarm() steps back over the navigation
   // the visitor just made.
@@ -218,12 +218,12 @@ test('un arranque normal no toca el historial', () => {
   assert.equal(clearStaleOverlayMarker({ history: { state: null }, location: null }), false, 'ni con un state vacío');
 });
 
-test('SOURCE: main.jsx limpia el marcador antes de renderizar', async () => {
+test('SOURCE: main.tsx limpia el marcador antes de renderizar', async () => {
   const code = stripComments(await read('../main.tsx'));
   assert.match(code, /import \{ clearStaleOverlayMarker \} from '\.\/hooks\/useOverlayHistory\.ts'/);
   const callAt = code.indexOf('clearStaleOverlayMarker({');
   const renderAt = code.indexOf('ReactDOM.createRoot');
-  assert.ok(callAt > -1, 'main.jsx tiene que llamarlo');
+  assert.ok(callAt > -1, 'main.tsx tiene que llamarlo');
   assert.ok(renderAt > callAt, 'y antes de renderizar, cuando todavía no puede haber nada armado');
 });
 
@@ -253,7 +253,7 @@ test('SOURCE: el lector de PaperCard usa useOverlayHistory con el tag reader', a
     /import \{ useOverlayHistory \} from '\.\.\/\.\.\/hooks\/useOverlayHistory\.ts';/,
     'must import the hook',
   );
-  assert.match(code, /const \[showReader, setShowReader\] = useState\(false\);/);
+  assert.match(code, /const \[showReader, setShowReader\] = useState(?:<[^;\n]+>)?\(false\);/);
   const { body } = armedWith(code, /useOverlayHistory\(showReader, (\w+), 'reader'\)/);
   assert.match(body, /readerCloseRef\.current\(\)/, 'Atrás tiene que PEDIR el cierre al lector, no desmontarlo');
   assert.match(body, /setShowReader\(false\)/, 'con el desmontaje solo como respaldo mientras el chunk perezoso no ha montado');
@@ -267,14 +267,14 @@ test('SOURCE: el visor de PDF de App usa useOverlayHistory con el tag pdf', asyn
     /import \{ useOverlayHistory \} from '\.\/hooks\/useOverlayHistory\.ts'/,
     'must import the hook',
   );
-  assert.match(code, /const \[pdfPaper, setPdfPaper\] = useState\(null\)/);
+  assert.match(code, /const \[pdfPaper, setPdfPaper\] = useState(?:<[^;\n]+>)?\(null\)/);
   const { body: armedBody } = armedWith(code, /useOverlayHistory\(Boolean\(pdfPaper\), (\w+), 'pdf'\)/);
   assert.match(armedBody, /pdfCloseRef\.current\(\)/, 'Atrás tiene que PEDIR el cierre al visor, no desmontarlo');
   assert.match(armedBody, /setPdfPaper\(null\)/, 'con el desmontaje solo como respaldo mientras el chunk perezoso no ha montado');
   assert.match(code, /<PDFViewer paper=\{pdfPaper\} closeRef=\{pdfCloseRef\}/, 'y el visor tiene que recibir ese mismo ref');
 
   // Critical point 3: since 2026-10-09 every pointer opens the viewer (a
-  // touch screen draws the pages itself, PdfPages.jsx), so every open arms
+  // touch screen draws the pages itself, PdfPages.tsx), so every open arms
   // the history entry. No branch may leave the app without setting pdfPaper.
   assert.match(code, /const openPdf = setPdfPaper\b/, 'openPdf is the setter: every open mounts the viewer');
 });
@@ -286,7 +286,7 @@ test('SOURCE: el visor de PDF propio de EntityExplorer usa useOverlayHistory con
     /import \{ useOverlayHistory \} from '\.\.\/\.\.\/hooks\/useOverlayHistory\.ts';/,
     'must import the hook',
   );
-  assert.match(code, /const \[pdfPaperToView, setPdfPaperToView\] = useState\(null\);/);
+  assert.match(code, /const \[pdfPaperToView, setPdfPaperToView\] = useState(?:<[^;\n]+>)?\(null\);/);
   const { body } = armedWith(code, /useOverlayHistory\(Boolean\(pdfPaperToView\), (\w+), 'pdf'\)/);
   assert.match(body, /pdfCloseRef\.current\(\)/, 'Atrás tiene que PEDIR el cierre al visor, no desmontarlo');
   assert.match(body, /setPdfPaperToView\(null\)/, 'con el desmontaje solo como respaldo mientras el visor no ha publicado su cierre (aquí PDFViewer se importa en plano, sin chunk perezoso que esperar)');
@@ -309,7 +309,7 @@ test('SOURCE: el visor de PDF propio de SearchPage usa useOverlayHistory con el 
     /import \{ useOverlayHistory \} from '\.\.\/\.\.\/hooks\/useOverlayHistory\.ts';/,
     'must import the hook',
   );
-  assert.match(code, /const \[pdfPaper, setPdfPaper\] = useState\(null\);/);
+  assert.match(code, /const \[pdfPaper, setPdfPaper\] = useState(?:<[^;\n]+>)?\(null\);/);
   const { body } = armedWith(code, /useOverlayHistory\(Boolean\(pdfPaper\), (\w+), 'pdf'\)/);
   assert.match(body, /pdfCloseRef\.current\(\)/, 'Atrás tiene que PEDIR el cierre al visor, no desmontarlo');
   assert.match(body, /setPdfPaper\(null\)/, 'con el desmontaje solo como respaldo mientras el visor no ha publicado su cierre (aquí PDFViewer se importa en plano, sin chunk perezoso que esperar)');
@@ -354,7 +354,7 @@ test('SOURCE: todo archivo bajo src/ que monta <PDFViewer o <PaperReader usa use
   assert.ok(
     matched.length >= 4,
     'el rastreo bajo src/ no encontró ni siquiera los cuatro dueños conocidos '
-    + '(App.jsx, EntityExplorer.jsx, SearchPage.jsx, PaperCard.jsx) — antes de '
+    + '(App.tsx, EntityExplorer.tsx, SearchPage.tsx, PaperCard.tsx) — antes de '
     + 'confiar en un resultado vacío o corto, revisa el patrón o el directorio: '
     + `encontrados ${JSON.stringify(matched)}`,
   );

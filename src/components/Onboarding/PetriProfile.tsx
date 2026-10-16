@@ -1,7 +1,8 @@
+import type { PetriProps } from './PetriFrame.tsx';
 import PetriFrame, { ANTENNAE } from './PetriFrame.tsx';
 
 
-export default function PetriProfile({ visibility, label, className }) {
+export default function PetriProfile({ visibility, label, className }: PetriProps & { visibility?: 'public' | 'private' }) {
   return (
     <PetriFrame
       label={label}

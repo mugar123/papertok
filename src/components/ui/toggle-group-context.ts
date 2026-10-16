@@ -1,3 +1,6 @@
+import type { VariantProps } from 'class-variance-authority';
+import type { toggleVariants } from './toggle-variants.ts';
+
 import { createContext } from 'react';
 
 /**
@@ -6,4 +9,4 @@ import { createContext } from 'react';
  * re-evaluating it would mint a new context that already-mounted consumers
  * would not be holding.
  */
-export const ToggleGroupContext = createContext({ size: 'default', variant: 'default' });
+export const ToggleGroupContext = createContext<VariantProps<typeof toggleVariants>>({ size: 'default', variant: 'default' });

@@ -1,8 +1,9 @@
+import type { PetriProps } from './PetriFrame.tsx';
 import { useId } from 'react';
 import PetriFrame, { ANTENNAE, Hatch } from './PetriFrame.tsx';
 
 
-export default function PetriFlask({ label, className }) {
+export default function PetriFlask({ label, className }: PetriProps) {
   const liquid = useId();
   return (
     <PetriFrame

@@ -1,3 +1,4 @@
+import type { ComponentProps } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { SignOut } from '@phosphor-icons/react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -21,7 +22,7 @@ import './OnboardingFlow.css';
 // the greeting, looking into a flask over the areas. The university screen
 // opens on a prop over the title instead, with Petri stamped on its paper
 // (PetriStamp).
-const STEP_PETRI = {
+const STEP_PETRI: Partial<Record<string, ComponentProps<typeof Petri>['pose']>> = {
   topics: 'flask',
 };
 
@@ -29,7 +30,7 @@ const STEP_PETRI = {
 // one per screen: a greeting, the areas and the topics within them, and the
 // university library. The topics are asked only of a reader who did not
 // answer them on the welcome (an account opened from a shared link).
-function onboardingSteps({ asksTopics }) {
+function onboardingSteps({ asksTopics }: { asksTopics: boolean }) {
   return [
     'welcome',
     ...(asksTopics ? ['topics', 'subtopics'] : []),
@@ -40,11 +41,11 @@ function onboardingSteps({ asksTopics }) {
 
 const COPY = {
   progress: 'Progress',
-  stepOf: (n, total) => `Step ${n} of ${total}`,
+  stepOf: (n: number, total: number) => `Step ${n} of ${total}`,
   back: 'Back',
   saving: 'Saving…',
   welcome: {
-    kicker: firstName => (firstName ? `Hello, ${firstName}` : 'Hello'),
+    kicker: (firstName: string) => (firstName ? `Hello, ${firstName}` : 'Hello'),
     title: 'Welcome to PaperTok',
     lede: 'Your feed is ready to be yours. A few short steps and you are in.',
     cta: 'Let’s go',
@@ -93,7 +94,7 @@ const WRITE_SECONDS = 1;
 const CAPITAL_WEIGHT = 1.25;
 const JOIN_AT = 0.88;
 const WORD_GAP = 0.1;
-const WRITE_EASE = [0.4, 0, 0.6, 1];
+const WRITE_EASE: [number, number, number, number] = [0.4, 0, 0.6, 1];
 const RULE_GAP = 0.15;
 const RULE_SECONDS = 0.35;
 // The reveal's soft edge in the outlines' units; its lean is the one the
@@ -104,7 +105,7 @@ const SLANT_DEGREES = WELCOME_TITLE.slant;
 const [VIEW_X, VIEW_Y, VIEW_W, VIEW_H] = WELCOME_TITLE.viewBox.split(' ').map(Number);
 const WEIGHTS = WELCOME_TITLE.glyphs.map(glyph => glyph.length * (/[A-Z]/.test(glyph.char) ? CAPITAL_WEIGHT : 1));
 const TOTAL_WEIGHT = WEIGHTS.reduce((sum, weight) => sum + weight, 0);
-const WRITING = [];
+const WRITING: { start: number; duration: number }[] = [];
 for (const [index, glyph] of WELCOME_TITLE.glyphs.entries()) {
   const previous = WRITING[index - 1];
   WRITING.push({
@@ -119,7 +120,7 @@ const RULE_START = WRITE_END + RULE_GAP;
 // Shears x by the height above the baseline, as the generator's `sweep` does.
 const SLANT = `translate(0 ${WELCOME_TITLE.baseline}) skewX(-${SLANT_DEGREES}) translate(0 ${-WELCOME_TITLE.baseline})`;
 
-function ScriptTitle({ still }) {
+function ScriptTitle({ still }: { still: boolean }) {
   return (
     <span className="onboarding-script" aria-hidden="true">
       <svg className="onboarding-script-svg" viewBox={WELCOME_TITLE.viewBox} focusable="false">
@@ -202,9 +203,9 @@ export default function OnboardingFlow() {
   const [direction, setDirection] = useState(1);
   const [selectedAreas, setSelectedAreas] = useState(() => new Set(guestSeed ?? []));
   const [selectedTopics, setSelectedTopics] = useState(() => new Set(guestAnswer?.topics ?? []));
-  const [expandedAreas, setExpandedAreas] = useState(() => new Set());
+  const [expandedAreas, setExpandedAreas] = useState(() => new Set<string>());
   const [saving, setSaving] = useState(false);
-  const [profileError, setProfileError] = useState(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const { completeOnboarding, onboardingComplete, user, institution, signOut } = useAuth();
   const { language } = useLanguage();
   const navigate = useNavigate();
@@ -242,7 +243,7 @@ export default function OnboardingFlow() {
     trackEvent('tutorial_begin', { language });
   }, [language, trackEvent]);
 
-  const goTo = (nextIndex) => {
+  const goTo = (nextIndex: number) => {
     if (saving || nextIndex === stepIndex || nextIndex < 0 || nextIndex >= steps.length) return;
     setDirection(nextIndex > stepIndex ? 1 : -1);
     setStep(nextIndex);
@@ -251,7 +252,7 @@ export default function OnboardingFlow() {
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
 
-  const toggleArea = (key) => {
+  const toggleArea = (key: string) => {
     const removing = selectedAreas.has(key);
     setSelectedAreas((previous) => {
       const next = new Set(previous);
@@ -267,7 +268,7 @@ export default function OnboardingFlow() {
     }
   };
 
-  const toggleTopic = (id) => {
+  const toggleTopic = (id: string) => {
     setSelectedTopics((previous) => {
       const next = new Set(previous);
       if (next.has(id)) next.delete(id);
@@ -276,7 +277,7 @@ export default function OnboardingFlow() {
     });
   };
 
-  const toggleExpanded = (key) => setExpandedAreas((previous) => {
+  const toggleExpanded = (key: string) => setExpandedAreas((previous) => {
     const next = new Set(previous);
     if (next.has(key)) next.delete(key);
     else next.add(key);
@@ -293,7 +294,7 @@ export default function OnboardingFlow() {
       markActivation();
       navigate(returnTo, { replace: true });
     } catch (err) {
-      if (err?.code === 'ONBOARDING_WRITE_TIMEOUT') {
+      if ((err as { code?: string } | null)?.code === 'ONBOARDING_WRITE_TIMEOUT') {
         // completeOnboarding's write is a merge-set of the same fields, so
         // the reader's own retry is the whole recovery — nothing to do here
         // but tell them why the button stopped spinning.
@@ -312,7 +313,7 @@ export default function OnboardingFlow() {
     || (step !== 'topics' && overCap);
 
   const isLast = stepIndex === steps.length - 1;
-  const stepCopy = COPY[step];
+  const stepCopy = COPY[step as 'topics' | 'subtopics' | 'university'];
   const petriPose = STEP_PETRI[step];
   // On the university screen an address typed and nothing linked yet makes
   // the primary the link's submit: Google's window has to open from a press.

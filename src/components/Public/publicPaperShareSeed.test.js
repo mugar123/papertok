@@ -32,7 +32,7 @@ test('SOURCE: the share seed is read for this key, and paints only when it can p
   const code = await component();
   assert.match(
     code,
-    /const shareSeed = useMemo\(\(\) => \{\s*const candidate = readShareSeed\(paperKey\);[\s\S]{0,200}?paperLegacyAdapter\(candidate\)[\s\S]{0,120}?\}, \[paperKey\]\);\s*const sharePainted = !seedPainted && seedPaintsWhole\(shareSeed\);/,
+    /const shareSeed = useMemo(?:<[^;\n]+>)?\(\(\) => \{\s*const candidate = readShareSeed\(paperKey\);[\s\S]{0,200}?paperLegacyAdapter\(candidate\)[\s\S]{0,120}?\}, \[paperKey\]\);\s*const sharePainted = !seedPainted && seedPaintsWhole\(shareSeed\);/,
   );
 });
 
@@ -46,7 +46,7 @@ test('SOURCE: until the providers answer, the page is the seed, ready and not lo
     code,
     /const status = hasCurrentResult\s*\? result\.status\s*: \(seedPainted \|\| sharePainted \? 'ready' : \(identity \? 'loading' : 'not-found'\)\);/,
   );
-  assert.match(code, /const \[seededOnArrival\] = useState\(\(\) => seedPainted \|\| sharePainted\);/);
+  assert.match(code, /const \[seededOnArrival\] = useState(?:<[^;\n]+>)?\(\(\) => seedPainted \|\| sharePainted\);/);
 });
 
 test('SOURCE: a load that finds nothing or fails keeps the seed rather than the error', async () => {
@@ -61,5 +61,5 @@ test('SOURCE: a load that finds nothing or fails keeps the seed rather than the 
 
 test('SOURCE: the head is built from the paper on screen, seed included', async () => {
   const code = await component();
-  assert.match(code, /const metadata = useMemo\(\(\) => publicPaperMetadata\(paper, canonicalRoute\), \[canonicalRoute, paper\]\);\s*usePublicPageMetadata\(metadata\);/);
+  assert.match(code, /const metadata = useMemo(?:<[^;\n]+>)?\(\(\) => publicPaperMetadata\(paper, canonicalRoute\), \[canonicalRoute, paper\]\);\s*usePublicPageMetadata\(metadata\);/);
 });

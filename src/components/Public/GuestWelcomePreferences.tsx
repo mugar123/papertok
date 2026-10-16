@@ -1,3 +1,6 @@
+import type { ReactNode } from 'react';
+import type { Icon } from '@phosphor-icons/react';
+import type { ReadingLevel } from '../../utils/userSettings.ts';
 import { useEffect, useState } from 'react';
 import { animate, cubicBezier, motion, useMotionValue, useMotionValueEvent, useReducedMotion, useTransform } from 'framer-motion';
 import { ArrowUpRight, BookOpen, Check, Cursor, FileText, Flask, Folder, GithubLogo, GraduationCap, LockSimple, LockSimpleOpen, Star } from '@phosphor-icons/react';
@@ -5,13 +8,13 @@ import { CATEGORIES } from '../../data/categories.js';
 import { Button } from '../ui/button.tsx';
 import { Switch } from '../ui/switch.tsx';
 
-const LEVELS = [
+const LEVELS: { id: ReadingLevel; title: string; icon: Icon; description: string }[] = [
   { id: 'beginner', title: 'Beginner', icon: BookOpen, description: 'Everyday language. Ideas explained from scratch.' },
   { id: 'university', title: 'University', icon: GraduationCap, description: 'Core concepts, context, and the science behind them.' },
   { id: 'researcher', title: 'Researcher', icon: Flask, description: 'Technical depth, methods, and nuance. Clearly structured.' },
 ];
 
-export function WelcomeReadingChoice({ level, onChange }) {
+export function WelcomeReadingChoice({ level, onChange }: { level: ReadingLevel; onChange: (level: ReadingLevel) => void }) {
   return <div className="gw-preferences">
     <fieldset className="gw-levels">
       <legend className="visually-hidden">Default plain words reading level</legend>
@@ -44,12 +47,12 @@ const DIGEST_BEHIND = [
 
 // The beat entrance's curve for what arrives; a strong ease-in-out for what
 // moves on screen rather than entering.
-const ARRIVE_EASE = [0.16, 1, 0.3, 1];
-const FLAP_EASE = [0.77, 0, 0.175, 1];
+const ARRIVE_EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
+const FLAP_EASE: [number, number, number, number] = [0.77, 0, 0.175, 1];
 
 // The digest: an envelope, open, a paper out of it with two more behind.
 
-export function DigestPreview({ still, stamp }) {
+export function DigestPreview({ still, stamp }: { still: boolean; stamp?: ReactNode }) {
   const field = CATEGORIES[DIGEST_LETTER.field];
   return <div className="gw-digest-preview" aria-hidden="true">
     <motion.div
@@ -90,7 +93,7 @@ export function DigestPreview({ still, stamp }) {
 // the other answers and is saved on the account at onboarding; the
 // subscription itself starts with the account's first follow, because the
 // digest is built from follows (EmailNotificationsContext).
-export function WelcomeInboxChoice({ subscribed, onChange }) {
+export function WelcomeInboxChoice({ subscribed, onChange }: { subscribed: boolean; onChange: (subscribed: boolean) => void }) {
   return <div className="gw-preferences gw-inbox">
     <label className="gw-digest-optin" data-checked={subscribed ? '' : undefined}>
       <span className="gw-digest-optin-text">
@@ -128,7 +131,7 @@ const CARD_SETTLE = 0.85;
 // (WCAG 2.2.2); with motion refused it is drawn opened, the card in place.
 // Only the account onboarding's university screen (OnboardingFlow) draws it.
 
-export function LibraryPreview({ still, stamp }) {
+export function LibraryPreview({ still, stamp }: { still: boolean; stamp?: ReactNode }) {
   const field = CATEGORIES[LIBRARY_PAPER.field];
   const [opened, setOpened] = useState(still);
   return <div className="gw-library-preview" aria-hidden="true">
@@ -190,9 +193,9 @@ const REPO_ENTRIES = [
 // cursor's press does, however late a frame arrives.
 const STAR_TOTAL = 4;
 const STAR_CLICK_AT = 2.45;
-const starTimes = (...seconds) => seconds.map(second => second / STAR_TOTAL);
+const starTimes = (...seconds: number[]) => seconds.map(second => second / STAR_TOTAL);
 const MOVE_EASE = cubicBezier(...FLAP_EASE);
-const hold = value => value;
+const hold = (value: number) => value;
 const CURSOR_REST = { x: 96, y: 138 };
 const CURSOR_ON_STAR = { x: 310, y: 23 };
 const CURSOR_TIMES = starTimes(0, 0.65, 1.55, STAR_TOTAL);
@@ -202,7 +205,7 @@ const CURSOR_EASE = [hold, MOVE_EASE, hold];
 // seconds (WCAG 2.2.2). An illustration only — nothing here stars the real
 // repository; the button under it opens GitHub. With motion refused it is
 // drawn starred, at rest, without the cursor.
-function StarDemo({ still }) {
+function StarDemo({ still }: { still: boolean }) {
   const [starred, setStarred] = useState(still);
   const clock = useMotionValue(still ? 1 : 0);
   useEffect(() => {

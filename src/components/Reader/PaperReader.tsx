@@ -1,3 +1,16 @@
+import type { FocusEvent, KeyboardEvent, MouseEvent, Ref, RefObject } from 'react';
+import type { TargetAndTransition } from 'framer-motion';
+import type { Paper, PaperAuthor } from '../../models/Paper.ts';
+import type { RewriteSection, ClientRewriteMeta } from '../../services/paperRewriteService.ts';
+import type { PassageAnnotation } from '../../hooks/usePassageAnnotations.ts';
+import type { ReadingLevel } from '../../utils/userSettings.ts';
+type ReaderQuota = { dailyLimit: number | null; remainingUses: number; unlimited?: boolean };
+interface PaperReaderProps {
+  paper: Paper; onClose: () => void;
+  originRect?: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'> | null;
+  closeRef?: Ref<() => void> | null;
+}
+export type ReaderCopy = typeof COPY.en;
 import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'framer-motion';
 import {
@@ -73,9 +86,9 @@ const COPY = {
     cached: 'Saved version',
     original: 'View the original paper',
     adaptation: 'AI adaptation generated from the full text. It does not replace the original article.',
-    remaining: (count) => `${count} ${count === 1 ? 'use' : 'uses'} today`,
-    uses: (left, total) => `${left}/${total} today`,
-    usesTitle: (left, total) => (left === 0
+    remaining: (count: number) => `${count} ${count === 1 ? 'use' : 'uses'} today`,
+    uses: (left: number, total: number) => `${left}/${total} today`,
+    usesTitle: (left: number, total: number) => (left === 0
       ? `You have used all ${total} of today's AI uses. They return tomorrow.`
       : `${left} of ${total} AI uses left today.`),
     stages: {
@@ -94,7 +107,7 @@ const COPY = {
       mine: 'Your notes',
       ai: 'AI annotations',
     },
-    optionCount: (id, count) => (id === 'marks'
+    optionCount: (id: string, count: number) => (id === 'marks'
       ? `${count} ${count === 1 ? 'passage' : 'passages'}`
       : `${count} ${count === 1 ? 'note' : 'notes'} · numbered at the foot`),
     noneOfThese: 'none yet',
@@ -107,7 +120,7 @@ const COPY = {
     // Same value as the `es` block above, on purpose: the source paper's own
     // heading, not a translation of it.
     previewOrigin: '§1 Introduction',
-    previewNote: (format) => (format === 'pdf' ? 'How the PDF will look' : 'How it will look compiled'),
+    previewNote: (format: string) => (format === 'pdf' ? 'How the PDF will look' : 'How it will look compiled'),
     format: 'Format',
     downloadTex: 'Download .tex',
     downloadPdf: 'Download PDF',
@@ -131,7 +144,7 @@ const COPY = {
     oneUse: '1 use',
     noUsesLeftShort: 'no uses',
     noUsesLeft: 'Today’s AI uses have run out.',
-    usesLeftLine: (left) => `${left} AI ${left === 1 ? 'use' : 'uses'} left today.`,
+    usesLeftLine: (left: number) => `${left} AI ${left === 1 ? 'use' : 'uses'} left today.`,
     reading: 'Reading the passage',
     originMine: 'Yours',
     originAi: 'AI',
@@ -139,7 +152,7 @@ const COPY = {
     removeAnnotation: 'Remove annotation',
     emptyAll: 'Select a sentence in the text to write a note on it, or to have the AI explain it.',
     emptyFiltered: 'Nothing here yet.',
-    countLine: ({ notes, marks }) => {
+    countLine: ({ notes, marks }: { notes: number; marks: number }) => {
       const parts = [];
       if (marks) parts.push(`${marks} ${marks === 1 ? 'mark' : 'marks'}`);
       if (notes) parts.push(`${notes} ${notes === 1 ? 'note' : 'notes'}`);
@@ -297,7 +310,7 @@ const GHOST_LINES = Object.freeze([
   '100%', '96%', '98%', '91%', '58%',
 ]);
 
-const EASE_OUT = [0.16, 1, 0.3, 1];
+const EASE_OUT: [number, number, number, number] = [0.16, 1, 0.3, 1];
 /**
  * For something travelling from one place on screen to another, where the
  * journey is the message — `--ease-out-quad` in variables.css, as JS.
@@ -309,7 +322,7 @@ const EASE_OUT = [0.16, 1, 0.3, 1];
  * looking like a cut with a smear behind it. This one is off at 20ms and only
  * half-way at 103ms, so the eye can follow it across.
  */
-const EASE_TRAVEL = [0.25, 0.46, 0.45, 0.94];
+const EASE_TRAVEL: [number, number, number, number] = [0.25, 0.46, 0.45, 0.94];
 
 /*
  * The reader's own entrance and exit — growing out of the button that opened
@@ -352,7 +365,7 @@ const EASE_TRAVEL = [0.25, 0.46, 0.45, 0.94];
  * spends itself in two frames is right for something moving — you see where it
  * went — and wrong for something dimming, where all it does is flash.
  */
-const PANEL_STATES = {
+const PANEL_STATES: Record<string, TargetAndTransition> = {
   shown: {
     opacity: 1,
     y: 0,
@@ -377,7 +390,7 @@ const PANEL_STATES = {
   },
 };
 
-const STILL_PANEL_STATES = {
+const STILL_PANEL_STATES: Record<string, TargetAndTransition> = {
   shown: { opacity: 1, y: 0, scale: 1, pointerEvents: 'auto', transition: { duration: 0.12 } },
   hidden: { opacity: 0, y: 0, scale: 1, pointerEvents: 'none', transition: { duration: 0.12 } },
 };
@@ -400,7 +413,7 @@ function usePanelReveal() {
   const [nearBottom, setNearBottom] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
   const [holdsFocus, setHoldsFocus] = useState(false);
-  const hideTimer = useRef(null);
+  const hideTimer = useRef<number | null>(null);
 
   const scheduleHide = useCallback(() => {
     if (hideTimer.current) return;
@@ -410,7 +423,7 @@ function usePanelReveal() {
     }, PANEL_HIDE_DELAY_MS);
   }, []);
 
-  const trackPointer = useCallback((event) => {
+  const trackPointer = useCallback((event: MouseEvent) => {
     // Not while a button is down: dragging a selection towards the last lines
     // is not a request for the controls, it is reading.
     if (event.buttons !== 0) return;
@@ -421,18 +434,18 @@ function usePanelReveal() {
       if (nearBottom) scheduleHide();
       return;
     }
-    clearTimeout(hideTimer.current);
+    clearTimeout(hideTimer.current!);
     hideTimer.current = null;
     setNearBottom(true);
   }, [nearBottom, scheduleHide]);
 
   const releasePointer = useCallback(() => {
-    clearTimeout(hideTimer.current);
+    clearTimeout(hideTimer.current!);
     hideTimer.current = null;
     scheduleHide();
   }, [scheduleHide]);
 
-  useEffect(() => () => clearTimeout(hideTimer.current), []);
+  useEffect(() => () => clearTimeout(hideTimer.current!), []);
 
   return {
     shown: panelShouldShow({ canHover, hasScrolled, nearBottom, holdsFocus }),
@@ -440,7 +453,7 @@ function usePanelReveal() {
     onPointerGone: canHover ? releasePointer : undefined,
     onScrolled: useCallback(() => setHasScrolled(true), []),
     onFocusIn: useCallback(() => setHoldsFocus(true), []),
-    onFocusOut: useCallback((event) => {
+    onFocusOut: useCallback((event: FocusEvent<HTMLElement>) => {
       // A move between two controls inside the panel is not a departure.
       if (event.currentTarget.contains(event.relatedTarget)) return;
       setHoldsFocus(false);
@@ -461,7 +474,7 @@ function usePanelReveal() {
  * visibility is. `setVisible` is therefore called at most once per direction
  * reversal, never once per scroll event.
  */
-function useBarScrollVisibility({ scrollRef, enabled, frozen }) {
+function useBarScrollVisibility({ scrollRef, enabled, frozen }: { scrollRef: RefObject<HTMLElement | null>; enabled: boolean; frozen: boolean }) {
   const [visible, setVisible] = useState(true);
   const visibleRef = useRef(true);
   const previousTopRef = useRef(0);
@@ -518,13 +531,13 @@ function useBarScrollVisibility({ scrollRef, enabled, frozen }) {
  * `data-end`. Maths is taken whole: there is no offset inside `x²` that means
  * anything in `$x^2$`.
  */
-function anchorFromSelection(range, paragraphNode, paragraphText) {
+function anchorFromSelection(range: Range | null, paragraphNode: HTMLElement | null, paragraphText: string) {
   if (!range || !paragraphNode) return null;
   const normalizedParagraph = normalizeLatexText(paragraphText);
   let start = Infinity;
   let end = -Infinity;
 
-  for (const node of paragraphNode.querySelectorAll('[data-start]')) {
+  for (const node of paragraphNode.querySelectorAll<HTMLElement>('[data-start]')) {
     if (!range.intersectsNode(node)) continue;
     const nodeStart = Number(node.dataset.start);
     const nodeEnd = Number(node.dataset.end);
@@ -560,7 +573,7 @@ const KIND_LABELS = {
   en: { abstract: 'Abstract', intro: 'Introduction', background: 'Background', methods: 'Methods', results: 'Results', discussion: 'Discussion', conclusion: 'Conclusion', other: 'Section' },
 };
 
-export default function PaperReader({ paper, onClose, originRect = null, closeRef = null }) {
+export default function PaperReader({ paper, onClose, originRect = null, closeRef = null }: PaperReaderProps) {
   const { user, readingPreferences } = useAuth();
   const uid = user?.uid;
   const { trackEvent } = useAnalyticsConsent();
@@ -573,10 +586,10 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   const paragraphHintId = useId();
 
   const [level, setLevel] = useState(() => readingPreferences?.aiExplanationLevel ?? 'university');
-  const [sections, setSections] = useState([]);
-  const [meta, setMeta] = useState(null);
+  const [sections, setSections] = useState<Array<RewriteSection & { reveal?: boolean }>>([]);
+  const [meta, setMeta] = useState<ClientRewriteMeta | null>(null);
   const [status, setStatus] = useState('idle');
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<Pick<PaperRewriteError, 'code' | 'quota'> | null>(null);
   const [railOpen, setRailOpen] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
   // Which face the annotation sheet shows once open. Touch never gets a third
@@ -602,13 +615,13 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    * and never on a cache hit or a failure — so the reader asks for the number
    * itself and then keeps it up to date from whatever the stream reports.
    */
-  const [quota, setQuota] = useState(null);
+  const [quota, setQuota] = useState<ReaderQuota | null>(null);
   const [stage, setStage] = useState('source');
-  const abortRef = useRef(null);
+  const abortRef = useRef<AbortController | null>(null);
   // The reader's own scroll container, so a touch selection outside it (e.g.
   // in a dialog rendered elsewhere in the tree) is never mistaken for one of
   // its paragraphs.
-  const scrollRef = useRef(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   /**
    * The rewrite this reader has already asked for, keyed the way the rewrite
    * cache keys itself. The object arriving as `paper` is rebuilt upstream when
@@ -645,13 +658,13 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   useImperativeHandle(closeRef, () => requestClose, [requestClose]);
   // Where focus lands on open: the way back, as it always was
   // (`data-dialog-initial-focus`, now the popup's `initialFocus`).
-  const closeButtonRef = useRef(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const panel = usePanelReveal();
 
   const supportsRewrite = canRewritePaper(paper);
   const paperId = paper?.id || paper?.doi || paper?.arxivId || '';
 
-  const load = useCallback(async (targetLevel, { force = false } = {}) => {
+  const load = useCallback(async (targetLevel: string, { force = false } = {}) => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -688,7 +701,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
           // is the freshest count there is — fresher than what the reader asked
           // for when it opened.
           if (typeof nextMeta.remainingUses === 'number') {
-            setQuota(current => ({ dailyLimit: current?.dailyLimit ?? null, remainingUses: nextMeta.remainingUses }));
+            setQuota(current => ({ dailyLimit: current?.dailyLimit ?? null, remainingUses: nextMeta.remainingUses! }));
           }
         },
         // `reveal` is what separates a section that was just written from one
@@ -774,7 +787,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
 
   useEffect(() => {
     const query = window.matchMedia('(max-width: 1100px)');
-    const sync = (event) => setIsNarrow(event.matches);
+    const sync = (event: MediaQueryListEvent) => setIsNarrow(event.matches);
     query.addEventListener('change', sync);
     return () => query.removeEventListener('change', sync);
   }, []);
@@ -806,7 +819,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     return () => controller.abort();
   }, [uid]);
 
-  const noteQuota = useCallback((remainingUses) => {
+  const noteQuota = useCallback((remainingUses: number) => {
     setQuota(current => ({ dailyLimit: current?.dailyLimit ?? null, remainingUses }));
   }, []);
 
@@ -869,7 +882,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    * actions (2026-08-29 — the mobile reader is level + download), so nothing
    * wires this there.
    */
-  const handleSelection = useCallback((sectionId, paragraphIndex, paragraphText, paragraphNode) => {
+  const handleSelection = useCallback((sectionId: string, paragraphIndex: number, paragraphText: string, paragraphNode: HTMLElement) => {
     if (!uid) return;
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
@@ -886,8 +899,8 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       sectionId,
       paragraphIndex,
       quote: anchor.quote,
-      quoteStart: anchor.start,
-      quoteEnd: anchor.end,
+      quoteStart: (anchor as { start?: number }).start,
+      quoteEnd: (anchor as { end?: number }).end,
       context: paragraphText,
       anchor: {
         left: rect.left,
@@ -912,7 +925,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    * `handleSelection` is -- the 'menu' route, fine pointers, desktop -- for
    * the same reason its own comment gives.
    */
-  const handleParagraphKeyDown = useCallback((event, sectionId, paragraphIndex, paragraphText) => {
+  const handleParagraphKeyDown = useCallback((event: KeyboardEvent<HTMLParagraphElement>, sectionId: string, paragraphIndex: number, paragraphText: string) => {
     if (event.key !== 'Enter' || !uid) return;
     event.preventDefault();
     const normalized = normalizeLatexText(paragraphText);
@@ -936,7 +949,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   }, [beginAnnotation, uid]);
 
   /** The source text of a paragraph, by the ids its `<p>` carries. */
-  const paragraphTextFor = useCallback((sectionId, paragraphIndex) => {
+  const paragraphTextFor = useCallback((sectionId: string | undefined, paragraphIndex: number) => {
     const section = sections.find(item => String(item.id) === String(sectionId));
     const text = section?.paragraphs?.[paragraphIndex];
     return typeof text === 'string' ? text : null;
@@ -959,9 +972,9 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    */
   useEffect(() => {
     if (selectionRoute !== 'menu') return undefined;
-    const paragraphAround = (node) => {
-      const element = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
-      return element?.closest('.rd-p[data-section]') || null;
+    const paragraphAround = (node: Node | null) => {
+      const element = node?.nodeType === Node.ELEMENT_NODE ? node as Element : node?.parentElement;
+      return element?.closest<HTMLElement>('.rd-p[data-section]') || null;
     };
     const handleDocumentMouseUp = () => {
       const selection = window.getSelection();
@@ -973,7 +986,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       const paragraphIndex = Number(paragraph.dataset.paragraph);
       const text = paragraphTextFor(paragraph.dataset.section, paragraphIndex);
       if (text === null) return;
-      handleSelection(paragraph.dataset.section, paragraphIndex, text, paragraph);
+      handleSelection(paragraph.dataset.section!, paragraphIndex, text, paragraph);
     };
     document.addEventListener('mouseup', handleDocumentMouseUp);
     return () => document.removeEventListener('mouseup', handleDocumentMouseUp);
@@ -1136,14 +1149,14 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   }, [annotations.annotations, include, kindLabels, level, originalUrl, paper, sections, trackEvent]);
 
   const handleDownload = useCallback(
-    (format) => (format === 'pdf' ? downloadPdf() : downloadTex()),
+    (format: string) => (format === 'pdf' ? downloadPdf() : downloadTex()),
     [downloadPdf, downloadTex],
   );
 
   /** Where the passage is, said in the reader's own vocabulary: "Método · §2". */
-  const annotationLabel = useCallback((annotation) => {
+  const annotationLabel = useCallback((annotation: PassageAnnotation) => {
     const section = sections.find(item => String(item.id) === String(annotation.sectionId));
-    const kind = kindLabels[section?.kind] || kindLabels.other;
+    const kind = kindLabels[section?.kind as keyof typeof kindLabels] || kindLabels.other;
     return `${kind} · §${Number(annotation.paragraphIndex) + 1}`;
   }, [kindLabels, sections]);
 
@@ -1153,7 +1166,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    * it in the middle of the screen puts it under the reader's eyes. It used to
    * glow on arrival as well, which mostly fired when nobody had asked.
    */
-  const goToPassage = useCallback((annotation) => {
+  const goToPassage = useCallback((annotation: PassageAnnotation) => {
     const selector = `[data-section="${CSS.escape(String(annotation.sectionId))}"][data-paragraph="${Number(annotation.paragraphIndex)}"]`;
     const paragraph = scrollRef.current?.querySelector(selector);
     if (!paragraph) return;
@@ -1176,10 +1189,10 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    */
   const providerQuota = shownError === 'AI_QUOTA_EXHAUSTED' && error?.quota?.scope === 'provider';
   const isStreaming = shownStatus === 'streaming';
-  const errorCopy = ERROR_COPY.en[providerQuota ? 'AI_QUOTA_EXHAUSTED_PROVIDER' : shownError]
+  const errorCopy = ERROR_COPY.en[(providerQuota ? 'AI_QUOTA_EXHAUSTED_PROVIDER' : shownError) as keyof typeof ERROR_COPY.en]
     || ERROR_COPY.en.AI_UNAVAILABLE;
-  const errorTone = providerQuota ? 'wait' : (ERROR_TONES[shownError] || 'broken');
-  const canRetry = supportsRewrite && (providerQuota || !UNRETRYABLE_ERRORS.has(shownError));
+  const errorTone = providerQuota ? 'wait' : (ERROR_TONES[shownError as keyof typeof ERROR_TONES] || 'broken');
+  const canRetry = supportsRewrite && (providerQuota || !UNRETRYABLE_ERRORS.has(shownError!));
 
   // One truth for all the floating chrome. A rewrite in flight overrides the
   // scroll state: the streaming indicator lives on the bar, so the bar (and
@@ -1223,7 +1236,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
         // Single-select: the array carries at most one id, and it is empty
         // when the pressed level is pressed again — which is not a request
         // for no level at all, so it is ignored.
-        onValueChange={([next]) => { if (next) setLevel(next); }}
+        onValueChange={([next]) => { if (next) setLevel(next as ReadingLevel); }}
         aria-label={copy.level}
       >
         {PAPER_REWRITE_LEVELS.map(option => (
@@ -1325,7 +1338,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   // string, while there is no error: both consumers gate their own rendering
   // on this being truthy, so a stray string here would show a phantom.
   const askErrorText = annotations.error
-    ? (ANNOTATION_ERROR_COPY.en[annotations.error]
+    ? (ANNOTATION_ERROR_COPY.en[annotations.error as keyof typeof ANNOTATION_ERROR_COPY.en]
       || ANNOTATION_ERROR_COPY.en.AI_UNAVAILABLE)
     : null;
 
@@ -1395,9 +1408,9 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                   until you see how short the row is. Segments only while there are
                   few enough to count at a glance. */}
               {/* No meter where there is nothing to empty. */}
-              {!quota.unlimited && quota.dailyLimit > 0 && quota.dailyLimit <= 12 && (
+              {!quota.unlimited && quota.dailyLimit! > 0 && quota.dailyLimit! <= 12 && (
                 <span className="rd-uses-meter" aria-hidden="true">
-                  {Array.from({ length: quota.dailyLimit }, (_, index) => (
+                  {Array.from({ length: quota.dailyLimit! }, (_, index) => (
                     <i key={index} data-spent={index >= quota.remainingUses ? '' : undefined} />
                   ))}
                 </span>
@@ -1482,7 +1495,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             {coarsePointer && <span className="rd-doc-kicker"><Sparkle size={11} /> {copy.title}</span>}
             <h1 className="rd-doc-title" lang="en"><ScientificText>{paper?.title}</ScientificText></h1>
             <p className="rd-doc-byline">
-              {(paper?.authors || []).slice(0, 6).map(author => author?.name || author).join(', ')}
+              {(paper?.authors || []).slice(0, 6).map(author => (author as PaperAuthor)?.name || author).join(', ')}
               {(paper?.authors || []).length > 6 && ' et al.'}
               {paper?.year ? ` · ${paper.year}` : ''}
             </p>
@@ -1530,7 +1543,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                     data-reveal={section.reveal ? '' : undefined}
                   >
                     <div className="rd-section-head">
-                      <span className="rd-section-kind">{kindLabels[section.kind] || kindLabels.other}</span>
+                      <span className="rd-section-kind">{kindLabels[section.kind as keyof typeof kindLabels] || kindLabels.other}</span>
                       {section.originalHeading && (
                         <span className="rd-section-origin">{section.originalHeading}</span>
                       )}
@@ -1592,7 +1605,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                       {/* Keyed by stage so the label is remounted, and its own
                           entrance animation replays, on every change of stage —
                           "downloading" does not jump into "reading". */}
-                      <span key={stage} className="rd-ghost-stage">{copy.stages[stage] || copy.writing}</span>
+                      <span key={stage} className="rd-ghost-stage">{copy.stages[stage as keyof ReaderCopy['stages']] || copy.writing}</span>
                       <small>{sections.length > 0 ? `${sections.length} ${copy.sections}` : copy.writingHint}</small>
                     </p>
                     <AnimatePresence mode="wait">

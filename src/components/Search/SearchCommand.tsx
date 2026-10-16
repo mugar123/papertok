@@ -1,3 +1,5 @@
+import type { ComponentProps, MouseEvent } from 'react';
+import type { FollowInput } from '../../utils/following.ts';
 import { Children, cloneElement, useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -66,7 +68,7 @@ const SUGGESTIONS = [
 // searchRelevance's DEFAULT_SECTION_ORDER: a section the palette renders but
 // the ordering module has never heard of scores 99 and sinks to the bottom of
 // every search, silently.
-const SECTIONS = ['papers', 'authors', 'institutions', 'topics', 'projects'];
+const SECTIONS = ['papers', 'authors', 'institutions', 'topics', 'projects'] as const;
 
 /**
  * How far down the list the entrance cascade runs before every remaining row
@@ -87,7 +89,7 @@ const SECTION_ICONS = {
   projects: Briefcase,
 };
 
-function lastPathSegment(value) {
+function lastPathSegment(value: unknown) {
   return String(value || '').split('/').pop();
 }
 
@@ -98,7 +100,7 @@ function lastPathSegment(value) {
  * same grouping and destinations; what changes is that searching no longer
  * costs you your place in the feed.
  */
-export default function SearchCommand({ open, onOpenChange, finalFocus }) {
+export default function SearchCommand({ open, onOpenChange, finalFocus }: { open: boolean; onOpenChange: (open: boolean) => void; finalFocus?: ComponentProps<typeof CommandDialog>['finalFocus'] }) {
   const navigate = useNavigate();
   // Whether the palette is closing because a row was picked. Picking is not
   // dismissing: the reader is being answered, not getting out of the way, so
@@ -113,7 +115,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
     query, setQuery, results, totalResults,
     isPending, hasSearched, searchIssue, reset,
   } = useEntitySearch();
-  const [pendingEntity, setPendingEntity] = useState(null);
+  const [pendingEntity, setPendingEntity] = useState<string | undefined | null>(null);
 
   // Cleared on the way in, never on the way out. The palette stays mounted
   // between opens (App.jsx), so `open` turning false is the START of the exit,
@@ -135,7 +137,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
   }, [open, reset]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const go = useCallback((path, state = null) => {
+  const go = useCallback((path: string, state: object | null = null) => {
     setLeavingBySelect(true);
     onOpenChange(false);
     // Router state, when there is any: the public paper page paints a paper
@@ -144,7 +146,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
     navigate(path, state ? { state } : undefined);
   }, [navigate, onOpenChange]);
 
-  const follow = useCallback(async (event, entity) => {
+  const follow = useCallback(async (event: MouseEvent, entity: FollowInput) => {
     event.preventDefault();
     event.stopPropagation();
     setPendingEntity(entity.id);
@@ -178,7 +180,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
       .sort((left, right) => getSearchSectionOrder(left, preferred) - getSearchSectionOrder(right, preferred));
   }, [query, results]);
 
-  const renderFollow = (entity) => {
+  const renderFollow = (entity: FollowInput) => {
     const following = isFollowing(entity);
     const pending = isFollowPending(entity) || pendingEntity === entity.id;
     return (
@@ -214,7 +216,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
         <span className="sc-label">{paper.title}</span>
         <span className="sc-meta">
           {paper.year || ''}
-          {paper.citationCount > 0 ? ` · ${paper.citationCount} ${copy.citations}` : ''}
+          {paper.citationCount! > 0 ? ` · ${paper.citationCount} ${copy.citations}` : ''}
         </span>
       </CommandItem>
     )),
@@ -258,7 +260,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
       <CommandItem
         key={concept.id}
         value={`topic-${concept.id}`}
-        onSelect={() => go(`/explorer/topic/${encodeURIComponent(lastPathSegment(concept.id))}`, { entity: handoverFromSearchRow('topic', concept), entityType: 'topic' })}
+        onSelect={() => go(`/explorer/topic/${encodeURIComponent(lastPathSegment(concept.id)!)}`, { entity: handoverFromSearchRow('topic', concept), entityType: 'topic' })}
       >
         <Lightbulb size={14} className="sc-icon" />
         <span className="sc-label">{concept.display_name || concept.label}</span>
@@ -277,8 +279,8 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
         key={project.id}
         value={`project-${project.id}`}
         onSelect={() => go(
-          `/explorer/project/${encodeURIComponent(project.id)}`
-          + `?name=${encodeURIComponent(project.acronym || project.title)}`
+          `/explorer/project/${encodeURIComponent(project.id!)}`
+          + `?name=${encodeURIComponent((project.acronym || project.title)!)}`
           + `&funder=${encodeURIComponent(project.funder || '')}`,
         )}
       >

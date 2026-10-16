@@ -18,7 +18,7 @@ import { lateralTabDirection } from '../utils/tabDirection.ts';
  * leaving and mis-reporting `data-nav-direction` for the rest of the run. One
  * caller, one answer, handed down.
  */
-const PageTransitionCustomContext = createContext({ direction: 0, lateral: false });
+const PageTransitionCustomContext = createContext<ReturnType<typeof usePageTransitionCustom>>({ direction: 0, lateral: false });
 
 export const PageTransitionCustomProvider = PageTransitionCustomContext.Provider;
 

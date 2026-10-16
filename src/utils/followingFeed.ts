@@ -214,7 +214,7 @@ export function followingFirstLoadPending({ items = [], loading = false, lastUpd
  *
  * @param {{ items: Array|null, ordered: Array }} previous  what the page left last time
  */
-export function resumeOrderedPapers<T extends Partial<Paper>>(previous: { items?: T[]; ordered?: T[]; orderKeys?: string[] } | null, items: T[] = [], seenIds: Iterable<string> = new Set()) {
+export function resumeOrderedPapers<T extends Partial<Paper>>(previous: { items?: T[] | null; ordered?: T[]; orderKeys?: string[] } | null, items: T[] = [], seenIds: Iterable<string> = new Set()) {
   if (previous?.items === items && Array.isArray(previous?.ordered)) return previous.ordered;
   // The order still in memory wins; after a reload of the tab there is none,
   // and the keys the page stored on its way out rebuild it over the items

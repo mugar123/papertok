@@ -148,7 +148,7 @@ test('the card is born with whatever the figure cache already holds', async () =
   );
   assert.match(
     src,
-    /const \[figures, setFigures\] = useState\(\(\) => peekPaperFigures\(paper\)\?\.slice\(0, 4\) \?\? \[\]\)/,
+    /const \[figures, setFigures\] = useState(?:<[^;\n]+>)?\(\(\) => peekPaperFigures\(paper\)\?\.slice\(0, 4\) \?\? \[\]\)/,
     'the first render already has them; `useState([])` would arrive empty',
   );
 });

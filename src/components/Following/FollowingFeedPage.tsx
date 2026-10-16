@@ -1,3 +1,5 @@
+import type { ComponentProps } from 'react';
+import type { Paper } from '../../models/Paper.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BellRinging, Checks, MagnifyingGlass } from '@phosphor-icons/react';
@@ -33,7 +35,7 @@ function readStoredOrderKeys() {
   }
 }
 
-function writeStoredOrderKeys(keys) {
+function writeStoredOrderKeys(keys: string[]) {
   try {
     if (keys.length) sessionStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(keys));
     else sessionStorage.removeItem(ORDER_STORAGE_KEY);
@@ -53,10 +55,10 @@ function writeStoredOrderKeys(keys) {
 // The order the page left with, for the next mount to resume — module scope,
 // because the page is remounted on every visit and the feed the reader left
 // must be the feed they come back to (`resumeOrderedPapers`).
-const lastOrder = { items: null, ordered: [] };
+const lastOrder: { items: Paper[] | null; ordered: Paper[]; orderKeys?: string[] } = { items: null, ordered: [] };
 lastOrder.orderKeys = readStoredOrderKeys();
 
-export default function FollowingFeedPage({ onOpenPdf, onSaveToList }) {
+export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<ComponentProps<typeof FeedContainer>, 'onOpenPdf' | 'onSaveToList'>) {
   const navigate = useNavigate();
   const { followedEntities } = useFollowing();
   // Skip writes into this set (`markNotInterested`), and For You gets its

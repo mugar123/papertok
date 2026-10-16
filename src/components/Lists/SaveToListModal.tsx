@@ -1,3 +1,6 @@
+import type { ComponentProps, KeyboardEvent } from 'react';
+import type { Paper } from '../../models/Paper.ts';
+import type { OwnList } from '../../utils/ownLists.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { IS_DEMO, db } from '../../services/firebase.ts';
 import { savedPaperDocRef } from '../../services/savedPaperStore.ts';
@@ -59,13 +62,13 @@ const LISTS_WAITING = ['loading', 'slow', 'offline'];
 const LISTS_STOPPED = ['stalled', 'unavailable'];
 
 // Demo storage helpers
-function demoGet(key, fallback) {
+function demoGet<T>(key: string, fallback: T): T {
   try {
     const v = localStorage.getItem(`papertok_${key}`);
     return v ? JSON.parse(v) : fallback;
   } catch { return fallback; }
 }
-function demoSet(key, value) {
+function demoSet(key: string, value: unknown) {
   localStorage.setItem(`papertok_${key}`, JSON.stringify(value));
 }
 
@@ -85,7 +88,7 @@ function demoSet(key, value) {
  * creates an EMPTY list — the paper joins it on Save) and `handleSave`, and
  * they are defined last, after every write-free handler.
  */
-export default function SaveToListModal({ paper, onClose }) {
+export default function SaveToListModal({ paper, onClose }: { paper: Paper; onClose: () => void }) {
   const { user } = useAuth();
   const { language } = useLanguage();
   const { trackEvent, markActivation } = useAnalyticsConsent();
@@ -108,7 +111,7 @@ export default function SaveToListModal({ paper, onClose }) {
   // it. Membership is the one thing that is NOT cached — it is per paper, so
   // it is derived here from the cached lists.
   const seededLists = user?.uid
-    ? (ownListsCache.get(user.uid) ?? readStoredLists(user.uid))
+    ? (ownListsCache.get(user!.uid) ?? readStoredLists(user!.uid))
     : null;
   const seededMembership = useMemo(
     () => listsHolding(seededLists, paper.id),
@@ -137,21 +140,21 @@ export default function SaveToListModal({ paper, onClose }) {
   // with the account about; everything else follows the membership, however
   // late it lands. See saveOrganizeModel.js.
   const [initialListIds, setInitialListIds] = useState(() => new Set(seededMembership));
-  const [listIntent, setListIntent] = useState(EMPTY_LIST_INTENT);
+  const [listIntent, setListIntent] = useState<ReturnType<typeof toggleListIntent>>(EMPTY_LIST_INTENT);
 
   // Drafts are null until the user edits the field; while null, the field
   // shows the library baseline. This is what lets a library record that lands
   // AFTER the modal opens fill an untouched field — the old version seeded
   // once at mount, showed empty, and saving would have replaced a real note
   // with nothing.
-  const [noteDraft, setNoteDraft] = useState(null);
-  const [tagsDraft, setTagsDraft] = useState(null);
+  const [noteDraft, setNoteDraft] = useState<string | null>(null);
+  const [tagsDraft, setTagsDraft] = useState<string[] | null>(null);
   const [tagInput, setTagInput] = useState('');
-  const [readLaterDraft, setReadLaterDraft] = useState(null);
+  const [readLaterDraft, setReadLaterDraft] = useState<boolean | null>(null);
   // Lists created in this window, kept so a read issued before they existed —
   // including a late answer from patientRead's healing loop — cannot take them
   // back off the screen and out of the shared cache. See mergeCreatedLists.
-  const createdLists = useRef([]);
+  const createdLists = useRef<OwnList[]>([]);
 
   // The creation form stays folded behind its button until asked for.
   const [creatingList, setCreatingList] = useState(false);
@@ -215,7 +218,7 @@ export default function SaveToListModal({ paper, onClose }) {
     const controller = new AbortController();
 
     const fromDemo = () => {
-      const stored = demoGet('lists', []);
+      const stored = demoGet<OwnList[]>('lists', []);
       const inLists = new Set(stored
         .filter((list) => list.paperIds?.includes(paper.id))
         .map((list) => list.id));
@@ -224,13 +227,13 @@ export default function SaveToListModal({ paper, onClose }) {
 
     const fromFirestore = async () => readOwnLists(
       await getDocs(query(
-        collection(db, 'users', user.uid, 'lists'),
+        collection(db, 'users', user!.uid, 'lists'),
         limit(OWN_LISTS_PAGE_SIZE),
       )),
       paper.id,
     );
 
-    const apply = ({ lists: userLists, inLists, authoritative, cached = false }) => {
+    const apply = ({ lists: userLists, inLists, authoritative, cached = false }: { lists: OwnList[] | null; inLists: Set<string>; authoritative: boolean; cached?: boolean }) => {
       if (!active) return;
       if (!authoritative) {
         setListsStatus('unavailable');
@@ -240,7 +243,7 @@ export default function SaveToListModal({ paper, onClose }) {
       // answer can land minutes after the Create button was pressed. Merging
       // is what stops the snapshot from taking that list back off the screen
       // — and, worse, out of the shared cache stamped fresh on the next line.
-      const merged = mergeCreatedLists(userLists, createdLists.current);
+      const merged = mergeCreatedLists(userLists!, createdLists.current);
       setLists(merged);
       if (cached) reviseOwnLists(user?.uid, merged);
       else {
@@ -265,18 +268,18 @@ export default function SaveToListModal({ paper, onClose }) {
      * one `apply`, and no state set synchronously inside the effect.
      */
     const fromFreshCache = () => {
-      const cached = ownListsCache.get(user.uid);
+      const cached = ownListsCache.get(user!.uid);
       // `cached: true` is what stops `apply` from renewing the freshness
       // window with data it did not fetch — otherwise the window would keep
       // extending itself and the lists would never be re-read at all.
       return {
-        lists: cached, inLists: listsHolding(cached, paper.id),
+        lists: cached!, inLists: listsHolding(cached, paper.id),
         authoritative: true, cached: true,
       };
     };
     const readLists = IS_DEMO
       ? fromDemo
-      : (ownListsAreFresh(user.uid) ? fromFreshCache : fromFirestore);
+      : (ownListsAreFresh(user!.uid) ? fromFreshCache : fromFirestore);
 
     patientRead(readLists, {
       attempts: 3,
@@ -325,7 +328,7 @@ export default function SaveToListModal({ paper, onClose }) {
     setSaveError(false);
   };
 
-  const toggleListSelection = (listId) => {
+  const toggleListSelection = (listId: string) => {
     beginEdit();
     setListIntent((previous) => toggleListIntent(previous, listId, initialListIds));
   };
@@ -335,7 +338,7 @@ export default function SaveToListModal({ paper, onClose }) {
     setReadLaterDraft(!pendingReadLater);
   };
 
-  const editNote = (value) => {
+  const editNote = (value: string) => {
     beginEdit();
     setNoteDraft(value);
   };
@@ -350,12 +353,12 @@ export default function SaveToListModal({ paper, onClose }) {
     setTagInput('');
   };
 
-  const removePendingTag = (tag) => {
+  const removePendingTag = (tag: string) => {
     beginEdit();
     setTagsDraft(removeTag(tags, tag));
   };
 
-  const onTagInputKeyDown = (event) => {
+  const onTagInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter' || event.key === ',') {
       event.preventDefault();
       commitPendingTag();
@@ -416,7 +419,7 @@ export default function SaveToListModal({ paper, onClose }) {
   // a request to close, and the answer is never a direct close: the request
   // is refused (`cancel()`) and routed through the unsaved-changes guard, the
   // way the native dialog's `onCancel` was intercepted before.
-  const onCancel = (eventDetails) => {
+  const onCancel = (eventDetails: Parameters<NonNullable<ComponentProps<typeof Dialog>['onOpenChange']>>[1]) => {
     eventDetails.cancel();
     requestClose({ explicit: eventDetails.reason === 'close-press' });
   };
@@ -424,7 +427,7 @@ export default function SaveToListModal({ paper, onClose }) {
   // Once the exit has played. `onClose` unmounts this component (App.jsx), so
   // this is the single point from which the parent hears of a close, whatever
   // path asked for it.
-  const handleOpenChangeComplete = (nextOpen) => {
+  const handleOpenChangeComplete = (nextOpen: boolean) => {
     if (!nextOpen) onClose();
   };
 
@@ -433,7 +436,7 @@ export default function SaveToListModal({ paper, onClose }) {
   // The write, and only the write: CreateListDialog owns the form, the busy
   // state and the error. Letting this throw is what gives the owner a message —
   // it used to end at console.error, leaving an unchanged screen behind.
-  const handleCreateList = async (name, icon, color) => {
+  const handleCreateList = async (name: string, icon: string, color: string) => {
     const listId = `list_${Date.now()}`;
     // Created EMPTY: creating the list is this button's explicit act; the
     // paper joins it when Save commits the (auto-checked) selection.
@@ -443,11 +446,11 @@ export default function SaveToListModal({ paper, onClose }) {
     };
 
     if (IS_DEMO) {
-      const allLists = demoGet('lists', []);
+      const allLists = demoGet<OwnList[]>('lists', []);
       allLists.push(newList);
       demoSet('lists', allLists);
     } else {
-      const listRef = doc(db, 'users', user.uid, 'lists', listId);
+      const listRef = doc(db, 'users', user!.uid, 'lists', listId);
       await setDoc(listRef, newList);
     }
 
@@ -461,7 +464,7 @@ export default function SaveToListModal({ paper, onClose }) {
     // screen's shared view of the collection with an array of one.
     if (listsStatus === 'ready') {
       reviseOwnLists(user?.uid, mergeCreatedLists(lists, [newList]));
-      saveStoredLists(user?.uid, ownListsCache.get(user?.uid));
+      saveStoredLists(user?.uid, ownListsCache.get(user?.uid as string));
     }
     setListIntent((previous) => toggleListIntent(previous, listId, initialListIds));
   };
@@ -494,7 +497,7 @@ export default function SaveToListModal({ paper, onClose }) {
     setSaveError(false);
     try {
       if (IS_DEMO) {
-        const allLists = demoGet('lists', []);
+        const allLists = demoGet<OwnList[]>('lists', []);
         for (const list of allLists) {
           if (toAdd.includes(list.id)) {
             list.paperIds = [...new Set([...(list.paperIds || []), paper.id])];
@@ -506,7 +509,7 @@ export default function SaveToListModal({ paper, onClose }) {
         demoSet('lists', allLists);
         if (savesPaper) {
           markSaved(paper);
-          const allSaved = demoGet('savedPapersData', {});
+          const allSaved = demoGet<Record<string, Partial<Paper>>>('savedPapersData', {});
           allSaved[paper.id] = {
             title: paper.title, authors: paper.authors?.slice(0, 5),
             primaryCategory: paper.primaryCategory, published: paper.published,
@@ -532,7 +535,7 @@ export default function SaveToListModal({ paper, onClose }) {
          */
         if (savesPaper) {
           await setDoc(
-            savedPaperDocRef(user.uid, paper.id),
+            savedPaperDocRef(user!.uid, paper.id),
             buildSavedPaperPayload(paper, new Date().toISOString()),
             { merge: true },
           );
@@ -547,13 +550,13 @@ export default function SaveToListModal({ paper, onClose }) {
         // later visit that an edit happened here, so a sync lost to a closed
         // tab or a dead connection can still be found and replayed (P25).
         for (const listId of toAdd) {
-          await updateDoc(doc(db, 'users', user.uid, 'lists', listId), {
+          await updateDoc(doc(db, 'users', user!.uid, 'lists', listId), {
             paperIds: arrayUnion(paper.id),
             updatedAt: serverTimestamp(),
           });
         }
         for (const listId of toRemove) {
-          await updateDoc(doc(db, 'users', user.uid, 'lists', listId), {
+          await updateDoc(doc(db, 'users', user!.uid, 'lists', listId), {
             paperIds: arrayRemove(paper.id),
             updatedAt: serverTimestamp(),
           });
@@ -576,7 +579,7 @@ export default function SaveToListModal({ paper, onClose }) {
           if (!list?.publicShareId) continue;
           const added = toAdd.includes(listId);
           queuePublicListSync({
-            key: publicListSyncKey(user.uid, listId),
+            key: publicListSyncKey(user!.uid, listId),
             shareId: list.publicShareId,
             listId,
             title: list.name,
@@ -597,18 +600,18 @@ export default function SaveToListModal({ paper, onClose }) {
       // wrote, or reopening on the same paper would show the checkbox as it
       // was BEFORE the save — a worse lie than the spinner the cache removes.
       if (user?.uid) {
-        const cached = ownListsCache.get(user.uid);
+        const cached = ownListsCache.get(user!.uid);
         if (cached) {
           // `revise`, not `remember`: the lists were edited, not re-read, so
           // this must not renew the freshness window. A list created in this
           // window while the read had not landed is folded in here too, or the
           // membership just written would be recorded against a list the cache
           // has never heard of and silently dropped.
-          reviseOwnLists(user.uid, withPaperMembership(
+          reviseOwnLists(user!.uid, withPaperMembership(
             mergeCreatedLists(cached, createdLists.current), paper.id,
             { added: toAdd, removed: toRemove },
           ));
-          saveStoredLists(user.uid, ownListsCache.get(user.uid));
+          saveStoredLists(user!.uid, ownListsCache.get(user!.uid));
         }
       }
 
@@ -652,7 +655,7 @@ export default function SaveToListModal({ paper, onClose }) {
     notePlaceholder: 'Ideas, questions, or conclusions...',
     tags: 'Tags',
     tagPlaceholder: 'Type a tag and press Enter',
-    removeTagLabel: tag => `Remove ${tag}`,
+    removeTagLabel: (tag: string) => `Remove ${tag}`,
     exportCitation: 'Export citation',
     save: 'Save',
     saving: 'Saving...',
@@ -748,7 +751,7 @@ export default function SaveToListModal({ paper, onClose }) {
               <div className="save-modal-rows">
                 {lists.map((list) => {
                   const selected = pendingListIds.has(list.id);
-                  const Icon = getIcon(list.emoji);
+                  const Icon = getIcon(list.emoji!);
                   return (
                     <label key={list.id} className={`save-modal-row${selected ? ' is-selected' : ''}`}>
                       {/* The row is the label of its checkbox: the whole row
@@ -813,7 +816,7 @@ export default function SaveToListModal({ paper, onClose }) {
                 <Tag size={14} aria-hidden="true" /> {copy.tags}
               </span>
               <div className="save-modal-tag-editor">
-                {tags.map((tag) => (
+                {tags.map((tag: string) => (
                   <span key={tag} className="save-modal-tag-chip">
                     {tag}
                     <button

@@ -175,7 +175,7 @@ try {
   // No session storage: no diagnostics either.
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(
+ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     {/* Not a React transition. React Router 7 wraps each navigation's state
         update in `startTransition`, which renders in the background at low

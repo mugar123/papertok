@@ -1,3 +1,15 @@
+import type { MouseEventHandler, PropsWithChildren, ReactNode } from 'react';
+import type { Variants } from 'framer-motion';
+import type { Progress } from './ProgressDots.tsx';
+interface WelcomeAction { label: string; onClick?: MouseEventHandler<HTMLButtonElement> }
+interface WelcomeShellProps extends PropsWithChildren {
+  stepKey: string; direction: number; still?: boolean | null; leaving?: boolean;
+  onLeaveComplete?: () => void; className?: string; stageClassName?: string;
+  dots: Progress; primary: WelcomeAction & { form?: string; disabled?: boolean; busy?: boolean };
+  back?: WelcomeAction | null; skip?: WelcomeAction | null;
+  barAction?: ReactNode; backdrop?: ReactNode; landing?: boolean;
+  onStepShown?: (key: string) => void;
+}
 import { useCallback, useLayoutEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeft, ArrowRight, CaretDown, Check, SkipForward } from '@phosphor-icons/react';
@@ -50,8 +62,8 @@ const SUBTOPICS_SHOWN = 6;
 const SUBTOPICS_FOLD_MIN = SUBTOPICS_SHOWN + 3;
 
 const SUBTOPICS_COPY = {
-  topicsOf: area => `${area} topics`,
-  showMore: n => `Show ${n} more`,
+  topicsOf: (area: string) => `${area} topics`,
+  showMore: (n: number) => `Show ${n} more`,
   showLess: 'Show less',
 };
 
@@ -72,7 +84,7 @@ export function WelcomeShell({
   landing = false,
   onStepShown,
   children,
-}) {
+}: WelcomeShellProps) {
   // The heading of a screen takes focus when the reader moves to it, so a
   // screen reader starts reading the new screen and a keyboard user starts
   // tabbing from its top. Not on the first paint: that is the page loading,
@@ -80,11 +92,11 @@ export function WelcomeShell({
   // than each caller, because a new section mounting is exactly "the reader
   // moved"; comparing elements, not counting calls, keeps StrictMode's second
   // attach of the first section from counting as a move.
-  const shownSection = useRef(null);
-  const focusNewHeading = useCallback((section) => {
+  const shownSection = useRef<HTMLElement | null>(null);
+  const focusNewHeading = useCallback((section: HTMLElement | null) => {
     if (!section) return;
     if (shownSection.current && shownSection.current !== section) {
-      section.querySelector('.gw-title')?.focus({ preventScroll: true });
+      section.querySelector<HTMLElement>('.gw-title')?.focus({ preventScroll: true });
     }
     shownSection.current = section;
   }, []);
@@ -96,16 +108,16 @@ export function WelcomeShell({
   // Variants with `custom`, so the screen that is leaving reads the direction
   // of the move that is happening now — a prop captured when it last rendered
   // would send it out the way the PREVIOUS move went.
-  const stepVariants = still
+  const stepVariants: Variants = still
     ? {
       enter: { opacity: 1 },
       center: { opacity: 1 },
       exit: { opacity: 0, transition: { duration: 0 } },
     }
     : {
-      enter: (dir) => ({ opacity: 0, x: dir * 28 }),
+      enter: (dir: number) => ({ opacity: 0, x: dir * 28 }),
       center: { opacity: 1, x: 0, transition: { duration: 0.34, ease: [0.33, 1, 0.68, 1] } },
-      exit: (dir) => ({ opacity: 0, x: dir * -28, transition: { duration: 0.18, ease: [0.32, 0, 0.67, 0] } }),
+      exit: (dir: number) => ({ opacity: 0, x: dir * -28, transition: { duration: 0.18, ease: [0.32, 0, 0.67, 0] } }),
     };
 
   return (
@@ -212,7 +224,7 @@ export function WelcomeShell({
 
 // A screen's kicker, heading and optional lede. Every screen draws its h1
 // through this, so none ships without the heading the shell focuses.
-export function WelcomeCopy({ kicker, title, lede }) {
+export function WelcomeCopy({ kicker, title, lede }: { kicker?: ReactNode; title: ReactNode; lede?: ReactNode }) {
   return (
     <div className="gw-copy">
       {kicker && <p className="gw-kicker">{kicker}</p>}
@@ -224,7 +236,7 @@ export function WelcomeCopy({ kicker, title, lede }) {
 
 // The areas of the taxonomy as a grid of cards. `selected` is a Set of area
 // keys; `onToggle(key)` flips one; `label` names the group.
-export function AreaPicker({ selected, onToggle, label }) {
+export function AreaPicker({ selected, onToggle, label }: { selected: Set<string>; onToggle: (key: string) => void; label: string }) {
   return (
     <div className="gw-areas" role="group" aria-label={label}>
       {AREA_ENTRIES.map(([key, area], index) => (
@@ -257,7 +269,7 @@ export function AreaPicker({ selected, onToggle, label }) {
 // with its glyph. `selectedTopics` is a Set of subcategory ids and
 // `onToggleTopic(id)` flips one; `expandedAreas` is a Set of area keys whose
 // fold is open and `onToggleExpanded(key)` opens or closes one.
-export function SubtopicsPicker({ selectedAreas, selectedTopics, onToggleTopic, expandedAreas, onToggleExpanded }) {
+export function SubtopicsPicker({ selectedAreas, selectedTopics, onToggleTopic, expandedAreas, onToggleExpanded }: { selectedAreas: Set<string>; selectedTopics: Set<string>; onToggleTopic: (id: string) => void; expandedAreas: Set<string>; onToggleExpanded: (key: string) => void }) {
   return AREA_ENTRIES.filter(([key]) => selectedAreas.has(key)).map(([key, area], groupIndex) => {
     const areaLabel = area.label;
     const entries = Object.entries(area.subcategories);

@@ -41,7 +41,7 @@ export default function PrivacyPopover({ className = '' }) {
   // browser that refuses storage leaves it where it was; say so in words.
   // Cleared first: a live region speaks only when its text changes, so a
   // second refusal would otherwise go unheard.
-  const choose = async checked => {
+  const choose = async (checked: boolean) => {
     setSaveFailed(false);
     const saved = await updateConsent(checked ? ANALYTICS_CONSENT.GRANTED : ANALYTICS_CONSENT.DENIED);
     setSaveFailed(!saved);

@@ -15,9 +15,9 @@ import './EditInterestsModal.css';
  * the leave before the popup goes. The primitive also owns what this
  * overlay never had — a dialog role, `aria-modal`, the focus trap.
  */
-export default function EditInterestsModal({ isOpen, onClose }) {
+export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const { userPreferences, updatePreferences } = useAuth();
-  const [selected, setSelected] = useState(new Set());
+  const [selected, setSelected] = useState(new Set<string>());
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState('');
 
@@ -33,7 +33,7 @@ export default function EditInterestsModal({ isOpen, onClose }) {
     return undefined;
   }, [isOpen, userPreferences]);
 
-  const toggleSubcategory = (subKey) => {
+  const toggleSubcategory = (subKey: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(subKey)) {
@@ -45,7 +45,7 @@ export default function EditInterestsModal({ isOpen, onClose }) {
     });
   };
 
-  const toggleArea = (areaKey) => {
+  const toggleArea = (areaKey: string) => {
     const subKeys = Object.keys(CATEGORIES[areaKey].subcategories);
     const allSelected = subKeys.every(k => selected.has(k));
     

@@ -15,7 +15,7 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '').replac
  */
 test('a panel that hides nothing cannot be opened, so the reserved toggle never says "Show less"', async () => {
   const jsx = stripComments(await read('./PaperCard.tsx'));
-  assert.match(jsx, /const toggleExpanded = \(e, newState\) => \{\s*e\.stopPropagation\(\);\s*if \(newState && abstractClipped !== true\) return;/);
+  assert.match(jsx, /const toggleExpanded = \(e: SyntheticEvent, newState: boolean\) => \{\s*e\.stopPropagation\(\);\s*if \(newState && abstractClipped !== true\) return;/);
 });
 
 /**
@@ -26,9 +26,9 @@ test('a panel that hides nothing cannot be opened, so the reserved toggle never 
  */
 test('on a coarse pointer a clipped abstract opens the reading sheet instead of unfolding in the card', async () => {
   const jsx = stripComments(await read('./PaperCard.tsx'));
-  assert.match(jsx, /const coarsePointer = useMemo\(\(\) => \{\s*try \{ return window\.matchMedia\('\(pointer: coarse\)'\)\.matches; \} catch \{ return false; \}\s*\}, \[\]\);/);
+  assert.match(jsx, /const coarsePointer = useMemo(?:<[^;\n]+>)?\(\(\) => \{\s*try \{ return window\.matchMedia\('\(pointer: coarse\)'\)\.matches; \} catch \{ return false; \}\s*\}, \[\]\);/);
   assert.match(jsx, /const readsInSheet = coarsePointer && abstractClipped === true && !expanded;/);
-  assert.match(jsx, /const openAbstract = \(e\) => \{\s*if \(readsInSheet\) \{\s*e\.stopPropagation\(\);\s*setShowAbstractSheet\(true\);\s*return;\s*\}\s*toggleExpanded\(e, !expanded\);\s*\};/);
+  assert.match(jsx, /const openAbstract = \(e: SyntheticEvent\) => \{\s*if \(readsInSheet\) \{\s*e\.stopPropagation\(\);\s*setShowAbstractSheet\(true\);\s*return;\s*\}\s*toggleExpanded\(e, !expanded\);\s*\};/);
   assert.match(jsx, /className=\{`pc-abstract \$\{expanded[^`]*`\}\s*onClick=\{openAbstract\}/);
   assert.match(jsx, /className=\{`pc-abstract-toggle\$\{abstractClipped === true \|\| expanded \? '' : ' pc-abstract-toggle--reserved'\}`\}\s*aria-expanded=\{readsInSheet \? undefined : expanded\}\s*aria-haspopup=\{readsInSheet \? 'dialog' : undefined\}\s*aria-controls=\{readsInSheet \? undefined : abstractId\}\s*onClick=\{openAbstract\}/);
   assert.match(jsx, /\{showAbstractSheet && \(\s*<AbstractSheet paper=\{paper\} onClose=\{closeAbstractSheet\} \/>\s*\)\}/);

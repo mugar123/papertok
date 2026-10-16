@@ -1,7 +1,9 @@
+import type { StyledProps } from './props.ts';
+
 // GitHub's own mark, drawn in `currentColor` so it takes the ink of whatever
 // it sits in. The same path is inlined in LoginPage, AuthPrompt and
 // SettingsPage; this is the copy new code should import.
-export function GithubMark({ size = 19, className = '', ...props }) {
+export function GithubMark({ size = 19, className = '', ...props }: StyledProps<'svg'> & { size?: number | string }) {
   return (
     <svg
       className={className}

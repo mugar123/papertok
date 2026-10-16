@@ -39,7 +39,7 @@ test('the quiet window outlasts a snap and the deadline stays a few cards long',
 test('SOURCE: the deferred re-rank checks the hold before it runs, and the scroll report is its heartbeat', async () => {
   const code = stripComments(await read('../context/FeedContext.tsx'));
   assert.match(code, /import \{ reRankHoldMs \} from '\.\.\/utils\/feedReRankTiming\.ts';/);
-  assert.match(code, /const feedScrolledAtRef = useRef\(0\);/);
+  assert.match(code, /const feedScrolledAtRef = useRef(?:<[^;\n]+>)?\(0\);/);
   const report = code.slice(code.indexOf('const reportVisiblePaper = useCallback('), code.indexOf('}, []);', code.indexOf('const reportVisiblePaper = useCallback(')));
   assert.match(report, /feedScrolledAtRef\.current = Date\.now\(\);/, 'every scroll report stamps the heartbeat');
   const start = code.indexOf('const scheduleReRank = useCallback(');

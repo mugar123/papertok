@@ -92,7 +92,7 @@ export function guestFeedLoadDecision({ enabled, previousKey, planKey }: { enabl
   return { refresh: previousKey !== null };
 }
 
-export function useGuestFeed({ areas = [], topics = [], enabled = true }: { areas?: string[]; topics?: string[]; enabled?: boolean } = {}) {
+export function useGuestFeed({ areas = [], topics = [], enabled = true }: { areas?: readonly string[]; topics?: readonly string[]; enabled?: boolean } = {}) {
   const [papers, setPapers] = useState<Paper[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

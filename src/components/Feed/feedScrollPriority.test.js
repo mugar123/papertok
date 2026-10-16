@@ -39,7 +39,7 @@ function block(code, from, to, label) {
  */
 test('SOURCE: the scroll hands the active-card render to a transition', async () => {
   const code = stripComments(await read('./FeedContainer.tsx'));
-  const handler = block(code, 'const handleScroll = useCallback((event) => {', '}, [reportVisiblePaper', 'handleScroll');
+  const handler = block(code, 'const handleScroll = useCallback((event: UIEvent<HTMLDivElement>) => {', '}, [reportVisiblePaper', 'handleScroll');
 
   assert.match(handler, /startTransition\(\(\) => setActiveIndex\(index\)\)/,
     'the only state update a scroll event makes goes in at transition priority');

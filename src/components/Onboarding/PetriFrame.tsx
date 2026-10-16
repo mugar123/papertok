@@ -1,3 +1,10 @@
+import type { Key, PropsWithChildren, ReactNode, SVGProps } from 'react';
+export interface PetriProps { label?: string; className?: string }
+interface PetriFrameProps extends PropsWithChildren<PetriProps> {
+  defs?: ReactNode; behind?: ReactNode; bodyKey?: Key;
+  bodyProps?: SVGProps<SVGGElement>;
+  svgProps?: SVGProps<SVGSVGElement> & { 'data-private'?: boolean };
+}
 import { useId } from 'react';
 import './Petri.css';
 
@@ -7,7 +14,7 @@ export const BODY = 'M48 124c-14-20-4-56 30-58 26-2 40 18 38 36-1 12-3 20-6 22Z'
 export const ANTENNAE = 'M62 66l-4-8M78 62l-1-9M94 64l3-8';
 
 // Diagonal hatching: the dish's fill, and the flask's liquid.
-export function Hatch({ id, fill }) {
+export function Hatch({ id, fill }: { id: string; fill: string }) {
   return (
     <pattern id={id} width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
       <rect width="1.4" height="4" fill={fill} />
@@ -38,9 +45,9 @@ export default function PetriFrame({
   bodyKey,
   bodyProps,
   svgProps,
-}) {
+}: PetriFrameProps) {
   const hatch = useId();
-  const a11y = label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true, focusable: 'false' };
+  const a11y: SVGProps<SVGSVGElement> = label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true, focusable: 'false' };
   return (
     <svg viewBox="14 22 128 124" className={className ? `petri ${className}` : 'petri'} {...a11y} {...svgProps}>
       <defs>

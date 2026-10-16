@@ -1,7 +1,8 @@
 import type { PaperInstitution } from '../models/Paper.ts';
 
-export interface LocalizedInstitution extends PaperInstitution {
+export interface LocalizedInstitution extends Omit<PaperInstitution, 'display_name'> {
   name?: string;
+  display_name?: string | null;
   localized_names?: Record<string, string>;
   localizedNames?: Record<string, string>;
   metadata?: { localizedNames?: Record<string, string> };

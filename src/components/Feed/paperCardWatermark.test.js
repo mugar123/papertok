@@ -11,7 +11,7 @@ import { readFile } from 'node:fs/promises';
  * corner. The receding is right. Keying it on the mere EXISTENCE of
  * `.pc-figures` was not, for two reasons measured on 2026-09-07:
  *
- * 1. The clippings are fetched behind `isCardSettled` (PaperCard.jsx), 240ms
+ * 1. The clippings are fetched behind `isCardSettled` (PaperCard.tsx), 240ms
  *    after the card is reported visible, so `.pc-figures` can only ever mount
  *    with the card already on screen. And `.pc-figure:not(.is-loaded)` holds
  *    every clipping at `opacity: 0` until its picture arrives. So the glyph

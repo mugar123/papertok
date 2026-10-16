@@ -1,3 +1,5 @@
+import type { StyledProps } from './props.ts';
+
 import { Checkbox as CheckboxPrimitive } from '@base-ui/react/checkbox';
 import { Check, Minus } from '@phosphor-icons/react';
 import { cn } from '../../lib/utils.ts';
@@ -7,7 +9,7 @@ import { cn } from '../../lib/utils.ts';
  * renders a real button with `role="checkbox"` and a hidden input for
  * forms; `indeterminate` shows a dash instead of the tick.
  */
-function Checkbox({ className, ...props }) {
+function Checkbox({ className, ...props }: StyledProps<typeof CheckboxPrimitive.Root>) {
   return (
     <CheckboxPrimitive.Root
       data-slot="checkbox"

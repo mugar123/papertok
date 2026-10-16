@@ -21,7 +21,7 @@ test('the filter drawer is a ui Sheet from the right, named by its title, with n
   assert.match(jsx, /<SheetTitle render=\{<h3 \/>\}>/);
   assert.match(jsx, /<SheetClose\s+render=\{<Button variant="ghost" size="icon" \/>\}\s+aria-label=\{'Close filters'\}/);
   for (const resto of ['useDialogFocus', 'aria-modal=', 'role="dialog"', 'ee-filter-backdrop" onClick']) {
-    assert.ok(!jsx.includes(resto), `\`${resto}\` sigue en EntityExplorer.jsx: eso lo pone el Sheet`);
+    assert.ok(!jsx.includes(resto), `\`${resto}\` sigue en EntityExplorer.tsx: eso lo pone el Sheet`);
   }
   // The primitive stacks and animates both layers; a z-index here would fight it.
   const backdrop = css.match(/\.ee-filter-backdrop \{([^}]*)\}/);
@@ -59,7 +59,7 @@ test('the drawer\'s sort, category and date rows are single-select ToggleGroups 
 test('follow is a Toggle, peer-review a Switch in a Label, search an Input', async () => {
   const jsx = await jsxFile;
   const css = await cssFile;
-  // The shared Follow control (ui/follow-toggle.jsx, pinned in its own test).
+  // The shared Follow control (ui/follow-toggle.tsx, pinned in its own test).
   assert.match(jsx, /<FollowToggle\s+pressed=\{entityIsFollowing\}/);
   assert.doesNotMatch(jsx, /aria-pressed=/);
   assert.doesNotMatch(css, /\.entity-follow-btn/, 'the follow look lives in one stylesheet');

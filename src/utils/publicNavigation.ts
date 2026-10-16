@@ -1,9 +1,9 @@
 declare const window: { location?: { origin?: string } };
 
 import type { Paper } from '../models/Paper.ts';
-export interface ShareOptions { origin?: string; base?: string; includeName?: boolean; name?: string; paperKey?: string; }
+export interface ShareOptions { origin?: string; base?: string; includeName?: boolean; name?: string | null; paperKey?: string; }
 interface EntityInput { type?: string; id?: string; canonicalId?: string; code?: string; externalId?: string; displayName?: string; }
-type PaperInput = string | (Partial<Paper> & { paperId?: string; paperKey?: string; key?: string; externalIds?: { DOI?: string | null; ArXiv?: string | null } }) | null | undefined;
+type PaperInput = string | (Partial<Pick<Paper, 'id' | 'doi' | 'arxivId' | 'pmid'>> & { paperId?: string; paperKey?: string; key?: string; externalIds?: { DOI?: string | null; ArXiv?: string | null } }) | null | undefined;
 type ListInput = string | { shareId?: string; id?: string; token?: string } | null | undefined;
 
 import { encodeBase64Url, decodeBase64Url } from './base64Url.ts';

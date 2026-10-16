@@ -32,7 +32,7 @@ export function getLocalHiddenStorageKey(userId: string | null | undefined) {
   return `${LOCAL_HIDDEN_PREFIX}:${encodeURIComponent(userId)}`;
 }
 
-export function readSeenPaperIds(userId: string, storage?: Storage | null): Set<string> {
+export function readSeenPaperIds(userId: string | null | undefined, storage?: Storage | null): Set<string> {
   const key = getSeenPapersStorageKey(userId);
   const target = getStorage(storage);
   if (!key || !target) return new Set();
@@ -45,7 +45,7 @@ export function readSeenPaperIds(userId: string, storage?: Storage | null): Set<
   }
 }
 
-export function saveSeenPaperIds(userId: string, paperIds: Iterable<string>, storage?: Storage | null, limit = 500) {
+export function saveSeenPaperIds(userId: string | null | undefined, paperIds: Iterable<string>, storage?: Storage | null, limit = 500) {
   const key = getSeenPapersStorageKey(userId);
   const target = getStorage(storage);
   if (!key || !target) return;
@@ -151,7 +151,7 @@ export function readStoredLists(userId: string, storage?: Storage | null): OwnLi
   }
 }
 
-export function saveStoredLists(userId: string, lists: OwnList[], storage?: Storage | null, budgetBytes = OWN_LISTS_STORAGE_BUDGET_BYTES) {
+export function saveStoredLists(userId: string | undefined, lists: OwnList[] | null | undefined, storage?: Storage | null, budgetBytes = OWN_LISTS_STORAGE_BUDGET_BYTES) {
   const key = getOwnListsStorageKey(userId);
   const target = getStorage(storage);
   if (!key || !target || !Array.isArray(lists)) return;
@@ -258,7 +258,7 @@ export function removeLegacySeenPaperIds(storage?: Storage | null) {
   }
 }
 
-export function clearUserScopedStorage(userId: string, storage?: Storage | null) {
+export function clearUserScopedStorage(userId: string | undefined, storage?: Storage | null) {
   const target = getStorage(storage);
   if (!target || !userId) return;
   const encodedUserId = encodeURIComponent(userId);

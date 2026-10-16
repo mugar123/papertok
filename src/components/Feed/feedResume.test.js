@@ -21,7 +21,7 @@ function bounded(code, from, to, label, maxLines) {
  *
  * The place a feed was left at lived in three module-scope maps, which is
  * exactly what a reload of the tab throws away — and the tab reloads itself
- * when a lazy chunk is gone after a deploy (main.jsx). Coming back from the
+ * when a lazy chunk is gone after a deploy (main.tsx). Coming back from the
  * profile then opened the feed at the top and read as the whole feed
  * reloading. The memory now goes through utils/feedResumeMemory.js, which
  * writes through to sessionStorage once the scroll settles and seeds from it.
@@ -65,15 +65,15 @@ test('SOURCE: activeIndex is seeded from the resume anchor, not from a bare 0', 
   const code = stripComments(await read('./FeedContainer.tsx'));
   assert.match(
     code,
-    /function resumeAnchor\(papers, scrollKey\) \{\s*const saved = resumeMemory\.get\(scrollKey\);\s*return \{ saved, index: resumeIndex\(\{ papers, savedPaperId: saved\.paperId, savedIndex: saved\.index \}\) \};\s*\}/,
+    /function resumeAnchor\(papers: Paper\[\], scrollKey: string\) \{\s*const saved = resumeMemory\.get\(scrollKey\);\s*return \{ saved, index: resumeIndex\(\{ papers, savedPaperId: saved\.paperId, savedIndex: saved\.index \}\) \};\s*\}/,
     'one helper answers where the feed opens, by paper id first and the saved index only as a fallback',
   );
   assert.match(
     code,
-    /const \[activeIndex, setActiveIndex\] = useState\(\(\) => resumeAnchor\(papers, scrollKey\)\.index\);/,
+    /const \[activeIndex, setActiveIndex\] = useState(?:<[^;\n]+>)?\(\(\) => resumeAnchor\(papers, scrollKey\)\.index\);/,
     'the seed is the resume anchor',
   );
-  assert.doesNotMatch(code, /useState\(0\)/, 'no bare 0 seed may come back');
+  assert.doesNotMatch(code, /useState(?:<[^;\n]+>)?\(0\)/, 'no bare 0 seed may come back');
   // The mount window and the seed must take the SAME anchor: a window on
   // card N with activeIndex 0 is the defect, whichever of the two is wrong.
   assert.match(code, /const \{ saved, index \} = resumeAnchor\(papers, scrollKey\);\s*return initialMountWindow\(\{\s*total: papers\.length,\s*anchorIndex: index,/);

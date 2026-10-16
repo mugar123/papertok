@@ -1,3 +1,13 @@
+import type { PropsWithChildren } from 'react';
+export interface ThemeContextValue {
+  theme: 'light' | 'dark';
+  isDark: boolean;
+  followsSystem: boolean;
+  preference: 'light' | 'dark' | 'system';
+  toggleTheme: (origin?: HTMLElement | null) => void;
+  setPreference: (value: 'light' | 'dark' | 'system') => void;
+}
+
 /* eslint-disable react-refresh/only-export-components */
 import {
   useCallback,
@@ -34,14 +44,14 @@ import { runThemeSwitch } from '../utils/themeTransition.ts';
  * `setPreference('system')` forgets the stored choice, and the system decides
  * again, live.
  */
-export function ThemeProvider({ children }) {
+export function ThemeProvider({ children }: PropsWithChildren) {
   const [chosen, setChosen] = useState(readStoredTheme);
   const [systemDark, setSystemDark] = useState(systemPrefersDark);
 
   useEffect(() => {
     if (!window.matchMedia) return undefined;
     const query = window.matchMedia('(prefers-color-scheme: dark)');
-    const onChange = (event) => setSystemDark(event.matches);
+    const onChange = (event: MediaQueryListEvent) => setSystemDark(event.matches);
     query.addEventListener('change', onChange);
     return () => query.removeEventListener('change', onChange);
   }, []);
@@ -68,7 +78,7 @@ export function ThemeProvider({ children }) {
   }, [theme]);
 
   /** 'light' | 'dark' | 'system': the three-way choice. */
-  const setPreference = useCallback((next) => {
+  const setPreference = useCallback((next: 'light' | 'dark' | 'system') => {
     const target = next === 'system' ? (systemDark ? 'dark' : 'light') : next;
     runThemeSwitch(() => {
       applyTheme(target);
@@ -78,7 +88,7 @@ export function ThemeProvider({ children }) {
     });
   }, [systemDark]);
 
-  const value = useMemo(() => ({
+  const value = useMemo<ThemeContextValue>(() => ({
     theme,
     isDark: theme === 'dark',
     followsSystem: chosen === null,

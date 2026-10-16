@@ -31,7 +31,7 @@ export function systemPrefersDark() {
 }
 
 /** `light` | `dark` | null (follow the system). */
-export function readStoredTheme() {
+export function readStoredTheme(): 'light' | 'dark' | null {
   try {
     const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
     return stored === 'light' || stored === 'dark' ? stored : null;

@@ -1,3 +1,6 @@
+import type { StyledProps } from './props.ts';
+import type { VariantProps } from 'class-variance-authority';
+
 import { useContext } from 'react';
 import { Toggle as TogglePrimitive } from '@base-ui/react/toggle';
 import { ToggleGroup as ToggleGroupPrimitive } from '@base-ui/react/toggle-group';
@@ -15,7 +18,7 @@ import { toggleVariants } from './toggle-variants.ts';
  * (A single-select group reports `[]` when the pressed item is pressed
  * again; the caller decides whether "none" is allowed.)
  */
-function ToggleGroup({ className, size = 'default', variant = 'default', children, ...props }) {
+function ToggleGroup({ className, size = 'default', variant = 'default', children, ...props }: StyledProps<typeof ToggleGroupPrimitive> & VariantProps<typeof toggleVariants>) {
   return (
     <ToggleGroupPrimitive
       data-slot="toggle-group"
@@ -35,7 +38,7 @@ function ToggleGroup({ className, size = 'default', variant = 'default', childre
   );
 }
 
-function ToggleGroupItem({ className, children, variant, size, ...props }) {
+function ToggleGroupItem({ className, children, variant, size, ...props }: StyledProps<typeof TogglePrimitive> & VariantProps<typeof toggleVariants>) {
   const context = useContext(ToggleGroupContext);
   return (
     <TogglePrimitive

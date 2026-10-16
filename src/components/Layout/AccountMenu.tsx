@@ -1,3 +1,5 @@
+import type { AppUser } from '../../context/AuthContext.tsx';
+import type { ThemeContextValue } from '../../context/ThemeContext.tsx';
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Menu } from '@base-ui/react/menu';
@@ -32,7 +34,7 @@ const THEMES = [
 export const PAPERTOK_REPO_URL = 'https://github.com/mugar123/papertok';
 
 
-function Avatar({ photo, user, className = '' }) {
+function Avatar({ photo, user, className = '' }: { photo: string | null; user: AppUser; className?: string }) {
   return photo ? (
     <img
       src={photo}
@@ -45,7 +47,7 @@ function Avatar({ photo, user, className = '' }) {
     />
   ) : (
     <div className={`navbar-avatar navbar-avatar--fallback ${className}`} aria-hidden="true">
-      {user.email?.charAt(0).toUpperCase() || 'U'}
+      {user!.email?.charAt(0).toUpperCase() || 'U'}
     </div>
   );
 }
@@ -56,25 +58,25 @@ function Avatar({ photo, user, className = '' }) {
  * A sheet is a dialog, not a menu, so its entries are plain links, a radio
  * group and a button; the Drawer owns focus, Escape and swipe-to-dismiss.
  */
-function AccountSheet({ user, photo, preference, setPreference, onSignOut }) {
+function AccountSheet({ user, photo, preference, setPreference, onSignOut }: { user: AppUser; photo: string | null; onSignOut: () => void } & Pick<ThemeContextValue, 'preference' | 'setPreference'>) {
   const [open, setOpen] = useState(false);
-  const firstRow = useRef(null);
+  const firstRow = useRef<HTMLAnchorElement | null>(null);
   const close = () => setOpen(false);
 
   return (
     <Drawer open={open} onOpenChange={setOpen}>
       <DrawerTrigger className="navbar-avatar-btn" aria-label="Account menu" title="Account">
-        <Avatar photo={photo} user={user} />
+        <Avatar photo={photo} user={user!} />
       </DrawerTrigger>
       {/* Focus starts on the first entry, as the menu's does; the checked
           theme radio would otherwise take it, halfway down the sheet. */}
       <DrawerContent className="account-sheet" aria-label="Account menu" initialFocus={firstRow}>
         <DrawerHandle />
         <div className="account-sheet-head">
-          <Avatar photo={photo} user={user} className="account-sheet-avatar" />
+          <Avatar photo={photo} user={user!} className="account-sheet-avatar" />
           <div className="account-sheet-identity">
-            <strong>{user.displayName || 'PaperTok user'}</strong>
-            <span>{user.email}</span>
+            <strong>{user!.displayName || 'PaperTok user'}</strong>
+            <span>{user!.email}</span>
           </div>
         </div>
 
@@ -140,12 +142,12 @@ export default function AccountMenu() {
     navigate('/feed');
   };
 
-  const photo = profilePhoto || user.photoURL;
+  const photo = profilePhoto || user!.photoURL;
 
   if (isPhone) {
     return (
       <AccountSheet
-        user={user}
+        user={user!}
         photo={photo}
         preference={preference}
         setPreference={setPreference}
@@ -157,15 +159,15 @@ export default function AccountMenu() {
   return (
     <Menu.Root>
       <Menu.Trigger className="navbar-avatar-btn" aria-label="Account menu" title="Account">
-        <Avatar photo={photo} user={user} />
+        <Avatar photo={photo} user={user!} />
       </Menu.Trigger>
 
       <Menu.Portal>
         <Menu.Positioner className="account-menu-positioner" align="end" sideOffset={8}>
           <Menu.Popup className="account-menu">
             <div className="account-menu-head">
-              <strong>{user.displayName || 'PaperTok user'}</strong>
-              <span>{user.email}</span>
+              <strong>{user!.displayName || 'PaperTok user'}</strong>
+              <span>{user!.email}</span>
             </div>
 
 

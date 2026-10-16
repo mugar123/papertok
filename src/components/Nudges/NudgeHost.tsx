@@ -38,7 +38,7 @@ const THANKS_HOLD_MS = 600;
 const COPY = {
   en: {
     dismiss: 'Dismiss and do not show again',
-    starsLabel: count => `${count} ${count === 1 ? 'star' : 'stars'} on GitHub`,
+    starsLabel: (count: number) => `${count} ${count === 1 ? 'star' : 'stars'} on GitHub`,
     'open-source': {
       title: 'PaperTok is open source',
       body: 'MIT licensed. A star helps other people find it.',
@@ -71,8 +71,8 @@ export default function NudgeHost() {
   // still being resolved and a number-or-null once it is: the panel does not
   // appear until then, so the count travels with it and never lands late on a
   // reader's copy.
-  const [picked, setPicked] = useState(null);
-  const [stars, setStars] = useState(undefined);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [stars, setStars] = useState<number | null | undefined>(undefined);
   const [thanked, setThanked] = useState(false);
   // One per visit: flipped the moment the choice is made, so a re-render, a
   // navigation or the health request landing cannot start a second one. State
@@ -115,7 +115,7 @@ export default function NudgeHost() {
   useEffect(() => {
     if (picked !== 'open-source' || stars !== undefined) return undefined;
     let settled = false;
-    const reveal = (value) => {
+    const reveal = (value: number | null) => {
       if (settled || !aliveRef.current) return;
       settled = true;
       setStars(value);
@@ -133,7 +133,7 @@ export default function NudgeHost() {
     return () => window.clearTimeout(budget);
   }, [picked, stars]);
 
-  const close = useCallback((id) => {
+  const close = useCallback((id: string) => {
     setDismissed(rememberNudgeDismissal(id));
     setPicked(null);
     setThanked(false);
@@ -168,9 +168,9 @@ export default function NudgeHost() {
               <>
                 {copy['open-source'].title}
                 {stars !== null && (
-                  <span className="nudge-stars" aria-label={copy.starsLabel(stars)}>
+                  <span className="nudge-stars" aria-label={copy.starsLabel(stars!)}>
                     <Star size={11} weight="fill" aria-hidden="true" />
-                    {stars.toLocaleString(locale)}
+                    {stars!.toLocaleString(locale)}
                   </span>
                 )}
               </>
@@ -184,8 +184,8 @@ export default function NudgeHost() {
           <NudgePanel
             key="nudge-email-down"
             icon={<EnvelopeSimple size={19} />}
-            title={emailCopy.title}
-            body={emailCopy.body}
+            title={emailCopy!.title}
+            body={emailCopy!.body}
             action={{ label: copy['email-down'].cta, onClick: handleSettings }}
             dismissLabel={copy.dismiss}
             onDismiss={() => close('email-down')}

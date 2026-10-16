@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 /**
- * The two guest overlays are Base UI Dialogs (shadcn's `ui/dialog.jsx`).
+ * The two guest overlays are Base UI Dialogs (shadcn's `ui/dialog.tsx`).
  * What used to be hand-rolled — the focus trap, Escape, the scrim, the
  * enter/exit — is the primitive's, and these checks protect the invariants
  * that were pinned on the old implementation: the overlay is modal, its
@@ -21,11 +21,11 @@ const gipCss = readFile(new URL('./GuestInterestsPrompt.css', import.meta.url), 
 
 test('the sign-in prompt is a modal Base UI Dialog that owns its own open flag', async () => {
   const jsx = await authJsx;
-  assert.match(jsx, /from '\.\.\/ui\/dialog\.jsx'/);
+  assert.match(jsx, /from '\.\.\/ui\/dialog\.tsx'/);
   assert.match(jsx, /<Dialog\b[\s\S]*?\n\s*modal\n\s*>/, 'the dialog must stay modal: FeedContainer probes [aria-modal="true"]');
   assert.doesNotMatch(jsx, /useDialogFocus|framer-motion|aria-modal=/, 'the primitive owns focus, Escape and motion now');
-  // App.jsx mounts it only while open, so it starts open and closes itself.
-  assert.match(jsx, /useState\(true\)/);
+  // App.tsx mounts it only while open, so it starts open and closes itself.
+  assert.match(jsx, /useState(?:<[^;\n]+>)?\(true\)/);
   assert.match(jsx, /open=\{isOpen\}/);
   assert.match(jsx, /const isOpen = open && !user/, 'a session appearing is itself the close');
 });
@@ -66,7 +66,7 @@ test('the sign-in sheet keeps its look and leaves the centring to the primitive'
 
 test('the interests prompt is a modal Dialog and settles into one parent callback', async () => {
   const jsx = await gipJsx;
-  assert.match(jsx, /from '\.\.\/ui\/dialog\.jsx'/);
+  assert.match(jsx, /from '\.\.\/ui\/dialog\.tsx'/);
   // Edit-only now: the first answer is the welcome page's last step
   // (GuestWelcome), so this sheet always has an answer to change and every
   // way out stays open — the X, Escape, the scrim and Cancel.
@@ -76,7 +76,7 @@ test('the interests prompt is a modal Dialog and settles into one parent callbac
   assert.doesNotMatch(jsx, /useDialogFocus|framer-motion|aria-modal=/);
   // An answer and a dismissal both close the sheet first; the parent hears
   // one of them once the leave has played.
-  const settle = jsx.match(/const settle = \(isOpen\) => \{[\s\S]*?\n {2}\};/);
+  const settle = jsx.match(/const settle = \(isOpen: boolean\) => \{[\s\S]*?\n {2}\};/);
   assert.ok(settle, 'GuestInterestsPrompt lost settle()');
   assert.match(settle[0], /if \(answer\) onSubmit\?\.\(answer\);\s*else onDismiss\?\.\(\);/);
   assert.equal((jsx.match(/onDismiss\?\.\(\)/g) ?? []).length, 1);
@@ -86,7 +86,7 @@ test('the interests prompt is a modal Dialog and settles into one parent callbac
   assert.match(jsx, /closeLabel=\{copy\.close\}/);
   // The chips are the shared Toggle: a native button on which Base UI
   // writes `aria-pressed` and `data-pressed`; the CSS reads the attribute.
-  assert.match(jsx, /import \{ Toggle \} from '\.\.\/ui\/toggle\.jsx'/);
+  assert.match(jsx, /import \{ Toggle \} from '\.\.\/ui\/toggle\.tsx'/);
   assert.match(jsx, /<Toggle\s[\s\S]*?className="gip-area"\s+pressed=\{isSelected\}\s+onPressedChange=\{\(\) => toggle\(key\)\}/);
   assert.doesNotMatch(jsx, /aria-pressed=|is-selected/);
   const css = await gipCss;

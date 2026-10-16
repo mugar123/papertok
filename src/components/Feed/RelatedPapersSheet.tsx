@@ -1,3 +1,6 @@
+import type { CSSProperties } from 'react';
+import type { Paper, PaperAuthor } from '../../models/Paper.ts';
+import type { CitationGraph } from '../../services/citationGraphService.ts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
@@ -29,7 +32,7 @@ import { Drawer, DrawerClose, DrawerContent, DrawerTitle } from '../ui/drawer.ts
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs.tsx';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.tsx';
 
-const INITIAL_GRAPH = {
+const INITIAL_GRAPH: CitationGraph = {
   references: [],
   citations: [],
   counts: { references: 0, citations: 0 },
@@ -59,24 +62,24 @@ const WALK = { SETTLE: 40, LEAVE: 440, REVEAL: 1200, PLACEHOLDER: 320 };
 // missing or expired session is not a provider failure worth an «ahora».
 const SETTLED = new Set(['ready', 'empty', 'error', 'signin']);
 
-function formatCount(value, locale = 'es-ES') {
+function formatCount(value: unknown, locale = 'es-ES') {
   return new Intl.NumberFormat(locale).format(Math.max(0, Number(value) || 0));
 }
 
 /** The node label has room for one word: the first author's family name. */
-function nodeAuthorLabel(paper) {
+function nodeAuthorLabel(paper: Partial<Paper>) {
   const first = paper?.authors?.[0];
-  const name = String(first?.name || first || '').trim();
+  const name = String((first as PaperAuthor)?.name || first || '').trim();
   if (name) return name.split(/\s+/).pop();
   return String(paper?.title || '').split(/\s+/)[0] || '';
 }
 
-function shortTitle(title, max) {
+function shortTitle(title: unknown, max: number) {
   const text = String(title || '').trim();
   return text.length > max ? `${text.slice(0, max).trim()}…` : text;
 }
 
-function LoadingState({ label }) {
+function LoadingState({ label }: { label: string }) {
   return (
     <div className="related-state related-loading" role="status" aria-live="polite">
       <span className="visually-hidden">{label}</span>
@@ -101,22 +104,22 @@ function LoadingState({ label }) {
  * when a paper is waiting, `onClose` otherwise. The primitive also owns the
  * focus trap, Escape and the restore.
  */
-export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onSelectPaper }) {
+export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onSelectPaper }: { paper: Paper; onClose: () => void; onPreparePaper?: (paper: Paper) => unknown; onSelectPaper: (paper: Paper) => void }) {
   const { locale } = useLanguage();
   const { open, setOpen } = usePopupOpenOnMount();
   const hasGraphIdentifier = Boolean(getCitationGraphDoi(paper));
   const [mode, setMode] = useState(hasGraphIdentifier ? 'graph' : 'similar');
   const [view, setView] = useState('map');
-  const [trail, setTrail] = useState([paper]);
-  const [graphs, setGraphs] = useState({});
-  const [papers, setPapers] = useState([]);
+  const [trail, setTrail] = useState<Partial<Paper>[]>([paper]);
+  const [graphs, setGraphs] = useState<Record<string, { status: string; data?: CitationGraph }>>({});
+  const [papers, setPapers] = useState<Paper[]>([]);
   const [relatedStatus, setRelatedStatus] = useState(hasGraphIdentifier ? 'idle' : 'loading');
   const [isSelectionReady, setIsSelectionReady] = useState(false);
-  const [selectedPaperKey, setSelectedPaperKey] = useState(null);
-  const [focusedKey, setFocusedKey] = useState(null);
+  const [selectedPaperKey, setSelectedPaperKey] = useState<string | null>(null);
+  const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [box, setBox] = useState({ width: 0, height: 0 });
   const [phase, setPhase] = useState('idle');
-  const [travel, setTravel] = useState(null);
+  const [travel, setTravel] = useState<{ x: number; y: number; accent: string } | null>(null);
   const [hasTravelled, setHasTravelled] = useState(false);
   const [previousCenterX, setPreviousCenterX] = useState(0);
   const [hasSlid, setHasSlid] = useState(true);
@@ -124,11 +127,11 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
 
   const closingRef = useRef(false);
   const mountedRef = useRef(false);
-  const pendingSelectionRef = useRef(null);
-  const closeButtonRef = useRef(null);
-  const walkTimersRef = useRef([]);
+  const pendingSelectionRef = useRef<{ paper: Paper; key: string } | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const walkTimersRef = useRef<number[]>([]);
   const walkingRef = useRef(false);
-  const resizeRef = useRef(null);
+  const resizeRef = useRef<ResizeObserver | null>(null);
   const onCloseRef = useRef(onClose);
   const onPreparePaperRef = useRef(onPreparePaper);
   const onSelectPaperRef = useRef(onSelectPaper);
@@ -149,7 +152,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     };
   }, []);
 
-  const later = useCallback((ms, action) => {
+  const later = useCallback((ms: number, action: () => void) => {
     walkTimersRef.current.push(setTimeout(() => {
       if (mountedRef.current) action();
     }, ms));
@@ -178,10 +181,10 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     setOpen(false);
   }, [setOpen]);
 
-  const requestPaper = useCallback((relatedPaper, paperKey) => {
+  const requestPaper = useCallback((relatedPaper: Partial<Paper>, paperKey: string) => {
     if (closingRef.current) return;
-    onPreparePaperRef.current?.(relatedPaper);
-    pendingSelectionRef.current = { paper: relatedPaper, key: paperKey };
+    onPreparePaperRef.current?.(relatedPaper as Paper);
+    pendingSelectionRef.current = { paper: relatedPaper as Paper, key: paperKey };
     closingRef.current = true;
     setSelectedPaperKey(paperKey);
     setIsSelectionReady(true);
@@ -191,7 +194,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
   // The primitive has finished the exit — the parent hears of it here and
   // nowhere else. A paper chosen from the sheet is handed over; anything
   // else was a dismissal.
-  const handleOpenChangeComplete = useCallback((nextOpen) => {
+  const handleOpenChangeComplete = useCallback((nextOpen: boolean) => {
     if (nextOpen) return;
     if (pendingSelectionRef.current) finishSelection();
     else finishClose();
@@ -272,7 +275,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     return () => { cancelled = true; };
   }, [hasGraphIdentifier, paper]);
 
-  const measurePlot = useCallback((node) => {
+  const measurePlot = useCallback((node: HTMLDivElement | null) => {
     resizeRef.current?.disconnect();
     resizeRef.current = null;
     if (!node || typeof ResizeObserver === 'undefined') return;
@@ -307,7 +310,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     return all.find(entry => `list:${entry.key}` === focusedKey)?.paper || null;
   }, [focusedNode, listEntries, focusedKey]);
 
-  const appendToTrail = useCallback((next) => {
+  const appendToTrail = useCallback((next: Partial<Paper>) => {
     setTrail(previous => {
       const identity = getRelatedPaperIdentity(next);
       const seen = previous.findIndex(item => getRelatedPaperIdentity(item) === identity);
@@ -316,7 +319,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     });
   }, []);
 
-  const requestCentre = useCallback((targetPaper, origin, currentCenterX) => {
+  const requestCentre = useCallback((targetPaper: Partial<Paper>, origin: { x: number; y: number } | null, currentCenterX: number) => {
     if (walkingRef.current || closingRef.current) return;
     if (!getCitationGraphDoi(targetPaper)) return;
     walkTimersRef.current.forEach(clearTimeout);
@@ -351,7 +354,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     });
   }, [appendToTrail, later, prefersReducedMotion]);
 
-  const goBackTo = useCallback((index) => {
+  const goBackTo = useCallback((index: number) => {
     if (walkingRef.current) return;
     walkTimersRef.current.forEach(clearTimeout);
     walkTimersRef.current = [];
@@ -393,7 +396,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
    * `context` picks which count `shown` reports — the fetch, for the list
    * that draws all of it, or `layout.shown`, for the map that may not.
    */
-  const bandCaption = (relation, context = 'map') => {
+  const bandCaption = (relation: string, context = 'map') => {
     // Nothing is known until the neighbourhood lands, and "0 of 0" on both
     // bands is how a sheet that is merely waiting looks broken.
     if (graphStatus !== 'ready') return '—';
@@ -409,7 +412,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     return `${shown} most recent of ${totalLabel}`;
   };
 
-  const renderNode = (node) => {
+  const renderNode = (node: ReturnType<typeof buildCitationMapLayout>['nodes'][number]) => {
     const isFocused = focusedKey === node.key;
     const accent = areaAccentForPaper(node.paper);
     const descending = isArriving && getRelatedPaperIdentity(node.paper) === previousIdentity;
@@ -420,7 +423,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     else if (descending) classes.push(node.relation === 'reference' ? 'is-arriving-up' : 'is-arriving-down');
     else classes.push('is-entering');
 
-    const style = {
+    const style: CSSProperties = {
       top: `${node.y - node.rowHeight / 2}px`,
       height: `${node.rowHeight}px`,
       '--node-delay': `${node.delay}ms`,
@@ -492,7 +495,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
         </div>
         <strong className="graph-peek-title"><ScientificText>{peekPaper.title}</ScientificText></strong>
         <small className="graph-peek-authors">
-          {peekPaper.authors.slice(0, 4).map(author => author.name || author).join(', ')}
+          {peekPaper.authors!.slice(0, 4).map(author => (author as PaperAuthor).name || author).join(', ')}
         </small>
         <div className="graph-peek-actions">
           <button
@@ -683,7 +686,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
                 <span className="related-item-copy">
                   <strong><ScientificText>{related.title}</ScientificText></strong>
                   <small>
-                    {related.authors.slice(0, 2).map(author => author.name || author).join(', ')}
+                    {related.authors.slice(0, 2).map(author => (author as PaperAuthor).name || author).join(', ')}
                     {related.year ? ` · ${related.year}` : ''}
                     {related.citationCountKnown ? ` · ${related.citationCount} ${'citations'}` : ''}
                   </small>
@@ -871,7 +874,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
                 <span className="related-item-copy">
                   <strong><ScientificText>{related.title}</ScientificText></strong>
                   <small>
-                    {related.authors.slice(0, 2).map(author => author.name || author).join(', ')}
+                    {related.authors.slice(0, 2).map(author => (author as PaperAuthor).name || author).join(', ')}
                     {related.year ? ` · ${related.year}` : ''}
                     {related.citationCountKnown ? ` · ${related.citationCount} ${'citations'}` : ''}
                   </small>

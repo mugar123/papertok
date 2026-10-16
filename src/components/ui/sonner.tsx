@@ -1,3 +1,5 @@
+import type { ComponentProps, CSSProperties } from 'react';
+
 import { CheckCircle, CircleNotch, Info, Warning, XCircle } from '@phosphor-icons/react';
 import { Toaster as Sonner } from 'sonner';
 import { useTheme } from '../../context/ThemeContext.tsx';
@@ -9,7 +11,7 @@ import { useTheme } from '../../context/ThemeContext.tsx';
  * else calls `toast()` from 'sonner'. Sonner announces each toast to screen
  * readers through its own live region.
  */
-function Toaster(props) {
+function Toaster(props: ComponentProps<typeof Sonner>) {
   const { theme } = useTheme();
   return (
     <Sonner
@@ -27,7 +29,7 @@ function Toaster(props) {
         '--normal-text': 'var(--text-primary)',
         '--normal-border': 'var(--border-default)',
         '--border-radius': 'var(--radius-lg)',
-      }}
+      } as CSSProperties}
       toastOptions={{ style: { fontFamily: 'var(--font-body)' } }}
       {...props}
     />

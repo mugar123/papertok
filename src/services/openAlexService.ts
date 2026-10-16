@@ -8,7 +8,8 @@ type RequestOptions = { language?: string; signal?: AbortSignal | null; throwOnE
 type InstitutionOptions = RequestOptions & { openAlexJson?: (url: string, options: OpenAlexJsonOptions<OpenAlexPage<OpenAlexInstitution>>) => Promise<OpenAlexPage<OpenAlexInstitution>> };
 type WorksFilters = { peerReviewed?: boolean; category?: string; dateRange?: string };
 type ImpactPeriod = ReturnType<typeof getRecentImpactPeriod>;
-type RecentImpact = ReturnType<typeof calculateEntityRecentImpact> & {
+export type RecentImpact = Partial<ReturnType<typeof calculateEntityRecentImpact>> & {
+  available: boolean; sampleSize: number; minimumSampleSize: number;
   entityType?: string; openAlexId?: string; period: ImpactPeriod; source: string; sampled?: boolean;
   sampleAttempts?: number; cacheStatus?: string; cachedAt?: number; stale?: boolean; rateLimited?: boolean; reason?: string;
 };
@@ -513,7 +514,7 @@ function workUrlForReference(reference: ReturnType<typeof paperReferenceFor>) {
  * @param {string} paperRef
  * @returns {Promise<Object|null>}
  */
-export async function getAuthorProfileExact(authorName: string, paperRef: string): Promise<OpenAlexAuthor | null> {
+export async function getAuthorProfileExact(authorName: string, paperRef: string | null): Promise<OpenAlexAuthor | null> {
   if (!authorName) return null;
 
   const reference = paperReferenceFor(paperRef);
@@ -1395,7 +1396,7 @@ function recentImpactCacheTtl(impact: RecentImpact | null | undefined) {
   return impact?.available ? IMPACT_CACHE_TTL_MS : IMPACT_INSUFFICIENT_TTL_MS;
 }
 
-export async function getEntityRecentImpact(type: string, entityOrId: string | (Partial<OpenAlexInstitution> & { orcid?: string | null }), now = new Date()) {
+export async function getEntityRecentImpact(type: string, entityOrId: string | (Partial<OpenAlexInstitution> & { orcid?: string | null }), now = new Date()): Promise<RecentImpact | null> {
   const config = getRecentImpactConfig(type);
   if (!config || !entityOrId) return null;
   const period = getRecentImpactPeriod(now);

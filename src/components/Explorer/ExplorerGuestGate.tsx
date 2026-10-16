@@ -22,7 +22,7 @@ const COPY = {
   papers: {
     en: {
       kicker: 'Preview without an account',
-      title: total => (total ? `There are ${total} publications here` : 'The list keeps going'),
+      title: (total: string | null) => (total ? `There are ${total} publications here` : 'The list keeps going'),
       body: 'You are seeing the first two. An account opens the whole list, with its search and its filters.',
     },
   },
@@ -39,7 +39,7 @@ const CTA = {
   en: { cta: 'Sign up', foot: 'With Google or GitHub, without leaving this screen.' },
 };
 
-export default function ExplorerGuestGate({ kind = 'papers', total = null, onSignUp }) {
+export default function ExplorerGuestGate({ kind = 'papers', total = null, onSignUp }: { kind?: keyof typeof COPY; total?: number | null; onSignUp?: () => void }) {
   const { locale } = useLanguage();
   const lang = 'en';
   const copy = COPY[kind][lang];

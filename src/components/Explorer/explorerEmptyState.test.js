@@ -13,13 +13,13 @@ test('the empty state distinguishes an error, active filters and an unindexed pr
 });
 
 // `pickEmptyVariant` lives in its own module specifically so it stays pure
-// and independent of ExplorerEmptyState.jsx's component export — unlike
-// AuthContext.jsx and its siblings, nothing here forces the two to share a
+// and independent of ExplorerEmptyState.tsx's component export — unlike
+// AuthContext.tsx and its siblings, nothing here forces the two to share a
 // binding. A blanket `eslint-disable` for react-refresh/only-export-components
 // would silence that rule for the whole file, including any future export
 // the rule should genuinely catch. This guard is what stops the pragma (or
 // the re-export that justified it) from creeping back in.
-test('ExplorerEmptyState.jsx does not blanket-disable react-refresh/only-export-components', async () => {
+test('ExplorerEmptyState.tsx does not blanket-disable react-refresh/only-export-components', async () => {
   const source = await read('./ExplorerEmptyState.tsx');
   assert.doesNotMatch(source, /eslint-disable.*only-export-components/);
 });

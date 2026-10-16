@@ -1,3 +1,4 @@
+import type { RefObject } from 'react';
 import { useEffect, useRef } from 'react';
 
 // The welcome's stars: one four-point glint at a time fades up, turns and fades
@@ -6,10 +7,10 @@ import { useEffect, useRef } from 'react';
 const STARS_LAST_MS = 2800;
 const STAR_PATH = 'M12 0C12.8 7 17 11.2 24 12C17 12.8 12.8 17 12 24C11.2 17 7 12.8 0 12C7 11.2 11.2 7 12 0Z';
 
-export default function Stars({ avoid }) {
-  const sky = useRef(null);
+export default function Stars({ avoid }: { avoid: RefObject<HTMLElement | null> }) {
+  const sky = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    let timer;
+    let timer: number;
     const until = performance.now() + STARS_LAST_MS;
     const twinkle = () => {
       const delay = 500 + Math.random() * 1000;
@@ -34,7 +35,7 @@ export default function Stars({ avoid }) {
       path.setAttribute('d', STAR_PATH);
       star.append(path);
       Object.assign(star.style, { left: `${x - size / 2}px`, top: `${y - size / 2}px`, width: `${size}px`, height: `${size}px` });
-      sky.current.append(star);
+      sky.current!.append(star);
       star.animate([
         { opacity: 0, transform: 'scale(0.4) rotate(0deg)' },
         { opacity: 0.9, transform: 'scale(1) rotate(45deg)', offset: 0.4 },

@@ -72,10 +72,10 @@ test('the phone sheet rises from below and reduced motion still switches it off'
 test('closing the palette gives the focus back to whoever opened it', () => {
   // No Base UI Trigger opens the palette, so the dialog is told where to
   // return: App records the opener and the palette hands it to the popup.
-  assert.match(app, /const searchOpenerRef = useRef\(null\)/);
+  assert.match(app, /const searchOpenerRef = useRef(?:<[^;\n]+>)?\(null\)/);
   assert.match(app, /searchOpenerRef\.current = document\.activeElement instanceof HTMLElement/);
   assert.match(app, /<SearchCommand open=\{searchOpen\} onOpenChange=\{setSearchOpen\} finalFocus=\{searchOpenerRef\} \/>/);
-  assert.match(palette, /export default function SearchCommand\(\{ open, onOpenChange, finalFocus \}\)/);
+  assert.match(palette, /export default function SearchCommand\(\{ open, onOpenChange, finalFocus \}: \{ open: boolean; onOpenChange: \(open: boolean\) => void; finalFocus\?: ComponentProps<typeof CommandDialog>\['finalFocus'\] \}\)/);
   assert.match(palette, /<CommandDialog [^>]*finalFocus=\{finalFocus\}/);
   assert.match(command, /finalFocus=\{finalFocus\}/);
 });

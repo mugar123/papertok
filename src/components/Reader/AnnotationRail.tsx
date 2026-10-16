@@ -1,3 +1,15 @@
+import type { PointerEvent } from 'react';
+import type { ReaderCopy } from './PaperReader.tsx';
+import type { PassageAnnotation } from '../../hooks/usePassageAnnotations.ts';
+type RailAnnotation = PassageAnnotation;
+interface AnnotationRailProps {
+  surface?: 'rail' | 'sheet'; hidden?: boolean; expanded?: boolean; onToggle: () => void;
+  annotations: RailAnnotation[]; answerAt?: number | null;
+  counts: { notes: number; marks: number }; filter: string; onFilter: (filter: string) => void;
+  thinking: boolean; error?: boolean; errorText?: string;
+  onFocus: (annotation: RailAnnotation) => void; onRemove: (id: string) => void;
+  labelFor: (annotation: RailAnnotation) => string; copy: ReaderCopy;
+}
 import { useEffect, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { CaretUp, PencilLine, Sparkle, Trash, WarningCircle } from '@phosphor-icons/react';
@@ -43,7 +55,7 @@ export default function AnnotationRail({
   onRemove,
   labelFor,
   copy,
-}) {
+}: AnnotationRailProps) {
   const prefersReducedMotion = useReducedMotion();
 
   const isSheet = surface === 'sheet';
@@ -55,8 +67,8 @@ export default function AnnotationRail({
      neither the list nor the paper. The list's own box changes whenever its
      content crosses the cap, which is what the observer hears; the measure
      after every render covers content that grows under a list already capped. */
-  const listRef = useRef(null);
-  const measureOverflowRef = useRef(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const measureOverflowRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     const list = listRef.current;
     if (!list) return undefined;
@@ -87,7 +99,7 @@ export default function AnnotationRail({
   useEffect(() => {
     const list = listRef.current;
     if (!revealKey || !list) return;
-    const card = [...list.querySelectorAll('[data-reveal]')]
+    const card = [...list.querySelectorAll<HTMLElement>('[data-reveal]')]
       .find(node => node.dataset.reveal === revealKey);
     if (!card) return;
     const delta = revealScrollDelta(list.getBoundingClientRect(), card.getBoundingClientRect());
@@ -106,21 +118,21 @@ export default function AnnotationRail({
 
      The gesture is only ever read on the header, so it can never be confused
      with a scroll of the notes underneath. */
-  const railRef = useRef(null);
-  const dragRef = useRef(null);
+  const railRef = useRef<HTMLElement | null>(null);
+  const dragRef = useRef<{ pointerId: number; startY: number; lastY: number; lastTime: number; velocity: number; moved: number; travel: number } | null>(null);
   const suppressClickRef = useRef(false);
 
   /* Read from the DOM rather than tracked in state: the sheet's height depends
      on how many notes are in it, and a stale number would settle the gesture
      against a travel the sheet no longer has. */
-  const measureTravel = element => {
+  const measureTravel = (element: HTMLElement) => {
     const peek = Number.parseFloat(
       getComputedStyle(element).getPropertyValue('--rd-sheet-peek'),
     ) || 0;
     return Math.max(0, element.offsetHeight - peek);
   };
 
-  const handlePointerDown = event => {
+  const handlePointerDown = (event: PointerEvent<HTMLButtonElement>) => {
     if (!isSheet || (event.pointerType === 'mouse' && event.button !== 0)) return;
     const element = railRef.current;
     if (!element) return;
@@ -150,7 +162,7 @@ export default function AnnotationRail({
     }
   };
 
-  const handlePointerMove = event => {
+  const handlePointerMove = (event: PointerEvent<HTMLButtonElement>) => {
     const drag = dragRef.current;
     if (!drag || event.pointerId !== drag.pointerId) return;
 
@@ -168,11 +180,11 @@ export default function AnnotationRail({
     // behind or the header twitches every time it is pressed.
     if (drag.moved < SHEET_DRAG_SLOP) return;
     const element = railRef.current;
-    element.dataset.dragging = '';
-    element.style.transform = `translateY(${sheetDragOffset({ expanded, deltaY, travel: drag.travel })}px)`;
+    element!.dataset.dragging = '';
+    element!.style.transform = `translateY(${sheetDragOffset({ expanded, deltaY, travel: drag.travel })}px)`;
   };
 
-  const endDrag = (event, { cancelled = false } = {}) => {
+  const endDrag = (event: PointerEvent<HTMLButtonElement>, { cancelled = false } = {}) => {
     const drag = dragRef.current;
     if (!drag || event.pointerId !== drag.pointerId) return;
     dragRef.current = null;
@@ -385,7 +397,7 @@ export default function AnnotationRail({
       >
         {ANNOTATION_FILTERS.map(value => (
           <ToggleGroupItem key={value} value={value} className="rd-rail-filter">
-            {copy.filters[value]}
+            {copy.filters[value as keyof ReaderCopy['filters']]}
           </ToggleGroupItem>
         ))}
       </ToggleGroup>

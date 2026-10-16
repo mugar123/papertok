@@ -1,3 +1,6 @@
+import type { StyledProps } from './props.ts';
+import type { ComponentProps } from 'react';
+
 import { Dialog as SheetPrimitive } from '@base-ui/react/dialog';
 import { X } from '@phosphor-icons/react';
 import { cn } from '../../lib/utils.ts';
@@ -12,19 +15,19 @@ import { cn } from '../../lib/utils.ts';
  * animate `transform` — safe here because, unlike the centred Dialog, a
  * sheet is pinned to an edge with `inset-*`, never with `translate`.
  */
-function Sheet(props) {
+function Sheet(props: ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />;
 }
 
-function SheetClose(props) {
+function SheetClose(props: ComponentProps<typeof SheetPrimitive.Close>) {
   return <SheetPrimitive.Close data-slot="sheet-close" {...props} />;
 }
 
-function SheetPortal(props) {
+function SheetPortal(props: ComponentProps<typeof SheetPrimitive.Portal>) {
   return <SheetPrimitive.Portal data-slot="sheet-portal" {...props} />;
 }
 
-function SheetOverlay({ className, ...props }) {
+function SheetOverlay({ className, ...props }: StyledProps<typeof SheetPrimitive.Backdrop>) {
   return (
     <SheetPrimitive.Backdrop
       data-slot="sheet-overlay"
@@ -71,7 +74,7 @@ function SheetContent({
   closeLabel = 'Close',
   overlayClassName,
   ...props
-}) {
+}: StyledProps<typeof SheetPrimitive.Popup> & { side?: keyof typeof SIDE_CLASSES; showClose?: boolean; showCloseButton?: boolean; closeLabel?: string; overlayClassName?: string }) {
   const withClose = showCloseButton ?? showClose;
   return (
     <SheetPortal>
@@ -103,7 +106,7 @@ function SheetContent({
   );
 }
 
-function SheetTitle({ className, ...props }) {
+function SheetTitle({ className, ...props }: StyledProps<typeof SheetPrimitive.Title>) {
   return (
     <SheetPrimitive.Title
       data-slot="sheet-title"

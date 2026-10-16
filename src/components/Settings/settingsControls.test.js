@@ -13,10 +13,10 @@ const read = name => readFile(new URL(name, import.meta.url), 'utf8').then(strip
 
 test('deleting an account is confirmed in an AlertDialog that nothing dismisses while it works', async () => {
   const jsx = await read('./DeleteAccountDialog.tsx');
-  assert.match(jsx, /from '\.\.\/ui\/alert-dialog\.jsx'/);
+  assert.match(jsx, /from '\.\.\/ui\/alert-dialog\.tsx'/);
   assert.match(jsx, /<AlertDialog\s+open=\{open\}\s+onOpenChange=\{handleOpenChange\}\s+onOpenChangeComplete=\{\(isOpen\) => \{ if \(!isOpen\) onClose\(\); \}\}/);
   assert.doesNotMatch(jsx, /useDialogFocus|role="dialog"|aria-modal=/);
-  assert.match(jsx, /const handleOpenChange = \(nextOpen\) => \{\s*if \(working\) return;\s*setOpen\(nextOpen\);/);
+  assert.match(jsx, /const handleOpenChange = \(nextOpen: boolean\) => \{\s*if \(working\) return;\s*setOpen\(nextOpen\);/);
   assert.equal((jsx.match(/\bonClose\(\)/g) ?? []).length, 1, 'onClose reaches the parent from exactly one place');
   // The phrase field: shared Input under its Label, focused on arrival,
   // its error still associated.
@@ -29,14 +29,14 @@ test('deleting an account is confirmed in an AlertDialog that nothing dismisses 
 
 test('the interests editor is a modal Dialog with a named close and pressed chips', async () => {
   const jsx = await read('./EditInterestsModal.tsx');
-  assert.match(jsx, /from '\.\.\/ui\/dialog\.jsx'/);
+  assert.match(jsx, /from '\.\.\/ui\/dialog\.tsx'/);
   assert.match(jsx, /<Dialog open=\{isOpen\} onOpenChange=\{nextOpen => \{ if \(!nextOpen\) onClose\(\); \}\} modal>/);
   assert.match(jsx, /closeLabel=\{'Close'\}/);
   assert.doesNotMatch(jsx, /isClosing|setIsClosing|setTimeout\(\(\) => \{\s*onClose/, 'the exit timer is the primitive\'s now');
   // The chips are the shared Toggle: a native button on which Base UI
   // writes `aria-pressed` and `data-pressed`, so the pill's CSS reads the
   // attribute and no class mirrors the state by hand any more.
-  assert.match(jsx, /import \{ Toggle \} from '\.\.\/ui\/toggle\.jsx'/);
+  assert.match(jsx, /import \{ Toggle \} from '\.\.\/ui\/toggle\.tsx'/);
   assert.match(jsx, /<Toggle\s[\s\S]*?className="eim-pill"\s+pressed=\{isSelected\}\s+onPressedChange=\{\(\) => toggleSubcategory\(subKey\)\}/);
   assert.doesNotMatch(jsx, /aria-pressed=|eim-pill--selected/);
   // "Select all" per area is an action, not a state: it stays a plain button.
@@ -49,9 +49,9 @@ test('the interests editor is a modal Dialog with a named close and pressed chip
 
 test('the settings page uses the shared Switch and RadioGroup, and styles them off data-checked', async () => {
   const jsx = await read('./SettingsPage.tsx');
-  assert.match(jsx, /import \{ Switch \} from '\.\.\/ui\/switch\.jsx'/);
-  assert.match(jsx, /import \{ RadioGroup, RadioGroupItem \} from '\.\.\/ui\/radio-group\.jsx'/);
-  assert.match(jsx, /import \{ Button \} from '\.\.\/ui\/button\.jsx'/);
+  assert.match(jsx, /import \{ Switch \} from '\.\.\/ui\/switch\.tsx'/);
+  assert.match(jsx, /import \{ RadioGroup, RadioGroupItem \} from '\.\.\/ui\/radio-group\.tsx'/);
+  assert.match(jsx, /import \{ Button \} from '\.\.\/ui\/button\.tsx'/);
   assert.doesNotMatch(jsx, /role="switch"|role="radiogroup"|role="radio"|aria-checked/);
   assert.match(jsx, /<Switch\s+className="settings-toggle"[\s\S]*?aria-label=\{copy\.analyticsToggleLabel\}/);
   assert.match(jsx, /<RadioGroup\s+className="settings-levels"\s+aria-label=\{copy\.aiLevelLabel\}[\s\S]*?onValueChange=\{handleLevelChange\}/);

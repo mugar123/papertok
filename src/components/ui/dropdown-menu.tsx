@@ -1,3 +1,6 @@
+import type { StyledProps } from './props.ts';
+import type { ComponentProps } from 'react';
+
 import { Menu as MenuPrimitive } from '@base-ui/react/menu';
 import { cn } from '../../lib/utils.ts';
 
@@ -6,15 +9,15 @@ import { cn } from '../../lib/utils.ts';
  * Explorer's sort menu and anything else that lists commands. Not for a
  * tray of settings that are not commands — that is a Popover.
  */
-function DropdownMenu(props) {
+function DropdownMenu(props: ComponentProps<typeof MenuPrimitive.Root>) {
   return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
 }
 
-function DropdownMenuTrigger(props) {
+function DropdownMenuTrigger(props: ComponentProps<typeof MenuPrimitive.Trigger>) {
   return <MenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props} />;
 }
 
-function DropdownMenuContent({ align = 'start', alignOffset = 0, side = 'bottom', sideOffset = 6, className, ...props }) {
+function DropdownMenuContent({ align = 'start', alignOffset = 0, side = 'bottom', sideOffset = 6, className, ...props }: StyledProps<typeof MenuPrimitive.Popup> & Pick<ComponentProps<typeof MenuPrimitive.Positioner>, 'align' | 'alignOffset' | 'side' | 'sideOffset'>) {
   return (
     <MenuPrimitive.Portal>
       <MenuPrimitive.Positioner

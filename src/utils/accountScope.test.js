@@ -11,7 +11,7 @@ import {
  * These run the real sequences an auth session produces, in order, and assert on
  * the KEY the provider tree is mounted under — because that key is what decides
  * whether React keeps the subtree or destroys it. A test that only looked at the
- * expression in `App.jsx` would pass on a key that is spelled differently and
+ * expression in `App.tsx` would pass on a key that is spelled differently and
  * still flips.
  */
 
@@ -73,7 +73,7 @@ test('signing in after an anonymous visit remounts', () => {
 });
 
 /**
- * `AuthContext.jsx:82` raises `loading` again on EVERY auth emission, a token
+ * `AuthContext.tsx:82` raises `loading` again on EVERY auth emission, a token
  * refresh included, while `user` stays. Read as "the session is unknown again",
  * that would drop the account and re-adopt it — a remount per refresh, which is
  * the original bug on a longer clock.
@@ -89,7 +89,7 @@ test('a token refresh does not drop the account', () => {
 });
 
 /**
- * `AuthContext.jsx:82-83` raises `loading` and sets the user in the SAME block,
+ * `AuthContext.tsx:82-83` raises `loading` and sets the user in the SAME block,
  * and only clears it once the profile read settles — a cache miss then a network
  * read, up to `PROFILE_NETWORK_TIMEOUT_MS` (7000ms, :29). Adoption must key off
  * the user being there, not off that read finishing, or the tree spends the

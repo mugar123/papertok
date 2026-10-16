@@ -1,3 +1,6 @@
+import type { ChangeEvent, ComponentProps } from 'react';
+import type { Icon } from '@phosphor-icons/react';
+import type { ReadingLevel } from '../../utils/userSettings.ts';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
@@ -110,7 +113,7 @@ const SETTINGS_COPY = {
   readingAi: 'Reading & AI',
   readingAiDescription: 'Adjust the depth of your AI explanations.',
   aiLevelLabel: 'Default AI level, preselected when you ask AI to explain a paper',
-  levelSaved: label => ({ title: 'Explanation level set', description: `New AI explanations start at the ${label} level.` }),
+  levelSaved: (label: string) => ({ title: 'Explanation level set', description: `New AI explanations start at the ${label} level.` }),
   levelError: { title: 'Level not saved', description: 'Your previous level is still in use. Try again.' },
   notifications: 'Notifications',
   notificationsDescription: 'Choose whether to receive updates while PaperTok is closed.',
@@ -123,7 +126,7 @@ const SETTINGS_COPY = {
   analyticsHint: 'Counts pages and actions anonymously, without cookies; never your searches, papers, interests or account. Saved on the spot.',
   institution: 'University',
   institutionDescription: 'Verify where you study or work by signing in with your university\'s Google account.',
-  institutionLinked: name => `Verified with ${name}.`,
+  institutionLinked: (name: string) => `Verified with ${name}.`,
   link: 'Link',
   manage: 'Manage',
   institutionLink: 'Link your university',
@@ -140,26 +143,26 @@ const SETTINGS_COPY = {
   methodLinked: 'You can sign in with it.',
   methodUnlinked: 'Connect it and you can sign in with it as well as the way you sign in today.',
   connectShort: 'Connect',
-  connect: label => `Connect ${label}`,
-  connecting: label => `Connecting ${label}…`,
-  alreadyLinked: label => ({ title: 'Already connected', description: `You can sign in with ${label} now.` }),
-  linkSuccess: label => ({ title: `${label} connected`, description: 'Next time you can sign in with either one. Both open this same account.' }),
-  linkTaken: label => ({
+  connect: (label: string) => `Connect ${label}`,
+  connecting: (label: string) => `Connecting ${label}…`,
+  alreadyLinked: (label: string) => ({ title: 'Already connected', description: `You can sign in with ${label} now.` }),
+  linkSuccess: (label: string) => ({ title: `${label} connected`, description: 'Next time you can sign in with either one. Both open this same account.' }),
+  linkTaken: (label: string) => ({
     title: `That ${label} account is already in use`,
     description: `It opens a different PaperTok account. The two are not merged: sign in to that one if it is the account you want to keep, or connect a different ${label} account.`,
   }),
-  linkFailed: label => `${label} not connected`,
+  linkFailed: (label: string) => `${label} not connected`,
 };
 
 const copy = SETTINGS_COPY;
 
 
 // Errors stay until dismissed (ui/toast.js); successes leave on their own.
-const notify = (kind, { title, description }) => (kind === 'error'
+const notify = (kind: 'success' | 'error', { title, description }: { title: string; description: string }) => (kind === 'error'
   ? toastError(title, { description })
   : toast[kind](title, { description }));
 
-function SectionHeading({ id, title, description }) {
+function SectionHeading({ id, title, description }: { id: string; title: string; description?: string }) {
   return (
     <div className="settings-section-heading">
       <h2 id={id}>{title}</h2>
@@ -173,7 +176,7 @@ function SectionHeading({ id, title, description }) {
  * what it acts on; the accessible name repeats that subject, and starts with
  * the visible text so speech input can still reach it (WCAG 2.5.3).
  */
-function RowAction({ label, text = label, Icon, variant = 'outline', ...props }) {
+function RowAction({ label, text = label, Icon, variant = 'outline', ...props }: ComponentProps<typeof Button> & { label: string; text?: string; Icon: Icon }) {
   return (
     <Button variant={variant} size="sm" className="settings-row-action" aria-label={label === text ? undefined : label} {...props}>
       <Icon size={15} aria-hidden="true" />
@@ -182,7 +185,7 @@ function RowAction({ label, text = label, Icon, variant = 'outline', ...props })
   );
 }
 
-function emailStatus(preferences, health, loading) {
+function emailStatus(preferences: ReturnType<typeof useEmailNotifications>['preferences'], health: ReturnType<typeof useEmailNotifications>['health'], loading: boolean) {
   if (loading) {
     return {
       label: 'Checking',
@@ -213,12 +216,12 @@ function emailStatus(preferences, health, loading) {
 
 function ProfileAccountPage() {
   const navigate = useNavigate();
-  const profileInputRef = useRef(null);
+  const profileInputRef = useRef<HTMLInputElement | null>(null);
   const { language } = useLanguage();
   const { user, profilePhoto, updateProfilePhoto, signInProviders, linkSignInMethod, signOut, institution } = useAuth();
   const [savingPhoto, setSavingPhoto] = useState(false);
   // The method being connected, while its popup is open.
-  const [linking, setLinking] = useState(null);
+  const [linking, setLinking] = useState<string | null>(null);
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [institutionOpen, setInstitutionOpen] = useState(false);
 
@@ -229,7 +232,7 @@ function ProfileAccountPage() {
   const onlyMethod = [gitHubLinked, googleLinked].filter(Boolean).length === 1;
   const visibleProfilePhoto = profilePhoto || user?.photoURL;
 
-  const handlePhotoSelect = async (event) => {
+  const handlePhotoSelect = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file || savingPhoto) return;
@@ -259,7 +262,7 @@ function ProfileAccountPage() {
     }
   };
 
-  const handleLink = async (method) => {
+  const handleLink = async (method: { id: string; providerId: string; label: string }) => {
     setLinking(method.id);
     try {
       const result = await linkSignInMethod(method.providerId);
@@ -268,10 +271,10 @@ function ProfileAccountPage() {
       // The identity already opens a different uid. Two Firestore trees are
       // never merged behind somebody's back (03-AUTH.md), so the honest move
       // is to say so and let them decide which account they keep.
-      if (linkError?.code === 'AUTH_IDENTITY_TAKEN') {
+      if ((linkError as { code?: string } | null)?.code === 'AUTH_IDENTITY_TAKEN') {
         notify('error', copy.linkTaken(method.label));
-      } else if (linkError?.code === 'auth/popup-closed-by-user'
-        || linkError?.code === 'auth/cancelled-popup-request') {
+      } else if ((linkError as { code?: string } | null)?.code === 'auth/popup-closed-by-user'
+        || (linkError as { code?: string } | null)?.code === 'auth/cancelled-popup-request') {
         // Closing the popup is an answer, not a failure: nothing to say.
       } else {
         console.error(`Error linking ${method.label}:`, linkError);
@@ -291,7 +294,7 @@ function ProfileAccountPage() {
     navigate('/feed');
   };
 
-  const identityFor = providerId => {
+  const identityFor = (providerId: string) => {
     const info = user?.providerData?.find(entry => entry.providerId === providerId);
     return info?.email || info?.displayName || '';
   };
@@ -483,7 +486,7 @@ function DiscoveryPage() {
     return Object.entries(CATEGORIES)
       .map(([id, area]) => {
         const count = Object.keys(area.subcategories).filter(key => selected.has(key)).length;
-        return count > 0 ? { id, label: area.label, accent: area.gradient, count } : null;
+        return count > 0 ? { id, label: area!.label, accent: area.gradient, count } : null;
       })
       .filter(Boolean);
   }, [userPreferences]);
@@ -518,7 +521,7 @@ function DiscoveryPage() {
               <div className="settings-interest-summary settings-row-tags" role="group" aria-label={copy.selectedAreas}>
                 {/* Each area in its own field ink (design.md, rule 2). */}
                 {selectedAreas.map(area => (
-                  <span key={area.id} style={{ '--area-accent': area.accent }}>{area.label} <small>{area.count}</small></span>
+                  <span key={area!.id} style={{ '--area-accent': area!.accent }}>{area!.label} <small>{area!.count}</small></span>
                 ))}
               </div>
             )}
@@ -532,9 +535,9 @@ function DiscoveryPage() {
 
 function ReadingPage() {
   const { readingPreferences, updateReadingPreferences } = useAuth();
-  const [savingLevel, setSavingLevel] = useState(null);
+  const [savingLevel, setSavingLevel] = useState<string | null>(null);
 
-  const handleLevelChange = async (level) => {
+  const handleLevelChange = async (level: ReadingLevel) => {
     if (level === readingPreferences.aiExplanationLevel || savingLevel) return;
     setSavingLevel(level);
     try {
@@ -562,7 +565,7 @@ function ReadingPage() {
         aria-busy={Boolean(savingLevel)}
       >
         {PAPER_REWRITE_LEVELS.map(({ id }) => {
-          const { label, description, Icon } = LEVEL_DETAILS[id];
+          const { label, description, Icon } = LEVEL_DETAILS[id as ReadingLevel];
           const checked = readingPreferences.aiExplanationLevel === id;
           return (
             <RadioGroupItem
@@ -623,16 +626,16 @@ const PAGE_COMPONENTS = {
 export default function SettingsPage({ page = 'profile' }) {
   const activeIndex = Math.max(0, SETTINGS_PAGES.findIndex(entry => entry.slug === page));
   const active = SETTINGS_PAGES[activeIndex];
-  const Page = PAGE_COMPONENTS[active.slug];
+  const Page = PAGE_COMPONENTS[active.slug as keyof typeof PAGE_COMPONENTS];
   // Below 900px the rail is a sideways strip, and every page remounts it
   // scrolled to the start, which hid a later page's own tab past the edge.
   // Brought in just clear of the strip's fading edge (28px, SettingsPage.css).
-  const indexListRef = useRef(null);
+  const indexListRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
     const list = indexListRef.current;
-    const link = list?.querySelector('a.is-active');
+    const link = list?.querySelector<HTMLAnchorElement>('a.is-active');
     if (!link) return;
-    list.scrollLeft = Math.max(0, link.offsetLeft + link.offsetWidth - list.clientWidth + 28);
+    list!.scrollLeft = Math.max(0, link.offsetLeft + link.offsetWidth - list!.clientWidth + 28);
   }, [activeIndex]);
 
   // The tab keeps saying which page this is; restored on the way out so the

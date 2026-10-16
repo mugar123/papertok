@@ -28,7 +28,7 @@ import './ThemeToggle.css';
  */
 export default function ThemeToggle({ className = 'navbar-icon-btn' }) {
   const { isDark, toggleTheme } = useTheme();
-  const buttonRef = useRef(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
 
   const label = 'Dark mode';
 

@@ -18,7 +18,7 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/g
 test("the project is queried with the route's funder and keeps the route id", async () => {
   const src = stripComments(await read('./EntityExplorer.tsx'));
   assert.match(src, /getProjectDetails\(id, \{ funder \}\)/);
-  assert.match(src, /getPapersByProject\(resolvedId, page, \{ funder: searchParams\.get\('funder'\) \|\| entity\.funder \|\| '' \}\)/);
+  assert.match(src, /getPapersByProject\(resolvedId, page, \{ funder: searchParams\.get\('funder'\) \|\| entity!\.funder \|\| '' \}\)/);
   assert.match(src, /code: details\.id \|\| id,/);
   // Positive half of the pin above: the previous two assertions only prove
   // entity.id is not details.id, never that it IS the route id. Match the

@@ -1,3 +1,5 @@
+import type { HTMLAttributes, PropsWithChildren } from 'react';
+import type { HighlightInput, HighlightRange, HighlightMath } from '../../utils/textHighlights.ts';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { getKatex, loadKatex } from '../../utils/katexLoader.ts';
 import { displayProse, katexSource } from '../../utils/latex.ts';
@@ -24,8 +26,8 @@ import {
  * touch screens and macOS where the system scrollbar only shows mid-scroll,
  * and dragging the formula itself still scrolls it as usual.
  */
-function MathRun({ Tag, display, html, ...rest }) {
-  const scrollerRef = useRef(null);
+function MathRun({ Tag, display, html, ...rest }: HTMLAttributes<HTMLElement> & { Tag: 'span' | 'mark'; display: boolean; html: string }) {
+  const scrollerRef = useRef<HTMLElement | null>(null);
   // Same object across renders: React re-assigns `innerHTML` for a new one,
   // and this component re-renders on every scroll step — a fresh object would
   // rebuild the formula and throw it back to its start mid-drag.
@@ -75,7 +77,7 @@ function MathRun({ Tag, display, html, ...rest }) {
     };
   }, [measure, html, inlineWide]);
 
-  const scrollTo = value => {
+  const scrollTo = (value: number) => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
     scroller.scrollLeft = value;
@@ -148,7 +150,7 @@ function MathRun({ Tag, display, html, ...rest }) {
  * way a selection that touches a formula can be anchored at all (the rendered
  * maths shares no characters with the `$...$` it came from).
  */
-export default function HighlightedScientificText({ children, highlights = [] }) {
+export default function HighlightedScientificText({ children, highlights = [] }: PropsWithChildren<{ highlights?: HighlightInput[] }>) {
   const text = Array.isArray(children) ? children.join('') : children;
   const plan = buildHighlightPlan(text, highlights);
   const hasMath = plan.some(item => item.type === 'math');
@@ -179,14 +181,14 @@ export default function HighlightedScientificText({ children, highlights = [] })
             'data-proposed': item.proposed ? '' : undefined,
           }
           : {};
-        const markClassFor = kind => [
+        const markClassFor = (kind: string | null) => [
           'rd-mark',
           `rd-mark--${kind}`,
-          `rd-mark--${item.source}`,
-          item.pending ? 'rd-mark--pending' : '',
+          `rd-mark--${(item as Partial<HighlightRange>).source}`,
+          (item as Partial<HighlightRange>).pending ? 'rd-mark--pending' : '',
           // The model's underline goes on running under the reader's own mark
           // (utils/textHighlights.js keeps both and says which is beneath).
-          item.under?.includes('ai') && item.source !== 'ai' ? 'rd-mark--over-ai' : '',
+          (item as Partial<HighlightMath>).under?.includes('ai') && (item as Partial<HighlightRange>).source !== 'ai' ? 'rd-mark--over-ai' : '',
         ].filter(Boolean).join(' ');
 
         if (item.type === 'math') {

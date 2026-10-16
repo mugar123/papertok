@@ -1,7 +1,7 @@
 import type { Paper, PaperAuthor } from '../models/Paper.ts';
 import type { FollowEntity } from '../utils/following.ts';
-type NotificationPaper = Partial<Paper> & { publishedDate?: string };
-interface NotificationPreferences { enabled?: boolean; maxPapers?: number; frequency?: string; language?: string }
+type NotificationPaper = Partial<Paper>;
+export interface NotificationPreferences { enabled?: boolean; maxPapers?: number; frequency?: string; language?: string; email?: string; lastSentAt?: string | null; lastTestAt?: string | null }
 interface EmailHealth { configured?: boolean; available?: boolean; provider?: string; senderMode?: string; permissionLimited?: boolean; code?: string }
 
 import { auth } from './firebase.ts';
@@ -131,7 +131,7 @@ async function authenticatedRequest<T extends object>(path: string, options: Req
 }
 
 export async function getEmailNotificationPreferences() {
-  const payload = await authenticatedRequest<{ preferences: NotificationPreferences }>('/notifications/preferences');
+  const payload = await authenticatedRequest<{ preferences: Required<NotificationPreferences> }>('/notifications/preferences');
   return payload.preferences;
 }
 
@@ -184,7 +184,7 @@ export function buildNotificationPreferencesPayload(preferences: NotificationPre
 }
 
 export async function saveEmailNotificationPreferences(preferences: NotificationPreferences, follows: Partial<FollowEntity>[] = [], previewItems: NotificationPaper[] = []) {
-  const payload = await authenticatedRequest<{ preferences: NotificationPreferences }>('/notifications/preferences', {
+  const payload = await authenticatedRequest<{ preferences: Required<NotificationPreferences> }>('/notifications/preferences', {
     method: 'PUT',
     body: JSON.stringify(buildNotificationPreferencesPayload(preferences, follows, previewItems)),
   });
@@ -192,5 +192,5 @@ export async function saveEmailNotificationPreferences(preferences: Notification
 }
 
 export async function sendEmailNotificationTest() {
-  return authenticatedRequest('/notifications/test', { method: 'POST' });
+  return authenticatedRequest<{ ok: boolean; providerId: string | null; paperCount: number; followCount: number; preferences: Required<NotificationPreferences> }>('/notifications/test', { method: 'POST' });
 }

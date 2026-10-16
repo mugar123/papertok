@@ -225,7 +225,7 @@ test('the root document is the app itself, with no gate left to hop through', ()
   // index.html would fire before React and bounce every legacy link to a
   // second address for no reason.
   const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
-  assert.match(html, /<script type="module" src="\/src\/main\.jsx"><\/script>/, 'index.html must boot the app');
+  assert.match(html, /<script type="module" src="\/src\/main\.tsx"><\/script>/, 'index.html must boot the app');
   assert.doesNotMatch(html, /papertok_signed_in/, 'the landing gate is gone; nothing may read the session mark before the app boots');
   assert.doesNotMatch(html, /location\.replace/, 'no pre-React redirect may sit in the app\'s own document');
 });

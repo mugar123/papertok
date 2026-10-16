@@ -1,3 +1,4 @@
+import type { PetriProps } from './PetriFrame.tsx';
 import { useState } from 'react';
 import PetriFrame, { ANTENNAE } from './PetriFrame.tsx';
 
@@ -45,7 +46,7 @@ const LOOKS = {
 // (`level`). She rises in with the screen; a later pick slides her new look
 // in from that level's side (GuestWelcome.css). It stands where the screen's
 // kicker was, so it carries the kicker as its name (`label`).
-export default function PetriReading({ level = 'university', label, className }) {
+export default function PetriReading({ level = 'university', label, className }: PetriProps & { level?: keyof typeof LOOKS }) {
   const [shown, setShown] = useState(level);
   const [from, setFrom] = useState(0);
   if (shown !== level) {

@@ -1,3 +1,5 @@
+import type { StyledProps } from './props.ts';
+
 import { cn } from '../../lib/utils.ts';
 
 /**
@@ -5,7 +7,7 @@ import { cn } from '../../lib/utils.ts';
  * control's `id`, or wrap the control. Small, semibold Inter — a label is a
  * control's caption, not machine data, so it is not set in mono.
  */
-function Label({ className, ...props }) {
+function Label({ className, ...props }: StyledProps<'label'>) {
   return (
     <label
       data-slot="label"

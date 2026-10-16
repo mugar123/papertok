@@ -110,7 +110,7 @@ test('the recent-impact score settles in place once it is known', async () => {
 
 test('the list is loading from the first live frame, so the empty-state copy never flashes', async () => {
   const jsx = await read('./EntityExplorer.tsx');
-  assert.match(jsx, /const \[isLoadingPapers, setIsLoadingPapers\] = useState\(true\);/);
+  assert.match(jsx, /const \[isLoadingPapers, setIsLoadingPapers\] = useState(?:<[^;\n]+>)?\(true\);/);
   // Every entity load re-arms it: a new entity means a new papers request.
   assert.match(jsx, /async function loadEntity\(\) \{[\s\S]*?setIsLoadingPapers\(true\);[\s\S]*?if \(type === 'topic'/);
 });
@@ -122,15 +122,15 @@ test('the ORCID record and the impact score are requested together, declared bef
 
 test('a known ORCID keeps its loading slot and a deferred reset cannot clear its response', async () => {
   const jsx = stripComments(await read('./EntityExplorer.tsx'));
-  assert.match(jsx, /useState\(\(\) => type === 'author' && Boolean\(entity\?\.orcid \|\| extractOrcid\(id\)\)\)/);
-  assert.match(jsx, /setIsLoadingOrcid\(type === 'author' && Boolean\(bornWith\?\.orcid \|\| extractOrcid\(id\)\)\);/);
+  assert.match(jsx, /useState(?:<[^;\n]+>)?\(\(\) => type === 'author' && Boolean\(entity\?\.orcid \|\| extractOrcid\(id\)\)\)/);
+  assert.match(jsx, /setIsLoadingOrcid\(type === 'author' && Boolean\(\(bornWith as ExplorerEntity \| null\)\?\.orcid \|\| extractOrcid\(id\)\)\);/);
   // Guarded against the mount since 2026-09-18 (a resumed visit keeps its
   // tab); what it resets on an entity change is unchanged.
   const reset = jsx.match(/useEffect\(\(\) => \{\s*if \(resetForEntityRef\.current === visitKey\) return undefined;\s*resetForEntityRef\.current = visitKey;\s*const timer = setTimeout\(\(\) => \{\s*setSelectedPaper\(null\);([\s\S]*?)\}, \[type, id, visitKey\]\);/);
   assert.ok(reset, 'the overlay reset is cancellable');
   assert.doesNotMatch(reset[1], /setOrcidInfo|setIsLoadingOrcid|setIsExperienceOpen|setExperienceToggled/,
     'a fast ORCID response survives the next timer task');
-  assert.match(reset[1], /return \(\) => clearTimeout\(timer\);/);
+  assert.match(reset[1], /return \(\) => clearTimeout\(timer!\);/);
   assert.match(jsx, /setEntityError\('ENTITY_LOAD_FAILED'\);\s*setIsLoadingEntity\(false\);\s*setIsLoadingOrcid\(false\);/,
     'a failed entity refresh releases the waiting slot');
   const css = stripComments(await read('./EntityExplorer.css'));
@@ -174,7 +174,7 @@ test('the Wikipedia block arrives under the settle: its fold animates opacity on
  */
 test('the Wikipedia block opens once, and a re-lookup swaps its contents in place', async () => {
   const jsx = (await read('./EntityExplorer.tsx')).replace(/^\s*\/\/.*$/gm, '');
-  assert.match(jsx, /const \[wikiBlockOpened, setWikiBlockOpened\] = useState\(false\);/);
+  assert.match(jsx, /const \[wikiBlockOpened, setWikiBlockOpened\] = useState(?:<[^;\n]+>)?\(false\);/);
   // Adjusted during render — the documented way to derive state from a prop —
   // so the commit that settles with content is the one that opens the block.
   assert.match(
@@ -197,7 +197,7 @@ test('the Wikipedia block opens once, and a re-lookup swaps its contents in plac
  */
 test('the space the Wikipedia block leaves behind is closed by the settle, not dropped', async () => {
   const jsx = stripComments(await read('./EntityExplorer.tsx'));
-  assert.match(jsx, /const \[wikiFoldExits, setWikiFoldExits\] = useState\(0\);/);
+  assert.match(jsx, /const \[wikiFoldExits, setWikiFoldExits\] = useState(?:<[^;\n]+>)?\(0\);/);
   assert.match(jsx, /<AnimatePresence initial=\{false\} onExitComplete=\{\(\) => setWikiFoldExits\(\(n\) => n \+ 1\)\}>/);
   const deps = jsx.match(/useHeightSettle\(\s*heroBodyRef,\s*\[([^\]]*)\]/);
   assert.ok(deps, 'the settle declares what is worth a movement');
@@ -211,7 +211,7 @@ test('the experience panel grows into place when the ORCID record lands', async 
 
 test('switching tabs neither cancels nor repeats a papers request', async () => {
   const jsx = await read('./EntityExplorer.tsx');
-  assert.match(jsx, /const papersRequestRef = useRef\(null\);/);
+  assert.match(jsx, /const papersRequestRef = useRef<\{ key: string; cancelled: boolean \} \| null>\(null\);/);
   assert.match(jsx, /const requestKey = entityPapersRequestKey\(\{/);
   assert.match(jsx, /if \(papersRequestRef\.current\?\.key === requestKey && !papersRequestRef\.current\.cancelled\) return;/);
   const deps = jsx.match(/\n {2}\}, \[(afterPageArrival, type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, searchParams, papersReloadKey, entityReloadKey)\]\);/);
@@ -222,7 +222,7 @@ test('the authors list is requested on the first visit to its tab and kept from 
   const jsx = await read('./EntityExplorer.tsx');
   // Seeded from the visit memory since 2026-09-18 (explorerResume.test.js); a
   // first visit still starts closed.
-  assert.match(jsx, /const \[authorsOpened, setAuthorsOpened\] = useState\(\(\) => Boolean\(resumed\?\.authorsOpened\)\);/);
+  assert.match(jsx, /const \[authorsOpened, setAuthorsOpened\] = useState(?:<[^;\n]+>)?\(\(\) => Boolean\(resumed\?\.authorsOpened\)\);/);
   assert.match(jsx, /entity\._queryTopic \|\| !authorsOpened\) return;/);
   assert.match(jsx, /\}, \[type, id, entity, authorsPage, debouncedSearch, authorsOpened, authorsReloadKey\]\);/);
   assert.match(jsx, /onClick=\{\(\) => openTab\('authors'\)\}/);
@@ -248,8 +248,8 @@ test('the fold wrapper is a plain box now', async () => {
 
 test('the list mounts in idle chunks, rows below the fold are skipped, and the sentinel waits for the page', async () => {
   const jsx = await read('./EntityExplorer.tsx');
-  assert.match(jsx, /const \[rowBudget, setRowBudget\] = useState\(EXPLORER_ROW_CHUNK\);/);
-  assert.match(jsx, /const mountedPapers = useMemo\(\(\) => filteredPapers\.slice\(0, rowBudget\), \[filteredPapers, rowBudget\]\);/);
+  assert.match(jsx, /const \[rowBudget, setRowBudget\] = useState(?:<[^;\n]+>)?\(EXPLORER_ROW_CHUNK\);/);
+  assert.match(jsx, /const mountedPapers = useMemo(?:<[^;\n]+>)?\(\(\) => filteredPapers\.slice\(0, rowBudget\), \[filteredPapers, rowBudget\]\);/);
   assert.match(jsx, /const rowsSettled = rowBudget >= filteredPapers\.length;/);
   assert.match(jsx, /setRowBudget\(\(budget\) => nextExplorerRowBudget\(budget, filteredPapers\.length\)\)/);
   assert.match(jsx, /if \(page === 1\) \{\s*setIsLoadingPapers\(true\);\s*setPapersError\(null\);\s*setRowBudget\(EXPLORER_ROW_CHUNK\);/, 'a fresh page starts over at one chunk');
@@ -260,7 +260,7 @@ test('the list mounts in idle chunks, rows below the fold are skipped, and the s
   // `visiblePapers` es `mountedPapers` recortado para quien mira sin cuenta
   // (dos filas); con sesión es la misma lista, así que el troceado en ralentí
   // que este test defiende sigue siendo lo que decide qué se monta.
-  assert.match(jsx, /const visiblePapers = useMemo\(\(\) => guestPreviewRows\(mountedPapers, \{ publicMode \}\)/);
+  assert.match(jsx, /const visiblePapers = useMemo(?:<[^;\n]+>)?\(\(\) => guestPreviewRows\(mountedPapers, \{ publicMode \}\)/);
   assert.match(jsx, /visiblePapers\.map\(\(paper, idx\) => \(/);
   assert.match(jsx, /'--area-accent': rowAreas\[idx\]\.accent/, 'the field colour is derived once per list');
   const css = await read('./EntityExplorer.css');

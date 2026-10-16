@@ -1,3 +1,5 @@
+import type { StyledProps } from './props.ts';
+
 import { Tabs as TabsPrimitive } from '@base-ui/react/tabs';
 import { cn } from '../../lib/utils.ts';
 
@@ -12,7 +14,7 @@ import { cn } from '../../lib/utils.ts';
  * with the `--active-tab-*` variables it exposes, so it slides between
  * tabs with a transition and never needs measuring.
  */
-function Tabs({ className, orientation = 'horizontal', ...props }) {
+function Tabs({ className, orientation = 'horizontal', ...props }: StyledProps<typeof TabsPrimitive.Root>) {
   return (
     <TabsPrimitive.Root
       data-slot="tabs"
@@ -23,7 +25,7 @@ function Tabs({ className, orientation = 'horizontal', ...props }) {
   );
 }
 
-function TabsList({ className, variant = 'line', children, ...props }) {
+function TabsList({ className, variant = 'line', children, ...props }: StyledProps<typeof TabsPrimitive.List> & { variant?: 'line' | 'pill' }) {
   return (
     <TabsPrimitive.List
       data-slot="tabs-list"
@@ -50,7 +52,7 @@ function TabsList({ className, variant = 'line', children, ...props }) {
   );
 }
 
-function TabsTrigger({ className, ...props }) {
+function TabsTrigger({ className, ...props }: StyledProps<typeof TabsPrimitive.Tab>) {
   return (
     <TabsPrimitive.Tab
       data-slot="tabs-trigger"
@@ -71,7 +73,7 @@ function TabsTrigger({ className, ...props }) {
   );
 }
 
-function TabsContent({ className, ...props }) {
+function TabsContent({ className, ...props }: StyledProps<typeof TabsPrimitive.Panel>) {
   return <TabsPrimitive.Panel data-slot="tabs-content" className={cn('flex-1 outline-none', className)} {...props} />;
 }
 

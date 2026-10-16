@@ -19,15 +19,15 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '').replac
  */
 test('an entity page comes back as it was left: tab, authors, Wikipedia block and impact figure', async () => {
   const jsx = stripComments(await read('./EntityExplorer.tsx'));
-  assert.match(jsx, /const visitMemory = new Map\(\);/);
-  assert.match(jsx, /const resumed = useMemo\(\(\) => visitMemory\.get\(visitKey\) \|\| null, \[visitKey\]\);/);
+  assert.match(jsx, /const visitMemory = new Map(?:<[^;\n]+>)?\(\);/);
+  assert.match(jsx, /const resumed = useMemo(?:<[^;\n]+>)?\(\(\) => visitMemory\.get\(visitKey\) \|\| null, \[visitKey\]\);/);
   for (const seed of [
-    /useState\(\(\) => resumed\?\.wikiInfo \?\? null\)/,
-    /useState\(\(\) => resumed\?\.settledWikiRequestKey \?\? ''\)/,
-    /useState\(\(\) => resumed\?\.recentImpact \?\? null\)/,
-    /useState\(\(\) => resumed\?\.activeTab \?\? 'papers'\)/,
-    /useState\(\(\) => Boolean\(resumed\?\.authorsOpened\)\)/,
-    /useState\(\(\) => \(resumed && !resumed\.authorsSearch \? resumed\.entityAuthors : \[\]\)\)/,
+    /useState(?:<[^;\n]+>)?\(\(\) => resumed\?\.wikiInfo \?\? null\)/,
+    /useState(?:<[^;\n]+>)?\(\(\) => resumed\?\.settledWikiRequestKey \?\? ''\)/,
+    /useState(?:<[^;\n]+>)?\(\(\) => resumed\?\.recentImpact \?\? null\)/,
+    /useState(?:<[^;\n]+>)?\(\(\) => resumed\?\.activeTab \?\? 'papers'\)/,
+    /useState(?:<[^;\n]+>)?\(\(\) => Boolean\(resumed\?\.authorsOpened\)\)/,
+    /useState(?:<[^;\n]+>)?\(\(\) => \(resumed && !resumed\.authorsSearch \? resumed\.entityAuthors : \[\]\)\)/,
   ]) assert.match(jsx, seed);
   // The load effect keeps the seeded pieces on the mount that resumed, and only then.
   assert.match(jsx, /const resuming = resumedEntityRef\.current;\s*resumedEntityRef\.current = false;\s*if \(!resuming\) \{\s*setEntityAuthors\(\[\]\);\s*setWikiInfo\(null\);\s*setWikiBlockOpened\(false\);\s*\}/);
@@ -39,8 +39,8 @@ test('an entity page comes back as it was left: tab, authors, Wikipedia block an
   // And every seeded piece is written back as it changes.
   assert.match(jsx, /rememberVisit\(visitKey, \{\s*activeTab,\s*authorsOpened,\s*authorsSearch: debouncedSearch,\s*entityAuthors,\s*authorsPage,\s*hasMoreAuthors,\s*wikiInfo,\s*settledWikiRequestKey,\s*loadedWikiImageUrl,\s*isWikiDescriptionExpandable,\s*wikiDescriptionExpandedHeight,\s*isWikiDescriptionExpanded,\s*recentImpact,\s*\}\);/);
   // The read-more toggle is a measurement taken a frame after mount: seeded, or the block comes back 27px short for that frame.
-  assert.match(jsx, /useState\(\(\) => Boolean\(resumed\?\.isWikiDescriptionExpandable\)\)/);
-  assert.match(jsx, /useState\(\(\) => resumed\?\.wikiDescriptionExpandedHeight \?\? 0\)/);
+  assert.match(jsx, /useState(?:<[^;\n]+>)?\(\(\) => Boolean\(resumed\?\.isWikiDescriptionExpandable\)\)/);
+  assert.match(jsx, /useState(?:<[^;\n]+>)?\(\(\) => resumed\?\.wikiDescriptionExpandedHeight \?\? 0\)/);
   assert.match(jsx, /if \(!resuming\) \{\s*setIsWikiDescriptionExpanded\(false\);\s*setIsWikiDescriptionExpandable\(false\);\s*\}/);
   assert.match(jsx, /if \(visitMemory\.size > VISIT_MEMORY_MAX\)/);
 });
@@ -55,7 +55,7 @@ test('an entity page comes back as it was left: tab, authors, Wikipedia block an
 test('an author card hands its row over, so the author page is born with a name and counts', async () => {
   const jsx = stripComments(await read('./EntityExplorer.tsx'));
   assert.match(jsx, /import \{ handedEntityFor, handoverFromSearchRow \} from '\.\.\/\.\.\/utils\/explorerHandover\.ts';/);
-  assert.match(jsx, /const navigateToEntity = useCallback\(\(nextType, nextId, handover = null\) => \{/);
+  assert.match(jsx, /const navigateToEntity = useCallback(?:<[^;\n]+>)?\(\(nextType: string, nextId: string, handover: HandoverEntity \| null = null\) => \{/);
   assert.match(jsx, /const entityForNext = handover \? handoverFromSearchRow\(nextType, handover\) : null;/);
   assert.match(jsx, /entityForNext \? \{ state: \{ entity: entityForNext, entityType: nextType \} \} : undefined/);
   assert.match(jsx, /onClick=\{\(\) => navigateToEntity\('author', author\.id, author\)\}/);

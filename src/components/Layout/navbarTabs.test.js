@@ -27,7 +27,7 @@ const stripCssComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '');
 function linksRow(jsx) {
   const start = jsx.indexOf('className="navbar-links"');
   const end = jsx.indexOf('className="navbar-right"');
-  assert.ok(start > 0 && end > start, 'the links row and the right-hand actions must both be in Navbar.jsx');
+  assert.ok(start > 0 && end > start, 'the links row and the right-hand actions must both be in Navbar.tsx');
   return jsx.slice(start, end);
 }
 
@@ -161,7 +161,7 @@ test('SOURCE: a finger that lifts on the tab it pressed navigates without waitin
   // And the click that the system may still synthesise is swallowed, or
   // react-router pushes the same route twice and Back needs two presses.
   assert.match(jsx, /handledRef\.current = Date\.now\(\);/);
-  assert.match(jsx, /const swallowSynthesisedClick = \(event\) => \{[\s\S]*?event\.preventDefault\(\);/);
+  assert.match(jsx, /const swallowSynthesisedClick = \(event: MouseEvent<HTMLAnchorElement>\) => \{[\s\S]*?event\.preventDefault\(\);/);
   // The pressed tab is only navigated when it is not the one already current.
   assert.match(jsx, /if \(pathname !== to\) navigate\(to\);/);
 });

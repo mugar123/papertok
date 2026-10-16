@@ -4,7 +4,7 @@ interface AccessOperations { request?: typeof authenticatedWorkerFetch; apiBase?
 interface AccessPayload { code?: string; status?: string; url?: unknown; collection?: unknown }
 interface ServicesPayload { code?: string; services?: Array<Record<string, unknown>>; unchecked?: number; partial?: boolean }
 type InstitutionAccess = NonNullable<ReturnType<typeof normalizeInstitutionAccess>>;
-type ServicesAnswer = NonNullable<ReturnType<typeof normalizeInstitutionServices>> | typeof UNSUPPORTED_SERVICES;
+type ServicesAnswer = (NonNullable<ReturnType<typeof normalizeInstitutionServices>> & { unsupported?: false }) | (typeof UNSUPPORTED_SERVICES & { unchecked?: never });
 
 /**
  * Whether the reader's linked institution gives access to a paper's published
@@ -198,7 +198,7 @@ function servicesDomain(institution: InstitutionInput | null | undefined) {
  * when it would have to ask. A view that opens on the list paints it on its
  * first frame from here instead of growing a frame later.
  */
-export function knownInstitutionServices(institution: InstitutionInput | null | undefined) {
+export function knownInstitutionServices(institution: InstitutionInput | null | undefined): ServicesAnswer | undefined {
   const domain = servicesDomain(institution);
   if (!domain) return undefined;
   if (unsupportedDomains.has(domain)) return UNSUPPORTED_SERVICES;
@@ -206,7 +206,7 @@ export function knownInstitutionServices(institution: InstitutionInput | null | 
   return cached && Date.now() < cached.expiresAt ? cached.answer : undefined;
 }
 
-export function findInstitutionServices(institution: InstitutionInput | null | undefined, overrides?: AccessOperations) {
+export function findInstitutionServices(institution: InstitutionInput | null | undefined, overrides?: AccessOperations): Promise<ServicesAnswer | null> {
   const domain = servicesDomain(institution);
   if (!domain) return Promise.resolve(null);
   const known = knownInstitutionServices(institution);

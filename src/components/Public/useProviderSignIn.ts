@@ -15,14 +15,14 @@ import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
  * latest attempt decides what the buttons show.
  */
 
-export function useProviderSignIn(surface) {
+export function useProviderSignIn(surface: string) {
   const { signInWithGoogle, signInWithGitHub, error } = useAuth();
   const { trackEvent } = useAnalyticsConsent();
-  const [pendingProvider, setPendingProvider] = useState(null);
-  const [collision, setCollision] = useState(null);
+  const [pendingProvider, setPendingProvider] = useState<'google' | 'github' | null>(null);
+  const [collision, setCollision] = useState<{ email: string } | null>(null);
   const latest = useRef(0);
 
-  const signIn = async (method) => {
+  const signIn = async (method: 'google' | 'github') => {
     const attempt = latest.current + 1;
     latest.current = attempt;
     setPendingProvider(method);
@@ -35,8 +35,8 @@ export function useProviderSignIn(surface) {
       // One account per email address: this address already opens PaperTok
       // through some other door. Email enumeration protection means Firebase
       // will not name which, so the copy points at "the method you already use".
-      if (signInError?.code === 'AUTH_EMAIL_ALREADY_USED' && latest.current === attempt) {
-        setCollision({ email: signInError.email || '' });
+      if ((signInError as { code?: string } | null)?.code === 'AUTH_EMAIL_ALREADY_USED' && latest.current === attempt) {
+        setCollision({ email: (signInError as { email?: string }).email || '' });
       }
     } finally {
       if (latest.current === attempt) setPendingProvider(null);

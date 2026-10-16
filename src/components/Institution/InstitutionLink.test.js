@@ -17,7 +17,7 @@ test('SOURCE: the link form keeps its own Google button unless the caller draws 
   );
   // Uncontrolled and empty by default; controlled when the caller passes
   // `email`, and then every write goes through the caller.
-  assert.match(code, /const \[ownEmail, setOwnEmail\] = useState\(''\);/);
+  assert.match(code, /const \[ownEmail, setOwnEmail\] = useState(?:<[^;\n]+>)?\(''\);/);
   assert.match(code, /const email = controlled \? controlledEmail : ownEmail;/);
   assert.match(code, /const setEmail = controlled \? onEmailChange : setOwnEmail;/);
   assert.equal((code.match(/setOwnEmail\(/g) || []).length, 0, 'nothing writes the own copy past the switch');

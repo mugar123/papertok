@@ -74,7 +74,7 @@ test('the Wikipedia prose resolves from the same 0.35 as every other arrival in 
  */
 test('the ORCID experience panel closes on a curve of its own, not the arrival reversed', async () => {
   const jsx = await read('./EntityExplorer.tsx');
-  const foldOut = jsx.match(/const EXPERIENCE_FOLD_OUT = \{[\s\S]*?\n\};/);
+  const foldOut = jsx.match(/const EXPERIENCE_FOLD_OUT: Transition = \{[\s\S]*?\n\};/);
   assert.ok(foldOut, 'the panel has a closing transition');
   assert.match(foldOut[0], /opacity: \{ duration: 0\.16, ease: 'linear' \}/);
   assert.match(foldOut[0], /height: \{ duration: 0\.3, ease: \[0\.4, 0, 0\.2, 1\] \}/);
@@ -153,9 +153,9 @@ test('reduced motion drops the movement and keeps the colour', async () => {
  */
 test('the ORCID experience panel mounts at full height on arrival and animates only for the toggle', async () => {
   const jsx = await read('./EntityExplorer.tsx');
-  assert.match(jsx, /const \[experienceToggled, setExperienceToggled\] = useState\(false\);/);
+  assert.match(jsx, /const \[experienceToggled, setExperienceToggled\] = useState(?:<[^;\n]+>)?\(false\);/);
   // The load owns the reset; a deferred overlay reset must not erase it.
-  assert.match(jsx, /setIsLoadingOrcid\(type === 'author' && Boolean\(bornWith\?\.orcid \|\| extractOrcid\(id\)\)\);\s*setIsExperienceOpen\(true\);\s*setExperienceToggled\(false\);/);
+  assert.match(jsx, /setIsLoadingOrcid\(type === 'author' && Boolean\(\(bornWith as ExplorerEntity \| null\)\?\.orcid \|\| extractOrcid\(id\)\)\);\s*setIsExperienceOpen\(true\);\s*setExperienceToggled\(false\);/);
   // The reader's own press is what earns the entrance.
   assert.match(jsx, /onClick=\{\(\) => \{ setExperienceToggled\(true\); setIsExperienceOpen\(open => !open\); \}\}/);
   // On arrival the panel mounts at full height (the settle carries the space)
@@ -391,7 +391,7 @@ test('the tab strip is marked by one rule that travels, not a border each tab pa
   // the entity loads, so a ref would be read once as null and — its deps
   // unchanged by the strip mounting — never read again. Measured with a ref:
   // the rule was in the DOM, armed, and permanently invisible.
-  assert.match(jsx, /const \[tabsRow, setTabsRow\] = useState\(null\);/);
+  assert.match(jsx, /const \[tabsRow, setTabsRow\] = useState(?:<[^;\n]+>)?\(null\);/);
   assert.match(jsx, /const tabRule = useActiveTabRule\(tabsRow, activeTab, '\.ee-tab\.active'\);/);
   assert.match(jsx, /<div className="ee-tabs" ref=\{setTabsRow\}>/);
   assert.match(jsx, /className=\{`ee-tab-rule\$\{tabRule\.measured \? ' is-measured' : ''\}`\}/,
@@ -436,6 +436,6 @@ test('the wash keeps its image on a fixed box, so the hero growing does not resc
   assert.match(container, /mask-image: linear-gradient\(to bottom, black 30%, transparent 100%\);/);
   assert.match(css, /\.ehc-bg-blur::before \{\s*content: '';\s*position: absolute;\s*top: -96px;\s*left: -10%;\s*right: -10%;\s*height: 720px;\s*background-image: var\(--ehc-wash-image\);\s*background-size: cover;\s*background-position: center;\s*filter: blur\(48px\) saturate\(1\.1\);\s*\}/);
   const jsx = stripComments(await read('./EntityExplorer.tsx'));
-  assert.match(jsx, /className="ehc-bg-blur"\s*style=\{\{ '--ehc-wash-image': `url\(\$\{visibleWikiInfo\.thumbnail\}\)` \}\}/);
-  assert.doesNotMatch(jsx, /backgroundImage: `url\(\$\{visibleWikiInfo\.thumbnail\}\)`/);
+  assert.match(jsx, /className="ehc-bg-blur"\s*style=\{\{ '--ehc-wash-image': `url\(\$\{visibleWikiInfo!\.thumbnail\}\)` \}\}/);
+  assert.doesNotMatch(jsx, /backgroundImage: `url\(\$\{visibleWikiInfo!\.thumbnail\}\)`/);
 });

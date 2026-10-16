@@ -1,3 +1,7 @@
+import type { StyledProps } from './props.ts';
+import type { ReactElement } from 'react';
+import type { VariantProps } from 'class-variance-authority';
+
 import { Button as ButtonPrimitive } from '@base-ui/react/button';
 import { cn } from '../../lib/utils.ts';
 import { buttonVariants } from './button-variants.ts';
@@ -15,7 +19,7 @@ import './button.css';
  * apart so the primitive stops pretending it is one (`nativeButton`), unless
  * the caller says otherwise.
  */
-export function Button({ className, variant, size, render, nativeButton, ...props }) {
+export function Button({ className, variant, size, render, nativeButton, ...props }: Omit<StyledProps<typeof ButtonPrimitive>, 'render'> & VariantProps<typeof buttonVariants> & { render?: ReactElement }) {
   return (
     <ButtonPrimitive
       data-slot="button"

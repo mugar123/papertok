@@ -1,3 +1,6 @@
+import type { StyledProps } from './props.ts';
+import type { ComponentProps } from 'react';
+
 import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
 import { X } from '@phosphor-icons/react';
 import { cn } from '../../lib/utils.ts';
@@ -23,22 +26,22 @@ import { cn } from '../../lib/utils.ts';
  * `motion-safe:` keeps both out of a reduced-motion session, as everywhere
  * else in this repo.
  */
-function Dialog(props) {
+function Dialog(props: ComponentProps<typeof DialogPrimitive.Root>) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />;
 }
 
-function DialogPortal(props) {
+function DialogPortal(props: ComponentProps<typeof DialogPrimitive.Portal>) {
   return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />;
 }
 
-function DialogClose(props) {
+function DialogClose(props: ComponentProps<typeof DialogPrimitive.Close>) {
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />;
 }
 
 /* No `backdrop-blur` on the scrim: its own opacity is what the fade
    animates, and a blur under an animated opacity is re-resolved every frame
    — the mobile-GPU cost this repo's other backdrops were cleared of. */
-function DialogOverlay({ className, ...props }) {
+function DialogOverlay({ className, ...props }: StyledProps<typeof DialogPrimitive.Backdrop>) {
   return (
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
@@ -60,7 +63,7 @@ function DialogOverlay({ className, ...props }) {
  * its close button says so here. `closeLabel` is the accessible name of the
  * X, in the active language — it is bilingual copy like everything else.
  */
-function DialogContent({ className, children, showClose = true, showCloseButton, closeLabel = 'Close', overlayClassName, ...props }) {
+function DialogContent({ className, children, showClose = true, showCloseButton, closeLabel = 'Close', overlayClassName, ...props }: StyledProps<typeof DialogPrimitive.Popup> & { showClose?: boolean; showCloseButton?: boolean; closeLabel?: string; overlayClassName?: string }) {
   const withClose = showCloseButton ?? showClose;
   return (
     <DialogPortal>
@@ -93,7 +96,7 @@ function DialogContent({ className, children, showClose = true, showCloseButton,
 }
 
 /* Prose is serif (design.md, rule 1): a dialog's headline reads like one. */
-function DialogTitle({ className, ...props }) {
+function DialogTitle({ className, ...props }: StyledProps<typeof DialogPrimitive.Title>) {
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
@@ -103,7 +106,7 @@ function DialogTitle({ className, ...props }) {
   );
 }
 
-function DialogDescription({ className, ...props }) {
+function DialogDescription({ className, ...props }: StyledProps<typeof DialogPrimitive.Description>) {
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"

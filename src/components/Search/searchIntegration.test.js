@@ -1,8 +1,8 @@
 /**
  * The combined search box, pinned where it can actually break.
  *
- * There are two boxes: the full page (`SearchPage.jsx`) and the command
- * palette, which is a pair — `SearchCommand.jsx` paints and
+ * There are two boxes: the full page (`SearchPage.tsx`) and the command
+ * palette, which is a pair — `SearchCommand.tsx` paints and
  * `useEntitySearch.js` queries. The rules belong to the search, not to the
  * file that happened to implement it first, so the shared ones below run
  * against both surfaces.
@@ -332,7 +332,7 @@ const app = await readCode('../../App.tsx');
 const destinations = await readCode('../../utils/searchDestinations.ts');
 const { PUBLIC_ENTITY_TYPES } = await import('../../utils/publicNavigation.ts');
 
-/** Route patterns App.jsx declares, minus the catch-all, which matches all. */
+/** Route patterns App.tsx declares, minus the catch-all, which matches all. */
 const ROUTES = [...app.matchAll(/path="([^"]+)"/g)]
   .map(match => match[1])
   .filter(path => path !== '*');
@@ -357,7 +357,7 @@ function routeAccepts(route, path) {
 }
 
 test('every path a search result navigates to is a declared route', () => {
-  assert.ok(ROUTES.length > 5, 'the routes were read out of App.jsx');
+  assert.ok(ROUTES.length > 5, 'the routes were read out of App.tsx');
   for (const surface of [
     { name: 'the command palette', code: palette },
     { name: 'the search page', code: page },
@@ -402,7 +402,7 @@ test('the explorer is only ever asked for a type it can resolve', () => {
 /**
  * The palette's exit is `@radix-ui/react-presence` holding the sheet on screen
  * while `scSheetOut` runs — which it can only do while the component is still
- * mounted. `App.jsx` used to mount `SearchCommand` behind `searchOpen &&`, so
+ * mounted. `App.tsx` used to mount `SearchCommand` behind `searchOpen &&`, so
  * closing removed the whole tree in the same commit (measured in the browser:
  * gone from the DOM 2 ms after close, the closed state never observed),
  * and the exit `SearchCommand.css` describes had never played once. The lazy
@@ -411,7 +411,7 @@ test('the explorer is only ever asked for a type it can resolve', () => {
  */
 test('the palette stays mounted after its first open, so its exit can play', () => {
   const mount = app.match(/\{user && (\w+) && \(\s*<Suspense[\s\S]*?<SearchCommand[\s\S]*?\/>/);
-  assert.ok(mount, 'App.jsx no longer mounts SearchCommand behind a `user && <flag>` guard');
+  assert.ok(mount, 'App.tsx no longer mounts SearchCommand behind a `user && <flag>` guard');
   assert.notEqual(
     mount[1],
     'searchOpen',
@@ -461,7 +461,7 @@ test('author, institution and topic rows hand their entity over in router state'
   assert.match(palette, /import \{ handoverFromSearchRow \} from '\.\.\/\.\.\/utils\/explorerHandover\.ts';/);
   assert.match(palette, /onSelect=\{\(\) => go\(path, \{ entity: handoverFromSearchRow\('author', author\), entityType: 'author' \}\)\}/);
   assert.match(palette, /onSelect=\{\(\) => go\(`\/explorer\/institution\/\$\{lastPathSegment\(institution\.id\)\}`, \{ entity: handoverFromSearchRow\('institution', institution\), entityType: 'institution' \}\)\}/);
-  assert.match(palette, /onSelect=\{\(\) => go\(`\/explorer\/topic\/\$\{encodeURIComponent\(lastPathSegment\(concept\.id\)\)\}`, \{ entity: handoverFromSearchRow\('topic', concept\), entityType: 'topic' \}\)\}/);
+  assert.match(palette, /onSelect=\{\(\) => go\(`\/explorer\/topic\/\$\{encodeURIComponent\(lastPathSegment\(concept\.id\)!\)\}`, \{ entity: handoverFromSearchRow\('topic', concept\), entityType: 'topic' \}\)\}/);
 });
 
 /**

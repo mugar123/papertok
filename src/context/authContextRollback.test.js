@@ -29,7 +29,7 @@ test('completeOnboarding flips the flag only after the document write has landed
   // failed against an unmounted page, left no local memory, and the next
   // reload asked everything again (audit of 2026-09-16, hallazgo 4).
   const src = stripComments(await readFile(new URL('./AuthContext.tsx', import.meta.url), 'utf8'));
-  const fn = src.match(/const completeOnboarding = useCallback\(async \(preferences\) => \{[\s\S]*?\n {2}\}, \[user\?\.uid\]\);/);
+  const fn = src.match(/const completeOnboarding = useCallback(?:<[^;\n]+>)?\(async \(preferences: string\[\]\) => \{[\s\S]*?\n {2}\}, \[user\?\.uid\]\);/);
   assert.ok(fn, 'completeOnboarding is gone or reshaped');
   const body = fn[0];
   const flips = [...body.matchAll(/setOnboardingComplete\(true\)/g)].map(m => m.index);
@@ -54,7 +54,7 @@ test('completeOnboarding bounds the write with settleWithin and never flips on a
   // write runs. A retry must find the same starting point it found the
   // first time, not a half-applied one.
   const src = stripComments(await readFile(new URL('./AuthContext.tsx', import.meta.url), 'utf8'));
-  const fn = src.match(/const completeOnboarding = useCallback\(async \(preferences\) => \{[\s\S]*?\n {2}\}, \[user\?\.uid\]\);/);
+  const fn = src.match(/const completeOnboarding = useCallback(?:<[^;\n]+>)?\(async \(preferences: string\[\]\) => \{[\s\S]*?\n {2}\}, \[user\?\.uid\]\);/);
   assert.ok(fn, 'completeOnboarding is gone or reshaped');
   const body = fn[0];
 
@@ -88,7 +88,7 @@ test('completeOnboarding bounds the write with settleWithin and never flips on a
 
 test('completeOnboarding gives a write timeout a stable code, and leaves a rejection as itself', async () => {
   const src = stripComments(await readFile(new URL('./AuthContext.tsx', import.meta.url), 'utf8'));
-  const fn = src.match(/const completeOnboarding = useCallback\(async \(preferences\) => \{[\s\S]*?\n {2}\}, \[user\?\.uid\]\);/);
+  const fn = src.match(/const completeOnboarding = useCallback(?:<[^;\n]+>)?\(async \(preferences: string\[\]\) => \{[\s\S]*?\n {2}\}, \[user\?\.uid\]\);/);
   assert.ok(fn, 'completeOnboarding is gone or reshaped');
   assert.match(
     fn[0],
@@ -102,7 +102,7 @@ test('updateProfilePhoto bounds its write and names the timeout', async () => {
   // The settings screen holds its photo spinner until this settles, and a
   // Firestore write against a stalled connection never settles on its own.
   const src = stripComments(await readFile(new URL('./AuthContext.tsx', import.meta.url), 'utf8'));
-  const fn = src.match(/const updateProfilePhoto = useCallback\(async \(value\) => \{[\s\S]*?\n {2}\}, \[profilePhoto, user\?\.uid\]\);/);
+  const fn = src.match(/const updateProfilePhoto = useCallback(?:<[^;\n]+>)?\(async \(value: unknown\) => \{[\s\S]*?\n {2}\}, \[profilePhoto, user\?\.uid\]\);/);
   assert.ok(fn, 'updateProfilePhoto is gone or reshaped');
   assert.match(fn[0], /await settleWithin\(\s*setDoc\(doc\(db, 'users', userId\)/);
   assert.doesNotMatch(fn[0], /await setDoc\(/, 'no unbounded write left behind');

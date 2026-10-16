@@ -57,8 +57,8 @@ test('a formula KaTeX rejects stays visible as its source, and is not retried on
 test('ScientificText is memoised and keeps its element tree across renders', async () => {
   assert.equal(ScientificText.$$typeof, Symbol.for('react.memo'), 'a card re-rendering for its own reasons must not re-walk the text');
   const code = stripComments(await read('./ScientificText.ts'));
-  assert.match(code, /const renderedChunks = useMemo\(\(\) => parts\.map\(\(chunk, index\) => \{[\s\S]*?dangerouslySetInnerHTML: \{ __html: html \},[\s\S]*?\}\), \[parts, katex\]\);/,
+  assert.match(code, /const renderedChunks = useMemo(?:<[^;\n]+>)?\(\(\) => parts\.map\(\(chunk, index\) => \{[\s\S]*?dangerouslySetInnerHTML: \{ __html: html \},[\s\S]*?\}\), \[parts, katex\]\);/,
     'the `{ __html }` objects live inside a memo keyed on the parsed text and on KaTeX being loaded, so React sees the same objects until either changes');
-  assert.match(code, /const renderedFormulas = new Map\(\);/, 'and rendered markup is kept per formula source');
+  assert.match(code, /const renderedFormulas = new Map(?:<[^;\n]+>)?\(\);/, 'and rendered markup is kept per formula source');
   assert.match(code, /if \(renderedFormulas\.size >= MAX_CACHED_FORMULAS\) renderedFormulas\.clear\(\);/, 'bounded');
 });

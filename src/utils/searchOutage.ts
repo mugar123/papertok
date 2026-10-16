@@ -115,7 +115,7 @@ export function formatRetryDelay(ms: number) {
 /**
  * "OpenAIRE", "ROR and OpenAIRE", "papers, authors and institutions".
  */
-export function joinNames(words: string[]) {
+export function joinNames(words: (string | null | undefined)[]) {
   const list = (words || []).filter(Boolean);
   if (list.length === 0) return '';
   if (list.length === 1) return list[0];

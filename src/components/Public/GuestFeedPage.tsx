@@ -1,3 +1,5 @@
+import type { Paper } from '../../models/Paper.ts';
+import type { GuestWelcomeAnswer } from './GuestWelcome.tsx';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { SignIn, Sparkle } from '@phosphor-icons/react';
@@ -22,7 +24,7 @@ const NO_AREAS = Object.freeze([]);
 export default function GuestFeedPage({
   onAuthRequired,
   onOpenPdf,
-}) {
+}: { onAuthRequired?: (reason: string) => void; onOpenPdf?: (paper: Paper) => void }) {
   const { language } = useLanguage();
   const { consent, trackEvent } = useAnalyticsConsent();
   // `null` until this device has finished the welcome. In that state the page
@@ -71,7 +73,7 @@ export default function GuestFeedPage({
   // The welcome answers with `{ areas, topics, readingLevel, emailDigest }`;
   // the header chip's sheet changes areas only, so it keeps the topics still
   // inside them and the two preferences waiting for an account.
-  const submitInterests = useCallback((answer) => {
+  const submitInterests = useCallback((answer: GuestWelcomeAnswer | string[]) => {
     const next = Array.isArray(answer)
       ? {
         areas: answer,

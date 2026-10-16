@@ -1,3 +1,6 @@
+import type { PropsWithChildren } from 'react';
+import type { AppUser } from '../../context/AuthContext.tsx';
+import type { PublicListPaper } from '../../services/publicListPayload.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowsClockwise, BookOpen, Check, Quotes, ShareNetwork } from '@phosphor-icons/react';
@@ -15,14 +18,14 @@ import { shareOrCopyLink } from '../../utils/shareLink.ts';
 import { copyText } from '../../utils/clipboard.ts';
 import './PublicListPage.css';
 
-function arxivUrl(arxivId) {
+function arxivUrl(arxivId: unknown) {
   const normalized = String(arxivId || '').trim();
   return /^(?:[a-z-]+(?:\.[A-Z]{2})?\/\d{7}|\d{4}\.\d{4,5})(?:v\d+)?$/i.test(normalized)
     ? `https://arxiv.org/abs/${encodeURIComponent(normalized).replace('%2F', '/')}`
     : '';
 }
 
-function getPublicPaperDestination(paper) {
+function getPublicPaperDestination(paper: PublicListPaper) {
   const path = getPublicPaperPath(paper);
   if (path) {
     return { href: path, internal: true };
@@ -34,15 +37,15 @@ function getPublicPaperDestination(paper) {
   return href ? { href, internal: false } : null;
 }
 
-function formatDate(value, locale) {
+function formatDate(value: unknown, locale: string) {
   if (!value) return '';
-  const date = typeof value?.toDate === 'function' ? value.toDate() : new Date(value);
+  const date = typeof (value as { toDate?: () => Date })?.toDate === 'function' ? (value as { toDate: () => Date }).toDate() : new Date(value as string);
   return Number.isNaN(date.getTime())
     ? ''
     : new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(date);
 }
 
-function PaperLink({ destination, label, children }) {
+function PaperLink({ destination, label, children }: PropsWithChildren<{ destination: ReturnType<typeof getPublicPaperDestination>; label: string }>) {
   if (!destination) return children;
   if (destination.internal) {
     return <Link to={destination.href} aria-label={label}>{children}</Link>;
@@ -54,7 +57,7 @@ function PaperLink({ destination, label, children }) {
   );
 }
 
-function AuthCta({ user, onAuthRequired, label }) {
+function AuthCta({ user, onAuthRequired, label }: { user: AppUser | null; onAuthRequired?: () => void; label: string }) {
   if (user) return <Link className="public-list-auth-cta" to="/lists">{label}</Link>;
   if (onAuthRequired) {
     return <button type="button" className="public-list-auth-cta" onClick={onAuthRequired}>{label}</button>;
@@ -62,17 +65,17 @@ function AuthCta({ user, onAuthRequired, label }) {
   return <Link className="public-list-auth-cta" to="/feed" state={{ authRequired: true, returnTo: '/lists' }}>{label}</Link>;
 }
 
-export default function PublicListPage({ shareId: shareIdProp, onAuthRequired }) {
+export default function PublicListPage({ shareId: shareIdProp, onAuthRequired }: { shareId?: string; buildPaperPath?: typeof getPublicPaperPath; onAuthRequired?: () => void }) {
   const params = useParams();
   const shareId = shareIdProp || params.shareId;
   const { locale } = useLanguage();
   const { user, onboardingComplete, profileLoadError } = useAuth();
   const { trackEvent } = useAnalyticsConsent();
-  const [publicList, setPublicList] = useState(null);
+  const [publicList, setPublicList] = useState<Awaited<ReturnType<typeof readPublicList>>>(null);
   const [status, setStatus] = useState('loading');
   const [reloadToken, setReloadToken] = useState(0);
-  const [shareState, setShareState] = useState(null);
-  const shareTimer = useRef(null);
+  const [shareState, setShareState] = useState<string | null>(null);
+  const shareTimer = useRef<number | null>(null);
 
   // Signed in, the app Navbar owns the top of the screen (App.jsx shows it for
   // /public/list/* too); signed out this is the standalone shared-link page and
@@ -85,7 +88,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
     // The retry loop outlives the promise, so leaving the page must stop it.
     const controller = new AbortController();
 
-    const apply = (result) => {
+    const apply = (result: Awaited<ReturnType<typeof readPublicList>>) => {
       if (!active) return;
       setPublicList(result);
       // `readPublicList` throws rather than returning null when the backend
@@ -104,7 +107,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
     // stall kick to rebuild, and a dead network rejects in milliseconds: the
     // slow notice waits until the wait has actually been felt.
     const startedAt = Date.now();
-    patientRead(() => readPublicList(shareId, { signal: controller.signal }), {
+    patientRead(() => readPublicList(shareId!, { signal: controller.signal }), {
       attempts: 3,
       label: 'public list',
       signal: controller.signal,
@@ -137,7 +140,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
     [locale, publicList?.updatedAt],
   );
 
-  useEffect(() => () => clearTimeout(shareTimer.current), []);
+  useEffect(() => () => clearTimeout(shareTimer.current!), []);
 
   // The share sheet where there is one, the clipboard where there is not —
   // same helper the owner's Lists page uses, so a link shared from here and a
@@ -147,7 +150,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
     const url = getPublicListUrl(shareId);
     if (!url) return;
 
-    clearTimeout(shareTimer.current);
+    clearTimeout(shareTimer.current!);
     const restingState = () => {
       shareTimer.current = setTimeout(() => setShareState(null), 2400);
     };
@@ -178,7 +181,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
     return {
       route: getPublicListPath(shareId),
       title: publicList ? {
-        en: `${publicList.title} | PaperTok public list`,
+        en: `${publicList!.title} | PaperTok public list`,
       } : {
         en: 'Public reading list | PaperTok',
       },
@@ -208,10 +211,10 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
     unsupportedTitle: 'Public lists are unavailable in demo mode',
     unsupportedBody: 'Open this link in the full PaperTok app.',
     retry: 'Try again',
-    papers: count => `${count} ${count === 1 ? 'paper' : 'papers'}`,
-    updated: date => `Updated ${date}`,
-    citations: count => `${count.toLocaleString(locale)} citations`,
-    open: title => `Open ${title}`,
+    papers: (count: number) => `${count} ${count === 1 ? 'paper' : 'papers'}`,
+    updated: (date: string) => `Updated ${date}`,
+    citations: (count: number) => `${count.toLocaleString(locale)} citations`,
+    open: (title: string) => `Open ${title}`,
     empty: 'This public list does not contain any papers yet.',
     authCta: user ? 'Open my lists' : 'Sign in to create a list',
     share: 'Share',
@@ -280,10 +283,10 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
       <div className="public-list-content">
         <section className="public-list-heading">
           <p className="public-list-kicker"><BookOpen size={16} /> {copy.publicList}</p>
-          <h1>{publicList.title}</h1>
-          {publicList.description && <p className="public-list-description">{publicList.description}</p>}
+          <h1>{publicList!.title}</h1>
+          {publicList!.description && <p className="public-list-description">{publicList!.description}</p>}
           <div className="public-list-meta">
-            <span>{copy.papers(publicList.paperCount)}</span>
+            <span>{copy.papers(publicList!.paperCount)}</span>
             {updatedAt && <span>{copy.updated(updatedAt)}</span>}
           </div>
           <div className="public-list-actions">
@@ -306,8 +309,8 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
           </div>
         </section>
 
-        <section className="public-list-papers" aria-label={copy.papers(publicList.paperCount)}>
-          {publicList.papers.map((paper, index) => {
+        <section className="public-list-papers" aria-label={copy.papers(publicList!.paperCount)}>
+          {publicList!.papers.map((paper, index) => {
             const destination = getPublicPaperDestination(paper);
             return (
               <article className="public-list-paper" key={paper.id}>
@@ -342,8 +345,8 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
                   )}
                   <div className="public-list-paper-footer">
                     {/* "0 citations" on every row is noise, not information. */}
-                    {Number.isInteger(paper.citations) && paper.citations > 0 && (
-                      <span><Quotes size={14} /> {copy.citations(paper.citations)}</span>
+                    {Number.isInteger(paper.citations) && paper.citations! > 0 && (
+                      <span><Quotes size={14} /> {copy.citations(paper.citations!)}</span>
                     )}
                     {paper.concepts?.slice(0, 3).map(concept => <span key={concept}>{concept}</span>)}
                   </div>
@@ -351,7 +354,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
               </article>
             );
           })}
-          {publicList.papers.length === 0 && (
+          {publicList!.papers.length === 0 && (
             <div className="public-list-empty">
               <span className="public-list-empty-icon" aria-hidden="true"><BookOpen size={20} /></span>
               <p>{copy.empty}</p>

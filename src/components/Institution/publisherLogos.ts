@@ -136,6 +136,6 @@ const LOGOS = {
   worldscientific,
 };
 
-export function publisherLogoFor(id) {
-  return Object.hasOwn(LOGOS, id) ? LOGOS[id] : null;
+export function publisherLogoFor(id: string) {
+  return Object.hasOwn(LOGOS, id) ? LOGOS[id as keyof typeof LOGOS] : null;
 }

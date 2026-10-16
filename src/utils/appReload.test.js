@@ -145,7 +145,7 @@ test('the policy clears on a reader reload and leaves everything alone otherwise
   assert.equal(session.getItem(`${FEED_RESUME_STORAGE_PREFIX}forYou`), '{"index":7}');
 });
 
-test('SOURCE: main.jsx marks both of the reloads the app gives itself, and applies the policy before rendering', async () => {
+test('SOURCE: main.tsx marks both of the reloads the app gives itself, and applies the policy before rendering', async () => {
   const { readFile } = await import('node:fs/promises');
   const main = await readFile(new URL('../main.tsx', import.meta.url), 'utf8');
   // The chunk-gone reload.

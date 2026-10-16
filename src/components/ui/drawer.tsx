@@ -1,3 +1,6 @@
+import type { StyledProps } from './props.ts';
+import type { ComponentProps } from 'react';
+
 import { Drawer as DrawerPrimitive } from '@base-ui/react/drawer';
 import { cn } from '../../lib/utils.ts';
 import './drawer.css';
@@ -17,30 +20,30 @@ import './drawer.css';
  * `DrawerContent` stays selectable with a mouse; add
  * `data-base-ui-swipe-ignore` to a scrolling region that must not dismiss.
  */
-function Drawer({ side = 'bottom', swipeDirection, ...props }) {
+function Drawer({ side = 'bottom', swipeDirection, ...props }: ComponentProps<typeof DrawerPrimitive.Root> & { side?: 'bottom' | 'top' | 'left' | 'right' }) {
   return (
     <DrawerPrimitive.Root
       data-slot="drawer"
-      swipeDirection={swipeDirection ?? { bottom: 'down', top: 'up', left: 'left', right: 'right' }[side]}
+      swipeDirection={swipeDirection ?? ({ bottom: 'down', top: 'up', left: 'left', right: 'right' } as const)[side]}
       {...props}
     />
   );
 }
 
 /* Opens the drawer; Base UI gives it aria-expanded and returns focus to it on close. */
-function DrawerTrigger(props) {
+function DrawerTrigger(props: ComponentProps<typeof DrawerPrimitive.Trigger>) {
   return <DrawerPrimitive.Trigger data-slot="drawer-trigger" {...props} />;
 }
 
-function DrawerPortal(props) {
+function DrawerPortal(props: ComponentProps<typeof DrawerPrimitive.Portal>) {
   return <DrawerPrimitive.Portal data-slot="drawer-portal" {...props} />;
 }
 
-function DrawerClose(props) {
+function DrawerClose(props: ComponentProps<typeof DrawerPrimitive.Close>) {
   return <DrawerPrimitive.Close data-slot="drawer-close" {...props} />;
 }
 
-function DrawerOverlay({ className, ...props }) {
+function DrawerOverlay({ className, ...props }: StyledProps<typeof DrawerPrimitive.Backdrop>) {
   return <DrawerPrimitive.Backdrop data-slot="drawer-overlay" className={cn('ui-drawer-backdrop', className)} {...props} />;
 }
 
@@ -49,7 +52,7 @@ function DrawerOverlay({ className, ...props }) {
  * popup itself (the visible sheet). A drawer without `snapPoints` opens at
  * its content height, capped at 85dvh with its own inside scroll.
  */
-function DrawerContent({ className, viewportClassName, overlayClassName, side = 'bottom', children, ...props }) {
+function DrawerContent({ className, viewportClassName, overlayClassName, side = 'bottom', children, ...props }: StyledProps<typeof DrawerPrimitive.Popup> & { viewportClassName?: string; overlayClassName?: string; side?: 'bottom' | 'top' | 'left' | 'right' }) {
   return (
     <DrawerPortal>
       <DrawerOverlay className={overlayClassName} />
@@ -69,16 +72,16 @@ function DrawerContent({ className, viewportClassName, overlayClassName, side = 
 }
 
 /* The grab handle: decorative, the gesture works on the whole popup. */
-function DrawerHandle({ className, ...props }) {
+function DrawerHandle({ className, ...props }: StyledProps<'div'>) {
   return <div data-slot="drawer-handle" aria-hidden="true" className={cn('ui-drawer-handle', className)} {...props} />;
 }
 
 /* Text selection works inside this part without starting a swipe. */
-function DrawerBody({ className, ...props }) {
+function DrawerBody({ className, ...props }: StyledProps<typeof DrawerPrimitive.Content>) {
   return <DrawerPrimitive.Content data-slot="drawer-body" className={cn('ui-drawer-body', className)} {...props} />;
 }
 
-function DrawerTitle({ className, ...props }) {
+function DrawerTitle({ className, ...props }: StyledProps<typeof DrawerPrimitive.Title>) {
   return (
     <DrawerPrimitive.Title
       data-slot="drawer-title"

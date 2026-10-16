@@ -575,7 +575,7 @@ export async function trackAcquisition({
   referrer,
   location,
   track = trackProductEvent,
-}: AcquisitionLocation & TrackingOptions = {}) {
+}: AcquisitionLocation & TrackingOptions & { language?: string } = {}) {
   if (readAnalyticsConsent() !== ANALYTICS_CONSENT.GRANTED) return false;
   try {
     const persistedForSession = storage?.getItem(ANALYTICS_ACQUISITION_SESSION_KEY) === 'true';

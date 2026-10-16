@@ -308,7 +308,7 @@ test('no motion of a page on its way out is an arrival', () => {
  */
 test('SOURCE: the arrival is a predicate read from the DOM, not a flag one commit behind', async () => {
   const code = stripAll(await readFile(new URL('./PageTransition.tsx', import.meta.url), 'utf8'));
-  const gate = code.match(/const isArriving = useCallback\(\(\) => \{([\s\S]*?)\n {2}\}, \[\]\);/);
+  const gate = code.match(/const isArriving = useCallback(?:<[^;\n]+>)?\(\(\) => \{([\s\S]*?)\n {2}\}, \[\]\);/);
   assert.ok(gate, 'the gate is a stable callback, so a consumer can ask it whenever it needs to');
 
   assert.match(gate[1], /isArrivalMotion\(root\.dataset\.pageMotion\)/,

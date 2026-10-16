@@ -1,4 +1,4 @@
-export type SettledWithin<T> = { status: 'fulfilled'; value: T } | { status: 'rejected'; reason: unknown } | { status: 'timed_out' };
+export type SettledWithin<T> = { status: 'fulfilled'; value: T } | { status: 'rejected'; reason: unknown } | { status: 'timed_out'; reason?: never };
 
 export async function settleWithin<T>(promise: T | PromiseLike<T>, timeoutMs: number): Promise<SettledWithin<Awaited<T>>> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;

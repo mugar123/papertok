@@ -12,7 +12,7 @@ test('SOURCE: a new account that signed in from a public page is sent to the onb
   // hallazgo 2).
   const code = stripComments(await readFile(new URL('../../App.tsx', import.meta.url), 'utf8'));
   assert.match(code, /const PUBLIC_ROUTE_PREFIXES = \['\/public\/', '\/explorer\/'\]/);
-  assert.match(code, /function isPublicRoute\(path\) \{\s*return PUBLIC_ROUTE_PREFIXES\.some\(prefix => path\.startsWith\(prefix\)\)\s*\}/);
+  assert.match(code, /function isPublicRoute\(path: string\) \{\s*return PUBLIC_ROUTE_PREFIXES\.some\(prefix => path\.startsWith\(prefix\)\)\s*\}/);
   const effect = code.match(
     /useEffect\(\(\) => \{\s*if \(!user \|\| authLoading \|\| onboardingComplete \|\| profileLoadError\) return\s*if \(!isPublicRoute\(location\.pathname\)\) return\s*navigate\('\/onboarding', \{ replace: true, state: \{ returnTo: `\$\{location\.pathname\}\$\{location\.search\}` \} \}\)\s*\}, \[user, authLoading, onboardingComplete, profileLoadError, location\.pathname, location\.search, navigate\]\)/,
   );

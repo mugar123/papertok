@@ -9,14 +9,14 @@ import { routeTitle, routeLabel } from '../../utils/routeMetadata.ts'
 
 export default function RouteAnnouncer() {
   const location = useLocation()
-  const liveRef = useRef(null)
+  const liveRef = useRef<HTMLSpanElement | null>(null)
   // Last pathname we actually announced, not "is this the first render":
   // React.StrictMode (src/main.tsx) double-invokes this effect on mount
   // against the same component instance, so a first-render flag flips to
   // false on the first invocation and no longer guards the second one. A
   // remembered pathname is stable across that double-invoke because both
   // runs see the same location.pathname.
-  const lastAnnouncedPath = useRef(null)
+  const lastAnnouncedPath = useRef<string | null>(null)
 
   useEffect(() => {
     // The title updates on every run, including a same-route re-run caused

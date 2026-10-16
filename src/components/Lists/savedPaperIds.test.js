@@ -29,7 +29,7 @@ test('SOURCE: the saved-paper document is addressed by its encoded name, after w
   const save = bounded(code, 'if (savesPaper) {\n          await setDoc(', 'for (const listId of toAdd)', 'the saved-paper write', 20);
   assert.match(
     save,
-    /await setDoc\(\s*savedPaperDocRef\(user\.uid, paper\.id\),[\s\S]*?\);\s*markSaved\(paper\);/,
+    /await setDoc\(\s*savedPaperDocRef\(user!\.uid, paper\.id\),[\s\S]*?\);\s*markSaved\(paper\);/,
     'the aggregate is told AFTER the document is written, so a refused write leaves no orphan',
   );
 });

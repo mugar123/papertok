@@ -1,3 +1,4 @@
+import type { Paper, PaperAuthor } from '../../models/Paper.ts';
 import { useRef } from 'react';
 import { X } from '@phosphor-icons/react';
 import ScientificText from '../ScientificText.ts';
@@ -18,10 +19,10 @@ import './AbstractSheet.css';
  * the frame after mount (usePopupOpenOnMount) so the drawer actually arrives,
  * and the card unmounts it once the leave has played (`onOpenChangeComplete`).
  */
-export default function AbstractSheet({ paper, onClose }) {
+export default function AbstractSheet({ paper, onClose }: { paper: Paper; onClose: () => void }) {
   const { open, requestClose } = usePopupOpenOnMount();
-  const closeRef = useRef(null);
-  const authors = (paper?.authors || []).map((author) => author?.name || author).filter(Boolean);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+  const authors = (paper?.authors || []).map((author) => (author as PaperAuthor)?.name || author).filter(Boolean);
   const authorsLine = authors.slice(0, 3).join(', ') + (authors.length > 3 ? ' et al.' : '');
   return (
     <Drawer

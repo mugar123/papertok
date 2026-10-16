@@ -23,13 +23,13 @@ test('a mouse selection is resolved from the Range, from the paragraph it starts
   // start overshot into the gap above — inside the reader's own scroller.
   assert.match(jsx, /const start = range\.startContainer;/);
   assert.match(jsx, /const paragraph = paragraphAround\(start\) \|\| paragraphAround\(range\.endContainer\);/);
-  assert.match(jsx, /\.closest\('\.rd-p\[data-section\]'\)/);
+  assert.match(jsx, /\.closest<HTMLElement>\('\.rd-p\[data-section\]'\)/);
   assert.match(jsx, /if \(!paragraph \|\| !scrollRef\.current\?\.contains\(paragraph\)\) return;/);
   // Only on the route that has a menu to open.
   assert.match(jsx, /if \(selectionRoute !== 'menu'\) return undefined;/);
   // The paragraph's source text comes from state by the ids the DOM carries.
-  assert.match(jsx, /const paragraphTextFor = useCallback\(\(sectionId, paragraphIndex\) => \{/);
-  assert.match(jsx, /handleSelection\(paragraph\.dataset\.section, paragraphIndex, text, paragraph\);/);
+  assert.match(jsx, /const paragraphTextFor = useCallback(?:<[^;\n]+>)?\(\(sectionId: string \| undefined, paragraphIndex: number\) => \{/);
+  assert.match(jsx, /handleSelection\(paragraph\.dataset\.section!, paragraphIndex, text, paragraph\);/);
   // Keyboard route untouched.
   assert.match(jsx, /onKeyDown=\{selectionRoute === 'menu'\s*\? \(event\) => handleParagraphKeyDown\(event, section\.id, paragraphIndex, paragraph\)/);
 });

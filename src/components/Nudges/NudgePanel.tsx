@@ -1,3 +1,10 @@
+import type { ReactNode } from 'react';
+import type { Transition } from 'framer-motion';
+interface NudgePanelProps {
+  icon: ReactNode; iconClassName?: string; title: ReactNode; body: string;
+  action: { label: string; href?: string; onClick: () => void };
+  dismissLabel: string; onDismiss: () => void;
+}
 import { motion, useReducedMotion } from 'framer-motion';
 import { X } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
@@ -16,7 +23,7 @@ import './NudgePanel.css';
 // lands first, movement keeps easing underneath it. One curve for all three
 // values is not a fade, it is a flash with a tail — 90% opacity 90ms in with
 // the travel still going.
-const ARRIVAL = {
+const ARRIVAL: Transition = {
   opacity: { duration: 0.26, ease: 'linear' },
   y: { duration: 0.38, ease: [0.16, 1, 0.3, 1] },
   scale: { duration: 0.38, ease: [0.16, 1, 0.3, 1] },
@@ -25,7 +32,7 @@ const ARRIVAL = {
 // Leaving, the fade leads and is done at 180ms: the panel stops asking for the
 // eye at once, and the sink finishes under something nobody is looking at.
 // It sinks because it rose — the same path, backwards.
-const LEAVE = {
+const LEAVE: Transition = {
   opacity: { duration: 0.18, ease: 'linear' },
   y: { duration: 0.26, ease: [0.4, 0, 1, 1] },
   scale: { duration: 0.26, ease: [0.4, 0, 1, 1] },
@@ -39,7 +46,7 @@ export default function NudgePanel({
   action,
   dismissLabel,
   onDismiss,
-}) {
+}: NudgePanelProps) {
   const prefersReducedMotion = useReducedMotion();
 
   return (

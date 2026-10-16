@@ -1,3 +1,7 @@
+import type { ComponentProps, ReactNode } from 'react';
+import type { ReadingLevel } from '../../utils/userSettings.ts';
+
+export type GuestWelcomeAnswer = { areas: string[]; topics: string[]; readingLevel: ReadingLevel; emailDigest: boolean };
 import { useEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
@@ -49,7 +53,7 @@ import './GuestWelcome.css';
 // is drawn at all.
 
 const STEPS = ['welcome', 'how', 'topics', 'subtopics', 'reading', 'inbox', 'support'];
-const STEP_PETRI = { how: 'welcome', topics: 'flask', reading: 'reading' };
+const STEP_PETRI: Partial<Record<string, ComponentProps<typeof Petri>['pose']>> = { how: 'welcome', topics: 'flask', reading: 'reading' };
 // Where the intro's skip lands: the question, not past it.
 const TOPICS_INDEX = STEPS.indexOf('topics');
 
@@ -60,7 +64,7 @@ const BEAT_STAGGER_MS = 900;
 const COPY = {
   en: {
     progress: 'Progress',
-    stepOf: (n, total) => `Step ${n} of ${total}`,
+    stepOf: (n: number, total: number) => `Step ${n} of ${total}`,
     back: 'Back',
     skip: 'Skip the intro',
     welcome: {
@@ -119,7 +123,7 @@ const COPY = {
 
 // ── The three gestures, one per screen, each playing its point once ──
 
-function SwipeDemo({ still }) {
+function SwipeDemo({ still }: { still: boolean }) {
   // Three papers slide up through the frame and the third stays.
   const cards = ['var(--gradient-physics)', 'var(--gradient-med)', 'var(--gradient-cs)'];
   return (
@@ -157,7 +161,7 @@ function SwipeDemo({ still }) {
   );
 }
 
-function PlainWordsDemo({ still }) {
+function PlainWordsDemo({ still }: { still: boolean }) {
   // The dense abstract gives way to three short highlighted lines.
   return (
     <div className="gw-demo gw-demo--plain" aria-hidden="true">
@@ -197,7 +201,7 @@ function PlainWordsDemo({ still }) {
   );
 }
 
-function LearnDemo({ still }) {
+function LearnDemo({ still }: { still: boolean }) {
   // A like, a save, and the paper you liked pulls its field up the list.
   const rows = [
     { accent: 'var(--gradient-econ)', key: 'a' },
@@ -235,14 +239,14 @@ function LearnDemo({ still }) {
         </motion.span>
       </div>
       <div className="gw-demo-list">
-        {order.map((key) => {
+        {order.map((key: string) => {
           const row = rows.find(item => item.key === key);
           return (
             <motion.div
               layout={!still}
               key={key}
               className="gw-demo-row"
-              style={{ '--area-accent': row.accent }}
+              style={{ '--area-accent': row!.accent }}
               transition={{ layout: { duration: 0.6, ease: [0.33, 1, 0.68, 1] } }}
             >
               <span className="gw-demo-row-title" />
@@ -262,7 +266,7 @@ const BEAT_DEMOS = [SwipeDemo, PlainWordsDemo, LearnDemo];
 // its illustration mounts when it lands, which is what starts it playing.
 // The words are in the DOM throughout, so a screen reader reads all three at
 // once; only their paint waits.
-function Beat({ beat, index, still }) {
+function Beat({ beat, index, still }: { beat: { title: string; body: string }; index: number; still: boolean }) {
   const [landed, setLanded] = useState(still);
   useEffect(() => {
     if (still) return undefined;
@@ -288,7 +292,7 @@ function Beat({ beat, index, still }) {
   );
 }
 
-export default function GuestWelcome({ initialAreas = [], initialTopics = [], initialReadingLevel = 'university', initialEmailDigest = false, onComplete, onSignIn }) {
+export default function GuestWelcome({ initialAreas = [], initialTopics = [], initialReadingLevel = 'university', initialEmailDigest = false, onComplete, onSignIn }: { initialAreas?: readonly string[]; initialTopics?: readonly string[]; initialReadingLevel?: ReadingLevel; initialEmailDigest?: boolean; onComplete?: (answer: GuestWelcomeAnswer) => void; onSignIn?: () => void }) {
   const prefersReducedMotion = useReducedMotion();
   const still = Boolean(prefersReducedMotion);
   const copy = COPY.en;
@@ -298,7 +302,7 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
   const [emailDigest, setEmailDigest] = useState(initialEmailDigest);
   const [direction, setDirection] = useState(1);
   const [leaving, setLeaving] = useState(false);
-  const hero = useRef(null);
+  const hero = useRef<HTMLDivElement | null>(null);
 
   const [shownStep, setShownStep] = useState(STEPS[0]);
   const onLanding = shownStep === 'welcome';
@@ -307,8 +311,8 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
   const { pendingProvider, collision, error: signInError, signIn } = useProviderSignIn('onboarding');
   const [selected, setSelected] = useState(() => new Set(normalizeGuestAreas(initialAreas)));
   const [selectedTopics, setSelectedTopics] = useState(() => new Set(normalizeGuestTopics(initialTopics, initialAreas)));
-  const [expandedAreas, setExpandedAreas] = useState(() => new Set());
-  const toggleExpanded = (key) => setExpandedAreas((previous) => {
+  const [expandedAreas, setExpandedAreas] = useState(() => new Set<string>());
+  const toggleExpanded = (key: string) => setExpandedAreas((previous) => {
     const next = new Set(previous);
     if (next.has(key)) next.delete(key);
     else next.add(key);
@@ -316,13 +320,13 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
   });
 
   const step = STEPS[stepIndex];
-  const stepCopy = copy[step];
+  const stepCopy = copy[step as 'welcome' | 'how' | 'topics' | 'subtopics' | 'reading' | 'inbox' | 'support'] as { kicker: string; title: ReactNode; lede?: string; cta: string };
   const isTopics = step === 'topics';
   const isSubtopics = step === 'subtopics';
   // The two question screens scroll under the foot and share a width.
   const isQuestion = isTopics || isSubtopics;
 
-  const goTo = (nextIndex) => {
+  const goTo = (nextIndex: number) => {
     if (nextIndex === stepIndex || nextIndex < 0 || nextIndex >= STEPS.length) return;
     setDirection(nextIndex > stepIndex ? 1 : -1);
     setStepIndex(nextIndex);
@@ -330,7 +334,7 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
 
-  const toggleArea = (key) => {
+  const toggleArea = (key: string) => {
     const removing = selected.has(key);
     setSelected((previous) => {
       const next = new Set(previous);
@@ -346,7 +350,7 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
     }
   };
 
-  const toggleTopic = (id) => {
+  const toggleTopic = (id: string) => {
     setSelectedTopics((previous) => {
       const next = new Set(previous);
       if (next.has(id)) next.delete(id);

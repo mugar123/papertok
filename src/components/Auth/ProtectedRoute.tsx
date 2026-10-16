@@ -1,3 +1,4 @@
+import type { PropsWithChildren } from 'react';
 import { useMemo, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.tsx';
@@ -5,7 +6,7 @@ import { peekAuthReturn } from '../../utils/authReturn.ts';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import AnimatedAtom from '../Feed/AnimatedAtom.tsx';
 
-export default function ProtectedRoute({ children, requireOnboarding = true }) {
+export default function ProtectedRoute({ children, requireOnboarding = true }: PropsWithChildren<{ requireOnboarding?: boolean }>) {
   const location = useLocation();
   const {
     user,

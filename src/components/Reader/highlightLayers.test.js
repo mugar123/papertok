@@ -16,7 +16,7 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '').replac
  */
 test('a mark the reader lays over a model underline keeps the underline running beneath it', async () => {
   const jsx = stripComments(await read('./HighlightedScientificText.tsx'));
-  assert.match(jsx, /item\.under\?\.includes\('ai'\) && item\.source !== 'ai' \? 'rd-mark--over-ai' : ''/);
+  assert.match(jsx, /\(item as Partial<HighlightMath>\)\.under\?\.includes\('ai'\) && \(item as Partial<HighlightRange>\)\.source !== 'ai' \? 'rd-mark--over-ai' : ''/);
   const css = stripComments(await read('./PaperReader.css'));
   const rule = css.match(/\.rd-mark--over-ai\.rd-mark--over-ai \{([^}]*)\}/)?.[1] || '';
   assert.match(rule, /box-shadow: inset 0 -2px 0 var\(--accent-primary\);/);

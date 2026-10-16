@@ -30,7 +30,7 @@ test('an ORCID OpenAlex does not know is resolved with the paper before falling 
 
 test('an unverified author gets no Follow and a notice that the results come from the name', () => {
   assert.match(jsx, /const authorIdentityUnverified = Boolean\(entity\) && !authorIdentityVerified\(\{ type, routeId: id, entity \}\);/);
-  const follow = jsx.slice(jsx.indexOf('const followEntity = useMemo(() => {'), jsx.indexOf('const followEntity = useMemo(() => {') + 300);
+  const follow = jsx.slice(jsx.indexOf('const followEntity = useMemo<FollowInput | null>(() => {'), jsx.indexOf('const followEntity = useMemo<FollowInput | null>(() => {') + 300);
   assert.match(follow, /if \(!entity \|\| authorIdentityUnverified \|\|/);
   assert.match(
     jsx,

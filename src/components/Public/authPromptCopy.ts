@@ -36,10 +36,10 @@ const COPY = Object.freeze({
   },
 });
 
-export function normalizeAuthReason(value) {
-  return typeof value === 'string' && Object.hasOwn(COPY, value) ? value : 'default';
+export function normalizeAuthReason(value: unknown) {
+  return typeof value === 'string' && Object.hasOwn(COPY, value) ? value as keyof typeof COPY : 'default';
 }
 
-export function authPromptCopy(reason) {
+export function authPromptCopy(reason: unknown) {
   return COPY[normalizeAuthReason(reason)]['en'];
 }

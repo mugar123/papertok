@@ -1,3 +1,5 @@
+import type { StyledProps } from './props.ts';
+
 import { cn } from '../../lib/utils.ts';
 
 /**
@@ -5,7 +7,7 @@ import { cn } from '../../lib/utils.ts';
  * grow with what is typed until its `max-h`, which a caller sets in
  * viewport units (design.md, rule 7) — never a fixed `em`.
  */
-function Textarea({ className, ...props }) {
+function Textarea({ className, ...props }: StyledProps<'textarea'>) {
   return (
     <textarea
       data-slot="textarea"

@@ -61,7 +61,7 @@ test('SOURCE: the next page pools the late candidates and then forgets them', as
   const pool = bounded(
     code,
     'const lateMain = lateSourceCandidatesRef.current.splice(0);',
-    'const uniqueMap = new Map();',
+    'const uniqueMap = new Map<string, Paper>();',
     'the candidate pool',
     12,
   );
@@ -194,7 +194,7 @@ test('SOURCE: the topic table is prewarmed when a topic follow is known', async 
   const code = stripComments(await read('./FeedContext.tsx'));
   const effect = bounded(
     code,
-    'const followingSignatureRef = useRef(null);',
+    'const followingSignatureRef = useRef<string | null>(null);',
     'const signature = followedEntities',
     'the following effect',
     12,

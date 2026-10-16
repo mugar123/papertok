@@ -9,7 +9,7 @@ test('SOURCE: a profile that lands after the feed budget still applies, the same
 
   // One applier for both arrivals: the sets, the affinities, the generation
   // bump and the semantic overlay all live in it.
-  const applier = code.match(/const applyInteractionProfile = \(result\) => \{[\s\S]*?\n {4}\};/);
+  const applier = code.match(/const applyInteractionProfile = \(result: Exclude<ProfileLoadResult, \{ status: 'unavailable' \}>\) => \{[\s\S]*?\n {4}\};/);
   assert.ok(applier, 'applyInteractionProfile is gone');
   for (const call of ['setLikedPaperIds(liked)', 'setSavedPaperIds(saved)', 'setReadPaperIds(read)', 'setInteractionProfileGeneration(generation => generation + 1)']) {
     assert.ok(applier[0].includes(call), `${call} is not inside the applier`);

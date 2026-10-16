@@ -26,7 +26,7 @@ test('newsletter_change has a single emitter', () => {
   );
   assert.match(
     source,
-    /const applySavedPreferences = useCallback\(\(saved, wasEnabled\) => \{/,
+    /const applySavedPreferences = useCallback(?:<[^;\n]+>)?\(\(saved: NotificationPreferences, wasEnabled: boolean\) => \{/,
     'the emitter should live in applySavedPreferences',
   );
 });

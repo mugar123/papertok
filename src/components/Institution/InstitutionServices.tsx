@@ -1,3 +1,6 @@
+import type { LinkedInstitution } from '../../services/institutionService.ts';
+type ServicesAnswer = Awaited<ReturnType<typeof findInstitutionServices>>;
+type InstitutionPlatform = NonNullable<ServicesAnswer>['services'][number];
 import { useEffect, useId, useRef, useState } from 'react';
 import { findInstitutionServices, knownInstitutionServices } from '../../services/institutionAccessService.ts';
 import { Button } from '../ui/button.tsx';
@@ -6,9 +9,9 @@ import './Institution.css';
 
 const COPY = {
   kicker: 'Through your library',
-  count: count => `${count} ${count === 1 ? 'platform' : 'platforms'}`,
-  found: count => `${COPY.count(count)} through your library.`,
-  unchecked: count => `${COPY.count(count)} could not be checked.`,
+  count: (count: number) => `${count} ${count === 1 ? 'platform' : 'platforms'}`,
+  found: (count: number) => `${COPY.count(count)} through your library.`,
+  unchecked: (count: number) => `${COPY.count(count)} could not be checked.`,
   loading: 'Checking your library…',
   empty: 'Your library has none of the platforms PaperTok checks. Papers may still open through other collections.',
   partial: 'PaperTok could only check part of the catalogue. Try again later.',
@@ -25,12 +28,12 @@ const COPY = {
  * (`ownPlatform: false`), so the line names the package ("via ProQuest
  * Central") rather than letting the tile claim a subscription to the publisher.
  */
-function subtitleFor(service) {
+function subtitleFor(service: InstitutionPlatform) {
   if (service.collection && !service.ownPlatform) return `via ${service.collection}`;
   return service.publisher || null;
 }
 
-function relativeLuminance(hex) {
+function relativeLuminance(hex: string) {
   const [r, g, b] = [1, 3, 5].map((start) => {
     const channel = parseInt(hex.slice(start, start + 2), 16) / 255;
     return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
@@ -43,12 +46,12 @@ function relativeLuminance(hex) {
  * whichever contrasts more (#111318, luminance ≈ 0.0065). The brand colour
  * does not flip with the theme, so neither may the ink on it.
  */
-function inkOn(hex) {
+function inkOn(hex: string) {
   const luminance = relativeLuminance(hex);
   return 1.05 / (luminance + 0.05) >= (luminance + 0.05) / 0.0565 ? 'light' : 'dark';
 }
 
-function ServiceRow({ service }) {
+function ServiceRow({ service }: { service: InstitutionPlatform }) {
   const logo = publisherLogoFor(service.id);
   const content = (
     <>
@@ -88,7 +91,7 @@ function ServiceRow({ service }) {
  * what it answers. A list cut short and a library PaperTok cannot check are
  * said as such, never as a library with nothing.
  */
-export default function InstitutionServices({ institution }) {
+export default function InstitutionServices({ institution }: { institution: LinkedInstitution }) {
   const { domain, entityId = null, rorId = null } = institution;
   const subject = `${domain}|${entityId}|${rorId}`;
   const kickerId = useId();
@@ -98,7 +101,7 @@ export default function InstitutionServices({ institution }) {
   // A known answer is there from the first render: the dialog this sits in
   // opens with a scale-in, and a list landing a frame later doubled its
   // height mid-animation.
-  const [answer, setAnswer] = useState(() => {
+  const [answer, setAnswer] = useState<{ subject: string; attempt: number; value: ServicesAnswer } | null>(() => {
     const known = knownInstitutionServices({ domain, entityId, rorId });
     return known ? { subject, attempt: 0, value: known } : null;
   });
@@ -127,10 +130,10 @@ export default function InstitutionServices({ institution }) {
   let quiet = false;
   if (loading) status = COPY.loading;
   else if (failed) status = COPY.error;
-  else if (result.unsupported) status = COPY.unsupported;
-  else if (result.partial) status = COPY.partial;
-  else if (result.unchecked > 0) {
-    status = [services.length > 0 && COPY.found(services.length), COPY.unchecked(result.unchecked)].filter(Boolean).join(' ');
+  else if (result!.unsupported) status = COPY.unsupported;
+  else if (result!.partial) status = COPY.partial;
+  else if (result!.unchecked > 0) {
+    status = [services.length > 0 && COPY.found(services.length), COPY.unchecked(result!.unchecked)].filter(Boolean).join(' ');
   } else if (services.length === 0) status = COPY.empty;
   else {
     status = COPY.found(services.length);
@@ -144,7 +147,7 @@ export default function InstitutionServices({ institution }) {
   // A retry that succeeds takes its own button away, and with it the focus
   // the press had. The heading takes it instead, so a keyboard user lands on
   // the list that answered rather than on the dialog's edge.
-  const kickerRef = useRef(null);
+  const kickerRef = useRef<HTMLHeadingElement | null>(null);
   const focusAfterRetry = useRef(false);
   useEffect(() => {
     if (loading || !focusAfterRetry.current) return;

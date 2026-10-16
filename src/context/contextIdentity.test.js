@@ -1,3 +1,4 @@
+import ts from 'typescript';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -34,11 +35,20 @@ test('createContext lives only in modules that define no components', () => {
   const offenders = [];
   for (const file of sourceFiles(srcDir)) {
     const source = readFileSync(file, 'utf8');
-    if (!/\bcreateContext\s*\(/.test(source)) continue;
+    const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+    let createsContext = false;
+    let containsJsx = false;
+    function visit(node) {
+      if (ts.isCallExpression(node) && node.expression.getText(parsed) === 'createContext') createsContext = true;
+      if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node)) containsJsx = true;
+      ts.forEachChild(node, visit);
+    }
+    visit(parsed);
+    if (!createsContext) continue;
     const name = relative(srcDir, file);
     const declared = [...source.matchAll(/export\s+(?:default\s+)?(?:function|class)\s+([A-Z]\w*)/g)].map(m => m[1]);
     if (declared.length) offenders.push(`${name} also declares ${declared.join(', ')}`);
-    else if (/<[A-Z][\w.]*[\s/>]/.test(source)) offenders.push(`${name} also contains JSX`);
+    else if (containsJsx) offenders.push(`${name} also contains JSX`);
   }
   assert.deepEqual(offenders, [], `createContext() must not share a module with components:\n  ${offenders.join('\n  ')}`);
 });
@@ -137,15 +147,15 @@ function parseDepsArray(block) {
 function isSourcedFromStableHook(providerSource, identifier) {
   if (STABLE_MODULE_CONSTANTS.has(identifier)) return true;
   return (
-    new RegExp(`const \\[[^\\]]*\\b${identifier}\\b[^\\]]*\\]\\s*=\\s*useState\\(`).test(providerSource)
+    new RegExp(`const \\[[^\\]]*\\b${identifier}\\b[^\\]]*\\]\\s*=\\s*useState(?:<[^\\n]+>)?\\(`).test(providerSource)
     || new RegExp(`const ${identifier} = useCallback\\(`).test(providerSource)
     || new RegExp(`const ${identifier} = useMemo\\(`).test(providerSource)
   );
 }
 
 for (const [file, providerName] of [
-  ['FeedContext.jsx', 'FeedProvider'],
-  ['AuthContext.jsx', 'AuthProvider'],
+  ['FeedContext.tsx', 'FeedProvider'],
+  ['AuthContext.tsx', 'AuthProvider'],
 ]) {
   test(`${providerName}'s context value is actually stable, not merely wrapped`, () => {
     const source = readFileSync(join(srcDir, 'context', file), 'utf8');

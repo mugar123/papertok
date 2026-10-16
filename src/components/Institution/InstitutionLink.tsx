@@ -1,3 +1,8 @@
+import type { FormEvent } from 'react';
+type InstitutionLinkProps = {
+  idPrefix?: string; formId?: string; showSubmit?: boolean;
+  onBusyChange?: (busy: boolean) => void; linkedNote?: string;
+} & ({ email: string; onEmailChange: (email: string) => void } | { email?: undefined; onEmailChange?: undefined });
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
@@ -15,7 +20,7 @@ const COPY = {
   hint: 'When you continue, Google opens so you can sign in with that account. PaperTok keeps the institution, not the address.',
   submit: 'Continue with Google',
   submitting: 'Verifying…',
-  linked: name => `Verified with ${name}.`,
+  linked: (name: string) => `Verified with ${name}.`,
   unlink: 'Unlink',
   unlinking: 'Unlinking…',
   linkedNow: 'Institution linked.',
@@ -42,7 +47,7 @@ export default function InstitutionLink({
   onEmailChange,
   onBusyChange,
   linkedNote,
-}) {
+}: InstitutionLinkProps) {
   const { institution, linkInstitution, unlinkInstitution } = useAuth();
   const [ownEmail, setOwnEmail] = useState('');
   const controlled = controlledEmail !== undefined;
@@ -50,13 +55,13 @@ export default function InstitutionLink({
   const setEmail = controlled ? onEmailChange : setOwnEmail;
   const [busy, setBusy] = useState(false);
   useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
-  const [feedback, setFeedback] = useState(null);
+  const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   // Linking swaps the form for the linked row and unlinking swaps it back, so
   // the control that had focus is gone either way. Focus lands on the control
   // that continues the task: Unlink after a link, the field after an unlink.
-  const pendingFocus = useRef(null);
-  const inputRef = useRef(null);
-  const unlinkRef = useRef(null);
+  const pendingFocus = useRef<'input' | 'unlink' | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const unlinkRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     if (pendingFocus.current === 'unlink' && institution) unlinkRef.current?.focus();
     if (pendingFocus.current === 'input' && !institution) inputRef.current?.focus();
@@ -66,7 +71,7 @@ export default function InstitutionLink({
   const hintId = `${idPrefix}-hint`;
   const feedbackId = `${idPrefix}-feedback`;
 
-  const handleSubmit = async (event) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (busy) return;
     setBusy(true);
@@ -74,14 +79,14 @@ export default function InstitutionLink({
     pendingFocus.current = 'unlink';
     try {
       await linkInstitution(email);
-      setEmail('');
+      setEmail!('');
       setFeedback({ tone: 'success', text: COPY.linkedNow });
     } catch (error) {
       // Closing Google's window is a decision, not a failure to report.
-      if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
+      if ((error as { code?: string } | null)?.code === 'auth/popup-closed-by-user' || (error as { code?: string } | null)?.code === 'auth/cancelled-popup-request') {
         setFeedback(null);
       } else {
-        if (!String(error?.code || '').startsWith('INSTITUTION_')) console.error('Error linking institution:', error);
+        if (!String((error as { code?: string } | null)?.code || '').startsWith('INSTITUTION_')) console.error('Error linking institution:', error);
         setFeedback({ tone: 'error', text: getUiErrorMessage(error, 'INSTITUTION_LINK_FAILED') });
       }
       pendingFocus.current = null;
@@ -149,7 +154,7 @@ export default function InstitutionLink({
           placeholder={COPY.placeholder}
           value={email}
           onChange={(event) => {
-            setEmail(event.target.value);
+            setEmail!(event.target.value);
             if (feedback?.tone === 'error') setFeedback(null);
           }}
           readOnly={busy}

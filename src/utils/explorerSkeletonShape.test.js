@@ -50,7 +50,7 @@ test('each type reserves the block it actually carries', () => {
   // and held open on its grey rows until Wikipedia answered, because
   // unreserved it used to appear at full height in one frame (measured on
   // T11090 from cold at 1280×900: the body went 109 → 234px the moment the
-  // entity came). It unfolds on arrival now instead (EntityExplorer.jsx), so
+  // entity came). It unfolds on arrival now instead (EntityExplorer.tsx), so
   // reserving it too would give the reader the same complaint from the other
   // side: the skeleton holds 146px, the live hero lands without the block
   // because the lookup is still out, the settle shrinks the box by that much,
@@ -93,7 +93,7 @@ test('an unknown type falls back to the plainest shape and still renders', () =>
 
 test('the skeleton knows which pages carry the recent-impact cell', () => {
   // `RecentImpactStat` mounts for authors and institutions only
-  // (EntityExplorer.jsx), and its cell is the one with a two-line detail
+  // (EntityExplorer.tsx), and its cell is the one with a two-line detail
   // under the label. Measured 2026-09-09 on a cold author: the cell grew
   // 64.5 → 77.5px when the score landed and the ORCID card under the header
   // dropped 10.3px in one frame. The skeleton reserves that detail line on

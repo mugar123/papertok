@@ -1,3 +1,4 @@
+import { stripTypeScriptTypes } from 'node:module';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -12,10 +13,10 @@ import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.ts';
 // Execute the actual loader callback with provider and React-state boundaries
 // injected. Source-pattern tests cannot catch an excluded page ending the feed.
 const source = readFileSync(new URL('./FeedContext.tsx', import.meta.url), 'utf8');
-const start = source.indexOf('async (reset = false, mode, randomizeStart = false, pageOverride,');
+const start = source.indexOf('async (reset = false, mode?: string | null, randomizeStart = false, pageOverride?: number,');
 const end = source.indexOf('\n  }, [\n    userPreferences, page, papers, loading, feedMode,', start);
 assert.ok(start >= 0 && end > start, 'the feed loader callback must exist');
-const callback = source.slice(start, end) + '\n  }';
+const callback = stripTypeScriptTypes(source.slice(start, end) + '\n  }');
 const ref = (current) => ({ current });
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 const records = (prefix, count = 15) => Array.from({ length: count }, (_, index) => ({

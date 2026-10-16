@@ -300,7 +300,7 @@ export function resolvePreferredSearchSection({
   query,
   hint,
   sectionValues = {},
-}: { query?: string; hint?: string; sectionValues?: Record<string, unknown[]> }) {
+}: { query?: string; hint?: string | null; sectionValues?: Record<string, unknown[]> }) {
   const availableSections = new Set(
     Object.entries(sectionValues)
       .filter(([, values]) => Array.isArray(values) && values.length > 0)

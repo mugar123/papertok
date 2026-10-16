@@ -3,6 +3,9 @@ interface OrcidAffiliation {
   organization?: { name?: string; 'disambiguated-organization'?: { 'disambiguation-source'?: string; 'disambiguated-organization-identifier'?: string } };
   'role-title'?: string; 'start-date'?: { year?: OrcidValue }; 'end-date'?: { year?: OrcidValue };
 }
+interface OrcidAffiliationRecord {
+  organization?: string; ror?: string | null; role?: string; startDate?: string; endDate?: string;
+}
 interface OrcidAffiliationGroup {
   summaries?: OrcidAffiliationGroup[];
   'employment-summary'?: OrcidAffiliation;
@@ -124,7 +127,7 @@ function formatOrcidData(data: OrcidPayload, orcidId: string) {
         endDate: summary['end-date']?.year?.value || 'Presente'
       };
     });
-  }).filter(Boolean) || [];
+  }).filter(Boolean) as OrcidAffiliationRecord[] || [];
 
   // Educations — same structure change
   const educations = activities.educations?.['affiliation-group']?.flatMap(group => {
@@ -144,7 +147,7 @@ function formatOrcidData(data: OrcidPayload, orcidId: string) {
         endDate: summary['end-date']?.year?.value
       };
     });
-  }).filter(Boolean) || [];
+  }).filter(Boolean) as OrcidAffiliationRecord[] || [];
 
   // Top Works (just getting titles and years of a few recent works to show activity)
   const worksGroups = activities.works?.group || [];

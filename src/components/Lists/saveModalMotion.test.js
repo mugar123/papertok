@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises';
  * scale over 200ms, and closing called `dialog.close()` in the same turn as
  * `onClose`, so the parent unmounted the window before any exit could paint.
  *
- * The window is a Base UI Dialog now (ui/dialog.jsx), and the contract is the
+ * The window is a Base UI Dialog now (ui/dialog.tsx), and the contract is the
  * primitive's: the popup is marked `data-open` on the way in and `data-closed`
  * on the way out, held in the document until `saveModalOut` has finished, and
  * the parent — which unmounts the component — hears of the close from
@@ -51,13 +51,13 @@ test('the save modal holds a matching enter and exit pair on the primitive\'s ow
 test('the exit plays before the parent unmounts the window, and the parent hears of it exactly once', async () => {
   const code = stripComments(await readFile(JSX, 'utf8'));
 
-  // The window owns its open state because App.jsx unmounts it on `onClose`.
-  assert.match(code, /const \[open, setOpen\] = useState\(true\);/);
+  // The window owns its open state because App.tsx unmounts it on `onClose`.
+  assert.match(code, /const \[open, setOpen\] = useState(?:<[^;\n]+>)?\(true\);/);
   assert.match(code, /<Dialog\s[\s\S]*?open=\{open\}/, 'the Root is controlled by the window');
   assert.match(code, /onOpenChangeComplete=\{handleOpenChangeComplete\}/, 'the parent is told after the animations, not before');
   assert.match(
     code,
-    /const handleOpenChangeComplete = \(nextOpen\) => \{\s*if \(!nextOpen\) onClose\(\);\s*\};/,
+    /const handleOpenChangeComplete = \(nextOpen: boolean\) => \{\s*if \(!nextOpen\) onClose\(\);\s*\};/,
   );
   const notifiesParent = code.match(/\bonClose\(\)/g) ?? [];
   assert.equal(notifiesParent.length, 1, 'onClose() must be called from onOpenChangeComplete and nowhere else');
@@ -74,7 +74,7 @@ test('every close path still funnels through the unsaved-changes guard, and a cl
   assert.match(code, /onOpenChange=\{\(nextOpen, eventDetails\) => \{ if \(!nextOpen\) onCancel\(eventDetails\); \}\}/);
   assert.match(
     code,
-    /const onCancel = \(eventDetails\) => \{\s*eventDetails\.cancel\(\);\s*requestClose\(\{ explicit: eventDetails\.reason === 'close-press' \}\);\s*\};/,
+    /const onCancel = \(eventDetails: Parameters<NonNullable<ComponentProps<typeof Dialog>\['onOpenChange'\]>>\[1\]\) => \{\s*eventDetails\.cancel\(\);\s*requestClose\(\{ explicit: eventDetails\.reason === 'close-press' \}\);\s*\};/,
   );
   assert.match(code, /if \(saving \|\| !open\) return/, 'a close while saving, or while already leaving, is refused');
   const guard = code.match(/const requestClose = \(\{ explicit = false \} = \{\}\) => \{[\s\S]*?\n {2}\};/);
@@ -91,7 +91,7 @@ test('every close path still funnels through the unsaved-changes guard, and a cl
 
 test('the window is a modal Base UI dialog that owns focus, Escape and the scroll guard', async () => {
   const code = stripComments(await readFile(JSX, 'utf8'));
-  assert.match(code, /import \{ Dialog, DialogClose, DialogContent, DialogTitle \} from '\.\.\/ui\/dialog\.jsx';/);
+  assert.match(code, /import \{ Dialog, DialogClose, DialogContent, DialogTitle \} from '\.\.\/ui\/dialog\.tsx';/);
   assert.doesNotMatch(code, /modal=\{false\}/, 'FeedContainer probes [aria-modal="true"]; the window must stay modal');
   assert.doesNotMatch(code, /<dialog\b|useDialogFocus/);
   assert.match(code, /<DialogContent\s[\s\S]*?className="save-modal"[\s\S]*?closeLabel=\{copy\.close\}/);
@@ -123,7 +123,7 @@ test('the guest save prompt traps focus and closes on Escape', async () => {
   // Either the shared keyboard hook or a Base UI Dialog, which owns the trap,
   // Escape and the restore itself; anything else is a window nobody can leave.
   const onHook = /useDialogFocus\(true, onClose\)/.test(source);
-  const onDialog = /from '\.\.\/ui\/dialog(?:\.jsx)?'/.test(source) && /<Dialog\b/.test(source) && !/modal=\{false\}/.test(source);
+  const onDialog = /from '\.\.\/ui\/dialog\.tsx'/.test(source) && /<Dialog\b/.test(source) && !/modal=\{false\}/.test(source);
   assert.ok(onHook || onDialog, 'AuthPrompt lost the dialog keyboard contract');
   assert.ok(
     /data-dialog-initial-focus/.test(source) || /initialFocus=/.test(source),

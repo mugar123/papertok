@@ -56,7 +56,7 @@ export interface PaperFollowMatch {
   canonicalId: string;
   displayName: string;
   source?: string;
-  externalIds?: Record<string, string | undefined>;
+  externalIds?: Record<string, string | null | undefined>;
   metadata?: Record<string, unknown>;
 }
 
@@ -126,6 +126,7 @@ export interface Paper {
   pdfUrl?: string | null;
   openAccessPdfUrl?: string;
   landingPageUrl?: string | null;
+  openUrl?: string | null;
   europePmcUrl?: string;
   accessSource?: string;
   license?: string;
@@ -159,7 +160,8 @@ export interface Paper {
   _type?: 'followed' | 'graph' | 'exploit' | 'exploration';
   _isGraphCandidate?: boolean;
   _dynamicScore?: number;
-  _debugScore?: PaperRecommendationScore;
+  _isOpenAlexEnriched?: boolean;
+  _debugScore?: Partial<PaperRecommendationScore>;
   updateKey?: string;
 
   // These aliases still arrive from adapters and older saved records.
@@ -206,6 +208,7 @@ export function readArxivId(value: unknown): string {
  */
 export function paperLegacyAdapter<T extends StoredPaperInput & { sources: PaperSources | null }>(legacyPaper: T): T;
 export function paperLegacyAdapter(legacyPaper: StoredPaperInput & { sources?: undefined }): Paper;
+export function paperLegacyAdapter(legacyPaper: Partial<Paper>): Partial<Paper>;
 export function paperLegacyAdapter(legacyPaper: StoredPaperInput): Paper | StoredPaperInput;
 export function paperLegacyAdapter(legacyPaper: StoredPaperInput): Paper | StoredPaperInput {
   // If it already looks like a new Paper (has sources object), return as is

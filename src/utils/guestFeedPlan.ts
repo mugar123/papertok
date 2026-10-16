@@ -67,7 +67,7 @@ const GUEST_PUBMED_CAP = 3;
  * physics categories and no economics. An area the guest narrowed to specific
  * topics offers only those; one they did not offers all of its own.
  */
-function interleaveAreaCategories(areas: string[], cap: number, topics: string[] = []) {
+function interleaveAreaCategories(areas: readonly string[], cap: number, topics: readonly string[] = []) {
   const lists = guestTopicListsForAreas(areas, topics);
   const picked = [];
   for (let index = 0; picked.length < cap; index += 1) {
@@ -90,7 +90,7 @@ function interleaveAreaCategories(areas: string[], cap: number, topics: string[]
  * `key` is what the feed hook watches: a plan with the same key is the same
  * plan, and a re-render must not re-fetch.
  */
-export function buildGuestFeedPlan(areas: string[] = [], topics: string[] = []) {
+export function buildGuestFeedPlan(areas: readonly string[] = [], topics: readonly string[] = []) {
   const chosen = normalizeGuestAreas(areas);
   const chosenTopics = normalizeGuestTopics(topics, chosen);
   if (chosen.length === 0) {

@@ -1,3 +1,11 @@
+import type { MouseEvent } from 'react';
+import type { MotionProps } from 'framer-motion';
+import type { QuerySnapshot } from 'firebase/firestore';
+import type { Paper } from '../../models/Paper.ts';
+import type { OwnList } from '../../utils/ownLists.ts';
+import type { MetadataRequest } from '../../utils/listPaperMetadataPlan.ts';
+import type { SyncState } from '../../services/publicListSync.ts';
+import type { PublicPaperInput } from '../../services/publicListPayload.ts';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { IS_DEMO, db } from '../../services/firebase.ts';
@@ -115,17 +123,17 @@ const PAPER_METADATA_LOAD_DEADLINE_MS = 4_000;
 const PAPER_METADATA_TOTAL_BUDGET_MS = 20_000;
 const PRIVATE_LIST_IDS = new Set(['__favorites__', '__read__', '__read_later__']);
 
-function demoGet(key, fallback) {
+function demoGet<T>(key: string, fallback: T): T {
   try { const v = localStorage.getItem(`papertok_${key}`); return v ? JSON.parse(v) : fallback; }
   catch { return fallback; }
 }
 
-function demoSet(key, value) {
+function demoSet(key: string, value: unknown) {
   try { localStorage.setItem(`papertok_${key}`, JSON.stringify(value)); }
   catch (err) { console.error('Error in demoSet', err); }
 }
 
-async function copyText(value) {
+async function copyText(value: string) {
   if (globalThis.navigator?.clipboard?.writeText) {
     await globalThis.navigator.clipboard.writeText(value);
     return;
@@ -153,7 +161,7 @@ async function copyText(value) {
  * ever asking for a click: it says what the background sync is doing, and goes
  * quiet again when there is nothing to say.
  */
-function publicBadgeState(status) {
+function publicBadgeState(status: string | undefined) {
   if (status === 'pending' || status === 'syncing') return 'syncing';
   if (status === 'synced') return 'synced';
   if (status === 'error') return 'stale';
@@ -161,7 +169,7 @@ function publicBadgeState(status) {
 }
 
 
-export default function ListsPage({ onOpenPdf, onEditPaper }) {
+export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (paper: Paper) => void; onEditPaper: (paper: Paper) => void }) {
   const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -186,7 +194,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
 
   // The paper open in the card overlay below: one that has no address on the
   // public paper page, so the card is painted from the stored copy instead.
-  const [overlayPaper, setOverlayPaper] = useState(null);
+  const [overlayPaper, setOverlayPaper] = useState<Paper | null>(null);
   const closeOverlayPaper = useCallback(() => setOverlayPaper(null), []);
 
   // The paper the overlay is SHOWING, which outlives the one selected. Closing
@@ -197,15 +205,15 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   // Adjusted during render rather than in an effect: a paper opened while
   // another is still leaving has to take over in the same commit, or the
   // window shows the wrong paper for a frame.
-  const [shownPaper, setShownPaper] = useState(null);
+  const [shownPaper, setShownPaper] = useState<Paper | null>(null);
   if (overlayPaper && overlayPaper !== shownPaper) {
     setShownPaper(overlayPaper);
   }
 
-  const getInteractionState = useCallback((paper) => ({
-    isLiked: likedPaperIds.has(paper.id),
-    isSaved: savedPaperIds.has(paper.id),
-    isRead: readPaperIds.has(paper.id),
+  const getInteractionState = useCallback((paper: Partial<Paper>) => ({
+    isLiked: likedPaperIds.has(paper.id!),
+    isSaved: savedPaperIds.has(paper.id!),
+    isRead: readPaperIds.has(paper.id!),
   }), [likedPaperIds, readPaperIds, savedPaperIds]);
 
   // Notes, tags and read timestamps no longer ride along on every feed load;
@@ -235,7 +243,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
    * lists dropping in behind them.
    */
   const seededLists = user?.uid
-    ? (ownListsCache.get(user.uid) ?? readStoredLists(user.uid))
+    ? (ownListsCache.get(user!.uid) ?? readStoredLists(user!.uid))
     : null;
   const [lists, setLists] = useState(() => seededLists ?? []);
   // Seeded, for the same reason the lists are. Leaving a list to read a paper
@@ -243,9 +251,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   // seconds earlier — Firestore's own cache cannot cover it, because this app
   // deliberately runs the in-memory one with no persistence (firebase.js).
   const [savedPapers, setSavedPapers] = useState(
-    () => (user?.uid ? readListPapers(user.uid) : null) ?? {},
+    () => (user?.uid ? readListPapers(user!.uid) : null) ?? {},
   );
-  const [expandedList, setExpandedList] = useState(null);
+  const [expandedList, setExpandedList] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   // Placeholder tiles for the cold case, and only for it. Seeding from the
   // session cache covers a revisit and the IndexedDB read covers this device,
@@ -268,46 +276,46 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
    * A row now waits while its own id is in this set, so the late window the
    * loader already supports is visible rather than contradicted.
    */
-  const [pendingPaperIds, setPendingPaperIds] = useState(() => new Set());
-  const [metadataError, setMetadataError] = useState(null);
-  const [error, setError] = useState(null);
+  const [pendingPaperIds, setPendingPaperIds] = useState(() => new Set<string>());
+  const [metadataError, setMetadataError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
-  const [shareFeedback, setShareFeedback] = useState(null);
+  const [shareFeedback, setShareFeedback] = useState<{ listId: string; state: string; url?: string | null; copied?: boolean } | null>(null);
   // What the sync engine is doing, keyed by list. It is not this page's state
   // to own: the save-and-organize modal queues syncs too, and they have to
   // outlive whichever screen started them, so the page subscribes instead.
-  const [syncStates, setSyncStates] = useState({});
+  const [syncStates, setSyncStates] = useState<Record<string, SyncState>>({});
   // What visitors actually see, per list. One read of the public document when
   // a published list is opened, and it earns its place twice: it is the only
   // honest source for "N papers are not in the public link yet", and it is
   // what lets a list damaged by an earlier sync repair itself on open — the
   // dirty stamp cannot, because a bad sync marks itself as done.
-  const [publicSnapshots, setPublicSnapshots] = useState({});
+  const [publicSnapshots, setPublicSnapshots] = useState<Record<string, { paperCount: number | null }>>({});
   // The index needs its own door to a new list: the only other one in the app is
   // inside the save modal, and it opens the very same window (CreateListDialog).
   const [creating, setCreating] = useState(false);
   // The list the edit window is open on, or null. Holding the list rather than
   // its id keeps the window's preset off a lookup that can miss mid-refresh.
-  const [editing, setEditing] = useState(null);
+  const [editing, setEditing] = useState<OwnList | null>(null);
   // Whether this session has had one authoritative answer about which lists
   // exist. Until it has, `lists` is a seed or a guess, and persisting it could
   // overwrite what this device knew with an emptiness nobody confirmed.
   const listsHeardFromServer = useRef(false);
   const metadataRequestId = useRef(0);
-  const metadataAbortRef = useRef(null);
+  const metadataAbortRef = useRef<AbortController | null>(null);
   useEffect(() => () => metadataAbortRef.current?.abort(), []);
   // The ceiling on the whole metadata fan-out; a new open cancels the last one's.
-  const metadataBudgetTimer = useRef(null);
-  const failedMetadataRequests = useRef(new Map());
+  const metadataBudgetTimer = useRef<number | null>(null);
+  const failedMetadataRequests = useRef(new Map<string, MetadataRequest[]>());
   const prefersReducedMotion = useReducedMotion();
 
-  const displayLists = useMemo(() => {
+  const displayLists = useMemo<OwnList[]>(() => {
     const favoriteIds = Array.from(likedPaperIds || []);
     const readIds = Array.from(readPaperIds || [])
-      .sort((a, b) => new Date(personalLibrary[b]?.readAt || 0) - new Date(personalLibrary[a]?.readAt || 0));
+      .sort((a, b) => (new Date(personalLibrary[b]?.readAt || 0) as Date & number) - (new Date(personalLibrary[a]?.readAt || 0) as Date & number));
     const readLaterIds = Object.values(personalLibrary)
       .filter((record) => record.readLater)
-      .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
+      .sort((a, b) => (new Date(b.updatedAt || 0) as Date & number) - (new Date(a.updatedAt || 0) as Date & number))
       .map((record) => record.paperId);
     return [
       { id: '__favorites__', name: 'Favorites', emoji: 'Heart', paperIds: favoriteIds, createdAt: 'default' },
@@ -317,7 +325,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     ];
   }, [likedPaperIds, lists, personalLibrary, readPaperIds]);
 
-  const getPaper = useCallback((paperId) => {
+  const getPaper = useCallback((paperId: string) => {
     // `libraryPapers` last of the three, because it is the broadest and the
     // least specific: it is whatever the mount's bounded read happened to
     // fetch, and either of the other two is a deliberate fetch of this paper.
@@ -366,7 +374,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       // need a second read of the document that was just written.
       if (Number.isInteger(state.result?.paperCount)) {
         setPublicSnapshots((current) => ({
-          ...current, [state.listId]: { paperCount: state.result.paperCount },
+          ...current, [state.listId!]: { paperCount: state.result!.paperCount },
         }));
       }
     }
@@ -409,15 +417,15 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
        * hand are records; an *absence* only counts when the server is the one
        * reporting it.
        */
-      const applySnapshot = (snapshot) => {
+      const applySnapshot = (snapshot: QuerySnapshot) => {
         if (!active) return false;
         if (!snapshotIsAuthoritative(snapshot)) return false;
-        const customLists = [];
+        const customLists: OwnList[] = [];
         snapshot.forEach((item) => customLists.push({ id: item.id, ...item.data() }));
         setLists(customLists);
         // The save modal paints from this same cache. Stamping it here means
         // a visit to Mis listas refreshes what the modal will show next.
-        rememberOwnLists(user.uid, customLists);
+        rememberOwnLists(user!.uid, customLists);
         // The gate on persisting: from here on this session has heard from the
         // server at least once, so `lists` is worth writing to disk — including
         // after a create, a rename or a delete.
@@ -427,14 +435,14 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
 
       try {
         if (IS_DEMO) {
-          if (active) setLists(demoGet('lists', []));
+          if (active) setLists(demoGet<OwnList[]>('lists', []));
           return;
         }
 
         // A bounded page, never the whole collection: this and the save modal
         // were the last two raw `collection(...)` reads in the client.
         const listsRef = query(
-          collection(db, 'users', user.uid, 'lists'),
+          collection(db, 'users', user!.uid, 'lists'),
           limit(OWN_LISTS_PAGE_SIZE),
         );
 
@@ -504,7 +512,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     };
   }, [user, reloadToken]);
 
-  const openList = useCallback(async (list, retryFailedOnly = false) => {
+  const openList = useCallback(async (list: OwnList, retryFailedOnly = false) => {
     const requestId = ++metadataRequestId.current;
     setExpandedList(list.id);
     setMetadataError(null);
@@ -529,8 +537,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     }
 
     if (IS_DEMO) {
-      const demoPapers = demoGet('savedPapersData', {});
-      const requestedPapers = {};
+      const demoPapers = demoGet<Record<string, Partial<Paper>>>('savedPapersData', {});
+      const requestedPapers: Record<string, Partial<Paper>> = {};
       missingIds.forEach((paperId) => {
         if (demoPapers[paperId]) {
           requestedPapers[paperId] = paperLegacyAdapter({ id: paperId, ...demoPapers[paperId] });
@@ -564,7 +572,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     // deadline is still running and can still paint its rows, and this is the
     // ceiling on that window too. A previous open's timer is cancelled by the
     // ref below, and a fire that finds nothing waiting does nothing.
-    clearTimeout(metadataBudgetTimer.current);
+    clearTimeout(metadataBudgetTimer.current!);
     metadataBudgetTimer.current = setTimeout(() => {
       if (metadataRequestId.current !== requestId || stillPending.size === 0) return;
       stillPending.clear();
@@ -573,7 +581,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     }, PAPER_METADATA_TOTAL_BUDGET_MS);
 
     /** Stops a superseded open from clearing the rows of the current one. */
-    const dropPending = (ids) => {
+    const dropPending = (ids: string[]) => {
       if (metadataRequestId.current !== requestId || ids.length === 0) return;
       ids.forEach((paperId) => stillPending.delete(paperId));
       setPendingPaperIds((current) => {
@@ -609,7 +617,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
        * of them came back empty would put the placeholder under a paper the
        * other request was about to deliver.
        */
-      const outstanding = new Map();
+      const outstanding = new Map<string, number>();
       requestDefinitions.forEach((requestDefinition) => {
         requestDefinition.paperIds.forEach((paperId) => {
           outstanding.set(paperId, (outstanding.get(paperId) || 0) + 1);
@@ -620,8 +628,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       // would wait on a request that is never going to be made.
       dropPending(missingIds.filter((paperId) => !outstanding.has(paperId)));
 
-      const settleRequest = (requestDefinition) => {
-        const exhausted = [];
+      const settleRequest = (requestDefinition: MetadataRequest) => {
+        const exhausted: string[] = [];
         requestDefinition.paperIds.forEach((paperId) => {
           const left = (outstanding.get(paperId) ?? 1) - 1;
           outstanding.set(paperId, left);
@@ -630,10 +638,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
         dropPending(exhausted);
       };
 
-      const resolvedIds = new Set();
-      const mergeSnapshot = (source, snapshot) => {
+      const resolvedIds = new Set<string>();
+      const mergeSnapshot = (source: MetadataRequest['source'], snapshot: QuerySnapshot) => {
         if (metadataRequestId.current !== requestId) return;
-        const loadedPapers = {};
+        const loadedPapers: Record<string, Partial<Paper>> = {};
         snapshot.forEach((item) => {
           const data = item.data();
           // Decoded: the document is named by the encoded id, the row by the
@@ -664,7 +672,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
         dropPending(Object.keys(loadedPapers));
         // Kept for the rest of the session, so leaving this list to read a
         // paper and coming back costs nothing.
-        rememberListPapers(user.uid, loadedPapers);
+        rememberListPapers(user!.uid, loadedPapers);
         setSavedPapers((current) => {
           const next = { ...current };
           Object.entries(loadedPapers).forEach(([paperId, paper]) => {
@@ -678,12 +686,12 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
         });
       };
 
-      const runRequest = async (requestDefinition) => {
+      const runRequest = async (requestDefinition: MetadataRequest): Promise<{ status: string; value?: QuerySnapshot; reason?: { code?: string; message?: string } }> => {
         const sourceCollection = requestDefinition.source === 'saved'
           ? 'savedPapers'
           : 'interactions';
         const metadataQuery = query(
-          collection(db, 'users', user.uid, sourceCollection),
+          collection(db, 'users', user!.uid, sourceCollection),
           where(documentId(), 'in', requestDefinition.paperIds.map(encodeFirestoreDocId)),
         );
 
@@ -715,7 +723,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
          * A batch past its deadline is still running: `onLateResult` merges
          * and settles it when it lands, exactly as before.
          */
-        const settleLate = (lateSnapshot) => {
+        const settleLate = (lateSnapshot: QuerySnapshot) => {
           mergeSnapshot(requestDefinition.source, lateSnapshot);
           settleRequest(requestDefinition);
           if (
@@ -772,7 +780,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
           const reason = result.status === 'rejected' ? result.reason : result.value?.reason;
           console.warn(
             `List metadata request failed (${definition.source}, ${definition.paperIds.length} ids):`,
-            reason?.code ?? result.value?.status ?? 'unknown',
+            reason?.code ?? (result as PromiseFulfilledResult<{ status: string }>).value?.status ?? 'unknown',
             reason?.message ?? '',
           );
           return [definition];
@@ -818,10 +826,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
         });
         hydrateLegacyArxivPapers(legacyMissing).then(({ records }) => {
           if (metadataRequestId.current !== requestId) return;
-          const named = {};
+          const named: Record<string, Partial<Paper>> = {};
           records.forEach(({ id, data }) => { named[id] = { ...data.paper, id }; });
           if (Object.keys(named).length > 0) {
-            rememberListPapers(user.uid, named);
+            rememberListPapers(user!.uid, named);
             setSavedPapers((current) => ({ ...named, ...current }));
           }
           dropPending(legacyMissing);
@@ -851,7 +859,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   // Coming back from a paper restores the list that was open. Once per id: the
   // state survives in the history entry, so coming back after closing the list
   // must not snap it open again.
-  const autoOpenedListId = useRef(null);
+  const autoOpenedListId = useRef<string | null>(null);
   useEffect(() => {
     const targetId = location.state?.openListId;
     if (!targetId || autoOpenedListId.current === targetId) return undefined;
@@ -878,7 +886,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
    * Before leaving, the current history entry is re-stamped with the open
    * list, so coming back restores the papers rather than the list index.
    */
-  const openPaperCard = (paper) => {
+  const openPaperCard = (paper: Partial<Paper>) => {
     // The public paper page when the paper has an address there — a DOI, an
     // arXiv id, the OpenAlex or PubMed id it was keyed by — with the stored
     // copy riding along so the page paints at once. A paper with no such
@@ -890,7 +898,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     // arXiv id, which built a PDF link nothing served.
     const path = getPublicPaperPath(paper) || getPublicPaperPath(paper.id);
     if (!path) {
-      setOverlayPaper(paper);
+      setOverlayPaper(paper as Paper);
       return;
     }
     if (expandedList) {
@@ -905,7 +913,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     navigate(path, { state: { paper, stored: true } });
   };
 
-  useEffect(() => () => clearTimeout(metadataBudgetTimer.current), []);
+  useEffect(() => () => clearTimeout(metadataBudgetTimer.current!), []);
 
   /**
    * Keeps the stored copy in step with the screen.
@@ -937,15 +945,15 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   // The dialog owns the form and its busy/error states; this owns the write.
   // Letting the failure through is the contract: CreateListDialog keeps itself
   // open and says so, instead of the caller guessing what to render.
-  const handleCreateList = async (name, icon, color) => {
+  const handleCreateList = async (name: string, icon: string, color: string) => {
     const listId = `list_${Date.now()}`;
     const newList = { id: listId, name, emoji: icon, color, paperIds: [], createdAt: new Date().toISOString() };
     if (IS_DEMO) {
-      const allLists = demoGet('lists', []);
+      const allLists = demoGet<OwnList[]>('lists', []);
       allLists.push(newList);
       demoSet('lists', allLists);
     } else {
-      await setDoc(doc(db, 'users', user.uid, 'lists', listId), newList);
+      await setDoc(doc(db, 'users', user!.uid, 'lists', listId), newList);
     }
     setLists((prev) => [...prev, newList]);
   };
@@ -964,18 +972,18 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
    * of `publicSyncedAt`. Renaming a published list without leaving that mark
    * would rename it everywhere except on the page strangers actually read.
    */
-  const handleEditList = async (listId, fields) => {
+  const handleEditList = async (listId: string, fields: { name: string; icon: string; color: string }) => {
     if (PRIVATE_LIST_IDS.has(listId)) return;
     const edit = { name: fields.name, emoji: fields.icon, color: fields.color };
     const editedAt = new Date();
 
     if (IS_DEMO) {
-      const allLists = demoGet('lists', []);
+      const allLists = demoGet<OwnList[]>('lists', []);
       demoSet('lists', allLists.map(item => (
         item.id === listId ? { ...item, ...edit, updatedAt: editedAt.toISOString() } : item
       )));
     } else {
-      await updateDoc(doc(db, 'users', user.uid, 'lists', listId), {
+      await updateDoc(doc(db, 'users', user!.uid, 'lists', listId), {
         ...edit,
         updatedAt: serverTimestamp(),
       });
@@ -986,7 +994,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     )));
   };
 
-  const handleDeleteList = async (listId) => {
+  const handleDeleteList = async (listId: string) => {
     if (PRIVATE_LIST_IDS.has(listId)) return;
     const list = lists.find(candidate => candidate.id === listId);
     // Deleting is irreversible and, for a published list, takes the public
@@ -996,14 +1004,14 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     );
     if (confirmed === false) return;
     if (IS_DEMO) {
-      const allLists = demoGet('lists', []).filter((l) => l.id !== listId);
+      const allLists = demoGet<OwnList[]>('lists', []).filter((l) => l.id !== listId);
       localStorage.setItem('papertok_lists', JSON.stringify(allLists));
     } else {
       if (list?.publicShareId) {
-        await unpublishPublicList(list.publicShareId, list.id);
-        cancelPublicListSync(publicListSyncKey(user.uid, listId));
+        await unpublishPublicList(list.publicShareId!, list.id);
+        cancelPublicListSync(publicListSyncKey(user!.uid, listId));
       }
-      await deleteDoc(doc(db, 'users', user.uid, 'lists', listId));
+      await deleteDoc(doc(db, 'users', user!.uid, 'lists', listId));
     }
     setLists((prev) => prev.filter((l) => l.id !== listId));
     if (expandedList === listId) setExpandedList(null);
@@ -1011,41 +1019,41 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
 
   // Taking a read mark back, from the row's own button or from the card's
   // read toggle in the overlay: the mark goes, and the row leaves the list.
-  const forgetRead = (paperId) => {
+  const forgetRead = (paperId: string) => {
     unmarkAsRead(paperId);
     setLists((prev) => prev.map((list) => {
       if (list.id === '__read__') {
-        return { ...list, paperIds: list.paperIds.filter((id) => id !== paperId) };
+        return { ...list, paperIds: list.paperIds!.filter((id) => id !== paperId) };
       }
       return list;
     }));
   };
 
-  const handleUnmarkAsRead = (e, paperId) => {
+  const handleUnmarkAsRead = (e: MouseEvent, paperId: string) => {
     e.stopPropagation();
     forgetRead(paperId);
   };
 
-  const handleUnlike = async (e, paperId, paper) => {
+  const handleUnlike = async (e: MouseEvent, paperId: string, paper: Partial<Paper>) => {
     e.stopPropagation();
-    await toggleLike(paper);
+    await toggleLike(paper as Paper);
     setLists((prev) => prev.map((list) => {
       if (list.id === '__favorites__') {
-        return { ...list, paperIds: list.paperIds.filter((id) => id !== paperId) };
+        return { ...list, paperIds: list.paperIds!.filter((id) => id !== paperId) };
       }
       return list;
     }));
   };
 
-  const handleRemoveFromCustomList = async (e, listId, paperId) => {
+  const handleRemoveFromCustomList = async (e: MouseEvent, listId: string, paperId: string) => {
     e.stopPropagation();
     // Only a write the server accepted may claim an edit time. Stamping the
     // local copy after a failed write would tell the freshness check that a
     // removal happened, and the sync would publish a list the account never
     // agreed to.
-    let editedAt = null;
+    let editedAt: Date | null = null;
     if (IS_DEMO) {
-      const allLists = demoGet('lists', []);
+      const allLists = demoGet<OwnList[]>('lists', []);
       const idx = allLists.findIndex((l) => l.id === listId);
       if (idx !== -1) {
         allLists[idx].paperIds = (allLists[idx].paperIds || []).filter((id) => id !== paperId);
@@ -1053,7 +1061,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       }
     } else {
       try {
-        const listRef = doc(db, 'users', user.uid, 'lists', listId);
+        const listRef = doc(db, 'users', user!.uid, 'lists', listId);
         await updateDoc(listRef, {
           paperIds: arrayRemove(paperId),
           // The mark the background sync looks for (P25). Every edit leaves
@@ -1069,13 +1077,13 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       if (list.id !== listId) return list;
       return {
         ...list,
-        paperIds: list.paperIds.filter((id) => id !== paperId),
+        paperIds: list.paperIds!.filter((id) => id !== paperId),
         ...(editedAt ? { updatedAt: editedAt } : {}),
       };
     }));
   };
 
-  const setListShareId = (listId, publicShareId) => {
+  const setListShareId = (listId: string, publicShareId: string | null | undefined) => {
     setPublicSnapshots((current) => {
       if (!(listId in current)) return current;
       const next = { ...current };
@@ -1099,7 +1107,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   // The platform share sheet when there is one (phones, mostly), the
   // clipboard when there is not. A dismissed sheet ends silently: closing it
   // was a decision, not a failure.
-  const shareListLink = async (listId, publicShareId, listName) => {
+  const shareListLink = async (listId: string, publicShareId: string | null | undefined, listName: string | undefined) => {
     const url = getPublicListUrl(publicShareId);
     if (!url) throw new Error('A public link could not be created.');
     const outcome = await shareOrCopyLink({ url, title: listName, copy: copyText });
@@ -1115,7 +1123,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     return url;
   };
 
-  const handlePublishList = async (list, papers) => {
+  const handlePublishList = async (list: OwnList, papers: PublicPaperInput[]) => {
     if (IS_DEMO) {
       setShareFeedback({ listId: list.id, state: 'unsupported' });
       return;
@@ -1152,7 +1160,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     }
   };
 
-  const handleShareList = async (list) => {
+  const handleShareList = async (list: OwnList) => {
     try {
       setShareFeedback({ listId: list.id, state: 'loading' });
       await shareListLink(list.id, list.publicShareId, list.name);
@@ -1166,7 +1174,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     }
   };
 
-  const handleUnpublishList = async (list) => {
+  const handleUnpublishList = async (list: OwnList) => {
     const confirmed = globalThis.confirm?.(
       'Stop sharing this list? Its public link will no longer work.',
     );
@@ -1174,11 +1182,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
 
     setShareFeedback({ listId: list.id, state: 'loading' });
     try {
-      await unpublishPublicList(list.publicShareId, list.id);
+      await unpublishPublicList(list.publicShareId!, list.id);
       // Whatever was queued for this list is about a share id that no longer
       // exists; letting it fire would report a failure for a decision the
       // owner has already made.
-      if (user) cancelPublicListSync(publicListSyncKey(user.uid, list.id));
+      if (user) cancelPublicListSync(publicListSyncKey(user!.uid, list.id));
       setListShareId(list.id, null);
       setShareFeedback({ listId: list.id, state: 'unpublished' });
     } catch (unpublishError) {
@@ -1220,7 +1228,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
         if (!active) return;
         setPublicSnapshots((current) => ({
           ...current,
-          [list.id]: { paperCount: Number.isInteger(document?.paperCount) ? document.paperCount : null },
+          [list.id]: { paperCount: Number.isInteger(document?.paperCount) ? document!.paperCount : null },
         }));
       })
       .catch((readError) => {
@@ -1250,7 +1258,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
    * It waits for the papers and refuses to run on a metadata failure: syncing
    * a half-loaded list would republish it short.
    */
-  const queuedSyncs = useRef(new Map());
+  const queuedSyncs = useRef(new Map<string, string>());
   useEffect(() => {
     if (IS_DEMO || !user || !expandedList) return;
     // Never from a seed. A list read back from this device's storage carries
@@ -1282,7 +1290,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       .filter(Boolean);
 
     const publishedCount = publicSnapshots[list.id]?.paperCount;
-    const behind = Number.isInteger(publishedCount) && publishedCount < papers.length;
+    const behind = Number.isInteger(publishedCount) && publishedCount! < papers.length;
     if (!listNeedsPublicSync(list) && !behind) return;
 
     // One request per state of the list, however many renders it causes.
@@ -1291,7 +1299,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     queuedSyncs.current.set(list.id, signature);
 
     queuePublicListSync({
-      key: publicListSyncKey(user.uid, list.id),
+      key: publicListSyncKey(user!.uid, list.id),
       shareId: list.publicShareId,
       listId: list.id,
       title: list.name,
@@ -1299,19 +1307,19 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       language: 'en',
       // Advisory only — the Worker reads the membership from the private list.
       paperIds: list.paperIds || [],
-      papers,
+      papers: papers as PublicPaperInput[],
     });
   }, [
     expandedList, getPaper, language, lists, metadataError, pendingPaperIds,
     publicSnapshots, user,
   ]);
 
-  const papersCount = (count) => `${count} ${count === 1 ? 'paper' : 'papers'}`;
+  const papersCount = (count: number) => `${count} ${count === 1 ? 'paper' : 'papers'}`;
 
   // One motion vocabulary for the two views of this page: the index and an
   // open list cross-fade with a small vertical step instead of swapping DOM in
   // a single frame.
-  const viewMotion = {
+  const viewMotion: MotionProps = {
     initial: prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 10 },
     animate: { opacity: 1, y: 0 },
     exit: prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -8 },
@@ -1387,7 +1395,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
             const isCustomList = !PRIVATE_LIST_IDS.has(list.id);
             const listShareFeedback = shareFeedback?.listId === list.id ? shareFeedback : null;
             const shareBusy = listShareFeedback?.state === 'loading';
-            const syncKey = user && isCustomList ? publicListSyncKey(user.uid, list.id) : null;
+            const syncKey = user && isCustomList ? publicListSyncKey(user!.uid, list.id) : null;
             const syncState = syncKey ? syncStates[syncKey] : null;
             const badgeState = publicBadgeState(syncState?.status);
             // How many papers of this list the public link does NOT carry.
@@ -1397,7 +1405,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
             const publishedCount = publicSnapshots[list.id]?.paperCount;
             const missingFromPublic = list.publicShareId
               ? Math.max(0, listTotal - (Number.isInteger(publishedCount)
-                ? publishedCount
+                ? publishedCount!
                 : publicPapers.length))
               : 0;
             const badgeLabel = {
@@ -1410,12 +1418,12 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
               <>
                 <header
                   className={`lists-expanded-header${resolveListColor(list) ? '' : ' lists-expanded-header--uncoloured'}`}
-                  style={resolveListColor(list) ? { '--list-accent': resolveListColor(list) } : undefined}
+                  style={resolveListColor(list) ? { '--list-accent': resolveListColor(list)! } : undefined}
                 >
                   <div className="lists-expanded-titleblock">
                     <span className="lists-expanded-icon" aria-hidden="true">
                       {(() => {
-                        const Icon = getIcon(list.emoji);
+                        const Icon = getIcon(list.emoji!);
                         return <Icon size={22} />;
                       })()}
                     </span>
@@ -1518,7 +1526,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                 {list.publicShareId && syncState?.status === 'error' && (
                   <div className="lists-share-status is-error" role="alert">
                     <span>{getUiErrorMessage(syncState.code, 'PUBLIC_LIST_SYNC_FAILED')}</span>
-                    <button className="lists-retry-btn" onClick={() => retryPublicListSync(syncKey)}>
+                    <button className="lists-retry-btn" onClick={() => retryPublicListSync(syncKey!)}>
                       {'Try again'}
                     </button>
                   </div>
@@ -1652,9 +1660,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                               {paper.authors.slice(0, 3).map(a => typeof a === 'string' ? a : a.name).filter(Boolean).join(', ')}{paper.authors.length > 3 && ' et al.'}
                             </p>
                           )}
-                          {record?.tags?.length > 0 && (
+                          {(record?.tags?.length as number) > 0 && (
                             <div className="lists-paper-tags">
-                              {record.tags.map((tag) => <span key={tag}>{tag}</span>)}
+                              {record.tags!.map((tag) => <span key={tag}>{tag}</span>)}
                             </div>
                           )}
                           {record?.note && <p className="lists-paper-note">{record.note}</p>}
@@ -1665,7 +1673,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                               the modal's membership check and note record
                               must look under the same key (R8: ids differ by
                               entry route). */}
-                          <button className="lists-paper-edit-btn" onClick={(e) => { e.stopPropagation(); onEditPaper?.({ ...paper, id: paperId }); }} title={'Edit note and tags'}>
+                          <button className="lists-paper-edit-btn" onClick={(e) => { e.stopPropagation(); onEditPaper?.({ ...paper, id: paperId } as Paper); }} title={'Edit note and tags'}>
                             <PencilSimple size={17} />
                           </button>
                           <button
@@ -1677,7 +1685,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                                 handleUnlike(e, paperId, paper);
                               } else if (list.id === '__read_later__') {
                                 e.stopPropagation();
-                                toggleReadLater(paper);
+                                toggleReadLater(paper as Paper);
                               } else {
                                 handleRemoveFromCustomList(e, list.id, paperId);
                               }
@@ -1690,7 +1698,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                       </div>
                     );
                   })}
-                  {(!list.paperIds || list.paperIds.length === 0) && (
+                  {(!list.paperIds || list.paperIds!.length === 0) && (
                     <div className="lists-empty-state lists-empty-state--inline">
                       <span className="lists-empty-icon" aria-hidden="true"><Books size={20} /></span>
                       <h3>{'This list is empty'}</h3>
@@ -1750,7 +1758,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
           </header>
           <div className="lists-grid">
             {displayLists.map((list, idx) => {
-              const Icon = getIcon(list.emoji);
+              const Icon = getIcon(list.emoji!);
               const isCustomList = !PRIVATE_LIST_IDS.has(list.id);
               const accent = resolveListColor(list);
               return (
@@ -1817,7 +1825,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                       {'Nothing saved yet.'}
                     </p>
                   ) : (
-                    list.paperIds
+                    list.paperIds!
                       .map((paperId) => getPaper(paperId))
                       .filter(Boolean)
                       .slice(0, 2)
@@ -1861,9 +1869,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
         {shownPaper && (
           <PaperCard
             paper={shownPaper}
-            isLiked={likedPaperIds.has(interactionIdFor(shownPaper))}
-            isSaved={savedPaperIds.has(interactionIdFor(shownPaper))}
-            isRead={readPaperIds.has(interactionIdFor(shownPaper))}
+            isLiked={likedPaperIds.has(interactionIdFor(shownPaper)!)}
+            isSaved={savedPaperIds.has(interactionIdFor(shownPaper)!)}
+            isRead={readPaperIds.has(interactionIdFor(shownPaper)!)}
             onLike={toggleLike}
             onNotInterested={(paper) => { markNotInterested(paper); closeOverlayPaper(); }}
             onMarkAsRead={markAsRead}

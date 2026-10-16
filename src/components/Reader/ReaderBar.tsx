@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+import type { ReaderCopy } from './PaperReader.tsx';
 import { motion, useReducedMotion } from 'framer-motion';
 import ThinkingDots from './ThinkingDots.tsx';
 
@@ -18,7 +20,7 @@ import ThinkingDots from './ThinkingDots.tsx';
  * (`levelControl` / `exportControl` in `PaperReader.jsx`): one control, two
  * surfaces, no second implementation to drift.
  */
-export default function ReaderBar({ copy, levelSlot, exportSlot, streaming, visible }) {
+export default function ReaderBar({ copy, levelSlot, exportSlot, streaming, visible }: { copy: Pick<ReaderCopy, 'writing'>; levelSlot: ReactNode; exportSlot: ReactNode; streaming: boolean; visible: boolean }) {
   const prefersReducedMotion = useReducedMotion();
 
   return (

@@ -30,7 +30,7 @@ test('SOURCE: every card mount can take a read mark back', async () => {
   assert.match(card, /onUnmarkAsRead = \(\) => \{\},/, 'the prop has a safe default');
   assert.match(card, /setReleasingRead\(true\);[\s\S]*?setTimeout\(\(\) => setReleasingRead\(false\), READ_RELEASE_MS\)/,
     'the release class is transient');
-  assert.match(card, /useEffect\(\(\) => \(\) => clearTimeout\(releaseTimerRef\.current\), \[\]\)/,
+  assert.match(card, /useEffect\(\(\) => \(\) => clearTimeout\(releaseTimerRef\.current!\), \[\]\)/,
     'and its timer is cleared on unmount');
   assert.match(card, /releasingRead && !isReadActive \? 'pc-side-btn--unreading' : ''/);
   assert.match(card, /onUnmarkAsRead=\{onUnmarkAsRead\}/, 'the related-paper card gets it too');
@@ -45,7 +45,7 @@ test('SOURCE: every card mount can take a read mark back', async () => {
     assert.match(await read(path), pattern, `${path} hands the card the way back`);
   }
   const lists = stripComments(await read('../Lists/ListsPage.tsx'));
-  assert.match(lists, /const forgetRead = \(paperId\) => \{\s*unmarkAsRead\(paperId\);[\s\S]*?'__read__'/,
+  assert.match(lists, /const forgetRead = \(paperId: string\) => \{\s*unmarkAsRead\(paperId\);[\s\S]*?'__read__'/,
     'on the lists page the row also leaves the reading list');
 });
 

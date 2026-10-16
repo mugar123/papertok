@@ -15,7 +15,7 @@ test('normalizes trailing slashes', () => {
 
 test('returns null for self-titled and unknown routes', () => {
   // The settings pages and the public pages already manage document.title
-  // themselves (SettingsPage.jsx, usePublicPageMetadata); the announcer must
+  // themselves (SettingsPage.tsx, usePublicPageMetadata); the announcer must
   // not fight them.
   assert.equal(routeTitle('/settings'), null)
   for (const page of ['profile', 'discovery', 'reading', 'notifications', 'privacy']) {

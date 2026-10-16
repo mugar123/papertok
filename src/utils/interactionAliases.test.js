@@ -58,13 +58,13 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '
  */
 test('SOURCE: the context builds the alias table and writes every mark under the resolved id', async () => {
   const code = stripComments(await read('../context/FeedContext.tsx'));
-  assert.match(code, /const interactionAliasIndex = useMemo\(\(\) => buildInteractionAliasIndex\(\[\s*\.\.\.Object\.entries\(libraryPapers\),\s*\.\.\.Object\.entries\(personalLibrary\)/,
+  assert.match(code, /const interactionAliasIndex = useMemo(?:<[^;\n]+>)?\(\(\) => buildInteractionAliasIndex\(\[\s*\.\.\.Object\.entries\(libraryPapers\),\s*\.\.\.Object\.entries\(personalLibrary\)/,
     'from the stored copies, no new read');
   for (const name of ['toggleLike', 'markNotInterested', 'markAsRead', 'toggleReadLater']) {
-    assert.match(code, new RegExp(`const ${name} = useCallback\\(async \\(paperInput\\) => \\{\\s*const paper = withInteractionId\\(paperInput\\);`), name);
+    assert.match(code, new RegExp(`const ${name} = useCallback\\(async \\(paperInput: Paper\\) => \\{\\s*const paper = withInteractionId\\(paperInput\\);`), name);
   }
-  assert.match(code, /const saveReadingMetadata = useCallback\(async \(paperInput, \{ note = '', tags = \[\] \}\) => \{\s*const paper = withInteractionId\(paperInput\);/);
-  assert.match(code, /const markSaved = useCallback\(async \(paperOrIdInput\) => \{\s*const paperOrId = paperOrIdInput && typeof paperOrIdInput === 'object' \? withInteractionId\(paperOrIdInput\) : paperOrIdInput;/);
+  assert.match(code, /const saveReadingMetadata = useCallback(?:<[^;\n]+>)?\(async \(paperInput: Paper, \{ note = '', tags = \[\] \}: \{ note\?: string; tags\?: string\[\] \}\) => \{\s*const paper = withInteractionId\(paperInput\);/);
+  assert.match(code, /const markSaved = useCallback(?:<[^;\n]+>)?\(async \(paperOrIdInput: Paper \| string\) => \{\s*const paperOrId = paperOrIdInput && typeof paperOrIdInput === 'object' \? withInteractionId\(paperOrIdInput\) : paperOrIdInput;/);
   assert.match(code, /interactionIdFor, libraryCopyFor,\s*feedMode, setFeedMode/, 'both are handed to the surfaces');
 });
 
@@ -86,6 +86,6 @@ test('SOURCE: every card surface looks a mark up under the resolved id', async (
   ]) {
     const code = stripComments(await read(path));
     assert.doesNotMatch(code, new RegExp(`PaperIds\\??\\.has\\(${subject}\\.id\\)`), `${path} still reads a mark by the raw id`);
-    assert.match(code, new RegExp(`readPaperIds\\??\\.has\\(interactionIdFor\\(${subject}\\)\\)`), path);
+    assert.match(code, new RegExp(`readPaperIds\\??\\.has\\(interactionIdFor\\(${subject}\\)!\\)`), path);
   }
 });

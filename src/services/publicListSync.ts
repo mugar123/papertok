@@ -6,7 +6,7 @@ interface SyncJob extends Omit<Partial<SyncRequest>, 'papers' | 'key'> {
   code: string | null; attempts: number; running: boolean; dirty: boolean; cancelled?: boolean;
   timer: ReturnType<typeof setTimeout> | null; result: SyncResult | null;
 }
-type SyncState = Pick<SyncJob, 'status' | 'code' | 'listId' | 'result'> | null;
+export type SyncState = Pick<SyncJob, 'status' | 'code' | 'listId' | 'result'> | null;
 type SyncListener = (key: string, state: SyncState) => void;
 interface SyncOptions {
   sync?: typeof syncPublicList; debounceMs?: number; retryMs?: number; noticeMs?: number; attempts?: number;
@@ -246,7 +246,7 @@ export function createPublicListSyncEngine(options: SyncOptions = {}) {
     schedule(job, 0);
   }
 
-  function subscribe(listener: SyncListener) {
+  function subscribe(listener: SyncListener): () => void {
     listeners.add(listener);
     return () => listeners.delete(listener);
   }

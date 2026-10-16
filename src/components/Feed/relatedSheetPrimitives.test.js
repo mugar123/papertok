@@ -17,7 +17,7 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '
  */
 test('the connections sheet is a modal Base UI Drawer that owns its open state and reports the close once', async () => {
   const jsx = stripComments(await read('./RelatedPapersSheet.tsx'));
-  assert.match(jsx, /import \{ Drawer, DrawerClose, DrawerContent, DrawerTitle \} from '\.\.\/ui\/drawer\.jsx';/);
+  assert.match(jsx, /import \{ Drawer, DrawerClose, DrawerContent, DrawerTitle \} from '\.\.\/ui\/drawer\.tsx';/);
   assert.doesNotMatch(jsx, /useDialogFocus|is-closing|setIsClosing|transitionTimerRef|onAnimationEnd|setTimeout\(\s*finish/);
   assert.doesNotMatch(jsx, /modal=\{false\}/, 'FeedContainer probes [aria-modal="true"]; the sheet must stay modal');
 
@@ -33,7 +33,7 @@ test('the connections sheet is a modal Base UI Drawer that owns its open state a
   assert.match(jsx, /const \{ open, setOpen \} = usePopupOpenOnMount\(\);/);
   assert.doesNotMatch(
     jsx,
-    /const \[open, setOpen\] = useState\(true\);/,
+    /const \[open, setOpen\] = useState(?:<[^;\n]+>)?\(true\);/,
     'a sheet that mounts open never arrives',
   );
   assert.match(jsx, /<Drawer\s+open=\{open\}\s+onOpenChange=\{\(nextOpen\) => \{ if \(!nextOpen\) requestClose\(\); \}\}\s+onOpenChangeComplete=\{handleOpenChangeComplete\}/);
@@ -41,16 +41,16 @@ test('the connections sheet is a modal Base UI Drawer that owns its open state a
 
   // Every way out takes `open` down and waits: a dismissal and a chosen
   // paper are told apart when the exit has finished, not before.
-  const close = jsx.match(/const requestClose = useCallback\(\(\) => \{([\s\S]*?)\}, \[setOpen\]\);/);
+  const close = jsx.match(/const requestClose = useCallback(?:<[^;\n]+>)?\(\(\) => \{([\s\S]*?)\}, \[setOpen\]\);/);
   assert.ok(close, 'requestClose is gone');
   assert.match(close[1], /setOpen\(false\);/);
-  const pick = jsx.match(/const requestPaper = useCallback\(\(relatedPaper, paperKey\) => \{([\s\S]*?)\}, \[setOpen\]\);/);
+  const pick = jsx.match(/const requestPaper = useCallback(?:<[^;\n]+>)?\(\(relatedPaper: Partial<Paper>, paperKey: string\) => \{([\s\S]*?)\}, \[setOpen\]\);/);
   assert.ok(pick, 'requestPaper is gone');
-  assert.match(pick[1], /pendingSelectionRef\.current = \{ paper: relatedPaper, key: paperKey \};/);
+  assert.match(pick[1], /pendingSelectionRef\.current = \{ paper: relatedPaper as Paper, key: paperKey \};/);
   assert.match(pick[1], /setOpen\(false\);/);
   assert.match(
     jsx,
-    /const handleOpenChangeComplete = useCallback\(\(nextOpen\) => \{\s*if \(nextOpen\) return;\s*if \(pendingSelectionRef\.current\) finishSelection\(\);\s*else finishClose\(\);\s*\}, \[finishClose, finishSelection\]\);/,
+    /const handleOpenChangeComplete = useCallback(?:<[^;\n]+>)?\(\(nextOpen: boolean\) => \{\s*if \(nextOpen\) return;\s*if \(pendingSelectionRef\.current\) finishSelection\(\);\s*else finishClose\(\);\s*\}, \[finishClose, finishSelection\]\);/,
   );
   const parentTold = jsx.match(/onCloseRef\.current\(\)/g) ?? [];
   assert.equal(parentTold.length, 1, 'onClose reaches the parent from finishClose and nowhere else');
@@ -102,7 +102,7 @@ test('the sheet\'s box carries the drawer\'s bleed, and a chosen paper settles t
 
 test('the related paper opens as a full-screen modal Dialog whose exit plays before the paper is let go of', async () => {
   const jsx = stripComments(await read('./PaperCard.tsx'));
-  assert.match(jsx, /import \{ Dialog, DialogClose, DialogContent \} from '\.\.\/ui\/dialog\.jsx';/);
+  assert.match(jsx, /import \{ Dialog, DialogClose, DialogContent \} from '\.\.\/ui\/dialog\.tsx';/);
   assert.doesNotMatch(jsx, /useDialogFocus|relatedCardTransitionTimerRef|handleRelatedCardAnimationEnd|RELATED_CARD_CLOSE_MS|is-closing/);
   assert.match(jsx, /<Dialog\s+open=\{Boolean\(activeRelatedPaper\) && !isClosingRelatedCard\}\s+onOpenChange=\{\(nextOpen\) => \{ if \(!nextOpen\) closeRelatedCard\(\); \}\}\s+onOpenChangeComplete=\{\(nextOpen\) => \{ if \(!nextOpen\) finishRelatedCardClose\(\); \}\}/);
   assert.doesNotMatch(jsx, /<Dialog\s[\s\S]*?modal=\{false\}/, 'FeedContainer probes [aria-modal="true"]; the card must stay modal');
@@ -111,17 +111,17 @@ test('the related paper opens as a full-screen modal Dialog whose exit plays bef
   assert.match(jsx, /closeLabel=(?:"Back to previous paper"|\{'Back to previous paper'\})/);
   assert.match(jsx, /<DialogClose\s+className="related-card-back"/);
   // Closing only takes `open` down; the paper goes when the exit has played.
-  const close = jsx.match(/const closeRelatedCard = useCallback\(\(\) => \{([\s\S]*?)\}, \[\]\);/);
+  const close = jsx.match(/const closeRelatedCard = useCallback(?:<[^;\n]+>)?\(\(\) => \{([\s\S]*?)\}, \[\]\);/);
   assert.ok(close, 'closeRelatedCard is gone');
   assert.match(close[1], /setIsClosingRelatedCard\(true\);/);
   assert.doesNotMatch(close[1], /setSelectedRelatedPaper|setPendingRelatedPaper|setTimeout/);
-  const finish = jsx.match(/const finishRelatedCardClose = useCallback\(\(\) => \{([\s\S]*?)\}, \[\]\);/);
+  const finish = jsx.match(/const finishRelatedCardClose = useCallback(?:<[^;\n]+>)?\(\(\) => \{([\s\S]*?)\}, \[\]\);/);
   assert.ok(finish, 'finishRelatedCardClose is gone');
   assert.match(finish[1], /setPendingRelatedPaper\(null\);\s*setSelectedRelatedPaper\(null\);\s*setIsClosingRelatedCard\(false\);/);
 
   // The popups are portaled, and React bubbles their clicks up this tree:
   // a double tap inside a sheet must not like the card underneath.
-  assert.match(jsx, /const handleDoubleTap = useCallback\(\(event\) => \{\s*if \(event\?\.target instanceof Node && !cardRef\.current\?\.contains\(event\.target\)\) return;/);
+  assert.match(jsx, /const handleDoubleTap = useCallback(?:<[^;\n]+>)?\(\(event: MouseEvent\) => \{\s*if \(event\?\.target instanceof Node && !cardRef\.current\?\.contains\(event\.target\)\) return;/);
 
   const css = await read('./PaperCard.css');
   assert.match(css, /\.related-card-overlay\[data-open\] \{\s*animation: relatedCardIn 0\.32s/);

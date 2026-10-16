@@ -3,9 +3,9 @@ import type { FollowInput } from './following.ts';
 export type RecommendationWeights = { [K in keyof typeof DEFAULT_RECOMMENDATION_WEIGHTS]: number };
 export interface RecentProperties { preprint: number; published: number; openAccess: number; subscription: number; journal: number; conference: number; }
 export interface RecommendationContext {
-  weights?: Partial<RecommendationWeights>; now?: number; userPreferences?: string[]; followedAuthors?: string[];
+  weights?: Partial<RecommendationWeights>; now?: number; userPreferences?: string[] | null; followedAuthors?: string[];
   followedEntities?: FollowInput[]; categoryAffinities?: Record<string, number>; categoryCooldowns?: Record<string, number | string>;
-  conceptAffinities?: Record<string, number>; temporalPreference?: number; recentPropsCount?: RecentProperties;
+  conceptAffinities?: Record<string, number>; temporalPreference?: number; recentPropsCount?: Partial<RecentProperties>;
 }
 interface Signal { id?: unknown; openAlexId?: unknown; canonicalId?: unknown; display_name?: unknown; displayName?: unknown; name?: unknown; label?: unknown; }
 type StableScore = ReturnType<typeof computeStableScore>;
@@ -373,17 +373,17 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
 // --- Content Diversity Soft Constraints ---
 // If the last 5 cards are saturated with one type, boost the opposite type.
 // This is the whole of the score that moves as the shuffle advances.
-function diversityBoostFor(stable: StableScore, recentPropsCount: RecentProperties) {
+function diversityBoostFor(stable: StableScore, recentPropsCount: Partial<RecentProperties>) {
   let diversityBoost = 0;
 
-  if (recentPropsCount.published >= 4 && stable.isPreprint) diversityBoost += 10;
-  if (recentPropsCount.preprint >= 4 && stable.isPublished) diversityBoost += 10;
+  if (recentPropsCount.published! >= 4 && stable.isPreprint) diversityBoost += 10;
+  if (recentPropsCount.preprint! >= 4 && stable.isPublished) diversityBoost += 10;
 
-  if (recentPropsCount.subscription >= 3 && stable.isOA) diversityBoost += 8;
-  if (recentPropsCount.openAccess >= 4 && !stable.isOA) diversityBoost += 5;
+  if (recentPropsCount.subscription! >= 3 && stable.isOA) diversityBoost += 8;
+  if (recentPropsCount.openAccess! >= 4 && !stable.isOA) diversityBoost += 5;
 
-  if (recentPropsCount.conference >= 3 && stable.isJournal) diversityBoost += 8;
-  if (recentPropsCount.journal >= 4 && stable.isConference) diversityBoost += 5;
+  if (recentPropsCount.conference! >= 3 && stable.isJournal) diversityBoost += 8;
+  if (recentPropsCount.journal! >= 4 && stable.isConference) diversityBoost += 5;
 
   return diversityBoost;
 }

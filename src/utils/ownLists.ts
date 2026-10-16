@@ -56,7 +56,7 @@ export function readOwnLists(snapshot: ListSnapshot | null | undefined, paperId:
  * about lists that never came from a snapshot: the save modal now paints from
  * a session cache, and membership is per paper while the cached lists are not.
  */
-export function listsHolding(lists: OwnList[], paperId: string) {
+export function listsHolding(lists: OwnList[] | null | undefined, paperId: string) {
   const inLists = new Set<string>();
   if (!paperId || !Array.isArray(lists)) return inLists;
   lists.forEach((list) => {

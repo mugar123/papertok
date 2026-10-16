@@ -184,7 +184,7 @@ test('a refresh keeps the cards on screen where they are and appends what is new
 
 test('SOURCE: the Following page ranks on its first render and merges refreshes', async () => {
   const code = await readSource('../components/Following/FollowingFeedPage.tsx');
-  assert.match(code, /useState\(\(\) => resumeOrderedPapers\(lastOrder, items, seenIds\)\)/,
+  assert.match(code, /useState(?:<[^;\n]+>)?\(\(\) => resumeOrderedPapers\(lastOrder, items, seenIds\)\)/,
     'an empty initial state painted the empty state for a frame before the cards');
   assert.match(code, /setOrderedPapers\(current => mergeOrderedPapers\(current, orderFollowingFeedPapers\(items, seenIds\)\)\)/);
 });
@@ -239,8 +239,8 @@ test('the Following feed resumes the order it left with, and merges a refresh in
 
 test('SOURCE: the Following page resumes from the order it left, kept at module scope', async () => {
   const code = await readSource('../components/Following/FollowingFeedPage.tsx');
-  assert.match(code, /const lastOrder = \{ items: null, ordered: \[\] \};/);
-  assert.match(code, /useState\(\(\) => resumeOrderedPapers\(lastOrder, items, seenIds\)\)/);
+  assert.match(code, /const lastOrder: \{ items: Paper\[\] \| null; ordered: Paper\[\]; orderKeys\?: string\[\] \} = \{ items: null, ordered: \[\] \};/);
+  assert.match(code, /useState(?:<[^;\n]+>)?\(\(\) => resumeOrderedPapers\(lastOrder, items, seenIds\)\)/);
   assert.match(code, /lastOrder\.items = items;\s*lastOrder\.ordered = orderedPapers;/);
 });
 
@@ -303,7 +303,7 @@ test('SOURCE: the Following page hands the container the list minus the skipped 
 
   assert.match(code, /const \{ notInterestedIds \} = useFeed\(\);/,
     'the page reads the shared set the skip writes');
-  const memo = code.match(/const shownPapers = useMemo\([\s\S]{0,220}?\);/)?.[0];
+  const memo = code.match(/const shownPapers = useMemo(?:<[^;\n]+>)?\([\s\S]{0,220}?\);/)?.[0];
   assert.ok(memo, 'the page derives the shown list from the ranked one');
   assert.match(memo, /withoutNotInterested\(orderedPapers, notInterestedIds\)/,
     'filtering the ranked order, so the skip survives a refresh and a revisit');
@@ -313,7 +313,7 @@ test('SOURCE: the Following page hands the container the list minus the skipped 
   // The container renders `source.papers` and nothing else, so this is the
   // one line that decides what the reader sees. `orderedPapers` here would
   // reinstate the dead button with every test above still passing.
-  const source = code.match(/const source = useMemo\(\(\) => \(\{[\s\S]*?\}\), \[[^\]]*\]\);/)?.[0];
+  const source = code.match(/const source = useMemo(?:<[^;\n]+>)?\(\(\) => \(\{[\s\S]*?\}\), \[[^\]]*\]\);/)?.[0];
   assert.ok(source, 'expected the source object the container is given');
   assert.match(source, /papers: shownPapers,/, 'the container is given the filtered list');
   assert.doesNotMatch(source, /papers: orderedPapers,/);

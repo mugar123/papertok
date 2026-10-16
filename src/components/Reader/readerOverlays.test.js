@@ -20,7 +20,7 @@ const stripComments = source => source
 test('the reader shell is a modal Base UI Dialog that owns its own leave', async () => {
   const jsx = stripComments(await read('./PaperReader.tsx'));
 
-  assert.match(jsx, /import \{ Dialog, DialogContent \} from '\.\.\/ui\/dialog\.jsx';/);
+  assert.match(jsx, /import \{ Dialog, DialogContent \} from '\.\.\/ui\/dialog\.tsx';/);
   // Modal (FeedContainer's scroll guard reads the `aria-modal` Base UI sets)
   // and never dismissed by a pointer: a full-screen surface has no outside.
   // The root's props, up to its content child: the arrow functions in them

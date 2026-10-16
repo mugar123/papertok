@@ -24,7 +24,7 @@ const COPY = {
   },
 };
 
-export function ExplorerEmptyState({ variant, onClearFilters, onRetry, errorMessage, openAireUrl }) {
+export function ExplorerEmptyState({ variant, onClearFilters, onRetry, errorMessage, openAireUrl }: { variant: keyof typeof COPY | 'error'; onClearFilters?: () => void; onRetry?: () => void; errorMessage?: string; openAireUrl?: string | null }) {
   const lang = 'en';
 
   if (variant === 'error') {

@@ -38,7 +38,7 @@ test('cualquier otra tecla no es el atajo', () => {
 
 test('SOURCE: la navbar delega en la puerta en vez de llevar la suya', async () => {
   const jsx = stripComments(await readFile(new URL('./Navbar.tsx', import.meta.url), 'utf8'));
-  assert.match(jsx, /import \{ shouldOpenSearchOnSlash \} from '\.\/searchShortcut\.js';/);
+  assert.match(jsx, /import \{ shouldOpenSearchOnSlash \} from '\.\/searchShortcut\.ts';/);
   assert.match(
     jsx,
     /if \(!shouldOpenSearchOnSlash\(event, document\)\) return;/,
@@ -47,6 +47,6 @@ test('SOURCE: la navbar delega en la puerta en vez de llevar la suya', async () 
   assert.doesNotMatch(
     jsx,
     /event\.key !== '\/'/,
-    'la comprobación en crudo volvería a saltarse el modal: vive en searchShortcut.js',
+    'la comprobación en crudo volvería a saltarse el modal: vive en searchShortcut.ts',
   );
 });

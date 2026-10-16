@@ -1,3 +1,6 @@
+import type { PropsWithChildren } from 'react';
+import type { LatexChunk } from '../utils/latex.ts';
+
 import { createElement, Fragment, memo, useEffect, useMemo, useReducer } from 'react';
 import { displayProse, katexSource, splitLatexText } from '../utils/latex.ts';
 import { getKatex, loadKatex } from '../utils/katexLoader.ts';
@@ -13,11 +16,11 @@ import { getKatex, loadKatex } from '../utils/katexLoader.ts';
 // math-heavy feed cannot grow it without limit; clearing it only costs the
 // next render what it used to cost every render.
 const MAX_CACHED_FORMULAS = 2000;
-const renderedFormulas = new Map();
+const renderedFormulas = new Map<string, string | null>();
 
-function renderFormula(katex, chunk) {
+function renderFormula(katex: NonNullable<ReturnType<typeof getKatex>>, chunk: Extract<LatexChunk, { type: 'math' }>) {
   const key = `${chunk.display ? 'D' : 'I'}\u0000${katexSource(chunk)}`;
-  if (renderedFormulas.has(key)) return renderedFormulas.get(key);
+  if (renderedFormulas.has(key)) return renderedFormulas.get(key)!;
   let html;
   try {
     html = katex.renderToString(katexSource(chunk), {
@@ -37,7 +40,7 @@ function renderFormula(katex, chunk) {
 // Math renders through the on-demand KaTeX chunk (see utils/katexLoader.js).
 // Until it lands, the raw LaTeX source shows — readable, and replaced as soon
 // as the chunk arrives, which the idle prefetch usually makes immediate.
-function ScientificText({ children }) {
+function ScientificText({ children }: PropsWithChildren) {
   const text = Array.isArray(children) ? children.join('') : children;
   // The title and the abstract both route through here, and the abstract can
   // run to a couple thousand characters -- re-walking it on every render (a

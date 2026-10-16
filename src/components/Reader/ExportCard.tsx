@@ -1,3 +1,12 @@
+import type { ReaderCopy } from './PaperReader.tsx';
+type ExportOption = 'marks' | 'mine' | 'ai';
+interface ExportCardProps {
+  copy: Pick<ReaderCopy, 'download' | 'whatGoes' | 'optionCount' | 'noneOfThese' | 'alwaysIncluded' | 'previewMasthead' | 'previewTitle' | 'previewByline' | 'previewNotice' | 'previewSection' | 'previewOrigin' | 'previewNote' | 'format' | 'downloadTex' | 'downloadPdf' | 'generating' | 'downloaded' | 'cancel'> & { options: ReaderCopy['exportOptions'] };
+  counts: Record<ExportOption, number>; include: Record<ExportOption, boolean>;
+  onToggle: (option: ExportOption) => void;
+  onDownload: (format: 'pdf' | 'tex') => void | Promise<void>;
+  fileNames: Record<'pdf' | 'tex', string>; stamp: string; busy?: boolean;
+}
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Check, DownloadSimple, FileText, Info, X } from '@phosphor-icons/react';
@@ -22,7 +31,7 @@ import { RadioGroup, RadioGroupItem } from '../ui/radio-group.tsx';
  * "what will the file look like", and an icon of a page cannot answer it.
  */
 
-const OPTIONS = [
+const OPTIONS: Array<{ id: ExportOption; countKey: ExportOption }> = [
   { id: 'marks', countKey: 'marks' },
   { id: 'mine', countKey: 'mine' },
   { id: 'ai', countKey: 'ai' },
@@ -35,7 +44,7 @@ const FORMATS = [
   { id: 'tex', label: 'LaTeX' },
 ];
 
-const EASE_OUT = [0.16, 1, 0.3, 1];
+const EASE_OUT: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
 export default function ExportCard({
   copy,
@@ -46,12 +55,12 @@ export default function ExportCard({
   fileNames,
   stamp,
   busy = false,
-}) {
+}: ExportCardProps) {
   const [justSaved, setJustSaved] = useState(false);
   const prefersReducedMotion = useReducedMotion();
   // PDF first: it opens everywhere, and the .tex stays one tap away for
   // whoever has a TeX toolchain and wants the compilable source.
-  const [format, setFormat] = useState('pdf');
+  const [format, setFormat] = useState<'pdf' | 'tex'>('pdf');
 
   // A download the browser handles silently gives the reader nothing to see, so
   // the button says so itself for a moment. The card stays open: the usual next
@@ -134,7 +143,7 @@ export default function ExportCard({
             <RadioGroup
               className="rd-export-format-chips"
               value={format}
-              onValueChange={(next) => { if (next) setFormat(next); }}
+              onValueChange={(next) => { if (next) setFormat(next as 'pdf' | 'tex'); }}
               aria-labelledby="rd-export-format-label"
             >
               {FORMATS.map(option => (

@@ -52,7 +52,7 @@ test('SOURCE: the guest dismissal only touches React state', async () => {
  */
 test('SOURCE: Skip without an account is opt-in, per surface', async () => {
   const card = stripComments(await read('../components/Feed/PaperCard.tsx'));
-  const start = card.indexOf('const handleNotInterested = (e) => {');
+  const start = card.indexOf('const handleNotInterested = (e: MouseEvent) => {');
   const body = card.slice(start, card.indexOf('};', start));
   assert.match(body, /if \(publicMode\) \{[\s\S]{0,200}?if \(onGuestNotInterested\) \{[\s\S]{0,120}?onGuestNotInterested\(paper\?\.id\);[\s\S]{0,60}?return;[\s\S]{0,40}?\}[\s\S]{0,60}?requireAuthentication\('not_interested'\);/,
     'a surface that supplies a guest handler uses it; one that does not still asks for the account');
@@ -71,7 +71,7 @@ test('SOURCE: Skip without an account is opt-in, per surface', async () => {
     'the guest handler still comes from the surface that owns the list');
   assert.match(container, /onGuestNotInterested=\{dismissFromSource \? handleGuestNotInterested : undefined\}/,
     'and a surface that supplies none is still handed nothing');
-  const wrapper = stripComments(container).match(/const handleGuestNotInterested = useCallback\([\s\S]{0,200}?\}, \[/)?.[0];
+  const wrapper = stripComments(container).match(/const handleGuestNotInterested = useCallback(?:<[^;\n]+>)?\([\s\S]{0,200}?\}, \[/)?.[0];
   assert.ok(wrapper, 'expected the wrapper around the surface dismissal');
   assert.match(wrapper, /dismissFromSource\?\.\(paperId\)/, 'which ends in the surface dropping the paper by id');
 

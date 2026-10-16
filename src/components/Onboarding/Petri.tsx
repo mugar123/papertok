@@ -1,3 +1,4 @@
+import type { ComponentProps } from 'react';
 import PetriFlask from './PetriFlask.tsx';
 import PetriKey from './PetriKey.tsx';
 import PetriProfile from './PetriProfile.tsx';
@@ -23,7 +24,7 @@ const POSES = {
  * (`name`, `level`, `visibility`) pass through. With a `label` the drawing is
  * an image of that name; without one it is decoration.
  */
-export default function Petri({ pose, ...props }) {
+export default function Petri({ pose, ...props }: ComponentProps<typeof PetriWelcome> & ComponentProps<typeof PetriReading> & ComponentProps<typeof PetriProfile> & { pose: keyof typeof POSES }) {
   const Pose = POSES[pose];
   return <Pose {...props} />;
 }

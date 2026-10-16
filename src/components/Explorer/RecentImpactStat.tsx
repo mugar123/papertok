@@ -1,7 +1,9 @@
+import type { getEntityRecentImpact } from '../../services/openAlexService.ts';
+interface ImpactProps { impact: Awaited<ReturnType<typeof getEntityRecentImpact>> | null; isLoading?: boolean; error?: string | null }
 // Scores are computed in English now (entityMetadata.js), but impact cached
 // before the interface went English-only carries the level in Spanish; this
 // reads those old records. It is data, not interface copy.
-const LEGACY_IMPACT_LEVELS = {
+const LEGACY_IMPACT_LEVELS: Record<string, string> = {
   Excepcional: 'Exceptional',
   'Muy alto': 'Very high',
   'Por encima de la media': 'Above average',
@@ -10,7 +12,7 @@ const LEGACY_IMPACT_LEVELS = {
   Bajo: 'Low',
 };
 
-function unavailableCopy({ error, impact }) {
+function unavailableCopy({ error, impact }: ImpactProps) {
   if (error === 'rate_limited') {
     return {
       title: 'OpenAlex has temporarily limited requests. The score will return when available.',
@@ -49,11 +51,11 @@ function unavailableCopy({ error, impact }) {
   };
 }
 
-export default function RecentImpactStat({ impact, isLoading, error }) {
-  const localizedLevel = LEGACY_IMPACT_LEVELS[impact?.level] || impact?.level;
+export default function RecentImpactStat({ impact, isLoading, error }: ImpactProps) {
+  const localizedLevel = LEGACY_IMPACT_LEVELS[impact?.level as keyof typeof LEGACY_IMPACT_LEVELS] || impact?.level;
   const unavailable = unavailableCopy({ error, impact });
   const title = impact?.available
-    ? (`${impact.stale ? 'Last saved calculation. ' : ''}PaperTok estimate based on ${impact.sampleSize} recent publications with FWCI. Median FWCI: ${impact.medianFwci}; ${Math.round(impact.highImpactShare * 100)}% exceeds twice the expected impact.`)
+    ? (`${impact.stale ? 'Last saved calculation. ' : ''}PaperTok estimate based on ${impact.sampleSize} recent publications with FWCI. Median FWCI: ${impact.medianFwci}; ${Math.round(impact.highImpactShare! * 100)}% exceeds twice the expected impact.`)
     : unavailable.title;
   const detail = isLoading
     ? ('Calculating…')
@@ -76,7 +78,7 @@ export default function RecentImpactStat({ impact, isLoading, error }) {
           of the ellipsis being swapped for a number between two frames. Never
           at mount, where the hero's own crossfade is already running. */}
       <span className={`ehc-stat-value${!isLoading && (impact || error) ? ' is-settled' : ''}`}>
-        {isLoading ? '…' : impact?.available ? impact.score.toFixed(1) : '—'}
+        {isLoading ? '…' : impact?.available ? impact.score!.toFixed(1) : '—'}
         <span className="ehc-stat-scale">/ 10</span>
       </span>
       <span className="ehc-stat-label">{'Recent impact'}</span>

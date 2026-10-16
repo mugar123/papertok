@@ -23,9 +23,9 @@ test('the atom screen is a veil over the feed, inside the same landmark as the c
 
 test('the veil recedes: the ground fades, the atom shrinks and rises, the copy settles', async () => {
   const jsx = await read('./FeedContainer.tsx');
-  assert.match(jsx, /const ATOM_VEIL_VARIANTS = \{[\s\S]*?gone: \{ opacity: 0, transition: \{ duration: 0\.42, ease: \[0\.16, 1, 0\.3, 1\] \} \}/);
-  assert.match(jsx, /const ATOM_VARIANTS = \{[\s\S]*?gone: \{ opacity: 0, scale: 0\.62, y: -16, transition: \{ duration: 0\.36, ease: \[0\.16, 1, 0\.3, 1\] \} \}/);
-  assert.match(jsx, /const ATOM_COPY_VARIANTS = \{[\s\S]*?gone: \{ opacity: 0, y: 6, transition: \{ duration: 0\.24, ease: \[0\.4, 0, 1, 1\] \} \}/);
+  assert.match(jsx, /const ATOM_VEIL_VARIANTS: Variants = \{[\s\S]*?gone: \{ opacity: 0, transition: \{ duration: 0\.42, ease: \[0\.16, 1, 0\.3, 1\] \} \}/);
+  assert.match(jsx, /const ATOM_VARIANTS: Variants = \{[\s\S]*?gone: \{ opacity: 0, scale: 0\.62, y: -16, transition: \{ duration: 0\.36, ease: \[0\.16, 1, 0\.3, 1\] \} \}/);
+  assert.match(jsx, /const ATOM_COPY_VARIANTS: Variants = \{[\s\S]*?gone: \{ opacity: 0, y: 6, transition: \{ duration: 0\.24, ease: \[0\.4, 0, 1, 1\] \} \}/);
   assert.match(jsx, /const ATOM_VEIL_REDUCED_VARIANTS = \{[\s\S]*?gone: \{ opacity: 0, transition: \{ duration: 0\.12 \} \}/);
   // Labels, not objects: the atom and the copy are children of the veil's
   // variant tree, and their `gone` plays when the veil's does.
@@ -46,7 +46,7 @@ test('the veil sits over the container and lets framer own its opacity', async (
 });
 
 test('on the first entry the card composes under the veil instead of sitting at rest', async () => {
-  // The direction moved out of PageTransition.jsx and into the hook `App`
+  // The direction moved out of PageTransition.tsx and into the hook `App`
   // calls, so that the page LEAVING is told about the navigation too — it is
   // kept mounted under a location context that still names the route it came
   // from, and asking for itself answered for the wrong one.
@@ -84,7 +84,7 @@ test('the auth gate hands the feed route to the veil instead of drawing an atom 
 test('the navbar fades in on its first mount of the session, and only then', async () => {
   const jsx = await read('../Layout/Navbar.tsx');
   assert.match(jsx, /let navbarHasArrived = false;/);
-  assert.match(jsx, /useState\(\(\) => !navbarHasArrived\)/);
+  assert.match(jsx, /useState(?:<[^;\n]+>)?\(\(\) => !navbarHasArrived\)/);
   assert.match(jsx, /className=\{arriving \? 'navbar navbar--arriving' : 'navbar'\}/);
   assert.match(jsx, /onAnimationEnd=\{handleArrived\}/);
   // Children animate too (the preferences sheet, the active rule): only the

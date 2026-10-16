@@ -1,3 +1,6 @@
+import type { StyledProps } from './props.ts';
+import type { ComponentProps } from 'react';
+
 import { Popover as PopoverPrimitive } from '@base-ui/react/popover';
 import { cn } from '../../lib/utils.ts';
 
@@ -8,25 +11,25 @@ import { cn } from '../../lib/utils.ts';
  * focus sane. Transitions, not animations, because a popover the user
  * closes mid-arrival should turn back smoothly.
  */
-function Popover(props) {
+function Popover(props: ComponentProps<typeof PopoverPrimitive.Root>) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />;
 }
 
-function PopoverTrigger(props) {
+function PopoverTrigger(props: ComponentProps<typeof PopoverPrimitive.Trigger>) {
   return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />;
 }
 
-function PopoverClose(props) {
+function PopoverClose(props: ComponentProps<typeof PopoverPrimitive.Close>) {
   return <PopoverPrimitive.Close data-slot="popover-close" {...props} />;
 }
 
 /** The popup's name (an `<h2>`); Base UI points `aria-labelledby` at it. */
-function PopoverTitle(props) {
+function PopoverTitle(props: ComponentProps<typeof PopoverPrimitive.Title>) {
   return <PopoverPrimitive.Title data-slot="popover-title" {...props} />;
 }
 
 /** Read out with the name when the popup opens, through `aria-describedby`. */
-function PopoverDescription(props) {
+function PopoverDescription(props: ComponentProps<typeof PopoverPrimitive.Description>) {
   return <PopoverPrimitive.Description data-slot="popover-description" {...props} />;
 }
 
@@ -38,7 +41,7 @@ function PopoverContent({
   sideOffset = 6,
   positionerClassName,
   ...props
-}) {
+}: StyledProps<typeof PopoverPrimitive.Popup> & Pick<ComponentProps<typeof PopoverPrimitive.Positioner>, 'align' | 'alignOffset' | 'side' | 'sideOffset'> & { positionerClassName?: string }) {
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Positioner

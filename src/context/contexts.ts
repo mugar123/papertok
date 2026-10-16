@@ -1,3 +1,12 @@
+import type { FeedContextValue } from './FeedContext.tsx';
+import type { EmailNotificationsContextValue } from './EmailNotificationsContext.tsx';
+import type { FollowingUpdatesContextValue } from './FollowingUpdatesContext.tsx';
+import type { FollowingContextValue } from './FollowingContext.tsx';
+import type { LanguageContextValue } from './LanguageContext.tsx';
+import type { ThemeContextValue } from './ThemeContext.tsx';
+import type { AnalyticsContextValue } from './AnalyticsContext.tsx';
+import type { AuthContextValue } from './AuthContext.tsx';
+
 import { createContext } from 'react';
 
 /**
@@ -20,11 +29,11 @@ import { createContext } from 'react';
  *
  * Keep this file free of components and of anything that changes often.
  */
-export const AnalyticsContext = createContext(null);
-export const AuthContext = createContext(null);
-export const EmailNotificationsContext = createContext(null);
-export const FeedContext = createContext(null);
-export const FollowingContext = createContext(null);
-export const FollowingUpdatesContext = createContext(null);
-export const LanguageContext = createContext(null);
-export const ThemeContext = createContext(null);
+export const AnalyticsContext = createContext<AnalyticsContextValue | null>(null);
+export const AuthContext = createContext<AuthContextValue | null>(null);
+export const EmailNotificationsContext = createContext<EmailNotificationsContextValue | null>(null);
+export const FeedContext = createContext<FeedContextValue | null>(null);
+export const FollowingContext = createContext<FollowingContextValue | null>(null);
+export const FollowingUpdatesContext = createContext<FollowingUpdatesContextValue | null>(null);
+export const LanguageContext = createContext<LanguageContextValue | null>(null);
+export const ThemeContext = createContext<ThemeContextValue | null>(null);

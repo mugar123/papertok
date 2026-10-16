@@ -15,7 +15,7 @@ const VARIABLES_CSS = new URL('../../styles/variables.css', import.meta.url);
 test('el input de la paleta no puede volver a disparar el auto-zoom de iOS', async () => {
   const command = await readFile(COMMAND_JSX, 'utf8');
   const input = command.match(/CommandPrimitive\.Input[\s\S]*?\{\.\.\.props\}/);
-  assert.ok(input, 'command.jsx ya no renderiza CommandPrimitive.Input');
+  assert.ok(input, 'command.tsx ya no renderiza CommandPrimitive.Input');
   assert.match(input[0], /text-\[1rem\]|text-base/);
   assert.doesNotMatch(input[0], /text-\[0\.\d+rem\]|text-sm(?![\w-])/);
 });
@@ -23,7 +23,7 @@ test('el input de la paleta no puede volver a disparar el auto-zoom de iOS', asy
 test('el contenido del diálogo anima entrada y salida, no solo el velo', async () => {
   const dialog = await readFile(DIALOG_JSX, 'utf8');
   const content = dialog.match(/function DialogContent[\s\S]*?\n\}/);
-  assert.ok(content, 'dialog.jsx ya no define DialogContent');
+  assert.ok(content, 'dialog.tsx ya no define DialogContent');
   assert.match(content[0], /data-open:\[animation:dialogIn/);
   // `both` es el contrato con Base UI: mantiene el nodo mientras
   // `getAnimations()` devuelva algo, y sin `both` el último frame vuelve a
@@ -44,7 +44,7 @@ test('el contenido del diálogo anima entrada y salida, no solo el velo', async 
 test('el filete de foco del campo no toca la primera letra', async () => {
   const command = await readFile(COMMAND_JSX, 'utf8');
   const input = command.match(/CommandPrimitive\.Input[\s\S]*?\{\.\.\.props\}/);
-  assert.ok(input, 'command.jsx ya no renderiza CommandPrimitive.Input');
+  assert.ok(input, 'command.tsx ya no renderiza CommandPrimitive.Input');
   // global.css dibuja el indicador de foco de los campos de texto como
   // `inset 0 0 0 1px`: un filete justo por dentro de la caja. Con `px-0` el
   // borde de la caja es el borde de la primera letra, y el anillo se leía como

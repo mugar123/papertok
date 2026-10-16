@@ -36,8 +36,8 @@ const NOT_CLASS_NAMES = new Set([
   'create-list-icon-label',
   'create-list-color-label',
   // `id`s again: the note textarea and the name input, each wired to its
-  // <label> with `htmlFor`. The fields themselves are ui/textarea.jsx and
-  // ui/input.jsx and carry no class of their own.
+  // <label> with `htmlFor`. The fields themselves are ui/textarea.tsx and
+  // ui/input.tsx and carry no class of their own.
   'save-modal-note',
   'create-list-name',
 ]);

@@ -8,6 +8,7 @@ type RewriteEvent = ({ type: 'meta' } & ClientRewriteMeta) | ({ type: 'section' 
   | { type: 'error'; code?: string; quota?: AIQuota | null; partial?: boolean; finishReason?: string }
   | { type: 'ping'; stage?: string } | { type: 'done' };
 interface RewriteOptions {
+  language?: string;
   force?: boolean;
   signal?: AbortSignal;
   onMeta?: (meta: ClientRewriteMeta) => void;

@@ -26,7 +26,7 @@ const COPY = {
     title: 'What are you into?',
     lede: 'Change the areas and the feed is rebuilt from them.',
     areasLabel: 'Areas of interest',
-    picked: n => `${n} ${n === 1 ? 'area picked' : 'areas picked'}`,
+    picked: (n: number) => `${n} ${n === 1 ? 'area picked' : 'areas picked'}`,
     primary: 'Update feed',
     secondary: 'Cancel',
     close: 'Close',
@@ -38,10 +38,10 @@ const COPY = {
 // Escape, the scrim — flips it; Base UI plays the leave, and only then
 // `onOpenChangeComplete(false)` hands the outcome to the parent: the answer
 // through `onSubmit`, anything else through `onDismiss`. One call, once.
-export default function GuestInterestsPrompt({ initialAreas = [], onSubmit, onDismiss }) {
+export default function GuestInterestsPrompt({ initialAreas = [], onSubmit, onDismiss }: { initialAreas?: readonly string[]; onSubmit?: (areas: string[]) => void; onDismiss?: () => void }) {
   const [open, setOpen] = useState(true);
-  const answerRef = useRef(null);
-  const titleRef = useRef(null);
+  const answerRef = useRef<string[] | null>(null);
+  const titleRef = useRef<HTMLHeadingElement | null>(null);
   const [selected, setSelected] = useState(() => new Set(normalizeGuestAreas(initialAreas)));
   const copy = COPY.en;
 
@@ -50,7 +50,7 @@ export default function GuestInterestsPrompt({ initialAreas = [], onSubmit, onDi
   // An edit only needs to be a change, and emptying the pick is one.
   const canSubmit = selectedKey !== initialKey;
 
-  const toggle = (key) => {
+  const toggle = (key: string) => {
     setSelected((previous) => {
       const next = new Set(previous);
       if (next.has(key)) next.delete(key);
@@ -67,7 +67,7 @@ export default function GuestInterestsPrompt({ initialAreas = [], onSubmit, onDi
 
   const dismiss = () => setOpen(false);
 
-  const settle = (isOpen) => {
+  const settle = (isOpen: boolean) => {
     if (isOpen) return;
     const answer = answerRef.current;
     if (answer) onSubmit?.(answer);

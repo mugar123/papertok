@@ -202,8 +202,8 @@ export async function removeUserHighlight(uid: string | null | undefined, highli
  * Groups stored highlights by section and paragraph so a paragraph can be
  * rendered with only the anchors that belong to it.
  */
-export function indexHighlightsByParagraph(highlights: UserHighlight[] = [], { level, language }: { level?: string; language?: string } = {}) {
-  const index = new Map<string, Array<Pick<UserHighlight, 'id' | 'quote'> & { kind: string; source: string }>>();
+export function indexHighlightsByParagraph(highlights: ReadonlyArray<Pick<UserHighlight, 'id' | 'quote' | 'level' | 'language' | 'sectionId' | 'paragraphIndex' | 'kind'>> = [], { level, language }: { level?: string; language?: string } = {}) {
+  const index = new Map<string, Array<Pick<UserHighlight, 'id' | 'quote'> & { kind: string; source: string; fresh?: boolean; pending?: boolean }>>();
   for (const highlight of highlights) {
     if (level && highlight.level !== level) continue;
     if (language && highlight.language !== language) continue;

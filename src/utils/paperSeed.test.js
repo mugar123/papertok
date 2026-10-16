@@ -33,7 +33,7 @@ test('SOURCE: the paper page paints an incomplete copy as a skeleton, not as "Ab
     'nothing is painted from a copy that lacks its abstract');
   assert.match(code, /: \(seedPainted \|\| sharePainted \? 'ready' : \(identity \? 'loading' : 'not-found'\)\)/,
     'the page waits on the providers instead, skeleton up');
-  assert.match(code, /useState\(\(\) => seedPainted \|\| sharePainted\)/,
+  assert.match(code, /useState(?:<[^;\n]+>)?\(\(\) => seedPainted \|\| sharePainted\)/,
     'the cover on arrival follows what was actually painted');
   assert.match(code, /const fallback = seededPaper \|\| shareSeed;/);
   const failures = code.match(/paper: fallback, status: fallback \? 'ready'/g) || [];

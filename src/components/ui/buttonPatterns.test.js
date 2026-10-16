@@ -9,11 +9,11 @@ import { readdir, readFile } from 'node:fs/promises';
  * place is a design decision: add it here and to design.md together.
  */
 const ALLOWED = new Map([
-  ['engraved', ['components/Public/GuestWelcome.jsx', 'components/Public/WelcomeShell.jsx']],
-  ['halftone', ['components/Public/GuestWelcome.jsx']],
+  ['engraved', ['components/Public/GuestWelcome.tsx', 'components/Public/WelcomeShell.tsx']],
+  ['halftone', ['components/Public/GuestWelcome.tsx']],
 ]);
 // The halftone class itself, outside the variant: the landing's theme switch.
-const HALFTONE_CLASS_ALLOWED = ['components/Public/WelcomeShell.jsx', 'components/ui/button-variants.js'];
+const HALFTONE_CLASS_ALLOWED = ['components/Public/WelcomeShell.tsx', 'components/ui/button-variants.ts'];
 
 async function sourcesUnder(dir) {
   const found = [];

@@ -30,7 +30,7 @@ test('SOURCE: a reset asked to keep the visible card merges the fresh page below
   assert.match(code, /import \{ mergeFreshFeedPage, splitFeedForReRank \} from '\.\.\/utils\/feedReRankSplit\.ts';/);
   assert.match(
     code,
-    /const loadPapers = useCallback\(async \(reset = false, mode, randomizeStart = false, pageOverride, \{ keepThroughVisible = false \} = \{\}\) => \{/,
+    /const loadPapers = useCallback(?:<[^;\n]+>)?\(async \(reset = false, mode\?: string \| null, randomizeStart = false, pageOverride\?: number, \{ keepThroughVisible = false \} = \{\}\) => \{/,
     'the option is an explicit parameter, not a ref the effect has to set',
   );
   const resetBranch = bounded(code, 'let nextPapers;', 'const nextHasMore =', 'the reset branch of loadPapers', 20);
@@ -51,7 +51,7 @@ test('SOURCE: the following effect records nothing off the feed route and compar
   const code = stripComments(await read('./FeedContext.tsx'));
   const effect = bounded(
     code,
-    'const followingSignatureRef = useRef(null);',
+    'const followingSignatureRef = useRef<string | null>(null);',
     '}, [feedRouteActive, followedEntities, followingLoading',
     'the following effect',
     46,
@@ -74,7 +74,7 @@ test('SOURCE: the following effect records nothing off the feed route and compar
 
 test('SOURCE: the topic warm-up still runs before the gate, so the prewarm test keeps its 12-line window', async () => {
   const code = stripComments(await read('./FeedContext.tsx'));
-  const head = bounded(code, 'const followingSignatureRef = useRef(null);', 'const signature = followedEntities', 'the head of the effect', 12);
+  const head = bounded(code, 'const followingSignatureRef = useRef<string | null>(null);', 'const signature = followedEntities', 'the head of the effect', 12);
   assert.match(head, /void loadTopicRetrieval\(\);/);
   assert.doesNotMatch(head, /feedRouteActive/, 'the gate comes after the signature, not before the warm-up');
 });
@@ -94,7 +94,7 @@ test('SOURCE: the following baseline is recorded only under a known account', as
   const code = stripComments(await read('./FeedContext.tsx'));
   const effect = bounded(
     code,
-    'const followingSignatureRef = useRef(null);',
+    'const followingSignatureRef = useRef<string | null>(null);',
     '}, [feedRouteActive, followedEntities, followingLoading',
     'the following effect',
     46,

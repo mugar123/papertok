@@ -79,7 +79,7 @@ export function guestTopicListsForAreas(areas: unknown, topics: unknown = []) {
  * `preferences` holds for a signed-in user, so it is what the onboarding
  * pre-selects and what the domain source plan is routed by.
  */
-export function guestCategoriesForAreas(areas: string[], topics: string[] = []) {
+export function guestCategoriesForAreas(areas: readonly string[], topics: readonly string[] = []) {
   return guestTopicListsForAreas(areas, topics).flat();
 }
 
@@ -126,11 +126,11 @@ function guestSeedLists(areas: unknown, perArea: number, topics: unknown) {
  * onboarding shows the reader so they can drop topics themselves, rather than
  * have `guestSeedCategoriesForAreas` drop them without a word.
  */
-export function guestSeedSizeForAreas(areas: string[], perArea = GUEST_SEED_PER_AREA, topics: string[] = []) {
+export function guestSeedSizeForAreas(areas: readonly string[], perArea = GUEST_SEED_PER_AREA, topics: readonly string[] = []) {
   return guestSeedLists(areas, perArea, topics).reduce((count, list) => count + list.length, 0);
 }
 
-export function guestSeedCategoriesForAreas(areas: string[], perArea = GUEST_SEED_PER_AREA, topics: string[] = []) {
+export function guestSeedCategoriesForAreas(areas: readonly string[], perArea = GUEST_SEED_PER_AREA, topics: readonly string[] = []) {
   const lists = guestSeedLists(areas, perArea, topics);
   const picked = [];
   for (let index = 0; ; index += 1) {

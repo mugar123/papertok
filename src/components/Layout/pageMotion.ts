@@ -70,11 +70,11 @@ export const EXIT_SAFETY_MS = 700;
  * fixed` and cannot push anything, where cancelling it would snap to opacity
  * 0.9 in one frame instead.
  */
-export function isArrivalMotion(motion) {
+export function isArrivalMotion(motion: unknown) {
   return motion === 'enter' || motion === 'enter-lateral' || motion === 'reveal';
 }
 
-export function pageMotionFor({ direction, lateral, present } = {}) {
+export function pageMotionFor({ direction, lateral, present }: { direction?: unknown; lateral?: unknown; present?: unknown } = {}) {
   const sign = typeof direction === 'number' && Number.isFinite(direction) ? Math.sign(direction) : 0;
   const isLateral = lateral === true;
   const isPresent = present !== false;

@@ -1,3 +1,28 @@
+import type { KeyboardEvent, MouseEvent } from 'react';
+import type { Transition } from 'framer-motion';
+import type { Paper, PaperAuthor } from '../../models/Paper.ts';
+import type { OpenAlexAuthor, OpenAlexInstitution, OpenAlexTopic } from '../../services/adapters/openAlexTypes.ts';
+import type { Project } from '../../services/openAireService.ts';
+import type { RecentImpact } from '../../services/openAlexService.ts';
+import type { WikiInfo } from '../../services/wikiService.ts';
+import type { HandoverEntity } from '../../utils/explorerHandover.ts';
+import type { ProjectParticipant } from '../../utils/entityMetadata.ts';
+import type { FollowInput } from '../../utils/following.ts';
+
+type ExplorerEntity = Partial<OpenAlexAuthor & OpenAlexInstitution & OpenAlexTopic & Project> & {
+  _queryTopic?: boolean; _detailsPending?: boolean; query?: string;
+  metadata?: { localizedNames?: Record<string, string>; query?: string; source?: string; categoryIds?: string[] };
+  ids?: { wikidata?: string; wikipedia?: string };
+  categories?: string[]; primaryCategory?: string;
+};
+interface VisitRecord {
+  activeTab: string; authorsOpened: boolean; authorsSearch: string; entityAuthors: OpenAlexAuthor[];
+  authorsPage: number; hasMoreAuthors: boolean;
+  wikiInfo: (WikiInfo & { _requestKey: string }) | null;
+  settledWikiRequestKey: string; loadedWikiImageUrl: string;
+  isWikiDescriptionExpandable: boolean; wikiDescriptionExpandedHeight: number; isWikiDescriptionExpanded: boolean;
+  recentImpact: RecentImpact | null;
+}
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import {
@@ -30,7 +55,7 @@ import {
 import { getEntityById, peekEntity, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution, getEntityRecentImpact, getLocalTopicEntity, enrichAuthorInstitutionLocalization } from '../../services/openAlexService.ts';
 import { isOpenAlexRateLimitError } from '../../services/openAlexClient.ts';
 import { fetchPapersByIds, getAuthorPapers } from '../../services/arxivService.ts';
-import { isScopusEnabled, PubmedAdapter, ScopusAdapter, SemanticScholarAdapter } from '../../services/adapters';
+import { isScopusEnabled, PubmedAdapter, ScopusAdapter, SemanticScholarAdapter } from '../../services/adapters/index.ts';
 import { getPapersByProject, getProjectDetails } from '../../services/openAireService.ts';
 import { PaperBuilder } from '../../services/PaperBuilder.ts';
 import { extractOrcid, getOrcidRecord } from '../../services/orcidService.ts';
@@ -114,7 +139,7 @@ const EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS = 4;
 // frame — travel × steepness ÷ frames — not its duration, and a steep
 // ease-in-out given too few frames measured WORSE than the front-loaded curve
 // it replaced. Shortening this is no free way to make it feel quicker.
-const EXPERIENCE_FOLD_OUT = {
+const EXPERIENCE_FOLD_OUT: Transition = {
   opacity: { duration: 0.16, ease: 'linear' },
   height: { duration: 0.3, ease: [0.4, 0, 0.2, 1] },
 };
@@ -164,7 +189,7 @@ const ProjectSummarySkeleton = () => (
   </div>
 );
 
-const handleActivationKey = (event, action) => {
+const handleActivationKey = (event: KeyboardEvent, action: () => void) => {
   if (event.key !== 'Enter' && event.key !== ' ') return;
   event.preventDefault();
   action();
@@ -195,11 +220,11 @@ const ROR_RELATION_LABELS = {
  * long session does not keep every page it ever opened.
  */
 const VISIT_MEMORY_MAX = 24;
-const visitMemory = new Map();
-function rememberVisit(key, record) {
+const visitMemory = new Map<string, VisitRecord>();
+function rememberVisit(key: string, record: VisitRecord) {
   visitMemory.delete(key);
   visitMemory.set(key, record);
-  if (visitMemory.size > VISIT_MEMORY_MAX) visitMemory.delete(visitMemory.keys().next().value);
+  if (visitMemory.size > VISIT_MEMORY_MAX) visitMemory.delete(visitMemory.keys().next().value!);
 }
 
 export default function EntityExplorer({
@@ -209,8 +234,8 @@ export default function EntityExplorer({
   // Under the app's own bar — App.jsx decides, the same way it decides to
   // render the bar — the page starts below it instead of at the top edge.
   appChrome = false,
-}) {
-  const { type, id } = useParams();
+}: { onSaveToList?: (paper: Paper) => void; publicMode?: boolean; onAuthRequired?: (reason?: string) => void; appChrome?: boolean }) {
+  const { type, id } = useParams() as { type: string; id: string };
   // The visit this page resumes, if it was here before (`visitMemory`).
   // Read once per mount: the seeds below take it into state, and the two
   // refs let the effects that would otherwise clear or refetch that state
@@ -258,31 +283,31 @@ export default function EntityExplorer({
   // either way and upgrades the record.
   const cachedEntity = useMemo(() => peekEntity(type, id), [id, type]);
   const bornResolved = Boolean(handedEntity) || Boolean(localTopic) || Boolean(cachedEntity) || (type === 'topic' && isOpaqueQueryTopicText(id));
-  const [entity, setEntity] = useState(() => (bornResolved ? (handedEntity || localTopic || cachedEntity || resolveQueryTopicRoute(id, searchParams)) : null));
-  const [entityError, setEntityError] = useState(null);
+  const [entity, setEntity] = useState<ExplorerEntity | null>(() => (bornResolved ? (handedEntity || localTopic || cachedEntity || resolveQueryTopicRoute(id, searchParams)) : null));
+  const [entityError, setEntityError] = useState<string | null>(null);
   const [entityReloadKey, setEntityReloadKey] = useState(0);
-  const [papers, setPapers] = useState([]);
+  const [papers, setPapers] = useState<Paper[]>([]);
   const [isLoadingEntity, setIsLoadingEntity] = useState(() => !bornResolved);
   // True from the start, and re-armed by every entity load: the live page's
   // first frame comes before the effect that requests the papers, and with
   // this false that frame showed the empty-state copy — "no results matched"
   // — between the hero landing and the rows' shapes taking over.
   const [isLoadingPapers, setIsLoadingPapers] = useState(true);
-  const [papersError, setPapersError] = useState(null);
+  const [papersError, setPapersError] = useState<string | null>(null);
   const [papersReloadKey, setPapersReloadKey] = useState(0);
   const [sortBy, setSortBy] = useState('cited_by_count:desc');
   
   const [searchQuery, setSearchQuery] = useState('');
 
-  const [selectedPaper, setSelectedPaper] = useState(null);
-  const [pdfPaperToView, setPdfPaperToView] = useState(null);
+  const [selectedPaper, setSelectedPaper] = useState<Paper | null>(null);
+  const [pdfPaperToView, setPdfPaperToView] = useState<Paper | null>(null);
   // Back closes this PDF viewer instead of leaving PaperTok: see useOverlayHistory.js.
   // Through the viewer's own close, the one the X uses — it owns `open` and
   // reports back only when its leave has played; `setPdfPaperToView(null)` is
   // just the fallback for the sub-frame gap before PDFViewer's own
   // `useImperativeHandle` has populated the ref — this import (above) is
   // plain, not lazy, so there is no chunk boundary to blame it on here.
-  const pdfCloseRef = useRef(null);
+  const pdfCloseRef = useRef<(() => void) | null>(null);
   const requestPdfClose = useCallback(() => {
     if (pdfCloseRef.current) pdfCloseRef.current();
     else setPdfPaperToView(null);
@@ -298,7 +323,7 @@ export default function EntityExplorer({
   // Adjusted during render rather than in an effect: a paper opened while
   // another is still leaving has to take over in the same commit, or the
   // window shows the wrong paper for a frame.
-  const [shownPaper, setShownPaper] = useState(null);
+  const [shownPaper, setShownPaper] = useState<Paper | null>(null);
   if (selectedPaper && selectedPaper !== shownPaper) {
     setShownPaper(selectedPaper);
   }
@@ -316,7 +341,7 @@ export default function EntityExplorer({
   // the commit that started the exit, and animates from there to the short one.
   const [wikiFoldExits, setWikiFoldExits] = useState(0);
   const [loadedWikiImageUrl, setLoadedWikiImageUrl] = useState(() => resumed?.loadedWikiImageUrl ?? '');
-  const [orcidInfo, setOrcidInfo] = useState(null);
+  const [orcidInfo, setOrcidInfo] = useState<Awaited<ReturnType<typeof getOrcidRecord>>>(null);
   // A known ORCID reserves its slot on the very first live frame. Waiting for
   // the entity refresh to raise this flag would remove and reinsert the slot.
   const [isLoadingOrcid, setIsLoadingOrcid] = useState(() => type === 'author' && Boolean(entity?.orcid || extractOrcid(id)));
@@ -333,8 +358,8 @@ export default function EntityExplorer({
   // it is not all of them at once).
   const [rowBudget, setRowBudget] = useState(EXPLORER_ROW_CHUNK);
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const observerRef = useRef(null);
-  const papersRequestRef = useRef(null);
+  const observerRef = useRef<HTMLDivElement | null>(null);
+  const papersRequestRef = useRef<{ key: string; cancelled: boolean } | null>(null);
 
   const [activeTab, setActiveTab] = useState(() => resumed?.activeTab ?? 'papers');
   // Whether the Authors tab has been opened on this entity. The list is
@@ -364,13 +389,13 @@ export default function EntityExplorer({
   const [wikiDescriptionExpandedHeight, setWikiDescriptionExpandedHeight] = useState(() => resumed?.wikiDescriptionExpandedHeight ?? 0);
   const [isProjectSummaryExpandable, setIsProjectSummaryExpandable] = useState(false);
   const [isWikiDescriptionExpandable, setIsWikiDescriptionExpandable] = useState(() => Boolean(resumed?.isWikiDescriptionExpandable));
-  const [resolvingParticipant, setResolvingParticipant] = useState(null);
+  const [resolvingParticipant, setResolvingParticipant] = useState<string | undefined | null>(null);
   const [participantNavigationError, setParticipantNavigationError] = useState('');
   const [isResolvingAuthorInstitution, setIsResolvingAuthorInstitution] = useState(false);
   const [authorInstitutionNavigationError, setAuthorInstitutionNavigationError] = useState('');
   const [recentImpact, setRecentImpact] = useState(() => resumed?.recentImpact ?? null);
   const [isLoadingRecentImpact, setIsLoadingRecentImpact] = useState(false);
-  const [recentImpactError, setRecentImpactError] = useState(null);
+  const [recentImpactError, setRecentImpactError] = useState<string | null>(null);
   
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
@@ -381,15 +406,15 @@ export default function EntityExplorer({
 
   const [entityAuthors, setEntityAuthors] = useState(() => (resumed && !resumed.authorsSearch ? resumed.entityAuthors : []));
   const [isLoadingAuthors, setIsLoadingAuthors] = useState(false);
-  const [authorsError, setAuthorsError] = useState(null);
+  const [authorsError, setAuthorsError] = useState<string | null>(null);
   const [authorsReloadKey, setAuthorsReloadKey] = useState(0);
   const [isFetchingMoreAuthors, setIsFetchingMoreAuthors] = useState(false);
   const [authorsPage, setAuthorsPage] = useState(() => (resumed && !resumed.authorsSearch ? resumed.authorsPage : 1));
   const [hasMoreAuthors, setHasMoreAuthors] = useState(() => Boolean(resumed && !resumed.authorsSearch && resumed.hasMoreAuthors));
-  const observerAuthorsRef = useRef(null);
+  const observerAuthorsRef = useRef<HTMLDivElement | null>(null);
   const viewedEntityRef = useRef('');
-  const projectSummaryTextRef = useRef(null);
-  const wikiDescriptionTextRef = useRef(null);
+  const projectSummaryTextRef = useRef<HTMLParagraphElement | null>(null);
+  const wikiDescriptionTextRef = useRef<HTMLParagraphElement | null>(null);
   const localizedTopicEntity = useMemo(
     () => entity?._localTopic ? getLocalTopicEntity(entity.id || id) : null,
     [entity, id],
@@ -420,7 +445,7 @@ export default function EntityExplorer({
       source: { en: 'Scientific journal' },
       concept: { en: 'Research topic' },
       topic: { en: 'Research topic' },
-    }[type] || { en: 'Scientific entity' };
+    }[type as 'author' | 'institution' | 'project' | 'source' | 'concept' | 'topic'] || { en: 'Scientific entity' };
 
     return {
       title: {
@@ -447,7 +472,7 @@ export default function EntityExplorer({
   // institution -> author from the Authors tab, production build: the
   // author page slid in as grey rows, its name landed at 600ms, and its hero
   // settled twice, 131 -> 238 and then 238 -> 393.
-  const navigateToEntity = useCallback((nextType, nextId, handover = null) => {
+  const navigateToEntity = useCallback((nextType: string, nextId: string, handover: HandoverEntity | null = null) => {
     if (publicMode) {
       const publicPath = getPublicEntityPath(nextType, nextId);
       if (publicPath) navigate(publicPath);
@@ -480,7 +505,7 @@ export default function EntityExplorer({
   // loading flag goes up here, with the tab, rather than in the effect that
   // fetches: the frame the tab opens on then already shows the rows' shapes
   // and never the empty-state copy.
-  const openTab = useCallback((tab) => {
+  const openTab = useCallback((tab: string) => {
     setActiveTab(tab);
     if (tab === 'authors' && !authorsOpened) {
       setAuthorsOpened(true);
@@ -563,10 +588,10 @@ export default function EntityExplorer({
   // The tab strip's travelling rule (see the strip below for why). The row is
   // held in STATE, not a ref: the live strip does not exist while the entity
   // loads, and a ref would be read once as null and never again.
-  const [tabsRow, setTabsRow] = useState(null);
+  const [tabsRow, setTabsRow] = useState<HTMLDivElement | null>(null);
   const tabRule = useActiveTabRule(tabsRow, activeTab, '.ee-tab.active');
 
-  const heroBodyRef = useRef(null);
+  const heroBodyRef = useRef<HTMLDivElement | null>(null);
   useHeightSettle(
     heroBodyRef,
     // Everything that changes this box's height and is worth a movement. The
@@ -609,7 +634,7 @@ export default function EntityExplorer({
     });
   }, [activeTab, authorsOpened, authorsPage, debouncedSearch, entityAuthors, hasMoreAuthors, isWikiDescriptionExpandable, isWikiDescriptionExpanded, loadedWikiImageUrl, recentImpact, settledWikiRequestKey, visitKey, wikiDescriptionExpandedHeight, wikiInfo]);
 
-  const getInteractionState = useCallback((paper) => ({
+  const getInteractionState = useCallback((paper: Paper) => ({
     isLiked: likedPaperIds.has(paper.id),
     isSaved: savedPaperIds.has(paper.id),
     isRead: readPaperIds.has(paper.id),
@@ -629,7 +654,7 @@ export default function EntityExplorer({
   // is, so signing up returns to this entity rather than to a login screen.
   // `reason` tells the sign-in dialog why it opened (authPromptCopy.js); the
   // wall at the foot of the list passes none and gets the general door.
-  const requestAccount = useCallback((reason) => {
+  const requestAccount = useCallback((reason?: string) => {
     trackEvent('select_content', { content_type: analyticsEntityType, surface: 'explorer' });
     onAuthRequired(reason);
   }, [analyticsEntityType, onAuthRequired, trackEvent]);
@@ -644,7 +669,7 @@ export default function EntityExplorer({
   const guestSearchLabel = `Search ${guestSearchScope.en} · needs an account`;
 
   const measureExpandableDescriptions = useCallback(() => {
-    const measure = (element, setHeight, setExpandable) => {
+    const measure = (element: HTMLElement | null, setHeight: (height: number) => void, setExpandable: (expandable: boolean) => void) => {
       if (!element) return;
       const lineHeight = Number.parseFloat(window.getComputedStyle(element).lineHeight);
       const collapsedHeight = Number.isFinite(lineHeight) ? lineHeight * 3 : element.clientHeight;
@@ -670,14 +695,14 @@ export default function EntityExplorer({
   // is a stable callback ([] deps), so this effect subscribes once for the
   // component's life rather than resubscribing on every render.
   useEffect(() => {
-    let timer = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const onResize = () => {
-      clearTimeout(timer);
+      clearTimeout(timer!);
       timer = setTimeout(() => requestAnimationFrame(measureExpandableDescriptions), 150);
     };
     window.addEventListener('resize', onResize);
     return () => {
-      clearTimeout(timer);
+      clearTimeout(timer!);
       window.removeEventListener('resize', onResize);
     };
   }, [measureExpandableDescriptions]);
@@ -685,7 +710,7 @@ export default function EntityExplorer({
   // An author page reached by a name that neither an id nor the paper could
   // confirm (utils/entityExplorer.js): its results may be several people's.
   const authorIdentityUnverified = Boolean(entity) && !authorIdentityVerified({ type, routeId: id, entity });
-  const followEntity = useMemo(() => {
+  const followEntity = useMemo<FollowInput | null>(() => {
     // A name-only author may be several people; following "them" would follow
     // whichever one the search returned.
     if (!entity || authorIdentityUnverified || !['author', 'institution', 'project', 'concept', 'topic'].includes(type)) return null;
@@ -709,7 +734,7 @@ export default function EntityExplorer({
           localizedNames: type === 'institution' ? entity.localized_names : undefined,
         };
     return {
-      type: followType,
+      type: followType as FollowInput['type'],
       id: entity.id || entity.code || id,
       displayName,
       source: type === 'project' ? 'openaire' : type === 'concept' || type === 'topic' ? 'papertok' : 'openalex',
@@ -740,7 +765,7 @@ export default function EntityExplorer({
       setExpandedSummary(false);
       setParticipantsExpanded(false);
     }, 0);
-    return () => clearTimeout(timer);
+    return () => clearTimeout(timer!);
   }, [type, id, visitKey]);
 
   useEffect(() => {
@@ -786,7 +811,7 @@ export default function EntityExplorer({
         setWikiBlockOpened(false);
       }
       setOrcidInfo(null);
-      setIsLoadingOrcid(type === 'author' && Boolean(bornWith?.orcid || extractOrcid(id)));
+      setIsLoadingOrcid(type === 'author' && Boolean((bornWith as ExplorerEntity | null)?.orcid || extractOrcid(id)));
       setIsExperienceOpen(true);
       setExperienceToggled(false);
       setExpandedSummary(false);
@@ -889,7 +914,7 @@ export default function EntityExplorer({
         return;
       }
       
-      let data;
+      let data: ExplorerEntity | null;
       let prefetchedOrcid = null;
       const orcidId = type === 'author' ? extractOrcid(id) : null;
       const isOpenAlexId = /^A\d+$/.test(id) || /openalex\.org\/A\d+/.test(id);
@@ -930,7 +955,7 @@ export default function EntityExplorer({
       if (isCancelled) return;
 
       if (type === 'author' && data) {
-        data = await enrichAuthorInstitutionLocalization(data);
+        data = await enrichAuthorInstitutionLocalization(data as OpenAlexAuthor);
         if (isCancelled) return;
       }
       
@@ -945,7 +970,7 @@ export default function EntityExplorer({
       // collapsed the frame the hero landed, reopened seconds later, and
       // filled after that — two jumps for the list under it, on every author.
       const wantsRecentImpact = ['institution', 'author'].includes(type) && Boolean(data);
-      const wantsOrcid = Boolean(data?.display_name) && type === 'author' && Boolean(data.orcid);
+      const wantsOrcid = Boolean(data?.display_name) && type === 'author' && Boolean(data!.orcid);
       if (wantsRecentImpact) {
         setIsLoadingRecentImpact(true);
         setRecentImpactError(null);
@@ -954,16 +979,16 @@ export default function EntityExplorer({
 
       const loadRecentImpact = async () => {
         try {
-          const impact = await getEntityRecentImpact(type, data);
+          const impact = await getEntityRecentImpact(type, data!);
           if (!isCancelled) setRecentImpact(impact);
         } catch (error) {
           if (!isCancelled) {
             setRecentImpactError(
               isOpenAlexRateLimitError(error)
                 ? 'rate_limited'
-                : error?.code === 'timeout'
+                : (error as { code?: string } | null)?.code === 'timeout'
                   ? 'timeout'
-                  : error?.code === 'network_error'
+                  : (error as { code?: string } | null)?.code === 'network_error'
                     ? 'network_error'
                     : 'unavailable'
             );
@@ -975,7 +1000,7 @@ export default function EntityExplorer({
       };
       const loadOrcid = async () => {
         try {
-          const record = prefetchedOrcid || await getOrcidRecord(data.orcid);
+          const record = prefetchedOrcid || await getOrcidRecord(data!.orcid!);
           if (!isCancelled) {
             setOrcidInfo(record);
             setIsExperienceOpen((record?.employments?.length ?? 0) <= EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS);
@@ -1050,7 +1075,7 @@ export default function EntityExplorer({
         setWikiInfo(info ? { ...info, _requestKey: wikiRequestKey } : null);
       }
     }).catch(error => {
-      if (error?.name !== 'AbortError') console.error('Failed to fetch Wikipedia info', error);
+      if ((error as Error | null)?.name !== 'AbortError') console.error('Failed to fetch Wikipedia info', error);
     }).finally(() => {
       window.clearTimeout(timeout);
       if (isActive) setSettledWikiRequestKey(wikiRequestKey);
@@ -1108,10 +1133,10 @@ export default function EntityExplorer({
       else setIsFetchingMore(true);
       
       try {
-        let arxivIds = [];
-        let dois = [];
+        let arxivIds: string[] = [];
+        let dois: string[] = [];
         let total = 0;
-        let fetchedPapers = [];
+        let fetchedPapers: Paper[] = [];
         let topicProviderFailure = false;
         // A project's two counts, kept apart because they answer different
         // questions. `projectUsableIds` is how many identifiers OpenAIRE
@@ -1121,10 +1146,10 @@ export default function EntityExplorer({
         let projectUsableIds = 0;
         let projectResolvedRows = 0;
 
-        const resolvedId = entity.id || id;
+        const resolvedId = entity!.id || id;
 
         if (type === 'project') {
-           const res = await getPapersByProject(resolvedId, page, { funder: searchParams.get('funder') || entity.funder || '' });
+           const res = await getPapersByProject(resolvedId, page, { funder: searchParams.get('funder') || entity!.funder || '' });
            arxivIds = res.arxivIds;
            dois = res.dois || [];
            // OpenAIRE's total counts every publication of the project, with or
@@ -1136,9 +1161,9 @@ export default function EntityExplorer({
            projectUsableIds = arxivIds.length + dois.length;
            total = res.total;
         } else if (type === 'author') {
-            let papersFromOA = [];
-            let arxPapersFromNative = [];
-            let primaryError = null;
+            let papersFromOA: Paper[] = [];
+            let arxPapersFromNative: Paper[] = [];
+            let primaryError: unknown = null;
             // Semantic Scholar, PubMed and Scopus are searched by the NAME,
             // so what they return is anyone who shares it. A person the id or
             // the paper confirmed gets their own works only; the name
@@ -1147,29 +1172,29 @@ export default function EntityExplorer({
             const nameOnly = !authorIdentityVerified({ type, routeId: id, entity });
             const supplementalPromises = nameOnly
               ? [
-                new SemanticScholarAdapter().search(`"${entity.display_name}"`, page, { type: 'author' }),
-                new PubmedAdapter().search(`"${entity.display_name}"`, page, { type: 'author' }),
+                new SemanticScholarAdapter().search(`"${entity!.display_name}"`, page, { type: 'author' }),
+                new PubmedAdapter().search(`"${entity!.display_name}"`, page, { type: 'author' }),
                 isScopusEnabled()
-                  ? new ScopusAdapter().search(entity.display_name, page, { type: 'author', limit: 8 })
+                  ? new ScopusAdapter().search(entity!.display_name!, page, { type: 'author', limit: 8 })
                   : Promise.resolve({ papers: [] }),
               ]
               : [Promise.resolve({ papers: [] }), Promise.resolve({ papers: [] }), Promise.resolve({ papers: [] })];
             const primaryPromise = !resolvedId.startsWith('stub-')
-              ? getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters, entity.display_name)
-              : getAuthorPapers(entity.display_name, 30);
+              ? getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters, entity!.display_name)
+              : getAuthorPapers(entity!.display_name!, 30);
             const [primaryResult, supplementalResults] = await Promise.all([
-              settleWithin(primaryPromise, ENTITY_PRIMARY_RENDER_BUDGET_MS),
+              settleWithin<Awaited<typeof primaryPromise>>(primaryPromise, ENTITY_PRIMARY_RENDER_BUDGET_MS),
               Promise.all(supplementalPromises.map(sourcePromise => (
-                settleWithin(sourcePromise, ENTITY_SUPPLEMENT_RENDER_BUDGET_MS)
+                settleWithin<Awaited<typeof sourcePromise>>(sourcePromise, ENTITY_SUPPLEMENT_RENDER_BUDGET_MS)
               ))),
             ]);
 
             if (primaryResult.status === 'fulfilled') {
               if (!resolvedId.startsWith('stub-')) {
-                papersFromOA = primaryResult.value?.papers || [];
-                total = primaryResult.value?.total || 0;
+                papersFromOA = (primaryResult.value as Awaited<ReturnType<typeof getWorksByEntity>>)?.papers || [];
+                total = (primaryResult.value as Awaited<ReturnType<typeof getWorksByEntity>>)?.total || 0;
               } else {
-                arxPapersFromNative = primaryResult.value || [];
+                arxPapersFromNative = primaryResult.value as Paper[] || [];
               }
             } else {
               primaryError = primaryResult.reason || new Error('The main source took too long to respond.');
@@ -1187,7 +1212,7 @@ export default function EntityExplorer({
             if (resolvedId.startsWith('stub-')) {
               total = fetchedPapers.length;
             }
-         } else if ((type === 'concept' || type === 'topic') && (entity._localTopic || entity._queryTopic)) {
+         } else if ((type === 'concept' || type === 'topic') && (entity!._localTopic || entity!._queryTopic)) {
             const topicResult = await fetchTopicPapers({
               ...entity,
               canonicalId: resolvedId,
@@ -1209,7 +1234,7 @@ export default function EntityExplorer({
               : (page - 1) * 30 + fetchedPapers.length;
          } else {
             const primaryResult = await settleWithin(
-              getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters, entity.display_name),
+              getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters, entity!.display_name),
               ENTITY_PRIMARY_RENDER_BUDGET_MS,
             );
             if (primaryResult.status !== 'fulfilled') {
@@ -1430,11 +1455,11 @@ export default function EntityExplorer({
   useEffect(() => {
     if (rowsSettled) return undefined;
     const schedule = typeof window.requestIdleCallback === 'function'
-      ? (fn) => window.requestIdleCallback(fn, { timeout: 400 })
-      : (fn) => setTimeout(fn, 32);
+      ? (fn: () => void) => window.requestIdleCallback(fn, { timeout: 400 })
+      : (fn: () => void) => setTimeout(fn, 32);
     const cancel = typeof window.cancelIdleCallback === 'function'
-      ? (id) => window.cancelIdleCallback(id)
-      : (id) => clearTimeout(id);
+      ? (id: number) => window.cancelIdleCallback(id)
+      : (id: number) => clearTimeout(id);
     const handle = schedule(() => setRowBudget((budget) => nextExplorerRowBudget(budget, filteredPapers.length)));
     return () => cancel(handle);
   }, [rowsSettled, rowBudget, filteredPapers.length]);
@@ -1490,7 +1515,7 @@ export default function EntityExplorer({
           url: publicEntityUrl,
         });
       } catch (error) {
-        if (error?.name !== 'AbortError') console.error(error);
+        if ((error as Error | null)?.name !== 'AbortError') console.error(error);
       }
       return;
     }
@@ -1504,7 +1529,7 @@ export default function EntityExplorer({
     }
   };
 
-  const handleFollow = (event) => {
+  const handleFollow = (event: MouseEvent) => {
     event.stopPropagation();
     if (!followEntity) return;
 
@@ -1532,13 +1557,13 @@ export default function EntityExplorer({
     setAuthorsReloadKey(key => key + 1);
   };
 
-  const openParticipantInstitution = async (participant) => {
+  const openParticipantInstitution = async (participant: ProjectParticipant) => {
     setResolvingParticipant(participant.name);
     setParticipantNavigationError('');
     try {
       const institution = await findInstitution({
         name: participant.searchName || participant.name,
-        aliases: [participant.name],
+        aliases: [participant.name!],
       });
       if (institution) {
         navigateToEntity('institution', institution.id);
@@ -1565,17 +1590,17 @@ export default function EntityExplorer({
     setAuthorInstitutionNavigationError('');
     try {
       if (institutionId || rorId) {
-        navigateToEntity('institution', institutionId || rorId);
+        navigateToEntity('institution', (institutionId || rorId)!);
         return;
       }
 
       const institution = await findInstitution({
         name: institutionName,
-        aliases: [knownInstitution?.display_name, entity?.institution].filter(Boolean),
+        aliases: [knownInstitution?.display_name, entity?.institution].filter(Boolean) as string[],
       });
 
       if (institution?.id) {
-        navigateToEntity('institution', institution.id.split('/').pop());
+        navigateToEntity('institution', institution.id.split('/').pop()!);
       } else {
         setAuthorInstitutionNavigationError('We could not find this institution profile.');
       }
@@ -1851,7 +1876,7 @@ export default function EntityExplorer({
                 ? { duration: 0 }
                 : { duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
               className="ehc-bg-blur"
-              style={{ '--ehc-wash-image': `url(${visibleWikiInfo.thumbnail})` }}
+              style={{ '--ehc-wash-image': `url(${visibleWikiInfo!.thumbnail})` }}
             ></motion.div>
           )}
         </AnimatePresence>
@@ -1902,7 +1927,7 @@ export default function EntityExplorer({
                     <img
                       src={visibleWikiInfo.thumbnail}
                       alt={entityDisplayName}
-                      onLoad={() => setLoadedWikiImageUrl(visibleWikiInfo.thumbnail)}
+                      onLoad={() => setLoadedWikiImageUrl(visibleWikiInfo.thumbnail!)}
                       onError={() => setLoadedWikiImageUrl('')}
                     />
                   </motion.div>
@@ -1917,7 +1942,7 @@ export default function EntityExplorer({
                     which is the follow identity; and being read on every
                     render it follows a language toggle without a remount. */}
                 <h1 className="ehc-name" style={{ margin: 0 }}>{entityDisplayName || entityTypeLabel}</h1>
-                {type === 'author' && orcidInfo?.employments?.length > 0 && (
+                {type === 'author' && (orcidInfo?.employments?.length as number) > 0 && (
                   <button
                     type="button"
                     className={`ehc-name-toggle ${isExperienceOpen ? 'is-open' : ''}`}
@@ -1945,16 +1970,16 @@ export default function EntityExplorer({
                       {entity.established && <span>{'Since'} {entity.established}</span>}
                     </div>
                   )}
-                  {entity.relationships?.length > 0 && (
+                  {(entity.relationships?.length as number) > 0 && (
                     <div className="ehc-ror-relations" aria-label={'Institutional relationships verified by ROR'}>
-                      {entity.relationships.slice(0, 4).map(relationship => (
+                      {entity.relationships!.slice(0, 4).map(relationship => (
                         <button
                           key={`${relationship.type}-${relationship.rorId}`}
                           type="button"
                           onClick={() => navigateToEntity('institution', relationship.rorId)}
-                          title={`${ROR_RELATION_LABELS[language][relationship.type] || ROR_RELATION_LABELS[language].related}: ${relationship.label}`}
+                          title={`${ROR_RELATION_LABELS[language][relationship.type as keyof typeof ROR_RELATION_LABELS.en] || ROR_RELATION_LABELS[language].related}: ${relationship.label}`}
                         >
-                          <span>{ROR_RELATION_LABELS[language][relationship.type] || ROR_RELATION_LABELS[language].related}</span>
+                          <span>{ROR_RELATION_LABELS[language][relationship.type as keyof typeof ROR_RELATION_LABELS.en] || ROR_RELATION_LABELS[language].related}</span>
                           <strong>{relationship.label}</strong>
                           <CaretRight size={13} />
                         </button>
@@ -2089,18 +2114,18 @@ export default function EntityExplorer({
                 <span className="ex-skel ex-skel-stat-label"></span>
               </div>
             ))}
-            {type === 'project' && entity.budget > 0 && (
+            {type === 'project' && (entity.budget as number) > 0 && (
               <div className="ehc-stat-box">
                 <span className="ehc-stat-value">
-                  {(() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: entity.currency, maximumFractionDigits: 0 }).format(entity.budget); } catch { return `${entity.budget.toLocaleString(locale)} €`; } })()}
+                  {(() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: entity.currency, maximumFractionDigits: 0 }).format(entity.budget!); } catch { return `${entity.budget!.toLocaleString(locale)} €`; } })()}
                 </span>
                 <span className="ehc-stat-label">{'Total budget'}</span>
               </div>
             )}
-            {type === 'project' && entity.fundedAmount > 0 && entity.fundedAmount !== entity.budget && (
+            {type === 'project' && (entity.fundedAmount as number) > 0 && entity.fundedAmount! !== entity.budget! && (
               <div className="ehc-stat-box">
                 <span className="ehc-stat-value">
-                  {(() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: entity.currency, maximumFractionDigits: 0 }).format(entity.fundedAmount); } catch { return `${entity.fundedAmount.toLocaleString(locale)} €`; } })()}
+                  {(() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: entity.currency, maximumFractionDigits: 0 }).format(entity.fundedAmount!); } catch { return `${entity.fundedAmount!.toLocaleString(locale)} €`; } })()}
                 </span>
                 <span className="ehc-stat-label">{'Funding'}</span>
               </div>
@@ -2111,15 +2136,15 @@ export default function EntityExplorer({
                 <span className="ehc-stat-label">{'Duration'}</span>
               </div>
             )}
-            {type === 'project' && entity.participants?.length > 0 && (
+            {type === 'project' && (entity.participants?.length as number) > 0 && (
               <div className="ehc-stat-box">
-                <span className="ehc-stat-value">{entity.participants.length}</span>
+                <span className="ehc-stat-value">{entity.participants!.length}</span>
                 <span className="ehc-stat-label">{'Participants'}</span>
               </div>
             )}
-            {type === 'project' && entity.measures?.citations > 0 && (
+            {type === 'project' && (entity.measures?.citations as number) > 0 && (
               <div className="ehc-stat-box">
-                <span className="ehc-stat-value">{entity.measures.citations.toLocaleString(locale)}</span>
+                <span className="ehc-stat-value">{entity.measures!.citations!.toLocaleString(locale)}</span>
                 <span className="ehc-stat-label">{'Citations'}</span>
               </div>
             )}
@@ -2143,7 +2168,7 @@ export default function EntityExplorer({
           </div>
 
           {/* Professional experience — a disclosure opened from the chevron by the name */}
-          {type === 'author' && orcidInfo?.employments?.length > 0 && (
+          {type === 'author' && (orcidInfo?.employments?.length as number) > 0 && (
             // No `initial={false}`: the presence mounts with the panel, when
             // the record lands on a hero that is already live, so the panel
             // arriving is the one entrance this animation exists for. Off, it
@@ -2191,7 +2216,7 @@ export default function EntityExplorer({
                     {'Professional experience'}
                   </div>
                   <div className="orcid-timeline">
-                    {orcidInfo.employments.map((emp, i) => (
+                    {orcidInfo!.employments.map((emp, i) => (
                       <div key={i} className="orcid-timeline-item" style={{ '--author-row-delay': `${Math.min(i, 4) * 40}ms` }}>
                         <button
                           type="button"
@@ -2222,7 +2247,7 @@ export default function EntityExplorer({
           )}
 
           {/* Project metadata chips */}
-          {type === 'project' && (entity.callIdentifier || entity.contractType || entity.openAccess || entity.measures?.downloads > 0 || entity.measures?.views > 0) && (
+          {type === 'project' && (entity.callIdentifier || entity.contractType || entity.openAccess || (entity.measures?.downloads as number) > 0 || (entity.measures?.views as number) > 0) && (
             <div className="project-meta-chips">
               {entity.callIdentifier && (
                 <span className="project-chip"><BookOpen size={13} /> {entity.callIdentifier}</span>
@@ -2233,11 +2258,11 @@ export default function EntityExplorer({
               {entity.openAccess && (
                 <span className="project-chip project-chip--oa"><BookOpen size={13} /> Open Access</span>
               )}
-              {entity.measures?.downloads > 0 && (
-                <span className="project-chip"><DownloadSimple size={13} /> {entity.measures.downloads.toLocaleString(locale)} {'downloads'}</span>
+              {(entity.measures?.downloads as number) > 0 && (
+                <span className="project-chip"><DownloadSimple size={13} /> {entity.measures!.downloads!.toLocaleString(locale)} {'downloads'}</span>
               )}
-              {entity.measures?.views > 0 && (
-                <span className="project-chip"><Eye size={13} /> {entity.measures.views.toLocaleString(locale)} {'views'}</span>
+              {(entity.measures?.views as number) > 0 && (
+                <span className="project-chip"><Eye size={13} /> {entity.measures!.views!.toLocaleString(locale)} {'views'}</span>
               )}
             </div>
           )}
@@ -2276,11 +2301,11 @@ export default function EntityExplorer({
           )}
 
           {/* Project subjects */}
-          {type === 'project' && entity.subjects?.length > 0 && (
+          {type === 'project' && (entity.subjects?.length as number) > 0 && (
             <div className="project-subjects">
               <h4 className="project-section-title"><Tag size={14} /> {'Project topics'}</h4>
               <div className="project-subjects-list">
-                {entity.subjects.map((s, i) => (
+                {entity.subjects!.map((s, i) => (
                   <span key={i} className="ehc-tag">{s}</span>
                 ))}
               </div>
@@ -2288,7 +2313,7 @@ export default function EntityExplorer({
           )}
 
           {/* Participating organizations */}
-          {type === 'project' && entity.participants?.length > 0 && (
+          {type === 'project' && (entity.participants?.length as number) > 0 && (
             <div className="project-participants">
               <h4 className="project-section-title"><Buildings size={14} /> {'Participating organizations'}</h4>
               <motion.div
@@ -2298,7 +2323,7 @@ export default function EntityExplorer({
                 transition={prefersReducedMotion ? { duration: 0 } : { layout: { duration: 0.28 } }}
               >
                 <AnimatePresence initial={false}>
-                {entity.participants.slice(0, participantsExpanded ? entity.participants.length : 6).map((p, i) => (
+                {entity.participants!.slice(0, participantsExpanded ? entity.participants!.length : 6).map((p, i) => (
                   <motion.button
                     key={`${p.name}-${p.country || i}`}
                     type="button"
@@ -2328,7 +2353,7 @@ export default function EntityExplorer({
               {participantNavigationError && (
                 <p className="project-participant-error" role="alert">{participantNavigationError}</p>
               )}
-              {entity.participants.length > 6 && (
+              {entity.participants!.length > 6 && (
                 <button
                   className="project-show-more"
                   onClick={() => setParticipantsExpanded(value => !value)}
@@ -2337,7 +2362,7 @@ export default function EntityExplorer({
                 >
                   {participantsExpanded
                     ? ('Show fewer organizations')
-                    : `+${entity.participants.length - 6} ${'more organizations'}`}
+                    : `+${entity.participants!.length - 6} ${'more organizations'}`}
                 </button>
               )}
             </div>
@@ -2659,7 +2684,7 @@ export default function EntityExplorer({
                   <h3 className="eli-title">
                     <ScientificText>{paper.title}</ScientificText>
                   </h3>
-                  <p className="eli-authors">{(paper.authors || []).map(a => a.name || a).join(', ')}</p>
+                  <p className="eli-authors">{(paper.authors || []).map(a => (a as PaperAuthor).name || a).join(', ')}</p>
                   <p className="eli-summary">
                     {hasUsableAIAbstract(paper.abstract)
                       ? <ScientificText>{paper.abstract}</ScientificText>
@@ -2780,8 +2805,8 @@ export default function EntityExplorer({
                   <h4>{author.display_name}</h4>
                   <p className="ee-author-metrics">
                     {author.source === 'crossref'
-                      ? `${author.works_count.toLocaleString(locale)} ${'matching publications'}`
-                      : `H-Index: ${author.h_index} • ${author.cited_by_count.toLocaleString(locale)} ${'citations'}`}
+                      ? `${author.works_count!.toLocaleString(locale)} ${'matching publications'}`
+                      : `H-Index: ${author.h_index} • ${author.cited_by_count!.toLocaleString(locale)} ${'citations'}`}
                   </p>
                 </div>
                 <CaretRight size={18} className="ee-author-arrow" />
@@ -2962,9 +2987,9 @@ export default function EntityExplorer({
         {shownPaper && (
           <PaperCard
             paper={shownPaper}
-            isLiked={likedPaperIds.has(interactionIdFor(shownPaper))}
-            isSaved={savedPaperIds.has(interactionIdFor(shownPaper))}
-            isRead={readPaperIds.has(interactionIdFor(shownPaper))}
+            isLiked={likedPaperIds.has(interactionIdFor(shownPaper)!)}
+            isSaved={savedPaperIds.has(interactionIdFor(shownPaper)!)}
+            isRead={readPaperIds.has(interactionIdFor(shownPaper)!)}
             onLike={toggleLike}
             onNotInterested={(paper) => { markNotInterested(paper); setSelectedPaper(null); }}
             onMarkAsRead={markAsRead}

@@ -76,7 +76,7 @@ export function filterAndSortEntityPapers<T extends Partial<Paper>>(papers: T[],
   });
 }
 
-function normalizePaperId(paperId: string) {
+function normalizePaperId(paperId: string | null) {
   if (!paperId) return '';
   const id = paperId.startsWith('arxiv:') ? paperId.split(':')[1] : paperId;
   return id.replace(/v\d+$/, '');
@@ -115,7 +115,7 @@ export function sourceArxivIdFrom(value: string|null) {
   return ARXIV_SOURCE.test(raw) ? raw.replace(/v\d+$/i, '') : '';
 }
 
-export function pinSourcePaper<T extends Pick<Paper, 'id'>>(papers: T[], sourcePaperId: string) {
+export function pinSourcePaper<T extends Pick<Paper, 'id'>>(papers: T[], sourcePaperId: string | null) {
   const sourceId = normalizePaperId(sourcePaperId);
   if (!sourceId) return papers;
   const sourceIndex = papers.findIndex(paper => normalizePaperId(paper.id) === sourceId);
