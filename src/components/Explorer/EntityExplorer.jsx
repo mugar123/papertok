@@ -2950,8 +2950,8 @@ export default function EntityExplorer({
         </SheetContent>
       </Sheet>
 
-      {/* Paper Card Overlay — the shared takeover, so the explorer, search and
-          Research all open a paper the same way. */}
+      {/* Paper Card Overlay — the shared takeover, so the explorer and search
+          open a paper the same way. */}
       <PaperOverlay
         open={Boolean(selectedPaper && !pdfPaperToView)}
         onClose={closeSelectedPaper}

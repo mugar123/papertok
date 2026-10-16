@@ -64,7 +64,7 @@ const DAY_7_MS = 7 * 24 * 60 * 60 * 1000;
 // under `/unknown` — a page that exists, is used, and is invisible in every
 // report. `/profile`, `/settings/profile`, `/settings/comments` and
 // `/admin/moderation` shipped missing and took a tenth of all page views with
-// them; `/research` (hidden for now) and its legacy alias `/report` both
+// them; `/research` (removed) and its legacy alias `/report` both
 // redirect to `/feed`, and they stay listed so those arrivals read as the old
 // link they came from rather than as noise. The test 'every route the app
 // declares is a named analytics path' is what keeps this list from drifting
@@ -138,7 +138,7 @@ const CATEGORIES = Object.freeze({
   // sanitizer drops the parameter and the event still ships, so the event
   // arrives stripped of the one field that says where it happened. Adding a
   // screen means adding it here in the same commit.
-  surface: new Set(['feed', 'following', 'lists', 'login', 'onboarding', 'research', 'search', 'settings', 'explorer', 'reader', 'auth_prompt', 'other']),
+  surface: new Set(['feed', 'following', 'lists', 'login', 'onboarding', 'search', 'settings', 'explorer', 'reader', 'auth_prompt', 'other']),
 });
 
 const EVENT_PARAMETER_SCHEMAS = Object.freeze({

@@ -13,7 +13,6 @@ import { readFile } from 'node:fs/promises';
 
 const navbarJsx = readFile(new URL('./Navbar.jsx', import.meta.url), 'utf8');
 const navbarCss = readFile(new URL('./Navbar.css', import.meta.url), 'utf8');
-const reportJsx = readFile(new URL('../Report/ScientificReport.jsx', import.meta.url), 'utf8');
 const accountJsx = readFile(new URL('./AccountMenu.jsx', import.meta.url), 'utf8');
 const accountCss = readFile(new URL('./AccountMenu.css', import.meta.url), 'utf8');
 
@@ -22,13 +21,6 @@ test('la navbar no dibuja el botón de recargar ni escucha al informe', async ()
   // Both names of the reload glyph: Lucide's, and Phosphor's since the switch.
   for (const resto of ['RotateCw', 'ArrowClockwise', 'refreshScientificReport', 'reportLoadingStart', 'reportLoadingEnd', 'showReloadButton', 'handleReload']) {
     assert.ok(!jsx.includes(resto), `\`${resto}\` sigue en Navbar.jsx`);
-  }
-});
-
-test('el informe ya no emite los eventos que solo la navbar escuchaba', async () => {
-  const jsx = await reportJsx;
-  for (const resto of ['refreshScientificReport', 'reportLoadingStart', 'reportLoadingEnd']) {
-    assert.ok(!jsx.includes(resto), `\`${resto}\` sigue en ScientificReport.jsx`);
   }
 });
 

@@ -37,10 +37,6 @@ export function normalizeArxivFigureId(paper) {
   return MODERN_ARXIV_ID.test(raw) || LEGACY_ARXIV_ID.test(raw) ? raw : '';
 }
 
-export function canHaveFigures(paper) {
-  return Boolean(normalizeArxivFigureId(paper));
-}
-
 async function requestFigures(url, arxivId) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);

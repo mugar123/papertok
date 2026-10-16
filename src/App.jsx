@@ -374,9 +374,9 @@ function AppContent() {
               </ProtectedRoute>
             }
           />
-          {/* Research is hidden while the MVP is trimmed down; its code stays
-              in components/Report. Its address and the legacy Novedades/Reporte
-              one land on the feed instead of the not-found page. */}
+          {/* Research was removed while the MVP is trimmed down. Its address
+              and the legacy Novedades/Reporte one land on the feed instead of
+              the not-found page. */}
           <Route path="/research" element={<Navigate to="/feed" replace />} />
           <Route path="/report" element={<Navigate to="/feed" replace />} />
           <Route
