@@ -86,8 +86,8 @@ export function DigestPreview({ still, stamp }) {
   </div>;
 }
 
-// The digest is opt-in: off until the visitor turns it on. A yes travels with
-// the other answers and is saved on the account at onboarding; the
+// The digest starts switched on; the visitor can turn it off. A yes travels
+// with the other answers and is saved on the account at onboarding; the
 // subscription itself starts with the account's first follow, because the
 // digest is built from follows (EmailNotificationsContext).
 export function WelcomeInboxChoice({ subscribed, onChange }) {

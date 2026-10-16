@@ -227,7 +227,7 @@ test('the welcome ends in the feed, and an existing account can sign in from any
   const bar = shell.slice(shell.indexOf('<header className="gw-bar">'), shell.indexOf('</header>'));
   assert.match(bar, /\{barAction\}/, 'the bar draws the action its caller passes');
   const barAction = jsx.slice(jsx.indexOf('barAction={('), jsx.indexOf("{step === 'welcome'", jsx.indexOf('barAction={(')));
-  assert.match(barAction, /<PrivacyPopover className="gw-bar-button" \/>/, 'Privacy is on every screen, the landing included');
+  assert.match(barAction, /<PrivacyPopover className=\{`gw-bar-button\$\{onLanding \? ' btn-halftone' : ''\}`\} \/>/, 'Privacy is on every screen, the landing included');
   assert.match(barAction, /\{!onLanding && \(\s*<button type="button" className="gw-sign-in" onClick=\{onSignIn\}>/);
   assert.match(barAction, /Sign in/);
   // The page leaves, and only then hands its answer over.

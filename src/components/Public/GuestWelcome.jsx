@@ -288,7 +288,7 @@ function Beat({ beat, index, still }) {
   );
 }
 
-export default function GuestWelcome({ initialAreas = [], initialTopics = [], initialReadingLevel = 'university', initialEmailDigest = false, onComplete, onSignIn }) {
+export default function GuestWelcome({ initialAreas = [], initialTopics = [], initialReadingLevel = 'university', initialEmailDigest = true, onComplete, onSignIn }) {
   const prefersReducedMotion = useReducedMotion();
   const still = Boolean(prefersReducedMotion);
   const copy = COPY.en;
@@ -420,8 +420,9 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
           {/* Here and not in WelcomeShell: account onboarding shares the shell
               and has Settings. A visitor can object before answering anything,
               so Privacy is on the landing too. The landing carries its own
-              account button, so the bar's Sign in starts on the next screen. */}
-          <PrivacyPopover className="gw-bar-button" />
+              account button, so the bar's Sign in starts on the next screen.
+              On the landing it wears the theme switch's halftone beside it. */}
+          <PrivacyPopover className={`gw-bar-button${onLanding ? ' btn-halftone' : ''}`} />
           {!onLanding && (
             <button type="button" className="gw-sign-in" onClick={onSignIn}>
               <SignIn size={15} aria-hidden="true" />

@@ -390,10 +390,10 @@ handler or a hand-rolled overlay.
 ink frame around a yellow plate) and `halftone` (a paper plate over a 1-bit
 checker shadow) draw the eye, and a pattern on every screen stops being one.
 `engraved` is the one primary action of the landing (Get started) and of the
-welcome/onboarding foot; `halftone` is the landing's account button and its
-theme switch. Never more than one engraved button on a screen, never on icon
-buttons inside the app, never in dense screens (feed, reader, explorer,
-settings, dialogs). `buttonPatterns.test.js` holds the list; a new place is a
+welcome/onboarding foot; `halftone` is the landing's account button, its
+theme switch and the Privacy button beside it. Never more than one engraved
+button on a screen, never on icon buttons inside the app, never in dense
+screens (feed, reader, explorer, settings, dialogs). `buttonPatterns.test.js` holds the list; a new place is a
 design decision, made here and there together. The label always sits on a
 solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
 `src/components/ui/button.css`).
