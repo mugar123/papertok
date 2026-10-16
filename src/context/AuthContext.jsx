@@ -238,7 +238,11 @@ export function AuthProvider({ children }) {
     try {
       return await signInWithProvider(providerId);
     } catch (err) {
-      setError(err?.code || 'AUTH_FAILED');
+      // Closing the window, or pressing again so a new one replaces it, is the
+      // reader's own choice, not a failure to report.
+      if (err?.code !== 'auth/popup-closed-by-user' && err?.code !== 'auth/cancelled-popup-request') {
+        setError(err?.code || 'AUTH_FAILED');
+      }
       throw err;
     }
   }, []);
@@ -298,10 +302,14 @@ export function AuthProvider({ children }) {
       setSignInProviders([]);
       setInstitution(null);
       localStorage.removeItem('papertok_user');
+      clearGuestInterests();
       return;
     }
     try {
       await firebaseSignOut(auth);
+      // A guest answer still waiting for adoption belonged to this session:
+      // the next account on this device must not inherit it.
+      clearGuestInterests();
       clearUserScopedStorage(signingOutUserId);
       forgetOwnProfile(signingOutUserId);
       resetAccountWarmup(signingOutUserId);

@@ -81,16 +81,6 @@
   min-height: 60px;
   padding: var(--space-2) var(--space-4);
   background: var(--bg-glass-strong);
-  /* No blur here, explicitly. Its immediate parent, `.pdf-viewer`, fades its
-     own opacity out on close (`pdfViewerOut`, `.is-closing` above) — an
-     ancestor animating opacity composites this whole subtree every frame,
-     which would force a backdrop-filter here to be re-resolved right along
-     with it. `backdrop-filter: none` overrides what the shared `.glass-strong`
-     utility class on this element (see variables.css) would otherwise still
-     apply; the translucent `background` above is what actually reads as the
-     surface. */
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
   border-bottom: 1px solid var(--border-subtle);
   z-index: 1;
   flex-shrink: 0;

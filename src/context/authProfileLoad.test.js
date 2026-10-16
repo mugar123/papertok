@@ -58,3 +58,12 @@ test('SOURCE: a follow toggle writes a field transform, not the list this sessio
     'the write must send patch, the field transform toggleFollowedAuthor returned',
   );
 });
+
+test('SOURCE: signing out drops a guest answer still waiting for adoption', async () => {
+  const code = (await readFile(SOURCE, 'utf8')).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+  const signOut = code.slice(code.indexOf('const signOut = useCallback('), code.indexOf('}, [user?.uid]);', code.indexOf('const signOut = useCallback(')));
+  // Logging out mid-onboarding must not leave the answer for the next account.
+  const [demo, firebase] = signOut.split(/\breturn;/);
+  assert.match(demo, /clearGuestInterests\(\)/, 'demo sign-out');
+  assert.match(firebase, /await firebaseSignOut\(auth\);[\s\S]*clearGuestInterests\(\)/, 'Firebase sign-out, once it has succeeded');
+});

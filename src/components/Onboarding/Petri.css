@@ -1,0 +1,50 @@
+/* Petri's props (the name card, the flask's glass) are
+   outlined in the face's ink on the light theme. At night neither that ink
+   nor the page's cream sits well on them, so each is outlined in its own
+   colour (--prop-fill, set on the element) darkened toward the night page. */
+:root[data-theme='dark'] .petri-prop-line {
+  stroke: color-mix(in srgb, var(--prop-fill) 55%, var(--bg-primary));
+}
+
+/* Some props read best as one flat colour at night: their outline takes
+   their own colour (the flask's glass). */
+:root[data-theme='dark'] .petri-prop-line[data-flat] {
+  stroke: var(--prop-fill);
+}
+
+/* Every pose's box, and how she arrives: she rises onto her dish with a small
+   overshoot; a pose that swaps its look (PetriReading) slides the new one in
+   from the side it came from (--petri-from). */
+.petri {
+  display: block;
+  width: 8.5rem;
+  height: 8.25rem;
+  margin: 0 auto var(--space-2);
+  overflow: visible;
+  color: var(--text-primary);
+}
+
+.petri .onboarding-petri-body {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: petriRise 500ms cubic-bezier(0.34, 1.56, 0.64, 1) 100ms backwards;
+}
+
+.petri .onboarding-petri-body.petri-swap {
+  animation: petriSlide 240ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@keyframes petriRise {
+  from { opacity: 0; translate: 0 24px; scale: 1 0.7; }
+}
+
+@keyframes petriSlide {
+  from { opacity: 0; translate: calc(var(--petri-from, 1) * 28px) 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .petri .onboarding-petri-body,
+  .petri .onboarding-petri-body.petri-swap {
+    animation: none;
+  }
+}

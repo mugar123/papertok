@@ -1,11 +1,13 @@
 import { useRef, useState } from 'react';
 import { X } from '@phosphor-icons/react';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import { authPromptCopy } from './authPromptCopy.js';
 import { Button } from '../ui/button.jsx';
 import GoogleMark from './GoogleMark.jsx';
+import { useProviderSignIn } from './useProviderSignIn.js';
+import { CollisionNote, ProviderSpinner } from './ProviderSignIn.jsx';
+import Petri from '../Onboarding/Petri.jsx';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.jsx';
 import './AuthPrompt.css';
 
@@ -21,13 +23,11 @@ import './AuthPrompt.css';
 // leave, and only then `onOpenChangeComplete(false)` tells the parent to
 // unmount. That is the one place `onClose` is called, so it reaches App once.
 export default function AuthPrompt({ onClose, reason = 'default' }) {
-  const { signInWithGoogle, signInWithGitHub, error, user } = useAuth();
+  const { user } = useAuth();
   // What opened the door decides what it says (authPromptCopy.js).
   const copy = authPromptCopy(reason);
-  const { trackEvent } = useAnalyticsConsent();
   const [open, setOpen] = useState(true);
-  const [pendingProvider, setPendingProvider] = useState(null);
-  const [collision, setCollision] = useState(null);
+  const { pendingProvider, collision, error, signIn: handleSignIn } = useProviderSignIn('auth_prompt');
   const closeButtonRef = useRef(null);
 
   // Once a session exists the prompt has done its job: routing takes the user on
@@ -35,31 +35,6 @@ export default function AuthPrompt({ onClose, reason = 'default' }) {
   // an effect: the session appearing is itself the close.
   const isOpen = open && !user;
 
-  const SIGN_IN_METHODS = {
-    google: signInWithGoogle,
-    github: signInWithGitHub,
-  };
-
-  const handleSignIn = async (method) => {
-    setPendingProvider(method);
-    setCollision(null);
-    trackEvent('select_content', { content_type: 'signup_cta', surface: 'auth_prompt', method });
-    try {
-      const result = await SIGN_IN_METHODS[method]();
-      trackEvent(result?.isNewUser ? 'sign_up' : 'login', { method });
-    } catch (signInError) {
-      // One account per email address: this address already opens PaperTok
-      // through some other door. Email enumeration protection means Firebase
-      // will not name which, so the copy points at "the method you already use".
-      if (signInError?.code === 'AUTH_EMAIL_ALREADY_USED') {
-        setCollision({ email: signInError.email || '' });
-      }
-    } finally {
-      setPendingProvider(null);
-    }
-  };
-
-  const busy = Boolean(pendingProvider);
 
   return (
     <Dialog
@@ -84,10 +59,7 @@ export default function AuthPrompt({ onClose, reason = 'default' }) {
           <X size={16} />
         </DialogClose>
 
-        <div className="auth-modal-brand">
-          <span className="auth-modal-mark" aria-hidden="true">P</span>
-          <span className="auth-modal-wordmark">Paper<span>Tok</span></span>
-        </div>
+        <Petri pose="key" className="auth-modal-petri" />
 
         <DialogTitle className="auth-modal-title">
           {copy.title}
@@ -102,11 +74,10 @@ export default function AuthPrompt({ onClose, reason = 'default' }) {
             size="lg"
             className="auth-provider w-full"
             onClick={() => handleSignIn('google')}
-            disabled={busy}
             id="google-sign-in-btn"
           >
             {pendingProvider === 'google' ? (
-              <span className="auth-spinner" aria-hidden="true" />
+              <ProviderSpinner />
             ) : (
               <GoogleMark className="auth-provider-icon" />
             )}
@@ -114,15 +85,14 @@ export default function AuthPrompt({ onClose, reason = 'default' }) {
           </Button>
 
           <Button
-            variant="default"
+            variant="outline"
             size="lg"
             className="auth-provider w-full"
             onClick={() => handleSignIn('github')}
-            disabled={busy}
             id="github-sign-in-btn"
           >
             {pendingProvider === 'github' ? (
-              <span className="auth-spinner auth-spinner--on-ink" aria-hidden="true" />
+              <ProviderSpinner />
             ) : (
               <svg className="auth-provider-icon" viewBox="0 0 16 16" width="19" height="19" aria-hidden="true">
                 <path
@@ -137,9 +107,7 @@ export default function AuthPrompt({ onClose, reason = 'default' }) {
 
         {collision ? (
           <div className="auth-modal-note auth-modal-note--warn" role="alert">
-            {collision.email
-              ? (<><strong>{collision.email}</strong> already signs in another way. Use that method, then connect GitHub from Settings.</>)
-              : ('That address already signs in another way. Use that method, then connect GitHub from Settings.')}
+            <CollisionNote email={collision.email} />
           </div>
         ) : error ? (
           <p className="auth-modal-note auth-modal-note--error" role="alert">

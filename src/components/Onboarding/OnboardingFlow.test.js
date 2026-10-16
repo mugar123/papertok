@@ -358,7 +358,7 @@ test('SOURCE: on the university screen a typed address makes the primary the lin
   assert.match(code, /link: 'Continue',\s*verifying: 'Verifying…',/);
   // With no address, or once linked, it is the screen's own: Start exploring.
   assert.match(primary[0], /label: saving \? COPY\.saving : stepCopy\.cta,/);
-  assert.match(code, /<LibraryPreview still=\{still\} \/>/);
+  assert.match(code, /<LibraryPreview still=\{still\} stamp=\{<PetriStamp \/>\} \/>/);
   assert.match(code, /import \{ LibraryPreview \} from '\.\.\/Public\/GuestWelcomePreferences\.jsx';/);
 
   const shell = (await readFile(new URL('../Public/WelcomeShell.jsx', import.meta.url), 'utf8'))
@@ -388,7 +388,8 @@ test('SOURCE: the handle screen shows the address it makes, live, in the welcome
   assert.match(code, /^import Handle from '\.\.\/Profile\/Handle\.jsx';$/m);
   const block = screenBlock(code, 'handle');
   assert.ok(block, 'the handle screen is gone or reshaped');
-  assert.match(block, /<AddressWindow handle=\{handleDraft\} valid=\{handleCheck\.valid && !handleTaken\} still=\{still\} \/>/);
+  // The window stands over the title, on the handle screen only.
+  assert.match(code, /\{step === 'handle' && <AddressWindow handle=\{handleDraft\} valid=\{handleCheck\.valid && !handleTaken\} still=\{still\} \/>\}\s*\{step === 'university' && <LibraryPreview/);
   const window = code.match(/function AddressWindow\(\{ handle, valid, still \}\) \{[\s\S]*?\n\}/);
   assert.ok(window, 'AddressWindow is gone or reshaped');
   assert.match(window[0], /className="gw-gh onboarding-window"\s+aria-hidden="true"/, 'the welcome\'s window, as decoration');
@@ -425,16 +426,14 @@ test('SOURCE: the handle field paints its "@" inside the field, out of the point
   assert.match(css, /\.onboarding-handle-input > input \{[^}]*padding-left:/, 'the typed handle starts after the sign');
 });
 
-test('SOURCE: the about screen is the photo, the name, and a labelled bio with its count', async () => {
+test('SOURCE: the about screen is the photo and a labelled bio with its count', async () => {
   const code = (await readFile(new URL('./OnboardingFlow.jsx', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   const block = screenBlock(code, 'about');
   assert.ok(block, 'the about screen is gone or reshaped');
-  assert.match(block, /<AvatarPicker[\s\S]*?size=\{120\}/);
-  // The photo lands with the spring, settling from -6 degrees.
-  assert.match(block, /initial=\{still \? false : \{ opacity: 0, transform: 'translateY\(16px\) rotate\(-6deg\)' \}\}/);
-  assert.match(block, /animate=\{\{ opacity: 1, transform: 'translateY\(0px\) rotate\(0deg\)' \}\}/);
-  assert.match(block, /<p className="onboarding-about-name">\{resolvedDisplayName\}<\/p>/);
+  assert.match(block, /<AvatarPicker\b/);
+  // The photo arrives like the other screens' props (ARRIVE): up and in.
+  assert.match(block, /initial=\{still \? false : \{ opacity: 0, transform: 'translateY\(16px\)' \}\}\s*animate=\{\{ opacity: 1, transform: 'translateY\(0px\)' \}\}\s*transition=\{ARRIVE\}/);
   assert.match(block, /\{accountPhoto && !photo && \(\s*<Label className="onboarding-switch">/);
   // A visible label, and the count beside it describing the field.
   assert.match(block, /<Label htmlFor="onboarding-bio">\{COPY\.about\.bio\}<\/Label>\s*<span id="onboarding-bio-count" className="onboarding-bio-count">\s*\{bio\.length\} \/ \{USER_PROFILE_LIMITS\.bio\}/);
@@ -448,7 +447,8 @@ test('SOURCE: the university screen keeps the welcome\'s layout, and its platfor
   const block = screenBlock(code, 'university');
   assert.ok(block, 'the university screen is gone or reshaped');
   assert.match(block, /className="gw-preferences gw-university onboarding-university"/);
-  assert.match(block, /<LibraryPreview still=\{still\} \/>\s*<InstitutionLink/);
+  assert.match(block, /onboarding-university">\s*<InstitutionLink/);
+  assert.match(code, /\{step === 'university' && <LibraryPreview still=\{still\} stamp=\{<PetriStamp \/>\} \/>\}\s*\{step === 'welcome' \? \(/);
   assert.match(block, /showSubmit=\{false\}/);
   const css = (await readFile(new URL('./OnboardingFlow.css', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\//g, '');

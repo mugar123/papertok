@@ -1,8 +1,9 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useLayoutEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeft, ArrowRight, CaretDown, Check, SkipForward } from '@phosphor-icons/react';
 import { CATEGORIES } from '../../data/categories.js';
 import ThemeToggle from '../Layout/ThemeToggle.jsx';
+import ProgressDots from './ProgressDots.jsx';
 import { Button } from '../ui/button.jsx';
 import { Toggle } from '../ui/toggle.jsx';
 import './GuestWelcome.css';
@@ -15,11 +16,19 @@ import './GuestWelcome.css';
 //   while `leaving` and calls `onLeaveComplete` when that has finished. With
 //   `still` there is no leave animation, so the caller hands its answer over
 //   itself instead of waiting for `onLeaveComplete`.
+// - `onStepShown(stepKey)` fires when the leaving screen has gone and the next
+//   one mounts, with the key of the screen now shown: chrome that differs
+//   between screens switches then, not while the old screen is still on its
+//   way out (where it would shift it).
+// - `landing` marks the landing page, the one screen whose bar may wear a
+//   patterned (halftone) theme switch.
+// - `backdrop`, drawn first and outside the stage: decoration placed against
+//   the whole page, which a screen's own entrance must not carry with it.
 // - The bar: the wordmark, the theme toggle and `barAction` after it.
 // - The stage (`gw-stage`, plus `stageClassName`) with one `gw-step
 //   gw-step--{stepKey}` section per screen. Changing `stepKey` slides the old
 //   screen out and the new one in; `direction` is 1 forward and -1 back.
-// - The foot: `dots` ({ count, index, label(n, total), ariaLabel }) with the
+// - The foot: `dots` ({ count, index, label(n, total), ariaLabel, max? }) with the
 //   current one marked `aria-current="step"`, then back, the primary button
 //   ({ label, onClick, disabled, busy, form }) and skip. `busy` keeps the
 //   button focusable but marks it `aria-disabled` while a save is in flight.
@@ -59,6 +68,9 @@ export function WelcomeShell({
   back,
   skip,
   barAction,
+  backdrop,
+  landing = false,
+  onStepShown,
   children,
 }) {
   // The heading of a screen takes focus when the reader moves to it, so a
@@ -76,6 +88,10 @@ export function WelcomeShell({
     }
     shownSection.current = section;
   }, []);
+
+
+  const latestStepKey = useRef(stepKey);
+  useLayoutEffect(() => { latestStepKey.current = stepKey; }, [stepKey]);
 
   // Variants with `custom`, so the screen that is leaving reads the direction
   // of the move that is happening now — a prop captured when it last rendered
@@ -101,10 +117,12 @@ export function WelcomeShell({
         if (leaving && !still) onLeaveComplete?.();
       }}
     >
+      {backdrop}
       <header className="gw-bar">
         <div className="gw-wordmark" aria-label="PaperTok">Paper<span>Tok</span></div>
         <div className="gw-bar-actions">
-          <ThemeToggle className="gw-bar-button" />
+          {/* Halftone on the landing only (design.md): elsewhere the bar stays quiet. */}
+          <ThemeToggle className={`gw-bar-button${landing ? ' btn-halftone' : ''}`} />
           {barAction}
         </div>
       </header>
@@ -113,7 +131,7 @@ export function WelcomeShell({
         {/* No `initial={false}` here: AnimatePresence hands it down to every
             motion component inside, and the illustrations would mount already
             finished. */}
-        <AnimatePresence mode="wait" custom={direction}>
+        <AnimatePresence mode="wait" custom={direction} onExitComplete={() => onStepShown?.(latestStepKey.current)}>
           <motion.section
             key={stepKey}
             ref={focusNewHeading}
@@ -133,17 +151,7 @@ export function WelcomeShell({
         {/* The dots on every screen, the areas' too: a running count of what
             is picked used to sit here, and each tile already says whether it
             is on (`aria-pressed`), to the eye and to a screen reader. */}
-        <ol className="gw-dots" aria-label={dots.ariaLabel}>
-            {Array.from({ length: dots.count }, (_, index) => (
-              <li
-                key={index}
-                className={`gw-dot${index === dots.index ? ' is-active' : ''}${index < dots.index ? ' is-done' : ''}`}
-                aria-current={index === dots.index ? 'step' : undefined}
-              >
-                <span className="gw-dot-label">{dots.label(index + 1, dots.count)}</span>
-              </li>
-            ))}
-        </ol>
+        <ProgressDots dots={dots} still={still} />
 
         {/* The way forward and the two quiet ways round it, in one row: back
             where there is somewhere to go back to, the skip wherever the
@@ -169,6 +177,7 @@ export function WelcomeShell({
           {/* `busy` keeps the button focusable: a disabled control drops the
               focus it holds, and the saving state is exactly when focus is on it. */}
           <Button
+            variant="engraved"
             size="lg"
             type={primary.form ? 'submit' : 'button'}
             form={primary.form}
@@ -206,7 +215,7 @@ export function WelcomeShell({
 export function WelcomeCopy({ kicker, title, lede }) {
   return (
     <div className="gw-copy">
-      <p className="gw-kicker">{kicker}</p>
+      {kicker && <p className="gw-kicker">{kicker}</p>}
       <h1 className="gw-title" tabIndex={-1}>{title}</h1>
       {lede && <p className="gw-lede">{lede}</p>}
     </div>
@@ -249,7 +258,7 @@ export function AreaPicker({ selected, onToggle, label }) {
 // `onToggleTopic(id)` flips one; `expandedAreas` is a Set of area keys whose
 // fold is open and `onToggleExpanded(key)` opens or closes one.
 export function SubtopicsPicker({ selectedAreas, selectedTopics, onToggleTopic, expandedAreas, onToggleExpanded }) {
-  return AREA_ENTRIES.filter(([key]) => selectedAreas.has(key)).map(([key, area]) => {
+  return AREA_ENTRIES.filter(([key]) => selectedAreas.has(key)).map(([key, area], groupIndex) => {
     const areaLabel = area.label;
     const entries = Object.entries(area.subcategories);
     const folds = entries.length >= SUBTOPICS_FOLD_MIN;
@@ -262,13 +271,13 @@ export function SubtopicsPicker({ selectedAreas, selectedTopics, onToggleTopic, 
     const hidden = entries.length - shown.length;
     const gridId = `gw-subtopics-${key}`;
     return (
-      <section key={key} className="gw-subtopics" aria-label={SUBTOPICS_COPY.topicsOf(areaLabel)}>
+      <section key={key} className="gw-subtopics" aria-label={SUBTOPICS_COPY.topicsOf(areaLabel)} style={{ '--i': groupIndex }}>
         <h2 className="gw-subtopics-title" style={{ '--area-accent': area.gradient }}>
           <area.icon size={18} weight="fill" aria-hidden="true" />
           {areaLabel}
         </h2>
         <div id={gridId} className="gw-areas" role="group" aria-label={SUBTOPICS_COPY.topicsOf(areaLabel)}>
-          {shown.map(([id, sub], index) => {
+          {shown.map(([id, sub]) => {
             const pressed = selectedTopics.has(id);
             return (
               <Toggle
@@ -277,7 +286,7 @@ export function SubtopicsPicker({ selectedAreas, selectedTopics, onToggleTopic, 
                 className="gw-area"
                 pressed={pressed}
                 onPressedChange={() => onToggleTopic(id)}
-                style={{ '--area-accent': area.gradient, '--i': index }}
+                style={{ '--area-accent': area.gradient }}
               >
                 <span className="gw-area-icon" aria-hidden="true">
                   <area.icon size={20} weight={pressed ? 'fill' : 'regular'} />

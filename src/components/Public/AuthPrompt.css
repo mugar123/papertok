@@ -40,36 +40,15 @@
 }
 
 /* ── Brand ── */
-.auth-modal-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-5);
+.petri.auth-modal-petri {
+  width: 6.5rem;
+  height: 6.3rem;
+  margin-bottom: var(--space-4);
 }
 
-.auth-modal-mark {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-sm);
-  background: var(--brand-yellow);
-  color: var(--text-on-brand);
-  font: 600 0.8125rem/1 var(--font-mono);
-  letter-spacing: 0.02em;
-  box-shadow: 2px 2px 0 var(--text-primary);
-}
-
-.auth-modal-wordmark {
-  font-size: 1.0625rem;
-  font-weight: var(--fw-bold);
-  letter-spacing: -0.02em;
-  color: var(--text-primary);
-}
-
-/* The yellow only underlines the mark; it never carries the text colour. */
-.auth-modal-wordmark span {
-  box-shadow: inset 0 -0.32em 0 var(--brand-yellow);
+/* The dialog arrives on its own; Petri is already standing in it. */
+.petri.auth-modal-petri .onboarding-petri-body {
+  animation: none;
 }
 
 /* ── Copy ── */
@@ -107,24 +86,6 @@
   flex: 0 0 auto;
 }
 
-.auth-spinner {
-  width: 18px;
-  height: 18px;
-  border: 2px solid var(--border-default);
-  border-top-color: var(--text-primary);
-  border-radius: var(--radius-full);
-  animation: authSpin 0.7s linear infinite;
-}
-
-.auth-spinner--on-ink {
-  border-color: rgba(255, 255, 255, 0.35);
-  border-top-color: var(--text-inverse);
-}
-
-@keyframes authSpin {
-  to { transform: rotate(360deg); }
-}
-
 /* ── States ── */
 .auth-modal-note {
   margin: var(--space-4) 0 0;
@@ -149,10 +110,4 @@
 
 .auth-modal-note strong {
   font-weight: var(--fw-semibold);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .auth-spinner {
-    animation: none;
-  }
 }

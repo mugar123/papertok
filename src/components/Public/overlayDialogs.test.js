@@ -44,9 +44,12 @@ test('the sign-in prompt keeps its close control, its name, and its initial focu
   assert.match(jsx, /<DialogClose\s[\s\S]*?ref=\{closeButtonRef\}[\s\S]*?aria-label=(?:"Close"|\{'Close'\})/);
   assert.match(jsx, /<DialogTitle className="auth-modal-title">/);
   assert.match(jsx, /<DialogDescription className="auth-modal-lede">/);
-  // The analytics contract of the door is unchanged.
-  assert.match(jsx, /trackEvent\('select_content', \{ content_type: 'signup_cta', surface: 'auth_prompt', method \}\)/);
-  assert.match(jsx, /trackEvent\(result\?\.isNewUser \? 'sign_up' : 'login', \{ method \}\)/);
+  // The analytics contract of the door is unchanged: the shared sign-in hook
+  // reports the press with the surface this door names, then the outcome.
+  assert.match(jsx, /useProviderSignIn\('auth_prompt'\)/);
+  const hook = await readFile(new URL('./useProviderSignIn.js', import.meta.url), 'utf8');
+  assert.match(hook, /trackEvent\('select_content', \{ content_type: 'signup_cta', surface, method \}\)/);
+  assert.match(hook, /trackEvent\(result\?\.isNewUser \? 'sign_up' : 'login', \{ method \}\)/);
 });
 
 test('the sign-in sheet keeps its look and leaves the centring to the primitive', async () => {

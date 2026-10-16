@@ -17,11 +17,33 @@
   width: 100%;
   min-height: 100vh;
   min-height: 100dvh;
-  background: var(--bg-primary);
+
+  background: transparent;
+}
+
+
+.gw-bar::before,
+.gw-foot::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: var(--text-primary);
+  opacity: var(--grain);
+  pointer-events: none;
+  mask: var(--grain-mask);
+  mask-composite: add;
+}
+
+
+:root:has(.gw) {
+  overscroll-behavior-y: none;
 }
 
 /* ── Bar ── */
 .gw-bar {
+  isolation: isolate;
+  clip-path: inset(0);
   position: sticky;
   top: 0;
   z-index: 3;
@@ -77,6 +99,10 @@
   align-items: center;
   gap: 6px;
   height: 36px;
+  /* The icon buttons beside it are bare glyphs in 36px boxes, so their
+     visible gap is the gap plus their padding; this framed button adds the
+     same space back, keeping the three evenly apart. */
+  margin-left: var(--space-2);
   padding: 0 var(--space-3);
   border: 1px solid var(--border-ink);
   border-radius: var(--radius-md);
@@ -143,6 +169,19 @@
 .gw-stage--topics {
   justify-content: flex-start;
   padding-top: clamp(16px, 4vh, 40px);
+}
+
+
+.gw-stage--topics:has(> .gw-step--topics),
+.gw-stage--topics:has(> .gw-step--profile),
+.gw-stage--topics:has(> .gw-step--handle),
+.gw-stage--topics:has(> .gw-step--about),
+.gw-stage--topics:has(> .gw-step--university),
+.gw-stage--topics:has(> .gw-step--reading),
+.gw-stage--topics:has(> .gw-step--inbox),
+.gw-stage--topics:has(> .gw-step--support) {
+  justify-content: safe center;
+  padding-bottom: clamp(16px, 4vh, 40px);
 }
 
 .gw-step {
@@ -407,189 +446,277 @@
   max-width: 50ch;
 }
 
-/* The areas' sentence is one line; the reading measure above is for the
-   welcome's two-line lede. */
+/* The areas' sentence is one line, and so are the account's own screens'
+   (profile, handle, page, university): their copy runs the screen's width
+   rather than the reading measure above, which is for the welcome's two-line
+   lede and left these sentences broken into short lines. */
 .gw-step--topics .gw-lede,
-.gw-step--subtopics .gw-lede {
+.gw-step--subtopics .gw-lede,
+.gw-step--profile .gw-lede,
+.gw-step--handle .gw-lede,
+.gw-step--about .gw-lede,
+.gw-step--university .gw-lede {
   max-width: none;
 }
 
-/* ── The welcome: two columns of papers either side of the copy ──
-   Laid out at the viewport's height, so the columns have a height to scroll
-   through and the button stays in view; the copy sits in the middle column
-   at its reading width. */
-.gw--showcase {
-  height: 100vh;
-  height: 100dvh;
-  min-height: 560px;
+
+.gw-step--profile .gw-title,
+.gw-step--handle .gw-title,
+.gw-step--about .gw-title,
+.gw-step--university .gw-title {
+  width: max-content;
+  max-width: min(820px, calc(100vw - 2 * var(--space-5)));
 }
 
-.gw--showcase .gw-stage {
-  flex: 1 1 auto;
-  min-height: 0;
-  padding-block: 0;
+
+.gw--landing {
   overflow: hidden;
+  isolation: isolate;
+}
+
+.gw--landing .gw-foot {
+  display: none;
+}
+
+
+.gw--landing .gw-stage {
+  padding-bottom: 104px;
 }
 
 .gw-step--welcome {
-  width: min(1240px, 100%);
-  height: 100%;
+  width: min(680px, 100%);
 }
 
-.gw-showcase {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 480px) minmax(0, 1fr);
-  /* One row exactly the stage's height. Left to size itself, the row took the
-     height of a whole column of papers (thousands of pixels) and the copy was
-     centred in that, off the screen. */
-  grid-template-rows: minmax(0, 1fr);
-  align-items: center;
-  gap: clamp(24px, 4vw, 56px);
-  width: 100%;
-  height: 100%;
+.gw-step--welcome .gw-kicker {
+  margin-bottom: var(--space-4);
 }
 
-/* The column and its toggle. The toggle is a sibling of the masked stream,
-   not inside it: the mask would fade its focus ring away at both ends. */
-.gw-stream-col {
-  position: relative;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
+.gw-step--welcome .gw-title {
+  margin-bottom: var(--space-5);
+  font-size: clamp(2.5rem, 7vw, 4.75rem);
+  font-weight: 400;
+  line-height: 1.02;
+  letter-spacing: -0.02em;
 }
 
-/* The ends fade into the page, so papers arrive and leave instead of being
-   cut by the edge of the column. The lower fade runs to the foot of the
-   screen: the columns carry on behind the button. */
-.gw-stream {
-  position: relative;
-  height: 100%;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 84%, transparent 100%);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 84%, transparent 100%);
-}
-
-.gw-stream-track {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding-block: 6px;
-  animation: gwStreamY var(--stream-duration, 110s) linear infinite;
-}
-
-.gw-stream--reverse .gw-stream-track {
-  animation-direction: reverse;
-}
-
-.gw-stream-col.is-paused .gw-stream-track {
-  animation-play-state: paused;
-}
-
-/* The whole column is the pause toggle: no button drawn, a pointer cursor,
-   and the focus ring inset so it shows inside the column's own edge. */
-.gw-stream-hit {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-2xl);
-  background: transparent;
-  cursor: pointer;
-}
-
-.gw-stream-hit:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
-/* Half the track is one full copy of the list, so a loop lands exactly
-   where it started. */
-@keyframes gwStreamY {
-  to { transform: translateY(-50%); }
-}
-
-@keyframes gwStreamX {
-  to { transform: translateX(-50%); }
-}
-
-.gw-stream-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 14px 16px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-xl);
-  background: var(--bg-elevated);
-  box-shadow: var(--shadow-sm);
-  text-align: left;
-}
-
-.gw-stream-meta {
-  display: flex;
-  gap: 6px;
-  min-width: 0;
-  margin: 0;
-  white-space: nowrap;
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--area-accent);
-}
-
-.gw-stream-meta > span:first-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.gw-stream-dot {
-  color: var(--border-strong);
-}
-
-.gw-stream-title {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  margin: 0;
+.gw-step--welcome .gw-lede {
+  max-width: 30em;
+  margin-bottom: var(--space-8);
   font-family: var(--font-serif);
-  font-size: 1.02rem;
-  font-weight: 600;
-  line-height: 1.25;
+  font-size: clamp(1.125rem, 2.2vw, 1.3125rem);
+  line-height: 1.5;
   color: var(--text-primary);
 }
 
-.gw-stream-authors {
-  margin: 0;
-  font-size: 0.75rem;
-  color: var(--text-secondary);
+.gw-cta {
+  display: grid;
+  gap: var(--space-4);
+  width: min(100%, 340px);
+  margin-inline: auto;
 }
 
 
-/* Wide screens: the foot floats over the columns instead of ending them, so
-   they run to the bottom of the screen. Its buttons sit in the middle column
-   and never overlap a card; the copy keeps the foot's height clear under it so
-   it stays centred in what is visible. */
-@media not all and (max-width: 860px) {
-  .gw--showcase .gw-foot {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: transparent;
-    pointer-events: none;
+.gw-cta {
+  position: relative;
+}
+
+.gw-account-caret {
+  transition: rotate 220ms var(--ease-out-expo);
+}
+
+[aria-expanded='true'] > .gw-account-caret {
+  rotate: 180deg;
+}
+
+.gw-providers {
+  position: absolute;
+  z-index: 1;
+  /* Clear of the button's 4px halftone shadow, with room to read as a list of its own. */
+  top: calc(100% + var(--space-4));
+  left: 0;
+  right: 0;
+}
+
+
+.gw-providers > div {
+  display: grid;
+  gap: var(--space-2);
+  clip-path: inset(0 0 100% 0);
+  transition: clip-path 220ms var(--ease-out-expo);
+}
+
+.gw-providers[data-open] > div {
+  clip-path: inset(-8px);
+}
+
+.gw-providers:not([data-open]) > div {
+  transition-duration: 140ms;
+}
+
+.gw-providers > div > * {
+  opacity: 0;
+  translate: 0 -6px;
+  transition: opacity 200ms var(--ease-out-expo), translate 200ms var(--ease-out-expo);
+}
+
+.gw-providers[data-open] > div > * {
+  opacity: 1;
+  translate: 0 0;
+}
+
+.gw-providers[data-open] > div > :nth-child(2) {
+  transition-delay: 40ms;
+}
+
+.gw-providers-note {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--accent-danger);
+}
+
+
+.gw-bar-button.btn-halftone.theme-toggle {
+  width: 40px;
+  height: 40px;
+  margin-right: 4px;
+  color: var(--text-primary);
+}
+
+.gw-bar-button.btn-halftone.theme-toggle::after {
+  inset: 0;
+  width: auto;
+  height: auto;
+  transform: none;
+}
+
+/* A size down on a phone, where the bar is narrower: still well over the 24px
+   target minimum (WCAG 2.5.8). */
+@media (max-width: 640px) {
+  .gw-bar-button.btn-halftone.theme-toggle {
+    min-width: 32px;
+    width: 32px;
+    height: 32px;
   }
 
-  .gw--showcase .gw-foot > * {
-    pointer-events: auto;
+  .gw-bar-button.btn-halftone.theme-toggle svg {
+    width: 15px;
+    height: 15px;
   }
+}
 
-  .gw-showcase > .gw-copy {
-    padding-bottom: 132px;
-  }
+.gw-or {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+}
+
+.gw-or::before,
+.gw-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+
+.gw-plate {
+  position: absolute;
+  z-index: -1;
+  width: calc(var(--w) / 2);
+  height: calc(var(--h) / 2);
+  background: var(--text-primary);
+  pointer-events: none;
+  -webkit-mask: var(--img) center / 100% 100% no-repeat;
+  mask: var(--img) center / 100% 100% no-repeat;
+}
+
+.gw-plate--scrolls {
+  --img: url('../../assets/welcome/scrolls.png');
+  --w: 331px;
+  --h: 345px;
+  top: 64px;
+  left: 0;
+}
+
+
+.gw-plate--microscope {
+  --img: url('../../assets/welcome/microscope.png');
+  --w: 281px;
+  --h: 463px;
+  width: calc(var(--w) * 0.68);
+  height: calc(var(--h) * 0.68);
+  bottom: -16px;
+  left: 8px;
+  rotate: 12deg;
+  transform-origin: bottom left;
+}
+
+.gw-plate--lab {
+  --img: url('../../assets/welcome/lab.png');
+  --w: 410px;
+  --h: 316px;
+  bottom: 0;
+  right: 0;
+  rotate: -16deg;
+  transform-origin: bottom right;
+}
+
+@media (min-width: 1440px) {
+  .gw-plate { width: var(--w); height: var(--h); }
+  .gw-plate--scrolls { top: 72px; left: 8px; }
+  .gw-plate--microscope { width: calc(var(--w) * 1.1); height: calc(var(--h) * 1.1); bottom: -56px; left: 24px; }
+  .gw-plate--lab { bottom: 32px; right: -32px; }
+}
+
+
+@media (max-width: 1100px) {
+  .gw-plate--scrolls { top: -50px; left: -70px; }
+  .gw-plate--microscope { display: none; }
+  .gw-plate--lab { bottom: -70px; right: -70px; }
+}
+
+@media (max-width: 560px) {
+  .gw-plate--scrolls { top: -40px; left: -60px; }
+  .gw-plate--lab { bottom: -12px; right: -32px; }
+}
+
+
+.gw-stars {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.gw-stars svg {
+  position: absolute;
+  fill: var(--text-primary);
+}
+
+.gw-stars svg.is-spot {
+  overflow: visible;
+  fill: var(--brand-yellow);
+  stroke: var(--border-ink);
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+
+
+.gw-subtopics {
+  animation: gwAreaIn 200ms var(--ease-out-expo) calc(var(--i, 0) * 60ms) backwards;
+}
+
+.gw-subtopics .gw-area {
+  animation: none;
+}
+
+.gw-petri text {
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 /* ── What you do here: three gestures in a row ── */
@@ -679,7 +806,7 @@
     background var(--transition-fast),
     box-shadow var(--transition-fast),
     scale 150ms ease-out;
-  animation: gwAreaIn 0.4s var(--ease-out-expo) calc(var(--i, 0) * 24ms) backwards;
+  animation: gwAreaIn 150ms var(--ease-out-expo) min(calc(var(--i, 0) * 20ms), 300ms) backwards;
 }
 
 @keyframes gwAreaIn {
@@ -813,6 +940,8 @@
 
 /* ── Foot: the way forward, centred ── */
 .gw-foot {
+  isolation: isolate; /* keeps the grain (below) under its content */
+  clip-path: inset(0); /* cuts the viewport-fixed grain to this box */
   position: sticky;
   bottom: 0;
   z-index: 3;
@@ -831,6 +960,7 @@
 }
 
 .gw-dots {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -842,12 +972,17 @@
 
 /* The current screen is a longer bar, not only a darker dot: the shape
    carries it as well as the ink, and `aria-current` names it. */
+.gw-dots--fixed {
+  justify-content: flex-start;
+}
+
 .gw-dot {
   width: 6px;
   height: 6px;
   border-radius: var(--radius-full);
   background: var(--border-strong);
-  transition: width var(--transition-base), background var(--transition-base);
+  /* The width is WelcomeShell's motion (born, folded, the current bar). */
+  transition: background var(--transition-base);
 }
 
 .gw-dot.is-done {
@@ -896,57 +1031,6 @@
   max-width: 340px;
 }
 
-/* ── Narrow ── */
-@media (max-width: 860px) {
-  .gw--showcase {
-    height: auto;
-    min-height: 100vh;
-    min-height: 100dvh;
-  }
-
-  .gw--showcase .gw-stage {
-    padding-inline: 0;
-  }
-
-  .gw-showcase {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: none;
-    gap: var(--space-6);
-    height: auto;
-    padding-block: var(--space-4);
-  }
-
-  .gw-showcase > .gw-copy {
-    padding-inline: var(--space-5);
-  }
-
-  .gw-stream {
-    height: auto;
-    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 12%, #000 88%, transparent 100%);
-    mask-image: linear-gradient(to right, transparent 0, #000 12%, #000 88%, transparent 100%);
-  }
-
-  .gw-stream-track {
-    flex-direction: row;
-    width: max-content;
-    padding-block: 0;
-    padding-inline: 6px;
-    animation-name: gwStreamX;
-  }
-
-  .gw-stream-card {
-    width: 240px;
-  }
-
-  .gw-stream-title {
-    -webkit-line-clamp: 2;
-  }
-
-  .gw-stream-col {
-    height: auto;
-  }
-}
-
 @media (max-width: 640px) {
   .gw-bar {
     padding: var(--inset-top) var(--space-3) 0;
@@ -960,6 +1044,10 @@
 
   .gw-stage {
     padding: var(--space-4) var(--space-4);
+  }
+
+  .gw-stage.gw-stage--topics {
+    padding-bottom: var(--space-4);
   }
 
   .gw-areas {
@@ -1029,10 +1117,19 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .gw-env-label > span { transform: none !important; transition: opacity 150ms ease; }
+  .gw-providers > div,
+  .gw-account-caret {
+    transition: none;
+  }
+
+  .gw-providers > div > * {
+    translate: none;
+    transition: opacity 160ms ease-out;
+  }
+
   .gw-library-chip > span { transform: none !important; transition: opacity 150ms ease; }
 
-  .gw-stream-track {
+  .gw-subtopics {
     animation: none;
   }
 
@@ -1058,39 +1155,43 @@
 .gw-preferences { width: 100%; margin-top: var(--space-6); }
 .gw-levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); margin: 0; padding: 0; border: 0; }
 .gw-level { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); padding: var(--space-5); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--bg-card); text-align: left; cursor: pointer; }
-.gw-level input { position: absolute; top: var(--space-5); right: var(--space-5); width: 18px; height: 18px; accent-color: var(--text-primary); }
+
+.gw-level input { appearance: none; box-sizing: border-box; position: absolute; top: var(--space-5); right: var(--space-5); width: 18px; min-width: 0; height: 18px; margin: 0; padding: 0; border: 1.5px solid var(--border-ink); border-radius: var(--radius-full); background: transparent; }
+.gw-level input:checked { background: var(--text-primary); box-shadow: inset 0 0 0 3.5px var(--bg-card); }
+.gw-level input,
+.gw-level input:checked { transition: none; }
 .gw-level strong { font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
 .gw-level > span { font-size: var(--fs-xs); line-height: 1.7; color: var(--text-secondary); }
-.gw-level:has(input:checked) { border-color: var(--border-ink); box-shadow: inset 0 -3px 0 var(--text-primary); background: var(--bg-sunken); }
+
+.gw-level:has(input:checked) { border-color: var(--border-ink); box-shadow: inset 0 -3px 0 var(--text-primary); }
 .gw-level:has(input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
 .gw-preference-note { margin: var(--space-4) 0 0; font-size: var(--fs-xs); line-height: 1.8; color: var(--text-secondary); }
 /* The digest arriving: an envelope on a sunken panel. Stage 260 × 410, the
    envelope the bottom 240 × 150 of it; the letters rise from inside and the
-   slot clips them at the envelope's foot. Order, back to front: inside, flap
-   once open, letters, pocket, flap while closed, seal. */
+   slot clips them at the envelope's foot. Order, back to front: inside, the open
+   flap, letters, pocket. */
 .gw-inbox { margin-top: var(--space-2); }
-/* The stage keeps headroom for the sparks; let it sit under the lede. */
+/* Pulled up to sit close under the lede. */
 .gw-digest-preview { display: grid; place-items: center; margin-top: -32px; pointer-events: none; }
 .gw-env { position: relative; width: 260px; height: 410px; perspective: 900px; zoom: 0.85; }
+
+.gw-step--inbox > .gw-digest-preview { margin: 0 0 var(--space-6); }
+
+.gw-env > .onboarding-petri-stamp { top: 268px; right: 6px; z-index: 5; }
 .gw-env-back,.gw-env-flap,.gw-env-pocket { position: absolute; left: 10px; right: 10px; bottom: 0; height: 150px; }
 .gw-env-back { z-index: 0; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--text-primary) 7%, var(--bg-elevated)); }
-.gw-env-flap { clip-path: polygon(0 0, 100% 0, 50% 62%); transform-origin: 50% 0; backface-visibility: visible; background: color-mix(in srgb, var(--text-primary) 3%, var(--bg-elevated)); }
+.gw-env-flap { z-index: 1; clip-path: polygon(0 0, 100% 0, 50% 62%); transform: rotateX(180deg); transform-origin: 50% 0; backface-visibility: visible; background: color-mix(in srgb, var(--text-primary) 3%, var(--bg-elevated)); }
 .gw-env-back svg,.gw-env-flap svg,.gw-env-pocket svg { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: var(--border-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .gw-env-flap path,.gw-env-pocket path { vector-effect: non-scaling-stroke; }
 .gw-env-slot { position: absolute; inset: 0; z-index: 2; overflow: hidden; }
 .gw-env-letter { position: absolute; left: 50%; bottom: 8px; display: flex; flex-direction: column; gap: 6px; width: 224px; height: 350px; margin-left: -112px; padding: 14px; border: 1px solid var(--border-default); border-top: 3px solid var(--area-accent); border-radius: var(--radius-lg); background: var(--bg-card); box-shadow: var(--shadow-sm); text-align: left; }
 .gw-env-letter--behind { gap: 7px; background: color-mix(in srgb, var(--area-accent) 5%, var(--bg-card)); }
-.gw-env-venue,.gw-env-label { font: var(--mono-label); letter-spacing: var(--mono-track); text-transform: uppercase; }
+.gw-env-venue { font: var(--mono-label); letter-spacing: var(--mono-track); text-transform: uppercase; }
 .gw-env-letter strong { font: 500 0.95rem/1.25 var(--font-serif); color: var(--text-primary); text-wrap: balance; }
 .gw-env-authors { font-size: 0.6875rem; line-height: 1.4; color: var(--text-secondary); }
 .gw-env-hook { margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--border-subtle); font: italic 400 0.8125rem/1.45 var(--font-serif); color: var(--text-secondary); }
 .gw-env-venue { margin-top: auto; color: var(--text-tertiary); }
 .gw-env-pocket { z-index: 3; clip-path: polygon(0 0, 50% 58%, 100% 0, 100% 100%, 0 100%); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--bg-elevated); }
-.gw-env-label { position: absolute; left: 0; right: 0; bottom: 12px; display: grid; justify-items: center; color: var(--text-secondary); }
-.gw-env-label > span { grid-area: 1 / 1; display: inline-flex; align-items: center; gap: 5px; transition: opacity 200ms cubic-bezier(0.23, 1, 0.32, 1), transform 200ms cubic-bezier(0.23, 1, 0.32, 1); }
-.gw-env-label > span:last-child { color: var(--accent-success); opacity: 0; transform: translateY(5px); }
-.gw-env-label[data-subscribed] > span:first-child { opacity: 0; transform: translateY(-5px); }
-.gw-env-label[data-subscribed] > span:last-child { opacity: 1; transform: translateY(0); }
 /* The opt-in: one row, the whole row a target for the switch. */
 .gw-digest-optin { display: flex; align-items: center; gap: var(--space-4); width: min(400px, 100%); margin: var(--space-4) auto 0; text-align: left; padding: var(--space-4); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--bg-card); cursor: pointer; transition: border-color 150ms ease, background-color 150ms ease; }
 /* On is said by the switch, in the same green as the envelope's label; the
@@ -1100,9 +1201,6 @@
 .gw-digest-optin-text { display: flex; flex: 1; flex-direction: column; gap: 6px; min-width: 0; }
 .gw-digest-optin-text strong { font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
 .gw-digest-optin-text span { font-size: var(--fs-xs); line-height: 1.6; color: var(--text-secondary); }
-.gw-env-seal { position: absolute; top: 338px; left: 50%; z-index: 5; display: grid; place-items: center; width: 30px; height: 30px; border-radius: var(--radius-full); background: var(--accent-primary); color: var(--text-inverse); box-shadow: 0 0 0 2px var(--bg-elevated), 0 0 0 3px var(--border-strong); font: 600 0.95rem/1 var(--font-serif); }
-.gw-env-sparks { position: absolute; top: 52px; left: 50%; z-index: 5; }
-.gw-env-sparks span { position: absolute; top: -3px; left: -3px; width: 6px; height: 6px; border-radius: var(--radius-full); background: var(--area-accent); }
 /* The university (the account onboarding's screen): the library demo over
    the link form. Stage 300 × 250: the paper card sits top-left and the library card
    lands over its bottom-right corner — the skeleton lines, never the chip,
@@ -1175,6 +1273,25 @@
   .gw-gh { zoom: 1; }
 }
 @media (max-width: 380px) { .gw-gh { zoom: 0.84; } }
+
+@media (max-width: 640px) {
+  .gw [data-slot=button].h-11,
+  .gw-icon-action {
+    height: 40px;
+  }
+
+  .gw-icon-action {
+    width: 40px;
+  }
+
+  .gw-gh-view {
+    height: 132px;
+  }
+
+  .gw-support-copy {
+    gap: var(--space-3);
+  }
+}
 .gw-preferences :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
 .gw-preferences [data-slot=button],.gw-level { scroll-margin-block: 100px 160px; }
 @media (max-width: 640px) {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
-import { Cursor, LockSimple } from '@phosphor-icons/react';
+import { Cursor, LockSimple, SignOut } from '@phosphor-icons/react';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { CATEGORIES } from '../../data/categories';
@@ -23,12 +23,22 @@ import {
 import { HANDLE_ERROR_MESSAGES, HANDLE_MAX_LENGTH, inspectHandle } from '../../utils/userHandle.js';
 import { GUEST_SEED_PER_AREA, guestSeedCategoriesForAreas, guestSeedSizeForAreas, readGuestInterests } from '../../utils/guestInterests.js';
 import { USER_PREFERENCES_MAX } from '../../utils/accountOnboarding.js';
+import { Button } from '../ui/button.jsx';
 import { Input } from '../ui/input.jsx';
 import { Label } from '../ui/label.jsx';
 import { Switch } from '../ui/switch.jsx';
 import { Textarea } from '../ui/textarea.jsx';
 import WELCOME_TITLE from './welcomeTitlePaths.js';
+import Petri from './Petri.jsx';
+import PetriStamp from './PetriStamp.jsx';
 import './OnboardingFlow.css';
+
+
+const STEP_PETRI = {
+  topics: 'flask',
+  profile: 'profile',
+  about: 'thinking',
+};
 
 // The account's first screens, drawn in the welcome's layout (WelcomeShell),
 // one per screen: a greeting, the areas and the topics within them, the
@@ -47,6 +57,10 @@ function onboardingSteps({ asksTopics, asksProfile, asksPage }) {
     'university',
   ];
 }
+
+// The longest the list can be, which the progress dots keep room for so a
+// choice that adds or removes screens does not move the dots already there.
+const STEPS_AT_MOST = onboardingSteps({ asksTopics: true, asksProfile: true, asksPage: true }).length;
 
 
 const COPY = {
@@ -180,7 +194,14 @@ function AddressWindow({ handle, valid, still }) {
         </span>
       </div>
       <div className="onboarding-window-page">
-        <span className="onboarding-window-avatar" />
+        <span className="onboarding-window-avatar">
+          <svg viewBox="54 74 52 52" focusable="false">
+            <rect x="54" y="74" width="52" height="52" fill="var(--brand-yellow)" />
+            <circle cx="70" cy="90" r="3.6" fill="var(--text-on-brand)" />
+            <circle cx="90" cy="90" r="3.6" fill="var(--text-on-brand)" />
+            <path d="M73 99q7 6 14 0" fill="none" stroke="var(--text-on-brand)" strokeWidth="2.6" strokeLinecap="round" />
+          </svg>
+        </span>
         <span className="onboarding-window-bar" />
         <span className="onboarding-window-bar onboarding-window-bar--short" />
         <span className="onboarding-window-tabs">
@@ -201,17 +222,18 @@ function AddressWindow({ handle, valid, still }) {
 // edge, so the ink arrives stroke by stroke rather than as an outline.
 // A glyph's time is its share of the ink (capitals weigh more), each begins
 // as the one before is nearly done, as joined letters do, and a word gap is
-// a short lift. Then the brand underline draws. Done by about 2.95 s, once.
+// a short lift. Then the brand underline draws. Done by about 1.7 s, once.
 // With motion refused the title is drawn whole and the underline in place.
 // The SVG is decoration; the heading's text is the visually hidden span.
-const WRITE_START = 0.1;
-const WRITE_SECONDS = 2.2;
+
+const WRITE_START = 0.6;
+const WRITE_SECONDS = 1;
 const CAPITAL_WEIGHT = 1.25;
 const JOIN_AT = 0.88;
-const WORD_GAP = 0.14;
+const WORD_GAP = 0.1;
 const WRITE_EASE = [0.4, 0, 0.6, 1];
 const RULE_GAP = 0.15;
-const RULE_SECONDS = 0.45;
+const RULE_SECONDS = 0.35;
 // The reveal's soft edge in the outlines' units; its lean is the one the
 // sweeps were measured across, baked with them.
 const INK_EDGE = 28;
@@ -312,6 +334,9 @@ export default function OnboardingFlow() {
   const [linkBusy, setLinkBusy] = useState(false);
   const still = Boolean(useReducedMotion());
   const [stepState, setStep] = useState(0);
+  // The screen actually on show: the stage's layout switches when the old
+  // screen has finished leaving (WelcomeShell's onStepShown), not under it.
+  const [shownStep, setShownStep] = useState('welcome');
   const [direction, setDirection] = useState(1);
   const [selectedAreas, setSelectedAreas] = useState(() => new Set(guestSeed ?? []));
   const [selectedTopics, setSelectedTopics] = useState(() => new Set(guestAnswer?.topics ?? []));
@@ -332,7 +357,7 @@ export default function OnboardingFlow() {
   // completeOnboarding must skip the create: the handle is already this
   // account's, and a second create hits its own reservation as "taken".
   const profileCreated = useRef(false);
-  const { completeOnboarding, onboardingComplete, updateProfilePhoto, user, institution } = useAuth();
+  const { completeOnboarding, onboardingComplete, updateProfilePhoto, user, institution, signOut } = useAuth();
   const { language } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
@@ -500,6 +525,7 @@ export default function OnboardingFlow() {
 
   const isLast = stepIndex === steps.length - 1;
   const stepCopy = COPY[step];
+  const petriPose = STEP_PETRI[step];
   const handleTaken = step === 'handle' && profileError === COPY.handle.handleTaken;
   const handleInvalid = handleTaken || (Boolean(handleDraft) && Boolean(handleError));
   // On the university screen an address typed and nothing linked yet makes
@@ -507,11 +533,25 @@ export default function OnboardingFlow() {
   const linksOnPress = step === 'university' && !institution && institutionEmail.trim() !== '';
   return (
     <WelcomeShell
+      // The way out of an account opened by mistake, beside the theme switch:
+      // the same log out as the account menu, which this page does not draw.
+      barAction={(
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Log out"
+          title="Log out"
+          onClick={async () => { await signOut(); navigate('/feed'); }}
+        >
+          <SignOut size={18} aria-hidden="true" />
+        </Button>
+      )}
       stepKey={step}
       direction={direction}
       still={still}
-      stageClassName={step === 'welcome' ? undefined : 'gw-stage--topics'}
-      dots={{ count: steps.length, index: stepIndex, label: COPY.stepOf, ariaLabel: COPY.progress }}
+      stageClassName={shownStep === 'welcome' ? undefined : 'gw-stage--topics'}
+      onStepShown={setShownStep}
+      dots={{ count: steps.length, index: stepIndex, max: STEPS_AT_MOST, label: COPY.stepOf, ariaLabel: COPY.progress }}
       // While saving, the button stays enabled so it keeps focus; handleFinish
       // is simply not called a second time.
       // While the skip's save runs the primary is the plain one again, saying
@@ -544,9 +584,12 @@ export default function OnboardingFlow() {
           ? { onClick: () => { if (!saving) void handleFinish(); }, label: COPY.university.skip }
           : null}
     >
+      {step === 'handle' && <AddressWindow handle={handleDraft} valid={handleCheck.valid && !handleTaken} still={still} />}
+      {step === 'university' && <LibraryPreview still={still} stamp={<PetriStamp />} />}
+
       {step === 'welcome' ? (
         <WelcomeCopy
-          kicker={COPY.welcome.kicker(firstName)}
+          kicker={<Petri pose="welcome" name={firstName} label={COPY.welcome.kicker(firstName)} className="onboarding-petri" />}
           title={(
             <>
               <span className="sr-only">{COPY.welcome.title}</span>
@@ -556,7 +599,13 @@ export default function OnboardingFlow() {
           lede={COPY.welcome.lede}
         />
       ) : (
-        <WelcomeCopy kicker={stepCopy.kicker} title={stepCopy.title} lede={stepCopy.lede} />
+        <WelcomeCopy
+          kicker={petriPose
+            ? <Petri pose={petriPose} visibility={visibilityDraft} label={stepCopy.kicker} className="onboarding-petri" />
+            : step === 'handle' || step === 'university' ? null : stepCopy.kicker}
+          title={stepCopy.title}
+          lede={stepCopy.lede}
+        />
       )}
 
       {step === 'topics' && <AreaPicker selected={selectedAreas} onToggle={toggleArea} label={COPY.topics.areasLabel} />}
@@ -594,11 +643,9 @@ export default function OnboardingFlow() {
         </div>
       )}
 
-      {/* The handle screen: the address it makes, in a browser window, over
-          the field that makes it. */}
+      {/* The handle screen's field, under the title (its window is above). */}
       {step === 'handle' && (
         <div className="gw-preferences onboarding-handle">
-          <AddressWindow handle={handleDraft} valid={handleCheck.valid && !handleTaken} still={still} />
           <Fields still={still}>
             <div className="onboarding-field">
               <Label htmlFor="onboarding-handle">{COPY.handle.handleLabel}</Label>
@@ -650,15 +697,14 @@ export default function OnboardingFlow() {
       )}
 
       {/* The about screen: the photo is the object, landing as the welcome's
-          library card does, with the name it will stand beside; the switch
-          and the bio are the controls under it. */}
+          library card does; the switch and the bio are the controls under it. */}
       {step === 'about' && (
         <div className="gw-preferences onboarding-about">
           <motion.div
             className="onboarding-avatar"
-            initial={still ? false : { opacity: 0, transform: 'translateY(16px) rotate(-6deg)' }}
-            animate={{ opacity: 1, transform: 'translateY(0px) rotate(0deg)' }}
-            transition={{ ...LANDING, delay: 0.1, opacity: { duration: 0.3, ease: ARRIVE_EASE, delay: 0.1 } }}
+            initial={still ? false : { opacity: 0, transform: 'translateY(16px)' }}
+            animate={{ opacity: 1, transform: 'translateY(0px)' }}
+            transition={ARRIVE}
           >
             {/* The shared picker prepares both copies (with the crop) before
                 it calls onChange, so there is nothing to wait for here. */}
@@ -666,12 +712,11 @@ export default function OnboardingFlow() {
               value={photo}
               fallbackSrc={showAccountPhoto ? accountPhoto : ''}
               initial={resolvedDisplayName.trim().charAt(0).toUpperCase()}
-              size={120}
+              size={88}
               disabled={saving}
               onChange={setPhoto}
             />
           </motion.div>
-          <p className="onboarding-about-name">{resolvedDisplayName}</p>
           <Fields still={still}>
             {/* The editor's switch, with its copy: a chosen photo replaces it. */}
             {accountPhoto && !photo && (
@@ -707,7 +752,6 @@ export default function OnboardingFlow() {
       {/* The university screen: the primary below submits the link. */}
       {step === 'university' && (
         <div className="gw-preferences gw-university onboarding-university">
-          <LibraryPreview still={still} />
           <InstitutionLink
             idPrefix="onboarding-institution"
             formId={UNIVERSITY_FORM_ID}

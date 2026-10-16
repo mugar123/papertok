@@ -1,0 +1,22 @@
+/* PetriStamp: by default on the corner of the paper it stamps, tilted and
+   half off the edge; a host moves it with its own rule. It lands with a small
+   thump once the prop under it has settled. */
+.onboarding-petri-stamp {
+  position: absolute;
+  top: -18px;
+  right: -18px;
+  width: 54px;
+  height: 54px;
+  rotate: -12deg;
+  animation: onboardingStamp 260ms cubic-bezier(0.23, 1, 0.32, 1) 900ms backwards;
+}
+
+@keyframes onboardingStamp {
+  from { opacity: 0; scale: 1.4; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-petri-stamp {
+    animation: none;
+  }
+}
