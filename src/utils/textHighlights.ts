@@ -1,3 +1,10 @@
+export interface HighlightInput { quote?: unknown; kind?: string; source?: string; id?: string | null; fresh?: boolean; pending?: boolean; proposed?: boolean }
+export interface HighlightRange { start: number; end: number; kind: string; source: string; id: string | null; fresh: boolean; pending: boolean; proposed: boolean }
+type TextSegment = { type: 'text'; value: string; start: number; end: number; kind?: never; id?: never }
+  | ({ type: 'mark'; value: string; under: string[] } & HighlightRange);
+export type HighlightMath = Omit<HighlightRange, 'kind' | 'source'> & { type: 'math'; value: string; raw: string; display: boolean; kind: string | null; source: string | null; under: string[] };
+export type HighlightChunk = TextSegment | HighlightMath;
+
 import { normalizeLatexText, splitLatexText } from './latex.ts';
 
 /**
@@ -25,7 +32,7 @@ import { normalizeLatexText, splitLatexText } from './latex.ts';
 /** Shorter than this and a quote matches the wrong place too easily. */
 const MIN_QUOTE_LENGTH = 8;
 
-export function normalizeHighlightQuote(quote) {
+export function normalizeHighlightQuote(quote: unknown) {
   return normalizeLatexText(quote);
 }
 
@@ -39,12 +46,12 @@ export function normalizeHighlightQuote(quote) {
  * `under`, and the renderer keeps the model's underline running beneath the
  * reader's wash.
  */
-function layerRank(range) {
+function layerRank(range: HighlightRange) {
   if (range.pending) return 0;
   return range.source === 'user' ? 1 : 2;
 }
 
-function byLayer(a, b) {
+function byLayer(a: HighlightRange, b: HighlightRange) {
   return layerRank(a) - layerRank(b) || a.start - b.start;
 }
 
@@ -54,11 +61,11 @@ function byLayer(a, b) {
  * A quote the model mangled simply fails to match and is dropped: a missing
  * highlight is invisible, whereas a mis-placed one is a lie about the text.
  */
-export function resolveHighlightRanges(text, highlights = []) {
+export function resolveHighlightRanges(text: unknown, highlights: HighlightInput[] = []) {
   const normalized = normalizeLatexText(text);
   if (!normalized) return [];
 
-  const ranges = [];
+  const ranges: HighlightRange[] = [];
   for (const highlight of highlights) {
     const quote = normalizeHighlightQuote(highlight?.quote);
     if (quote.length < MIN_QUOTE_LENGTH) continue;
@@ -72,7 +79,7 @@ export function resolveHighlightRanges(text, highlights = []) {
     // dropping the second one, whichever it was, took the model's underline
     // away the moment the reader's selection touched it (2026-09-17). A
     // pending selection sits on anything, its own saved mark included.
-    const claimed = range => !pending && !range.pending && range.source === source;
+    const claimed = (range: HighlightRange) => !pending && !range.pending && range.source === source;
     let searchFrom = 0;
     let start = -1;
     for (;;) {
@@ -119,7 +126,7 @@ export function resolveHighlightRanges(text, highlights = []) {
  * remembered in `under`. Ranges spanning maths are clipped to the chunk; the
  * maths between stays intact (see `buildHighlightPlan`).
  */
-export function segmentTextChunk(chunkStart, value, ranges) {
+export function segmentTextChunk(chunkStart: number, value: string, ranges: HighlightRange[]): TextSegment[] {
   const chunkEnd = chunkStart + value.length;
   const overlapping = ranges.filter(range => range.start < chunkEnd && range.end > chunkStart);
   if (overlapping.length === 0) {
@@ -133,7 +140,7 @@ export function segmentTextChunk(chunkStart, value, ranges) {
   }
   const points = [...cuts].sort((a, b) => a - b);
 
-  const segments = [];
+  const segments: TextSegment[] = [];
   for (let index = 0; index < points.length - 1; index += 1) {
     const start = points[index];
     const end = points[index + 1];
@@ -166,10 +173,10 @@ export function segmentTextChunk(chunkStart, value, ranges) {
  * Produces a flat render plan for a paragraph: text and mark segments
  * interleaved with the maths chunks, in document order.
  */
-export function buildHighlightPlan(text, highlights = []) {
+export function buildHighlightPlan(text: unknown, highlights: HighlightInput[] = []) {
   const chunks = splitLatexText(text);
   const ranges = resolveHighlightRanges(text, highlights);
-  const plan = [];
+  const plan: HighlightChunk[] = [];
   let offset = 0;
 
   for (const chunk of chunks) {
@@ -213,7 +220,7 @@ export function buildHighlightPlan(text, highlights = []) {
  * rewrite is regenerated. Position is deliberately not stored: the quote is the
  * anchor, and `paragraphIndex` only scopes the search.
  */
-export function buildSelectionAnchor(selectedText) {
+export function buildSelectionAnchor(selectedText: string) {
   const quote = normalizeHighlightQuote(selectedText);
   if (quote.length < MIN_QUOTE_LENGTH) return null;
   return { quote, kind: 'user' };
@@ -229,7 +236,7 @@ export function buildSelectionAnchor(selectedText) {
  * survive that, and slicing the source with them produces a quote that
  * `resolveHighlightRanges` can find again on the next render.
  */
-export function buildRangeAnchor(text, start, end) {
+export function buildRangeAnchor(text: unknown, start: number, end: number) {
   const normalized = normalizeLatexText(text);
   if (!normalized) return null;
   const from = Math.max(0, Math.min(start, end));

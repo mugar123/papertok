@@ -1,3 +1,5 @@
+import type { Paper } from '../models/Paper.ts';
+interface AreaPlan { areas?: string[] }
 import { CATEGORIES } from '../data/categories.js';
 
 /**
@@ -16,24 +18,24 @@ import { CATEGORIES } from '../data/categories.js';
  */
 
 const AREA_BY_CATEGORY = new Map(Object.entries(CATEGORIES)
-  .flatMap(([areaKey, area]) => Object.keys(area.subcategories || {}).map(categoryId => [categoryId, areaKey])));
+  .flatMap(([areaKey, area]) => Object.keys(area.subcategories || {}).map(categoryId => [categoryId, areaKey] as const)));
 
 /** The taxonomy area a paper belongs to, from its category ids; `null` if none is ours. */
-export function areaOfPaper(paper) {
+export function areaOfPaper(paper: Partial<Paper> | null | undefined) {
   if (!paper) return null;
   for (const value of [paper.primaryCategory, ...(paper.categories || [])]) {
     if (typeof value !== 'string') continue;
-    if (CATEGORIES[value]) return value;
+    if (CATEGORIES[value as keyof typeof CATEGORIES]) return value;
     const area = AREA_BY_CATEGORY.get(value);
     if (area) return area;
   }
   return null;
 }
 
-const keyOf = (paper) => String(paper?.doi || paper?.arxivId || paper?.id || '').toLowerCase();
+const keyOf = (paper: Partial<Paper> | null | undefined) => String(paper?.doi || paper?.arxivId || paper?.id || '').toLowerCase();
 
-function uniqueByKey(papers) {
-  const seen = new Set();
+function uniqueByKey<T extends Partial<Paper>>(papers: T[]) {
+  const seen = new Set<string>();
   return papers.filter((paper) => {
     const key = keyOf(paper);
     if (!key || seen.has(key)) return false;
@@ -43,42 +45,42 @@ function uniqueByKey(papers) {
 }
 
 // Takes one from each list in turn until every list is spent.
-function interleave(lists) {
+function interleave<T>(lists: T[][]) {
   const queues = lists.map(list => [...list]);
   const out = [];
   while (queues.some(queue => queue.length > 0)) {
     for (const queue of queues) {
-      if (queue.length > 0) out.push(queue.shift());
+      if (queue.length > 0) out.push(queue.shift()!);
     }
   }
   return out;
 }
 
-function groupInOrder(papers, keyFn) {
-  const groups = new Map();
+function groupInOrder<T>(papers: T[], keyFn: (paper: T) => string) {
+  const groups = new Map<string, T[]>();
   for (const paper of papers) {
     const key = keyFn(paper);
     if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(paper);
+    groups.get(key)!.push(paper);
   }
   return [...groups.values()];
 }
 
 // Within one area: sources take turns, and inside a source its subcategories
 // do, so neither a fast source nor a busy subcategory fills the area's share.
-function orderWithinArea(papers) {
+function orderWithinArea<T extends Partial<Paper>>(papers: T[]) {
   const bySource = groupInOrder(papers, paper => paper?.sources?.primary || paper?.provider || '');
   return interleave(bySource.map(list => interleave(groupInOrder(list, paper => paper?.primaryCategory || ''))));
 }
 
-function quotaFor(plan, pageSize) {
+function quotaFor(plan: AreaPlan | null | undefined, pageSize: number) {
   const areas = plan?.areas || [];
   return areas.length > 0 ? Math.ceil(pageSize / areas.length) : pageSize;
 }
 
 // Deals `slots` more papers out of `pools` (area → ordered papers) in turns,
 // each area stopping at `limits[area]`.
-function deal(pools, areas, limits, slots) {
+function deal<T>(pools: Record<string, T[]>, areas: string[], limits: Record<string, number>, slots: number) {
   const picked = [];
   const taken = Object.fromEntries(areas.map(area => [area, 0]));
   let dealt = true;
@@ -87,7 +89,7 @@ function deal(pools, areas, limits, slots) {
     for (const area of areas) {
       if (picked.length >= slots) break;
       if (taken[area] >= limits[area] || pools[area].length === 0) continue;
-      picked.push(pools[area].shift());
+      picked.push(pools[area].shift()!);
       taken[area] += 1;
       dealt = true;
     }
@@ -95,8 +97,8 @@ function deal(pools, areas, limits, slots) {
   return picked;
 }
 
-function poolsFor(candidates, areas, excludedKeys) {
-  const pools = Object.fromEntries(areas.map(area => [area, []]));
+function poolsFor<T extends Partial<Paper>>(candidates: T[], areas: string[], excludedKeys: Set<string>) {
+  const pools = Object.fromEntries<T[]>(areas.map(area => [area, []]));
   const spill = [];
   for (const paper of uniqueByKey(candidates)) {
     if (excludedKeys.has(keyOf(paper))) continue;
@@ -114,10 +116,10 @@ function poolsFor(candidates, areas, excludedKeys) {
  * which `extendGuestPage` fills when it does. With no chosen areas the page is
  * the sources' own order, as before.
  */
-export function composeGuestPage(candidates, plan, pageSize) {
+export function composeGuestPage<T extends Partial<Paper>>(candidates: T[], plan: AreaPlan | null | undefined, pageSize: number) {
   const areas = plan?.areas || [];
   if (areas.length === 0) return uniqueByKey(candidates).slice(0, pageSize);
-  const { pools } = poolsFor(candidates, areas, new Set());
+  const { pools } = poolsFor(candidates, areas, new Set<string>());
   const quota = quotaFor(plan, pageSize);
   return deal(pools, areas, Object.fromEntries(areas.map(area => [area, quota])), pageSize);
 }
@@ -128,7 +130,7 @@ export function composeGuestPage(candidates, plan, pageSize) {
  * share, then to whichever areas have papers left, and only then to papers
  * from areas nobody chose.
  */
-export function extendGuestPage(shown, candidates, plan, pageSize) {
+export function extendGuestPage<T extends Partial<Paper>>(shown: T[], candidates: T[], plan: AreaPlan | null | undefined, pageSize: number) {
   const current = Array.isArray(shown) ? shown.slice(0, pageSize) : [];
   const areas = plan?.areas || [];
   const shownKeys = new Set(current.map(keyOf).filter(Boolean));
@@ -152,11 +154,11 @@ export function extendGuestPage(shown, candidates, plan, pageSize) {
  * chosen areas, four papers, as before. The caller's per-source budget still
  * bounds the wait when an area never answers.
  */
-export function guestPageReady(papers, plan, pageSize) {
+export function guestPageReady(papers: Partial<Paper>[], plan: AreaPlan | null | undefined, pageSize: number) {
   const areas = plan?.areas || [];
   if (areas.length === 0) return papers.length >= 4;
   const needed = Math.min(2, quotaFor(plan, pageSize));
-  const counts = {};
+  const counts: Record<string, number> = {};
   for (const paper of papers) {
     const area = areaOfPaper(paper);
     if (area) counts[area] = (counts[area] || 0) + 1;

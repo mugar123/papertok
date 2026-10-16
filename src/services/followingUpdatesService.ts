@@ -1,3 +1,12 @@
+import type { Paper } from '../models/Paper.ts';
+import type { FollowEntity } from '../utils/following.ts';
+import type { fetchTopicPapers } from './topicRetrievalService.ts';
+interface FollowingResult { papers: Paper[]; checkedEntities: number; totalEntities: number; failedEntities: number; }
+interface FollowingOptions {
+  topicRetriever?: typeof fetchTopicPapers; fetchUpdatesForFollow?: (follow: FollowEntity, options: FollowingOptions) => Promise<Paper[]>;
+  entityTimeoutMs?: number; limit?: number; maxAgeDays?: number; now?: number; onProgress?: (result: FollowingResult) => void;
+}
+
 import { mapWithConcurrency } from '../utils/mapWithConcurrency.ts';
 import { settleWithin } from '../utils/asyncTiming.ts';
 import { isScientificCategoryId } from '../utils/topicNavigation.ts';
@@ -28,7 +37,7 @@ const ENTITY_DEADLINE_MS = 45_000;
 // for its turn and the last one went out 6 s in.
 const CATEGORY_TOPIC_EXCLUDED_PROVIDERS = Object.freeze(['searchArxiv', 'searchPubmed']);
 
-function createMatch(follow) {
+function createMatch(follow: FollowEntity) {
   return {
     type: follow.type,
     canonicalId: follow.canonicalId,
@@ -39,7 +48,7 @@ function createMatch(follow) {
   };
 }
 
-function withMatch(papers, follow) {
+function withMatch(papers: Paper[], follow: FollowEntity) {
   const match = createMatch(follow);
   return (papers || []).slice(0, PAPERS_PER_ENTITY).map(paper => ({
     ...paper,
@@ -47,11 +56,11 @@ function withMatch(papers, follow) {
   }));
 }
 
-function cleanOpenAlexId(value) {
-  return String(value || '').split('/').pop();
+function cleanOpenAlexId(value: unknown) {
+  return String(value || '').split('/').pop()!;
 }
 
-function topicUpdatesOptions(follow) {
+function topicUpdatesOptions(follow: FollowEntity) {
   const canonicalId = cleanOpenAlexId(follow?.canonicalId);
   if (/^[TC]\d+$/i.test(canonicalId)) return {};
   const categoryIds = follow?.metadata?.categoryIds || follow?.categoryIds;
@@ -59,7 +68,7 @@ function topicUpdatesOptions(follow) {
   return byCategory ? { excludeProviders: [...CATEGORY_TOPIC_EXCLUDED_PROVIDERS] } : {};
 }
 
-async function fetchTopicUpdates(follow, topicRetriever) {
+async function fetchTopicUpdates(follow: FollowEntity, topicRetriever?: typeof fetchTopicPapers) {
   // The topic table is ~32 KB gzip and this runs on a background refresh, so
   // the module loads on first use instead of in the boot graph. Tests still
   // inject their own retriever through the parameter.
@@ -78,7 +87,7 @@ async function fetchTopicUpdates(follow, topicRetriever) {
   return result.papers;
 }
 
-async function fetchAuthorUpdates(follow) {
+async function fetchAuthorUpdates(follow: FollowEntity) {
   const authorId = cleanOpenAlexId(follow.canonicalId);
   if (/^A\d+$/i.test(authorId)) {
     const result = await getWorksByEntity('author', authorId, 'publication_date:desc', 1);
@@ -87,7 +96,7 @@ async function fetchAuthorUpdates(follow) {
   return getAuthorPapers(follow.displayName, PAPERS_PER_ENTITY);
 }
 
-async function fetchInstitutionUpdates(follow) {
+async function fetchInstitutionUpdates(follow: FollowEntity) {
   const institutionId = follow.externalIds?.ror || follow.canonicalId;
   const result = await getWorksByEntity(
     'institution',
@@ -101,7 +110,7 @@ async function fetchInstitutionUpdates(follow) {
   return result.papers || [];
 }
 
-async function fetchProjectUpdates(follow) {
+async function fetchProjectUpdates(follow: FollowEntity) {
   // A bare grant code answers for every funder that ever used it
   // (`grantID=100010` is three projects), and that is the shape of every
   // project followed before the OpenAIRE id landed. The funder stored on the
@@ -118,7 +127,7 @@ async function fetchProjectUpdates(follow) {
   ];
 }
 
-async function fetchUpdatesForFollow(follow, options = {}) {
+async function fetchUpdatesForFollow(follow: FollowEntity, options: FollowingOptions = {}) {
   if (follow.type === 'topic') return fetchTopicUpdates(follow, options.topicRetriever);
   if (follow.type === 'author') return fetchAuthorUpdates(follow);
   if (follow.type === 'institution') return fetchInstitutionUpdates(follow);
@@ -131,16 +140,16 @@ async function fetchUpdatesForFollow(follow, options = {}) {
 // request waits its turn (authors by name, topics by category, a project's
 // arXiv ids). Fast first, so the first delivery below comes from the follows
 // that can answer at once.
-function resolvesThroughOpenAlex(follow) {
+function resolvesThroughOpenAlex(follow: FollowEntity) {
   const id = cleanOpenAlexId(follow?.canonicalId);
   if (follow?.type === 'author') return /^A\d+$/i.test(id);
   if (follow?.type === 'topic') return /^[TC]\d+$/i.test(id);
   return follow?.type === 'institution';
 }
 
-export function orderFollowsForRefresh(follows = []) {
-  const fast = [];
-  const slow = [];
+export function orderFollowsForRefresh(follows: FollowEntity[] = []) {
+  const fast: FollowEntity[] = [];
+  const slow: FollowEntity[] = [];
   follows.forEach(follow => (resolvesThroughOpenAlex(follow) ? fast : slow).push(follow));
   return [...fast, ...slow];
 }
@@ -155,13 +164,13 @@ export function orderFollowsForRefresh(follows = []) {
  * cache: the first answer was in at ~300 ms, the last at 6.5 s, and the feed
  * used to wait for the last. The final value is the last delivery.
  */
-export async function fetchFollowingUpdates(followedEntities = [], options = {}) {
+export async function fetchFollowingUpdates(followedEntities: FollowEntity[] = [], options: FollowingOptions = {}): Promise<FollowingResult> {
   const follows = orderFollowsForRefresh(followedEntities.slice(0, MAX_FOLLOWS_PER_REFRESH));
   const fetchOne = options.fetchUpdatesForFollow || fetchUpdatesForFollow;
   const deadlineMs = Number.isFinite(options.entityTimeoutMs) ? options.entityTimeoutMs : ENTITY_DEADLINE_MS;
   const limit = options.limit || 60;
   const maxAgeDays = options.maxAgeDays || 365;
-  const collected = [];
+  const collected: Paper[] = [];
   let checkedEntities = 0;
   let failedEntities = 0;
 
@@ -176,7 +185,7 @@ export async function fetchFollowingUpdates(followedEntities = [], options = {})
   });
 
   await mapWithConcurrency(follows, 4, async (follow) => {
-    const settled = await settleWithin(Promise.resolve().then(() => fetchOne(follow, options)), deadlineMs);
+    const settled = await settleWithin(Promise.resolve().then(() => fetchOne(follow, options)), deadlineMs!);
     checkedEntities += 1;
     if (settled.status === 'fulfilled') collected.push(...withMatch(settled.value, follow));
     else failedEntities += 1;

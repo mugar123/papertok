@@ -6,7 +6,7 @@
  * line. Both rects are viewport boxes, as `getBoundingClientRect()` gives them;
  * the answer is a `scrollTop` delta.
  */
-export function revealScrollDelta(view, item) {
+export function revealScrollDelta(view: Pick<DOMRect, 'top' | 'bottom'>, item: Pick<DOMRect, 'top' | 'bottom'>) {
   if (item.top < view.top) return item.top - view.top;
   if (item.bottom > view.bottom) return Math.min(item.bottom - view.bottom, item.top - view.top);
   return 0;

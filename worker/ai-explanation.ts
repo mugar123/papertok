@@ -3,12 +3,8 @@ import type { Paper } from '../src/models/Paper.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
 import type { QuotaRequest } from './request-quota-ledger.ts';
 
-export interface AIQuota {
-  resetAt: string;
-  retryAfterSeconds: number;
-  scope: string;
-  remainingUses?: number;
-}
+import type { AIQuota } from '../src/models/Rewrite.ts';
+export type { AIQuota } from '../src/models/Rewrite.ts';
 
 export interface AIProviderPayload {
   error?: { details?: Array<{ retryDelay?: unknown; [key: string]: unknown }>; [key: string]: unknown };

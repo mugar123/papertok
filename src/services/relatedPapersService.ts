@@ -1,24 +1,28 @@
+import type { Paper } from '../models/Paper.ts';
+import type { SemanticScholarRecord } from './adapters/SemanticScholarAdapter.ts';
+interface RelatedOptions { fetchWorker?: typeof authenticatedWorkerFetch; apiBase?: string; }
+
 import { PaperBuilder } from './PaperBuilder.ts';
 import { authenticatedWorkerFetch, workerSourceUrl } from './workerApiClient.ts';
 
-const CACHE = new Map();
+const CACHE = new Map<string, { data: Paper[]; timestamp: number }>();
 const CACHE_TTL = 24 * 60 * 60 * 1000;
 // One promise per paper while it is being asked: the cache only fills once the
 // answer is in, and two callers in the same tick used to be two Worker calls
 // and two provider calls in the same second.
-const IN_FLIGHT = new Map();
+const IN_FLIGHT = new Map<string, Promise<Paper[]>>();
 // The Worker always answers twenty (`RELATED_UPSTREAM_LIMIT` there); every
 // caller trims from that one list rather than asking for its own size.
 const RELATED_UPSTREAM_LIMIT = 20;
 
-export function getSemanticScholarPaperId(paper) {
+export function getSemanticScholarPaperId(paper: Partial<Paper>) {
   if (paper?.doi) return `DOI:${paper.doi.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '')}`;
   if (paper?.arxivId) return `ARXIV:${paper.arxivId.replace(/v\d+$/, '')}`;
   if (paper?.semanticScholarId) return paper.semanticScholarId;
   return null;
 }
 
-function mapRelatedPaper(item) {
+function mapRelatedPaper(item: SemanticScholarRecord): Paper {
   const externalIds = item.externalIds || {};
   return PaperBuilder.create({
     id: externalIds.ArXiv ? `arxiv:${externalIds.ArXiv}` : item.paperId,
@@ -40,7 +44,7 @@ function mapRelatedPaper(item) {
   });
 }
 
-async function fetchRelatedFromWorker(paperId, paper, { fetchWorker, apiBase }) {
+async function fetchRelatedFromWorker(paperId: string, paper: Partial<Paper>, { fetchWorker, apiBase }: RelatedOptions & { fetchWorker: typeof authenticatedWorkerFetch }) {
   // There used to be a direct `api.semanticscholar.org` branch here for when no
   // Worker origin was configured. It could not ship — `vite build` refuses a
   // bundle without `VITE_PAPER_API_BASE_URL` — and it was a keyless browser call
@@ -61,7 +65,7 @@ async function fetchRelatedFromWorker(paperId, paper, { fetchWorker, apiBase }) 
   try {
     const response = await fetchWorker(url, { signal: controller.signal });
     if (!response.ok) throw new Error(`Semantic Scholar API error: ${response.status}`);
-    const payload = await response.json();
+    const payload = await response.json() as { recommendedPapers?: SemanticScholarRecord[]; papers?: SemanticScholarRecord[] };
     const items = payload.recommendedPapers || payload.papers || [];
     const currentIds = new Set([paper.id, paper.arxivId, paper.doi].filter(Boolean).map(value => String(value).toLowerCase()));
     return PaperBuilder.deduplicate(items.map(mapRelatedPaper).filter(item => {
@@ -76,7 +80,7 @@ async function fetchRelatedFromWorker(paperId, paper, { fetchWorker, apiBase }) 
 // path needs a Firebase session and a configured Worker origin, neither of
 // which exists under `node --test`. `apiBase` left undefined lets
 // `workerSourceUrl` fall back to the configured origin.
-export async function getRelatedPapers(paper, limit = 8, { fetchWorker = authenticatedWorkerFetch, apiBase } = {}) {
+export async function getRelatedPapers(paper: Partial<Paper>, limit = 8, { fetchWorker = authenticatedWorkerFetch, apiBase }: RelatedOptions = {}) {
   const paperId = getSemanticScholarPaperId(paper);
   if (!paperId) return [];
   const cached = CACHE.get(paperId);

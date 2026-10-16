@@ -1,3 +1,5 @@
+import type { OpenAlexWork } from '../services/adapters/openAlexTypes.ts';
+
 /**
  * Whether a paper is a preprint, read from what each provider actually says
  * about it (audit 2026-09-23, issue 12a: chapters and accepted papers carried
@@ -10,7 +12,7 @@
 // 2608.12077, 2606.06074). «Submitted to» still says nothing of the kind.
 const ARXIV_PUBLISHED_COMMENT = /\b(?:(?:accepted|published|appears|to appear) in|accepted (?:for|at|to)|to appear (?:as|at))\b/i;
 
-export function arxivCommentSaysPublished(comment) {
+export function arxivCommentSaysPublished(comment: unknown) {
   return ARXIV_PUBLISHED_COMMENT.test(String(comment || ''));
 }
 
@@ -22,7 +24,7 @@ export function arxivCommentSaysPublished(comment) {
 // is the rule the enrichment mapper already kept; the card mappers now share it.
 const OPENALEX_PREPRINT_TYPES = new Set(['preprint', 'posted-content']);
 
-export function openAlexPublicationStatus(work) {
+export function openAlexPublicationStatus(work: Pick<OpenAlexWork, 'type' | 'primary_location' | 'locations'> | null | undefined) {
   const type = String(work?.type || '').trim().toLowerCase();
   if (type && !OPENALEX_PREPRINT_TYPES.has(type)) return 'published';
   const published = work?.primary_location?.is_published
@@ -32,7 +34,7 @@ export function openAlexPublicationStatus(work) {
 
 // Semantic Scholar's `Review` is a kind of article: PMID 30617335, a review
 // in Nature Medicine, carried the chip.
-export function semanticScholarIsPreprint(publicationTypes) {
+export function semanticScholarIsPreprint(publicationTypes: unknown) {
   return Array.isArray(publicationTypes)
     && publicationTypes.some(type => String(type).trim().toLowerCase() === 'preprint');
 }

@@ -54,7 +54,7 @@ test('an entity page comes back as it was left: tab, authors, Wikipedia block an
  */
 test('an author card hands its row over, so the author page is born with a name and counts', async () => {
   const jsx = stripComments(await read('./EntityExplorer.jsx'));
-  assert.match(jsx, /import \{ handedEntityFor, handoverFromSearchRow \} from '\.\.\/\.\.\/utils\/explorerHandover\.js';/);
+  assert.match(jsx, /import \{ handedEntityFor, handoverFromSearchRow \} from '\.\.\/\.\.\/utils\/explorerHandover\.ts';/);
   assert.match(jsx, /const navigateToEntity = useCallback\(\(nextType, nextId, handover = null\) => \{/);
   assert.match(jsx, /const entityForNext = handover \? handoverFromSearchRow\(nextType, handover\) : null;/);
   assert.match(jsx, /entityForNext \? \{ state: \{ entity: entityForNext, entityType: nextType \} \} : undefined/);

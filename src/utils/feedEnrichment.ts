@@ -1,6 +1,8 @@
+import type { Paper } from '../models/Paper.ts';
+
 import { PaperBuilder } from '../services/PaperBuilder.ts';
 
-export function getOpenAlexEnrichmentId(paperOrId) {
+export function getOpenAlexEnrichmentId(paperOrId: string | Partial<Paper> | null | undefined) {
   const candidates = typeof paperOrId === 'string'
     ? [paperOrId]
     : [paperOrId?.id, paperOrId?.arxivId];
@@ -26,28 +28,28 @@ export function getOpenAlexEnrichmentId(paperOrId) {
   return '';
 }
 
-function normalizeEnrichmentDoi(value) {
+function normalizeEnrichmentDoi(value: unknown) {
   const doi = String(value || '').trim().toLowerCase().replace(/^https?:\/\/(?:dx\.)?doi\.org\//, '');
   if (!/^10\.\d{4,9}\/\S+$/.test(doi) || /^10\.48550\/arxiv\./.test(doi)) return '';
   return doi;
 }
 
-export function needsOpenAlexEnrichment(paper) {
+export function needsOpenAlexEnrichment(paper: Partial<Paper> | null | undefined) {
   const id = getOpenAlexEnrichmentId(paper);
   if (!id || !(/^(?:openalex:)?W\d+$/i.test(id) || /^\d{4}\.\d{4,5}$/.test(id) || /^[a-z][a-z.-]+\/\d{7}$/i.test(id) || /^doi:/.test(id))) {
     return false;
   }
 
-  const sources = paper?.sources || {};
+  const sources: Partial<Paper['sources']> = paper?.sources || {};
   return sources.primary !== 'openalex' && !(sources.enrichedBy || []).includes('openalex');
 }
 
-export function takeFeedPage(papers, pageSize = 15) {
+export function takeFeedPage<T>(papers: T[] | null | undefined, pageSize = 15) {
   const safeSize = Number.isFinite(pageSize) ? Math.max(0, Math.floor(pageSize)) : 15;
   return (Array.isArray(papers) ? papers : []).slice(0, safeSize);
 }
 
-function isPlainObject(value) {
+function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
 }
@@ -60,7 +62,7 @@ function isPlainObject(value) {
 // real change, so this walks values instead. Anything it can't confidently
 // prove equal (functions, class instances, mismatched shapes) is treated as
 // different, so a real change is never mistaken for a no-op and dropped.
-export function paperFieldsEqual(a, b) {
+export function paperFieldsEqual(a: unknown, b: unknown): boolean {
   if (Object.is(a, b)) return true;
   if (Array.isArray(a) || Array.isArray(b)) {
     return Array.isArray(a) && Array.isArray(b)
@@ -76,7 +78,7 @@ export function paperFieldsEqual(a, b) {
   return false;
 }
 
-export function mergeOpenAlexEnrichment(papers, enrichmentById) {
+export function mergeOpenAlexEnrichment(papers: Paper[], enrichmentById: Record<string, Partial<Paper>> | null | undefined) {
   if (!enrichmentById || Object.keys(enrichmentById).length === 0) return papers;
 
   return papers.map((paper) => {

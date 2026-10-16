@@ -1,18 +1,40 @@
+import type { Paper } from '../../models/Paper.ts';
+import type { PaperSearchFilters, PaperSearchResult } from './index.ts';
+
+export interface SemanticScholarRecord {
+  paperId: string;
+  title?: string;
+  publicationDate?: string;
+  url?: string;
+  abstract?: string | null;
+  authors?: Array<{ name: string; authorId?: string | null }>;
+  publicationTypes?: string[] | null;
+  externalIds?: { DOI?: string | null; ArXiv?: string | null };
+  year?: number | null;
+  venue?: string | null;
+  isOpenAccess?: boolean;
+  openAccessPdf?: { url?: string | null } | null;
+  citationCount?: number | null;
+  referenceCount?: number | null;
+}
+
 import { fetchWorkerSourceJson } from '../workerApiClient.ts';
 import { semanticScholarIsPreprint } from '../../utils/publicationStatus.ts';
 
 const SEMANTIC_SCHOLAR_PAGE_SIZE = 25;
 
 export class SemanticScholarAdapter {
+  declare name: string;
+  declare workerOptions: Parameters<typeof fetchWorkerSourceJson>[2];
   // Same injection seam as `PubmedAdapter`: `import.meta.env` is absent under
   // `node --test`, so the Worker origin has to be passable for the network path
   // to be testable at all.
-  constructor(workerOptions = {}) {
+  constructor(workerOptions: Parameters<typeof fetchWorkerSourceJson>[2] = {}) {
     this.name = 'semanticscholar';
     this.workerOptions = workerOptions;
   }
 
-  async search(query, page = 1, filters = {}) {
+  async search(query: string, page = 1, filters: PaperSearchFilters = {}): Promise<PaperSearchResult> {
     // Clean query
     // Word boundaries, or CORD-19 becomes "C D-19": the operators are words.
     let safeQuery = query.replace(/\b(?:OR|AND)\b/g, ' ').replace(/"/g, '').replace(/[()]/g, '');
@@ -27,7 +49,7 @@ export class SemanticScholarAdapter {
     // the Worker; a refusal arrives here already carrying its `retry-after`, so
     // there is nothing left for a local backoff to add.
     try {
-      const data = await fetchWorkerSourceJson('/sources/s2', {
+      const data = await fetchWorkerSourceJson<{ data?: SemanticScholarRecord[]; total?: number }>('/sources/s2', {
         q: safeQuery,
         page,
         limit: SEMANTIC_SCHOLAR_PAGE_SIZE,
@@ -41,14 +63,14 @@ export class SemanticScholarAdapter {
         mappedPapers = mappedPapers.map(p => {
           const paperText = `${p.title} ${p.abstract || ''}`.toLowerCase();
           let bestMatch = null;
-          for (const catId of filters.internalCategories) {
+          for (const catId of filters.internalCategories!) {
               const keywords = catId.split('.');
               if (keywords.some(kw => kw.length > 2 && paperText.includes(kw))) {
                   bestMatch = catId;
                   break;
               }
           }
-          const selectedCat = bestMatch || filters.internalCategories[Math.floor(Math.random() * filters.internalCategories.length)];
+          const selectedCat = bestMatch || filters.internalCategories![Math.floor(Math.random() * filters.internalCategories!.length)];
           p.categories = [selectedCat, ...(p.categories || [])];
           return p;
         });
@@ -60,7 +82,7 @@ export class SemanticScholarAdapter {
     }
   }
 
-  mapToStandard(raw) {
+  mapToStandard(raw: SemanticScholarRecord): Paper {
     const isPreprint = semanticScholarIsPreprint(raw.publicationTypes);
     // The DOI and the arXiv id ride in `externalIds` (the Worker asks for
     // them). They used to be dropped — `doi: null` — so a paper saved from a

@@ -1,3 +1,4 @@
+import type { Icon } from '@phosphor-icons/react';
 import {
   Atom,
   BookOpen,
@@ -16,15 +17,15 @@ import {
 // The keys are the icon names stored on each list in Firestore, so they keep
 // the names they were saved under even where the glyph behind them changed
 // library (FlaskConical and Flame were Lucide's names).
-export const ICONS = {
+export const ICONS: Record<string, Icon> = {
   Folder, Star, Microscope, FlaskConical: Flask, BookOpen, Target, Lightbulb, Dna, Atom, Flame: Fire, Heart, Eye
 };
 
-export const getIcon = (nameOrEmoji) => {
+export const getIcon = (nameOrEmoji: string) => {
   if (ICONS[nameOrEmoji]) return ICONS[nameOrEmoji];
   
   // Backwards compatibility with emojis already in database
-  const emojiMap = {
+  const emojiMap: Record<string, Icon> = {
     '📂': Folder, '⭐': Star, '🔬': Microscope, '🧪': Flask, 
     '📚': BookOpen, '🎯': Target, '💡': Lightbulb, '🧬': Dna, 
     '⚛️': Atom, '🔥': Fire, '❤️': Heart

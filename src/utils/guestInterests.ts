@@ -1,3 +1,5 @@
+type GuestAnswer = { areas?: unknown; topics?: unknown; readingLevel?: unknown; emailDigest?: unknown };
+
 import { CATEGORIES } from '../data/categories.js';
 import { normalizeReadingPreferences } from './userSettings.ts';
 
@@ -23,9 +25,9 @@ import { normalizeReadingPreferences } from './userSettings.ts';
  */
 export const GUEST_INTERESTS_STORAGE_KEY = 'papertok_guestInterests';
 
-const AREA_KEYS = Object.freeze(Object.keys(CATEGORIES));
+const AREA_KEYS = Object.freeze(Object.keys(CATEGORIES) as Array<Extract<keyof typeof CATEGORIES, string>>);
 
-function getStorage(storage) {
+function getStorage(storage?: Storage | null) {
   if (storage) return storage;
   if (typeof window === 'undefined') return null;
   try {
@@ -40,7 +42,7 @@ function getStorage(storage) {
  * list is always something every consumer (the feed plan, the onboarding)
  * can hand straight to CATEGORIES.
  */
-export function normalizeGuestAreas(areas) {
+export function normalizeGuestAreas(areas: unknown) {
   if (!Array.isArray(areas)) return [];
   const wanted = new Set(areas.filter(area => typeof area === 'string'));
   return AREA_KEYS.filter(key => wanted.has(key));
@@ -51,7 +53,7 @@ export function normalizeGuestAreas(areas) {
  * area that is itself chosen. Taxonomy order, deduplicated — so dropping an
  * area drops its topics with it.
  */
-export function normalizeGuestTopics(topics, areas) {
+export function normalizeGuestTopics(topics: unknown, areas: unknown) {
   if (!Array.isArray(topics)) return [];
   const wanted = new Set(topics.filter(topic => typeof topic === 'string'));
   return normalizeGuestAreas(areas)
@@ -63,7 +65,7 @@ export function normalizeGuestTopics(topics, areas) {
  * The subcategory ids each chosen area stands for, area by area: its picked
  * topics if it has any, otherwise every one of its subcategories.
  */
-export function guestTopicListsForAreas(areas, topics = []) {
+export function guestTopicListsForAreas(areas: unknown, topics: unknown = []) {
   const chosenTopics = new Set(normalizeGuestTopics(topics, areas));
   return normalizeGuestAreas(areas).map((key) => {
     const all = Object.keys(CATEGORIES[key].subcategories);
@@ -77,7 +79,7 @@ export function guestTopicListsForAreas(areas, topics = []) {
  * `preferences` holds for a signed-in user, so it is what the onboarding
  * pre-selects and what the domain source plan is routed by.
  */
-export function guestCategoriesForAreas(areas, topics = []) {
+export function guestCategoriesForAreas(areas: string[], topics: string[] = []) {
   return guestTopicListsForAreas(areas, topics).flat();
 }
 
@@ -109,7 +111,7 @@ export const GUEST_SEED_MAX = 100;
  * the whole seed stops at the rules' cap, so even a visitor who ticked every
  * topic of every area gets a profile the rules accept.
  */
-function guestSeedLists(areas, perArea, topics) {
+function guestSeedLists(areas: unknown, perArea: number, topics: unknown) {
   const chosen = normalizeGuestAreas(areas);
   const narrowed = new Set(normalizeGuestTopics(topics, chosen));
   return chosen.map((key) => {
@@ -124,11 +126,11 @@ function guestSeedLists(areas, perArea, topics) {
  * onboarding shows the reader so they can drop topics themselves, rather than
  * have `guestSeedCategoriesForAreas` drop them without a word.
  */
-export function guestSeedSizeForAreas(areas, perArea = GUEST_SEED_PER_AREA, topics = []) {
+export function guestSeedSizeForAreas(areas: string[], perArea = GUEST_SEED_PER_AREA, topics: string[] = []) {
   return guestSeedLists(areas, perArea, topics).reduce((count, list) => count + list.length, 0);
 }
 
-export function guestSeedCategoriesForAreas(areas, perArea = GUEST_SEED_PER_AREA, topics = []) {
+export function guestSeedCategoriesForAreas(areas: string[], perArea = GUEST_SEED_PER_AREA, topics: string[] = []) {
   const lists = guestSeedLists(areas, perArea, topics);
   const picked = [];
   for (let index = 0; ; index += 1) {
@@ -150,7 +152,7 @@ export function guestSeedCategoriesForAreas(areas, perArea = GUEST_SEED_PER_AREA
  * which the prompt honours by not asking again — the header chip stays as
  * the way back in.
  */
-export function readGuestInterests(storage) {
+export function readGuestInterests(storage?: Storage | null) {
   const target = getStorage(storage);
   if (!target) return null;
 
@@ -178,7 +180,7 @@ export function readGuestInterests(storage) {
  * travels with this guest bridge until account onboarding saves it to the UID,
  * and so does an explicit yes to the email digest (`emailDigest: true`).
  */
-export function saveGuestInterests(answer, storage) {
+export function saveGuestInterests(answer: GuestAnswer | unknown[] | null | undefined, storage?: Storage | null) {
   const areas = Array.isArray(answer) ? answer : answer?.areas;
   const normalized = normalizeGuestAreas(areas);
   const topics = Array.isArray(answer) ? [] : normalizeGuestTopics(answer?.topics, normalized);
@@ -194,8 +196,8 @@ export function saveGuestInterests(answer, storage) {
       target.setItem(GUEST_INTERESTS_STORAGE_KEY, JSON.stringify({
         areas: normalized,
         topics,
-        ...(answer?.readingLevel ? { readingLevel: normalizeReadingPreferences({ aiExplanationLevel: answer.readingLevel }).aiExplanationLevel } : {}),
-        ...(answer?.emailDigest === true ? { emailDigest: true } : {}),
+        ...((answer as GuestAnswer | null | undefined)?.readingLevel ? { readingLevel: normalizeReadingPreferences({ aiExplanationLevel: (answer as GuestAnswer).readingLevel }).aiExplanationLevel } : {}),
+        ...((answer as GuestAnswer | null | undefined)?.emailDigest === true ? { emailDigest: true } : {}),
         dismissedAt: null,
         updatedAt: Date.now(),
       }));
@@ -207,11 +209,11 @@ export function saveGuestInterests(answer, storage) {
   return normalized;
 }
 
-export function dismissGuestInterests(storage) {
+export function dismissGuestInterests(storage?: Storage | null) {
   saveGuestInterests([], storage);
 }
 
-export function clearGuestInterests(storage) {
+export function clearGuestInterests(storage?: Storage | null) {
   const target = getStorage(storage);
   if (!target) return;
 

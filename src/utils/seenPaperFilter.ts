@@ -33,7 +33,7 @@ export const MAX_SEEN_FILTER_CHARS = 120000;
 
 const BASE64_CHUNK_BYTES = 0x8000;
 
-function uint32ArrayToBase64(buckets) {
+function uint32ArrayToBase64(buckets: Uint32Array) {
   const bytes = new Uint8Array(buckets.length * 4);
   const view = new DataView(bytes.buffer);
   for (let index = 0; index < buckets.length; index += 1) {
@@ -49,7 +49,7 @@ function uint32ArrayToBase64(buckets) {
   return btoa(binary);
 }
 
-function base64ToUint32Array(encoded) {
+function base64ToUint32Array(encoded: string) {
   const binary = atob(encoded);
   if (binary.length % 4 !== 0) {
     throw new RangeError('Serialised seen filter is not a whole number of 32-bit buckets.');
@@ -70,18 +70,18 @@ export function createSeenFilter() {
   return new BloomFilter(SEEN_FILTER_BITS, SEEN_FILTER_HASHES);
 }
 
-export function addSeenPaper(filter, paperId) {
+export function addSeenPaper(filter: BloomFilter | null | undefined, paperId: unknown) {
   if (!filter || typeof paperId !== 'string' || !paperId) return filter;
   filter.add(paperId);
   return filter;
 }
 
-export function hasSeenPaper(filter, paperId) {
+export function hasSeenPaper(filter: BloomFilter | null | undefined, paperId: unknown) {
   if (!filter || typeof paperId !== 'string' || !paperId) return false;
   return filter.test(paperId);
 }
 
-export function isSeenFilterEmpty(filter) {
+export function isSeenFilterEmpty(filter: BloomFilter | null | undefined) {
   return !filter || filter.countBits() === 0;
 }
 
@@ -90,9 +90,9 @@ export function isSeenFilterEmpty(filter) {
  *   worth storing. Callers must treat an oversized result as a bug, not clamp
  *   it: a truncated filter would start reporting false negatives.
  */
-export function serializeSeenFilter(filter) {
+export function serializeSeenFilter(filter: BloomFilter | null | undefined): string|null {
   if (isSeenFilterEmpty(filter)) return null;
-  const encoded = uint32ArrayToBase64(filter.buckets);
+  const encoded = uint32ArrayToBase64(filter!.buckets);
   if (encoded.length > MAX_SEEN_FILTER_CHARS) {
     throw new RangeError(
       `Serialised seen filter is ${encoded.length} chars, over the ${MAX_SEEN_FILTER_CHARS} budget.`,
@@ -106,7 +106,7 @@ export function serializeSeenFilter(filter) {
  *   corrupt. A null filter degrades to "nothing evicted yet", which is the same
  *   state every user starts in, so a bad payload can never hide the whole feed.
  */
-export function deserializeSeenFilter(encoded) {
+export function deserializeSeenFilter(encoded: unknown): BloomFilter|null {
   if (typeof encoded !== 'string' || !encoded) return null;
   if (encoded.length > MAX_SEEN_FILTER_CHARS) return null;
   try {

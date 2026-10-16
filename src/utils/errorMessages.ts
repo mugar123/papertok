@@ -46,13 +46,13 @@ const ERROR_MESSAGES = {
   },
 };
 
-function errorCode(value) {
+function errorCode(value: unknown) {
   if (typeof value === 'string') return value;
-  return value?.code || '';
+  return (value as { code?: string } | null | undefined)?.code || '';
 }
 
-export function getUiErrorMessage(value, fallbackCode = 'GENERAL_ERROR') {
-  const messages = ERROR_MESSAGES['en'];
+export function getUiErrorMessage(value: unknown, fallbackCode = 'GENERAL_ERROR') {
+  const messages: Record<string, string> = ERROR_MESSAGES['en'];
   const code = errorCode(value);
   return messages[code] || messages[fallbackCode] || messages.GENERAL_ERROR;
 }

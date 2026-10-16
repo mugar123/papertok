@@ -37,7 +37,7 @@ import { ruleTransform } from '../utils/navRule.ts';
  * @param {string} activeSelector      how to find the active element inside the row
  * @returns {{ transform: string, measured: boolean }}
  */
-export function useActiveTabRule(row, activeKey, activeSelector) {
+export function useActiveTabRule(row: HTMLElement|null, activeKey: string, activeSelector: string): { transform: string; measured: boolean; } {
   const [rule, setRule] = useState({ transform: '', measured: false });
 
   useLayoutEffect(() => {

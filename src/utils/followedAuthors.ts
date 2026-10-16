@@ -8,7 +8,7 @@ import { arrayRemove, arrayUnion } from 'firebase/firestore';
  * timed out — and writing it whole would replace every author the account
  * follows with the one it just tapped.
  */
-export function toggleFollowedAuthor(followed, authorName, { union = arrayUnion, remove = arrayRemove } = {}) {
+export function toggleFollowedAuthor(followed: string[], authorName: string, { union = arrayUnion, remove = arrayRemove } = {}) {
   const following = followed.includes(authorName);
   return {
     next: following ? followed.filter(name => name !== authorName) : [...followed, authorName],

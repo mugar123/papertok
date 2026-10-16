@@ -1,3 +1,4 @@
+import type { RefObject } from 'react';
 import { useLayoutEffect, useRef } from 'react';
 import { depsAreSame, planHeightSettle } from './heightSettlePlan.ts';
 
@@ -5,7 +6,7 @@ const SETTLE_ID = 'height-settle';
 const EASE = 'cubic-bezier(0.16, 1, 0.3, 1)';
 
 /** The `overflow` each element had before a settle clipped it, by element. */
-const restingOverflow = new WeakMap();
+const restingOverflow = new WeakMap<HTMLElement, string>();
 
 /**
  * Settles an element's height across a change in what it holds, instead of
@@ -69,9 +70,9 @@ const restingOverflow = new WeakMap();
  * arrives inside this box animates its CONTENTS (opacity), and the box's
  * growth — the space, and everything below it — is carried here.
  */
-export function useHeightSettle(ref, deps, { enabled = true, suspended, duration = 360, easing = EASE } = {}) {
-  const lastHeightRef = useRef(null);
-  const lastDepsRef = useRef(null);
+export function useHeightSettle(ref: RefObject<HTMLElement | null>, deps: readonly unknown[] | undefined, { enabled = true, suspended, duration = 360, easing = EASE }: { enabled?: boolean; suspended?: () => boolean; duration?: number; easing?: string } = {}) {
+  const lastHeightRef = useRef<number | null>(null);
+  const lastDepsRef = useRef<readonly unknown[] | null | undefined>(null);
 
   useLayoutEffect(() => {
     const depsChanged = !depsAreSame(lastDepsRef.current, deps);
@@ -90,8 +91,8 @@ export function useHeightSettle(ref, deps, { enabled = true, suspended, duration
     let running = null;
     let current = null;
     if (inFlight) {
-      const [start, end] = inFlight.effect.getKeyframes();
-      running = { from: parseFloat(start.height), to: parseFloat(end.height), currentTime: inFlight.currentTime || 0 };
+      const [start, end] = (inFlight.effect as KeyframeEffect).getKeyframes();
+      running = { from: parseFloat(start.height as string), to: parseFloat(end.height as string), currentTime: inFlight.currentTime || 0 };
       current = el.getBoundingClientRect().height;
       inFlight.cancel();
     }

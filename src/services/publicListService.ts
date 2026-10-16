@@ -1,3 +1,7 @@
+import type { PublicListInput, PublicListPayload } from './publicListPayload.ts';
+export interface ListOperationResult { code?: string; shareId?: string; paperCount?: number; listCount?: number; skipped?: number; publishedAt?: string; updatedAt?: string }
+interface ListOperations { isDemo?: boolean; rest?: typeof firestoreRest; request?: typeof authenticatedWorkerFetch; apiBase?: string }
+
 /**
  * Publishing goes through the Worker; reading does not.
  *
@@ -28,6 +32,7 @@ import {
 export { PUBLIC_LIST_LIMITS, sanitizePublicList, sanitizePublicPaper };
 
 export class PublicListUnsupportedError extends Error {
+  declare code: string;
   constructor() {
     super('Public lists are unavailable in demo mode.');
     this.name = 'PublicListUnsupportedError';
@@ -40,6 +45,8 @@ export class PublicListUnsupportedError extends Error {
  * apart from "the service is down" instead of showing one blank failure.
  */
 export class PublicListRequestError extends Error {
+  declare code: string;
+  declare status: number;
   constructor(code = 'PUBLISH_FAILED', status = 502) {
     super(code);
     this.name = 'PublicListRequestError';
@@ -50,12 +57,12 @@ export class PublicListRequestError extends Error {
 
 // Identifier hygiene, not payload shaping: uids, share ids and private list
 // ids are checked here before they ever reach a path segment.
-function cleanString(value, maximum) {
+function cleanString(value: unknown, maximum: number|undefined) {
   if (typeof value !== 'string') return '';
   return value.trim().replace(/\s+/g, ' ').slice(0, maximum);
 }
 
-function operations(overrides = {}) {
+function operations(overrides: ListOperations = {}) {
   return {
     isDemo: overrides.isDemo === undefined ? IS_DEMO : overrides.isDemo,
     rest: overrides.rest || firestoreRest,
@@ -66,17 +73,17 @@ function operations(overrides = {}) {
   };
 }
 
-function requireSupported(api) {
+function requireSupported(api: ReturnType<typeof operations>) {
   if (api.isDemo) throw new PublicListUnsupportedError();
 }
 
-function validateShareId(shareId) {
+function validateShareId(shareId: unknown) {
   const normalized = cleanString(shareId, 64);
   if (!/^[a-f0-9]{32}$/.test(normalized)) throw new TypeError('Invalid public list ID.');
   return normalized;
 }
 
-function validatePrivateListId(listId) {
+function validatePrivateListId(listId: unknown) {
   const normalized = cleanString(listId, 160);
   if (!normalized || normalized.includes('/')) throw new TypeError('Invalid private list ID.');
   return normalized;
@@ -85,9 +92,9 @@ function validatePrivateListId(listId) {
 // An answer that is not JSON is still an answer — the Worker's own error codes
 // arrive as JSON, but a proxy in between may not. A body that never finished is
 // a different matter, and that one throws out of here rather than parsing.
-function parseWorkerPayload(text) {
+function parseWorkerPayload(text: string) {
   try {
-    return JSON.parse(text);
+    return JSON.parse(text) as ListOperationResult;
   } catch {
     return {};
   }
@@ -98,7 +105,7 @@ function parseWorkerPayload(text) {
  * here so the UI never sends something it could have cleaned, there because a
  * browser is not a place to enforce anything.
  */
-async function callWorker(api, path, body) {
+async function callWorker(api: ReturnType<typeof operations>, path: string, body: Record<string, unknown>) {
   if (!api.apiBase) throw new PublicListRequestError('PUBLISHING_NOT_CONFIGURED', 503);
   let response;
   let payload;
@@ -114,7 +121,7 @@ async function callWorker(api, path, body) {
     // empty payload it would have treated as a successful publish.
     payload = parseWorkerPayload(await response.text());
   } catch (error) {
-    throw new PublicListRequestError(error?.code || 'PUBLISH_UNREACHABLE', 0);
+    throw new PublicListRequestError((error as { code?: string } | null)?.code || 'PUBLISH_UNREACHABLE', 0);
   }
   if (!response.ok) {
     throw new PublicListRequestError(payload?.code || 'PUBLISH_FAILED', response.status);
@@ -128,7 +135,7 @@ async function callWorker(api, path, body) {
  * can see to `profileLists/{uid}` and refuse the 31st publish with
  * `PROFILE_LISTS_FULL`.
  */
-export async function publishPublicList(input, overrides) {
+export async function publishPublicList(input: PublicListInput, overrides?: ListOperations) {
   const api = operations(overrides);
   requireSupported(api);
   const listId = validatePrivateListId(input?.listId);
@@ -155,7 +162,7 @@ export async function publishPublicList(input, overrides) {
  * a fifty-paper list correctly. A whole-payload replace from there would have
  * published a list of one.
  */
-export async function syncPublicList(shareId, input, overrides) {
+export async function syncPublicList(shareId: string, input: PublicListInput, overrides?: ListOperations) {
   const api = operations(overrides);
   requireSupported(api);
   const listId = validatePrivateListId(input?.listId);
@@ -188,7 +195,7 @@ export async function syncPublicList(shareId, input, overrides) {
   return { ...header, paperIds, ...result };
 }
 
-export async function unpublishPublicList(shareId, listId, overrides) {
+export async function unpublishPublicList(shareId: string, listId: string, overrides?: ListOperations) {
   const api = operations(overrides);
   requireSupported(api);
   const normalizedListId = validatePrivateListId(listId);
@@ -198,7 +205,7 @@ export async function unpublishPublicList(shareId, listId, overrides) {
   });
 }
 
-export async function readPublicList(shareId, { signal } = {}, overrides) {
+export async function readPublicList(shareId: string, { signal }: { signal?: AbortSignal } = {}, overrides?: ListOperations) {
   const api = operations(overrides);
   requireSupported(api);
   const normalizedShareId = validateShareId(shareId);
@@ -209,6 +216,6 @@ export async function readPublicList(shareId, { signal } = {}, overrides) {
   // stalled read from the in-memory cache, where a list that exists came back
   // as "not available". Here a 404 is the server's own answer, and a request
   // that never arrives rejects as `unavailable`, which `patientRead` retries.
-  const document = await api.rest.getDocument(`publicLists/${normalizedShareId}`, { signal });
+  const document = await api.rest.getDocument<PublicListPayload & { ownerUid?: string; updatedAt?: unknown }>(`publicLists/${normalizedShareId}`, { signal });
   return document?.exists ? { shareId: document.id, ...document.data } : null;
 }

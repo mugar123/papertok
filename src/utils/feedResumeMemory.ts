@@ -1,3 +1,5 @@
+type FeedResume = { scrollTop: number; index: number; paperId: string | null };
+
 /**
  * The card each feed was left on, per surface, in a memory that survives a
  * reload of the tab.
@@ -29,7 +31,7 @@ function defaultStorage() {
   }
 }
 
-function readStored(storage, key) {
+function readStored(storage: Storage | null, key: string) {
   if (!storage) return null;
   try {
     const raw = storage.getItem(`${FEED_RESUME_STORAGE_PREFIX}${key}`);
@@ -45,10 +47,10 @@ function readStored(storage, key) {
 }
 
 export function createFeedResumeMemory({ storage = defaultStorage() } = {}) {
-  const entries = new Map();
-  const seeded = new Set();
+  const entries = new Map<string, FeedResume>();
+  const seeded = new Set<string>();
 
-  const get = (key) => {
+  const get = (key: string) => {
     if (!entries.has(key) && !seeded.has(key)) {
       seeded.add(key);
       const stored = readStored(storage, key);
@@ -57,7 +59,7 @@ export function createFeedResumeMemory({ storage = defaultStorage() } = {}) {
     return entries.get(key) || NOWHERE;
   };
 
-  const remember = (key, { scrollTop = 0, index = 0, paperId = null } = {}) => {
+  const remember = (key: string, { scrollTop = 0, index = 0, paperId = null }: Partial<FeedResume> = {}) => {
     seeded.add(key);
     entries.set(key, {
       scrollTop: Number(scrollTop) || 0,
@@ -66,7 +68,7 @@ export function createFeedResumeMemory({ storage = defaultStorage() } = {}) {
     });
   };
 
-  const persist = (key) => {
+  const persist = (key: string) => {
     const entry = entries.get(key);
     if (!storage || !entry) return;
     try {

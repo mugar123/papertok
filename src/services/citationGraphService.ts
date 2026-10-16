@@ -1,10 +1,15 @@
+import type { Paper } from '../models/Paper.ts';
+interface GraphDependencies { fetchPapersByDois?: typeof fetchPapersByDois; findOpenAccessCopy?: typeof findOpenAccessCopy; authenticatedWorkerFetch?: typeof authenticatedWorkerFetch; apiBase?: string }
+interface GraphPayload { references?: Partial<Paper>[]; citations?: Partial<Paper>[]; counts?: { references?: number; citations?: number }; source?: string; partial?: boolean; degraded?: boolean }
+export type CitationGraph = ReturnType<typeof mapCitationGraphPayload>;
+
 import { PaperBuilder } from './PaperBuilder.ts';
 import { normalizeCitationDoi } from '../utils/citationGraph.ts';
 import { fetchPapersByDois } from './openAlexService.ts';
 import { findOpenAccessCopy } from './unpaywallService.ts';
 import { authenticatedWorkerFetch } from './workerApiClient.ts';
 
-const CACHE = new Map();
+const CACHE = new Map<string, { data: CitationGraph; timestamp: number }>();
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 /**
  * Requests that have not answered yet, keyed like the cache.
@@ -15,7 +20,7 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
  * without this the pair costs eighteen. Only successes are remembered: a
  * rejection leaves the key clear so the next view can ask again.
  */
-const IN_FLIGHT = new Map();
+const IN_FLIGHT = new Map<string, Promise<CitationGraph>>();
 
 const MISSING_ABSTRACTS = new Set([
   '',
@@ -25,16 +30,16 @@ const MISSING_ABSTRACTS = new Set([
   'resumen no disponible.',
 ]);
 
-function hasSourcedAbstract(value) {
+function hasSourcedAbstract(value: unknown) {
   return !MISSING_ABSTRACTS.has(String(value || '').trim().toLowerCase());
 }
 
-function mergeHydratedPaper(paper, openAlexPaper, openCopy) {
+function mergeHydratedPaper(paper: Paper, openAlexPaper: Paper | null, openCopy: Awaited<ReturnType<typeof findOpenAccessCopy>>) {
   const enrichedBy = new Set(paper?.sources?.enrichedBy || []);
   if (openAlexPaper) enrichedBy.add('openalex');
   if (openCopy) enrichedBy.add('unpaywall');
 
-  const hydrated = {
+  const hydrated: Paper = {
     ...paper,
     sources: {
       primary: paper?.sources?.primary || 'opencitations',
@@ -59,8 +64,8 @@ function mergeHydratedPaper(paper, openAlexPaper, openCopy) {
       'concepts',
       'categories',
       'keywords',
-    ];
-    fields.forEach(field => {
+    ] as const;
+    fields.forEach(<K extends typeof fields[number]>(field: K) => {
       const value = openAlexPaper[field];
       const missing = hydrated[field] === undefined
         || hydrated[field] === null
@@ -92,7 +97,7 @@ function mergeHydratedPaper(paper, openAlexPaper, openCopy) {
   return hydrated;
 }
 
-export async function hydrateCitationGraphPaper(paper, dependencies = {}) {
+export async function hydrateCitationGraphPaper(paper: Paper, dependencies: GraphDependencies = {}) {
   const doi = getCitationGraphDoi(paper);
   if (!doi) return paper;
 
@@ -109,13 +114,13 @@ export async function hydrateCitationGraphPaper(paper, dependencies = {}) {
   return mergeHydratedPaper(paper, openAlexPaper, openCopy);
 }
 
-export function getCitationGraphDoi(paper) {
+export function getCitationGraphDoi(paper: Partial<Paper> | null | undefined) {
   const doi = normalizeCitationDoi(paper?.doi);
   return /^10\.\d{4,9}\/.+/.test(doi) ? doi : '';
 }
 
-export function mapCitationGraphPayload(payload) {
-  const mapPapers = items => (Array.isArray(items) ? items : []).map(item => PaperBuilder.create(item));
+export function mapCitationGraphPayload(payload: GraphPayload | null) {
+  const mapPapers = (items: Partial<Paper>[] | undefined) => (Array.isArray(items) ? items : []).map(item => PaperBuilder.create(item));
   return {
     references: mapPapers(payload?.references),
     citations: mapPapers(payload?.citations),
@@ -132,7 +137,7 @@ export function mapCitationGraphPayload(payload) {
   };
 }
 
-async function requestCitationGraph(doi, safeLimit, cacheKey, dependencies) {
+async function requestCitationGraph(doi: string, safeLimit: number, cacheKey: string, dependencies: GraphDependencies) {
   const workerFetch = dependencies.authenticatedWorkerFetch || authenticatedWorkerFetch;
   const configured = dependencies.apiBase ?? import.meta.env?.VITE_PAPER_API_BASE_URL;
   const apiBase = configured?.replace(/\/$/, '');
@@ -157,7 +162,7 @@ async function requestCitationGraph(doi, safeLimit, cacheKey, dependencies) {
   }
 }
 
-export async function getCitationGraph(paper, limit = 8, dependencies = {}) {
+export async function getCitationGraph(paper: Partial<Paper>, limit = 8, dependencies: GraphDependencies = {}) {
   const doi = getCitationGraphDoi(paper);
   if (!doi) return null;
 

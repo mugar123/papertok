@@ -1,3 +1,5 @@
+export interface MetadataRequest { source: 'saved' | 'interaction'; paperIds: string[] }
+interface MetadataOptions { missingIds?: string[]; batchSize?: number }
 import { encodeFirestoreDocId } from './firestoreDocId.ts';
 
 /**
@@ -42,7 +44,7 @@ export const PAPER_METADATA_BATCH_SIZE = FIRESTORE_IN_FILTER_MAX;
  * The rules are Firestore's own: not empty, no `/`, not `.` or `..`, not
  * `__…__`, and at most 1500 bytes when UTF-8 encoded.
  */
-export function isFetchableDocumentId(id) {
+export function isFetchableDocumentId(id: string|string[]|undefined) {
   if (typeof id !== 'string' || id.length === 0) return false;
   if (id.includes('/')) return false;
   if (id === '.' || id === '..') return false;
@@ -65,15 +67,15 @@ export function isFetchableDocumentId(id) {
  * can stop those rows waiting instead of leaving them on a request that is not
  * coming.
  */
-export function planMetadataRequests({ missingIds, batchSize = PAPER_METADATA_BATCH_SIZE } = {}) {
+export function planMetadataRequests({ missingIds, batchSize = PAPER_METADATA_BATCH_SIZE }: MetadataOptions = {}) {
   const ids = Array.isArray(missingIds) ? missingIds : [];
   const size = Math.min(
     Math.max(1, Math.floor(batchSize) || 1),
     FIRESTORE_IN_FILTER_MAX,
   );
 
-  const fetchable = [];
-  const unfetchable = [];
+  const fetchable: string[] = [];
+  const unfetchable: string[] = [];
   // Judged on the ENCODED name (utils/firestoreDocId.js), which is what the
   // query will actually carry: a legacy arXiv id is a batch member, and only
   // what no encoding can save (`..`, `__x__`, 1500+ bytes) is dropped.
@@ -81,7 +83,7 @@ export function planMetadataRequests({ missingIds, batchSize = PAPER_METADATA_BA
     (isFetchableDocumentId(encodeFirestoreDocId(id)) ? fetchable : unfetchable).push(id);
   }
 
-  const requests = [];
+  const requests: MetadataRequest[] = [];
   for (let index = 0; index < fetchable.length; index += size) {
     const paperIds = fetchable.slice(index, index + size);
     requests.push({ source: 'saved', paperIds });
@@ -106,11 +108,11 @@ export function planMetadataRequests({ missingIds, batchSize = PAPER_METADATA_BA
  * actually still missing, and it is empty only when there is nothing left to
  * ask for.
  */
-export function planRetryRequests({ failedRequests, missingIds, batchSize } = {}) {
+export function planRetryRequests({ failedRequests, missingIds, batchSize }: MetadataOptions & { failedRequests?: MetadataRequest[] } = {}) {
   const stillMissing = new Set(Array.isArray(missingIds) ? missingIds : []);
-  const sources = new Set();
+  const sources = new Set<string>();
   const retryIds = [];
-  const seen = new Set();
+  const seen = new Set<string>();
 
   for (const request of Array.isArray(failedRequests) ? failedRequests : []) {
     if (request?.source) sources.add(request.source);
@@ -137,9 +139,9 @@ export function planRetryRequests({ failedRequests, missingIds, batchSize } = {}
  * query. A pre-2007 arXiv id (`hep-th/0603001`) inside an `in` filter rejects
  * the whole query, and with it every other paper of its batch.
  */
-export function planLibraryBatches(ids, size) {
-  const fetchable = [];
-  const unfetchable = [];
+export function planLibraryBatches(ids: string[], size: number) {
+  const fetchable: string[] = [];
+  const unfetchable: string[] = [];
   for (const id of Array.isArray(ids) ? ids : []) {
     (isFetchableDocumentId(id) ? fetchable : unfetchable).push(id);
   }

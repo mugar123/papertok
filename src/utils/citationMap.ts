@@ -1,3 +1,6 @@
+import type { Paper } from '../models/Paper.ts';
+type Geometry = typeof CITATION_MAP_GEOMETRY;
+interface BandBounds { top: number; bottom: number }
 /**
  * Geometry for the citation map: where every neighbour of a paper sits on the
  * two axes the map draws.
@@ -53,27 +56,27 @@ const EMPTY_BANDS = {
   citations: { top: 0, bottom: 0 },
 };
 
-export function isMappableCitationPaper(paper) {
+export function isMappableCitationPaper(paper: Partial<Paper> | null | undefined) {
   if (!paper) return false;
   const year = Number(paper.year);
   return Number.isFinite(year) && year > 0 && Boolean(paper.citationCountKnown);
 }
 
-export function formatCitationTick(value) {
+export function formatCitationTick(value: number) {
   if (value >= 1000000) return `${value / 1000000}M`;
   if (value >= 1000) return `${value / 1000}K`;
   return String(value);
 }
 
-function impactOf(paper) {
+function impactOf(paper: Partial<Paper> | null | undefined) {
   return Math.max(1, Number(paper?.citationCount) || 0);
 }
 
-function sortKey(paper, index) {
+function sortKey(paper: Partial<Paper>, index: number) {
   return String(paper?.id || paper?.doi || paper?.title || index);
 }
 
-function logDomain(papers, geometry) {
+function logDomain(papers: Partial<Paper>[], geometry: Geometry) {
   const logs = papers.map(paper => Math.log10(impactOf(paper)));
   if (!logs.length) return { low: 0, high: geometry.minDomainSpan };
 
@@ -94,7 +97,7 @@ function logDomain(papers, geometry) {
  * of it, and running both again resolves the pair. The order is never touched,
  * so a node that is older than another is always drawn above it.
  */
-function spreadWithinBand(positions, spacing, minY, maxY) {
+function spreadWithinBand(positions: number[], spacing: number, minY: number, maxY: number) {
   const ys = positions.slice();
   if (!ys.length) return ys;
 
@@ -117,12 +120,12 @@ function spreadWithinBand(positions, spacing, minY, maxY) {
  * choose between shrinking a row and overlapping one — it always gets a
  * list that already fits at the fixed pitch.
  */
-function bandCapacity(bounds, geometry) {
+function bandCapacity(bounds: BandBounds, geometry: Geometry) {
   const bandHeight = Math.max(0, bounds.bottom - bounds.top);
   return Math.max(0, Math.floor(bandHeight / geometry.minGap));
 }
 
-function placeBand(papers, relation, bounds, geometry, xOf, width) {
+function placeBand<T extends Partial<Paper>>(papers: T[], relation: string, bounds: BandBounds, geometry: Geometry, xOf: (paper: T) => number, width: number) {
   if (!papers.length) return [];
 
   const ordered = papers
@@ -163,14 +166,14 @@ function placeBand(papers, relation, bounds, geometry, xOf, width) {
   });
 }
 
-export function buildCitationMapLayout({
+export function buildCitationMapLayout<T extends Partial<Paper>>({
   width = 0,
   height = 0,
   center = null,
   references = [],
   citations = [],
   geometry = CITATION_MAP_GEOMETRY,
-} = {}) {
+}: { width?: number; height?: number; center?: T | null; references?: T[]; citations?: T[]; geometry?: Geometry } = {}) {
   const ready = width > 0 && height > 0;
   const ruleY = height / 2;
   const bands = height > 0
@@ -204,15 +207,15 @@ export function buildCitationMapLayout({
 
   const centerImpactKnown = Boolean(center?.citationCountKnown);
   const scaled = [...mappableReferences, ...mappableCitations];
-  if (centerImpactKnown) scaled.push(center);
+  if (centerImpactKnown) scaled.push(center!);
   const { low, high } = logDomain(scaled, geometry);
 
   const plotWidth = Math.max(0, width - geometry.sidePadding * 2);
-  const xForImpact = impact => {
+  const xForImpact = (impact: number) => {
     const fraction = (Math.log10(impact) - low) / (high - low);
     return geometry.sidePadding + Math.min(1, Math.max(0, fraction)) * plotWidth;
   };
-  const xOf = paper => xForImpact(impactOf(paper));
+  const xOf = (paper: Partial<Paper> | null) => xForImpact(impactOf(paper));
 
   const centerX = centerImpactKnown && ready
     ? xOf(center)

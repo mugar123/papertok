@@ -1,3 +1,11 @@
+import type { LinkedInstitution } from './institutionService.ts';
+type InstitutionInput = Partial<LinkedInstitution>;
+interface AccessOperations { request?: typeof authenticatedWorkerFetch; apiBase?: string }
+interface AccessPayload { code?: string; status?: string; url?: unknown; collection?: unknown }
+interface ServicesPayload { code?: string; services?: Array<Record<string, unknown>>; unchecked?: number; partial?: boolean }
+type InstitutionAccess = NonNullable<ReturnType<typeof normalizeInstitutionAccess>>;
+type ServicesAnswer = NonNullable<ReturnType<typeof normalizeInstitutionServices>> | typeof UNSUPPORTED_SERVICES;
+
 /**
  * Whether the reader's linked institution gives access to a paper's published
  * version, through the Worker's `GET /access`.
@@ -23,13 +31,13 @@ const UNKNOWN_TTL = 6 * 60 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 10000;
 const STATUSES = new Set(['entitled', 'not-entitled', 'unknown']);
 
-const answers = new Map();
-const inFlight = new Map();
+const answers = new Map<string, { access: InstitutionAccess; expiresAt: number }>();
+const inFlight = new Map<string, Promise<InstitutionAccess | null>>();
 // Domains the Worker has no resolver for. It will not gain one mid-session, and
 // every card of every reader from that domain would otherwise ask again.
-const unsupportedDomains = new Set();
+const unsupportedDomains = new Set<string>();
 
-function operations(overrides = {}) {
+function operations(overrides: AccessOperations = {}) {
   return {
     request: overrides.request || authenticatedWorkerFetch,
     apiBase: overrides.apiBase === undefined
@@ -38,13 +46,13 @@ function operations(overrides = {}) {
   };
 }
 
-function cleanString(value) {
+function cleanString(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 /** The Worker's answer in the shape the card reads, or null when it is not one. */
-function normalizeInstitutionAccess(payload) {
-  if (!payload || !STATUSES.has(payload.status)) return null;
+function normalizeInstitutionAccess(payload: AccessPayload | null) {
+  if (!payload || !STATUSES.has(payload.status!)) return null;
   const url = safeExternalUrl(payload.url) || null;
   // Entitled means a link the reader can follow: without one there is nothing
   // the chip could honestly promise, so the answer is treated as no answer.
@@ -52,7 +60,7 @@ function normalizeInstitutionAccess(payload) {
   return { status: payload.status, collection: cleanString(payload.collection), url };
 }
 
-async function lookUp(api, doi, institution) {
+async function lookUp(api: ReturnType<typeof operations>, doi: string, institution: InstitutionInput & { domain: string }) {
   const url = workerSourceUrl('/access', {
     doi,
     domain: institution.domain,
@@ -63,7 +71,7 @@ async function lookUp(api, doi, institution) {
   try {
     const response = await api.request(url, withRequestDeadline({ headers: { accept: 'application/json' } }, REQUEST_TIMEOUT_MS));
     // Read inside the try: the deadline covers the body too.
-    const payload = await response.json().catch(() => null);
+    const payload = await response.json().catch(() => null) as AccessPayload | null;
     if (!response.ok) {
       if (response.status === 404 && payload?.code === 'INSTITUTION_NOT_SUPPORTED') {
         unsupportedDomains.add(institution.domain);
@@ -86,7 +94,7 @@ async function lookUp(api, doi, institution) {
  * `{ status, collection, url }` for the DOI at the institution, or null when
  * nothing can be said. `institution` is the linked record (`useAuth().institution`).
  */
-export function findInstitutionAccess(rawDoi, institution, overrides) {
+export function findInstitutionAccess(rawDoi: unknown, institution: InstitutionInput | null | undefined, overrides?: AccessOperations) {
   const doi = normalizeDoi(rawDoi);
   const domain = typeof institution?.domain === 'string' ? institution.domain.trim().toLowerCase() : '';
   if (!doi.startsWith('10.') || !domain || unsupportedDomains.has(domain)) return Promise.resolve(null);
@@ -94,7 +102,7 @@ export function findInstitutionAccess(rawDoi, institution, overrides) {
   const key = `${domain}|${doi}`;
   const cached = answers.get(key);
   if (cached && Date.now() < cached.expiresAt) return Promise.resolve(cached.access);
-  if (inFlight.has(key)) return inFlight.get(key);
+  if (inFlight.has(key)) return inFlight.get(key)!;
 
   const pending = lookUp(operations(overrides), doi, { ...institution, domain })
     .finally(() => inFlight.delete(key));
@@ -111,30 +119,30 @@ const SERVICES_TIMEOUT_MS = 15000;
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const UNSUPPORTED_SERVICES = Object.freeze({ services: Object.freeze([]), partial: false, unsupported: true });
 
-const serviceAnswers = new Map();
-const servicesInFlight = new Map();
+const serviceAnswers = new Map<string, { answer: NonNullable<ReturnType<typeof normalizeInstitutionServices>>; expiresAt: number }>();
+const servicesInFlight = new Map<string, Promise<ServicesAnswer | null>>();
 
-function normalizeService(raw) {
+function normalizeService(raw: Record<string, unknown> | null | undefined) {
   const id = cleanString(raw?.id);
   const name = cleanString(raw?.name);
   if (!id || !name) return null;
-  const monogram = cleanString(raw.monogram);
+  const monogram = cleanString(raw!.monogram);
   return {
     id,
     name,
-    publisher: cleanString(raw.publisher),
-    url: safeExternalUrl(raw.url) || null,
+    publisher: cleanString(raw!.publisher),
+    url: safeExternalUrl(raw!.url) || null,
     monogram: monogram && Array.from(monogram).length <= 4 ? monogram : Array.from(name)[0],
-    color: typeof raw.color === 'string' && HEX_COLOR.test(raw.color) ? raw.color.toLowerCase() : null,
-    collection: cleanString(raw.collection),
+    color: typeof raw!.color === 'string' && HEX_COLOR.test(raw!.color) ? raw!.color.toLowerCase() : null,
+    collection: cleanString(raw!.collection),
     // Absent (an older Worker) reads as the publisher's own platform.
-    ownPlatform: raw.ownPlatform !== false,
+    ownPlatform: raw!.ownPlatform !== false,
   };
 }
 
-function normalizeInstitutionServices(payload) {
+function normalizeInstitutionServices(payload: ServicesPayload | null) {
   if (!payload || !Array.isArray(payload.services)) return null;
-  const seen = new Set();
+  const seen = new Set<string>();
   const services = [];
   for (const raw of payload.services) {
     const service = normalizeService(raw);
@@ -142,11 +150,11 @@ function normalizeInstitutionServices(payload) {
     seen.add(service.id);
     services.push(service);
   }
-  const unchecked = Number.isInteger(payload.unchecked) && payload.unchecked > 0 ? payload.unchecked : 0;
+  const unchecked = Number.isInteger(payload.unchecked) && payload.unchecked! > 0 ? payload.unchecked! : 0;
   return { services, partial: payload.partial === true, unchecked };
 }
 
-async function lookUpServices(api, institution) {
+async function lookUpServices(api: ReturnType<typeof operations>, institution: InstitutionInput & { domain: string }) {
   const url = workerSourceUrl('/institution/services', {
     domain: institution.domain,
     entityId: cleanString(institution.entityId),
@@ -155,7 +163,7 @@ async function lookUpServices(api, institution) {
   if (!url) return null;
   try {
     const response = await api.request(url, withRequestDeadline({ headers: { accept: 'application/json' } }, SERVICES_TIMEOUT_MS));
-    const payload = await response.json().catch(() => null);
+    const payload = await response.json().catch(() => null) as ServicesPayload | null;
     if (!response.ok) {
       if (response.status === 404 && payload?.code === 'INSTITUTION_NOT_SUPPORTED') {
         unsupportedDomains.add(institution.domain);
@@ -181,7 +189,7 @@ async function lookUpServices(api, institution) {
  * Worker cannot ask about this library at all; null when the check failed.
  * A failure is not kept, so asking again after one is the retry.
  */
-function servicesDomain(institution) {
+function servicesDomain(institution: InstitutionInput | null | undefined) {
   return typeof institution?.domain === 'string' ? institution.domain.trim().toLowerCase() : '';
 }
 
@@ -190,7 +198,7 @@ function servicesDomain(institution) {
  * when it would have to ask. A view that opens on the list paints it on its
  * first frame from here instead of growing a frame later.
  */
-export function knownInstitutionServices(institution) {
+export function knownInstitutionServices(institution: InstitutionInput | null | undefined) {
   const domain = servicesDomain(institution);
   if (!domain) return undefined;
   if (unsupportedDomains.has(domain)) return UNSUPPORTED_SERVICES;
@@ -198,12 +206,12 @@ export function knownInstitutionServices(institution) {
   return cached && Date.now() < cached.expiresAt ? cached.answer : undefined;
 }
 
-export function findInstitutionServices(institution, overrides) {
+export function findInstitutionServices(institution: InstitutionInput | null | undefined, overrides?: AccessOperations) {
   const domain = servicesDomain(institution);
   if (!domain) return Promise.resolve(null);
   const known = knownInstitutionServices(institution);
   if (known) return Promise.resolve(known);
-  if (servicesInFlight.has(domain)) return servicesInFlight.get(domain);
+  if (servicesInFlight.has(domain)) return servicesInFlight.get(domain)!;
 
   const pending = lookUpServices(operations(overrides), { ...institution, domain })
     .finally(() => servicesInFlight.delete(domain));

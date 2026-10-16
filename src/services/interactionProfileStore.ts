@@ -1,3 +1,8 @@
+import type { QueryConstraint } from 'firebase/firestore';
+import type { InteractionProfile, StoredInteractionProfile, InteractionDocumentData } from '../utils/interactionProfile.ts';
+type ReadKind = 'aggregate' | 'interactions' | 'library' | 'driftCheck';
+interface ReadStats extends Record<ReadKind, number> { log: Array<{ kind: ReadKind; count: number; at: string }>; reset(): string; readonly interactionDataTotal: number; }
+
 /**
  * Firestore wiring for the interaction profile aggregate.
  *
@@ -58,7 +63,7 @@ const LIBRARY_BATCH_SIZE = FIRESTORE_IN_FILTER_MAX;
  */
 export const LIBRARY_READ_CONCURRENCY = 6;
 
-const pendingFlushes = new Map();
+const pendingFlushes = new Map<string, { timeoutId: ReturnType<typeof setTimeout>; profile: InteractionProfile }>();
 
 /**
  * Development-only read counter.
@@ -68,9 +73,9 @@ const pendingFlushes = new Map();
  * only layer that knows: expose `window.__papertokReads` in `npm run dev` and it
  * is stripped from production builds.
  */
-function countReads(kind, count) {
+function countReads(kind: ReadKind, count: number) {
   if (!import.meta.env?.DEV || count <= 0) return;
-  const stats = (globalThis.__papertokReads ??= {
+  const stats = ((globalThis as typeof globalThis & { __papertokReads?: ReadStats }).__papertokReads ??= {
     aggregate: 0,
     interactions: 0,
     library: 0,
@@ -92,11 +97,11 @@ function countReads(kind, count) {
   stats.log.push({ kind, count, at: new Date().toISOString() });
 }
 
-export function interactionProfileRef(userId) {
+export function interactionProfileRef(userId: string) {
   return doc(db, 'users', userId, INTERACTION_PROFILE_COLLECTION, INTERACTION_PROFILE_DOC_ID);
 }
 
-export function interactionsRef(userId) {
+export function interactionsRef(userId: string) {
   return collection(db, 'users', userId, 'interactions');
 }
 
@@ -106,7 +111,7 @@ export function interactionsRef(userId) {
  * the slash after the aggregate had already recorded the interaction, which is
  * what left likes the Liked tab could not name.
  */
-export function interactionDocRef(userId, paperId) {
+export function interactionDocRef(userId: string, paperId: string) {
   return doc(interactionsRef(userId), encodeInteractionDocId(paperId));
 }
 
@@ -126,7 +131,7 @@ function unconfirmedPage() {
   );
 }
 
-export function createInteractionProfileClient(userId) {
+export function createInteractionProfileClient(userId: string) {
   return {
     userId,
     async readAggregate() {
@@ -145,16 +150,16 @@ export function createInteractionProfileClient(userId) {
       countReads('aggregate', 1);
       return { exists: snapshot.exists(), data: snapshot.exists() ? snapshot.data() : null };
     },
-    async listInteractionPage({ pageSize, startAfterId }) {
+    async listInteractionPage({ pageSize, startAfterId }: { pageSize: number; startAfterId?: string | null }) {
       // Paginating by document id rather than by timestamp: timestamp is an
       // optional field and an orderBy on it would silently drop any document
       // that never received one.
-      const constraints = [orderBy(documentId()), limit(pageSize)];
+      const constraints: QueryConstraint[] = [orderBy(documentId()), limit(pageSize)];
       if (startAfterId) constraints.splice(1, 0, startAfter(encodeInteractionDocId(startAfterId)));
       const snapshot = await getDocs(query(interactionsRef(userId), ...constraints));
       if (!queryIsAuthoritative(snapshot)) throw unconfirmedPage();
       // Decoded: the rebuilt aggregate must carry paper ids, never document names.
-      const documents = snapshot.docs.map(item => ({ id: decodeInteractionDocId(item.id), data: item.data() }));
+      const documents = snapshot.docs.map(item => ({ id: decodeInteractionDocId(item.id), data: item.data() as InteractionDocumentData }));
       countReads('interactions', documents.length);
       return { documents, hasMore: documents.length === pageSize };
     },
@@ -171,18 +176,18 @@ export function createInteractionProfileClient(userId) {
       countReads('driftCheck', reads);
       return { count, reads };
     },
-    async writeAggregate(document) {
+    async writeAggregate(document: StoredInteractionProfile) {
       await setDoc(interactionProfileRef(userId), document);
     },
   };
 }
 
-export async function writeInteractionProfile(userId, profile) {
+export async function writeInteractionProfile(userId: string, profile: InteractionProfile | null) {
   if (!userId || !profile) return;
   await setDoc(interactionProfileRef(userId), serializeInteractionProfile(profile));
 }
 
-export function scheduleInteractionProfileFlush(userId, profile) {
+export function scheduleInteractionProfileFlush(userId: string, profile: InteractionProfile | null) {
   if (!userId || !profile) return;
   const existing = pendingFlushes.get(userId);
   if (existing) clearTimeout(existing.timeoutId);
@@ -197,7 +202,7 @@ export function scheduleInteractionProfileFlush(userId, profile) {
   pendingFlushes.set(userId, { timeoutId, profile });
 }
 
-export function flushInteractionProfileNow(userId) {
+export function flushInteractionProfileNow(userId: string) {
   const pending = userId ? pendingFlushes.get(userId) : null;
   if (!pending) return Promise.resolve();
   clearTimeout(pending.timeoutId);
@@ -229,7 +234,7 @@ export function flushAllInteractionProfiles() {
  * `fromCache` is true if ANY batch was served locally: absence is only
  * trustworthy when every batch heard back from the server.
  */
-export async function fetchLibraryRecords(userId, paperIds) {
+export async function fetchLibraryRecords(userId: string, paperIds: string[]) {
   if (!userId || !paperIds?.length) return { records: [], fromCache: false };
   // Ids are encoded into document names first (utils/interactionDocId.js), so
   // a pre-2007 arXiv id is a batch member like any other; the plan still keeps
@@ -244,7 +249,7 @@ export async function fetchLibraryRecords(userId, paperIds) {
     );
     return {
       fromCache: snapshot.metadata.fromCache,
-      records: snapshot.docs.map(item => ({ id: decodeInteractionDocId(item.id), data: item.data() })),
+      records: snapshot.docs.map(item => ({ id: decodeInteractionDocId(item.id), data: item.data() as InteractionDocumentData })),
     };
   });
   // A bounded pool cannot abandon its in-flight workers the way Promise.all
@@ -253,7 +258,7 @@ export async function fetchLibraryRecords(userId, paperIds) {
   // than hand back a partial library that looks complete.
   const failure = settled.find(result => result.status === 'rejected');
   if (failure) throw failure.reason;
-  const results = settled.map(result => result.value);
+  const results = settled.map(result => (result as PromiseFulfilledResult<{ fromCache: boolean; records: Array<{ id: string; data: InteractionDocumentData }> }>).value);
   const records = results.flatMap(result => result.records);
   countReads('library', records.length);
   return { records, fromCache: results.some(result => result.fromCache) };

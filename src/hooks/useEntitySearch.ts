@@ -1,3 +1,10 @@
+import type { Paper } from '../models/Paper.ts';
+import type { OpenAlexAuthor, OpenAlexInstitution, OpenAlexTopic } from '../services/adapters/openAlexTypes.ts';
+import type { Project } from '../services/openAireService.ts';
+import type { trackProductEvent } from '../services/analyticsService.ts';
+interface SearchResults { papers: Paper[]; authors: OpenAlexAuthor[]; institutions: OpenAlexInstitution[]; topics: OpenAlexTopic[]; projects: Project[] }
+interface SearchOutcome<T> { value: T; status: 'fulfilled' | 'rejected' | 'timeout' }
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   enrichAuthorInstitutionLocalization,
@@ -31,7 +38,7 @@ const SEARCH_DEBOUNCE_MS = 320;
 const SEARCH_TIMEOUT_MS = 6_000;
 const SEARCH_MIN_LOADING_MS = 180;
 
-const EMPTY_RESULTS = Object.freeze({
+const EMPTY_RESULTS: Readonly<SearchResults> = Object.freeze({
   papers: [],
   authors: [],
   institutions: [],
@@ -39,17 +46,17 @@ const EMPTY_RESULTS = Object.freeze({
   projects: [],
 });
 
-const wait = (delayMs) => new Promise(resolve => setTimeout(resolve, delayMs));
+const wait = (delayMs: number|undefined) => new Promise<void>(resolve => setTimeout(resolve, delayMs));
 
 /** Resolves to a value either way, so one dead source cannot stall the rest. */
-function settleSearch(promise, fallback = [], timeoutMs = SEARCH_TIMEOUT_MS) {
-  return new Promise((resolve) => {
+function settleSearch<T>(promise: Promise<T[]>, fallback: T[] = [], timeoutMs = SEARCH_TIMEOUT_MS) {
+  return new Promise<SearchOutcome<T[]>>((resolve) => {
     let settled = false;
-    let timeoutId = null;
-    const finish = (value, status) => {
+    let timeoutId: number|null|undefined = null;
+    const finish = (value: T[], status: SearchOutcome<T[]>['status']) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timeoutId);
+      clearTimeout(timeoutId!);
       resolve({ value, status });
     };
     timeoutId = setTimeout(() => finish(fallback, 'timeout'), timeoutMs);
@@ -61,7 +68,7 @@ function settleSearch(promise, fallback = [], timeoutMs = SEARCH_TIMEOUT_MS) {
 
 export function useEntitySearch() {
   const { language } = useLanguage();
-  const { trackEvent } = useAnalyticsConsent();
+  const { trackEvent } = useAnalyticsConsent() as { trackEvent: typeof trackProductEvent };
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState(EMPTY_RESULTS);
@@ -71,13 +78,13 @@ export function useEntitySearch() {
   const [resultsTerm, setResultsTerm] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [searchIssue, setSearchIssue] = useState(null);
+  const [searchIssue, setSearchIssue] = useState<{ unavailableSections: Array<keyof SearchResults> } | null>(null);
 
-  const debounceRef = useRef(null);
-  const requestAbortRef = useRef(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestAbortRef = useRef<AbortController | null>(null);
   const searchIdRef = useRef(0);
 
-  const performSearch = useCallback(async (searchTerm) => {
+  const performSearch = useCallback(async (searchTerm: string) => {
     const searchStartedAt = Date.now();
     const searchId = ++searchIdRef.current;
     requestAbortRef.current?.abort();
@@ -96,7 +103,7 @@ export function useEntitySearch() {
     // well, one straggler at a time, which is what assembled the palette on
     // screen over several seconds; the whole search now lands in a single
     // commit below, exactly as the page already did it.
-    const track = (section, promise) => promise.then(outcome => ({ ...outcome, section }));
+    const track = <K extends keyof SearchResults>(section: K, promise: Promise<SearchOutcome<SearchResults[K]>>) => promise.then(outcome => ({ ...outcome, section }));
 
     const tasks = [
       // OpenAlex and arXiv, merged and ranked by title match
@@ -184,7 +191,7 @@ export function useEntitySearch() {
     // stay in state until this single commit, whole and never interleaved with
     // the new ones, and `isPending` below keeps them off screen meanwhile.
     const revealedResults = { ...EMPTY_RESULTS };
-    outcomes.forEach((outcome) => { revealedResults[outcome.section] = outcome.value; });
+    outcomes.forEach(<K extends keyof SearchResults>(outcome: SearchOutcome<SearchResults[K]> & { section: K }) => { revealedResults[outcome.section] = outcome.value; });
     setResults(revealedResults);
     setResultsTerm(searchTerm);
 
@@ -221,11 +228,11 @@ export function useEntitySearch() {
 
     requestAbortRef.current?.abort();
     searchIdRef.current += 1;
-    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (debounceRef.current) clearTimeout(debounceRef.current!);
     debounceRef.current = setTimeout(() => performSearch(query.trim()), SEARCH_DEBOUNCE_MS);
 
     return () => {
-      clearTimeout(debounceRef.current);
+      clearTimeout(debounceRef.current!);
       requestAbortRef.current?.abort();
     };
   }, [performSearch, query]);

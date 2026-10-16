@@ -34,7 +34,7 @@ async function sourceFiles(dir = SRC) {
  * hardcodes its own is how the two numbers came to disagree in the first place.
  */
 /** Modules whose batch size is defined as `FIRESTORE_IN_FILTER_MAX`. */
-const CAP_OWNERS = /from '[^']*(firestoreLimits|listPaperMetadataPlan)(\.js)?'/;
+const CAP_OWNERS = /from '[^']*(firestoreLimits|listPaperMetadataPlan)(\.ts)?'/;
 
 test('SOURCE: every in-filter call site takes its cap from this module', async () => {
   const offenders = [];

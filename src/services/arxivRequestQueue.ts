@@ -26,44 +26,45 @@ export const DEFAULT_GAP_MS = 350;
 export const DEFAULT_COOLDOWN_MS = 4_000;
 
 export class ArxivQueueError extends Error {
-  constructor(code, message) {
+  declare code: string;
+  constructor(code: string, message: string|undefined) {
     super(message);
     this.name = 'ArxivQueueError';
     this.code = code;
   }
 }
 
-const realSleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const realSleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-export function createArxivRequestQueue({
+export function createArxivRequestQueue<T = unknown>({
   gapMs = DEFAULT_GAP_MS,
   maxQueueWaitMs,
   now = Date.now,
   sleep = realSleep,
-} = {}) {
-  let chain = Promise.resolve();
-  const inFlight = new Map();
+}: { gapMs?: number; maxQueueWaitMs?: number; now?: () => number; sleep?: (ms: number) => PromiseLike<unknown> } = {}) {
+  let chain: Promise<unknown> = Promise.resolve();
+  const inFlight = new Map<string, Promise<T>>();
   let refusedUntil = 0;
 
-  const runNow = async (enqueuedAt, task) => {
+  const runNow = async (enqueuedAt: number, task: () => T | PromiseLike<T>) => {
     if (now() < refusedUntil) {
       throw new ArxivQueueError('RATE_LIMITED', 'arXiv is rate limited; not asking again yet');
     }
-    if (Number.isFinite(maxQueueWaitMs) && now() - enqueuedAt > maxQueueWaitMs) {
+    if (Number.isFinite(maxQueueWaitMs) && now() - enqueuedAt > maxQueueWaitMs!) {
       throw new ArxivQueueError('QUEUE_EXPIRED', 'arXiv request waited longer than anyone waits for it');
     }
     try {
       return await task();
     } catch (error) {
-      if (error?.status === 429) {
-        const cooldown = Number.isFinite(error.retryAfterMs) && error.retryAfterMs > 0 ? error.retryAfterMs : DEFAULT_COOLDOWN_MS;
+      if ((error as { status?: number } | null)?.status === 429) {
+        const cooldown = Number.isFinite((error as { retryAfterMs: number }).retryAfterMs) && (error as { retryAfterMs: number }).retryAfterMs > 0 ? (error as { retryAfterMs: number }).retryAfterMs : DEFAULT_COOLDOWN_MS;
         refusedUntil = Math.max(refusedUntil, now() + cooldown);
       }
       throw error;
     }
   };
 
-  const run = (key, task) => {
+  const run = (key: string, task: () => T | PromiseLike<T>) => {
     const existing = inFlight.get(key);
     if (existing) return existing;
     const enqueuedAt = now();

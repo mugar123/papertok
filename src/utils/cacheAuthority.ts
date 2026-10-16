@@ -24,7 +24,7 @@
  */
 
 /** True when a query snapshot's contents can be acted on. */
-export function queryIsAuthoritative(snapshot) {
+export function queryIsAuthoritative(snapshot: { empty?: boolean; size?: number; metadata?: { fromCache?: boolean } } | null | undefined) {
   if (!snapshot) return false;
   const empty = snapshot.empty ?? snapshot.size === 0;
   if (!empty) return true;
@@ -36,7 +36,7 @@ export function queryIsAuthoritative(snapshot) {
  * on. A document that is present is present; only "this document does not
  * exist" needs the server to have said so.
  */
-export function documentIsAuthoritative(snapshot) {
+export function documentIsAuthoritative(snapshot: { exists?: boolean | (() => boolean); metadata?: { fromCache?: boolean } } | null | undefined) {
   if (!snapshot) return false;
   if (typeof snapshot.exists === 'function' ? snapshot.exists() : snapshot.exists) return true;
   return snapshot.metadata?.fromCache !== true;

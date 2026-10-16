@@ -27,17 +27,17 @@ export const DECLARED_DEPLOY_FLAGS = Object.freeze({
 // reject builds the app would have run correctly, and normalizing less would
 // pass a bundle that disagrees with the declared intent. It also makes an
 // absent variable and 'false' the same state, which is what they are.
-export function isDeployFlagEnabled(value) {
+export function isDeployFlagEnabled(value: unknown) {
   return (value ?? '') === 'true';
 }
 
-export function findDeployFlagDrift(env = {}, declared = DECLARED_DEPLOY_FLAGS) {
+export function findDeployFlagDrift(env: Record<string, unknown> = {}, declared: Record<string, boolean> = DECLARED_DEPLOY_FLAGS) {
   return Object.entries(declared)
     .map(([name, expected]) => ({ name, expected, actual: isDeployFlagEnabled(env[name]) }))
     .filter(({ expected, actual }) => expected !== actual);
 }
 
-export function describeDeployFlagDrift(drift) {
+export function describeDeployFlagDrift(drift: ReturnType<typeof findDeployFlagDrift>) {
   return drift
     .map(({ name, expected, actual }) => (
       `- ${name}: declared ${expected}, this build would ship ${actual}`

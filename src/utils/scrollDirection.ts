@@ -9,7 +9,7 @@
  * scrolling surface moves a few pixels either way, and without it the bar
  * would flicker on every one of them.
  */
-export function nextBarVisibility({ previousTop, currentTop, visible, threshold = 8 }) {
+export function nextBarVisibility({ previousTop, currentTop, visible, threshold = 8 }: { previousTop: number; currentTop: number; visible: boolean; threshold?: number }) {
   const delta = currentTop - previousTop;
   // The top of the document always shows the bar: a reader who has scrolled
   // back to the title is not reading, and this is the cheapest way back for

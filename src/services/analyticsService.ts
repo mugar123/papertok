@@ -1,3 +1,9 @@
+import type { CaptureResult, PostHog, PostHogConfig } from 'posthog-js';
+type Consent = typeof ANALYTICS_CONSENT[keyof typeof ANALYTICS_CONSENT];
+type AnalyticsStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+interface AcquisitionLocation { referrer?: string; location?: Pick<Location, 'origin' | 'search'> }
+interface TrackingOptions { storage?: AnalyticsStorage | null; now?: number | (() => number); track?: typeof trackProductEvent }
+
 // Two transports with different jobs. Vercel Web Analytics counts visits,
 // pages and countries; AnalyticsProvider renders its <Analytics /> and sends the
 // page views. PostHog's EU cloud, in cookieless mode and loaded on the first
@@ -117,7 +123,7 @@ const SOCIAL_HOSTS = [
   'youtube.com',
 ];
 
-const CATEGORIES = Object.freeze({
+const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   action: new Set(['add', 'remove']),
   acquisition_channel: new Set(['direct', 'organic_search', 'organic_social', 'referral', 'email', 'paid', 'other']),
   content_type: new Set(['paper', 'author', 'institution', 'project', 'topic', 'list', 'signup_cta', 'other']),
@@ -140,7 +146,7 @@ const CATEGORIES = Object.freeze({
   surface: new Set(['feed', 'following', 'lists', 'login', 'onboarding', 'search', 'settings', 'explorer', 'reader', 'auth_prompt', 'other']),
 });
 
-const EVENT_PARAMETER_SCHEMAS = Object.freeze({
+const EVENT_PARAMETER_SCHEMAS: Readonly<Record<string, Record<string, string>>> = Object.freeze({
   acquisition_view: { acquisition_channel: 'acquisition_channel', language: 'language' },
   guest_demo_start: { entry_point: 'entry_point', language: 'language' },
   paper_view: { surface: 'surface', position: 'boundedNumber' },
@@ -195,13 +201,13 @@ function readAnalyticsConsentCookie() {
     const entry = document.cookie.split(';').map(value => value.trim()).find(value => value.startsWith(prefix));
     if (!entry) return null;
     const value = decodeURIComponent(entry.slice(prefix.length));
-    return Object.values(ANALYTICS_CONSENT).includes(value) ? value : null;
+    return Object.values(ANALYTICS_CONSENT).includes(value as Consent) ? value : null;
   } catch {
     return null;
   }
 }
 
-function persistAnalyticsConsentCookie(value) {
+function persistAnalyticsConsentCookie(value: string) {
   if (typeof document === 'undefined') return false;
   try {
     const secure = globalThis.location?.protocol === 'https:' ? '; Secure' : '';
@@ -219,11 +225,11 @@ function persistAnalyticsConsentCookie(value) {
 // a visitor's Privacy button (PrivacyPopover), is the way out. The default is
 // never written down -- a stored "granted" means somebody chose it, a stored
 // "denied" is respected, and an empty store IS the default.
-export function readAnalyticsConsent(storage) {
+export function readAnalyticsConsent(storage?: AnalyticsStorage | null) {
   const targetStorage = storage === undefined ? getBrowserStorage() : storage;
   try {
     const value = targetStorage?.getItem(ANALYTICS_CONSENT_KEY);
-    if (Object.values(ANALYTICS_CONSENT).includes(value)) return value;
+    if (Object.values(ANALYTICS_CONSENT).includes(value as Consent)) return value;
   } catch {
     // The cookie below preserves the choice when browser storage is unavailable.
   }
@@ -231,8 +237,8 @@ export function readAnalyticsConsent(storage) {
   return stored ?? ANALYTICS_CONSENT.GRANTED;
 }
 
-export function persistAnalyticsConsent(value, storage) {
-  if (!Object.values(ANALYTICS_CONSENT).includes(value)) return false;
+export function persistAnalyticsConsent(value: string, storage?: AnalyticsStorage | null) {
+  if (!Object.values(ANALYTICS_CONSENT).includes(value as Consent)) return false;
   const targetStorage = storage === undefined ? getBrowserStorage() : storage;
   let persisted = false;
   try {
@@ -269,10 +275,10 @@ export function normalizeAnalyticsPath(pathname = '/') {
   return '/unknown';
 }
 
-export function sanitizeAnalyticsLocation(pathname, browserLocation = globalThis.location) {
+export function sanitizeAnalyticsLocation(pathname: string|undefined, browserLocation: Pick<Location, 'origin'> | undefined = globalThis.location) {
   const pagePath = normalizeAnalyticsPath(pathname);
   try {
-    const origin = new URL(browserLocation?.origin).origin;
+    const origin = new URL(browserLocation?.origin as string).origin;
     if (!/^https?:$/.test(new URL(origin).protocol)) return pagePath;
     return `${origin}${pagePath}`;
   } catch {
@@ -296,9 +302,9 @@ export function sanitizeAnalyticsLocation(pathname, browserLocation = globalThis
  * the app — so `location.href` can carry a fragment route for the length of one
  * page view. Both forms read the same way and reach the same normalizer.
  */
-export function sanitizeAnalyticsEventUrl(url) {
+export function sanitizeAnalyticsEventUrl(url: unknown) {
   try {
-    const parsed = new URL(url);
+    const parsed = new URL(url as string);
     const fragmentPath = parsed.hash.startsWith('#/') ? parsed.hash.slice(1) : '';
     return sanitizeAnalyticsLocation(fragmentPath || parsed.pathname, parsed);
   } catch {
@@ -308,17 +314,17 @@ export function sanitizeAnalyticsEventUrl(url) {
   }
 }
 
-export function sanitizeProductEventParams(eventName, params = {}) {
+export function sanitizeProductEventParams(eventName: string | number, params: Record<string, unknown> = {}) {
   const schema = EVENT_PARAMETER_SCHEMAS[eventName];
   if (!schema || !params || typeof params !== 'object' || Array.isArray(params)) return {};
 
-  return Object.entries(schema).reduce((safeParams, [key, type]) => {
+  return Object.entries(schema).reduce<Record<string, unknown>>((safeParams, [key, type]) => {
     const value = params[key];
     if (type === 'boolean' && typeof value === 'boolean') safeParams[key] = value;
     if (type === 'boundedNumber' && Number.isFinite(value)) {
-      safeParams[key] = Math.min(1000, Math.max(0, Math.round(value)));
+      safeParams[key] = Math.min(1000, Math.max(0, Math.round(value as number)));
     }
-    if (CATEGORIES[type]?.has(value)) safeParams[key] = value;
+    if (CATEGORIES[type]?.has(value as string)) safeParams[key] = value;
     return safeParams;
   }, {});
 }
@@ -340,7 +346,7 @@ export function removeLegacyGoogleAnalyticsCookies() {
   });
 }
 
-function clearConsentScopedAnalyticsState(storage = getBrowserStorage()) {
+function clearConsentScopedAnalyticsState(storage: AnalyticsStorage | null = getBrowserStorage()) {
   acquisitionTrackedInMemory = false;
   try {
     storage?.removeItem(ANALYTICS_ACTIVATION_KEY);
@@ -361,7 +367,7 @@ function clearConsentScopedAnalyticsState(storage = getBrowserStorage()) {
 // recorded before can still leave afterwards: in PostHog's next batch, or, for
 // a send that failed (offline, say), whenever its retry queue gets through.
 // Kept `async` because every caller awaits it.
-export async function setAnalyticsConsent(value) {
+export async function setAnalyticsConsent(value: string) {
   if (!persistAnalyticsConsent(value)) return false;
   if (value === ANALYTICS_CONSENT.GRANTED) return true;
   clearConsentScopedAnalyticsState();
@@ -385,7 +391,7 @@ const ANALYTICS_HOSTS = new Set(['papertok.app', 'www.papertok.app']);
  * PostHog dashboard, and no script is fetched besides this module. Requests go
  * to our own origin, which vercel.json rewrites to PostHog's EU host.
  */
-const POSTHOG_OPTIONS = {
+const POSTHOG_OPTIONS: Partial<PostHogConfig> = {
   api_host: '/ingest',
   ui_host: 'https://eu.posthog.com',
   cookieless_mode: 'always',
@@ -444,7 +450,7 @@ const POSTHOG_PROPERTIES = new Set([
  * drops it when it is neither a page view nor a registered event, or when the
  * reader has turned analytics off.
  */
-export function sanitizeAnalyticsCapture(capture, consent = readAnalyticsConsent()) {
+export function sanitizeAnalyticsCapture(capture: CaptureResult | null, consent = readAnalyticsConsent()) {
   if (!capture || consent !== ANALYTICS_CONSENT.GRANTED) return null;
   const { event, properties = {} } = capture;
   if (event !== '$pageview' && !Object.hasOwn(EVENT_PARAMETER_SCHEMAS, event)) return null;
@@ -472,12 +478,12 @@ export function sanitizeAnalyticsCapture(capture, consent = readAnalyticsConsent
  * read from storage at send time rather than from the tab's React state,
  * because another tab may have turned analytics off since this one rendered.
  */
-export function sanitizeVercelEvent(event, consent = readAnalyticsConsent()) {
+export function sanitizeVercelEvent<T extends { url: string }>(event: T | null, consent = readAnalyticsConsent()) {
   if (!event || consent !== ANALYTICS_CONSENT.GRANTED) return null;
   return { ...event, url: sanitizeAnalyticsEventUrl(event.url) };
 }
 
-let analyticsClient = null;
+let analyticsClient: Promise<PostHog | null> | null = null;
 
 /**
  * Loaded on the first event of a reader who has not turned analytics off, so
@@ -505,7 +511,7 @@ function loadAnalyticsClient() {
 // as a batched transport can honestly report. The callers' bookkeeping
 // (`activation`, `day_7_return`, the guest demo) relies on it never being true
 // for an event that was dropped.
-async function sendAnalyticsEvent(eventName, properties) {
+async function sendAnalyticsEvent(eventName: string, properties: Record<string, unknown>) {
   if (typeof window === 'undefined' || !ANALYTICS_HOSTS.has(globalThis.location?.hostname)) return false;
   if (!analyticsClient && globalThis.navigator?.onLine === false) return false;
   const client = await loadAnalyticsClient();
@@ -519,25 +525,25 @@ async function sendAnalyticsEvent(eventName, properties) {
  * here, from the route the view belongs to, so a navigation made while the
  * library loads cannot file this view under the next page.
  */
-export async function trackPageView(pathname) {
+export async function trackPageView(pathname: string) {
   if (readAnalyticsConsent() !== ANALYTICS_CONSENT.GRANTED) return false;
   return sendAnalyticsEvent('$pageview', { $current_url: sanitizeAnalyticsLocation(pathname) });
 }
 
-export async function trackProductEvent(eventName, params = {}) {
+export async function trackProductEvent(eventName: string, params: Record<string, unknown> = {}) {
   if (!Object.hasOwn(EVENT_PARAMETER_SCHEMAS, eventName)) return false;
   if (readAnalyticsConsent() !== ANALYTICS_CONSENT.GRANTED) return false;
   return sendAnalyticsEvent(eventName, sanitizeProductEventParams(eventName, params));
 }
 
-function hostnameMatches(hostname, patterns) {
+function hostnameMatches(hostname: string, patterns: string[]) {
   return patterns.some(pattern => hostname === pattern || hostname.endsWith(`.${pattern}`) || hostname.includes(pattern));
 }
 
 export function inferAcquisitionChannel({
   referrer = globalThis.document?.referrer || '',
   location = globalThis.location,
-} = {}) {
+}: AcquisitionLocation = {}) {
   const medium = (() => {
     try {
       return new URLSearchParams(location?.search || '').get('utm_medium')?.toLowerCase() || '';
@@ -569,7 +575,7 @@ export async function trackAcquisition({
   referrer,
   location,
   track = trackProductEvent,
-} = {}) {
+}: AcquisitionLocation & TrackingOptions = {}) {
   if (readAnalyticsConsent() !== ANALYTICS_CONSENT.GRANTED) return false;
   try {
     const persistedForSession = storage?.getItem(ANALYTICS_ACQUISITION_SESSION_KEY) === 'true';
@@ -587,7 +593,7 @@ export async function trackAcquisition({
   }
 }
 
-function resolveTimestamp(now) {
+function resolveTimestamp(now: number | (() => number)) {
   const timestamp = typeof now === 'function' ? now() : now;
   return Number.isFinite(timestamp) ? timestamp : Date.now();
 }
@@ -597,9 +603,9 @@ function resolveTimestamp(now) {
 // pass the stored check and send the mark twice: opening `/` asks on the way in
 // and again after the redirect to `/feed`. Kept in memory, not in storage, so a
 // tab closed mid-send leaves the mark unsent and the next visit tries again.
-const marksInFlight = new Set();
+const marksInFlight = new Set<string>();
 
-export async function markActivation({ storage = getBrowserStorage(), now = Date.now, track = trackProductEvent } = {}) {
+export async function markActivation({ storage = getBrowserStorage(), now = Date.now, track = trackProductEvent }: TrackingOptions = {}) {
   if (readAnalyticsConsent(storage) !== ANALYTICS_CONSENT.GRANTED) return false;
 
   try {
@@ -621,7 +627,7 @@ export async function markActivation({ storage = getBrowserStorage(), now = Date
   }
 }
 
-export async function trackDay7Return({ storage = getBrowserStorage(), now = Date.now, track = trackProductEvent } = {}) {
+export async function trackDay7Return({ storage = getBrowserStorage(), now = Date.now, track = trackProductEvent }: TrackingOptions = {}) {
   if (readAnalyticsConsent(storage) !== ANALYTICS_CONSENT.GRANTED) return false;
 
   try {

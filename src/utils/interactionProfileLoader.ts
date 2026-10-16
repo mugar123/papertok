@@ -1,3 +1,19 @@
+import type { InteractionProfile, StoredInteractionProfile, InteractionDocument } from './interactionProfile.ts';
+export interface RebuildOptions {
+  listInteractionPage: (options: { pageSize: number; startAfterId: string | null }) => Promise<{ documents: InteractionDocument[]; hasMore: boolean }>;
+  now?: number; pageSize?: number; maxDocuments?: number;
+}
+interface RebuildResult { profile: InteractionProfile; reads: number; truncated: boolean; documentsRead: number; }
+interface DriftReport { accounted: number; actual: number; missing: number; threshold: number; }
+interface LoadMeta { reads: number; rebuilt: boolean; truncated: boolean; drift: DriftReport | null; reusedRebuild?: boolean; documentsRead?: number; repairedDrift?: boolean; }
+export type ProfileLoadResult = ({ status: 'loaded' | 'empty'; profile: InteractionProfile } & LoadMeta) | { status: 'unavailable'; reads: number; reason: string };
+interface LoadOptions extends RebuildOptions {
+  readAggregate: () => Promise<{ exists: boolean; data: Partial<StoredInteractionProfile> | null }>;
+  writeAggregate?: (document: StoredInteractionProfile) => Promise<unknown>;
+  countInteractions?: () => Promise<{ count: number; reads?: number }>;
+  checkDrift?: boolean; userId?: string | null; rebuildCache?: Map<string, Promise<RebuildResult>>;
+}
+
 /**
  * Loading strategy for the interaction profile aggregate.
  *
@@ -57,11 +73,11 @@ export const INTERACTION_PROFILE_STATUS = Object.freeze({
   UNAVAILABLE: 'unavailable',
 });
 
-function loadedResult(profile, meta) {
+function loadedResult(profile: InteractionProfile, meta: LoadMeta): ProfileLoadResult {
   return Object.freeze({ status: INTERACTION_PROFILE_STATUS.LOADED, profile, ...meta });
 }
 
-function emptyResult(profile, meta) {
+function emptyResult(profile: InteractionProfile, meta: LoadMeta): ProfileLoadResult {
   return Object.freeze({ status: INTERACTION_PROFILE_STATUS.EMPTY, profile, ...meta });
 }
 
@@ -74,7 +90,7 @@ export function unavailableInteractionProfile({ reads = 0, reason = 'unknown' } 
   return Object.freeze({ status: INTERACTION_PROFILE_STATUS.UNAVAILABLE, reads, reason });
 }
 
-export function hasInteractionProfile(result) {
+export function hasInteractionProfile(result: ProfileLoadResult | null | undefined): result is Extract<ProfileLoadResult, { profile: InteractionProfile }> {
   return result?.status === INTERACTION_PROFILE_STATUS.LOADED
     || result?.status === INTERACTION_PROFILE_STATUS.EMPTY;
 }
@@ -84,12 +100,12 @@ export function hasInteractionProfile(result) {
  * Concurrent loads of the same account share it instead of racing, and a second
  * load after the first finished reuses its result for free.
  */
-const sessionRebuilds = new Map();
+const sessionRebuilds = new Map<string, Promise<RebuildResult>>();
 
-function sortByRecencyDescending(documents) {
+function sortByRecencyDescending(documents: InteractionDocument[]) {
   return [...documents].sort((a, b) => {
-    const left = Date.parse(a?.data?.timestamp || a?.data?.libraryUpdatedAt || '') || 0;
-    const right = Date.parse(b?.data?.timestamp || b?.data?.libraryUpdatedAt || '') || 0;
+    const left = Date.parse((a?.data?.timestamp || a?.data?.libraryUpdatedAt || '') as string) || 0;
+    const right = Date.parse((b?.data?.timestamp || b?.data?.libraryUpdatedAt || '') as string) || 0;
     return right - left;
   });
 }
@@ -104,9 +120,9 @@ export async function rebuildInteractionProfile({
   now = Date.now(),
   pageSize = REBUILD_PAGE_SIZE,
   maxDocuments = REBUILD_MAX_DOCUMENTS,
-}) {
-  const documents = [];
-  let cursor = null;
+}: RebuildOptions): Promise<RebuildResult> {
+  const documents: InteractionDocument[] = [];
+  let cursor: string | null = null;
   let reads = 0;
   let truncated = false;
 
@@ -152,14 +168,14 @@ export async function loadInteractionProfile({
   pageSize = REBUILD_PAGE_SIZE,
   maxDocuments = REBUILD_MAX_DOCUMENTS,
   rebuildCache = sessionRebuilds,
-}) {
+}: LoadOptions): Promise<ProfileLoadResult> {
   let reads = 0;
   let snapshot;
   try {
     snapshot = await readAggregate();
     reads += 1;
   } catch (error) {
-    return unavailableInteractionProfile({ reads, reason: `aggregate-read-failed: ${error.message}` });
+    return unavailableInteractionProfile({ reads, reason: `aggregate-read-failed: ${(error as Error).message}` });
   }
 
   const stored = snapshot?.exists ? deserializeInteractionProfile(snapshot.data) : null;
@@ -201,7 +217,7 @@ export async function loadInteractionProfile({
  * @returns {{reads: number, missing: number, exceedsThreshold: boolean}|null}
  *   null when the count could not be taken, which is never a reason to rebuild.
  */
-async function measureDrift(countInteractions, stored) {
+async function measureDrift(countInteractions: NonNullable<LoadOptions['countInteractions']>, stored: InteractionProfile) {
   try {
     const { count, reads = 1 } = await countInteractions();
     const accounted = stored.sourceDocCount || 0;
@@ -225,16 +241,16 @@ async function measureDrift(countInteractions, stored) {
 async function rebuildAndCache({
   cacheKey, rebuildCache, listInteractionPage, writeAggregate,
   now, pageSize, maxDocuments, reads, drift,
-}) {
+}: Required<Pick<LoadOptions, 'rebuildCache' | 'now' | 'pageSize' | 'maxDocuments'>> & Pick<LoadOptions, 'listInteractionPage' | 'writeAggregate'> & { cacheKey: string | null; reads: number; drift: DriftReport | null }): Promise<ProfileLoadResult> {
   // Another load of this account is already rebuilding, or already did. Wait for
   // its result rather than starting a second scan or, worse, handing back an
   // empty profile that would blank the user's likes.
   if (cacheKey && rebuildCache.has(cacheKey)) {
     try {
-      const shared = await rebuildCache.get(cacheKey);
+      const shared = await rebuildCache.get(cacheKey)!;
       return finishRebuild(shared, { reads, reused: true, drift });
     } catch (error) {
-      return unavailableInteractionProfile({ reads, reason: `rebuild-failed: ${error.message}` });
+      return unavailableInteractionProfile({ reads, reason: `rebuild-failed: ${(error as Error).message}` });
     }
   }
 
@@ -269,11 +285,11 @@ async function rebuildAndCache({
     const rebuild = await pending;
     return finishRebuild(rebuild, { reads, reused: false, drift });
   } catch (error) {
-    return unavailableInteractionProfile({ reads, reason: `rebuild-failed: ${error.message}` });
+    return unavailableInteractionProfile({ reads, reason: `rebuild-failed: ${(error as Error).message}` });
   }
 }
 
-function finishRebuild(rebuild, { reads, reused, drift = null }) {
+function finishRebuild(rebuild: RebuildResult, { reads, reused, drift = null }: { reads: number; reused: boolean; drift?: DriftReport | null }) {
   // A reusing caller pays only for its own aggregate read; the scan was already
   // billed to whoever started it.
   const totalReads = reused ? reads : reads + rebuild.reads;

@@ -1,3 +1,18 @@
+import type { OpenAlexInstitution } from './adapters/openAlexTypes.ts';
+
+interface RorName { value?: string; lang?: string; types?: string[]; }
+interface RorRecord {
+  id?: string;
+  names?: RorName[];
+  locations?: Array<{ geonames_details?: { country_code?: string; country_name?: string; name?: string; lat?: number; lng?: number } }>;
+  links?: Array<{ type?: string; value?: string }>;
+  types?: string[];
+  domains?: string[];
+  established?: number | string;
+  relationships?: Array<{ id?: string; label?: string; type?: string }>;
+  status?: string;
+}
+
 import { filterRelevantSearchResults, institutionSearchValues } from '../utils/searchRelevance.ts';
 import { withEnforcedDeadline } from '../utils/requestDeadline.ts';
 import { safeCatalogUrl } from '../utils/externalUrl.ts';
@@ -5,23 +20,23 @@ import { safeCatalogUrl } from '../utils/externalUrl.ts';
 const API_BASE = 'https://api.ror.org/v2/organizations';
 const CACHE_PREFIX = 'papertok_ror_v3_';
 const CACHE_TTL = 30 * 24 * 60 * 60 * 1000;
-const MEMORY_CACHE = new Map();
+const MEMORY_CACHE = new Map<string, { value: OpenAlexInstitution | null; timestamp: number }>();
 const SEARCH_CACHE_TTL = 10 * 60 * 1000;
-const SEARCH_CACHE = new Map();
+const SEARCH_CACHE = new Map<string, { value: OpenAlexInstitution[]; timestamp: number }>();
 
-export function normalizeRorId(value) {
+export function normalizeRorId(value: unknown) {
   const match = String(value || '').trim().match(/(?:ror\.org\/)?(0[a-hj-km-np-tv-z0-9]{6}[0-9]{2})/i);
   return match?.[1]?.toLowerCase() || '';
 }
 
-function getPreferredName(names = []) {
+function getPreferredName(names: RorName[] = []) {
   return names.find(name => name?.types?.includes('ror_display'))?.value
     || names.find(name => name?.types?.includes('label'))?.value
     || names.find(name => name?.value)?.value
     || '';
 }
 
-function getLocalizedNames(names = []) {
+function getLocalizedNames(names: RorName[] = []) {
   return Object.fromEntries(['en'].flatMap((language) => {
     const candidates = names.filter(name => (
       name?.lang === language
@@ -30,22 +45,22 @@ function getLocalizedNames(names = []) {
     ));
     const preferred = candidates.find(name => name.types?.includes('ror_display'))
       || candidates.find(name => name.types?.includes('label'));
-    return preferred ? [[language, preferred.value]] : [];
+    return preferred ? [[language, preferred.value!]] : [];
   }));
 }
 
-function uniqueStrings(values) {
+function uniqueStrings(values: unknown[]) {
   return [...new Set(values.map(value => String(value || '').trim()).filter(Boolean))];
 }
 
-export function normalizeRorInstitution(record) {
+export function normalizeRorInstitution(record: RorRecord | null): OpenAlexInstitution | null {
   const rorId = normalizeRorId(record?.id);
   if (!rorId) return null;
-  const names = record.names || [];
+  const names = record!.names || [];
   const displayName = getPreferredName(names);
   if (!displayName) return null;
-  const location = record.locations?.[0]?.geonames_details || {};
-  const links = record.links || [];
+  const location = record!.locations?.[0]?.geonames_details || {};
+  const links = record!.links || [];
   const rorUrl = `https://ror.org/${rorId}`;
 
   return {
@@ -56,26 +71,26 @@ export function normalizeRorInstitution(record) {
     aliases: uniqueStrings(names.filter(name => !name.types?.includes('ror_display')).map(name => name.value)),
     acronyms: uniqueStrings(names.filter(name => name.types?.includes('acronym')).map(name => name.value)),
     country_code: location.country_code || '',
-    type: record.types?.[0] || 'other',
-    types: record.types || [],
+    type: record!.types?.[0] || 'other',
+    types: record!.types || [],
     geo: {
       city: location.name || '',
       country: location.country_name || '',
       country_code: location.country_code || '',
-      latitude: Number.isFinite(location.lat) ? location.lat : null,
-      longitude: Number.isFinite(location.lng) ? location.lng : null,
+      latitude: Number.isFinite(location.lat) ? location.lat! : null,
+      longitude: Number.isFinite(location.lng) ? location.lng! : null,
     },
-    domains: record.domains || [],
-    established: Number(record.established) || null,
+    domains: record!.domains || [],
+    established: Number(record!.established) || null,
     homepage_url: safeCatalogUrl(links.find(link => link.type === 'website')?.value) || null,
     wikipedia_url: safeCatalogUrl(links.find(link => link.type === 'wikipedia')?.value) || null,
-    relationships: (record.relationships || []).map(relationship => ({
+    relationships: (record!.relationships || []).map(relationship => ({
       id: relationship.id,
       rorId: normalizeRorId(relationship.id),
       label: relationship.label,
       type: relationship.type,
     })).filter(relationship => relationship.rorId && relationship.label),
-    status: record.status || 'active',
+    status: record!.status || 'active',
     works_count: null,
     cited_by_count: null,
     summary_stats: null,
@@ -85,7 +100,7 @@ export function normalizeRorInstitution(record) {
   };
 }
 
-export function mergeInstitutionWithRor(openAlexInstitution, rorInstitution) {
+export function mergeInstitutionWithRor(openAlexInstitution: OpenAlexInstitution | null, rorInstitution: OpenAlexInstitution | null): OpenAlexInstitution | null {
   if (!rorInstitution) return openAlexInstitution || null;
   if (!openAlexInstitution) return rorInstitution;
 
@@ -118,12 +133,12 @@ export function mergeInstitutionWithRor(openAlexInstitution, rorInstitution) {
   };
 }
 
-function readCache(rorId) {
+function readCache(rorId: string) {
   const memory = MEMORY_CACHE.get(rorId);
   if (memory && Date.now() - memory.timestamp < CACHE_TTL) return memory.value;
   if (typeof localStorage === 'undefined') return undefined;
   try {
-    const stored = JSON.parse(localStorage.getItem(`${CACHE_PREFIX}${rorId}`));
+    const stored = JSON.parse(localStorage.getItem(`${CACHE_PREFIX}${rorId}`)!) as { value: OpenAlexInstitution | null; timestamp: number } | null;
     if (stored && Date.now() - stored.timestamp < CACHE_TTL) {
       MEMORY_CACHE.set(rorId, stored);
       return stored.value;
@@ -132,7 +147,7 @@ function readCache(rorId) {
   return undefined;
 }
 
-function writeCache(rorId, value) {
+function writeCache(rorId: string, value: OpenAlexInstitution | null) {
   const entry = { value, timestamp: Date.now() };
   MEMORY_CACHE.set(rorId, entry);
   if (typeof localStorage !== 'undefined') {
@@ -144,29 +159,29 @@ function writeCache(rorId, value) {
  * Exported for its regression test, which needs a deadline short enough to wait
  * for: the real ones are seven seconds.
  */
-export async function fetchJson(url, timeoutMs = 7000, { signal } = {}) {
+export async function fetchJson<T>(url: string | URL, timeoutMs = 7000, { signal }: { signal?: AbortSignal | null } = {}): Promise<T | null> {
   const response = await fetch(url, withEnforcedDeadline({ signal }, timeoutMs));
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`ROR Error: ${response.status}`);
   return response.json();
 }
 
-export async function getRorInstitution(value) {
+export async function getRorInstitution(value: unknown) {
   const rorId = normalizeRorId(value);
   if (!rorId) return null;
   const cached = readCache(rorId);
   if (cached !== undefined) return cached;
-  const record = await fetchJson(`${API_BASE}/${encodeURIComponent(rorId)}`);
+  const record = await fetchJson<RorRecord>(`${API_BASE}/${encodeURIComponent(rorId)}`);
   const institution = normalizeRorInstitution(record);
   writeCache(rorId, institution);
   return institution;
 }
 
-function normalizeName(value) {
+function normalizeName(value: unknown) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
-export async function searchRorInstitutions(query, limit = 8, options = {}) {
+export async function searchRorInstitutions(query: unknown, limit = 8, options: { signal?: AbortSignal | null } = {}) {
   const cleanQuery = String(query || '').trim();
   if (!cleanQuery) return [];
   const cacheKey = `${normalizeName(cleanQuery)}:${limit}`;
@@ -177,10 +192,10 @@ export async function searchRorInstitutions(query, limit = 8, options = {}) {
 
   const url = new URL(API_BASE);
   url.searchParams.set('query', cleanQuery);
-  const payload = await fetchJson(url, 7000, options);
+  const payload = await fetchJson<{ items?: RorRecord[] }>(url, 7000, options);
   const normalizedInstitutions = (payload?.items || [])
     .map(normalizeRorInstitution)
-    .filter(Boolean);
+    .filter(Boolean) as OpenAlexInstitution[];
   const institutions = filterRelevantSearchResults(
     cleanQuery,
     normalizedInstitutions,
@@ -191,7 +206,7 @@ export async function searchRorInstitutions(query, limit = 8, options = {}) {
   return institutions;
 }
 
-export async function resolveRorInstitution({ ror, name, domain } = {}) {
+export async function resolveRorInstitution({ ror, name, domain }: { ror?: string | null; name?: string; domain?: string } = {}) {
   if (ror) {
     const direct = await getRorInstitution(ror).catch(() => null);
     if (direct) return direct;
@@ -200,12 +215,12 @@ export async function resolveRorInstitution({ ror, name, domain } = {}) {
   if (candidates.length === 0) return null;
   const normalizedDomain = String(domain || '').toLowerCase().replace(/^www\./, '');
   if (normalizedDomain) {
-    const domainMatch = candidates.find(candidate => candidate.domains.some(candidateDomain => candidateDomain.toLowerCase().replace(/^www\./, '') === normalizedDomain));
+    const domainMatch = candidates.find(candidate => candidate.domains!.some(candidateDomain => candidateDomain.toLowerCase().replace(/^www\./, '') === normalizedDomain));
     if (domainMatch) return domainMatch;
   }
   const normalizedName = normalizeName(name);
   return candidates.find(candidate => (
     normalizeName(candidate.display_name) === normalizedName
-    || candidate.aliases.some(alias => normalizeName(alias) === normalizedName)
+    || candidate.aliases!.some(alias => normalizeName(alias) === normalizedName)
   )) || candidates[0];
 }

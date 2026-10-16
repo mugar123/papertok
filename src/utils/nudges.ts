@@ -1,3 +1,4 @@
+type NudgeStorage = Pick<Storage, 'getItem' | 'setItem'>;
 /**
  * The small panels that ask for something once and then never again: a star on
  * GitHub, a heads-up that email is down. Everything here is the part that can
@@ -34,16 +35,16 @@ function browserStorage() {
   }
 }
 
-function resolveStorage(storage) {
+function resolveStorage(storage: NudgeStorage | null | undefined) {
   return storage === undefined ? browserStorage() : storage;
 }
 
 /** The ids this device has already answered. Anything else reads as none. */
-export function readDismissedNudges(storage) {
+export function readDismissedNudges(storage?: NudgeStorage | null) {
   try {
     const raw = resolveStorage(storage)?.getItem(NUDGE_DISMISSED_KEY);
     if (!raw) return [];
-    const parsed = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.filter(id => typeof id === 'string') : [];
   } catch {
     return [];
@@ -56,7 +57,7 @@ export function readDismissedNudges(storage) {
  * the panel out of the way for the rest of the visit, which is the part the
  * person asked for.
  */
-export function rememberNudgeDismissal(id, storage) {
+export function rememberNudgeDismissal(id: string, storage?: NudgeStorage | null) {
   const next = readDismissedNudges(storage);
   if (!next.includes(id)) next.push(id);
   try {
@@ -68,7 +69,7 @@ export function rememberNudgeDismissal(id, storage) {
 }
 
 /** One of the pending ones, at random, or nothing at all. */
-export function pickNudge({ eligible = [], dismissed = [], random = Math.random } = {}) {
+export function pickNudge({ eligible = [], dismissed = [], random = Math.random }: { eligible?: string[]; dismissed?: string[]; random?: () => number } = {}) {
   const pending = eligible.filter(id => !dismissed.includes(id));
   if (pending.length === 0) return null;
   const index = Math.min(pending.length - 1, Math.floor(random() * pending.length));
@@ -85,28 +86,28 @@ export function pickNudge({ eligible = [], dismissed = [], random = Math.random 
  * lands. And a service that says it is available is believed, whatever else it
  * reports.
  */
-export function emailNudgeProblem({ loading = false, health = {} } = {}) {
+export function emailNudgeProblem({ loading = false, health = {} }: { loading?: boolean; health?: { code?: string | null; available?: boolean } | null } = {}) {
   if (loading || !health?.code || health.available === true) return null;
   return health.code === 'EMAIL_NOT_CONFIGURED' ? 'not-configured' : 'unavailable';
 }
 
 /** The cached star count, if it is still worth trusting. */
-export function readCachedStarCount(storage, now = Date.now()) {
+export function readCachedStarCount(storage?: NudgeStorage | null, now = Date.now()) {
   try {
     const raw = resolveStorage(storage)?.getItem(STAR_COUNT_KEY);
     if (!raw) return null;
-    const { count, at } = JSON.parse(raw) || {};
-    if (!Number.isInteger(count) || count < 0 || !Number.isFinite(at)) return null;
-    const age = now - at;
-    return age >= 0 && age < STAR_COUNT_TTL_MS ? count : null;
+    const { count, at } = (JSON.parse(raw) || {}) as { count?: number; at?: number };
+    if (!Number.isInteger(count) || count! < 0 || !Number.isFinite(at)) return null;
+    const age = now - at!;
+    return age >= 0 && age < STAR_COUNT_TTL_MS ? count! : null;
   } catch {
     return null;
   }
 }
 
 /** Keeps a count for a day. Anything that is not a count is not kept. */
-export function cacheStarCount(count, storage, now = Date.now()) {
-  if (!Number.isInteger(count) || count < 0) return false;
+export function cacheStarCount(count: number, storage?: NudgeStorage | null, now = Date.now()) {
+  if (!Number.isInteger(count) || count! < 0) return false;
   try {
     resolveStorage(storage)?.setItem(STAR_COUNT_KEY, JSON.stringify({ count, at: now }));
     return true;

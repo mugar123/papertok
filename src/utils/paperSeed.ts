@@ -1,3 +1,5 @@
+import type { Paper } from '../models/Paper.ts';
+
 import { hasUsableAIAbstract } from './aiExplanationAccess.ts';
 import { LEGACY_STORED_SUMMARY_CAP, STORED_AUTHOR_CAP, STORED_SUMMARY_CAP } from './readingLibrary.ts';
 
@@ -14,18 +16,18 @@ import { LEGACY_STORED_SUMMARY_CAP, STORED_AUTHOR_CAP, STORED_SUMMARY_CAP } from
  * for a link with no copy at all, and still falls back to the copy if they
  * never do. A copy that carries its abstract paints at once, as before.
  */
-export function seedPaintsWhole(paper) {
+export function seedPaintsWhole(paper: Partial<Pick<Paper, 'title' | 'abstract'>> | null | undefined) {
   if (!paper || typeof paper !== 'object') return false;
   if (!String(paper.title || '').trim()) return false;
   return hasUsableAIAbstract(paper.abstract);
 }
 
-const present = (value) => (Array.isArray(value)
+const present = (value: unknown) => (Array.isArray(value)
   ? value.length > 0
   : !(value === undefined || value === null || (typeof value === 'string' && value.trim() === '')));
 
 // A stored summary that stops exactly at a cap was cut there, not finished.
-const summaryLooksCut = (text) => text.length === LEGACY_STORED_SUMMARY_CAP || text.length >= STORED_SUMMARY_CAP;
+const summaryLooksCut = (text: string) => text.length === LEGACY_STORED_SUMMARY_CAP || text.length >= STORED_SUMMARY_CAP;
 
 /**
  * The abstract the page shows once the providers have answered, given the
@@ -34,7 +36,7 @@ const summaryLooksCut = (text) => text.length === LEGACY_STORED_SUMMARY_CAP || t
  * the provider's whole text, and a copy with no usable abstract takes
  * whatever the provider has.
  */
-export function hydratedAbstract(seedAbstract, providerAbstract) {
+export function hydratedAbstract(seedAbstract: Paper['abstract'] | null | undefined, providerAbstract: Paper['abstract'] | null | undefined) {
   const seed = hasUsableAIAbstract(seedAbstract) ? String(seedAbstract) : '';
   const provider = hasUsableAIAbstract(providerAbstract) ? String(providerAbstract) : '';
   if (!seed) return provider || providerAbstract || seedAbstract || '';
@@ -46,10 +48,10 @@ export function hydratedAbstract(seedAbstract, providerAbstract) {
  * The author list to show: the copy's, in the form the feed printed it, unless
  * the copy was cut at the cap and the provider knows more of them.
  */
-export function hydratedAuthors(seedAuthors, providerAuthors) {
+export function hydratedAuthors(seedAuthors: Paper['authors'] | null | undefined, providerAuthors: Paper['authors'] | null | undefined) {
   if (!present(seedAuthors)) return providerAuthors;
   const providerCount = Array.isArray(providerAuthors) ? providerAuthors.length : 0;
-  if (seedAuthors.length >= STORED_AUTHOR_CAP && providerCount > seedAuthors.length) return providerAuthors;
+  if (seedAuthors!.length >= STORED_AUTHOR_CAP && providerCount > seedAuthors!.length) return providerAuthors;
   return seedAuthors;
 }
 
@@ -72,11 +74,11 @@ export function hydratedAuthors(seedAuthors, providerAuthors) {
  * citations, concepts, institutions, open-access copies, the related graph —
  * and the fields where fresher is simply better, the date.
  */
-export function hydrateSeededPaper(seed, hydrated) {
+export function hydrateSeededPaper(seed: Partial<Paper> | null | undefined, hydrated: Partial<Paper> | null | undefined) {
   if (!hydrated || typeof hydrated !== 'object') return seed || null;
   if (!seed || typeof seed !== 'object') return hydrated;
-  const keep = (field) => (present(seed[field]) ? seed[field] : hydrated[field]);
-  const fresh = (field) => (present(hydrated[field]) ? hydrated[field] : seed[field]);
+  const keep = <K extends keyof Paper>(field: K) => (present(seed[field]) ? seed[field] : hydrated[field]);
+  const fresh = <K extends keyof Paper>(field: K) => (present(hydrated[field]) ? hydrated[field] : seed[field]);
   return {
     ...hydrated,
     id: keep('id'),

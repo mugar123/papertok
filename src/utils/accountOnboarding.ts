@@ -6,7 +6,7 @@
  * no flag, which is what sent a returning account back through the interest
  * picker as if they were new.
  */
-export function accountLooksOnboarded(data) {
+export function accountLooksOnboarded(data: { onboardingComplete?: unknown; preferences?: unknown; selectedCategories?: unknown } | null | undefined) {
   if (!data || typeof data !== 'object') return false;
   if (data.onboardingComplete === true) return true;
   const prefs = data.preferences ?? data.selectedCategories;

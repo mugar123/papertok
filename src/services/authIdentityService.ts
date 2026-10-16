@@ -1,3 +1,14 @@
+import type { AuthProvider, User } from 'firebase/auth';
+interface IdentityOperations {
+  authentication?: typeof auth;
+  providers?: Record<string, AuthProvider>;
+  popupSignIn?: typeof signInWithPopup;
+  popupLink?: typeof linkWithPopup;
+  additionalUserInfo?: typeof getAdditionalUserInfo;
+  isDemo?: boolean;
+  currentUser?: User | null;
+}
+
 /**
  * Sign-in identities (F5).
  *
@@ -37,6 +48,7 @@ export const SIGN_IN_PROVIDERS = Object.freeze({
 });
 
 export class AuthIdentityUnsupportedError extends Error {
+  declare code: string;
   constructor() {
     super('Sign-in providers are unavailable in demo mode.');
     this.name = 'AuthIdentityUnsupportedError';
@@ -50,7 +62,10 @@ export class AuthIdentityUnsupportedError extends Error {
  * just typed it into the provider they came from.
  */
 export class EmailAlreadyUsedError extends Error {
-  constructor(email, providerId) {
+  declare code: string;
+  declare email: string;
+  declare providerId: string;
+  constructor(email: string, providerId: string) {
     super('That email address already belongs to an account.');
     this.name = 'EmailAlreadyUsedError';
     this.code = 'AUTH_EMAIL_ALREADY_USED';
@@ -66,7 +81,10 @@ export class EmailAlreadyUsedError extends Error {
  * automatically, and this error is what the UI turns into that explanation.
  */
 export class IdentityAlreadyLinkedError extends Error {
-  constructor(providerId, email) {
+  declare code: string;
+  declare email: string;
+  declare providerId: string;
+  constructor(providerId: string, email: string) {
     super('That identity already signs in to another PaperTok account.');
     this.name = 'IdentityAlreadyLinkedError';
     this.code = 'AUTH_IDENTITY_TAKEN';
@@ -75,7 +93,7 @@ export class IdentityAlreadyLinkedError extends Error {
   }
 }
 
-function operations(overrides = {}) {
+function operations(overrides: IdentityOperations = {}) {
   return {
     authentication: overrides.authentication || auth,
     providers: overrides.providers || {
@@ -89,29 +107,29 @@ function operations(overrides = {}) {
   };
 }
 
-function requireSupported(api) {
+function requireSupported(api: ReturnType<typeof operations>) {
   if (api.isDemo) throw new AuthIdentityUnsupportedError();
 }
 
-function requireProvider(api, providerId) {
+function requireProvider(api: ReturnType<typeof operations>, providerId: string) {
   const provider = api.providers[providerId];
   if (!provider) throw new TypeError(`Unknown sign-in provider: ${providerId}`);
   return provider;
 }
 
-function emailFromError(error) {
-  return error?.customData?.email || error?.email || '';
+function emailFromError(error: unknown) {
+  return (error as { customData?: { email?: string } } | null)?.customData?.email || (error as { email?: string } | null)?.email || '';
 }
 
 /** Every door this account already has, as Firebase provider ids. */
-export function providerIdsOf(user) {
+export function providerIdsOf(user: Pick<User, 'providerData'> | null | undefined) {
   const entries = Array.isArray(user?.providerData) ? user.providerData : [];
   return entries
     .map(entry => entry?.providerId)
     .filter(providerId => typeof providerId === 'string' && providerId);
 }
 
-export function hasSignInProvider(user, providerId) {
+export function hasSignInProvider(user: Pick<User, 'providerData'> | null | undefined, providerId: string) {
   return providerIdsOf(user).includes(providerId);
 }
 
@@ -122,7 +140,7 @@ export function hasSignInProvider(user, providerId) {
  * every provider, which is precisely why a GitHub sign-up cannot skip a step a
  * Google sign-up takes.
  */
-export async function signInWithProvider(providerId, overrides) {
+export async function signInWithProvider(providerId: string, overrides?: IdentityOperations) {
   const api = operations(overrides);
   requireSupported(api);
   const provider = requireProvider(api, providerId);
@@ -135,7 +153,7 @@ export async function signInWithProvider(providerId, overrides) {
       user: result?.user || null,
     };
   } catch (error) {
-    if (error?.code === 'auth/account-exists-with-different-credential') {
+    if ((error as { code?: string } | null)?.code === 'auth/account-exists-with-different-credential') {
       throw new EmailAlreadyUsedError(emailFromError(error), providerId);
     }
     throw error;
@@ -150,7 +168,7 @@ export async function signInWithProvider(providerId, overrides) {
  * Already-linked is success, not failure. Asking for something that is already
  * true is not an error worth showing anybody.
  */
-export async function linkSignInProvider(providerId, overrides) {
+export async function linkSignInProvider(providerId: string, overrides?: IdentityOperations) {
   const api = operations(overrides);
   requireSupported(api);
   const provider = requireProvider(api, providerId);
@@ -169,13 +187,13 @@ export async function linkSignInProvider(providerId, overrides) {
   } catch (error) {
     // `provider-already-linked` only reaches here when the link landed between
     // the check above and the popup — a race, and a harmless one.
-    if (error?.code === 'auth/provider-already-linked') {
+    if ((error as { code?: string } | null)?.code === 'auth/provider-already-linked') {
       return { providerId, alreadyLinked: true, user };
     }
     // Two different codes, one situation: the identity (or its address) is
     // spoken for by another uid.
-    if (error?.code === 'auth/credential-already-in-use'
-      || error?.code === 'auth/email-already-in-use') {
+    if ((error as { code?: string } | null)?.code === 'auth/credential-already-in-use'
+      || (error as { code?: string } | null)?.code === 'auth/email-already-in-use') {
       throw new IdentityAlreadyLinkedError(providerId, emailFromError(error));
     }
     throw error;

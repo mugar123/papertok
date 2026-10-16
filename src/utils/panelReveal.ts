@@ -21,7 +21,7 @@ export const PANEL_REVEAL_ZONE_PX = 140;
 export const PANEL_HIDE_DELAY_MS = 140;
 
 /** Whether a pointer at this height is inside the strip that summons the panel. */
-export function pointerWakesPanel(clientY, viewportHeight) {
+export function pointerWakesPanel(clientY: number, viewportHeight: number) {
   if (!Number.isFinite(clientY) || !Number.isFinite(viewportHeight)) return false;
   return clientY >= viewportHeight - PANEL_REVEAL_ZONE_PX;
 }

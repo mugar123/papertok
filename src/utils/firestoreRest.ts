@@ -1,3 +1,5 @@
+import type { FirestoreValue, FirestoreDataValue, FirestoreData } from '../models/Firestore.ts';
+
 /**
  * Firestore over its REST API, for the reads that must not depend on the
  * SDK's listen stream.
@@ -29,7 +31,7 @@
 export const FIRESTORE_REST_BASE = 'https://firestore.googleapis.com/v1';
 
 /** HTTP status → the SDK's error code, so callers keep one vocabulary. */
-const STATUS_CODES = Object.freeze({
+const STATUS_CODES: Readonly<Record<number, string>> = Object.freeze({
   400: 'invalid-argument',
   401: 'unauthenticated',
   403: 'permission-denied',
@@ -43,12 +45,14 @@ const STATUS_CODES = Object.freeze({
   504: 'deadline-exceeded',
 });
 
-export function restErrorCode(status) {
+export function restErrorCode(status: number) {
   return STATUS_CODES[status] || 'unknown';
 }
 
 export class FirestoreRestError extends Error {
-  constructor(message, { code = 'unknown', status = null, cause } = {}) {
+  declare code: string;
+  declare status: number | null;
+  constructor(message: string|undefined, { code = 'unknown', status = null, cause }: { code?: string; status?: number | null; cause?: unknown } = {}) {
     super(message, cause ? { cause } : undefined);
     this.name = 'FirestoreRestError';
     this.code = code;
@@ -56,7 +60,7 @@ export class FirestoreRestError extends Error {
   }
 }
 
-export function decodeValue(value) {
+export function decodeValue(value: FirestoreValue | null | undefined): FirestoreDataValue {
   if (!value || typeof value !== 'object') return null;
   if ('nullValue' in value) return null;
   if ('booleanValue' in value) return value.booleanValue;
@@ -71,18 +75,18 @@ export function decodeValue(value) {
   return null;
 }
 
-export function decodeFields(fields) {
+export function decodeFields(fields: Record<string, FirestoreValue> | null | undefined): FirestoreData {
   return Object.fromEntries(
     Object.entries(fields || {}).map(([key, value]) => [key, decodeValue(value)]),
   );
 }
 
-export function documentRoot(projectId) {
+export function documentRoot(projectId: string) {
   return `projects/${projectId}/databases/(default)/documents`;
 }
 
-function lastSegment(path) {
-  return String(path || '').split('/').pop();
+function lastSegment(path: unknown) {
+  return String(path || '').split('/').pop()!;
 }
 
 /**
@@ -93,11 +97,11 @@ function lastSegment(path) {
  * preflight (one per URL), so a token doubles the round trips of a read.
  */
 /** @param {{ projectId?: string, fetchImpl?: typeof fetch, getToken?: () => Promise<string | null> }} [options] */
-export function createFirestoreRest({ projectId, fetchImpl = globalThis.fetch, getToken } = {}) {
+export function createFirestoreRest({ projectId, fetchImpl = globalThis.fetch, getToken }: { projectId?: string; fetchImpl?: typeof fetch; getToken?: () => Promise<string|null>; } = {}) {
   if (!projectId) throw new TypeError('A Firestore project id is required.');
   const base = `${FIRESTORE_REST_BASE}/${documentRoot(projectId)}`;
 
-  async function authorization() {
+  async function authorization(): Promise<Record<string, string>> {
     if (!getToken) return {};
     try {
       const token = await getToken();
@@ -107,17 +111,17 @@ export function createFirestoreRest({ projectId, fetchImpl = globalThis.fetch, g
     }
   }
 
-  async function request(url, init) {
+  async function request(url: string, init: RequestInit) {
     let response;
     try {
       response = await fetchImpl(url, init);
     } catch (error) {
-      if (error?.name === 'AbortError') {
+      if ((error as Error | null)?.name === 'AbortError') {
         throw new FirestoreRestError('The request was cancelled.', { code: 'cancelled', cause: error });
       }
       throw new FirestoreRestError('Firestore could not be reached.', { code: 'unavailable', cause: error });
     }
-    let body;
+    let body: { fields?: Record<string, FirestoreValue>; error?: { message?: string } } | null;
     try {
       body = await response.json();
     } catch {
@@ -135,16 +139,16 @@ export function createFirestoreRest({ projectId, fetchImpl = globalThis.fetch, g
 
   return {
     /** One document by path. A 404 is a confirmed absence; a 403 is not (it stays an error). */
-    async getDocument(path, { signal } = {}) {
+    async getDocument<T = FirestoreData>(path: string, { signal }: { signal?: AbortSignal } = {}) {
       const id = lastSegment(path);
-      let body;
+      let body: { fields?: Record<string, FirestoreValue>; error?: { message?: string } } | null;
       try {
         body = await request(`${base}/${path}`, { method: 'GET', headers: await authorization(), signal });
       } catch (error) {
-        if (error?.status === 404) return { exists: false, id, data: null };
+        if ((error as FirestoreRestError | null)?.status === 404) return { exists: false as const, id, data: null };
         throw error;
       }
-      return { exists: true, id, data: decodeFields(body?.fields) };
+      return { exists: true as const, id, data: decodeFields(body?.fields) as T };
     },
   };
 }

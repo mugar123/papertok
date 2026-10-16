@@ -1,3 +1,5 @@
+import type { OwnList } from './ownLists.ts';
+
 const LEGACY_SEEN_PAPERS_KEY = 'papertok_seenIds';
 const SEEN_PAPERS_KEY_PREFIX = 'papertok_seenIds:';
 const DRIFT_CHECK_KEY_PREFIX = 'papertok_profileDriftCheckedAt:';
@@ -13,37 +15,37 @@ const LOCAL_HIDDEN_PREFIX = 'papertok:locallyHiddenComments';
 // browser's two accounts have no shared answer to migrate to — only swept.
 const LEGACY_LOCAL_HIDDEN_KEY = LOCAL_HIDDEN_PREFIX;
 
-function getStorage(storage) {
+function getStorage(storage?: Storage | null) {
   if (storage) return storage;
   if (typeof window === 'undefined') return null;
   return window.localStorage;
 }
 
-export function getSeenPapersStorageKey(userId) {
+export function getSeenPapersStorageKey(userId: string | null | undefined) {
   if (!userId) return null;
   return `${SEEN_PAPERS_KEY_PREFIX}${encodeURIComponent(userId)}`;
 }
 
 /** No uid, no key: an anonymous hide would be a global hide again. */
-export function getLocalHiddenStorageKey(userId) {
+export function getLocalHiddenStorageKey(userId: string | null | undefined) {
   if (!userId) return null;
   return `${LOCAL_HIDDEN_PREFIX}:${encodeURIComponent(userId)}`;
 }
 
-export function readSeenPaperIds(userId, storage) {
+export function readSeenPaperIds(userId: string, storage?: Storage | null): Set<string> {
   const key = getSeenPapersStorageKey(userId);
   const target = getStorage(storage);
   if (!key || !target) return new Set();
 
   try {
-    const parsed = JSON.parse(target.getItem(key) || '[]');
+    const parsed = JSON.parse(target.getItem(key) || '[]') as string[] | null;
     return new Set(Array.isArray(parsed) ? parsed : []);
   } catch {
     return new Set();
   }
 }
 
-export function saveSeenPaperIds(userId, paperIds, storage, limit = 500) {
+export function saveSeenPaperIds(userId: string, paperIds: Iterable<string>, storage?: Storage | null, limit = 500) {
   const key = getSeenPapersStorageKey(userId);
   const target = getStorage(storage);
   if (!key || !target) return;
@@ -56,7 +58,7 @@ export function saveSeenPaperIds(userId, paperIds, storage, limit = 500) {
   }
 }
 
-export function getDriftCheckStorageKey(userId) {
+export function getDriftCheckStorageKey(userId: string | null | undefined) {
   if (!userId) return null;
   return `${DRIFT_CHECK_KEY_PREFIX}${encodeURIComponent(userId)}`;
 }
@@ -66,7 +68,7 @@ export function getDriftCheckStorageKey(userId) {
  * subcollection. Kept per device rather than in the aggregate so the check needs
  * no extra Firestore write and no schema change.
  */
-export function readProfileDriftCheckedAt(userId, storage) {
+export function readProfileDriftCheckedAt(userId: string, storage?: Storage | null) {
   const key = getDriftCheckStorageKey(userId);
   const target = getStorage(storage);
   if (!key || !target) return 0;
@@ -79,7 +81,7 @@ export function readProfileDriftCheckedAt(userId, storage) {
   }
 }
 
-export function saveProfileDriftCheckedAt(userId, timestamp, storage) {
+export function saveProfileDriftCheckedAt(userId: string, timestamp: number, storage?: Storage | null) {
   const key = getDriftCheckStorageKey(userId);
   const target = getStorage(storage);
   if (!key || !target) return;
@@ -91,14 +93,14 @@ export function saveProfileDriftCheckedAt(userId, timestamp, storage) {
   }
 }
 
-export function getOwnListsStorageKey(userId) {
+export function getOwnListsStorageKey(userId: string | null | undefined) {
   if (!userId) return null;
   return `${OWN_LISTS_KEY_PREFIX}${encodeURIComponent(userId)}`;
 }
 
 // Written by the removed public-profile editor. Nothing writes it now;
 // sign-out still sweeps it from devices that stored one.
-function getOwnProfileStorageKey(userId) {
+function getOwnProfileStorageKey(userId: string | null | undefined) {
   if (!userId) return null;
   return `${OWN_PROFILE_KEY_PREFIX}${encodeURIComponent(userId)}`;
 }
@@ -130,7 +132,7 @@ export const OWN_LISTS_STORAGE_BUDGET_BYTES = 262_144;
  * seeded card that opened onto an empty list would be the "we could not find
  * out" lie wearing yet another hat.
  */
-export function readStoredLists(userId, storage) {
+export function readStoredLists(userId: string, storage?: Storage | null): OwnList[] | null {
   const key = getOwnListsStorageKey(userId);
   const target = getStorage(storage);
   if (!key || !target) return null;
@@ -149,7 +151,7 @@ export function readStoredLists(userId, storage) {
   }
 }
 
-export function saveStoredLists(userId, lists, storage, budgetBytes = OWN_LISTS_STORAGE_BUDGET_BYTES) {
+export function saveStoredLists(userId: string, lists: OwnList[], storage?: Storage | null, budgetBytes = OWN_LISTS_STORAGE_BUDGET_BYTES) {
   const key = getOwnListsStorageKey(userId);
   const target = getStorage(storage);
   if (!key || !target || !Array.isArray(lists)) return;
@@ -187,7 +189,7 @@ export function saveStoredLists(userId, lists, storage, budgetBytes = OWN_LISTS_
   }
 }
 
-export function getOnboardingStorageKey(userId) {
+export function getOnboardingStorageKey(userId: string | null | undefined) {
   if (!userId) return null;
   return `${ONBOARDING_KEY_PREFIX}${encodeURIComponent(userId)}`;
 }
@@ -200,7 +202,7 @@ export function getOnboardingStorageKey(userId) {
  * answer sent the account through the interest picker again. Remembering the
  * flag here lets the router keep them in the app until the document confirms.
  */
-export function readStoredOnboarding(userId, storage) {
+export function readStoredOnboarding(userId: string, storage?: Storage | null): { complete: boolean; preferences: string[] } | null {
   const key = getOnboardingStorageKey(userId);
   const target = getStorage(storage);
   if (!key || !target) return null;
@@ -209,7 +211,7 @@ export function readStoredOnboarding(userId, storage) {
     const parsed = JSON.parse(target.getItem(key) || 'null');
     if (!parsed || typeof parsed !== 'object') return null;
     const preferences = Array.isArray(parsed.preferences)
-      ? parsed.preferences.filter(value => typeof value === 'string')
+      ? parsed.preferences.filter((value: unknown) => typeof value === 'string')
       : [];
     if (parsed.complete !== true && preferences.length === 0) return null;
     return { complete: parsed.complete === true || preferences.length > 0, preferences };
@@ -218,7 +220,7 @@ export function readStoredOnboarding(userId, storage) {
   }
 }
 
-export function saveStoredOnboarding(userId, state, storage) {
+export function saveStoredOnboarding(userId: string, state: { preferences?: unknown[]; complete?: boolean }, storage?: Storage | null) {
   const key = getOnboardingStorageKey(userId);
   const target = getStorage(storage);
   if (!key || !target || !state) return;
@@ -240,12 +242,12 @@ export function saveStoredOnboarding(userId, state, storage) {
 
 // Written by the follow counters of the removed profile page. Nothing writes
 // it now; sign-out still sweeps it from devices that stored one.
-function getFollowStatsStorageKey(userId) {
+function getFollowStatsStorageKey(userId: string | null | undefined) {
   if (!userId) return null;
   return `${FOLLOW_STATS_KEY_PREFIX}${encodeURIComponent(userId)}`;
 }
 
-export function removeLegacySeenPaperIds(storage) {
+export function removeLegacySeenPaperIds(storage?: Storage | null) {
   const target = getStorage(storage);
   if (!target) return;
 
@@ -256,7 +258,7 @@ export function removeLegacySeenPaperIds(storage) {
   }
 }
 
-export function clearUserScopedStorage(userId, storage) {
+export function clearUserScopedStorage(userId: string, storage?: Storage | null) {
   const target = getStorage(storage);
   if (!target || !userId) return;
   const encodedUserId = encodeURIComponent(userId);

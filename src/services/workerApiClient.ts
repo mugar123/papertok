@@ -12,11 +12,11 @@ const PRODUCTION_WORKER_ORIGINS = Object.freeze([
 ]);
 
 function configuredWorkerOrigin() {
-  const configured = import.meta.env?.VITE_PAPER_API_BASE_URL;
+  const configured = (import.meta as ImportMeta & { env?: { DEV?: boolean; VITE_PAPER_API_BASE_URL?: string } }).env?.VITE_PAPER_API_BASE_URL;
   if (!configured) return '';
   try {
     const url = new URL(configured);
-    const isLocalDevelopment = import.meta.env?.DEV
+    const isLocalDevelopment = (import.meta as ImportMeta & { env?: { DEV?: boolean; VITE_PAPER_API_BASE_URL?: string } }).env?.DEV
       && ['localhost', '127.0.0.1'].includes(url.hostname)
       && ['http:', 'https:'].includes(url.protocol);
     return PRODUCTION_WORKER_ORIGINS.includes(url.origin) || isLocalDevelopment ? url.origin : '';
@@ -25,7 +25,7 @@ function configuredWorkerOrigin() {
   }
 }
 
-export function trustedWorkerUrl(input) {
+export function trustedWorkerUrl(input: string | URL) {
   const allowedOrigin = configuredWorkerOrigin();
   if (!allowedOrigin) return '';
   try {
@@ -46,6 +46,7 @@ export function hasWorkerSession() {
 }
 
 export class WorkerApiAuthError extends Error {
+  declare code: string;
   constructor(code = 'WORKER_AUTH_REQUIRED') {
     super(code);
     this.name = 'WorkerApiAuthError';
@@ -56,7 +57,7 @@ export class WorkerApiAuthError extends Error {
 // The Worker's own origin, for callers that build a route URL rather than being
 // handed one. Exported as a builder rather than as the bare origin so no caller
 // has to remember the trailing-slash and empty-value handling.
-export function workerSourceUrl(path, params = {}, apiBase = configuredWorkerOrigin()) {
+export function workerSourceUrl(path: string, params: Record<string, unknown> = {}, apiBase = configuredWorkerOrigin()) {
   if (!apiBase) return '';
   const url = new URL(`${String(apiBase).replace(/\/$/, '')}${path}`);
   for (const [name, value] of Object.entries(params)) {
@@ -87,11 +88,11 @@ export function workerSourceUrl(path, params = {}, apiBase = configuredWorkerOri
  * Of the two modules this is the one the other already imports, so a single
  * shared definition can only sit here without closing an import cycle.
  */
-export function sourceResponseError(path, status, body = null) {
+export function sourceResponseError(path: string, status: number, body: { code?: unknown; upstreamStatus?: number } | null = null) {
   const code = typeof body?.code === 'string' ? body.code : '';
-  const upstreamStatus = Number.isInteger(body?.upstreamStatus) ? body.upstreamStatus : 0;
+  const upstreamStatus = Number.isInteger(body?.upstreamStatus) ? body!.upstreamStatus : 0;
   const detail = [code, upstreamStatus ? `upstream ${upstreamStatus}` : ''].filter(Boolean).join(', ');
-  const error = new Error(`${path} returned ${status}${detail ? ` (${detail})` : ''}`);
+  const error = new Error(`${path} returned ${status}${detail ? ` (${detail})` : ''}`) as Error & { status: number; code?: string; upstreamStatus?: number };
   error.status = status;
   if (code) error.code = code;
   if (upstreamStatus) error.upstreamStatus = upstreamStatus;
@@ -102,13 +103,13 @@ export function sourceResponseError(path, status, body = null) {
 // feed reads. `apiBase` and `fetchImpl` are injectable for the same reason
 // `openAlexClient` injects them: `import.meta.env` does not exist under
 // `node --test`, so without a seam these paths could only be tested in a browser.
-export async function fetchWorkerSourceJson(path, params = {}, {
+export async function fetchWorkerSourceJson<T = unknown>(path: string, params: Record<string, unknown> = {}, {
   timeoutMs,
   apiBase = configuredWorkerOrigin(),
   // Wrapped rather than passed by reference: a detached `fetch` is an illegal
   // invocation in a browser.
   fetchImpl = (...args) => fetch(...args),
-} = {}) {
+}: { timeoutMs?: number; apiBase?: string; fetchImpl?: typeof fetch } = {}) {
   const url = workerSourceUrl(path, params, apiBase);
   if (!url) throw new WorkerApiAuthError('WORKER_ORIGIN_NOT_ALLOWED');
   // One deadline for the headers and the body alike: these calls sit inside the
@@ -118,13 +119,13 @@ export async function fetchWorkerSourceJson(path, params = {}, {
   if (!response.ok) {
     // Read under the same deadline as the headers (`withRequestDeadline` keeps
     // the signal armed for the body); a body that is not JSON is simply no body.
-    const body = await response.json().catch(() => null);
+    const body = await response.json().catch(() => null) as { code?: unknown; upstreamStatus?: number } | null;
     throw sourceResponseError(path, response.status, body);
   }
-  return response.json();
+  return response.json() as Promise<T>;
 }
 
-export async function authenticatedWorkerFetch(input, options = {}) {
+export async function authenticatedWorkerFetch(input: string | URL, options: RequestInit = {}) {
   const url = trustedWorkerUrl(input);
   if (!url) throw new WorkerApiAuthError('WORKER_ORIGIN_NOT_ALLOWED');
   const currentUser = auth.currentUser;

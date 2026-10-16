@@ -35,7 +35,7 @@ const FLICK_VELOCITY = 0.4;
  * resting state. Without the clamp a sheet can be dragged off the top of the
  * screen, which reads as a broken sheet rather than a stiff one.
  */
-export function sheetDragOffset({ expanded, deltaY, travel }) {
+export function sheetDragOffset({ expanded, deltaY, travel }: { expanded: boolean; deltaY: number; travel: number }) {
   const span = Math.max(0, travel);
   const base = expanded ? 0 : span;
   return Math.min(span, Math.max(0, base + deltaY));
@@ -46,7 +46,7 @@ export function sheetDragOffset({ expanded, deltaY, travel }) {
  * to set a state either way and an answer phrased as "flip it" makes the caller
  * do this reasoning a second time.
  */
-export function shouldSettleOpen({ expanded, deltaY, travel, velocity = 0 }) {
+export function shouldSettleOpen({ expanded, deltaY, travel, velocity = 0 }: { expanded: boolean; deltaY: number; travel: number; velocity?: number }) {
   const span = Math.max(0, travel);
   // Measured before layout, or a sheet shorter than its own peek: there is no
   // gesture to read, and guessing would move it for no reason.

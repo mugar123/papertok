@@ -1,3 +1,7 @@
+import type { Paper } from '../models/Paper.ts';
+
+type PaperIdentifierInput = Pick<Partial<Paper>, 'doi' | 'arxivId'> & { externalIds?: { DOI?: string; ArXiv?: string } };
+
 /**
  * The canonical spelling of a paper's DOI and arXiv id, so the same paper
  * reached through different providers matches itself:
@@ -18,7 +22,7 @@
 const DOI_PATTERN = /^10\.\d{4,9}\/\S+$/;
 const ARXIV_PATTERN = /^(?:\d{4}\.\d{4,5}|[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)?\/\d{7})(?:v\d+)?$/i;
 
-function cleanText(value) {
+function cleanText(value: unknown) {
   if (value === null || value === undefined) return '';
   const text = String(value).trim();
   const hasControlCharacter = [...text].some(character => {
@@ -28,7 +32,7 @@ function cleanText(value) {
   return hasControlCharacter ? '' : text;
 }
 
-function normalizeDoi(value) {
+function normalizeDoi(value: unknown) {
   const doi = cleanText(value)
     .replace(/^doi:\s*/i, '')
     .replace(/^(?:https?:\/\/)?(?:dx\.)?doi\.org\//i, '');
@@ -37,7 +41,7 @@ function normalizeDoi(value) {
 }
 
 /** Lowercased and versionless: `2401.12345v3` and `2401.12345` are one paper. */
-function normalizeArxivId(value) {
+function normalizeArxivId(value: unknown) {
   const arxivId = cleanText(value)
     .replace(/^arxiv:\s*/i, '')
     .replace(/^(?:https?:\/\/)?(?:export\.)?arxiv\.org\/(?:abs|pdf)\//i, '')
@@ -46,11 +50,11 @@ function normalizeArxivId(value) {
   return arxivId.toLowerCase().replace(/v\d+$/, '');
 }
 
-function doiOf(paper) {
+function doiOf(paper: PaperIdentifierInput) {
   return normalizeDoi(paper?.doi || paper?.externalIds?.DOI);
 }
 
-function arxivIdOf(paper) {
+function arxivIdOf(paper: PaperIdentifierInput) {
   return normalizeArxivId(paper?.arxivId || paper?.externalIds?.ArXiv);
 }
 
@@ -58,11 +62,11 @@ function arxivIdOf(paper) {
  * The DOI in canonical spelling, or null. Accepts a paper object (its `doi`,
  * then `externalIds.DOI`) or a bare identifier string.
  */
-export function canonicalDoiOf(paper) {
-  return (paper && typeof paper === 'object' ? doiOf(paper) : normalizeDoi(paper)) || null;
+export function canonicalDoiOf(paper: unknown) {
+  return (paper && typeof paper === 'object' ? doiOf(paper as PaperIdentifierInput) : normalizeDoi(paper)) || null;
 }
 
 /** The arXiv id in canonical spelling, or null; same inputs as canonicalDoiOf. */
-export function canonicalArxivIdOf(paper) {
-  return (paper && typeof paper === 'object' ? arxivIdOf(paper) : normalizeArxivId(paper)) || null;
+export function canonicalArxivIdOf(paper: unknown) {
+  return (paper && typeof paper === 'object' ? arxivIdOf(paper as PaperIdentifierInput) : normalizeArxivId(paper)) || null;
 }

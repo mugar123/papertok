@@ -27,7 +27,7 @@ test('SOURCE: the interaction profile aggregate is read with patience, and a cac
 
 test('SOURCE: a rebuild never consumes a page the server did not send', async () => {
   const code = await read('./interactionProfileStore.ts');
-  const page = code.match(/async listInteractionPage\(\{ pageSize, startAfterId \}\) \{[\s\S]*?\n {4}\},/);
+  const page = code.match(/async listInteractionPage\(\{ pageSize, startAfterId \}: \{ pageSize: number; startAfterId\?: string \| null \}\) \{[\s\S]*?\n {4}\},/);
   assert.ok(page, 'listInteractionPage is gone');
   assert.match(page[0], /const snapshot = await getDocs\([\s\S]*?\);\s*if \(!queryIsAuthoritative\(snapshot\)\) throw unconfirmedPage\(\);/);
   // And what it throws is the "not now" the loader already keeps the old

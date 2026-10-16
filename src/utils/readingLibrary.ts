@@ -1,4 +1,9 @@
-function authorName(author) {
+interface CitationDownload { href: string; download: string; click(): void; remove(): void }
+declare const document: { createElement(tag: 'a'): CitationDownload; body: { appendChild(link: CitationDownload): unknown } };
+
+import type { Paper } from '../models/Paper.ts';
+
+function authorName(author: Paper['authors'][number] | undefined) {
   if (typeof author === 'string') return author.trim();
   return author?.name?.trim() || '';
 }
@@ -16,7 +21,7 @@ export const STORED_SUMMARY_CAP = 4000;
 export const LEGACY_STORED_SUMMARY_CAP = 1000;
 export const STORED_AUTHOR_CAP = 20;
 
-export function serializeLibraryPaper(paper = {}) {
+export function serializeLibraryPaper(paper: Partial<Paper> & { venue?: string; url?: string } = {}) {
   return {
     id: paper.id || paper.arxivId || paper.doi || '',
     title: typeof paper.title === 'string' ? paper.title : '',
@@ -24,7 +29,7 @@ export function serializeLibraryPaper(paper = {}) {
     primaryCategory: paper.primaryCategory || paper.categories?.[0] || '',
     categories: paper.categories || (paper.primaryCategory ? [paper.primaryCategory] : []),
     published: paper.published || paper.publicationDate || '',
-    year: paper.year || (paper.published ? new Date(paper.published).getFullYear() : null),
+    year: paper.year || (paper.published ? new Date(paper.published!).getFullYear() : null),
     summary: paper.summary?.substring(0, STORED_SUMMARY_CAP) || '',
     arxivId: paper.arxivId || '',
     doi: paper.doi || '',
@@ -34,7 +39,7 @@ export function serializeLibraryPaper(paper = {}) {
   };
 }
 
-function cleanBibValue(value) {
+function cleanBibValue(value: unknown) {
   return String(value || '')
     .replace(/\\/g, '\\\\')
     .replace(/[{}]/g, '')
@@ -42,19 +47,19 @@ function cleanBibValue(value) {
     .trim();
 }
 
-function citationKey(paper, index = 0) {
+function citationKey(paper: Partial<Paper>, index = 0) {
   const firstAuthor = authorName(paper.authors?.[0]).split(/\s+/).pop() || 'Paper';
-  const year = paper.year || (paper.published ? new Date(paper.published).getFullYear() : 'nd');
+  const year = paper.year || (paper.published ? new Date(paper.published!).getFullYear() : 'nd');
   const titleWord = (paper.title || '').replace(/[^a-zA-Z0-9 ]/g, '').split(/\s+/).find(word => word.length > 3) || 'Research';
   return `${firstAuthor}${year}${titleWord}${index || ''}`.replace(/[^a-zA-Z0-9]/g, '');
 }
 
-export function papersToBibTeX(papers = []) {
+export function papersToBibTeX(papers: Partial<Paper>[] = []) {
   return papers.map((paper, index) => {
     const fields = [
       `  title = {${cleanBibValue(paper.title)}},`,
       paper.authors?.length ? `  author = {${paper.authors.map(authorName).filter(Boolean).map(cleanBibValue).join(' and ')}},` : '',
-      paper.year || paper.published ? `  year = {${paper.year || new Date(paper.published).getFullYear()}},` : '',
+      paper.year || paper.published ? `  year = {${paper.year || new Date(paper.published!).getFullYear()}},` : '',
       paper.journal ? `  journal = {${cleanBibValue(paper.journal)}},` : '',
       paper.doi ? `  doi = {${cleanBibValue(paper.doi)}},` : '',
       paper.arxivId ? `  eprint = {${cleanBibValue(paper.arxivId)}},` : '',
@@ -66,11 +71,11 @@ export function papersToBibTeX(papers = []) {
   }).join('\n\n');
 }
 
-export function papersToRIS(papers = []) {
+export function papersToRIS(papers: Partial<Paper>[] = []) {
   return papers.map((paper) => {
     const lines = ['TY  - JOUR', `TI  - ${String(paper.title || '').replace(/\s+/g, ' ').trim()}`];
     (paper.authors || []).map(authorName).filter(Boolean).forEach(author => lines.push(`AU  - ${author}`));
-    if (paper.year || paper.published) lines.push(`PY  - ${paper.year || new Date(paper.published).getFullYear()}`);
+    if (paper.year || paper.published) lines.push(`PY  - ${paper.year || new Date(paper.published!).getFullYear()}`);
     if (paper.journal) lines.push(`JO  - ${paper.journal}`);
     if (paper.doi) lines.push(`DO  - ${paper.doi}`);
     if (paper.landingPageUrl) lines.push(`UR  - ${paper.landingPageUrl}`);
@@ -80,7 +85,7 @@ export function papersToRIS(papers = []) {
   }).join('\n\n');
 }
 
-export function downloadCitationFile(papers, format, filename = 'papertok') {
+export function downloadCitationFile(papers: Partial<Paper>[], format: string, filename = 'papertok') {
   const isBibTeX = format === 'bibtex';
   const content = isBibTeX ? papersToBibTeX(papers) : papersToRIS(papers);
   const blob = new Blob([content], { type: isBibTeX ? 'application/x-bibtex;charset=utf-8' : 'application/x-research-info-systems;charset=utf-8' });

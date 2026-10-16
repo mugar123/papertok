@@ -220,7 +220,7 @@ test('un arranque normal no toca el historial', () => {
 
 test('SOURCE: main.jsx limpia el marcador antes de renderizar', async () => {
   const code = stripComments(await read('../main.jsx'));
-  assert.match(code, /import \{ clearStaleOverlayMarker \} from '\.\/hooks\/useOverlayHistory\.js'/);
+  assert.match(code, /import \{ clearStaleOverlayMarker \} from '\.\/hooks\/useOverlayHistory\.ts'/);
   const callAt = code.indexOf('clearStaleOverlayMarker({');
   const renderAt = code.indexOf('ReactDOM.createRoot');
   assert.ok(callAt > -1, 'main.jsx tiene que llamarlo');
@@ -229,7 +229,7 @@ test('SOURCE: main.jsx limpia el marcador antes de renderizar', async () => {
 
 test('SOURCE: useOverlayHistory arma en el frame siguiente y cancela en la limpieza', async () => {
   const code = stripComments(await read('./useOverlayHistory.ts'));
-  const hookBody = code.match(/export function useOverlayHistory\(open, onClose, tag\) \{[\s\S]*?\n\}/);
+  const hookBody = code.match(/export function useOverlayHistory\(open: boolean, onClose: \(\) => void, tag: string\) \{[\s\S]*?\n\}/);
   assert.ok(hookBody, 'useOverlayHistory must still have this exact signature');
   const body = hookBody[0];
   // The names and the whitespace are nobody's business — the ORDER is: the
@@ -250,7 +250,7 @@ test('SOURCE: el lector de PaperCard usa useOverlayHistory con el tag reader', a
   const code = stripComments(await read('../components/Feed/PaperCard.jsx'));
   assert.match(
     code,
-    /import \{ useOverlayHistory \} from '\.\.\/\.\.\/hooks\/useOverlayHistory\.js';/,
+    /import \{ useOverlayHistory \} from '\.\.\/\.\.\/hooks\/useOverlayHistory\.ts';/,
     'must import the hook',
   );
   assert.match(code, /const \[showReader, setShowReader\] = useState\(false\);/);
@@ -264,7 +264,7 @@ test('SOURCE: el visor de PDF de App usa useOverlayHistory con el tag pdf', asyn
   const code = stripComments(await read('../App.jsx'));
   assert.match(
     code,
-    /import \{ useOverlayHistory \} from '\.\/hooks\/useOverlayHistory\.js'/,
+    /import \{ useOverlayHistory \} from '\.\/hooks\/useOverlayHistory\.ts'/,
     'must import the hook',
   );
   assert.match(code, /const \[pdfPaper, setPdfPaper\] = useState\(null\)/);
@@ -283,7 +283,7 @@ test('SOURCE: el visor de PDF propio de EntityExplorer usa useOverlayHistory con
   const code = stripComments(await read('../components/Explorer/EntityExplorer.jsx'));
   assert.match(
     code,
-    /import \{ useOverlayHistory \} from '\.\.\/\.\.\/hooks\/useOverlayHistory\.js';/,
+    /import \{ useOverlayHistory \} from '\.\.\/\.\.\/hooks\/useOverlayHistory\.ts';/,
     'must import the hook',
   );
   assert.match(code, /const \[pdfPaperToView, setPdfPaperToView\] = useState\(null\);/);
@@ -306,7 +306,7 @@ test('SOURCE: el visor de PDF propio de SearchPage usa useOverlayHistory con el 
   const code = stripComments(await read('../components/Search/SearchPage.jsx'));
   assert.match(
     code,
-    /import \{ useOverlayHistory \} from '\.\.\/\.\.\/hooks\/useOverlayHistory\.js';/,
+    /import \{ useOverlayHistory \} from '\.\.\/\.\.\/hooks\/useOverlayHistory\.ts';/,
     'must import the hook',
   );
   assert.match(code, /const \[pdfPaper, setPdfPaper\] = useState\(null\);/);

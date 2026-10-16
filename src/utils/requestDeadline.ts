@@ -27,11 +27,11 @@
  */
 export const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 
-export function requestDeadline(options = {}, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) {
+export function requestDeadline(options: Pick<RequestInit, 'signal'> = {}, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) {
   return options.signal ?? AbortSignal.timeout(timeoutMs);
 }
 
-export function withRequestDeadline(options = {}, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) {
+export function withRequestDeadline<T extends RequestInit>(options: T = {} as T, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) {
   return { ...options, signal: requestDeadline(options, timeoutMs) };
 }
 
@@ -55,7 +55,7 @@ export function withRequestDeadline(options = {}, timeoutMs = DEFAULT_REQUEST_TI
  * navigates away still raises `AbortError`, and only a real timeout raises
  * `TimeoutError`.
  */
-export function withEnforcedDeadline(options = {}, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) {
+export function withEnforcedDeadline<T extends RequestInit>(options: T = {} as T, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) {
   const deadline = AbortSignal.timeout(timeoutMs);
   return {
     ...options,

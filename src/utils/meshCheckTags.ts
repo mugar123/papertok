@@ -16,7 +16,7 @@ const CHECK_TAGS = new Set([
 ].map(tag => tag.toLowerCase()));
 const HISTORY_CENTURY = /^history, \d{1,2}(?:st|nd|rd|th) century$/;
 
-export function isMeshCheckTag(name) {
+export function isMeshCheckTag(name: unknown) {
   const normalized = String(name || '').replace(/\s+/g, ' ').trim().toLowerCase();
   return CHECK_TAGS.has(normalized) || HISTORY_CENTURY.test(normalized);
 }
@@ -26,10 +26,10 @@ export function isMeshCheckTag(name) {
  * topics first, then the rest, each group in the record's own order, without
  * check tags or repeats.
  */
-export function orderMeshDescriptors(descriptors) {
+export function orderMeshDescriptors(descriptors: Array<{ name: string; major?: boolean }> | null | undefined) {
   const kept = (Array.isArray(descriptors) ? descriptors : [])
     .filter(descriptor => descriptor?.name && !isMeshCheckTag(descriptor.name));
-  const seen = new Set();
+  const seen = new Set<string>();
   return [...kept.filter(descriptor => descriptor.major), ...kept.filter(descriptor => !descriptor.major)]
     .map(descriptor => descriptor.name)
     .filter((name) => {

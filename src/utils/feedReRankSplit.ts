@@ -1,3 +1,5 @@
+import type { Paper } from '../models/Paper.ts';
+
 /**
  * Where a re-rank may start shuffling.
  *
@@ -12,7 +14,7 @@
  */
 export const RERANK_LOOKAHEAD = 3;
 
-export function splitFeedForReRank(papers, { anchorPaperIds = [], lookahead = RERANK_LOOKAHEAD } = {}) {
+export function splitFeedForReRank<T extends Pick<Paper, 'id'>>(papers: T[] | null | undefined, { anchorPaperIds = [], lookahead = RERANK_LOOKAHEAD }: { anchorPaperIds?: Array<string | null | undefined>; lookahead?: number } = {}) {
   const list = Array.isArray(papers) ? papers : [];
   let anchorIndex = 0;
   for (const id of anchorPaperIds || []) {
@@ -38,7 +40,7 @@ export function splitFeedForReRank(papers, { anchorPaperIds = [], lookahead = RE
  * keeps what the re-rank would lock — through the visible card plus the
  * lookahead — and puts the fresh page right below it; the old queue goes.
  */
-export function mergeFreshFeedPage(previous, fresh, { anchorPaperIds = [], lookahead = RERANK_LOOKAHEAD } = {}) {
+export function mergeFreshFeedPage<T extends Pick<Paper, 'id'>>(previous: T[] | null | undefined, fresh: T[] | null | undefined, { anchorPaperIds = [], lookahead = RERANK_LOOKAHEAD }: { anchorPaperIds?: Array<string | null | undefined>; lookahead?: number } = {}) {
   const incoming = Array.isArray(fresh) ? fresh : [];
   const { locked } = splitFeedForReRank(previous, { anchorPaperIds, lookahead });
   if (locked.length === 0) return incoming;

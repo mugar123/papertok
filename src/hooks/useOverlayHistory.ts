@@ -1,3 +1,4 @@
+type OverlayHistory = Pick<History, 'pushState' | 'replaceState' | 'back'> & { state: ({ overlay?: unknown } & Record<string, unknown>) | null };
 import { useEffect, useRef } from 'react';
 
 /**
@@ -132,15 +133,15 @@ import { useEffect, useRef } from 'react';
  * before the ref is assigned in `EntityExplorer.jsx` and `SearchPage.jsx`,
  * which import `PDFViewer` plainly).
  */
-export function createOverlayHistory({ history, listen, unlisten }) {
-  let armed = null;
+export function createOverlayHistory({ history, listen, unlisten }: { history: OverlayHistory; listen: (callback: () => void) => void; unlisten: (callback: () => void) => void }) {
+  let armed: { tag: string; onClose: () => void } | null = null;
   const onPop = () => {
     if (!armed) return;
     const { onClose } = armed; armed = null; unlisten(onPop);
     onClose();
   };
   return {
-    arm(tag, onClose) {
+    arm(tag: string, onClose: () => void) {
       if (armed) return;
       // Already sitting on an entry tagged for this same overlay: arming
       // again must not stack an indistinguishable second one on top of it —
@@ -156,7 +157,7 @@ export function createOverlayHistory({ history, listen, unlisten }) {
       // same tag arms itself just as happily, riding this one's entry — see
       // the SHARED-TAG INVARIANT paragraph in the file doc comment above for
       // what that costs and why it does not happen today.
-      const alreadyOnTag = Boolean(history.state) && history.state.overlay === tag;
+      const alreadyOnTag = Boolean(history.state) && history.state!.overlay === tag;
       if (!alreadyOnTag) {
         try {
           history.pushState(
@@ -216,7 +217,7 @@ export function createOverlayHistory({ history, listen, unlisten }) {
  * like it did nothing: on `/explorer/*` and `/public/paper/*` the in-page back
  * arrow inherits that, once, after a reload taken with an overlay open.
  */
-export function clearStaleOverlayMarker({ history, location }) {
+export function clearStaleOverlayMarker({ history, location }: { history: OverlayHistory; location?: Pick<Location, 'href'> }) {
   const state = history?.state;
   if (!state || typeof state !== 'object' || state.overlay === undefined) return false;
   const cleaned = { ...state };
@@ -246,10 +247,10 @@ export function clearStaleOverlayMarker({ history, location }) {
  * surviving, real mount ever touches history. A close within that single
  * frame is not reachable by a person; nothing here is slower for one.
  */
-export function useOverlayHistory(open, onClose, tag) {
+export function useOverlayHistory(open: boolean, onClose: () => void, tag: string) {
   const closeRef = useRef(onClose);
   useEffect(() => { closeRef.current = onClose; });
-  const ctlRef = useRef(null);
+  const ctlRef = useRef<ReturnType<typeof createOverlayHistory> | null>(null);
   useEffect(() => {
     if (!open) return undefined;
     if (!ctlRef.current) {

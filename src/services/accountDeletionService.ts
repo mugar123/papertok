@@ -1,3 +1,9 @@
+interface DeletionPayload { code?: string; complete?: boolean; stage?: string }
+interface DeletionOperations {
+  isDemo?: boolean; request?: typeof authenticatedWorkerFetch; apiBase?: string;
+  getToken?: () => Promise<string>; currentUid?: () => string | null | undefined;
+}
+
 /**
  * Deletes the signed-in account through the Worker.
  *
@@ -11,6 +17,8 @@ import { auth, IS_DEMO } from './firebase.ts';
 import { authenticatedWorkerFetch } from './workerApiClient.ts';
 
 export class AccountDeletionError extends Error {
+  declare code: string;
+  declare status: number;
   constructor(code = 'ACCOUNT_DELETION_FAILED', status = 502) {
     super(code);
     this.name = 'AccountDeletionError';
@@ -21,7 +29,7 @@ export class AccountDeletionError extends Error {
 
 const MAX_SLICES = 40;
 
-function operations(overrides = {}) {
+function operations(overrides: DeletionOperations = {}) {
   return {
     isDemo: overrides.isDemo === undefined ? IS_DEMO : overrides.isDemo,
     request: overrides.request || authenticatedWorkerFetch,
@@ -33,15 +41,15 @@ function operations(overrides = {}) {
   };
 }
 
-function parsePayload(text) {
+function parsePayload(text: string) {
   try {
-    return JSON.parse(text);
+    return JSON.parse(text) as DeletionPayload;
   } catch {
     return {};
   }
 }
 
-async function postSlice(api) {
+async function postSlice(api: ReturnType<typeof operations>) {
   if (!api.apiBase) throw new AccountDeletionError('ACCOUNT_DELETION_NOT_CONFIGURED', 503);
   let response;
   let payload;
@@ -53,10 +61,10 @@ async function postSlice(api) {
     });
     payload = parsePayload(await response.text());
   } catch (error) {
-    if (error?.code === 'WORKER_AUTH_REQUIRED' || error?.code === 'auth/user-token-expired') {
+    if ((error as { code?: string } | null)?.code === 'WORKER_AUTH_REQUIRED' || (error as { code?: string } | null)?.code === 'auth/user-token-expired') {
       throw new AccountDeletionError('AUTH_REQUIRED', 401);
     }
-    throw new AccountDeletionError(error?.code || 'ACCOUNT_DELETION_UNREACHABLE', 0);
+    throw new AccountDeletionError((error as { code?: string } | null)?.code || 'ACCOUNT_DELETION_UNREACHABLE', 0);
   }
   if (response.status === 401) {
     throw new AccountDeletionError(payload?.code || 'AUTH_REQUIRED', 401);
@@ -72,7 +80,7 @@ async function postSlice(api) {
  * once the walk has reached the user tree — which is what a lost response
  * after Auth deletion looks like from the tab.
  */
-export async function deleteAccount(overrides) {
+export async function deleteAccount(overrides?: DeletionOperations) {
   const api = operations(overrides);
   if (api.isDemo) throw new AccountDeletionError('ACCOUNT_DELETION_UNSUPPORTED_IN_DEMO', 400);
   // The account that confirmed is the only one this loop may act on. Each
@@ -81,7 +89,7 @@ export async function deleteAccount(overrides) {
   const confirmedUid = api.currentUid();
   if (!confirmedUid) throw new AccountDeletionError('AUTH_REQUIRED', 401);
 
-  let lastStage = null;
+  let lastStage: string | null = null;
   for (let i = 0; i < MAX_SLICES; i += 1) {
     if (api.currentUid() !== confirmedUid) throw new AccountDeletionError('AUTH_REQUIRED', 401);
     let payload;
@@ -91,8 +99,8 @@ export async function deleteAccount(overrides) {
       // `AUTH_REQUIRED` after the Worker has already deleted the Auth user is
       // the normal end of a deletion. Before that stage, or as a re-login
       // demand, it is a failure the user has to see.
-      const authGone = error?.code === 'AUTH_REQUIRED'
-        && ['userTree', 'auth'].includes(lastStage)
+      const authGone = (error as { code?: string } | null)?.code === 'AUTH_REQUIRED'
+        && ['userTree', 'auth'].includes(lastStage!)
         && api.currentUid() === confirmedUid;
       if (authGone) return { complete: true, stage: 'auth' };
       throw error;

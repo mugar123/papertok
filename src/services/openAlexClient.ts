@@ -1,3 +1,35 @@
+export interface OpenAlexRequestOptions extends Omit<RequestInit, 'priority'> {
+  timeoutMs?: number;
+  cacheTtlMs?: number;
+  staleIfError?: boolean;
+  retries?: number;
+  priority?: boolean;
+}
+export interface OpenAlexJsonOptions<T, Source = T> extends OpenAlexRequestOptions {
+  persistentKey?: string;
+  persistentTtlMs?: number;
+  persistentSlim?: (data: Source) => T;
+  returnMeta?: boolean;
+}
+export interface OpenAlexMeta { source: string; stale: boolean; savedAt: number }
+interface PersistentEntry { data: unknown; savedAt: number }
+interface QueuedRequest {
+  task: () => Promise<Response>;
+  resolve: (response: Response | PromiseLike<Response>) => void;
+  reject: (reason: unknown) => void;
+  priority: boolean;
+}
+interface ClientOptions {
+  fetchImpl?: typeof fetch;
+  storage?: Storage | null;
+  now?: () => number;
+  sleep?: (delayMs: number) => PromiseLike<unknown>;
+  random?: () => number;
+  mailto?: string;
+  apiBase?: string;
+  maxConcurrent?: number;
+}
+
 const OPENALEX_HOST = 'api.openalex.org';
 const DEFAULT_MAILTO = 'app@papertok.io';
 const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
@@ -23,13 +55,13 @@ const MAX_PERSISTENT_CHARS = 1_200_000;
 const MAX_PERSISTENT_ENTRY_CHARS = 150_000;
 const MAX_RESPONSE_CACHE_ENTRIES = 40;
 
-const clonePersistentData = (data) => {
+const clonePersistentData = <T>(data: T): T => {
   if (data === null || typeof data !== 'object') return data;
   if (typeof structuredClone === 'function') return structuredClone(data);
   return JSON.parse(JSON.stringify(data));
 };
 
-const persistentPriority = (key) => (key.startsWith('recent-impact:') || key.startsWith('institution-impact:')
+const persistentPriority = (key: string) => (key.startsWith('recent-impact:') || key.startsWith('institution-impact:')
   ? 2
   : key.startsWith('entity:') ? 1 : 0);
 
@@ -40,10 +72,10 @@ const persistentPriority = (key) => (key.startsWith('recent-impact:') || key.sta
  * the cap is kept without serialising the blob to measure it; `newSize` is
  * the entry just written.
  */
-function trimPersistentStore(store, sizes) {
+function trimPersistentStore(store: Record<string, PersistentEntry>, sizes: Map<string, number>) {
   const entries = Object.entries(store).sort(([keyA, a], [keyB, b]) =>
     persistentPriority(keyB) - persistentPriority(keyA) || (b.savedAt || 0) - (a.savedAt || 0));
-  const kept = [];
+  const kept: Array<[string, PersistentEntry]> = [];
   let total = 0;
   for (const [key, entry] of entries) {
     let size = sizes.get(key);
@@ -69,10 +101,13 @@ const getDefaultStorage = () => {
   }
 };
 
-const defaultSleep = (delayMs) => new Promise(resolve => setTimeout(resolve, delayMs));
+const defaultSleep = (delayMs: number|undefined) => new Promise(resolve => setTimeout(resolve, delayMs));
 
 export class OpenAlexRequestError extends Error {
-  constructor(message, options = {}) {
+  declare code: string;
+  declare status: number | null;
+  declare retryAfterMs: number;
+  constructor(message: string | undefined, options: { cause?: unknown; code?: string; status?: number; retryAfterMs?: number } = {}) {
     super(message, options.cause ? { cause: options.cause } : undefined);
     this.name = 'OpenAlexRequestError';
     this.code = options.code || 'request_failed';
@@ -81,16 +116,16 @@ export class OpenAlexRequestError extends Error {
   }
 }
 
-export function isOpenAlexRateLimitError(error) {
-  let current = error;
+export function isOpenAlexRateLimitError(error: unknown) {
+  let current = error as { code?: string; status?: number; cause?: unknown } | null | undefined;
   while (current) {
     if (current.code === 'rate_limited' || current.status === 429) return true;
-    current = current.cause;
+    current = current.cause as typeof current;
   }
   return false;
 }
 
-export function parseRetryAfter(value, now = Date.now()) {
+export function parseRetryAfter(value: string | null | undefined, now = Date.now()) {
   if (!value) return 0;
   const seconds = Number(value);
   if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
@@ -121,12 +156,12 @@ const DEFAULT_RATE_LIMIT_DELAY_MS = 60_000;
 // out at zero or below -- an epoch already in the past, a negative header --
 // means "unusable", not "not limited": falling back to the default keeps the
 // backoff a 429 legitimately asked for.
-function boundRateLimitDelay(delayMs) {
+function boundRateLimitDelay(delayMs: number) {
   if (!Number.isFinite(delayMs) || delayMs <= 0) return DEFAULT_RATE_LIMIT_DELAY_MS;
   return Math.min(delayMs, MAX_RATE_LIMIT_DELAY_MS);
 }
 
-export function getOpenAlexRateLimitDelay(response, now = Date.now()) {
+export function getOpenAlexRateLimitDelay(response: Pick<Response, 'headers' | 'status'> | null | undefined, now = Date.now()) {
   if (!response) return 0;
   const remainingHeader = response.headers.get('x-ratelimit-remaining');
   const remaining = remainingHeader === null ? null : Number(remainingHeader);
@@ -154,7 +189,7 @@ export function getOpenAlexRateLimitDelay(response, now = Date.now()) {
 //
 // With no Worker configured -- local development -- the request still goes
 // direct on the anonymous allowance, which is exactly what it did before.
-export function identifyOpenAlexUrl(rawUrl, mailto = DEFAULT_MAILTO, apiBase = PAPER_API_BASE) {
+export function identifyOpenAlexUrl(rawUrl: string | URL, mailto = DEFAULT_MAILTO, apiBase = PAPER_API_BASE) {
   const url = new URL(rawUrl);
   if (url.hostname !== OPENALEX_HOST) return url.toString();
 
@@ -173,7 +208,24 @@ export function identifyOpenAlexUrl(rawUrl, mailto = DEFAULT_MAILTO, apiBase = P
 }
 
 export class OpenAlexClient {
-  constructor(options = {}) {
+  declare fetchImpl: typeof fetch | undefined;
+  declare storage: Storage | null;
+  declare now: () => number;
+  declare sleep: (delayMs: number) => PromiseLike<unknown>;
+  declare random: () => number;
+  declare mailto: string;
+  declare apiBase: string;
+  declare maxConcurrent: number;
+  declare activeRequests: number;
+  declare queue: QueuedRequest[];
+  declare inFlight: Map<string, Promise<Response>>;
+  declare responseCache: Map<string, { response: Response; savedAt: number }>;
+  declare rateLimitedUntil: number;
+  declare persistentStore: Record<string, PersistentEntry> | null;
+  declare persistentSizes: Map<string, number>;
+  declare persistentFlush: Promise<void> | null;
+  declare persistentDirty: boolean;
+  constructor(options: ClientOptions = {}) {
     // Safari/WebKit requires the native fetch receiver to remain the global
     // object. Calling an unbound window.fetch as an instance method can throw
     // "Illegal invocation" before any network request is made.
@@ -235,10 +287,10 @@ export class OpenAlexClient {
    * fires only in the tabs that did not write) or when asked
    * (`forgetPersistentStore`).
    */
-  readPersistentStore() {
-    if (this.persistentStore) return this.persistentStore;
-    this.persistentStore = JSON.parse(this.storage.getItem(STORAGE_KEY) || '{}');
-    return this.persistentStore;
+  readPersistentStore(): Record<string, PersistentEntry> {
+    if (this.persistentStore) return this.persistentStore!;
+    this.persistentStore = JSON.parse(this.storage!.getItem(STORAGE_KEY) || '{}');
+    return this.persistentStore!;
   }
 
   forgetPersistentStore() {
@@ -246,7 +298,7 @@ export class OpenAlexClient {
     this.persistentSizes = new Map();
   }
 
-  readPersistent(key, maxAgeMs = Number.POSITIVE_INFINITY) {
+  readPersistent<T = unknown>(key: string | number, maxAgeMs = Number.POSITIVE_INFINITY) {
     if (!this.storage || !key) return null;
     try {
       const store = this.readPersistentStore();
@@ -257,7 +309,7 @@ export class OpenAlexClient {
         // A copy, as a fresh parse used to hand out: the store is shared
         // across reads now, and a caller that edits what it got must not
         // edit the cache.
-        data: clonePersistentData(entry.data),
+        data: clonePersistentData(entry.data) as T,
         savedAt: entry.savedAt,
         ageMs,
         stale: ageMs > maxAgeMs,
@@ -274,7 +326,7 @@ export class OpenAlexClient {
    * once instead of sixty times. Reads in between see the writes: they read
    * the memory, not the storage.
    */
-  writePersistent(key, data) {
+  writePersistent(key: string, data: unknown) {
     if (!this.storage || !key) return;
     try {
       const entry = { data, savedAt: this.now() };
@@ -304,7 +356,7 @@ export class OpenAlexClient {
     }
   }
 
-  async fetch(rawUrl, options = {}) {
+  async fetch(rawUrl: string | URL, options: OpenAlexRequestOptions = {}) {
     if (typeof this.fetchImpl !== 'function') {
       throw new OpenAlexRequestError('Fetch is not available', { code: 'network_error' });
     }
@@ -359,10 +411,13 @@ export class OpenAlexClient {
     }
   }
 
-  async json(rawUrl, options = {}) {
+  async json<T = unknown, Source = T>(rawUrl: string | URL, options: OpenAlexJsonOptions<T, Source> & { returnMeta: true }): Promise<{ data: T; meta: OpenAlexMeta }>;
+  async json<T = unknown, Source = T>(rawUrl: string | URL, options?: OpenAlexJsonOptions<T, Source> & { returnMeta?: false }): Promise<T>;
+  async json<T = unknown, Source = T>(rawUrl: string | URL, options?: OpenAlexJsonOptions<T, Source>): Promise<T | { data: T; meta: OpenAlexMeta }>;
+  async json<T = unknown, Source = T>(rawUrl: string | URL, options: OpenAlexJsonOptions<T, Source> = {}): Promise<T | { data: T; meta: OpenAlexMeta }> {
     const persistentKey = options.persistentKey;
     const persistentTtlMs = options.persistentTtlMs ?? Number.POSITIVE_INFINITY;
-    const cached = persistentKey ? this.readPersistent(persistentKey, persistentTtlMs) : null;
+    const cached = persistentKey ? this.readPersistent<T>(persistentKey, persistentTtlMs) : null;
 
     if (cached && !cached.stale) {
       return options.returnMeta
@@ -378,14 +433,14 @@ export class OpenAlexClient {
           status: response.status,
         });
       }
-      const fetched = await response.json();
+      const fetched: Source | T = await response.json();
       // `persistentSlim` turns the response into what is worth keeping — a
       // works page as the papers the app made of it, not the raw work objects
       // with their inverted-index abstracts — and what a cache hit returns is
       // that same shape, so the caller sees one shape either way.
       const data = persistentKey && typeof options.persistentSlim === 'function'
-        ? options.persistentSlim(fetched)
-        : fetched;
+        ? options.persistentSlim(fetched as Source)
+        : fetched as T;
       if (persistentKey) this.writePersistent(persistentKey, data);
       return options.returnMeta
         ? { data, meta: { source: 'network', stale: false, savedAt: this.now() } }
@@ -405,8 +460,8 @@ export class OpenAlexClient {
   // one search used to enter it behind every followed-entity lookup and wait
   // out their timeouts (measured 2026-09-16: 2.3 s late on a cold entry, 10 s
   // in the control run) — past the feed's own first-paint budget.
-  enqueue(task, { priority = false } = {}) {
-    return new Promise((resolve, reject) => {
+  enqueue(task: () => Promise<Response>, { priority = false } = {}) {
+    return new Promise<Response>((resolve, reject) => {
       const item = { task, resolve, reject, priority };
       if (priority) this.queue.unshift(item);
       else this.queue.push(item);
@@ -421,14 +476,14 @@ export class OpenAlexClient {
   // the screen is waiting on gets out at once; the extra slot only ever holds
   // priority work, so the width the provider sees for everything else is
   // unchanged.
-  hasRoomFor(item) {
+  hasRoomFor(item: Pick<QueuedRequest, 'priority'>) {
     const width = item.priority ? this.maxConcurrent + 1 : this.maxConcurrent;
     return this.activeRequests < width;
   }
 
   drainQueue() {
     while (this.queue.length > 0 && this.hasRoomFor(this.queue[0])) {
-      const item = this.queue.shift();
+      const item = this.queue.shift()!;
       this.activeRequests += 1;
       Promise.resolve()
         .then(item.task)
@@ -440,7 +495,7 @@ export class OpenAlexClient {
     }
   }
 
-  async performFetch(url, options) {
+  async performFetch(url: string, options: OpenAlexRequestOptions) {
     const retries = options.retries ?? 2;
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     let lastResponse = null;
@@ -490,28 +545,28 @@ export class OpenAlexClient {
         return response;
       } catch (error) {
         if (isOpenAlexRateLimitError(error)) throw error;
-        if (error.code === 'aborted') throw error;
-        if (attempt >= retries || error.code === 'timeout') throw error;
+        if ((error as OpenAlexRequestError).code === 'aborted') throw error;
+        if (attempt >= retries || (error as OpenAlexRequestError).code === 'timeout') throw error;
         await this.sleep(this.withJitter(350 * (2 ** attempt)));
       }
     }
 
-    return lastResponse;
+    return lastResponse!;
   }
 
-  async fetchOnce(url, options) {
+  async fetchOnce(url: string, options: OpenAlexRequestOptions) {
     const controller = new AbortController();
     const externalSignal = options.signal;
     const abortFromExternalSignal = () => controller.abort(externalSignal?.reason);
     if (externalSignal?.aborted) abortFromExternalSignal();
     else externalSignal?.addEventListener('abort', abortFromExternalSignal, { once: true });
     const timeoutId = setTimeout(() => controller.abort(), options.timeoutMs);
-    const fetchOptions = { ...options };
+    const fetchOptions: OpenAlexRequestOptions & Record<string, unknown> = { ...options };
     ['timeoutMs', 'cacheTtlMs', 'staleIfError', 'retries', 'persistentKey', 'persistentTtlMs', 'returnMeta', 'priority']
       .forEach(key => delete fetchOptions[key]);
 
     try {
-      const response = await this.fetchImpl(url, { ...fetchOptions, signal: controller.signal });
+      const response = await this.fetchImpl!(url, { ...fetchOptions, signal: controller.signal } as RequestInit);
       // Drained here, inside the deadline, and handed back as a fresh Response.
       // `json()` reads the body far from this function and `fetch()` caches and
       // clones it on the way, so leaving the read outside meant the timeout
@@ -540,7 +595,7 @@ export class OpenAlexClient {
     }
   }
 
-  withJitter(delayMs) {
+  withJitter(delayMs: number) {
     return Math.round(delayMs * (0.9 + this.random() * 0.2));
   }
 }
@@ -549,7 +604,7 @@ export class OpenAlexClient {
 // them, so those are handed straight back.
 const BODYLESS_STATUSES = new Set([101, 204, 205, 304]);
 
-async function bufferResponse(response) {
+async function bufferResponse(response: Response) {
   if (BODYLESS_STATUSES.has(response.status) || !response.body) return response;
   const body = await response.arrayBuffer();
   return new Response(body, {
@@ -561,8 +616,8 @@ async function bufferResponse(response) {
 
 export const openAlexClient = new OpenAlexClient();
 
-export const openAlexFetch = (url, options) => openAlexClient.fetch(url, options);
-export const openAlexJson = (url, options) => openAlexClient.json(url, options);
+export const openAlexFetch = (url: string | URL, options?: OpenAlexRequestOptions) => openAlexClient.fetch(url, options);
+export const openAlexJson = (<T = unknown, Source = T>(url: string | URL, options?: OpenAlexJsonOptions<T, Source>) => openAlexClient.json<T, Source>(url, options)) as OpenAlexClient['json'];
 export const getOpenAlexHealth = () => openAlexClient.getHealth();
-export const readOpenAlexPersistent = (key, maxAgeMs) => openAlexClient.readPersistent(key, maxAgeMs);
-export const writeOpenAlexPersistent = (key, data) => openAlexClient.writePersistent(key, data);
+export const readOpenAlexPersistent = <T = unknown>(key: string, maxAgeMs?: number) => openAlexClient.readPersistent<T>(key, maxAgeMs);
+export const writeOpenAlexPersistent = (key: string, data: unknown) => openAlexClient.writePersistent(key, data);

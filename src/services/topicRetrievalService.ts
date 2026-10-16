@@ -1,3 +1,23 @@
+import type { Paper } from '../models/Paper.ts';
+import type { PaperSearchResult } from './adapters/index.ts';
+import type { TopicInput } from '../utils/topicNavigation.ts';
+import type { FollowInput } from '../utils/following.ts';
+type RetrievalTopic = TopicInput & { canonicalId?: string; _queryTopic?: boolean };
+interface TopicProviders {
+  fetchOpenAlexEntity: typeof getWorksByEntity;
+  fetchArxivCategories: typeof fetchPapers;
+  fetchDomainCategories: typeof fetchDomainPapers;
+  searchArxiv: typeof searchPapers;
+  searchOpenAlex: OpenAlexAdapter['search'];
+  searchPubmed: PubmedAdapter['search'];
+}
+interface TopicRequest { name: string; kind: string; promise: Promise<Paper[] | PaperSearchResult>; relevanceTopic?: TopicInput; }
+export interface TopicRetrievalOptions {
+  allowLegacyDisplayName?: boolean; filters?: Parameters<typeof getWorksByEntity>[5]; maxPapers?: number; mode?: string;
+  page?: number; pageSize?: number; providers?: Partial<TopicProviders>; searchQuery?: string; sortBy?: string;
+  timeoutMs?: number; excludeProviders?: string[];
+}
+
 import { CATEGORIES, getCategoryLabel } from '../data/categories.js';
 import { filterRelevantQueryTopicPapers } from '../utils/queryTopicSearch.ts';
 import {
@@ -22,38 +42,38 @@ const ARXIV_CATEGORY_PREFIXES = [
 const DEFAULT_PAGE_SIZE = 25;
 const DEFAULT_MAX_PAPERS = 60;
 
-function cleanText(value, maxLength = 180) {
+function cleanText(value: unknown, maxLength = 180) {
   return String(value || '').replace(/\p{Cc}/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLength);
 }
 
-function cleanOpenAlexId(value) {
-  return cleanText(value, 300).split('/').pop();
+function cleanOpenAlexId(value: unknown) {
+  return cleanText(value, 300).split('/').pop()!;
 }
 
-function meaningfulQuery(value) {
+function meaningfulQuery(value: unknown) {
   const query = cleanText(value);
   if (!query || isOpaqueQueryTopicText(query)) return '';
   return createQueryTopic({ displayName: query, query })?.query || '';
 }
 
-function nativeArxivCategory(value) {
+function nativeArxivCategory(value: string) {
   const category = cleanText(value, 80);
   return ARXIV_CATEGORY_PREFIXES.some(prefix => (
     category === prefix || category.startsWith(`${prefix}.`)
   ));
 }
 
-function categoryIdsFromCanonical(canonicalId) {
-  if (CATEGORIES[canonicalId]) return Object.keys(CATEGORIES[canonicalId].subcategories || {});
+function categoryIdsFromCanonical(canonicalId: string) {
+  if (CATEGORIES[canonicalId as keyof typeof CATEGORIES]) return Object.keys(CATEGORIES[canonicalId as keyof typeof CATEGORIES].subcategories || {});
   return isScientificCategoryId(canonicalId) ? [canonicalId] : [];
 }
 
-function categorySearchQuery(categoryIds, canonicalId) {
-  if (CATEGORIES[canonicalId]) return getCategoryLabel(canonicalId);
+function categorySearchQuery(categoryIds: string[], canonicalId: string) {
+  if (CATEGORIES[canonicalId as keyof typeof CATEGORIES]) return getCategoryLabel(canonicalId);
   return categoryIds.length ? getCategoryLabel(categoryIds[0]) : '';
 }
 
-function normalizedCategoryIds(topic, canonicalId) {
+function normalizedCategoryIds(topic: RetrievalTopic, canonicalId: string) {
   return [...new Set([
     ...(Array.isArray(topic?.metadata?.categoryIds) ? topic.metadata.categoryIds : []),
     ...(Array.isArray(topic?.categoryIds) ? topic.categoryIds : []),
@@ -61,13 +81,13 @@ function normalizedCategoryIds(topic, canonicalId) {
   ].map(categoryId => cleanText(categoryId, 80)).filter(isScientificCategoryId))].slice(0, 12);
 }
 
-function displayNameForTopic(topic) {
+function displayNameForTopic(topic: RetrievalTopic) {
   return cleanText(
     topic?.displayName || topic?.display_name || topic?.name || topic?.label,
   );
 }
 
-export function resolveTopicRetrievalPlan(topic = {}, { allowLegacyDisplayName = false } = {}) {
+export function resolveTopicRetrievalPlan(topic: RetrievalTopic = {}, { allowLegacyDisplayName = false } = {}) {
   const canonicalId = cleanOpenAlexId(topic.canonicalId || topic.id);
   const malformedQueryId = isOpaqueQueryTopicText(canonicalId) && !isQueryTopicId(canonicalId);
   const queryTopicId = isQueryTopicId(canonicalId);
@@ -105,13 +125,13 @@ export function resolveTopicRetrievalPlan(topic = {}, { allowLegacyDisplayName =
   };
 }
 
-export function getFollowedTopicCategoryIds(followedEntities = []) {
+export function getFollowedTopicCategoryIds(followedEntities: FollowInput[] = []) {
   return [...new Set((followedEntities || [])
     .filter(follow => follow?.type === 'topic')
     .flatMap(follow => resolveTopicRetrievalPlan(follow).categoryIds))];
 }
 
-const DEFAULT_PROVIDERS = Object.freeze({
+const DEFAULT_PROVIDERS: Readonly<TopicProviders> = Object.freeze<TopicProviders>({
   fetchOpenAlexEntity: (type, id, sortBy, page, searchQuery, filters) => (
     getWorksByEntity(type, id, sortBy, page, searchQuery, filters)
   ),
@@ -126,24 +146,24 @@ const DEFAULT_PROVIDERS = Object.freeze({
   searchPubmed: (query, page, options) => new PubmedAdapter().search(query, page, options),
 });
 
-function papersFromResult(value) {
+function papersFromResult(value: Paper[] | PaperSearchResult) {
   if (Array.isArray(value)) return value;
   return Array.isArray(value?.papers) ? value.papers : [];
 }
 
-function quotedQuery(query) {
+function quotedQuery(query: string) {
   return `"${cleanText(query).replace(/["\\]/g, ' ').replace(/\s+/g, ' ').trim()}"`;
 }
 
-function addRequest(requests, name, kind, promise) {
+function addRequest(requests: TopicRequest[], name: string, kind: string, promise: TopicRequest['promise']) {
   requests.push({ name, kind, promise });
 }
 
-function invokeProvider(provider, args) {
+function invokeProvider<Args extends unknown[], Result>(provider: (...args: Args) => Promise<Result>, args: Args) {
   return Promise.resolve().then(() => provider(...args));
 }
 
-export async function fetchTopicPapers(topic, options = {}) {
+export async function fetchTopicPapers(topic: RetrievalTopic, options: TopicRetrievalOptions = {}) {
   const {
     allowLegacyDisplayName = false,
     filters = {},
@@ -161,7 +181,7 @@ export async function fetchTopicPapers(topic, options = {}) {
     excludeProviders = [],
   } = options;
   const excluded = new Set(excludeProviders);
-  const provider = (name) => (excluded.has(name) ? null : providers[name]);
+  const provider = <K extends keyof TopicProviders>(name: K) => (excluded.has(name) ? null : providers[name]);
   const safePage = Math.max(1, Number(page) || 1);
   const safePageSize = Math.max(1, Math.min(30, Number(pageSize) || DEFAULT_PAGE_SIZE));
   const safeMaxPapers = Math.max(1, Math.min(90, Number(maxPapers) || DEFAULT_MAX_PAPERS));
@@ -178,7 +198,7 @@ export async function fetchTopicPapers(topic, options = {}) {
     };
   }
 
-  const requests = [];
+  const requests: TopicRequest[] = [];
   const offset = (safePage - 1) * safePageSize;
   if (plan.openAlexId && provider('fetchOpenAlexEntity')) {
     const entityType = plan.openAlexId.toUpperCase().startsWith('T') ? 'topic' : 'concept';
@@ -186,7 +206,7 @@ export async function fetchTopicPapers(topic, options = {}) {
       requests,
       'openalex-exact',
       'exact',
-      invokeProvider(provider('fetchOpenAlexEntity'), [
+      invokeProvider(provider('fetchOpenAlexEntity')!, [
         entityType,
         plan.openAlexId,
         sortBy,
@@ -202,7 +222,7 @@ export async function fetchTopicPapers(topic, options = {}) {
         requests,
         'arxiv-categories',
         'exact',
-        invokeProvider(provider('fetchArxivCategories'), [arxivCategories, offset, safePageSize, mode]),
+        invokeProvider(provider('fetchArxivCategories')!, [arxivCategories, offset, safePageSize, mode]),
       );
     }
     if (plan.categoryIds.length && provider('fetchDomainCategories')) {
@@ -210,7 +230,7 @@ export async function fetchTopicPapers(topic, options = {}) {
         requests,
         'domain-categories',
         'exact',
-        invokeProvider(provider('fetchDomainCategories'), [
+        invokeProvider(provider('fetchDomainCategories')!, [
           plan.categoryIds,
           safePage,
           Math.min(10, safePageSize),
@@ -227,7 +247,7 @@ export async function fetchTopicPapers(topic, options = {}) {
           requests,
           'arxiv-query',
           'generic',
-          invokeProvider(provider('searchArxiv'), [combinedQuery, offset, safePageSize]),
+          invokeProvider(provider('searchArxiv')!, [combinedQuery, offset, safePageSize]),
         );
       }
       if (provider('searchOpenAlex')) {
@@ -235,7 +255,7 @@ export async function fetchTopicPapers(topic, options = {}) {
           requests,
           'openalex-query',
           'generic',
-          invokeProvider(provider('searchOpenAlex'), [
+          invokeProvider(provider('searchOpenAlex')!, [
             quotedQuery(combinedQuery),
             safePage,
             { internalCategories: plan.categoryIds },
@@ -247,7 +267,7 @@ export async function fetchTopicPapers(topic, options = {}) {
           requests,
           'pubmed-query',
           'generic',
-          invokeProvider(provider('searchPubmed'), [
+          invokeProvider(provider('searchPubmed')!, [
             quotedQuery(combinedQuery),
             safePage,
             { internalCategories: plan.categoryIds.slice(0, 3) },
@@ -262,16 +282,16 @@ export async function fetchTopicPapers(topic, options = {}) {
 
   const settled = await Promise.all(requests.map(request => (
     Number.isFinite(timeoutMs)
-      ? settleWithin(request.promise, timeoutMs)
+      ? settleWithin(request.promise, timeoutMs!)
       : Promise.resolve(request.promise).then(
-        value => ({ status: 'fulfilled', value }),
-        reason => ({ status: 'rejected', reason }),
+        value => ({ status: 'fulfilled' as const, value }),
+        reason => ({ status: 'rejected' as const, reason }),
       )
   )));
-  const successfulProviders = [];
-  const failedProviders = [];
+  const successfulProviders: string[] = [];
+  const failedProviders: string[] = [];
   let hasMore = false;
-  const collected = [];
+  const collected: Paper[] = [];
 
   settled.forEach((result, index) => {
     const request = requests[index];
@@ -281,10 +301,10 @@ export async function fetchTopicPapers(topic, options = {}) {
     }
     successfulProviders.push(request.name);
     const rawPapers = papersFromResult(result.value).filter(Boolean);
-    const total = Number(result.value?.total);
+    const total = Number((result.value as PaperSearchResult)?.total);
     hasMore ||= rawPapers.length >= safePageSize || (Number.isFinite(total) && total > safePage * safePageSize);
     collected.push(...(request.kind === 'generic'
-      ? filterRelevantQueryTopicPapers(rawPapers, request.relevanceTopic)
+      ? filterRelevantQueryTopicPapers(rawPapers, request.relevanceTopic!)
       : rawPapers));
   });
 

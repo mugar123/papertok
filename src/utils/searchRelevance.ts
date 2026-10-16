@@ -1,3 +1,6 @@
+import type { Paper } from '../models/Paper.ts';
+import type { EntityMetrics, OpenAlexAuthor, OpenAlexInstitution, OpenAlexTopic } from '../services/adapters/openAlexTypes.ts';
+
 // An unknown section scores 99 in getSearchSectionOrder, so a section missing
 // from here silently sinks to the bottom of every search forever.
 const DEFAULT_SECTION_ORDER = ['papers', 'topics', 'authors', 'institutions', 'projects'];
@@ -35,7 +38,7 @@ const ORGANISATION_WORDS = /\b(?:(?:universi|institut|istitut|laborat|hochschul|
 
 const PROJECT_WORDS = /\b(?:project|projects|proyecto|proyectos|projeto|projet|projekt|grant|grants|horizon|horizonte|erc)\b/;
 
-export function normalizeSearchText(value = '') {
+export function normalizeSearchText(value: unknown = '') {
   return String(value)
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -69,7 +72,7 @@ export function normalizeSearchText(value = '') {
  * the identity fields, because no person is called a sentence — but it still
  * requires the organisation word, so a long collaboration byline survives it.
  */
-export function isOrganisationAuthorRecord(author = {}) {
+export function isOrganisationAuthorRecord(author: Partial<OpenAlexAuthor> = {}) {
   const name = normalizeSearchText(author?.display_name);
   if (!name) return false;
   if (!ORGANISATION_WORDS.test(name)) return false;
@@ -80,7 +83,7 @@ export function isOrganisationAuthorRecord(author = {}) {
 
 // Citations scaled clear of any believable works count, so works only ever
 // decide between records whose citations already tied.
-function prominenceWeight(record) {
+function prominenceWeight(record: EntityMetrics | null | undefined) {
   return (record?.cited_by_count || 0) * 1e6 + (record?.works_count || 0);
 }
 
@@ -93,7 +96,7 @@ function prominenceWeight(record) {
  * signals swapped, because it asks a different question — which record is the
  * fullest, not which person is the famous one.
  */
-export function authorProminenceWeight(author) {
+export function authorProminenceWeight(author: EntityMetrics) {
   return prominenceWeight(author);
 }
 
@@ -111,11 +114,11 @@ export function authorProminenceWeight(author) {
  * this is only a tie-break once something has filled them in. Un-enriched, every
  * institution weighs the same and the text order stands untouched.
  */
-export function institutionProminenceWeight(institution) {
+export function institutionProminenceWeight(institution: EntityMetrics) {
   return prominenceWeight(institution);
 }
 
-export function scoreSearchMatch(query, values = []) {
+export function scoreSearchMatch(query: string|undefined, values: unknown[] = []) {
   const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) return 0;
 
@@ -148,7 +151,7 @@ export function scoreSearchMatch(query, values = []) {
 }
 
 /** Whole-word containment on already-normalised text: "sam" does not find "samples". */
-function containsPhrase(normalizedText, normalizedPhrase) {
+function containsPhrase(normalizedText: string, normalizedPhrase: string) {
   return ` ${normalizedText} `.includes(` ${normalizedPhrase} `);
 }
 
@@ -183,7 +186,7 @@ function containsPhrase(normalizedText, normalizedPhrase) {
  * Utilization of Meta's New Open-Source Pretrained Model" over the Llama 2
  * paper itself.
  */
-export function scorePaperSearchMatch(query, paper = {}) {
+export function scorePaperSearchMatch(query: string|undefined, paper: Partial<Paper> = {}) {
   const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) return 0;
   const title = normalizeSearchText(paper?.title);
@@ -214,7 +217,7 @@ export function scorePaperSearchMatch(query, paper = {}) {
  * relevance still decides between two titles that match alike. Nothing is
  * dropped here -- a paper found only through its abstract is still a result.
  */
-export function rankPaperSearchResults(query, papers = []) {
+export function rankPaperSearchResults<T extends Partial<Paper>>(query: string, papers: T[] = []) {
   return (papers || [])
     .map((paper, index) => ({ paper, index, score: scorePaperSearchMatch(query, paper) }))
     .sort((a, b) => (b.score - a.score) || (a.index - b.index))
@@ -228,12 +231,7 @@ export function rankPaperSearchResults(query, papers = []) {
  * which for OpenAlex authors means four one-paper records can sit above the
  * researcher everybody was looking for, all of them scoring exactly 100.
  */
-export function filterRelevantSearchResults(
-  query,
-  results,
-  getValues,
-  { minimumScore = 55, getWeight = null } = {},
-) {
+export function filterRelevantSearchResults<T>(query: string, results: T[], getValues: (result: T) => unknown[], { minimumScore = 55, getWeight = null }: { minimumScore?: number; getWeight?: ((result: T) => number) | null } = {}) {
   const weigh = typeof getWeight === 'function' ? getWeight : null;
   return (results || [])
     .map((result, index) => ({
@@ -260,7 +258,7 @@ export function filterRelevantSearchResults(
  * the ONLY way an acronym query can match at all, since "MIT" carries no
  * organisation word for the intent check to read.
  */
-export function institutionSearchValues(institution) {
+export function institutionSearchValues(institution: Partial<OpenAlexInstitution>) {
   return [
     institution.display_name,
     ...Object.values(institution.localized_names || {}),
@@ -283,8 +281,8 @@ export function buildSearchSectionValues({
   institutions = [],
   topics = [],
   projects = [],
-} = {}) {
-  const clean = values => values.filter(Boolean);
+}: { papers?: Partial<Paper>[]; authors?: Partial<OpenAlexAuthor>[]; institutions?: Partial<OpenAlexInstitution>[]; topics?: Partial<OpenAlexTopic>[]; projects?: Array<{ acronym?: string | null; title?: string }> } = {}) {
+  const clean = (values: unknown[]) => values.filter(Boolean);
   return {
     papers: clean(papers.map(paper => paper.title)),
     topics: clean(topics.flatMap(concept => [
@@ -302,7 +300,7 @@ export function resolvePreferredSearchSection({
   query,
   hint,
   sectionValues = {},
-}) {
+}: { query?: string; hint?: string; sectionValues?: Record<string, unknown[]> }) {
   const availableSections = new Set(
     Object.entries(sectionValues)
       .filter(([, values]) => Array.isArray(values) && values.length > 0)
@@ -349,7 +347,7 @@ export function resolvePreferredSearchSection({
   return DEFAULT_SECTION_ORDER.find(section => availableSections.has(section)) || null;
 }
 
-export function getSearchSectionOrder(section, preferredSection) {
+export function getSearchSectionOrder(section: string, preferredSection: string | null) {
   if (section === preferredSection) return 1;
   const defaultIndex = DEFAULT_SECTION_ORDER.indexOf(section);
   return defaultIndex === -1 ? 99 : 10 + defaultIndex;

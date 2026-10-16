@@ -1,3 +1,5 @@
+import type { Paper } from '../models/Paper.ts';
+import type { GuestFeedPlan } from '../utils/guestFeedPlan.ts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchPapers } from '../services/arxivService.ts';
 import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter.ts';
@@ -23,7 +25,7 @@ const GUEST_SOURCE_BUDGET_MS = 4_000;
 // A source the plan has nothing for is not asked at all, rather than asked for
 // nothing: an empty arXiv list returns [] on its own, but a PubMed search for
 // '' would be a real request for whatever PubMed makes of an empty string.
-function startGuestCandidateRequests(plan, { refresh = false } = {}) {
+function startGuestCandidateRequests(plan: GuestFeedPlan, { refresh = false } = {}) {
   const openAlex = new OpenAlexAdapter();
   const requests = [
     plan.arxivCategories.length > 0
@@ -49,8 +51,8 @@ function startGuestCandidateRequests(plan, { refresh = false } = {}) {
   return requests;
 }
 
-function dedupePapers(papers) {
-  const seen = new Set();
+function dedupePapers<T extends Partial<Paper>>(papers: T[]) {
+  const seen = new Set<string>();
   return papers.filter((paper) => {
     const key = String(paper?.doi || paper?.arxivId || paper?.id || '').toLowerCase();
     if (!key || seen.has(key)) return false;
@@ -69,7 +71,7 @@ function dedupePapers(papers) {
  * Removes one paper from a shown list. Returns the SAME array when there is
  * nothing to remove, so a miss costs no re-render.
  */
-export function dropPaperById(papers, paperId) {
+export function dropPaperById<T extends Partial<Paper>>(papers: T[], paperId: string) {
   if (!Array.isArray(papers)) return [];
   if (!paperId) return papers;
   const next = papers.filter((paper) => paper?.id !== paperId);
@@ -85,15 +87,15 @@ export function dropPaperById(papers, paperId) {
  * refresh; a later change of plan is a rebuild of what was shown. The same
  * plan twice loads nothing.
  */
-export function guestFeedLoadDecision({ enabled, previousKey, planKey }) {
+export function guestFeedLoadDecision({ enabled, previousKey, planKey }: { enabled: boolean; previousKey: string | null; planKey: string }) {
   if (!enabled || previousKey === planKey) return null;
   return { refresh: previousKey !== null };
 }
 
-export function useGuestFeed({ areas = [], topics = [], enabled = true } = {}) {
-  const [papers, setPapers] = useState([]);
+export function useGuestFeed({ areas = [], topics = [], enabled = true }: { areas?: string[]; topics?: string[]; enabled?: boolean } = {}) {
+  const [papers, setPapers] = useState<Paper[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const requestIdRef = useRef(0);
   const plan = useMemo(() => buildGuestFeedPlan(areas, topics), [areas, topics]);
@@ -102,7 +104,7 @@ export function useGuestFeed({ areas = [], topics = [], enabled = true } = {}) {
   // `refresh` is the reader's pull-to-refresh: the shown papers stay until
   // the new ones land, and arXiv is asked past its cache. `forceRefresh` is
   // what that second part is called at the source.
-  const load = useCallback(async (requestedPlan, { refresh = false, forceRefresh = refresh } = {}) => {
+  const load = useCallback(async (requestedPlan: GuestFeedPlan, { refresh = false, forceRefresh = refresh }: { refresh?: boolean; forceRefresh?: boolean } = {}) => {
     const requestId = ++requestIdRef.current;
     if (refresh) setIsRefreshing(true);
     else setLoading(true);
@@ -120,8 +122,8 @@ export function useGuestFeed({ areas = [], topics = [], enabled = true } = {}) {
 
       // Europe PMC has no in-flight map, and the early and late batches
       // overlap: each pmid is asked for once per load.
-      const askedPmids = new Set();
-      const enrichVisible = (batch) => {
+      const askedPmids = new Set<string>();
+      const enrichVisible = (batch: Paper[]) => {
         const ids = batch.map(getOpenAlexEnrichmentId).filter(Boolean);
         if (ids.length > 0) {
           enrichPapersBatch(ids, { timeoutMs: 6_500 }).catch(() => ({})).then((lateEnrichment) => {
@@ -132,10 +134,10 @@ export function useGuestFeed({ areas = [], topics = [], enabled = true } = {}) {
         // The guest feed shows PubMed cards too, and they carry the same debt
         // ade641a left behind: no open access, no PMC PDF, no citations until
         // Europe PMC answers. Asked for after the batch is on screen.
-        const pmids = [...new Set(batch.map(paper => paper?.pmid).filter(pmid => pmid && !askedPmids.has(pmid)))];
+        const pmids = [...new Set(batch.map(paper => paper?.pmid).filter(pmid => pmid && !askedPmids.has(pmid)))] as string[];
         if (pmids.length > 0) {
           pmids.forEach(pmid => askedPmids.add(pmid));
-          enrichPubmedIds(pmids).catch(() => new Map()).then((lateRecords) => {
+          enrichPubmedIds(pmids).catch(() => new Map<string, Partial<Paper> & { pmid: string }>()).then((lateRecords) => {
             if (requestId !== requestIdRef.current || !lateRecords || lateRecords.size === 0) return;
             setPapers((current) => mergeEuropePmcEnrichment(current, lateRecords));
           });
@@ -206,7 +208,7 @@ export function useGuestFeed({ areas = [], topics = [], enabled = true } = {}) {
   // Keyed by the plan, not by the array it came from: a caller re-rendering
   // with an equal list is the same plan, and must not start a load that
   // would show up as a skeleton under the cards already on screen.
-  const loadedKeyRef = useRef(null);
+  const loadedKeyRef = useRef<string | null>(null);
   useEffect(() => {
     const previousKey = loadedKeyRef.current;
     const decision = guestFeedLoadDecision({ enabled, previousKey, planKey: plan.key });
@@ -233,7 +235,7 @@ export function useGuestFeed({ areas = [], topics = [], enabled = true } = {}) {
   // in this state, so dropping one is the whole action: nothing to write, no
   // profile to train, and nothing that outlives the page. A visitor pressing
   // Skip used to get a sign-in prompt instead, which read as a dead button.
-  const dismissPaper = useCallback((paperId) => {
+  const dismissPaper = useCallback((paperId: string) => {
     setPapers((current) => dropPaperById(current, paperId));
   }, []);
 

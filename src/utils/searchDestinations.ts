@@ -1,3 +1,5 @@
+import type { Paper } from '../models/Paper.ts';
+
 /**
  * Where a search result sends you.
  *
@@ -30,7 +32,7 @@ import { getPublicPaperPath } from './publicNavigation.ts';
  * carrying the query, where the same paper opens in an overlay that needs no
  * identifier.
  */
-export function searchPaperDestination(paper, query = '') {
+export function searchPaperDestination(paper: Partial<Paper>, query = '') {
   const path = getPublicPaperPath(paper);
   if (path) return { path, state: { paper } };
 

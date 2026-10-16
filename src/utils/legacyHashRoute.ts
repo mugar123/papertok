@@ -79,7 +79,7 @@ export function routeFromLegacyHash({ search = '', hash = '' } = {}) {
  * history that object carries react-router's `idx`, which is what
  * `utils/routeDirection.js` reads to tell an arrival from a step back.
  */
-export function applyLegacyHashRoute({ history, location } = {}) {
+export function applyLegacyHashRoute({ history, location }: { history?: Pick<History, 'replaceState' | 'state'>; location?: { search?: string; hash?: string } } = {}) {
   const route = routeFromLegacyHash(location || {});
   if (!route || !history?.replaceState) return null;
   try {

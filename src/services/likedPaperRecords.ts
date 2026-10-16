@@ -1,5 +1,7 @@
+import type { Paper } from '../models/Paper.ts';
+
 // Reached lazily, so a unit test of this module never loads the arXiv client.
-const readArxivPapers = async (ids) => {
+const readArxivPapers = async (ids: string[]) => {
   const { fetchPapersByIds } = await import('./arxivService.ts');
   return fetchPapersByIds(ids);
 };
@@ -13,11 +15,11 @@ const readArxivPapers = async (ids) => {
  */
 const LEGACY_ARXIV_ID = /^(?:arxiv:)?[a-z][a-z-]*(?:\.[a-z-]+)?\/\d{7}(?:v\d+)?$/i;
 
-export function isLegacyArxivId(id) {
+export function isLegacyArxivId(id: string) {
   return typeof id === 'string' && LEGACY_ARXIV_ID.test(id);
 }
 
-const arxivKey = value => String(value || '')
+const arxivKey = (value: unknown) => String(value || '')
   .replace(/^arxiv:/i, '')
   .replace(/v\d+$/i, '')
   .toLowerCase();
@@ -28,7 +30,7 @@ const arxivKey = value => String(value || '')
  * Returns records in the library shape, and `failed` when arXiv did not
  * answer, so the caller can leave those ids askable.
  */
-export async function hydrateLegacyArxivPapers(ids, { fetchArxivPapers = readArxivPapers } = {}) {
+export async function hydrateLegacyArxivPapers(ids: string[], { fetchArxivPapers = readArxivPapers } = {}) {
   const legacy = (Array.isArray(ids) ? ids : []).filter(isLegacyArxivId);
   if (legacy.length === 0) return { records: [], failed: false };
 
@@ -39,7 +41,7 @@ export async function hydrateLegacyArxivPapers(ids, { fetchArxivPapers = readArx
     return { records: [], failed: true };
   }
 
-  const byKey = new Map();
+  const byKey = new Map<string, Paper>();
   for (const paper of papers) {
     for (const key of [paper?.arxivId, paper?.id]) {
       if (key) byKey.set(arxivKey(key), paper);

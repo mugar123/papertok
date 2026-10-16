@@ -143,7 +143,7 @@ test('the card is born with whatever the figure cache already holds', async () =
   const src = strip(await read('./PaperCard.jsx'));
   assert.match(
     src,
-    /import \{[^}]*\bpeekPaperFigures\b[^}]*\} from '\.\.\/\.\.\/services\/paperFigureService\.js'/,
+    /import \{[^}]*\bpeekPaperFigures\b[^}]*\} from '\.\.\/\.\.\/services\/paperFigureService\.ts'/,
     'the synchronous cache read is imported',
   );
   assert.match(
@@ -231,7 +231,7 @@ test('SOURCE: a clipping leaves before its page and resumes with it, never in on
   assert.match(resume[1], /from \{ opacity: 0;/);
   assert.doesNotMatch(resume[1], /translate|scale|rotate/, 'a resume is a fade: the travel is what says "arriving"');
 
-  assert.match(code, /import \{ useIsPageArriving \} from '\.\.\/\.\.\/hooks\/usePageArrival\.js';/);
+  assert.match(code, /import \{ useIsPageArriving \} from '\.\.\/\.\.\/hooks\/usePageArrival\.ts';/);
   assert.match(code, /const isPageArriving = useIsPageArriving\(\);/);
   const effect = code.match(/useLayoutEffect\(\(\) => \{\s*if \(!figuresShown\)([\s\S]*?)\s+\}, \[figuresShown, isPageArriving\]\);/);
   assert.ok(effect, 'the verdict is taken in a layout effect, before the frame is painted');

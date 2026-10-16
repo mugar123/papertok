@@ -1,3 +1,5 @@
+import type { Paper } from '../models/Paper.ts';
+export interface PaperFigure { url: string; caption: string }
 import { trustedWorkerUrl } from './workerApiClient.ts';
 
 /**
@@ -12,10 +14,10 @@ import { trustedWorkerUrl } from './workerApiClient.ts';
  * would retry a conversion that is never going to exist.
  */
 
-const figureCache = new Map();
+const figureCache = new Map<string, PaperFigure[]>();
 /** In-flight requests, so a double mount does not fetch the same paper twice
  *  and then race to cache each other's result. */
-const pendingRequests = new Map();
+const pendingRequests = new Map<string, Promise<PaperFigure[]>>();
 const REQUEST_TIMEOUT_MS = 10_000;
 
 /**
@@ -29,7 +31,7 @@ const REQUEST_TIMEOUT_MS = 10_000;
 const MODERN_ARXIV_ID = /^\d{4}\.\d{4,5}$/;
 const LEGACY_ARXIV_ID = /^[a-z]+(?:-[a-z]+)?(?:\.[A-Za-z]+(?:-[A-Za-z]+)?)?\/\d{7}$/;
 
-export function normalizeArxivFigureId(paper) {
+export function normalizeArxivFigureId(paper: Partial<Paper> | null | undefined) {
   const raw = String(paper?.arxivId || '')
     .replace(/^arxiv:/i, '')
     .replace(/v\d+$/i, '')
@@ -37,13 +39,13 @@ export function normalizeArxivFigureId(paper) {
   return MODERN_ARXIV_ID.test(raw) || LEGACY_ARXIV_ID.test(raw) ? raw : '';
 }
 
-async function requestFigures(url, arxivId) {
+async function requestFigures(url: string, arxivId: string) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     const response = await fetch(url, { signal: controller.signal });
     if (!response.ok) throw new Error(`Figures unavailable: ${response.status}`);
-    const payload = await response.json();
+    const payload = await response.json() as { figures?: PaperFigure[] };
     const figures = Array.isArray(payload?.figures)
       ? payload.figures.filter(figure => typeof figure?.url === 'string')
       : [];
@@ -72,19 +74,19 @@ async function requestFigures(url, arxivId) {
  * `null` and `[]` are different answers: `[]` is a paper the Worker has
  * already told us has no figures, and must not trigger another look.
  */
-export function peekPaperFigures(paper) {
+export function peekPaperFigures(paper: Partial<Paper> | null | undefined) {
   const arxivId = normalizeArxivFigureId(paper);
   if (!arxivId) return null;
-  return figureCache.has(arxivId) ? figureCache.get(arxivId) : null;
+  return figureCache.has(arxivId) ? figureCache.get(arxivId)! : null;
 }
 
-export async function getPaperFigures(paper) {
+export async function getPaperFigures(paper: Partial<Paper> | null | undefined) {
   const arxivId = normalizeArxivFigureId(paper);
   if (!arxivId) return [];
-  if (figureCache.has(arxivId)) return figureCache.get(arxivId);
-  if (pendingRequests.has(arxivId)) return pendingRequests.get(arxivId);
+  if (figureCache.has(arxivId)) return figureCache.get(arxivId)!;
+  if (pendingRequests.has(arxivId)) return pendingRequests.get(arxivId)!;
 
-  const apiBase = import.meta.env.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '');
+  const apiBase = (import.meta as ImportMeta & { env: { VITE_PAPER_API_BASE_URL?: string } }).env.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '');
   if (!apiBase) return [];
   const url = trustedWorkerUrl(`${apiBase}/resources/figures?arxiv_id=${encodeURIComponent(arxivId)}`);
   if (!url) return [];

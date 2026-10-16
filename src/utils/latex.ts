@@ -1,4 +1,6 @@
-const HTML_ENTITIES = {
+export type LatexChunk = { type: 'text'; value: string } | { type: 'math'; value: string; raw: string; display: boolean };
+
+const HTML_ENTITIES: Record<string, string> = {
   '&amp;': '&',
   '&gt;': '>',
   '&lt;': '<',
@@ -14,7 +16,7 @@ const HTML_ENTITIES = {
 
 const SCIENTIFIC_MARKUP_TAG = /<\/?(?:[a-z][\w.-]*:)?[a-z][\w.-]*(?:\s[^<>]*?)?\s*\/?>/gi;
 
-function decodeHtmlEntity(entity) {
+function decodeHtmlEntity(entity: string) {
   const normalizedEntity = entity.toLowerCase();
   if (HTML_ENTITIES[normalizedEntity]) return HTML_ENTITIES[normalizedEntity];
   const decimalMatch = entity.match(/^&#(\d+);$/);
@@ -23,7 +25,7 @@ function decodeHtmlEntity(entity) {
   if (!Number.isInteger(codePoint)) return entity;
 
   try {
-    return String.fromCodePoint(codePoint);
+    return String.fromCodePoint(codePoint!);
   } catch {
     return entity;
   }
@@ -66,13 +68,13 @@ const TRAILING_TAG = /<\/?[a-z][\w.:-]*(?:\s[^<>]*)?\/?>$/i;
  * boundary — never at the end of the text, which would take the rest of the
  * abstract for the formula.
  */
-function closeDocument(content) {
+function closeDocument(content: string) {
   return content.includes('\\begin{document}') && !content.includes('\\end{document}')
     ? `${content}\\end{document}`
     : content;
 }
 
-function translateScripts(formula) {
+function translateScripts(formula: string) {
   return formula.replace(HTML_SCRIPT, (match, tag, content) => (
     `${tag.toLowerCase() === 'sup' ? '^' : '_'}{${content}}`
   ));
@@ -85,7 +87,7 @@ function translateScripts(formula) {
  * looked for across whitespace, which is what keeps `the ` from losing its `e`
  * to a one-letter formula that came with no twin at all.
  */
-function gluedTwinStart(head, twin) {
+function gluedTwinStart(head: string, twin: string) {
   let end = head.length;
   for (let position = twin.length - 1; position >= 0; position -= 1) {
     while (head[end - 1] === '>') {
@@ -100,7 +102,7 @@ function gluedTwinStart(head, twin) {
   return end;
 }
 
-function stripOuterDollars(body) {
+function stripOuterDollars(body: string) {
   const display = /^\$\$([\s\S]*)\$\$$/.exec(body);
   if (display) return display[1];
   const inline = /^\$([\s\S]*)\$$/.exec(body);
@@ -111,7 +113,7 @@ function stripOuterDollars(body) {
  * The MathML twin reaches us flattened to bare characters, so
  * `{T}_{{{{\rm{c}}}}}^{0}` and `Tc0` are one formula written twice.
  */
-function flattenFormula(expression) {
+function flattenFormula(expression: string) {
   return expression.replace(/\\[a-zA-Z]+\s*/g, '').replace(/[{}$_^\\\s]/g, '');
 }
 
@@ -131,7 +133,7 @@ function flattenFormula(expression) {
  * formula — so what is dropped is the flattening of THIS formula, matched
  * exactly, or nothing at all.
  */
-function unwrapStandaloneDocuments(text) {
+function unwrapStandaloneDocuments(text: string) {
   let output = '';
   let cursor = 0;
   let match;
@@ -150,7 +152,7 @@ function unwrapStandaloneDocuments(text) {
   return output + text.slice(cursor);
 }
 
-export function normalizeScientificMarkup(text) {
+export function normalizeScientificMarkup(text: unknown) {
   if (!text) return '';
 
   // `<alternatives>` is resolved while its tags still stand, which is what
@@ -182,7 +184,7 @@ export const LATEX_DELIMITERS = [
   { left: '\\begin{math}', right: '\\end{math}', display: false },
 ];
 
-function isEscaped(text, index) {
+function isEscaped(text: string, index: number) {
   let backslashCount = 0;
   for (let cursor = index - 1; cursor >= 0 && text[cursor] === '\\'; cursor -= 1) {
     backslashCount += 1;
@@ -190,8 +192,8 @@ function isEscaped(text, index) {
   return backslashCount % 2 === 1;
 }
 
-function findNextDelimiter(text, startIndex) {
-  let nextMatch = null;
+function findNextDelimiter(text: string, startIndex: number) {
+  let nextMatch: { index: number; delimiter: typeof LATEX_DELIMITERS[number] } | null = null;
 
   for (const delimiter of LATEX_DELIMITERS) {
     let index = text.indexOf(delimiter.left, startIndex);
@@ -214,7 +216,7 @@ function findNextDelimiter(text, startIndex) {
   return nextMatch;
 }
 
-function findDelimiterEnd(text, delimiter, startIndex) {
+function findDelimiterEnd(text: string, delimiter: typeof LATEX_DELIMITERS[number], startIndex: number) {
   let braceLevel = 0;
 
   for (let index = startIndex; index < text.length; index += 1) {
@@ -238,12 +240,12 @@ function findDelimiterEnd(text, delimiter, startIndex) {
   return -1;
 }
 
-function commandSeparator(expression, nextCharacter) {
+function commandSeparator(expression: string, nextCharacter: string | undefined) {
   const needsCommandSeparator = /\\[a-zA-Z]+$/.test(expression) && /[a-zA-Z]/.test(nextCharacter || '');
   return needsCommandSeparator ? `${expression} ` : expression;
 }
 
-function unwrapEnsureMath(match, expression, offset, source) {
+function unwrapEnsureMath(match: string, expression: string, offset: number, source: string) {
   return commandSeparator(expression, source[offset + match.length]);
 }
 
@@ -262,7 +264,7 @@ const STACKREL_TILDE = /\\stackrel\{\\ifmmode\s*\\tilde\{\}\s*\\else\s*\\~\{\}\s
  * `\AA{}` swallows its empty group; `\AA bond` keeps its space, because the
  * abstracts that carry these wrote the space on purpose.
  */
-const TEXT_SYMBOLS = {
+const TEXT_SYMBOLS: Record<string, string> = {
   AA: 'Å',
   textcopyright: '©',
   texttimes: '×',
@@ -286,7 +288,7 @@ const TEXT_SYMBOL = new RegExp(`\\\\(${Object.keys(TEXT_SYMBOLS).join('|')})(?![
  * the same delimiter walk `splitLatexText` does, so "inside a formula" means
  * exactly what the renderer will later take it to mean.
  */
-function transformByMode(text, transformProse, transformMath) {
+function transformByMode(text: string, transformProse: (text: string) => string, transformMath: (text: string) => string) {
   let output = '';
   let cursor = 0;
 
@@ -314,7 +316,7 @@ function transformByMode(text, transformProse, transformMath) {
   return output;
 }
 
-function normalizeMathRun(value) {
+function normalizeMathRun(value: string) {
   return value
     .replace(ENSUREMATH, unwrapEnsureMath)
     .replace(STACKREL_TILDE, '\\tilde{$1}')
@@ -329,7 +331,7 @@ function normalizeMathRun(value) {
  * around them: the macro IS the formula. Each becomes its own inline formula,
  * in `\( \)` so a stray `$` in the prose cannot pair with it.
  */
-function normalizeProseRun(value) {
+function normalizeProseRun(value: string) {
   return value
     .replace(STACKREL_TILDE, (match, expression) => `\\(\\tilde{${expression.replace(ENSUREMATH, '$1')}}\\)`)
     .replace(ENSUREMATH, (match, expression) => `\\(${expression}\\)`)
@@ -337,7 +339,7 @@ function normalizeProseRun(value) {
     .replace(TEXT_SYMBOL, (match, name) => TEXT_SYMBOLS[name]);
 }
 
-export function normalizeLatexText(text) {
+export function normalizeLatexText(text: unknown) {
   if (!text) return '';
 
   return transformByMode(normalizeScientificMarkup(text), normalizeProseRun, normalizeMathRun)
@@ -350,7 +352,7 @@ export function normalizeLatexText(text) {
  * it is given. Prose runs go through here at paint time; the normalized space
  * itself keeps the escape, because highlight offsets are measured against it.
  */
-export function displayProse(value) {
+export function displayProse(value: string) {
   return String(value).replace(/\\%/g, '%');
 }
 
@@ -359,7 +361,7 @@ export function displayProse(value) {
  * offset in its normalized source, where each `\%` occupies two characters but
  * paints as one. Identity when the run carries no escapes.
  */
-export function proseSourceOffset(normalizedRun, displayOffset) {
+export function proseSourceOffset(normalizedRun: string, displayOffset: number) {
   const run = String(normalizedRun);
   let source = 0;
   for (let display = 0; display < displayOffset && source < run.length; display += 1) {
@@ -368,9 +370,9 @@ export function proseSourceOffset(normalizedRun, displayOffset) {
   return source;
 }
 
-export function splitLatexText(text) {
+export function splitLatexText(text: unknown) {
   const normalized = normalizeLatexText(text);
-  const chunks = [];
+  const chunks: LatexChunk[] = [];
   let cursor = 0;
 
   while (cursor < normalized.length) {
@@ -428,7 +430,7 @@ const MATH_ENV = /^\\begin\{math\}([\s\S]*)\\end\{math\}$/;
  * place rather than splitting and rejoining, so an optional row-spacing
  * argument (`\\[2pt]`) and every space the source chose survive it.
  */
-function alignRows(body) {
+function alignRows(body: string) {
   let out = '';
   let braces = 0;
   let environments = 0;
@@ -492,7 +494,7 @@ function alignRows(body) {
  * environment the paper actually wrote — base LaTeX renders eqnarray, numbers
  * included, with no amsmath needed — and only the renderer sees this.
  */
-export function katexSource(chunk) {
+export function katexSource(chunk: { value?: unknown } | null | undefined) {
   const value = String(chunk?.value ?? '');
 
   const inline = MATH_ENV.exec(value);

@@ -1,10 +1,13 @@
-const lastSegment = (value) => String(value || '').split('/').pop();
+import type { OpenAlexAuthor, OpenAlexInstitution, OpenAlexTopic } from '../services/adapters/openAlexTypes.ts';
+export type HandoverEntity = Partial<OpenAlexAuthor & OpenAlexInstitution & OpenAlexTopic>;
+
+const lastSegment = (value: unknown) => String(value || '').split('/').pop();
 
 // `decodeURIComponent` throws `URIError` on a lone `%` (not a valid escape).
 // None of the three wired rows (author, institution, topic) can produce one
 // in a route id, but this runs inside a render-phase memo, where a throw is
 // a worse failure than a route that simply fails to match.
-const safeDecodeURIComponent = (value) => {
+const safeDecodeURIComponent = (value: string) => {
   try {
     return decodeURIComponent(value);
   } catch {
@@ -35,7 +38,7 @@ const safeDecodeURIComponent = (value) => {
  * without `works_count` or `cited_by_count` would be poorer than what the
  * skeleton's stats grid already reserves.
  */
-export function handoverFromSearchRow(type, row) {
+export function handoverFromSearchRow(type: string, row: HandoverEntity | null | undefined) {
   if (!row || !row.display_name) return null;
   if (type === 'author') {
     return {
@@ -66,10 +69,10 @@ export function handoverFromSearchRow(type, row) {
  * a route reached by any other link, or a stale state after a reload, gets
  * null and loads as it always did.
  */
-export function handedEntityFor(type, id, state) {
+export function handedEntityFor(type: string, id: unknown, state: { entity?: HandoverEntity; entityType?: string } | null | undefined) {
   const handed = state?.entity;
   if (!handed || !handed.display_name || typeof id !== 'string') return null;
-  if (state.entityType !== type) return null;
+  if (state!.entityType !== type) return null;
   const routeId = safeDecodeURIComponent(id);
   if (type === 'author') {
     const orcidInRoute = routeId.match(/orcid\.org\/([0-9X-]+)/i)?.[1];

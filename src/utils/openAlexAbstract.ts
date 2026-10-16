@@ -1,3 +1,5 @@
+import type { OpenAlexWork } from '../services/adapters/openAlexTypes.ts';
+
 /**
  * OpenAlex ships abstracts as an inverted index — `{ word: [positions] }` —
  * rather than as text, which is how abstract content stays inside the open
@@ -10,7 +12,7 @@
  * Returns the text, or an empty string when there is nothing to rebuild. The
  * caller supplies its own placeholder, because they differ by locale.
  */
-export function reconstructOpenAlexAbstract(invertedIndex) {
+export function reconstructOpenAlexAbstract(invertedIndex: unknown) {
   if (!invertedIndex || typeof invertedIndex !== 'object') return '';
 
   const words = [];
@@ -43,7 +45,7 @@ const MIN_ABSTRACT_LENGTH = 40;
  * empty string when the work type has none or the text cannot be one. An
  * empty answer means "missing", which every caller already renders as such.
  */
-export function usableOpenAlexAbstract(work) {
+export function usableOpenAlexAbstract(work: Pick<OpenAlexWork, 'type' | 'abstract_inverted_index'> | null | undefined) {
   if (!work || TYPES_WITHOUT_ABSTRACT.has(String(work.type || '').toLowerCase())) return '';
   const text = reconstructOpenAlexAbstract(work.abstract_inverted_index);
   if (text.length < MIN_ABSTRACT_LENGTH || text.length > MAX_ABSTRACT_LENGTH) return '';

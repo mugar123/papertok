@@ -1,6 +1,8 @@
+import type { PaperFollowMatch } from '../models/Paper.ts';
+
 const FOLLOW_PATH_TYPES = new Set(['author', 'topic', 'institution', 'project']);
 
-function getNavigationId(entity) {
+function getNavigationId(entity: Partial<PaperFollowMatch>) {
   const canonicalId = String(entity?.canonicalId || '').trim();
   if (
     entity?.type === 'author'
@@ -11,8 +13,8 @@ function getNavigationId(entity) {
   return canonicalId || String(entity?.displayName || '').trim();
 }
 
-export function getFollowedEntityPath(entity) {
-  if (!FOLLOW_PATH_TYPES.has(entity?.type)) return '/settings/following';
+export function getFollowedEntityPath(entity: Partial<PaperFollowMatch>) {
+  if (!FOLLOW_PATH_TYPES.has(entity?.type as string)) return '/settings/following';
 
   const navigationId = getNavigationId(entity);
   if (!navigationId) return '/settings/following';

@@ -19,7 +19,7 @@ import { arrayRemove, serverTimestamp } from 'firebase/firestore';
  * `null` make `arrayRemove` throw, and the legacy array can carry either, so
  * blanks are dropped first.
  */
-export function finishLegacyAuthorsMigration(followedAuthors, { remove = arrayRemove, timestamp = serverTimestamp } = {}) {
+export function finishLegacyAuthorsMigration(followedAuthors: unknown[], { remove = arrayRemove, timestamp = serverTimestamp } = {}) {
   const names = [...new Set(
     (followedAuthors || []).filter((name) => typeof name === 'string' && name.length > 0),
   )];

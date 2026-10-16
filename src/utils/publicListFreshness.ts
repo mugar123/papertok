@@ -23,23 +23,23 @@
  */
 
 /** Milliseconds since the epoch, from whatever shape the field arrived in. */
-export function toEpochMillis(value) {
+export function toEpochMillis(value: unknown): number {
   if (value === null || value === undefined || value === '') return 0;
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
   if (value instanceof Date) {
     return Number.isNaN(value.getTime()) ? 0 : value.getTime();
   }
-  if (typeof value.toMillis === 'function') {
+  if (typeof (value as { toMillis?: unknown }).toMillis === 'function') {
     try {
-      const millis = value.toMillis();
+      const millis = (value as { toMillis: () => number }).toMillis();
       return Number.isFinite(millis) ? millis : 0;
     } catch {
       return 0;
     }
   }
-  if (typeof value.seconds === 'number') {
-    const nanos = typeof value.nanoseconds === 'number' ? value.nanoseconds : 0;
-    return value.seconds * 1000 + Math.floor(nanos / 1e6);
+  if (typeof (value as { seconds?: unknown }).seconds === 'number') {
+    const nanos = typeof (value as { nanoseconds?: unknown }).nanoseconds === 'number' ? (value as { nanoseconds: number }).nanoseconds : 0;
+    return (value as { seconds: number }).seconds * 1000 + Math.floor(nanos / 1e6);
   }
   if (typeof value === 'string') {
     const parsed = Date.parse(value);
@@ -56,7 +56,7 @@ export function toEpochMillis(value) {
  * with no `updatedAt` there is no evidence of an edit, and guessing "dirty"
  * there would re-publish every list in the account on first open.
  */
-export function listNeedsPublicSync(list) {
+export function listNeedsPublicSync(list: { publicShareId?: string | null; updatedAt?: unknown; publicSyncedAt?: unknown } | null | undefined) {
   if (!list?.publicShareId) return false;
   const editedAt = toEpochMillis(list.updatedAt);
   if (!editedAt) return false;
@@ -68,6 +68,6 @@ export function listNeedsPublicSync(list) {
  * singleton and outlives a sign-out, and two accounts on one device must never
  * coalesce onto the same job.
  */
-export function publicListSyncKey(uid, listId) {
+export function publicListSyncKey(uid: string, listId: string) {
   return `${uid}:${listId}`;
 }

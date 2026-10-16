@@ -1,3 +1,12 @@
+export interface OwnList {
+  id: string; name?: string; emoji?: string | null; icon?: string; color?: string | null; paperIds?: string[];
+  publicShareId?: string | null; description?: string; updatedAt?: unknown; publicSyncedAt?: unknown; createdAt?: unknown;
+}
+export interface ListSnapshot {
+  empty?: boolean; size?: number; metadata?: { fromCache?: boolean };
+  forEach(callback: (item: { id: string; data(): Omit<OwnList, 'id'> }) => void): void;
+}
+
 /**
  * Reading an account's own `lists` collection.
  *
@@ -27,13 +36,13 @@ export const OWN_LISTS_PAGE_SIZE = 60;
  * rendered as an empty account — that is what made the modal tell an account
  * with four lists that it had none and offer to create one.
  */
-export function readOwnLists(snapshot, paperId) {
+export function readOwnLists(snapshot: ListSnapshot | null | undefined, paperId: string) {
   if (!queryIsAuthoritative(snapshot)) {
-    return { lists: [], inLists: new Set(), authoritative: false };
+    return { lists: [], inLists: new Set<string>(), authoritative: false };
   }
 
-  const lists = [];
-  snapshot.forEach((item) => {
+  const lists: OwnList[] = [];
+  snapshot!.forEach((item) => {
     lists.push({ id: item.id, ...item.data() });
   });
 
@@ -47,8 +56,8 @@ export function readOwnLists(snapshot, paperId) {
  * about lists that never came from a snapshot: the save modal now paints from
  * a session cache, and membership is per paper while the cached lists are not.
  */
-export function listsHolding(lists, paperId) {
-  const inLists = new Set();
+export function listsHolding(lists: OwnList[], paperId: string) {
+  const inLists = new Set<string>();
   if (!paperId || !Array.isArray(lists)) return inLists;
   lists.forEach((list) => {
     if (Array.isArray(list?.paperIds) && list.paperIds.includes(paperId)) {
@@ -71,7 +80,7 @@ export function listsHolding(lists, paperId) {
  * Pure, and it copies rather than mutates: the cached array is shared with
  * whatever is already on screen.
  */
-export function withPaperMembership(lists, paperId, { added = [], removed = [] } = {}) {
+export function withPaperMembership(lists: OwnList[], paperId: string, { added = [], removed = [] }: { added?: string[]; removed?: string[] } = {}) {
   if (!Array.isArray(lists) || !paperId) return lists;
   const toAdd = new Set(added);
   const toRemove = new Set(removed);
@@ -105,7 +114,7 @@ export function withPaperMembership(lists, paperId, { added = [], removed = [] }
  * the ids the snapshot has never heard of are carried over. Returns the very
  * same array when there is nothing to merge, so the common case costs nothing.
  */
-export function mergeCreatedLists(fetched, created) {
+export function mergeCreatedLists(fetched: OwnList[], created: OwnList[]) {
   if (!Array.isArray(fetched) || !Array.isArray(created) || created.length === 0) return fetched;
   const known = new Set(fetched.map((list) => list?.id));
   const missing = created.filter((list) => list?.id && !known.has(list.id));

@@ -1,3 +1,7 @@
+import type { Paper } from '../models/Paper.ts';
+
+export interface OpenTarget { mode: 'external' | 'inline'; url: string; }
+
 /**
  * Dónde se abre un paper, en orden de preferencia y en un solo sitio.
  *
@@ -24,7 +28,7 @@
 import { isTrustedInlinePdfUrl, safeExternalUrl } from './externalUrl.ts';
 import { isAIReadablePdfUrl } from './aiExplanationAccess.ts';
 
-function arxivPdfUrl(arxivId) {
+function arxivPdfUrl(arxivId: unknown) {
   const id = String(arxivId || '').trim();
   // El prefijo fija el origen: lo que venga en el id solo puede ser ruta,
   // consulta o fragmento, y `safeExternalUrl` descarta lo que ni siquiera
@@ -40,7 +44,7 @@ function arxivPdfUrl(arxivId) {
  * iframe se anunciaba como «no hay PDF de acceso abierto disponible» -- y lo
  * había, a un clic de distancia.
  */
-export function pdfLinksForPaper(paper) {
+export function pdfLinksForPaper(paper: Partial<Paper> | null | undefined) {
   const direct = safeExternalUrl(paper?.pdfUrl);
   const arxiv = arxivPdfUrl(paper?.arxivId);
   return {
@@ -56,7 +60,7 @@ export function pdfLinksForPaper(paper) {
  * La URL del reenvío del Worker para un PDF, o '' si no hay Worker o el PDF
  * no es de un host que el Worker acepte.
  */
-export function pdfRelayUrl(sourceUrl, apiBase) {
+export function pdfRelayUrl(sourceUrl: string, apiBase: unknown) {
   const base = String(apiBase || '').replace(/\/$/, '');
   if (!base || !sourceUrl || !isAIReadablePdfUrl(sourceUrl)) return '';
   return `${base}/pdf?url=${encodeURIComponent(sourceUrl)}`;
@@ -69,7 +73,7 @@ export function pdfRelayUrl(sourceUrl, apiBase) {
  * hosts que dejan enmarcar su PDF; `external`, una pestaña nueva.
  * `institutionAccess` is the answer from `findInstitutionAccess`.
  */
-export function openTargetsForPaper(paper, openCopy = null, institutionAccess = null) {
+export function openTargetsForPaper(paper: Partial<Paper> | null | undefined, openCopy: Partial<Paper> | null = null, institutionAccess: { status?: string; url?: string } | null = null): OpenTarget[] {
   // `findInstitutionAccess` only ever hands over an entitlement with a safe link.
   const libraryUrl = institutionAccess?.status === 'entitled' ? institutionAccess.url : '';
   const candidates = [
@@ -82,7 +86,7 @@ export function openTargetsForPaper(paper, openCopy = null, institutionAccess = 
   ];
 
   const seen = new Set(libraryUrl ? [libraryUrl] : []);
-  const targets = libraryUrl ? [{ mode: 'external', url: libraryUrl }] : [];
+  const targets: OpenTarget[] = libraryUrl ? [{ mode: 'external', url: libraryUrl }] : [];
   for (const candidate of candidates) {
     const url = safeExternalUrl(candidate);
     // Una misma URL llega por dos campos más veces de las que parece, y
@@ -98,7 +102,7 @@ export function openTargetsForPaper(paper, openCopy = null, institutionAccess = 
  * Abre el primer destino que responda. Devuelve si alguno lo hizo, que es el
  * dato que faltaba: el manejador necesita saber cuándo seguir buscando.
  */
-export function openFirstTarget(targets, { inline, external }) {
+export function openFirstTarget(targets: OpenTarget[], { inline, external }: { inline: (target: OpenTarget) => unknown; external: (url: string) => unknown }) {
   for (const target of targets) {
     if (target.mode === 'inline' ? inline(target) : external(target.url)) return true;
   }

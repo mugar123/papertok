@@ -7,15 +7,7 @@ export const FEED_DISPLAY_STATES = Object.freeze({
   EMPTY: 'empty',
 });
 
-export function getFeedDisplayState({
-  hasPapers,
-  loading,
-  error,
-  isRefreshing,
-  showLoader,
-  initialLoadPending,
-  hasSourceEmptyState,
-}) {
+export function getFeedDisplayState({ hasPapers, loading, error, isRefreshing, showLoader, initialLoadPending, hasSourceEmptyState }: { hasPapers?: boolean; loading?: boolean; error?: unknown; isRefreshing?: boolean; showLoader?: boolean; initialLoadPending?: boolean; hasSourceEmptyState?: boolean }) {
   if (error && !hasPapers) return FEED_DISPLAY_STATES.ERROR;
   if (hasPapers) return FEED_DISPLAY_STATES.FEED;
   if (initialLoadPending) return FEED_DISPLAY_STATES.INITIAL_DISCOVERY;
@@ -33,7 +25,7 @@ export function getFeedDisplayState({
  * refreshed. An empty feed that has stopped loading is a verdict with a retry,
  * not a wait, and gets no veil.
  */
-export function feedAtomVeilCopy({ displayState, loading, isRefreshing }) {
+export function feedAtomVeilCopy({ displayState, loading, isRefreshing }: { displayState?: string; loading?: boolean; isRefreshing?: boolean }) {
   if (displayState === FEED_DISPLAY_STATES.INITIAL_DISCOVERY) return 'discovery';
   if (displayState === FEED_DISPLAY_STATES.EMPTY && (loading || isRefreshing)) return 'gathering';
   return null;

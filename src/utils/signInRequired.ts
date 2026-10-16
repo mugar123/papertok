@@ -5,9 +5,9 @@
  * expired one — rather than because a provider is down. The two want
  * different words: "sign in", not "could not be loaded right now".
  */
-export function isSignInRequiredError(error) {
+export function isSignInRequiredError(error: unknown) {
   if (!error || typeof error !== 'object') return false;
-  return error.code === 'WORKER_AUTH_REQUIRED'
-    || error.code === 'AUTH_REQUIRED'
-    || error.status === 401;
+  return (error as { code?: unknown }).code === 'WORKER_AUTH_REQUIRED'
+    || (error as { code?: unknown }).code === 'AUTH_REQUIRED'
+    || (error as { status?: unknown }).status === 401;
 }

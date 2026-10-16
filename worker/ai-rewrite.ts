@@ -4,26 +4,8 @@ import type { AIProviderPayload } from './ai-explanation.ts';
 
 type RewriteLevel = keyof typeof REWRITE_LEVELS;
 type ExplanationContext = ReturnType<typeof normalizePaperForExplanation>;
-interface RewriteHighlight { paragraphIndex: number; quote: string; kind: string }
-export interface RewriteSection {
-  id: string;
-  kind: string;
-  heading: string;
-  originalHeading: string;
-  paragraphs: string[];
-  highlights: RewriteHighlight[];
-}
-interface RewriteMeta {
-  level: string;
-  language: string;
-  model: string;
-  provider: string;
-  promptVersion: string;
-  sourceBasis: string;
-  title: string;
-  doi: string;
-  pdfUrl: string;
-}
+import type { RewriteHighlight, RewriteMeta, RewriteSection } from '../src/models/Rewrite.ts';
+export type { RewriteSection } from '../src/models/Rewrite.ts';
 interface CachedRewrite { meta: RewriteMeta; sections: RewriteSection[]; truncated?: boolean }
 type RewriteSource = { text: string; truncated: boolean; textReason: string; pdfBase64?: never }
   | { pdfBase64: string; textReason?: string; text?: never; truncated?: never };

@@ -1,3 +1,5 @@
+import type { Paper } from '../models/Paper.ts';
+
 /**
  * Skip's exit: where the card that is leaving has to be pinned while it goes.
  *
@@ -39,10 +41,10 @@ export const SKIP_EXIT_MS = 300;
  * measured yet. A null is not a failure: the caller removes the card at once,
  * which is what happened before this existed.
  */
-export function skipExitSlot({ papers, paperId, cardHeight } = {}) {
+export function skipExitSlot({ papers, paperId, cardHeight }: { papers?: Array<Pick<Paper, 'id'>>; paperId?: string | null; cardHeight?: number } = {}) {
   if (!paperId || !Array.isArray(papers)) return null;
-  if (!Number.isFinite(cardHeight) || cardHeight <= 0) return null;
+  if (!Number.isFinite(cardHeight) || cardHeight! <= 0) return null;
   const index = papers.findIndex(paper => paper?.id === paperId);
   if (index < 0) return null;
-  return { id: paperId, top: index * cardHeight, height: cardHeight };
+  return { id: paperId, top: index * cardHeight!, height: cardHeight };
 }

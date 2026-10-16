@@ -1,3 +1,8 @@
+import type { Paper } from '../models/Paper.ts';
+
+import type { mapUnpaywallResult } from '../services/unpaywallService.ts';
+type OpenCopy = ReturnType<typeof mapUnpaywallResult>;
+
 /**
  * What a card may honestly say about a paper: whether it has been through peer
  * review, and whether the reader can actually open it.
@@ -27,7 +32,7 @@
  * claim about peer review made from an empty field, and the reassuring
  * direction is the worse one to guess wrong in.
  */
-export function reviewStatusForPaper(paper) {
+export function reviewStatusForPaper(paper: Partial<Paper> | null | undefined) {
   if (!paper) return null;
   if (paper.publicationStatus === 'preprint' || paper.publicationType === 'preprint') {
     return 'preprint';
@@ -55,7 +60,7 @@ export function reviewStatusForPaper(paper) {
  * `openCopy` is what the open-access lookup found (`mapUnpaywallResult`): a free
  * copy of a paper whose own record did not show one.
  */
-export function accessStatusForPaper(paper, { openCopy = null } = {}) {
+export function accessStatusForPaper(paper: Partial<Paper> | null | undefined, { openCopy = null }: { openCopy?: OpenCopy } = {}) {
   if (!paper) return null;
   // An arXiv id is evidence in its own right, and it outranks an explicit
   // `false`: OpenAlex reports `is_oa` for the *published* version, so a paper
@@ -118,7 +123,7 @@ const ACCESS_TAGS = {
   },
 };
 
-function localize(tag) {
+function localize(tag: { key: string; tone: string; label: { en: string }; hint: { en: string } }) {
   return {
     key: tag.key,
     tone: tag.tone,
@@ -128,9 +133,9 @@ function localize(tag) {
 }
 
 /** The peer-review chip for a paper, or null when there is nothing to flag. */
-export function reviewTagForPaper(paper) {
+export function reviewTagForPaper(paper: Partial<Paper> | null | undefined) {
   const status = reviewStatusForPaper(paper);
-  const tag = status ? REVIEW_TAGS[status] : null;
+  const tag = status ? REVIEW_TAGS[status as keyof typeof REVIEW_TAGS] : null;
   return tag ? localize(tag) : null;
 }
 
@@ -140,7 +145,7 @@ export function reviewTagForPaper(paper) {
  * leaves `version` out for bronze copies, and the publisher's page is still
  * the article.
  */
-export function isPublishedVersionCopy(copy) {
+export function isPublishedVersionCopy(copy: OpenCopy) {
   return copy?.hostType === 'publisher' && (!copy.version || copy.version === 'publishedVersion');
 }
 
@@ -157,7 +162,7 @@ export function isPublishedVersionCopy(copy) {
  * whatever the record said, because a library that could not answer has not
  * said the paper is paywalled.
  */
-export function accessTagForPaper(paper, { openCopy = null, institutionAccess = null, institutionLabel = '' } = {}) {
+export function accessTagForPaper(paper: Partial<Paper> | null | undefined, { openCopy = null, institutionAccess = null, institutionLabel = '' }: { openCopy?: OpenCopy; institutionAccess?: { status?: string } | null; institutionLabel?: string } = {}) {
   const status = accessStatusForPaper(paper, { openCopy });
   if (accessStatusForPaper(paper) !== 'open' && institutionAccess?.status === 'entitled' && institutionLabel) {
     return {

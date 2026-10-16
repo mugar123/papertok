@@ -1,3 +1,7 @@
+interface SeedDocument { getElementById(id: string): { textContent: string | null } | null }
+
+import type { Paper } from '../models/Paper.ts';
+
 import { plainScientificText } from './plainScientificText.ts';
 
 /**
@@ -15,9 +19,9 @@ import { plainScientificText } from './plainScientificText.ts';
  */
 export const SHARE_SEED_ELEMENT_ID = 'papertok-share-seed';
 
-export function parseShareSeed(text, paperKey) {
+export function parseShareSeed(text: unknown, paperKey: string | null) {
   if (!text || !paperKey) return null;
-  let seed;
+  let seed: { key?: string; paper?: Partial<Paper> } | null;
   try {
     seed = JSON.parse(String(text));
   } catch {
@@ -29,7 +33,7 @@ export function parseShareSeed(text, paperKey) {
   return String(paper.title || '').trim() ? paper : null;
 }
 
-export function readShareSeed(paperKey, doc = globalThis.document) {
+export function readShareSeed(paperKey: string | null, doc: SeedDocument | undefined = (globalThis as typeof globalThis & { document?: SeedDocument }).document) {
   const element = doc?.getElementById?.(SHARE_SEED_ELEMENT_ID);
   return element ? parseShareSeed(element.textContent, paperKey) : null;
 }
@@ -40,7 +44,7 @@ export function readShareSeed(paperKey, doc = globalThis.document) {
  * and summary as plain text, as the Worker writes them, since a tab title and
  * a search snippet render no LaTeX.
  */
-export function publicPaperMetadata(paper, route) {
+export function publicPaperMetadata(paper: Partial<Pick<Paper, 'title' | 'abstract'>> | null | undefined, route: string) {
   if (!paper) return { route, noIndex: true };
   const title = plainScientificText(paper.title) || String(paper.title || '');
   const description = plainScientificText(paper.abstract) || String(paper.abstract || '');

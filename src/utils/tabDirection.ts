@@ -21,10 +21,10 @@ export const TAB_ORDER = ['/feed', '/following'];
  * memory is: `App` keys `<Routes>` on the pathname, so every page component is
  * destroyed and remade on the way through and cannot remember anything itself.
  */
-const tabMemory = {};
+const tabMemory: { index?: number; direction?: number | null } = {};
 
 /** `/following/` and `/following` are the same tab; `/` is not `''`. */
-function normalize(pathname) {
+function normalize(pathname: string) {
   if (typeof pathname !== 'string' || pathname === '') return null;
   const trimmed = pathname === '/' ? '/' : pathname.replace(/\/+$/, '');
   return trimmed === '' ? '/' : trimmed;
@@ -42,7 +42,7 @@ function normalize(pathname) {
  * it had already recorded, conclude nothing had moved, and hand back `null`
  * halfway through — flipping the page's direction mid-animation.
  */
-export function lateralTabDirection(pathname, memory = tabMemory) {
+export function lateralTabDirection(pathname: string, memory = tabMemory) {
   const path = normalize(pathname);
   const index = path === null ? -1 : TAB_ORDER.indexOf(path);
 

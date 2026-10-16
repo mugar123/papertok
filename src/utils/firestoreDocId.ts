@@ -12,10 +12,10 @@
  * documents keep their names) and makes the mapping reversible. Shared by the
  * `interactions` and `savedPapers` collections.
  */
-export function encodeFirestoreDocId(paperId) {
+export function encodeFirestoreDocId(paperId: unknown) {
   return String(paperId || '').replace(/%/g, '%25').replace(/\//g, '%2F');
 }
 
-export function decodeFirestoreDocId(documentId) {
+export function decodeFirestoreDocId(documentId: unknown) {
   return String(documentId || '').replace(/%2F/g, '/').replace(/%25/g, '%');
 }

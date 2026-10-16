@@ -1,3 +1,7 @@
+import type { Paper } from '../models/Paper.ts';
+
+type ArxivFetchError = Error & { status?: number; retryAfterMs?: number };
+
 /**
  * arXiv API Service
  * Uses the Vite proxy in dev and the Worker's /arxiv route in production.
@@ -14,7 +18,7 @@ const ARXIV_DEV = '/api/arxiv';
 const ARXIV_PROD = 'https://export.arxiv.org/api/query';
 const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '');
 
-const cache = new Map();
+const cache = new Map<string, { data: Paper[]; timestamp: number }>();
 const CACHE_TTL = 5 * 60 * 1000;
 
 // Biology and medicine use their specialist sources in the feed. Engineering
@@ -30,20 +34,20 @@ const CATEGORY_DEFINITIONS = new Map(
   )
 );
 
-function isArxivCategory(category) {
+function isArxivCategory(category: string) {
   return ARXIV_PREFIXES.some(prefix => category === prefix || category.startsWith(`${prefix}.`));
 }
 
-function categoryMatchScore(paper, categoryId) {
+function categoryMatchScore(paper: Partial<Paper>, categoryId: string) {
   if (paper.categories?.includes(categoryId) || paper.primaryCategory === categoryId) return Number.POSITIVE_INFINITY;
 
   const label = CATEGORY_DEFINITIONS.get(categoryId)?.label || categoryId.replace(/\./g, ' ');
   const terms = label.toLowerCase().split(/[^a-z0-9]+/).filter(term => term.length >= 4);
   const text = `${paper.title || ''} ${paper.abstract || ''}`.toLowerCase();
-  return terms.reduce((score, term) => score + (text.includes(term) ? 1 : 0), 0);
+  return terms.reduce((score: number, term: string) => score + (text.includes(term) ? 1 : 0), 0);
 }
 
-export function assignRequestedCategories(papers, requestedCategories) {
+export function assignRequestedCategories<T extends Partial<Paper>>(papers: T[], requestedCategories?: string[]): T[] {
   if (!Array.isArray(requestedCategories) || requestedCategories.length === 0) return papers;
 
   return papers.map(paper => {
@@ -64,12 +68,12 @@ export function assignRequestedCategories(papers, requestedCategories) {
 // Handing an unread Response back to the caller is what put the read outside the
 // only thing bounding it: a feed that stops mid-document is a stall, not a short
 // answer, and the two timers this replaces both stopped at the headers.
-async function fetchXmlWithTimeout(url, timeoutMs, errorLabel) {
+async function fetchXmlWithTimeout(url: string, timeoutMs: number, errorLabel: string) {
   const response = await fetch(url, withRequestDeadline({}, timeoutMs));
   if (!response.ok) {
     // The status and the provider's own backoff travel on the error: the
     // tab's lane pauses on a 429 for exactly what it was told.
-    const error = new Error(`${errorLabel}: ${response.status}`);
+    const error = new Error(`${errorLabel}: ${response.status}`) as ArxivFetchError;
     error.status = response.status;
     const retryAfter = Number(response.headers.get('retry-after'));
     if (Number.isFinite(retryAfter) && retryAfter > 0) error.retryAfterMs = retryAfter * 1000;
@@ -78,11 +82,11 @@ async function fetchXmlWithTimeout(url, timeoutMs, errorLabel) {
   return response.text();
 }
 
-function parseArxivXml(xmlText) {
+function parseArxivXml(xmlText: string) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlText, 'text/xml');
   const entries = doc.querySelectorAll('entry');
-  const papers = [];
+  const papers: Paper[] = [];
 
   entries.forEach((entry) => {
     const id = entry.querySelector('id')?.textContent || '';
@@ -93,7 +97,7 @@ function parseArxivXml(xmlText) {
     const summary = (entry.querySelector('summary')?.textContent || '').replace(/\s+/g, ' ').trim();
 
     const authorElements = entry.querySelectorAll('author');
-    const authors = [];
+    const authors: string[] = [];
     authorElements.forEach((a) => {
       const name = a.querySelector('name')?.textContent;
       if (name) authors.push(name);
@@ -113,7 +117,7 @@ function parseArxivXml(xmlText) {
     const primaryCategory = primaryCatEl?.getAttribute('term') || '';
 
     const categoryElements = entry.querySelectorAll('category');
-    const allCategories = [];
+    const allCategories: string[] = [];
     categoryElements.forEach((c) => {
       const term = c.getAttribute('term');
       if (term) allCategories.push(term);
@@ -154,7 +158,7 @@ function parseArxivXml(xmlText) {
   return papers;
 }
 
-function safeDateISO(dateStr) {
+function safeDateISO(dateStr: string) {
   if (!dateStr) return new Date().toISOString();
   let cleanStr = dateStr.trim();
   
@@ -187,16 +191,16 @@ export const ARXIV_ROUTE_TIMEOUT_MS = 6_000;
 // The Worker keeps arXiv's one-every-three-seconds beat for the whole app;
 // the lane is what keeps this tab from spending seats on answers nobody
 // waits for any more.
-const arxivQueue = createArxivRequestQueue({ maxQueueWaitMs: ARXIV_ROUTE_TIMEOUT_MS });
+const arxivQueue = createArxivRequestQueue<Paper[]>({ maxQueueWaitMs: ARXIV_ROUTE_TIMEOUT_MS });
 
-function fetchArxivData(url) {
+function fetchArxivData(url: string) {
   return arxivQueue.run(url, () => fetchArxivDataNow(url));
 }
 
 /**
  * Helper to fetch and parse arXiv XML through the Worker in production.
  */
-async function fetchArxivDataNow(url) {
+async function fetchArxivDataNow(url: string) {
   let lastError;
 
   // The Worker is the only browser-reachable route to arXiv in production:
@@ -246,17 +250,17 @@ async function fetchArxivDataNow(url) {
 // and a fresh error that carried nothing is how the tab sent a second
 // request 420 ms after the first 429 of the paced Worker (measured
 // 2026-09-16) instead of pausing.
-export function arxivUnreachableError(cause) {
-  const error = new Error('Could not reach arXiv. Try again in a few seconds.', { cause });
-  if (Number.isInteger(cause?.status)) error.status = cause.status;
-  if (Number.isFinite(cause?.retryAfterMs)) error.retryAfterMs = cause.retryAfterMs;
+export function arxivUnreachableError(cause: unknown) {
+  const error = new Error('Could not reach arXiv. Try again in a few seconds.', { cause }) as ArxivFetchError;
+  if (Number.isInteger((cause as ArxivFetchError | null)?.status)) error.status = (cause as ArxivFetchError).status;
+  if (Number.isFinite((cause as ArxivFetchError | null)?.retryAfterMs)) error.retryAfterMs = (cause as ArxivFetchError).retryAfterMs;
   return error;
 }
 
 /**
  * Fetch papers from arXiv by categories or raw query.
  */
-export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20, mode = 'recent', sortByOverride = 'submittedDate', options = {}) {
+export async function fetchPapers(categoriesOrQuery: string | string[], start = 0, maxResults = 20, mode = 'recent', sortByOverride = 'submittedDate', options: { forceRefresh?: boolean } = {}) {
   if (!categoriesOrQuery || categoriesOrQuery.length === 0) return [];
 
   let searchQuery = categoriesOrQuery;
@@ -275,7 +279,7 @@ export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20,
   const sortBy = mode === 'relevance' ? 'relevance' : sortByOverride;
 
   const params = new URLSearchParams({
-    search_query: searchQuery,
+    search_query: searchQuery as string,
     start: start.toString(),
     max_results: maxResults.toString(),
     sortBy,
@@ -304,8 +308,8 @@ export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20,
   }
 }
 
-export function getPdfUrl(arxivId) { return `https://arxiv.org/pdf/${arxivId}`; }
-export function getAbsUrl(arxivId) { return `https://arxiv.org/abs/${arxivId}`; }
+export function getPdfUrl(arxivId: string) { return `https://arxiv.org/pdf/${arxivId}`; }
+export function getAbsUrl(arxivId: string) { return `https://arxiv.org/abs/${arxivId}`; }
 export function clearCache() { cache.clear(); }
 
 // arXiv's query grammar takes a phrase between double quotes, so a `"` inside
@@ -313,22 +317,22 @@ export function clearCache() { cache.clear(); }
 // API as stray syntax, and what comes back is empty or wrong with no error to
 // say so. `URLSearchParams` keeps the URL safe -- it never kept the query safe.
 // Dropping the quote leaves a phrase arXiv can still match.
-function arxivPhrase(value) {
+function arxivPhrase(value: unknown) {
   return String(value ?? '').replace(/"/g, '').trim();
 }
 
-export function buildAuthorQuery(authorName) {
+export function buildAuthorQuery(authorName: unknown) {
   return `au:"${arxivPhrase(authorName)}"`;
 }
 
-export function buildSearchQuery(queryStr) {
+export function buildSearchQuery(queryStr: unknown) {
   return `all:"${arxivPhrase(queryStr)}"`;
 }
 
 /**
  * Fetch papers by a specific author
  */
-export async function getAuthorPapers(authorName, maxResults = 10) {
+export async function getAuthorPapers(authorName: string, maxResults = 10) {
   // We use quotes for exact match. URLSearchParams will safely encode spaces.
   return fetchPapers(buildAuthorQuery(authorName), 0, maxResults, 'submittedDate');
 }
@@ -336,7 +340,7 @@ export async function getAuthorPapers(authorName, maxResults = 10) {
 /**
  * Fetch papers by a list of arXiv IDs.
  */
-export async function fetchPapersByIds(arxivIds) {
+export async function fetchPapersByIds(arxivIds: string[] | null | undefined) {
   if (!arxivIds || arxivIds.length === 0) return [];
   const idList = arxivIds.join(',');
   const params = new URLSearchParams({
@@ -363,7 +367,7 @@ export async function fetchPapersByIds(arxivIds) {
 /**
  * Search papers by any string (all:query)
  */
-export async function searchPapers(queryStr, start = 0, maxResults = 20) {
+export async function searchPapers(queryStr: string, start = 0, maxResults = 20) {
   if (!queryStr || queryStr.trim() === '') return [];
   return fetchPapers(buildSearchQuery(queryStr), start, maxResults, 'recent', 'relevance');
 }

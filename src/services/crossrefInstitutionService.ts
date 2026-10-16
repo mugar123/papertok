@@ -1,16 +1,28 @@
+import type { Paper, PaperAuthor } from '../models/Paper.ts';
+import type { OpenAlexAuthor } from './adapters/openAlexTypes.ts';
+import type { CrossrefLicense } from '../utils/crossrefLicense.ts';
+interface CrossrefWork {
+  DOI?: string; title?: string[]; abstract?: string; type?: string;
+  published?: { 'date-parts'?: number[][] }; 'published-online'?: { 'date-parts'?: number[][] }; issued?: { 'date-parts'?: number[][] };
+  author?: Array<{ given?: string; family?: string; name?: string; ORCID?: string }>;
+  'container-title'?: string[]; publisher?: string; URL?: string; 'is-referenced-by-count'?: number;
+  license?: CrossrefLicense[];
+}
+interface CrossrefFilters { peerReviewed?: boolean; dateRange?: string; searchQuery?: string; }
+
 import { openLicenseFromCrossref } from '../utils/crossrefLicense.ts';
 
 const CROSSREF_WORKS_LIMIT = 30;
 const CROSSREF_AUTHORS_WORKS_LIMIT = 100;
 
-function stripMarkup(value) {
+function stripMarkup(value: unknown) {
   return String(value || '')
     .replace(/<[^>]*>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-function getCrossrefPublishedDate(work) {
+function getCrossrefPublishedDate(work: CrossrefWork) {
   const dateParts = work.published?.['date-parts']?.[0]
     || work['published-online']?.['date-parts']?.[0]
     || work.issued?.['date-parts']?.[0]
@@ -31,7 +43,7 @@ function getCrossrefPublishedDate(work) {
  * `posted-content` is Crossref's preprint type, so a work carrying it is
  * neither published nor reviewed, whatever its DOI looks like.
  */
-function publicationFactsForCrossrefType(type) {
+function publicationFactsForCrossrefType(type: string | undefined): Pick<Paper, 'publicationType' | 'publicationStatus' | 'peerReviewed'> {
   if (type === 'journal-article') {
     return { publicationType: 'journal', publicationStatus: 'published', peerReviewed: true };
   }
@@ -44,7 +56,7 @@ function publicationFactsForCrossrefType(type) {
   return { publicationType: 'publication', publicationStatus: 'published', peerReviewed: false };
 }
 
-export function mapCrossrefInstitutionWork(work) {
+export function mapCrossrefInstitutionWork(work: CrossrefWork): Paper | null {
   const doi = String(work?.DOI || '').trim().toLowerCase();
   const title = work?.title?.[0] || '';
   if (!doi || !title) return null;
@@ -82,7 +94,7 @@ export function mapCrossrefInstitutionWork(work) {
   };
 }
 
-function matchesInstitutionFallbackFilters(paper, filters = {}) {
+function matchesInstitutionFallbackFilters(paper: Paper, filters: CrossrefFilters = {}) {
   // The canonical field, the one `entityExplorer` and `paperStatus` read. Asking
   // `publicationType !== 'journal'` instead agreed with it only by accident, and
   // dropped every refereed work whose venue is not a journal.
@@ -94,10 +106,10 @@ function matchesInstitutionFallbackFilters(paper, filters = {}) {
     if (filters.dateRange === 'last_5_years' && year < currentYear - 5) return false;
   }
   const query = String(filters.searchQuery || '').trim().toLowerCase();
-  return !query || `${paper.title} ${paper.abstract} ${(paper.authors || []).map(author => author.name).join(' ')}`.toLowerCase().includes(query);
+  return !query || `${paper.title} ${paper.abstract} ${(paper.authors || []).map(author => (author as PaperAuthor).name).join(' ')}`.toLowerCase().includes(query);
 }
 
-export async function getInstitutionWorksFromCrossref(institutionName, page, searchQuery, filters = {}, request) {
+export async function getInstitutionWorksFromCrossref(institutionName: string, page: number, searchQuery: string, filters: CrossrefFilters = {}, request: (url: string) => Promise<Response>) {
   if (!institutionName) return { papers: [], total: 0, source: 'crossref' };
   const url = new URL('https://api.crossref.org/works');
   url.searchParams.set('query.affiliation', institutionName);
@@ -108,10 +120,10 @@ export async function getInstitutionWorksFromCrossref(institutionName, page, sea
 
   const response = await request(url.toString());
   if (!response.ok) throw new Error(`Crossref API error: ${response.status}`);
-  const payload = await response.json();
-  const papers = (payload.message?.items || [])
+  const payload = await response.json() as { message?: { items?: CrossrefWork[] } };
+  const papers = ((payload.message?.items || [])
     .map(mapCrossrefInstitutionWork)
-    .filter(Boolean)
+    .filter(Boolean) as Paper[])
     .filter(paper => matchesInstitutionFallbackFilters(paper, { ...filters, searchQuery }));
 
   // Crossref's affiliation total is relevance-oriented and can be very broad.
@@ -122,7 +134,7 @@ export async function getInstitutionWorksFromCrossref(institutionName, page, sea
   return { papers, total, source: 'crossref' };
 }
 
-function normalizeAuthorSearchValue(value) {
+function normalizeAuthorSearchValue(value: string) {
   return String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -131,7 +143,7 @@ function normalizeAuthorSearchValue(value) {
     .trim();
 }
 
-export async function getInstitutionAuthorsFromCrossref(institutionName, page, searchQuery, request) {
+export async function getInstitutionAuthorsFromCrossref(institutionName: string, page: number, searchQuery: string, request: (url: string) => Promise<Response>) {
   if (!institutionName || page > 1) {
     return { authors: [], total: 0, source: 'crossref' };
   }
@@ -144,9 +156,9 @@ export async function getInstitutionAuthorsFromCrossref(institutionName, page, s
 
   const response = await request(url.toString());
   if (!response.ok) throw new Error(`Crossref API error: ${response.status}`);
-  const payload = await response.json();
+  const payload = await response.json() as { message?: { items?: CrossrefWork[] } };
   const normalizedQuery = normalizeAuthorSearchValue(searchQuery);
-  const authorsByIdentity = new Map();
+  const authorsByIdentity = new Map<string, OpenAlexAuthor & { works_count: number; cited_by_count: number; source: string }>();
 
   (payload.message?.items || []).forEach((work) => {
     const citations = Number(work['is-referenced-by-count']) || 0;

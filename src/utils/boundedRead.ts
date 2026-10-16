@@ -1,3 +1,25 @@
+declare const navigator: { onLine?: boolean };
+declare const window: { addEventListener(type: string, listener: () => void): void; removeEventListener(type: string, listener: () => void): void };
+
+type StallRecovery = (attempt: number) => void | Promise<unknown>;
+export interface PatientReadOptions<T> {
+  attempts?: number;
+  ms?: number;
+  retryDelayMs?: number;
+  maxRetryDelayMs?: number;
+  label?: string;
+  onSlow?: (attempt: number, info: { offline: boolean }) => void;
+  onLateResult?: (value: T) => void;
+  signal?: AbortSignal;
+  isAnswer?: (value: T) => boolean;
+  stallMs?: number;
+  onStall?: StallRecovery | null;
+  checkOffline?: () => boolean;
+  subscribeOnline?: (listener: () => void) => () => void;
+  setTimer?: typeof setTimeout;
+  clearTimer?: typeof clearTimeout;
+}
+
 /**
  * A bound on how long the interface will wait for a read.
  *
@@ -42,7 +64,7 @@ export const MAX_RETRY_DELAY_MS = 8000;
  */
 export const DEFAULT_STALL_MS = 3000;
 
-let defaultStallRecovery = null;
+let defaultStallRecovery: StallRecovery | null = null;
 
 /**
  * Registers what a stalled read should do to the transport — in the app, the
@@ -51,7 +73,7 @@ let defaultStallRecovery = null;
  * on; a read that passes `onStall` of its own overrides it. Returns the
  * unregister function, which tests use.
  */
-export function registerStallRecovery(recover) {
+export function registerStallRecovery(recover: StallRecovery | null | undefined) {
   defaultStallRecovery = typeof recover === 'function' ? recover : null;
   return () => {
     if (defaultStallRecovery === recover) defaultStallRecovery = null;
@@ -59,7 +81,9 @@ export function registerStallRecovery(recover) {
 }
 
 export class ReadTimedOutError extends Error {
-  constructor(label = 'read', cause) {
+  declare timedOut: boolean;
+  declare label: string;
+  constructor(label = 'read', cause?: unknown) {
     super(`Timed out waiting for ${label}`, cause ? { cause } : undefined);
     this.name = 'ReadTimedOutError';
     // Survives the structured-clone and cross-realm cases where `instanceof`
@@ -69,8 +93,8 @@ export class ReadTimedOutError extends Error {
   }
 }
 
-export function isReadTimeout(error) {
-  return Boolean(error && error.timedOut);
+export function isReadTimeout(error: unknown) {
+  return Boolean(error && (error as { timedOut?: unknown }).timedOut);
 }
 
 /**
@@ -105,14 +129,14 @@ const TRANSIENT_READ_CODES = Object.freeze([
   'unknown',
 ]);
 
-export function isTransientReadError(error) {
+export function isTransientReadError(error: unknown) {
   if (!error) return false;
-  if (error.timedOut === true) return true;
+  if ((error as { timedOut?: unknown }).timedOut === true) return true;
   // A service that knows its own error is a "not now" says so on the error
   // itself (`retryable`), and asking again is the right response, not a
   // verdict.
-  if (error.retryable === true) return true;
-  return TRANSIENT_READ_CODES.includes(error.code);
+  if ((error as { retryable?: unknown }).retryable === true) return true;
+  return TRANSIENT_READ_CODES.includes((error as { code: string }).code);
 }
 
 /**
@@ -146,13 +170,13 @@ export const SLOW_NOTICE_AFTER_MS = 1200;
  * true, and "there seems to be no connection" is the more useful sentence the
  * instant it is available.
  */
-export function slowNoticeStatus(elapsedMs, info, threshold = SLOW_NOTICE_AFTER_MS) {
+export function slowNoticeStatus(elapsedMs: number, info: { offline?: boolean } | null | undefined, threshold = SLOW_NOTICE_AFTER_MS) {
   if (info?.offline) return 'offline';
   return elapsedMs >= threshold ? 'slow' : null;
 }
 
 /** Wakes a waiting read the moment the browser regains a network. */
-function subscribeToOnline(listener) {
+function subscribeToOnline(listener: () => void) {
   if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
     return () => {};
   }
@@ -199,7 +223,7 @@ function subscribeToOnline(listener) {
  * cleanup: the retry loop outlives the promise on purpose, so an unmounted
  * screen that never aborts would keep re-reading for the life of the tab.
  */
-export function patientRead(makeAttempt, options = {}) {
+export function patientRead<T>(makeAttempt: () => T | PromiseLike<T>, options: PatientReadOptions<T> = {}): Promise<T> {
   const {
     attempts = 2,
     ms = DEFAULT_READ_TIMEOUT_MS,
@@ -225,25 +249,25 @@ export function patientRead(makeAttempt, options = {}) {
     clearTimer = clearTimeout,
   } = options;
 
-  return new Promise((resolve, reject) => {
+  return new Promise<T>((resolve, reject) => {
     let settled = false;
     let timedOut = false;
     let lateDelivered = false;
     let stopped = false;
-    let timer = null;
-    let retryTimer = null;
-    let stallTimer = null;
-    let releaseOnline = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let stallTimer: ReturnType<typeof setTimeout> | null = null;
+    let releaseOnline: (() => void) | null = null;
     let retries = 0;
-    let lastTransient = null;
+    let lastTransient: unknown = null;
 
     /** Ends every pending timer and listener. Nothing runs after this. */
     const stop = () => {
       if (stopped) return;
       stopped = true;
-      clearTimer(timer);
-      clearTimer(retryTimer);
-      clearTimer(stallTimer);
+      clearTimer(timer!);
+      clearTimer(retryTimer!);
+      clearTimer(stallTimer!);
       timer = null;
       retryTimer = null;
       stallTimer = null;
@@ -253,7 +277,7 @@ export function patientRead(makeAttempt, options = {}) {
       }
     };
 
-    const succeed = (value) => {
+    const succeed = (value: T) => {
       if (settled) {
         // The main promise already rejected as timed out; this is the late
         // answer the caller still wants exactly once.
@@ -269,7 +293,7 @@ export function patientRead(makeAttempt, options = {}) {
       resolve(value);
     };
 
-    const failForReal = (error) => {
+    const failForReal = (error: unknown) => {
       // A deterministic error ends the retry loop even when the promise has
       // already rejected as timed out: no amount of asking will change it.
       stop();
@@ -278,12 +302,12 @@ export function patientRead(makeAttempt, options = {}) {
       reject(error);
     };
 
-    const notifySlow = (attemptNumber) => {
+    const notifySlow = (attemptNumber: number) => {
       if (!onSlow) return;
       onSlow(attemptNumber, { offline: checkOffline() });
     };
 
-    const scheduleRetry = (attemptNumber) => {
+    const scheduleRetry = (attemptNumber: number) => {
       if (stopped) return;
       // Past the timeout verdict, the loop only exists to feed `onLateResult`.
       // With nobody listening, or the answer already delivered, it is waste.
@@ -296,7 +320,7 @@ export function patientRead(makeAttempt, options = {}) {
       // No network at all: go straight to the longest pause and let the
       // `online` event do the waking.
       const delay = checkOffline() ? maxRetryDelayMs : backoff;
-      clearTimer(retryTimer);
+      clearTimer(retryTimer!);
       retryTimer = setTimer(() => {
         retryTimer = null;
         launch(attemptNumber);
@@ -304,11 +328,11 @@ export function patientRead(makeAttempt, options = {}) {
       armOnlineWake(attemptNumber);
     };
 
-    function armOnlineWake(attemptNumber) {
+    function armOnlineWake(attemptNumber: number) {
       if (releaseOnline || stopped) return;
       releaseOnline = subscribeOnline(() => {
         if (stopped) return;
-        clearTimer(retryTimer);
+        clearTimer(retryTimer!);
         retryTimer = null;
         if (releaseOnline) {
           releaseOnline();
@@ -318,17 +342,17 @@ export function patientRead(makeAttempt, options = {}) {
       });
     }
 
-    function launch(attemptNumber) {
+    function launch(attemptNumber: number) {
       if (stopped) return;
       // Synchronously: the read must be on the wire before the timer starts
       // counting against it. A sync throw is just a failed attempt.
-      let attemptPromise;
+      let attemptPromise: Promise<Awaited<T>>;
       try {
         attemptPromise = Promise.resolve(makeAttempt());
       } catch (error) {
         attemptPromise = Promise.reject(error);
       }
-      const notNow = (error) => {
+      const notNow = (error: unknown) => {
         // "Not now", not "not ever". This attempt is gone, so nothing is left
         // racing for it — ask again, after a pause.
         lastTransient = error;
@@ -336,7 +360,7 @@ export function patientRead(makeAttempt, options = {}) {
         scheduleRetry(attemptNumber);
       };
       attemptPromise.then((value) => {
-        clearTimer(stallTimer);
+        clearTimer(stallTimer!);
         stallTimer = null;
         if (settled && !timedOut) return;
         if (!isAnswer(value)) {
@@ -345,7 +369,7 @@ export function patientRead(makeAttempt, options = {}) {
         }
         succeed(value);
       }, (error) => {
-        clearTimer(stallTimer);
+        clearTimer(stallTimer!);
         stallTimer = null;
         if (isReadTimeout(error)) return;
         if (!isTransientReadError(error)) {
@@ -361,7 +385,7 @@ export function patientRead(makeAttempt, options = {}) {
       // attempt — as a transient, or as a value `isAnswer` refuses — and the
       // retry that follows is the first read on the rebuilt stream.
       if (onStall && stallMs > 0 && stallMs < ms) {
-        clearTimer(stallTimer);
+        clearTimer(stallTimer!);
         stallTimer = setTimer(() => {
           stallTimer = null;
           if (stopped || checkOffline()) return;
@@ -374,7 +398,7 @@ export function patientRead(makeAttempt, options = {}) {
           }
         }, stallMs);
       }
-      clearTimer(timer);
+      clearTimer(timer!);
       timer = setTimer(() => {
         timer = null;
         if (stopped) return;

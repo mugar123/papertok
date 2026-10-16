@@ -1,7 +1,7 @@
 import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.ts';
 import { matchesAuthorName } from '../utils/authorNameMatch.ts';
 
-/** @typedef {import('../models/Paper.ts').Paper} Paper */
+import type { Paper, PaperAuthor } from '../models/Paper.ts';
 
 // Below this many alphanumeric characters a title is not a fingerprint of a
 // paper -- "editorial", "introduction", "lettertotheeditor" (17) -- and the
@@ -18,7 +18,7 @@ export class PaperBuilder {
    * @param {Partial<Paper>} data
    * @returns {Paper}
    */
-  static create(data) {
+  static create(data: Omit<Partial<Paper>, 'arxivId' | 'journal'> & { arxivId?: string | null; journal?: string | null }): Paper {
     const isPreprint = data.publicationStatus === 'preprint'
       || data.publicationType === 'preprint'
       || !data.publicationType;
@@ -122,7 +122,9 @@ export class PaperBuilder {
    * @param {Partial<Paper>} enrichmentData
    * @param {string} [sourceName]
    */
-  static merge(existingPaper, enrichmentData, sourceName) {
+  static merge(existingPaper: Paper, enrichmentData: Partial<Paper>, sourceName?: string): Paper;
+  static merge(existingPaper: Partial<Paper> & Pick<Paper, 'sources'>, enrichmentData: Partial<Paper>, sourceName?: string): Partial<Paper> & Pick<Paper, 'sources'>;
+  static merge(existingPaper: Partial<Paper> & Pick<Paper, 'sources'>, enrichmentData: Partial<Paper>, sourceName?: string) {
     const merged = { ...existingPaper };
 
     // Update traceability
@@ -221,7 +223,7 @@ export class PaperBuilder {
       if (!merged.authors?.length) {
         merged.authors = enrichmentData.authors;
       } else {
-        const candidates = enrichmentData.authors;
+        const candidates = enrichmentData.authors as Array<PaperAuthor>;
         // Same work, same order on both sides: when the lists are the same
         // length the POSITION is the identity, and the name only confirms it.
         // Otherwise a name may carry an id only when exactly one candidate
@@ -248,7 +250,7 @@ export class PaperBuilder {
       const newConcepts = enrichmentData.concepts.filter(c => !existingConceptIds.has(c.id));
       merged.concepts = [...(merged.concepts || []), ...newConcepts];
     }
-    if (enrichmentData.topics?.length > 0) merged.topics = enrichmentData.topics;
+    if ((enrichmentData.topics?.length as number) > 0) merged.topics = enrichmentData.topics;
     if (enrichmentData.primaryTopic || enrichmentData.primary_topic) {
       merged.primaryTopic = enrichmentData.primaryTopic || enrichmentData.primary_topic;
     }
@@ -267,7 +269,7 @@ export class PaperBuilder {
     }
     if (enrichmentData.researchResources?.length) {
       const resources = [...(merged.researchResources || []), ...enrichmentData.researchResources];
-      const seenResources = new Set();
+      const seenResources = new Set<string>();
       merged.researchResources = resources.filter(resource => {
         const key = `${resource?.kind || ''}:${resource?.url || resource?.id || ''}`.toLowerCase();
         if (!resource || !key || seenResources.has(key)) return false;
@@ -332,10 +334,10 @@ export class PaperBuilder {
    * @param {Array<Partial<Paper> | null | undefined> | null | undefined} papers
    * @returns {Paper[]} Deduplicated and merged array
    */
-  static deduplicate(papers) {
+  static deduplicate(papers: Array<Partial<Paper>|null|undefined>|null|undefined): Paper[] {
     if (!papers || papers.length === 0) return [];
     
-    const mergedMap = new Map(); // key -> merged paper
+    const mergedMap = new Map<string | undefined | null, Paper>(); // key -> merged paper
 
     for (const paper of papers) {
       if (!paper) continue;
@@ -349,7 +351,7 @@ export class PaperBuilder {
       // Heuristic key: Alphanumeric title + first author's last name
       const cleanTitle = (paper.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       const firstAuthorName = paper.authors && paper.authors.length > 0
-        ? String(paper.authors[0]?.name ?? paper.authors[0] ?? '')
+        ? String((paper.authors[0] as PaperAuthor)?.name ?? paper.authors[0] ?? '')
         : '';
       const firstAuthor = firstAuthorName.toLowerCase().split(' ').pop();
       const heuristicKey = cleanTitle && firstAuthor ? `${cleanTitle}_${firstAuthor}` : null;
@@ -405,7 +407,7 @@ export class PaperBuilder {
       // OpenAlex work that knows both. Taking only the first matching key merged
       // into one group and then repointed the other group's keys at the result,
       // so that group fell out of the map and its paper was silently dropped.
-      const groups = [...new Set(allKeys.map(key => mergedMap.get(key)).filter(Boolean))];
+      const groups = [...new Set(allKeys.map(key => mergedMap.get(key)).filter(Boolean) as Paper[])];
 
       // 3. Merge or Add
       if (groups.length > 0) {

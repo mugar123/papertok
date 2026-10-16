@@ -1,3 +1,13 @@
+interface EuropePmcUrl { availabilityCode?: string; availability?: string; documentStyle?: string; url?: string; }
+export interface EuropePmcRecord {
+  id?: string; pmid?: string; pmcid?: string; abstractText?: string; citedByCount?: number | string;
+  isOpenAccess?: string; license?: string; hasReferences?: string; hasData?: string; hasSuppl?: string;
+  fullTextUrlList?: { fullTextUrl?: EuropePmcUrl[] };
+  keywordList?: { keyword?: string[] };
+  meshHeadingList?: { meshHeading?: Array<{ descriptorName?: string | { $?: string; value?: string }; majorTopic_YN?: string; meshQualifierList?: { meshQualifier?: Array<{ majorTopic_YN?: string }> } }> };
+  authorList?: { author?: Array<{ collectiveName?: string; fullName?: string; firstName?: string; lastName?: string; affiliation?: string; authorId?: { type?: string; value?: string }; authorAffiliationDetailsList?: { authorAffiliation?: Array<{ affiliation?: string }> } }> };
+}
+
 /**
  * Europe PMC answers two different questions in this app -- "enrich this PMID"
  * (`europePmcService`) and "give me papers for these categories"
@@ -24,7 +34,7 @@ import { orderMeshDescriptors } from './meshCheckTags.ts';
 // which is the only question either caller is asking.
 const OPEN_AVAILABILITY_CODES = new Set(['OA', 'F']);
 
-function isYes(value) {
+function isYes(value: unknown) {
   return String(value || '').toUpperCase() === 'Y';
 }
 
@@ -39,13 +49,13 @@ const HEADING_TAG = /<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1\s*>/gi;
 const BLOCK_TAG = /<\/?(?:p|div|br|li|ul|ol|section|title)\b[^>]*>/gi;
 const INLINE_TAG = /<\/?(?:i|b|em|strong|sup|sub|span|a|u|small|abbr|italic|bold|sc)\b[^>]*>/gi;
 
-function headingLabel(_match, _level, text) {
+function headingLabel(_match: string, _level: string, text: string) {
   const label = String(text || '').replace(INLINE_TAG, '').replace(/\s+/g, ' ').trim();
   if (!label) return ' ';
   return /[:.]$/.test(label) ? ` ${label} ` : ` ${label}: `;
 }
 
-function stripMarkup(value) {
+function stripMarkup(value: unknown) {
   return String(value || '')
     .replace(HEADING_TAG, headingLabel)
     .replace(BLOCK_TAG, ' ')
@@ -60,11 +70,11 @@ function stripMarkup(value) {
     .trim();
 }
 
-function uniqueTerms(values) {
-  const seen = new Set();
+function uniqueTerms(values: unknown[]) {
+  const seen = new Set<string>();
   return values
     .map(stripMarkup)
-    .filter((value) => {
+    .filter((value: string) => {
       const key = value.toLowerCase();
       if (!value || seen.has(key)) return false;
       seen.add(key);
@@ -78,7 +88,7 @@ function uniqueTerms(values) {
 // in one view and none in the other.
 // Major topics first and without check tags ("Humans", "Mice"), as the
 // PubMed reader orders them (utils/meshCheckTags.js).
-function meshDescriptors(raw) {
+function meshDescriptors(raw: EuropePmcRecord | null | undefined) {
   const headings = raw?.meshHeadingList?.meshHeading || [];
   return orderMeshDescriptors(headings.flatMap((heading) => {
     const descriptor = typeof heading?.descriptorName === 'string'
@@ -96,7 +106,7 @@ function meshDescriptors(raw) {
 // The core record names each author in full, with an ORCID and affiliations
 // when it has them; `name` stays Europe PMC's own "Surname INITIALS", which is
 // what the card has always shown.
-function recordAuthors(raw) {
+function recordAuthors(raw: EuropePmcRecord | null | undefined) {
   const authors = raw?.authorList?.author || [];
   return authors.flatMap((author) => {
     const collective = stripMarkup(author?.collectiveName);
@@ -104,7 +114,7 @@ function recordAuthors(raw) {
     if (!name) return [];
     const fullName = collective || [stripMarkup(author?.firstName), stripMarkup(author?.lastName)].filter(Boolean).join(' ') || name;
     const orcid = String(author?.authorId?.type || '').toUpperCase() === 'ORCID'
-      ? String(author.authorId.value || '').trim().match(/(\d{4}-\d{4}-\d{4}-\d{3}[\dX])$/i)?.[1]?.toUpperCase()
+      ? String(author.authorId!.value || '').trim().match(/(\d{4}-\d{4}-\d{4}-\d{3}[\dX])$/i)?.[1]?.toUpperCase()
       : '';
     const affiliation = stripMarkup(author?.authorAffiliationDetailsList?.authorAffiliation?.[0]?.affiliation || author?.affiliation);
     return [{
@@ -116,12 +126,12 @@ function recordAuthors(raw) {
   });
 }
 
-function isOpenFullTextUrl(item) {
+function isOpenFullTextUrl(item: EuropePmcUrl) {
   return OPEN_AVAILABILITY_CODES.has(String(item?.availabilityCode || '').toUpperCase())
     || /open access/i.test(String(item?.availability || ''));
 }
 
-export function mapEuropePmcRecord(raw) {
+export function mapEuropePmcRecord(raw: EuropePmcRecord | null | undefined) {
   const declaredOpen = isYes(raw?.isOpenAccess);
   const urls = raw?.fullTextUrlList?.fullTextUrl || [];
   const openUrls = urls.filter(item => declaredOpen || isOpenFullTextUrl(item));

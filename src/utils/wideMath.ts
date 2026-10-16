@@ -25,13 +25,13 @@ export const KEY_STEP_PX = 40;
  * not depend on how the formula is laid out, so turning the formula into a
  * scroller cannot flip the answer back (no oscillation under the observer).
  */
-export function inlineMathNeedsScroll(baseWidths, availableWidth) {
+export function inlineMathNeedsScroll(baseWidths: number[], availableWidth: number) {
   if (!(availableWidth > 0)) return false;
   return baseWidths.some(width => width > availableWidth + 0.5);
 }
 
 /** Hidden width of a scroller, in whole pixels; 0 when it fits. */
-export function hiddenWidth(scrollWidth, clientWidth) {
+export function hiddenWidth(scrollWidth: number, clientWidth: number) {
   const hidden = Math.ceil(scrollWidth - clientWidth);
   // Sub-pixel rounding leaves a 1px "overflow" on formulas that fit.
   return hidden > 1 ? hidden : 0;
@@ -41,14 +41,14 @@ export function hiddenWidth(scrollWidth, clientWidth) {
  * Width of the slider's thumb: the visible share of the formula, the way a
  * scrollbar thumb shows it, never below the minimum target.
  */
-export function sliderThumbWidth(trackWidth, clientWidth, scrollWidth) {
+export function sliderThumbWidth(trackWidth: number, clientWidth: number, scrollWidth: number) {
   if (!(trackWidth > 0) || !(scrollWidth > 0)) return MIN_THUMB_PX;
   const share = Math.min(1, clientWidth / scrollWidth);
   return Math.max(MIN_THUMB_PX, Math.round(trackWidth * share));
 }
 
 /** What a screen reader hears for the slider's position. */
-export function sliderValueText(position, hidden) {
+export function sliderValueText(position: number, hidden: number) {
   if (!(hidden > 0)) return 'Start of formula';
   const percent = Math.round((Math.min(Math.max(position, 0), hidden) / hidden) * 100);
   if (percent <= 0) return 'Start of formula';
@@ -57,8 +57,8 @@ export function sliderValueText(position, hidden) {
 }
 
 /** The slider's next position for a key, or null for keys it leaves alone. */
-export function sliderKeyTarget(key, position, hidden) {
-  const clamp = value => Math.min(Math.max(value, 0), hidden);
+export function sliderKeyTarget(key: string, position: number, hidden: number) {
+  const clamp = (value: number) => Math.min(Math.max(value, 0), hidden);
   switch (key) {
     case 'ArrowLeft':
     case 'ArrowDown':

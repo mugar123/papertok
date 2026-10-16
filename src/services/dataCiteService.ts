@@ -1,3 +1,15 @@
+import type { PaperResearchResource } from '../models/Paper.ts';
+type ResourceKind = 'dataset' | 'software' | 'material' | 'version';
+interface DataCiteAttributes {
+  doi?: string; titles?: Array<{ title?: string }>; types?: { resourceTypeGeneral?: string; resourceType?: string };
+  relatedIdentifiers?: Array<{ relatedIdentifier?: string; relatedIdentifierType?: string; relationType: string; resourceTypeGeneral?: string }>;
+  url?: string; publisher?: string | { name?: string }; publicationYear?: number | string;
+  viewCount?: number; downloadCount?: number; citationCount?: number;
+}
+interface DataCiteRecord { id?: string; attributes?: DataCiteAttributes; }
+export interface DataCiteResource extends PaperResearchResource { kind: ResourceKind; doi?: string; relationType: string; resourceType: string; publisher: string; year: number | null; viewCount: number; downloadCount: number; citationCount: number; }
+interface CacheEntry { value: DataCiteResource[]; timestamp: number; ttl: number; }
+
 import { normalizeDoi } from './unpaywallService.ts';
 import { safeCatalogUrl } from '../utils/externalUrl.ts';
 import { withRequestDeadline } from '../utils/requestDeadline.ts';
@@ -6,7 +18,7 @@ const API_BASE = 'https://api.datacite.org/dois';
 const CACHE_PREFIX = 'papertok_datacite_';
 const POSITIVE_TTL = 7 * 24 * 60 * 60 * 1000;
 const NEGATIVE_TTL = 24 * 60 * 60 * 1000;
-const MEMORY_CACHE = new Map();
+const MEMORY_CACHE = new Map<string, CacheEntry>();
 const MAX_RESOURCES = 8;
 
 const RESOURCE_TYPES = Object.freeze({
@@ -30,13 +42,13 @@ const TITLE_STOP_WORDS = new Set([
   'sobre', 'supplement', 'supplementary', 'the', 'with', 'this', 'that', 'using',
 ]);
 
-function getResourceKind(resourceTypeGeneral, relationType) {
+function getResourceKind(resourceTypeGeneral: unknown, relationType: string): ResourceKind | null {
   const normalizedType = String(resourceTypeGeneral || '').toLowerCase().replace(/[^a-z]/g, '');
   if (VERSION_RELATIONS.has(relationType)) return 'version';
-  return Object.entries(RESOURCE_TYPES).find(([, values]) => values.has(normalizedType))?.[0] || null;
+  return Object.entries(RESOURCE_TYPES).find(([, values]) => values.has(normalizedType))?.[0] as ResourceKind || null;
 }
 
-function getResourceUrl(identifier, identifierType) {
+function getResourceUrl(identifier: unknown, identifierType: unknown) {
   if (String(identifierType || '').toUpperCase() === 'DOI') {
     const doi = normalizeDoi(identifier);
     return doi ? `https://doi.org/${doi}` : '';
@@ -44,7 +56,7 @@ function getResourceUrl(identifier, identifierType) {
   return safeCatalogUrl(identifier);
 }
 
-function getTitle(attributes, kind) {
+function getTitle(attributes: DataCiteAttributes, kind: ResourceKind) {
   const title = attributes?.titles?.find(candidate => candidate?.title)?.title;
   return String(title || '')
     .replace(/<[^>]*>/g, '')
@@ -53,7 +65,7 @@ function getTitle(attributes, kind) {
     || ({ dataset: 'Associated dataset', software: 'Associated software', material: 'Associated material', version: 'Related version' }[kind]);
 }
 
-function getMeaningfulTitleTokens(value) {
+function getMeaningfulTitleTokens(value: unknown) {
   return new Set(String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -62,7 +74,7 @@ function getMeaningfulTitleTokens(value) {
     .filter(token => token.length >= 5 && !TITLE_STOP_WORDS.has(token)));
 }
 
-function hasMeaningfulTitleOverlap(paperTitle, resourceTitle) {
+function hasMeaningfulTitleOverlap(paperTitle: string, resourceTitle: string) {
   if (!paperTitle) return true;
   const paperTokens = getMeaningfulTitleTokens(paperTitle);
   const resourceTokens = getMeaningfulTitleTokens(resourceTitle);
@@ -70,7 +82,7 @@ function hasMeaningfulTitleOverlap(paperTitle, resourceTitle) {
   return shared.length >= 2 || shared.some(token => token.length >= 12);
 }
 
-export function mapDataCiteRecord(record, targetDoi, targetTitle = '') {
+export function mapDataCiteRecord(record: DataCiteRecord, targetDoi: unknown, targetTitle = ''): DataCiteResource | null {
   const attributes = record?.attributes;
   const doi = normalizeDoi(attributes?.doi || record?.id);
   const normalizedTarget = normalizeDoi(targetDoi);
@@ -103,7 +115,7 @@ export function mapDataCiteRecord(record, targetDoi, targetTitle = '') {
   };
 }
 
-export function mapDataCiteDirectRelations(record, targetDoi) {
+export function mapDataCiteDirectRelations(record: DataCiteRecord, targetDoi: unknown): DataCiteResource[] {
   const attributes = record?.attributes;
   if (!attributes) return [];
 
@@ -134,12 +146,12 @@ export function mapDataCiteDirectRelations(record, targetDoi) {
   });
 }
 
-function readCache(doi) {
+function readCache(doi: string) {
   const memory = MEMORY_CACHE.get(doi);
   if (memory && Date.now() - memory.timestamp < memory.ttl) return memory.value;
   if (typeof localStorage === 'undefined') return undefined;
   try {
-    const stored = JSON.parse(localStorage.getItem(`${CACHE_PREFIX}${doi}`));
+    const stored = JSON.parse(localStorage.getItem(`${CACHE_PREFIX}${doi}`)!) as CacheEntry | null;
     if (stored && Date.now() - stored.timestamp < stored.ttl) {
       MEMORY_CACHE.set(doi, stored);
       return stored.value;
@@ -148,7 +160,7 @@ function readCache(doi) {
   return undefined;
 }
 
-function writeCache(doi, value) {
+function writeCache(doi: string, value: DataCiteResource[]) {
   const entry = { value, timestamp: Date.now(), ttl: value.length > 0 ? POSITIVE_TTL : NEGATIVE_TTL };
   MEMORY_CACHE.set(doi, entry);
   if (typeof localStorage !== 'undefined') {
@@ -160,7 +172,7 @@ function writeCache(doi, value) {
  * Exported for its regression test, which needs a deadline short enough to wait
  * for: the real ones are seven seconds.
  */
-export async function fetchJson(url, timeoutMs = 7000) {
+export async function fetchJson<T>(url: string | URL, timeoutMs = 7000): Promise<T | null> {
   const response = await fetch(url, withRequestDeadline({
     headers: { Accept: 'application/vnd.api+json' },
   }, timeoutMs));
@@ -169,8 +181,8 @@ export async function fetchJson(url, timeoutMs = 7000) {
   return response.json();
 }
 
-function deduplicateResources(resources) {
-  const seen = new Set();
+function deduplicateResources(resources: DataCiteResource[]) {
+  const seen = new Set<string>();
   const priority = { dataset: 0, software: 1, material: 2, version: 3 };
   return resources
     .filter(resource => {
@@ -186,7 +198,7 @@ function deduplicateResources(resources) {
     .slice(0, MAX_RESOURCES);
 }
 
-export async function getRelatedResearchResources(rawDoi, { title = '' } = {}) {
+export async function getRelatedResearchResources(rawDoi: unknown, { title = '' } = {}) {
   const doi = normalizeDoi(rawDoi);
   if (!doi || !doi.startsWith('10.')) return [];
   const cached = readCache(doi);
@@ -197,14 +209,14 @@ export async function getRelatedResearchResources(rawDoi, { title = '' } = {}) {
   reverseUrl.searchParams.set('page[size]', '20');
 
   const [directResult, reverseResult] = await Promise.allSettled([
-    fetchJson(`${API_BASE}/${encodeURIComponent(doi)}`),
-    fetchJson(reverseUrl),
+    fetchJson<{ data: DataCiteRecord }>(`${API_BASE}/${encodeURIComponent(doi)}`),
+    fetchJson<{ data?: DataCiteRecord[] }>(reverseUrl),
   ]);
   const directResources = directResult.status === 'fulfilled' && directResult.value
     ? mapDataCiteDirectRelations(directResult.value.data, doi)
     : [];
   const reverseResources = reverseResult.status === 'fulfilled'
-    ? (reverseResult.value?.data || []).map(record => mapDataCiteRecord(record, doi, title)).filter(Boolean)
+    ? (reverseResult.value?.data || []).map(record => mapDataCiteRecord(record, doi, title)).filter(Boolean) as DataCiteResource[]
     : [];
   const resources = deduplicateResources([...reverseResources, ...directResources]);
   writeCache(doi, resources);

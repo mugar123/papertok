@@ -26,7 +26,7 @@
  * local or free-text query has no author index behind it, and that flag does
  * not exist until the entity resolves. Everything else is decided by `type`.
  */
-export function hasAuthorsTab(type, entity = null) {
+export function hasAuthorsTab(type: string|undefined, entity: { _localTopic?: boolean; _queryTopic?: boolean } | null = null) {
   // A project's papers come from OpenAIRE, which indexes participants rather
   // than authors — so despite being an organisation-shaped page like an
   // institution, it has no Authors tab either.
@@ -77,7 +77,7 @@ export function hasAuthorsTab(type, entity = null) {
  * landed. Unreserved, a card that does come grows the hero from the bottom
  * under the settle's clip, which reads as an arrival.
  */
-export function explorerSkeletonShape(type, { hasOrcid = false } = {}) {
+export function explorerSkeletonShape(type: string|undefined, { hasOrcid = false } = {}) {
   const authorish = type === 'author';
   const institutionish = type === 'institution';
   const projectish = type === 'project';

@@ -1,3 +1,19 @@
+import type { PublicListInput, PublicPaperInput } from './publicListPayload.ts';
+interface SyncRequest extends PublicListInput { key: string; shareId: string; listId: string }
+interface SyncResult { paperCount: number | null; listCount: number | null; skipped: number | null }
+interface SyncJob extends Omit<Partial<SyncRequest>, 'papers' | 'key'> {
+  key: string; papers: Map<unknown, PublicPaperInput>; status: 'idle' | 'syncing' | 'pending' | 'synced' | 'error';
+  code: string | null; attempts: number; running: boolean; dirty: boolean; cancelled?: boolean;
+  timer: ReturnType<typeof setTimeout> | null; result: SyncResult | null;
+}
+type SyncState = Pick<SyncJob, 'status' | 'code' | 'listId' | 'result'> | null;
+type SyncListener = (key: string, state: SyncState) => void;
+interface SyncOptions {
+  sync?: typeof syncPublicList; debounceMs?: number; retryMs?: number; noticeMs?: number; attempts?: number;
+  setTimer?: (callback: () => void, delay: number) => ReturnType<typeof setTimeout>;
+  clearTimer?: (handle: ReturnType<typeof setTimeout>) => void; onError?: (error: unknown) => void;
+}
+
 /**
  * The engine that keeps a published list's public copy up to date on its own
  * (P25), and the reason there is no Update button any more.
@@ -36,22 +52,22 @@ export const PUBLIC_LIST_SYNC_RETRY_MS = 4_000;
 export const PUBLIC_LIST_SYNC_NOTICE_MS = 2_500;
 export const PUBLIC_LIST_SYNC_ATTEMPTS = 2;
 
-export function createPublicListSyncEngine(options = {}) {
+export function createPublicListSyncEngine(options: SyncOptions = {}) {
   const {
     sync = syncPublicList,
     debounceMs = PUBLIC_LIST_SYNC_DEBOUNCE_MS,
     retryMs = PUBLIC_LIST_SYNC_RETRY_MS,
     noticeMs = PUBLIC_LIST_SYNC_NOTICE_MS,
     attempts: maxAttempts = PUBLIC_LIST_SYNC_ATTEMPTS,
-    setTimer = (callback, delay) => setTimeout(callback, delay),
-    clearTimer = (handle) => clearTimeout(handle),
-    onError = (error) => console.error('A public list could not be synced:', error),
+    setTimer = (callback: () => void, delay: number) => setTimeout(callback, delay),
+    clearTimer = (handle: ReturnType<typeof setTimeout>) => clearTimeout(handle),
+    onError = (error: unknown) => console.error('A public list could not be synced:', error),
   } = options;
 
-  const jobs = new Map();
-  const listeners = new Set();
+  const jobs = new Map<string, SyncJob>();
+  const listeners = new Set<SyncListener>();
 
-  function stateOf(job) {
+  function stateOf(job: SyncJob | undefined) {
     if (!job || job.status === 'idle') return null;
     // `listId` rides along so a subscriber can act on the list itself — the
     // lists page marks it synced locally, which keeps the freshness check
@@ -66,7 +82,7 @@ export function createPublicListSyncEngine(options = {}) {
     };
   }
 
-  function announce(key) {
+  function announce(key: string) {
     const state = stateOf(jobs.get(key));
     // A listener that throws is a rendering bug, not a reason to lose a sync.
     listeners.forEach((listener) => {
@@ -78,14 +94,14 @@ export function createPublicListSyncEngine(options = {}) {
     });
   }
 
-  function setStatus(job, status, code = null) {
+  function setStatus(job: SyncJob, status: SyncJob['status'], code: string | null = null) {
     if (job.status === status && job.code === code) return;
     job.status = status;
     job.code = code;
     announce(job.key);
   }
 
-  function schedule(job, delay) {
+  function schedule(job: SyncJob, delay: number) {
     if (job.timer !== null) clearTimer(job.timer);
     job.timer = setTimer(() => {
       job.timer = null;
@@ -93,7 +109,7 @@ export function createPublicListSyncEngine(options = {}) {
     }, delay);
   }
 
-  function retire(job) {
+  function retire(job: SyncJob) {
     // The notice has been read; drop the job so the badge returns to plain
     // "Public" and the accumulated payload stops holding memory.
     job.timer = setTimer(() => {
@@ -105,7 +121,7 @@ export function createPublicListSyncEngine(options = {}) {
     }, noticeMs);
   }
 
-  async function run(job) {
+  async function run(job: SyncJob) {
     if (job.running) {
       job.dirty = true;
       return;
@@ -115,7 +131,7 @@ export function createPublicListSyncEngine(options = {}) {
     setStatus(job, 'syncing');
 
     try {
-      const outcome = await sync(job.shareId, {
+      const outcome = await sync(job.shareId!, {
         listId: job.listId,
         title: job.title,
         description: job.description,
@@ -124,9 +140,9 @@ export function createPublicListSyncEngine(options = {}) {
         papers: [...job.papers.values()],
       });
       job.result = {
-        paperCount: Number.isInteger(outcome?.paperCount) ? outcome.paperCount : null,
-        listCount: Number.isInteger(outcome?.listCount) ? outcome.listCount : null,
-        skipped: Number.isInteger(outcome?.skipped) ? outcome.skipped : null,
+        paperCount: Number.isInteger(outcome?.paperCount) ? outcome.paperCount! : null,
+        listCount: Number.isInteger(outcome?.listCount) ? outcome.listCount! : null,
+        skipped: Number.isInteger(outcome?.skipped) ? outcome.skipped! : null,
       };
       job.running = false;
       if (job.cancelled) return;
@@ -147,7 +163,7 @@ export function createPublicListSyncEngine(options = {}) {
       // failure is expected and belongs to nobody.
       if (job.cancelled) return;
       job.attempts += 1;
-      const code = error?.code || 'PUBLIC_LIST_SYNC_FAILED';
+      const code = (error as { code?: string } | null)?.code || 'PUBLIC_LIST_SYNC_FAILED';
       if (job.dirty || job.attempts < maxAttempts) {
         setStatus(job, 'pending', null);
         schedule(job, retryMs);
@@ -162,7 +178,7 @@ export function createPublicListSyncEngine(options = {}) {
    * Ask for a sync. Safe to call on every edit: the debounce and the job merge
    * turn a burst into one request.
    */
-  function queue(request) {
+  function queue(request: SyncRequest) {
     const { key, shareId, listId } = request || {};
     if (!key || !shareId || !listId) return;
 
@@ -209,7 +225,7 @@ export function createPublicListSyncEngine(options = {}) {
    * optimization: the share id it holds no longer exists, so letting it fire
    * would report a failure about a list the owner has already dealt with.
    */
-  function cancel(key) {
+  function cancel(key: string) {
     const job = jobs.get(key);
     if (!job) return;
     if (job.timer !== null) clearTimer(job.timer);
@@ -222,20 +238,20 @@ export function createPublicListSyncEngine(options = {}) {
   }
 
   /** The only manual entry point, and only for a job that already failed. */
-  function retry(key) {
-    const job = jobs.get(key);
+  function retry(key: string | null) {
+    const job = jobs.get(key!);
     if (!job || job.running) return;
     job.attempts = 0;
     setStatus(job, 'pending');
     schedule(job, 0);
   }
 
-  function subscribe(listener) {
+  function subscribe(listener: SyncListener) {
     listeners.add(listener);
     return () => listeners.delete(listener);
   }
 
-  function getState(key) {
+  function getState(key: string) {
     return stateOf(jobs.get(key));
   }
 
@@ -252,7 +268,7 @@ export function createPublicListSyncEngine(options = {}) {
 
 const engine = createPublicListSyncEngine();
 
-export const queuePublicListSync = (request) => engine.queue(request);
-export const cancelPublicListSync = (key) => engine.cancel(key);
-export const retryPublicListSync = (key) => engine.retry(key);
-export const subscribeToPublicListSync = (listener) => engine.subscribe(listener);
+export const queuePublicListSync = (request: SyncRequest) => engine.queue(request);
+export const cancelPublicListSync = (key: string) => engine.cancel(key);
+export const retryPublicListSync = (key: string|null) => engine.retry(key);
+export const subscribeToPublicListSync = (listener: SyncListener) => engine.subscribe(listener);

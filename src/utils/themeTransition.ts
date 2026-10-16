@@ -22,7 +22,7 @@
  * Pure so it is testable without a DOM: two booleans in, one route out.
  * Everything that actually reads `window`/`matchMedia` lives in the caller.
  */
-export function pickThemeRoute({ reducedMotion, hasViewTransitions }) {
+export function pickThemeRoute({ reducedMotion, hasViewTransitions }: { reducedMotion: boolean; hasViewTransitions: boolean }) {
   if (reducedMotion) return 'instant';
   if (!hasViewTransitions) return 'instant';
   return 'fade';
@@ -38,7 +38,7 @@ function prefersReducedMotion() {
 
 const PLAIN_CLASS = 'theme-switch-plain';
 
-export function runThemeSwitch(commit) {
+export function runThemeSwitch(commit: () => void | Promise<void>) {
   const route = pickThemeRoute({
     reducedMotion: prefersReducedMotion(),
     hasViewTransitions: typeof document.startViewTransition === 'function',

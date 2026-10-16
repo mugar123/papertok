@@ -1,3 +1,5 @@
+import type { AIQuota } from '../models/Rewrite.ts';
+import type { Paper } from '../models/Paper.ts';
 import { authenticatedWorkerFetch } from './workerApiClient.ts';
 
 /**
@@ -22,7 +24,9 @@ const ANNOTATION_TIMEOUT_MS = 20_000;
 export const MIN_ANNOTATABLE_CHARS = 8;
 
 export class PaperAnnotationError extends Error {
-  constructor(code, quota = null) {
+  declare code: string | undefined;
+  declare quota: AIQuota | null;
+  constructor(code: string|undefined, quota: AIQuota | null = null) {
     super(code);
     this.name = 'PaperAnnotationError';
     this.code = code;
@@ -30,7 +34,7 @@ export class PaperAnnotationError extends Error {
   }
 }
 
-export function canAnnotatePassage(quote) {
+export function canAnnotatePassage(quote: unknown) {
   return String(quote || '').trim().length >= MIN_ANNOTATABLE_CHARS;
 }
 
@@ -40,13 +44,13 @@ export function canAnnotatePassage(quote) {
  * it, so without this the rail says «no se ha podido explicar este pasaje» to a
  * reader whose only way forward is to sign in again.
  */
-export function toAnnotationError(error, { cancelled = false } = {}) {
+export function toAnnotationError(error: unknown, { cancelled = false } = {}) {
   if (error instanceof PaperAnnotationError) return error;
-  if (error?.name === 'AbortError') {
+  if ((error as { name?: string } | null)?.name === 'AbortError') {
     return new PaperAnnotationError(cancelled ? 'AI_CANCELLED' : 'AI_TIMEOUT');
   }
-  if (error?.name === 'WorkerApiAuthError') return new PaperAnnotationError('AI_AUTH_REQUIRED');
-  if (typeof error?.code === 'string' && error.code.startsWith('auth/')) {
+  if ((error as { name?: string } | null)?.name === 'WorkerApiAuthError') return new PaperAnnotationError('AI_AUTH_REQUIRED');
+  if (typeof (error as { code?: unknown } | null)?.code === 'string' && (error as { code: string }).code.startsWith('auth/')) {
     return new PaperAnnotationError('AI_AUTH_REQUIRED');
   }
   return new PaperAnnotationError('AI_UNAVAILABLE');
@@ -55,12 +59,12 @@ export function toAnnotationError(error, { cancelled = false } = {}) {
 /**
  * @returns {Promise<{note: string, model: string, remainingUses: number|null}>}
  */
-export async function annotatePassage(paper, {
+export async function annotatePassage(paper: Partial<Paper> | null | undefined, {
   quote,
   context = '',
   level = 'university',
   signal,
-} = {}) {
+}: { quote?: string; context?: string; level?: string; language?: string; signal?: AbortSignal } = {}): Promise<{ note: string; model: string; remainingUses: number|null; }> {
   if (!canAnnotatePassage(quote)) throw new PaperAnnotationError('AI_INVALID_REQUEST');
   // A signal that already fired will never fire again, so the listener below
   // would never run and the POST would spend one of the day's uses on an answer
@@ -93,10 +97,10 @@ export async function annotatePassage(paper, {
     });
 
     if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
+      const payload = await response.json().catch(() => ({})) as { code?: string; quota?: AIQuota };
       throw new PaperAnnotationError(payload.code || 'AI_UNAVAILABLE', payload.quota || null);
     }
-    const payload = await response.json().catch(() => null);
+    const payload = await response.json().catch(() => null) as { note?: unknown; model?: unknown; remainingUses?: unknown } | null;
     const note = String(payload?.note || '').trim();
     if (!note) throw new PaperAnnotationError('AI_EMPTY_RESPONSE');
     return {

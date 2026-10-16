@@ -1,3 +1,8 @@
+import type { Paper } from '../models/Paper.ts';
+import type { EuropePmcRecord } from '../utils/europePmcRecord.ts';
+type Enrichment = NonNullable<ReturnType<typeof mapEuropePmcResult>>;
+interface CacheEntry { value: Enrichment | null; timestamp: number; ttl: number; }
+
 import { mapEuropePmcRecord } from '../utils/europePmcRecord.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
 import { paperFieldsEqual } from '../utils/feedEnrichment.ts';
@@ -6,12 +11,12 @@ const API_BASE = 'https://www.ebi.ac.uk/europepmc/webservices/rest/search';
 const CACHE_PREFIX = 'papertok_epmc_';
 const POSITIVE_TTL = 7 * 24 * 60 * 60 * 1000;
 const NEGATIVE_TTL = 24 * 60 * 60 * 1000;
-const MEMORY_CACHE = new Map();
+const MEMORY_CACHE = new Map<string, CacheEntry>();
 
 // One reader for the payload, shared with the domain-source search mapper:
 // `src/utils/europePmcRecord.ts` explains why. What stays here is the shape the
 // enrichment path needs -- a patch to merge onto a paper, keyed by PMID.
-export function mapEuropePmcResult(result) {
+export function mapEuropePmcResult(result: EuropePmcRecord): (Partial<Paper> & { pmid: string }) | null {
   const record = mapEuropePmcRecord(result);
   const pmid = record.pmid || record.providerId;
   if (!pmid) return null;
@@ -39,12 +44,12 @@ export function mapEuropePmcResult(result) {
   };
 }
 
-function readCache(pmid) {
+function readCache(pmid: string) {
   const memory = MEMORY_CACHE.get(pmid);
   if (memory && Date.now() - memory.timestamp < memory.ttl) return memory.value;
   if (typeof localStorage === 'undefined') return undefined;
   try {
-    const stored = JSON.parse(localStorage.getItem(`${CACHE_PREFIX}${pmid}`));
+    const stored = JSON.parse(localStorage.getItem(`${CACHE_PREFIX}${pmid}`)!) as CacheEntry | null;
     if (stored && Date.now() - stored.timestamp < stored.ttl) {
       MEMORY_CACHE.set(pmid, stored);
       return stored.value;
@@ -53,7 +58,7 @@ function readCache(pmid) {
   return undefined;
 }
 
-function writeCache(pmid, value) {
+function writeCache(pmid: string, value: Enrichment | null) {
   const entry = { value, timestamp: Date.now(), ttl: value ? POSITIVE_TTL : NEGATIVE_TTL };
   MEMORY_CACHE.set(pmid, entry);
   if (typeof localStorage !== 'undefined') {
@@ -61,10 +66,10 @@ function writeCache(pmid, value) {
   }
 }
 
-export async function enrichPubmedIds(rawPmids) {
+export async function enrichPubmedIds(rawPmids: string[]) {
   const pmids = [...new Set((rawPmids || []).map(value => String(value || '').trim()).filter(Boolean))];
-  const results = new Map();
-  const missing = [];
+  const results = new Map<string, Enrichment>();
+  const missing: string[] = [];
 
   pmids.forEach(pmid => {
     const cached = readCache(pmid);
@@ -86,12 +91,12 @@ export async function enrichPubmedIds(rawPmids) {
   try {
     const response = await fetch(url, { signal: controller.signal });
     if (!response.ok) throw new Error(`Europe PMC Error: ${response.status}`);
-    const payload = await response.json();
+    const payload = await response.json() as { resultList?: { result?: EuropePmcRecord[] } };
     const mappedById = new Map(
-      (payload?.resultList?.result || [])
+      ((payload?.resultList?.result || [])
         .map(mapEuropePmcResult)
-        .filter(Boolean)
-        .map(item => [item.pmid, item])
+        .filter(Boolean) as Enrichment[])
+      .map(item => [item.pmid, item])
     );
 
     missing.forEach(pmid => {
@@ -106,11 +111,11 @@ export async function enrichPubmedIds(rawPmids) {
   return results;
 }
 
-const CLOSED_RECORD_ACCESS_FIELDS = ['openAccess', 'accessSource', 'landingPageUrl'];
+const CLOSED_RECORD_ACCESS_FIELDS = ['openAccess', 'accessSource', 'landingPageUrl'] as const;
 
-const normalizePmid = value => String(value || '').trim().replace(/^pmid:/i, '');
+const normalizePmid = (value: unknown) => String(value || '').trim().replace(/^pmid:/i, '');
 
-function unionStrings(base, extra) {
+function unionStrings(base: string[] | undefined, extra: string[] | undefined) {
   return [...new Set([...(base || []), ...(extra || [])].filter(Boolean))];
 }
 
@@ -124,7 +129,7 @@ function unionStrings(base, extra) {
  * mergeICiteEnrichment: a record that changes nothing returns the same
  * object, so memo(PaperCard) keeps its IntersectionObserver.
  */
-export function mergeEuropePmcEnrichment(papers, recordsByPmid) {
+export function mergeEuropePmcEnrichment(papers: Paper[], recordsByPmid: Map<string, Enrichment> | Record<string, Enrichment>) {
   const lookup = recordsByPmid instanceof Map
     ? recordsByPmid
     : new Map(Object.entries(recordsByPmid || {}));
@@ -147,7 +152,7 @@ export function mergeEuropePmcEnrichment(papers, recordsByPmid) {
     }
     const merged = PaperBuilder.merge(paper, patch, 'europepmc');
     if (record.openAccess && record.landingPageUrl) merged.landingPageUrl = record.landingPageUrl;
-    if (record.biomedicalTerms?.length > 0) {
+    if ((record.biomedicalTerms?.length as number) > 0) {
       // PaperBuilder.merge unions the terms; the categories and keywords the
       // classifier reads are unioned here, the way the old adapter did.
       merged.biomedicalTerms = record.biomedicalTerms;

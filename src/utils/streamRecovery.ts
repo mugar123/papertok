@@ -45,9 +45,9 @@ export function createStreamRecovery({
   isOffline = () => false,
   minIntervalMs = MIN_STREAM_RECOVERY_INTERVAL_MS,
   warn = (...args) => console.warn(...args),
-}) {
+}: { disable: () => PromiseLike<unknown>; enable: () => PromiseLike<unknown>; now?: () => number; isOffline?: () => boolean; minIntervalMs?: number; warn?: (...args: unknown[]) => void }): () => Promise<boolean> {
   let lastKickAt = -Infinity;
-  let inFlight = null;
+  let inFlight: Promise<boolean> | null = null;
 
   return async function recoverStream() {
     if (isOffline()) return false;
@@ -60,7 +60,7 @@ export function createStreamRecovery({
         await enable();
         return true;
       } catch (error) {
-        warn('Could not rebuild the Firestore stream:', error?.message || error);
+        warn('Could not rebuild the Firestore stream:', (error as Error | null)?.message || error);
         return false;
       } finally {
         inFlight = null;

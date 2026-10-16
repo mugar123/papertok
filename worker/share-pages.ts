@@ -30,7 +30,7 @@ export interface ShareProviders {
   openAlex?: (path: string, params: Record<string, string>) => Promise<(OpenAlexWork & { results?: OpenAlexWork[] }) | null>;
   arxiv?: (id: string) => Promise<string>;
   openAire?: (params: Record<string, string>) => Promise<OpenAireProjects | null>;
-  firestore?: { getDocument: (path: string) => Promise<{ exists: boolean; data?: { title?: unknown; description?: unknown; language?: unknown; papers?: Partial<Paper>[] } } | null> };
+  firestore?: { getDocument: (path: string) => Promise<{ exists: boolean; data?: { title?: unknown; description?: unknown; language?: unknown; papers?: Partial<Paper>[] } | null } | null> };
 }
 interface SharePage {
   status: number; language: string; title: string; description: string; imageAlt: string;

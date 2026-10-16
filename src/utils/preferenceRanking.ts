@@ -17,26 +17,26 @@ import { getCategoryArea } from '../data/categories.js';
  * Ids outside the schema (a followed topic that maps to no area) keep their
  * relative order in a group of their own.
  */
-export function rankPreferences(preferences, affinities = {}) {
+export function rankPreferences(preferences: string[], affinities: Record<string, number> = {}) {
   const ids = [...new Set((preferences || []).filter(id => typeof id === 'string' && id))];
-  const score = (id) => Number(affinities?.[id]) || 0;
-  const tiers = new Map();
+  const score = (id: string) => Number(affinities?.[id]) || 0;
+  const tiers = new Map<number, string[]>();
   for (const id of ids) {
     const value = score(id);
     if (!tiers.has(value)) tiers.set(value, []);
-    tiers.get(value).push(id);
+    tiers.get(value)!.push(id);
   }
   return [...tiers.keys()]
     .sort((a, b) => b - a)
-    .flatMap(value => interleaveByArea(tiers.get(value)));
+    .flatMap(value => interleaveByArea(tiers.get(value)!));
 }
 
-function interleaveByArea(ids) {
-  const byArea = new Map();
+function interleaveByArea(ids: string[]) {
+  const byArea = new Map<string, string[]>();
   for (const id of ids) {
     const area = getCategoryArea(id) ?? '';
     if (!byArea.has(area)) byArea.set(area, []);
-    byArea.get(area).push(id);
+    byArea.get(area)!.push(id);
   }
   const lists = [...byArea.values()];
   const out = [];

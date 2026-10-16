@@ -1,3 +1,6 @@
+import type { OwnList } from './ownLists.ts';
+import type { Paper } from '../models/Paper.ts';
+
 import { createSessionCache } from './sessionCache.ts';
 
 /**
@@ -11,7 +14,7 @@ import { createSessionCache } from './sessionCache.ts';
  * Keys carry the uid so no account can ever be served another account's entry.
  * Nothing here survives a reload.
  */
-export const ownListsCache = createSessionCache({ maxEntries: 4 });
+export const ownListsCache = createSessionCache<OwnList[]>({ maxEntries: 4 });
 /**
  * Paper metadata the lists screen has already paid for, keyed by uid.
  *
@@ -24,7 +27,7 @@ export const ownListsCache = createSessionCache({ maxEntries: 4 });
  * `{ [paperId]: paper }` map, which is what the screen seeds its state from, and
  * an LRU over individual papers would evict the middle of a list.
  */
-export const listPapersCache = createSessionCache({ maxEntries: 2 });
+export const listPapersCache = createSessionCache<Record<string, Partial<Paper>>>({ maxEntries: 2 });
 
 /**
  * How long a lists read stays good enough to reuse without asking again.
@@ -43,17 +46,17 @@ export const listPapersCache = createSessionCache({ maxEntries: 2 });
  */
 export const OWN_LISTS_FRESH_MS = 30_000;
 
-const ownListsReadAt = new Map();
+const ownListsReadAt = new Map<string, number>();
 
 /** Caches a lists read and stamps it fresh. Both readers of the collection use it. */
-export function rememberOwnLists(uid, lists) {
+export function rememberOwnLists(uid: string, lists: OwnList[]) {
   if (!uid || !Array.isArray(lists)) return;
   ownListsCache.set(uid, lists);
   ownListsReadAt.set(uid, Date.now());
 }
 
 /** Updates the cached lists in place, without claiming they were re-read. */
-export function reviseOwnLists(uid, lists) {
+export function reviseOwnLists(uid: string, lists: OwnList[]) {
   if (!uid || !Array.isArray(lists)) return;
   ownListsCache.set(uid, lists);
 }
@@ -62,20 +65,20 @@ export function reviseOwnLists(uid, lists) {
  * True when the cached lists are recent enough to skip the read entirely.
  * Pure but for the clock, which is injectable so the tests never wait.
  */
-export function ownListsAreFresh(uid, now = Date.now(), ttlMs = OWN_LISTS_FRESH_MS) {
+export function ownListsAreFresh(uid: string, now = Date.now(), ttlMs = OWN_LISTS_FRESH_MS) {
   if (!uid || !ownListsCache.get(uid)) return false;
   const readAt = ownListsReadAt.get(uid);
   return typeof readAt === 'number' && now - readAt < ttlMs;
 }
 
-export function forgetOwnLists(uid) {
+export function forgetOwnLists(uid: string) {
   if (!uid) return;
   ownListsCache.delete(uid);
   ownListsReadAt.delete(uid);
 }
 
 /** The papers this account's lists screen has already resolved. */
-export function readListPapers(uid) {
+export function readListPapers(uid: string) {
   return uid ? listPapersCache.get(uid) : undefined;
 }
 
@@ -86,7 +89,7 @@ export function readListPapers(uid) {
  * would throw away the previous list's papers on every visit — which is the
  * re-fetching this cache exists to stop.
  */
-export function rememberListPapers(uid, papers) {
+export function rememberListPapers(uid: string, papers: Record<string, Partial<Paper>>) {
   if (!uid || !papers || typeof papers !== 'object') return;
   const known = listPapersCache.get(uid);
   listPapersCache.set(uid, known ? { ...known, ...papers } : { ...papers });

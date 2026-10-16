@@ -13,8 +13,8 @@
  * (tests) that import always rejects, and that is exactly the tolerated case.
  */
 
-let katexModule = null;
-let katexPromise = null;
+let katexModule: typeof import('katex').default | null = null;
+let katexPromise: Promise<typeof import('katex').default | null> | null = null;
 
 /** The loaded module, or null while it is still on its way. */
 export function getKatex() {

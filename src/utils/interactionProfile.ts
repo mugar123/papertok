@@ -1,3 +1,27 @@
+import type { BloomFilter } from 'bloomfilter';
+import type { Paper } from '../models/Paper.ts';
+export type CuratedSetName = 'liked' | 'saved' | 'read' | 'notInterested' | 'readLater';
+export interface InteractionProfile {
+  version: number; updatedAt: string | null;
+  categories: Map<string, { cohorts: Map<number, { weighted: number; raw: number }>; aged: number }>;
+  cooldowns: Map<string, number>;
+  curated: Map<CuratedSetName, { order: string[]; members: Set<string> }>;
+  seenFilter: BloomFilter | null;
+  counters: { interactions: number; evicted: number }; countedPapers: Set<string>;
+  sourceDocCount: number; truncated: boolean;
+}
+export interface StoredInteractionProfile {
+  schemaVersion: number; updatedAt: string; affinities: string; curated: string; seenFilter?: string;
+  interactionCount: number; evictedCount: number; sourceDocCount: number; truncated: boolean;
+}
+export interface InteractionDocumentData {
+  liked?: boolean; saved?: boolean; read?: boolean; notInterested?: boolean; readLater?: boolean;
+  openedPdf?: boolean; viewTime?: number; skip?: boolean; pdfBounce?: boolean; paperCategory?: string;
+  timestamp?: number | string; libraryUpdatedAt?: string;
+  paper?: Partial<Paper>; paperTitle?: string; paperAuthors?: Paper['authors'];
+}
+export interface InteractionDocument { id: string; data: InteractionDocumentData; }
+
 /**
  * Derived aggregate of `users/{uid}/interactions`.
  *
@@ -59,7 +83,7 @@ const IMPACT_SKIP = -1;
 const IMPACT_PDF_BOUNCE = -2;
 const IMPACT_NOT_INTERESTED = -10;
 
-export const CURATED_SETS = Object.freeze(['liked', 'saved', 'read', 'notInterested', 'readLater']);
+export const CURATED_SETS = Object.freeze(['liked', 'saved', 'read', 'notInterested', 'readLater'] as const);
 
 // Caps chosen so the serialised curated payload stays far below the 1 MiB
 // document limit even with long DOI-shaped ids. Anything evicted moves into the
@@ -76,11 +100,11 @@ export const MAX_CURATED_JSON_BYTES = 320000;
 export const MAX_AFFINITY_JSON_BYTES = 120000;
 export const MAX_TRACKED_CATEGORIES = 300;
 
-function dayIndexOf(timestampMs) {
+function dayIndexOf(timestampMs: number) {
   return Math.floor(timestampMs / DAY_MS);
 }
 
-function toTimestampMs(value) {
+function toTimestampMs(value: unknown) {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string' && value) {
     const parsed = new Date(value).getTime();
@@ -89,7 +113,7 @@ function toTimestampMs(value) {
   return null;
 }
 
-export function createEmptyInteractionProfile() {
+export function createEmptyInteractionProfile(): InteractionProfile {
   return {
     version: INTERACTION_PROFILE_SCHEMA_VERSION,
     updatedAt: null,
@@ -106,7 +130,7 @@ export function createEmptyInteractionProfile() {
   };
 }
 
-function categoryBucket(profile, category) {
+function categoryBucket(profile: InteractionProfile, category: string) {
   let bucket = profile.categories.get(category);
   if (!bucket) {
     bucket = { cohorts: new Map(), aged: 0 };
@@ -120,7 +144,7 @@ function categoryBucket(profile, category) {
  * usable timestamp keep the full scan's behaviour of an undecayed weight of 1,
  * which is modelled as a cohort dated now.
  */
-function addImpact(profile, category, impact, timestampMs) {
+function addImpact(profile: InteractionProfile, category: string, impact: number, timestampMs: number) {
   if (typeof category !== 'string' || !category) return;
   const bucket = categoryBucket(profile, category);
   if (impact === 0) return;
@@ -136,7 +160,7 @@ function addImpact(profile, category, impact, timestampMs) {
   bucket.cohorts.set(day, cohort);
 }
 
-function compactCategories(profile, now) {
+function compactCategories(profile: InteractionProfile, now: number) {
   const oldestLiveDay = dayIndexOf(now - MAX_COHORT_AGE_DAYS * DAY_MS);
   profile.categories.forEach((bucket) => {
     bucket.cohorts.forEach((cohort, day) => {
@@ -150,12 +174,12 @@ function compactCategories(profile, now) {
   if (profile.categories.size <= MAX_TRACKED_CATEGORIES) return;
   // Keep the categories that actually move the ranking.
   const ranked = [...profile.categories.keys()]
-    .map(category => [category, Math.abs(categoryAffinityAt(profile, category, now))])
+    .map(category => [category, Math.abs(categoryAffinityAt(profile, category, now))] as const)
     .sort((a, b) => b[1] - a[1]);
   ranked.slice(MAX_TRACKED_CATEGORIES).forEach(([category]) => profile.categories.delete(category));
 }
 
-function categoryAffinityAt(profile, category, now) {
+function categoryAffinityAt(profile: InteractionProfile, category: string, now: number) {
   const bucket = profile.categories.get(category);
   if (!bucket) return 0;
   let total = DECAY_FLOOR * bucket.aged;
@@ -170,9 +194,9 @@ function categoryAffinityAt(profile, category, now) {
 /**
  * Materialises the two maps `scorePaperForRecommendation` consumes.
  */
-export function readCategorySignals(profile, now = Date.now()) {
-  const affinities = {};
-  const cooldowns = {};
+export function readCategorySignals(profile: InteractionProfile | null | undefined, now = Date.now()) {
+  const affinities: Record<string, number> = {};
+  const cooldowns: Record<string, number> = {};
   if (!profile) return { affinities, cooldowns };
 
   profile.categories.forEach((_bucket, category) => {
@@ -187,13 +211,13 @@ export function readCategorySignals(profile, now = Date.now()) {
   return { affinities, cooldowns };
 }
 
-function applyNotInterestedSpread(profile, category, timestampMs) {
+function applyNotInterestedSpread(profile: InteractionProfile, category: string, timestampMs: number) {
   // The full scan walked every leaf category and penalised the ones that share
   // an area with the rejected one. getCategorySimilarity only ever returns 0.8
   // (same prefix) or 0.4 (same area) for distinct categories, so the walk is
   // bounded by the largest area.
   Object.keys(CATEGORIES).forEach((areaKey) => {
-    Object.keys(CATEGORIES[areaKey].subcategories).forEach((otherCategory) => {
+    Object.keys(CATEGORIES[areaKey as keyof typeof CATEGORIES].subcategories).forEach((otherCategory) => {
       if (otherCategory === category) return;
       const similarity = getCategorySimilarity(category, otherCategory);
       if (similarity <= 0) return;
@@ -203,19 +227,19 @@ function applyNotInterestedSpread(profile, category, timestampMs) {
   });
 }
 
-function curatedSet(profile, name) {
+function curatedSet(profile: InteractionProfile, name: CuratedSetName) {
   return profile.curated.get(name);
 }
 
-function ensureSeenFilter(profile) {
+function ensureSeenFilter(profile: InteractionProfile) {
   if (!profile.seenFilter) profile.seenFilter = createSeenFilter();
   return profile.seenFilter;
 }
 
-function addCurated(profile, name, paperId) {
+function addCurated(profile: InteractionProfile, name: CuratedSetName, paperId: string) {
   const set = curatedSet(profile, name);
   if (!set || typeof paperId !== 'string' || !paperId) return;
-  if (set.members.has(paperId)) {
+  if (set!.members.has(paperId)) {
     // Refresh recency so the newest action stays inside the cap.
     const position = set.order.indexOf(paperId);
     if (position > 0) {
@@ -224,27 +248,27 @@ function addCurated(profile, name, paperId) {
     }
     return;
   }
-  set.members.add(paperId);
+  set!.members.add(paperId);
   set.order.unshift(paperId);
 
   const cap = CURATED_ID_CAPS[name];
   while (set.order.length > cap) {
-    const evicted = set.order.pop();
+    const evicted = set.order.pop()!;
     set.members.delete(evicted);
     addSeenPaper(ensureSeenFilter(profile), evicted);
     profile.counters.evicted += 1;
   }
 }
 
-function removeCurated(profile, name, paperId) {
+function removeCurated(profile: InteractionProfile, name: CuratedSetName, paperId: string) {
   const set = curatedSet(profile, name);
-  if (!set || !set.members.has(paperId)) return;
+  if (!set || !set!.members.has(paperId)) return;
   set.members.delete(paperId);
   const position = set.order.indexOf(paperId);
   if (position >= 0) set.order.splice(position, 1);
 }
 
-export function curatedIds(profile, name) {
+export function curatedIds(profile: InteractionProfile | null | undefined, name: CuratedSetName) {
   const set = profile && curatedSet(profile, name);
   return set ? [...set.order] : [];
 }
@@ -255,11 +279,11 @@ export function curatedIds(profile, name) {
  * only err towards hiding a paper the user has not seen, never towards
  * repeating one they have.
  */
-export function isPaperKnown(profile, paperId) {
+export function isPaperKnown(profile: InteractionProfile | null | undefined, paperId: unknown) {
   if (!profile || typeof paperId !== 'string' || !paperId) return false;
   for (const name of CURATED_SETS) {
     if (name === 'readLater') continue;
-    if (curatedSet(profile, name).members.has(paperId)) return true;
+    if (curatedSet(profile, name)!.members.has(paperId)) return true;
   }
   return hasSeenPaper(profile.seenFilter, paperId);
 }
@@ -275,9 +299,9 @@ export function isPaperKnown(profile, paperId) {
  * subtracts it from the true document count, so an over-count can only
  * under-report drift, never invent it and trigger a needless rebuild.
  */
-function isPaperAccountedFor(profile, paperId) {
+function isPaperAccountedFor(profile: InteractionProfile, paperId: string) {
   if (profile.countedPapers.has(paperId)) return true;
-  return CURATED_SETS.some(name => curatedSet(profile, name).members.has(paperId));
+  return CURATED_SETS.some(name => curatedSet(profile, name)!.members.has(paperId));
 }
 
 /**
@@ -293,7 +317,7 @@ function isPaperAccountedFor(profile, paperId) {
  * @param {number} [event.viewTime] seconds, for kind === 'viewTime'
  * @param {boolean} [event.value] for the toggles that carry one
  */
-export function recordInteractionEvent(profile, event, now = Date.now()) {
+export function recordInteractionEvent(profile: InteractionProfile, event: { paperId: string; kind: string; category?: string; timestamp?: number|string; viewTime?: number; value?: boolean; }, now = Date.now()) {
   if (!profile || !event || typeof event.paperId !== 'string' || !event.paperId) return profile;
   const timestampMs = toTimestampMs(event.timestamp) ?? now;
   const category = typeof event.category === 'string' ? event.category : '';
@@ -379,7 +403,7 @@ export function recordInteractionEvent(profile, event, now = Date.now()) {
  * Impact of one interaction document from its final state, exactly as the old
  * full scan derived it.
  */
-export function interactionDocumentImpact(data) {
+export function interactionDocumentImpact(data: InteractionDocumentData) {
   let impact = 0;
   if (data.liked) impact += IMPACT_LIKED;
   if (data.saved) impact += IMPACT_SAVED;
@@ -400,7 +424,7 @@ export function interactionDocumentImpact(data) {
  *
  * @param {Array<{id: string, data: object}>} documents ordered newest first
  */
-export function buildProfileFromInteractionDocuments(documents, { now = Date.now() } = {}) {
+export function buildProfileFromInteractionDocuments(documents: Array<{ id: string; data: InteractionDocumentData; }>, { now = Date.now() } = {}) {
   const profile = createEmptyInteractionProfile();
 
   documents.forEach(({ id, data }) => {
@@ -440,10 +464,10 @@ export function buildProfileFromInteractionDocuments(documents, { now = Date.now
   return profile;
 }
 
-function serializeAffinities(profile) {
-  const categories = {};
+function serializeAffinities(profile: InteractionProfile) {
+  const categories: Record<string, { c: Record<number, [number, number]>; a: number }> = {};
   profile.categories.forEach((bucket, category) => {
-    const cohorts = {};
+    const cohorts: Record<number, [number, number]> = {};
     bucket.cohorts.forEach((cohort, day) => {
       // Six significant digits keeps the payload small; the values feed a
       // ranking that is clamped and shuffled afterwards.
@@ -451,18 +475,18 @@ function serializeAffinities(profile) {
     });
     categories[category] = { c: cohorts, a: Number(bucket.aged.toPrecision(6)) };
   });
-  const cooldowns = {};
+  const cooldowns: Record<string, number> = {};
   profile.cooldowns.forEach((timestampMs, category) => {
     cooldowns[category] = timestampMs;
   });
   return JSON.stringify({ categories, cooldowns });
 }
 
-function trimCuratedToBudget(payload) {
+function trimCuratedToBudget(payload: Record<CuratedSetName, string[]>) {
   let serialized = JSON.stringify(payload);
   while (serialized.length > MAX_CURATED_JSON_BYTES) {
     const largest = CURATED_SETS
-      .map(name => [name, payload[name].length])
+      .map(name => [name, payload[name].length] as const)
       .sort((a, b) => b[1] - a[1])[0];
     if (!largest || largest[1] === 0) break;
     // Drop the oldest quarter of the biggest set; the Bloom filter already
@@ -476,8 +500,8 @@ function trimCuratedToBudget(payload) {
 /**
  * @returns {object} the Firestore document body.
  */
-export function serializeInteractionProfile(profile) {
-  const curatedPayload = {};
+export function serializeInteractionProfile(profile: InteractionProfile): StoredInteractionProfile {
+  const curatedPayload = {} as Record<CuratedSetName, string[]>;
   CURATED_SETS.forEach((name) => {
     curatedPayload[name] = curatedIds(profile, name);
   });
@@ -501,7 +525,7 @@ export function serializeInteractionProfile(profile) {
     );
   }
 
-  const document = {
+  const document: StoredInteractionProfile = {
     schemaVersion: INTERACTION_PROFILE_SCHEMA_VERSION,
     updatedAt: profile.updatedAt || new Date().toISOString(),
     affinities: affinitiesJson,
@@ -523,15 +547,15 @@ export function serializeInteractionProfile(profile) {
  * @returns {object|null} null when the payload is missing, from another schema
  *   version or unparseable, which sends the caller down the rebuild path.
  */
-export function deserializeInteractionProfile(data) {
+export function deserializeInteractionProfile(data: Partial<StoredInteractionProfile> | null | undefined): InteractionProfile | null {
   if (!data || typeof data !== 'object') return null;
   if (data.schemaVersion !== INTERACTION_PROFILE_SCHEMA_VERSION) return null;
 
   const profile = createEmptyInteractionProfile();
   try {
-    const affinities = JSON.parse(data.affinities || '{}');
+    const affinities = JSON.parse(data.affinities || '{}') as { categories?: Record<string, { c?: Record<string, unknown>; a?: number }>; cooldowns?: Record<string, unknown> };
     Object.entries(affinities.categories || {}).forEach(([category, bucket]) => {
-      const cohorts = new Map();
+      const cohorts = new Map<number, { weighted: number; raw: number }>();
       Object.entries(bucket?.c || {}).forEach(([day, pair]) => {
         if (!Array.isArray(pair)) return;
         cohorts.set(Number(day), { weighted: Number(pair[0]) || 0, raw: Number(pair[1]) || 0 });
@@ -543,14 +567,14 @@ export function deserializeInteractionProfile(data) {
       if (Number.isFinite(value)) profile.cooldowns.set(category, value);
     });
 
-    const curated = JSON.parse(data.curated || '{}');
+    const curated = JSON.parse(data.curated || '{}') as Partial<Record<CuratedSetName, unknown[]>>;
     CURATED_SETS.forEach((name) => {
-      const ids = Array.isArray(curated[name]) ? curated[name] : [];
+      const ids = Array.isArray(curated[name]) ? curated[name]! : [];
       const set = curatedSet(profile, name);
       ids.forEach((paperId) => {
-        if (typeof paperId !== 'string' || !paperId || set.members.has(paperId)) return;
-        set.members.add(paperId);
-        set.order.push(paperId);
+        if (typeof paperId !== 'string' || !paperId || set!.members.has(paperId)) return;
+        set!.members.add(paperId);
+        set!.order.push(paperId);
       });
     });
   } catch {
@@ -566,6 +590,6 @@ export function deserializeInteractionProfile(data) {
   return profile;
 }
 
-export function interactionProfileNeedsRebuild(data) {
+export function interactionProfileNeedsRebuild(data: Partial<StoredInteractionProfile> | null | undefined) {
   return deserializeInteractionProfile(data) === null;
 }

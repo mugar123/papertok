@@ -29,7 +29,7 @@ test('the connections sheet is a modal Base UI Drawer that owns its open state a
   // stood at its final transform with opacity 1 in the first frame it
   // existed and `getAnimations()` was empty -- the sheet did not arrive, it
   // appeared. `usePopupOpenOnMount` is the one frame that fixes it.
-  assert.match(jsx, /import \{ usePopupOpenOnMount \} from '\.\.\/\.\.\/hooks\/usePopupOpenOnMount\.js';/);
+  assert.match(jsx, /import \{ usePopupOpenOnMount \} from '\.\.\/\.\.\/hooks\/usePopupOpenOnMount\.ts';/);
   assert.match(jsx, /const \{ open, setOpen \} = usePopupOpenOnMount\(\);/);
   assert.doesNotMatch(
     jsx,

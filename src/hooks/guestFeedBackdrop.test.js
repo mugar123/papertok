@@ -29,7 +29,7 @@ test('the guest page enables its feed once the visitor has answered', () => {
   assert.match(page, /readingLevel: interests\?\.readingLevel,\s*emailDigest: interests\?\.emailDigest === true,/);
 
   const hook = stripComments(readFileSync(new URL('./useGuestFeed.ts', import.meta.url), 'utf8'));
-  assert.match(hook, /export function useGuestFeed\(\{ areas = \[\], topics = \[\], enabled = true \} = \{\}\)/);
+  assert.match(hook, /export function useGuestFeed\(\{ areas = \[\], topics = \[\], enabled = true \}: \{ areas\?: string\[\]; topics\?: string\[\]; enabled\?: boolean \} = \{\}\)/);
   assert.match(hook, /const decision = guestFeedLoadDecision\(\{ enabled, previousKey, planKey: plan\.key \}\);\s*if \(!decision\) return undefined;/);
   assert.match(hook, /load\(plan, decision\.refresh \? \{ refresh: true, forceRefresh: false \} : \{\}\);/);
 

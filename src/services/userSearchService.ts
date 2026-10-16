@@ -1,3 +1,4 @@
+import type { Firestore } from 'firebase/firestore';
 /**
  * The people index, write side.
  *
@@ -33,7 +34,7 @@ const NAME_MAX = 80;
  * reopens the hole this equality closes — a client writing "taylor swift" into
  * its own entry to surface in other people's searches.
  */
-export function toIndexedName(displayName) {
+export function toIndexedName(displayName: unknown) {
   const value = typeof displayName === 'string' ? displayName : '';
   return value.slice(0, NAME_MAX).replace(/[A-Z]/g, letter => letter.toLowerCase());
 }
@@ -48,7 +49,7 @@ export function toIndexedName(displayName) {
  * one that any signed-in caller could `orderBy` to get a listing of who touched
  * their profile most recently. Nothing ever read it.
  */
-export function userSearchEntry({ handle, displayName }) {
+export function userSearchEntry({ handle, displayName }: { handle?: unknown; displayName?: unknown }) {
   const cleanHandle = typeof handle === 'string' ? handle.trim().toLowerCase() : '';
   const nameLower = toIndexedName(displayName);
   if (!cleanHandle || cleanHandle.length > HANDLE_MAX) {
@@ -63,6 +64,6 @@ export function userSearchEntry({ handle, displayName }) {
 }
 
 /** Where a uid's index entry lives. Keyed by uid, matching the profile. */
-export function userSearchReference(database, uid, document = doc) {
+export function userSearchReference(database: Firestore, uid: string, document = doc) {
   return document(database, USER_SEARCH_COLLECTION, uid);
 }

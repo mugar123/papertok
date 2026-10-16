@@ -37,7 +37,7 @@ test('the hero settles between its heights instead of snapping at the handover',
   // Comments are prose, not code: the call carries a comment between its
   // dependency list and its options, and this must read through it.
   const jsx = (await read('./EntityExplorer.jsx')).replace(/^\s*\/\/.*$/gm, '');
-  assert.match(jsx, /import \{ useHeightSettle \} from '\.\.\/\.\.\/hooks\/useHeightSettle';/);
+  assert.match(jsx, /import \{ useHeightSettle \} from '\.\.\/\.\.\/hooks\/useHeightSettle\.ts';/);
   // `suspended` is the route transition's own gate: a settle under a page that
   // is still travelling is a second owner of the same displacement.
   assert.match(jsx, /const heroBodyRef = useRef\(null\);[\s\S]*?useHeightSettle\(\s*heroBodyRef,\s*\[isLoadingEntity, entity, orcidInfo, isLoadingOrcid, recentImpact, hasLoadedWikiImage, showWikiBlock, wikiDescription, isWikiRequestPending, wikiFoldExits\],\s*\{ enabled: !prefersReducedMotion, suspended: isPageArriving, easing: 'cubic-bezier\(0\.4, 0, 0\.2, 1\)' \},\s*\);/);
@@ -60,7 +60,7 @@ test('the hero settles between its heights instead of snapping at the handover',
 test('the height settle is a FLIP on one property, decided every commit and re-aimed in flight', async () => {
   const hookRaw = await read('../../hooks/useHeightSettle.ts');
   const hook = hookRaw.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
-  assert.match(hook, /import \{ depsAreSame, planHeightSettle \} from '\.\/heightSettlePlan\.js';/);
+  assert.match(hook, /import \{ depsAreSame, planHeightSettle \} from '\.\/heightSettlePlan\.ts';/);
   // Measured before paint, so the first frame is already the old height —
   // and with NO dependency list: the memory is kept on every commit.
   assert.match(hook, /useLayoutEffect\(\(\) => \{/);
@@ -68,7 +68,7 @@ test('the height settle is a FLIP on one property, decided every commit and re-a
   assert.doesNotMatch(hookRaw, /eslint-disable-next-line react-hooks\/exhaustive-deps/);
   // A settle in flight is read (keyframes and clock) before it is cancelled.
   assert.match(hook, /el\.getAnimations\(\)\.find\(\(animation\) => animation\.id === SETTLE_ID\)/);
-  assert.match(hook, /const \[start, end\] = inFlight\.effect\.getKeyframes\(\);/);
+  assert.match(hook, /const \[start, end\] = \(inFlight\.effect as KeyframeEffect\)\.getKeyframes\(\);/);
   assert.match(hook, /current = el\.getBoundingClientRect\(\)\.height;\s*inFlight\.cancel\(\);/);
   // The decision is the pure module's; the hook only measures and drives.
   assert.match(hook, /const plan = planHeightSettle\(\{ remembered: lastHeightRef\.current, depsChanged, running, current, natural, suspended: standDown \}\);/);
@@ -90,7 +90,7 @@ test('the skeleton tab strip stands as tall as the live one', async () => {
 test('the explorer is born with the entity a link handed over, and treats its own fetch as an upgrade', async () => {
   const jsx = (await read('./EntityExplorer.jsx')).replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
   assert.match(jsx, /import \{ useParams, useNavigate, useSearchParams, useLocation \} from 'react-router-dom';/);
-  assert.match(jsx, /import \{ handedEntityFor, handoverFromSearchRow \} from '\.\.\/\.\.\/utils\/explorerHandover\.js';/);
+  assert.match(jsx, /import \{ handedEntityFor, handoverFromSearchRow \} from '\.\.\/\.\.\/utils\/explorerHandover\.ts';/);
   assert.match(jsx, /const handedEntity = useMemo\(\(\) => handedEntityFor\(type, id, location\.state\), \[id, location\.state, type\]\);/);
   assert.match(jsx, /const bornResolved = Boolean\(handedEntity\) \|\| Boolean\(localTopic\) \|\| Boolean\(cachedEntity\) \|\| \(type === 'topic' && isOpaqueQueryTopicText\(id\)\);/);
   assert.match(jsx, /useState\(\(\) => \(bornResolved \? \(handedEntity \|\| localTopic \|\| cachedEntity \|\| resolveQueryTopicRoute\(id, searchParams\)\) : null\)\)/);

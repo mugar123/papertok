@@ -1,3 +1,9 @@
+interface RunningSettle { from: number; to: number; currentTime: number | CSSNumberish }
+interface HeightSettleInput { remembered: number | null; depsChanged: boolean; running: RunningSettle | null; current: number | null; natural: number; suspended?: boolean }
+type HeightSettlePlan = { action: 'none'; remember: number }
+  | ({ action: 'resume'; remember: number } & RunningSettle)
+  | { action: 'animate'; from: number | null; to: number; remember: number };
+
 /** Under this many pixels a change is not worth a movement. */
 const SAME_HEIGHT_PX = 1;
 
@@ -35,7 +41,7 @@ const SAME_HEIGHT_PX = 1;
  * re-aimed from where the box is, so the box never eases to a height that is
  * already wrong and snaps the difference at the end.
  */
-export function planHeightSettle({ remembered, depsChanged, running, current, natural, suspended }) {
+export function planHeightSettle({ remembered, depsChanged, running, current, natural, suspended }: HeightSettleInput): HeightSettlePlan {
   const remember = natural;
   // Checked before the in-flight branch: a suspended commit decides nothing
   // about an animation that is already running, it simply does not start one.
@@ -53,7 +59,7 @@ export function planHeightSettle({ remembered, depsChanged, running, current, na
 }
 
 /** Whether two dependency lists are the same, the way React compares them. */
-export function depsAreSame(previous, next) {
+export function depsAreSame(previous: readonly unknown[] | null | undefined, next: readonly unknown[] | null | undefined) {
   if (previous == null || next == null) return false;
   if (previous.length !== next.length) return false;
   return previous.every((value, index) => Object.is(value, next[index]));

@@ -1,3 +1,11 @@
+import type { ShareOptions } from '../utils/publicNavigation.ts';
+type LocalizedText = string | Record<string, string | undefined> | null;
+interface MetadataOptions extends ShareOptions {
+  title?: LocalizedText; description?: LocalizedText; imageAlt?: LocalizedText; url?: string; route?: string; image?: string;
+  ogType?: string; type?: string; jsonLd?: unknown; structuredData?: unknown; noIndex?: boolean; robots?: string;
+}
+interface NodeRecord { node: Element; existed: boolean; content: string | null; href: string | null; textContent: string | null; }
+
 import { useEffect, useMemo } from 'react';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import {
@@ -18,25 +26,25 @@ const ROOT_METADATA = {
   },
 };
 
-const EMPTY_OPTIONS = {};
+const EMPTY_OPTIONS: MetadataOptions = {};
 
-function cleanText(value) {
+function cleanText(value: unknown) {
   if (value === null || value === undefined) return '';
   return String(value).trim();
 }
 
-function resolveLocalized(value, language, fallback) {
+function resolveLocalized(value: LocalizedText | undefined, language: string, fallback: string) {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     return cleanText(value[language] || value.default) || fallback;
   }
   return cleanText(value) || fallback;
 }
 
-function isHttpUrl(value) {
+function isHttpUrl(value: string) {
   return /^https?:\/\//i.test(value);
 }
 
-function resolveAbsoluteHttpUrl(value, rootUrl) {
+function resolveAbsoluteHttpUrl(value: unknown, rootUrl: string) {
   const rawValue = cleanText(value);
   if (!rawValue) return '';
   if (isHttpUrl(rawValue)) {
@@ -55,7 +63,7 @@ function resolveAbsoluteHttpUrl(value, rootUrl) {
   }
 }
 
-function resolvePageUrl(value, navigationOptions, rootUrl) {
+function resolvePageUrl(value: unknown, navigationOptions: ShareOptions, rootUrl: string) {
   const rawValue = cleanText(value);
   if (!rawValue) return rootUrl;
   if (rawValue.startsWith('#') || rawValue.startsWith('/public/')) {
@@ -71,7 +79,7 @@ function buildStructuredData({
   imageUrl,
   rootUrl,
   customData,
-}) {
+}: { title: string; description: string; pageUrl: string; imageUrl: string; rootUrl: string; customData?: unknown; language?: string }) {
   const baseData = {
     '@context': 'https://schema.org',
     '@type': 'WebPage',
@@ -93,12 +101,12 @@ function buildStructuredData({
   return baseData;
 }
 
-function findMeta(attribute, value) {
+function findMeta(attribute: string, value: string|null) {
   return Array.from(document.head.querySelectorAll(`meta[${attribute}]`))
     .find(node => node.getAttribute(attribute) === value) || null;
 }
 
-function rememberNode(records, node, existed) {
+function rememberNode(records: NodeRecord[], node: Element, existed: boolean) {
   records.push({
     node,
     existed,
@@ -108,7 +116,7 @@ function rememberNode(records, node, existed) {
   });
 }
 
-function upsertMeta(records, attribute, key, content) {
+function upsertMeta(records: NodeRecord[], attribute: string, key: string, content: string) {
   let node = findMeta(attribute, key);
   const existed = Boolean(node);
   if (!node) {
@@ -120,7 +128,7 @@ function upsertMeta(records, attribute, key, content) {
   node.setAttribute('content', content);
 }
 
-function upsertCanonical(records, href) {
+function upsertCanonical(records: NodeRecord[], href: string) {
   let node = document.head.querySelector('link[rel="canonical"]');
   const existed = Boolean(node);
   if (!node) {
@@ -132,8 +140,8 @@ function upsertCanonical(records, href) {
   node.setAttribute('href', href);
 }
 
-function upsertJsonLd(records, value) {
-  let node = document.head.querySelector('#papertok-jsonld');
+function upsertJsonLd(records: NodeRecord[], value: unknown) {
+  let node = document.head.querySelector<HTMLScriptElement>('#papertok-jsonld');
   const existed = Boolean(node);
   if (!node) {
     node = document.createElement('script');
@@ -146,7 +154,7 @@ function upsertJsonLd(records, value) {
   node.textContent = JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
-function restoreNodes(records) {
+function restoreNodes(records: NodeRecord[]) {
   for (const record of records.reverse()) {
     if (!record.existed) {
       record.node.remove();
@@ -175,9 +183,9 @@ export function usePublicPageMetadata(options = EMPTY_OPTIONS) {
       base: config.base,
     };
     const rootUrl = getSiteRootUrl(navigationOptions);
-    const title = resolveLocalized(config.title, language, ROOT_METADATA.title[language]);
-    const description = resolveLocalized(config.description, language, ROOT_METADATA.description[language]);
-    const imageAlt = resolveLocalized(config.imageAlt, language, ROOT_METADATA.imageAlt[language]);
+    const title = resolveLocalized(config.title, language, ROOT_METADATA.title[language as keyof typeof ROOT_METADATA.title]);
+    const description = resolveLocalized(config.description, language, ROOT_METADATA.description[language as keyof typeof ROOT_METADATA.description]);
+    const imageAlt = resolveLocalized(config.imageAlt, language, ROOT_METADATA.imageAlt[language as keyof typeof ROOT_METADATA.imageAlt]);
     const pageUrl = resolvePageUrl(config.url || config.route, navigationOptions, rootUrl);
     const imageUrl = resolveAbsoluteHttpUrl(config.image || DEFAULT_SHARE_IMAGE_PATH, rootUrl);
     const ogType = cleanText(config.ogType || config.type) || 'website';
@@ -207,7 +215,7 @@ export function usePublicPageMetadata(options = EMPTY_OPTIONS) {
   useEffect(() => {
     if (typeof document === 'undefined') return undefined;
 
-    const records = [];
+    const records: NodeRecord[] = [];
     const previousTitle = document.title;
     const previousLanguage = document.documentElement.getAttribute('lang');
     document.title = metadata.title;

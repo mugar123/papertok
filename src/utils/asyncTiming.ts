@@ -1,12 +1,14 @@
-export async function settleWithin(promise, timeoutMs) {
-  let timeoutId;
+export type SettledWithin<T> = { status: 'fulfilled'; value: T } | { status: 'rejected'; reason: unknown } | { status: 'timed_out' };
+
+export async function settleWithin<T>(promise: T | PromiseLike<T>, timeoutMs: number): Promise<SettledWithin<Awaited<T>>> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       Promise.resolve(promise).then(
-        value => ({ status: 'fulfilled', value }),
-        reason => ({ status: 'rejected', reason }),
+        value => ({ status: 'fulfilled' as const, value }),
+        reason => ({ status: 'rejected' as const, reason }),
       ),
-      new Promise(resolve => {
+      new Promise<{ status: 'timed_out' }>(resolve => {
         timeoutId = setTimeout(() => resolve({ status: 'timed_out' }), Math.max(0, timeoutMs));
       }),
     ]);
@@ -15,12 +17,12 @@ export async function settleWithin(promise, timeoutMs) {
   }
 }
 
-export async function resolveWithin(promise, timeoutMs, fallbackValue) {
+export async function resolveWithin<T, F>(promise: T | PromiseLike<T>, timeoutMs: number, fallbackValue: F) {
   const result = await settleWithin(promise, timeoutMs);
   return result.status === 'fulfilled' ? result.value : fallbackValue;
 }
 
-export function fulfilledPaperLists(results) {
+export function fulfilledPaperLists<T>(results: Array<SettledWithin<T[]> | { status: 'pending' }>) {
   return (Array.isArray(results) ? results : []).flatMap((result) => (
     result?.status === 'fulfilled' && Array.isArray(result.value) ? result.value : []
   ));
@@ -49,13 +51,13 @@ export const DEFAULT_SOURCE_SETTLE_TIMEOUT_MS = 12_000;
  * has nothing to show waits for the real answers, and the success path's late
  * pool receives them too.
  */
-export function settleSourcesForFirstPaint(promises, timeoutMs, isReady, { allTimeoutMs = DEFAULT_SOURCE_SETTLE_TIMEOUT_MS } = {}) {
+export function settleSourcesForFirstPaint<T>(promises: Iterable<PromiseLike<T[]> | T[]>, timeoutMs: number, isReady: ((papers: T[]) => boolean) | undefined, { allTimeoutMs = DEFAULT_SOURCE_SETTLE_TIMEOUT_MS } = {}) {
   const sources = [...promises];
   const tracked = sources.map((promise) => settleWithin(promise, timeoutMs));
-  const results = Array.from({ length: tracked.length }, () => ({ status: 'pending' }));
+  const results: Array<SettledWithin<T[]> | { status: 'pending' }> = Array.from({ length: tracked.length }, () => ({ status: 'pending' }));
   let resolved = false;
 
-  const first = new Promise((resolve) => {
+  const first = new Promise<typeof results>((resolve) => {
     const maybeFinish = () => {
       if (resolved) return;
       const papers = fulfilledPaperLists(results);

@@ -1,3 +1,13 @@
+type InstitutionInput = Partial<Record<'domain' | 'rorId' | 'name' | 'acronym' | 'entityId' | 'verifiedAt', unknown>>;
+export type LinkedInstitution = NonNullable<ReturnType<typeof normalizeInstitution>>;
+interface InstitutionOperations {
+  isDemo?: boolean; request?: typeof authenticatedWorkerFetch; apiBase?: string;
+  currentUser?: () => typeof auth.currentUser; secondaryAuth?: typeof secondaryAuth;
+  setPersistence?: typeof setPersistence; provider?: () => GoogleAuthProvider;
+  popupSignIn?: typeof signInWithPopup; additionalUserInfo?: typeof getAdditionalUserInfo;
+  deleteUser?: typeof deleteUser; signOut?: typeof signOut;
+}
+
 /**
  * Linking a university to the account, through the Worker.
  *
@@ -30,6 +40,8 @@ import { authenticatedWorkerFetch } from './workerApiClient.ts';
 import { institutionDomainOf } from '../utils/institutionDomain.ts';
 
 export class InstitutionLinkError extends Error {
+  declare code: string;
+  declare status: number;
   constructor(code = 'INSTITUTION_LINK_FAILED', status = 502) {
     super(code);
     this.name = 'InstitutionLinkError';
@@ -40,7 +52,7 @@ export class InstitutionLinkError extends Error {
 
 const SECONDARY_APP_NAME = 'institution-link';
 
-function cleanString(value) {
+function cleanString(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
@@ -48,7 +60,7 @@ function cleanString(value) {
  * The stored shape, or null. The Worker writes every field; this only
  * protects the screens from a document edited by hand or by an older build.
  */
-export function normalizeInstitution(value) {
+export function normalizeInstitution(value: InstitutionInput | null | undefined) {
   if (!value || typeof value !== 'object') return null;
   const domain = institutionDomainOf(`proof@${String(value.domain || '').trim().toLowerCase()}`);
   if (!domain) return null;
@@ -63,7 +75,7 @@ export function normalizeInstitution(value) {
 }
 
 /** The short form a pill shows: the acronym when the registry has one. */
-export function institutionLabel(institution) {
+export function institutionLabel(institution: Partial<LinkedInstitution> | null | undefined) {
   return institution?.acronym || institution?.name || '';
 }
 
@@ -72,7 +84,7 @@ function secondaryAuth() {
   return getAuth(existing || initializeApp(app.options, SECONDARY_APP_NAME));
 }
 
-function operations(overrides = {}) {
+function operations(overrides: InstitutionOperations = {}) {
   return {
     isDemo: overrides.isDemo === undefined ? IS_DEMO : overrides.isDemo,
     request: overrides.request || authenticatedWorkerFetch,
@@ -90,7 +102,7 @@ function operations(overrides = {}) {
   };
 }
 
-async function postJson(api, path, body) {
+async function postJson(api: ReturnType<typeof operations>, path: string, body: Record<string, unknown>) {
   if (!api.apiBase) throw new InstitutionLinkError('INSTITUTION_LINK_NOT_CONFIGURED', 503);
   let response;
   let payload;
@@ -100,12 +112,12 @@ async function postJson(api, path, body) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     });
-    payload = await response.json().catch(() => ({}));
+    payload = await response.json().catch(() => ({})) as { code?: string; institution?: InstitutionInput };
   } catch (error) {
-    if (error?.code === 'WORKER_AUTH_REQUIRED' || error?.code === 'auth/user-token-expired') {
+    if ((error as { code?: string } | null)?.code === 'WORKER_AUTH_REQUIRED' || (error as { code?: string } | null)?.code === 'auth/user-token-expired') {
       throw new InstitutionLinkError('AUTH_REQUIRED', 401);
     }
-    throw new InstitutionLinkError(error?.code || 'INSTITUTION_LINK_UNREACHABLE', 0);
+    throw new InstitutionLinkError((error as { code?: string } | null)?.code || 'INSTITUTION_LINK_UNREACHABLE', 0);
   }
   if (!response.ok) {
     throw new InstitutionLinkError(
@@ -122,7 +134,7 @@ async function postJson(api, path, body) {
  * and `hd` steer Google's chooser to that domain; the domain is still checked
  * on the account that actually came back, because a chooser is a suggestion.
  */
-async function proveWithUniversityAccount(api, email, domain) {
+async function proveWithUniversityAccount(api: ReturnType<typeof operations>, email: string, domain: string) {
   const secondary = api.secondaryAuth();
   await api.setPersistence(secondary, inMemoryPersistence);
   const provider = api.provider();
@@ -150,7 +162,7 @@ async function proveWithUniversityAccount(api, email, domain) {
   }
 }
 
-export async function linkInstitution(email, overrides) {
+export async function linkInstitution(email: string, overrides?: InstitutionOperations) {
   const api = operations(overrides);
   if (api.isDemo) throw new InstitutionLinkError('INSTITUTION_UNSUPPORTED_IN_DEMO', 400);
   const domain = institutionDomainOf(email);
@@ -172,7 +184,7 @@ export async function linkInstitution(email, overrides) {
   }
 }
 
-export async function unlinkInstitution(overrides) {
+export async function unlinkInstitution(overrides?: InstitutionOperations) {
   const api = operations(overrides);
   if (api.isDemo) throw new InstitutionLinkError('INSTITUTION_UNSUPPORTED_IN_DEMO', 400);
   if (!api.currentUser()) throw new InstitutionLinkError('AUTH_REQUIRED', 401);

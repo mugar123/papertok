@@ -1,13 +1,25 @@
+import type { Paper, PaperResearchResource } from '../models/Paper.ts';
+export interface HuggingFaceResources {
+  linkedModels?: Array<{ id: string; downloads?: number; likes?: number }>;
+  linkedDatasets?: Array<{ id: string; downloads?: number; likes?: number }>;
+  githubRepo?: string; projectPage?: string;
+}
+export interface HuggingFaceRecord extends HuggingFaceResources {
+  paper?: HuggingFaceRecord; id?: string; title?: string; publishedAt?: string; summary?: string;
+  ai_keywords?: string[]; upvotes?: number;
+  authors?: Array<string | { name?: string; user?: string }>;
+}
+
 import { PaperBuilder } from './PaperBuilder.ts';
 
 const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
 const REQUEST_TIMEOUT_MS = 8_000;
 
-function cleanText(value) {
+function cleanText(value: unknown) {
   return String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function safeUrl(value) {
+function safeUrl(value: string) {
   try {
     const url = new URL(value);
     return ['http:', 'https:'].includes(url.protocol) ? url.toString() : '';
@@ -16,15 +28,15 @@ function safeUrl(value) {
   }
 }
 
-function resource(kind, id, title, url, metadata = {}) {
+function resource(kind: string, id: string, title: string, url: string, metadata: Pick<PaperResearchResource, 'downloads' | 'likes'> = {}): PaperResearchResource | null {
   const safeResourceUrl = safeUrl(url);
   if (!id || !safeResourceUrl) return null;
   return { kind, id: `${kind}:${id}`, title: cleanText(title || id), url: safeResourceUrl, ...metadata };
 }
 
-function uniqueResources(items) {
-  const seen = new Set();
-  return items.filter(Boolean).filter(item => {
+function uniqueResources(items: Array<PaperResearchResource | null>): PaperResearchResource[] {
+  const seen = new Set<string>();
+  return (items.filter(Boolean) as PaperResearchResource[]).filter(item => {
     const key = `${item.kind}:${item.url}`.toLowerCase();
     if (seen.has(key)) return false;
     seen.add(key);
@@ -32,7 +44,7 @@ function uniqueResources(items) {
   });
 }
 
-export function mapHuggingFaceResources(payload) {
+export function mapHuggingFaceResources(payload: HuggingFaceResources | null) {
   const models = (payload?.linkedModels || []).map(item => resource(
     'model',
     item.id,
@@ -56,7 +68,7 @@ export function mapHuggingFaceResources(payload) {
   return uniqueResources([...models, ...datasets, github, projectPage]).slice(0, 8);
 }
 
-export function mapHuggingFacePaper(raw, requestedCategories = []) {
+export function mapHuggingFacePaper(raw: HuggingFaceRecord, requestedCategories: string[] = []): Paper | null {
   const paper = raw?.paper || raw;
   const arxivId = cleanText(paper?.id || raw?.id).replace(/^arxiv:/i, '').replace(/v\d+$/i, '');
   const title = cleanText(paper?.title || raw?.title);
@@ -77,8 +89,8 @@ export function mapHuggingFacePaper(raw, requestedCategories = []) {
     abstract: cleanText(paper?.summary || raw?.summary),
     authors: (paper?.authors || raw?.authors || [])
       .map(author => ({
-        name: cleanText(author?.name || author),
-        ...(author?.user ? { id: String(author.user) } : {}),
+        name: cleanText((author as { name?: string })?.name || author),
+        ...((author as { user?: string })?.user ? { id: String((author as { user?: string }).user) } : {}),
       }))
       .filter(author => author.name),
     arxivId,
@@ -106,7 +118,7 @@ export function mapHuggingFacePaper(raw, requestedCategories = []) {
   });
 }
 
-export async function getHuggingFaceResearchResources(arxivId) {
+export async function getHuggingFaceResearchResources(arxivId: unknown) {
   const normalizedId = cleanText(arxivId).replace(/^arxiv:/i, '').replace(/v\d+$/i, '');
   if (!PAPER_API_BASE || !normalizedId) return [];
   const controller = new AbortController();

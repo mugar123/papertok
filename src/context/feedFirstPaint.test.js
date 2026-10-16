@@ -117,13 +117,13 @@ test('SOURCE: PubMed cards get Europe PMC after paint, never before setPapers', 
 
 test('SOURCE: the guest feed enriches its PubMed cards too', async () => {
   const code = stripComments(await read('../hooks/useGuestFeed.ts'));
-  const enrich = bounded(code, 'const enrichVisible = (batch) => {', '};', 'enrichVisible', 22);
+  const enrich = bounded(code, 'const enrichVisible = (batch: Paper[]) => {', '};', 'enrichVisible', 22);
   // Each pmid is asked for once per load: `enrichVisible` runs for the early
   // batch and again for the late one, which overlap, and the service has no
   // in-flight map. The answer is dropped when a newer load has started.
   assert.match(
     enrich,
-    /const pmids = \[\.\.\.new Set\(batch\.map\(paper => paper\?\.pmid\)\.filter\(pmid => pmid && !askedPmids\.has\(pmid\)\)\)\];\s*if \(pmids\.length > 0\) \{\s*pmids\.forEach\(pmid => askedPmids\.add\(pmid\)\);\s*enrichPubmedIds\(pmids\)\.catch\(\(\) => new Map\(\)\)\.then\(\(lateRecords\) => \{\s*if \(requestId !== requestIdRef\.current \|\| !lateRecords \|\| lateRecords\.size === 0\) return;\s*setPapers\(\(current\) => mergeEuropePmcEnrichment\(current, lateRecords\)\);/,
+    /const pmids = \[\.\.\.new Set\(batch\.map\(paper => paper\?\.pmid\)\.filter\(pmid => pmid && !askedPmids\.has\(pmid\)\)\)\] as string\[\];\s*if \(pmids\.length > 0\) \{\s*pmids\.forEach\(pmid => askedPmids\.add\(pmid\)\);\s*enrichPubmedIds\(pmids\)\.catch\(\(\) => new Map<string, Partial<Paper> & \{ pmid: string \}>\(\)\)\.then\(\(lateRecords\) => \{\s*if \(requestId !== requestIdRef\.current \|\| !lateRecords \|\| lateRecords\.size === 0\) return;\s*setPapers\(\(current\) => mergeEuropePmcEnrichment\(current, lateRecords\)\);/,
     'the pmids of the batch on screen are asked for once, and the answer is guarded by request',
   );
   // The OpenAlex half must not early-return past the pmid half.

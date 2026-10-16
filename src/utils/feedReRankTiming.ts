@@ -23,9 +23,9 @@ export const RERANK_MAX_WAIT_MS = 4000;
  * `scrolledAt` is the last scroll report (0 when the feed has never
  * scrolled), `requestedAt` when this re-rank was first asked for.
  */
-export function reRankHoldMs({ now, scrolledAt = 0, requestedAt = now } = {}) {
-  const sinceScroll = now - scrolledAt;
+export function reRankHoldMs({ now, scrolledAt = 0, requestedAt = now }: { now?: number; scrolledAt?: number; requestedAt?: number } = {}) {
+  const sinceScroll = now! - scrolledAt;
   if (sinceScroll >= RERANK_SCROLL_QUIET_MS) return 0;
-  if (now - requestedAt >= RERANK_MAX_WAIT_MS) return 0;
+  if (now! - requestedAt! >= RERANK_MAX_WAIT_MS) return 0;
   return RERANK_SCROLL_QUIET_MS - sinceScroll;
 }

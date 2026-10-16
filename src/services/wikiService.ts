@@ -1,4 +1,13 @@
-const entityWikiCache = new Map();
+interface WikiPage { index?: number; title?: string; extract?: string; thumbnail?: { source?: string }; fullurl?: string; pageprops?: { wikibase_item?: string; disambiguation?: unknown } }
+interface WikipediaPayload { query?: { pages?: Record<string, WikiPage> } }
+interface WikidataPayload { entities?: Record<string, { id?: string; sitelinks?: Record<string, { title?: string }> }> }
+interface WikiIds { wikidata?: unknown; wikipedia?: unknown }
+interface WikiEntity { ids?: WikiIds; _queryTopic?: boolean; _localTopic?: boolean }
+interface WikiIdentity { qid?: string; enwikiTitle?: string; signal?: AbortSignal }
+interface WikiOptions { expectedTitle?: string; entity?: WikiEntity | null; title?: string; alternateTitle?: string; signal?: AbortSignal; strictTitleMatch?: boolean }
+export interface WikiInfo { title: string; extract: string; thumbnail: string | null; url: string; language: string }
+
+const entityWikiCache = new Map<string, WikiInfo>();
 
 const TOPIC_WIKI_ALIASES = new Map([
   ['black hole', { en: 'Black hole' }],
@@ -22,11 +31,11 @@ const TOPIC_WIKI_ALIASES = new Map([
   ['computadoras cuanticas', { en: 'Quantum computing' }],
 ]);
 
-function normalizeWikiTitle(value = '') {
+function normalizeWikiTitle(value: unknown = '') {
   return String(value).replace(/\s+/g, ' ').trim();
 }
 
-function normalizeComparableWikiTitle(value = '') {
+function normalizeComparableWikiTitle(value: unknown = '') {
   return normalizeWikiTitle(value)
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -35,15 +44,15 @@ function normalizeComparableWikiTitle(value = '') {
     .toLowerCase();
 }
 
-function getTopicWikiAlias(value) {
+function getTopicWikiAlias(value: string|undefined) {
   const comparable = normalizeComparableWikiTitle(value);
   return TOPIC_WIKI_ALIASES.get(comparable)?.['en'] || '';
 }
 
-export function mapWikipediaSearchResponse(data, {
+export function mapWikipediaSearchResponse(data: WikipediaPayload | null, {
   expectedTitle = '',
   strictTitleMatch = false,
-} = {}) {
+}: WikiOptions = {}) {
   const pages = Object.values(data?.query?.pages || {})
     .filter(page => page && !Object.hasOwn(page.pageprops || {}, 'disambiguation'))
     .sort((left, right) => (left.index ?? Number.MAX_SAFE_INTEGER) - (right.index ?? Number.MAX_SAFE_INTEGER));
@@ -64,13 +73,13 @@ export function mapWikipediaSearchResponse(data, {
   };
 }
 
-async function searchWikipedia(title, language, signal, { strictTitleMatch = false } = {}) {
+async function searchWikipedia(title: string, language: string, signal: AbortSignal | undefined, { strictTitleMatch = false } = {}) {
   const normalizedTitle = normalizeWikiTitle(title);
   if (!normalizedTitle) return null;
 
   const normalizedLanguage = 'en';
   const cacheKey = `${normalizedLanguage}:${strictTitleMatch ? 'strict' : 'fuzzy'}:${normalizedTitle.toLocaleLowerCase('en-US')}`;
-  if (entityWikiCache.has(cacheKey)) return entityWikiCache.get(cacheKey);
+  if (entityWikiCache.has(cacheKey)) return entityWikiCache.get(cacheKey)!;
   const url = new URL(`https://${normalizedLanguage}.wikipedia.org/w/api.php`);
   url.searchParams.set('action', 'query');
   url.searchParams.set('generator', 'search');
@@ -107,13 +116,13 @@ const ENWIKI_URL_PATTERN = /^https?:\/\/en\.wikipedia\.org\/wiki\/([^?#]+)$/i;
  * `/entity/` URL or a bare `Q…` depending on the entity type. Anything else is
  * no identity at all.
  */
-export function wikidataIdFromOpenAlexIds(ids) {
+export function wikidataIdFromOpenAlexIds(ids: WikiIds | null | undefined) {
   const raw = String(ids?.wikidata || '').trim();
   if (WIKIDATA_ID_PATTERN.test(raw)) return raw;
   return raw.match(WIKIDATA_URL_PATTERN)?.[1]?.toUpperCase() || '';
 }
 
-function enwikiTitleFromUrl(value) {
+function enwikiTitleFromUrl(value: unknown) {
   const path = String(value || '').trim().match(ENWIKI_URL_PATTERN)?.[1];
   if (!path) return '';
   try {
@@ -130,7 +139,7 @@ function enwikiTitleFromUrl(value) {
  * by name is exactly what put a cancer researcher's portrait on "Tumor
  * progression" and a Shakira single on "Medicine" (audit of 2026-09-23).
  */
-export function resolveEntityWikiIdentity(entity) {
+export function resolveEntityWikiIdentity(entity: WikiEntity | null | undefined) {
   if (!entity || typeof entity !== 'object') return null;
   const qid = wikidataIdFromOpenAlexIds(entity.ids);
   if (qid) return { qid, enwikiTitle: '' };
@@ -139,27 +148,27 @@ export function resolveEntityWikiIdentity(entity) {
   return null;
 }
 
-async function fetchJson(url, signal) {
+async function fetchJson<T>(url: URL, signal: AbortSignal | undefined): Promise<T | null> {
   const response = await fetch(url, { signal });
   if (!response.ok) return null;
   return response.json();
 }
 
-async function fetchWikidataSitelinks({ qid, enwikiTitle, signal }) {
+async function fetchWikidataSitelinks({ qid, enwikiTitle, signal }: WikiIdentity) {
   const url = new URL('https://www.wikidata.org/w/api.php');
   url.searchParams.set('action', 'wbgetentities');
   if (qid) {
     url.searchParams.set('ids', qid);
   } else {
     url.searchParams.set('sites', 'enwiki');
-    url.searchParams.set('titles', enwikiTitle);
+    url.searchParams.set('titles', enwikiTitle!);
   }
   url.searchParams.set('props', 'sitelinks');
   url.searchParams.set('sitefilter', 'enwiki');
   url.searchParams.set('format', 'json');
   url.searchParams.set('origin', '*');
 
-  const data = await fetchJson(url, signal);
+  const data = await fetchJson<WikidataPayload>(url, signal);
   const entity = Object.values(data?.entities || {})
     .find(candidate => candidate && !Object.hasOwn(candidate, 'missing') && WIKIDATA_ID_PATTERN.test(candidate.id || ''));
   if (!entity || (qid && entity.id !== qid)) return null;
@@ -168,7 +177,7 @@ async function fetchWikidataSitelinks({ qid, enwikiTitle, signal }) {
   return { qid: entity.id, titles };
 }
 
-async function fetchWikipediaPageByTitle({ title, language, qid, signal }) {
+async function fetchWikipediaPageByTitle({ title, language, qid, signal }: { title: string; language: string; qid: string | undefined; signal?: AbortSignal }) {
   const url = new URL(`https://${language}.wikipedia.org/w/api.php`);
   url.searchParams.set('action', 'query');
   url.searchParams.set('titles', title);
@@ -182,7 +191,7 @@ async function fetchWikipediaPageByTitle({ title, language, qid, signal }) {
   url.searchParams.set('format', 'json');
   url.searchParams.set('origin', '*');
 
-  const data = await fetchJson(url, signal);
+  const data = await fetchJson<WikipediaPayload>(url, signal);
   const page = Object.values(data?.query?.pages || {}).find(candidate => candidate && !Object.hasOwn(candidate, 'missing'));
   // The title came from the item itself, but a page can have been moved or
   // turned into a redirect since: only the item it describes today counts.
@@ -202,12 +211,12 @@ async function fetchWikipediaPageByTitle({ title, language, qid, signal }) {
 /**
  * The English Wikipedia article of an entity known by identity. Never a search.
  */
-export async function getEntityWikiInfoByIdentity({ qid = '', enwikiTitle = '', signal } = {}) {
+export async function getEntityWikiInfoByIdentity({ qid = '', enwikiTitle = '', signal }: WikiIdentity = {}) {
   const normalizedTitle = normalizeWikiTitle(enwikiTitle);
   if (!qid && !normalizedTitle) return null;
 
   const cacheKey = `identity:en:${qid || `enwiki:${normalizedTitle}`}`;
-  if (entityWikiCache.has(cacheKey)) return entityWikiCache.get(cacheKey);
+  if (entityWikiCache.has(cacheKey)) return entityWikiCache.get(cacheKey)!;
 
   const item = await fetchWikidataSitelinks({ qid, enwikiTitle: normalizedTitle, signal });
   if (!item) return null;
@@ -225,7 +234,7 @@ export async function getEntityWikiInfoByIdentity({ qid = '', enwikiTitle = '', 
  * the title search (exact-title for free text, as before); every OpenAlex
  * entity is resolved by identity or shows no Wikipedia block.
  */
-export async function loadEntityWikiInfo({ entity, title, alternateTitle = '', signal } = {}) {
+export async function loadEntityWikiInfo({ entity, title, alternateTitle = '', signal }: WikiOptions = {}) {
   // No Wikidata id to go by: a search, and only an article by that exact
   // title counts. For the taxonomy's own topics too, since their curated
   // aliases already are titles, and a first hit that is another article is a
@@ -248,7 +257,7 @@ export async function getEntityWikiInfo({
   alternateTitle = '',
   signal,
   strictTitleMatch = false,
-} = {}) {
+}: WikiOptions = {}) {
   const requestedLanguage = 'en';
   const rawCandidates = [title, alternateTitle].map(normalizeWikiTitle).filter(Boolean);
   const candidates = [...new Set([

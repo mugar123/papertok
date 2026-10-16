@@ -16,7 +16,7 @@
  */
 
 /** Which provider actually serves each search section. */
-export const SECTION_SOURCES = Object.freeze({
+export const SECTION_SOURCES: Readonly<Record<string, string>> = Object.freeze({
   papers: 'openalex',
   authors: 'openalex',
   topics: 'openalex',
@@ -24,7 +24,7 @@ export const SECTION_SOURCES = Object.freeze({
   projects: 'openaire',
 });
 
-export const SOURCE_LABELS = Object.freeze({
+export const SOURCE_LABELS: Readonly<Record<string, string>> = Object.freeze({
   openalex: 'OpenAlex',
   ror: 'ROR',
   openaire: 'OpenAIRE',
@@ -56,7 +56,7 @@ export function describeSearchOutage({
   rateLimited = false,
   retryAfterMs = 0,
   now = Date.now(),
-} = {}) {
+}: { sections?: string[]; rateLimited?: boolean; retryAfterMs?: number; now?: number } = {}) {
   const failedSections = sections.filter(section => section in SECTION_SOURCES);
   const affected = new Set(failedSections.map(section => SECTION_SOURCES[section]));
   if (rateLimited) affected.add('openalex');
@@ -64,7 +64,7 @@ export function describeSearchOutage({
   const sources = SOURCE_ORDER.filter(source => affected.has(source));
   if (sources.length === 0) return null;
 
-  const sectionsBySource = {};
+  const sectionsBySource: Record<string, string[]> = {};
   for (const source of sources) {
     sectionsBySource[source] = failedSections
       .filter(section => SECTION_SOURCES[section] === source);
@@ -86,7 +86,7 @@ export function describeSearchOutage({
  * the Papers pill during an OpenAlex outage must keep the notice — it is
  * exactly the pill it describes.
  */
-export function outageAffectsFilter(outage, filter) {
+export function outageAffectsFilter(outage: ReturnType<typeof describeSearchOutage>, filter: string) {
   if (!outage) return false;
   if (filter === 'all') return true;
   const source = SECTION_SOURCES[filter];
@@ -100,7 +100,7 @@ export function outageAffectsFilter(outage, filter) {
  * Returns null when there is no figure to show — the banner then omits the
  * sentence rather than inventing an estimate.
  */
-export function formatRetryDelay(ms) {
+export function formatRetryDelay(ms: number) {
   if (!Number.isFinite(ms) || ms <= 0) return null;
 
   const seconds = Math.round(ms / 1000);
@@ -115,7 +115,7 @@ export function formatRetryDelay(ms) {
 /**
  * "OpenAIRE", "ROR and OpenAIRE", "papers, authors and institutions".
  */
-export function joinNames(words) {
+export function joinNames(words: string[]) {
   const list = (words || []).filter(Boolean);
   if (list.length === 0) return '';
   if (list.length === 1) return list[0];

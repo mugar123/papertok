@@ -1,3 +1,7 @@
+import type { PaperSubject } from '../models/Paper.ts';
+
+type ConceptInput = Partial<PaperSubject> & { name?: string; displayName?: string };
+
 /**
  * The OpenAlex concepts (or topics) a paper may show as subjects.
  *
@@ -13,11 +17,11 @@ const BIBLIOGRAPHIC_DATABASES = new Set([
   'psycinfo', 'google scholar', 'cochrane library',
 ]);
 
-function conceptName(concept) {
+function conceptName(concept: ConceptInput | null | undefined) {
   return String(concept?.display_name || concept?.displayName || concept?.name || '').trim().toLowerCase();
 }
 
-export function usableOpenAlexConcepts(concepts) {
+export function usableOpenAlexConcepts<T extends ConceptInput>(concepts: T[] | null | undefined) {
   if (!Array.isArray(concepts)) return [];
   return concepts.filter(concept => concept
     && (concept.score === undefined || concept.score > MIN_CONCEPT_SCORE)

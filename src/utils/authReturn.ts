@@ -13,12 +13,12 @@
  * whatever sign-in came next.
  */
 
-let pending = null;
+let pending: string | null = null;
 
 // Only an in-app absolute path is honoured as a destination: `//evil.com` is
 // a protocol-relative URL the browser would follow off-site, and bouncing
 // back to /login or /onboarding would loop.
-export function isInAppPath(path) {
+export function isInAppPath(path: unknown): path is string {
   return typeof path === 'string'
     && path.startsWith('/')
     && !path.startsWith('//')
@@ -26,7 +26,7 @@ export function isInAppPath(path) {
 }
 
 /** A guest arrived with a destination; the latest arrival wins. */
-export function offerAuthReturn(path) {
+export function offerAuthReturn(path: unknown) {
   pending = isInAppPath(path) ? path : null;
 }
 

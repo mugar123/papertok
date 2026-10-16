@@ -1,3 +1,4 @@
+import type { NavigateOptions, To } from 'react-router-dom';
 import { useCallback, useContext } from 'react';
 import { UNSAFE_NavigationContext } from 'react-router-dom';
 
@@ -19,7 +20,7 @@ import { UNSAFE_NavigationContext } from 'react-router-dom';
  */
 export function useStableNavigate() {
   const { navigator } = useContext(UNSAFE_NavigationContext);
-  return useCallback((to, options = {}) => {
+  return useCallback((to: To | number, options: NavigateOptions = {}) => {
     if (typeof to === 'number') {
       navigator.go(to);
       return;

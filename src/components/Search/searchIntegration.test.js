@@ -458,7 +458,7 @@ test('the search page input is named by more than its placeholder', () => {
 
 test('author, institution and topic rows hand their entity over in router state', async () => {
   const palette = await readFile(new URL('./SearchCommand.jsx', import.meta.url), 'utf8');
-  assert.match(palette, /import \{ handoverFromSearchRow \} from '\.\.\/\.\.\/utils\/explorerHandover\.js';/);
+  assert.match(palette, /import \{ handoverFromSearchRow \} from '\.\.\/\.\.\/utils\/explorerHandover\.ts';/);
   assert.match(palette, /onSelect=\{\(\) => go\(path, \{ entity: handoverFromSearchRow\('author', author\), entityType: 'author' \}\)\}/);
   assert.match(palette, /onSelect=\{\(\) => go\(`\/explorer\/institution\/\$\{lastPathSegment\(institution\.id\)\}`, \{ entity: handoverFromSearchRow\('institution', institution\), entityType: 'institution' \}\)\}/);
   assert.match(palette, /onSelect=\{\(\) => go\(`\/explorer\/topic\/\$\{encodeURIComponent\(lastPathSegment\(concept\.id\)\)\}`, \{ entity: handoverFromSearchRow\('topic', concept\), entityType: 'topic' \}\)\}/);
@@ -480,7 +480,7 @@ test('the search row and the explorer build a project name with the same helper'
   const explorer = await readCode('../Explorer/EntityExplorer.jsx');
   assert.match(
     page,
-    /import \{ getProjectDisplayName \} from '\.\.\/\.\.\/utils\/entityMetadata\.js';/,
+    /import \{ getProjectDisplayName \} from '\.\.\/\.\.\/utils\/entityMetadata\.ts';/,
     'the search page takes the name from the shared helper',
   );
   assert.match(

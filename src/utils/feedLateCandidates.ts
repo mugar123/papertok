@@ -1,3 +1,6 @@
+import type { Paper } from '../models/Paper.ts';
+
+import type { SettledWithin } from './asyncTiming.ts';
 import { PaperBuilder } from '../services/PaperBuilder.ts';
 import { fulfilledPaperLists } from './asyncTiming.ts';
 
@@ -11,7 +14,7 @@ import { fulfilledPaperLists } from './asyncTiming.ts';
  * are kept for the NEXT page's candidate pool instead of being appended under
  * the reader — nothing on screen moves, nothing fetched is wasted.
  */
-export function lateSourceCandidates(shownPapers, settledResults) {
+export function lateSourceCandidates(shownPapers: Array<Partial<Paper>> | null | undefined, settledResults: Array<SettledWithin<Array<Partial<Paper>>>>) {
   const shown = new Set((shownPapers || []).map(paper => paper?.id).filter(Boolean));
   return PaperBuilder.deduplicate(fulfilledPaperLists(settledResults))
     .filter(paper => paper?.id && !shown.has(paper.id));

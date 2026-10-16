@@ -1,6 +1,6 @@
 // Registration checks at page load are not enough for a tab or installed PWA
 // that survives several deploys. Check again on resume and while in use.
-export function watchServiceWorkerUpdates(registration, {
+export function watchServiceWorkerUpdates(registration: ServiceWorkerRegistration | null | undefined, {
   windowTarget = window,
   documentTarget = document,
   navigatorTarget = navigator,

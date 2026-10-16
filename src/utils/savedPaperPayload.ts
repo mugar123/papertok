@@ -1,3 +1,5 @@
+import type { Paper } from '../models/Paper.ts';
+
 /**
  * The document written to `users/{uid}/savedPapers/{paperId}`.
  *
@@ -23,7 +25,7 @@
  */
 
 /** Absent, empty and blank are all "we do not have this". */
-const text = (value, max) => {
+const text = (value: unknown, max: number|undefined) => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -36,8 +38,8 @@ const text = (value, max) => {
  * `savedAt` is the caller's, so this stays pure and its tests do not have to
  * freeze the clock.
  */
-export function buildSavedPaperPayload(paper, savedAt) {
-  const payload = { savedAt };
+export function buildSavedPaperPayload<T>(paper: Partial<Paper> | null | undefined, savedAt: T) {
+  const payload: Partial<Paper> & { savedAt: T } = { savedAt };
 
   /**
    * `title` is the one field the rules REQUIRE, with no absent-or-null escape,
@@ -87,6 +89,6 @@ export function buildSavedPaperPayload(paper, savedAt) {
  * to put in the required field. The caller checks this BEFORE touching the
  * list, so the orphan cannot be created.
  */
-export function canStoreSavedPaper(paper) {
+export function canStoreSavedPaper(paper: Partial<Paper> | null | undefined) {
   return Boolean(buildSavedPaperPayload(paper, 'x').title);
 }

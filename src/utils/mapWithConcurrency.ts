@@ -16,8 +16,8 @@
  * Lifted out of followingUpdatesService, which has bounded its own fan-out this
  * way since it shipped; this is the same helper, not a second one.
  */
-export async function mapWithConcurrency(items, concurrency, mapper) {
-  const results = new Array(items.length);
+export async function mapWithConcurrency<T, R>(items: readonly T[], concurrency: number, mapper: (item: T, index: number) => R | PromiseLike<R>) {
+  const results = new Array<PromiseSettledResult<Awaited<R>>>(items.length);
   let nextIndex = 0;
 
   async function worker() {

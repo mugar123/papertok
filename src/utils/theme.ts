@@ -40,7 +40,7 @@ export function readStoredTheme() {
   }
 }
 
-export function persistTheme(theme) {
+export function persistTheme(theme: string) {
   try {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   } catch {
@@ -62,7 +62,7 @@ export function clearStoredTheme() {
  * on a phone — the address bar, the notch strip in standalone mode — is the
  * colour of the page under it rather than the white it was born with.
  */
-export function applyTheme(theme) {
+export function applyTheme(theme: string|undefined) {
   const root = document.documentElement;
   root.dataset.theme = theme;
   const meta = document.querySelector('meta[name="theme-color"]');

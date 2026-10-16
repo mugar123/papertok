@@ -1,3 +1,19 @@
+import type { Paper, PaperAuthor, PaperRecommendationScore } from '../models/Paper.ts';
+import type { FollowInput } from './following.ts';
+export type RecommendationWeights = { [K in keyof typeof DEFAULT_RECOMMENDATION_WEIGHTS]: number };
+export interface RecentProperties { preprint: number; published: number; openAccess: number; subscription: number; journal: number; conference: number; }
+export interface RecommendationContext {
+  weights?: Partial<RecommendationWeights>; now?: number; userPreferences?: string[]; followedAuthors?: string[];
+  followedEntities?: FollowInput[]; categoryAffinities?: Record<string, number>; categoryCooldowns?: Record<string, number | string>;
+  conceptAffinities?: Record<string, number>; temporalPreference?: number; recentPropsCount?: RecentProperties;
+}
+interface Signal { id?: unknown; openAlexId?: unknown; canonicalId?: unknown; display_name?: unknown; displayName?: unknown; name?: unknown; label?: unknown; }
+type StableScore = ReturnType<typeof computeStableScore>;
+interface ShuffleOptions<T> {
+  scorePaper?: (paper: T, recent: RecentProperties) => unknown; weights?: Partial<RecommendationWeights>;
+  initialPapers?: T[]; random?: () => number; maxConsecutiveCategory?: number; poolCap?: number;
+}
+
 // Every score component is bounded so the weights below describe the REAL
 // maximum contribution of each signal. Resulting hierarchy: preference and
 // learned affinity (<=100) > follows (<=70) > citations/classics (<=25) >
@@ -25,7 +41,7 @@ export const DEFAULT_RECOMMENDATION_WEIGHTS = Object.freeze({
   minCooldownMultiplier: 0.1,
 });
 
-export function mergeRecommendationWeights(overrides = {}) {
+export function mergeRecommendationWeights(overrides: Partial<RecommendationWeights> = {}): RecommendationWeights {
   return {
     ...DEFAULT_RECOMMENDATION_WEIGHTS,
     ...Object.fromEntries(
@@ -37,7 +53,7 @@ export function mergeRecommendationWeights(overrides = {}) {
 export function readRecommendationWeights(storageKey = 'PAPERTOK_RECOMMENDATION_WEIGHTS') {
   if (typeof window === 'undefined') return DEFAULT_RECOMMENDATION_WEIGHTS;
 
-  const globalOverrides = window.PAPERTOK_RECOMMENDATION_WEIGHTS || {};
+  const globalOverrides = (window as Window & { PAPERTOK_RECOMMENDATION_WEIGHTS?: Partial<RecommendationWeights> }).PAPERTOK_RECOMMENDATION_WEIGHTS || {};
   const storedOverrides = (() => {
     try {
       const raw = window.localStorage?.getItem(storageKey);
@@ -50,17 +66,17 @@ export function readRecommendationWeights(storageKey = 'PAPERTOK_RECOMMENDATION_
   return mergeRecommendationWeights({ ...globalOverrides, ...storedOverrides });
 }
 
-function daysSince(date, now) {
-  const ts = new Date(date).getTime();
+function daysSince(date: string | number | undefined, now: number) {
+  const ts = new Date(date!).getTime();
   if (!Number.isFinite(ts)) return 30;
   return Math.max(0, (now - ts) / (1000 * 60 * 60 * 24));
 }
 
-function clamp(value, min, max) {
+function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-function topReasons(parts) {
+function topReasons(parts: Record<string, number>) {
   return Object.entries(parts)
     .filter(([, value]) => Math.abs(value) > 0.01)
     .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
@@ -82,8 +98,8 @@ function topReasons(parts) {
 // string it always did, or a restored snapshot would stop matching a fresh
 // score. Thirty topReasons calls per snapshot against N-squared per re-rank is
 // still the trade we want; enumerable is not an oversight.
-function defineExplanation(target, parts) {
-  let explanation;
+function defineExplanation<T extends object>(target: T, parts: Record<string, number>): T & { explanation: string } {
+  let explanation: string|undefined;
   Object.defineProperty(target, 'explanation', {
     enumerable: true,
     configurable: true,
@@ -91,22 +107,22 @@ function defineExplanation(target, parts) {
       if (explanation === undefined) explanation = topReasons(parts).join(', ') || 'neutral';
       return explanation;
     },
-    set(value) {
+    set(value: string) {
       explanation = value;
     },
   });
-  return target;
+  return target as T & { explanation: string };
 }
 
-export function getPaperCategorySignals(paper) {
+export function getPaperCategorySignals(paper: Partial<Paper>) {
   const providerCategories = paper?.allCategories || paper?.categories || [];
   return [...new Set([
     paper?.primaryCategory,
     ...(Array.isArray(providerCategories) ? providerCategories : []),
-  ].filter(category => typeof category === 'string' && category.trim()))].slice(0, 6);
+  ].filter(category => typeof category === 'string' && category.trim()))].slice(0, 6) as string[];
 }
 
-function normalizeSignalUncached(value) {
+function normalizeSignalUncached(value: unknown) {
   return String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -120,10 +136,10 @@ function normalizeSignalUncached(value) {
 // papers and across re-ranks, so the NFD pass and the three regexes are worth
 // paying once per distinct string. Only strings are cached: candidates arrive
 // as objects too, and those would key on a toString the cache cannot trust.
-const normalizedSignals = new Map();
+const normalizedSignals = new Map<string, string>();
 const NORMALIZED_SIGNAL_LIMIT = 5000;
 
-function normalizeSignal(value) {
+function normalizeSignal(value: unknown) {
   if (typeof value !== 'string') return normalizeSignalUncached(value);
 
   const cached = normalizedSignals.get(value);
@@ -137,19 +153,19 @@ function normalizeSignal(value) {
   return normalized;
 }
 
-function signalMatches(follow, candidates) {
+function signalMatches(follow: Signal, candidates: Array<Signal | string | null | undefined>) {
   const followId = normalizeSignal(follow.canonicalId || follow.id);
   const followName = normalizeSignal(follow.displayName || follow.name);
   return candidates.some((candidate) => {
-    const candidateId = normalizeSignal(candidate?.id || candidate?.openAlexId || candidate?.canonicalId || candidate);
+    const candidateId = normalizeSignal((candidate as Signal)?.id || (candidate as Signal)?.openAlexId || (candidate as Signal)?.canonicalId || candidate);
     const candidateName = normalizeSignal(
-      candidate?.display_name || candidate?.displayName || candidate?.name || candidate?.label || candidate,
+      (candidate as Signal)?.display_name || (candidate as Signal)?.displayName || (candidate as Signal)?.name || (candidate as Signal)?.label || candidate,
     );
     return Boolean((followId && candidateId === followId) || (followName && candidateName === followName));
   });
 }
 
-function followedTopicAliases(follow) {
+function followedTopicAliases(follow: FollowInput) {
   const canonicalId = String(follow.canonicalId || follow.id || '');
   const stableIds = [
     ...(/^query-/i.test(canonicalId) ? [] : [canonicalId]),
@@ -157,12 +173,12 @@ function followedTopicAliases(follow) {
   ];
   const names = [follow.metadata?.query, follow.displayName || follow.name];
   return [
-    ...stableIds.map(id => ({ id })),
-    ...names.map(name => ({ name })),
+    ...stableIds.map<Signal>(id => ({ id })),
+    ...names.map<Signal>(name => ({ name })),
   ].filter(alias => alias.id || alias.name);
 }
 
-function paperTopicSignals(paper) {
+function paperTopicSignals(paper: Partial<Paper>) {
   return [
     ...getPaperCategorySignals(paper),
     ...(paper.concepts || []),
@@ -177,7 +193,7 @@ function paperTopicSignals(paper) {
   ].filter(Boolean);
 }
 
-export function getFollowedEntitySignals(paper, followedEntities = [], weights = DEFAULT_RECOMMENDATION_WEIGHTS) {
+export function getFollowedEntitySignals(paper: Partial<Paper>, followedEntities: FollowInput[] = [], weights: RecommendationWeights = DEFAULT_RECOMMENDATION_WEIGHTS) {
   const topicCandidates = paperTopicSignals(paper);
   const authors = paper.authors || [];
   const institutions = paper.institutions || paper.openAlex?.institutions || [];
@@ -211,7 +227,7 @@ export function getFollowedEntitySignals(paper, followedEntities = [], weights =
   };
 }
 
-export function applyCategoryAffinityDelta(affinities, paper, delta, secondaryMultiplier = 0.35) {
+export function applyCategoryAffinityDelta(affinities: Record<string, number>, paper: Partial<Paper>, delta: number, secondaryMultiplier = 0.35) {
   const categories = getPaperCategorySignals(paper);
   categories.forEach((category, index) => {
     const categoryDelta = index === 0 ? delta : delta * secondaryMultiplier;
@@ -229,7 +245,7 @@ const NEUTRAL_RECENT_PROPS = Object.freeze({
 // recency. A diversified shuffle asks for the same paper once per remaining
 // pool slot, and only the diversity boost differs between those calls, so this
 // half is computed once per paper and reused (see beginScoringRun).
-function computeStableScore(paper, context) {
+function computeStableScore(paper: Partial<Paper>, context: RecommendationContext) {
   const weights = mergeRecommendationWeights(context.weights);
   const now = context.now || Date.now();
   const userPreferences = context.userPreferences || [];
@@ -260,7 +276,7 @@ function computeStableScore(paper, context) {
     preference = weights.relatedSelectedCategory;
   }
 
-  const authorBoost = paper.authors?.some((author) => followedAuthors.includes(author?.name || author))
+  const authorBoost = paper.authors?.some((author) => followedAuthors.includes(((author as PaperAuthor)?.name || author) as string))
     ? weights.followedAuthor
     : 0;
   const followedSignals = getFollowedEntitySignals(paper, followedEntities, weights);
@@ -349,15 +365,15 @@ function computeStableScore(paper, context) {
     isConference: paper.sourceType === 'conference' || paper.conference,
 
     // Last assembled result, reused while the boost holds its value.
-    lastDiversityBoost: null,
-    lastResult: null,
+    lastDiversityBoost: null as number | null,
+    lastResult: null as PaperRecommendationScore | null,
   };
 }
 
 // --- Content Diversity Soft Constraints ---
 // If the last 5 cards are saturated with one type, boost the opposite type.
 // This is the whole of the score that moves as the shuffle advances.
-function diversityBoostFor(stable, recentPropsCount) {
+function diversityBoostFor(stable: StableScore, recentPropsCount: RecentProperties) {
   let diversityBoost = 0;
 
   if (recentPropsCount.published >= 4 && stable.isPreprint) diversityBoost += 10;
@@ -381,7 +397,7 @@ function diversityBoostFor(stable, recentPropsCount) {
 // cooldown maps IN PLACE (applyCategoryAffinityDelta, categoryCooldowns.current
 // [category] = Date.now()): entries kept across runs would keep answering with
 // scores that ignore the reader's last swipe.
-let activeScoringRun = null;
+let activeScoringRun: Map<Partial<Paper>, StableScore> | null = null;
 
 function beginScoringRun() {
   const previous = activeScoringRun;
@@ -389,7 +405,7 @@ function beginScoringRun() {
   return () => { activeScoringRun = previous; };
 }
 
-function stableScoreFor(paper, context) {
+function stableScoreFor(paper: Partial<Paper>, context: RecommendationContext) {
   const run = activeScoringRun;
   if (!run) return computeStableScore(paper, context);
 
@@ -412,7 +428,7 @@ function stableScoreFor(paper, context) {
   return stable;
 }
 
-export function scorePaperForRecommendation(paper, context = {}) {
+export function scorePaperForRecommendation(paper: Partial<Paper>, context: RecommendationContext = {}): PaperRecommendationScore {
   const stable = stableScoreFor(paper, context);
   const recentPropsCount = context.recentPropsCount || NEUTRAL_RECENT_PROPS;
   const diversityBoost = diversityBoostFor(stable, recentPropsCount);
@@ -440,14 +456,14 @@ export function scorePaperForRecommendation(paper, context = {}) {
   return result;
 }
 
-export function applyRecommendationScore(paper, context = {}) {
+export function applyRecommendationScore<T extends Partial<Paper>>(paper: T, context: RecommendationContext = {}): T {
   const debugScore = scorePaperForRecommendation(paper, context);
   paper._dynamicScore = debugScore.total;
   paper._debugScore = debugScore;
   return paper;
 }
 
-function countRecentProperties(papers) {
+function countRecentProperties(papers: Partial<Paper>[]) {
   const counts = { preprint: 0, published: 0, openAccess: 0, subscription: 0, journal: 0, conference: 0 };
 
   papers.forEach((paper) => {
@@ -464,7 +480,7 @@ function countRecentProperties(papers) {
   return counts;
 }
 
-function getTrailingCategoryRun(papers) {
+function getTrailingCategoryRun(papers: Partial<Paper>[]) {
   const lastCategory = papers.at(-1)?.primaryCategory || '';
   if (!lastCategory) return { lastCategory: '', count: 0 };
 
@@ -481,7 +497,7 @@ function getTrailingCategoryRun(papers) {
 // wide enough for diversity, then shuffle that.
 export const FEED_SHUFFLE_POOL_CAP = 80;
 
-export function trimScoredCandidatePool(papers, options = {}) {
+export function trimScoredCandidatePool<T extends Partial<Paper>>(papers: T[], options: Pick<ShuffleOptions<T>, 'scorePaper'> & { cap?: number } = {}): T[] {
   const list = Array.isArray(papers) ? [...papers] : [];
   const requestedCap = options.cap ?? FEED_SHUFFLE_POOL_CAP;
   const cap = Number.isFinite(requestedCap) ? Math.max(0, Math.floor(requestedCap)) : FEED_SHUFFLE_POOL_CAP;
@@ -497,7 +513,7 @@ export function trimScoredCandidatePool(papers, options = {}) {
   return list.slice(0, cap);
 }
 
-export function diversifiedWeightedShuffle(papers, options = {}) {
+export function diversifiedWeightedShuffle<T extends Partial<Paper>>(papers: T[], options: ShuffleOptions<T> = {}): T[] {
   const {
     scorePaper,
     weights = DEFAULT_RECOMMENDATION_WEIGHTS,
@@ -578,7 +594,7 @@ export function shouldLogRanking() {
   return window.localStorage?.getItem('DEBUG_RANKING') === 'true';
 }
 
-export function logRankingBatch(label, papers, limit = 10) {
+export function logRankingBatch(label: string, papers: Partial<Paper>[], limit = 10) {
   if (!shouldLogRanking()) return;
   const rows = papers.slice(0, limit).map((paper, index) => ({
     rank: index + 1,

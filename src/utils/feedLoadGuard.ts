@@ -8,7 +8,7 @@
  * @param {Array<Array>} paperPools - every pool of candidate papers gathered so far
  * @returns {boolean} true when there is nothing to render AND at least one source failed
  */
-export function shouldAbortFeedLoad(sourceResults = [], ...paperPools) {
+export function shouldAbortFeedLoad(sourceResults: Array<{ status: string }> = [], ...paperPools: Array<readonly unknown[] | null | undefined>) {
   const totalPapers = paperPools.reduce((sum, pool) => sum + (pool?.length || 0), 0);
   if (totalPapers > 0) return false;
   return sourceResults.some(result => result?.status !== 'fulfilled');

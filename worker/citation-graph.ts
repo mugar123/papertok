@@ -1,3 +1,4 @@
+import type { CitationRow } from '../src/utils/citationGraph.ts';
 import type { WorkerEnv } from './env.ts';
 import type { Paper } from '../src/models/Paper.ts';
 import type { OpenAlexWork } from './openalex-api.ts';
@@ -262,12 +263,12 @@ export async function handleCitationGraph(request: Request, env: WorkerEnv, iden
     // citations: [], partial: false}` -- and cached that for a week.
     let degraded = currentWorkFailed || partial;
     let referenceConnections: CitationConnection[] = normalizeCitationRows(
-      referenceResult.status === 'fulfilled' ? referenceResult.value : [],
+      referenceResult.status === 'fulfilled' ? referenceResult.value as CitationRow[] : [],
       'reference',
       doi,
     );
     const citationConnections: CitationConnection[] = normalizeCitationRows(
-      citationResult.status === 'fulfilled' ? citationResult.value : [],
+      citationResult.status === 'fulfilled' ? citationResult.value as CitationRow[] : [],
       'citation',
       doi,
     );

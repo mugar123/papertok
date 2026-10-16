@@ -14,7 +14,7 @@
  */
 
 /** The card's easing, as used across `PaperCard.css`. */
-export const CARD_EASE = Object.freeze([0.16, 1, 0.3, 1]);
+export const CARD_EASE = Object.freeze([0.16, 1, 0.3, 1] as const);
 
 /** And its duration, in milliseconds. Kept in step with the CSS by hand. */
 export const CARD_DURATION_MS = 420;
@@ -28,21 +28,21 @@ export const CARD_DURATION_MS = 420;
  * fallback covers the flat stretches where the derivative is too small to
  * trust, which is exactly where a curve like `0.16, 1, 0.3, 1` spends its tail.
  */
-export function cubicBezier(x1, y1, x2, y2) {
-  const curve = (a, b, t) => {
+export function cubicBezier(x1: number, y1: number, x2: number, y2: number) {
+  const curve = (a: number, b: number, t: number) => {
     const c = 3 * a;
     const B = 3 * (b - a) - c;
     const A = 1 - c - B;
     return ((A * t + B) * t + c) * t;
   };
-  const slope = (a, b, t) => {
+  const slope = (a: number, b: number, t: number) => {
     const c = 3 * a;
     const B = 3 * (b - a) - c;
     const A = 1 - c - B;
     return (3 * A * t + 2 * B) * t + c;
   };
 
-  return (progress) => {
+  return (progress: number) => {
     if (progress <= 0) return 0;
     if (progress >= 1) return 1;
 
@@ -80,14 +80,14 @@ export function cubicBezier(x1, y1, x2, y2) {
  * `now` and `raf` are injectable so the tween can be tested without a browser
  * and without waiting real seconds for it.
  */
-export function tweenScrollTop(node, to, options = {}) {
+export function tweenScrollTop(node: Pick<Element, 'scrollTop'> | null | undefined, to: number, options: { durationMs?: number; easing?: (progress: number) => number; immediate?: boolean; now?: () => number; raf?: (callback: FrameRequestCallback) => number | undefined; cancelRaf?: (handle: number) => void } = {}) {
   const {
     durationMs = CARD_DURATION_MS,
     easing = cubicBezier(...CARD_EASE),
     immediate = false,
     now = () => Date.now(),
     raf = (callback) => globalThis.requestAnimationFrame?.(callback),
-    cancelRaf = (handle) => globalThis.cancelAnimationFrame?.(handle),
+    cancelRaf = (handle: number) => globalThis.cancelAnimationFrame?.(handle),
   } = options;
 
   if (!node) return () => {};
@@ -102,7 +102,7 @@ export function tweenScrollTop(node, to, options = {}) {
   }
 
   const startedAt = now();
-  let handle = null;
+  let handle: number | null | undefined = null;
   let stopped = false;
 
   const step = () => {

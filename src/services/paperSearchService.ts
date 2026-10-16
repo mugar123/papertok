@@ -1,3 +1,6 @@
+import type { Paper } from '../models/Paper.ts';
+import type { PaperSearchFilters, PaperSearchResult } from './adapters/index.ts';
+
 import { OPENALEX_SEARCH_TYPES, OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
 import { searchPapers as searchArxivPapers } from './arxivService.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
@@ -35,28 +38,28 @@ export const ARXIV_SEARCH_TIMEOUT_MS = 5_000;
 const openAlexAdapter = new OpenAlexAdapter();
 
 export const DEFAULT_PAPER_SEARCH_PROVIDERS = Object.freeze({
-  searchOpenAlex: (query, options) => openAlexAdapter.search(query, 1, { ...options, types: OPENALEX_SEARCH_TYPES }),
-  searchArxiv: (query, limit) => searchArxivPapers(query, 0, limit),
+  searchOpenAlex: (query: string, options: PaperSearchFilters) => openAlexAdapter.search(query, 1, { ...options, types: OPENALEX_SEARCH_TYPES }),
+  searchArxiv: (query: string, limit: number) => searchArxivPapers(query, 0, limit),
 });
 
-function papersFrom(value) {
+function papersFrom(value: Paper[] | PaperSearchResult) {
   if (Array.isArray(value)) return value;
   return Array.isArray(value?.papers) ? value.papers : [];
 }
 
-function settle(promise) {
+function settle<T>(promise: () => Promise<T>): Promise<PromiseSettledResult<T>> {
   return Promise.resolve()
     .then(() => promise())
-    .then(value => ({ status: 'fulfilled', value }), reason => ({ status: 'rejected', reason }));
+    .then(value => ({ status: 'fulfilled' as const, value }), reason => ({ status: 'rejected' as const, reason }));
 }
 
-export async function searchPapersAcrossSources(query, {
+export async function searchPapersAcrossSources(query: unknown, {
   signal,
   providers = DEFAULT_PAPER_SEARCH_PROVIDERS,
   arxivTimeoutMs = ARXIV_SEARCH_TIMEOUT_MS,
   arxivLimit = ARXIV_SEARCH_LIMIT,
   limit = PAPER_SEARCH_LIMIT,
-} = {}) {
+}: { signal?: AbortSignal; providers?: typeof DEFAULT_PAPER_SEARCH_PROVIDERS; arxivTimeoutMs?: number; arxivLimit?: number; limit?: number } = {}) {
   const term = String(query || '').trim();
   if (!term) return [];
 

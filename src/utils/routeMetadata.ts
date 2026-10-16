@@ -2,7 +2,7 @@
 // (only for routes that do not title themselves) and the route-change
 // announcement for screen readers (all mapped routes).
 
-const LABELS = {
+const LABELS: Record<string, string> = {
   '/feed': 'For you',
   '/lists': 'My lists',
   '/following': 'Following',
@@ -31,15 +31,15 @@ const SELF_TITLED = new Set([
   '/settings/privacy',
 ])
 
-function normalize(pathname) {
+function normalize(pathname: string) {
   return pathname === '/' ? '/' : pathname.replace(/\/+$/, '')
 }
 
-export function routeLabel(pathname) {
+export function routeLabel(pathname: string) {
   return LABELS[normalize(pathname)] || null
 }
 
-export function routeTitle(pathname) {
+export function routeTitle(pathname: string) {
   const normalized = normalize(pathname)
   if (SELF_TITLED.has(normalized)) return null
   const label = routeLabel(normalized)

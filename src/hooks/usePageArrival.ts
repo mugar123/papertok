@@ -75,7 +75,7 @@ export function useAfterPageArrival() {
   const isArriving = useIsPageArriving();
   return useCallback(() => {
     if (!isArriving()) return null;
-    return new Promise((resolve) => {
+    return new Promise<void>((resolve) => {
       const startedAt = performance.now();
       const tick = () => {
         if (!isArriving() || performance.now() - startedAt > ARRIVAL_WAIT_CAP_MS) resolve();

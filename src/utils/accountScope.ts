@@ -59,7 +59,7 @@ export const INITIAL_ACCOUNT_SCOPE = Object.freeze({ account: null, generation: 
  * @param {{uid?: string|null, authLoading?: boolean}} auth
  * @returns {{account: string|null, generation: number}}
  */
-export function nextAccountScope(previous, { uid, authLoading } = {}) {
+export function nextAccountScope(previous: { account: string|null; generation: number; }, { uid, authLoading }: { uid?: string|null; authLoading?: boolean; } = {}): { account: string|null; generation: number; } {
   const scope = previous || INITIAL_ACCOUNT_SCOPE;
   const account = uid || '';
   // A token refresh raises `authLoading` again with the user still in hand;
@@ -83,6 +83,6 @@ export function nextAccountScope(previous, { uid, authLoading } = {}) {
  * @param {{generation: number}} scope
  * @returns {string}
  */
-export function accountScopeKey(scope) {
+export function accountScopeKey(scope: { generation: number; }): string {
   return `account-${(scope || INITIAL_ACCOUNT_SCOPE).generation}`;
 }

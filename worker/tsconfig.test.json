@@ -5,7 +5,8 @@
     "../worker-configuration.d.ts",
     "../src/services/paperFigureService.test.js",
     "../src/components/Institution/publisherLogos.test.js",
-    "../src/utils/aiExplanation.test.js"
+    "../src/utils/aiExplanation.test.js",
+    "../src/types/**/*.d.ts"
   ],
   "exclude": []
 }

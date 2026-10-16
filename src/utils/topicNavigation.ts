@@ -1,3 +1,12 @@
+export interface TopicInput {
+  id?: string; openAlexId?: string; display_name?: string; displayName?: string; name?: string; label?: string;
+  categoryId?: string; categoryIds?: string[]; topicSource?: string; provider?: string; source?: string; query?: string;
+  metadata?: { query?: string; source?: string; categoryIds?: string[] };
+}
+export interface TopicTarget extends TopicInput {
+  id: string; label: string; type: string; reliable: boolean; _queryTopic?: boolean;
+}
+
 import { CATEGORIES } from '../data/categories.js';
 import { isTechnicalClassification } from './scientificClassification.ts';
 
@@ -6,14 +15,14 @@ export const MAX_QUERY_TOPIC_LENGTH = 180;
 export const MAX_QUERY_TOPIC_SOURCE_LENGTH = 48;
 export const MAX_QUERY_TOPIC_CATEGORY_IDS = 12;
 
-function cleanTopicText(value = '') {
+function cleanTopicText(value: unknown = '') {
   return String(value)
     .replace(/\p{Cc}/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-function normalizeLabel(value = '') {
+function normalizeLabel(value: unknown = '') {
   return cleanTopicText(value)
     .normalize('NFKD')
     .replace(/\p{M}/gu, '')
@@ -62,7 +71,7 @@ const GENERIC_TOPIC_LABELS = new Set([
  * area's subcategories, then the next area — and the walk still stops at the
  * first match, so which entry wins is unchanged. Only the normalising moved.
  */
-let taxonomyIndex = null;
+let taxonomyIndex: Array<{ areaId: string; area: { label: string }; areaKeys: string[]; subcategories: Array<{ categoryId: string; category: { label: string }; keys: string[] }> }> | null = null;
 function getTaxonomyIndex() {
   if (taxonomyIndex) return taxonomyIndex;
   taxonomyIndex = Object.entries(CATEGORIES).map(([areaId, area]) => ({
@@ -78,10 +87,10 @@ function getTaxonomyIndex() {
   return taxonomyIndex;
 }
 
-function findLocalTopic(value) {
+function findLocalTopic(value: string|undefined) {
   if (!value) return null;
-  if (CATEGORIES[value]) {
-    const area = CATEGORIES[value];
+  if (CATEGORIES[value as keyof typeof CATEGORIES]) {
+    const area = CATEGORIES[value as keyof typeof CATEGORIES];
     return {
       id: value,
       label: area.label,
@@ -114,22 +123,22 @@ function findLocalTopic(value) {
   return null;
 }
 
-export function isScientificCategoryId(value) {
+export function isScientificCategoryId(value: string|undefined) {
   if (!value) return false;
-  if (CATEGORIES[value]) return true;
-  if (Object.values(CATEGORIES).some(area => Boolean(area.subcategories?.[value]))) return true;
+  if (CATEGORIES[value as keyof typeof CATEGORIES]) return true;
+  if (Object.values(CATEGORIES).some(area => Boolean((area.subcategories as Record<string, { label: string }>)?.[value]))) return true;
   return /^[a-z][a-z-]*(?:\.[A-Za-z][A-Za-z-]*)+$/.test(value) || /^(?:astro|cond|hep|nucl|nlin)-[a-z-]+$/i.test(value);
 }
 
-export function isQueryTopicId(value) {
+export function isQueryTopicId(value: string|undefined) {
   return /^query-[a-f0-9]{8}$/i.test(cleanTopicText(value));
 }
 
-export function isOpaqueQueryTopicText(value) {
+export function isOpaqueQueryTopicText(value: string|undefined) {
   return /^query(?:-|$)/i.test(cleanTopicText(value));
 }
 
-function isMeaningfulTopicText(value) {
+function isMeaningfulTopicText(value: string|undefined) {
   const text = cleanTopicText(value);
   const normalized = normalizeLabel(text);
   if (!text || text.length > MAX_QUERY_TOPIC_LENGTH || GENERIC_TOPIC_LABELS.has(normalized)) return false;
@@ -142,7 +151,7 @@ function isMeaningfulTopicText(value) {
   return compact.length >= 2 && /\p{L}/u.test(compact);
 }
 
-function stableTopicHash(value) {
+function stableTopicHash(value: string) {
   let hash = 0x811c9dc5;
   for (let index = 0; index < value.length; index += 1) {
     hash ^= value.charCodeAt(index);
@@ -151,7 +160,7 @@ function stableTopicHash(value) {
   return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
-function queryTopicSource(value, rawId = '') {
+function queryTopicSource(value: TopicInput, rawId = '') {
   const explicitSource = value?.metadata?.source
     || value?.topicSource
     || value?.provider
@@ -164,7 +173,7 @@ function queryTopicSource(value, rawId = '') {
     .slice(0, MAX_QUERY_TOPIC_SOURCE_LENGTH) || 'free-text';
 }
 
-function queryTopicCategoryIds(value, query) {
+function queryTopicCategoryIds(value: TopicInput, query: string) {
   const candidates = [
     ...(Array.isArray(value?.metadata?.categoryIds) ? value.metadata.categoryIds : []),
     ...(Array.isArray(value?.categoryIds) ? value.categoryIds : []),
@@ -177,7 +186,7 @@ function queryTopicCategoryIds(value, query) {
     .slice(0, MAX_QUERY_TOPIC_CATEGORY_IDS);
 }
 
-export function getQueryTopicMetadata(value = {}) {
+export function getQueryTopicMetadata(value: TopicInput | string | null = {}) {
   const data = typeof value === 'object' && value !== null ? value : {};
   const displayName = cleanTopicText(
     data.display_name || data.displayName || data.name || data.label || '',
@@ -193,14 +202,14 @@ export function getQueryTopicMetadata(value = {}) {
   };
 }
 
-export function createQueryTopic(value) {
+export function createQueryTopic(value: TopicInput | string | null | undefined): TopicTarget | null {
   const data = typeof value === 'object' && value !== null ? value : null;
   const displayName = cleanTopicText(
     data?.display_name || data?.displayName || data?.name || data?.label || (data ? '' : value),
   );
   const metadata = getQueryTopicMetadata(data || {
     displayName,
-    query: value,
+    query: value as string,
     source: 'free-text',
   });
   const query = metadata.query;
@@ -221,12 +230,12 @@ export function createQueryTopic(value) {
   };
 }
 
-function toSearchParams(searchParams) {
+function toSearchParams(searchParams: URLSearchParams | string | undefined) {
   if (searchParams instanceof URLSearchParams) return searchParams;
   return new URLSearchParams(searchParams || '');
 }
 
-export function resolveQueryTopicRoute(id, searchParams) {
+export function resolveQueryTopicRoute(id: string, searchParams?: URLSearchParams | string) {
   if (!isQueryTopicId(id)) return null;
   const params = toSearchParams(searchParams);
   const query = params.get('q') || params.get('name') || '';
@@ -241,7 +250,7 @@ export function resolveQueryTopicRoute(id, searchParams) {
   return topic?.id === id ? topic : null;
 }
 
-export function resolvePaperTopic(value) {
+export function resolvePaperTopic(value: TopicInput | string | null | undefined): TopicTarget | null {
   const concept = typeof value === 'object' && value !== null ? value : null;
   const label = cleanTopicText(
     concept?.display_name || concept?.displayName || concept?.name || concept?.label || value,
@@ -251,7 +260,7 @@ export function resolvePaperTopic(value) {
   if (local) return local;
 
   const rawId = concept?.id || concept?.openAlexId || '';
-  const externalId = String(rawId).split('/').pop();
+  const externalId = String(rawId).split('/').pop()!;
   if (/^C\d+$/i.test(externalId) && isMeaningfulTopicText(label)) {
     return { id: externalId, label, type: 'concept', reliable: false };
   }
@@ -265,7 +274,7 @@ export function resolvePaperTopic(value) {
   return queryTopic;
 }
 
-export function topicExplorerPath(topic) {
+export function topicExplorerPath(topic: TopicTarget | null | undefined) {
   if (!topic) return null;
   const basePath = `/explorer/${topic.type}/${encodeURIComponent(topic.id)}`;
   if (!topic._queryTopic) return basePath;

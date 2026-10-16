@@ -1,3 +1,5 @@
+import type { OwnList, ListSnapshot } from '../utils/ownLists.ts';
+
 /**
  * Warm the signed-in account's own lists so the first open of the lists page
  * or the save-to-list modal is not a cold Firestore handshake.
@@ -15,9 +17,9 @@ import { OWN_LISTS_PAGE_SIZE } from '../utils/ownLists.ts';
 import { ownListsCache, rememberOwnLists, reviseOwnLists } from '../utils/profileSessionCaches.ts';
 import { readStoredLists, saveStoredLists } from '../utils/userScopedStorage.ts';
 
-const warmed = new Set();
+const warmed = new Set<string>();
 
-export function resetAccountWarmup(uid) {
+export function resetAccountWarmup(uid?: string) {
   if (uid) warmed.delete(uid);
   else warmed.clear();
 }
@@ -26,24 +28,24 @@ export function resetAccountWarmup(uid) {
  * Synchronous: copy last-known lists into the session cache.
  * Call this before the first screen that needs them renders.
  */
-export function hydrateAccountCaches(uid, { storage } = {}) {
+export function hydrateAccountCaches(uid: string, { storage }: { storage?: Storage | null } = {}) {
   if (!uid || ownListsCache.get(uid)) return;
   const lists = readStoredLists(uid, storage);
   if (lists) reviseOwnLists(uid, lists);
 }
 
-async function defaultReadLists(uid) {
+async function defaultReadLists(uid: string) {
   return getDocs(query(
     collection(db, 'users', uid, 'lists'),
     limit(OWN_LISTS_PAGE_SIZE),
   ));
 }
 
-export async function warmAccountCaches(uid, {
+export async function warmAccountCaches(uid: string, {
   storage,
   readLists = defaultReadLists,
   currentUid = () => auth.currentUser?.uid,
-} = {}) {
+}: { storage?: Storage | null; readLists?: (uid: string) => Promise<ListSnapshot>; currentUid?: () => string | undefined } = {}) {
   if (!uid || IS_DEMO || warmed.has(uid)) return;
   warmed.add(uid);
   hydrateAccountCaches(uid, { storage });
@@ -55,7 +57,7 @@ export async function warmAccountCaches(uid, {
   const listsSnapshot = await readLists(uid).catch(() => null);
   if (!stillCurrent()) return; // Signed out while the read was in flight.
   if (listsSnapshot && queryIsAuthoritative(listsSnapshot)) {
-    const lists = [];
+    const lists: OwnList[] = [];
     listsSnapshot.forEach(item => lists.push({ id: item.id, ...item.data() }));
     rememberOwnLists(uid, lists);
     saveStoredLists(uid, lists, storage);

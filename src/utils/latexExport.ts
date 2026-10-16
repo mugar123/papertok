@@ -1,3 +1,6 @@
+import type { Paper, PaperAuthor } from '../models/Paper.ts';
+import type { ExportOptions, NumberedAnnotation } from './exportDocument.ts';
+import type { HighlightMath } from './textHighlights.ts';
 import { splitLatexText } from './latex.ts';
 import { buildHighlightPlan } from './textHighlights.ts';
 import {
@@ -42,7 +45,7 @@ import {
  * own output.
  */
 const LATEX_SPECIAL = /[\\{}$&#%_~^<>]/g;
-const LATEX_ESCAPE = {
+const LATEX_ESCAPE: Record<string, string> = {
   '\\': '\\textbackslash{}',
   '{': '\\{',
   '}': '\\}',
@@ -86,7 +89,7 @@ const LATEX_ESCAPE = {
  * XeLaTeX specifically — again `exit=0`, nothing in the log, visible only by
  * rasterizing the page.
  */
-const PUNCTUATION = {
+const PUNCTUATION: Record<string, string> = {
   '\u00b7': '\\textperiodcentered{}',
   '\u2014': '\\textemdash{}',
   '\u2013': '\\textendash{}',
@@ -152,7 +155,7 @@ const PUNCTUATION_RE = new RegExp(`[${Object.keys(PUNCTUATION).join('')}]`, 'g')
  * string: it carries no visual meaning and pdfLaTeX's default UTF-8 handling
  * has no LICR entry for it, which is a hard compile error on its own.
  */
-const SYMBOLS = {
+const SYMBOLS: Record<string, string> = {
   // Greek letters: lowercase, then uppercase distinct from any Latin letter
   'α': '\\ensuremath{\\alpha}', // U+03B1
   'β': '\\ensuremath{\\beta}', // U+03B2
@@ -339,7 +342,7 @@ const UNSAFE_MATH = /\\(?:input|include|write|openout|openin|read|catcode|[gex]?
  * only one that ever runs. Any other backslash in prose is the model's, and
  * prose is prose: it is shown, not executed.
  */
-export function escapeLatexText(value) {
+export function escapeLatexText(value: unknown) {
   return String(value ?? '')
     .replace(/\\%/g, '%')
     .replace(LATEX_SPECIAL, character => LATEX_ESCAPE[character])
@@ -348,7 +351,7 @@ export function escapeLatexText(value) {
 }
 
 /** Whether a maths chunk may pass through to the file unescaped. */
-export function isSafeMath(value) {
+export function isSafeMath(value: unknown) {
   const text = String(value ?? '');
   if (UNSAFE_MATH.test(text)) return false;
   return !/\\end\s*\{\s*document\s*\}/i.test(text);
@@ -374,7 +377,7 @@ export function isSafeMath(value) {
  * PDF counts both the same; that distinction is `.tex`-only plumbing this
  * predicate does not need.
  */
-export function isNumberedFormula(item) {
+export function isNumberedFormula(item: { display?: boolean; kind?: string | null; raw?: string } | null | undefined) {
   return Boolean(item?.display) && !item?.kind && isSafeMath(item?.raw);
 }
 
@@ -383,7 +386,7 @@ export function isNumberedFormula(item) {
  * above is not dropped and not repaired — it is escaped and shown as the source
  * it is, which is both safe and honest about what the model produced.
  */
-function emitMath(item) {
+function emitMath(item: HighlightMath) {
   // `raw` and never `value` for the safety check: for a `\begin{...}`
   // environment `splitLatexText` sets `value === raw`, delimiters and all,
   // so re-wrapping it produced `$\begin{equation}...\end{equation}$` —
@@ -432,14 +435,14 @@ function emitMath(item) {
  * otherwise a highlight that crossed a formula would come out as two commands
  * with a seam down the middle.
  */
-export function renderParagraph(text, annotations = [], labels = {}) {
+export function renderParagraph(text: string, annotations: NumberedAnnotation[] = [], labels: { ai?: string; mine?: string } = {}) {
   const plan = buildHighlightPlan(text, annotations);
   // Holds notes, not marks: a bare highlight has no entry here, only an
   // annotation with words on it does. `isMarked`, three lines below in the
   // main loop, is the one that means "marked".
   const noted = annotations.filter(item => item?.note);
-  const pieces = [];
-  let run = null;
+  const pieces: string[] = [];
+  let run: { id: string | null; kind: string | null; parts: string[] } | null = null;
 
   const flush = () => {
     if (!run) return;
@@ -454,7 +457,7 @@ export function renderParagraph(text, annotations = [], labels = {}) {
     // at the end of the document: LaTeX puts a footnote at the foot of the page
     // its marker landed on, which is the whole point. Emitting them at the end
     // put every note on the LAST page the moment there was more than one page.
-    const note = noted.find(item => item.id === run.id);
+    const note = noted.find(item => item.id === run!.id);
     const kind = note && (note.kind === 'ai' ? labels.ai : labels.mine);
     pieces.push(note
       ? `${command}{${body}}\\footnote{\\ptkind{${escapeLatexText(kind || '')}}\\quad ${escapeLatexText(note.note)}}`
@@ -486,16 +489,16 @@ const SECTION_FALLBACK = { en: 'Section' };
  * El byline, escapado. Ya no es un `\parbox` centrado: la portada va en
  * bandera y `flushleft` parte la línea sola cuando hay nueve autores.
  */
-export function authorLine(paper, limit = 12) {
+export function authorLine(paper: Partial<Paper> | null | undefined, limit = 12) {
   const names = (Array.isArray(paper?.authors) ? paper.authors : [])
-    .map(author => String(author?.name || author || '').trim())
+    .map(author => String((author as PaperAuthor)?.name || author || '').trim())
     .filter(Boolean);
   if (names.length === 0) return '';
   const shown = names.slice(0, limit).map(escapeLatexText).join(', ');
   return names.length > limit ? `${shown} et al.` : shown;
 }
 
-function preamble(copy, hasHighlights) {
+function preamble(copy: ReturnType<typeof documentCopy>, hasHighlights: boolean) {
   return [
     `% ${copy.generated}`,
     '\\documentclass[11pt,a4paper]{article}',
@@ -585,7 +588,7 @@ function preamble(copy, hasHighlights) {
  * La procedencia no se mueve al colofón: sigue al pie de CADA página, fuera de
  * la numeración de las notas, porque el fichero puede acabar lejos de aquí.
  */
-function pageStyles(meta) {
+function pageStyles(meta: ReturnType<typeof documentMeta>) {
   const foot = escapeLatexText(meta.provenance);
   return [
     '\\renewcommand{\\sectionmark}[1]'
@@ -641,8 +644,8 @@ function pageStyles(meta) {
  * después por la misma regla de contrabarra que ya vale para `%`, `#`, `&`
  * y `_`.
  */
-const URL_PERCENT_ENCODE = { '{': '%7B', '}': '%7D', $: '%24' };
-export function escapeUrlForLatex(value) {
+const URL_PERCENT_ENCODE: Record<string, string> = { '{': '%7B', '}': '%7D', $: '%24' };
+export function escapeUrlForLatex(value: unknown) {
   return String(value ?? '')
     .replace(/[{}$]/g, character => URL_PERCENT_ENCODE[character])
     .replace(/([%#&_])/g, '\\$1');
@@ -667,7 +670,7 @@ export function escapeUrlForLatex(value) {
  * su posición en el array: el documento existe en inglés también, y allí esa
  * misma clave es "Source".
  */
-function colophon(meta, copy) {
+function colophon(meta: ReturnType<typeof documentMeta>, copy: ReturnType<typeof documentCopy>) {
   if (meta.colophon.rows.length === 0) return [];
   return [
     // Todo el bloque —desde el filete hasta la última fila de la tabla— va
@@ -724,7 +727,7 @@ export function buildLatexDocument({
   originalUrl = '',
   generatedAt = new Date(),
   include = {},
-} = {}) {
+}: ExportOptions = {}): { source: string; fileName: string; noteCount: number; } {
   const copy = documentCopy();
   const kept = exportableAnnotations(annotations, {
     sections, level, language, include,
@@ -807,6 +810,6 @@ export function buildLatexDocument({
 }
 
 /** Exposed for the tests: the chunks a paragraph is made of. */
-export function paragraphChunks(text) {
+export function paragraphChunks(text: string) {
   return splitLatexText(text);
 }

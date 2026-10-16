@@ -1,3 +1,13 @@
+import type { Paper } from '../models/Paper.ts';
+import type { UserHighlight } from '../services/userHighlightService.ts';
+export interface PassageSelection { sectionId: string; paragraphIndex: number; quote: string; context?: string; quoteStart?: number; quoteEnd?: number; anchor?: { left: number; top: number; bottom: number; right: number } }
+export type PassageAnnotation = Omit<UserHighlight, 'paperTitle'> & { paperTitle?: string; fresh?: boolean; unsaved?: boolean };
+interface AnnotationOptions {
+  uid?: string | null; paper?: Partial<Paper> | null; paperId: string; level: string; language: string;
+  onQuota?: (remaining: number) => void;
+  trackEvent?: (name: string, params: Record<string, unknown>) => unknown;
+}
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   listUserHighlights,
@@ -44,7 +54,7 @@ const IDLE = 'idle';
  */
 export const FRESH_SETTLE_MS = 700;
 /** One frozen empty list, so "nothing to show" is a stable identity. */
-const EMPTY = Object.freeze([]);
+const EMPTY: readonly PassageAnnotation[] = Object.freeze([]);
 
 export function usePassageAnnotations({
   uid,
@@ -54,16 +64,16 @@ export function usePassageAnnotations({
   language,
   onQuota,
   trackEvent,
-}) {
-  const [loaded, setLoaded] = useState([]);
-  const [pending, setPending] = useState(null);
+}: AnnotationOptions) {
+  const [loaded, setLoaded] = useState<PassageAnnotation[]>([]);
+  const [pending, setPending] = useState<PassageSelection | null>(null);
   const [busy, setBusy] = useState(IDLE);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null | undefined>(null);
   // Where the last "explain this" was asked: the margin keeps the card that
   // waits for the answer — and the one that says it failed — in the place the
   // answer is filed, not at the top of a list that may be scrolled elsewhere.
-  const [askedAt, setAskedAt] = useState(null);
-  const askAbortRef = useRef(null);
+  const [askedAt, setAskedAt] = useState<Pick<PassageSelection, 'sectionId' | 'paragraphIndex'> | null>(null);
+  const askAbortRef = useRef<AbortController | null>(null);
 
   // Derived rather than cleared: without a reader or a paper there is nothing to
   // show, and writing that emptiness into state from an effect would cost a
@@ -88,7 +98,7 @@ export function usePassageAnnotations({
     setError(null);
   }, []);
 
-  const begin = useCallback((selection) => {
+  const begin = useCallback((selection: PassageSelection) => {
     setError(null);
     setPending(selection);
   }, []);
@@ -99,7 +109,7 @@ export function usePassageAnnotations({
    * caller can decide what to do next.
    */
   /** Takes the one-shot `fresh` flag back off once its animation has run. */
-  const settle = useCallback((annotationId) => {
+  const settle = useCallback((annotationId: string) => {
     setLoaded(current => current.map(item => (
       item.id === annotationId && item.fresh ? { ...item, fresh: false } : item
     )));
@@ -109,8 +119,8 @@ export function usePassageAnnotations({
      window — ask for an explanation, mark another passage while it writes —
      and a single timer would settle the first one's flag on the second one's
      clock. */
-  const freshTimers = useRef(new Map());
-  const scheduleSettle = useCallback((annotationId) => {
+  const freshTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const scheduleSettle = useCallback((annotationId: string) => {
     if (!annotationId) return;
     const timers = freshTimers.current;
     clearTimeout(timers.get(annotationId));
@@ -127,7 +137,7 @@ export function usePassageAnnotations({
     };
   }, []);
 
-  const store = useCallback(async ({ kind, note }) => {
+  const store = useCallback(async ({ kind, note }: { kind: UserHighlight['kind']; note?: string }) => {
     if (!uid || !pending) return null;
     const saved = await saveUserHighlight(uid, {
       paperId,
@@ -158,7 +168,7 @@ export function usePassageAnnotations({
     return saved;
   }, [level, store, trackEvent]);
 
-  const saveNote = useCallback(async (text) => {
+  const saveNote = useCallback(async (text: string) => {
     const note = String(text || '').trim();
     if (!note) return null;
     setBusy('saving');
@@ -210,7 +220,7 @@ export function usePassageAnnotations({
       // An answer that arrived but could not be stored is still an answer worth
       // showing: it goes in the rail unsaved rather than being thrown away for
       // a Firestore write the reader never asked about.
-      const entry = saved
+      const entry: PassageAnnotation = saved
         ? { ...saved, fresh: true }
         : {
           id: `local:${passage.sectionId}:${passage.paragraphIndex}`,
@@ -237,7 +247,7 @@ export function usePassageAnnotations({
     }
   }, [language, level, onQuota, paper, paperId, pending, scheduleSettle, trackEvent, uid]);
 
-  const remove = useCallback(async (annotationId) => {
+  const remove = useCallback(async (annotationId: string) => {
     if (!annotationId) return;
     // Removed from the rail first: the write is the slow part, and a card that
     // lingers after the click reads as a click that did not land. A failure

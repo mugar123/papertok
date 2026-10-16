@@ -11,7 +11,7 @@ import { displayProse, splitLatexText } from './latex.ts';
  * markup, so the result is readable rather than exact.
  */
 
-const SYMBOLS = Object.freeze({
+const SYMBOLS: Readonly<Record<string, string>> = Object.freeze({
   alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', epsilon: 'ε', varepsilon: 'ε', zeta: 'ζ',
   eta: 'η', theta: 'θ', vartheta: 'ϑ', iota: 'ι', kappa: 'κ', lambda: 'λ', mu: 'μ', nu: 'ν',
   xi: 'ξ', pi: 'π', rho: 'ρ', sigma: 'σ', tau: 'τ', upsilon: 'υ', phi: 'φ', varphi: 'φ',
@@ -37,14 +37,14 @@ const SUBSCRIPTS = Object.freeze({
 // A command whose argument is the text itself: `\mathcal{C}` is a C.
 const WRAPPERS = /\\(?:mathcal|mathbb|mathrm|mathbf|mathit|mathsf|mathtt|mathfrak|mathscr|boldsymbol|bm|text|textrm|textit|textbf|operatorname|mbox|hat|bar|tilde|vec|dot|ddot|widehat|widetilde|overline|underline)\s*\{([^{}]*)\}/g;
 
-function script(content, table, marker) {
+function script(content: string, table: Readonly<Record<string, string>>, marker: string) {
   const characters = [...content];
   return characters.length > 0 && characters.every(character => table[character])
     ? characters.map(character => table[character]).join('')
     : `${marker}${content}`;
 }
 
-function plainMath(source) {
+function plainMath(source: string) {
   let text = String(source);
   // Innermost first, so `\mathbf{\hat{x}}` unwraps one layer per pass.
   for (let pass = 0; pass < 4; pass += 1) {
@@ -70,13 +70,13 @@ function plainMath(source) {
 // Attributes have to look like attributes, too.
 const INLINE_TAG = /<\/?(?:i|b|em|strong|sup|sub|span|a|u|small|abbr|italic|bold|sc)(?:\s+[a-z-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'<>]+))*\s*\/?>/gi;
 
-function plainProse(source) {
+function plainProse(source: string) {
   return displayProse(source)
     .replace(INLINE_TAG, '')
     .replace(/\\([&#$_{}])/g, '$1');
 }
 
-export function plainScientificText(value) {
+export function plainScientificText(value: unknown) {
   if (value === null || value === undefined) return '';
   const text = String(value);
   if (!text.trim()) return '';

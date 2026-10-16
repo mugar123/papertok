@@ -14,26 +14,26 @@
  * entry falls out past `maxEntries`. Module-scoped by design — this is a
  * per-tab session cache, not storage; nothing here survives a reload.
  */
-export function createSessionCache({ maxEntries = 16 } = {}) {
-  const entries = new Map();
+export function createSessionCache<T = unknown>({ maxEntries = 16 } = {}) {
+  const entries = new Map<string, T>();
 
   return {
-    get(key) {
+    get(key: string) {
       if (!entries.has(key)) return undefined;
       const value = entries.get(key);
       // Re-insert so recently used entries are the last to be evicted.
       entries.delete(key);
-      entries.set(key, value);
+      entries.set(key, value as T);
       return value;
     },
-    set(key, value) {
+    set(key: string, value: T) {
       entries.delete(key);
       entries.set(key, value);
       if (entries.size > maxEntries) {
-        entries.delete(entries.keys().next().value);
+        entries.delete(entries.keys().next().value as string);
       }
     },
-    delete(key) {
+    delete(key: string) {
       entries.delete(key);
     },
     clear() {

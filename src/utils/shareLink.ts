@@ -13,7 +13,7 @@ import { plainScientificText } from './plainScientificText.ts';
 
 function defaultNativeShare() {
   if (typeof navigator === 'undefined' || typeof navigator.share !== 'function') return null;
-  return data => navigator.share(data);
+  return (data: ShareData) => navigator.share(data);
 }
 
 /**
@@ -25,7 +25,7 @@ function defaultNativeShare() {
  *               native sheet. A clipboard failure propagates to the caller,
  *               which already knows how to render that.
  */
-export async function shareOrCopyLink({ url, title, text, copy, share }) {
+export async function shareOrCopyLink({ url, title, text, copy, share }: ShareData & { url: string; copy: (url: string) => unknown; share?: ((data: ShareData) => Promise<unknown>) | null }) {
   if (typeof copy !== 'function') throw new TypeError('A copy fallback is required.');
   const nativeShare = share === undefined ? defaultNativeShare() : share;
 
@@ -34,7 +34,7 @@ export async function shareOrCopyLink({ url, title, text, copy, share }) {
       await nativeShare({ ...(title ? { title } : {}), ...(text ? { text } : {}), url });
       return 'shared';
     } catch (error) {
-      if (error?.name === 'AbortError') return 'aborted';
+      if ((error as { name?: string } | null)?.name === 'AbortError') return 'aborted';
       // NotAllowedError, DataError, anything else: the sheet did not take it.
     }
   }
@@ -49,7 +49,7 @@ export async function shareOrCopyLink({ url, title, text, copy, share }) {
  * a message used to arrive as a bare link whose key nobody can read (audit
  * 2026-09-23, issue 5). Plain, because no target renders LaTeX.
  */
-export function paperShareData({ title, url }) {
+export function paperShareData({ title, url }: { title?: string; url: string }) {
   const plain = plainScientificText(title);
   return plain ? { title: plain, text: plain, url } : { url };
 }

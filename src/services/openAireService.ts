@@ -1,7 +1,33 @@
+import type { ProjectParticipant } from '../utils/entityMetadata.ts';
+interface XmlField { $?: string; '@class'?: string; '@type'?: string; '@classname'?: string; '@id'?: string; '@score'?: string; '@count'?: string; }
+interface FundingTree { funder?: { shortname?: XmlField; name?: XmlField }; funding_level_0?: { name?: XmlField }; }
+interface OpenAireRelation {
+  to?: XmlField; legalshortname?: XmlField; legalname?: XmlField; country?: XmlField; websiteurl?: XmlField;
+  title?: XmlField; acronym?: XmlField; code?: XmlField;
+  funding?: { funder?: { '@shortname'?: string; '@name'?: string }; funding_level_0?: { '@name'?: string } };
+}
+type OpenAireProject = Partial<Record<'code' | 'title' | 'acronym' | 'totalcost' | 'fundedamount' | 'summary' | 'startdate' | 'enddate' | 'currency' | 'callidentifier' | 'contracttype' | 'websiteurl' | 'oamandatepublications', XmlField>> & {
+  fundingtree?: FundingTree | FundingTree[]; subject?: XmlField | XmlField[];
+  rels?: { rel?: OpenAireRelation | OpenAireRelation[] }; measure?: XmlField | XmlField[];
+};
+interface OpenAireResult {
+  header?: { 'dri:objIdentifier'?: XmlField };
+  metadata?: { 'oaf:entity'?: { 'oaf:project'?: OpenAireProject; 'oaf:result'?: { rels?: { rel?: OpenAireRelation | OpenAireRelation[] }; pid?: XmlField | XmlField[] } } };
+}
+interface OpenAireResponse { response?: { results?: { result?: OpenAireResult | OpenAireResult[] }; header?: { total?: XmlField } }; }
+export interface Project {
+  id?: string; code?: string; openaireId?: string | null; title: string; acronym?: string | null;
+  funder: string; fundingStream?: string; funderLevel?: string; summary?: string; startDate?: string; endDate?: string;
+  budget?: number; fundedAmount?: number; currency?: string; callIdentifier?: string | null; contractType?: string | null;
+  websiteUrl?: string | null; subjects?: string[]; participants?: ProjectParticipant[];
+  measures?: { citations?: number; downloads?: number; views?: number; influentialResults?: number }; openAccess?: boolean;
+}
+interface ProjectPapers { arxivIds: string[]; dois: string[]; total: number; }
+
 import { deduplicateProjectParticipants } from '../utils/entityMetadata.ts';
 import { withEnforcedDeadline } from '../utils/requestDeadline.ts';
 
-export const CACHE = new Map();
+export const CACHE = new Map<string, { data: Project | ProjectPapers | null; timestamp: number }>();
 const CACHE_TTL = 1000 * 60 * 60 * 24; // 24 hours
 
 /**
@@ -13,12 +39,12 @@ const CACHE_TTL = 1000 * 60 * 60 * 24; // 24 hours
  * Exported for its regression test, which needs a deadline short enough to wait
  * for: the real one is ten seconds.
  */
-export function fetchWithTimeout(url, timeout = 10000, { signal } = {}) {
+export function fetchWithTimeout(url: string | URL, timeout = 10000, { signal }: { signal?: AbortSignal | null } = {}) {
   return fetch(url, withEnforcedDeadline({ signal }, timeout));
 }
 
 /** Validate that a string is a plausible 3-letter ISO 4217 currency code */
-function validCurrency(code) {
+function validCurrency(code: unknown) {
   if (!code || typeof code !== 'string') return 'EUR';
   const upper = code.trim().toUpperCase();
   return /^[A-Z]{3}$/.test(upper) ? upper : 'EUR';
@@ -29,7 +55,7 @@ function validCurrency(code) {
  * fundingtree can be an array of objects or a single object,
  * and funder shortname/name use the {"$": "value"} pattern.
  */
-function extractFunder(p) {
+function extractFunder(p: OpenAireProject) {
   let funderName = "Funder desconocido";
   let fundingStream = "";
   
@@ -51,7 +77,7 @@ function extractFunder(p) {
   return { funderName, fundingStream };
 }
 
-export async function getProjectDetails(projectId, { funder = '' } = {}) {
+export async function getProjectDetails(projectId: string | undefined, { funder = '' } = {}) {
   if (!projectId) return null;
   // A grant code alone is not unique across funders (grantID=100010 answers
   // for NHMRC, SNSF, and UKRI alike), so a bare code needs the funder to land
@@ -66,8 +92,8 @@ export async function getProjectDetails(projectId, { funder = '' } = {}) {
   // cannot overwrite each other.
   const cacheKey = `projectDetails_${projectId}_${isOpenAireId ? '' : funder}`;
   if (CACHE.has(cacheKey)) {
-    const cached = CACHE.get(cacheKey);
-    if (Date.now() - cached.timestamp < CACHE_TTL) return cached.data;
+    const cached = CACHE.get(cacheKey)!;
+    if (Date.now() - cached.timestamp < CACHE_TTL) return cached.data as Project | null;
   }
   const lookup = isOpenAireId
     ? `openaireProjectID=${encodeURIComponent(projectId)}`
@@ -76,7 +102,7 @@ export async function getProjectDetails(projectId, { funder = '' } = {}) {
   try {
     const response = await fetchWithTimeout(url);
     if (!response.ok) return null;
-    const data = await response.json();
+    const data = await response.json() as OpenAireResponse;
     if (!data?.response?.results?.result) return null;
     
     let res = data.response.results.result;
@@ -88,19 +114,19 @@ export async function getProjectDetails(projectId, { funder = '' } = {}) {
     const { funderName, fundingStream } = extractFunder(p);
 
     // Use fundedamount as fallback when totalcost is 0
-    const totalCost = parseFloat(p.totalcost?.["$"]) || 0;
-    const fundedAmount = parseFloat(p.fundedamount?.["$"]) || 0;
+    const totalCost = parseFloat(p.totalcost?.["$"] as string) || 0;
+    const fundedAmount = parseFloat(p.fundedamount?.["$"] as string) || 0;
     const budget = totalCost > 0 ? totalCost : fundedAmount;
 
     // Extract subjects/topics
-    let subjects = [];
+    let subjects: string[] = [];
     if (p.subject) {
       const subArr = Array.isArray(p.subject) ? p.subject : [p.subject];
-      subjects = [...new Set(subArr.map(s => s["$"]).filter(Boolean))];
+      subjects = [...new Set(subArr.map(s => s["$"]).filter(Boolean))] as string[];
     }
 
     // Extract participant organizations
-    let participants = [];
+    let participants: ProjectParticipant[] = [];
     if (p.rels?.rel) {
       const rels = Array.isArray(p.rels.rel) ? p.rels.rel : [p.rels.rel];
       participants = deduplicateProjectParticipants(rels
@@ -114,18 +140,18 @@ export async function getProjectDetails(projectId, { funder = '' } = {}) {
     }
 
     // Extract impact measures
-    const measures = {};
+    const measures: NonNullable<Project['measures']> = {};
     if (p.measure) {
       const mArr = Array.isArray(p.measure) ? p.measure : [p.measure];
       for (const m of mArr) {
-        if (m["@id"] === "totalCitationCount") measures.citations = parseInt(m["@score"]) || 0;
-        if (m["@id"] === "downloads") measures.downloads = parseInt(m["@count"]) || 0;
-        if (m["@id"] === "views") measures.views = parseInt(m["@count"]) || 0;
-        if (m["@id"] === "numOfInfluentialResults") measures.influentialResults = parseInt(m["@score"]) || 0;
+        if (m["@id"] === "totalCitationCount") measures.citations = parseInt(m["@score"]!) || 0;
+        if (m["@id"] === "downloads") measures.downloads = parseInt(m["@count"]!) || 0;
+        if (m["@id"] === "views") measures.views = parseInt(m["@count"]!) || 0;
+        if (m["@id"] === "numOfInfluentialResults") measures.influentialResults = parseInt(m["@score"]!) || 0;
       }
     }
 
-    const details = {
+    const details: Project = {
       id: p.code?.["$"],
       openaireId: res?.header?.["dri:objIdentifier"]?.["$"] || null,
       title: p.title?.["$"] || "Unknown Project",
@@ -160,7 +186,7 @@ export async function getProjectDetails(projectId, { funder = '' } = {}) {
  * There is no `pid` parameter at all — it is a 400 «Parameter pid is not
  * supported» (measured 2026-09-24).
  */
-function arxivOriginalId(arxivId) {
+function arxivOriginalId(arxivId: unknown) {
   const bare = String(arxivId).trim().replace(/^arxiv:/i, '').replace(/v\d+$/i, '');
   return `oai:arXiv.org:${bare}`;
 }
@@ -168,10 +194,10 @@ function arxivOriginalId(arxivId) {
 const PUBLICATION_LOOKUP = 'https://api.openaire.eu/search/publications?format=json&size=1';
 
 /** The first publication a lookup finds, and whether OpenAIRE answered at all. */
-async function lookUpPublication(lookup) {
+async function lookUpPublication(lookup: string) {
   const response = await fetchWithTimeout(`${PUBLICATION_LOOKUP}&${lookup}`);
   if (!response.ok) return { answered: false, publication: null };
-  const data = await response.json();
+  const data = await response.json() as OpenAireResponse;
   const result = data?.response?.results?.result;
   return { answered: true, publication: (Array.isArray(result) ? result[0] : result) || null };
 }
@@ -183,16 +209,16 @@ async function lookUpPublication(lookup) {
  * asks when it settles, and asking again on each render only paid the same
  * empty answer again.
  */
-export async function getProjectForPaper(arxivId, doi) {
+export async function getProjectForPaper(arxivId: string | undefined, doi: string | null | undefined) {
   if (!arxivId && !doi) return null;
 
   const cacheKey = `project_${arxivId || doi}`;
   if (CACHE.has(cacheKey)) {
-    const cached = CACHE.get(cacheKey);
-    if (Date.now() - cached.timestamp < CACHE_TTL) return cached.data;
+    const cached = CACHE.get(cacheKey)!;
+    if (Date.now() - cached.timestamp < CACHE_TTL) return cached.data as Project | null;
   }
 
-  let project = null;
+  let project: Project | null = null;
   try {
     let lookup = doi ? await lookUpPublication(`doi=${encodeURIComponent(doi)}`) : null;
     // The arXiv record only when the DOI finds no publication at all. A
@@ -210,7 +236,7 @@ export async function getProjectForPaper(arxivId, doi) {
   return project;
 }
 
-function parseProjectFromResult(result) {
+function parseProjectFromResult(result: OpenAireResult): Project | null {
   try {
     let rels = result?.metadata?.["oaf:entity"]?.["oaf:result"]?.rels?.rel;
     if (!rels) return null;
@@ -235,7 +261,7 @@ function parseProjectFromResult(result) {
             }
         }
 
-        let title = rel.title?.["$"] || "Unknown Project Title";
+        const title = rel.title?.["$"] || "Unknown Project Title";
         let acronym = rel.acronym?.["$"];
         
         if (!acronym) {
@@ -243,7 +269,7 @@ function parseProjectFromResult(result) {
         }
 
         return {
-          id: rel.to["$"], 
+          id: rel.to!["$"],
           code: rel.code?.["$"],
           acronym: acronym,
           title: title,
@@ -261,7 +287,7 @@ function parseProjectFromResult(result) {
 /**
  * Get papers (PIDs/DOIs) for a specific project
  */
-export async function getPapersByProject(projectCode, page = 1, { funder = '' } = {}) {
+export async function getPapersByProject(projectCode: string, page = 1, { funder = '' } = {}) {
   if (!projectCode) return { arxivIds: [], dois: [], total: 0 };
 
   // See getProjectDetails: a bare grant code needs the funder to disambiguate,
@@ -270,8 +296,8 @@ export async function getPapersByProject(projectCode, page = 1, { funder = '' } 
   const isOpenAireId = projectCode.includes('::');
   const cacheKey = `papers_proj_${projectCode}_${isOpenAireId ? '' : funder}_${page}`;
   if (CACHE.has(cacheKey)) {
-    const cached = CACHE.get(cacheKey);
-    if (Date.now() - cached.timestamp < CACHE_TTL) return cached.data;
+    const cached = CACHE.get(cacheKey)!;
+    if (Date.now() - cached.timestamp < CACHE_TTL) return cached.data as ProjectPapers;
   }
 
   try {
@@ -281,14 +307,14 @@ export async function getPapersByProject(projectCode, page = 1, { funder = '' } 
     const response = await fetchWithTimeout(url);
     if (!response.ok) throw new Error(`OpenAIRE API error: ${response.status}`);
 
-    const data = await response.json();
+    const data = await response.json() as OpenAireResponse;
     if (!data?.response?.results?.result) return { arxivIds: [], dois: [], total: 0 };
 
     let results = data.response.results.result;
     if (!Array.isArray(results)) results = [results];
 
-    const arxivIds = [];
-    const dois = [];
+    const arxivIds: string[] = [];
+    const dois: string[] = [];
     
     const total = data.response.header?.total?.["$"] ? parseInt(data.response.header.total["$"]) : 0;
 
@@ -340,7 +366,7 @@ export async function getPapersByProject(projectCode, page = 1, { funder = '' } 
 /**
  * Search for projects by keywords
  */
-export async function searchProjects(query, page = 1, options = {}) {
+export async function searchProjects(query: string, page = 1, options: { signal?: AbortSignal | null; throwOnError?: boolean } = {}) {
   if (!query) return { projects: [], total: 0 };
   const url = `https://api.openaire.eu/search/projects?format=json&size=5&page=${page}&keywords=${encodeURIComponent(query)}`;
   
@@ -353,7 +379,7 @@ export async function searchProjects(query, page = 1, options = {}) {
       return { projects: [], total: 0 };
     }
     
-    const data = await response.json();
+    const data = await response.json() as OpenAireResponse;
     if (!data?.response?.results?.result) return { projects: [], total: 0 };
     
     let results = data.response.results.result;
@@ -365,8 +391,8 @@ export async function searchProjects(query, page = 1, options = {}) {
       
       const { funderName, fundingStream } = extractFunder(p);
       
-      const totalCost = parseFloat(p.totalcost?.["$"]) || 0;
-      const fundedAmount = parseFloat(p.fundedamount?.["$"]) || 0;
+      const totalCost = parseFloat(p.totalcost?.["$"] as string) || 0;
+      const fundedAmount = parseFloat(p.fundedamount?.["$"] as string) || 0;
       const budget = totalCost > 0 ? totalCost : fundedAmount;
 
       return {
@@ -379,9 +405,9 @@ export async function searchProjects(query, page = 1, options = {}) {
         budget,
         currency: validCurrency(p.currency?.["$"]),
       };
-    }).filter(project => project?.id && project.title);
+    }).filter(project => project?.id && project.title) as Project[];
 
-    const seenProjects = new Set();
+    const seenProjects = new Set<string>();
     const projects = mappedProjects.filter(project => {
       const key = [project.code || '', project.title, project.funder, project.budget]
         .filter(Boolean)

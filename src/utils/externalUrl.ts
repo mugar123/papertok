@@ -1,3 +1,5 @@
+declare const window: { open(url: string, target: string, features: string): unknown };
+
 // Enmarcable, no «académico». Un host entra aquí solo si sirve el PDF sin
 // prohibir el iframe, y eso se comprueba con las cabeceras, no por reputación.
 // Medido el 2026-08-29: arXiv responde `application/pdf` sin `X-Frame-Options`,
@@ -12,11 +14,11 @@ const INLINE_PDF_HOSTS = new Set([
   'export.arxiv.org',
 ]);
 
-function isHostOrSubdomain(hostname, allowedHost) {
+function isHostOrSubdomain(hostname: string, allowedHost: string) {
   return hostname === allowedHost || hostname.endsWith(`.${allowedHost}`);
 }
 
-export function safeExternalUrl(value) {
+export function safeExternalUrl(value: unknown) {
   if (!value) return '';
   try {
     const url = new URL(String(value).trim());
@@ -43,7 +45,7 @@ export function safeExternalUrl(value) {
  * con error del navegador, que sigue siendo mejor que un clic mudo: dice que
  * la fuente está rota, no la app.
  */
-export function safeCatalogUrl(value) {
+export function safeCatalogUrl(value: unknown) {
   if (!value) return '';
   try {
     const url = new URL(String(value).trim());
@@ -54,7 +56,7 @@ export function safeCatalogUrl(value) {
   }
 }
 
-export function safeDoiUrl(doi) {
+export function safeDoiUrl(doi: unknown) {
   const normalized = String(doi || '')
     .trim()
     .replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '');
@@ -63,14 +65,14 @@ export function safeDoiUrl(doi) {
     : '';
 }
 
-export function isTrustedInlinePdfUrl(value) {
+export function isTrustedInlinePdfUrl(value: unknown) {
   const safeUrl = safeExternalUrl(value);
   if (!safeUrl) return false;
   const url = new URL(safeUrl);
   return [...INLINE_PDF_HOSTS].some(host => isHostOrSubdomain(url.hostname.toLowerCase(), host));
 }
 
-export function openExternalUrl(value) {
+export function openExternalUrl(value: unknown) {
   const safeUrl = safeExternalUrl(value);
   if (!safeUrl || typeof window === 'undefined') return false;
   window.open(safeUrl, '_blank', 'noopener,noreferrer');

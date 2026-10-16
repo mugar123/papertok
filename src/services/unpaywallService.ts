@@ -1,6 +1,12 @@
+interface OpenAccessPayload {
+  doi_url?: string; source?: string;
+  best_oa_location?: { url_for_pdf?: string; url_for_landing_page?: string; url?: string; license?: string; version?: string; host_type?: string; repository_institution?: string } | null;
+}
+interface CacheEntry { value: ReturnType<typeof mapUnpaywallResult>; timestamp: number; ttl: number; }
+
 import { safeCatalogUrl } from '../utils/externalUrl.ts';
 
-const MEMORY_CACHE = new Map();
+const MEMORY_CACHE = new Map<string, CacheEntry>();
 const POSITIVE_TTL = 7 * 24 * 60 * 60 * 1000;
 const NEGATIVE_TTL = 24 * 60 * 60 * 1000;
 // Neither Unpaywall nor Crossref could speak for the DOI yet, which is what a
@@ -12,7 +18,7 @@ const UNRESOLVED_TTL = 6 * 60 * 60 * 1000;
 // so a reload asks again; with nothing at all, a card asked on every visit.
 const FAILURE_TTL = 10 * 60 * 1000;
 
-export function normalizeDoi(value) {
+export function normalizeDoi(value: unknown) {
   return String(value || '')
     .trim()
     .replace(/^doi:\s*/i, '')
@@ -20,7 +26,7 @@ export function normalizeDoi(value) {
     .toLowerCase();
 }
 
-export function mapUnpaywallResult(payload) {
+export function mapUnpaywallResult(payload: OpenAccessPayload) {
   const location = payload?.best_oa_location;
   if (!location) return null;
   const pdfUrl = safeCatalogUrl(location.url_for_pdf);
@@ -39,12 +45,12 @@ export function mapUnpaywallResult(payload) {
   };
 }
 
-function readCache(doi) {
+function readCache(doi: string) {
   const memory = MEMORY_CACHE.get(doi);
   if (memory && Date.now() - memory.timestamp < memory.ttl) return memory.value;
   if (typeof localStorage === 'undefined') return undefined;
   try {
-    const stored = JSON.parse(localStorage.getItem(`papertok_oa_${doi}`));
+    const stored = JSON.parse(localStorage.getItem(`papertok_oa_${doi}`)!) as CacheEntry | null;
     if (stored && Date.now() - stored.timestamp < stored.ttl) {
       MEMORY_CACHE.set(doi, stored);
       return stored.value;
@@ -53,7 +59,7 @@ function readCache(doi) {
   return undefined;
 }
 
-function writeCache(doi, value, ttl = value ? POSITIVE_TTL : NEGATIVE_TTL) {
+function writeCache(doi: string, value: ReturnType<typeof mapUnpaywallResult>, ttl = value ? POSITIVE_TTL : NEGATIVE_TTL) {
   const entry = { value, timestamp: Date.now(), ttl };
   MEMORY_CACHE.set(doi, entry);
   if (typeof localStorage !== 'undefined') {
@@ -61,11 +67,11 @@ function writeCache(doi, value, ttl = value ? POSITIVE_TTL : NEGATIVE_TTL) {
   }
 }
 
-function rememberFailure(doi) {
+function rememberFailure(doi: string) {
   MEMORY_CACHE.set(doi, { value: null, timestamp: Date.now(), ttl: FAILURE_TTL });
 }
 
-export async function findOpenAccessCopy(rawDoi) {
+export async function findOpenAccessCopy(rawDoi: unknown) {
   const doi = normalizeDoi(rawDoi);
   if (!doi || !doi.startsWith('10.')) return null;
   const cached = readCache(doi);
@@ -85,13 +91,13 @@ export async function findOpenAccessCopy(rawDoi) {
       else rememberFailure(doi);
       return null;
     }
-    const payload = await response.json();
+    const payload = await response.json() as OpenAccessPayload;
     const result = mapUnpaywallResult(payload);
     writeCache(doi, result, !result && payload?.source === 'unresolved' ? UNRESOLVED_TTL : undefined);
     return result;
   } catch (error) {
     rememberFailure(doi);
-    if (error?.name !== 'AbortError') console.warn('Unpaywall is unavailable', error);
+    if ((error as { name?: string } | null)?.name !== 'AbortError') console.warn('Unpaywall is unavailable', error);
     return null;
   } finally {
     clearTimeout(timeout);

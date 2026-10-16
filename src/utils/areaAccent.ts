@@ -1,3 +1,5 @@
+import type { Paper } from '../models/Paper.ts';
+
 /**
  * A research field's flat ink colour, as a `var(--gradient-*)` reference for
  * `--area-accent`.
@@ -30,11 +32,11 @@ const FALLBACK = 'var(--gradient-brand)';
  * it a second way is how a paper ends up inked as physics and labelled as
  * something else.
  */
-export function areaKeyForCategory(categoryId) {
+export function areaKeyForCategory(categoryId: unknown): keyof typeof CATEGORIES | null {
   if (!categoryId || typeof categoryId !== 'string') return null;
 
   const category = categoryId.trim();
-  if (CATEGORIES[category]) return category;
+  if (CATEGORIES[category as keyof typeof CATEGORIES]) return category as keyof typeof CATEGORIES;
 
   // Every exact match, before any prefix match — two passes, not one.
   //
@@ -47,26 +49,26 @@ export function areaKeyForCategory(categoryId) {
   // is a guess, and a guess must never outrank knowledge just for being earlier
   // in the list.
   for (const [key, area] of Object.entries(CATEGORIES)) {
-    if (area.subcategories?.[category]) return key;
+    if ((area.subcategories as Record<string, { label: string }>)?.[category]) return key as keyof typeof CATEGORIES;
   }
 
   const prefix = category.split('.')[0].split('-')[0];
   for (const [key, area] of Object.entries(CATEGORIES)) {
     const subcategories = Object.keys(area.subcategories || {});
     if (subcategories.some(subKey => subKey.startsWith(prefix))) {
-      return key;
+      return key as keyof typeof CATEGORIES;
     }
   }
   return null;
 }
 
 /** The area one category id belongs to, or null. */
-export function areaForCategory(categoryId) {
-  return CATEGORIES[areaKeyForCategory(categoryId)] || null;
+export function areaForCategory(categoryId: unknown) {
+  return CATEGORIES[areaKeyForCategory(categoryId) as keyof typeof CATEGORIES] || null;
 }
 
 /** The ink for one category id, or the brand ink when nothing matches. */
-export function areaAccentForCategory(categoryId) {
+export function areaAccentForCategory(categoryId: unknown) {
   return areaForCategory(categoryId)?.gradient || FALLBACK;
 }
 
@@ -84,7 +86,7 @@ export function areaAccentForCategory(categoryId) {
  * institution's or a project's index rendered in the brand ink, and read
  * "QUBIT" where the feed read "Physics".
  */
-const OPENALEX_FIELD_AREAS = Object.freeze({
+const OPENALEX_FIELD_AREAS: Readonly<Record<string, keyof typeof CATEGORIES>> = Object.freeze({
   11: 'bio', 13: 'bio',
   15: 'chemeng',
   17: 'cs',
@@ -97,10 +99,10 @@ const OPENALEX_FIELD_AREAS = Object.freeze({
 });
 
 /** The area an OpenAlex field belongs to, given its id or its `/fields/17` URL. */
-export function areaKeyForOpenAlexField(field) {
+export function areaKeyForOpenAlexField(field: string | number | { id?: string } | null | undefined): keyof typeof CATEGORIES | null {
   const raw = typeof field === 'object' ? field?.id : field;
   if (raw === undefined || raw === null) return null;
-  const area = OPENALEX_FIELD_AREAS[String(raw).split('/').pop()];
+  const area = OPENALEX_FIELD_AREAS[String(raw).split('/').pop()!];
   return (area && CATEGORIES[area]) ? area : null;
 }
 
@@ -113,13 +115,13 @@ export function areaKeyForOpenAlexField(field) {
  * cross-list would otherwise resolve to nothing while the same paper, read from
  * a different feed, resolves to its field.
  */
-export function areaKeyForPaper(paper) {
+export function areaKeyForPaper(paper: Partial<Paper> | null | undefined) {
   const candidates = [paper?.primaryCategory, ...(paper?.categories || [])]
     .filter(value => typeof value === 'string' && value.trim());
 
   for (const candidate of candidates) {
     const key = areaKeyForCategory(candidate);
-    if (key) return key;
+    if (key) return key as keyof typeof CATEGORIES;
   }
 
   // Then the OpenAlex field. A paper from the works endpoint has no arXiv
@@ -134,7 +136,7 @@ export function areaKeyForPaper(paper) {
      watermark. */
   for (const candidate of candidates) {
     const key = getAreaKeyFromTopicName(candidate);
-    if (key) return key;
+    if (key) return key as keyof typeof CATEGORIES;
   }
   return null;
 }
@@ -143,12 +145,12 @@ export function areaKeyForPaper(paper) {
  * The area a paper belongs to: its arXiv category if it has one, otherwise the
  * branch OpenAlex filed it under, otherwise what its topic is called.
  */
-export function areaForPaper(paper) {
-  return CATEGORIES[areaKeyForPaper(paper)] || null;
+export function areaForPaper(paper: Partial<Paper> | null | undefined) {
+  return CATEGORIES[areaKeyForPaper(paper) as keyof typeof CATEGORIES] || null;
 }
 
 /** The ink for a paper. */
-export function areaAccentForPaper(paper) {
+export function areaAccentForPaper(paper: Partial<Paper> | null | undefined) {
   return areaForPaper(paper)?.gradient || FALLBACK;
 }
 
@@ -163,7 +165,7 @@ export function areaAccentForPaper(paper) {
  * Falls back to OpenAlex's own field name — "Computer Science" — for a branch
  * this app has no area of its own for, and to null when there is nothing to say.
  */
-export function areaLabelForPaper(paper) {
+export function areaLabelForPaper(paper: Partial<Paper> | null | undefined) {
   const area = areaForPaper(paper);
   if (area) return area.label || null;
   return paper?.primaryTopic?.field?.display_name || null;

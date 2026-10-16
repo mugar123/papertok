@@ -1,4 +1,4 @@
-import type { Paper, PaperFollowMatch } from '../src/models/Paper.ts';
+import type { Paper, PaperFollowMatch, PaperSubject } from '../src/models/Paper.ts';
 import type { OpenAlexWork } from './openalex-api.ts';
 import type { Delivery, DeliveryDraft, DeliveryDraftInput, DeliveryLedgerPayload, DeliveryLedgerResult, DeliveryLedgerState } from './email-delivery-ledger.ts';
 
@@ -45,7 +45,7 @@ interface ArxivEntry {
   author?: { name?: unknown } | Array<{ name?: unknown }>;
   link?: { '@_rel'?: string; '@_href'?: string } | Array<{ '@_rel'?: string; '@_href'?: string }>;
 }
-type DigestOpenAlexWork = OpenAlexWork & { keywords?: unknown[]; categories?: unknown[] };
+type DigestOpenAlexWork = OpenAlexWork & { keywords?: PaperSubject[]; categories?: string[] };
 interface OpenAlexPayload { results: DigestOpenAlexWork[] }
 export type OpenAlexRequests = Map<string, Promise<OpenAlexPayload>>;
 type OpenAirePid = { '@classname'?: unknown; '$'?: unknown };
@@ -1059,7 +1059,7 @@ function mapOpenAlexPaper(work: DigestOpenAlexWork, follow: Follow | null) {
     // The card's own resolution: the field, then what the topic is called.
     area: areaKeyForPaper({
       primaryTopic: work?.primary_topic,
-      categories: [work?.primary_topic?.display_name].filter(Boolean),
+      categories: [work?.primary_topic?.display_name].filter(Boolean) as string[],
     }),
     abstract: usableOpenAlexAbstract(work),
     _followedEntityMatches: follow ? [follow] : [],

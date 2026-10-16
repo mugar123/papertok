@@ -1,3 +1,7 @@
+import type { Paper, PaperAuthor } from '../models/Paper.ts';
+type AuthorInput = string | (Partial<PaperAuthor> & { openAlexId?: string }) | null | undefined;
+export interface PaperReference { type: string; value: string; }
+
 import { getPublicEntityPath } from './publicNavigation.ts';
 
 /**
@@ -16,20 +20,20 @@ import { getPublicEntityPath } from './publicNavigation.ts';
  */
 const OPENALEX_AUTHOR = /(?:^|\/)(A\d+)$/i;
 
-export function openAlexAuthorId(author) {
+export function openAlexAuthorId(author: AuthorInput) {
   const raw = typeof author === 'string' ? '' : String(author?.id || author?.openAlexId || '').trim();
   const match = raw.match(OPENALEX_AUTHOR);
   return match ? match[1].toUpperCase() : '';
 }
 
-export function authorDisplayName(author) {
+export function authorDisplayName(author: AuthorInput) {
   return String((typeof author === 'string' ? author : author?.name) || '').trim();
 }
 
 const ORCID = /(\d{4}-\d{4}-\d{4}-\d{3}[\dX])$/i;
 const ARXIV_ID = /^(?:\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?\/\d{7})(?:v\d+)?$/i;
 
-export function authorOrcid(author) {
+export function authorOrcid(author: AuthorInput) {
   const raw = typeof author === 'string' ? '' : String(author?.orcid || '').trim();
   return raw.match(ORCID)?.[1]?.toUpperCase() || '';
 }
@@ -39,7 +43,7 @@ export function authorOrcid(author) {
  * OpenAlex to find which author entity wrote it: a DOI first, then a PubMed id,
  * then an arXiv id. Takes the paper, or (for older callers) its id.
  */
-export function paperReferenceFor(paperOrId) {
+export function paperReferenceFor(paperOrId: Partial<Paper> | string | null | undefined): PaperReference | null {
   if (paperOrId && typeof paperOrId === 'object') {
     const doi = String(paperOrId.doi || '').trim().replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '');
     if (/^10\.\d{4,9}\/\S+$/.test(doi)) return { type: 'doi', value: doi.toLowerCase() };
@@ -63,14 +67,14 @@ export function paperReferenceFor(paperOrId) {
 
 // arXiv keeps the `?arxivId=` the explorer has always read (and old links
 // carry); a DOI or a PubMed id rides as `?paper=doi:…` / `?paper=pmid:…`.
-function paperQuery(reference) {
+function paperQuery(reference: PaperReference | null) {
   if (!reference) return '';
   return reference.type === 'arxiv'
     ? `arxivId=${encodeURIComponent(reference.value)}`
     : `paper=${encodeURIComponent(`${reference.type}:${reference.value}`)}`;
 }
 
-function withQuery(path, query) {
+function withQuery(path: string, query: string) {
   if (!query) return path;
   return `${path}${path.includes('?') ? '&' : '?'}${query}`;
 }
@@ -86,7 +90,7 @@ function withQuery(path, query) {
  * is shared by many people ("Wei Zhang" is 11,284 OpenAlex entities), and the
  * paper is what says which one wrote it.
  */
-export function authorExplorerPath(author, paper, { publicMode = false } = {}) {
+export function authorExplorerPath(author: AuthorInput, paper: Partial<Paper> | string | null | undefined, { publicMode = false }: { publicMode?: boolean; } = {}): string {
   const name = authorDisplayName(author);
   const openAlexId = openAlexAuthorId(author);
   const identity = openAlexId || authorOrcid(author);

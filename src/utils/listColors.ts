@@ -44,15 +44,15 @@ export const LIST_COLORS = Object.freeze([
  * for it. Read later stays uncoloured: it is a queue, not a shelf, and a rule
  * of no colour reads correctly as "nothing assigned here".
  */
-const SYSTEM_LIST_COLORS = Object.freeze({
+const SYSTEM_LIST_COLORS: Readonly<Record<string, string | null>> = Object.freeze({
   __favorites__: 'var(--accent-like)',
   __read__: 'var(--list-ochre)',
   __read_later__: null,
 });
 
 /** The CSS value for a palette id, or null when the id is not one of ours. */
-export function listColorVarById(colorId) {
-  return LIST_COLORS.includes(colorId) ? `var(--list-${colorId})` : null;
+export function listColorVarById(colorId: string | null | undefined) {
+  return LIST_COLORS.includes(colorId as string) ? `var(--list-${colorId})` : null;
 }
 
 /** A fresh colour for a list about to be created. */
@@ -72,7 +72,7 @@ export function randomListColorId() {
  * djb2, which is not a good hash for anything that matters and is exactly right
  * for choosing one of eight buckets from a short string.
  */
-function stableIndex(id) {
+function stableIndex(id: string) {
   let hash = 5381;
   for (let i = 0; i < id.length; i += 1) {
     hash = ((hash << 5) + hash + id.charCodeAt(i)) | 0;
@@ -88,9 +88,9 @@ function stableIndex(id) {
  * the tick on the swatch the card is already painted with, not on a default the
  * owner never chose.
  */
-export function resolveListColorId(list) {
+export function resolveListColorId(list: { id?: string; color?: string | null } | null | undefined) {
   if (!list?.id || Object.hasOwn(SYSTEM_LIST_COLORS, list.id)) return null;
-  return LIST_COLORS.includes(list.color) ? list.color : LIST_COLORS[stableIndex(list.id)];
+  return LIST_COLORS.includes(list.color as string) ? list.color : LIST_COLORS[stableIndex(list.id)];
 }
 
 /**
@@ -100,13 +100,13 @@ export function resolveListColorId(list) {
  * card, the open list's header — and everything inside reads `var(--list-accent)`,
  * which is how the field colour already flows through the Explorer.
  */
-export function resolveListColor(list) {
+export function resolveListColor(list: { id?: string; color?: string | null } | null | undefined) {
   if (!list?.id) return null;
   if (Object.hasOwn(SYSTEM_LIST_COLORS, list.id)) return SYSTEM_LIST_COLORS[list.id];
   return listColorVarById(resolveListColorId(list));
 }
 
 /** Whether this list's colour belongs to the owner and can be edited. */
-export function listColorIsEditable(listId) {
-  return Boolean(listId) && !Object.hasOwn(SYSTEM_LIST_COLORS, listId);
+export function listColorIsEditable(listId: string | null | undefined) {
+  return Boolean(listId) && !Object.hasOwn(SYSTEM_LIST_COLORS, listId as string);
 }

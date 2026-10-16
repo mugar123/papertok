@@ -116,7 +116,7 @@ test('SOURCE: the provider tree is keyed on a generation, not on the account, so
   assert.match(body, /nextAccountScope\(/, 'and the generation it carries comes from nextAccountScope');
   assert.match(
     code,
-    /import \{[^}]*\bnextAccountScope\b[^}]*\} from '\.\/utils\/accountScope\.js'/,
+    /import \{[^}]*\bnextAccountScope\b[^}]*\} from '\.\/utils\/accountScope\.ts'/,
     'imported from the module that holds the measurement',
   );
 });

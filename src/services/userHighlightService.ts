@@ -1,3 +1,19 @@
+export interface UserHighlight {
+  id: string;
+  paperId: string;
+  level: string;
+  language: string;
+  sectionId: string;
+  paragraphIndex: number;
+  quote: string;
+  kind: 'ai' | 'user';
+  note?: string;
+  paperTitle: string;
+  createdAt?: unknown;
+}
+export type HighlightInput = { [K in keyof Omit<UserHighlight, 'id' | 'createdAt'>]?: unknown };
+type HighlightOperations = Partial<{ database: typeof db; collectionRef: typeof collection; composeQuery: typeof query; matching: typeof where; cap: typeof limit; readDocuments: typeof getDocs }>;
+
 import {
   collection,
   deleteDoc,
@@ -23,7 +39,7 @@ import { HIGHLIGHT_MIN_QUOTE_LENGTH, normalizeHighlightQuote } from '../utils/te
 
 export const MAX_HIGHLIGHTS_PER_PAPER = 200;
 
-function cleanText(value, maxLength) {
+function cleanText(value: unknown, maxLength: number) {
   return String(value || '').trim().slice(0, maxLength);
 }
 
@@ -32,7 +48,7 @@ function cleanText(value, maxLength) {
  * query can be asserted without a Firestore behind it, the same seam
  * `publicListService` uses for its own reads.
  */
-function operations(overrides = {}) {
+function operations(overrides: HighlightOperations = {}) {
   return {
     database: overrides.database || db,
     collectionRef: overrides.collectionRef || collection,
@@ -43,7 +59,7 @@ function operations(overrides = {}) {
   };
 }
 
-function highlightsCollection(uid, api = operations()) {
+function highlightsCollection(uid: string, api = operations()) {
   return api.collectionRef(api.database, 'users', uid, 'highlights');
 }
 
@@ -53,7 +69,7 @@ function highlightsCollection(uid, api = operations()) {
  * time the reader opened, to keep the handful that belong to the paper on
  * screen.
  */
-export function buildHighlightsQuery(uid, paperId, overrides) {
+export function buildHighlightsQuery(uid: string, paperId: string, overrides?: HighlightOperations) {
   const api = operations(overrides);
   return api.composeQuery(
     highlightsCollection(uid, api),
@@ -74,7 +90,7 @@ export function buildHighlightsQuery(uid, paperId, overrides) {
  * highlight of it would land as a second document. Leaving `user` out keeps
  * every existing id exactly where it is.
  */
-export function buildHighlightId({ paperId, level, language, sectionId, paragraphIndex, quote, kind }) {
+export function buildHighlightId({ paperId, level, language, sectionId, paragraphIndex, quote, kind }: HighlightInput) {
   const fingerprint = [
     cleanText(paperId, 400),
     level,
@@ -100,13 +116,13 @@ export function buildHighlightId({ paperId, level, language, sectionId, paragrap
  */
 export const MAX_NOTE_LENGTH = 1_200;
 
-export function normalizeUserHighlight(input) {
+export function normalizeUserHighlight(input: HighlightInput | null | undefined): Omit<UserHighlight, 'id'> | null {
   const quote = normalizeHighlightQuote(input?.quote);
   if (quote.length < HIGHLIGHT_MIN_QUOTE_LENGTH) return null;
-  const paragraphIndex = Number.parseInt(input?.paragraphIndex, 10);
+  const paragraphIndex = Number.parseInt(input?.paragraphIndex as string, 10);
   if (!Number.isInteger(paragraphIndex) || paragraphIndex < 0 || paragraphIndex > 100) return null;
-  const level = ['beginner', 'university', 'researcher'].includes(input?.level)
-    ? input.level
+  const level = ['beginner', 'university', 'researcher'].includes(input?.level as string)
+    ? input!.level as string
     : 'university';
   const language = 'en';
   const sectionId = cleanText(input?.sectionId, 40);
@@ -136,7 +152,7 @@ export function normalizeUserHighlight(input) {
   };
 }
 
-export async function listUserHighlights(uid, paperId, overrides) {
+export async function listUserHighlights(uid: string | null | undefined, paperId: unknown, overrides?: HighlightOperations): Promise<UserHighlight[]> {
   if (!uid) return [];
   const target = cleanText(paperId, 400);
   // No paper, no highlights. This used to mean "hand over the whole
@@ -147,14 +163,14 @@ export async function listUserHighlights(uid, paperId, overrides) {
   const api = operations(overrides);
   try {
     const snapshot = await api.readDocuments(buildHighlightsQuery(uid, target, overrides));
-    return snapshot.docs.map(entry => ({ id: entry.id, ...entry.data() }));
+    return snapshot.docs.map(entry => ({ id: entry.id, ...entry.data() as Omit<UserHighlight, 'id'> }));
   } catch (error) {
     console.warn('Could not load highlights', error);
     return [];
   }
 }
 
-export async function saveUserHighlight(uid, input) {
+export async function saveUserHighlight(uid: string | null | undefined, input: HighlightInput) {
   if (!uid) return null;
   const highlight = normalizeUserHighlight(input);
   if (!highlight) return null;
@@ -171,7 +187,7 @@ export async function saveUserHighlight(uid, input) {
   }
 }
 
-export async function removeUserHighlight(uid, highlightId) {
+export async function removeUserHighlight(uid: string | null | undefined, highlightId: string) {
   if (!uid || !highlightId) return false;
   try {
     await deleteDoc(doc(highlightsCollection(uid), cleanText(highlightId, 200)));
@@ -186,8 +202,8 @@ export async function removeUserHighlight(uid, highlightId) {
  * Groups stored highlights by section and paragraph so a paragraph can be
  * rendered with only the anchors that belong to it.
  */
-export function indexHighlightsByParagraph(highlights = [], { level, language } = {}) {
-  const index = new Map();
+export function indexHighlightsByParagraph(highlights: UserHighlight[] = [], { level, language }: { level?: string; language?: string } = {}) {
+  const index = new Map<string, Array<Pick<UserHighlight, 'id' | 'quote'> & { kind: string; source: string }>>();
   for (const highlight of highlights) {
     if (level && highlight.level !== level) continue;
     if (language && highlight.language !== language) continue;

@@ -1,3 +1,6 @@
+interface CreateListState { name: string; icon: string; color: string; busy: boolean; error: boolean; }
+type CreateListAction = { type: 'open'; preset?: Partial<CreateListState> } | { type: 'name' | 'icon' | 'color'; value: string } | { type: 'submit' | 'failed' };
+
 /**
  * The state machine behind the "new list" window.
  *
@@ -34,11 +37,11 @@ export const CREATE_LIST_FORM_INITIAL = Object.freeze({
 });
 
 /** Enabled when there is a name to send and nothing already on its way. */
-export function canSubmitCreateList(state) {
+export function canSubmitCreateList(state: CreateListState) {
   return Boolean(state.name.trim()) && !state.busy;
 }
 
-export function createListFormReducer(state, action) {
+export function createListFormReducer(state: CreateListState, action: CreateListAction): CreateListState {
   switch (action.type) {
     case 'open': {
       // The same window creates and edits, so `open` seeds it: nothing when

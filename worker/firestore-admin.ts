@@ -1,20 +1,8 @@
 import type { WorkerEnv } from './env.ts';
 
-export type FirestoreValue =
-  | { nullValue: null }
-  | { booleanValue: boolean }
-  | { integerValue: string }
-  | { doubleValue: number }
-  | { stringValue: string }
-  | { timestampValue: string }
-  | { arrayValue: { values?: FirestoreValue[] } }
-  | { mapValue: { fields?: Record<string, FirestoreValue> } }
-  | { referenceValue: string }
-  | { geoPointValue: { latitude: number; longitude: number } }
-  | { bytesValue: string };
+import type { FirestoreValue, FirestoreDataValue, FirestoreData } from '../src/models/Firestore.ts';
+export type { FirestoreValue, FirestoreDataValue, FirestoreData } from '../src/models/Firestore.ts';
 
-export type FirestoreDataValue = null | boolean | number | string | Date | FirestoreDataValue[] | FirestoreData;
-export interface FirestoreData { [field: string]: FirestoreDataValue }
 interface FirestoreFailure { error?: { status?: string } }
 interface FirestoreDocument extends FirestoreFailure {
   name: string;

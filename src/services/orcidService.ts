@@ -1,3 +1,30 @@
+interface OrcidValue { value?: string }
+interface OrcidAffiliation {
+  organization?: { name?: string; 'disambiguated-organization'?: { 'disambiguation-source'?: string; 'disambiguated-organization-identifier'?: string } };
+  'role-title'?: string; 'start-date'?: { year?: OrcidValue }; 'end-date'?: { year?: OrcidValue };
+}
+interface OrcidAffiliationGroup {
+  summaries?: OrcidAffiliationGroup[];
+  'employment-summary'?: OrcidAffiliation;
+  'education-summary'?: OrcidAffiliation;
+}
+interface OrcidPayload {
+  person?: {
+    name?: { 'given-names'?: OrcidValue; 'family-name'?: OrcidValue };
+    biography?: { content?: string };
+    'researcher-urls'?: { 'researcher-url'?: Array<{ 'url-name'?: string; url?: OrcidValue }> };
+  };
+  'activities-summary'?: {
+    employments?: { 'affiliation-group'?: OrcidAffiliationGroup[] };
+    educations?: { 'affiliation-group'?: OrcidAffiliationGroup[] };
+    works?: { group?: Array<{ 'work-summary'?: Array<{
+      title?: { title?: OrcidValue }; 'publication-date'?: { year?: OrcidValue }; type?: string;
+      'external-ids'?: { 'external-id'?: Array<{ 'external-id-type'?: string; 'external-id-value'?: string }> };
+    }> }> };
+  };
+}
+export type OrcidRecord = ReturnType<typeof formatOrcidData>;
+
 /**
  * ORCID API Service
  * Fetches data from the ORCID Public API (v3.0)
@@ -13,7 +40,7 @@ import { withRequestDeadline } from '../utils/requestDeadline.ts';
  * Exported for its regression test, which needs a deadline short enough to wait
  * for: the real one is eight seconds.
  */
-export const fetchWithTimeout = (url, options = {}, timeout = 8000) => (
+export const fetchWithTimeout = (url: string, options: RequestInit = {}, timeout = 8000) => (
   fetch(url, withRequestDeadline(options, timeout))
 );
 
@@ -22,7 +49,7 @@ export const fetchWithTimeout = (url, options = {}, timeout = 8000) => (
  * @param {string} input 
  * @returns {string|null} Clean ORCID or null if invalid
  */
-export function extractOrcid(input) {
+export function extractOrcid(input: string): string|null {
   if (!input) return null;
   const match = input.match(/\b(\d{4}-\d{4}-\d{4}-\d{3}[\dX])\b/i);
   return match ? match[1].toUpperCase() : null;
@@ -33,7 +60,7 @@ export function extractOrcid(input) {
  * @param {string} orcidId 
  * @returns {Promise<Object|null>}
  */
-export async function getOrcidRecord(orcidId) {
+export async function getOrcidRecord(orcidId: string): Promise<OrcidRecord | null> {
   const cleanOrcid = extractOrcid(orcidId);
   if (!cleanOrcid) return null;
 
@@ -49,7 +76,7 @@ export async function getOrcidRecord(orcidId) {
       return null;
     }
     
-    const data = await response.json();
+    const data = await response.json() as OrcidPayload;
     return formatOrcidData(data, cleanOrcid);
   } catch (err) {
     console.error("ORCID fetch exception", err);
@@ -60,7 +87,7 @@ export async function getOrcidRecord(orcidId) {
 /**
  * Transforms the raw ORCID API response into a more usable format for the UI
  */
-function formatOrcidData(data, orcidId) {
+function formatOrcidData(data: OrcidPayload, orcidId: string) {
   const person = data.person || {};
   const activities = data['activities-summary'] || {};
 
@@ -130,7 +157,7 @@ function formatOrcidData(data, orcidId) {
       type: summary.type,
       doi: summary['external-ids']?.['external-id']?.find(id => id['external-id-type'] === 'doi')?.['external-id-value']
     };
-  }).filter(Boolean).sort((a, b) => (b.year || 0) - (a.year || 0)).slice(0, 5);
+  }).filter(Boolean).sort((a, b) => ((b!.year || 0) as number) - ((a!.year || 0) as number)).slice(0, 5);
 
   return {
     orcid: orcidId,

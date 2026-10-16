@@ -1,3 +1,5 @@
+import type { Paper } from '../models/Paper.ts';
+
 import { PaperBuilder } from './PaperBuilder.ts';
 import { paperFieldsEqual } from '../utils/feedEnrichment.ts';
 
@@ -5,18 +7,18 @@ const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, 
 const REQUEST_TIMEOUT_MS = 8_000;
 const MAX_PMIDS = 200;
 
-function normalizePmid(value) {
+function normalizePmid(value: unknown) {
   const pmid = String(value || '').trim().replace(/^pmid:/i, '');
   return /^\d{1,12}$/.test(pmid) ? pmid : '';
 }
 
-function finiteOrNull(value) {
+function finiteOrNull(value: unknown) {
   if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
 
-export function mapICitePublication(raw) {
+export function mapICitePublication(raw: Record<string, unknown> | null): (Partial<Paper> & { pmid: string }) | null {
   const pmid = normalizePmid(raw?.pmid);
   if (!pmid) return null;
   const citationCount = finiteOrNull(raw?.citation_count);
@@ -35,8 +37,8 @@ export function mapICitePublication(raw) {
   };
 }
 
-export async function fetchICiteMetrics(papersOrPmids) {
-  const pmids = [...new Set((papersOrPmids || []).map(item => normalizePmid(item?.pmid ?? item)).filter(Boolean))]
+export async function fetchICiteMetrics(papersOrPmids: Array<Partial<Paper> | string>): Promise<Record<string, Partial<Paper>>> {
+  const pmids = [...new Set((papersOrPmids || []).map(item => normalizePmid((item as Partial<Paper>)?.pmid ?? item)).filter(Boolean))]
     .slice(0, MAX_PMIDS);
   if (!PAPER_API_BASE || pmids.length === 0) return {};
 
@@ -47,8 +49,8 @@ export async function fetchICiteMetrics(papersOrPmids) {
     url.searchParams.set('pmids', pmids.join(','));
     const response = await fetch(url, { signal: controller.signal, headers: { accept: 'application/json' } });
     if (!response.ok) return {};
-    const payload = await response.json();
-    return Object.fromEntries((payload?.data || []).map(mapICitePublication).filter(Boolean).map(item => [item.pmid, item]));
+    const payload = await response.json() as { data?: Array<Record<string, unknown>> };
+    return Object.fromEntries((payload?.data || []).map(mapICitePublication).filter(Boolean).map(item => [item!.pmid, item!]));
   } catch {
     return {};
   } finally {
@@ -56,7 +58,7 @@ export async function fetchICiteMetrics(papersOrPmids) {
   }
 }
 
-export function mergeICiteEnrichment(papers, metricsByPmid) {
+export function mergeICiteEnrichment(papers: Paper[], metricsByPmid: Record<string, Partial<Paper>>) {
   if (!metricsByPmid || Object.keys(metricsByPmid).length === 0) return papers;
   return papers.map(paper => {
     const pmid = normalizePmid(paper?.pmid);

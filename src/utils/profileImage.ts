@@ -4,7 +4,7 @@ const AVATAR_SIZE = 320;
 const MAX_OUTPUT_BYTES = 190_000;
 const ACCEPTED_PROFILE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
-export function validateProfileImageMetadata(file) {
+export function validateProfileImageMetadata(file: Pick<File, 'type' | 'size'> | null | undefined) {
   if (!file || !ACCEPTED_PROFILE_TYPES.has(String(file.type || '').toLowerCase())) {
     throw new Error('Selecciona una imagen PNG, JPEG o WebP.');
   }
@@ -16,7 +16,7 @@ export function validateProfileImageMetadata(file) {
   }
 }
 
-export function normalizeProfilePhoto(value) {
+export function normalizeProfilePhoto(value: unknown) {
   if (typeof value !== 'string') return null;
   const normalized = value.trim();
   if (
@@ -29,13 +29,13 @@ export function normalizeProfilePhoto(value) {
 }
 
 /** The centred square of the source image to draw, in source pixels. */
-export function squareSource(naturalWidth, naturalHeight) {
+export function squareSource(naturalWidth: number, naturalHeight: number) {
   const side = Math.min(naturalWidth, naturalHeight);
   return { x: (naturalWidth - side) / 2, y: (naturalHeight - side) / 2, size: side };
 }
 
-function loadImage(objectUrl) {
-  return new Promise((resolve, reject) => {
+function loadImage(objectUrl: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
     image.onload = () => resolve(image);
     image.onerror = () => reject(new Error('This image could not be processed.'));
@@ -43,12 +43,12 @@ function loadImage(objectUrl) {
   });
 }
 
-function canvasToBlob(canvas, type, quality) {
-  return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number) {
+  return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, quality));
 }
 
-function blobToDataUrl(blob) {
-  return new Promise((resolve, reject) => {
+function blobToDataUrl(blob: Blob) {
+  return new Promise<string | ArrayBuffer | null>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
     reader.onerror = () => reject(new Error('The processed image could not be read.'));
@@ -56,7 +56,7 @@ function blobToDataUrl(blob) {
   });
 }
 
-export async function prepareProfileImage(file) {
+export async function prepareProfileImage(file: File) {
   validateProfileImageMetadata(file);
 
   const objectUrl = URL.createObjectURL(file);
@@ -89,7 +89,7 @@ export async function prepareProfileImage(file) {
       AVATAR_SIZE,
     );
 
-    const attempts = [
+    const attempts: Array<[string, number]> = [
       ['image/webp', 0.84],
       ['image/webp', 0.7],
       ['image/jpeg', 0.76],

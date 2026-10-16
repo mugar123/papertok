@@ -1,3 +1,8 @@
+import type { Paper } from '../../models/Paper.ts';
+import type { PaperSearchFilters, PaperSearchResult } from './index.ts';
+import type { OpenAlexWork } from './openAlexTypes.ts';
+import type { OpenAlexRequestError } from '../openAlexClient.ts';
+
 import { assignRequestedCategories } from '../arxivService.ts';
 import { getCategoryArea } from '../../data/categoryTaxonomy.js';
 import { openAlexFetch } from '../openAlexClient.ts';
@@ -53,19 +58,22 @@ export const OPENALEX_PUBLISHED_TYPES = Object.freeze(['article', 'conference-pa
 export const OPENALEX_SEARCH_TYPES = Object.freeze([...OPENALEX_PUBLISHED_TYPES, 'preprint', 'review']);
 
 export class OpenAlexAdapter {
+  declare name: string;
+  declare baseUrl: string;
+  declare mailto: string;
   constructor() {
     this.name = 'openalex_search';
     this.baseUrl = 'https://api.openalex.org/works';
     this.mailto = 'app@papertok.io';
   }
 
-  buildSearchUrl(query, page = 1, { types, internalCategories = [] } = {}) {
+  buildSearchUrl(query: string|number|boolean, page = 1, { types, internalCategories = [] }: PaperSearchFilters = {}) {
     const perPage = 25;
 
     // Convert query to OpenAlex default.search format
     const searchParam = encodeURIComponent(query);
 
-    const economicCategories = internalCategories.some(category => ['econ', 'q-fin'].includes(getCategoryArea(category)));
+    const economicCategories = internalCategories.some(category => ['econ', 'q-fin'].includes(getCategoryArea(category) as string));
     const workTypes = types || (economicCategories
       ? [...OPENALEX_PUBLISHED_TYPES, 'preprint']
       : OPENALEX_PUBLISHED_TYPES);
@@ -74,7 +82,7 @@ export class OpenAlexAdapter {
     return `${this.baseUrl}?filter=default.search:${searchParam},${typeFilter}&page=${page}&per-page=${perPage}&mailto=${this.mailto}&select=${OPENALEX_WORK_SEARCH_FIELDS.join(',')}`;
   }
 
-  async search(query, page = 1, filters = {}) {
+  async search(query: string, page = 1, filters: PaperSearchFilters = {}): Promise<PaperSearchResult> {
     const url = this.buildSearchUrl(query, page, filters);
 
     try {
@@ -90,10 +98,10 @@ export class OpenAlexAdapter {
         throw new Error(`OpenAlex API error: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as { results: OpenAlexWork[]; meta: { count: number } };
       
       const papers = assignRequestedCategories(
-        data.results.map(work => this.mapToStandard(work)).filter(Boolean),
+        data.results.map(work => this.mapToStandard(work)).filter(Boolean) as Paper[],
         filters.internalCategories
       );
 
@@ -102,14 +110,14 @@ export class OpenAlexAdapter {
         total: data.meta.count
       };
     } catch (error) {
-      if (error.code !== 'aborted') {
+      if ((error as OpenAlexRequestError).code !== 'aborted') {
         console.error('[OpenAlexAdapter] Search failed:', error);
       }
-      throw new Error(`Could not reach OpenAlex: ${error.message}`, { cause: error });
+      throw new Error(`Could not reach OpenAlex: ${(error as Error).message}`, { cause: error });
     }
   }
 
-  mapToStandard(work) {
+  mapToStandard(work: OpenAlexWork | null | undefined): Paper | null {
     if (!work || !work.id) return null;
 
     const doi = work.doi ? work.doi.replace('https://doi.org/', '') : null;

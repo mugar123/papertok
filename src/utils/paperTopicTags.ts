@@ -1,8 +1,11 @@
+import type { Paper } from '../models/Paper.ts';
+import type { TopicInput, TopicTarget } from './topicNavigation.ts';
+
 import { getCategoryLabel } from '../data/categories.js';
 import { isTechnicalClassification } from './scientificClassification.ts';
 import { resolvePaperTopic } from './topicNavigation.ts';
 
-function normalizedLabel(value) {
+function normalizedLabel(value: string) {
   return String(value || '')
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
@@ -10,7 +13,7 @@ function normalizedLabel(value) {
     .toLowerCase();
 }
 
-function conceptLabel(concept) {
+function conceptLabel(concept: string | TopicInput) {
   return typeof concept === 'string'
     ? concept.trim()
     : String(
@@ -29,13 +32,13 @@ function conceptLabel(concept) {
  * else is the provider's text, printed as given and marked English, so a
  * screen reader in the Spanish UI does not read it as Spanish.
  */
-function chipText(topic, providerLabel, translatedLabel) {
+function chipText(topic: TopicTarget, providerLabel: string, translatedLabel: string) {
   if (topic.reliable) return { label: topic.label, lang: undefined, identity: `topic:${topic.id}` };
   if (translatedLabel) return { label: translatedLabel, lang: undefined, identity: normalizedLabel(translatedLabel) };
   return { label: providerLabel, lang: 'en', identity: normalizedLabel(providerLabel) };
 }
 
-export function buildPaperTopicTags(paper, limit = 4) {
+export function buildPaperTopicTags(paper: Partial<Paper>, limit = 4) {
   const primaryCategory = paper?.primaryCategory || paper?.categories?.[0] || '';
   const primaryLabel = getCategoryLabel(primaryCategory);
   const primaryTopic = primaryCategory

@@ -1,3 +1,20 @@
+import type { Paper, PaperAuthor } from '../models/Paper.ts';
+import type { AIQuota, RewriteMeta, RewriteSection } from '../models/Rewrite.ts';
+export type { RewriteSection } from '../models/Rewrite.ts';
+type RewritePaperInput = Partial<Paper> & { journalRef?: string };
+export type ClientRewriteMeta = Pick<RewriteMeta, 'level' | 'language'> & Partial<RewriteMeta> & { cached?: boolean; remainingUses?: number | null };
+export interface RewriteResult { meta: ClientRewriteMeta; sections: RewriteSection[]; incomplete?: boolean }
+type RewriteEvent = ({ type: 'meta' } & ClientRewriteMeta) | ({ type: 'section' } & RewriteSection)
+  | { type: 'error'; code?: string; quota?: AIQuota | null; partial?: boolean; finishReason?: string }
+  | { type: 'ping'; stage?: string } | { type: 'done' };
+interface RewriteOptions {
+  force?: boolean;
+  signal?: AbortSignal;
+  onMeta?: (meta: ClientRewriteMeta) => void;
+  onSection?: (section: RewriteSection, index: number) => void;
+  onProgress?: (progress: { stage: string }) => void;
+}
+
 import { isAIReadablePdfUrl } from '../utils/aiExplanationAccess.ts';
 import { authenticatedWorkerFetch } from './workerApiClient.ts';
 
@@ -13,7 +30,7 @@ import { authenticatedWorkerFetch } from './workerApiClient.ts';
  * flipping between levels a second time is instant.
  */
 
-const rewriteCache = new Map();
+const rewriteCache = new Map<string, RewriteResult>();
 
 /**
  * No bytes for this long means the stream is dead, not slow. The worker sends a
@@ -29,7 +46,11 @@ export const PAPER_REWRITE_LEVELS = Object.freeze([
 ]);
 
 export class PaperRewriteError extends Error {
-  constructor(code, quota = null, { partial = false } = {}) {
+  declare code: string | undefined;
+  declare quota: AIQuota | null;
+  declare partial: boolean;
+  declare finishReason?: string;
+  constructor(code: string|undefined, quota: AIQuota | null = null, { partial = false } = {}) {
     super(code);
     this.name = 'PaperRewriteError';
     this.code = code;
@@ -38,11 +59,11 @@ export class PaperRewriteError extends Error {
   }
 }
 
-function cleanText(value, maxLength) {
+function cleanText(value: unknown, maxLength: number) {
   return String(value || '').trim().slice(0, maxLength);
 }
 
-function paperCacheId(paper) {
+function paperCacheId(paper: RewritePaperInput | null | undefined) {
   return cleanText(paper?.id || paper?.doi || paper?.arxivId || paper?.title, 500).toLowerCase();
 }
 
@@ -50,7 +71,7 @@ function paperCacheId(paper) {
  * The rewrite needs a PDF the worker is actually allowed to read, which is why
  * an abstract is not enough here — unlike the old explainer.
  */
-export function getRewritablePdfUrl(paper) {
+export function getRewritablePdfUrl(paper: RewritePaperInput | null | undefined) {
   const candidates = [paper?.openAccessPdfUrl];
   if (paper?.arxivId) {
     const arxivId = String(paper.arxivId).replace(/^arxiv:/i, '').replace(/v\d+$/i, '');
@@ -77,13 +98,13 @@ export function getRewritablePdfUrl(paper) {
  * Returns `null` rather than throwing: a reader that cannot show the count is
  * still a working reader, and this must never be the thing that breaks it.
  */
-export async function fetchRemainingAIUses({ signal } = {}) {
+export async function fetchRemainingAIUses({ signal }: { signal?: AbortSignal } = {}) {
   const apiBase = import.meta.env.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '');
   if (!apiBase) return null;
   try {
     const response = await authenticatedWorkerFetch(`${apiBase}/ai/quota`, { method: 'GET', signal });
     if (!response.ok) return null;
-    const payload = await response.json();
+    const payload = await response.json() as { remainingUses?: unknown; dailyLimit?: unknown; unlimited?: unknown };
     const remainingUses = Number(payload?.remainingUses);
     const dailyLimit = Number(payload?.dailyLimit);
     if (!Number.isFinite(remainingUses) || !Number.isFinite(dailyLimit)) return null;
@@ -95,17 +116,17 @@ export async function fetchRemainingAIUses({ signal } = {}) {
   }
 }
 
-export function canRewritePaper(paper) {
+export function canRewritePaper(paper: RewritePaperInput | null | undefined) {
   return Boolean(getRewritablePdfUrl(paper));
 }
 
-export function serializePaperForRewrite(paper) {
+export function serializePaperForRewrite(paper: RewritePaperInput | null | undefined) {
   return {
     id: cleanText(paper?.id, 400),
     title: cleanText(paper?.title, 1_000),
     abstract: cleanText(paper?.abstract || paper?.summary, 30_000),
     authors: Array.isArray(paper?.authors)
-      ? paper.authors.slice(0, 30).map(author => ({ name: cleanText(author?.name || author, 160) }))
+      ? paper.authors.slice(0, 30).map(author => ({ name: cleanText((author as PaperAuthor)?.name || author, 160) }))
       : [],
     year: paper?.year || (paper?.published ? new Date(paper.published).getFullYear() : null),
     doi: cleanText(paper?.doi, 300),
@@ -124,11 +145,11 @@ export function serializePaperForRewrite(paper) {
  * the object, so a caller handed a freshly rebuilt `paper` with the same
  * contents can tell that it is not looking at a new request.
  */
-export function rewriteCacheKey(paper, level, language) {
+export function rewriteCacheKey(paper: RewritePaperInput | null | undefined, level: string, language: string) {
   return `${paperCacheId(paper)}:${level}:${language}`;
 }
 
-export function getCachedRewrite(paper, level, language = 'en') {
+export function getCachedRewrite(paper: RewritePaperInput | null | undefined, level: string, language = 'en') {
   return rewriteCache.get(rewriteCacheKey(paper, level, language)) || null;
 }
 
@@ -136,19 +157,19 @@ export function getCachedRewrite(paper, level, language = 'en') {
  * Splits an incoming byte stream into complete NDJSON events, holding any
  * partial trailing line until its newline arrives.
  */
-export function createNdjsonParser() {
+export function createNdjsonParser<T = unknown>() {
   let buffer = '';
-  const parse = (line) => {
+  const parse = (line: string) => {
     const trimmed = line.trim();
     if (!trimmed) return null;
     try {
-      return JSON.parse(trimmed);
+      return JSON.parse(trimmed) as T;
     } catch {
       return null;
     }
   };
   return {
-    push(text) {
+    push(text: string) {
       buffer += text;
       const events = [];
       let newlineAt = buffer.indexOf('\n');
@@ -178,27 +199,27 @@ export function createNdjsonParser() {
  * something had broken and to try again — when trying again was the one thing
  * that could not work, and signing in was.
  */
-export function toRewriteError(error, { cancelled = false } = {}) {
+export function toRewriteError(error: unknown, { cancelled = false } = {}) {
   if (error instanceof PaperRewriteError) return error;
-  if (error?.name === 'AbortError') {
+  if ((error as { name?: string } | null)?.name === 'AbortError') {
     return new PaperRewriteError(cancelled ? 'AI_CANCELLED' : 'AI_TIMEOUT');
   }
-  if (error?.name === 'WorkerApiAuthError') return new PaperRewriteError('AI_AUTH_REQUIRED');
+  if ((error as { name?: string } | null)?.name === 'WorkerApiAuthError') return new PaperRewriteError('AI_AUTH_REQUIRED');
   // Firebase reports a revoked, expired or unreachable session through its own
   // `auth/*` codes, which never travel over the wire.
-  if (typeof error?.code === 'string' && error.code.startsWith('auth/')) {
+  if (typeof (error as { code?: unknown } | null)?.code === 'string' && (error as { code: string }).code.startsWith('auth/')) {
     return new PaperRewriteError('AI_AUTH_REQUIRED');
   }
   return new PaperRewriteError('AI_UNAVAILABLE');
 }
 
-export async function rewritePaper(paper, level = 'university', {
+export async function rewritePaper(paper: RewritePaperInput, level = 'university', {
   force = false,
   signal,
   onMeta,
   onSection,
   onProgress,
-} = {}) {
+}: RewriteOptions = {}) {
   if (!PAPER_REWRITE_LEVELS.some(item => item.id === level)) {
     throw new PaperRewriteError('AI_INVALID_LEVEL');
   }
@@ -212,7 +233,7 @@ export async function rewritePaper(paper, level = 'university', {
   const cacheKey = rewriteCacheKey(paper, level, rewriteLanguage);
 
   if (!force && rewriteCache.has(cacheKey)) {
-    const cached = rewriteCache.get(cacheKey);
+    const cached = rewriteCache.get(cacheKey)!;
     onMeta?.({ ...cached.meta, cached: true, remainingUses: null });
     cached.sections.forEach((section, index) => onSection?.(section, index));
     return cached;
@@ -228,15 +249,15 @@ export async function rewritePaper(paper, level = 'university', {
   signal?.addEventListener('abort', abortFromCaller, { once: true });
   // A stall timer rather than a total deadline: a long paper is allowed to take
   // its time as long as bytes keep arriving.
-  let stallTimer = null;
+  let stallTimer: ReturnType<typeof setTimeout> | null | undefined = null;
   const resetStallTimer = () => {
     if (stallTimer) clearTimeout(stallTimer);
     stallTimer = setTimeout(() => controller.abort(), STALL_TIMEOUT_MS);
   };
 
-  let meta = null;
-  const sections = [];
-  let streamError = null;
+  let meta: ClientRewriteMeta | null = null;
+  const sections: RewriteSection[] = [];
+  let streamError: PaperRewriteError | null = null;
 
   try {
     resetStallTimer();
@@ -252,16 +273,16 @@ export async function rewritePaper(paper, level = 'university', {
     });
 
     if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
+      const payload = await response.json().catch(() => ({})) as { code?: string; quota?: AIQuota };
       throw new PaperRewriteError(payload.code || 'AI_UNAVAILABLE', payload.quota || null);
     }
     if (!response.body) throw new PaperRewriteError('AI_UNAVAILABLE');
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    const parser = createNdjsonParser();
+    const parser = createNdjsonParser<RewriteEvent>();
 
-    const handleEvent = (event) => {
+    const handleEvent = (event: RewriteEvent) => {
       if (event.type === 'meta') {
         meta = event;
         onMeta?.(event);

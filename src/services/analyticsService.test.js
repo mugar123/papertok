@@ -511,7 +511,7 @@ test('SOURCE: PostHog starts cookieless, with its own collection off and every e
   const code = (await readFile(new URL('./analyticsService.ts', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
-  const options = code.match(/const POSTHOG_OPTIONS = \{([\s\S]*?)\n\};/)?.[1];
+  const options = code.match(/const POSTHOG_OPTIONS: Partial<PostHogConfig> = \{([\s\S]*?)\n\};/)?.[1];
   assert.ok(options, 'the PostHog options are gone');
 
   for (const setting of [
@@ -718,7 +718,7 @@ test('every event the app emits is registered, with a surface that survives', as
       else if (
         /\.[jt]sx?$/.test(entry.name)
         && !/\.test\.[jt]sx?$/.test(entry.name)
-        && entry.name !== 'analyticsService.js'
+        && entry.name !== 'analyticsService.ts'
       ) sources.push(child);
     }
   }

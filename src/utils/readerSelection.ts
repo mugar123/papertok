@@ -9,6 +9,6 @@
  * git history for the day "explain this" returns to mobile with the redesign
  * it needs.
  */
-export function pickSelectionRoute({ coarsePointer }) {
+export function pickSelectionRoute({ coarsePointer }: { coarsePointer: boolean }) {
   return coarsePointer ? 'bar' : 'menu';
 }

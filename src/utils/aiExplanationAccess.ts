@@ -5,7 +5,7 @@ const UNAVAILABLE_ABSTRACTS = new Set([
   'el resumen no esta disponible en crossref.',
 ]);
 
-function normalizedAbstract(value) {
+function normalizedAbstract(value: unknown) {
   return String(value || '')
     .toLowerCase()
     .normalize('NFD')
@@ -14,12 +14,12 @@ function normalizedAbstract(value) {
     .trim();
 }
 
-export function hasUsableAIAbstract(value) {
+export function hasUsableAIAbstract(value: unknown) {
   const normalized = normalizedAbstract(value);
   return Boolean(normalized) && !UNAVAILABLE_ABSTRACTS.has(normalized);
 }
 
-export function isAIReadablePdfUrl(value) {
+export function isAIReadablePdfUrl(value: string | URL | null | undefined) {
   if (!value) return false;
   try {
     const url = new URL(value);

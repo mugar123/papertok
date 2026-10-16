@@ -1,3 +1,4 @@
+export type GuestFeedPlan = ReturnType<typeof buildGuestFeedPlan>;
 import { CATEGORIES } from '../data/categories.js';
 import { ARXIV_FEED_AREAS } from '../services/arxivService.ts';
 import { guestCategoriesForAreas, guestTopicListsForAreas, normalizeGuestAreas, normalizeGuestTopics } from './guestInterests.ts';
@@ -27,7 +28,7 @@ export const GUEST_CATEGORIES = Object.freeze([
   'econ.GN',
 ]);
 
-function warnMissingCategory(categoryId) {
+function warnMissingCategory(categoryId: string) {
   if (!isDev) return;
   console.warn(
     `[guestFeed] "${categoryId}" is not in the category schema: the discovery query will search for the id itself.`,
@@ -37,9 +38,9 @@ function warnMissingCategory(categoryId) {
 // Returns the raw id when the schema does not know it -- on purpose. Falling
 // back to the area label would paper over the next id that drifts out of the
 // schema; the warning is what makes the drift visible while it is still cheap.
-export function guestCategoryLabel(categoryId, onMissing = warnMissingCategory) {
+export function guestCategoryLabel(categoryId: string, onMissing = warnMissingCategory) {
   for (const area of Object.values(CATEGORIES)) {
-    const category = area.subcategories?.[categoryId];
+    const category = (area.subcategories as Record<string, { label?: string }> | undefined)?.[categoryId];
     if (category) return category.label || category.label || categoryId;
   }
   onMissing(categoryId);
@@ -66,7 +67,7 @@ const GUEST_PUBMED_CAP = 3;
  * physics categories and no economics. An area the guest narrowed to specific
  * topics offers only those; one they did not offers all of its own.
  */
-function interleaveAreaCategories(areas, cap, topics = []) {
+function interleaveAreaCategories(areas: string[], cap: number, topics: string[] = []) {
   const lists = guestTopicListsForAreas(areas, topics);
   const picked = [];
   for (let index = 0; picked.length < cap; index += 1) {
@@ -89,7 +90,7 @@ function interleaveAreaCategories(areas, cap, topics = []) {
  * `key` is what the feed hook watches: a plan with the same key is the same
  * plan, and a re-render must not re-fetch.
  */
-export function buildGuestFeedPlan(areas = [], topics = []) {
+export function buildGuestFeedPlan(areas: string[] = [], topics: string[] = []) {
   const chosen = normalizeGuestAreas(areas);
   const chosenTopics = normalizeGuestTopics(topics, chosen);
   if (chosen.length === 0) {

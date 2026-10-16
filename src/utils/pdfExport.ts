@@ -1,3 +1,9 @@
+import type { ExportOptions, NumberedAnnotation } from './exportDocument.ts';
+import type { HighlightMath } from './textHighlights.ts';
+type Katex = Awaited<ReturnType<typeof loadKatex>>;
+type PdfModel = ReturnType<typeof buildPdfModel>;
+interface VerticalBounds { top: number; bottom: number }
+interface PdfNote { number: number; kind: string; text: string }
 import {
   documentCopy,
   documentMeta,
@@ -68,7 +74,7 @@ export function buildPdfModel({
   originalUrl = '',
   generatedAt = new Date(),
   include = {},
-} = {}) {
+}: ExportOptions = {}) {
   const copy = documentCopy();
   const kept = exportableAnnotations(annotations, {
     sections, level, language, include,
@@ -118,10 +124,10 @@ export function buildPdfModel({
  * on: a fraction rises above its line and hangs below it, so its top or its
  * bottom can sit in the neighbouring line's band while its middle never does.
  */
-export function lineStartIndices(lines, units) {
+export function lineStartIndices(lines: VerticalBounds[], units: VerticalBounds[]) {
   const bands = [...lines].sort((a, b) => a.top - b.top);
   if (bands.length < 2) return [];
-  const bandOf = ({ top, bottom }) => {
+  const bandOf = ({ top, bottom }: VerticalBounds) => {
     const middle = (top + bottom) / 2;
     let best = 0;
     let bestGap = Infinity;
@@ -135,8 +141,8 @@ export function lineStartIndices(lines, units) {
     return best;
   };
 
-  const starts = [];
-  let line = null;
+  const starts: number[] = [];
+  let line: number|null = null;
   units.forEach((unit, index) => {
     const band = bandOf(unit);
     if (line !== null && band > line) starts.push(index);
@@ -256,14 +262,14 @@ const PAGE_CSS = `
 .pdfx-page .katex { font-size: 1.02em; }
 `;
 
-function element(tag, className, text) {
+function element(tag: string, className?: string, text?: string | null) {
   const node = document.createElement(tag);
   if (className) node.className = className;
   if (text != null) node.textContent = text;
   return node;
 }
 
-function renderMath(katex, item) {
+function renderMath(katex: Katex, item: HighlightMath) {
   if (!katex) return null;
   try {
     return katex.renderToString(katexSource(item), {
@@ -322,7 +328,7 @@ function renderMath(katex, item) {
  * the eqnarray the paper wrote. The count is what keeps the two in step: base
  * LaTeX numbers an eqnarray by the row exactly as amsmath numbers an align.
  */
-function numberedEquation(piece, counter) {
+function numberedEquation(piece: HTMLElement, counter: { n: number }) {
   const rows = piece.querySelectorAll('.katex .eqn-num').length || 1;
   counter.n += 1;
   const label = counter.n;
@@ -340,9 +346,9 @@ function numberedEquation(piece, counter) {
  * in LaTeX), but the footnote marker goes after the LAST piece of its run, so
  * a highlight that crosses a formula reads as one mark with one number.
  */
-function renderParagraphInto(node, text, annotations, katex, eqCounter) {
+function renderParagraphInto(node: HTMLElement, text: string, annotations: NumberedAnnotation[], katex: Katex, eqCounter?: { n: number }) {
   const plan = buildHighlightPlan(text, annotations);
-  const noted = new Map(annotations
+  const noted = new Map<string | null | undefined, number | undefined>(annotations
     .filter(item => item.note && item.number != null)
     .map(item => [item.id, item.number]));
 
@@ -373,7 +379,7 @@ function renderParagraphInto(node, text, annotations, katex, eqCounter) {
   });
 }
 
-function markClass(kind) {
+function markClass(kind: string | null | undefined) {
   return kind === 'ai' ? 'pdfx-mark pdfx-mark--ai' : 'pdfx-mark';
 }
 
@@ -385,13 +391,13 @@ function markClass(kind) {
  * mark that holds a block (display maths) answers null and is left whole: it
  * is one box already, not a run of line boxes.
  */
-function markUnits(mark) {
-  const units = [];
+function markUnits(mark: HTMLElement) {
+  const units: Array<{ rect: DOMRect; node: Node; offset: number }> = [];
   const range = document.createRange();
-  const visit = (parent) => {
+  const visit = (parent: Node): boolean => {
     for (const child of parent.childNodes) {
       if (child.nodeType === Node.TEXT_NODE) {
-        const text = child.data;
+        const text = (child as Text).data;
         for (let offset = 0; offset < text.length; offset += 1) {
           if (/\s/.test(text[offset])) continue;
           const code = text.charCodeAt(offset);
@@ -403,13 +409,13 @@ function markUnits(mark) {
           offset = end - 1;
         }
       } else if (child.nodeType === Node.ELEMENT_NODE) {
-        const { display, position } = getComputedStyle(child);
+        const { display, position } = getComputedStyle(child as Element);
         if (display === 'none' || position === 'absolute' || position === 'fixed') continue;
         if (display === 'inline' || display === 'contents') {
           if (!visit(child)) return false;
         } else if (display.startsWith('inline-')) {
           const offset = Array.prototype.indexOf.call(parent.childNodes, child);
-          units.push({ rect: child.getBoundingClientRect(), node: parent, offset });
+          units.push({ rect: (child as Element).getBoundingClientRect(), node: parent, offset });
         } else {
           return false;
         }
@@ -441,14 +447,14 @@ function markUnits(mark) {
  * drew it (`box-decoration-break: slice`) — left on, a cut would widen its line
  * by a pixel and could push the last word of a full line onto the next.
  */
-function cutMarksAtLineBreaks(pages) {
+function cutMarksAtLineBreaks(pages: HTMLElement[]) {
   const plans = pages
-    .flatMap(page => [...page.querySelectorAll('mark.pdfx-mark')])
+    .flatMap(page => [...page.querySelectorAll<HTMLElement>('mark.pdfx-mark')])
     .map(mark => {
       const lines = [...mark.getClientRects()];
       const units = lines.length > 1 ? markUnits(mark) : null;
       const starts = units ? lineStartIndices(lines, units.map(unit => unit.rect)) : [];
-      return { mark, points: starts.map(index => units[index]) };
+      return { mark, points: starts.map(index => units![index]) };
     });
 
   for (const { mark, points } of plans) {
@@ -459,7 +465,7 @@ function cutMarksAtLineBreaks(pages) {
       const range = document.createRange();
       range.setStart(node, offset);
       range.setEnd(mark, mark.childNodes.length);
-      const piece = mark.cloneNode(false);
+      const piece = mark.cloneNode(false) as HTMLElement;
       piece.appendChild(range.extractContents());
       mark.after(piece);
       pieces.splice(1, 0, piece);
@@ -472,9 +478,9 @@ function cutMarksAtLineBreaks(pages) {
 }
 
 /** The blocks the pages are filled with, each with the notes it must seat. */
-function buildBlocks(model, katex) {
-  const blocks = [];
-  const push = (node, { notes = [], heading = null } = {}) => {
+function buildBlocks(model: PdfModel, katex: Katex) {
+  const blocks: Array<{ node: HTMLElement; notes: PdfNote[]; heading: string | null }> = [];
+  const push = (node: HTMLElement, { notes = [], heading = null }: { notes?: PdfNote[]; heading?: string | null } = {}) => {
     blocks.push({ node, notes, heading });
   };
   // Lives here, not inside `renderParagraphInto`: created once per document
@@ -529,9 +535,9 @@ function buildBlocks(model, katex) {
       const notes = paragraph.annotations
         .filter(item => item.note && item.number != null)
         .map(item => ({
-          number: item.number,
+          number: item.number!,
           kind: item.kind === 'ai' ? model.labels.ai : model.labels.mine,
-          text: item.note,
+          text: item.note!,
         }));
       push(node, { notes });
     }
@@ -551,7 +557,7 @@ function buildBlocks(model, katex) {
   return blocks;
 }
 
-function noteEntry(note) {
+function noteEntry(note: PdfNote) {
   const node = element('div', 'pdfx-note');
   const body = element('span');
   body.append(
@@ -583,7 +589,7 @@ function noteEntry(note) {
  * as one box across all its lines: every mark is cut into one element per line
  * first (`cutMarksAtLineBreaks`). In the browser the cut changes nothing.
  */
-export async function renderPdfPages(model, host) {
+export async function renderPdfPages(model: PdfModel, host: HTMLElement) {
   const katex = await loadKatex();
   if (!host.querySelector('style[data-pdfx]')) {
     const style = element('style');
@@ -592,12 +598,12 @@ export async function renderPdfPages(model, host) {
     host.appendChild(style);
   }
 
-  const pages = [];
-  const heads = [];
-  const marks = [];
-  let page = null;
-  let flow = null;
-  let notes = null;
+  const pages: HTMLElement[] = [];
+  const heads: HTMLElement[] = [];
+  const marks: Array<{ page: number; text: string; node: HTMLElement }> = [];
+  let page: HTMLElement = null!;
+  let flow: HTMLElement = null!;
+  let notes: HTMLElement = null!;
 
   const newPage = () => {
     page = element('div', 'pdfx-page');
@@ -703,7 +709,7 @@ export async function renderPdfPages(model, host) {
  * the page count so the live harness can check the output without touching
  * the reader's downloads folder (`deliver: false`).
  */
-export async function downloadPdfDocument(model, { deliver = true } = {}) {
+export async function downloadPdfDocument(model: PdfModel, { deliver = true } = {}) {
   const [{ jsPDF }, { default: html2canvas }] = await Promise.all([
     import('jspdf'),
     import('html2canvas-pro'),

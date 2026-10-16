@@ -23,7 +23,7 @@ export const RULE_BASE_WIDTH_PX = 80;
  * @param {number} [baseWidth]
  * @returns {string} a CSS transform, or '' when there is nothing to mark
  */
-export function ruleTransform(link, containerLeft, inset, baseWidth = RULE_BASE_WIDTH_PX) {
+export function ruleTransform(link: { left: number; width: number; }, containerLeft: number, inset: number, baseWidth: number = RULE_BASE_WIDTH_PX): string {
   if (!link || !Number.isFinite(link.left) || !Number.isFinite(link.width)) return '';
   const pad = Math.max(0, Number(inset) || 0);
   const width = Math.max(0, link.width - pad * 2);
@@ -32,7 +32,7 @@ export function ruleTransform(link, containerLeft, inset, baseWidth = RULE_BASE_
   return `translateX(${round(x)}px) scaleX(${round(width / baseWidth, 4)})`;
 }
 
-function round(value, decimals = 2) {
+function round(value: number, decimals = 2) {
   const factor = 10 ** decimals;
   return Math.round(value * factor) / factor;
 }

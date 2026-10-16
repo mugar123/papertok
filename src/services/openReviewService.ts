@@ -1,28 +1,31 @@
+import type { Paper } from '../models/Paper.ts';
+export interface OpenReviewNote { content?: Record<string, unknown>; forum?: string; id?: string; domain?: string; pdate?: number; cdate?: number; tcdate?: number; }
+
 import { PaperBuilder } from './PaperBuilder.ts';
 
-function unwrap(value) {
+function unwrap(value: unknown): unknown {
   if (value && typeof value === 'object' && !Array.isArray(value) && 'value' in value) {
     return value.value;
   }
   return value;
 }
 
-function text(value) {
+function text(value: unknown) {
   return String(unwrap(value) || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function list(value) {
+function list(value: unknown) {
   const unwrapped = unwrap(value);
   return (Array.isArray(unwrapped) ? unwrapped : [unwrapped])
     .map(item => text(item))
     .filter(Boolean);
 }
 
-function normalizeDoi(value) {
+function normalizeDoi(value: unknown) {
   return text(value).replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '').toLowerCase();
 }
 
-function extractArxivId(content, pdfUrl) {
+function extractArxivId(content: Record<string, unknown>, pdfUrl: string) {
   const candidates = [
     unwrap(content?.arxiv),
     unwrap(content?.arxiv_id),
@@ -36,7 +39,7 @@ function extractArxivId(content, pdfUrl) {
   return '';
 }
 
-function absoluteOpenReviewUrl(value, fallback) {
+function absoluteOpenReviewUrl(value: unknown, fallback: string) {
   const candidate = text(value);
   if (!candidate) return fallback;
   try {
@@ -46,7 +49,7 @@ function absoluteOpenReviewUrl(value, fallback) {
   }
 }
 
-function publicationDetails(venue, venueId) {
+function publicationDetails(venue: string, venueId: string): Pick<Paper, 'publicationStatus' | 'publicationType' | 'peerReviewed'> {
   const combined = `${venue} ${venueId}`.toLowerCase();
   const rejected = /rejected|withdrawn|desk[-_ ]rejected|submitted/.test(combined);
   const accepted = !rejected && /accepted|published|oral|poster|spotlight/.test(combined);
@@ -57,7 +60,7 @@ function publicationDetails(venue, venueId) {
   return { publicationStatus: 'published', publicationType, peerReviewed: true };
 }
 
-function timestampToIso(...values) {
+function timestampToIso(...values: unknown[]) {
   for (const value of values) {
     if (!value) continue;
     const date = new Date(typeof value === 'number' ? value : String(value));
@@ -66,7 +69,7 @@ function timestampToIso(...values) {
   return '';
 }
 
-export function mapOpenReviewNote(note, requestedCategories = []) {
+export function mapOpenReviewNote(note: OpenReviewNote, requestedCategories: string[] = []): Paper | null {
   const content = note?.content || {};
   const title = text(content.title);
   const abstract = text(content.abstract);

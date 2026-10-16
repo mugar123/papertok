@@ -1,3 +1,5 @@
+declare const window: { location: { href: string }; history: { state: unknown; replaceState(data: unknown, unused: string, url: URL): void } };
+
 /**
  * Firebase Configuration
  * Live project configuration for PaperTok
@@ -59,7 +61,7 @@ const db = getFirestore(app);
 // unsigned JSON claim set as a Google credential, so the same name always
 // reopens the same account, and a new one goes through onboarding like any
 // first sign-in. The production build drops this whole block.
-if (import.meta.env?.MODE === 'emulators') {
+if ((import.meta as ImportMeta & { env?: { MODE?: string } }).env?.MODE === 'emulators') {
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
   connectFirestoreEmulator(db, '127.0.0.1', 8080);
 

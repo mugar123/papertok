@@ -16,7 +16,7 @@ const INVENTED = new Set([
   'untitled',
 ]);
 
-export function isPlaceholderPaperTitle(title, paperId) {
+export function isPlaceholderPaperTitle(title: unknown, paperId?: unknown) {
   const text = typeof title === 'string' ? title.trim() : '';
   if (!text) return true;
   if (paperId && text === paperId) return true;

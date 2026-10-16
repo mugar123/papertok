@@ -25,7 +25,7 @@
  * load sat the feed's cards at rest, so the first paper appeared already
  * composed under the atom veil instead of composing as it lifted.
  */
-export function directionForNavigationType(navigationType, { historyIndex = null } = {}) {
+export function directionForNavigationType(navigationType: string|null, { historyIndex = null }: { historyIndex?: number | null } = {}) {
   if (navigationType === 'POP') return historyIndex === 0 ? 0 : -1;
   if (navigationType === 'PUSH') return 1;
   // REPLACE swaps the current entry for another: same place, different content,
@@ -55,9 +55,9 @@ export function directionForNavigationType(navigationType, { historyIndex = null
  * entry, or a reload deep in history — and a missing index (no
  * `history.state`) falls back to the router's own type.
  */
-const historyDirectionMemory = {};
+const historyDirectionMemory: { index?: number; direction?: number } = {};
 
-export function directionForHistoryIndex(historyIndex, memory = historyDirectionMemory, navigationType = null) {
+export function directionForHistoryIndex(historyIndex: number | null | undefined, memory = historyDirectionMemory, navigationType: string | null = null) {
   if (typeof historyIndex !== 'number') return directionForNavigationType(navigationType);
   if (memory.index === historyIndex) return memory.direction;
   const direction = typeof memory.index === 'number'

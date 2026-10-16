@@ -78,7 +78,7 @@ test('SOURCE: the matcher lives here and openAlexService imports it', async () =
   // problem, not print the whole service.
   assert.ok(!/function\s+matchesAuthorName\b/.test(service), 'no second copy of the matcher');
   assert.ok(!/function\s+normalizeNameForMatch\b/.test(service), 'no second copy of its helper');
-  assert.ok(/from\s+'\.\.\/utils\/authorNameMatch\.js'/.test(service), 'it imports the shared one');
+  assert.ok(/from\s+'\.\.\/utils\/authorNameMatch\.ts'/.test(service), 'it imports the shared one');
 
   const builder = (await readFile(new URL('../services/PaperBuilder.ts', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\//g, '')

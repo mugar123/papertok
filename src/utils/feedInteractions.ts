@@ -1,3 +1,5 @@
+import type { Paper } from '../models/Paper.ts';
+
 export const SEMANTIC_PROFILE_POSITIVE_CAP = 24;
 
 /**
@@ -6,10 +8,10 @@ export const SEMANTIC_PROFILE_POSITIVE_CAP = 24;
  * kept. The ranking still sees the rest through category affinities on the
  * aggregate; only the semantic overlay is capped.
  */
-export function selectSemanticProfilePositiveIds(liked = [], saved = [], cap = SEMANTIC_PROFILE_POSITIVE_CAP) {
+export function selectSemanticProfilePositiveIds(liked: unknown[] = [], saved: unknown[] = [], cap = SEMANTIC_PROFILE_POSITIVE_CAP) {
   const limit = Number.isFinite(cap) ? Math.max(0, Math.floor(cap)) : SEMANTIC_PROFILE_POSITIVE_CAP;
   const ids = [];
-  const seen = new Set();
+  const seen = new Set<string>();
   for (const value of [...liked, ...saved]) {
     const id = String(value || '').trim();
     if (!id || seen.has(id)) continue;
@@ -20,8 +22,8 @@ export function selectSemanticProfilePositiveIds(liked = [], saved = [], cap = S
   return ids;
 }
 
-export function dedupeInteractionPapers(papers = []) {
-  const uniquePapers = new Map();
+export function dedupeInteractionPapers<T extends Pick<Partial<Paper>, 'id'>>(papers: T[] = []) {
+  const uniquePapers = new Map<string, T>();
 
   for (const paper of papers) {
     const paperId = String(paper?.id || '').trim();
@@ -47,11 +49,11 @@ export function dedupeInteractionPapers(papers = []) {
  * (`increment()`, `deleteField()`) y objetos ya serializados; recorrerlos por
  * dentro los rompería.
  */
-export function definedFields(fields = {}) {
-  const defined = {};
+export function definedFields<T extends Record<string, unknown>>(fields: T = {} as T) {
+  const defined: Partial<T> = {};
 
   for (const [name, value] of Object.entries(fields)) {
-    if (value !== undefined) defined[name] = value;
+    if (value !== undefined) defined[name as keyof T] = value as T[keyof T];
   }
 
   return defined;

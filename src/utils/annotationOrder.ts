@@ -1,3 +1,5 @@
+type AnnotationPosition = { sectionId?: string; paragraphIndex?: number };
+
 /**
  * Ordering and filtering for the annotation rail.
  *
@@ -9,7 +11,7 @@
 
 export const ANNOTATION_FILTERS = Object.freeze(['all', 'mine', 'ai']);
 
-export function isAnnotationFilter(value) {
+export function isAnnotationFilter(value: string) {
   return ANNOTATION_FILTERS.includes(value);
 }
 
@@ -18,8 +20,8 @@ export function isAnnotationFilter(value) {
  * `sectionId` and a `paragraphIndex` but nothing that says which section comes
  * first — that only exists in the order the sections streamed in.
  */
-export function buildSectionOrder(sections = []) {
-  const order = new Map();
+export function buildSectionOrder(sections: Array<{ id?: string }> = []) {
+  const order = new Map<string, number>();
   sections.forEach((section, index) => {
     if (section?.id != null) order.set(String(section.id), index);
   });
@@ -34,14 +36,14 @@ export function buildSectionOrder(sections = []) {
  * regenerated the paper with other headings — sorts to the end rather than
  * being dropped. It is still the reader's note; it has simply lost its place.
  */
-export function sortAnnotations(annotations = [], sectionOrder = new Map()) {
+export function sortAnnotations<T extends AnnotationPosition>(annotations: T[] = [], sectionOrder = new Map<string, number>()) {
   const placed = annotations.map((annotation, arrival) => ({ annotation, arrival }));
   placed.sort((left, right) => {
     const leftSection = sectionOrder.has(String(left.annotation?.sectionId))
-      ? sectionOrder.get(String(left.annotation.sectionId))
+      ? sectionOrder.get(String(left.annotation.sectionId))!
       : Number.MAX_SAFE_INTEGER;
     const rightSection = sectionOrder.has(String(right.annotation?.sectionId))
-      ? sectionOrder.get(String(right.annotation.sectionId))
+      ? sectionOrder.get(String(right.annotation.sectionId))!
       : Number.MAX_SAFE_INTEGER;
     if (leftSection !== rightSection) return leftSection - rightSection;
 
@@ -61,7 +63,7 @@ export function sortAnnotations(annotations = [], sectionOrder = new Map()) {
  * every note already on its paragraph: a stand-in handed to `sortAnnotations`
  * after the rest lands exactly where the answer will.
  */
-export function answerSlot(visible = [], passage = null, sectionOrder = new Map()) {
+export function answerSlot(visible: AnnotationPosition[] = [], passage: AnnotationPosition | null = null, sectionOrder = new Map<string, number>()) {
   if (!passage) return null;
   const standIn = { sectionId: passage.sectionId, paragraphIndex: passage.paragraphIndex };
   return sortAnnotations([...visible, standIn], sectionOrder).indexOf(standIn);
@@ -71,7 +73,7 @@ export function answerSlot(visible = [], passage = null, sectionOrder = new Map(
  * `mine` is everything you made — a bare highlight and a highlight you wrote on
  * are both yours — and `ai` is only what the model answered.
  */
-export function filterAnnotations(annotations = [], filter = 'all') {
+export function filterAnnotations<T extends { kind?: string }>(annotations: T[] = [], filter = 'all') {
   if (filter === 'ai') return annotations.filter(item => item?.kind === 'ai');
   if (filter === 'mine') return annotations.filter(item => item?.kind !== 'ai');
   return annotations.slice();
@@ -81,7 +83,7 @@ export function filterAnnotations(annotations = [], filter = 'all') {
  * What the rail's header says. A bare highlight is not a note, so it is counted
  * separately: "4 marcas · 2 notas" is honest where "6 notas" is not.
  */
-export function countAnnotations(annotations = []) {
+export function countAnnotations(annotations: Array<{ note?: string }> = []) {
   let notes = 0;
   let marks = 0;
   for (const item of annotations) {

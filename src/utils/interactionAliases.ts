@@ -1,3 +1,5 @@
+import type { Paper } from '../models/Paper.ts';
+
 import { canonicalArxivIdOf, canonicalDoiOf } from './paperCanonicalKey.ts';
 
 /**
@@ -18,7 +20,7 @@ const OPENALEX_ID = /^(?:openalex:|https?:\/\/openalex\.org\/)?(W\d+)$/i;
 const PUBMED_ID = /^pmid:(\d+)$/i;
 
 /** One shape for the provider ids that arrive in several: `openalex:W…`, `pmid:…`. */
-export function normalizedProviderId(raw) {
+export function normalizedProviderId(raw: unknown) {
   const value = String(raw ?? '').trim();
   if (!value) return '';
   const openAlex = value.match(OPENALEX_ID);
@@ -33,9 +35,9 @@ export function normalizedProviderId(raw) {
  * `doi:` + its DOI, `arxiv:` + its arXiv id. An id that is itself a DOI or
  * an arXiv id (older copies were keyed that way) yields both forms.
  */
-export function paperIdentities(paper) {
+export function paperIdentities(paper: Partial<Paper> | null | undefined) {
   if (!paper || typeof paper !== 'object') return [];
-  const identities = new Set();
+  const identities = new Set<string>();
   const own = normalizedProviderId(paper.id);
   if (own) identities.add(own);
   const doi = canonicalDoiOf(paper) || canonicalDoiOf({ doi: paper.id });
@@ -49,8 +51,8 @@ export function paperIdentities(paper) {
  * The alias table from `[interactionId, storedCopy]` pairs. The first copy
  * to claim an identity keeps it, and an interaction id always maps to itself.
  */
-export function buildInteractionAliasIndex(entries) {
-  const index = new Map();
+export function buildInteractionAliasIndex(entries: Iterable<[string, Partial<Paper> | null | undefined]> | null | undefined) {
+  const index = new Map<string, string>();
   for (const [id, copy] of entries || []) {
     if (!id) continue;
     const own = normalizedProviderId(id);
@@ -69,7 +71,7 @@ export function buildInteractionAliasIndex(entries) {
  * its identities is an alias of, otherwise the paper's own id — a paper the
  * reader has never touched keeps the id it arrived with.
  */
-export function resolveInteractionId(paper, index, isKnown = () => false) {
+export function resolveInteractionId(paper: Partial<Paper> | null | undefined, index: Map<string, string> | null | undefined, isKnown: (id: string) => boolean = () => false) {
   const raw = paper?.id;
   if (!raw) return raw;
   if (isKnown(raw)) return raw;

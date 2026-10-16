@@ -1,3 +1,18 @@
+import type { Paper } from '../models/Paper.ts';
+import type { OpenAlexWork, OpenAlexPage, OpenAlexAuthor, OpenAlexInstitution, OpenAlexTopic } from './adapters/openAlexTypes.ts';
+import type { OpenAlexJsonOptions } from './openAlexClient.ts';
+
+type Enrichment = Partial<Paper> & { related_works?: string[] };
+type Entity = OpenAlexAuthor | OpenAlexInstitution | OpenAlexTopic;
+type RequestOptions = { language?: string; signal?: AbortSignal | null; throwOnError?: boolean; timeoutMs?: number; limit?: number };
+type InstitutionOptions = RequestOptions & { openAlexJson?: (url: string, options: OpenAlexJsonOptions<OpenAlexPage<OpenAlexInstitution>>) => Promise<OpenAlexPage<OpenAlexInstitution>> };
+type WorksFilters = { peerReviewed?: boolean; category?: string; dateRange?: string };
+type ImpactPeriod = ReturnType<typeof getRecentImpactPeriod>;
+type RecentImpact = ReturnType<typeof calculateEntityRecentImpact> & {
+  entityType?: string; openAlexId?: string; period: ImpactPeriod; source: string; sampled?: boolean;
+  sampleAttempts?: number; cacheStatus?: string; cachedAt?: number; stale?: boolean; rateLimited?: boolean; reason?: string;
+};
+
 /**
  * OpenAlex API Service
  * Handles semantic enrichment, concept extraction, and citation graphs.
@@ -41,9 +56,9 @@ import {
   institutionSearchValues,
 } from '../utils/searchRelevance.ts';
 
-const CACHE = new Map();
-const GRAPH_CACHE = new Map(); // caches W... to arxivId mappings
-const RECENT_IMPACT_CACHE = new Map();
+const CACHE = new Map<string, Enrichment>();
+const GRAPH_CACHE = new Map<string, string | null>(); // caches W... to arxivId mappings
+const RECENT_IMPACT_CACHE = new Map<string, { data: RecentImpact; savedAt: number }>();
 const ENTITY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const ENTITY_STALE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const IMPACT_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -88,11 +103,11 @@ const OPENALEX_ENRICHMENT_SELECT = [
  */
 export const MAX_ENRICHMENT_AUTHORS = 50;
 
-function normalizeDoi(value) {
+function normalizeDoi(value: unknown) {
   return String(value || '').trim().replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '');
 }
 
-function extractArxivId(value) {
+function extractArxivId(value: unknown) {
   const text = String(value || '');
   const match = text.match(/(?:arxiv\.org\/(?:abs|pdf)\/|10\.48550\/arxiv\.|arxiv:)(\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?\/\d{7})(?:v\d+)?/i);
   return match?.[1] || '';
@@ -106,7 +121,7 @@ function extractArxivId(value) {
  * the identifiers happens to carry it. Exported because the feed and the search
  * want it too — a card without this id can never show the paper's figure.
  */
-export function getArxivIdFromWork(work) {
+export function getArxivIdFromWork(work: OpenAlexWork | null | undefined) {
   const direct = extractArxivId(work?.ids?.arxiv);
   if (direct) return direct;
 
@@ -117,7 +132,7 @@ export function getArxivIdFromWork(work) {
   return candidates.map(extractArxivId).find(Boolean) || '';
 }
 
-function getReliableEnrichmentDoi(work, arxivId) {
+function getReliableEnrichmentDoi(work: OpenAlexWork, arxivId: string) {
   const doi = normalizeDoi(work?.doi || work?.ids?.doi);
   if (!doi) return undefined;
 
@@ -128,7 +143,7 @@ function getReliableEnrichmentDoi(work, arxivId) {
   return work?.type !== 'preprint' || hasPublishedLocation ? doi : undefined;
 }
 
-export function mapOpenAlexEnrichmentWork(work) {
+export function mapOpenAlexEnrichmentWork(work: OpenAlexWork | null): { openAlexId: string; arxivId: string; enrichment: Enrichment } | null {
   if (!work || typeof work !== 'object') return null;
   const openAlexUrl = work.id || work.ids?.openalex || '';
   const openAlexId = String(openAlexUrl).split('/').pop();
@@ -158,7 +173,7 @@ export function mapOpenAlexEnrichmentWork(work) {
       concepts: semanticTopics,
       topics: work.topics || [],
       primaryTopic: work.primary_topic || null,
-      citationCount: Number.isFinite(work.cited_by_count) ? work.cited_by_count : 0,
+      citationCount: Number.isFinite(work.cited_by_count) ? work.cited_by_count! : 0,
       citationCountKnown: Number.isFinite(work.cited_by_count),
       related_works: work.related_works || [],
       publicationType: work.type || work.primary_location?.source?.type || 'preprint',
@@ -180,7 +195,7 @@ export function mapOpenAlexEnrichmentWork(work) {
 // and it's not supported», so the key goes once and the ids are joined. This
 // used to be written out by hand at each call site, and the two copies drifted:
 // one of them had always been returning 400.
-export function buildOpenAlexIdFilter(ids) {
+export function buildOpenAlexIdFilter(ids: unknown) {
   const values = [...new Set((Array.isArray(ids) ? ids : [])
     .map(id => String(id || '').trim())
     .filter(Boolean))];
@@ -195,7 +210,7 @@ export function buildOpenAlexIdFilter(ids) {
  * started buffering inside the deadline. This one hands the response back
  * unread, so it needs the deadline to outlive the call the same way.
  */
-export async function fetchWithTimeout(url, timeoutMs = 8000) {
+export async function fetchWithTimeout(url: string | URL, timeoutMs = 8000) {
   let hostname = '';
   try {
     hostname = new URL(url).hostname;
@@ -210,7 +225,7 @@ export async function fetchWithTimeout(url, timeoutMs = 8000) {
   return fetch(url, withRequestDeadline({}, timeoutMs));
 }
 
-async function enrichInstitutionWithRor(institution, prefetchedRor = null) {
+async function enrichInstitutionWithRor(institution: OpenAlexInstitution | null, prefetchedRor: OpenAlexInstitution | null = null) {
   if (!institution) return prefetchedRor;
   const rorInstitution = prefetchedRor || (institution.ror
     ? await getRorInstitution(institution.ror).catch(() => null)
@@ -224,7 +239,7 @@ async function enrichInstitutionWithRor(institution, prefetchedRor = null) {
  * @param {{ timeoutMs?: number }} options
  * @returns {Promise<Object>} Map of { arxivId: { concepts, cited_by_count, related_works } }
  */
-export function isOpenAlexEnrichmentId(id) {
+export function isOpenAlexEnrichmentId(id: unknown): boolean {
   const raw = String(id || '').trim();
   // A DOI is taken whole: stripping a trailing `v<n>` the way an arXiv id needs
   // would corrupt one that legitimately ends that way.
@@ -235,7 +250,7 @@ export function isOpenAlexEnrichmentId(id) {
     || /^(?:openalex:|https:\/\/openalex\.org\/)?W\d+$/i.test(value);
 }
 
-export async function enrichPapersBatch(arxivIds, options = {}) {
+export async function enrichPapersBatch(arxivIds: string[], options: RequestOptions = {}) {
   const validIds = [...new Set((Array.isArray(arxivIds) ? arxivIds : [])
     .filter(id => typeof id === 'string' && id.trim() !== '')
     .map(id => {
@@ -245,16 +260,16 @@ export async function enrichPapersBatch(arxivIds, options = {}) {
     })
     .filter(isOpenAlexEnrichmentId))];
     
-  const result = {};
+  const result: Record<string, Enrichment> = {};
   
   // Reuse semantic/citation signals across sessions so a temporary outage does
   // not erase recommendation quality for papers the user has already encountered.
   validIds.forEach(id => {
     if (!CACHE.has(id)) {
-      const persisted = readOpenAlexPersistent(`enrichment:${id}`, ENRICHMENT_CACHE_TTL_MS);
+      const persisted = readOpenAlexPersistent<Enrichment>(`enrichment:${id}`, ENRICHMENT_CACHE_TTL_MS);
       if (persisted && !persisted.stale) CACHE.set(id, persisted.data);
     }
-    if (CACHE.has(id)) result[id] = CACHE.get(id);
+    if (CACHE.has(id)) result[id] = CACHE.get(id)!;
   });
 
   const toFetch = validIds.filter(id => !CACHE.has(id));
@@ -262,9 +277,9 @@ export async function enrichPapersBatch(arxivIds, options = {}) {
   if (toFetch.length === 0) return result;
 
   // Separate OpenAlex IDs and ArXiv IDs
-  const openAlexIds = [];
-  const arxivIdsOnly = [];
-  const doisOnly = [];
+  const openAlexIds: string[] = [];
+  const arxivIdsOnly: string[] = [];
+  const doisOnly: string[] = [];
   
   toFetch.forEach(id => {
     if (/^doi:/i.test(id)) {
@@ -276,11 +291,11 @@ export async function enrichPapersBatch(arxivIds, options = {}) {
     }
   });
 
-  const fetchChunk = async (filterParam) => {
+  const fetchChunk = async (filterParam: string) => {
     const url = `https://api.openalex.org/works?filter=${filterParam}&per_page=50&select=${OPENALEX_ENRICHMENT_SELECT}`;
     let response = null;
     let primaryFailed = false;
-    let directError = null;
+    let directError: unknown = null;
     try {
       response = await fetchWithTimeout(url, options.timeoutMs ?? 10000);
       if (!response || !response.ok) primaryFailed = true;
@@ -303,7 +318,7 @@ export async function enrichPapersBatch(arxivIds, options = {}) {
 
     try {
       if (response && response.ok) {
-        const data = await response.json();
+        const data = await response.json() as OpenAlexPage<OpenAlexWork>;
         if (data && data.results) {
           data.results.forEach(work => {
              const mapped = mapOpenAlexEnrichmentWork(work);
@@ -369,15 +384,15 @@ export async function enrichPapersBatch(arxivIds, options = {}) {
  * Given a list of OpenAlex Work URLs (https://openalex.org/W...), fetch their metadata to get their arXiv IDs.
  * This is used for Capa 2 (Graph exploration).
  */
-export async function getArxivIdsForOpenAlexWorks(openAlexUrls) {
+export async function getArxivIdsForOpenAlexWorks(openAlexUrls: string[]) {
   if (!openAlexUrls || openAlexUrls.length === 0) return [];
   const validUrls = openAlexUrls.filter(url => url && typeof url === 'string' && url.includes('/'));
   
-  const result = [];
-  const toFetch = [];
+  const result: string[] = [];
+  const toFetch: string[] = [];
   
   validUrls.forEach(url => {
-    const wId = url.split('/').pop();
+    const wId = url.split('/').pop()!;
     if (GRAPH_CACHE.has(wId)) {
       const cached = GRAPH_CACHE.get(wId);
       if (cached) result.push(cached);
@@ -396,12 +411,12 @@ export async function getArxivIdsForOpenAlexWorks(openAlexUrls) {
   try {
      const response = await fetchWithTimeout(url, 10000);
      if (response.ok) {
-        const data = await response.json();
-        data.results.forEach(work => {
-           const wId = work.id.split('/').pop();
+        const data = await response.json() as OpenAlexPage<OpenAlexWork>;
+        data.results!.forEach(work => {
+           const wId = work.id!.split('/').pop()!;
            let arxivId = null;
            if (work.ids && work.ids.arxiv) {
-              arxivId = work.ids.arxiv.split('/').pop().replace(/v\d+$/, '');
+              arxivId = work.ids.arxiv.split('/').pop()!.replace(/v\d+$/, '');
               result.push(arxivId);
            }
            GRAPH_CACHE.set(wId, arxivId); // Cache even if null to avoid re-fetching non-arxiv works
@@ -418,7 +433,7 @@ export async function getArxivIdsForOpenAlexWorks(openAlexUrls) {
  * @param {string} authorName 
  * @returns {Promise<Object|null>}
  */
-export async function getAuthorProfile(authorName) {
+export async function getAuthorProfile(authorName: string): Promise<OpenAlexAuthor | null> {
   if (!authorName) return null;
   const cleanName = encodeURIComponent(authorName.trim());
   const url = `https://api.openalex.org/authors?search=${cleanName}`;
@@ -427,7 +442,7 @@ export async function getAuthorProfile(authorName) {
     const response = await fetchWithTimeout(url, 10000);
     if (!response.ok) return null;
     
-    const data = await response.json();
+    const data = await response.json() as OpenAlexPage<OpenAlexAuthor>;
     if (data && data.results && data.results.length > 0) {
       // Find the first result that actually matches the name reasonably well
       let bestAuthor = null;
@@ -459,7 +474,7 @@ export async function getAuthorProfile(authorName) {
   return null;
 }
 
-export async function getAuthorProfileByOrcid(orcidId) {
+export async function getAuthorProfileByOrcid(orcidId: string) {
   const cleanOrcid = orcidId?.match(/\b\d{4}-\d{4}-\d{4}-\d{3}[\dX]\b/i)?.[0]?.toUpperCase();
   if (!cleanOrcid) return null;
 
@@ -467,7 +482,7 @@ export async function getAuthorProfileByOrcid(orcidId) {
   try {
     const response = await fetchWithTimeout(url, 10000);
     if (!response.ok) return null;
-    const data = await response.json();
+    const data = await response.json() as OpenAlexPage<OpenAlexAuthor>;
     return data.results?.[0] || null;
   } catch (err) {
     console.error(`OpenAlex ORCID lookup failed for ${cleanOrcid}`, err);
@@ -479,7 +494,7 @@ export async function getAuthorProfileByOrcid(orcidId) {
 // indexes them, an arXiv id through its DataCite DOI. A PubMed paper's
 // `pmid:` id used to be glued onto the arXiv prefix
 // (`works/doi:10.48550/arxiv.pmid:42774036`), which can only 404.
-function workUrlForReference(reference) {
+function workUrlForReference(reference: ReturnType<typeof paperReferenceFor>) {
   if (!reference) return '';
   if (reference.type === 'doi') return `https://api.openalex.org/works/doi:${reference.value}`;
   if (reference.type === 'pmid') return `https://api.openalex.org/works/pmid:${reference.value}`;
@@ -498,7 +513,7 @@ function workUrlForReference(reference) {
  * @param {string} paperRef
  * @returns {Promise<Object|null>}
  */
-export async function getAuthorProfileExact(authorName, paperRef) {
+export async function getAuthorProfileExact(authorName: string, paperRef: string): Promise<OpenAlexAuthor | null> {
   if (!authorName) return null;
 
   const reference = paperReferenceFor(paperRef);
@@ -523,7 +538,7 @@ export async function getAuthorProfileExact(authorName, paperRef) {
     const workResponse = await fetchWithTimeout(workUrl, 8000).catch(() => null);
 
     if (workResponse && workResponse.ok) {
-      const workData = await workResponse.json();
+      const workData = await workResponse.json() as OpenAlexWork;
 
       if (workData.authorships) {
         // The authorship the requested name is: by OpenAlex's spelling of the
@@ -549,7 +564,7 @@ export async function getAuthorProfileExact(authorName, paperRef) {
         if (bestMatch && authorKey) {
            const profileResponse = await fetchWithTimeout(`https://api.openalex.org/authors/${authorKey}`, 10000);
            if (profileResponse.ok) {
-              const author = await profileResponse.json();
+              const author = await profileResponse.json() as OpenAlexAuthor;
               return {
                 id: author.id,
                 display_name: author.display_name,
@@ -613,8 +628,8 @@ export async function getAuthorProfileExact(authorName, paperRef) {
  * @param {Array} authors
  * @returns {Array}
  */
-export function dedupeAuthors(authors) {
-  const normalize = (value) => (value || '')
+export function dedupeAuthors<T extends OpenAlexAuthor>(authors: T[]): T[] {
+  const normalize = (value: string | null | undefined) => (value || '')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -624,18 +639,18 @@ export function dedupeAuthors(authors) {
 
   // Higher score = the more prominent / canonical profile. Research output is the
   // primary signal; identity fields (ORCID, institution) are back-filled below.
-  const score = (author) => (author.works_count || 0) * 1e6
+  const score = (author: T) => (author.works_count || 0) * 1e6
     + (author.cited_by_count || 0);
 
-  const conflicts = (a, b) => (
+  const conflicts = (a: T, b: T) => (
     (a.orcid && b.orcid && a.orcid !== b.orcid)
     || (a.institution && b.institution && normalize(a.institution) !== normalize(b.institution))
   );
 
   // Same name can hold several genuinely distinct people, so each name maps to a
   // LIST of identity clusters instead of a single winner.
-  const clustersByName = new Map();
-  const ordered = [];
+  const clustersByName = new Map<string, Array<{ author: T }>>();
+  const ordered: Array<{ author: T }> = [];
   for (const author of authors) {
     const key = normalize(author.display_name);
     if (!key) continue;
@@ -662,18 +677,18 @@ export function dedupeAuthors(authors) {
   return ordered.map(cluster => cluster.author);
 }
 
-const AUTHOR_INSTITUTION_LOOKUPS = new Map();
+const AUTHOR_INSTITUTION_LOOKUPS = new Map<string, Promise<OpenAlexInstitution | null>>();
 
-function settleAuthorInstitutionLookup(promise, timeoutMs) {
+function settleAuthorInstitutionLookup<T>(promise: Promise<T>, timeoutMs: number): Promise<T | null> {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return promise;
 
-  return new Promise(resolve => {
+  return new Promise<T | null>(resolve => {
     let settled = false;
-    let timeoutId = null;
-    const finish = value => {
+    let timeoutId: ReturnType<typeof setTimeout> | null | undefined = null;
+    const finish = (value: T | null) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timeoutId);
+      clearTimeout(timeoutId!);
       resolve(value);
     };
     timeoutId = setTimeout(() => finish(null), timeoutMs);
@@ -686,7 +701,7 @@ function settleAuthorInstitutionLookup(promise, timeoutMs) {
  * Attach ROR's localized labels to an author institution without changing its
  * OpenAlex identity or canonical display name.
  */
-export async function enrichAuthorInstitutionLocalization(author, { timeoutMs = 1800 } = {}) {
+export async function enrichAuthorInstitutionLocalization<T extends OpenAlexAuthor | null | undefined>(author: T, { timeoutMs = 1800 } = {}) {
   if (!author) return author;
 
   const sourceInstitution = author.institutionData
@@ -731,14 +746,14 @@ export async function enrichAuthorInstitutionLocalization(author, { timeoutMs = 
   };
 }
 
-export async function searchAuthors(query, options = {}) {
+export async function searchAuthors(query: string, options: RequestOptions = {}) {
   if (!query) return [];
   const normalizedQuery = query.trim();
   const cleanName = encodeURIComponent(normalizedQuery);
   const url = `https://api.openalex.org/authors?search=${cleanName}&per-page=10`;
   
   try {
-    const data = await openAlexJson(url, {
+    const data = await openAlexJson<OpenAlexPage<OpenAlexAuthor>>(url, {
       timeoutMs: 7000,
       cacheTtlMs: 10 * 60 * 1000,
       staleIfError: true,
@@ -787,7 +802,7 @@ const INSTITUTION_PROMINENCE_TIMEOUT_MS = 1500;
  * OpenAlex refuses an OR across filters with «It looks like you're trying to do
  * an OR query between filters and it's not supported».
  */
-export function buildRorIdFilter(rorIds) {
+export function buildRorIdFilter(rorIds: unknown) {
   const values = [...new Set((Array.isArray(rorIds) ? rorIds : [])
     .map(id => normalizeRorId(id))
     .filter(Boolean))];
@@ -805,16 +820,16 @@ export function buildRorIdFilter(rorIds) {
  * relevance leaves out would weigh nothing and sink for a reason that has
  * nothing to do with how prominent it is.
  */
-export async function fetchInstitutionProminence(rorIds, options = {}) {
+export async function fetchInstitutionProminence(rorIds: unknown, options: InstitutionOptions = {}) {
   const filter = buildRorIdFilter(rorIds);
-  if (!filter) return new Map();
+  if (!filter) return new Map<string, OpenAlexInstitution>();
 
   // Injectable for the test, the way `OpenAlexClient` already takes `fetchImpl`
   // and `storage`. The shared client binds `globalThis.fetch` when the module
   // loads — deliberately, so Safari keeps the native receiver — so swapping the
   // global does NOT reach it, and a test that tried would quietly hit the live
   // API and pass on whatever OpenAlex happened to say that day.
-  const requestJson = options.openAlexJson || openAlexJson;
+  const requestJson: NonNullable<InstitutionOptions['openAlexJson']> = options.openAlexJson || openAlexJson;
   const url = `https://api.openalex.org/institutions?filter=${filter}`
     + `&per-page=${INSTITUTION_SEARCH_CANDIDATES}`
     + '&select=ror,works_count,cited_by_count,summary_stats';
@@ -825,7 +840,7 @@ export async function fetchInstitutionProminence(rorIds, options = {}) {
     signal: options.signal,
   });
 
-  const prominenceByRorId = new Map();
+  const prominenceByRorId = new Map<string, OpenAlexInstitution>();
   (data?.results || []).forEach((result) => {
     const rorId = normalizeRorId(result?.ror);
     if (rorId) prominenceByRorId.set(rorId, result);
@@ -843,10 +858,10 @@ export async function fetchInstitutionProminence(rorIds, options = {}) {
  * (SearchPage.jsx, SearchCommand.jsx), so swapping in an OpenAlex id would
  * hand the explorer an `I…` where it wants an `0…` on every institution result.
  */
-export function applyInstitutionProminence(institutions, prominenceByRorId) {
+export function applyInstitutionProminence(institutions: OpenAlexInstitution[], prominenceByRorId: Map<string, OpenAlexInstitution> | null) {
   if (!prominenceByRorId?.size) return institutions;
   return institutions.map((institution) => {
-    const prominence = prominenceByRorId.get(institution._rorId);
+    const prominence = prominenceByRorId.get(institution._rorId!);
     if (!prominence) return institution;
     return {
       ...institution,
@@ -865,7 +880,7 @@ export function applyInstitutionProminence(institutions, prominenceByRorId) {
  * has to leave the candidates exactly as ROR sent them. Losing the tie-break is
  * a worse answer; losing the section is a bug.
  */
-async function rankInstitutionsByProminence(query, candidates, options = {}) {
+async function rankInstitutionsByProminence(query: string, candidates: OpenAlexInstitution[], options: InstitutionOptions = {}) {
   if (candidates.length <= 1) return candidates;
 
   const prominenceByRorId = await fetchInstitutionProminence(
@@ -887,7 +902,7 @@ async function rankInstitutionsByProminence(query, candidates, options = {}) {
  * @param {string} query
  * @returns {Promise<Array>}
  */
-export async function searchInstitutions(query, options = {}) {
+export async function searchInstitutions(query: string, options: InstitutionOptions = {}) {
   if (!query) return [];
   try {
     const candidates = await searchRorInstitutions(query, INSTITUTION_SEARCH_CANDIDATES, options);
@@ -912,13 +927,13 @@ function normalizeTopicSearchValue(value = '') {
     .trim();
 }
 
-function scoreTopicMatch(query, values) {
+function scoreTopicMatch(query: string, values: Array<string | undefined>) {
   const normalizedQuery = normalizeTopicSearchValue(query);
   if (!normalizedQuery) return -1;
 
   const queryTokens = normalizedQuery.split(' ').filter(Boolean);
   let bestScore = -1;
-  values.forEach((value, index) => {
+  values.forEach((value: string|undefined, index: number) => {
     const normalizedValue = normalizeTopicSearchValue(value);
     if (!normalizedValue) return;
     const sourceWeight = Math.max(0, 4 - index);
@@ -935,9 +950,9 @@ function scoreTopicMatch(query, values) {
   return bestScore;
 }
 
-export function searchLocalTopics(query, limit = 8) {
+export function searchLocalTopics(query: string, limit = 8) {
   if (!query?.trim()) return [];
-  const matches = [];
+  const matches: Array<OpenAlexTopic & { _searchScore?: number }> = [];
 
   Object.entries(CATEGORIES).forEach(([id, category]) => {
     const categoryScore = scoreTopicMatch(query, [
@@ -982,7 +997,7 @@ export function searchLocalTopics(query, limit = 8) {
   });
 
   return matches
-    .sort((a, b) => b._searchScore - a._searchScore || a.display_name.localeCompare(b.display_name))
+    .sort((a, b) => b._searchScore! - a._searchScore! || a.display_name.localeCompare(b.display_name))
     .slice(0, Math.max(1, limit))
     .map(topic => {
       const result = { ...topic };
@@ -995,7 +1010,7 @@ export function searchLocalTopics(query, limit = 8) {
  * Search PaperTok's bilingual taxonomy first, then enrich it with current
  * OpenAlex topics when the provider is available.
  */
-export async function searchConcepts(query, options = {}) {
+export async function searchConcepts(query: string, options: RequestOptions = {}) {
   if (!query?.trim()) return [];
   const limit = Math.max(1, Math.min(12, Number(options.limit) || 8));
   const normalizedQuery = query.trim();
@@ -1004,7 +1019,7 @@ export async function searchConcepts(query, options = {}) {
   try {
     const url = new URL('https://api.openalex.org/autocomplete/topics');
     url.searchParams.set('q', normalizedQuery);
-    const data = await openAlexJson(url.toString(), {
+    const data = await openAlexJson<OpenAlexPage<OpenAlexTopic> & { topics?: OpenAlexTopic[] }>(url.toString(), {
       timeoutMs: 3500,
       retries: 0,
       cacheTtlMs: 30 * 60 * 1000,
@@ -1019,7 +1034,7 @@ export async function searchConcepts(query, options = {}) {
       normalizeTopicSearchValue(topic.label),
     ]).filter(Boolean));
     const remoteTopics = (data?.topics || data?.results || []).flatMap(topic => {
-      const id = String(topic?.id || '').split('/').pop();
+      const id = String(topic?.id || '').split('/').pop()!;
       const nameKey = normalizeTopicSearchValue(topic?.display_name);
       if (!/^T\d+$/i.test(id) || !nameKey || seen.has(nameKey)) return [];
       seen.add(nameKey);
@@ -1045,8 +1060,8 @@ export async function searchConcepts(query, options = {}) {
   }
 }
 
-export function getLocalTopicEntity(id) {
-  const area = CATEGORIES[id];
+export function getLocalTopicEntity(id: string) {
+  const area = CATEGORIES[id as keyof typeof CATEGORIES];
   if (area) {
     return {
       id,
@@ -1059,7 +1074,7 @@ export function getLocalTopicEntity(id) {
     };
   }
   for (const areaValue of Object.values(CATEGORIES)) {
-    const subcategory = areaValue.subcategories?.[id];
+    const subcategory = (areaValue.subcategories as Record<string, { label: string }>)?.[id];
     if (subcategory) {
       return {
         id,
@@ -1078,7 +1093,7 @@ export function getLocalTopicEntity(id) {
  * Look up an OpenAlex institution by its ROR identifier or name.
  * Returns { id, display_name } or null if not found.
  */
-export async function findInstitution({ rorUrl, name, aliases = [] }) {
+export async function findInstitution({ rorUrl, name, aliases = [] }: { rorUrl?: string | null; name?: string; aliases?: string[] }) {
   let resolvedRorUrl = rorUrl;
   if (!resolvedRorUrl && name) {
     const rorInstitution = await resolveRorInstitution({ name }).catch(() => null);
@@ -1091,11 +1106,11 @@ export async function findInstitution({ rorUrl, name, aliases = [] }) {
     try {
       const res = await fetchWithTimeout(url, 4000);
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json() as OpenAlexPage<OpenAlexInstitution>;
         const inst = data.results?.[0];
         if (inst) {
           return {
-            id: inst.id.split('/').pop(),
+            id: inst.id.split('/').pop()!,
             display_name: inst.display_name
           };
         }
@@ -1105,15 +1120,15 @@ export async function findInstitution({ rorUrl, name, aliases = [] }) {
 
   const candidateNames = [...new Set([name, ...aliases].map(value => value?.trim()).filter(Boolean))];
   for (const candidateName of candidateNames) {
-    const url = `https://api.openalex.org/institutions?search=${encodeURIComponent(candidateName)}&select=id,display_name&per-page=1`;
+    const url = `https://api.openalex.org/institutions?search=${encodeURIComponent(candidateName!)}&select=id,display_name&per-page=1`;
     try {
       const res = await fetchWithTimeout(url, 4000);
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json() as OpenAlexPage<OpenAlexInstitution>;
         const inst = data.results?.[0];
         if (inst) {
           return {
-            id: inst.id.split('/').pop(),
+            id: inst.id.split('/').pop()!,
             display_name: inst.display_name
           };
         }
@@ -1141,37 +1156,37 @@ export async function findInstitution({ rorUrl, name, aliases = [] }) {
  * a project's record is OpenAIRE's, not this cache's. Only a FRESH entry
  * qualifies — a stale one is `getEntityById`'s business, which revalidates.
  */
-export function peekEntity(type, id) {
+export function peekEntity(type: string|undefined, id: string|undefined) {
   if (!id || (type !== 'author' && type !== 'institution')) return null;
-  const cleanId = String(id).includes('/') ? String(id).split('/').pop() : String(id);
-  const cached = readOpenAlexPersistent(`entity:${type}:${cleanId}`, ENTITY_CACHE_TTL_MS);
+  const cleanId = String(id).includes('/') ? String(id).split('/').pop()! : String(id);
+  const cached = readOpenAlexPersistent<Entity>(`entity:${type}:${cleanId}`, ENTITY_CACHE_TTL_MS);
   return cached && !cached.stale && cached.data ? cached.data : null;
 }
 
 /**
  * Fetch entity metadata by ID
  */
-export async function getEntityById(type, id) {
+export async function getEntityById(type: string | undefined, id: string | undefined): Promise<Entity | null> {
   if (!id) return null;
   if (type === 'concept' || type === 'topic') {
     const localTopic = getLocalTopicEntity(id);
     if (localTopic) return localTopic;
   }
-  const cleanId = id.includes('/') ? id.split('/').pop() : id;
+  const cleanId = id.includes('/') ? id.split('/').pop()! : id;
   const persistentCacheKey = `entity:${type}:${cleanId}`;
-  const cachedEntity = readOpenAlexPersistent(persistentCacheKey, ENTITY_CACHE_TTL_MS);
+  const cachedEntity = readOpenAlexPersistent<Entity>(persistentCacheKey, ENTITY_CACHE_TTL_MS);
   if (cachedEntity && !cachedEntity.stale) {
     return type === 'institution'
-      ? enrichInstitutionWithRor(cachedEntity.data)
+      ? enrichInstitutionWithRor(cachedEntity.data as OpenAlexInstitution)
       : cachedEntity.data;
   }
 
-  const persistEntity = (data) => {
+  const persistEntity = (data: Entity | null) => {
     if (data) writeOpenAlexPersistent(persistentCacheKey, data);
     return data;
   };
   const readStaleEntity = () => {
-    const stale = readOpenAlexPersistent(persistentCacheKey, ENTITY_STALE_TTL_MS);
+    const stale = readOpenAlexPersistent<Entity>(persistentCacheKey, ENTITY_STALE_TTL_MS);
     return stale && !stale.stale
       ? { ...stale.data, _openAlexCacheStatus: 'stale', _openAlexCachedAt: stale.savedAt }
       : null;
@@ -1186,10 +1201,10 @@ export async function getEntityById(type, id) {
       const response = await fetchWithTimeout(url, 10000);
       if (response.status === 404) return persistEntity(await rorPromise);
       if (!response.ok) throw new Error(`OpenAlex API error: ${response.status}`);
-      const data = await response.json();
+      const data = await response.json() as OpenAlexPage<OpenAlexInstitution>;
       if (data.results && data.results.length > 0) {
         const institution = data.results[0];
-        if (institution.works_count > 0) {
+        if (institution.works_count! > 0) {
           return persistEntity(await enrichInstitutionWithRor(institution, await rorPromise));
         }
 
@@ -1197,7 +1212,7 @@ export async function getEntityById(type, id) {
         try {
           const worksResponse = await fetchWithTimeout(worksUrl, 10000);
           if (!worksResponse.ok) return persistEntity(await enrichInstitutionWithRor(institution, await rorPromise));
-          const worksData = await worksResponse.json();
+          const worksData = await worksResponse.json() as OpenAlexPage<OpenAlexWork>;
           const withWorks = applyInstitutionWorksFallback(institution, worksData.meta?.count);
           return persistEntity(await enrichInstitutionWithRor(withWorks, await rorPromise));
         } catch {
@@ -1207,7 +1222,7 @@ export async function getEntityById(type, id) {
       return persistEntity(await rorPromise);
     } catch (err) {
       const staleEntity = readStaleEntity();
-      if (staleEntity) return enrichInstitutionWithRor(staleEntity, await rorPromise);
+      if (staleEntity) return enrichInstitutionWithRor(staleEntity as OpenAlexInstitution, await rorPromise);
       const rorFallback = await rorPromise;
       if (rorFallback) return persistEntity(rorFallback);
       console.error(`OpenAlex getEntityById by ROR filter failed for ${id}`, err);
@@ -1230,16 +1245,16 @@ export async function getEntityById(type, id) {
     const response = await fetchWithTimeout(url, 10000);
     if (response.status === 404) return null;
     if (!response.ok) throw new Error(`OpenAlex API error: ${response.status}`);
-    let data = await response.json();
+    let data = await response.json() as Entity;
 
     if (type === 'institution' && data?.works_count === 0) {
-      const filterKey = data.ror ? 'institutions.ror' : 'institutions.id';
-      const filterValue = data.ror || cleanId;
+      const filterKey = (data as OpenAlexInstitution).ror ? 'institutions.ror' : 'institutions.id';
+      const filterValue = (data as OpenAlexInstitution).ror || cleanId;
       const worksUrl = `https://api.openalex.org/works?filter=${filterKey}:${encodeURIComponent(filterValue)}&per-page=1&select=id`;
       try {
         const worksResponse = await fetchWithTimeout(worksUrl, 10000);
         if (worksResponse.ok) {
-          const worksData = await worksResponse.json();
+          const worksData = await worksResponse.json() as OpenAlexPage<OpenAlexWork>;
           data = applyInstitutionWorksFallback(data, worksData.meta?.count);
         }
       } catch {
@@ -1248,7 +1263,7 @@ export async function getEntityById(type, id) {
     }
 
     if (type === 'institution') {
-      data = await enrichInstitutionWithRor(data);
+      data = (await enrichInstitutionWithRor(data as OpenAlexInstitution))!;
     }
     
     // If it's a concept, translate back to Spanish
@@ -1270,7 +1285,7 @@ export async function getEntityById(type, id) {
     const staleEntity = readStaleEntity();
     if (staleEntity) {
       return type === 'institution'
-        ? enrichInstitutionWithRor(staleEntity)
+        ? enrichInstitutionWithRor(staleEntity as OpenAlexInstitution)
         : staleEntity;
     }
     console.error(`OpenAlex getEntityById failed for ${type} ${id}`, err);
@@ -1278,7 +1293,7 @@ export async function getEntityById(type, id) {
   }
 }
 
-export function normalizeRecentImpactEntityId(type, value) {
+export function normalizeRecentImpactEntityId(type: string, value: string | Partial<Entity> | null | undefined) {
   const prefix = type === 'institution' ? 'I' : type === 'author' ? 'A' : '';
   if (!prefix) return '';
   const rawId = typeof value === 'object' ? value?.id : value;
@@ -1286,7 +1301,7 @@ export function normalizeRecentImpactEntityId(type, value) {
   return match?.[1]?.toUpperCase() || '';
 }
 
-async function resolveRecentImpactEntityId(type, entityOrId) {
+async function resolveRecentImpactEntityId(type: string, entityOrId: string | (Partial<OpenAlexInstitution> & { orcid?: string | null })) {
   const directId = normalizeRecentImpactEntityId(type, entityOrId);
   if (directId) return directId;
 
@@ -1296,7 +1311,7 @@ async function resolveRecentImpactEntityId(type, entityOrId) {
       : entityOrId;
     const rorId = normalizeRorId(rawRor);
     if (!rorId) return '';
-    const data = await openAlexJson(
+    const data = await openAlexJson<OpenAlexPage<Entity>>(
       `https://api.openalex.org/institutions?filter=ror:${rorId}&per-page=1&select=id`,
       {
         timeoutMs: 7000,
@@ -1313,7 +1328,7 @@ async function resolveRecentImpactEntityId(type, entityOrId) {
   const rawOrcid = typeof entityOrId === 'object' ? entityOrId?.orcid : entityOrId;
   const orcid = String(rawOrcid || '').match(/\b\d{4}-\d{4}-\d{4}-\d{3}[\dX]\b/i)?.[0]?.toUpperCase();
   if (!orcid) return '';
-  const data = await openAlexJson(
+  const data = await openAlexJson<OpenAlexPage<Entity>>(
     `https://api.openalex.org/authors?filter=orcid:${encodeURIComponent(orcid)}&per-page=1&select=id`,
     {
       timeoutMs: 7000,
@@ -1327,7 +1342,7 @@ async function resolveRecentImpactEntityId(type, entityOrId) {
   return normalizeRecentImpactEntityId(type, data?.results?.[0]?.id);
 }
 
-export function buildRecentImpactUrl(type, openAlexId, period, attempt = 0) {
+export function buildRecentImpactUrl(type: string, openAlexId: string, period: ImpactPeriod, attempt = 0) {
   const config = getRecentImpactConfig(type);
   const normalizedId = normalizeRecentImpactEntityId(type, openAlexId);
   if (!config || !normalizedId || !period?.from || !period?.to) return '';
@@ -1347,10 +1362,10 @@ export function buildRecentImpactUrl(type, openAlexId, period, attempt = 0) {
   return `https://api.openalex.org/works?${params}`;
 }
 
-export async function fetchRecentImpactWorks(type, openAlexId, period, fetchJson = openAlexJson) {
+export async function fetchRecentImpactWorks(type: string, openAlexId: string, period: ImpactPeriod, fetchJson: (url: string, options: OpenAlexJsonOptions<OpenAlexPage<OpenAlexWork>>) => Promise<OpenAlexPage<OpenAlexWork>> = openAlexJson) {
   const config = getRecentImpactConfig(type);
   if (!config) return { works: [], attempts: 0 };
-  const uniqueWorks = new Map();
+  const uniqueWorks = new Map<string, OpenAlexWork>();
   let attempts = 0;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -1376,11 +1391,11 @@ export async function fetchRecentImpactWorks(type, openAlexId, period, fetchJson
   return { works: [...uniqueWorks.values()], attempts };
 }
 
-function recentImpactCacheTtl(impact) {
+function recentImpactCacheTtl(impact: RecentImpact | null | undefined) {
   return impact?.available ? IMPACT_CACHE_TTL_MS : IMPACT_INSUFFICIENT_TTL_MS;
 }
 
-export async function getEntityRecentImpact(type, entityOrId, now = new Date()) {
+export async function getEntityRecentImpact(type: string, entityOrId: string | (Partial<OpenAlexInstitution> & { orcid?: string | null }), now = new Date()) {
   const config = getRecentImpactConfig(type);
   if (!config || !entityOrId) return null;
   const period = getRecentImpactPeriod(now);
@@ -1408,7 +1423,7 @@ export async function getEntityRecentImpact(type, entityOrId, now = new Date()) 
   if (memoryEntry) RECENT_IMPACT_CACHE.delete(cacheKey);
 
   const persistentCacheKey = `recent-impact:v2:${cacheKey}`;
-  const cachedImpact = readOpenAlexPersistent(persistentCacheKey, Number.POSITIVE_INFINITY);
+  const cachedImpact = readOpenAlexPersistent<RecentImpact>(persistentCacheKey, Number.POSITIVE_INFINITY);
   if (cachedImpact && cachedImpact.ageMs <= recentImpactCacheTtl(cachedImpact.data)) {
     const impact = {
       ...cachedImpact.data,
@@ -1462,7 +1477,7 @@ export async function getEntityRecentImpact(type, entityOrId, now = new Date()) 
 /**
  * OpenAlex Concept Mapping for PaperTok Categories
  */
-const OA_CONCEPT_MAP = {
+const OA_CONCEPT_MAP: Record<string, string> = {
   'physics': 'C121332964',
   'cs': 'C41008148',
   'math': 'C33923547',
@@ -1484,7 +1499,7 @@ const ENTITY_SCREEN_BUDGET_MS = 7000;
  * sortBy: 'cited_by_count:desc' or 'publication_date:desc'
  * filters: { category: string, peerReviewed: boolean, dateRange: string }
  */
-export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc', page = 1, searchQuery = '', filters = {}, entityName = '') {
+export async function getWorksByEntity(type: string|undefined, id: string|undefined, sortBy = 'cited_by_count:desc', page = 1, searchQuery = '', filters: WorksFilters = {}, entityName = '') {
   if (!id) return { papers: [], total: 0 };
 
   // The screen cuts its own wait at 7000 ms (`ENTITY_PRIMARY_RENDER_BUDGET_MS`
@@ -1496,7 +1511,7 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
   const startedAt = Date.now();
   const primaryTimeoutMs = type === 'institution' ? 3500 : ENTITY_SCREEN_BUDGET_MS;
   
-  const cleanId = id.includes('/') ? id.split('/').pop() : id;
+  const cleanId = id.includes('/') ? id.split('/').pop()! : id;
   const isRor = type === 'institution' && (id.includes('ror.org') || !cleanId.startsWith('I'));
   
   let filterKey;
@@ -1545,7 +1560,7 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
   const worksCacheKey = `entity-works-v2:${type}:${cleanId}:${sortBy}:${page}:${searchQuery}:${JSON.stringify(filters)}`;
   
   try {
-    const data = await openAlexJson(url, {
+    const data = await openAlexJson<ReturnType<typeof slimWorksPage>, OpenAlexPage<OpenAlexWork>>(url, {
       timeoutMs: primaryTimeoutMs,
       retries: 0,
       cacheTtlMs: 5 * 60 * 1000,
@@ -1583,10 +1598,10 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
 /**
  * Fetch authors for a specific entity (e.g. institution or concept)
  */
-export async function getAuthorsByEntity(type, id, page = 1, searchQuery = '', entityName = '') {
+export async function getAuthorsByEntity(type: string|undefined, id: string, page = 1, searchQuery = '', entityName = '') {
   if (!id || type === 'author') return { authors: [], total: 0 };
   
-  const cleanId = id.includes('/') ? id.split('/').pop() : id;
+  const cleanId = id.includes('/') ? id.split('/').pop()! : id;
   const isRor = type === 'institution' && (id.includes('ror.org') || !cleanId.startsWith('I'));
   
   let filterKey;
@@ -1608,7 +1623,7 @@ export async function getAuthorsByEntity(type, id, page = 1, searchQuery = '', e
   const authorsCacheKey = `entity-authors-v2:${type}:${cleanId}:${page}:${searchQuery.trim().toLowerCase()}`;
   
   try {
-    const data = await openAlexJson(url, {
+    const data = await openAlexJson<ReturnType<typeof slimAuthorsPage>, OpenAlexPage<OpenAlexAuthor>>(url, {
       timeoutMs: 7000,
       retries: 0,
       cacheTtlMs: 5 * 60 * 1000,
@@ -1644,7 +1659,7 @@ export async function getAuthorsByEntity(type, id, page = 1, searchQuery = '', e
  * and format them as standard Paper objects (since they might not be on arXiv).
  * @param {string[]} dois 
  */
-export async function fetchPapersByDois(dois, options = {}) {
+export async function fetchPapersByDois(dois: string[], options: { throwOnProviderError?: boolean } = {}) {
   if (!dois || dois.length === 0) return [];
   
   const cleanDois = dois.map(doi => {
@@ -1654,7 +1669,7 @@ export async function fetchPapersByDois(dois, options = {}) {
   
   if (cleanDois.length === 0) return [];
   
-  const results = [];
+  const results: OpenAlexWork[] = [];
   const chunkSize = 40;
   for (let i = 0; i < cleanDois.length; i += chunkSize) {
     const chunk = cleanDois.slice(i, i + chunkSize);
@@ -1665,7 +1680,7 @@ export async function fetchPapersByDois(dois, options = {}) {
     try {
       const response = await fetchWithTimeout(url, 10000);
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json() as OpenAlexPage<OpenAlexWork>;
         if (data && data.results) {
           results.push(...data.results);
         }
@@ -1687,13 +1702,13 @@ export async function fetchPapersByDois(dois, options = {}) {
  * abstracts, authorships, locations); the papers made from it are a tenth of
  * that, and are all the page ever reads.
  */
-export function slimWorksPage(data) {
+export function slimWorksPage(data: OpenAlexPage<OpenAlexWork>) {
   const papers = Array.isArray(data?.results) ? data.results.map(formatOpenAlexWorkAsPaper).filter(Boolean) : [];
   return { papers, total: data?.meta?.count || 0 };
 }
 
 /** An authors page as the Explorer keeps it: the seven fields its cards show. */
-export function slimAuthorsPage(data) {
+export function slimAuthorsPage(data: OpenAlexPage<OpenAlexAuthor>) {
   const authors = Array.isArray(data?.results) ? data.results.map(author => ({
     id: author.id,
     display_name: author.display_name,
@@ -1708,7 +1723,7 @@ export function slimAuthorsPage(data) {
   return { authors, total: data?.meta?.count || 0 };
 }
 
-function formatOpenAlexWorkAsPaper(work) {
+function formatOpenAlexWorkAsPaper(work: OpenAlexWork): Paper {
   const summary = usableOpenAlexAbstract(work) || 'Resumen no disponible.';
   
   const authors = work.authorships?.map(a => ({ name: a.author?.display_name || 'Unknown Author', id: a.author?.id })) || [{ name: 'Unknown Author' }];
@@ -1721,7 +1736,7 @@ function formatOpenAlexWorkAsPaper(work) {
       displayName: institution.display_name,
     }])).values()];
   const categories = usableOpenAlexConcepts(work.concepts).map(c => c.display_name);
-  const openAlexId = work.id.split('/').pop();
+  const openAlexId = work.id!.split('/').pop()!;
   
   return PaperBuilder.create({
     id: openAlexId,
@@ -1761,7 +1776,7 @@ function formatOpenAlexWorkAsPaper(work) {
  * public paper page's fallback when arXiv itself refuses to answer: arXiv
  * rate-limits by IP in bursts, while OpenAlex indexes the same preprints.
  */
-export async function fetchPaperByArxivIdViaOpenAlex(arxivId, { timeoutMs = 8000 } = {}) {
+export async function fetchPaperByArxivIdViaOpenAlex(arxivId: unknown, { timeoutMs = 8000 } = {}) {
   const clean = String(arxivId || '').replace(/^arxiv:/i, '').replace(/v\d+$/i, '').trim();
   if (!clean) return null;
   // Same landing-page filter the enrichment batch uses: OpenAlex has no
@@ -1772,7 +1787,7 @@ export async function fetchPaperByArxivIdViaOpenAlex(arxivId, { timeoutMs = 8000
   try {
     const response = await fetchWithTimeout(`https://api.openalex.org/works?filter=${filter}&per_page=1`, timeoutMs);
     if (!response?.ok) return null;
-    const data = await response.json();
+    const data = await response.json() as OpenAlexPage<OpenAlexWork>;
     const work = data?.results?.[0];
     return work ? formatOpenAlexWorkAsPaper(work) : null;
   } catch (error) {
@@ -1797,7 +1812,7 @@ export async function fetchPaperByArxivIdViaOpenAlex(arxivId, { timeoutMs = 8000
  * `globalThis.fetch` when the module loads, so swapping the global would not
  * reach it.
  */
-export async function fetchPaperByWorkId(type, value, options = {}) {
+export async function fetchPaperByWorkId(type: unknown, value: unknown, options: { timeoutMs?: number; openAlexJson?: (url: string, options: OpenAlexJsonOptions<OpenAlexWork>) => Promise<OpenAlexWork> } = {}) {
   const kind = String(type || '').toLowerCase();
   const clean = String(value || '').trim();
   const lookup = kind === 'openalex' && /^W\d+$/i.test(clean)
@@ -1806,7 +1821,7 @@ export async function fetchPaperByWorkId(type, value, options = {}) {
   if (!lookup) return null;
   const feedId = kind === 'openalex' ? `openalex:${lookup}` : lookup;
 
-  const requestJson = options.openAlexJson || openAlexJson;
+  const requestJson: (url: string, options: OpenAlexJsonOptions<OpenAlexWork>) => Promise<OpenAlexWork> = options.openAlexJson || openAlexJson;
   try {
     const work = await requestJson(`https://api.openalex.org/works/${encodeURIComponent(lookup)}`, {
       timeoutMs: options.timeoutMs ?? 8000,
@@ -1818,7 +1833,7 @@ export async function fetchPaperByWorkId(type, value, options = {}) {
   } catch (error) {
     // A 404 is an id nobody can open, which the page reports as not found;
     // anything else is the provider misbehaving, and the page offers a retry.
-    if (error?.status === 404) return null;
+    if ((error as { status?: number } | null)?.status === 404) return null;
     throw error;
   }
 }

@@ -1,24 +1,26 @@
+import type { Paper, PaperAuthor } from '../models/Paper.ts';
+
 import { CATEGORIES } from '../data/categories.js';
 
-function getPaperTimestamp(paper) {
+function getPaperTimestamp(paper: Partial<Paper>) {
   const timestamp = new Date(paper.published || paper.publicationDate || '').getTime();
   if (Number.isFinite(timestamp)) return timestamp;
   const year = Number(paper.year);
   return Number.isFinite(year) ? new Date(`${year}-01-01T00:00:00Z`).getTime() : 0;
 }
 
-function matchesCategory(paper, areaId) {
+function matchesCategory(paper: Partial<Paper>, areaId: string | undefined) {
   if (!areaId) return true;
   const categories = [
     paper.primaryCategory,
     ...(paper.categories || []),
     ...(paper.allCategories || []),
   ].filter(Boolean);
-  const areaCategories = Object.keys(CATEGORIES[areaId]?.subcategories || {});
-  return categories.includes(areaId) || categories.some(category => areaCategories.includes(category));
+  const areaCategories = Object.keys(CATEGORIES[areaId as keyof typeof CATEGORIES]?.subcategories || {});
+  return categories.includes(areaId) || categories.some(category => areaCategories.includes(category!));
 }
 
-export function getPaperCitationCount(paper) {
+export function getPaperCitationCount(paper: Partial<Paper> | null | undefined) {
   const candidates = [
     paper?.citationCount,
     paper?.citationsCount,
@@ -29,13 +31,13 @@ export function getPaperCitationCount(paper) {
   return Math.max(0, Number(citationCount) || 0);
 }
 
-export function hasKnownPaperCitationCount(paper) {
+export function hasKnownPaperCitationCount(paper: Partial<Paper> | null | undefined) {
   return paper?.citationCountKnown === true
     || paper?.openAlex?.citationCountKnown === true
     || getPaperCitationCount(paper) > 0;
 }
 
-export function filterAndSortEntityPapers(papers, { searchQuery = '', filters = {}, sortBy = '' } = {}) {
+export function filterAndSortEntityPapers<T extends Partial<Paper>>(papers: T[], { searchQuery = '', filters = {}, sortBy = '' }: { searchQuery?: string; filters?: { dateRange?: string; category?: string; peerReviewed?: boolean }; sortBy?: string } = {}) {
   const query = searchQuery.trim().toLowerCase();
   const now = new Date();
   const minYear = filters.dateRange === 'last_year'
@@ -46,7 +48,7 @@ export function filterAndSortEntityPapers(papers, { searchQuery = '', filters = 
 
   const filtered = (papers || []).filter(paper => {
     if (query) {
-      const authors = (paper.authors || []).map(author => author?.name || author).join(' ');
+      const authors = (paper.authors || []).map(author => (author as PaperAuthor)?.name || author).join(' ');
       const searchable = [paper.title, paper.abstract, paper.summary, authors]
         .filter(Boolean)
         .join(' ')
@@ -74,7 +76,7 @@ export function filterAndSortEntityPapers(papers, { searchQuery = '', filters = 
   });
 }
 
-function normalizePaperId(paperId) {
+function normalizePaperId(paperId: string) {
   if (!paperId) return '';
   const id = paperId.startsWith('arxiv:') ? paperId.split(':')[1] : paperId;
   return id.replace(/v\d+$/, '');
@@ -92,7 +94,7 @@ const ARXIV_SOURCE = /^(?:\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?\/\d{7})(?:v\d+)?
  * Zhang" is 11,284 OpenAlex entities (audit 2026-09-23). Other entity types
  * are identified by their route and always count.
  */
-export function authorIdentityVerified({ type, routeId, entity } = {}) {
+export function authorIdentityVerified({ type, routeId, entity }: { type?: string; routeId?: unknown; entity?: { id?: string; verified?: boolean } | null } = {}) {
   if (type !== 'author') return true;
   const raw = String(routeId || '').trim();
   if (OPENALEX_AUTHOR_ROUTE.test(raw)) return true;
@@ -108,12 +110,12 @@ export function authorIdentityVerified({ type, routeId, entity } = {}) {
  * carried something else. Old links put a PubMed paper's `pmid:` id in
  * `?arxivId=`, and pinning it sent `id_list=pmid:…` to arXiv.
  */
-export function sourceArxivIdFrom(value) {
+export function sourceArxivIdFrom(value: string|null) {
   const raw = String(value || '').trim();
   return ARXIV_SOURCE.test(raw) ? raw.replace(/v\d+$/i, '') : '';
 }
 
-export function pinSourcePaper(papers, sourcePaperId) {
+export function pinSourcePaper<T extends Pick<Paper, 'id'>>(papers: T[], sourcePaperId: string) {
   const sourceId = normalizePaperId(sourcePaperId);
   if (!sourceId) return papers;
   const sourceIndex = papers.findIndex(paper => normalizePaperId(paper.id) === sourceId);
@@ -163,14 +165,14 @@ export function entityPapersRequestKey({
   searchParams,
   reloadKey,
   entityReloadKey,
-}) {
+}: { type?: string; id?: string; entity?: { id?: string; display_name?: string; _localTopic?: boolean; _queryTopic?: boolean } | null; entityDisplayName?: string; sortBy?: string; page?: number; searchQuery?: string; filters?: unknown; searchParams?: unknown; reloadKey?: unknown; entityReloadKey?: unknown }) {
   return JSON.stringify([
     type,
     id,
     type === 'institution' ? id : (entity?.id || id),
     type === 'project'
       ? ''
-      : ['concept', 'topic'].includes(type)
+      : ['concept', 'topic'].includes(type!)
         ? entityDisplayName || ''
         : entity?.display_name || '',
     Boolean(entity?._localTopic),
@@ -199,7 +201,7 @@ export function entityPapersRequestKey({
 export const EXPLORER_ROW_CHUNK = 8;
 
 /** The next row budget: `chunk` more rows, never past what the list has. */
-export function nextExplorerRowBudget(budget, total, chunk = EXPLORER_ROW_CHUNK) {
+export function nextExplorerRowBudget(budget: number, total: number, chunk = EXPLORER_ROW_CHUNK) {
   return Math.min(Math.max(0, total), Math.max(0, budget) + chunk);
 }
 
@@ -212,7 +214,7 @@ export function nextExplorerRowBudget(budget, total, chunk = EXPLORER_ROW_CHUNK)
 export const GUEST_PREVIEW_LIMIT = 2;
 
 /** The rows to mount. With a session, the list itself, untouched. */
-export function guestPreviewRows(rows, { publicMode } = {}) {
+export function guestPreviewRows<T>(rows: T[], { publicMode }: { publicMode?: boolean } = {}) {
   if (!publicMode) return rows;
   return rows.slice(0, GUEST_PREVIEW_LIMIT);
 }
@@ -222,10 +224,10 @@ export function guestPreviewRows(rows, { publicMode } = {}) {
  * behind it: an entity with two publications has reached its end, not a wall,
  * and a list still loading cannot claim anything is missing yet.
  */
-export function shouldShowGuestGate({ publicMode, loaded, hasMore, isLoading } = {}) {
+export function shouldShowGuestGate({ publicMode, loaded, hasMore, isLoading }: { publicMode?: boolean; loaded?: number; hasMore?: boolean; isLoading?: boolean } = {}) {
   if (!publicMode || isLoading) return false;
-  if (!(loaded > 0)) return false;
-  return loaded > GUEST_PREVIEW_LIMIT || Boolean(hasMore);
+  if (!(loaded! > 0)) return false;
+  return loaded! > GUEST_PREVIEW_LIMIT || Boolean(hasMore);
 }
 
 /**
@@ -234,8 +236,8 @@ export function shouldShowGuestGate({ publicMode, loaded, hasMore, isLoading } =
  * number, or that does not exceed what is on screen, is no explanation for a
  * wall, so the copy falls back to naming none.
  */
-export function guestGateTotal(entity, shown = GUEST_PREVIEW_LIMIT) {
+export function guestGateTotal(entity: { works_count?: number | null } | null | undefined, shown = GUEST_PREVIEW_LIMIT) {
   const total = entity?.works_count;
-  return Number.isFinite(total) && total > shown ? total : null;
+  return Number.isFinite(total) && total! > shown ? total : null;
 }
 

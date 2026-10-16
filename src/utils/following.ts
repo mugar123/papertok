@@ -1,6 +1,11 @@
+import type { PaperFollowMatch } from '../models/Paper.ts';
+export interface FollowMetadata { labelEn?: string; query?: string; categoryIds?: string[]; source?: string; funder?: string; arxivId?: string; localizedNames?: Record<string, string>; }
+export type FollowEntity = Omit<PaperFollowMatch, 'metadata'> & { metadata?: FollowMetadata; categoryIds?: string[] };
+export type FollowInput = Omit<Partial<FollowEntity>, 'type'> & { type?: PaperFollowMatch['type'] | 'concept'; id?: string; display_name?: string; name?: string };
+
 const SUPPORTED_FOLLOW_TYPES = new Set(['author', 'topic', 'institution', 'project']);
 
-export function normalizeFollowText(value) {
+export function normalizeFollowText(value: unknown) {
   return String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -9,7 +14,7 @@ export function normalizeFollowText(value) {
     .replace(/\s+/g, ' ');
 }
 
-export function normalizeFollowId(value) {
+export function normalizeFollowId(value: unknown) {
   return String(value || '')
     .trim()
     .replace(/^https?:\/\/(?:api\.)?openalex\.org\//i, '')
@@ -18,13 +23,13 @@ export function normalizeFollowId(value) {
     .replace(/^\/+|\/+$/g, '');
 }
 
-export function createFollowKey(type, canonicalId) {
-  const safeType = SUPPORTED_FOLLOW_TYPES.has(type) ? type : 'entity';
+export function createFollowKey(type: string, canonicalId: unknown) {
+  const safeType = SUPPORTED_FOLLOW_TYPES.has(type!) ? type : 'entity';
   const safeId = normalizeFollowId(canonicalId) || normalizeFollowText(canonicalId) || 'unknown';
   return `${safeType}_${safeId}`.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 240);
 }
 
-export function compactFollowData(value) {
+export function compactFollowData(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(compactFollowData).filter(item => item !== undefined);
   }
@@ -36,9 +41,9 @@ export function compactFollowData(value) {
   return value;
 }
 
-export function createFollowEntity(input = {}) {
+export function createFollowEntity(input: FollowInput = {}): FollowEntity | null {
   const type = input.type === 'concept' ? 'topic' : input.type;
-  if (!SUPPORTED_FOLLOW_TYPES.has(type)) return null;
+  if (!SUPPORTED_FOLLOW_TYPES.has(type!)) return null;
 
   const displayName = String(input.displayName || input.display_name || input.name || '').trim();
   const canonicalId = normalizeFollowId(input.canonicalId || input.id || displayName);
@@ -51,7 +56,7 @@ export function createFollowEntity(input = {}) {
     source: input.source || 'papertok',
     externalIds: input.externalIds || {},
     metadata: input.metadata || {},
-  });
+  }) as FollowEntity;
 }
 
 /**
@@ -68,13 +73,13 @@ export function createFollowEntity(input = {}) {
  * acronym but not a title keep different names, because neither spelling then
  * heads the other.
  */
-function isSameProjectNameSpelling(oneName, otherName) {
+function isSameProjectNameSpelling(oneName: string, otherName: string) {
   if (!oneName || !otherName) return false;
   const [head, full] = oneName.length < otherName.length ? [oneName, otherName] : [otherName, oneName];
   return full.startsWith(`${head}: `);
 }
 
-export function followsEntity(followedEntities, entity) {
+export function followsEntity(followedEntities: FollowEntity[], entity: FollowInput) {
   const normalized = createFollowEntity(entity);
   if (!normalized) return false;
   const id = normalizeFollowId(normalized.canonicalId);
@@ -90,15 +95,15 @@ export function followsEntity(followedEntities, entity) {
   });
 }
 
-export function getFollowingStorageKey(userId) {
+export function getFollowingStorageKey(userId: unknown) {
   return `papertok_following_${String(userId || 'anonymous').replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 }
 
-export function migrateLegacyAuthors(authorNames = []) {
+export function migrateLegacyAuthors(authorNames: string[] = []) {
   return [...new Set(authorNames.filter(Boolean))].map((displayName) => createFollowEntity({
     type: 'author',
     canonicalId: `legacy:${normalizeFollowText(displayName)}`,
     displayName,
     source: 'legacy',
-  })).filter(Boolean);
+  })).filter(Boolean) as FollowEntity[];
 }

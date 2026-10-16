@@ -1,3 +1,21 @@
+import type { Paper, PaperAuthor } from '../../models/Paper.ts';
+import type { PaperSearchFilters, PaperSearchResult } from './index.ts';
+
+export interface PubmedSummary {
+  uid: string;
+  title?: string;
+  authors?: Array<{ name: string }>;
+  articleids?: Array<{ idtype: string; value: string }>;
+  source?: string;
+  pubdate?: string;
+  pubtype?: string | string[];
+}
+interface PubmedResponse {
+  esearchresult?: { idlist?: string[]; count?: string };
+  result?: Record<string, PubmedSummary>;
+  efetch?: string;
+}
+
 import { CATEGORIES } from '../../data/categories.js';
 import { readSourceCache, writeSourceCache } from '../../utils/sourceCache.ts';
 import { mergePubmedAuthors, readPubmedEfetch } from '../../utils/pubmedEfetch.ts';
@@ -15,7 +33,7 @@ import { fetchWorkerSourceJson } from '../workerApiClient.ts';
 const PUBMED_CACHE_TTL_MS = 10 * 60 * 1000;
 const PUBMED_PAGE_SIZE = 25;
 
-const PUBMED_CATEGORY_ALIASES = Object.freeze({
+const PUBMED_CATEGORY_ALIASES: Readonly<Record<string, string[]>> = Object.freeze({
   'med.gen': ['internal medicine', 'general medicine', 'primary care', 'family medicine', 'multimorbidity'],
   'med.onco': ['oncology', 'cancer', 'tumor', 'tumour', 'carcinoma', 'neoplasm', 'chemotherapy'],
   'med.cardio': ['cardiology', 'cardiovascular', 'cardiac', 'heart disease', 'myocardial', 'coronary', 'arrhythmia'],
@@ -49,7 +67,7 @@ const PUBMED_CATEGORY_ALIASES = Object.freeze({
   'bio.biotech': ['biotechnology', 'bioengineering', 'synthetic biology', 'bioprocess', 'genetic engineering'],
 });
 
-function normalizePubmedText(value) {
+function normalizePubmedText(value: unknown) {
   return String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -59,18 +77,18 @@ function normalizePubmedText(value) {
     .trim();
 }
 
-function getCategoryDefinition(categoryId) {
+function getCategoryDefinition(categoryId: string|number) {
   for (const area of Object.values(CATEGORIES)) {
-    if (area.subcategories?.[categoryId]) return area.subcategories[categoryId];
+    if ((area.subcategories as Record<string, { label: string }>)?.[categoryId]) return (area.subcategories as Record<string, { label: string }>)[categoryId];
   }
   return null;
 }
 
-function containsTerm(text, term) {
+function containsTerm(text: string, term: string) {
   return text && term && ` ${text} `.includes(` ${term} `);
 }
 
-export function classifyPubmedCategory(paper, internalCategories = []) {
+export function classifyPubmedCategory(paper: Partial<Paper>, internalCategories: string[] = []) {
   const candidates = [...new Set(internalCategories)]
     .filter(categoryId => getCategoryDefinition(categoryId));
 
@@ -108,7 +126,7 @@ export function classifyPubmedCategory(paper, internalCategories = []) {
   return ranked[0].categoryId;
 }
 
-function assignPubmedCategory(paper, internalCategories) {
+function assignPubmedCategory(paper: Paper, internalCategories?: string[]) {
   const categoryId = classifyPubmedCategory(paper, internalCategories);
   if (!categoryId) return null;
 
@@ -133,7 +151,7 @@ function assignPubmedCategory(paper, internalCategories) {
 // Ordered: `Preprint` wins over everything (PubMed tags preprints as such and
 // nothing else about the record contradicts it), and `Review` before
 // `Journal Article` because a review carries both.
-const PUBTYPE_MAP = [
+const PUBTYPE_MAP: Array<[RegExp, string]> = [
   [/preprint/i, 'preprint'],
   [/review/i, 'review'],
   [/journal article/i, 'article'],
@@ -141,7 +159,7 @@ const PUBTYPE_MAP = [
   [/clinical trial|randomized/i, 'article'],
 ];
 
-function publicationTypeFromPubtype(pubtype) {
+function publicationTypeFromPubtype(pubtype: string | string[] | undefined) {
   const list = Array.isArray(pubtype) ? pubtype : (pubtype ? [pubtype] : []);
   for (const [pattern, type] of PUBTYPE_MAP) {
     if (list.some(entry => pattern.test(String(entry)))) return type;
@@ -150,15 +168,17 @@ function publicationTypeFromPubtype(pubtype) {
 }
 
 export class PubmedAdapter {
+  declare name: string;
+  declare workerOptions: Parameters<typeof fetchWorkerSourceJson>[2];
   // `workerOptions` is the injection seam `openAlexClient` already uses:
   // `import.meta.env` does not exist under `node --test`, so without it this
   // adapter's network path could only be exercised in a browser.
-  constructor(workerOptions = {}) {
+  constructor(workerOptions: Parameters<typeof fetchWorkerSourceJson>[2] = {}) {
     this.name = 'pubmed';
     this.workerOptions = workerOptions;
   }
 
-  async search(query, page = 1, filters = {}) {
+  async search(query: string, page = 1, filters: PaperSearchFilters = {}): Promise<PaperSearchResult> {
     const cacheKey = [
       'pubmed',
       query,
@@ -167,7 +187,7 @@ export class PubmedAdapter {
       [...(filters?.internalCategories || [])].sort().join(','),
     ].join('|');
 
-    const cached = readSourceCache(cacheKey, PUBMED_CACHE_TTL_MS);
+    const cached = readSourceCache<PaperSearchResult>(cacheKey, PUBMED_CACHE_TTL_MS);
     if (cached) return cached;
 
     const result = await this.fetchSearch(query, page, filters);
@@ -177,7 +197,7 @@ export class PubmedAdapter {
     return result;
   }
 
-  async fetchSearch(query, page = 1, filters = {}) {
+  async fetchSearch(query: string, page = 1, filters: PaperSearchFilters = {}): Promise<PaperSearchResult> {
     try {
       let finalQuery = query;
       if (filters && filters.type === 'author') {
@@ -188,7 +208,7 @@ export class PubmedAdapter {
       // three upstream payloads unchanged — esearch, esummary and the efetch XML —
       // so everything below maps exactly what it mapped when the browser fetched
       // them itself.
-      const pubmedData = await fetchWorkerSourceJson('/sources/pubmed', {
+      const pubmedData = await fetchWorkerSourceJson<PubmedResponse>('/sources/pubmed', {
         q: finalQuery,
         page,
         limit: PUBMED_PAGE_SIZE,
@@ -219,8 +239,8 @@ export class PubmedAdapter {
             if (enrichment.abstract) paper.abstract = enrichment.abstract;
             // Full names, ORCIDs and affiliations ride with the card's
             // authors (names unchanged) so an author link can say who.
-            if (enrichment.authors?.length > 0) paper.authors = mergePubmedAuthors(paper.authors, enrichment.authors);
-            if (enrichment.categories?.length > 0) {
+            if ((enrichment.authors?.length as number) > 0) paper.authors = mergePubmedAuthors(paper.authors, enrichment.authors);
+            if ((enrichment.categories?.length as number) > 0) {
               paper.categories = enrichment.categories;
               paper.keywords = enrichment.categories;
             }
@@ -231,10 +251,10 @@ export class PubmedAdapter {
         console.warn('PubmedAdapter enrichment failed:', err);
       }
 
-      if (filters.internalCategories?.length > 0) {
+      if ((filters.internalCategories?.length as number) > 0) {
         mappedPapers = mappedPapers
           .map(paper => assignPubmedCategory(paper, filters.internalCategories))
-          .filter(Boolean);
+          .filter(Boolean) as Paper[];
       }
 
       return { papers: mappedPapers, total };
@@ -245,9 +265,9 @@ export class PubmedAdapter {
     }
   }
 
-  mapToStandard(raw) {
-    let doi = null;
-    let pmc = null;
+  mapToStandard(raw: PubmedSummary): Paper {
+    let doi: string | null = null;
+    let pmc: string | null = null;
     
     if (raw.articleids) {
        const doiObj = raw.articleids.find(id => id.idtype === 'doi');
@@ -259,18 +279,18 @@ export class PubmedAdapter {
 
     const id = raw.uid;
     
-    let authors = [];
+    let authors: PaperAuthor[] = [];
     if (raw.authors && Array.isArray(raw.authors)) {
       authors = raw.authors.map(a => ({ name: a.name }));
     }
 
-    let pdfUrl = '';
+    const pdfUrl = '';
     // A PMC copy is proof of access; its absence is not proof of a paywall.
     // Deposit takes days to months, so a CC BY paper a day old has none, and a
     // `false` here was painted "Suscripción" (`paperStatus.js` reads an explicit
     // false as a paywall). Unknown lets OpenAlex, Europe PMC or the card's
     // open-access lookup say what it is.
-    let isOpenAccess;
+    let isOpenAccess: boolean | undefined;
 
     if (pmc) {
       isOpenAccess = true;

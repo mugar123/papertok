@@ -1,3 +1,6 @@
+import type { Paper } from '../models/Paper.ts';
+type MountWindow = { lo: number; hi: number };
+
 /**
  * Which cards a feed mounts right now.
  *
@@ -42,7 +45,7 @@ export function initialMountWindow({ total = 0, anchorIndex = 0, radius = MOUNT_
 }
 
 /** The next window: `step` more cards, below first (where the reader is headed), then above. */
-export function growMountWindow(window, total, step = MOUNT_WINDOW_STEP) {
+export function growMountWindow(window: MountWindow | null | undefined, total: number, step = MOUNT_WINDOW_STEP) {
   const lo = Math.max(0, window?.lo ?? 0);
   const hi = Math.min(total, window?.hi ?? 0);
   if (total <= 0) return { lo: 0, hi: 0 };
@@ -71,18 +74,18 @@ export function growMountWindow(window, total, step = MOUNT_WINDOW_STEP) {
  * — without ever mounting a long run of cards because of a far jump.
  */
 export const MOUNT_WINDOW_REACH = 4;
-export function windowReachingReader(window, readerIndex, total) {
+export function windowReachingReader(window: MountWindow, readerIndex: number, total: number) {
   const lo = window?.lo ?? 0;
   const hi = window?.hi ?? 0;
   if (hi === 0 || total <= hi || readerIndex < hi - 1 || readerIndex > hi + MOUNT_WINDOW_REACH) return window;
   return { lo, hi: Math.min(total, readerIndex + 2) };
 }
 
-export function mountWindowCovers(window, total) {
+export function mountWindowCovers(window: MountWindow | null | undefined, total: number) {
   return total <= 0 || ((window?.lo ?? 0) <= 0 && (window?.hi ?? 0) >= total);
 }
 
-export function inMountWindow(window, index) {
+export function inMountWindow(window: MountWindow | null | undefined, index: number) {
   return index >= (window?.lo ?? 0) && index < (window?.hi ?? 0);
 }
 
@@ -97,7 +100,7 @@ export function inMountWindow(window, index) {
  * different paper, or on the first one. The paper's own id survives all of
  * that; the saved index is the fallback for a paper the feed no longer has.
  */
-export function resumeIndex({ papers = [], savedPaperId = null, savedIndex = 0 } = {}) {
+export function resumeIndex({ papers = [], savedPaperId = null, savedIndex = 0 }: { papers?: Array<Pick<Paper, 'id'>>; savedPaperId?: string | null; savedIndex?: number } = {}) {
   const total = papers.length;
   if (total === 0) return 0;
   if (savedPaperId) {

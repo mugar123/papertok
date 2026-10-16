@@ -48,12 +48,12 @@ export const CITATION_GATE_MAX_WAIT_MS = 1200;
  * the timer is always cleared — a pending one would keep the process (and a
  * test run) alive past its work.
  */
-export async function awaitWithinGate(promises, { maxWaitMs = CITATION_GATE_MAX_WAIT_MS } = {}) {
+export async function awaitWithinGate<T>(promises: Array<PromiseLike<T> | T>, { maxWaitMs = CITATION_GATE_MAX_WAIT_MS } = {}) {
   const list = Array.isArray(promises) ? promises : [];
   if (list.length === 0) return [];
 
   const slots = list.map((promise) => {
-    const slot = { value: null, settled: false };
+    const slot: { value: Awaited<T> | null; settled: boolean; done?: Promise<void>; closed?: boolean } = { value: null, settled: false };
     slot.done = Promise.resolve(promise).then(
       (value) => { if (!slot.closed) { slot.value = value; slot.settled = true; } },
       () => { slot.settled = true; },
@@ -61,7 +61,7 @@ export async function awaitWithinGate(promises, { maxWaitMs = CITATION_GATE_MAX_
     return slot;
   });
 
-  let timer;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const cap = new Promise((resolve) => { timer = setTimeout(resolve, maxWaitMs); });
   try {
     await Promise.race([Promise.all(slots.map((slot) => slot.done)), cap]);

@@ -1,3 +1,7 @@
+type SelectionIds = Iterable<string> | null | undefined;
+interface Selection { membership?: SelectionIds; checked?: SelectionIds; unchecked?: SelectionIds; known?: SelectionIds }
+interface OrganizeDraft { listIds?: SelectionIds; tags?: string[]; note?: string; readLater?: boolean }
+
 /**
  * The pending-selection model behind the "Save and organize" modal.
  *
@@ -14,7 +18,7 @@
  * lists when the modal opens; unchecking one of those must remove it, not
  * just fail to re-add it.
  */
-export function diffListSelection(initialIds, pendingIds) {
+export function diffListSelection(initialIds: SelectionIds, pendingIds: SelectionIds) {
   const initial = new Set(initialIds ?? []);
   const pending = new Set(pendingIds ?? []);
   return {
@@ -28,7 +32,7 @@ export function diffListSelection(initialIds, pendingIds) {
  * "a, b, c" becomes three tags, trims, drops empties, and dedupes against
  * the tags already present (case-sensitive, like the service stores them).
  */
-export function commitTagInput(tags, input) {
+export function commitTagInput(tags: string[] | null | undefined, input: unknown) {
   const current = [...(tags ?? [])];
   for (const candidate of String(input ?? '').split(',')) {
     const tag = candidate.trim();
@@ -37,7 +41,7 @@ export function commitTagInput(tags, input) {
   return current;
 }
 
-export function removeTag(tags, tag) {
+export function removeTag(tags: string[] | null | undefined, tag: string) {
   return (tags ?? []).filter(existing => existing !== tag);
 }
 
@@ -45,7 +49,7 @@ export function removeTag(tags, tag) {
  * Whether closing now would lose something. Tag ORDER changes count as a
  * change deliberately: the order is what gets stored.
  */
-export function hasUnsavedChanges({ initial, pending }) {
+export function hasUnsavedChanges({ initial, pending }: { initial: OrganizeDraft; pending: OrganizeDraft }) {
   const listsChanged = (() => {
     const { toAdd, toRemove } = diffListSelection(initial.listIds, pending.listIds);
     return toAdd.length > 0 || toRemove.length > 0;
@@ -73,7 +77,7 @@ export function hasUnsavedChanges({ initial, pending }) {
  * proposal counts as the stored value. Otherwise opening the modal and closing
  * it straight away would ask about "unsaved changes" nobody made.
  */
-export function readLaterState({ stored, draft, alreadySaved }) {
+export function readLaterState({ stored, draft, alreadySaved }: { stored?: boolean; draft?: boolean | null; alreadySaved?: boolean }) {
   const proposed = Boolean(stored) || !alreadySaved;
   return {
     pending: draft ?? proposed,
@@ -103,7 +107,7 @@ export const EMPTY_LIST_INTENT = Object.freeze({ checked: [], unchecked: [] });
 /**
  * Whether a row is ticked right now: the membership, as amended by the user.
  */
-export function isListSelected(listId, { membership, checked, unchecked } = {}) {
+export function isListSelected(listId: string, { membership, checked, unchecked }: Selection = {}) {
   if (new Set(unchecked ?? []).has(listId)) return false;
   if (new Set(checked ?? []).has(listId)) return true;
   return new Set(membership ?? []).has(listId);
@@ -115,7 +119,7 @@ export function isListSelected(listId, { membership, checked, unchecked } = {}) 
  * `unchecked` entry behind and a later membership change would be fought by a
  * ghost the user had already undone.
  */
-export function toggleListIntent(intent, listId, membership) {
+export function toggleListIntent(intent: Selection | null | undefined, listId: string, membership: SelectionIds) {
   const checked = new Set(intent?.checked ?? []);
   const unchecked = new Set(intent?.unchecked ?? []);
   const wanted = !isListSelected(listId, { membership, checked, unchecked });
@@ -137,7 +141,7 @@ export function toggleListIntent(intent, listId, membership) {
  * still count, or the half-painted screen would turn every unseen list into a
  * removal, which is the bug one layer down.
  */
-export function resolveSelection({ membership, checked, unchecked, known } = {}) {
+export function resolveSelection({ membership, checked, unchecked, known }: Selection = {}) {
   const selection = new Set(membership ?? []);
   const reachable = known == null ? null : new Set(known);
   for (const id of checked ?? []) {

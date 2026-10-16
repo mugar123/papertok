@@ -1,6 +1,14 @@
+declare const window: { location?: { origin?: string } };
+
+import type { Paper } from '../models/Paper.ts';
+export interface ShareOptions { origin?: string; base?: string; includeName?: boolean; name?: string; paperKey?: string; }
+interface EntityInput { type?: string; id?: string; canonicalId?: string; code?: string; externalId?: string; displayName?: string; }
+type PaperInput = string | (Partial<Paper> & { paperId?: string; paperKey?: string; key?: string; externalIds?: { DOI?: string | null; ArXiv?: string | null } }) | null | undefined;
+type ListInput = string | { shareId?: string; id?: string; token?: string } | null | undefined;
+
 import { encodeBase64Url, decodeBase64Url } from './base64Url.ts';
 
-const VITE_BASE_URL = import.meta.env?.BASE_URL || '/';
+const VITE_BASE_URL = (import.meta as ImportMeta & { env?: { BASE_URL?: string } }).env?.BASE_URL || '/';
 
 export const DEFAULT_PUBLIC_ORIGIN = 'https://papertok.app';
 export const DEFAULT_SHARE_IMAGE_PATH = '/og/papertok-share-0.2.png';
@@ -16,7 +24,7 @@ export const PUBLIC_ENTITY_TYPES = Object.freeze([
 
 const PUBLIC_ENTITY_TYPE_SET = new Set(PUBLIC_ENTITY_TYPES);
 
-function cleanText(value) {
+function cleanText(value: unknown) {
   if (value === null || value === undefined) return '';
   const text = String(value).trim();
   const hasControlCharacter = [...text].some(character => {
@@ -26,13 +34,13 @@ function cleanText(value) {
   return hasControlCharacter ? '' : text;
 }
 
-function encodePathSegment(value) {
+function encodePathSegment(value: string|number|boolean) {
   return encodeURIComponent(value).replace(/[!'()*]/g, character => (
     `%${character.charCodeAt(0).toString(16).toUpperCase()}`
   ));
 }
 
-function normalizeRouterPath(path) {
+function normalizeRouterPath(path: string) {
   const value = cleanText(path).replace(/^#/, '');
   if (!value) return '/';
   if (value === '/') return '/';
@@ -65,11 +73,11 @@ export function getViteBasePath(base = VITE_BASE_URL) {
 
 function getRuntimeOrigin() {
   if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin;
-  if (typeof globalThis !== 'undefined' && globalThis.location?.origin) return globalThis.location.origin;
+  if (typeof globalThis !== 'undefined' && (globalThis as typeof globalThis & { location?: { origin?: string } }).location?.origin) return (globalThis as typeof globalThis & { location?: { origin?: string } }).location!.origin!;
   return DEFAULT_PUBLIC_ORIGIN;
 }
 
-function normalizeOrigin(origin) {
+function normalizeOrigin(origin: string) {
   try {
     const url = new URL(cleanText(origin) || DEFAULT_PUBLIC_ORIGIN);
     if (!['http:', 'https:'].includes(url.protocol)) return DEFAULT_PUBLIC_ORIGIN;
@@ -102,7 +110,7 @@ export function getSiteRootUrl({ origin = getRuntimeOrigin(), base = VITE_BASE_U
  * what keeps a project-path deployment (`base: '/papertok/'`) building
  * `/papertok/public/...` rather than a path off its own root.
  */
-export function getAbsoluteShareUrl(path, options = {}) {
+export function getAbsoluteShareUrl(path: string, options = {}) {
   const value = cleanText(path);
   if (/^https?:\/\//i.test(value)) {
     try {
@@ -116,12 +124,12 @@ export function getAbsoluteShareUrl(path, options = {}) {
   return `${rootUrl}${normalizeRouterPath(value).slice(1)}`;
 }
 
-function normalizeEntityType(type) {
+function normalizeEntityType(type: unknown) {
   const normalized = cleanText(type).toLowerCase();
   return PUBLIC_ENTITY_TYPE_SET.has(normalized) ? normalized : '';
 }
 
-function resolveEntityInput(typeOrEntity, id, options) {
+function resolveEntityInput(typeOrEntity: EntityInput | string | undefined, id: string | ShareOptions | undefined, options: ShareOptions) {
   if (typeOrEntity && typeof typeOrEntity === 'object') {
     return {
       type: typeOrEntity.type,
@@ -136,7 +144,7 @@ function resolveEntityInput(typeOrEntity, id, options) {
   return { type: typeOrEntity, id, options };
 }
 
-export function getPublicEntityPath(typeOrEntity, id, options = {}) {
+export function getPublicEntityPath(typeOrEntity: EntityInput | string | undefined, id?: string | ShareOptions, options: ShareOptions = {}) {
   const input = resolveEntityInput(typeOrEntity, id, options);
   const type = normalizeEntityType(input.type);
   const identifier = cleanText(input.id);
@@ -144,26 +152,26 @@ export function getPublicEntityPath(typeOrEntity, id, options = {}) {
 
   const path = `${PUBLIC_ROUTE_PREFIX}/entity/${encodePathSegment(type)}/${encodePathSegment(identifier)}`;
   const includeName = input.options?.includeName === true;
-  const name = cleanText(input.options?.name || typeOrEntity?.displayName);
+  const name = cleanText(input.options?.name || (typeOrEntity as EntityInput)?.displayName);
   return includeName && name ? `${path}?name=${encodeURIComponent(name)}` : path;
 }
 
-export function getPublicEntityUrl(typeOrEntity, id, options = {}) {
+export function getPublicEntityUrl(typeOrEntity: EntityInput | string | undefined, id?: string | ShareOptions, options: ShareOptions = {}) {
   const input = resolveEntityInput(typeOrEntity, id, options);
   const path = getPublicEntityPath(typeOrEntity, id, input.options || options);
   return path ? getAbsoluteShareUrl(path, input.options || options) : null;
 }
 
-function normalizeDoi(value) {
-  let doi = cleanText(value)
+function normalizeDoi(value: unknown) {
+  const doi = cleanText(value)
     .replace(/^doi:\s*/i, '')
     .replace(/^(?:https?:\/\/)?(?:dx\.)?doi\.org\//i, '');
   if (!/^10\.\d{4,9}\/\S+$/i.test(doi)) return '';
   return doi.toLowerCase();
 }
 
-function normalizeArxivId(value) {
-  let arxivId = cleanText(value)
+function normalizeArxivId(value: unknown) {
+  const arxivId = cleanText(value)
     .replace(/^arxiv:\s*/i, '')
     .replace(/^(?:https?:\/\/)?(?:export\.)?arxiv\.org\/(?:abs|pdf)\//i, '')
     .replace(/\.pdf$/i, '');
@@ -178,7 +186,7 @@ function normalizeArxivId(value) {
  * adapter puts on paper ids and the `https://openalex.org/` form the API
  * returns both stripped. Uppercased, so one work has one key.
  */
-function normalizeOpenAlexWorkId(value) {
+function normalizeOpenAlexWorkId(value: unknown) {
   const workId = cleanText(value)
     .replace(/^openalex:\s*/i, '')
     .replace(/^(?:https?:\/\/)?(?:api\.)?openalex\.org\/(?:works\/)?/i, '');
@@ -191,7 +199,7 @@ function normalizeOpenAlexWorkId(value) {
  * mints or a pubmed.ncbi.nlm.nih.gov URL. A bare run of digits is not taken
  * for one — too many things are a run of digits.
  */
-function normalizePmid(value) {
+function normalizePmid(value: unknown) {
   const text = cleanText(value);
   const match = text.match(/^pmid:\s*(\d+)$/i)
     || text.match(/^(?:https?:\/\/)?(?:www\.)?(?:pubmed\.ncbi\.nlm\.nih\.gov|ncbi\.nlm\.nih\.gov\/pubmed)\/(\d+)\/?$/i);
@@ -209,7 +217,7 @@ function normalizePmid(value) {
  * `pmid:…`, and the Liked tab has nothing else to go on for it. Without an
  * identity for those ids, every such row was a label instead of a link.
  */
-function getPaperIdentity(typeOrPaper, identifier) {
+function getPaperIdentity(typeOrPaper: PaperInput, identifier: unknown): string {
   if (typeOrPaper && typeof typeOrPaper === 'object') {
     const doi = normalizeDoi(typeOrPaper.doi || typeOrPaper.externalIds?.DOI);
     if (doi) return `doi:${doi}`;
@@ -282,12 +290,12 @@ function getPaperIdentity(typeOrPaper, identifier) {
   return '';
 }
 
-export function encodePaperKey(typeOrPaper, identifier) {
+export function encodePaperKey(typeOrPaper: PaperInput, identifier?: unknown) {
   const identity = getPaperIdentity(typeOrPaper, identifier);
   return identity ? encodeBase64Url(identity) : null;
 }
 
-export function decodePaperKey(key) {
+export function decodePaperKey(key: string) {
   const decoded = decodeBase64Url(cleanText(key));
   if (!decoded) return null;
 
@@ -299,7 +307,7 @@ export function decodePaperKey(key) {
   return identity === `${type}:${identifier}` ? identity : null;
 }
 
-export function parsePaperKey(key) {
+export function parsePaperKey(key: string) {
   const identity = decodePaperKey(key);
   if (!identity) return null;
   const separatorIndex = identity.indexOf(':');
@@ -309,11 +317,11 @@ export function parsePaperKey(key) {
   };
 }
 
-export function getPaperKey(paper) {
+export function getPaperKey(paper: PaperInput) {
   return encodePaperKey(paper);
 }
 
-function resolvePaperKey(typeOrPaper, identifier, options = {}) {
+function resolvePaperKey(typeOrPaper: PaperInput, identifier: unknown, options: ShareOptions = {}) {
   const suppliedKey = typeOrPaper && typeof typeOrPaper === 'object'
     ? typeOrPaper.paperKey || typeOrPaper.key
     : options.paperKey;
@@ -325,7 +333,7 @@ function resolvePaperKey(typeOrPaper, identifier, options = {}) {
   return encodePaperKey(typeOrPaper, identifier);
 }
 
-function resolvePaperArguments(typeOrPaper, identifier, options) {
+function resolvePaperArguments(typeOrPaper: PaperInput, identifier: string | ShareOptions | undefined, options: ShareOptions) {
   if (
     typeOrPaper
     && typeof typeOrPaper === 'object'
@@ -338,19 +346,20 @@ function resolvePaperArguments(typeOrPaper, identifier, options) {
   return { identifier, options };
 }
 
-export function getPublicPaperPath(typeOrPaper, identifier, options = {}) {
+export function getPublicPaperPath(typeOrPaper: PaperInput, identifier?: string | ShareOptions, options: ShareOptions = {}) {
   const input = resolvePaperArguments(typeOrPaper, identifier, options);
   const key = resolvePaperKey(typeOrPaper, input.identifier, input.options);
   return key ? `${PUBLIC_ROUTE_PREFIX}/paper/${encodePathSegment(key)}` : null;
 }
 
-export function getPublicPaperUrl(typeOrPaper, identifier, options = {}) {
+export function getPublicPaperUrl(typeOrPaper: PaperInput, identifier?: string | ShareOptions, options: ShareOptions = {}) {
   const input = resolvePaperArguments(typeOrPaper, identifier, options);
   const path = getPublicPaperPath(typeOrPaper, input.identifier, input.options);
   return path ? getAbsoluteShareUrl(path, input.options) : null;
 }
 
-export function getSharedListPath(listOrId) {
+export function getSharedListPath(listOrId: ListInput, options?: ShareOptions): string | null;
+export function getSharedListPath(listOrId: ListInput) {
   const listId = listOrId && typeof listOrId === 'object'
     ? listOrId.shareId || listOrId.id || listOrId.token
     : listOrId;
@@ -359,7 +368,7 @@ export function getSharedListPath(listOrId) {
   return `${PUBLIC_ROUTE_PREFIX}/list/${encodePathSegment(identifier)}`;
 }
 
-export function getSharedListUrl(listOrId, options = {}) {
+export function getSharedListUrl(listOrId: ListInput, options: ShareOptions = {}) {
   const path = getSharedListPath(listOrId, options);
   return path ? getAbsoluteShareUrl(path, options) : null;
 }

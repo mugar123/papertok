@@ -1,3 +1,10 @@
+export interface CrossrefLicense {
+  URL: string;
+  'content-version'?: string;
+  'delay-in-days'?: number;
+  start?: { 'date-time'?: string; 'date-parts'?: number[][] };
+}
+
 /**
  * Whether Crossref says the published version of a paper is openly licensed
  * today. Shared by the Worker's `/oa` fallback and the Crossref institution
@@ -24,7 +31,7 @@
 const READABLE_VERSIONS = new Set(['vor', 'unspecified']);
 
 /** `cc-by`, `cc-by-nc-nd`, `cc0`, `public-domain`, or null for anything else. */
-export function licenseSlugFromUrl(value) {
+export function licenseSlugFromUrl(value: unknown) {
   let url;
   try {
     url = new URL(String(value || ''));
@@ -41,7 +48,7 @@ export function licenseSlugFromUrl(value) {
   return null;
 }
 
-function licenceStart(entry) {
+function licenceStart(entry: CrossrefLicense | null | undefined) {
   const dateTime = entry?.start?.['date-time'];
   const parsed = Date.parse(dateTime || '');
   if (Number.isFinite(parsed)) return { ms: parsed, iso: dateTime };
@@ -55,7 +62,7 @@ function licenceStart(entry) {
  * The first licence that opens the version of record today, as
  * `{ url, slug, start }`, or null. `now` is injectable for the embargo case.
  */
-export function openLicenseFromCrossref(work, { now = Date.now() } = {}) {
+export function openLicenseFromCrossref(work: { license?: CrossrefLicense[] } | null | undefined, { now = Date.now() } = {}) {
   const entries = Array.isArray(work?.license) ? work.license : [];
   for (const entry of entries) {
     const version = String(entry?.['content-version'] || 'unspecified').toLowerCase();

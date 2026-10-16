@@ -27,7 +27,7 @@ function bounded(code, from, to, label, maxLines) {
  */
 test('SOURCE: a reset asked to keep the visible card merges the fresh page below it', async () => {
   const code = stripComments(await read('./FeedContext.jsx'));
-  assert.match(code, /import \{ mergeFreshFeedPage, splitFeedForReRank \} from '\.\.\/utils\/feedReRankSplit\.js';/);
+  assert.match(code, /import \{ mergeFreshFeedPage, splitFeedForReRank \} from '\.\.\/utils\/feedReRankSplit\.ts';/);
   assert.match(
     code,
     /const loadPapers = useCallback\(async \(reset = false, mode, randomizeStart = false, pageOverride, \{ keepThroughVisible = false \} = \{\}\) => \{/,

@@ -27,7 +27,7 @@ test('SOURCE: the library read encodes before it plans and decodes what comes ba
   assert.ok(body.length > 0, 'expected to have found fetchLibraryRecords');
   assert.match(body, /planLibraryBatches\(paperIds\.map\(encodeInteractionDocId\), LIBRARY_BATCH_SIZE\)/,
     'encoded first, so a legacy id is a batch member and not a dropped one');
-  assert.match(body, /records: snapshot\.docs\.map\(item => \(\{ id: decodeInteractionDocId\(item\.id\), data: item\.data\(\) \}\)\)/,
+  assert.match(body, /records: snapshot\.docs\.map\(item => \(\{ id: decodeInteractionDocId\(item\.id\), data: item\.data\(\) as InteractionDocumentData \}\)\)/,
     'and the caller sees the paper id it asked for, never the encoded name');
 });
 
@@ -35,7 +35,7 @@ test('SOURCE: the aggregate rebuild scan decodes ids, or a rebuilt aggregate wou
   const code = stripComments(await read('../services/interactionProfileStore.ts'));
   const page = code.slice(code.indexOf('async listInteractionPage('), code.indexOf('async countInteractions('));
   assert.match(page, /startAfter\(encodeInteractionDocId\(startAfterId\)\)/);
-  assert.match(page, /\{ id: decodeInteractionDocId\(item\.id\), data: item\.data\(\) \}/);
+  assert.match(page, /\{ id: decodeInteractionDocId\(item\.id\), data: item\.data\(\) as InteractionDocumentData \}/);
 });
 
 /**

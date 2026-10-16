@@ -60,7 +60,7 @@ export const PULL_BLOCKING_SCROLLERS = '.pc-abstract--open';
  * Where a pull may begin, or null. `containerTop` and `containerHeight` are
  * the scroller's own, so the band is measured from the bar downwards.
  */
-export function pullStartFrom({ target, scrollTop, clientY, containerTop = 0, containerHeight = 0 }) {
+export function pullStartFrom({ target, scrollTop, clientY, containerTop = 0, containerHeight = 0 }: { target?: Pick<Element, 'closest'> | null; scrollTop: number; clientY: number; containerTop?: number; containerHeight?: number }) {
   if (typeof target?.closest === 'function' && target.closest(PULL_BLOCKING_SCROLLERS)) return null;
   if (scrollTop === 0) return clientY;
   return clientY - containerTop <= pullBandDepth(containerHeight) ? clientY : null;
@@ -71,7 +71,7 @@ export function pullStartFrom({ target, scrollTop, clientY, containerTop = 0, co
  * ours; up is the feed going to the next paper. A move more sideways than
  * vertical is neither, and is left to the browser.
  */
-export function pullTakesOver({ startY, startX = 0, currentY, currentX = 0 }) {
+export function pullTakesOver({ startY, startX = 0, currentY, currentX = 0 }: { startY: number; startX?: number; currentY: number; currentX?: number }) {
   const dy = currentY - startY;
   if (dy <= 0) return false;
   return dy > Math.abs(currentX - startX);
@@ -93,7 +93,7 @@ export function pullTakesOver({ startY, startX = 0, currentY, currentX = 0 }) {
  */
 export const PULL_MAX_TRAVEL_PX = 128;
 
-export function pullTravelPx({ startY, currentY }) {
+export function pullTravelPx({ startY, currentY }: { startY?: number | null; currentY: number }) {
   if (typeof startY !== 'number') return 0;
   const dy = currentY - startY;
   if (dy <= 0) return 0;
@@ -101,7 +101,7 @@ export function pullTravelPx({ startY, currentY }) {
 }
 
 /** How far along the pull is, 0..1, for the pill to grow with. */
-export function pullProgress({ startY, currentY }) {
+export function pullProgress({ startY, currentY }: { startY?: number | null; currentY: number }) {
   if (typeof startY !== 'number') return 0;
   const dy = currentY - startY;
   if (dy <= 0) return 0;
@@ -112,7 +112,7 @@ export function pullProgress({ startY, currentY }) {
  * Whether a release ends in a refresh: past the threshold, or a fling that
  * was fast enough over a distance that could not be a tremor.
  */
-export function pullOutcome({ startY, endY, elapsedMs }) {
+export function pullOutcome({ startY, endY, elapsedMs }: { startY?: number | null; endY: number; elapsedMs: number }) {
   if (typeof startY !== 'number') return 'none';
   const dy = endY - startY;
   if (dy > PULL_REFRESH_THRESHOLD_PX) return 'refresh';

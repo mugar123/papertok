@@ -46,6 +46,6 @@ test('SOURCE: the Firebase web config is a literal that agrees with the auth rew
 test('the env example says where the config lives instead of listing variables nothing reads', async () => {
   const env = await readFile(ENV_EXAMPLE, 'utf8');
   assert.doesNotMatch(env, /^VITE_FIREBASE_/m, '.env.example still lists VITE_FIREBASE_* variables');
-  assert.match(env, /src\/services\/firebase\.js/, '.env.example says where the Firebase config lives');
+  assert.match(env, /src\/services\/firebase\.ts/, '.env.example says where the Firebase config lives');
   assert.match(env, /vercel\.json/, '.env.example says why authDomain is code and not config');
 });

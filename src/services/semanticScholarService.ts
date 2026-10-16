@@ -1,3 +1,5 @@
+import type { Paper } from '../models/Paper.ts';
+
 /**
  * Semantic Scholar recommendations for the feed.
  *
@@ -17,7 +19,7 @@
  */
 import { getRelatedPapers, getSemanticScholarPaperId } from './relatedPapersService.ts';
 
-const CACHE = new Map();
+const CACHE = new Map<string, string[]>();
 const RECOMMENDATION_LIMIT = 20;
 
 /**
@@ -35,16 +37,16 @@ const RECOMMENDATION_LIMIT = 20;
  * @param {object} paper
  * @returns {Promise<string[]>} Array of recommended arXiv IDs
  */
-export async function getPaperRecommendations(paper, { fetchRelated = getRelatedPapers } = {}) {
+export async function getPaperRecommendations(paper: Partial<Paper>, { fetchRelated = getRelatedPapers } = {}): Promise<string[]> {
   const paperId = getSemanticScholarPaperId(paper);
   if (!paperId) return [];
   const cacheKey = `rec_${paperId}`;
 
-  if (CACHE.has(cacheKey)) return CACHE.get(cacheKey);
+  if (CACHE.has(cacheKey)) return CACHE.get(cacheKey)!;
 
   try {
     const related = await fetchRelated(paper, RECOMMENDATION_LIMIT);
-    const arxivIds = related.map(item => item.arxivId).filter(Boolean);
+    const arxivIds = related.map(item => item.arxivId).filter(Boolean) as string[];
     CACHE.set(cacheKey, arxivIds);
     return arxivIds;
   } catch (error) {

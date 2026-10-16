@@ -1,3 +1,5 @@
+import type { Paper, PaperFollowMatch } from '../models/Paper.ts';
+
 import { getFollowingUpdatePaperKey, getPaperPublicationTime } from './followingUpdates.ts';
 import { resolvePaperTopic } from './topicNavigation.ts';
 import { getLocalizedInstitutionName } from './institutionLocalization.ts';
@@ -25,7 +27,7 @@ const TYPE_LABELS = {
  * @param {Array<{type: string, displayName: string}>} matches
  * @returns {string}
  */
-export function buildFollowReasonLabel(matches = []) {
+export function buildFollowReasonLabel(matches: Array<Partial<PaperFollowMatch>> = []): string {
   const named = matches.filter(match => match?.displayName);
   if (named.length === 0) return '';
   if (named.length > 2) {
@@ -33,7 +35,7 @@ export function buildFollowReasonLabel(matches = []) {
   }
 
   const parts = named.map((match) => {
-    const connector = TYPE_LABELS.en[match.type] ?? '';
+    const connector = TYPE_LABELS.en[match.type as keyof typeof TYPE_LABELS.en] ?? '';
     const localizedTopic = match.type === 'topic'
       ? resolvePaperTopic(match.canonicalId)
         || resolvePaperTopic(match.displayName)
@@ -47,9 +49,9 @@ export function buildFollowReasonLabel(matches = []) {
   return `Because you follow ${parts.join(' and ')}`;
 }
 
-function getFollowKeys(paper = {}) {
-  return [...new Set((paper._followedEntityMatches || [])
-    .filter(match => match && typeof match === 'object')
+function getFollowKeys(paper: Partial<Paper> = {}) {
+  return [...new Set(((paper._followedEntityMatches || [])
+    .filter(match => match && typeof match === 'object') as PaperFollowMatch[])
     .map((match) => {
       const id = String(match.canonicalId || '').trim().toLowerCase();
       const name = String(match.displayName || '').trim().toLowerCase();
@@ -58,20 +60,20 @@ function getFollowKeys(paper = {}) {
     .filter(Boolean))];
 }
 
-function sharesFollow(leftKeys = [], rightKeys = []) {
+function sharesFollow(leftKeys: string[] = [], rightKeys: string[] = []) {
   if (!leftKeys.length || !rightKeys.length) return false;
   const right = new Set(rightKeys);
   return leftKeys.some(key => right.has(key));
 }
 
-function getBlockedFollowKeys(ordered = [], maximum = MAX_CONSECUTIVE_PER_FOLLOW) {
-  if (ordered.length < maximum) return new Set();
+function getBlockedFollowKeys(ordered: Partial<Paper>[] = [], maximum = MAX_CONSECUTIVE_PER_FOLLOW) {
+  if (ordered.length < maximum) return new Set<string>();
   const recentKeySets = ordered.slice(-maximum).map(paper => new Set(getFollowKeys(paper)));
-  if (recentKeySets.some(keys => keys.size === 0)) return new Set();
+  if (recentKeySets.some(keys => keys.size === 0)) return new Set<string>();
   return new Set([...recentKeySets[0]].filter(key => recentKeySets.every(keys => keys.has(key))));
 }
 
-function hasBlockedFollow(paper, blockedKeys) {
+function hasBlockedFollow(paper: Partial<Paper>, blockedKeys: Set<string>) {
   return getFollowKeys(paper).some(key => blockedKeys.has(key));
 }
 
@@ -81,7 +83,7 @@ function hasBlockedFollow(paper, blockedKeys) {
  * follows adds confidence. Seen state is a small novelty boost, not a separate
  * inbox partition.
  */
-export function getFollowingFeedRelevanceScore(paper = {}, seenIds = new Set(), now = Date.now()) {
+export function getFollowingFeedRelevanceScore(paper: Partial<Paper> = {}, seenIds: Iterable<string> = new Set(), now = Date.now()) {
   const publicationTime = getPaperPublicationTime(paper);
   const ageDays = publicationTime
     ? Math.max(0, (Number(now) - publicationTime) / DAY_MS)
@@ -116,7 +118,7 @@ export function getFollowingFeedRelevanceScore(paper = {}, seenIds = new Set(), 
  * @param {{now?: number, maxConsecutivePerFollow?: number}} options
  * @returns {Array}
  */
-export function orderFollowingFeedPapers(items = [], seenIds = new Set(), options = {}) {
+export function orderFollowingFeedPapers<T extends Partial<Paper>>(items: T[] = [], seenIds: Iterable<string> = new Set(), options: { now?: number; maxConsecutivePerFollow?: number } = {}) {
   const now = Number.isFinite(Number(options.now)) ? Number(options.now) : Date.now();
   const maximum = Math.max(1, Number(options.maxConsecutivePerFollow) || MAX_CONSECUTIVE_PER_FOLLOW);
   const ranked = (items || []).filter(Boolean).map(paper => ({
@@ -130,7 +132,7 @@ export function orderFollowingFeedPapers(items = [], seenIds = new Set(), option
     || left.key.localeCompare(right.key)
   ));
 
-  const ordered = [];
+  const ordered: T[] = [];
   while (ranked.length) {
     const blockedKeys = getBlockedFollowKeys(ordered, maximum);
     const hasAlternative = blockedKeys.size > 0
@@ -168,16 +170,16 @@ export function orderFollowingFeedPapers(items = [], seenIds = new Set(), option
  * appended in the fresh ranking's order. A card moving under the thumb read
  * as the feed glitching; the next visit ranks everything again from scratch.
  */
-export function mergeOrderedPapers(previousOrdered = [], freshOrdered = []) {
+export function mergeOrderedPapers<T extends Partial<Paper>>(previousOrdered: T[] = [], freshOrdered: T[] = []) {
   if (!previousOrdered.length) return freshOrdered;
   const freshByKey = new Map(freshOrdered.map(paper => [getFollowingUpdatePaperKey(paper), paper]));
-  const kept = [];
-  const keptKeys = new Set();
+  const kept: T[] = [];
+  const keptKeys = new Set<string>();
   previousOrdered.forEach((paper) => {
     const key = getFollowingUpdatePaperKey(paper);
     if (!freshByKey.has(key) || keptKeys.has(key)) return;
     keptKeys.add(key);
-    kept.push(freshByKey.get(key));
+    kept.push(freshByKey.get(key)!);
   });
   const appended = freshOrdered.filter(paper => !keptKeys.has(getFollowingUpdatePaperKey(paper)));
   return [...kept, ...appended];
@@ -193,7 +195,7 @@ export function mergeOrderedPapers(previousOrdered = [], freshOrdered = []) {
  * by the no-follows shortcut, so a reader who follows nothing is not left
  * "discovering" forever). An error is the error screen's to report.
  */
-export function followingFirstLoadPending({ items = [], loading = false, lastUpdatedAt = null, error = null } = {}) {
+export function followingFirstLoadPending({ items = [], loading = false, lastUpdatedAt = null, error = null }: { items?: unknown[]; loading?: boolean; lastUpdatedAt?: unknown; error?: unknown } = {}) {
   if (error) return false;
   if ((items || []).length > 0) return false;
   return Boolean(loading) || !lastUpdatedAt;
@@ -212,7 +214,7 @@ export function followingFirstLoadPending({ items = [], loading = false, lastUpd
  *
  * @param {{ items: Array|null, ordered: Array }} previous  what the page left last time
  */
-export function resumeOrderedPapers(previous, items = [], seenIds = new Set()) {
+export function resumeOrderedPapers<T extends Partial<Paper>>(previous: { items?: T[]; ordered?: T[]; orderKeys?: string[] } | null, items: T[] = [], seenIds: Iterable<string> = new Set()) {
   if (previous?.items === items && Array.isArray(previous?.ordered)) return previous.ordered;
   // The order still in memory wins; after a reload of the tab there is none,
   // and the keys the page stored on its way out rebuild it over the items
@@ -222,7 +224,7 @@ export function resumeOrderedPapers(previous, items = [], seenIds = new Set()) {
 }
 
 /** The keys of an order, in order — what the page stores so a reload can resume it. */
-export function orderKeysOf(ordered = []) {
+export function orderKeysOf(ordered: Partial<Paper>[] = []) {
   return (ordered || []).filter(Boolean).map(getFollowingUpdatePaperKey);
 }
 
@@ -231,10 +233,10 @@ export function orderKeysOf(ordered = []) {
  * longer carry are skipped. A reload of the tab loses the module-scope
  * order but not the items (localStorage) nor these keys (sessionStorage).
  */
-export function orderFromKeys(items = [], keys = []) {
+export function orderFromKeys<T extends Partial<Paper>>(items: T[] = [], keys: string[] = []) {
   if (!Array.isArray(keys) || keys.length === 0) return [];
   const byKey = new Map((items || []).filter(Boolean).map(paper => [getFollowingUpdatePaperKey(paper), paper]));
-  const taken = new Set();
+  const taken = new Set<string>();
   return keys.flatMap((key) => {
     const paper = byKey.get(key);
     if (!paper || taken.has(key)) return [];
@@ -257,7 +259,7 @@ export function orderFromKeys(items = [], keys = []) {
  * The same array comes back when nothing is dropped: an identity that changes
  * for no reason rebuilds the source object and re-renders every card.
  */
-export function withoutNotInterested(papers = [], notInterestedIds = null) {
+export function withoutNotInterested<T extends Partial<Paper>>(papers: T[] = [], notInterestedIds: Pick<Set<string>, 'has'> | null = null) {
   if (!Array.isArray(papers)) return [];
   if (typeof notInterestedIds?.has !== 'function') return papers;
   const next = papers.filter(paper => !(paper?.id && notInterestedIds.has(paper.id)));

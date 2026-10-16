@@ -1,38 +1,7 @@
 import type { WorkerEnv } from './env.ts';
 import type { UpstreamError } from './provider-runtime.ts';
-import type { PaperSubject } from '../src/models/Paper.ts';
 
-// The upstream envelope is decoded here; normalized results use Paper.
-export interface OpenAlexWork {
-  id?: string;
-  title?: string;
-  display_name?: string;
-  language?: string;
-  doi?: string | null;
-  ids?: { doi?: string | null; pmid?: string | null; [key: string]: string | null | undefined };
-  abstract_inverted_index?: Record<string, number[]> | null;
-  authorships?: Array<{ raw_author_name?: string; author?: { id?: string; display_name?: string }; institutions?: Array<{ id?: string; display_name?: string; ror?: string | null }> }>;
-  publication_year?: number | null;
-  publication_date?: string;
-  type?: string;
-  primary_location?: OpenAlexLocation | null;
-  best_oa_location?: OpenAlexLocation | null;
-  locations?: OpenAlexLocation[];
-  open_access?: { is_oa?: boolean; oa_url?: string | null; oa_status?: string };
-  cited_by_count?: number | null;
-  referenced_works?: string[];
-  concepts?: PaperSubject[];
-  topics?: PaperSubject[];
-  primary_topic?: PaperSubject | null;
-}
-
-interface OpenAlexLocation {
-  pdf_url?: string | null;
-  landing_page_url?: string | null;
-  source?: { id?: string; display_name?: string; type?: string; host_organization_name?: string } | null;
-  is_oa?: boolean;
-  license?: string | null;
-}
+export type { OpenAlexWork } from '../src/services/adapters/openAlexTypes.ts';
 
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import {

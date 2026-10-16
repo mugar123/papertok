@@ -13,7 +13,7 @@
  */
 const DOMAIN_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 
-export function institutionDomainOf(email) {
+export function institutionDomainOf(email: unknown) {
   const value = String(email || '').trim().toLowerCase();
   const at = value.indexOf('@');
   if (at <= 0 || at !== value.lastIndexOf('@')) return '';

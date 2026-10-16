@@ -1,3 +1,7 @@
+type TopicPaper = Omit<Partial<Paper>, 'keywords'> & { keywords?: Array<string | PaperSubject> };
+import type { Paper, PaperSubject } from '../models/Paper.ts';
+import type { TopicInput } from './topicNavigation.ts';
+
 const QUERY_TOPIC_MINIMUM_SCORE = 70;
 
 const TOKEN_STOP_WORDS = new Set([
@@ -13,12 +17,12 @@ function normalizeQueryText(value = '') {
     .trim();
 }
 
-function semanticLabel(value) {
+function semanticLabel(value: string | TopicInput | null | undefined) {
   if (typeof value === 'string') return value;
   return value?.display_name || value?.displayName || value?.name || value?.label || '';
 }
 
-function semanticValues(paper) {
+function semanticValues(paper: TopicPaper) {
   return [
     ...(paper?.concepts || []),
     ...(paper?.topics || []),
@@ -29,22 +33,22 @@ function semanticValues(paper) {
   ].map(semanticLabel).map(normalizeQueryText).filter(Boolean);
 }
 
-function containsPhrase(value, phrase) {
+function containsPhrase(value: string, phrase: string) {
   return Boolean(value && phrase && ` ${value} `.includes(` ${phrase} `));
 }
 
-function queryTokens(query) {
+function queryTokens(query: string) {
   return [...new Set(query.split(' ').filter(token => (
     token.length >= 2 && !TOKEN_STOP_WORDS.has(token)
   )))];
 }
 
-function matchedTokenCount(value, tokens) {
+function matchedTokenCount(value: string, tokens: string[]) {
   const values = new Set(value.split(' ').filter(Boolean));
   return tokens.reduce((count, token) => count + (values.has(token) ? 1 : 0), 0);
 }
 
-function hasExactCategoryMatch(paper, topic) {
+function hasExactCategoryMatch(paper: TopicPaper, topic: TopicInput) {
   const categoryIds = new Set((topic?.categoryIds || []).map(normalizeQueryText).filter(Boolean));
   if (categoryIds.size === 0) return false;
 
@@ -53,7 +57,7 @@ function hasExactCategoryMatch(paper, topic) {
   return declaredCategories.length === 0 && categoryIds.has(normalizeQueryText(paper?.primaryCategory));
 }
 
-export function scoreQueryTopicPaper(paper, topic) {
+export function scoreQueryTopicPaper(paper: TopicPaper, topic: TopicInput) {
   const query = normalizeQueryText(topic?.query || topic?.display_name || topic?.label);
   if (!query || !paper) return 0;
   if (hasExactCategoryMatch(paper, topic)) return 140;
@@ -81,9 +85,7 @@ export function scoreQueryTopicPaper(paper, topic) {
   return 0;
 }
 
-export function filterRelevantQueryTopicPapers(
-  papers,
-  topic,
+export function filterRelevantQueryTopicPapers<T extends TopicPaper>(papers: T[], topic: TopicInput,
   { minimumScore = QUERY_TOPIC_MINIMUM_SCORE } = {},
 ) {
   return (papers || [])

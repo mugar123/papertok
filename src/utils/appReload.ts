@@ -99,7 +99,7 @@ export function consumeAppForcedReload({ storage = safeSession(), now = Date.now
  */
 export function isReloadNavigation({ perf = typeof performance !== 'undefined' ? performance : null } = {}) {
   try {
-    const entry = perf?.getEntriesByType?.('navigation')?.[0];
+    const entry = perf?.getEntriesByType?.('navigation')?.[0] as PerformanceNavigationTiming | undefined;
     return entry?.type === 'reload';
   } catch {
     return false;
@@ -110,7 +110,7 @@ export function isReloadNavigation({ perf = typeof performance !== 'undefined' ?
  * The decision, kept separate from the reading of it so it can be tested
  * without a browser: a reload the reader asked for starts the feed fresh.
  */
-export function shouldStartFeedFresh({ isReload, wasAppForced }) {
+export function shouldStartFeedFresh({ isReload, wasAppForced }: { isReload?: boolean; wasAppForced?: boolean }) {
   return Boolean(isReload) && !wasAppForced;
 }
 
@@ -121,8 +121,8 @@ export function shouldStartFeedFresh({ isReload, wasAppForced }) {
  * their profile, their seen-set — is not continuity, it is their data.
  */
 export function clearFeedContinuity({ session = safeSession(), local = safeLocal() } = {}) {
-  const removed = [];
-  const sweep = (storage, matches) => {
+  const removed: string[] = [];
+  const sweep = (storage: Storage | null, matches: (key: string) => boolean) => {
     if (!storage) return;
     let keys;
     try {
@@ -140,8 +140,8 @@ export function clearFeedContinuity({ session = safeSession(), local = safeLocal
       }
     }
   };
-  sweep(session, (key) => key.startsWith(FEED_RESUME_STORAGE_PREFIX) || key === FOLLOWING_ORDER_STORAGE_KEY);
-  sweep(local, (key) => key.startsWith(FEED_SNAPSHOT_STORAGE_PREFIX));
+  sweep(session, (key: string) => key.startsWith(FEED_RESUME_STORAGE_PREFIX) || key === FOLLOWING_ORDER_STORAGE_KEY);
+  sweep(local, (key: string) => key.startsWith(FEED_SNAPSHOT_STORAGE_PREFIX));
   return removed;
 }
 
@@ -150,7 +150,7 @@ export function clearFeedContinuity({ session = safeSession(), local = safeLocal
  * feed reads both stores on its first render, so this has to have happened by
  * then.
  */
-export function applyReloadPolicy({ session, local, perf, now } = {}) {
+export function applyReloadPolicy({ session, local, perf, now }: { session?: Storage | null; local?: Storage | null; perf?: Performance | null; now?: number } = {}) {
   const isReload = isReloadNavigation({ perf });
   const wasAppForced = consumeAppForcedReload({ storage: session, now });
   if (!shouldStartFeedFresh({ isReload, wasAppForced })) return { fresh: false, removed: [] };

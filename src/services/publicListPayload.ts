@@ -1,3 +1,15 @@
+import type { Paper } from '../models/Paper.ts';
+export type PublicListPaper = Pick<Paper, 'id' | 'title'> & {
+  authors: string[]; category?: Paper['primaryCategory']; concepts?: string[]; date?: string; citations?: number; openUrl?: string; sourceId?: string;
+} & Partial<Pick<Paper, 'abstract' | 'year' | 'doi' | 'arxivId'>>;
+export type PublicPaperInput = Partial<Record<keyof Paper | 'category' | 'date' | 'citations' | 'openUrl' | 'sourceId' | 'listPaperId', unknown>> & {
+  authors?: Array<string | { name?: unknown }>;
+  concepts?: Array<string | { display_name?: unknown; name?: unknown; title?: unknown }>;
+  categories?: unknown[];
+};
+export interface PublicListInput { title?: unknown; name?: unknown; description?: unknown; papers?: PublicPaperInput[]; listId?: string; paperIds?: string[]; language?: string }
+export type PublicListPayload = ReturnType<typeof sanitizePublicList>;
+
 /**
  * The shape of a public list, and the only place that decides it.
  *
@@ -44,17 +56,17 @@ export const PUBLIC_LIST_LIMITS = Object.freeze({
  */
 export const PUBLIC_LIST_MAX_BYTES = 700_000;
 
-function cleanString(value, maximum) {
+function cleanString(value: unknown, maximum: number|undefined) {
   if (typeof value !== 'string') return '';
   return value.trim().replace(/\s+/g, ' ').slice(0, maximum);
 }
 
-function cleanMultilineString(value, maximum) {
+function cleanMultilineString(value: unknown, maximum: number|undefined) {
   if (typeof value !== 'string') return '';
   return value.trim().replace(/\r\n?/g, '\n').slice(0, maximum);
 }
 
-function normalizeDoi(value) {
+function normalizeDoi(value: unknown) {
   const url = safeDoiUrl(value);
   if (!url) return '';
   try {
@@ -64,7 +76,7 @@ function normalizeDoi(value) {
   }
 }
 
-function normalizeArxivId(value) {
+function normalizeArxivId(value: unknown) {
   const candidate = cleanString(value, PUBLIC_LIST_LIMITS.arxivId)
     .replace(/^arxiv:/i, '')
     .replace(/^https?:\/\/(?:export\.)?arxiv\.org\/(?:abs|pdf)\//i, '')
@@ -74,7 +86,7 @@ function normalizeArxivId(value) {
     : '';
 }
 
-function normalizeAuthors(authors) {
+function normalizeAuthors(authors: PublicPaperInput['authors']) {
   if (!Array.isArray(authors)) return [];
   return authors
     .map(author => cleanString(
@@ -85,7 +97,7 @@ function normalizeAuthors(authors) {
     .slice(0, PUBLIC_LIST_LIMITS.authors);
 }
 
-function normalizeConcepts(concepts) {
+function normalizeConcepts(concepts: PublicPaperInput['concepts']) {
   if (!Array.isArray(concepts)) return [];
   return concepts
     .map(concept => cleanString(
@@ -96,7 +108,7 @@ function normalizeConcepts(concepts) {
     .slice(0, PUBLIC_LIST_LIMITS.concepts);
 }
 
-function stablePaperId(paper, doi, arxivId) {
+function stablePaperId(paper: PublicPaperInput, doi: string, arxivId: string) {
   const rawId = cleanString(paper?.id, PUBLIC_LIST_LIMITS.id);
   if (doi) return `doi:${doi.toLowerCase()}`;
   if (arxivId) return `arxiv:${arxivId.toLowerCase()}`;
@@ -115,7 +127,7 @@ function stablePaperId(paper, doi, arxivId) {
  * hypothetical: it removed "Observation of perfect absorption…" from a real
  * shared list. The join key is data now, not a guess.
  */
-function sourcePaperId(paper, id) {
+function sourcePaperId(paper: PublicPaperInput, id: string) {
   // `listPaperId` on the way in, `sourceId` on the way back through: this
   // function has to be IDEMPOTENT because the payload is sanitized twice, once
   // in the browser and once in the Worker, and the second pass sees the output
@@ -130,10 +142,10 @@ function sourcePaperId(paper, id) {
 
 /**
  * @typedef {Pick<import('../models/Paper.ts').Paper, 'id' | 'title'> &
- * { authors: string[]; concepts?: string[]; date?: string; citations?: number; openUrl?: string; sourceId?: string } &
- * Partial<Pick<import('../models/Paper.ts').Paper, 'abstract' | 'year' | 'category' | 'doi' | 'arxivId'>>} PublicListPaper
+ * { authors: string[]; category?: Paper['primaryCategory']; concepts?: string[]; date?: string; citations?: number; openUrl?: string; sourceId?: string } &
+ * Partial<Pick<import('../models/Paper.ts').Paper, 'abstract' | 'year' | 'doi' | 'arxivId'>>} PublicListPaper
  */
-export function sanitizePublicPaper(paper) {
+export function sanitizePublicPaper(paper: PublicPaperInput | null | undefined) {
   if (!paper || typeof paper !== 'object') return null;
 
   const doi = normalizeDoi(paper.doi);
@@ -143,7 +155,7 @@ export function sanitizePublicPaper(paper) {
   if (!id || !title) return null;
 
   /** @type {PublicListPaper} */
-  const result = {
+  const result: PublicListPaper = {
     id,
     title,
     authors: normalizeAuthors(paper.authors),
@@ -157,8 +169,8 @@ export function sanitizePublicPaper(paper) {
   const openUrl = safeExternalUrl(
     paper.openUrl || paper.landingPageUrl || paper.openAccessPdfUrl || paper.pdfUrl,
   ).slice(0, PUBLIC_LIST_LIMITS.url);
-  const year = Number.isInteger(paper.year) && paper.year >= 1000 && paper.year <= 3000
-    ? paper.year
+  const year = Number.isInteger(paper.year) && (paper.year as number) >= 1000 && (paper.year as number) <= 3000
+    ? paper.year as number
     : null;
   const date = cleanString(paper.date || paper.published, PUBLIC_LIST_LIMITS.date);
   const citations = Number.isInteger(paper.citations)
@@ -170,8 +182,8 @@ export function sanitizePublicPaper(paper) {
   if (date) result.date = date;
   if (category) result.category = category;
   if (concepts.length) result.concepts = concepts;
-  if (Number.isInteger(citations) && citations >= 0 && citations <= PUBLIC_LIST_LIMITS.citations) {
-    result.citations = citations;
+  if (Number.isInteger(citations) && (citations as number) >= 0 && (citations as number) <= PUBLIC_LIST_LIMITS.citations) {
+    result.citations = citations as number;
   }
   if (doi) result.doi = doi;
   if (arxivId) result.arxivId = arxivId;
@@ -181,14 +193,14 @@ export function sanitizePublicPaper(paper) {
   return result;
 }
 
-export function sanitizePublicList(input) {
+export function sanitizePublicList(input: PublicListInput | null | undefined) {
   const title = cleanString(input?.title || input?.name, PUBLIC_LIST_LIMITS.title);
   if (!title) throw new TypeError('A public list title is required.');
 
   const papers = (Array.isArray(input?.papers) ? input.papers : [])
     .map(sanitizePublicPaper)
     .filter(Boolean)
-    .slice(0, PUBLIC_LIST_LIMITS.papers);
+    .slice(0, PUBLIC_LIST_LIMITS.papers) as PublicListPaper[];
   const description = cleanMultilineString(input?.description, PUBLIC_LIST_LIMITS.description);
 
   return {
@@ -208,14 +220,14 @@ export function sanitizePublicList(input) {
  * out over a limit, so a hostile client cannot hand us a document that only
  * the coercion happened to save.
  */
-export function assertPublicListWithinLimits(payload) {
-  const failures = [];
-  const check = (condition, code) => { if (!condition) failures.push(code); };
+export function assertPublicListWithinLimits(payload: PublicListPayload) {
+  const failures: string[] = [];
+  const check = (condition: boolean, code: string) => { if (!condition) failures.push(code); };
 
   check(typeof payload?.title === 'string' && payload.title.length > 0
     && payload.title.length <= PUBLIC_LIST_LIMITS.title, 'TITLE');
   check(!('description' in payload)
-    || payload.description.length <= PUBLIC_LIST_LIMITS.description, 'DESCRIPTION');
+    || payload.description!.length <= PUBLIC_LIST_LIMITS.description, 'DESCRIPTION');
   check(payload?.language === 'es' || payload?.language === 'en', 'LANGUAGE');
   check(Array.isArray(payload?.papers)
     && payload.papers.length <= PUBLIC_LIST_LIMITS.papers, 'PAPER_COUNT');
@@ -228,24 +240,24 @@ export function assertPublicListWithinLimits(payload) {
       && paper.authors.length <= PUBLIC_LIST_LIMITS.authors, 'PAPER_AUTHORS');
     check(paper.authors.every(author => typeof author === 'string'
       && author.length <= PUBLIC_LIST_LIMITS.author), 'PAPER_AUTHOR');
-    check(!('abstract' in paper) || paper.abstract.length <= PUBLIC_LIST_LIMITS.abstract, 'PAPER_ABSTRACT');
-    check(!('concepts' in paper) || (paper.concepts.length <= PUBLIC_LIST_LIMITS.concepts
-      && paper.concepts.every(concept => typeof concept === 'string'
+    check(!('abstract' in paper) || paper.abstract!.length <= PUBLIC_LIST_LIMITS.abstract, 'PAPER_ABSTRACT');
+    check(!('concepts' in paper) || (paper.concepts!.length <= PUBLIC_LIST_LIMITS.concepts
+      && paper.concepts!.every(concept => typeof concept === 'string'
         && concept.length <= PUBLIC_LIST_LIMITS.concept)), 'PAPER_CONCEPTS');
-    check(!('openUrl' in paper) || (paper.openUrl.length <= PUBLIC_LIST_LIMITS.url
-      && paper.openUrl.startsWith('https://')), 'PAPER_URL');
-    check(!('doi' in paper) || paper.doi.length <= PUBLIC_LIST_LIMITS.doi, 'PAPER_DOI');
-    check(!('arxivId' in paper) || paper.arxivId.length <= PUBLIC_LIST_LIMITS.arxivId, 'PAPER_ARXIV');
+    check(!('openUrl' in paper) || (paper.openUrl!.length <= PUBLIC_LIST_LIMITS.url
+      && paper.openUrl!.startsWith('https://')), 'PAPER_URL');
+    check(!('doi' in paper) || paper.doi!.length <= PUBLIC_LIST_LIMITS.doi, 'PAPER_DOI');
+    check(!('arxivId' in paper) || paper.arxivId!.length <= PUBLIC_LIST_LIMITS.arxivId, 'PAPER_ARXIV');
     // Same namespace as the paper id it stands in for, so the same bound.
     check(!('sourceId' in paper) || (typeof paper.sourceId === 'string'
       && paper.sourceId.length > 0
       && paper.sourceId.length <= PUBLIC_LIST_LIMITS.id), 'PAPER_SOURCE_ID');
-    check(!('category' in paper) || paper.category.length <= PUBLIC_LIST_LIMITS.category, 'PAPER_CATEGORY');
-    check(!('date' in paper) || paper.date.length <= PUBLIC_LIST_LIMITS.date, 'PAPER_DATE');
+    check(!('category' in paper) || paper.category!.length <= PUBLIC_LIST_LIMITS.category, 'PAPER_CATEGORY');
+    check(!('date' in paper) || paper.date!.length <= PUBLIC_LIST_LIMITS.date, 'PAPER_DATE');
     check(!('year' in paper) || (Number.isInteger(paper.year)
-      && paper.year >= 1000 && paper.year <= 3000), 'PAPER_YEAR');
+      && (paper.year as number) >= 1000 && (paper.year as number) <= 3000), 'PAPER_YEAR');
     check(!('citations' in paper) || (Number.isInteger(paper.citations)
-      && paper.citations >= 0 && paper.citations <= PUBLIC_LIST_LIMITS.citations), 'PAPER_CITATIONS');
+      && paper.citations! >= 0 && paper.citations! <= PUBLIC_LIST_LIMITS.citations), 'PAPER_CITATIONS');
   }
 
   // The backstop, measured on the wire format rather than on any one field.
@@ -263,7 +275,7 @@ export function assertPublicListWithinLimits(payload) {
  * wrong is silent: keying by the public id makes the Worker fail to recognise
  * a paper it published itself and drop it.
  */
-export function publicPaperJoinKey(paper) {
+export function publicPaperJoinKey(paper: Pick<PublicPaperInput, 'sourceId' | 'id'> | null | undefined) {
   if (!paper || typeof paper !== 'object') return '';
   return cleanString(paper.sourceId, PUBLIC_LIST_LIMITS.id)
     || cleanString(paper.id, PUBLIC_LIST_LIMITS.id);
@@ -277,8 +289,8 @@ export function publicPaperJoinKey(paper) {
  * and only falls back to this. It stays because a client that cannot be
  * re-deployed still sends it, and because the trimming keeps the request small.
  */
-export function sanitizeSyncPaperIds(paperIds) {
-  const seen = new Set();
+export function sanitizeSyncPaperIds(paperIds: unknown[] | null | undefined) {
+  const seen = new Set<string>();
   const ids = [];
   for (const value of Array.isArray(paperIds) ? paperIds : []) {
     const id = cleanString(value, PUBLIC_LIST_LIMITS.id);

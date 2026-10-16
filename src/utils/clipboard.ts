@@ -10,7 +10,7 @@
  * Throws when the copy did not happen, so callers can tell success from
  * failure instead of showing "copied" over nothing.
  */
-export async function copyText(value) {
+export async function copyText(value: string) {
   // Presence is not permission: `writeText` exists and still rejects with
   // NotAllowedError inside embedded browsers, in non-secure contexts, and when
   // the document lost transient activation. Falling through on rejection —

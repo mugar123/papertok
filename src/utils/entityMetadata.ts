@@ -1,32 +1,36 @@
-export function applyInstitutionWorksFallback(institution, worksCount) {
-  if (!institution || !Number.isFinite(worksCount) || worksCount <= 0 || institution.works_count > 0) {
+import type { EntityMetrics } from '../services/adapters/openAlexTypes.ts';
+
+export interface ProjectParticipant { name?: string; searchName?: string | null; country?: string | null; website?: string | null; }
+
+export function applyInstitutionWorksFallback<T extends EntityMetrics>(institution: T, worksCount: number | undefined) {
+  if (!institution || !Number.isFinite(worksCount) || worksCount! <= 0 || institution.works_count! > 0) {
     return institution;
   }
 
   return {
     ...institution,
     works_count: worksCount,
-    cited_by_count: institution.cited_by_count > 0 ? institution.cited_by_count : null,
+    cited_by_count: institution.cited_by_count! > 0 ? institution.cited_by_count : null,
     summary_stats: {
       ...institution.summary_stats,
-      h_index: institution.summary_stats?.h_index > 0 ? institution.summary_stats.h_index : null,
-      '2yr_mean_citedness': institution.summary_stats?.['2yr_mean_citedness'] > 0
-        ? institution.summary_stats['2yr_mean_citedness']
+      h_index: (institution.summary_stats?.h_index as number) > 0 ? institution.summary_stats!.h_index : null,
+      '2yr_mean_citedness': (institution.summary_stats?.['2yr_mean_citedness'] as number) > 0
+        ? institution.summary_stats!['2yr_mean_citedness']
         : null,
     },
     metrics_are_partial: true,
   };
 }
 
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 const RECENT_IMPACT_CONFIG = Object.freeze({
   institution: Object.freeze({ minimumSampleSize: 50, sampleSize: 200 }),
   author: Object.freeze({ minimumSampleSize: 5, sampleSize: 100 }),
 });
 
-export function getRecentImpactConfig(type) {
-  return RECENT_IMPACT_CONFIG[type] || null;
+export function getRecentImpactConfig(type: string|number) {
+  return RECENT_IMPACT_CONFIG[type as keyof typeof RECENT_IMPACT_CONFIG] || null;
 }
 
 export function getRecentImpactPeriod(now = new Date()) {
@@ -44,10 +48,10 @@ export function getRecentImpactPeriod(now = new Date()) {
   };
 }
 
-export function calculateEntityRecentImpact(works = [], minimumSampleSize = 50) {
+export function calculateEntityRecentImpact(works: Array<{ fwci?: number | null }> = [], minimumSampleSize = 50) {
   const fwciValues = works
     .map(work => work?.fwci)
-    .filter(value => Number.isFinite(value) && value >= 0)
+    .filter((value): value is number => Number.isFinite(value) && value! >= 0)
     .sort((a, b) => a - b);
 
   if (fwciValues.length < minimumSampleSize) {
@@ -92,7 +96,7 @@ export function calculateEntityRecentImpact(works = [], minimumSampleSize = 50) 
   };
 }
 
-export function calculateInstitutionRecentImpact(works = [], minimumSampleSize = 50) {
+export function calculateInstitutionRecentImpact(works: Array<{ fwci?: number | null }> = [], minimumSampleSize = 50) {
   return calculateEntityRecentImpact(works, minimumSampleSize);
 }
 
@@ -105,15 +109,15 @@ export function calculateInstitutionRecentImpact(works = [], minimumSampleSize =
  * the one the surface computes. Two surfaces spelling it differently is
  * exactly what let a reader follow the same project twice.
  */
-export function getProjectDisplayName(project) {
+export function getProjectDisplayName(project: { acronym?: string | null; title?: string } | null | undefined) {
   const acronym = String(project?.acronym || '').trim();
   const title = String(project?.title || '').trim();
   if (acronym && title) return `${acronym}: ${title}`;
   return acronym || title;
 }
 
-export function deduplicateProjectParticipants(participants = []) {
-  const uniqueParticipants = new Map();
+export function deduplicateProjectParticipants(participants: ProjectParticipant[] = []) {
+  const uniqueParticipants = new Map<string, ProjectParticipant>();
 
   for (const participant of participants) {
     const name = participant?.name?.trim();

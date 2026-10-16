@@ -6,8 +6,6 @@
     "types": ["node"]
   },
   "include": [
-    "src/**/*.test.js",
-    "src/**/*.test.ts",
     "proxy/**/*.test.js",
     "proxy/**/*.test.ts",
     "tests/**/*.js",
@@ -16,12 +14,10 @@
     "scripts/**/*.mjs",
     "scripts/**/*.ts",
     "*.config.js",
-    "*.config.ts"
+    "*.config.ts",
+    "src/types/**/*.d.ts"
   ],
   "exclude": [
-    "scripts/diagnostics",
-    "src/services/paperFigureService.test.js",
-    "src/components/Institution/publisherLogos.test.js",
-    "src/utils/aiExplanation.test.js"
+    "scripts/diagnostics"
   ]
 }

@@ -14,28 +14,28 @@
  * "Wan-Ning Li", and "Chen YC" matched "Y. C. Pan" (audit 2026-09-23).
  */
 
-function normalizeText(value) {
+function normalizeText(value: unknown) {
   return String(value || '')
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '');
 }
 
-function words(value) {
+function words(value: string) {
   return value.toLowerCase().replace(/[^a-z\s-]/g, ' ').split(/[\s-]+/).filter(Boolean);
 }
 
-export function normalizeNameForMatch(name) {
+export function normalizeNameForMatch(name: string) {
   return words(normalizeText(name).replace(/\./g, ' '));
 }
 
 // "WN", "V.K.", "J" -> ['w', 'n'] … : a run of capitals written as initials.
-function initialsOf(token) {
+function initialsOf(token: string) {
   const letters = token.replace(/\./g, '');
   return /^[A-Z]{1,3}$/.test(letters) ? letters.toLowerCase().split('') : null;
 }
 
 // Given-name parts, with initials split: "Wan-Ning" -> ['wan', 'ning'], "A." -> ['a'].
-function givenParts(tokens) {
+function givenParts(tokens: string[]) {
   return tokens.flatMap(token => initialsOf(token) || normalizeNameForMatch(token));
 }
 
@@ -45,7 +45,7 @@ function givenParts(tokens) {
  * name has "given… surname", and a two-word name also the reverse, because
  * Chinese names reach us in both orders ("Wei Zhang", "Zhang Wei").
  */
-function readings(name) {
+function readings(name: unknown) {
   const text = normalizeText(name).replace(/\s+/g, ' ').trim();
   if (!text) return [];
   if (text.includes(',')) {
@@ -55,7 +55,7 @@ function readings(name) {
   const tokens = text.split(' ');
   const last = tokens[tokens.length - 1];
   if (tokens.length >= 2 && initialsOf(last)) {
-    return [{ surname: normalizeNameForMatch(tokens.slice(0, -1).join(' ')), given: initialsOf(last) }];
+    return [{ surname: normalizeNameForMatch(tokens.slice(0, -1).join(' ')), given: initialsOf(last)! }];
   }
   const plain = { surname: normalizeNameForMatch(last), given: givenParts(tokens.slice(0, -1)) };
   // A Spanish or Portuguese name ends in two surnames, and is often indexed
@@ -72,7 +72,7 @@ function readings(name) {
   return [plain, { surname: normalizeNameForMatch(tokens[0]), given: givenParts([tokens[1]]) }];
 }
 
-function sameSurname(a, b) {
+function sameSurname(a: string[], b: string[]) {
   if (a.length === 0 || b.length === 0) return false;
   if (a.join(' ') === b.join(' ')) return true;
   // A compound surname written whole on one side and in part on the other
@@ -81,7 +81,7 @@ function sameSurname(a, b) {
   return shorter.every(part => longer.includes(part));
 }
 
-function sameGivenPart(a, b) {
+function sameGivenPart(a: string, b: string) {
   if (a === b) return true;
   if (a.length === 1 || b.length === 1) return a[0] === b[0];
   return a.length > 3 && b.length > 3 && (a.startsWith(b) || b.startsWith(a));
@@ -89,7 +89,7 @@ function sameGivenPart(a, b) {
 
 // Given names agree in order as far as both go; a side with fewer (or none)
 // does not contradict the other.
-function givenInOrder(a, b) {
+function givenInOrder(a: string[], b: string[]) {
   const length = Math.min(a.length, b.length);
   for (let index = 0; index < length; index += 1) {
     if (!sameGivenPart(a[index], b[index])) return false;
@@ -100,13 +100,13 @@ function givenInOrder(a, b) {
 // A first initial is often dropped in front of the name a person goes by:
 // "J. Robert Oppenheimer" is "Robert Oppenheimer". The side with more given
 // names may skip its leading initial; nothing else is skipped.
-function sameGiven(a, b) {
+function sameGiven(a: string[], b: string[]) {
   if (givenInOrder(a, b)) return true;
   const [longer, shorter] = a.length > b.length ? [a, b] : [b, a];
   return longer.length > shorter.length && longer[0].length === 1 && givenInOrder(longer.slice(1), shorter);
 }
 
-export function matchesAuthorName(reqName, oaName) {
+export function matchesAuthorName(reqName: unknown, oaName: unknown) {
   if (!reqName || !oaName) return false;
   const left = readings(reqName);
   const right = readings(oaName);

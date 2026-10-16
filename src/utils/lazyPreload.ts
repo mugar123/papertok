@@ -1,3 +1,5 @@
+import type { ComponentType } from 'react';
+
 import { createElement, lazy, useRef } from 'react';
 
 /**
@@ -22,9 +24,9 @@ import { createElement, lazy, useRef } from 'react';
  * and never suspends. A cold visit (nothing preloaded) still goes through the
  * ordinary lazy path and the fallback, exactly as before.
  */
-export function lazyWithPreload(factory) {
-  let loaded = null;
-  let pending = null;
+export function lazyWithPreload<Props extends object>(factory: () => Promise<{ default: ComponentType<Props> }>) {
+  let loaded: ComponentType<Props> | null = null;
+  let pending: Promise<{ default: ComponentType<Props> }> | null = null;
   const load = () => {
     if (!pending) {
       pending = Promise.resolve()
@@ -41,12 +43,12 @@ export function lazyWithPreload(factory) {
   };
   const Lazy = lazy(load);
 
-  function Preloadable(props) {
+  function Preloadable(props: Props) {
     // An instance that first rendered through `Lazy` keeps doing so: swapping
     // the element type once the module lands would remount the screen and
     // lose its state. After resolution `Lazy` renders synchronously anyway.
     const viaLazy = useRef(loaded === null);
-    return createElement(viaLazy.current ? Lazy : loaded, props);
+    return createElement(viaLazy.current ? Lazy : loaded!, props);
   }
   Preloadable.preload = load;
   return Preloadable;

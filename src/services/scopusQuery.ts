@@ -1,4 +1,4 @@
-function normalizePhrase(value) {
+function normalizePhrase(value: unknown) {
   const withoutControlCharacters = [...String(value || '')]
     .map(character => {
       const code = character.charCodeAt(0);
@@ -17,7 +17,7 @@ function normalizePhrase(value) {
 }
 
 /** @param {{ terms?: unknown[], author?: unknown }} [input] */
-export function buildScopusSearchQuery({ terms = [], author = '' } = {}) {
+export function buildScopusSearchQuery({ terms = [], author = '' }: { terms?: unknown[]; author?: unknown; } = {}) {
   const normalizedAuthor = normalizePhrase(author);
   if (normalizedAuthor) return `AUTH("${normalizedAuthor}")`;
 

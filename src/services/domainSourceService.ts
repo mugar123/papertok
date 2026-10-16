@@ -1,3 +1,52 @@
+import type { Paper } from '../models/Paper.ts';
+import type { EuropePmcRecord } from '../utils/europePmcRecord.ts';
+import type { OpenReviewNote } from './openReviewService.ts';
+import type { HuggingFaceRecord } from './huggingFaceService.ts';
+import type { SettledWithin } from '../utils/asyncTiming.ts';
+
+type ProviderAuthor = string | { name?: string; fullName?: string } | undefined;
+interface BioRxivRecord { doi?: string; title?: string; version?: string | number; category?: string; abstract?: string; authors?: string; date?: string; license?: string; }
+interface BioRxivResponse { _papertok?: { degraded?: string }; collection?: BioRxivRecord[]; }
+interface EuropePmcSearchRecord extends EuropePmcRecord {
+  title?: string; doi?: string; firstPublicationDate?: string; electronicPublicationDate?: string; dateOfCreation?: string;
+  source?: string; authorString?: string; journalInfo?: { journal?: { title?: string }; yearOfPublication?: number | string };
+}
+interface CoreWork {
+  id?: string | number; title?: string; doi?: string; publishedDate?: string; acceptedDate?: string; depositedDate?: string;
+  downloadUrl?: string; links?: Array<{ type?: string; url?: string }>; fieldOfStudy?: string; documentType?: string;
+  arxivId?: string; abstract?: string; authors?: ProviderAuthor[]; yearPublished?: number | string; publisher?: string;
+  journals?: Array<{ title?: string }>; citationCount?: number;
+}
+interface OstiRecord {
+  osti_id?: string | number; title?: string; doi?: string; links?: Array<{ rel?: string; href?: string }>;
+  subjects?: string[]; description?: string; authors?: ProviderAuthor[]; research_orgs?: string[]; publication_date?: string;
+  journal_name?: string; publisher?: string; product_type?: string;
+}
+interface NasaRecord {
+  id?: string | number; title?: string; publications?: Array<{ publicationDate?: string }>;
+  distributionDate?: string; submittedDate?: string; downloads?: Array<{ links?: { pdf?: string; original?: string }; mimetype?: string }>;
+  subjectCategories?: string[]; keywords?: string[]; abstract?: string;
+  authorAffiliations?: Array<{ meta?: { author?: ProviderAuthor; organization?: { name?: string } } }>;
+  stiType?: string;
+}
+interface AdsRecord {
+  bibcode?: string; title?: string | string[]; doi?: string | string[]; identifier?: string | string[];
+  property?: string[]; keyword?: string | string[]; arxiv_class?: string | string[];
+  doctype?: string; esources?: string[]; citation_count?: number | string; pubdate?: string; year?: number | string;
+  abstract?: string; author?: string[]; pub?: string; reference_count?: number; reference?: unknown[]; has_data?: boolean; data?: unknown[];
+}
+interface InspireRecord {
+  metadata?: InspireRecord; control_number?: string | number; id?: string; titles?: Array<{ title?: string }>; title?: string;
+  dois?: Array<{ value?: string }>; doi?: string; arxiv_eprints?: Array<{ value?: string }>;
+  document_type?: string[]; publication_info?: Array<{ journal_title?: string; year?: number | string }>;
+  documents?: Array<{ key?: string; url?: string }>; keywords?: Array<string | { value?: string }>;
+  inspire_categories?: Array<string | { term?: string }>; primary_arxiv_category?: string[] | { value?: string };
+  citation_count?: number | string; earliest_date?: string; imprints?: Array<{ date?: string }>;
+  abstracts?: Array<{ value?: string }>; authors?: Array<{ full_name?: string; raw_name?: string }>; reference_count?: number; references?: unknown[];
+}
+interface PhysicsResponse { _papertok?: { source?: string }; response?: { docs?: AdsRecord[] }; hits?: { hits?: InspireRecord[] }; }
+type SourceRequest<T> = { path: string; promise: Promise<T> };
+
 import { CATEGORIES } from '../data/categories.js';
 import { PaperBuilder } from './PaperBuilder.ts';
 import { isScopusEnabled, ScopusAdapter } from './adapters/ScopusAdapter.ts';
@@ -18,7 +67,7 @@ const REQUEST_TIMEOUT_MS = 10_000;
 // It matches `OPTIONAL_SOURCE_RENDER_BUDGET_MS` in the feed for the same reason.
 const DOMAIN_SOURCE_BUDGET_MS = 3_500;
 
-const BIORXIV_CATEGORIES = {
+const BIORXIV_CATEGORIES: Record<string, string> = {
   'bio.gen': 'genetics',
   'bio.mol': 'molecular biology',
   'bio.cell': 'cell biology',
@@ -84,45 +133,45 @@ const HUGGING_FACE_CATEGORIES = new Set([
   'bio.comp',
 ]);
 
-function isOpenReviewCategory(categoryId) {
+function isOpenReviewCategory(categoryId: string) {
   return /^(?:cs\.|stat\.(?:ML|CO)$|eess\.(?:IV|SY)$)/i.test(categoryId);
 }
 
-function isPhysicsCategory(categoryId) {
+function isPhysicsCategory(categoryId: string) {
   return /^(?:astro-ph(?:\.|$)|cond-mat(?:\.|$)|gr-qc$|hep-|math-ph$|nucl-|physics\.|quant-ph$|nlin\.)/i.test(categoryId);
 }
 
-function normalizeText(value) {
+function normalizeText(value: unknown) {
   return String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function normalizeDoi(value) {
+function normalizeDoi(value: unknown) {
   return String(value || '').trim().replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '').toLowerCase();
 }
 
-function safeUrl(value) {
+function safeUrl(value: string | undefined) {
   try {
-    const url = new URL(value);
+    const url = new URL(value!);
     return ['http:', 'https:'].includes(url.protocol) ? url.toString() : '';
   } catch {
     return '';
   }
 }
 
-function safeYear(value) {
-  const year = new Date(value).getUTCFullYear();
+function safeYear(value: string | undefined) {
+  const year = new Date(value!).getUTCFullYear();
   return Number.isInteger(year) && year > 1800 ? year : new Date().getUTCFullYear();
 }
 
-function categoryLabel(categoryId) {
+function categoryLabel(categoryId: string) {
   for (const area of Object.values(CATEGORIES)) {
-    const category = area.subcategories?.[categoryId];
+    const category = (area.subcategories as Record<string, { label: string }>)?.[categoryId];
     if (category) return category.label || category.label;
   }
   return categoryId.replace(/[.-]/g, ' ');
 }
 
-function selectCategory(providerLabel, requestedCategories) {
+function selectCategory(providerLabel: string, requestedCategories: string[]) {
   if (!requestedCategories?.length) return '';
   if (requestedCategories.length === 1) return requestedCategories[0];
   const normalizedProvider = normalizeText(providerLabel).toLowerCase();
@@ -132,7 +181,7 @@ function selectCategory(providerLabel, requestedCategories) {
   }) || requestedCategories[0];
 }
 
-function withRequestedCategory(paper, requestedCategories, providerLabel = '') {
+function withRequestedCategory<T extends Partial<Paper>>(paper: T, requestedCategories: string[], providerLabel = ''): T {
   const selected = selectCategory(providerLabel, requestedCategories);
   if (!selected) return paper;
   return {
@@ -143,7 +192,7 @@ function withRequestedCategory(paper, requestedCategories, providerLabel = '') {
   };
 }
 
-function authorObjects(values) {
+function authorObjects(values: ProviderAuthor[] | undefined) {
   return (values || [])
     .map(value => typeof value === 'string' ? value : value?.name || value?.fullName)
     .map(normalizeText)
@@ -151,7 +200,7 @@ function authorObjects(values) {
     .map(name => ({ name }));
 }
 
-export function mapBioRxivPaper(raw, requestedCategories = []) {
+export function mapBioRxivPaper(raw: BioRxivRecord, requestedCategories: string[] = []): Paper | null {
   const doi = normalizeDoi(raw?.doi);
   if (!doi || !raw?.title) return null;
   const version = String(raw.version || '1').replace(/\D/g, '') || '1';
@@ -187,7 +236,7 @@ export function mapBioRxivPaper(raw, requestedCategories = []) {
  * briefly; that is a failure of the source, thrown so the feed's source-health
  * log reports it, never an honest "no preprints".
  */
-export function readBioRxivResponse(data, requestedCategories = [], limit = 8) {
+export function readBioRxivResponse(data: BioRxivResponse | null, requestedCategories: string[] = [], limit = 8) {
   const degraded = data?._papertok?.degraded;
   if (degraded) {
     throw Object.assign(new Error(`Specialist source degraded: ${degraded}`), { code: degraded });
@@ -195,7 +244,7 @@ export function readBioRxivResponse(data, requestedCategories = [], limit = 8) {
   return (data?.collection || []).slice(0, limit).map(item => mapBioRxivPaper(item, requestedCategories));
 }
 
-export function mapEuropePmcSearchResult(raw, requestedCategories = []) {
+export function mapEuropePmcSearchResult(raw: EuropePmcSearchRecord, requestedCategories: string[] = []): Paper | null {
   const record = mapEuropePmcRecord(raw);
   const { pmid, providerId } = record;
   if ((!providerId && !pmid) || !raw?.title) return null;
@@ -238,7 +287,7 @@ export function mapEuropePmcSearchResult(raw, requestedCategories = []) {
   return withRequestedCategory(paper, requestedCategories, terms.join(' '));
 }
 
-export function mapCoreWork(raw, requestedCategories = []) {
+export function mapCoreWork(raw: CoreWork, requestedCategories: string[] = []): Paper | null {
   if (!raw?.id || !raw?.title) return null;
   const doi = normalizeDoi(raw.doi);
   const published = raw.publishedDate || raw.acceptedDate || raw.depositedDate || '';
@@ -270,7 +319,7 @@ export function mapCoreWork(raw, requestedCategories = []) {
   return withRequestedCategory(paper, requestedCategories, providerTerms.join(' '));
 }
 
-export function mapOstiRecord(raw, requestedCategories = []) {
+export function mapOstiRecord(raw: OstiRecord, requestedCategories: string[] = []): Paper | null {
   if (!raw?.osti_id || !raw?.title) return null;
   const doi = normalizeDoi(raw.doi);
   const fullTextUrl = safeUrl((raw.links || []).find(link => link?.rel === 'fulltext')?.href);
@@ -300,7 +349,7 @@ export function mapOstiRecord(raw, requestedCategories = []) {
   return withRequestedCategory(paper, requestedCategories, subjects.join(' '));
 }
 
-export function mapNasaRecord(raw, requestedCategories = []) {
+export function mapNasaRecord(raw: NasaRecord, requestedCategories: string[] = []): Paper | null {
   if (!raw?.id || !raw?.title) return null;
   const published = raw.publications?.[0]?.publicationDate || raw.distributionDate || raw.submittedDate || '';
   const download = (raw.downloads || []).find(item => item?.links?.pdf || item?.mimetype === 'application/pdf');
@@ -332,7 +381,7 @@ export function mapNasaRecord(raw, requestedCategories = []) {
   return withRequestedCategory(paper, requestedCategories, terms.join(' '));
 }
 
-function extractAdsArxivId(raw) {
+function extractAdsArxivId(raw: AdsRecord) {
   const identifiers = Array.isArray(raw?.identifier) ? raw.identifier : [raw?.identifier];
   for (const value of identifiers) {
     const match = String(value || '').match(/(?:arxiv:|arxiv\.org\/(?:abs|pdf)\/)(\d{4}\.\d{4,5}|[a-z][a-z.-]+\/\d{7})(?:v\d+)?/i);
@@ -341,7 +390,7 @@ function extractAdsArxivId(raw) {
   return '';
 }
 
-export function mapAdsPaper(raw, requestedCategories = []) {
+export function mapAdsPaper(raw: AdsRecord, requestedCategories: string[] = []): Paper | null {
   const bibcode = normalizeText(raw?.bibcode);
   // ADS markup means something: `<tex-math>` carries a formula and
   // `<SUB>`/`<SUP>` are scripts, some of them inside that formula. Flattening
@@ -379,7 +428,7 @@ export function mapAdsPaper(raw, requestedCategories = []) {
     adsUrl: `https://ui.adsabs.harvard.edu/abs/${encodeURIComponent(bibcode)}/abstract`,
     sources: { primary: 'nasa-ads', enrichedBy: [] },
     title,
-    abstract: normalizeScientificMarkup(raw.abstract),
+    abstract: normalizeScientificMarkup(raw.abstract!),
     authors: authorObjects(raw.author),
     year: Number(raw.year) || safeYear(published),
     published,
@@ -403,7 +452,7 @@ export function mapAdsPaper(raw, requestedCategories = []) {
   return withRequestedCategory(paper, requestedCategories, terms.join(' '));
 }
 
-export function mapInspirePaper(hit, requestedCategories = []) {
+export function mapInspirePaper(hit: InspireRecord, requestedCategories: string[] = []): Paper | null {
   const raw = hit?.metadata || hit;
   const controlNumber = String(raw?.control_number || hit?.id || '').trim();
   const title = normalizeText(raw?.titles?.[0]?.title || raw?.title);
@@ -416,8 +465,8 @@ export function mapInspirePaper(hit, requestedCategories = []) {
   const documents = Array.isArray(raw.documents) ? raw.documents : [];
   const pdfUrl = safeUrl(documents.find(document => /pdf/i.test(document?.key || document?.url || ''))?.url);
   const terms = [...new Set([
-    ...(raw.keywords || []).map(keyword => keyword?.value || keyword),
-    ...(raw.inspire_categories || []).map(category => category?.term || category),
+    ...(raw.keywords || []).map(keyword => (keyword as { value?: string })?.value || keyword),
+    ...(raw.inspire_categories || []).map(category => (category as { term?: string })?.term || category),
     ...(Array.isArray(raw.primary_arxiv_category)
       ? raw.primary_arxiv_category
       : [raw.primary_arxiv_category?.value]),
@@ -468,13 +517,13 @@ export const DOMAIN_SOURCE_PATHS = Object.freeze({
   openreview: '/sources/openreview',
   huggingface: '/sources/huggingface',
 });
-export const PROTECTED_SOURCE_PATHS = Object.freeze(new Set([
+export const PROTECTED_SOURCE_PATHS = Object.freeze(new Set<string>([
   DOMAIN_SOURCE_PATHS.core,
   DOMAIN_SOURCE_PATHS.physics,
   DOMAIN_SOURCE_PATHS.scopus,
 ]));
 
-async function fetchJson(path, params) {
+async function fetchJson<T>(path: string, params: Record<string, unknown>): Promise<T | null> {
   if (!PAPER_API_BASE) return null;
   const url = new URL(`${PAPER_API_BASE}${path}`);
   Object.entries(params).forEach(([key, value]) => {
@@ -490,17 +539,17 @@ async function fetchJson(path, params) {
   if (!response.ok) {
     // Read under the same deadline as the headers (`withRequestDeadline` keeps
     // the signal armed for the body); a body that is not JSON is simply no body.
-    const body = await response.json().catch(() => null);
+    const body = await response.json().catch(() => null) as { code?: unknown; upstreamStatus?: number } | null;
     throw sourceResponseError(path, response.status, body);
   }
   return response.json();
 }
 
-function sourceQuery(categories) {
+function sourceQuery(categories: string[]) {
   return categories.map(categoryLabel).map(label => `"${label}"`).join(' OR ');
 }
 
-export function getDomainSourcePlan(categories = []) {
+export function getDomainSourcePlan(categories: string[] = []) {
   const unique = [...new Set(categories)].filter(Boolean);
   const biology = unique.filter(category => category.startsWith('bio.'));
   const engineering = unique.filter(category => /^(?:eess|mech|civil|chemeng)\./.test(category));
@@ -529,7 +578,7 @@ export function getDomainSourcePlan(categories = []) {
 // `isScopusEnabled()` already refuses without a session, so the `hasSession`
 // term on Scopus is redundant at run time -- it is here so the rule reads the
 // same for all three, and so a test can hold the whole invariant at once.
-export function getEligibleDomainSources(plan, { hasSession = false, scopusEnabled = false } = {}) {
+export function getEligibleDomainSources(plan: ReturnType<typeof getDomainSourcePlan>, { hasSession = false, scopusEnabled = false } = {}) {
   return {
     scopus: plan.scopus.length > 0 && scopusEnabled && hasSession,
     biorxiv: Boolean(plan.biorxivCategory),
@@ -546,7 +595,7 @@ export function getEligibleDomainSources(plan, { hasSession = false, scopusEnabl
 // `Promise.allSettled` used to drop its rejections on the floor, so a systematic
 // 401, a quota 429 and a source that is simply down all reached the feed as the
 // same thing: nothing. It is what kept the failing physics branch invisible.
-export function reportDomainSourceFailures(settled, entries, logger = console.warn) {
+export function reportDomainSourceFailures<T>(settled: SettledWithin<T>[], entries: Array<{ path: string }>, logger = console.warn) {
   settled.forEach((result, index) => {
     const path = entries[index]?.path || 'unknown';
     // A source cut at its budget is not a rejection and used to leave no trace at
@@ -557,7 +606,7 @@ export function reportDomainSourceFailures(settled, entries, logger = console.wa
       return;
     }
     if (result.status !== 'rejected') return;
-    const reason = result.reason;
+    const reason = result.reason as { code?: string; message?: string; status?: number } | null;
     // `code` first (it is the discriminant: UPSTREAM_RATE_LIMITED vs
     // PROVIDER_RATE_LIMITED vs UPSTREAM_TIMEOUT), then the message, which since
     // `sourceResponseError` carries the upstream status. The bare status came
@@ -575,7 +624,7 @@ export function reportDomainSourceFailures(settled, entries, logger = console.wa
  * had already returned down with it. bioRxiv hangs outright on about a quarter
  * of calls (measured 2026-09-01), which made that the common case, not the edge.
  */
-export async function settleDomainSources(requests, sourceBudgetMs = DOMAIN_SOURCE_BUDGET_MS, logger = console.warn) {
+export async function settleDomainSources<T>(requests: SourceRequest<T>[], sourceBudgetMs = DOMAIN_SOURCE_BUDGET_MS, logger = console.warn) {
   const settled = await Promise.all(
     requests.map(entry => settleWithin(entry.promise, sourceBudgetMs)),
   );
@@ -583,7 +632,7 @@ export async function settleDomainSources(requests, sourceBudgetMs = DOMAIN_SOUR
   return settled;
 }
 
-export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMode = 'recent', { sourceBudgetMs = DOMAIN_SOURCE_BUDGET_MS } = {}) {
+export async function fetchDomainPapers(categories: string[], page = 1, limit = 8, queryMode = 'recent', { sourceBudgetMs = DOMAIN_SOURCE_BUDGET_MS } = {}) {
   const plan = getDomainSourcePlan(categories);
   const eligible = getEligibleDomainSources(plan, {
     hasSession: hasWorkerSession(),
@@ -591,8 +640,8 @@ export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMo
   });
   const safePage = Math.max(1, Number(page) || 1);
   const safeLimit = Math.max(1, Math.min(10, Number(limit) || 8));
-  const requests = [];
-  const request = (path, promise) => requests.push({ path, promise });
+  const requests: SourceRequest<Array<Paper | null>>[] = [];
+  const request = (path: string, promise: Promise<Array<Paper | null>>) => requests.push({ path, promise });
 
   if (eligible.scopus) {
     const scopusAdapter = new ScopusAdapter();
@@ -604,7 +653,7 @@ export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMo
   }
 
   if (eligible.biorxiv) {
-    request(DOMAIN_SOURCE_PATHS.biorxiv, fetchJson('/sources/biorxiv', {
+    request(DOMAIN_SOURCE_PATHS.biorxiv, fetchJson<BioRxivResponse>('/sources/biorxiv', {
       category: plan.biorxivCategory,
       page: safePage,
       limit: safeLimit,
@@ -612,7 +661,7 @@ export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMo
   }
 
   if (eligible.europepmc) {
-    request(DOMAIN_SOURCE_PATHS.europepmc, fetchJson('/sources/europepmc', {
+    request(DOMAIN_SOURCE_PATHS.europepmc, fetchJson<{ resultList?: { result?: EuropePmcSearchRecord[] } }>('/sources/europepmc', {
       q: sourceQuery(plan.biology.slice(0, 3)),
       page: safePage,
       limit: safeLimit,
@@ -621,7 +670,7 @@ export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMo
   }
 
   if (eligible.core) {
-    request(DOMAIN_SOURCE_PATHS.core, fetchJson('/sources/core', {
+    request(DOMAIN_SOURCE_PATHS.core, fetchJson<{ results?: CoreWork[] }>('/sources/core', {
       q: sourceQuery(plan.engineering.slice(0, 4)),
       page: safePage,
       limit: safeLimit,
@@ -629,7 +678,7 @@ export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMo
   }
 
   if (eligible.osti) {
-    request(DOMAIN_SOURCE_PATHS.osti, fetchJson('/sources/osti', {
+    request(DOMAIN_SOURCE_PATHS.osti, fetchJson<OstiRecord[]>('/sources/osti', {
       q: sourceQuery(plan.osti.slice(0, 3)),
       page: safePage,
       limit: Math.min(6, safeLimit),
@@ -638,7 +687,7 @@ export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMo
   }
 
   if (eligible.nasa) {
-    request(DOMAIN_SOURCE_PATHS.nasa, fetchJson('/sources/nasa', {
+    request(DOMAIN_SOURCE_PATHS.nasa, fetchJson<{ results?: NasaRecord[] }>('/sources/nasa', {
       q: sourceQuery(plan.nasa.slice(0, 3)),
       page: safePage,
       limit: Math.min(6, safeLimit),
@@ -647,7 +696,7 @@ export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMo
   }
 
   if (eligible.physics) {
-    request(DOMAIN_SOURCE_PATHS.physics, fetchJson('/sources/physics', {
+    request(DOMAIN_SOURCE_PATHS.physics, fetchJson<PhysicsResponse>('/sources/physics', {
       q: sourceQuery(plan.physics.slice(0, 4)),
       fallback_q: plan.inspirePhysics.length > 0 ? sourceQuery(plan.inspirePhysics.slice(0, 4)) : '',
       page: safePage,
@@ -664,7 +713,7 @@ export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMo
 
   if (eligible.openreview) {
     const selectedCategory = plan.openReview[(safePage - 1) % plan.openReview.length];
-    request(DOMAIN_SOURCE_PATHS.openreview, fetchJson('/sources/openreview', {
+    request(DOMAIN_SOURCE_PATHS.openreview, fetchJson<{ notes?: OpenReviewNote[] }>('/sources/openreview', {
       q: categoryLabel(selectedCategory),
       page: safePage,
       limit: safeLimit,
@@ -674,7 +723,7 @@ export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMo
 
   if (eligible.huggingface) {
     const selectedCategory = plan.huggingFace[(safePage - 1) % plan.huggingFace.length];
-    request(DOMAIN_SOURCE_PATHS.huggingface, fetchJson('/sources/huggingface', {
+    request(DOMAIN_SOURCE_PATHS.huggingface, fetchJson<{ papers?: HuggingFaceRecord[] }>('/sources/huggingface', {
       q: categoryLabel(selectedCategory),
       page: safePage,
       limit: safeLimit,
@@ -685,6 +734,6 @@ export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMo
   if (requests.length === 0) return [];
   const settled = await settleDomainSources(requests, sourceBudgetMs);
   return PaperBuilder.deduplicate(
-    settled.flatMap(result => result.status === 'fulfilled' ? result.value.filter(Boolean) : [])
+    settled.flatMap(result => result.status === 'fulfilled' ? result.value.filter(Boolean) as Paper[] : [])
   ).slice(0, safeLimit * 2);
 }
