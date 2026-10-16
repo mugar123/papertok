@@ -319,12 +319,12 @@ test('SOURCE: el visor de PDF propio de SearchPage usa useOverlayHistory con el 
 const SRC_DIR = new URL('../', import.meta.url);
 
 /**
- * Every `.js`/`.jsx` under src/ except the tests, path-relative — same shape
+ * Every `.js`/`.jsx`/`.ts`/`.tsx` under src/ except the tests, path-relative — same shape
  * as `accessibilityStructure.test.js`'s `sources()`.
  */
 async function sourceFilesUnderSrc() {
   const entries = await readdir(SRC_DIR, { recursive: true });
-  return entries.filter((name) => /\.jsx?$/.test(name) && !/\.test\.jsx?$/.test(name)).sort();
+  return entries.filter((name) => /\.[jt]sx?$/.test(name) && !/\.test\.[jt]sx?$/.test(name)).sort();
 }
 
 /**
@@ -337,7 +337,7 @@ async function sourceFilesUnderSrc() {
  * ones: it does not know the owners' names, only the shape — any file that
  * renders `<PDFViewer` or `<PaperReader` has to also reference
  * `useOverlayHistory`, or Back would leave PaperTok through it exactly as it
- * did before this hook existed. `.test.js` files are excluded on purpose:
+ * did before this hook existed. Test files are excluded on purpose:
  * this file's own SOURCE tests above quote `<PDFViewer …>` inside regex
  * literals, which would otherwise register as a mount of nothing.
  */

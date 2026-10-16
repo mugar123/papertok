@@ -11,7 +11,7 @@ async function sourceFiles(dir) {
   const files = await Promise.all(entries.map(async (entry) => {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) return sourceFiles(full);
-    return /\.(jsx?|mjs)$/.test(entry.name) && !entry.name.endsWith('.test.js') ? [full] : [];
+    return /\.([jt]sx?|mjs)$/.test(entry.name) && !/\.test\.[jt]sx?$/.test(entry.name) ? [full] : [];
   }));
   return files.flat();
 }

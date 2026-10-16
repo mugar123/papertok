@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { paperLegacyAdapter, readArxivId } from './Paper.js';
+import { paperLegacyAdapter, readArxivId } from './Paper.ts';
 
 /**
  * The stored copies of papers — a list entry, a library record — reach the

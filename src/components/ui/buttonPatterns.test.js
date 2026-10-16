@@ -20,7 +20,7 @@ async function sourcesUnder(dir) {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const path = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, dir);
     if (entry.isDirectory()) found.push(...await sourcesUnder(path));
-    else if (/\.jsx?$/.test(entry.name) && !entry.name.endsWith('.test.js')) found.push(path);
+    else if (/\.[jt]sx?$/.test(entry.name) && !/\.test\.[jt]sx?$/.test(entry.name)) found.push(path);
   }
   return found;
 }

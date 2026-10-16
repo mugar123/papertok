@@ -10,7 +10,7 @@ function* sourceFiles(dir) {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) yield* sourceFiles(full);
-    else if (/\.jsx?$/.test(entry) && !entry.endsWith('.test.js')) yield full;
+    else if (/\.[jt]sx?$/.test(entry) && !/\.test\.[jt]sx?$/.test(entry)) yield full;
   }
 }
 

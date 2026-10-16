@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { paperLegacyAdapter } from '../src/models/Paper.js';
+import { paperLegacyAdapter } from '../src/models/Paper.ts';
 import { seedPaintsWhole } from '../src/utils/paperSeed.js';
 import { encodePaperKey } from '../src/utils/publicNavigation.js';
 import { publicPaperMetadata, readShareSeed } from '../src/utils/shareSeed.js';

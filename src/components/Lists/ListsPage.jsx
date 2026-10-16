@@ -27,7 +27,7 @@ import { Button } from '../ui/button.jsx';
 import { resolveListColor } from '../../utils/listColors.js';
 import { areaAccentForPaper } from '../../utils/areaAccent.js';
 import ScientificText from '../ScientificText.js';
-import { paperLegacyAdapter } from '../../models/Paper';
+import { paperLegacyAdapter } from '../../models/Paper.ts';
 import {
   Books,
   Check,

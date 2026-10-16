@@ -578,10 +578,10 @@ test('the global focus ring stays outside every cascade layer', async () => {
   );
 });
 
-/** Every `.js`/`.jsx` under src/ except the tests, path-relative. */
+/** Every `.js`/`.jsx`/`.ts`/`.tsx` under src/ except the tests, path-relative. */
 async function sources() {
   const entries = await readdir(SRC_DIR, { recursive: true });
-  return entries.filter(name => /\.jsx?$/.test(name) && !/\.test\.jsx?$/.test(name)).sort();
+  return entries.filter(name => /\.[jt]sx?$/.test(name) && !/\.test\.[jt]sx?$/.test(name)).sort();
 }
 
 /**
@@ -589,7 +589,7 @@ async function sources() {
  * unlayered author CSS: `!important` inverts the layer order, which puts the
  * unlayered rule LAST rather than first, and an inline style outranks the whole
  * author stylesheet. These are the two shapes worth failing a build over — and
- * the reason they are searched for in `.js`/`.jsx` is that neither leaves a
+ * the reason they are searched for in JavaScript and TypeScript sources is that neither leaves a
  * trace in any `.css` file for the scan above to find.
  */
 const RING_KILLERS = [

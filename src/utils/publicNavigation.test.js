@@ -204,7 +204,7 @@ test('SOURCE: nothing in this codebase mints a public URL with the fragment in i
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       const full = `${dir}/${entry.name}`;
       if (entry.isDirectory()) { await walk(full); continue; }
-      if (!/\.(js|jsx)$/.test(entry.name) || /\.test\.jsx?$/.test(entry.name)) continue;
+      if (!/\.[jt]sx?$/.test(entry.name) || /\.test\.[jt]sx?$/.test(entry.name)) continue;
       const code = (await readFile(full, 'utf8'))
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .replace(/(^|[^:])\/\/.*$/gm, '$1');

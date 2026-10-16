@@ -716,8 +716,8 @@ test('every event the app emits is registered, with a surface that survives', as
       // value, and scanning them would flag the declaration as a violation of
       // itself.
       else if (
-        /\.jsx?$/.test(entry.name)
-        && !entry.name.endsWith('.test.js')
+        /\.[jt]sx?$/.test(entry.name)
+        && !/\.test\.[jt]sx?$/.test(entry.name)
         && entry.name !== 'analyticsService.js'
       ) sources.push(child);
     }

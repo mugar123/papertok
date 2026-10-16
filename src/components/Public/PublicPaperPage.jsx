@@ -20,7 +20,7 @@ import {
   getPublicPaperPath,
   parsePaperKey,
 } from '../../utils/publicNavigation.js';
-import { paperLegacyAdapter } from '../../models/Paper.js';
+import { paperLegacyAdapter } from '../../models/Paper.ts';
 import { hydrateSeededPaper, seedPaintsWhole } from '../../utils/paperSeed.js';
 import { publicPaperMetadata, readShareSeed } from '../../utils/shareSeed.js';
 import PaperCard from '../Feed/PaperCard.jsx';

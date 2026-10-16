@@ -16,7 +16,7 @@ async function sourceFiles(dir = SRC) {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const child = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, dir);
     if (entry.isDirectory()) out.push(...await sourceFiles(child));
-    else if (/\.jsx?$/.test(entry.name) && !entry.name.includes('.test.')) out.push(child);
+    else if (/\.[jt]sx?$/.test(entry.name) && !entry.name.includes('.test.')) out.push(child);
   }
   return out;
 }
