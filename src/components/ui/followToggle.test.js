@@ -6,10 +6,9 @@ const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
 
 /**
- * One Follow control for everything that can be followed. The public profile
- * used to carry its own — taller, wider, an icon per state and a red
- * "Unfollow" on hover — beside the Explorer's compact ink toggle, so following
- * a person and following an institution looked like two different actions.
+ * One Follow control for everything that can be followed: authors,
+ * institutions, projects and topics, all from the Explorer (whose use of it
+ * explorerOverlays.test.js pins).
  */
 
 test('the Follow control is a Toggle: ink while it invites, a chip with a check once on', async () => {
@@ -24,14 +23,4 @@ test('the Follow control is a Toggle: ink while it invites, a chip with a check 
   const squeeze = css.match(/\.follow-toggle:active:not\(:disabled\) \{([^}]*)\}/);
   assert.match(squeeze?.[1] || '', /transform: scale\(0\.97\);/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.follow-toggle:active:not\(:disabled\) \{\s*transform: none;/);
-});
-
-test('the Explorer and the public profile both use it, and neither styles its own', async () => {
-  const explorer = await read('../Explorer/EntityExplorer.jsx');
-  const profile = await read('../Public/PublicProfilePage.jsx');
-  const profileCss = stripComments(await read('../Public/PublicProfilePage.css'));
-  assert.match(explorer, /<FollowToggle\s/);
-  assert.match(profile, /<FollowToggle\s+pressed=\{following\}/);
-  assert.doesNotMatch(profileCss, /\.profile-follow-button/);
-  assert.doesNotMatch(profile, /UserPlus|UserX|is-unfollow-intent/);
 });

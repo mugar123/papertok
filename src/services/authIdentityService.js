@@ -4,9 +4,8 @@
  * The Firebase `uid` is the identity. Google and GitHub are two doors into the
  * same `uid` — never two accounts — so everything here is about which doors an
  * account has and how a second one gets attached to it. Nothing in this module
- * touches Firestore: signing in creates no profile, and the privacy choice of
- * F8 keeps happening where it always happened, in the profile editor. A door is
- * not an account.
+ * touches Firestore, and signing in creates no profile. A door is not an
+ * account.
  *
  * The awkward case is the email collision. Firebase enforces one account per
  * email address, so the second provider carrying an address that already exists

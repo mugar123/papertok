@@ -3,9 +3,8 @@ import { IS_DEMO, db } from '../../services/firebase';
 import { savedPaperDocRef } from '../../services/savedPaperStore.js';
 import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, serverTimestamp, setDoc, limit, query } from 'firebase/firestore';
 import { isReadTimeout, patientRead } from '../../utils/boundedRead';
-import { OWN_LISTS_PAGE_SIZE } from '../../services/userProfileService';
 import {
-  listsHolding, mergeCreatedLists, readOwnLists, withPaperMembership,
+  OWN_LISTS_PAGE_SIZE, listsHolding, mergeCreatedLists, readOwnLists, withPaperMembership,
 } from '../../utils/ownLists';
 import { queuePublicListSync } from '../../services/publicListSync.js';
 import { publicListSyncKey } from '../../utils/publicListFreshness.js';

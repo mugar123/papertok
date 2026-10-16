@@ -96,7 +96,9 @@ export function getOwnListsStorageKey(userId) {
   return `${OWN_LISTS_KEY_PREFIX}${encodeURIComponent(userId)}`;
 }
 
-export function getOwnProfileStorageKey(userId) {
+// Written by the removed public-profile editor. Nothing writes it now;
+// sign-out still sweeps it from devices that stored one.
+function getOwnProfileStorageKey(userId) {
   if (!userId) return null;
   return `${OWN_PROFILE_KEY_PREFIX}${encodeURIComponent(userId)}`;
 }
@@ -122,12 +124,11 @@ export const OWN_LISTS_STORAGE_BUDGET_BYTES = 262_144;
  * read and dropped in behind them. Two of the five cards arriving late is not a
  * slow screen, it is a screen that looks finished before it is.
  *
- * The cost is the same one `readStoredFollowStats` accepts one function up: a
- * list renamed on another device keeps its old name for as long as the read
- * takes. What is NOT accepted is a card that cannot be opened — so a list is
- * stored whole, with its paper ids, or it is not stored at all. A seeded card
- * that opened onto an empty list would be the "we could not find out" lie
- * wearing yet another hat.
+ * The cost: a list renamed on another device keeps its old name for as long
+ * as the read takes. What is NOT accepted is a card that cannot be opened — so
+ * a list is stored whole, with its paper ids, or it is not stored at all. A
+ * seeded card that opened onto an empty list would be the "we could not find
+ * out" lie wearing yet another hat.
  */
 export function readStoredLists(userId, storage) {
   const key = getOwnListsStorageKey(userId);
@@ -186,83 +187,6 @@ export function saveStoredLists(userId, lists, storage, budgetBytes = OWN_LISTS_
   }
 }
 
-/**
- * The owner's public profile, as this device last saw it.
- *
- * The session cache already covers remounts inside a tab. After a reload the
- * first visit to `/profile` used to wait on `userProfiles/{uid}` — a document
- * the auth bootstrap never reads (that one is the private `users/{uid}`).
- * Remembering the public half here lets the masthead paint from what this
- * device already knew, and the network read corrects it behind.
- *
- * Photo is deliberately omitted: it can be tens of kilobytes, and the owner
- * masthead already falls back to the private profile photo AuthContext holds.
- */
-export function readStoredProfile(userId, storage) {
-  const key = getOwnProfileStorageKey(userId);
-  const target = getStorage(storage);
-  if (!key || !target) return null;
-
-  try {
-    const parsed = JSON.parse(target.getItem(key) || 'null');
-    if (!parsed || typeof parsed !== 'object') return null;
-    const uid = typeof parsed.uid === 'string' ? parsed.uid : '';
-    const handle = typeof parsed.handle === 'string' ? parsed.handle : '';
-    const displayName = typeof parsed.displayName === 'string' ? parsed.displayName : '';
-    if (!uid || !handle || !displayName) return null;
-    return {
-      uid,
-      handle,
-      displayName,
-      bio: typeof parsed.bio === 'string' ? parsed.bio : '',
-      visibility: parsed.visibility === 'private' ? 'private' : 'public',
-      createdAt: typeof parsed.createdAt === 'string' ? parsed.createdAt : null,
-      pinnedShareIds: Array.isArray(parsed.pinnedShareIds) ? parsed.pinnedShareIds : [],
-      showPinnedLists: parsed.showPinnedLists !== false,
-    };
-  } catch {
-    return null;
-  }
-}
-
-export function saveStoredProfile(userId, profile, storage) {
-  const key = getOwnProfileStorageKey(userId);
-  const target = getStorage(storage);
-  if (!key || !target || !profile?.uid || !profile.handle || !profile.displayName) return;
-
-  try {
-    const createdAt = typeof profile.createdAt === 'string'
-      ? profile.createdAt
-      : (typeof profile.createdAt?.toDate === 'function'
-        ? profile.createdAt.toDate()?.toISOString?.()
-        : (profile.createdAt instanceof Date ? profile.createdAt.toISOString() : null));
-    target.setItem(key, JSON.stringify({
-      uid: profile.uid,
-      handle: profile.handle,
-      displayName: profile.displayName,
-      bio: typeof profile.bio === 'string' ? profile.bio : '',
-      visibility: profile.visibility === 'private' ? 'private' : 'public',
-      createdAt: createdAt || null,
-      pinnedShareIds: Array.isArray(profile.pinnedShareIds) ? profile.pinnedShareIds : [],
-      showPinnedLists: profile.showPinnedLists !== false,
-    }));
-  } catch {
-    // A profile that cannot be remembered simply waits for its read again.
-  }
-}
-
-export function clearStoredProfile(userId, storage) {
-  const key = getOwnProfileStorageKey(userId);
-  const target = getStorage(storage);
-  if (!key || !target) return;
-
-  try {
-    target.removeItem(key);
-  } catch {
-    // A copy that cannot be removed is corrected by the next read, as before.
-  }
-}
-
 export function getOnboardingStorageKey(userId) {
   if (!userId) return null;
   return `${ONBOARDING_KEY_PREFIX}${encodeURIComponent(userId)}`;
@@ -314,60 +238,11 @@ export function saveStoredOnboarding(userId, state, storage) {
   }
 }
 
-export function getFollowStatsStorageKey(userId) {
+// Written by the follow counters of the removed profile page. Nothing writes
+// it now; sign-out still sweeps it from devices that stored one.
+function getFollowStatsStorageKey(userId) {
   if (!userId) return null;
   return `${FOLLOW_STATS_KEY_PREFIX}${encodeURIComponent(userId)}`;
-}
-
-/**
- * The follower / following counters of your own profile, as this device last
- * saw them.
- *
- * The session cache already spares every re-entry within a tab, but it dies on
- * reload, and the first visit after one showed an ellipsis for a full round
- * trip — a `count()` aggregation is server-only, so there is no local answer to
- * fall back on. Remembering the last pair here means the header opens on the
- * number instead of on a placeholder, and the aggregation corrects it behind.
- *
- * The cost is honest and small: if somebody followed you while the tab was
- * closed, the old number stands for as long as the read takes. A counter that
- * self-corrects in a few hundred milliseconds beats a counter that admits to
- * knowing nothing.
- */
-export function readStoredFollowStats(userId, storage) {
-  const key = getFollowStatsStorageKey(userId);
-  const target = getStorage(storage);
-  if (!key || !target) return null;
-
-  try {
-    const parsed = JSON.parse(target.getItem(key) || 'null');
-    if (!parsed || typeof parsed !== 'object') return null;
-    const stat = value => (value && typeof value === 'object' && Number.isFinite(value.count)
-      ? { count: value.count, capped: value.capped === true }
-      : null);
-    const followers = stat(parsed.followers);
-    const followed = stat(parsed.followed);
-    return followers || followed ? { followers, followed } : null;
-  } catch {
-    return null;
-  }
-}
-
-export function saveStoredFollowStats(userId, stats, storage) {
-  const key = getFollowStatsStorageKey(userId);
-  const target = getStorage(storage);
-  if (!key || !target || !stats) return;
-
-  try {
-    const stat = value => (value && Number.isFinite(value.count)
-      ? { count: value.count, capped: value.capped === true }
-      : null);
-    const payload = { followers: stat(stats.followers), followed: stat(stats.followed) };
-    if (!payload.followers && !payload.followed) return;
-    target.setItem(key, JSON.stringify(payload));
-  } catch {
-    // A counter that cannot be remembered simply waits for its read again.
-  }
 }
 
 export function removeLegacySeenPaperIds(storage) {

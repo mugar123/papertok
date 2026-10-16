@@ -9,10 +9,8 @@ import {
   getPublicEntityPath,
   getPublicListPath,
   getPublicPaperPath,
-  getPublicProfilePath,
   parsePaperKey,
 } from '../src/utils/publicNavigation.js';
-import { isValidHandle, normalizeHandle } from '../src/utils/userHandle.js';
 
 /**
  * The HTML a crawler gets for a public page (audit 2026-09-23, issue 5).
@@ -22,7 +20,8 @@ import { isValidHandle, normalizeHandle } from '../src/utils/userHandle.js';
  * received the same 8963 bytes, titled «PaperTok», with og:url and canonical
  * at /feed and an empty #root. Vercel sends those bots here instead
  * (vercel.json), from /public/{paper,list,user,entity}/… to /share/…, and
- * this module answers the same shell with the page's own head: title,
+ * this module answers the same shell with the page's own head (profiles are
+ * gone, so a /share/user/… path gets the not-found page): title,
  * description, canonical, og:* and twitter:*, JSON-LD, a static copy of the
  * page inside #root, and for a paper the paper itself as a seed the app
  * paints from (`src/utils/shareSeed.js`).
@@ -30,7 +29,7 @@ import { isValidHandle, normalizeHandle } from '../src/utils/userHandle.js';
  * Two caches, deliberately apart. The shell is kept five minutes, because it
  * names the hashed assets of the current deployment and a stale one points at
  * files Vercel no longer serves. What a page says (the record) is kept a day:
- * it costs a provider call, and papers, lists and profiles change slowly. The
+ * it costs a provider call, and papers and lists change slowly. The
  * page is composed per request from the two, so a deploy reaches every page in
  * minutes. Pages are English-only; the reader's Accept-Language is not consulted.
  */
@@ -43,15 +42,15 @@ const NO_INDEX = 'noindex, nofollow';
 
 const SHELL_CACHE_SECONDS = 5 * 60;
 const FOUND_CACHE_SECONDS = 24 * 60 * 60;
-// Lists and profiles are their owners' to take back: a list unpublished, a
-// profile made private, an account deleted. Kept a day, the preview outlived
-// that switch by a day (privacy.html: "from then on it is no longer served");
-// kept five minutes and served for one more, it reaches crawlers within six.
+// Lists are their owners' to take back: a list unpublished, an account
+// deleted. Kept a day, the preview outlived that switch by a day
+// (privacy.html: "from then on it is no longer served"); kept five minutes and
+// served for one more, it reaches crawlers within six.
 const OWNED_FOUND_CACHE_SECONDS = 5 * 60;
 const OWNED_MAX_AGE_SECONDS = 60;
-const OWNED_KINDS = new Set(['list', 'user']);
-// A missing page can appear (a handle registered, a paper indexed), so its
-// answer is kept an hour rather than a day.
+const OWNED_KINDS = new Set(['list']);
+// A missing page can appear (a paper indexed), so its answer is kept an hour
+// rather than a day.
 const MISSING_CACHE_SECONDS = 60 * 60;
 // A failure is remembered as long as the Worker's other degraded answers
 // (DEGRADED_CACHE_SECONDS): long enough that a burst of bots is one upstream
@@ -66,7 +65,7 @@ const MAX_LIST_PAPERS = 50;
 const MIN_ABSTRACT_LENGTH = 40;
 const MAX_ENTITY_ID_LENGTH = 240;
 
-const KINDS = new Set(['paper', 'list', 'user', 'entity']);
+const KINDS = new Set(['paper', 'list', 'entity']);
 const ENTITY_TYPES = new Set(PUBLIC_ENTITY_TYPES);
 const LIST_ID = /^[a-f0-9]{32}$/;
 
@@ -128,12 +127,10 @@ const COPY = Object.freeze({
   imageAlt: {
     paper: 'A scientific paper view in PaperTok',
     list: 'A public scientific reading list on PaperTok',
-    user: 'A public researcher profile on PaperTok',
   },
   notFound: {
     paper: 'We could not find this paper',
     list: 'We could not find this list',
-    user: 'We could not find this profile',
     entity: 'We could not find this page',
   },
   notFoundDescription: 'The link may no longer be available or may not be valid.',
@@ -141,7 +138,6 @@ const COPY = Object.freeze({
   listSuffix: 'PaperTok public list',
   listFallback: 'Explore a public scientific reading list curated on PaperTok.',
   listPapers: 'Papers in this list',
-  userFallback: 'A public researcher profile on PaperTok.',
   entityTypes: {
     author: 'Author',
     institution: 'Institution',
@@ -324,11 +320,6 @@ export function matchShareRoute(url) {
   if (kind === 'list' && rest.length === 1 && LIST_ID.test(rest[0])) {
     return { kind, shareId: rest[0], canonicalPath: getPublicListPath(rest[0]), cacheId: `list/${rest[0]}` };
   }
-  if (kind === 'user' && rest.length === 1) {
-    const handle = normalizeHandle(rest[0]);
-    if (!isValidHandle(handle)) return invalid;
-    return { kind, handle, canonicalPath: getPublicProfilePath(handle), cacheId: `user/${handle}` };
-  }
   if (kind === 'entity' && rest.length === 2) {
     const type = rest[0].toLowerCase();
     const id = cleanRouteId(rest[1]);
@@ -475,31 +466,6 @@ async function loadList(route, { firestore }) {
   });
 }
 
-async function loadProfile(route, { firestore }) {
-  const reservation = await firestore.getDocument(`handles/${route.handle}`);
-  if (!reservation?.exists) return notFound();
-  const uid = cleanText(reservation.data?.uid, 128);
-  if (!uid || /[/\s]/.test(uid)) return notFound();
-  let document;
-  try {
-    document = await firestore.getDocument(`userProfiles/${encodeURIComponent(uid)}`);
-  } catch (error) {
-    // The rules deny an anonymous read of a private profile and of one that
-    // does not exist alike, and the page itself treats both as not found:
-    // telling them apart here would be the oracle the rules avoid.
-    if (error?.code === 'permission-denied' || error?.status === 403) return notFound();
-    throw error;
-  }
-  if (!document?.exists) return notFound();
-  const profile = document.data || {};
-  // A reservation whose profile moved on is stale, not a redirect.
-  if (normalizeHandle(profile.handle) !== route.handle) return notFound();
-  if ('visibility' in profile && profile.visibility !== 'public') return notFound();
-  const displayName = cleanText(profile.displayName, 120);
-  if (!displayName) return notFound();
-  return found({ profile: { displayName, handle: route.handle, bio: cleanText(profile.bio, 500) } });
-}
-
 function projectName(project) {
   const acronym = cleanText(project?.acronym?.$, 120);
   const title = cleanText(project?.title?.$, 400);
@@ -538,7 +504,6 @@ export function createShareLoader(providers = {}) {
     if (!route || route.invalid) return notFound();
     if (route.kind === 'paper') return loadPaper(route, providers);
     if (route.kind === 'list') return loadList(route, providers);
-    if (route.kind === 'user') return loadProfile(route, providers);
     if (route.kind === 'entity') return loadEntity(route, providers);
     return notFound();
   };
@@ -726,38 +691,6 @@ function listPage(route, list) {
   });
 }
 
-function profilePage(route, profile) {
-  const pageUrl = absoluteUrl(route.canonicalPath);
-  const description = profile.bio || COPY.userFallback;
-  return basePage({
-    title: `${profile.displayName} (@${profile.handle}) | PaperTok`,
-    description,
-    imageAlt: COPY.imageAlt.user,
-    maxAge: OWNED_MAX_AGE_SECONDS,
-    ogType: 'profile',
-    canonicalUrl: pageUrl,
-    pageUrl,
-    jsonLd: webPage({
-      name: `${profile.displayName} (@${profile.handle})`,
-      description,
-      url: pageUrl,
-      extra: {
-        '@type': 'ProfilePage',
-        mainEntity: compact({
-          '@type': 'Person',
-          name: profile.displayName,
-          alternateName: `@${profile.handle}`,
-          description: profile.bio,
-          url: pageUrl,
-        }),
-      },
-    }),
-    fallbackHtml: `<main><h1>${escapeHtml(profile.displayName)} <span>@${escapeHtml(profile.handle)}</span></h1>`
-      + (profile.bio ? `<p>${escapeHtml(profile.bio)}</p>` : '')
-      + '</main>',
-  });
-}
-
 function entityPage(route, entity) {
   const pageUrl = absoluteUrl(route.canonicalPath);
   const typeLabel = COPY.entityTypes[route.type];
@@ -810,7 +743,6 @@ export function sharePageModel(route, outcome) {
   const record = outcome.record || {};
   if (outcome.found && route.kind === 'paper' && record.paper) return paperPage(route, record.paper);
   if (outcome.found && route.kind === 'list' && record.list) return listPage(route, record.list);
-  if (outcome.found && route.kind === 'user' && record.profile) return profilePage(route, record.profile);
   if (outcome.found && route.kind === 'entity' && record.entity) return entityPage(route, record.entity);
   return unavailablePage(route);
 }
@@ -826,7 +758,8 @@ function escapeRegExp(value) {
 }
 
 // Replacements are functions throughout: a string replacement reads `$&`,
-// `$1` and `$'` as patterns, and a bio can contain any of them.
+// `$1` and `$'` as patterns, and a list's title or description can contain
+// any of them.
 function setElement(html, pattern, element) {
   if (pattern.test(html)) return html.replace(pattern, () => element || '');
   if (!element) return html;
@@ -982,7 +915,7 @@ async function lookUpRecord(route, key, { loadRecord, admit, cache }) {
 }
 
 /**
- * GET or HEAD `/share/{paper,list,user,entity}/…`. Public, and without an
+ * GET or HEAD `/share/{paper,list,entity}/…`. Public, and without an
  * Origin: the caller is Vercel relaying a crawler (see vercel.json).
  *
  * - `loadShell()` → the app shell (`createShellLoader`);

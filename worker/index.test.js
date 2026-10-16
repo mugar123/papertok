@@ -2917,15 +2917,13 @@ test('an arXiv call a share page could not seat gives its hourly unit back', asy
   assert.equal(urls.some(url => url.includes('export.arxiv.org')), false, 'no seat, no call');
 });
 
-test('a profile page reads the public documents anonymously, as a visitor would', async () => {
+test('a list page reads the public document anonymously, as a visitor would', async () => {
   const urls = [];
+  const shareId = '0123456789abcdef0123456789abcdef';
   const documents = {
-    'handles/ada_l': { uid: { stringValue: 'u1' } },
-    'userProfiles/u1': {
-      handle: { stringValue: 'ada_l' },
-      displayName: { stringValue: 'Ada Lovelace' },
-      bio: { stringValue: 'Analytical engines.' },
-      visibility: { stringValue: 'public' },
+    [`publicLists/${shareId}`]: {
+      title: { stringValue: 'Tutoring with language models' },
+      papers: { arrayValue: {} },
     },
   };
   const upstream = shareUpstream(urls);
@@ -2942,12 +2940,12 @@ test('a profile page reads the public documents anonymously, as a visitor would'
       }
       return upstream(url, init);
     },
-    () => reportApi.fetch(crawlerRequest('/share/user/ada_l'), openAlexEnv({ FIREBASE_PROJECT_ID: 'papertok-test' })),
+    () => reportApi.fetch(crawlerRequest(`/share/list/${shareId}`), openAlexEnv({ FIREBASE_PROJECT_ID: 'papertok-test' })),
   );
   assert.equal(response.status, 200);
-  assert.match(await response.text(), /<title>Ada Lovelace \(@ada_l\) \| PaperTok<\/title>/);
+  assert.match(await response.text(), /<title>Tutoring with language models \| PaperTok public list<\/title>/);
   const reads = urls.filter(entry => entry.address.includes('firestore.googleapis.com'));
-  assert.equal(reads.length, 2);
+  assert.equal(reads.length, 1);
   assert.equal(reads.every(entry => entry.authorization === null), true, 'no credential: the rules decide as for anyone');
 });
 

@@ -261,21 +261,13 @@ test('F5: provider ids survive a malformed providerData without throwing', () =>
 
 // --- structural ------------------------------------------------------------
 
-test('SOURCE: signing in never writes a profile, so the F8 choice cannot be skipped', async () => {
-  // "Nobody gets in without choosing" holds because the door and the profile
-  // are separate acts: this module has no way to create `userProfiles/{uid}`,
-  // and `createUserProfile` refuses without a visibility choice. A GitHub
-  // sign-up therefore meets the exact same gate a Google sign-up meets.
+test('SOURCE: the identity module stays out of Firestore, so a sign-in writes nothing', async () => {
+  // The door and the account's data are separate acts: this module has no way
+  // to write a document, so signing in through either provider stores nothing
+  // by itself.
   const source = await readFile(new URL('./authIdentityService.js', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /firebase\/firestore/, 'the identity module stays out of Firestore');
-  assert.doesNotMatch(source, /userProfiles|createUserProfile|setDoc|writeBatch/);
-
-  const profiles = await readFile(new URL('./userProfileService.js', import.meta.url), 'utf8');
-  assert.match(
-    profiles,
-    /if \(!isVisibilityChoice\(input\?\.visibility\)\) \{\s*\n\s*throw new TypeError/,
-    'creating a profile still requires the choice, whichever door was used',
-  );
+  assert.doesNotMatch(source, /setDoc|writeBatch/);
 });
 
 test('SOURCE: the pending credential is deliberately never stashed', async () => {

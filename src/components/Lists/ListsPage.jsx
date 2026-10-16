@@ -67,7 +67,6 @@ import {
 import { getPublicListUrl, getPublicPaperPath } from '../../utils/publicNavigation.js';
 import PaperCard from '../Feed/PaperCard.jsx';
 import PaperOverlay from '../Feed/PaperOverlay.jsx';
-import { OWN_LISTS_PAGE_SIZE } from '../../services/userProfileService.js';
 import { isReadTimeout, patientRead } from '../../utils/boundedRead.js';
 import {
   ownListsCache,
@@ -75,7 +74,7 @@ import {
   rememberListPapers,
   rememberOwnLists,
 } from '../../utils/profileSessionCaches.js';
-import { snapshotIsAuthoritative } from '../../utils/ownLists.js';
+import { OWN_LISTS_PAGE_SIZE, snapshotIsAuthoritative } from '../../utils/ownLists.js';
 import { readStoredLists, saveStoredLists } from '../../utils/userScopedStorage.js';
 import { queryIsAuthoritative } from '../../utils/cacheAuthority.js';
 import {
@@ -247,10 +246,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     () => (user?.uid ? readListPapers(user.uid) : null) ?? {},
   );
   const [expandedList, setExpandedList] = useState(null);
-  // True while the expanded list is the one a profile card navigated to: its
-  // back control then returns to the profile instead of collapsing to the
-  // index the visitor never asked for.
-  const [openedFromRoute, setOpenedFromRoute] = useState(false);
   const [loading, setLoading] = useState(false);
   // Placeholder tiles for the cold case, and only for it. Seeding from the
   // session cache covers a revisit and the IndexedDB read covers this device,
@@ -812,8 +807,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       const unresolvedIds = missingIds.filter((paperId) => !resolvedIds.has(paperId));
 
       // A legacy arXiv id (`hep-th/0603001`) saved or liked before document
-      // names were encoded has no document to answer for it. arXiv names it,
-      // the way the profile's Liked tab does; a superseded open paints nothing.
+      // names were encoded has no document to answer for it. arXiv names it;
+      // a superseded open paints nothing.
       const legacyMissing = unresolvedIds.filter((paperId) => !stillAnswerable.has(paperId));
       if (legacyMissing.length > 0) {
         setPendingPaperIds((current) => {
@@ -853,9 +848,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     }
   }, [libraryPapers, personalLibrary, savedPapers, user]);
 
-  // A profile list card arrives with the list it wants opened. Once per id:
-  // the state survives in the history entry, so coming back after closing the
-  // list must not snap it open again.
+  // Coming back from a paper restores the list that was open. Once per id: the
+  // state survives in the history entry, so coming back after closing the list
+  // must not snap it open again.
   const autoOpenedListId = useRef(null);
   useEffect(() => {
     const targetId = location.state?.openListId;
@@ -870,9 +865,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       // effect and cancels the pending open. Marking it early meant the
       // retry was refused and the list never opened at all.
       autoOpenedListId.current = targetId;
-      // A profile card sends only the id and means "you came from elsewhere";
-      // a restore after visiting a paper sends the flag it had before.
-      setOpenedFromRoute(location.state?.fromRoute !== false);
       openList(target);
     }, 0);
     return () => clearTimeout(timeoutId);
@@ -885,8 +877,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
    *
    * Before leaving, the current history entry is re-stamped with the open
    * list, so coming back restores the papers rather than the list index.
-   * `fromRoute` rides along so the expanded view's back control keeps
-   * pointing wherever it pointed before.
    */
   const openPaperCard = (paper) => {
     // The public paper page when the paper has an address there — a DOI, an
@@ -906,7 +896,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     if (expandedList) {
       navigate(location.pathname, {
         replace: true,
-        state: { openListId: expandedList, fromRoute: openedFromRoute },
+        state: { openListId: expandedList },
       });
     }
     // `stored`: this copy is what the list saved, not the paper — the page
@@ -933,7 +923,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
 
   const closeExpandedList = () => {
     metadataRequestId.current += 1;
-    setOpenedFromRoute(false);
     setExpandedList(null);
     // Drop the restore marker, or a later visit would reopen a list the user
     // has explicitly closed.
@@ -1329,10 +1318,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     transition: { duration: prefersReducedMotion ? 0.1 : 0.2, ease: [0.16, 1, 0.3, 1] },
   };
 
-  // Arriving from a profile card with { openListId }: until the effect above
-  // opens it, hold a skeleton instead of flashing an index the visitor did not
-  // ask for. Falls through to the index if the list never shows up; closing
-  // the list clears the state, so this cannot re-trap a closed list.
+  // Returning from a paper with { openListId }: until the effect above opens
+  // it, hold a skeleton instead of flashing the index. Falls through to the
+  // index if the list never shows up; closing the list clears the state, so
+  // this cannot re-trap a closed list.
   // Derived, never stored: the placeholders must vanish the instant real cards
   // exist, and a stale `true` left over from a failed load is harmless — by
   // then the wait is already known to be long.
@@ -1380,11 +1369,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
         <motion.div className="lists-expanded" key="expanded" {...viewMotion}>
           <button
             className="lists-back-btn"
-            onClick={openedFromRoute ? () => navigate(-1) : closeExpandedList}
+            onClick={closeExpandedList}
           >
-            {openedFromRoute
-              ? ('← Back')
-              : ('← My lists')}
+            {'← My lists'}
           </button>
           {(() => {
             const list = displayLists.find((l) => l.id === expandedList);
@@ -1770,7 +1757,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
               <div
                 key={list.id}
                 className={`list-card${accent ? '' : ' list-card--uncoloured'}`}
-                onClick={() => { setOpenedFromRoute(false); openList(list); }}
+                onClick={() => openList(list)}
                 style={{ '--stagger-index': idx, ...(accent ? { '--list-accent': accent } : {}) }}
               >
                 <div className="list-card-top">
@@ -1802,7 +1789,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                   <button
                     type="button"
                     className="list-card-name-btn"
-                    onClick={(e) => { e.stopPropagation(); setOpenedFromRoute(false); openList(list); }}
+                    onClick={(e) => { e.stopPropagation(); openList(list); }}
                   >
                     {list.name}
                   </button>

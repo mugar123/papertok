@@ -8,8 +8,6 @@ import {
   getPublicEntityUrl,
   getPublicPaperPath,
   getPublicPaperUrl,
-  getPublicProfilePath,
-  getPublicProfileUrl,
   getSharedListPath,
   getSharedListUrl,
   getSiteRootUrl,
@@ -156,27 +154,6 @@ test('builds shared-list paths and absolute share URLs with the Vite base', () =
   assert.equal(getAbsoluteShareUrl('/', URL_OPTIONS), 'https://example.test/papertok/');
 });
 
-test('builds a public profile path from a handle or a profile', () => {
-  assert.equal(getPublicProfilePath('ada'), '/public/user/ada');
-  assert.equal(getPublicProfilePath('  @Ada_Lovelace '), '/public/user/ada_lovelace');
-  assert.equal(getPublicProfilePath({ handle: 'ADA' }), '/public/user/ada');
-});
-
-test('refuses to build a profile path for a handle the rules would reject', () => {
-  // A link to a reserved handle would shadow an application route, and a link
-  // to an invalid one would 404 after costing a Firestore read.
-  for (const handle of ['settings', 'admin', 'api', 'ada lovelace', '../admin', 'ab', '']) {
-    assert.equal(getPublicProfilePath(handle), null, `${handle} must not become a link`);
-  }
-  assert.equal(getPublicProfilePath(null), null);
-  assert.equal(getPublicProfileUrl('admin'), null);
-});
-
-test('a profile URL is absolute and routed by path like every other share link', () => {
-  const url = getPublicProfileUrl('ada', { origin: 'https://example.test', base: '/papertok/' });
-  assert.equal(url, 'https://example.test/papertok/public/user/ada');
-});
-
 /**
  * What leaves the app on a share sheet, in a message, in an email. Every one of
  * these used to be minted with a `#`, because the fragment WAS the route. It is
@@ -194,16 +171,14 @@ test('every share URL the app mints is a real path, with no fragment anywhere in
   const urls = [
     getPublicPaperUrl({ arxivId: '2401.12345' }, undefined, LIVE),
     getPublicEntityUrl('topic', 'astro-ph.CO', LIVE),
-    getPublicProfileUrl('ada', LIVE),
     getSharedListUrl('reading-list', LIVE),
     getAbsoluteShareUrl('/public/entity/topic/astro-ph.CO', LIVE),
   ];
 
   assert.equal(urls[0], `https://papertok.app/public/paper/${key}`);
   assert.equal(urls[1], 'https://papertok.app/public/entity/topic/astro-ph.CO');
-  assert.equal(urls[2], 'https://papertok.app/public/user/ada');
-  assert.equal(urls[3], 'https://papertok.app/public/list/reading-list');
-  assert.equal(urls[4], 'https://papertok.app/public/entity/topic/astro-ph.CO');
+  assert.equal(urls[2], 'https://papertok.app/public/list/reading-list');
+  assert.equal(urls[3], 'https://papertok.app/public/entity/topic/astro-ph.CO');
 
   for (const url of urls) {
     assert.ok(url, 'every one of these must still build a URL');

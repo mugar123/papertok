@@ -1,5 +1,0 @@
-/* The handle inherits its line's voice; only the sign changes face. Inter's
-   "@" at the mono size sits on the same baseline and reads as one word. */
-.handle-at {
-  font-family: var(--font-body);
-}

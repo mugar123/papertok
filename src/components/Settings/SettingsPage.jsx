@@ -8,7 +8,6 @@ import {
   Compass,
   Flask,
   GearSix,
-  GlobeHemisphereWest,
   GraduationCap,
   LinkSimple,
   PencilSimple,
@@ -28,30 +27,13 @@ import { useAnalyticsConsent } from '../../context/AnalyticsContext';
 import { ANALYTICS_CONSENT } from '../../services/analyticsService';
 import { PAPER_REWRITE_LEVELS } from '../../services/paperRewriteService';
 import { CATEGORIES } from '../../data/categories';
-import { PUBLIC_AVATAR_PRESET, prepareProfileImage } from '../../utils/profileImage';
-import { savePublicProfilePhoto } from '../../services/userProfileService';
+import { prepareProfileImage } from '../../utils/profileImage';
 import { SIGN_IN_PROVIDERS } from '../../services/authIdentityService';
 import GoogleMark from '../Public/GoogleMark.jsx';
 import InstitutionDialog from '../Institution/InstitutionDialog.jsx';
 import InstitutionPill from '../Institution/InstitutionPill.jsx';
 import { getUiErrorMessage } from '../../utils/errorMessages';
-import { settleWithin } from '../../utils/asyncTiming';
-import {
-  IdentitySection,
-  ProfileListsSection,
-  ProfileReadState,
-  ProfileVisibilityPrompt,
-  PublicPageSection,
-} from '../Profile/ProfileEditor.jsx';
-import { useProfileEditor } from '../Profile/useProfileEditor.js';
 import EditInterestsModal from './EditInterestsModal';
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogTitle,
-} from '../ui/alert-dialog.jsx';
 import DeleteAccountDialog from './DeleteAccountDialog';
 import EmailNotificationModal from '../Following/EmailNotificationModal';
 import { Button } from '../ui/button.jsx';
@@ -91,16 +73,12 @@ const LEVEL_DETAILS = {
   },
 };
 
-/**
- * The public copy's whole budget: the patient read (PUBLIC_PHOTO_READ_TIMEOUT_MS,
- * 8 s, with the stream kick at 3 s), the second compression and the commit.
- */
-const PUBLIC_PHOTO_MIRROR_TIMEOUT_MS = 12_000;
-
 const SETTINGS_COPY = {
   title: 'Settings',
   subtitle: 'Your account, discovery preferences, and reading tools.',
   pagesLabel: 'Settings pages',
+  accountPhoto: 'Account photo',
+  accountPhotoDescription: 'Shown on your account button in the navigation bar.',
   photo: 'Photo',
   photoHint: 'PNG, JPEG or WebP. Saved as soon as you choose it.',
   uploadPhoto: 'Upload photo',
@@ -108,13 +86,11 @@ const SETTINGS_COPY = {
   removePhoto: 'Remove',
   removeToSignInPhoto: 'Remove and go back to your sign-in photo',
   removeToInitial: 'Remove and go back to your initial',
-  photoUpdated: { title: 'Photo updated', description: 'It shows across PaperTok and on your public page.' },
-  photoUpdatedHidden: { title: 'Photo updated', description: 'It shows across PaperTok. Your public page keeps your initial, as set in Privacy.' },
+  photoUpdated: { title: 'Photo updated', description: 'It shows across PaperTok.' },
   signInPhotoRestored: { title: 'Photo removed', description: 'Your sign-in photo is back in its place.' },
   photoRemoved: { title: 'Photo removed', description: 'Your initial shows in its place.' },
   photoSaveError: 'Photo not saved',
   photoRestoreError: { title: 'Photo not removed', description: 'The profile photo could not be removed. Try again.' },
-  photoPublicPending: { title: 'Photo saved, public page behind', description: 'Your public page still shows the old picture. Try again.' },
   discovery: 'Discovery',
   discoveryDescription: 'Signals PaperTok uses to build your feeds.',
   followedContent: 'Following',
@@ -145,14 +121,6 @@ const SETTINGS_COPY = {
   usageAnalyticsDescription: 'Control the anonymous measurements used to improve PaperTok.',
   analyticsToggleLabel: 'Allow usage analytics',
   analyticsHint: 'Counts pages and actions anonymously, without cookies; never your searches, papers, interests or account. Saved on the spot.',
-  unpublish: 'Unpublish',
-  unpublishDescription: 'Take your public page down. Your account stays.',
-  unpublishTitle: 'Unpublish my profile',
-  unpublishBody: handle => `Deletes your public page and frees @${handle}. Published lists stay published but stop carrying your name. You can create a profile again whenever you want.`,
-  unpublishing: 'Saving...',
-  unpublishConfirmTitle: 'Unpublish your public profile?',
-  unpublishConfirmBody: handle => `Your page will stop existing and @${handle} becomes available to anyone. Your account and your lists stay.`,
-  cancel: 'Cancel',
   institution: 'University',
   institutionDescription: 'Verify where you study or work by signing in with your university\'s Google account.',
   institutionLinked: name => `Verified with ${name}.`,
@@ -248,7 +216,6 @@ function ProfileAccountPage() {
   const profileInputRef = useRef(null);
   const { language } = useLanguage();
   const { user, profilePhoto, updateProfilePhoto, signInProviders, linkSignInMethod, signOut, institution } = useAuth();
-  const editor = useProfileEditor();
   const [savingPhoto, setSavingPhoto] = useState(false);
   // The method being connected, while its popup is open.
   const [linking, setLinking] = useState(null);
@@ -262,35 +229,6 @@ function ProfileAccountPage() {
   const onlyMethod = [gitHubLinked, googleLinked].filter(Boolean).length === 1;
   const visibleProfilePhoto = profilePhoto || user?.photoURL;
 
-  // The public profile keeps its own copy: `users/{uid}` is owner-only, so a
-  // signed-out visitor could never see the private one. The copy is
-  // best-effort — a failure is not worth losing the photo the user just set —
-  // but it is neither unbounded nor silent: the spinner waits on it, and a
-  // public page left on the old picture is exactly what the user would check
-  // next (reported 2026-09-23, when this waited forever on a dead stream).
-  // Pinned to the account that chose the file: compressions and reads happen
-  // between the click and the write, and `auth.currentUser` may be somebody
-  // else by then.
-  const mirrorPublicPhoto = async (makePhoto) => {
-    const settled = await settleWithin(
-      Promise.resolve()
-        .then(makePhoto)
-        .then(photo => savePublicProfilePhoto(photo, { currentUser: user })),
-      PUBLIC_PHOTO_MIRROR_TIMEOUT_MS,
-    );
-    if (settled.status === 'fulfilled') return true;
-    console.error('Could not mirror the photo to the public profile:', settled.reason || 'timed out');
-    return false;
-  };
-
-
-  const reportPhoto = (mirrored, done) => notify(
-    mirrored ? 'success' : 'error',
-    mirrored ? done : copy.photoPublicPending,
-  );
-
-  const publicPhotoHidden = editor.read.status === 'ready' && !editor.form.showPhoto;
-
   const handlePhotoSelect = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -300,10 +238,7 @@ function ProfileAccountPage() {
     try {
       const preparedPhoto = await prepareProfileImage(file);
       await updateProfilePhoto(preparedPhoto);
-      // Recompressed again because the public budget is 60 KB against 280 KB here.
-      const mirrored = publicPhotoHidden
-        || await mirrorPublicPhoto(() => prepareProfileImage(file, PUBLIC_AVATAR_PRESET));
-      reportPhoto(mirrored, publicPhotoHidden ? copy.photoUpdatedHidden : copy.photoUpdated);
+      notify('success', copy.photoUpdated);
     } catch (error) {
       toastError(copy.photoSaveError, { description: getUiErrorMessage(error, 'PROFILE_PHOTO_SAVE_FAILED') });
     } finally {
@@ -316,10 +251,7 @@ function ProfileAccountPage() {
     setSavingPhoto(true);
     try {
       await updateProfilePhoto(null);
-      // Removing the upload falls back to the account picture, so the public
-      // profile follows it there rather than being left on the old one.
-      const mirrored = publicPhotoHidden || await mirrorPublicPhoto(() => user?.photoURL || null);
-      reportPhoto(mirrored, user?.photoURL ? copy.signInPhotoRestored : copy.photoRemoved);
+      notify('success', user?.photoURL ? copy.signInPhotoRestored : copy.photoRemoved);
     } catch {
       notify('error', copy.photoRestoreError);
     } finally {
@@ -422,16 +354,10 @@ function ProfileAccountPage() {
 
   return (
     <>
-      {editor.read.ready ? (
-        <>
-          <IdentitySection form={editor.form} photo={photoField} />
-          {/* Which published lists the page shows: part of what it says
-              about you, so it sits with the identity, not with Privacy. */}
-          {editor.read.status === 'ready' && <ProfileListsSection lists={editor.lists} />}
-        </>
-      ) : (
-        <ProfileReadState read={editor.read} />
-      )}
+      <section className="settings-section" aria-labelledby="settings-photo-heading">
+        <SectionHeading id="settings-photo-heading" title={copy.accountPhoto} description={copy.accountPhotoDescription} />
+        <div className="profile-fields">{photoField}</div>
+      </section>
 
       <section className="settings-section" aria-labelledby="settings-access-heading">
         <SectionHeading id="settings-access-heading" title={copy.access} description={copy.accessDescription} />
@@ -507,7 +433,6 @@ function ProfileAccountPage() {
         </div>
       </section>
 
-      <ProfileVisibilityPrompt prompt={editor.prompt} />
       {deleteAccountOpen && (
         <DeleteAccountDialog
           open
@@ -520,84 +445,29 @@ function ProfileAccountPage() {
   );
 }
 
-/** Unpublishing deletes the page and frees the handle, so it asks first. */
-function UnpublishDialog({ unpublish, open, onOpenChange }) {
-  const confirm = async () => {
-    await unpublish.run();
-    onOpenChange(false);
-  };
-  return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="settings-confirm-dialog" aria-busy={unpublish.busy ? 'true' : undefined}>
-        <AlertDialogTitle>{copy.unpublishConfirmTitle}</AlertDialogTitle>
-        <AlertDialogDescription>{copy.unpublishConfirmBody(unpublish.handle ?? '')}</AlertDialogDescription>
-        <div className="settings-confirm-actions">
-          <AlertDialogCancel disabled={unpublish.busy}>{copy.cancel}</AlertDialogCancel>
-          <Button variant="rose" onClick={confirm} disabled={unpublish.busy}>
-            {unpublish.busy ? copy.unpublishing : copy.unpublish}
-          </Button>
-        </div>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}
-
 function PrivacyPage() {
   const { consent: analyticsConsent, updateConsent: updateAnalyticsConsent } = useAnalyticsConsent();
-  const editor = useProfileEditor();
-  const [unpublishOpen, setUnpublishOpen] = useState(false);
 
   return (
-    <>
-      {editor.read.ready
-        ? <PublicPageSection form={editor.form} visibility={editor.visibility} />
-        : <ProfileReadState read={editor.read} />}
-
-      {/* The account's, not the profile's: it works with or without one. */}
-      <section className="settings-section" aria-labelledby="settings-analytics-heading">
-        <SectionHeading id="settings-analytics-heading" title={copy.usageAnalytics} description={copy.usageAnalyticsDescription} />
-        <div className="profile-fields">
-          <Label className="profile-switch">
-            <span className="profile-switch-copy">
-              <span className="profile-switch-label">{copy.analyticsToggleLabel}</span>
-              <span className="profile-switch-hint">{copy.analyticsHint}</span>
-            </span>
-            <Switch
-              className="settings-toggle"
-              checked={analyticsConsent === ANALYTICS_CONSENT.GRANTED}
-              aria-label={copy.analyticsToggleLabel}
-              onCheckedChange={checked => updateAnalyticsConsent(
-                checked ? ANALYTICS_CONSENT.GRANTED : ANALYTICS_CONSENT.DENIED,
-              )}
-            />
-          </Label>
-        </div>
-      </section>
-
-      {editor.unpublish.handle && (
-        <section className="settings-section" aria-labelledby="settings-unpublish-heading">
-          <SectionHeading id="settings-unpublish-heading" title={copy.unpublish} description={copy.unpublishDescription} />
-          <div className="settings-list">
-            <div className="settings-row">
-              <div className="settings-row-content">
-                <h3>{copy.unpublishTitle}</h3>
-                <p>{copy.unpublishBody(editor.unpublish.handle)}</p>
-              </div>
-              <RowAction
-                Icon={GlobeHemisphereWest}
-                variant="rose"
-                label={copy.unpublish}
-                onClick={() => setUnpublishOpen(true)}
-                disabled={editor.unpublish.blocked}
-              />
-            </div>
-          </div>
-        </section>
-      )}
-
-      <UnpublishDialog unpublish={editor.unpublish} open={unpublishOpen} onOpenChange={setUnpublishOpen} />
-      <ProfileVisibilityPrompt prompt={editor.prompt} />
-    </>
+    <section className="settings-section" aria-labelledby="settings-analytics-heading">
+      <SectionHeading id="settings-analytics-heading" title={copy.usageAnalytics} description={copy.usageAnalyticsDescription} />
+      <div className="profile-fields">
+        <Label className="profile-switch">
+          <span className="profile-switch-copy">
+            <span className="profile-switch-label">{copy.analyticsToggleLabel}</span>
+            <span className="profile-switch-hint">{copy.analyticsHint}</span>
+          </span>
+          <Switch
+            className="settings-toggle"
+            checked={analyticsConsent === ANALYTICS_CONSENT.GRANTED}
+            aria-label={copy.analyticsToggleLabel}
+            onCheckedChange={checked => updateAnalyticsConsent(
+              checked ? ANALYTICS_CONSENT.GRANTED : ANALYTICS_CONSENT.DENIED,
+            )}
+          />
+        </Label>
+      </div>
+    </section>
   );
 }
 

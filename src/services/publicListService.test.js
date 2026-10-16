@@ -5,7 +5,6 @@ import {
   PUBLIC_LIST_LIMITS,
   PublicListRequestError,
   PublicListUnsupportedError,
-  attributePublicList,
   publishPublicList,
   readPublicList,
   sanitizePublicList,
@@ -136,6 +135,9 @@ test('publishing posts the sanitized list to the Worker, never to Firestore', as
   // caller could aim a publish at somebody else's link.
   assert.equal('shareId' in requests[0].body, false);
   assert.equal('ownerId' in requests[0].body, false);
+  // The Worker attributes by default; with no public profile that would be a
+  // hidden showcase card per publish, capped at thirty.
+  assert.equal(requests[0].body.attributed, false);
   assert.equal(published.shareId, '07070707070707070707070707070707');
 
   // Private fields are stripped before the payload ever leaves the browser.
@@ -345,6 +347,8 @@ test('Firestore rules keep public lists readable and shut to every client', asyn
 
   // A share link stays public and stays one document.
   assert.match(publicListRule, /allow get: if true/);
+  // It must not name its owner; ownership lives in publicListOwners.
+  assert.doesNotMatch(publicListRule, /ownerId/, 'a share link must not name its owner');
   // Paging it is not a feature, and never was.
   assert.match(publicListRule, /allow list: if false/);
   // Every write comes from the Worker now.
@@ -424,21 +428,6 @@ test('THE BUG: an unreachable backend is not a missing list', async () => {
     },
     'nobody confirmed this list is gone — the backend never answered',
   );
-});
-
-test('F12: attribution posts the share and the boolean, nothing else', async () => {
-  const shareId = '07070707070707070707070707070707';
-  const { api, requests } = fakeApi();
-  await attributePublicList(shareId, true, api);
-  assert.equal(requests[0].url, 'https://worker.test/lists/attribute');
-  assert.deepEqual(requests[0].body, { shareId, attributed: true });
-
-  await attributePublicList(shareId, false, api);
-  assert.deepEqual(requests[1].body, { shareId, attributed: false });
-
-  await assert.rejects(() => attributePublicList(shareId, 'yes', api), TypeError);
-  await assert.rejects(() => attributePublicList('nonsense', true, api), TypeError);
-  assert.equal(requests.length, 2, 'a refused call must never reach the network');
 });
 
 test('a Worker that stalls mid-answer fails as unreachable, not as an empty publish', async () => {

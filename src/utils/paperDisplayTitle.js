@@ -25,7 +25,3 @@ export function isPlaceholderPaperTitle(title, paperId) {
   if (ARXIV_NEW.test(text) || ARXIV_OLD.test(text)) return true;
   return false;
 }
-
-export function resolvedPaperTitle(title, paperId) {
-  return isPlaceholderPaperTitle(title, paperId) ? '' : String(title).trim();
-}

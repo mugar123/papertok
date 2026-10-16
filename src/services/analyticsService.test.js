@@ -174,7 +174,6 @@ test('names the routes that reach analytics through the static list', () => {
   assert.equal(normalizeAnalyticsPath('/profile'), '/profile');
   assert.equal(normalizeAnalyticsPath('/settings/profile'), '/settings/profile');
   assert.equal(normalizeAnalyticsPath('/report'), '/report');
-  assert.equal(normalizeAnalyticsPath('/public/user/nicolas?ref=share'), '/public/user/:handle');
 });
 
 test('maps unknown and malformed routes to a fixed analytics path', () => {
@@ -183,6 +182,9 @@ test('maps unknown and malformed routes to a fixed analytics path', () => {
   assert.equal(normalizeAnalyticsPath('/search/private-query'), '/unknown');
   assert.equal(normalizeAnalyticsPath('/public/paper/private-key'), '/public/paper/:id');
   assert.equal(normalizeAnalyticsPath('/public/list/private-key'), '/public/list/:id');
+  // Profile pages are gone; an old link to one is a not-found page, and the
+  // handle in it (a person) never reaches the report.
+  assert.equal(normalizeAnalyticsPath('/public/user/private-handle?ref=share'), '/unknown');
   assert.equal(normalizeAnalyticsPath('/public/entity/topic/private-key'), '/public/entity/topic/:id');
 });
 
@@ -300,8 +302,9 @@ test('builds page locations from the sanitized path and origin only', () => {
  * you searched for."
  *
  * Every route on this origin that carries something belonging to a reader is
- * here: the paper, the author, the list, the handle (a person, not an id) and
- * the search query (what they typed). None of them has a fragment any more.
+ * here: the paper, the author, the list, the handle in an old profile link (a
+ * person, not an id; the page is gone, so it files under /unknown) and the
+ * search query (what they typed). None of them has a fragment any more.
  */
 test('strips the identifier out of the real path before the page-view URL is sent', () => {
   assert.equal(
@@ -318,7 +321,7 @@ test('strips the identifier out of the real path before the page-view URL is sen
   );
   assert.equal(
     sanitizeAnalyticsEventUrl('https://papertok.app/public/user/nicolas'),
-    'https://papertok.app/public/user/:handle',
+    'https://papertok.app/unknown',
   );
   assert.equal(
     sanitizeAnalyticsEventUrl('https://papertok.app/search?q=private+query'),

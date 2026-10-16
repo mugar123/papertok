@@ -25,7 +25,7 @@ import { documentIsAuthoritative } from '../utils/cacheAuthority.js';
 import { normalizeProfilePhoto } from '../utils/profileImage';
 import { clearUserScopedStorage, readStoredOnboarding, saveStoredOnboarding } from '../utils/userScopedStorage';
 import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from '../services/accountWarmup.js';
-import { forgetOwnProfile } from '../utils/profileSessionCaches.js';
+import { forgetOwnLists } from '../utils/profileSessionCaches.js';
 import { accountLooksOnboarded } from '../utils/accountOnboarding.js';
 import { clearGuestInterests, readGuestInterests } from '../utils/guestInterests.js';
 import { toggleFollowedAuthor } from '../utils/followedAuthors.js';
@@ -311,7 +311,7 @@ export function AuthProvider({ children }) {
       // the next account on this device must not inherit it.
       clearGuestInterests();
       clearUserScopedStorage(signingOutUserId);
-      forgetOwnProfile(signingOutUserId);
+      forgetOwnLists(signingOutUserId);
       resetAccountWarmup(signingOutUserId);
     } catch (err) {
       setError(err?.code || 'AUTH_FAILED');
@@ -366,12 +366,10 @@ export function AuthProvider({ children }) {
         }, { merge: true }),
         PROFILE_NETWORK_TIMEOUT_MS,
       );
-      // A retry is safe — this merge-sets the same fields — and
-      // OnboardingFlow's `profileCreated` ref already stops a retried
-      // handleFinish from creating the public-profile document twice, so
-      // there is nothing to do here but let the caller know and stop: the
-      // flag and the preferences must stay unflipped, same as the reorder
-      // above already guarantees for a rules refusal.
+      // A retry is safe — this merge-sets the same fields — so there is
+      // nothing to do here but let the caller know and stop: the flag and
+      // the preferences must stay unflipped, same as the reorder above
+      // already guarantees for a rules refusal.
       if (settled.status !== 'fulfilled') {
         if (settled.status === 'timed_out') {
           const timeoutError = new Error('completeOnboarding: the write did not settle in time');

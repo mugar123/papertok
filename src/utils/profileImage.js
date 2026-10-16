@@ -4,17 +4,6 @@ const AVATAR_SIZE = 320;
 const MAX_OUTPUT_BYTES = 190_000;
 const ACCEPTED_PROFILE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
-/**
- * The public profile photo (F1) has a much tighter budget than the private
- * one: it rides in `userProfiles/{uid}`, which is read on every profile visit,
- * so it is recompressed smaller rather than reused as-is.
- */
-export const PUBLIC_AVATAR_PRESET = Object.freeze({
-  size: 192,
-  maxDataUrlLength: 60_000,
-  maxOutputBytes: 42_000,
-});
-
 export function validateProfileImageMetadata(file) {
   if (!file || !ACCEPTED_PROFILE_TYPES.has(String(file.type || '').toLowerCase())) {
     throw new Error('Selecciona una imagen PNG, JPEG o WebP.');
@@ -27,11 +16,11 @@ export function validateProfileImageMetadata(file) {
   }
 }
 
-export function normalizeProfilePhoto(value, maxLength = MAX_PROFILE_DATA_URL_LENGTH) {
+export function normalizeProfilePhoto(value) {
   if (typeof value !== 'string') return null;
   const normalized = value.trim();
   if (
-    normalized.length > maxLength
+    normalized.length > MAX_PROFILE_DATA_URL_LENGTH
     || !/^data:image\/(?:webp|jpeg|png);base64,/i.test(normalized)
   ) {
     return null;
@@ -39,22 +28,10 @@ export function normalizeProfilePhoto(value, maxLength = MAX_PROFILE_DATA_URL_LE
   return normalized;
 }
 
-/**
- * The square of the source image to draw, in source pixels. A `crop` from the
- * picker is clamped inside the image; without one, the centred square.
- */
-export function squareSource(naturalWidth, naturalHeight, crop) {
+/** The centred square of the source image to draw, in source pixels. */
+export function squareSource(naturalWidth, naturalHeight) {
   const side = Math.min(naturalWidth, naturalHeight);
-  if (!crop) {
-    return { x: (naturalWidth - side) / 2, y: (naturalHeight - side) / 2, size: side };
-  }
-  const size = Math.min(Math.max(Number(crop.size) || side, 1), side);
-  const clamp = (value, max) => Math.min(Math.max(Number(value) || 0, 0), max);
-  return {
-    x: clamp(crop.x, naturalWidth - size),
-    y: clamp(crop.y, naturalHeight - size),
-    size,
-  };
+  return { x: (naturalWidth - side) / 2, y: (naturalHeight - side) / 2, size: side };
 }
 
 function loadImage(objectUrl) {
@@ -79,12 +56,8 @@ function blobToDataUrl(blob) {
   });
 }
 
-export async function prepareProfileImage(file, options = {}) {
+export async function prepareProfileImage(file) {
   validateProfileImageMetadata(file);
-
-  const avatarSize = options.size || AVATAR_SIZE;
-  const maxOutputBytes = options.maxOutputBytes || MAX_OUTPUT_BYTES;
-  const maxDataUrlLength = options.maxDataUrlLength || MAX_PROFILE_DATA_URL_LENGTH;
 
   const objectUrl = URL.createObjectURL(file);
   try {
@@ -93,15 +66,15 @@ export async function prepareProfileImage(file, options = {}) {
     if (!Number.isFinite(side) || side <= 0) {
       throw new Error('The image does not have valid dimensions.');
     }
-    const source = squareSource(image.naturalWidth, image.naturalHeight, options.crop);
+    const source = squareSource(image.naturalWidth, image.naturalHeight);
     const canvas = document.createElement('canvas');
-    canvas.width = avatarSize;
-    canvas.height = avatarSize;
+    canvas.width = AVATAR_SIZE;
+    canvas.height = AVATAR_SIZE;
 
     const context = canvas.getContext('2d');
     if (!context) throw new Error('El navegador no pudo preparar la imagen.');
     context.fillStyle = '#111018';
-    context.fillRect(0, 0, avatarSize, avatarSize);
+    context.fillRect(0, 0, AVATAR_SIZE, AVATAR_SIZE);
     context.imageSmoothingEnabled = true;
     context.imageSmoothingQuality = 'high';
     context.drawImage(
@@ -112,8 +85,8 @@ export async function prepareProfileImage(file, options = {}) {
       source.size,
       0,
       0,
-      avatarSize,
-      avatarSize,
+      AVATAR_SIZE,
+      AVATAR_SIZE,
     );
 
     const attempts = [
@@ -121,17 +94,13 @@ export async function prepareProfileImage(file, options = {}) {
       ['image/webp', 0.7],
       ['image/jpeg', 0.76],
       ['image/jpeg', 0.62],
-      // Extra rungs for the tighter public budget; harmless for the private
-      // one, which never reaches them.
-      ['image/webp', 0.55],
-      ['image/jpeg', 0.48],
     ];
 
     for (const [type, quality] of attempts) {
       const blob = await canvasToBlob(canvas, type, quality);
-      if (!blob || blob.size > maxOutputBytes) continue;
+      if (!blob || blob.size > MAX_OUTPUT_BYTES) continue;
       const dataUrl = await blobToDataUrl(blob);
-      const normalized = normalizeProfilePhoto(dataUrl, maxDataUrlLength);
+      const normalized = normalizeProfilePhoto(dataUrl);
       if (normalized) return normalized;
     }
 

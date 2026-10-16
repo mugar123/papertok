@@ -99,11 +99,7 @@ test('an outage follows the pills it really describes', () => {
   assert.equal(outageAffectsFilter(openAlexDown, 'projects'), false, 'OpenAIRE is fine');
 });
 
-test('people are never covered by a provider outage', () => {
-  const everythingDown = describeSearchOutage({
-    sections: ['papers', 'institutions', 'projects'],
-  });
-  assert.equal(outageAffectsFilter(everythingDown, 'users'), false);
+test('without an outage, no pill carries the notice', () => {
   assert.equal(outageAffectsFilter(null, 'all'), false);
 });
 

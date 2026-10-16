@@ -1,13 +1,3 @@
-/**
- * Section ordering, with people in the mix.
- *
- * The merged search does not interleave results: OpenAlex returns its own
- * relevance ranking and Firestore returns lexicographic order on a prefix, and
- * there is no honest way to compare a paper's score against a handle's. So
- * people are a section like the other five, and the only question this file
- * answers is which section goes first.
- */
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -23,7 +13,7 @@ import {
   scoreSearchMatch,
 } from './searchRelevance.js';
 
-// --- scoring and filtering, from before people joined the page --------------
+// --- scoring and filtering ---------------------------------------------------
 
 test('keeps exact and complete institution matches ahead of fuzzy noise', () => {
   const results = [
@@ -90,12 +80,11 @@ test('defaults a general scientific query to papers', () => {
   }), 'papers');
 });
 
-// --- section ordering with people in the mix -------------------------------
+// --- section ordering -------------------------------------------------------
 
 /** Every section populated, so ordering is the only thing under test. */
 const populated = (overrides = {}) => ({
   papers: ['Numerical relativity of binary mergers'],
-  users: ['nick_mugar', 'nicolás muñoz garcía'],
   topics: ['Cosmology'],
   authors: ['Geoffrey Hinton'],
   institutions: ['Massachusetts Institute of Technology'],
@@ -103,96 +92,17 @@ const populated = (overrides = {}) => ({
   ...overrides,
 });
 
-test('a section missing from the default order sinks to the bottom forever', () => {
-  // The trap this file exists to keep shut: getSearchSectionOrder scores an
-  // unknown section 99, so adding a section to the page without adding it here
-  // makes it last on every search, silently and permanently.
-  assert.ok(
-    getSearchSectionOrder('users', null) < getSearchSectionOrder('nonsense', null),
-    'users must be a known section, not a stranger scored 99',
-  );
-});
-
-test('by default people come after papers, not before them', () => {
-  // A two-letter prefix matches somebody by accident often enough that a
-  // non-empty users section is not on its own evidence of intent. Leading with
-  // it would put strangers above the literature on every search.
-  const preferred = resolvePreferredSearchSection({
-    query: 'binary mergers', hint: null, sectionValues: populated(),
-  });
-  assert.equal(preferred, 'papers');
-  assert.ok(
-    getSearchSectionOrder('users', preferred) < getSearchSectionOrder('topics', preferred),
-    'and people come second, ahead of the rest',
-  );
-});
-
-test('an @ prefix puts people first — nobody types @ looking for a paper', () => {
-  const preferred = resolvePreferredSearchSection({
-    query: '@nick', hint: null, sectionValues: populated(),
-  });
-  assert.equal(preferred, 'users');
-  assert.equal(getSearchSectionOrder('users', preferred), 1);
-});
-
-test('the @ is read off the raw query, which normalisation would have eaten', () => {
-  // normalizeSearchText strips every symbol, so by the time the scoring sees
-  // the term the sigil is gone. Checking it there would silently never fire.
+test('a leading @ is read as text, like any other symbol', () => {
+  // No section claims the sigil: normalisation strips it along with every
+  // other symbol, so the words that follow decide the order.
   assert.equal(scoreSearchMatch('@nick', ['nick']), 100, 'the sigil is invisible to scoring');
   assert.equal(
-    resolvePreferredSearchSection({ query: '  @nick', hint: null, sectionValues: populated() }),
-    'users',
-    'leading whitespace does not hide the sigil',
-  );
-});
-
-test('an exact handle or name beats every other exact match', () => {
-  // The strongest signal available that a person was meant: stronger than a
-  // paper or a topic whose title happens to be the same words.
-  assert.equal(
-    resolvePreferredSearchSection({
-      query: 'nick_mugar', hint: null, sectionValues: populated(),
-    }),
-    'users',
+    resolvePreferredSearchSection({ query: '@Cosmology', hint: null, sectionValues: populated() }),
+    'topics',
   );
   assert.equal(
-    resolvePreferredSearchSection({
-      query: 'nicolás muñoz garcía', hint: null, sectionValues: populated(),
-    }),
-    'users',
-    'an exact display name counts too, accents and all',
-  );
-});
-
-test('a search that matches nobody leaves the other sections exactly as they were', () => {
-  // The regression that would matter most: people joining the page must not
-  // reorder a literature search.
-  const withoutUsers = resolvePreferredSearchSection({
-    query: 'Cosmology', hint: null, sectionValues: populated({ users: [] }),
-  });
-  const withUsers = resolvePreferredSearchSection({
-    query: 'Cosmology', hint: null, sectionValues: populated(),
-  });
-  assert.equal(withoutUsers, 'topics');
-  assert.equal(withUsers, 'topics', 'a populated users section does not steal an exact topic');
-});
-
-test('an empty users section can never be preferred, @ or not', () => {
-  assert.equal(
-    resolvePreferredSearchSection({
-      query: '@nobody', hint: null, sectionValues: populated({ users: [] }),
-    }),
+    resolvePreferredSearchSection({ query: '  @nobody', hint: null, sectionValues: populated() }),
     'papers',
-    'preferring a section with nothing in it would show an empty box at the top',
-  );
-});
-
-test('clicking the Users pill wins over everything, because it was asked for', () => {
-  assert.equal(
-    resolvePreferredSearchSection({
-      query: 'Cosmology', hint: 'users', sectionValues: populated(),
-    }),
-    'users',
   );
 });
 
@@ -241,15 +151,6 @@ test('the intent reorders the exact sweep, it does not replace it', () => {
   // institutions that only match loosely. Otherwise "instituto cervantes" typed
   // as a topic name would be dragged to an institutions section that has
   // nothing exact to show.
-  assert.equal(
-    resolvePreferredSearchSection({
-      query: 'nick_mugar',
-      hint: null,
-      sectionValues: populated({ institutions: ['University of Salamanca'] }),
-    }),
-    'users',
-    'an exact handle still wins',
-  );
   assert.equal(
     resolvePreferredSearchSection({
       query: 'university of salamanca',
@@ -490,11 +391,9 @@ test('the section values drop the holes the sources leave', () => {
   const values = buildSearchSectionValues({
     topics: [{ display_name: 'Cosmology' }],
     projects: [{ title: 'A funded thing' }],
-    users: [{ handle: 'nick' }],
   });
   assert.deepEqual(values.topics, ['Cosmology']);
   assert.deepEqual(values.projects, ['A funded thing']);
-  assert.deepEqual(values.users, ['nick']);
 });
 
 // --- paper ranking: the title a reader typed goes first ----------------------

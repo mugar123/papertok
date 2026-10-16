@@ -90,10 +90,9 @@ test('SOURCE: activeIndex is seeded from the resume anchor, not from a bare 0', 
   assert.match(code, /useLayoutEffect\(\(\) => \{\s*if \(restoreAttemptedRef\.current/, 'and it must stay a LAYOUT effect, or the re-render lands after a paint');
 });
 
-test('SOURCE: the profile and settings screens are warmed at idle, so a deploy does not force a reload on the way there', async () => {
+test('SOURCE: the settings screen is warmed at idle, so a deploy does not force a reload on the way there', async () => {
   const code = stripComments(await read('../../App.jsx'));
   const block = bounded(code, 'const prefetch = () => {', 'const schedule = window.requestIdleCallback', 'the idle prefetch', 40);
-  assert.match(block, /PublicProfilePage\.preload\(\)\.catch\(\(\) => \{\}\)/);
   assert.match(block, /SettingsPage\.preload\(\)\.catch\(\(\) => \{\}\)/);
 });
 

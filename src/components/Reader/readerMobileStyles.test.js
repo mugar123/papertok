@@ -16,9 +16,8 @@ import { readFile } from 'node:fs/promises';
  *
  * None of the three produced a warning, a lint error or a failing build — an
  * overflowing flex row is valid CSS and a hidden scrollbar is a deliberate
- * feature elsewhere in this same file. So they are held here instead, in the
- * shape `publicProfileStyles.test.js` uses one screen over: read the stylesheet,
- * and assert the parts of the fix a stylesheet can be held to.
+ * feature elsewhere in this same file. So they are held here instead: read the
+ * stylesheet, and assert the parts of the fix a stylesheet can be held to.
  */
 
 const READER_CSS = new URL('./PaperReader.css', import.meta.url);
