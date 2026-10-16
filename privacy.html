@@ -162,13 +162,16 @@
 
       <h2>Analytics</h2>
       <p>
-        PaperTok measures how the application is used with <strong>PostHog</strong>, on its
-        servers in the European Union (Frankfurt). <strong>It uses no cookies</strong> and
-        keeps nothing about you in your browser. To tell visits apart, PostHog combines your
-        IP address and your browser's user agent with a random value that changes every day,
-        keeps only the result and discards the IP address and the user agent. No location is
-        derived from them, the result cannot follow you from one day to the next or across
-        sites, and it is never linked to your account.
+        PaperTok measures how the application is used with two services, and
+        <strong>neither uses cookies</strong>. <strong>Vercel Web Analytics</strong> counts page
+        views and the country a visit comes from: to tell visits apart, Vercel derives an
+        identifier from the browser itself that expires every day and cannot follow you from
+        one day to the next or across sites. <strong>PostHog</strong>, on its servers in the
+        European Union (Frankfurt), counts what is done in the application. It keeps nothing
+        about you in your browser: to tell visits apart, it combines your IP address and your
+        browser's user agent with a random value that changes every day, keeps only the
+        result and discards the IP address and the user agent, and it derives no location
+        from them. Neither identifier is linked to your account.
       </p>
       <p>
         The legal basis is PaperTok's legitimate interest in knowing which parts of the
@@ -176,12 +179,13 @@
         permission before measuring. You can <strong>object whenever you like</strong> by
         turning it off in Settings → Privacy or, without an account, with the Privacy
         button at the top of the welcome screens and the feed. The choice is kept in this
-        browser: from then on nothing new is recorded from it, and from your next visit
-        the library is not even loaded.
+        browser and turns off both services: from then on nothing new is recorded from it,
+        and from your next visit neither library is even loaded.
       </p>
       <p>
-        What is sent is the page you are on, with the path stripped of identifiers, and a
-        fixed list of actions, each with a few fixed values. Reading a specific paper is
+        What is sent is the page you are on, with the path stripped of identifiers, to both
+        services, and to PostHog a fixed list of actions, each with a few fixed values.
+        Reading a specific paper is
         recorded as <code>/public/paper/:id</code>, and visiting an author's profile as
         <code>/explorer/author/:id</code>: which one never travels. A search is recorded as a
         search, with its type and how many results it returned, never with what you
@@ -189,8 +193,8 @@
         operating system. Nothing from your account is sent.
       </p>
       <p>
-        These requests go to papertok.app itself, and Vercel relays them to PostHog. PostHog
-        keeps the events for one year.
+        PostHog's requests go to papertok.app itself, and Vercel relays them to PostHog.
+        PostHog keeps the events for one year.
       </p>
 
       <h2>Scientific sources and AI features</h2>
@@ -219,8 +223,8 @@
       </p>
       <ul>
         <li><strong>Google</strong> (Firebase Authentication, Firestore) — accounts and app data.</li>
-        <li><strong>Vercel</strong> — hosting, and relaying analytics requests to PostHog.</li>
-        <li><strong>PostHog</strong> — usage analytics, on servers in the European Union.</li>
+        <li><strong>Vercel</strong> — hosting, page-view analytics, and relaying analytics requests to PostHog.</li>
+        <li><strong>PostHog</strong> — analytics of what is done in the application, on servers in the European Union.</li>
         <li><strong>Cloudflare</strong> (Workers, KV) — the intermediate server and email-update storage.</li>
         <li><strong>Brevo</strong> — sending the emails.</li>
       </ul>

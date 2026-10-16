@@ -1,19 +1,29 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { Analytics } from '@vercel/analytics/react';
+import { pageview } from '@vercel/analytics';
 import { AnalyticsContext } from './contexts';
 import { useLocation } from 'react-router-dom';
 import { useLanguage } from './LanguageContext';
 import {
   ANALYTICS_CONSENT,
   markActivation as markAnalyticsActivation,
+  normalizeAnalyticsPath,
   readAnalyticsConsent,
   removeLegacyGoogleAnalyticsCookies,
+  sanitizeVercelEvent,
   setAnalyticsConsent,
   trackAcquisition,
   trackDay7Return,
   trackPageView,
   trackProductEvent,
 } from '../services/analyticsService';
+
+// Declared once, outside the component: `<Analytics />` re-registers its
+// `beforeSend` on every change of identity, so an inline arrow would re-register
+// it on every render of the whole app. It takes only the event, so the stored
+// choice is read at send time (`sanitizeVercelEvent`).
+const sanitizeOutgoingEvent = event => sanitizeVercelEvent(event);
 
 export function AnalyticsProvider({ children }) {
   const location = useLocation();
@@ -31,12 +41,23 @@ export function AnalyticsProvider({ children }) {
     trackAcquisition({ language });
   }, [consent, language]);
 
-  // Keyed on the concrete pathname, not on the pattern it reports: two papers
-  // share `/public/paper/:id`, and the second is still a view. The privacy
-  // policy promises that reading a paper is reported as `/public/paper/:id`
-  // and never says which; `trackPageView` sends only the pattern.
+  // Page views go to both services, keyed on the concrete pathname, and report
+  // only the pattern: Vercel Web Analytics counts visits, pages and countries,
+  // and PostHog needs the views beside its events to follow a path through the
+  // app. <Analytics route> below is what flips `disableAutoTrack` on the
+  // injected script; its own `path` prop is deliberately not passed, because
+  // that emitter re-fires on a change of PATTERN, and two papers share one —
+  // the second was never a view.
+  //
+  // `route` and `path` carry the SAME normalized value on purpose. Vercel reads
+  // `route` as the pattern and `path` as the concrete URL that matched it, but
+  // the concrete URL is the one thing that must not travel: the privacy policy
+  // promises that reading a paper is reported as `/public/paper/:id` and never
+  // says which. `trackPageView` normalizes the same way for PostHog.
   useEffect(() => {
     if (consent !== ANALYTICS_CONSENT.GRANTED) return;
+    const viewPath = normalizeAnalyticsPath(location.pathname);
+    pageview({ route: viewPath, path: viewPath });
     trackPageView(location.pathname);
   }, [consent, location.pathname]);
 
@@ -60,9 +81,26 @@ export function AnalyticsProvider({ children }) {
     [consent, updateConsent, trackEvent, markActivation],
   );
 
+  // Passing `route` flips `disableAutoTrack` on the injected script, whose own
+  // tracking reads `window.location.pathname`. That used to be a constant —
+  // under HashRouter the route lived in the fragment and the pathname was just
+  // where the app was served — so `route` was what made page views work at all.
+  // Since the router moved to real paths (src/main.jsx), the pathname IS the
+  // route, identifier and all, so this prop is now what keeps the script from
+  // filing a view under `/public/paper/<the real id>`. The views themselves are
+  // emitted above, already normalized.
+  const analyticsPath = normalizeAnalyticsPath(location.pathname);
+
   return (
     <AnalyticsContext.Provider value={value}>
       {children}
+      {consent === ANALYTICS_CONSENT.GRANTED ? (
+        <Analytics
+          mode={import.meta.env.DEV ? 'development' : 'production'}
+          route={analyticsPath}
+          beforeSend={sanitizeOutgoingEvent}
+        />
+      ) : null}
     </AnalyticsContext.Provider>
   );
 }

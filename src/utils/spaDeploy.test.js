@@ -23,6 +23,7 @@ test('the SPA rewrite never answers a missing chunk with the app document', asyn
   const matches = value => new RegExp(`^${pattern}$`).test(value);
   assert.ok(matches('lists'));
   assert.ok(matches('public/paper/10.1234%2Fabc'));
+  assert.ok(!matches('_vercel/insights/script.js'));
   assert.ok(!matches('ingest/e/'));
   // A tab that outlives a deploy asks for a chunk by its old hash. That has to
   // be a 404 Vite can report, not HTML served as JavaScript with a 200.
