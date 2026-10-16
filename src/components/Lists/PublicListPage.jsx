@@ -331,7 +331,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
                   )}
                   {/* Through the same KaTeX pass as the title above, and as
                       every other abstract in the app (the feed card, the
-                      explorer, the report). This was the one that rendered
+                      explorer). This was the one that rendered
                       raw: a shared list of maths papers showed its readers
                       "$G_{2}$-invariant" where every other screen showed the
                       formula. */}

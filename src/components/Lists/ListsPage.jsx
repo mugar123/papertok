@@ -1798,7 +1798,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                   {/* A count is machine data, so it is set in mono with tabular
                       figures. It used to say nothing but its own size in Inter. */}
                   <span className="list-card-count">{papersCount(list.paperIds?.length || 0)}</span>
-                  {/* The profile card says Public; its twin here said nothing. */}
+                  {/* A published list says so on its card. */}
                   {list.publicShareId && (
                     <span className="lists-badge lists-badge--public">
                       <GlobeHemisphereWest size={11} aria-hidden="true" /> {'Public'}

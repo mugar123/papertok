@@ -3,10 +3,9 @@ import { displayProse, katexSource, splitLatexText } from '../utils/latex.js';
 import { getKatex, loadKatex } from '../utils/katexLoader.js';
 
 // Rendered formulas, by source. A card re-renders many times while it is
-// arriving on screen (visibility, figures, settle, idle, comment count, the
-// active flag) and again whenever the queue behind it is re-ranked, and each
-// of those renders used to run `katex.renderToString` for every formula on
-// the card. Measured 2026-09-22 on the production bundle: a physics abstract
+// arriving on screen (visibility, figures, settle, idle) and again whenever
+// the queue behind it is re-ranked, and each of those renders used to run
+// `katex.renderToString` for every formula on the card. Measured 2026-09-22 on the production bundle: a physics abstract
 // paid it 5-7 times per snap, on the main thread, in the middle of the scroll
 // animation. The markup for a given source never changes, so it is rendered
 // once per session and read back after that. Bounded so a long session on a

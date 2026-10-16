@@ -225,10 +225,10 @@ function bumpConceptAffinities(conceptMap, paper, delta) {
 }
 
 // `feedRouteActive` says whether the route that actually renders this feed is
-// on screen. The provider wraps every route so its consumers (save modal,
-// comments, PDF viewer) exist everywhere, but the multi-source fetch fan-out
-// must not: measured in production, a signed-in visit to a public profile
-// fired the full source cascade for a feed nobody was looking at.
+// on screen. The provider wraps every route so its consumers (save modal, PDF
+// viewer) exist everywhere, but the multi-source fetch fan-out must not:
+// measured in production, a signed-in visit to a public page fired the full
+// source cascade for a feed nobody was looking at.
 export function FeedProvider({ children, feedRouteActive = true }) {
   const { user, userPreferences, followedAuthors } = useAuth();
   const { followedEntities, loading: followingLoading } = useFollowing();

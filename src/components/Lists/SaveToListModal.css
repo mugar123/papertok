@@ -55,10 +55,10 @@
 
 /* The previous `scaleIn` was a 2% scale over 200ms — below the threshold at
    which a 440px sheet reads as arriving, so opening looked like a hard cut.
-   16px of travel and 4% of scale, on the same spring the comments sheet uses
-   on desktop, is what makes the window drop into place. `transform`, never
-   `translate`: the primitive centres the popup with the `translate` property
-   and a keyframe touching it would drag the window to the corner. */
+   16px of travel and 4% of scale is what makes the window drop into place.
+   `transform`, never `translate`: the primitive centres the popup with the
+   `translate` property and a keyframe touching it would drag the window to
+   the corner. */
 .save-modal[data-open] {
   animation: saveModalIn 0.36s cubic-bezier(0.16, 1, 0.3, 1);
 }

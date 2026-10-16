@@ -209,7 +209,6 @@ Current areas of development include:
 - improving recommendation quality
 - expanding and improving scientific data sources
 - better deduplication across providers
-- scientific discovery and trend tools
 - offline support for the installed app (a service worker)
 - a three-state theme control (light / system / dark)
 - performance and reliability

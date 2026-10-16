@@ -129,7 +129,7 @@ export default function PublicPaperPage({
   const requestIdRef = useRef(0);
   const identity = useMemo(() => parsePaperKey(paperKey), [paperKey]);
 
-  // A paper handed over by an in-app link (profile tabs, lists) renders
+  // A paper handed over by an in-app link (a list, the search palette) renders
   // immediately, and the network load below becomes an upgrade instead of a
   // gate. This is what keeps the page alive when arXiv rate-limits: a paper
   // the app already holds must never turn into "could not be loaded".
@@ -229,11 +229,11 @@ export default function PublicPaperPage({
   // No reset needed per paper: <Routes> is keyed by pathname, so a different
   // paper remounts this page outright.
   const [cardRevealed, setCardRevealed] = useState(false);
-  // A paper handed over in router state — from the search palette, a list, a
-  // profile tab — is painted on the very first frame, so there is no wait for
-  // the cover to bridge. Without this it went up anyway and sat over a finished
-  // page until the card's own animation reported in: a skeleton on top of the
-  // paper it was standing in for.
+  // A paper handed over in router state — from the search palette or a list —
+  // is painted on the very first frame, so there is no wait for the cover to
+  // bridge. Without this it went up anyway and sat over a finished page until
+  // the card's own animation reported in: a skeleton on top of the paper it
+  // was standing in for.
   const [seededOnArrival] = useState(() => seedPainted || sharePainted);
   useEffect(() => {
     if (status !== 'ready' || cardRevealed) return undefined;

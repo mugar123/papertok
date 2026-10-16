@@ -21,8 +21,7 @@
   /* Explicit, and not `min-width`: `PageTransition` wraps every route in a
      column flex container, so without a declared width this becomes a
      shrink-to-fit item measured against its own content — the page is laid out
-     narrow while the lists are still loading and jumps when they land. The
-     Report carries the same declaration for the same reason. */
+     narrow while the lists are still loading and jumps when they land. */
   width: 100%;
   max-width: 1240px;
   margin: 0 auto;

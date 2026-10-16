@@ -2129,8 +2129,8 @@ export default function EntityExplorer({
               {'Found by name: these results may mix people who share it.'}
             </p>
           ) : followEntity && (
-            // A pressed button, not a command: the shared Follow control, the
-            // same one a public profile uses for people.
+            // A pressed button, not a command: the Follow control from
+            // ui/follow-toggle.jsx.
             <FollowToggle
               pressed={entityIsFollowing}
               onClick={handleFollow}
