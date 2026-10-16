@@ -31,14 +31,6 @@
   gap: 5px;
 }
 
-/* The answer to the previous query, still up while the new one runs. Keeping it
-   is what stops every keystroke blinking the palette to empty; dimming it is
-   what stops it reading as the answer to what is being typed now. */
-.sc-group--stale {
-  opacity: 0.4;
-  transition: opacity var(--transition-fast);
-}
-
 .sc-follow {
   flex: 0 0 auto;
   display: inline-flex;

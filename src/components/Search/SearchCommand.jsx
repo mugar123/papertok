@@ -111,7 +111,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
   const {
     query, setQuery, results, totalResults,
-    isPending, isStale, hasSearched, searchIssue, reset,
+    isPending, hasSearched, searchIssue, reset,
   } = useEntitySearch();
   const [pendingEntity, setPendingEntity] = useState(null);
 
@@ -324,9 +324,6 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
     return (
       <CommandGroup
         key={section}
-        // Rows that still answer the previous query are dimmed rather
-        // than passed off as this one's.
-        className={isStale ? 'sc-group--stale' : undefined}
         heading={
           <span className="sc-heading sc-enter" style={{ '--sc-enter-index': headingIndex }}>
             <SectionIcon size={11} /> {copy[section]}

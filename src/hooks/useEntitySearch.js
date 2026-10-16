@@ -181,8 +181,8 @@ export function useEntitySearch() {
     // The trade, deliberately: `results` is NOT emptied when a search starts.
     // Emptying it there is the obvious fix and the wrong one — it would turn
     // every keystroke into a blink to nothing and back. So the previous answers
-    // stay up until this single commit, whole and never interleaved with the
-    // new ones, and `isStale` below marks them while they do.
+    // stay in state until this single commit, whole and never interleaved with
+    // the new ones, and `isPending` below keeps them off screen meanwhile.
     const revealedResults = { ...EMPTY_RESULTS };
     outcomes.forEach((outcome) => { revealedResults[outcome.section] = outcome.value; });
     setResults(revealedResults);
@@ -246,17 +246,12 @@ export function useEntitySearch() {
   const totalResults = Object.values(results)
     .reduce((total, list) => total + list.length, 0);
 
-  // True while what is on screen answers an older question than the one being
-  // typed. It is the price of not blinking to empty on every keystroke, and the
-  // palette pays it out loud: rows that are still the previous answer are
-  // dimmed rather than passed off as this one.
-  const isStale = Boolean(typedTerm) && totalResults > 0 && resultsTerm !== typedTerm;
-
   // An answer is owed from the first keystroke, not from the end of the
-  // debounce: with nothing on screen to dim, the 320 ms before the search
-  // starts showed a blank sheet, or the previous "No results".
+  // debounce. Until it lands the palette shows its skeleton, not the previous
+  // answer: rows left from an older query would still take Enter and be read
+  // out as results for the one being typed.
   const isPending = isSearching
-    || (Boolean(typedTerm) && totalResults === 0 && resultsTerm !== typedTerm);
+    || (Boolean(typedTerm) && resultsTerm !== typedTerm);
 
   return {
     query,
@@ -264,7 +259,6 @@ export function useEntitySearch() {
     results,
     totalResults,
     isPending,
-    isStale,
     hasSearched,
     searchIssue,
     reset,

@@ -64,11 +64,13 @@ test('neither surface paints a section while an answer is still owed', () => {
   // had already started reading.
   assert.match(page, /hasVisibleResults && !searchPending/, 'the page gates its sections');
   assert.match(palette, /!isPending && renderedSections/, 'the palette gates its sections');
-  // Owed from the first keystroke: the debounce is part of the wait, or a first
-  // query shows a blank sheet before its skeleton.
+  // Owed from the first keystroke, whatever is already on screen: the debounce
+  // is part of the wait. Otherwise a first query shows a blank sheet before its
+  // skeleton, and a later one keeps the previous query's rows up, where Enter
+  // still opens one of them.
   assert.match(
     paletteSearch,
-    /const isPending = isSearching\s*\|\|\s*\(Boolean\(typedTerm\) && totalResults === 0 && resultsTerm !== typedTerm\)/,
+    /const isPending = isSearching\s*\|\|\s*\(Boolean\(typedTerm\) && resultsTerm !== typedTerm\)/,
   );
   assert.match(palette, /\{isPending && \(\s*<div className="sc-skeleton"/, 'the skeleton stands in from the first keystroke');
   assert.match(palette, /hasSearched && !isPending && totalResults === 0/, 'and the last "No results" does not show through the debounce');
@@ -97,11 +99,6 @@ test('a search never paints on top of the last one', () => {
     'a search paints from empty, never on top of the last one',
   );
   assert.match(paletteSearch, /setResults\(revealedResults\);/, 'and in one commit');
-  // Still not fixed by clearing on the way in, which would blink the palette to
-  // nothing on every keystroke. Rows survive the debounce gap — the window
-  // before the pending gate above closes — and say they are the old ones.
-  assert.match(paletteSearch, /const isStale = /, 'the kept rows know they are the old ones');
-  assert.match(palette, /className=\{isStale \? 'sc-group--stale' : undefined\}/, 'and say so on screen');
 });
 
 test('both surfaces build their section values in one place', () => {
