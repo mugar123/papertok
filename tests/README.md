@@ -23,7 +23,8 @@ reporting a pass without evaluating a single rule.
 
 ## Requirements
 
-The emulator needs a JRE (Java 11+). On this machine it was installed with:
+The emulator needs a JRE. firebase-tools 15 refuses anything older than Java 21.
+On this machine it was installed with:
 
 ```bash
 brew install openjdk
