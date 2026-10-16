@@ -108,82 +108,8 @@
   margin-top: 0;
 }
 
-/* ── The account photo ── */
-.settings-photo-field {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-4);
-}
-
-.settings-photo-copy {
-  display: grid;
-  gap: 2px;
-}
-
-.settings-photo-label {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-}
-
-.settings-profile-avatar {
-  position: relative;
-  width: 56px;
-  height: 56px;
-}
-
-.settings-profile-avatar > img,
-.settings-profile-fallback {
-  width: 56px;
-  height: 56px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-full);
-  object-fit: cover;
-}
-
-/* The initial is set in the page colour against the ink disc, not in
-   --text-primary: that token IS the ink, so the letter was painted its own
-   background and rendered at 1:1 contrast — invisible in both themes for
-   every account without a photo. */
-.settings-profile-fallback {
-  display: grid;
-  place-items: center;
-  background: var(--gradient-brand);
-  color: var(--text-inverse);
-  font-family: var(--font-serif);
-  font-size: var(--fs-2xl);
-  font-weight: var(--fw-semibold);
-}
-
-.settings-profile-loading {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  color: var(--text-primary);
-  background: var(--bg-card);
-}
-
-.settings-profile-loading svg,
 .settings-spin {
   animation: settingsSpin 0.85s linear infinite;
-}
-
-.settings-profile-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.settings-profile-actions input {
-  display: none;
-}
-
-.settings-photo-remove.settings-photo-remove {
-  color: var(--tint-red-fg);
 }
 
 /* ── Sections: a title, one line, then the panel ── */
@@ -474,15 +400,8 @@
   flex: 0 0 auto;
 }
 
-/* The photo's hint and the analytics switch: the profile-* classes these
-   pages render, which no other stylesheet defines. */
-.profile-hint {
-  margin: 0;
-  color: var(--text-tertiary);
-  font-size: var(--fs-xs);
-}
-
-/* The label and its hint beside the control, inside the panel. */
+/* The analytics switch, the profile-* classes these pages render: the label
+   and its hint beside the control, inside the panel. */
 .profile-switch {
   display: flex;
   align-items: center;
@@ -593,18 +512,9 @@
     justify-content: flex-start;
     flex-wrap: wrap;
   }
-
-  .settings-photo-field {
-    grid-template-columns: 56px minmax(0, 1fr);
-  }
-
-  .settings-photo-field .settings-profile-actions {
-    grid-column: 1 / -1;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .settings-profile-loading svg,
   .settings-spin {
     animation: none;
   }

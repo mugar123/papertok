@@ -72,8 +72,8 @@ test('each settings page is its own route, so the rail is links rather than a sc
 
 test('the settings pages carry their own field and switch styles, with no public-profile editor behind them', async () => {
   const jsx = await read('./SettingsPage.jsx');
-  // The photo is saved to the private account only: nothing here reads or
-  // writes the public profile, and ProfileEditor.css is no longer loaded.
+  // Nothing here reads or writes the public profile, and nothing imports the
+  // deleted Profile components or their stylesheets.
   assert.doesNotMatch(jsx, /from '\.\.\/Profile\/|userProfileService|savePublicProfilePhoto/);
   const css = await read('./SettingsPage.css');
   const rendered = new Set((jsx.match(/className="[^"]*"/g) ?? [])
