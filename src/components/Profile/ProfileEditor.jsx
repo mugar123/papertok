@@ -7,20 +7,18 @@ import {
   FolderOpen,
   GlobeHemisphereWest,
   IdentificationCard,
-  ListBullets,
   Lock,
   PushPin,
   PushPinSlash,
-  ShieldCheck,
 } from '@phosphor-icons/react';
 import { USER_PROFILE_LIMITS } from '../../services/userProfileService.js';
 import VisibilityList from './VisibilityList.jsx';
-import InstitutionPill from '../Institution/InstitutionPill.jsx';
 import VisibilityPrompt from './VisibilityPrompt.jsx';
 import { getIcon } from '../../utils/icons.js';
-import { getSiteRootUrl } from '../../utils/publicNavigation.js';
 import { HANDLE_MAX_LENGTH } from '../../utils/userHandle.js';
+import { cn } from '../../lib/utils.js';
 import { Button } from '../ui/button.jsx';
+import { buttonVariants } from '../ui/button-variants.js';
 import { Input } from '../ui/input.jsx';
 import { Label } from '../ui/label.jsx';
 import { Switch } from '../ui/switch.jsx';
@@ -64,13 +62,6 @@ const copy = {
   loadingLists: 'Looking for your published lists...',
   pin: 'Pin',
   unpin: 'Unpin from top',
-  preview: 'Preview · your public page',
-  previewPublicBadge: 'Public',
-  previewPrivateBadge: 'Private',
-  previewNoBio: 'No bio yet.',
-  previewLists: 'Lists',
-  previewNoLists: 'No lists on your profile yet.',
-  previewPinned: 'pinned',
   onProfile: 'On my profile',
   offProfile: 'Not on my profile',
   migrating: 'Updating your pinned lists to the new model…',
@@ -80,6 +71,7 @@ const copy = {
   hiddenPinsShow: 'Show them',
   hiddenPinsKeep: 'Keep them off',
   viewPublic: 'View public profile',
+  viewPublicNewTab: 'View public profile (opens in a new tab)',
   papers: count => `${count} ${count === 1 ? 'paper' : 'papers'}`,
   loading: 'Loading your profile...',
   loadError: 'Your profile could not be loaded.',
@@ -90,14 +82,11 @@ const copy = {
   retry: 'Try again',
 };
 
-function Heading({ id, Icon, title, description }) {
+function Heading({ id, title, description }) {
   return (
     <div className="settings-section-heading">
-      <Icon size={18} aria-hidden="true" />
-      <div>
-        <h2 id={id}>{title}</h2>
-        <p>{description}</p>
-      </div>
+      <h2 id={id}>{title}</h2>
+      <p>{description}</p>
     </div>
   );
 }
@@ -157,7 +146,6 @@ export function IdentitySection({ form, photo }) {
       <section className="settings-section" aria-labelledby="profile-identity-title">
         <Heading
           id="profile-identity-title"
-          Icon={IdentificationCard}
           title={copy.sectionIdentity}
           description={form.isNew ? copy.createIntro : copy.editIntro}
         />
@@ -167,18 +155,36 @@ export function IdentitySection({ form, photo }) {
           <div className="profile-identity-fields">
             <div className="profile-field">
               <Label htmlFor="profile-handle">{copy.handle}</Label>
-              <div className="profile-handle-input">
-                <span aria-hidden="true">@</span>
-                <Input
-                  id="profile-handle"
-                  value={handleDraft}
-                  onChange={event => form.setHandleDraft(event.target.value.toLowerCase())}
-                  maxLength={HANDLE_MAX_LENGTH}
-                  autoComplete="off"
-                  spellCheck="false"
-                  aria-invalid={handleError ? 'true' : undefined}
-                  aria-describedby="profile-handle-hint"
-                />
+              <div className="profile-handle-row">
+                <div className="profile-handle-input">
+                  <span aria-hidden="true">@</span>
+                  <Input
+                    id="profile-handle"
+                    value={handleDraft}
+                    onChange={event => form.setHandleDraft(event.target.value.toLowerCase())}
+                    maxLength={HANDLE_MAX_LENGTH}
+                    autoComplete="off"
+                    spellCheck="false"
+                    aria-invalid={handleError ? 'true' : undefined}
+                    aria-describedby="profile-handle-hint"
+                  />
+                </div>
+                {/* The page the saved handle names (the draft may not exist
+                    yet), in a new tab so unsaved edits stay here. A link drawn
+                    as a button, not a Button rendered as a link: Base UI gives
+                    a non-button element `role="button"`, and this navigates. */}
+                {form.publicPath && (
+                  <a
+                    href={form.publicPath}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={cn(buttonVariants({ variant: 'outline', size: 'icon' }), 'profile-handle-open')}
+                    aria-label={copy.viewPublicNewTab}
+                    title={copy.viewPublic}
+                  >
+                    <ArrowSquareOut size={17} aria-hidden="true" />
+                  </a>
+                )}
               </div>
               <p id="profile-handle-hint" className={`profile-hint${handleError ? ' is-error' : ''}`} aria-live="polite">
                 {handleError || copy.handleHint}
@@ -223,83 +229,6 @@ export function IdentitySection({ form, photo }) {
   );
 }
 
-/**
- * The public page as its link shows it, rendered from the same state the
- * form writes, so it moves as they type — and the parts a save just
- * committed light up.
- */
-export function ProfilePreview({ preview }) {
-  const { displayName, bio, handle, initial, avatar, institution, isPrivate, publicPath, lists, pinnedShareIds, savedTick } = preview;
-  const flashing = savedTick > 0 ? 'is-flashing' : undefined;
-
-  return (
-    <aside className="profile-preview" aria-label={copy.preview}>
-      <div className="profile-preview-card">
-        <div className="profile-preview-chrome">
-          {/* The fixed part of the address, then the handle — the part the
-              form changes — in the accent colour. */}
-          <span className="profile-preview-url">
-            {`${getSiteRootUrl()}public/user/`}
-            <span className="profile-preview-handle">{handle}</span>
-          </span>
-          <span className={`profile-preview-badge${isPrivate ? ' is-private' : ''}`}>
-            {isPrivate
-              ? <><Lock size={11} aria-hidden="true" /> {copy.previewPrivateBadge}</>
-              : <><GlobeHemisphereWest size={11} aria-hidden="true" /> {copy.previewPublicBadge}</>}
-          </span>
-        </div>
-        <div className="profile-preview-body">
-          <div className="profile-preview-identity">
-            <div className="profile-preview-avatar">
-              {avatar
-                ? <img src={avatar} alt="" referrerPolicy="no-referrer" />
-                : <span>{initial}</span>}
-            </div>
-            <div className="profile-preview-name">
-              <div className="profile-preview-name-line">
-                <strong key={`name-${savedTick}`} className={flashing}>{displayName || '—'}</strong>
-                {institution && <InstitutionPill institution={institution} />}
-              </div>
-              <span key={`handle-${savedTick}`} className={flashing}>@{handle}</span>
-            </div>
-          </div>
-          <p key={`bio-${savedTick}`} className={`profile-preview-bio${bio ? '' : ' is-empty'}${flashing ? ` ${flashing}` : ''}`}>
-            {bio || copy.previewNoBio}
-          </p>
-          {lists !== null && (
-            <div className="profile-preview-lists">
-              <span className="profile-preview-lists-label">{copy.previewLists}</span>
-              {lists.length === 0 ? (
-                <p className="profile-preview-empty">{copy.previewNoLists}</p>
-              ) : lists.map(list => {
-                const Icon = getIcon(list.emoji);
-                const isPinned = pinnedShareIds.includes(list.shareId);
-                return (
-                  <div className={`profile-preview-list${isPinned ? ' is-pinned' : ''}`} key={list.shareId}>
-                    <Icon size={16} aria-hidden="true" />
-                    <span>
-                      <strong>{list.title}</strong>
-                      <small>{copy.papers(list.paperCount)}{isPinned ? ` · ${copy.previewPinned}` : ''}</small>
-                    </span>
-                    {isPinned && <PushPin size={12} aria-hidden="true" />}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-        {publicPath && (
-          <Link className="profile-preview-open" to={publicPath}>
-            <span>{copy.viewPublic}</span>
-            <ArrowSquareOut size={14} aria-hidden="true" />
-          </Link>
-        )}
-      </div>
-    </aside>
-  );
-}
-
-
 function PrivacySummary() {
   const groups = [
     { title: copy.publicNow, Icon: GlobeHemisphereWest, items: copy.publicItems, tone: 'public' },
@@ -325,7 +254,7 @@ export function PublicPageSection({ form, visibility }) {
       className={`profile-form${form.reborn ? ' is-reborn' : ''}`}
     >
       <section className="settings-section" aria-labelledby="profile-public-page-title">
-        <Heading id="profile-public-page-title" Icon={ShieldCheck} title={copy.sectionPublicPage} description={copy.publicPageIntro} />
+        <Heading id="profile-public-page-title" title={copy.sectionPublicPage} description={copy.publicPageIntro} />
         <div className="profile-fields">
           {/* Nothing below is saved until the profile exists, so say so
               rather than let the controls look like they took effect. */}
@@ -376,7 +305,7 @@ export function ProfileListsSection({ lists }) {
   const { items, pinnedShareIds, locked, migration, settling } = lists;
   return (
     <section className="settings-section" aria-labelledby="profile-pinned-title">
-      <Heading id="profile-pinned-title" Icon={ListBullets} title={copy.pinned} description={copy.pinnedHint} />
+      <Heading id="profile-pinned-title" title={copy.pinned} description={copy.pinnedHint} />
       <div className="profile-fields">
         {/* The one decision the F12 migration cannot take alone: pins the
             owner had explicitly hidden. Everything else migrates silently. */}

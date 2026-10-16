@@ -1,26 +1,23 @@
 /* The editor renders inside the settings pages (SettingsPage.jsx), and the
-   onboarding's profile step (.ob) reuses its field and preview rules, so the
+   onboarding's profile step (.ob) reuses its field rules, so the
    lines are declared on both roots: undefined there, the field border was
    invalid at computed-value time and the inputs drew no edge at all. */
 .settings-page,
 .ob {
-  /* The three lines the page draws with. On paper they are the app's
+  /* The two lines the editor draws with. On paper they are the app's
      hairlines. On ink they were not lines at all: --border-default measured
-     1.37:1 on --bg-card and 1.45:1 on the page, --border-subtle 1.16:1, and
-     the cards themselves 1.06:1 on the page (2026-09-03), so sections,
-     cards and fields all but vanished in the dark theme. The rule and the
-     card edge step up to --border-strong (2.2:1 -- separators, not
+     1.37:1 on --bg-card and 1.45:1 on the page, --border-subtle 1.16:1
+     (2026-09-03), so rows and fields all but vanished in the dark theme.
+     The row rule steps up to --border-strong (2.2:1 -- separators, not
      controls); the field boundary is a UI component, so it is mixed from the
      tertiary ink to clear 3:1 (WCAG 1.4.11) against the field's own surface.
      The light theme keeps its hairlines. */
-  --profile-rule: var(--border-default);
   --profile-card-line: var(--border-subtle);
   --profile-line-field: var(--border-default);
 }
 
 :root[data-theme='dark'] .settings-page,
 :root[data-theme='dark'] .ob {
-  --profile-rule: var(--border-strong);
   --profile-card-line: var(--border-strong);
   --profile-line-field: color-mix(in srgb, var(--text-tertiary) 70%, var(--bg-card));
 }
@@ -106,8 +103,23 @@
 }
 
 
+/* The handle, then the page it names. */
+.profile-handle-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* As tall as the field beside it; doubled to outrank the Button's size. */
+.profile-handle-open.profile-handle-open {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+}
+
 .profile-handle-input {
   position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .profile-handle-input > span {
@@ -201,27 +213,30 @@
 
 
 @keyframes profile-row-flash {
-  0% { background: var(--bg-card); }
+  0% { background: transparent; }
   35% { background: var(--brand-yellow-soft); }
-  100% { background: var(--bg-card); }
+  100% { background: transparent; }
 }
 
 .profile-pin-list li.is-flashing {
   animation: profile-row-flash 920ms ease;
 }
 
+/* A row of the settings panel: ruled off from what sits above it. */
 .profile-switch {
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  min-height: 64px;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--profile-card-line);
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--profile-card-line);
   font-weight: var(--fw-regular);
   line-height: var(--lh-normal);
   cursor: pointer;
+}
+
+.profile-switch:first-child {
+  padding-top: 0;
+  border-top: 0;
 }
 
 .profile-switch-copy {
@@ -247,9 +262,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  margin-top: var(--space-2);
-  padding-top: var(--space-5);
-  border-top: 1px solid var(--profile-rule);
+  margin-top: var(--space-4);
 }
 
 .profile-actions {
@@ -266,7 +279,7 @@
 }
 
 .profile-empty {
-  margin: var(--space-4) 0 0;
+  margin: 0;
   color: var(--text-tertiary);
   font-size: var(--fs-sm);
 }
@@ -292,10 +305,6 @@
 
 
 .profile-empty-lists {
-  margin: var(--space-4) 0 0;
-}
-
-.profile-empty-lists .profile-empty {
   margin: 0;
 }
 
@@ -321,27 +330,30 @@
   background: var(--bg-glass-hover);
 }
 
+/* Rows of the settings panel, ruled like its other lists. */
 .profile-pin-list {
   list-style: none;
-  margin: var(--space-4) 0 0;
+  margin: calc(-1 * var(--space-3)) 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
 }
 
 .profile-pin-list li {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--profile-card-line);
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--profile-card-line);
+}
+
+.profile-pin-list li:last-child {
+  border-bottom: 0;
 }
 
 .profile-pin-emoji {
-  font-size: 20px;
+  display: grid;
+  color: var(--text-tertiary);
 }
 
 .profile-pin-copy {
@@ -352,6 +364,7 @@
 }
 
 .profile-pin-title {
+  font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
   overflow-wrap: anywhere;
 }
@@ -387,7 +400,6 @@
 @media (prefers-reduced-motion: reduce) {
   .profile-spin { animation: none; }
 }
-
 
 .profile-stale {
   display: flex;
@@ -458,8 +470,6 @@
   }
 }
 
-
-
 /* The rise a remounted form makes (`.profile-form.is-reborn`). Opacity and
    transform only, so it costs the compositor and not the layout. */
 @keyframes profile-rise {
@@ -467,297 +477,23 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-.profile-preview {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.profile-preview-label {
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-
-.profile-preview-card {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--profile-rule);
-  border-radius: var(--radius-lg);
-  background: var(--bg-card);
-}
-
-.profile-preview-chrome {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--profile-card-line);
-  background: var(--bg-sunken);
-}
-
-.profile-preview-url {
-  flex: 1 1 8rem;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.profile-preview-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 24px;
-  padding: 0 8px;
-  border: 1px solid var(--tint-green-line);
-  border-radius: var(--radius-full);
-  background: var(--tint-green-bg);
-  color: var(--tint-green-fg);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: var(--fw-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.profile-preview-badge.is-private {
-  border-color: var(--tint-neutral-line);
-  background: var(--tint-neutral-bg);
-  color: var(--tint-neutral-fg);
-}
-
-.profile-preview-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-5);
-}
-
-.profile-preview-identity {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
-.profile-preview-avatar {
-  display: grid;
-  width: 64px;
-  height: 64px;
-  flex: 0 0 auto;
-  place-items: center;
-  overflow: hidden;
-  border: 1px solid var(--border-strong);
-  border-radius: 50%;
-  background: var(--gradient-brand);
-  color: var(--text-inverse);
-  font-family: var(--font-mono);
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-semibold);
-}
-
-.profile-preview-avatar img {
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: cover;
-}
-
-.profile-preview-name {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 3px;
-}
-
-/* The preview claims to be the public page, so it wears the public page's
-   voices — only smaller: the serif nameplate, and the rounded bio below. */
-.profile-preview-name-line {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-}
-
-.profile-preview-name strong {
-  min-width: 0;
-  overflow: hidden;
-  font-family: var(--font-serif);
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-semibold);
-  letter-spacing: -0.025em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.profile-preview-name > span {
-  overflow: hidden;
-  color: var(--text-tertiary);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.profile-preview-bio {
-  margin: 0;
-  color: var(--text-secondary);
-  font-family: var(--font-rounded);
-  font-size: var(--fs-xs);
-  line-height: var(--lh-relaxed);
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-
-.profile-preview-bio.is-empty {
-  color: var(--text-tertiary);
-  font-style: italic;
-}
-
-.profile-preview-lists {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--profile-card-line);
-}
-
-.profile-preview-lists-label {
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-
-.profile-preview-list {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--profile-card-line);
-  border-radius: var(--radius-md);
-  background: var(--bg-sunken);
-  color: var(--text-secondary);
-}
-
-.profile-preview-list.is-pinned {
-  border-left: 3px solid var(--brand-yellow);
-}
-
-.profile-preview-list > svg:first-child {
-  flex: 0 0 auto;
-  color: var(--text-secondary);
-}
-
-.profile-preview-list > svg:last-child {
-  flex: 0 0 auto;
-  margin-left: auto;
-  color: var(--text-tertiary);
-}
-
-.profile-preview-list > span {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.profile-preview-list strong {
-  overflow: hidden;
-  color: var(--text-primary);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-semibold);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.profile-preview-list small {
-  color: var(--text-tertiary);
-  font-family: var(--font-mono);
-  font-size: 10px;
-}
-
-.profile-preview-empty {
-  margin: 0;
-  color: var(--text-tertiary);
-  font-size: 11px;
-  line-height: var(--lh-normal);
-}
-
-.profile-preview-open {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  min-height: 40px;
-  padding: 0 var(--space-4);
-  border-top: 1px solid var(--profile-card-line);
-  background: var(--bg-sunken);
-  color: var(--text-primary);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  text-decoration: none;
-  transition: background var(--transition-fast);
-}
-
-.profile-preview-open svg {
-  flex: 0 0 auto;
-  color: var(--text-tertiary);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .profile-preview-open:hover {
-    background: var(--bg-secondary);
-  }
-}
-
-.profile-preview-open:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
-
-@keyframes profile-preview-flash {
-  0% { background: transparent; }
-  35% { background: var(--brand-yellow-soft); }
-  100% { background: transparent; }
-}
-
-.profile-preview .is-flashing {
-  border-radius: var(--radius-sm);
-  animation: profile-preview-flash 920ms ease;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .profile-preview .is-flashing,
   .profile-pin-toggle.is-settling,
   .profile-pin-list li.is-flashing,
   .profile-form.is-reborn {
     animation: none;
   }
 
-  .profile-preview-open,
   .profile-pin-toggle {
     transition: none;
   }
 }
 
-
+/* Framed as a settings panel by SettingsPage.css. */
 .profile-fields {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 18px;
-  padding-top: 18px;
-  border-top: 1px solid var(--border-default);
+  gap: var(--space-5);
 }
 
 .profile-field textarea {
@@ -778,16 +514,6 @@
 
 .settings-content .profile-load-error {
   text-align: left;
-}
-
-.profile-preview {
-  margin-bottom: 8px;
-}
-
-
-.profile-preview-handle {
-  color: var(--text-on-brand-soft);
-  font-weight: var(--fw-semibold);
 }
 
 .profile-chips {

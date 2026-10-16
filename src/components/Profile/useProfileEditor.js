@@ -176,10 +176,6 @@ export function useProfileEditor() {
     () => Boolean(user?.uid) && promptDismissedFor === user.uid,
   );
   const [reloadToken, setReloadToken] = useState(0);
-  // Bumped on every successful save. It is the `key` of the preview's flashing
-  // parts, so a second save remounts them and the highlight replays instead of
-  // sitting there already-finished.
-  const [savedTick, setSavedTick] = useState(0);
   // F12 migration of the legacy pin model. 'idle' until the profile answers;
   // 'prompt' when hidden pins need the owner's decision; 'failed' leaves the
   // legacy artifacts untouched for the next visit's retry.
@@ -306,13 +302,9 @@ export function useProfileEditor() {
     rememberOwnProfile(user.uid, profile);
   }, [profile, status, user?.uid]);
 
-  /**
-   * A write landed: say so in a toast (which also announces it), and bump the
-   * tick the preview highlights on.
-   */
+  /** A write landed: say so in a toast, which also announces it. */
   const markSaved = ({ title, description }) => {
     toast.success(title, { description });
-    setSavedTick(tick => tick + 1);
   };
 
   const handleCheck = useMemo(() => inspectHandle(handleDraft), [handleDraft]);
@@ -671,14 +663,6 @@ export function useProfileEditor() {
 
   const isNew = status === 'new';
   const isPublicProfile = profileIsPublic(profile);
-  // What the public page will actually show, pinned lists first. `null` is
-  // "not read yet": saying the profile shows no lists before the answer
-  // arrives would be a guess.
-  const previewLists = useMemo(() => (pinnableLists === null
-    ? null
-    : pinnableLists.filter(list => list.onProfile === true).sort(
-      (left, right) => Number(pinnedShareIds.includes(right.shareId)) - Number(pinnedShareIds.includes(left.shareId)),
-    )), [pinnableLists, pinnedShareIds]);
 
   // Grouped by the section that uses each part, so a section receives only
   // what it renders and changes.
@@ -708,6 +692,8 @@ export function useProfileEditor() {
       saving,
       deleting,
       reborn,
+      // Only a profile that exists has a page to open.
+      publicPath: profile ? getPublicProfilePath(profile.handle) : null,
     },
     visibility: {
       isNew,
@@ -735,23 +721,6 @@ export function useProfileEditor() {
       togglePin,
       hiddenPinsPrompt,
       resolveHiddenPins,
-    },
-    preview: {
-      displayName,
-      bio,
-      handle: handleCheck.valid ? handleCheck.handle : (handleDraft || '…'),
-      initial: (displayName || user?.email || '?').trim().charAt(0).toUpperCase(),
-      avatar: showPhoto ? appAvatar : null,
-      institution,
-      // A profile being created shows the choice made for it on Privacy, and
-      // is not shown as public before anyone has chosen that.
-      isPrivate: isNew
-        ? visibilityDraft !== PROFILE_VISIBILITY.public
-        : status === 'ready' && !isPublicProfile,
-      publicPath: profile ? getPublicProfilePath(profile.handle) : null,
-      lists: previewLists,
-      pinnedShareIds,
-      savedTick,
     },
     prompt: {
       open: askVisibility,
