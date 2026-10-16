@@ -11,7 +11,7 @@ const strip = (s) => s.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
  * tapped (2026-09-11). The card must reach the navigator without the location.
  */
 test('SOURCE: the feed card does not subscribe to the location', async () => {
-  const card = strip(await read('../components/Feed/PaperCard.jsx'));
+  const card = strip(await read('../components/Feed/PaperCard.tsx'));
   assert.doesNotMatch(card, /\buseNavigate\b|\buseLocation\b|\buseHref\b|\buseMatch\b/, 'router hooks that read the location re-render every card');
   assert.match(card, /const navigate = useStableNavigate\(\);/);
 });
@@ -24,7 +24,7 @@ test('SOURCE: the stable navigator reads NavigationContext only, never the locat
 });
 
 test('SOURCE: every card navigation is an absolute path, since there is no location to resolve against', async () => {
-  const card = strip(await read('../components/Feed/PaperCard.jsx'));
+  const card = strip(await read('../components/Feed/PaperCard.tsx'));
   const calls = [...card.matchAll(/navigate\(([^)]*)\)/g)].map((m) => m[1].trim());
   assert.ok(calls.length >= 3, `expected the three topic/author navigations, found ${calls.length}`);
   for (const arg of calls) assert.match(arg, /^path$|^-1$|^`\/|^'\//, `navigate(${arg}) must be an absolute path or a number`);

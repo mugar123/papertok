@@ -84,7 +84,7 @@ const STATIC_ANALYTICS_PATHS = new Set([
   '/',
   // The app's own home since it moved off `/`. Every entry below is now a real
   // path the server sees, not a fragment: `location.pathname` IS the route
-  // (src/main.jsx), which is what this whole list has to keep pace with.
+  // (src/main.tsx), which is what this whole list has to keep pace with.
   '/feed',
   '/following',
   '/lists',

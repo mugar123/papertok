@@ -25,7 +25,7 @@ import { readFile } from 'node:fs/promises';
  */
 
 const CSS = new URL('./PublicPaperPage.css', import.meta.url);
-const JSX = new URL('./PublicPaperPage.jsx', import.meta.url);
+const JSX = new URL('./PublicPaperPage.tsx', import.meta.url);
 
 /** Comments name selectors and properties in prose; matching them would invent both sides. */
 const stripComments = source => source

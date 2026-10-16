@@ -6,7 +6,7 @@ import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { reserveSharedMinuteQuota, serveCached } from './provider-runtime.ts';
 
 const DEFAULT_PDF_GLOBAL_MINUTE_LIMIT = 120;
-// The in-app PDF viewer on a touch screen (src/components/PDF/PdfPages.jsx)
+// The in-app PDF viewer on a touch screen (src/components/PDF/PdfPages.tsx)
 // draws the pages itself with pdf.js, because a framed PDF is crippled on
 // every touch platform. pdf.js needs the bytes, and arXiv and Europe PMC send
 // no CORS headers, so the browser cannot read them directly: this route

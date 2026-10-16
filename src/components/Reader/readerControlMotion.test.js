@@ -19,11 +19,11 @@ import { PANEL_HIDE_DELAY_MS } from '../../utils/panelReveal.ts';
  * rather than read.
  */
 
-const READER_JSX = new URL('./PaperReader.jsx', import.meta.url);
+const READER_JSX = new URL('./PaperReader.tsx', import.meta.url);
 const READER_CSS = new URL('./PaperReader.css', import.meta.url);
-const EXPORT_JSX = new URL('./ExportCard.jsx', import.meta.url);
+const EXPORT_JSX = new URL('./ExportCard.tsx', import.meta.url);
 const EXPORT_CSS = new URL('./Export.css', import.meta.url);
-const POPOVER_JSX = new URL('../ui/popover.jsx', import.meta.url);
+const POPOVER_JSX = new URL('../ui/popover.tsx', import.meta.url);
 
 /** Comments name properties and durations in prose; matching them would invent both sides. */
 const stripComments = source => source

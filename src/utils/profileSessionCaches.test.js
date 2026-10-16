@@ -72,8 +72,8 @@ test('rubbish is refused rather than cached', () => {
    between the two files was the bug. */
 
 const OWN_LISTS_READERS = [
-  '../components/Lists/ListsPage.jsx',
-  '../components/Lists/SaveToListModal.jsx',
+  '../components/Lists/ListsPage.tsx',
+  '../components/Lists/SaveToListModal.tsx',
 ];
 
 test('SOURCE: every screen that reads the lists collection seeds from the session cache', async () => {

@@ -18,7 +18,7 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '').replac
  * and the effects that would clear or refetch it stand down exactly once.
  */
 test('an entity page comes back as it was left: tab, authors, Wikipedia block and impact figure', async () => {
-  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
   assert.match(jsx, /const visitMemory = new Map\(\);/);
   assert.match(jsx, /const resumed = useMemo\(\(\) => visitMemory\.get\(visitKey\) \|\| null, \[visitKey\]\);/);
   for (const seed of [
@@ -53,7 +53,7 @@ test('an entity page comes back as it was left: tab, authors, Wikipedia block an
  * with it (`handedEntityFor`).
  */
 test('an author card hands its row over, so the author page is born with a name and counts', async () => {
-  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
   assert.match(jsx, /import \{ handedEntityFor, handoverFromSearchRow \} from '\.\.\/\.\.\/utils\/explorerHandover\.ts';/);
   assert.match(jsx, /const navigateToEntity = useCallback\(\(nextType, nextId, handover = null\) => \{/);
   assert.match(jsx, /const entityForNext = handover \? handoverFromSearchRow\(nextType, handover\) : null;/);
@@ -69,7 +69,7 @@ test('an author card hands its row over, so the author page is born with a name 
  * Wikipedia block does (`useAfterPageArrival`).
  */
 test('the first page of papers waits out the page\'s arrival before it mounts', async () => {
-  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
   assert.match(jsx, /if \(page === 1\) \{\s*const arriving = afterPageArrival\(\);\s*if \(arriving\) await arriving;\s*if \(request\.cancelled\) return;\s*setPapers\(fetchedPapers\);\s*\}/);
   assert.match(jsx, /\}, \[afterPageArrival, type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, searchParams, papersReloadKey, entityReloadKey\]\);/);
 });

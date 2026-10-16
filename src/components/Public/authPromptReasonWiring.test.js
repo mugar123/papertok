@@ -19,27 +19,27 @@ function bounded(code, from, to, label, maxLines) {
 }
 
 test('App keeps the reason it was asked for and hands it to the dialog', () => {
-  const app = read('../../App.jsx');
+  const app = read('../../App.tsx');
   const request = bounded(app, 'const requestAuthentication = useCallback(', '}, [])', 'requestAuthentication', 8);
   assert.match(request, /\(reason\) => \{\s*clearAuthReturn\(\)\s*setAuthPromptOpen\(true\)\s*setAuthPromptReason\(normalizeAuthReason\(reason\)\)/);
   assert.match(app, /<AuthPrompt\s+reason=\{authPromptReason\}/);
 });
 
 test('a guest bounced off a protected route gets the general door, not a stale reason', () => {
-  const app = read('../../App.jsx');
+  const app = read('../../App.tsx');
   // The bounce opens the door without a reason, so the reason is put back to
   // the general one whenever the door closes.
   assert.match(app, /onClose=\{\(\) => \{\s*setAuthPromptOpen\(false\)\s*setAuthPromptReason\('default'\)\s*\}\}/);
 });
 
 test('the guest page forwards the action it was given', () => {
-  const page = read('./GuestFeedPage.jsx');
+  const page = read('./GuestFeedPage.tsx');
   const requestAccount = bounded(page, 'const requestAccount = useCallback(', '}, [', 'requestAccount', 8);
   assert.match(requestAccount, /onAuthRequired\?\.\(action\);/);
 });
 
 test('the dialog reads its headline and lede from the reason', () => {
-  const prompt = read('./AuthPrompt.jsx');
+  const prompt = read('./AuthPrompt.tsx');
   assert.match(prompt, /export default function AuthPrompt\(\{ onClose, reason = 'default' \}\)/);
   assert.match(prompt, /const copy = authPromptCopy\(reason\);/);
   assert.match(prompt, /<DialogTitle className="auth-modal-title">\s*\{copy\.title\}\s*<\/DialogTitle>/);
@@ -47,7 +47,7 @@ test('the dialog reads its headline and lede from the reason', () => {
 });
 
 test('a guest pressing Connections gets the dialog with its reason, not a sheet that cannot load', () => {
-  const card = read('../Feed/PaperCard.jsx');
+  const card = read('../Feed/PaperCard.tsx');
   assert.match(
     card,
     /onClick=\{\(event\) => \{\s*event\.stopPropagation\(\);\s*if \(publicMode\) \{\s*requireAuthentication\('related'\);\s*return;\s*\}\s*setShowRelated\(true\);\s*\}\}\s*aria-label=\{'View related papers'\}/,
@@ -55,7 +55,7 @@ test('a guest pressing Connections gets the dialog with its reason, not a sheet 
 });
 
 test('the sheet says "sign in" when the session is what is missing, and says it to assistive tech', () => {
-  const sheet = read('../Feed/RelatedPapersSheet.jsx');
+  const sheet = read('../Feed/RelatedPapersSheet.tsx');
   assert.match(sheet, /const SETTLED = new Set\(\['ready', 'empty', 'error', 'signin'\]\);/);
   assert.match(sheet, /\{ status: isSignInRequiredError\(error\) \? 'signin' : 'error' \}/);
   assert.equal((sheet.match(/setRelatedStatus\(isSignInRequiredError\(error\) \? 'signin' : 'error'\);/g) || []).length, 2);

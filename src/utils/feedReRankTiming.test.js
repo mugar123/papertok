@@ -37,7 +37,7 @@ test('the quiet window outlasts a snap and the deadline stays a few cards long',
  * node. They pin how the hold is wired into the deferred re-rank.
  */
 test('SOURCE: the deferred re-rank checks the hold before it runs, and the scroll report is its heartbeat', async () => {
-  const code = stripComments(await read('../context/FeedContext.jsx'));
+  const code = stripComments(await read('../context/FeedContext.tsx'));
   assert.match(code, /import \{ reRankHoldMs \} from '\.\.\/utils\/feedReRankTiming\.ts';/);
   assert.match(code, /const feedScrolledAtRef = useRef\(0\);/);
   const report = code.slice(code.indexOf('const reportVisiblePaper = useCallback('), code.indexOf('}, []);', code.indexOf('const reportVisiblePaper = useCallback(')));

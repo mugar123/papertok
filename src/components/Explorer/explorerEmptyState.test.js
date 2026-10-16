@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { pickEmptyVariant } from './explorerEmptyVariant.js';
+import { pickEmptyVariant } from './explorerEmptyVariant.ts';
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 
@@ -20,7 +20,7 @@ test('the empty state distinguishes an error, active filters and an unindexed pr
 // the rule should genuinely catch. This guard is what stops the pragma (or
 // the re-export that justified it) from creeping back in.
 test('ExplorerEmptyState.jsx does not blanket-disable react-refresh/only-export-components', async () => {
-  const source = await read('./ExplorerEmptyState.jsx');
+  const source = await read('./ExplorerEmptyState.tsx');
   assert.doesNotMatch(source, /eslint-disable.*only-export-components/);
 });
 
@@ -33,14 +33,14 @@ test('ExplorerEmptyState.jsx does not blanket-disable react-refresh/only-export-
  * the call site and says which of the two happened.
  */
 test('the authors tab blames the search only when there is one', async () => {
-  const explorer = await read('./EntityExplorer.jsx');
+  const explorer = await read('./EntityExplorer.tsx');
   assert.match(
     explorer,
     /<ExplorerEmptyState variant=\{debouncedSearch \? 'authors' : 'authors-none'\} \/>/,
     'the variant is picked from whether a search is actually running',
   );
 
-  const emptyState = await read('./ExplorerEmptyState.jsx');
+  const emptyState = await read('./ExplorerEmptyState.tsx');
   const copy = emptyState.match(/ {2}'authors-none': \{\n {4}en: \[[^\]]*\],\n {2}\},/);
   assert.ok(copy, "the 'authors-none' variant carries its own copy");
   assert.doesNotMatch(
@@ -66,7 +66,7 @@ const strip = (source) => source.replace(/\/\*[\s\S]*?\*\/|\{\/\*[\s\S]*?\*\/\}|
  * prometiendo más y, debajo, el vacío negando que hubiera nada.
  */
 test('SOURCE: el vacío espera a que no quede ninguna página en vuelo', async () => {
-  const jsx = strip(await read('./EntityExplorer.jsx'));
+  const jsx = strip(await read('./EntityExplorer.tsx'));
 
   for (const [tab, condicion] of [
     ['publicaciones', /\{!isLoadingPapers && !isFetchingMore && filteredPapers\.length === 0 && \(/],
@@ -83,7 +83,7 @@ test('SOURCE: el vacío espera a que no quede ninguna página en vuelo', async (
  * mientras de verdad está trayendo algo.
  */
 test('SOURCE: el pie de la lista no invita a bajar por una lista vacía', async () => {
-  const jsx = strip(await read('./EntityExplorer.jsx'));
+  const jsx = strip(await read('./EntityExplorer.tsx'));
   // Sin `\{` delante: desde el 12-09 la condición lleva además `!publicMode`
   // (el invitado no tiene centinela, ver explorerGuestGate.test.js). Lo que se
   // defiende aquí es la guarda de la lista vacía, no quién va delante de ella.

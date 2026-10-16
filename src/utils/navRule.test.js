@@ -19,7 +19,7 @@ test('SOURCE: the navbar rule is one compositor-driven element, not a framer lay
   // Comments are prose, not code: the hook's own comment explains the
   // `layoutId` it replaced, so only real code is scanned for it.
   const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-  const jsx = stripComments(await readFile(new URL('../components/Layout/Navbar.jsx', import.meta.url), 'utf8'));
+  const jsx = stripComments(await readFile(new URL('../components/Layout/Navbar.tsx', import.meta.url), 'utf8'));
   const css = await readFile(new URL('../components/Layout/Navbar.css', import.meta.url), 'utf8');
   assert.doesNotMatch(jsx, /layoutId/, 'a JS-driven layout animation freezes with the main thread');
   assert.match(jsx, /ruleTransform\(/);

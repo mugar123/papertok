@@ -24,7 +24,7 @@ function bounded(code, from, to, label, maxLines) {
  * encodes what it asks for and decodes what comes back.
  */
 test('SOURCE: the saved-paper document is addressed by its encoded name, after which the aggregate learns of it', async () => {
-  const code = stripComments(await read('./SaveToListModal.jsx'));
+  const code = stripComments(await read('./SaveToListModal.tsx'));
   assert.doesNotMatch(code, /doc\(db, 'users', user\.uid, 'savedPapers'/);
   const save = bounded(code, 'if (savesPaper) {\n          await setDoc(', 'for (const listId of toAdd)', 'the saved-paper write', 20);
   assert.match(
@@ -35,7 +35,7 @@ test('SOURCE: the saved-paper document is addressed by its encoded name, after w
 });
 
 test('SOURCE: Read later alone saves the paper, so the Save button lights up for it', async () => {
-  const code = stripComments(await read('./SaveToListModal.jsx'));
+  const code = stripComments(await read('./SaveToListModal.tsx'));
   assert.match(
     code,
     /const savesPaper = toAdd\.length > 0 \|\| \(readLaterChanged && pendingReadLater\);/,
@@ -45,7 +45,7 @@ test('SOURCE: Read later alone saves the paper, so the Save button lights up for
 });
 
 test('SOURCE: leaving the last list and Read later unsaves the paper, but only on a membership read in full', async () => {
-  const code = stripComments(await read('./SaveToListModal.jsx'));
+  const code = stripComments(await read('./SaveToListModal.tsx'));
   const rule = bounded(code, 'const unsavesPaper =', ';', 'the unsave rule', 6);
   for (const guard of [
     /alreadySaved && !savesPaper/,
@@ -59,7 +59,7 @@ test('SOURCE: leaving the last list and Read later unsaves the paper, but only o
 });
 
 test('SOURCE: the lists screen asks by encoded name and keys what comes back by paper id', async () => {
-  const code = stripComments(await read('./ListsPage.jsx'));
+  const code = stripComments(await read('./ListsPage.tsx'));
   assert.match(code, /where\(documentId\(\), 'in', requestDefinition\.paperIds\.map\(encodeFirestoreDocId\)\)/);
   const merge = bounded(code, 'snapshot.forEach((item) => {', 'loadedPapers[paperId] = paper;', 'the snapshot merge', 22);
   assert.match(merge, /const paperId = decodeFirestoreDocId\(item\.id\);/);
@@ -67,13 +67,13 @@ test('SOURCE: the lists screen asks by encoded name and keys what comes back by 
 });
 
 test('SOURCE: a row whose paper never came says so instead of printing the id', async () => {
-  const code = stripComments(await read('./ListsPage.jsx'));
+  const code = stripComments(await read('./ListsPage.tsx'));
   const placeholder = bounded(code, 'className="lists-paper-title lists-paper-placeholder"', '</p>', 'the placeholder row', 4);
   assert.doesNotMatch(placeholder, /\{paperId\}/, 'a document id is not a title');
 });
 
 test('SOURCE: legacy ids no document could answer for are named from arXiv', async () => {
-  const code = stripComments(await read('./ListsPage.jsx'));
+  const code = stripComments(await read('./ListsPage.tsx'));
   const tail = bounded(code, 'const unresolvedIds = missingIds.filter(', '} catch (metadataLoadError) {', 'the end of openList', 40);
   assert.match(tail, /hydrateLegacyArxivPapers\(/);
   assert.match(tail, /metadataRequestId\.current !== requestId/, 'a superseded open must not paint into the current one');

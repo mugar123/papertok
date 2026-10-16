@@ -16,7 +16,7 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/g
  * returns belongs in entity.code instead, never in entity.id.
  */
 test("the project is queried with the route's funder and keeps the route id", async () => {
-  const src = stripComments(await read('./EntityExplorer.jsx'));
+  const src = stripComments(await read('./EntityExplorer.tsx'));
   assert.match(src, /getProjectDetails\(id, \{ funder \}\)/);
   assert.match(src, /getPapersByProject\(resolvedId, page, \{ funder: searchParams\.get\('funder'\) \|\| entity\.funder \|\| '' \}\)/);
   assert.match(src, /code: details\.id \|\| id,/);
@@ -59,7 +59,7 @@ test("the project is queried with the route's funder and keeps the route id", as
  * entity effect needs neither a ref nor an extra dependency.
  */
 test('a nameless project lends a title to the hero and no name to the follow', async () => {
-  const src = stripComments(await read('./EntityExplorer.jsx'));
+  const src = stripComments(await read('./EntityExplorer.tsx'));
 
   assert.match(
     src,

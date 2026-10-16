@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const VERCEL = new URL('../../vercel.json', import.meta.url);
-const MAIN = new URL('../main.jsx', import.meta.url);
+const MAIN = new URL('../main.tsx', import.meta.url);
 const FIREBASE = new URL('../services/firebase.ts', import.meta.url);
 const ANALYTICS = new URL('../services/analyticsService.ts', import.meta.url);
 

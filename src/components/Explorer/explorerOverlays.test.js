@@ -10,7 +10,7 @@ import { readFile } from 'node:fs/promises';
  * control and the peer-review switch write their own state.
  */
 
-const jsxFile = readFile(new URL('./EntityExplorer.jsx', import.meta.url), 'utf8');
+const jsxFile = readFile(new URL('./EntityExplorer.tsx', import.meta.url), 'utf8');
 const cssFile = readFile(new URL('./EntityExplorer.css', import.meta.url), 'utf8');
 
 test('the filter drawer is a ui Sheet from the right, named by its title, with nothing hand-rolled left', async () => {

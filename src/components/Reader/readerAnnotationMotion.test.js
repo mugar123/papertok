@@ -21,8 +21,8 @@ import { readFile } from 'node:fs/promises';
 
 const ANNOTATIONS_CSS = new URL('./Annotations.css', import.meta.url);
 const EXPORT_CSS = new URL('./Export.css', import.meta.url);
-const RAIL_JSX = new URL('./AnnotationRail.jsx', import.meta.url);
-const POPOVER_JSX = new URL('../ui/popover.jsx', import.meta.url);
+const RAIL_JSX = new URL('./AnnotationRail.tsx', import.meta.url);
+const POPOVER_JSX = new URL('../ui/popover.tsx', import.meta.url);
 const HOOK = new URL('../../hooks/usePassageAnnotations.ts', import.meta.url);
 
 const stripComments = source => source

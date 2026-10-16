@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-const source = async () => stripComments(await readFile(new URL('./ListsPage.jsx', import.meta.url), 'utf8'));
+const source = async () => stripComments(await readFile(new URL('./ListsPage.tsx', import.meta.url), 'utf8'));
 
 test('SOURCE: the lists read refuses a cache-served emptiness instead of calling it a failure', async () => {
   const code = await source();

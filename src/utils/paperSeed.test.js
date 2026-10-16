@@ -23,7 +23,7 @@ test('a handed-over copy paints only when it carries a title and a real abstract
  * arrival only when it is whole; otherwise it shows the skeleton and waits.
  */
 test('SOURCE: the paper page paints an incomplete copy as a skeleton, not as "Abstract unavailable"', async () => {
-  const code = stripComments(await read('../components/Public/PublicPaperPage.jsx'));
+  const code = stripComments(await read('../components/Public/PublicPaperPage.tsx'));
   assert.match(code, /const seedPainted = seedPaintsWhole\(seededPaper\) && !location\.state\?\.stored/,
     'a stored copy from a list or a profile row opens on the skeleton, whole or not');
   // The share seed of a crawler's document (utils/shareSeed.js) is the one
@@ -133,7 +133,7 @@ test('the stored authors stay unless the copy was cut and the provider knows mor
 });
 
 test('SOURCE: the paper page lays the copy over the provider\'s answer', async () => {
-  const code = stripComments(await read('../components/Public/PublicPaperPage.jsx'));
+  const code = stripComments(await read('../components/Public/PublicPaperPage.tsx'));
   assert.match(code, /setResult\(\{ requestKey, paper: hydrateSeededPaper\(seededPaper, loadedPaper\), status: 'ready' \}\)/);
   assert.doesNotMatch(code, /paper: loadedPaper, status: 'ready'/, 'the provider\'s paper is never shown bare when a copy came along');
 });

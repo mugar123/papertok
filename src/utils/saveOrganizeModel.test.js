@@ -122,7 +122,7 @@ test('the proposal enables Save without arming the close guard', () => {
    handler moves an index and fails here. */
 
 test('SOURCE: firestore writes live only in handleCreateList and handleSave', async () => {
-  const source = await readFile(new URL('../components/Lists/SaveToListModal.jsx', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../components/Lists/SaveToListModal.tsx', import.meta.url), 'utf8');
   const body = source.slice(source.indexOf('export default'));
   const createAt = body.indexOf('const handleCreateList');
   const saveAt = body.indexOf('const handleSave');
@@ -151,7 +151,7 @@ test('SOURCE: firestore writes live only in handleCreateList and handleSave', as
 });
 
 test('SOURCE: the dialog cancel path goes through the unsaved-changes guard', async () => {
-  const source = await readFile(new URL('../components/Lists/SaveToListModal.jsx', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../components/Lists/SaveToListModal.tsx', import.meta.url), 'utf8');
   assert.ok(source.includes('onCancel'), 'the <dialog> Escape path must be intercepted');
   assert.ok(source.includes('requestClose'), 'every close path funnels through requestClose');
 });

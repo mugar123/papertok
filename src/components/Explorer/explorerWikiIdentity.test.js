@@ -19,7 +19,7 @@ function bounded(code, from, to, label, maxLines) {
   return block;
 }
 
-const source = stripComments(readFileSync(new URL('./EntityExplorer.jsx', import.meta.url), 'utf8'));
+const source = stripComments(readFileSync(new URL('./EntityExplorer.tsx', import.meta.url), 'utf8'));
 
 test('the Explorer loads its Wikipedia block through the identity-aware loader', () => {
   const effect = bounded(source, 'if (!canLoadWikiInfo) {', 'setSettledWikiRequestKey(wikiRequestKey)', 'the Wikipedia effect', 60);

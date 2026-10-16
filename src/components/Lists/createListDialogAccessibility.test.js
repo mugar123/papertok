@@ -21,7 +21,7 @@ const stripComments = source => source
 const read = async (path) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
 
 test('a failed create/save is tied to the name field, not only announced', async () => {
-  const jsx = await read('./CreateListDialog.jsx');
+  const jsx = await read('./CreateListDialog.tsx');
 
   const input = jsx.match(/<(?:input|Input)\b[\s\S]*?\/>/);
   assert.ok(input, 'the list-name input changed shape; update this test alongside it');
@@ -54,7 +54,7 @@ test('a failed create/save is tied to the name field, not only announced', async
 });
 
 test('a failed create/save reaches the console with the real error, not only the screen', async () => {
-  const jsx = await read('./CreateListDialog.jsx');
+  const jsx = await read('./CreateListDialog.tsx');
   // The catch of `submit`: it must bind the error and hand it to console.error.
   // A permission-denied from the rules and a dead connection paint the same
   // "try again"; the console is the only place that tells them apart.

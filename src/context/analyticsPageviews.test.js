@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const SOURCE = new URL('./AnalyticsContext.jsx', import.meta.url);
+const SOURCE = new URL('./AnalyticsContext.tsx', import.meta.url);
 const APP_HTML = new URL('../../index.html', import.meta.url);
 
 test('SOURCE: a page view is sent on every pathname change, to both services, only while analytics is allowed', async () => {
@@ -56,7 +56,7 @@ test('SOURCE: a page view is sent on every pathname change, to both services, on
  *
  * Under HashRouter this was safe for free — a fragment is stripped out of
  * `Referer` — so nothing in the app ever had to say so. Real paths
- * (src/main.jsx) ended that, and `/privacy.html` still promises "which one
+ * (src/main.tsx) ended that, and `/privacy.html` still promises "which one
  * never travels". `strict-origin` is the one line that keeps it, for the
  * analytics requests and for every other request the app makes.
  */

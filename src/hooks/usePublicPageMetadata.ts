@@ -7,7 +7,7 @@ interface MetadataOptions extends ShareOptions {
 interface NodeRecord { node: Element; existed: boolean; content: string | null; href: string | null; textContent: string | null; }
 
 import { useEffect, useMemo } from 'react';
-import { useLanguage } from '../context/LanguageContext.jsx';
+import { useLanguage } from '../context/LanguageContext.tsx';
 import {
   DEFAULT_SHARE_IMAGE_PATH,
   getAbsoluteShareUrl,

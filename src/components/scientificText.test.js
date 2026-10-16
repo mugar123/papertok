@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import katex from 'katex';
-import ScientificText from './ScientificText.js';
+import ScientificText from './ScientificText.ts';
 import { loadKatex } from '../utils/katexLoader.ts';
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
@@ -56,7 +56,7 @@ test('a formula KaTeX rejects stays visible as its source, and is not retried on
 
 test('ScientificText is memoised and keeps its element tree across renders', async () => {
   assert.equal(ScientificText.$$typeof, Symbol.for('react.memo'), 'a card re-rendering for its own reasons must not re-walk the text');
-  const code = stripComments(await read('./ScientificText.js'));
+  const code = stripComments(await read('./ScientificText.ts'));
   assert.match(code, /const renderedChunks = useMemo\(\(\) => parts\.map\(\(chunk, index\) => \{[\s\S]*?dangerouslySetInnerHTML: \{ __html: html \},[\s\S]*?\}\), \[parts, katex\]\);/,
     'the `{ __html }` objects live inside a memo keyed on the parsed text and on KaTeX being loaded, so React sees the same objects until either changes');
   assert.match(code, /const renderedFormulas = new Map\(\);/, 'and rendered markup is kept per formula source');

@@ -104,8 +104,8 @@ test('an action nobody defined leaves the state exactly as it was', () => {
    fixed. */
 
 const CREATE_SITES = [
-  '../components/Lists/ListsPage.jsx',
-  '../components/Lists/SaveToListModal.jsx',
+  '../components/Lists/ListsPage.tsx',
+  '../components/Lists/SaveToListModal.tsx',
 ];
 
 test('SOURCE: neither create site keeps a form of its own', async () => {

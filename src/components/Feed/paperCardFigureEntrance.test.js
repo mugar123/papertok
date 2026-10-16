@@ -29,7 +29,7 @@ const strip = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$
  * element is given it again, which is what re-arms the entrance for free.
  */
 test('a clipping is shown as loaded only while its card is in front of the reader', async () => {
-  const jsx = strip(await read('./PaperCard.jsx'));
+  const jsx = strip(await read('./PaperCard.tsx'));
   const className = jsx.match(/className=\{`pc-figure\$\{[^`]*`\}/)?.[0] || '';
   assert.ok(className, 'the figure still builds its className from a template literal');
   // Both halves, or the entrance goes back to being a one-shot on `load`.
@@ -45,7 +45,7 @@ test('a clipping is shown as loaded only while its card is in front of the reade
  * every swipe. So it is only put out once the card has left entirely.
  */
 test('the clippings are lit at 15% but only put out once the card is gone entirely', async () => {
-  const jsx = strip(await read('./PaperCard.jsx'));
+  const jsx = strip(await read('./PaperCard.tsx'));
   assert.match(jsx, /if \(entry\.isIntersecting && entry\.intersectionRatio >= 0\.15\) setFiguresLit\(true\);/);
   assert.match(jsx, /else if \(!entry\.isIntersecting\) setFiguresLit\(false\);/);
   // A single symmetric flag is exactly what this must not collapse back into.
@@ -76,7 +76,7 @@ test('the entrance is withheld by the same class the stylesheet gates it on', as
  * clipping crawling for a second and a half.
  */
 test('the clippings stagger by delay and all travel at the same speed', async () => {
-  const jsx = strip(await read('./PaperCard.jsx'));
+  const jsx = strip(await read('./PaperCard.tsx'));
   const scatter = jsx.slice(jsx.indexOf('function figureScatterStyle'), jsx.indexOf('function mergeResearchResources'));
   assert.match(scatter, /'--fig-in-delay': `\$\{index \* FIGURE_ENTRANCE_STAGGER_MS\}ms`/,
     'the stagger is a delay, and it is the thing that varies per slot');
@@ -117,7 +117,7 @@ test('the entrance spends its run moving, and holds only its first frame', async
  * Gating the entrance on that would put it back to running off screen.
  */
 test('the flag is the card\'s own 15% observer, so it cannot be true off screen', async () => {
-  const jsx = strip(await read('./PaperCard.jsx'));
+  const jsx = strip(await read('./PaperCard.tsx'));
   assert.match(jsx, /setIsCardVisible\(entry\.isIntersecting && entry\.intersectionRatio >= 0\.15\)/);
   assert.doesNotMatch(jsx, /setIsCardVisible[\s\S]{0,200}rootMargin/);
 });
@@ -140,7 +140,7 @@ test('the flag is the card\'s own 15% observer, so it cannot be true off screen'
  * one frame where the previous paper's clippings are painted against this one.
  */
 test('the card is born with whatever the figure cache already holds', async () => {
-  const src = strip(await read('./PaperCard.jsx'));
+  const src = strip(await read('./PaperCard.tsx'));
   assert.match(
     src,
     /import \{[^}]*\bpeekPaperFigures\b[^}]*\} from '\.\.\/\.\.\/services\/paperFigureService\.ts'/,
@@ -154,7 +154,7 @@ test('the card is born with whatever the figure cache already holds', async () =
 });
 
 test('a new paper in the same card resets the clippings during render, not in an effect', async () => {
-  const src = strip(await read('./PaperCard.jsx'));
+  const src = strip(await read('./PaperCard.tsx'));
   const start = src.indexOf('const [figuresPaperKey, setFiguresPaperKey]');
   assert.notEqual(start, -1, 'the reset keeps the key it last reset for');
   // Bounded at the `if` block's own closing brace: a wider window swallows the
@@ -171,7 +171,7 @@ test('a new paper in the same card resets the clippings during render, not in an
 });
 
 test('a card that already has its clippings does not go asking for them again', async () => {
-  const src = strip(await read('./PaperCard.jsx'));
+  const src = strip(await read('./PaperCard.tsx'));
   const start = src.indexOf('getPaperFigures(paper)');
   assert.notEqual(start, -1);
   const effect = src.slice(src.lastIndexOf('useEffect', start), start);
@@ -200,7 +200,7 @@ test('a card that already has its clippings does not go asking for them again', 
  */
 test('SOURCE: a clipping leaves before its page and resumes with it, never in one frame', async () => {
   const css = await readFile(new URL('./PaperCard.css', import.meta.url), 'utf8');
-  const jsx = await readFile(new URL('./PaperCard.jsx', import.meta.url), 'utf8');
+  const jsx = await readFile(new URL('./PaperCard.tsx', import.meta.url), 'utf8');
   const code = jsx.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
 
   // Leaving: every motion of a page on its way out takes the clippings with it.

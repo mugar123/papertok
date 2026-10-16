@@ -13,7 +13,7 @@ const strip = (source) => source.replace(/\/\*[\s\S]*?\*\/|\{\/\*[\s\S]*?\*\/\}|
  * stopped 420px short of the rows it was talking about.
  */
 test('SOURCE: el aviso parcial va antes del centinela, en las dos pestañas', async () => {
-  const jsx = strip(await read('./EntityExplorer.jsx'));
+  const jsx = strip(await read('./EntityExplorer.tsx'));
 
   for (const [tab, banner, sentinel] of [
     ['publicaciones', "getUiErrorMessage('PARTIAL_PUBLICATIONS_LOAD_FAILED'", 'ref={observerRef}'],
@@ -34,7 +34,7 @@ test('SOURCE: el aviso parcial va antes del centinela, en las dos pestañas', as
  * que es lo que corresponde a dónde vive.
  */
 test('SOURCE: el aviso parcial se anuncia como status, no como alert', async () => {
-  const jsx = strip(await read('./EntityExplorer.jsx'));
+  const jsx = strip(await read('./EntityExplorer.tsx'));
   const strips = [...jsx.matchAll(/<div className="explorer-inline-error" role="(\w+)">/g)].map((m) => m[1]);
   assert.equal(strips.length, 2, 'las dos tiras, publicaciones y autores');
   assert.deepEqual(strips, ['status', 'status']);

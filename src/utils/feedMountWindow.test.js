@@ -68,7 +68,7 @@ test('a page that lands under the reader is mounted at once, not left to the idl
 });
 
 test('SOURCE: the container mounts a window and grows it off the critical path', async () => {
-  const code = await readFile(new URL('../components/Feed/FeedContainer.jsx', import.meta.url), 'utf8');
+  const code = await readFile(new URL('../components/Feed/FeedContainer.tsx', import.meta.url), 'utf8');
   // The anchor goes through `resumeAnchor` now, so the window and the card
   // the container calls active cannot disagree (feedResume.test.js has the
   // seed). Both halves are pinned here: the window takes that helper's
@@ -110,7 +110,7 @@ test('a feed resumes on the paper it was on, wherever that paper is now', async 
 });
 
 test('SOURCE: the container saves the paper it is on and restores by that paper', async () => {
-  const code = stripComments(await readFile(new URL('../components/Feed/FeedContainer.jsx', import.meta.url), 'utf8'));
+  const code = stripComments(await readFile(new URL('../components/Feed/FeedContainer.tsx', import.meta.url), 'utf8'));
   // The place lives in utils/feedResumeMemory.js now (it survives the reload
   // the tab gives itself after a deploy); what is remembered is still the
   // paper's id, and what restores is still that paper.

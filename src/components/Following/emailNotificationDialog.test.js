@@ -12,7 +12,7 @@ const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(
 const read = name => readFile(new URL(name, import.meta.url), 'utf8').then(stripComments);
 
 test('the email modal is a modal Dialog whose only way out is the parent\'s onClose', async () => {
-  const jsx = await read('./EmailNotificationModal.jsx');
+  const jsx = await read('./EmailNotificationModal.tsx');
   assert.match(jsx, /from '\.\.\/ui\/dialog\.jsx'/);
   assert.match(jsx, /<Dialog open=\{isOpen\} onOpenChange=\{nextOpen => \{ if \(!nextOpen\) onClose\(\); \}\} modal>/);
   assert.match(jsx, /closeLabel=(?:"Close"|\{'Close'\})/);
@@ -23,7 +23,7 @@ test('the email modal is a modal Dialog whose only way out is the parent\'s onCl
 });
 
 test('the controls are the shared Switch and Select, each with its name', async () => {
-  const jsx = await read('./EmailNotificationModal.jsx');
+  const jsx = await read('./EmailNotificationModal.tsx');
   assert.doesNotMatch(jsx, /type="checkbox"|<select|<option/);
   assert.match(jsx, /<Label htmlFor=\{enabledId\}>/);
   assert.match(jsx, /<Switch\s+id=\{enabledId\}[\s\S]*?onCheckedChange=\{checked => setDraft\(current => \(\{ \.\.\.current, enabled: checked \}\)\)\}/);

@@ -28,13 +28,13 @@ const strip = (src) => src
  */
 
 const CALLERS = [
-  { name: 'the explorer', path: '../Explorer/EntityExplorer.jsx' },
-  { name: 'search', path: '../Search/SearchPage.jsx' },
-  { name: 'the lists page', path: '../Lists/ListsPage.jsx', selected: 'overlayPaper' },
+  { name: 'the explorer', path: '../Explorer/EntityExplorer.tsx' },
+  { name: 'search', path: '../Search/SearchPage.tsx' },
+  { name: 'the lists page', path: '../Lists/ListsPage.tsx', selected: 'overlayPaper' },
 ];
 
 test('the overlay tells its caller when the leave has actually finished', async () => {
-  const src = strip(await read('./PaperOverlay.jsx'));
+  const src = strip(await read('./PaperOverlay.tsx'));
   assert.match(
     src,
     /export default function PaperOverlay\(\{[^}]*\bonExitComplete\b[^}]*\}\)/,

@@ -16,7 +16,7 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '').replac
  * selection across two paragraphs quoting from the wrong one.
  */
 test('a mouse selection is resolved from the Range, from the paragraph it starts in, wherever the button is released', async () => {
-  const jsx = stripComments(await read('./PaperReader.jsx'));
+  const jsx = stripComments(await read('./PaperReader.tsx'));
   assert.match(jsx, /document\.addEventListener\('mouseup', handleDocumentMouseUp\);/);
   assert.match(jsx, /return \(\) => document\.removeEventListener\('mouseup', handleDocumentMouseUp\);/);
   // The paragraph is the one the selection starts in — or ends in, when the

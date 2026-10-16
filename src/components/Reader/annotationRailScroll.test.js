@@ -55,7 +55,7 @@ test('a note keeps its height in a capped column, so the list scrolls instead of
  * (measured 2026-09-25). The rail marks its list while it overflows, and only
  * then is the wheel kept.
  */
-const RAIL_JSX = new URL('./AnnotationRail.jsx', import.meta.url);
+const RAIL_JSX = new URL('./AnnotationRail.tsx', import.meta.url);
 const stripScript = source => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '');

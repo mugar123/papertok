@@ -1,0 +1,1118 @@
+import { Children, useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import {
+  ArrowClockwise,
+  ArrowLeft,
+  Briefcase,
+  Buildings,
+  Check,
+  CircleNotch,
+  Compass,
+  FileText,
+  Lightbulb,
+  MagnifyingGlass,
+  Plus,
+  Sparkle,
+  TrendUp,
+  Users,
+  WarningCircle,
+} from '@phosphor-icons/react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  searchAuthors,
+  searchInstitutions,
+  searchConcepts,
+  searchLocalTopics,
+  enrichAuthorInstitutionLocalization,
+} from '../../services/openAlexService.ts';
+import { searchProjects } from '../../services/openAireService.ts';
+import { searchPapersAcrossSources } from '../../services/paperSearchService.ts';
+import { useFollowing } from '../../context/FollowingContext.tsx';
+import { useFeed } from '../../context/FeedContext.tsx';
+import { useLanguage } from '../../context/LanguageContext.tsx';
+import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
+import { useOverlayHistory } from '../../hooks/useOverlayHistory.ts';
+import { getOpenAlexHealth, isOpenAlexRateLimitError } from '../../services/openAlexClient.ts';
+import {
+  SECTION_SOURCES,
+  SOURCE_LABELS,
+  describeSearchOutage,
+  formatRetryDelay,
+  joinNames,
+  outageAffectsFilter,
+} from '../../utils/searchOutage.ts';
+import PaperCard from '../Feed/PaperCard.tsx';
+import PaperOverlay from '../Feed/PaperOverlay.tsx';
+import PDFViewer from '../PDF/PDFViewer.tsx';
+import ScientificText from '../ScientificText.ts';
+import { Input } from '../ui/input.tsx';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.tsx';
+import { Toggle } from '../ui/toggle.tsx';
+import { getLocalizedInstitutionName } from '../../utils/institutionLocalization.ts';
+import { getProjectDisplayName } from '../../utils/entityMetadata.ts';
+import {
+  authorProminenceWeight,
+  buildSearchSectionValues,
+  filterRelevantSearchResults,
+  getSearchSectionOrder,
+  isOrganisationAuthorRecord,
+  resolvePreferredSearchSection,
+} from '../../utils/searchRelevance.ts';
+
+import './SearchPage.css';
+
+const SEARCH_DEBOUNCE_MS = 320;
+const SEARCH_TIMEOUT_MS = 6000;
+const SEARCH_MIN_LOADING_MS = 180;
+
+const SEARCH_FILTER_OPTIONS = [
+  { id: 'all', label: 'All', Icon: MagnifyingGlass },
+  { id: 'papers', label: 'Papers', Icon: FileText },
+  { id: 'institutions', label: 'Institutions', Icon: Buildings },
+  { id: 'authors', label: 'Authors', Icon: Users },
+  { id: 'projects', label: 'Projects', Icon: Briefcase },
+  { id: 'topics', label: 'Topics', Icon: Lightbulb },
+];
+
+const wait = (delayMs) => new Promise(resolve => setTimeout(resolve, delayMs));
+
+/**
+ * Never rejects: a failed source resolves with its fallback and a status.
+ *
+ * The error object rides along now. It used to be dropped here
+ * (`.catch(() => ...)`), and with it went the one thing that could tell a rate
+ * limit from a timeout — `retryAfterMs`, which the OpenAlex client had already
+ * parsed out of `Retry-After`.
+ */
+function settleSearch(promise, fallback = [], timeoutMs = SEARCH_TIMEOUT_MS) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let timeoutId = null;
+    const finish = (value, status, error = null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve({ value, status, error });
+    };
+    timeoutId = setTimeout(() => finish(fallback, 'timeout'), timeoutMs);
+    Promise.resolve(promise)
+      .then(value => finish(value, 'fulfilled'))
+      .catch(error => finish(fallback, 'rejected', error));
+  });
+}
+
+function handleSearchItemKeyDown(event, action) {
+  if (event.target !== event.currentTarget) return;
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    action();
+  }
+}
+
+/**
+ * Ranks the sections by moving them in the DOM, so what a screen reader hears
+ * and what a keyboard walks match what everyone else sees.
+ *
+ * Moving a node does cancel and restart its CSS animations — `insertBefore`
+ * detaches the element first, and a subtree that leaves the document loses its
+ * running animations. That used to blank a section that was already on screen
+ * and re-enter it row by row, several times per search, because the ranking was
+ * recomputed as each straggling source landed. The fix is upstream: the page
+ * now settles once, so this comparator runs on a result set that no longer
+ * changes underneath it. Expressing the rank with flexbox `order` instead would
+ * also stop the restarts, but at the price of a reading order that no longer
+ * matches the visual one.
+ */
+function OrderedSearchSections({ children, preferredSection }) {
+  return Children.toArray(children).sort((left, right) => (
+    getSearchSectionOrder(left.props['data-section'], preferredSection)
+    - getSearchSectionOrder(right.props['data-section'], preferredSection)
+  ));
+}
+
+function FollowButton({ entity, isFollowing, isPending, onToggle }) {
+  const following = isFollowing(entity);
+  const pending = isPending(entity);
+  const label = following
+    ? ('Following')
+    : ('Follow');
+
+  // A ui Toggle: Base UI writes `aria-pressed` (and `data-pressed`) from
+  // `pressed`. The click still goes through `onToggle`, which stops it from
+  // reaching the row link underneath and asks the following context.
+  return (
+    <Toggle
+      variant="outline"
+      className={`search-follow-btn ${following ? 'following' : ''} ${pending ? 'is-pending' : ''}`}
+      pressed={following}
+      onClick={(event) => onToggle(event, entity)}
+      disabled={pending}
+      aria-label={label}
+      title={label}
+    >
+      {following
+        ? <Check size={14} aria-hidden="true" />
+        : <Plus size={14} aria-hidden="true" />}
+      <span>{label}</span>
+    </Toggle>
+  );
+}
+
+function formatPaperDate(paper, locale) {
+  const dateValue = paper.published || paper.publishedDate;
+  if (dateValue) {
+    const date = new Date(dateValue);
+    if (!Number.isNaN(date.getTime())) return date.toLocaleDateString(locale);
+  }
+  return paper.year ? String(paper.year) : null;
+}
+
+export default function SearchPage({ onSaveToList = () => {} }) {
+  const navigate = useNavigate();
+  const { language, locale } = useLanguage();
+  const { trackEvent } = useAnalyticsConsent();
+  const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
+  const {
+    likedPaperIds, savedPaperIds, readPaperIds,
+    interactionIdFor, toggleLike, markNotInterested, markAsRead, unmarkAsRead, trackViewTime, trackSkip,
+  } = useFeed();
+  
+  // Seeded from the URL, so a search is a place you can be sent to. The
+  // palette needs this for the one paper in fifty that carries neither a DOI
+  // nor an arXiv id: it has no public paper URL of its own, so the row hands
+  // the reader to this page with the query intact rather than to a dead link.
+  // The search effect below already keys on `query`, so seeding it is the
+  // whole of the wiring.
+  const [searchParams] = useSearchParams();
+  const [query, setQuery] = useState(() => searchParams.get('q')?.trim() || '');
+  const [isSearching, setIsSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [searchIntent, setSearchIntent] = useState(null);
+  const [activeSearchFilter, setActiveSearchFilter] = useState('all');
+  const [searchIssue, setSearchIssue] = useState(null);
+
+  const [paperResults, setPaperResults] = useState([]);
+  const [authorResults, setAuthorResults] = useState([]);
+  const [institutionResults, setInstitutionResults] = useState([]);
+  const [conceptResults, setConceptResults] = useState([]);
+  const [projectResults, setProjectResults] = useState([]);
+
+  const [selectedPaper, setSelectedPaper] = useState(null);
+  const [pdfPaper, setPdfPaper] = useState(null);
+  // Back closes this PDF viewer instead of leaving PaperTok: see useOverlayHistory.js.
+  // Through the viewer's own close, the one the X uses — it owns `open` and
+  // reports back only when its leave has played; `setPdfPaper(null)` is just
+  // the fallback for the sub-frame gap before PDFViewer's own
+  // `useImperativeHandle` has populated the ref — this import (above) is
+  // plain, not lazy, so there is no chunk boundary to blame it on here.
+  const pdfCloseRef = useRef(null);
+  const requestPdfClose = useCallback(() => {
+    if (pdfCloseRef.current) pdfCloseRef.current();
+    else setPdfPaper(null);
+  }, []);
+  useOverlayHistory(Boolean(pdfPaper), requestPdfClose, 'pdf');
+  const closeSelectedPaper = useCallback(() => setSelectedPaper(null), []);
+
+  // The paper the overlay is SHOWING, which outlives the one selected. Closing
+  // sets `selectedPaper` to null to start the leave; if the card went with it,
+  // the surface would spend its 200ms exit fading out over nothing. This is
+  // dropped when the leave actually ends (`onExitComplete`).
+  //
+  // Adjusted during render rather than in an effect: a paper opened while
+  // another is still leaving has to take over in the same commit, or the
+  // window shows the wrong paper for a frame.
+  const [shownPaper, setShownPaper] = useState(null);
+  if (selectedPaper && selectedPaper !== shownPaper) {
+    setShownPaper(selectedPaper);
+  }
+
+  
+  const timeoutRef = useRef(null);
+  const requestAbortRef = useRef(null);
+  const searchIdRef = useRef(0);
+  const getInteractionState = useCallback((paper) => ({
+    isLiked: likedPaperIds.has(paper.id),
+    isSaved: savedPaperIds.has(paper.id),
+    isRead: readPaperIds.has(paper.id),
+  }), [likedPaperIds, readPaperIds, savedPaperIds]);
+  const clearResults = useCallback(() => {
+    setPaperResults([]);
+    setAuthorResults([]);
+    setInstitutionResults([]);
+    setConceptResults([]);
+    setProjectResults([]);
+  }, []);
+
+  const performSearch = useCallback(async (searchTerm) => {
+    const searchStartedAt = Date.now();
+    const searchId = ++searchIdRef.current;
+    requestAbortRef.current?.abort();
+    const requestController = new AbortController();
+    requestAbortRef.current = requestController;
+    const localTopics = searchLocalTopics(searchTerm, 8);
+
+    setIsSearching(true);
+    setHasSearched(true);
+    setSearchIssue(null);
+
+    const sectionSetters = {
+      papers: setPaperResults,
+      authors: setAuthorResults,
+      institutions: setInstitutionResults,
+      topics: setConceptResults,
+      projects: setProjectResults,
+    };
+    const isCurrentSearch = () => (
+      searchId === searchIdRef.current && !requestController.signal.aborted
+    );
+    // Only tags the outcome with its section. Painting used to happen here, one
+    // straggler at a time, which is what assembled the page on screen over
+    // several seconds; the whole search now lands in a single commit below.
+    const track = (section, promise) => promise.then(outcome => ({ ...outcome, section }));
+
+    const tasks = [
+      // OpenAlex and arXiv, merged and ranked by title match
+      // (paperSearchService.js): OpenAlex alone could not answer "llama 2".
+      track('papers', settleSearch(
+        searchPapersAcrossSources(searchTerm, { signal: requestController.signal }),
+      )),
+      track('authors', settleSearch(
+        searchAuthors(searchTerm, {
+          signal: requestController.signal,
+          throwOnError: true,
+        }).then(results => filterRelevantSearchResults(
+          searchTerm,
+          // OpenAlex answers an organisation name with institution-as-author
+          // records: four of them are called "University of Salamanca". They
+          // score 100 and took the top of this section from the people who
+          // actually wrote something.
+          results.filter(author => !isOrganisationAuthorRecord(author)),
+          author => [author.display_name],
+          // Several exact matches all score 100; prominence decides which of
+          // them a reader was looking for.
+          { getWeight: authorProminenceWeight },
+        )).then(results => Promise.all(
+          results.map(author => enrichAuthorInstitutionLocalization(author, { timeoutMs: 1500 })),
+        )),
+        [],
+        5000,
+      )),
+      track('institutions', settleSearch(
+        searchInstitutions(searchTerm, {
+          signal: requestController.signal,
+          throwOnError: true,
+        }),
+        [],
+        4500,
+      )),
+      track('topics', settleSearch(
+        searchConcepts(searchTerm, {
+          language,
+          limit: 8,
+          signal: requestController.signal,
+        }),
+        localTopics,
+        4500,
+      )),
+      track('projects', settleSearch(
+        searchProjects(searchTerm, 1, {
+          signal: requestController.signal,
+          throwOnError: true,
+        })
+          .then(result => filterRelevantSearchResults(
+            searchTerm,
+            result.projects || [],
+            project => [project.acronym, project.title, project.funder],
+          )),
+      )),
+    ];
+
+    // One settle. Every source is bounded by its own deadline above, so this
+    // waits at most as long as the slowest deadline and then commits the whole
+    // page at once. The floor keeps an instant answer from flashing a skeleton.
+    const outcomes = await Promise.all(tasks);
+    const remainingMinimumDelay = Math.max(
+      0,
+      SEARCH_MIN_LOADING_MS - (Date.now() - searchStartedAt),
+    );
+    if (remainingMinimumDelay > 0) await wait(remainingMinimumDelay);
+    if (!isCurrentSearch()) return;
+
+    const resultCount = outcomes.reduce(
+      (total, outcome) => total + (Array.isArray(outcome.value) ? outcome.value.length : 0),
+      0,
+    );
+
+    const failedSections = outcomes
+      .filter(outcome => outcome.status !== 'fulfilled')
+      .map(outcome => outcome.section);
+
+    // Only OpenAlex's own sections can testify about OpenAlex: a 429 from
+    // OpenAIRE also satisfies `isOpenAlexRateLimitError`, which walks the cause
+    // chain looking for that status.
+    const openAlexOutcomes = outcomes
+      .filter(outcome => SECTION_SOURCES[outcome.section] === 'openalex');
+    const health = getOpenAlexHealth();
+    const rateLimited = health.rateLimited
+      || openAlexOutcomes.some(outcome => isOpenAlexRateLimitError(outcome.error));
+    // Both sources of the figure, largest wins: the client zeroes
+    // `rateLimitedUntil` as soon as any request succeeds, so health can read 0
+    // while the error that just failed still carries what OpenAlex said.
+    const retryAfterMs = Math.max(
+      health.retryAfterMs || 0,
+      ...openAlexOutcomes.map(outcome => (
+        isOpenAlexRateLimitError(outcome.error) ? outcome.error?.retryAfterMs || 0 : 0
+      )),
+    );
+    const issue = describeSearchOutage({ sections: failedSections, rateLimited, retryAfterMs });
+
+    outcomes.forEach(outcome => sectionSetters[outcome.section](outcome.value));
+    setSearchIssue(issue);
+    setIsSearching(false);
+    if (requestAbortRef.current === requestController) {
+      requestAbortRef.current = null;
+    }
+
+    // After the commit, never before: with the whole page behind the pending
+    // gate, anything that throws on the way to `setIsSearching(false)` no
+    // longer leaves a stale spinner — it leaves a blank page.
+    trackEvent('search_performed', {
+      search_type: 'all',
+      result_count: resultCount,
+      has_results: resultCount > 0,
+    });
+  }, [language, trackEvent]);
+
+  useEffect(() => {
+    if (!query.trim()) {
+      requestAbortRef.current?.abort();
+      searchIdRef.current += 1;
+      const resetStateTimeout = setTimeout(() => {
+        clearResults();
+        setIsSearching(false);
+        setHasSearched(false);
+        setSearchIssue(null);
+      }, 0);
+      return () => clearTimeout(resetStateTimeout);
+    }
+
+    requestAbortRef.current?.abort();
+    searchIdRef.current += 1;
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    
+    timeoutRef.current = setTimeout(() => {
+      performSearch(query.trim());
+    }, SEARCH_DEBOUNCE_MS);
+    
+    return () => {
+      clearTimeout(timeoutRef.current);
+      requestAbortRef.current?.abort();
+    };
+  }, [clearResults, query, performSearch]);
+
+  const handleToggleFollow = async (e, entity) => {
+    e.stopPropagation();
+    try {
+      await toggleFollow(entity);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const orcidMatch = query.match(/\b(\d{4}-\d{4}-\d{4}-\d{3}[\dX])\b/i);
+  const cleanOrcid = orcidMatch ? orcidMatch[1].toUpperCase() : null;
+
+  const hasSearchSectionResults = paperResults.length > 0
+    || authorResults.length > 0
+    || institutionResults.length > 0
+    || conceptResults.length > 0
+    || projectResults.length > 0;
+  const hasResults = hasSearchSectionResults || !!cleanOrcid;
+  const hasVisibleResults = activeSearchFilter === 'all'
+    ? hasResults
+    : activeSearchFilter === 'papers'
+      ? paperResults.length > 0
+      : activeSearchFilter === 'institutions'
+        ? institutionResults.length > 0
+        : activeSearchFilter === 'authors'
+          ? authorResults.length > 0 || !!cleanOrcid
+          : activeSearchFilter === 'projects'
+            ? projectResults.length > 0
+            : conceptResults.length > 0;
+  const activeFilterOption = SEARCH_FILTER_OPTIONS.find(option => option.id === activeSearchFilter)
+    || SEARCH_FILTER_OPTIONS[0];
+
+  // The count this filter is actually showing, mirroring `hasVisibleResults`
+  // above but as a number: the live region below reads exactly what is on
+  // screen, so it can never disagree with a filtered "No X found".
+  const visibleResultCount = activeSearchFilter === 'all'
+    ? paperResults.length + authorResults.length + institutionResults.length
+      + conceptResults.length + projectResults.length
+      + (cleanOrcid ? 1 : 0)
+    : activeSearchFilter === 'papers'
+      ? paperResults.length
+      : activeSearchFilter === 'institutions'
+        ? institutionResults.length
+        : activeSearchFilter === 'authors'
+          ? authorResults.length + (cleanOrcid ? 1 : 0)
+          : activeSearchFilter === 'projects'
+            ? projectResults.length
+            : conceptResults.length;
+
+  const searchPending = Boolean(query.trim()) && isSearching;
+
+  // The exact copy the visible empty state renders below, shared with the
+  // hidden live region so the two can never say different things.
+  const emptyResultsMessage = hasResults && activeSearchFilter !== 'all'
+    ? (`No ${activeFilterOption.label.toLowerCase()} found for "${query}"`)
+    : (`No results found for "${query}"`);
+
+  /**
+   * The settled outcome of a search: how many results this filter is
+   * showing, or that it found none. Derived fresh on every render — not
+   * stored in state — so it reads '' for the entire time a search is
+   * pending (`searchPending`) and only becomes real text once one lands.
+   *
+   * That '' in between is what lets two searches that land on the exact same
+   * count still both be heard. It only works because `searchPending` flips
+   * true and back to false around real network I/O (`performSearch`'s
+   * `await Promise.all(tasks)`): that is a genuine elapsed period, so React
+   * commits (and paints) the '' on its own before the eventual count ever
+   * gets computed, rather than the two collapsing into one batched update.
+   * Clearing and setting in the very same tick would not be enough on its
+   * own — confirmed the hard way elsewhere in this delivery, in
+   * EditInterestsModal.jsx.
+   *
+   * Switching filter tabs never forces a re-announcement (that would be the
+   * chattiness this whole region exists to avoid), but the count alone can
+   * coincidentally repeat across tabs -- 12 papers, then 12 institutions --
+   * which would otherwise read as the tab switch having done nothing. The
+   * active filter's own name is folded into the non-empty text for exactly
+   * that reason: the string itself changes on every tab switch, with no
+   * extra firing and no special-casing of "did the count change".
+   */
+  const resultAnnouncement = (!query.trim() || !hasSearched || searchPending)
+    ? ''
+    : outageAffectsFilter(searchIssue, activeSearchFilter)
+      ? ''
+      : visibleResultCount > 0
+        ? (`${visibleResultCount} ${visibleResultCount === 1 ? 'result' : 'results'} found${activeSearchFilter !== 'all' ? ` in ${activeFilterOption.label}` : ''} for "${query}"`)
+        : emptyResultsMessage;
+
+  // Memoised so the order is recomputed only when the results themselves
+  // change, not on every render. With the whole page landing in one commit,
+  // that means once per search — the ordering churn that used to run 6-10 times
+  // while stragglers trickled in is gone with the staggered reveal.
+  // The values each section votes with come from `buildSearchSectionValues`,
+  // which the palette calls too. They had drifted apart — the palette left out
+  // aliases and acronyms, so it alone could not answer "USAL" or "MIT".
+  const preferredSection = useMemo(() => resolvePreferredSearchSection({
+    query,
+    hint: searchIntent,
+    sectionValues: buildSearchSectionValues({
+      papers: paperResults,
+      topics: conceptResults,
+      authors: authorResults,
+      institutions: institutionResults,
+      projects: projectResults,
+    }),
+  }), [
+    query, searchIntent, paperResults,
+    conceptResults, authorResults, institutionResults, projectResults,
+  ]);
+
+  // The notice outlives the search that raised it, so the countdown has to keep
+  // running: `retryAtMs` is an instant, and this ticks it. Coarsely while the
+  // wait is long — one repaint a second for eight hours would be 28 800 renders
+  // that change nothing — and once a second in the last stretch.
+  const [outageNow, setOutageNow] = useState(() => Date.now());
+  const outageRetryAt = searchIssue?.retryAtMs || null;
+  // `outageNow` used to sit in this effect's own dependency array, so every
+  // tick's `setOutageNow` tore the interval down and rebuilt it — a fresh
+  // `setInterval` every second, and one that kept firing in a background tab.
+  // A self-rescheduling `setTimeout` reads the current time itself on every
+  // tick instead of closing over a value that only changes when this effect
+  // re-runs, so the cadence can still adapt (30s while far out, 1s in the
+  // final stretch) without `outageNow` needing to be a dependency at all.
+  // Hidden tabs pause it entirely — `visibilitychange` clears the pending
+  // timer — and `resume()` recomputes from `Date.now()` on return, so the
+  // countdown catches up instead of resuming from a stale value.
+  useEffect(() => {
+    if (!outageRetryAt) return undefined;
+    let timer = null;
+
+    const clearPending = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    };
+
+    const tick = () => {
+      const now = Date.now();
+      setOutageNow(now);
+      const remaining = outageRetryAt - now;
+      if (remaining <= 0) return;
+      timer = setTimeout(tick, remaining > 90_000 ? 30_000 : 1_000);
+    };
+
+    const resume = () => {
+      if (document.visibilityState === 'hidden') return;
+      clearPending();
+      tick();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') clearPending();
+      else resume();
+    };
+
+    resume();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      clearPending();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [outageRetryAt]);
+  const openAlexRetryLabel = outageRetryAt
+    ? formatRetryDelay(outageRetryAt - outageNow)
+    : null;
+
+  // The notice names whoever went down and what is missing because of it, in
+  // the same words the filter pills use.
+  const sectionWord = (section) => {
+    const option = SEARCH_FILTER_OPTIONS.find(entry => entry.id === section);
+    return option ? (option.label).toLowerCase() : null;
+  };
+  const outageSourceNames = joinNames(
+    (searchIssue?.sources || []).map(source => SOURCE_LABELS[source]),
+  );
+  // Every failed section, not just OpenAlex's: a simultaneous OpenAIRE failure
+  // used to vanish behind the OpenAlex headline.
+  const outageSectionNames = joinNames(
+    (searchIssue?.sections || []).map(sectionWord),
+  );
+  const suggestedQueries = [
+    {
+      label: 'Cosmology',
+      icon: <Lightbulb size={14} />,
+      query: 'Cosmology',
+      section: 'topics',
+    },
+    {
+      label: 'MIT',
+      icon: <Buildings size={14} />,
+      query: 'Massachusetts Institute of Technology',
+      section: 'institutions',
+    },
+    {
+      label: 'CRISPR Cas9',
+      icon: <FileText size={14} />,
+      query: 'CRISPR Cas9',
+      section: 'papers',
+    },
+    {
+      label: 'Horizon projects',
+      icon: <Briefcase size={14} />,
+      query: 'Horizon',
+      section: 'projects',
+    },
+    {
+      label: 'Geoffrey Hinton',
+      icon: <Users size={14} />,
+      query: 'Geoffrey Hinton',
+      section: 'authors',
+    },
+    {
+      label: 'Quantum computing',
+      icon: <TrendUp size={14} />,
+      query: 'Quantum computing',
+      section: 'topics',
+    },
+  ];
+
+  const updateQuery = (nextQuery, intent = null, filter = activeSearchFilter) => {
+    requestAbortRef.current?.abort();
+    clearResults();
+    setQuery(nextQuery);
+    setSearchIntent(intent);
+    setActiveSearchFilter(filter);
+    setSearchIssue(null);
+    setHasSearched(false);
+    setIsSearching(Boolean(nextQuery.trim()));
+  };
+
+  const handleSuggestedSearch = (suggestion) => {
+    updateQuery(suggestion.query, suggestion.section, suggestion.section);
+  };
+
+  const handleSearchFilterChange = (filterId) => {
+    setActiveSearchFilter(filterId);
+    setSearchIntent(filterId === 'all' ? null : filterId);
+    // The notice belongs to the sections the previous view was showing. Kept
+    // across a filter change it would reappear, unretried, over a view it never
+    // described.
+    setSearchIssue(null);
+  };
+
+  const clearSearch = () => {
+    updateQuery('', null, 'all');
+  };
+
+  return (
+    // The page is the Tabs root: the filter bar is its list and the results
+    // its one panel, so Base UI can wire `aria-controls` / `aria-labelledby`
+    // between them and give the pills arrow-key navigation.
+    // Rendered as the page's <main>, with its h1: the route had neither.
+    <Tabs
+      render={<main />}
+      className="search-page-container"
+      value={activeSearchFilter}
+      onValueChange={handleSearchFilterChange}
+    >
+      <h1 className="visually-hidden">{'Search PaperTok'}</h1>
+      <div className="search-header">
+        <div className="search-header-main">
+          <button
+            type="button"
+            className="search-back-btn"
+            onClick={() => navigate('/feed')}
+            aria-label={'Back'}
+          >
+            <ArrowLeft size={22} />
+          </button>
+          <div className={`search-input-wrapper ${searchPending ? 'is-searching' : ''}`}>
+            <MagnifyingGlass className="search-icon" size={18} />
+            <Input
+              type="search"
+              className="search-input"
+              placeholder={'Search PaperTok...'}
+              aria-label={'Search PaperTok'}
+              value={query}
+              onChange={(event) => updateQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape' && query) clearSearch();
+              }}
+              autoComplete="off"
+              autoFocus
+            />
+            {searchPending && (
+              <span className="search-input-loader" role="status" aria-live="polite">
+                <CircleNotch size={17} aria-hidden="true" />
+                <span className="visually-hidden">{'Searching'}</span>
+              </span>
+            )}
+          </div>
+        </div>
+        {/* `line`: the active pill is underlined in the brand yellow, the one
+            mark the yellow is for (design.md, rule 3). */}
+        <TabsList
+          variant="line"
+          className="search-filter-bar"
+          aria-label={'Filter search results'}
+        >
+          {SEARCH_FILTER_OPTIONS.map(({ id, label, Icon }) => {
+            return (
+              <TabsTrigger
+                key={id}
+                id={`search-filter-${id}`}
+                value={id}
+                className="search-filter-pill"
+                title={label}
+              >
+                <Icon size={15} aria-hidden="true" />
+                <span>{label}</span>
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+
+      </div>
+
+      <div className="search-results custom-scrollbar">
+        {/* One panel for every pill: it takes the active value, so it is
+            always the panel of the tab that is on. */}
+        <TabsContent
+          value={activeSearchFilter}
+          id="search-results-panel"
+          className="search-results-list"
+          aria-busy={searchPending}
+        >
+            {/* Persistent: mounted before any search ever runs, so only its
+                text changes and a screen reader actually hears the outcome. */}
+            <p className="visually-hidden" role="status" aria-live="polite">{resultAnnouncement}</p>
+            {!query.trim() && !isSearching && (
+              <div className="search-initial-state">
+                <div className="search-initial-hero">
+                  <Compass size={48} className="search-initial-icon" />
+                  <h2>{'Explore knowledge'}</h2>
+                  <p>{'Search papers, researchers, topics, institutions, and funded projects.'}</p>
+                </div>
+                
+                <div className="search-suggestions">
+                  <h3 className="search-suggestions-title"><Sparkle size={16} /> {'Suggested searches'}</h3>
+                  <div className="search-suggestions-grid">
+                    {suggestedQueries.map(item => (
+                      <button
+                        type="button"
+                        key={item.label}
+                        onClick={() => handleSuggestedSearch(item)}
+                        className="search-suggestion-chip"
+                      >
+                        {item.icon}
+                        <span>{item.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Shown on the pills the outage is actually true for. Switching to
+                Papers during an OpenAlex outage keeps it — that IS the pill it
+                describes. Clearing the notice on every filter change traded one
+                lie for another. */}
+            {searchIssue && !searchPending && outageAffectsFilter(searchIssue, activeSearchFilter) && (
+              <div className="search-service-state" role="status">
+                <WarningCircle size={20} aria-hidden="true" />
+                <div className="search-service-copy">
+                  {/* One notice, always naming the provider that actually went
+                      down. The page never claims "the search is unavailable":
+                      it is the page itself, it knows perfectly well that it is
+                      running, and it used to say that over a list of results. */}
+                  <strong>{searchIssue.rateLimited
+                    ? ('OpenAlex is temporarily unavailable')
+                    : (`${outageSourceNames} did not respond`)}</strong>
+                  <span>{[
+                    // Only a real rate limit can promise a time; a timeout gets
+                    // no invented estimate.
+                    searchIssue.rateLimited && (openAlexRetryLabel
+                      ? (`It is estimated to be back in ${openAlexRetryLabel}.`)
+                      : ('It has not said when it will be back.')),
+                    outageSectionNames
+                      ? (`Meanwhile ${outageSectionNames} may be limited.`)
+                      : ('Searches may come back incomplete.'),
+                  ].filter(Boolean).join(' ')}</span>
+                </div>
+                {/* No retry while OpenAlex is throttling us with a known wait:
+                    the client short-circuits without touching the network, so
+                    the button could only fail again, instantly. */}
+                {!(searchIssue.rateLimited && openAlexRetryLabel) && (
+                  <button
+                    type="button"
+                    className="search-retry-btn"
+                    onClick={() => performSearch(query.trim())}
+                    aria-label={'Retry search'}
+                    title={'Retry search'}
+                  >
+                    <ArrowClockwise size={17} />
+                  </button>
+                )}
+              </div>
+            )}
+
+            {searchPending && (
+              // Decorative: the input's own status region above already
+              // announces "Searching" for assistive technology, so this
+              // skeleton does not need to repeat it as a second live region.
+              <div className="search-loading-state" aria-hidden="true">
+                {[0, 1, 2].map(index => (
+                  <div className="search-loading-row" key={index} style={{ '--loading-row-index': index }}>
+                    <span className="search-loading-icon" />
+                    <span className="search-loading-copy">
+                      <span className="search-loading-line search-loading-line--title" />
+                      <span className="search-loading-line search-loading-line--detail" />
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* "Nothing was found" is only sayable when the sources this view
+                depends on actually answered. Under an outage that covers them,
+                the page cannot know, and the notice above says so instead —
+                but an outage elsewhere no longer blanks the panel, which is
+                what the old blanket `!searchIssue` guard did. */}
+            {!hasVisibleResults && query && hasSearched && !searchPending
+              && !outageAffectsFilter(searchIssue, activeSearchFilter) && (
+              <div className="search-empty">
+                <MagnifyingGlass size={40} className="search-empty-icon" />
+                <p>{emptyResultsMessage}</p>
+                <span>{hasResults && activeSearchFilter !== 'all'
+                  ? ('Try another filter or search term')
+                  : ('Try a different search term')}</span>
+              </div>
+            )}
+
+            {hasVisibleResults && !searchPending && (
+              <div key={activeSearchFilter} className="search-filtered-results">
+                {/* Direct ORCID */}
+                {cleanOrcid && (activeSearchFilter === 'all' || activeSearchFilter === 'authors') && (
+                  <div className="search-section" style={{ order: 0 }}>
+                    <h3 className="search-section-title">{'Direct ORCID search'}</h3>
+                    <div
+                      className="search-item"
+                      role="link"
+                      tabIndex={0}
+                      onClick={() => navigate(`/explorer/author/https%3A%2F%2Forcid.org%2F${cleanOrcid}`)}
+                      onKeyDown={event => handleSearchItemKeyDown(
+                        event,
+                        () => navigate(`/explorer/author/https%3A%2F%2Forcid.org%2F${cleanOrcid}`),
+                      )}
+                    >
+                      <div className="search-item-icon" style={{ background: '#a6ce39', color: 'white' }}>
+                        <Users size={22} />
+                      </div>
+                      <div className="search-item-info">
+                        <h4 style={{ color: '#a6ce39' }}>{'View ORCID profile'} {cleanOrcid}</h4>
+                        <p>{'Explore the author and their work through a verified unique identifier'}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <OrderedSearchSections preferredSection={preferredSection}>
+            {institutionResults.length > 0 && (activeSearchFilter === 'all' || activeSearchFilter === 'institutions') && (
+              <div className="search-section" data-section="institutions">
+                <h3 className="search-section-title">{'Universities and institutions'}</h3>
+                {institutionResults.map((inst, index) => {
+                  const localizedName = getLocalizedInstitutionName(inst);
+                  return (
+                    <div
+                      key={inst.id}
+                      className="search-item search-item-enter"
+                      style={{ '--search-item-index': Math.min(index, 6) }}
+                      onClick={() => navigate(`/explorer/institution/${inst.id.split('/').pop()}`)}
+                    >
+                      <div className="search-item-icon"><Buildings size={22} /></div>
+                      <div className="search-item-info">
+                        <h4>
+                          <button
+                            type="button"
+                            className="search-item-title-btn"
+                            onClick={(e) => { e.stopPropagation(); navigate(`/explorer/institution/${inst.id.split('/').pop()}`); }}
+                          >
+                            {localizedName}
+                          </button>
+                        </h4>
+                        <p>{inst.country_code || ('Unknown country')} • {'Academic institution'}</p>
+                      </div>
+                      <FollowButton
+                        entity={{
+                          type: 'institution',
+                          id: inst.id,
+                          displayName: inst.display_name,
+                          source: inst._metadataSource || 'ror',
+                          externalIds: { ror: inst.ror || inst.id },
+                          metadata: { localizedNames: inst.localized_names },
+                        }}
+                        isFollowing={isFollowing}
+                        isPending={isFollowPending}
+                        onToggle={handleToggleFollow}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {projectResults.length > 0 && (activeSearchFilter === 'all' || activeSearchFilter === 'projects') && (
+              <div className="search-section" data-section="projects">
+                <h3 className="search-section-title">{'Research projects'}</h3>
+                {projectResults.map((project, index) => (
+                  <div
+                    key={project.id}
+                    className="search-item search-item-enter"
+                    style={{ '--search-item-index': Math.min(index, 6) }}
+                    onClick={() => navigate(`/explorer/project/${encodeURIComponent(project.id)}?name=${encodeURIComponent(getProjectDisplayName(project))}&funder=${encodeURIComponent(project.funder)}`)}
+                  >
+                    <div className="search-item-icon"><Briefcase size={22} /></div>
+                    <div className="search-item-info">
+                      <h4>
+                        <button
+                          type="button"
+                          className="search-item-title-btn"
+                          onClick={(e) => { e.stopPropagation(); navigate(`/explorer/project/${encodeURIComponent(project.id)}?name=${encodeURIComponent(getProjectDisplayName(project))}&funder=${encodeURIComponent(project.funder)}`); }}
+                        >
+                          {getProjectDisplayName(project)}
+                        </button>
+                      </h4>
+                      <p>{project.funder}{project.budget > 0 ? (() => { try { return ` • ${new Intl.NumberFormat(locale, { style: 'currency', currency: project.currency, maximumFractionDigits: 0 }).format(project.budget)}`; } catch { return ` • ${project.budget.toLocaleString(locale)} €`; } })() : ''}</p>
+                    </div>
+                    <FollowButton
+                      entity={{ type: 'project', id: project.id, displayName: getProjectDisplayName(project), source: 'openaire', metadata: { funder: project.funder } }}
+                      isFollowing={isFollowing}
+                      isPending={isFollowPending}
+                      onToggle={handleToggleFollow}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {conceptResults.length > 0 && (activeSearchFilter === 'all' || activeSearchFilter === 'topics') && (
+              <div className="search-section" data-section="topics">
+                <h3 className="search-section-title">{'Topics and areas'}</h3>
+                {conceptResults.map((concept, index) => (
+                  <div
+                    key={concept.id}
+                    className="search-item search-topic-item search-item-enter"
+                    style={{ '--search-item-index': Math.min(index, 6) }}
+                    onClick={() => navigate(`/explorer/topic/${encodeURIComponent(String(concept.id).split('/').pop())}`)}
+                  >
+                    <div className="search-item-icon search-topic-icon"><Lightbulb size={22} /></div>
+                    <div className="search-item-info">
+                      <h4>
+                        <button
+                          type="button"
+                          className="search-item-title-btn"
+                          onClick={(e) => { e.stopPropagation(); navigate(`/explorer/topic/${encodeURIComponent(String(concept.id).split('/').pop())}`); }}
+                        >
+                          {concept.display_name}
+                        </button>
+                      </h4>
+                      <p>
+                        {concept._localTopic && concept.level === 0
+                          ? `${concept.subcategoryCount || 0} ${'related topics'}`
+                          : concept._localTopic
+                            ? `${'Topic in'} ${concept.parent_display_name || ('PaperTok taxonomy')}`
+                            : [
+                                concept.field_display_name || ('OpenAlex topic'),
+                                Number.isFinite(concept.works_count)
+                                  ? `${concept.works_count.toLocaleString(locale)} ${'works'}`
+                                  : '',
+                              ].filter(Boolean).join(' • ')}
+                      </p>
+                    </div>
+                    <FollowButton
+                      entity={{
+                        type: 'topic',
+                        id: concept.id,
+                        displayName: concept.display_name,
+                        source: concept._localTopic ? 'papertok' : 'openalex',
+                        metadata: {
+                          categoryIds: concept.categoryIds,
+                          // Persisted on the follow; the key predates the
+                          // English-only interface and stays for the readers.
+                          labelEn: concept.label,
+                        },
+                      }}
+                      isFollowing={isFollowing}
+                      isPending={isFollowPending}
+                      onToggle={handleToggleFollow}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {authorResults.length > 0 && (activeSearchFilter === 'all' || activeSearchFilter === 'authors') && (
+              <div className="search-section" data-section="authors">
+                <h3 className="search-section-title">{'Authors'}</h3>
+                {authorResults.map((author, index) => {
+                  const authorFollow = { type: 'author', id: author.id, displayName: author.display_name, source: 'openalex', externalIds: { orcid: author.orcid } };
+                  const authorInstitution = getLocalizedInstitutionName(
+                    author.institutionData || { display_name: author.institution },
+                  );
+                  return (
+                    <div
+                      key={author.id}
+                      className="search-item search-item-enter"
+                      style={{ '--search-item-index': Math.min(index, 6) }}
+                      onClick={() => navigate(`/explorer/author/${author.id.split('/').pop()}`)}
+                    >
+                      <div className="search-item-avatar">
+                        {author.display_name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="search-item-info">
+                        <h4>
+                          <button
+                            type="button"
+                            className="search-item-title-btn"
+                            onClick={(e) => { e.stopPropagation(); navigate(`/explorer/author/${author.id.split('/').pop()}`); }}
+                          >
+                            {author.display_name}
+                          </button>
+                        </h4>
+                        <p>{authorInstitution || ('Unknown institution')}</p>
+                      </div>
+                      <FollowButton
+                        entity={authorFollow}
+                        isFollowing={isFollowing}
+                        isPending={isFollowPending}
+                        onToggle={handleToggleFollow}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {paperResults.length > 0 && (activeSearchFilter === 'all' || activeSearchFilter === 'papers') && (
+              <div className="search-section" data-section="papers">
+                <h3 className="search-section-title">{'Publications'}</h3>
+                {paperResults.map((paper, index) => {
+                  const authors = (paper.authors || []).map(author => author.name || author);
+                  return (
+                    <div
+                      key={paper.id}
+                      className="search-item paper-item search-item-enter"
+                      style={{ '--search-item-index': Math.min(index, 6) }}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setSelectedPaper(paper)}
+                      onKeyDown={event => handleSearchItemKeyDown(
+                        event,
+                        () => setSelectedPaper(paper),
+                      )}
+                    >
+                      <div className="search-item-icon"><FileText size={22} /></div>
+                      <div className="search-item-info">
+                        <h4 lang="en"><ScientificText>{paper.title}</ScientificText></h4>
+                        <p className="search-item-authors">{authors.slice(0, 3).join(', ')}{authors.length > 3 ? ` +${authors.length - 3}` : ''}</p>
+                        <span className="search-item-meta">
+                          {formatPaperDate(paper, locale) || ('Unknown date')} • {paper.primaryCategory || paper.journal || 'Paper'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+                </OrderedSearchSections>
+              </div>
+            )}
+        </TabsContent>
+      </div>
+
+      {/* Paper Card Overlay */}
+      <PaperOverlay
+        open={Boolean(selectedPaper && !pdfPaper)}
+        onClose={closeSelectedPaper}
+        onExitComplete={() => setShownPaper(null)}
+       
+        label={'Paper details'}
+      >
+        {shownPaper && (
+          <PaperCard
+            paper={shownPaper}
+            isLiked={likedPaperIds.has(interactionIdFor(shownPaper))}
+            isSaved={savedPaperIds.has(interactionIdFor(shownPaper))}
+            isRead={readPaperIds.has(interactionIdFor(shownPaper))}
+            onLike={toggleLike}
+            onNotInterested={(paper) => { markNotInterested(paper); setSelectedPaper(null); }}
+            onMarkAsRead={markAsRead}
+            onUnmarkAsRead={unmarkAsRead}
+            onOpenPdf={(paper) => setPdfPaper(paper)}
+            onSaveToList={onSaveToList}
+            getInteractionState={getInteractionState}
+            trackViewTime={trackViewTime}
+            trackSkip={trackSkip}
+          />
+        )}
+      </PaperOverlay>
+
+      {/* PDF Viewer */}
+      {pdfPaper && (
+        <PDFViewer paper={pdfPaper} closeRef={pdfCloseRef} onClose={() => setPdfPaper(null)} />
+      )}
+    </Tabs>
+  );
+}

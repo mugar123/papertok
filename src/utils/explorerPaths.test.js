@@ -27,7 +27,7 @@ test('signed out, the public entity page gets the id when there is one, and the 
 });
 
 test('SOURCE: every author link on the card goes through the helper', async () => {
-  const jsx = await readFile(new URL('../components/Feed/PaperCard.jsx', import.meta.url), 'utf8');
+  const jsx = await readFile(new URL('../components/Feed/PaperCard.tsx', import.meta.url), 'utf8');
   assert.doesNotMatch(jsx, /\/explorer\/author\/\$\{encodeURIComponent\(/, 'no card builds a name-only author path by hand anymore');
   assert.ok((jsx.match(/authorExplorerPath\(/g) || []).length >= 2, 'both author lists use it');
 });

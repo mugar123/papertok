@@ -281,9 +281,9 @@ test('SOURCE: the pending credential is deliberately never stashed', async () =>
 test('SOURCE: nothing on the feed path imports the identity service', async () => {
   // The feed-load invariant (one document read) asserted where it can break.
   for (const path of [
-    '../context/FeedContext.jsx',
-    '../components/Feed/FeedContainer.jsx',
-    '../components/Feed/PaperCard.jsx',
+    '../context/FeedContext.tsx',
+    '../components/Feed/FeedContainer.tsx',
+    '../components/Feed/PaperCard.tsx',
     '../utils/interactionProfileLoader.ts',
     '../services/interactionProfileStore.ts',
   ]) {

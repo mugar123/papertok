@@ -31,7 +31,7 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '
 const read = async (path) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
 
 test('the provenance row holds its 30px from the first frame, so the plot never resizes under the centre', async () => {
-  const jsx = await read('./RelatedPapersSheet.jsx');
+  const jsx = await read('./RelatedPapersSheet.tsx');
 
   // Rendered with the sheet's graph height, not with the data.
   assert.match(
@@ -69,7 +69,7 @@ test('the centre is placed at half the plot, which is what makes a late sibling 
  * frame. It is a move, so it is animated as one.
  */
 test('the centre carries its column on `translate`, never on `left`, so the move can be transitioned', async () => {
-  const jsx = await read('./RelatedPapersSheet.jsx');
+  const jsx = await read('./RelatedPapersSheet.tsx');
 
   // The x is handed over as a variable; the stylesheet decides what property
   // it lands on. `left` would lay the plot out again every frame, and

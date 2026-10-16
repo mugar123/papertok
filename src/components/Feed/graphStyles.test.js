@@ -16,7 +16,7 @@ import { readFile } from 'node:fs/promises';
  * long as nobody read past it.
  */
 const PREFIX = 'graph-';
-const JSX = './RelatedPapersSheet.jsx';
+const JSX = './RelatedPapersSheet.tsx';
 const CSS = './PaperCard.css';
 
 /**

@@ -18,8 +18,8 @@ async function readCode(relativePath) {
   return source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 }
 
-const page = await readCode('./SearchPage.jsx');
-const palette = await readCode('./SearchCommand.jsx');
+const page = await readCode('./SearchPage.tsx');
+const palette = await readCode('./SearchCommand.tsx');
 const paletteSearch = await readCode('../../hooks/useEntitySearch.ts');
 
 // The palette is checked as one body of code: the component owns what is
@@ -328,7 +328,7 @@ test('visibleResultCount agrees with hasVisibleResults about a direct ORCID hit,
  * is exactly the failure a person notices and a test never does, so the test
  * reads the router.
  */
-const app = await readCode('../../App.jsx');
+const app = await readCode('../../App.tsx');
 const destinations = await readCode('../../utils/searchDestinations.ts');
 const { PUBLIC_ENTITY_TYPES } = await import('../../utils/publicNavigation.ts');
 
@@ -457,7 +457,7 @@ test('the search page input is named by more than its placeholder', () => {
 });
 
 test('author, institution and topic rows hand their entity over in router state', async () => {
-  const palette = await readFile(new URL('./SearchCommand.jsx', import.meta.url), 'utf8');
+  const palette = await readFile(new URL('./SearchCommand.tsx', import.meta.url), 'utf8');
   assert.match(palette, /import \{ handoverFromSearchRow \} from '\.\.\/\.\.\/utils\/explorerHandover\.ts';/);
   assert.match(palette, /onSelect=\{\(\) => go\(path, \{ entity: handoverFromSearchRow\('author', author\), entityType: 'author' \}\)\}/);
   assert.match(palette, /onSelect=\{\(\) => go\(`\/explorer\/institution\/\$\{lastPathSegment\(institution\.id\)\}`, \{ entity: handoverFromSearchRow\('institution', institution\), entityType: 'institution' \}\)\}/);
@@ -477,7 +477,7 @@ test('author, institution and topic rows hand their entity over in router state'
  * drifting apart again.
  */
 test('the search row and the explorer build a project name with the same helper', async () => {
-  const explorer = await readCode('../Explorer/EntityExplorer.jsx');
+  const explorer = await readCode('../Explorer/EntityExplorer.tsx');
   assert.match(
     page,
     /import \{ getProjectDisplayName \} from '\.\.\/\.\.\/utils\/entityMetadata\.ts';/,

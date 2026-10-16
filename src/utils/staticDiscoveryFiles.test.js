@@ -9,7 +9,7 @@ import { readFile } from 'node:fs/promises';
  * visitor, and so a crawler, back to /feed (audit 2026-09-23, issue 5).
  */
 
-const APP = new URL('../App.jsx', import.meta.url);
+const APP = new URL('../App.tsx', import.meta.url);
 const SITEMAP = new URL('../../public/sitemap.xml', import.meta.url);
 const ROBOTS = new URL('../../public/robots.txt', import.meta.url);
 

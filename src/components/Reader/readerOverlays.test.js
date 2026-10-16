@@ -18,7 +18,7 @@ const stripComments = source => source
   .replace(/^\s*\/\/.*$/gm, '');
 
 test('the reader shell is a modal Base UI Dialog that owns its own leave', async () => {
-  const jsx = stripComments(await read('./PaperReader.jsx'));
+  const jsx = stripComments(await read('./PaperReader.tsx'));
 
   assert.match(jsx, /import \{ Dialog, DialogContent \} from '\.\.\/ui\/dialog\.jsx';/);
   // Modal (FeedContainer's scroll guard reads the `aria-modal` Base UI sets)
@@ -43,8 +43,8 @@ test('the reader shell is a modal Base UI Dialog that owns its own leave', async
 });
 
 test('the reader\'s toggle groups speak Base UI\'s array API', async () => {
-  const reader = stripComments(await read('./PaperReader.jsx'));
-  const rail = stripComments(await read('./AnnotationRail.jsx'));
+  const reader = stripComments(await read('./PaperReader.tsx'));
+  const rail = stripComments(await read('./AnnotationRail.tsx'));
 
   // `value` is always an array and `onValueChange` receives the whole array;
   // a `type="single"` / string value is the Radix shape and silently breaks.
@@ -55,9 +55,9 @@ test('the reader\'s toggle groups speak Base UI\'s array API', async () => {
 });
 
 test('the selection menu and the export card are anchored popovers', async () => {
-  const menu = stripComments(await read('./SelectionMenu.jsx'));
-  const card = stripComments(await read('./ExportCard.jsx'));
-  const reader = stripComments(await read('./PaperReader.jsx'));
+  const menu = stripComments(await read('./SelectionMenu.tsx'));
+  const card = stripComments(await read('./ExportCard.tsx'));
+  const reader = stripComments(await read('./PaperReader.tsx'));
 
   // The menu sits on the selection's own rectangle — Base UI positions it,
   // flips it and keeps it on the page; nothing measures by hand any more.

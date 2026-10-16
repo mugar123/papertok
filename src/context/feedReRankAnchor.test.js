@@ -25,7 +25,7 @@ function bounded(code, from, to, label, maxLines) {
  * through the visible card, whatever paper the interaction names.
  */
 test('SOURCE: the re-rank splits through the deepest of the interacted and the visible paper', async () => {
-  const code = stripComments(await read('./FeedContext.jsx'));
+  const code = stripComments(await read('./FeedContext.tsx'));
   assert.match(code, /import \{ (?:mergeFreshFeedPage, )?splitFeedForReRank \} from '\.\.\/utils\/feedReRankSplit\.ts';/);
   const rerank = bounded(code, 'const reRankFeed = useCallback(', '}, [calculateAndAttachScore]);', 'reRankFeed', 30);
   assert.match(rerank, /splitFeedForReRank\(prevPapers, \{\s*anchorPaperIds: \[sourcePaperId, visiblePaperIdRef\.current\],?\s*\}\)/,
@@ -36,7 +36,7 @@ test('SOURCE: the re-rank splits through the deepest of the interacted and the v
 });
 
 test('SOURCE: the visible paper lives in a ref and is reported through the context value', async () => {
-  const code = stripComments(await read('./FeedContext.jsx'));
+  const code = stripComments(await read('./FeedContext.tsx'));
   assert.match(code, /const visiblePaperIdRef = useRef\(null\);/);
   const report = bounded(code, 'const reportVisiblePaper = useCallback(', '}, []);', 'reportVisiblePaper', 6);
   assert.match(report, /visiblePaperIdRef\.current = paperId \|\| null;/, 'a ref write, never a state update');

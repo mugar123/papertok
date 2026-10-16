@@ -32,7 +32,7 @@ function linksRow(jsx) {
 }
 
 test('SOURCE: the two tabs are NavLinks, For you included, so a lost click still navigates through the href', async () => {
-  const row = linksRow(stripJsComments(await read('./Navbar.jsx')));
+  const row = linksRow(stripJsComments(await read('./Navbar.tsx')));
   const navLinks = row.match(/<NavLink\b/g) || [];
   assert.equal(navLinks.length, 2, 'exactly two NavLinks in the links row');
   assert.match(row, /<NavLink\s+to="\/feed"\s+end\b/, 'For you must be a NavLink to "/feed" with `end`');
@@ -43,14 +43,14 @@ test('SOURCE: the two tabs are NavLinks, For you included, so a lost click still
 });
 
 test('SOURCE: For you still keeps the feed in its default mode when tapped', async () => {
-  const row = linksRow(stripJsComments(await read('./Navbar.jsx')));
+  const row = linksRow(stripJsComments(await read('./Navbar.tsx')));
   const forYou = row.match(/<NavLink\s+to="\/feed"[\s\S]*?<\/NavLink>/);
   assert.ok(forYou, 'the For you NavLink is present');
   assert.match(forYou[0], /setFeedMode\('top'\)/, 'the mode reset rides on the NavLink onClick (React Router runs it before its own)');
   // And on the touch route, where the navigation happens on pointerup and the
   // click that may follow is swallowed: the reset has to happen there too, or
   // a finger would switch tab without it.
-  const jsx = stripJsComments(await read('./Navbar.jsx'));
+  const jsx = stripJsComments(await read('./Navbar.tsx'));
   assert.match(jsx, /if \(tab === 'home'\) setFeedMode\('top'\);/);
 });
 
@@ -116,7 +116,7 @@ test('SOURCE: on a touch screen each tab is hit across the whole bar, not only i
  * is. That was the glitch the reader saw in the yellow bar.
  */
 test('SOURCE: the mark is measured once per tab change, from the tab the router made current', async () => {
-  const jsx = stripJsComments(await read('./Navbar.jsx'));
+  const jsx = stripJsComments(await read('./Navbar.tsx'));
   const row = linksRow(jsx);
   for (const tab of ['home', 'following']) {
     assert.match(row, new RegExp(`data-tab="${tab}"`), `${tab} carries its data-tab`);
@@ -147,7 +147,7 @@ test('SOURCE: the mark is measured once per tab change, from the tab the router 
  * the click that may follow is swallowed or the same route is pushed twice.
  */
 test('SOURCE: a finger that lifts on the tab it pressed navigates without waiting for the click', async () => {
-  const jsx = stripJsComments(await read('./Navbar.jsx'));
+  const jsx = stripJsComments(await read('./Navbar.tsx'));
   const row = linksRow(jsx);
   for (const [tab, to] of [['home', '/feed'], ['following', '/following']]) {
     assert.match(row, new RegExp(`onPointerUp=\\{\\(event\\) => liftTab\\(event, '${tab}', '${to}'\\)\\}`), `${tab} navigates on pointerup`);

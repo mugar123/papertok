@@ -30,7 +30,7 @@ function bounded(code, from, to, label, maxLines) {
  * re-serialised the whole local state, abstracts included.
  */
 test('SOURCE: markSeen keeps one identity for the whole session', async () => {
-  const code = stripComments(await read('./FollowingUpdatesContext.jsx'));
+  const code = stripComments(await read('./FollowingUpdatesContext.tsx'));
   const markSeen = bounded(code, 'const markSeen = useCallback(', '}, [scheduleSeenPersist]);', 'markSeen', 30);
   assert.match(markSeen, /if \(!key \|\| seenIdsRef\.current\.has\(key\)\) return;/, 'the early return reads the ref, not the state');
   assert.doesNotMatch(markSeen, /\bseenIds\b(?!Ref)/, 'no read of `seenIds` state anywhere in the callback');
@@ -41,7 +41,7 @@ test('SOURCE: markSeen keeps one identity for the whole session', async () => {
 });
 
 test('SOURCE: the persisted write waits for a still feed and always carries the freshest set', async () => {
-  const code = stripComments(await read('./FollowingUpdatesContext.jsx'));
+  const code = stripComments(await read('./FollowingUpdatesContext.tsx'));
   const delay = code.match(/const SEEN_PERSIST_DELAY_MS = (\d+);/);
   assert.ok(delay, 'the delay is a named constant');
   const ms = Number(delay[1]);
@@ -52,7 +52,7 @@ test('SOURCE: the persisted write waits for a still feed and always carries the 
 });
 
 test('SOURCE: a tab hidden or closed inside the delay flushes first', async () => {
-  const code = stripComments(await read('./FollowingUpdatesContext.jsx'));
+  const code = stripComments(await read('./FollowingUpdatesContext.tsx'));
   const effect = bounded(code, "window.addEventListener('pagehide', flushSeenPersist);", '}, [flushSeenPersist]);', 'the flush-on-hide effect', 10);
   assert.match(code, /if \(document\.visibilityState === 'hidden'\) flushSeenPersist\(\);/);
   assert.match(effect, /document\.addEventListener\('visibilitychange', handleVisibilityChange\);/);

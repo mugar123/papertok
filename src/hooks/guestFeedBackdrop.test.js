@@ -18,7 +18,7 @@ test('nothing loads until the feed is enabled, and the first load after it is no
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 test('the guest page enables its feed once the visitor has answered', () => {
-  const page = stripComments(readFileSync(new URL('../components/Public/GuestFeedPage.jsx', import.meta.url), 'utf8'));
+  const page = stripComments(readFileSync(new URL('../components/Public/GuestFeedPage.tsx', import.meta.url), 'utf8'));
   // `firstVisit` is `interests === null`: the welcome page is up until then.
   assert.match(page, /const firstVisit = interests === null;/);
   assert.match(page, /const guestFeed = useGuestFeed\(\{ areas, topics, enabled: !firstVisit \}\);/);
@@ -33,7 +33,7 @@ test('the guest page enables its feed once the visitor has answered', () => {
   assert.match(hook, /const decision = guestFeedLoadDecision\(\{ enabled, previousKey, planKey: plan\.key \}\);\s*if \(!decision\) return undefined;/);
   assert.match(hook, /load\(plan, decision\.refresh \? \{ refresh: true, forceRefresh: false \} : \{\}\);/);
 
-  const app = stripComments(readFileSync(new URL('../App.jsx', import.meta.url), 'utf8'));
+  const app = stripComments(readFileSync(new URL('../App.tsx', import.meta.url), 'utf8'));
   const feedRoute = app.slice(app.indexOf('path="/feed"'), app.indexOf('path="/lists"'));
   assert.match(feedRoute, /<GuestFeedPage\s+onAuthRequired=\{requestAuthentication\}\s+onOpenPdf=\{openPdf\}/);
 });

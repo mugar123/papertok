@@ -18,7 +18,7 @@ import { readFile } from 'node:fs/promises';
  * and does not load under node.
  */
 
-const RAIL_JSX = new URL('./AnnotationRail.jsx', import.meta.url);
+const RAIL_JSX = new URL('./AnnotationRail.tsx', import.meta.url);
 
 const stripScript = source => source
   .replace(/\/\*[\s\S]*?\*\//g, '')

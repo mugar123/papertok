@@ -12,7 +12,7 @@ import { readFile } from 'node:fs/promises';
  * re-read of `users/{uid}/following` every time it happens.
  */
 
-const SOURCE = new URL('./FollowingContext.jsx', import.meta.url);
+const SOURCE = new URL('./FollowingContext.tsx', import.meta.url);
 
 function subscriptionEffect(source) {
   // The effect that opens the snapshot listener, up to its dependency array.

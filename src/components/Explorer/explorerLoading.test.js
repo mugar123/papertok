@@ -62,7 +62,7 @@ test('the sweep keeps its phase down the page, now on the pseudo-element', async
 });
 
 test('nothing is left of the page skeleton reserving the Wikipedia block', async () => {
-  const jsx = (await read('./EntityExplorer.jsx')).replace(/^\s*\/\/.*$/gm, '');
+  const jsx = (await read('./EntityExplorer.tsx')).replace(/^\s*\/\/.*$/gm, '');
   assert.doesNotMatch(jsx, /WikiBlockSkeleton/, "explorerSkeletonShape never answers 'wiki' any more, so the component was unreachable");
   const css = stripComments(await read('./EntityExplorer.css'));
   assert.doesNotMatch(css, /\.ehc-wiki--reserved/);
@@ -101,7 +101,7 @@ test('the ORCID card lands at the page\'s tempo, not over four seconds from noth
 });
 
 test('the recent-impact score settles in place once it is known', async () => {
-  const jsx = await read('./RecentImpactStat.jsx');
+  const jsx = await read('./RecentImpactStat.tsx');
   assert.match(jsx, /className=\{`ehc-stat-value\$\{!isLoading && \(impact \|\| error\) \? ' is-settled' : ''\}`\}/);
   const css = await read('./EntityExplorer.css');
   assert.match(css, /\.ehc-stat-value\.is-settled \{\s*animation: statSettle 0\.3s ease-out both;\s*\}/);
@@ -109,19 +109,19 @@ test('the recent-impact score settles in place once it is known', async () => {
 });
 
 test('the list is loading from the first live frame, so the empty-state copy never flashes', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
+  const jsx = await read('./EntityExplorer.tsx');
   assert.match(jsx, /const \[isLoadingPapers, setIsLoadingPapers\] = useState\(true\);/);
   // Every entity load re-arms it: a new entity means a new papers request.
   assert.match(jsx, /async function loadEntity\(\) \{[\s\S]*?setIsLoadingPapers\(true\);[\s\S]*?if \(type === 'topic'/);
 });
 
 test('the ORCID record and the impact score are requested together, declared before either starts', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
+  const jsx = await read('./EntityExplorer.tsx');
   assert.match(jsx, /setEntity\(data \|\| handedEntity \|\| cachedEntity\);\s*setIsLoadingEntity\(false\);[\s\S]*?setIsLoadingOrcid\(wantsOrcid\);[\s\S]*?await Promise\.all\(\[\s*wantsRecentImpact \? loadRecentImpact\(\) : null,\s*wantsOrcid \? loadOrcid\(\) : null,\s*\]\);/);
 });
 
 test('a known ORCID keeps its loading slot and a deferred reset cannot clear its response', async () => {
-  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
   assert.match(jsx, /useState\(\(\) => type === 'author' && Boolean\(entity\?\.orcid \|\| extractOrcid\(id\)\)\)/);
   assert.match(jsx, /setIsLoadingOrcid\(type === 'author' && Boolean\(bornWith\?\.orcid \|\| extractOrcid\(id\)\)\);/);
   // Guarded against the mount since 2026-09-18 (a resumed visit keeps its
@@ -150,7 +150,7 @@ test('a known ORCID keeps its loading slot and a deferred reset cannot clear its
  * clamped). One owner of the height, and it is not framer.
  */
 test('the Wikipedia block arrives under the settle: its fold animates opacity only', async () => {
-  const jsx = (await read('./EntityExplorer.jsx')).replace(/^\s*\/\/.*$/gm, '');
+  const jsx = (await read('./EntityExplorer.tsx')).replace(/^\s*\/\/.*$/gm, '');
   const fold = jsx.match(/<motion\.div\s+className="ehc-wiki-fold"([\s\S]*?)>\s*<div\s+className=\{`ehc-wiki /);
   assert.ok(fold, 'the fold is a motion wrapper around the padded `.ehc-wiki`');
   assert.match(fold[1], /initial=\{\{ opacity: 0 \}\}/, 'it starts invisible, at its full height');
@@ -173,7 +173,7 @@ test('the Wikipedia block arrives under the settle: its fold animates opacity on
  * what the pre-3b96b3a code did and what the in-fold skeleton branch is for.
  */
 test('the Wikipedia block opens once, and a re-lookup swaps its contents in place', async () => {
-  const jsx = (await read('./EntityExplorer.jsx')).replace(/^\s*\/\/.*$/gm, '');
+  const jsx = (await read('./EntityExplorer.tsx')).replace(/^\s*\/\/.*$/gm, '');
   assert.match(jsx, /const \[wikiBlockOpened, setWikiBlockOpened\] = useState\(false\);/);
   // Adjusted during render — the documented way to derive state from a prop —
   // so the commit that settles with content is the one that opens the block.
@@ -196,7 +196,7 @@ test('the Wikipedia block opens once, and a re-lookup swaps its contents in plac
  * exists to remove, arriving from the exit side. `onExitComplete` is that commit.
  */
 test('the space the Wikipedia block leaves behind is closed by the settle, not dropped', async () => {
-  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
   assert.match(jsx, /const \[wikiFoldExits, setWikiFoldExits\] = useState\(0\);/);
   assert.match(jsx, /<AnimatePresence initial=\{false\} onExitComplete=\{\(\) => setWikiFoldExits\(\(n\) => n \+ 1\)\}>/);
   const deps = jsx.match(/useHeightSettle\(\s*heroBodyRef,\s*\[([^\]]*)\]/);
@@ -205,12 +205,12 @@ test('the space the Wikipedia block leaves behind is closed by the settle, not d
 });
 
 test('the experience panel grows into place when the ORCID record lands', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
+  const jsx = await read('./EntityExplorer.tsx');
   assert.match(jsx, /<AnimatePresence>\s*\{isExperienceOpen && \(/);
 });
 
 test('switching tabs neither cancels nor repeats a papers request', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
+  const jsx = await read('./EntityExplorer.tsx');
   assert.match(jsx, /const papersRequestRef = useRef\(null\);/);
   assert.match(jsx, /const requestKey = entityPapersRequestKey\(\{/);
   assert.match(jsx, /if \(papersRequestRef\.current\?\.key === requestKey && !papersRequestRef\.current\.cancelled\) return;/);
@@ -219,7 +219,7 @@ test('switching tabs neither cancels nor repeats a papers request', async () => 
 });
 
 test('the authors list is requested on the first visit to its tab and kept from then on', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
+  const jsx = await read('./EntityExplorer.tsx');
   // Seeded from the visit memory since 2026-09-18 (explorerResume.test.js); a
   // first visit still starts closed.
   assert.match(jsx, /const \[authorsOpened, setAuthorsOpened\] = useState\(\(\) => Boolean\(resumed\?\.authorsOpened\)\);/);
@@ -230,7 +230,7 @@ test('the authors list is requested on the first visit to its tab and kept from 
 });
 
 test('the page skeleton reserves as many rows as the list skeleton paints', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
+  const jsx = await read('./EntityExplorer.tsx');
   const pageSkeletonRows = jsx.match(/<div className="explorer-grid">\s*\{\[1, 2, 3, 4, 5\]\.map\(i => \(\s*<div key=\{i\} className="explorer-list-item ex-skel-row">/);
   assert.ok(pageSkeletonRows, 'five rows in the page skeleton');
   assert.match(jsx, /isLoadingPapers && !isFetchingMore && \[1, 2, 3, 4, 5\]\.map/);
@@ -247,7 +247,7 @@ test('the fold wrapper is a plain box now', async () => {
 });
 
 test('the list mounts in idle chunks, rows below the fold are skipped, and the sentinel waits for the page', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
+  const jsx = await read('./EntityExplorer.tsx');
   assert.match(jsx, /const \[rowBudget, setRowBudget\] = useState\(EXPLORER_ROW_CHUNK\);/);
   assert.match(jsx, /const mountedPapers = useMemo\(\(\) => filteredPapers\.slice\(0, rowBudget\), \[filteredPapers, rowBudget\]\);/);
   assert.match(jsx, /const rowsSettled = rowBudget >= filteredPapers\.length;/);
@@ -286,7 +286,7 @@ test('the list mounts in idle chunks, rows below the fold are skipped, and the s
  * both end the pagination, and only the second is an error.
  */
 test('a project page tells an unindexed project from a load that failed, and ends the pagination for both', async () => {
-  const src = stripComments(await read('./EntityExplorer.jsx'));
+  const src = stripComments(await read('./EntityExplorer.tsx'));
 
   assert.doesNotMatch(
     src,
@@ -323,7 +323,7 @@ test('a project page tells an unindexed project from a load that failed, and end
  * only once the wait has run past 4s, so a normal load never shows it.
  */
 test('the first page\'s long wait is announced at 4s, in a fade, under the skeleton rows', async () => {
-  const src = stripComments(await read('./EntityExplorer.jsx'));
+  const src = stripComments(await read('./EntityExplorer.tsx'));
   const css = await read('./EntityExplorer.css');
   assert.match(src, /setTimeout\(\(\) => setIsPapersLoadSlow\(true\), 4000\)/);
   assert.match(src, /isLoadingPapers && !isFetchingMore && isPapersLoadSlow && \(\s*<p className="explorer-loading-note"/);
@@ -343,7 +343,7 @@ test('the first page\'s long wait is announced at 4s, in a fade, under the skele
  * instead of inheriting whatever was left of the first one's.
  */
 test('the timer effect only arms the wait; it never resets the flag inside its own body', async () => {
-  const src = stripComments(await read('./EntityExplorer.jsx'));
+  const src = stripComments(await read('./EntityExplorer.tsx'));
   const effect = src.match(/if \(!\(isLoadingPapers && !isFetchingMore\)\) return undefined;[\s\S]*?\}, \[isLoadingPapers, isFetchingMore, type, id\]\);/);
   assert.ok(effect, 'the timer effect guards with a plain return, and is keyed to the route as well');
   assert.doesNotMatch(effect[0], /setIsPapersLoadSlow\(false\)/, 'the reset belongs to loadPapers, not to this effect');

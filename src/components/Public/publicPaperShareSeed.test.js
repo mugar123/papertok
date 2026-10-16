@@ -16,7 +16,7 @@ import { readFile } from 'node:fs/promises';
  * each rule bound in one contiguous pattern.
  */
 
-const JSX = new URL('./PublicPaperPage.jsx', import.meta.url);
+const JSX = new URL('./PublicPaperPage.tsx', import.meta.url);
 const stripComments = source => source
   .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
   .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');

@@ -10,7 +10,7 @@ test('SOURCE: a new account that signed in from a public page is sent to the onb
   // save, follow) only open the AuthPrompt: nothing used to take a brand-new
   // account from there to choose its interests (audit of 2026-09-16,
   // hallazgo 2).
-  const code = stripComments(await readFile(new URL('../../App.jsx', import.meta.url), 'utf8'));
+  const code = stripComments(await readFile(new URL('../../App.tsx', import.meta.url), 'utf8'));
   assert.match(code, /const PUBLIC_ROUTE_PREFIXES = \['\/public\/', '\/explorer\/'\]/);
   assert.match(code, /function isPublicRoute\(path\) \{\s*return PUBLIC_ROUTE_PREFIXES\.some\(prefix => path\.startsWith\(prefix\)\)\s*\}/);
   const effect = code.match(

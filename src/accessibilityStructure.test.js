@@ -21,11 +21,11 @@ import { readFile, readdir } from 'node:fs/promises';
  * actually verified.
  */
 
-const APP_JSX = new URL('./App.jsx', import.meta.url);
-const NAVBAR_JSX = new URL('./components/Layout/Navbar.jsx', import.meta.url);
-const FEED_CONTAINER_JSX = new URL('./components/Feed/FeedContainer.jsx', import.meta.url);
-const BUTTON_VARIANTS = new URL('./components/ui/button-variants.js', import.meta.url);
-const COMMAND_JSX = new URL('./components/ui/command.jsx', import.meta.url);
+const APP_JSX = new URL('./App.tsx', import.meta.url);
+const NAVBAR_JSX = new URL('./components/Layout/Navbar.tsx', import.meta.url);
+const FEED_CONTAINER_JSX = new URL('./components/Feed/FeedContainer.tsx', import.meta.url);
+const BUTTON_VARIANTS = new URL('./components/ui/button-variants.ts', import.meta.url);
+const COMMAND_JSX = new URL('./components/ui/command.tsx', import.meta.url);
 const SRC_DIR = new URL('./', import.meta.url);
 
 /**
@@ -135,7 +135,7 @@ test('the skip link handles its own click instead of leaving the jump to the bro
   // hash, react-router read "/main-content" as the pathname, matched nothing,
   // and the catch-all ejected a keyboard user from the page they were on
   // (verified live from #/login at the time: the hash became #main-content,
-  // then #/, and the login page was gone). src/main.jsx mounts a BrowserRouter
+  // then #/, and the login page was gone). src/main.tsx mounts a BrowserRouter
   // since 2026-09-18, so that hazard is gone and the comment must NOT name it
   // as a live reason. What replaces the assertion is the one below: the
   // comment has to give a reason that is true now, and the two reasons that
@@ -291,7 +291,7 @@ test('el landmark del feed está en TODAS las ramas, no sólo en la que tiene pa
 });
 
 test('`/following` passes its own landmark, with its own heading', async () => {
-  const following = await readSource(new URL('./components/Following/FollowingFeedPage.jsx', import.meta.url));
+  const following = await readSource(new URL('./components/Following/FollowingFeedPage.tsx', import.meta.url));
 
   const prop = following.match(/landmark=\{\{\s*label: ([^\n]+),\s*heading: ([^\n]+),\s*\}\}/);
   assert.ok(
@@ -370,7 +370,7 @@ test('no .css stylesheet switches the focus ring off without a replacement', asy
   // in `.css` (see `stylesheets()` above). It cannot see an `outline-none`
   // written as a Tailwind utility class inside a JSX `className`/`cn(...)`
   // call — that string never touches a stylesheet. One exists today, on the
-  // search palette's field in `src/components/ui/command.jsx`, and it was
+  // search palette's field in `src/components/ui/command.tsx`, and it was
   // measured in the browser rather than reasoned about: it costs the user no
   // ring. (The palette's rows carried a second one until the selected-row ring
   // went in; see that test above for why it could not stay.) Whether the field
@@ -641,7 +641,7 @@ test('no component outranks the global focus ring from JSX', async () => {
 
 test('the guest feed names itself with a visually hidden h1 inside its own <main>', async () => {
   // A JSX comment leaves its braces behind once the comment is stripped.
-  const guest = (await readSource(new URL('./components/Public/GuestFeedPage.jsx', import.meta.url)))
+  const guest = (await readSource(new URL('./components/Public/GuestFeedPage.tsx', import.meta.url)))
     .replace(/\{\s*\}/g, '');
   assert.match(
     guest,
@@ -652,25 +652,25 @@ test('the guest feed names itself with a visually hidden h1 inside its own <main
   assert.equal((guest.match(/<h1\b/g) || []).length, 1);
   // The welcome, which the same route shows first, brings its own pair
   // through the shared shell.
-  const welcome = await readSource(new URL('./components/Public/WelcomeShell.jsx', import.meta.url));
+  const welcome = await readSource(new URL('./components/Public/WelcomeShell.tsx', import.meta.url));
   assert.equal((welcome.match(/<motion\.main\b/g) || []).length, 1);
   assert.equal((welcome.match(/<h1\b/g) || []).length, 1);
 });
 
 test('a public paper is headed by its own title, as the page h1', async () => {
-  const card = await readSource(new URL('./components/Feed/PaperCard.jsx', import.meta.url));
+  const card = await readSource(new URL('./components/Feed/PaperCard.tsx', import.meta.url));
   assert.match(card, /\n\s*titleAs = 'h2',\n/, 'the card keeps its h2 wherever it is one card of many');
   assert.match(
     card,
     /const TitleTag = titleAs === 'h1' \? 'h1' : 'h2';[\s\S]{0,40000}?<TitleTag className="pc-title" lang="en">\s*<ScientificText>\{paper\.title\}<\/ScientificText>\s*<\/TitleTag>/,
   );
-  const page = await readSource(new URL('./components/Public/PublicPaperPage.jsx', import.meta.url));
+  const page = await readSource(new URL('./components/Public/PublicPaperPage.tsx', import.meta.url));
   const cardCall = page.slice(page.indexOf('<PaperCard'), page.indexOf('/>', page.indexOf('<PaperCard')));
   assert.match(cardCall, /\btitleAs="h1"/, 'the paper page passes its title up to h1');
 });
 
 test('/search is a <main> with an h1', async () => {
-  const search = await readSource(new URL('./components/Search/SearchPage.jsx', import.meta.url));
+  const search = await readSource(new URL('./components/Search/SearchPage.tsx', import.meta.url));
   assert.match(
     search,
     /<Tabs\s+render=\{<main \/>\}\s+className="search-page-container"[\s\S]{0,300}?>\s*<h1 className="visually-hidden">\{'[^']+'\}<\/h1>\s*<div className="search-header">/,
@@ -678,7 +678,7 @@ test('/search is a <main> with an h1', async () => {
 });
 
 test('the Explorer\'s error and not-found states say so in an h1', async () => {
-  const explorer = await readSource(new URL('./components/Explorer/EntityExplorer.jsx', import.meta.url));
+  const explorer = await readSource(new URL('./components/Explorer/EntityExplorer.tsx', import.meta.url));
   const branch = explorer.slice(explorer.indexOf('if (!entity) {'), explorer.indexOf('if (!entity) {') + 1400);
   assert.match(branch, /<h1>\{entityError\s*\?/);
   assert.doesNotMatch(branch, /<h2>/);

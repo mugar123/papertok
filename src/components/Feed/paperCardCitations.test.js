@@ -21,7 +21,7 @@ function bounded(code, from, to, label, maxLines) {
  * `setPapers` would still contain every keyword this test could look for.
  */
 test('SOURCE: the citation gate is awaited before the feed paints', async () => {
-  const code = stripComments(await read('../../context/FeedContext.jsx'));
+  const code = stripComments(await read('../../context/FeedContext.tsx'));
 
   const gateAt = code.indexOf('awaitWithinGate(');
   assert.ok(gateAt > 0, 'FeedContext waits for the citation sources');
@@ -39,7 +39,7 @@ test('SOURCE: the citation gate is awaited before the feed paints', async () => 
  * leaves the chip popping in from the other two.
  */
 test('SOURCE: the gate waits for every source that carries a citation count', async () => {
-  const code = stripComments(await read('../../context/FeedContext.jsx'));
+  const code = stripComments(await read('../../context/FeedContext.tsx'));
   const gate = bounded(code, 'await awaitWithinGate([', ']);', 'the citation gate', 8);
 
   assert.match(gate, /enrichmentPromise/, 'OpenAlex');
@@ -63,7 +63,7 @@ test('SOURCE: the gate waits for every source that carries a citation count', as
  * pagination and refresh both have papers on screen by definition.
  */
 test('SOURCE: the gate is behind an empty screen, not behind `reset`', async () => {
-  const code = stripComments(await read('../../context/FeedContext.jsx'));
+  const code = stripComments(await read('../../context/FeedContext.tsx'));
   const gateAt = code.indexOf('awaitWithinGate(');
   const guard = code.slice(code.lastIndexOf('if (', gateAt), gateAt);
 
@@ -79,14 +79,14 @@ test('SOURCE: the gate is behind an empty screen, not behind `reset`', async () 
  * should be revisited rather than silently over-covering.
  */
 test('SOURCE: the re-entry the guard was widened for still exists', async () => {
-  const code = stripComments(await read('../../context/FeedContext.jsx'));
+  const code = stripComments(await read('../../context/FeedContext.tsx'));
   assert.match(code, /loadPapersRef\.current\(false, activeMode, false, nextPageToFetch\)/,
     'the auto-fetch continuation paints with `reset` false');
 });
 
 /** A stale request that resolves its gate must not paint over a newer one. */
 test('SOURCE: the request id is re-checked after the wait', async () => {
-  const code = stripComments(await read('../../context/FeedContext.jsx'));
+  const code = stripComments(await read('../../context/FeedContext.tsx'));
   const gateAt = code.indexOf('awaitWithinGate(');
   const after = code.slice(gateAt, code.indexOf('setPapers(nextPapers)', gateAt));
 
@@ -127,7 +127,7 @@ test('SOURCE: a late citation chip fades in, and so does its separator', async (
 });
 
 test('SOURCE: the dot before the chip is the one that carries the modifier', async () => {
-  const code = stripComments(await read('./PaperCard.jsx'));
+  const code = stripComments(await read('./PaperCard.tsx'));
   const chip = bounded(code, '{(paper.citationCountKnown || paper.citationCount > 0) && (', 'pc-citations', 'the citation chip', 8);
 
   assert.match(chip, /className="pc-meta-dot pc-meta-dot--citations"/,

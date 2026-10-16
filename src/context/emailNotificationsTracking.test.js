@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const source = readFileSync(new URL('./EmailNotificationsContext.jsx', import.meta.url), 'utf8');
+const source = readFileSync(new URL('./EmailNotificationsContext.tsx', import.meta.url), 'utf8');
 
 /**
  * `newsletter_change` is a delta: it fires when the saved preference differs

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { authPromptCopy, normalizeAuthReason } from './authPromptCopy.js';
+import { authPromptCopy, normalizeAuthReason } from './authPromptCopy.ts';
 import { isSignInRequiredError } from '../../utils/signInRequired.ts';
 import { WorkerApiAuthError } from '../../services/workerApiClient.ts';
 

@@ -28,7 +28,7 @@ test('normalizes Vite base paths for project-site roots', () => {
 test('builds entity routes with encoded path segments', () => {
   // The `getHashRoute(path)` assertion that used to sit here is gone with the
   // function: its only job was to put a `#` in front of a route, and the route
-  // is the path now (src/main.jsx mounts a BrowserRouter). What it was really
+  // is the path now (src/main.tsx mounts a BrowserRouter). What it was really
   // protecting — that the identifier's own slashes stay percent-encoded, so a
   // canonical ORCID URL cannot split into extra path segments — is the
   // assertion above, and the whole-URL shape is checked at the bottom of this
@@ -157,7 +157,7 @@ test('builds shared-list paths and absolute share URLs with the Vite base', () =
 /**
  * What leaves the app on a share sheet, in a message, in an email. Every one of
  * these used to be minted with a `#`, because the fragment WAS the route. It is
- * not any more (src/main.jsx mounts a BrowserRouter), and a `#/…` link now
+ * not any more (src/main.tsx mounts a BrowserRouter), and a `#/…` link now
  * costs a translation on arrival (utils/legacyHashRoute.js) before it reaches
  * the page it names — so the app stops minting them.
  *

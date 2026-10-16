@@ -16,7 +16,7 @@ import { readFile } from 'node:fs/promises';
  * and the primitive reports the close at once: no timer has to outlive it.
  */
 
-const JSX = new URL('./SaveToListModal.jsx', import.meta.url);
+const JSX = new URL('./SaveToListModal.tsx', import.meta.url);
 const CSS = new URL('./SaveToListModal.css', import.meta.url);
 const CARD_CSS = new URL('../Feed/PaperCard.css', import.meta.url);
 
@@ -119,7 +119,7 @@ test('the bookmark rail pops the way like and read already do', async () => {
 });
 
 test('the guest save prompt traps focus and closes on Escape', async () => {
-  const source = await readFile(new URL('../Public/AuthPrompt.jsx', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../Public/AuthPrompt.tsx', import.meta.url), 'utf8');
   // Either the shared keyboard hook or a Base UI Dialog, which owns the trap,
   // Escape and the restore itself; anything else is a window nobody can leave.
   const onHook = /useDialogFocus\(true, onClose\)/.test(source);

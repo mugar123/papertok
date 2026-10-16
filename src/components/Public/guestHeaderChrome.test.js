@@ -18,9 +18,9 @@ import { readFile } from 'node:fs/promises';
 
 const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '');
 
-const guestJsx = readFile(new URL('./GuestFeedPage.jsx', import.meta.url), 'utf8');
+const guestJsx = readFile(new URL('./GuestFeedPage.tsx', import.meta.url), 'utf8');
 const guestCss = readFile(new URL('./GuestFeedPage.css', import.meta.url), 'utf8').then(stripComments);
-const feedContainerJsx = readFile(new URL('../Feed/FeedContainer.jsx', import.meta.url), 'utf8');
+const feedContainerJsx = readFile(new URL('../Feed/FeedContainer.tsx', import.meta.url), 'utf8');
 
 test('la cabecera de invitado ya no dibuja el botón de recargar', async () => {
   const jsx = await guestJsx;

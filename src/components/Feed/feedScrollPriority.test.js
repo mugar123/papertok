@@ -38,7 +38,7 @@ function block(code, from, to, label) {
  * stop being true.
  */
 test('SOURCE: the scroll hands the active-card render to a transition', async () => {
-  const code = stripComments(await read('./FeedContainer.jsx'));
+  const code = stripComments(await read('./FeedContainer.tsx'));
   const handler = block(code, 'const handleScroll = useCallback((event) => {', '}, [reportVisiblePaper', 'handleScroll');
 
   assert.match(handler, /startTransition\(\(\) => setActiveIndex\(index\)\)/,
@@ -55,7 +55,7 @@ test('SOURCE: the scroll hands the active-card render to a transition', async ()
  * scroll event lands. That trap is described at the top of FeedContainer.
  */
 test('SOURCE: the resume still sets the active card synchronously', async () => {
-  const code = stripComments(await read('./FeedContainer.jsx'));
+  const code = stripComments(await read('./FeedContainer.tsx'));
   const calls = [...code.matchAll(/(startTransition\(\(\) => )?setActiveIndex\(/g)];
 
   assert.equal(calls.length, 2, 'exactly two places set the active card');
@@ -70,8 +70,8 @@ test('SOURCE: the resume still sets the active card synchronously', async () => 
  * than silently shipping a flicker.
  */
 test('SOURCE: the card takes no active flag from the feed', async () => {
-  const card = stripComments(await read('./PaperCard.jsx'));
-  const feed = stripComments(await read('./FeedContainer.jsx'));
+  const card = stripComments(await read('./PaperCard.tsx'));
+  const feed = stripComments(await read('./FeedContainer.tsx'));
 
   assert.doesNotMatch(card, /\bisActive\b/, "PaperCard reads an active flag again — see the test's reasoning");
   assert.doesNotMatch(feed, /isActive=/, 'FeedContainer hands the card an active flag again');

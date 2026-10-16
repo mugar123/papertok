@@ -71,7 +71,7 @@ moves sideways while the page it indicates moves forward.
 
 ### 2. Half a second, strictly sequential, for two tabs of one bar
 
-`AnimatePresence mode="wait"` (`src/App.jsx:197`) means the outgoing page must
+`AnimatePresence mode="wait"` (`src/App.tsx:197`) means the outgoing page must
 finish before the incoming one starts — confirmed by **0 frames with both pages**
 in both directions. With `ENTER_MS = 0.3` and `EXIT_MS = 0.2`
 (`PageTransition.jsx:25-26`) the handover is 200ms + 300ms plus the presence
@@ -156,7 +156,7 @@ export function lateralTabDirection(pathname, memory = tabMemory) {
 **In `PageTransition.jsx`**, prefer the lateral answer when there is one:
 
 ```jsx
-/* target — src/components/Layout/PageTransition.jsx */
+/* target — src/components/Layout/PageTransition.tsx */
 const historyDirection = directionForHistoryIndex(
   typeof window !== 'undefined' ? window.history.state?.idx : null,
   undefined,
@@ -211,7 +211,7 @@ mirror each other, and pressing back to a tab retraces the step it came by.
    Each test must pass its own `memory` object, as `routeDirection.test.js` does
    for `directionForHistoryIndex`.
 
-3. In `src/components/Layout/PageTransition.jsx`:
+3. In `src/components/Layout/PageTransition.tsx`:
    - add `import { useLocation, useNavigationType } from 'react-router-dom'`
      (the file currently imports only `useNavigationType`);
    - add `import { lateralTabDirection } from '../../utils/tabDirection.js'`;
@@ -239,7 +239,7 @@ mirror each other, and pressing back to a tab retraces the step it came by.
 
 ## Boundaries
 
-- Do **NOT** change `AnimatePresence mode="wait"` in `src/App.jsx:197`. The
+- Do **NOT** change `AnimatePresence mode="wait"` in `src/App.tsx:197`. The
   comment at `App.jsx:31-38` records that the Suspense fallback depends on the
   incoming screen being mounted from the exit-complete callback; removing
   `mode="wait"` changes how every route in the app loads, which is far beyond

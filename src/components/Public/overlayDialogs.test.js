@@ -14,9 +14,9 @@ import { readFile } from 'node:fs/promises';
 
 const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
-const authJsx = readFile(new URL('./AuthPrompt.jsx', import.meta.url), 'utf8').then(stripComments);
+const authJsx = readFile(new URL('./AuthPrompt.tsx', import.meta.url), 'utf8').then(stripComments);
 const authCss = readFile(new URL('./AuthPrompt.css', import.meta.url), 'utf8').then(stripComments);
-const gipJsx = readFile(new URL('./GuestInterestsPrompt.jsx', import.meta.url), 'utf8').then(stripComments);
+const gipJsx = readFile(new URL('./GuestInterestsPrompt.tsx', import.meta.url), 'utf8').then(stripComments);
 const gipCss = readFile(new URL('./GuestInterestsPrompt.css', import.meta.url), 'utf8').then(stripComments);
 
 test('the sign-in prompt is a modal Base UI Dialog that owns its own open flag', async () => {
@@ -47,7 +47,7 @@ test('the sign-in prompt keeps its close control, its name, and its initial focu
   // The analytics contract of the door is unchanged: the shared sign-in hook
   // reports the press with the surface this door names, then the outcome.
   assert.match(jsx, /useProviderSignIn\('auth_prompt'\)/);
-  const hook = await readFile(new URL('./useProviderSignIn.js', import.meta.url), 'utf8');
+  const hook = await readFile(new URL('./useProviderSignIn.ts', import.meta.url), 'utf8');
   assert.match(hook, /trackEvent\('select_content', \{ content_type: 'signup_cta', surface, method \}\)/);
   assert.match(hook, /trackEvent\(result\?\.isNewUser \? 'sign_up' : 'login', \{ method \}\)/);
 });

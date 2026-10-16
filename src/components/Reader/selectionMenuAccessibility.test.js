@@ -19,7 +19,7 @@ const stripComments = source => source
 const read = async (path) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
 
 test('the note textarea is named by a real <label>, not a floating span', async () => {
-  const jsx = await read('./SelectionMenu.jsx');
+  const jsx = await read('./SelectionMenu.tsx');
 
   assert.doesNotMatch(
     jsx,

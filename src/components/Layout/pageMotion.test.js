@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EXIT_SAFETY_MS, PAGE_MOTIONS, pageMotionFor } from './pageMotion.js';
+import { EXIT_SAFETY_MS, PAGE_MOTIONS, pageMotionFor } from './pageMotion.ts';
 
 /**
  * BEHAVIOUR tests for the pure table behind `PageTransition` (spec §7 of

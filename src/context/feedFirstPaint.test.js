@@ -29,7 +29,7 @@ function bounded(code, from, to, label, maxLines) {
  * others returned afterwards. The late answers must be kept and consumed.
  */
 test('SOURCE: the feed keeps what the slower sources return after the first paint', async () => {
-  const code = stripComments(await read('./FeedContext.jsx'));
+  const code = stripComments(await read('./FeedContext.tsx'));
   const block = bounded(
     code,
     'const { first, all } = settleSourcesForFirstPaint(',
@@ -57,7 +57,7 @@ test('SOURCE: the feed keeps what the slower sources return after the first pain
 });
 
 test('SOURCE: the next page pools the late candidates and then forgets them', async () => {
-  const code = stripComments(await read('./FeedContext.jsx'));
+  const code = stripComments(await read('./FeedContext.tsx'));
   const pool = bounded(
     code,
     'const lateMain = lateSourceCandidatesRef.current.splice(0);',
@@ -90,7 +90,7 @@ test('SOURCE: the next page pools the late candidates and then forgets them', as
  * belongs after the paint, never in front of it.
  */
 test('SOURCE: PubMed cards get Europe PMC after paint, never before setPapers', async () => {
-  const code = stripComments(await read('./FeedContext.jsx'));
+  const code = stripComments(await read('./FeedContext.tsx'));
   // Tied in one regex: the request must be built from the pmids of the page
   // that was just selected (`iCitePmids`), and it must sit AFTER the promise
   // that iCite already builds from those same ids — which is itself after
@@ -144,7 +144,7 @@ test('SOURCE: the PubMed adapter itself stays free of browser-side enrichment', 
  * what the reader had actually been liking (audit 2026-09-02, A3).
  */
 test('SOURCE: the semantic sample is the most recent likes, not the lowest ids', async () => {
-  const code = stripComments(await read('./FeedContext.jsx'));
+  const code = stripComments(await read('./FeedContext.tsx'));
   assert.match(
     code,
     /const positiveIds = selectSemanticProfilePositiveIds\(\s*curatedIds\(profile, 'liked'\),\s*curatedIds\(profile, 'saved'\),\s*\);/,
@@ -164,7 +164,7 @@ test('SOURCE: the semantic sample is the most recent likes, not the lowest ids',
  * the query again — but budgeted, and against a prewarmed module.
  */
 test('SOURCE: followed topics rank the main query again, inside a budget', async () => {
-  const code = stripComments(await read('./FeedContext.jsx'));
+  const code = stripComments(await read('./FeedContext.tsx'));
   assert.match(code, /const FOLLOWED_TOPIC_RANK_BUDGET_MS = 300;/);
   const ranked = bounded(
     code,
@@ -191,7 +191,7 @@ test('SOURCE: followed topics rank the main query again, inside a budget', async
 });
 
 test('SOURCE: the topic table is prewarmed when a topic follow is known', async () => {
-  const code = stripComments(await read('./FeedContext.jsx'));
+  const code = stripComments(await read('./FeedContext.tsx'));
   const effect = bounded(
     code,
     'const followingSignatureRef = useRef(null);',
@@ -214,7 +214,7 @@ test('SOURCE: the topic table is prewarmed when a topic follow is known', async 
  * the feed's search takes the priority lane.
  */
 test('SOURCE: the main sources are requested before the optional candidates, and the feed search has priority', async () => {
-  const code = stripComments(await read('./FeedContext.jsx'));
+  const code = stripComments(await read('./FeedContext.tsx'));
   const block = bounded(
     code,
     "queryMode = Math.random() > 0.5 ? 'recent' : 'relevance';",

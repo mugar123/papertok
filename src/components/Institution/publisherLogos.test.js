@@ -4,7 +4,7 @@ import test from 'node:test';
 import { SERVICE_CATALOGUE } from '../../../worker/institution-services.ts';
 
 // The module imports the logo files through Vite, so node reads its source instead.
-const source = readFileSync(new URL('./publisherLogos.js', import.meta.url), 'utf8');
+const source = readFileSync(new URL('./publisherLogos.ts', import.meta.url), 'utf8');
 const assetsDir = new URL('../../assets/publishers/', import.meta.url);
 const imports = [...source.matchAll(/^import (\w+) from '\.\.\/\.\.\/assets\/publishers\/([\w-]+)\.(svg|png)';$/gm)];
 const files = readdirSync(assetsDir).filter(name => /\.(svg|png)$/.test(name));

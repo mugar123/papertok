@@ -12,7 +12,7 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/g
  */
 
 test('the Follow control is a Toggle: ink while it invites, a chip with a check once on', async () => {
-  const jsx = await read('./follow-toggle.jsx');
+  const jsx = await read('./follow-toggle.tsx');
   const css = stripComments(await read('./follow-toggle.css'));
   assert.match(jsx, /<Toggle\s+variant="outline"\s+className=\{cn\('follow-toggle', className\)\}\s+pressed=\{pressed\}/);
   assert.match(jsx, /<Check size=\{14\} aria-hidden="true" \/>/);

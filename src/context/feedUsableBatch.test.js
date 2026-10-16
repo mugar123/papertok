@@ -11,7 +11,7 @@ import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.ts';
 
 // Execute the actual loader callback with provider and React-state boundaries
 // injected. Source-pattern tests cannot catch an excluded page ending the feed.
-const source = readFileSync(new URL('./FeedContext.jsx', import.meta.url), 'utf8');
+const source = readFileSync(new URL('./FeedContext.tsx', import.meta.url), 'utf8');
 const start = source.indexOf('async (reset = false, mode, randomizeStart = false, pageOverride,');
 const end = source.indexOf('\n  }, [\n    userPreferences, page, papers, loading, feedMode,', start);
 assert.ok(start >= 0 && end > start, 'the feed loader callback must exist');

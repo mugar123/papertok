@@ -98,7 +98,7 @@ export function getSiteRootUrl({ origin = getRuntimeOrigin(), base = VITE_BASE_U
  * This used to mint `https://papertok.app/#/public/paper/<key>`, because the
  * fragment WAS the route: the app was a HashRouter, `/` was the only path the
  * server knew, and everything after the `#` never left the browser. Neither
- * half holds any more — `src/main.jsx` mounts a BrowserRouter, and vercel.json
+ * half holds any more — `src/main.tsx` mounts a BrowserRouter, and vercel.json
  * rewrites every non-file path to the app — so the route goes where a route
  * goes. A `#/…` link still reaches the same page (index.html's gate forwards
  * it and `utils/legacyHashRoute.js` translates it), but it pays a hop through

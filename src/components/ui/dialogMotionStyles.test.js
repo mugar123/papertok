@@ -8,8 +8,8 @@ import { readFile } from 'node:fs/promises';
  * diálogo aparecía y se iba en un frame (solo el velo tenía fundido).
  */
 
-const DIALOG_JSX = new URL('./dialog.jsx', import.meta.url);
-const COMMAND_JSX = new URL('./command.jsx', import.meta.url);
+const DIALOG_JSX = new URL('./dialog.tsx', import.meta.url);
+const COMMAND_JSX = new URL('./command.tsx', import.meta.url);
 const VARIABLES_CSS = new URL('../../styles/variables.css', import.meta.url);
 
 test('el input de la paleta no puede volver a disparar el auto-zoom de iOS', async () => {

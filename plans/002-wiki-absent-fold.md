@@ -39,7 +39,7 @@ t=5001  move  -0.1
 Two causes, both in one object:
 
 ```jsx
-// src/components/Explorer/EntityExplorer.jsx:1858-1867 — current
+// src/components/Explorer/EntityExplorer.tsx:1858-1867 — current
 exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, marginTop: -HERO_STACK_GAP_PX, y: -6 }}
 transition={prefersReducedMotion
   ? { duration: 0 }
@@ -57,7 +57,7 @@ transition={prefersReducedMotion
    *arrival* that is exactly right. On a *collapse* it means everything below the
    block leaps 32px in one frame and then inches the last 20px over 300ms. The
    repo's own rule is that things leave on a different curve — the rationale is
-   written at `src/components/Layout/PageTransition.jsx:40` and
+   written at `src/components/Layout/PageTransition.tsx:40` and
    `src/components/Comments/CommentsSheet.jsx:185` — and this exit never got it.
 
 2. **Opacity finishes 120ms before the space does.** `opacity` runs 300ms while
@@ -90,7 +90,7 @@ The space closes on a curve that holds, moves, and settles — and everything
 finishes together.
 
 ```jsx
-/* target — src/components/Explorer/EntityExplorer.jsx:1858-1867 */
+/* target — src/components/Explorer/EntityExplorer.tsx:1858-1867 */
 exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, marginTop: -HERO_STACK_GAP_PX, y: -6 }}
 transition={prefersReducedMotion
   ? { duration: 0 }
@@ -143,14 +143,14 @@ Expected result: no single frame carrying more than ~14px, against 31.9px today.
   the header of `src/components/Layout/ThemeToggle.css`. A silent departure is
   the thing to avoid, not the departure.
 - **Exemplar for an exit that is not the arrival reversed**:
-  `src/components/Layout/PageTransition.jsx:29-44` — the `EASE_LEAVING` constant
+  `src/components/Layout/PageTransition.tsx:29-44` — the `EASE_LEAVING` constant
   and the comment above it, which is the same argument this plan is making one
   level down.
 - Motion values that a test asserts are updated in the test in the same change.
 
 ## Steps
 
-1. Open `src/components/Explorer/EntityExplorer.jsx`. The object to edit is the
+1. Open `src/components/Explorer/EntityExplorer.tsx`. The object to edit is the
    `transition` prop of `<motion.div layout className="ehc-wiki-fold">`, at lines
    **1859-1867**. Leave `initial`, `animate` and `exit` untouched.
 

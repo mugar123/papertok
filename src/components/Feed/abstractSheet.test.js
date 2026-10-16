@@ -14,7 +14,7 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '').replac
  * the guest feed, desktop). A panel that hides nothing has nothing to open.
  */
 test('a panel that hides nothing cannot be opened, so the reserved toggle never says "Show less"', async () => {
-  const jsx = stripComments(await read('./PaperCard.jsx'));
+  const jsx = stripComments(await read('./PaperCard.tsx'));
   assert.match(jsx, /const toggleExpanded = \(e, newState\) => \{\s*e\.stopPropagation\(\);\s*if \(newState && abstractClipped !== true\) return;/);
 });
 
@@ -25,7 +25,7 @@ test('a panel that hides nothing cannot be opened, so the reserved toggle never 
  * selection route, never by width — and the card's own panel stays put.
  */
 test('on a coarse pointer a clipped abstract opens the reading sheet instead of unfolding in the card', async () => {
-  const jsx = stripComments(await read('./PaperCard.jsx'));
+  const jsx = stripComments(await read('./PaperCard.tsx'));
   assert.match(jsx, /const coarsePointer = useMemo\(\(\) => \{\s*try \{ return window\.matchMedia\('\(pointer: coarse\)'\)\.matches; \} catch \{ return false; \}\s*\}, \[\]\);/);
   assert.match(jsx, /const readsInSheet = coarsePointer && abstractClipped === true && !expanded;/);
   assert.match(jsx, /const openAbstract = \(e\) => \{\s*if \(readsInSheet\) \{\s*e\.stopPropagation\(\);\s*setShowAbstractSheet\(true\);\s*return;\s*\}\s*toggleExpanded\(e, !expanded\);\s*\};/);
@@ -35,7 +35,7 @@ test('on a coarse pointer a clipped abstract opens the reading sheet instead of 
 });
 
 test('the reading sheet is a bottom drawer that arrives, scrolls inside and leaves before it unmounts', async () => {
-  const jsx = stripComments(await read('./AbstractSheet.jsx'));
+  const jsx = stripComments(await read('./AbstractSheet.tsx'));
   assert.match(jsx, /const \{ open, requestClose \} = usePopupOpenOnMount\(\);/);
   assert.match(jsx, /onOpenChange=\{\(next\) => \{ if \(!next\) requestClose\(\); \}\}/);
   assert.match(jsx, /onOpenChangeComplete=\{\(next\) => \{ if \(!next\) onClose\(\); \}\}/);

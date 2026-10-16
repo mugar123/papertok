@@ -10,7 +10,7 @@ import { readFile } from 'node:fs/promises';
  * for (design.md, rule 3).
  */
 
-const jsxFile = readFile(new URL('./SearchPage.jsx', import.meta.url), 'utf8');
+const jsxFile = readFile(new URL('./SearchPage.tsx', import.meta.url), 'utf8');
 const cssFile = readFile(new URL('./SearchPage.css', import.meta.url), 'utf8');
 
 test('the filter bar is a Tabs root with a line list, and the results are its panel', async () => {

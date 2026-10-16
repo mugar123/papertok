@@ -6,7 +6,7 @@ const read = path => readFile(new URL(path, import.meta.url), 'utf8');
 const stripComments = source => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 test('SOURCE: the link form keeps its own Google button unless the caller draws the submit', async () => {
-  const code = stripComments(await read('./InstitutionLink.jsx'));
+  const code = stripComments(await read('./InstitutionLink.tsx'));
   // Settings passes neither, so it keeps the button and its own address.
   assert.match(code, /formId,\s*showSubmit = true,\s*email: controlledEmail,\s*onEmailChange,\s*onBusyChange,\s*linkedNote,/);
   assert.match(code, /\{COPY\.linked\(institution\.name\)\}\{linkedNote \? ` \$\{linkedNote\}` : ''\}/);
@@ -27,7 +27,7 @@ test('SOURCE: the link form keeps its own Google button unless the caller draws 
 });
 
 test('SOURCE: Settings opens the link as it always has, with its own button', async () => {
-  const dialog = stripComments(await read('./InstitutionDialog.jsx'));
+  const dialog = stripComments(await read('./InstitutionDialog.tsx'));
   assert.match(dialog, /<InstitutionLink idPrefix="settings-institution" \/>/);
   assert.doesNotMatch(dialog, /showSubmit|formId|onEmailChange|onBusyChange|linkedNote/);
 });

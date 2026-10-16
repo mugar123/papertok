@@ -12,7 +12,7 @@ const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(
 const read = name => readFile(new URL(name, import.meta.url), 'utf8').then(stripComments);
 
 test('deleting an account is confirmed in an AlertDialog that nothing dismisses while it works', async () => {
-  const jsx = await read('./DeleteAccountDialog.jsx');
+  const jsx = await read('./DeleteAccountDialog.tsx');
   assert.match(jsx, /from '\.\.\/ui\/alert-dialog\.jsx'/);
   assert.match(jsx, /<AlertDialog\s+open=\{open\}\s+onOpenChange=\{handleOpenChange\}\s+onOpenChangeComplete=\{\(isOpen\) => \{ if \(!isOpen\) onClose\(\); \}\}/);
   assert.doesNotMatch(jsx, /useDialogFocus|role="dialog"|aria-modal=/);
@@ -28,7 +28,7 @@ test('deleting an account is confirmed in an AlertDialog that nothing dismisses 
 });
 
 test('the interests editor is a modal Dialog with a named close and pressed chips', async () => {
-  const jsx = await read('./EditInterestsModal.jsx');
+  const jsx = await read('./EditInterestsModal.tsx');
   assert.match(jsx, /from '\.\.\/ui\/dialog\.jsx'/);
   assert.match(jsx, /<Dialog open=\{isOpen\} onOpenChange=\{nextOpen => \{ if \(!nextOpen\) onClose\(\); \}\} modal>/);
   assert.match(jsx, /closeLabel=\{'Close'\}/);
@@ -48,7 +48,7 @@ test('the interests editor is a modal Dialog with a named close and pressed chip
 });
 
 test('the settings page uses the shared Switch and RadioGroup, and styles them off data-checked', async () => {
-  const jsx = await read('./SettingsPage.jsx');
+  const jsx = await read('./SettingsPage.tsx');
   assert.match(jsx, /import \{ Switch \} from '\.\.\/ui\/switch\.jsx'/);
   assert.match(jsx, /import \{ RadioGroup, RadioGroupItem \} from '\.\.\/ui\/radio-group\.jsx'/);
   assert.match(jsx, /import \{ Button \} from '\.\.\/ui\/button\.jsx'/);
@@ -65,13 +65,13 @@ test('the settings page uses the shared Switch and RadioGroup, and styles them o
 });
 
 test('each settings page is its own route, so the rail is links rather than a scroll spy', async () => {
-  const jsx = await read('./SettingsPage.jsx');
+  const jsx = await read('./SettingsPage.tsx');
   assert.match(jsx, /<NavLink\s+key=\{entry\.slug\}\s+to=\{`\/settings\/\$\{entry\.slug\}`\}\s+replace/);
   assert.doesNotMatch(jsx, /useSectionSpy|scrollIntoView/);
 });
 
 test('the settings pages carry their own field and switch styles, with no public-profile editor behind them', async () => {
-  const jsx = await read('./SettingsPage.jsx');
+  const jsx = await read('./SettingsPage.tsx');
   // The photo is saved to the private account only: nothing here reads or
   // writes the public profile, and ProfileEditor.css is no longer loaded.
   assert.doesNotMatch(jsx, /from '\.\.\/Profile\/|userProfileService|savePublicProfilePhoto/);

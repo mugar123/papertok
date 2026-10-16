@@ -22,9 +22,9 @@ import { readFile } from 'node:fs/promises';
 
 const READER_CSS = new URL('./PaperReader.css', import.meta.url);
 const ANNOTATIONS_CSS = new URL('./Annotations.css', import.meta.url);
-const READER_JSX = new URL('./PaperReader.jsx', import.meta.url);
+const READER_JSX = new URL('./PaperReader.tsx', import.meta.url);
 const READER_BAR_CSS = new URL('./ReaderBar.css', import.meta.url);
-const READER_BAR_JSX = new URL('./ReaderBar.jsx', import.meta.url);
+const READER_BAR_JSX = new URL('./ReaderBar.tsx', import.meta.url);
 
 /** Comments name selectors and properties in prose; matching them would invent both sides. */
 const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '');

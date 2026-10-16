@@ -17,7 +17,7 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '').replac
  * composer away: the previous one's draft is not this one's.
  */
 test('the selection menu re-anchors on every new selection and keeps the last rectangle through its leave', async () => {
-  const jsx = stripComments(await read('./SelectionMenu.jsx'));
+  const jsx = stripComments(await read('./SelectionMenu.tsx'));
   assert.match(jsx, /const \[anchorSeen, setAnchorSeen\] = useState\(anchor\);/);
   assert.match(jsx, /const \[anchorElement, setAnchorElement\] = useState\(\(\) => virtualAnchor\(anchor\)\);/);
   assert.match(jsx, /if \(anchor && anchor !== anchorSeen\) \{\s*setAnchorSeen\(anchor\);\s*setAnchorElement\(virtualAnchor\(anchor\)\);\s*setComposing\(false\);\s*setDraft\(''\);\s*\}/);

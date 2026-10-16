@@ -517,7 +517,7 @@ Tailwind v4 is wired via `@tailwindcss/vite`; utility classes (`w-full`,
 Sign-in has two entry points. Which one you reach for is decided by a single
 question: **did the user already get taken somewhere else?**
 
-**The modal — `src/components/Public/AuthPrompt.jsx`.** The in-context door,
+**The modal — `src/components/Public/AuthPrompt.tsx`.** The in-context door,
 opened by calling `requestAuthentication` (passed to screens as
 `onAuthRequired`). It does Google + GitHub sign-in on the spot and closes itself
 once a session exists, leaving the user exactly where they were. That is the

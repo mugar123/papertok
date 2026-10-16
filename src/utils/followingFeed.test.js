@@ -183,14 +183,14 @@ test('a refresh keeps the cards on screen where they are and appends what is new
 });
 
 test('SOURCE: the Following page ranks on its first render and merges refreshes', async () => {
-  const code = await readSource('../components/Following/FollowingFeedPage.jsx');
+  const code = await readSource('../components/Following/FollowingFeedPage.tsx');
   assert.match(code, /useState\(\(\) => resumeOrderedPapers\(lastOrder, items, seenIds\)\)/,
     'an empty initial state painted the empty state for a frame before the cards');
   assert.match(code, /setOrderedPapers\(current => mergeOrderedPapers\(current, orderFollowingFeedPapers\(items, seenIds\)\)\)/);
 });
 
 test('SOURCE: the follow-reason pill arrives after the paper it explains, not on a fade of its own ahead of it', async () => {
-  const jsx = await readSource('../components/Feed/PaperCard.jsx');
+  const jsx = await readSource('../components/Feed/PaperCard.tsx');
   const css = await readSource('../components/Feed/PaperCard.css');
   assert.match(jsx, /<div className="pc-follow-reason">/);
   assert.doesNotMatch(jsx, /<motion\.div\s+className="pc-follow-reason"/);
@@ -214,9 +214,9 @@ test('the first wait of the Following feed is a first load until something has a
 });
 
 test('SOURCE: the container honours a source\'s own first-load flag, and Following sets it', async () => {
-  const container = await readSource('../components/Feed/FeedContainer.jsx');
+  const container = await readSource('../components/Feed/FeedContainer.tsx');
   assert.match(container, /initialLoadPending: \(source \? Boolean\(source\.initialLoadPending\) : !initialFeedReady\) && !error/);
-  const page = await readSource('../components/Following/FollowingFeedPage.jsx');
+  const page = await readSource('../components/Following/FollowingFeedPage.tsx');
   assert.match(page, /initialLoadPending: followingFirstLoadPending\(\{ items, loading, lastUpdatedAt, error \}\)/);
 });
 
@@ -238,7 +238,7 @@ test('the Following feed resumes the order it left with, and merges a refresh in
 });
 
 test('SOURCE: the Following page resumes from the order it left, kept at module scope', async () => {
-  const code = await readSource('../components/Following/FollowingFeedPage.jsx');
+  const code = await readSource('../components/Following/FollowingFeedPage.tsx');
   assert.match(code, /const lastOrder = \{ items: null, ordered: \[\] \};/);
   assert.match(code, /useState\(\(\) => resumeOrderedPapers\(lastOrder, items, seenIds\)\)/);
   assert.match(code, /lastOrder\.items = items;\s*lastOrder\.ordered = orderedPapers;/);
@@ -298,7 +298,7 @@ test('the Following feed drops what the reader skipped, and keeps the array when
 });
 
 test('SOURCE: the Following page hands the container the list minus the skipped papers', async () => {
-  const code = (await readSource('../components/Following/FollowingFeedPage.jsx'))
+  const code = (await readSource('../components/Following/FollowingFeedPage.tsx'))
     .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
   assert.match(code, /const \{ notInterestedIds \} = useFeed\(\);/,

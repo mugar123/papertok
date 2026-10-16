@@ -10,7 +10,7 @@ const read = async (path) => (await readFile(new URL(path, import.meta.url), 'ut
  * to everyone else, and it must see the tap before anything can cancel it.
  */
 test('SOURCE: the diagnostic is a lazy chunk behind the flag, never a static import', async () => {
-  const main = await read('../main.jsx');
+  const main = await read('../main.tsx');
   assert.doesNotMatch(main, /^import[^\n]*tapDiagnostics/m, 'no static import in main.jsx');
   assert.match(main, /import\('\.\/diagnostics\/tapDiagnostics\.js'\)/);
   assert.match(main, /sessionStorage\.getItem\('papertok_tapdiag'\) === '1'/);

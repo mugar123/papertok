@@ -5,7 +5,7 @@ const read = (p) => readFile(new URL(p, import.meta.url), 'utf8');
 const strip = (s) => s.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 test('SOURCE: el feed expone un refresco visible en el primer paper y por arrastre', async () => {
-  const src = strip(await read('./FeedContainer.jsx'));
+  const src = strip(await read('./FeedContainer.tsx'));
   assert.match(src, /className=\{`feed-refresh[\s\S]{0,260}onClick=\{handleRefresh\}/);
   const listeners = src.slice(src.indexOf("el.addEventListener('touchstart'"), src.indexOf("return () => {", src.indexOf("el.addEventListener('touchstart'")));
   assert.match(listeners, /touchstart[\s\S]{0,120}touchmove[\s\S]{0,120}touchend[\s\S]{0,120}touchcancel/, 'las cuatro fases del gesto');
@@ -16,7 +16,7 @@ test('SOURCE: el feed expone un refresco visible en el primer paper y por arrast
 });
 
 test('SOURCE: la píldora no existe para el invitado, y el tirón tampoco', async () => {
-  const src = strip(await read('./FeedContainer.jsx'));
+  const src = strip(await read('./FeedContainer.tsx'));
   assert.match(src, /\{!publicMode && papers\.length > 0 && \(\s*<button/, 'sin cuenta no hay píldora');
   const attach = src.slice(src.indexOf('const el = feedRef.current;'), src.indexOf('const onStart ='));
   assert.match(attach, /if \(!el \|\| publicMode\) return undefined;/, 'sin cuenta el tirón ni se engancha');
@@ -35,7 +35,7 @@ test('SOURCE: la píldora no existe para el invitado, y el tirón tampoco', asyn
 });
 
 test('SOURCE: el tirón escribe su progreso en el elemento, no en el estado del feed', async () => {
-  const src = strip(await read('./FeedContainer.jsx'));
+  const src = strip(await read('./FeedContainer.tsx'));
   const move = src.slice(src.indexOf('const onMove = (event) => {'), src.indexOf('const onEnd = (event) => {'));
   assert.match(move, /setPull\(\s*pullProgress\(/);
   assert.match(move, /pullTravelPx\(\{ startY: state\.startY, currentY: touch\.clientY \}\)/,
@@ -101,7 +101,7 @@ test('SOURCE: al tirar, los papers vienen con el dedo y sin reloj de por medio',
  * que el atributo se va no se nota porque la pose es la misma.
  */
 test('SOURCE: el tirón que refresca aterriza; el que no, vuelve con la goma', async () => {
-  const src = strip(await read('./FeedContainer.jsx'));
+  const src = strip(await read('./FeedContainer.tsx'));
   const end = src.slice(src.indexOf('const onEnd = (event) => {'), src.indexOf('const onCancel ='));
   assert.match(end, /if \(outcome === 'refresh' && !busy && !running\) \{\s*landPull\(\);\s*refresh\?\.\(\);\s*\} else \{\s*setPull\(0, 0\);\s*\}/,
     'las dos salidas son distintas a propósito: entregar y cancelar no significan lo mismo');
@@ -135,7 +135,7 @@ test('SOURCE: el tirón que refresca aterriza; el que no, vuelve con la goma', a
 });
 
 test('SOURCE: la primera visita es la bienvenida, en el primer render y sin cargar el feed', async () => {
-  const src = strip(await read('../Public/GuestFeedPage.jsx'));
+  const src = strip(await read('../Public/GuestFeedPage.tsx'));
   // Decided from the stored answer during render: no efecto que llegue un
   // commit tarde, y ninguna espera al feed.
   assert.match(src, /const firstVisit = interests === null;/);
@@ -156,7 +156,7 @@ test('SOURCE: la primera visita es la bienvenida, en el primer render y sin carg
  * scrolling the moment the gesture is ours.
  */
 test('SOURCE: el tirón se decide en el primer movimiento y entonces detiene el feed', async () => {
-  const src = strip(await read('./FeedContainer.jsx'));
+  const src = strip(await read('./FeedContainer.tsx'));
   const start = src.slice(src.indexOf('const onStart = (event) => {'), src.indexOf('const onMove = (event) => {'));
   assert.match(start, /containerTop: box\.top,\s*containerHeight: box\.height,/, 'la franja se mide desde el borde del scroller y escala con su alto');
   const move = src.slice(src.indexOf('const onMove = (event) => {'), src.indexOf('const onEnd = (event) => {'));
@@ -178,7 +178,7 @@ test('SOURCE: el tirón se decide en el primer movimiento y entonces detiene el 
  * changed is the one thing no rule here may move: the scroller.
  */
 test('SOURCE: el feed se cubre mientras se refresca, y el scroller sigue quieto', async () => {
-  const src = strip(await read('./FeedContainer.jsx'));
+  const src = strip(await read('./FeedContainer.tsx'));
   assert.match(src, /className=\{`feed-container\$\{isRefreshing \? ' feed-container--refreshing' : ''\}`\}/);
   const css = strip(await read('./FeedContainer.css'));
   const dip = css.slice(css.indexOf('.feed-container--refreshing {'), css.indexOf('}', css.indexOf('.feed-container--refreshing {')));
@@ -220,7 +220,7 @@ test('SOURCE: el feed se cubre mientras se refresca, y el scroller sigue quieto'
 });
 
 test('SOURCE: la píldora dice qué está haciendo en cada uno de sus tres estados', async () => {
-  const src = strip(await read('./FeedContainer.jsx'));
+  const src = strip(await read('./FeedContainer.tsx'));
   const at = src.indexOf("const refreshPhase = isRefreshing");
   assert.ok(at > 0, 'la píldora sigue tipando sus tres caras');
   const body = src.slice(at, src.indexOf('</button>', at));
@@ -240,7 +240,7 @@ test('SOURCE: la píldora dice qué está haciendo en cada uno de sus tres estad
  * La cura no es animar también la otra: es que el ancho no cambie.
  */
 test('SOURCE: el ancho de la píldora no depende de qué cara lleve puesta', async () => {
-  const src = strip(await read('./FeedContainer.jsx'));
+  const src = strip(await read('./FeedContainer.tsx'));
   const at = src.indexOf("const refreshPhase = isRefreshing");
   const body = src.slice(at, src.indexOf('</button>', at));
   assert.match(body, /<span className="feed-refresh-gauge" aria-hidden="true">[\s\S]{0,320}Object\.values\(refreshLabels\)\.map/,
@@ -288,7 +288,7 @@ test('SOURCE: la píldora se retira bajo la barra, no se apaga en el aire', asyn
  * y vuelve al verbo debajo de la barra, donde no se la ve.
  */
 test('SOURCE: la cara no vuelve al verbo mientras la píldora se ve', async () => {
-  const src = strip(await read('./FeedContainer.jsx'));
+  const src = strip(await read('./FeedContainer.tsx'));
   assert.match(src, /const refreshPhase = isRefreshing \? 'refreshing' : \(refreshDone \|\| doneHold\) \? 'done' : 'idle';/,
     'la cola sostiene la cara, y sólo la cara');
   const hold = src.slice(src.indexOf('const pillOnScreen ='), src.indexOf('const handleOpenPdf'));
@@ -326,7 +326,7 @@ test('SOURCE: la cara no vuelve al verbo mientras la píldora se ve', async () =
  * transición de página ya aprendió a no hacer.
  */
 test('SOURCE: las caras de la píldora no se leen a la vez', async () => {
-  const src = strip(await read('./FeedContainer.jsx'));
+  const src = strip(await read('./FeedContainer.tsx'));
   const block = src.slice(src.indexOf('function refreshFaceMotion('), src.indexOf('const SCROLL_IDLE_DELAY_MS'));
   assert.ok(block.length > 0 && block.length < 2200, 'el relevo vive en una función suya');
   const out = Number(/const FACE_OUT_S = ([\d.]+);/.exec(src)[1]);
@@ -347,7 +347,7 @@ test('SOURCE: las caras de la píldora no se leen a la vez', async () => {
 });
 
 test('SOURCE: el beat de Actualizado deja sitio al crossfade de salida', async () => {
-  const src = strip(await read('./FeedContainer.jsx'));
+  const src = strip(await read('./FeedContainer.tsx'));
   const at = src.indexOf('wasRefreshingRef.current && !isRefreshing');
   assert.ok(at > 0, 'el efecto del beat sigue ahí');
   const beat = src.slice(at, at + 350);
@@ -359,7 +359,7 @@ test('SOURCE: el beat de Actualizado deja sitio al crossfade de salida', async (
 });
 
 test('SOURCE: la píldora no asoma solo porque el cursor ya estaba en la franja', async () => {
-  const src = strip(await read('./FeedContainer.jsx'));
+  const src = strip(await read('./FeedContainer.tsx'));
   assert.match(src, /refreshHoverLockedRef = useRef\(true\)/, 'el hover nace cerrado');
   const hover = src.slice(src.indexOf('const handleMouseMove = useCallback('), src.indexOf('}, [handleMouseMove, publicMode]);'));
   assert.match(hover, /refreshHoverLockedRef\.current/, 'mientras está cerrado, la franja no enciende la píldora');
@@ -393,7 +393,7 @@ test('SOURCE: la píldora trabaja sin halo, y el aterrizaje conserva su spring',
   const inMs = Number(/opacity (\d+)ms/.exec(dip)[1]);
   assert.ok(outMs >= 300, `vuelta más suave (${outMs}ms)`);
   assert.ok(inMs <= 200, `ida más rápida (${inMs}ms)`);
-  const src = strip(await read('./FeedContainer.jsx'));
+  const src = strip(await read('./FeedContainer.tsx'));
   assert.match(src, /phase === 'done'[\s\S]*?type: 'spring'/, 'Actualizado entra con muelle: es la respuesta y se le deja aterrizar');
   assert.match(src, /transform: \{ type: 'spring'[\s\S]*?opacity: \{ duration/,
     'el muelle lleva el recorrido y la opacidad va aparte: un rebote en el fundido lee como parpadeo');
@@ -409,7 +409,7 @@ test('SOURCE: la píldora trabaja sin halo, y el aterrizaje conserva su spring',
  * the cover, the same trip costs nothing.
  */
 test('SOURCE: el refresco salta arriba bajo el velo, no viaja a la vista', async () => {
-  const src = strip(await read('./FeedContainer.jsx'));
+  const src = strip(await read('./FeedContainer.tsx'));
   const dipMs = Number(/const REFRESH_DIP_MS = (\d+);/.exec(src)[1]);
   const css = strip(await read('./FeedContainer.css'));
   const dip = css.slice(css.indexOf('.feed-container--refreshing {'), css.indexOf('}', css.indexOf('.feed-container--refreshing {')));
@@ -456,7 +456,7 @@ test('SOURCE: el refresco salta arriba bajo el velo, no viaja a la vista', async
  * valer lo mismo antes y después de que el contenedor exista.
  */
 test('SOURCE: el hover se engancha al envoltorio vivo, no al del primer commit', async () => {
-  const src = strip(await read('./FeedContainer.jsx'));
+  const src = strip(await read('./FeedContainer.tsx'));
   const attach = src.slice(src.indexOf('const feedRef = useRef(null);'), src.indexOf('const sentinelRef'));
   assert.ok(attach.length > 0 && attach.length < 700, 'el ref del scroller y su publicación viven juntos');
   assert.match(attach, /const \[feedNode, setFeedNode\] = useState\(null\);/,

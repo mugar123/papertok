@@ -44,7 +44,7 @@ const idiomas = (expresion) => {
 };
 
 test('SOURCE: el botón principal se llama como su rótulo, que en móvil no se ve', async () => {
-  const card = stripComments(await read('./PaperCard.jsx'));
+  const card = stripComments(await read('./PaperCard.tsx'));
   const boton = bloque(card, 'className={`pc-action-read');
   assert.match(boton, /onClick=\{handleOpenPaper\}/, 'el ancla ya no cae en el botón que abre el paper');
 
@@ -85,7 +85,7 @@ test('SOURCE: el botón principal se llama como su rótulo, que en móvil no se 
  * esconde bajo el spinner, porque «Leer» no está en «Buscando acceso...».
  */
 test('SOURCE: la palabra que el botón principal enseña en móvil está en su nombre', async () => {
-  const card = stripComments(await read('./PaperCard.jsx'));
+  const card = stripComments(await read('./PaperCard.tsx'));
   const boton = bloque(card, 'className={`pc-action-read');
   assert.match(
     boton,
@@ -110,7 +110,7 @@ test('SOURCE: la palabra que el botón principal enseña en móvil está en su n
 });
 
 test('SOURCE: el botón de reescritura se llama por lo que dibuja, sin aria-label que lo contradiga', async () => {
-  const card = stripComments(await read('./PaperCard.jsx'));
+  const card = stripComments(await read('./PaperCard.tsx'));
   const boton = bloque(card, '<Button\n                variant="brand"');
 
   assert.doesNotMatch(
@@ -130,7 +130,7 @@ test('SOURCE: el botón de reescritura se llama por lo que dibuja, sin aria-labe
 });
 
 test('SOURCE: el nombre del botón de autores empieza por lo que el botón enseña', async () => {
-  const card = stripComments(await read('./PaperCard.jsx'));
+  const card = stripComments(await read('./PaperCard.tsx'));
   const boton = bloque(card, 'className="pc-authors-more"', '</button>');
 
   const dibujado = boton.slice(boton.lastIndexOf('>') + 1).trim();

@@ -11,7 +11,7 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '
  * and the lists page still has to open it.
  */
 test('SOURCE: the lists page opens a paper with no address as a card from the stored copy', async () => {
-  const code = stripComments(await read('./ListsPage.jsx'));
+  const code = stripComments(await read('./ListsPage.tsx'));
   const start = code.indexOf('const openPaperCard = (paper) => {');
   const body = code.slice(start, code.indexOf('};', start));
   assert.match(body, /const path = getPublicPaperPath\(paper\) \|\| getPublicPaperPath\(paper\.id\)/);

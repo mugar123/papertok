@@ -11,7 +11,7 @@ const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
  * composing in, with nothing between the two.
  */
 test('the atom screen is a veil over the feed, inside the same landmark as the cards', async () => {
-  const jsx = await read('./FeedContainer.jsx');
+  const jsx = await read('./FeedContainer.tsx');
   assert.match(jsx, /import \{ AnimatePresence, motion, useReducedMotion \} from 'framer-motion';/);
   assert.match(jsx, /const atomVeil = feedAtomVeilCopy\(\{ displayState, loading, isRefreshing \}\);/);
   // One tree for the wait and for the cards, so the veil can leave over them.
@@ -22,7 +22,7 @@ test('the atom screen is a veil over the feed, inside the same landmark as the c
 });
 
 test('the veil recedes: the ground fades, the atom shrinks and rises, the copy settles', async () => {
-  const jsx = await read('./FeedContainer.jsx');
+  const jsx = await read('./FeedContainer.tsx');
   assert.match(jsx, /const ATOM_VEIL_VARIANTS = \{[\s\S]*?gone: \{ opacity: 0, transition: \{ duration: 0\.42, ease: \[0\.16, 1, 0\.3, 1\] \} \}/);
   assert.match(jsx, /const ATOM_VARIANTS = \{[\s\S]*?gone: \{ opacity: 0, scale: 0\.62, y: -16, transition: \{ duration: 0\.36, ease: \[0\.16, 1, 0\.3, 1\] \} \}/);
   assert.match(jsx, /const ATOM_COPY_VARIANTS = \{[\s\S]*?gone: \{ opacity: 0, y: 6, transition: \{ duration: 0\.24, ease: \[0\.4, 0, 1, 1\] \} \}/);
@@ -66,7 +66,7 @@ test('on the first entry the card composes under the veil instead of sitting at 
  * the veil is the boot screen until the first card composes under it.
  */
 test('the auth gate hands the feed route to the veil instead of drawing an atom of its own', async () => {
-  const gate = await read('../Auth/ProtectedRoute.jsx');
+  const gate = await read('../Auth/ProtectedRoute.tsx');
   assert.match(gate, /if \(loading\) \{\s*(?:\/\/[^\n]*\n\s*)*if \(location\.pathname === '\/feed'\) \{\s*return children;\s*\}/);
   assert.doesNotMatch(gate, /InitialFeedLoading/);
   assert.doesNotMatch(gate, /feed-empty--initial-loading/);
@@ -82,7 +82,7 @@ test('the auth gate hands the feed route to the veil instead of drawing an atom 
  * not handed out again.
  */
 test('the navbar fades in on its first mount of the session, and only then', async () => {
-  const jsx = await read('../Layout/Navbar.jsx');
+  const jsx = await read('../Layout/Navbar.tsx');
   assert.match(jsx, /let navbarHasArrived = false;/);
   assert.match(jsx, /useState\(\(\) => !navbarHasArrived\)/);
   assert.match(jsx, /className=\{arriving \? 'navbar navbar--arriving' : 'navbar'\}/);

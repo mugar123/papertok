@@ -25,7 +25,7 @@ test('hydrateAccountCaches copies this device\'s lists into the session', () => 
 });
 
 test('SOURCE: auth hydrates and warms the account caches on sign-in', async () => {
-  const source = await readFile(new URL('../context/AuthContext.jsx', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../context/AuthContext.tsx', import.meta.url), 'utf8');
   assert.match(source, /hydrateAccountCaches/);
   assert.match(source, /warmAccountCaches/);
   assert.match(source, /resetAccountWarmup/);
@@ -34,7 +34,7 @@ test('SOURCE: auth hydrates and warms the account caches on sign-in', async () =
 });
 
 test('SOURCE: the save modal seeds from this device, not only the session', async () => {
-  const source = await readFile(new URL('../components/Lists/SaveToListModal.jsx', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../components/Lists/SaveToListModal.tsx', import.meta.url), 'utf8');
   assert.match(source, /readStoredLists/);
   assert.match(source, /saveStoredLists/);
 });

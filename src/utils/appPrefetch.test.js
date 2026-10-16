@@ -24,7 +24,7 @@ function bounded(code, from, to, label, maxLines) {
  * and a fresh object would re-arm the timer for nothing.
  */
 test('SOURCE: the idle prefetch waits for a session, so a guest on /login does not pay for eleven chunks', async () => {
-  const code = stripComments(await read('../App.jsx'));
+  const code = stripComments(await read('../App.tsx'));
   assert.match(code, /const sessionUid = user\?\.uid \?\? null/, 'the gate is the uid, not the user object');
   const effect = bounded(code, 'useEffect(() => {\n    if (!sessionUid) return', '}, [sessionUid])', 'the prefetch effect', 45);
   assert.match(effect, /const prefetch = \(\) => \{/, 'the guard sits in the effect that schedules the prefetch, not somewhere else');

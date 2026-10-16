@@ -110,7 +110,7 @@ that could regress navigation away from the others.
 ## Dependencies and collisions
 
 - **001 and 002 edit the same JSX element's neighbourhood** in
-  `src/components/Explorer/EntityExplorer.jsx`:
+  `src/components/Explorer/EntityExplorer.tsx`:
   - 002 edits the `transition` prop of `<motion.div layout className="ehc-wiki-fold">` (lines 1859-1867).
   - 001 edits the skeleton/prose ternary *inside* it (lines 1873-1900).
 
@@ -171,7 +171,7 @@ not independently confirmed.
 | --- | --- |
 | `src/components/Feed/PaperCard.css:23` | `.pc { transition: opacity 0.9s ease; }` — 900ms, three times the UI budget, on the most-mounted element in the app. It is vestigial: `pc--visible` is applied at `PaperCard.jsx:1035` but **no rule anywhere defines it**, and nothing else changes `.pc`'s opacity. The fix is deletion. |
 | `src/components/Lists/ListsPage.css:1047` and `src/components/Explorer/EntityExplorer.css:1262` | `@keyframes staggerFadeUp` is defined **twice with different values** (`opacity 0 → 1, translateY(8px)` vs `opacity 0.35 → 1, translateY(6px)`). `@keyframes` is a global namespace and both files ship in lazy chunks, so whichever route is visited first wins for both components. Non-deterministic across sessions. |
-| `src/components/ui/button-variants.js:5` | The shared `Button` has **zero** `active:` styles across the base string and all variants — only `transition-colors`. The feed's two primary reading CTAs (`PaperCard.jsx:1572`, `:1578`) are this component, so on touch the app's highest-frequency control acknowledges a press with nothing. |
+| `src/components/ui/button-variants.ts:5` | The shared `Button` has **zero** `active:` styles across the base string and all variants — only `transition-colors`. The feed's two primary reading CTAs (`PaperCard.jsx:1572`, `:1578`) are this component, so on touch the app's highest-frequency control acknowledges a press with nothing. |
 | `src/components/Settings/EditInterestsModal.css` | The only component stylesheet with animations and **no** `prefers-reduced-motion` block at all (0 matches), and its JSX imports no `useReducedMotion` either. It opens with `translateY(20px) scale(0.98)` and closes with a slide-down. |
 | `src/styles/variables.css:507, 512, 517, 522, 537, 542, 555` | Seven global `@keyframes` with zero consumers — `slideDown`, `slideInFromBottom`, `slideOutToBottom`, `scaleIn`, `bounce`, `heartBeat`, `ripple`. Verified by grepping every `animation:` / `animation-name:` in CSS and JSX. `ripple` also starts at `scale(0)`. |
 

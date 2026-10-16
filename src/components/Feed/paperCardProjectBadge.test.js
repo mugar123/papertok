@@ -12,7 +12,7 @@ const strip = (source) => source.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
  * no OpenAIRE id (e.g. an older cached shape).
  */
 test('the project pill navigates with the OpenAIRE id and falls back to the code only when it is missing', async () => {
-  const src = strip(await read('./PaperCard.jsx'));
+  const src = strip(await read('./PaperCard.tsx'));
   assert.match(src, /const projectRouteId = project\.id \|\| project\.code;/);
   assert.match(src, /\/explorer\/project\/\$\{encodeURIComponent\(projectRouteId\)\}/);
   assert.match(src, /disabled=\{!\(project\.id \|\| project\.code\)\}/);
@@ -28,7 +28,7 @@ test('the project pill navigates with the OpenAIRE id and falls back to the code
  * id, which already names one project.
  */
 test('the public project path carries the name, so a logged-out reader gets the hero straight away too', async () => {
-  const src = strip(await read('./PaperCard.jsx'));
+  const src = strip(await read('./PaperCard.tsx'));
   assert.match(
     src,
     /getPublicEntityPath\('project', projectRouteId, \{ includeName: true, name: project\.acronym \}\)/,
@@ -45,8 +45,8 @@ test('the public project path carries the name, so a logged-out reader gets the 
  * (SearchPage.jsx, both the row click and its title button share the string).
  */
 test('search results wrap the OpenAIRE project id in encodeURIComponent before it lands in a URL path', async () => {
-  const command = strip(await read('../Search/SearchCommand.jsx'));
-  const searchPage = strip(await read('../Search/SearchPage.jsx'));
+  const command = strip(await read('../Search/SearchCommand.tsx'));
+  const searchPage = strip(await read('../Search/SearchPage.tsx'));
   const encodedProjectPath = /\/explorer\/project\/\$\{encodeURIComponent\(project\.id\)\}/g;
 
   assert.equal(

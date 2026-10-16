@@ -109,7 +109,7 @@ test('the glyph settles into its receded weight instead of stepping', async () =
   // Read off the card rather than written twice: the glyph and the clipping
   // are one event, and a literal here is how they come apart. Retuned together
   // with the image fade, including its linear progression.
-  const jsx = await readFile(new URL('./PaperCard.jsx', import.meta.url), 'utf8');
+  const jsx = await readFile(new URL('./PaperCard.tsx', import.meta.url), 'utf8');
   const entranceMs = Number(/const FIGURE_ENTRANCE_MS = (\d+);/.exec(jsx)[1]);
   assert.match(
     body,

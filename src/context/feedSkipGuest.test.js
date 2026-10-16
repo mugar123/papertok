@@ -31,7 +31,7 @@ function bounded(code, from, to, label, maxLines) {
  * conditional — of either polarity — stands before that fork at all.
  */
 test('SOURCE: markNotInterested quita el paper también sin sesión', async () => {
-  const code = stripComments(await read('./FeedContext.jsx'));
+  const code = stripComments(await read('./FeedContext.tsx'));
   const body = bounded(
     code,
     'const markNotInterested = useCallback(',

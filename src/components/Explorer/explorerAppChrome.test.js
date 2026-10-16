@@ -16,7 +16,7 @@ const read = async (path) => stripComments(await readFile(new URL(path, import.m
  * empty band over the card while it dissolved.
  */
 test('the bar stays up on an entity page, and the page is told by the one place that decides', async () => {
-  const app = await read('../../App.jsx');
+  const app = await read('../../App.tsx');
   const rule = app.match(/const showNavbar = \(navbarRoutes\.includes\(normalizedPathname\)([\s\S]*?)\)\s*&& Boolean\(user\)/);
   assert.ok(rule, 'showNavbar is the one place that decides');
   assert.match(rule[1], /\|\| normalizedPathname\.startsWith\('\/explorer\/'\)/);
@@ -29,7 +29,7 @@ test('the bar stays up on an entity page, and the page is told by the one place 
 });
 
 test('every root the explorer can return carries the modifier, from one prop', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
+  const jsx = await read('./EntityExplorer.tsx');
   assert.match(jsx, /export default function EntityExplorer\(\{[\s\S]*?appChrome = false,[\s\S]*?\}\) \{/);
   assert.match(jsx, /const appChromeClass = appChrome \? ' explorer--app' : '';/);
   assert.equal((jsx.match(/\$\{appChromeClass\}/g) || []).length, 3, 'skeleton, error and live page');

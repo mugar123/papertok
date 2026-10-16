@@ -16,7 +16,7 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '
  * hears of the close from `onOpenChangeComplete(false)` and nowhere else.
  */
 test('the connections sheet is a modal Base UI Drawer that owns its open state and reports the close once', async () => {
-  const jsx = stripComments(await read('./RelatedPapersSheet.jsx'));
+  const jsx = stripComments(await read('./RelatedPapersSheet.tsx'));
   assert.match(jsx, /import \{ Drawer, DrawerClose, DrawerContent, DrawerTitle \} from '\.\.\/ui\/drawer\.jsx';/);
   assert.doesNotMatch(jsx, /useDialogFocus|is-closing|setIsClosing|transitionTimerRef|onAnimationEnd|setTimeout\(\s*finish/);
   assert.doesNotMatch(jsx, /modal=\{false\}/, 'FeedContainer probes [aria-modal="true"]; the sheet must stay modal');
@@ -60,7 +60,7 @@ test('the connections sheet is a modal Base UI Drawer that owns its open state a
 });
 
 test('the sheet\'s mode switch is a Tabs and its map/list switch a ToggleGroup, drawn by the sheet\'s own rules', async () => {
-  const jsx = stripComments(await read('./RelatedPapersSheet.jsx'));
+  const jsx = stripComments(await read('./RelatedPapersSheet.tsx'));
   assert.match(jsx, /<Tabs value=\{mode\} onValueChange=\{\(next\) => setMode\(next\)\}>/);
   assert.match(jsx, /<TabsList variant="pill" className="related-mode-tabs" aria-label=/);
   assert.match(jsx, /<TabsTrigger value="graph" disabled=\{!hasGraphIdentifier \|\| Boolean\(selectedPaperKey\)\}>/);
@@ -101,7 +101,7 @@ test('the sheet\'s box carries the drawer\'s bleed, and a chosen paper settles t
 });
 
 test('the related paper opens as a full-screen modal Dialog whose exit plays before the paper is let go of', async () => {
-  const jsx = stripComments(await read('./PaperCard.jsx'));
+  const jsx = stripComments(await read('./PaperCard.tsx'));
   assert.match(jsx, /import \{ Dialog, DialogClose, DialogContent \} from '\.\.\/ui\/dialog\.jsx';/);
   assert.doesNotMatch(jsx, /useDialogFocus|relatedCardTransitionTimerRef|handleRelatedCardAnimationEnd|RELATED_CARD_CLOSE_MS|is-closing/);
   assert.match(jsx, /<Dialog\s+open=\{Boolean\(activeRelatedPaper\) && !isClosingRelatedCard\}\s+onOpenChange=\{\(nextOpen\) => \{ if \(!nextOpen\) closeRelatedCard\(\); \}\}\s+onOpenChangeComplete=\{\(nextOpen\) => \{ if \(!nextOpen\) finishRelatedCardClose\(\); \}\}/);

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { EXIT_SAFETY_MS, PAGE_MOTIONS, isArrivalMotion, pageMotionFor } from './pageMotion.js';
+import { EXIT_SAFETY_MS, PAGE_MOTIONS, isArrivalMotion, pageMotionFor } from './pageMotion.ts';
 
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '');
 const read = async (path) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
@@ -307,7 +307,7 @@ test('no motion of a page on its way out is an arrival', () => {
  * frame — a worse defect than the one the gate exists for.
  */
 test('SOURCE: the arrival is a predicate read from the DOM, not a flag one commit behind', async () => {
-  const code = stripAll(await readFile(new URL('./PageTransition.jsx', import.meta.url), 'utf8'));
+  const code = stripAll(await readFile(new URL('./PageTransition.tsx', import.meta.url), 'utf8'));
   const gate = code.match(/const isArriving = useCallback\(\(\) => \{([\s\S]*?)\n {2}\}, \[\]\);/);
   assert.ok(gate, 'the gate is a stable callback, so a consumer can ask it whenever it needs to');
 
@@ -341,7 +341,7 @@ test('SOURCE: the arrival is a predicate read from the DOM, not a flag one commi
  * arrival — hence `data-leave-direction`, written only while it leaves.
  */
 test('the page leaving declares the direction that is ejecting it', async () => {
-  const jsx = await read('./PageTransition.jsx');
+  const jsx = await read('./PageTransition.tsx');
   assert.match(
     jsx,
     /data-leave-direction=\{present \? undefined : direction\}/,

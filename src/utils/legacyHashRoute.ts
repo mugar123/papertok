@@ -3,7 +3,7 @@
  *
  * PaperTok was a HashRouter from its first commit, so every link it ever put
  * on a clipboard, into a share sheet or into a notification email has the shape
- * `https://papertok.app/#/public/paper/<key>`. `src/main.jsx` mounts a
+ * `https://papertok.app/#/public/paper/<key>`. `src/main.tsx` mounts a
  * BrowserRouter now: the router reads `location.pathname`, and a fragment is
  * back to meaning a place on the page. Nothing changed about the links, and the
  * plan's first constraint is that none of them may die.

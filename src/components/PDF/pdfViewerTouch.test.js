@@ -16,7 +16,7 @@ const stripComments = source => source
  * visor del navegador lo que no puede dibujar.
  */
 test('el visor no monta el iframe en puntero grueso: dibuja las páginas con pdf.js', async () => {
-  const source = stripComments(await readFile(new URL('./PDFViewer.jsx', import.meta.url), 'utf8'));
+  const source = stripComments(await readFile(new URL('./PDFViewer.tsx', import.meta.url), 'utf8'));
   assert.match(source, /const canEmbed = Boolean\(pdfUrl\) && !coarsePointer;/);
   assert.match(source, /\{canEmbed && <iframe/);
   assert.match(source, /const relayUrl = coarsePointer \? pdfRelayUrl\(relaySourceUrl, PAPER_API_BASE_URL\) : '';/);
@@ -32,7 +32,7 @@ test('el visor no monta el iframe en puntero grueso: dibuja las páginas con pdf
 });
 
 test('las páginas usan la build legacy de pdf.js', async () => {
-  const source = stripComments(await readFile(new URL('./PdfPages.jsx', import.meta.url), 'utf8'));
+  const source = stripComments(await readFile(new URL('./PdfPages.tsx', import.meta.url), 'utf8'));
   // La moderna llama a Map.getOrInsertComputed y Math.sumPrecise, que los
   // iPhone para los que existe este visor no tienen.
   assert.match(source, /from 'pdfjs-dist\/legacy\/build\/pdf\.min\.mjs'/);
@@ -56,7 +56,7 @@ test('la tarjeta de traspaso tiene superficie propia y un botón legible', async
 });
 
 test('en táctil, abrir un paper monta el visor de la app, sin pestaña nueva', async () => {
-  const app = stripComments(await readFile(new URL('../../App.jsx', import.meta.url), 'utf8'));
+  const app = stripComments(await readFile(new URL('../../App.tsx', import.meta.url), 'utf8'));
   assert.match(app, /onOpenPdf=\{openPdf\}/);
   assert.match(app, /const openPdf = setPdfPaper/);
   assert.doesNotMatch(app, /window\.open\(/);

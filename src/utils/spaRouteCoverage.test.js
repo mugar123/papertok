@@ -11,7 +11,7 @@ import { readFile } from 'node:fs/promises';
  */
 
 const VERCEL = new URL('../../vercel.json', import.meta.url);
-const APP = new URL('../App.jsx', import.meta.url);
+const APP = new URL('../App.tsx', import.meta.url);
 const NOT_FOUND = new URL('../../public/404.html', import.meta.url);
 
 async function spaMatcher() {

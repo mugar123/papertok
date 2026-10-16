@@ -22,7 +22,7 @@ const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
  */
 
 test('the library read asks for every curated set a list can be built from', async () => {
-  const source = await read('./FeedContext.jsx');
+  const source = await read('./FeedContext.tsx');
   const union = source.slice(
     source.indexOf('const paperIds = [...new Set(['),
     source.indexOf('PERSONAL_LIBRARY_MAX_RECORDS)'),
@@ -37,7 +37,7 @@ test('the library read asks for every curated set a list can be built from', asy
 });
 
 test('what the read fetches is kept, even when the record is filtered out', async () => {
-  const source = await read('./FeedContext.jsx');
+  const source = await read('./FeedContext.tsx');
 
   const forEachBody = source.slice(
     source.indexOf('records.forEach(({ id, data }) => {'),
@@ -60,7 +60,7 @@ test('what the read fetches is kept, even when the record is filtered out', asyn
 });
 
 test('the lists screen counts the prefetch as already in hand', async () => {
-  const source = await read('../components/Lists/ListsPage.jsx');
+  const source = await read('../components/Lists/ListsPage.tsx');
 
   assert.match(source, /^\s*libraryPapers,$/m, 'it must take the prefetch from the context');
 
@@ -83,7 +83,7 @@ test('the lists screen counts the prefetch as already in hand', async () => {
  * arrived yet.
  */
 test('an empty card means an empty list, not an unfinished read', async () => {
-  const source = await read('../components/Lists/ListsPage.jsx');
+  const source = await read('../components/Lists/ListsPage.tsx');
   const preview = source.slice(
     source.indexOf('<div className="list-card-preview">'),
     source.indexOf('list-card-preview-title'),

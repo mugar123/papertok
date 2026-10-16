@@ -15,8 +15,8 @@ import {
 } from '../services/openAlexService.ts';
 import { searchProjects } from '../services/openAireService.ts';
 import { searchPapersAcrossSources } from '../services/paperSearchService.ts';
-import { useLanguage } from '../context/LanguageContext.jsx';
-import { useAnalyticsConsent } from '../context/AnalyticsContext.jsx';
+import { useLanguage } from '../context/LanguageContext.tsx';
+import { useAnalyticsConsent } from '../context/AnalyticsContext.tsx';
 import {
   authorProminenceWeight,
   filterRelevantSearchResults,

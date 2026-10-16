@@ -51,7 +51,7 @@ test('SOURCE: the guest dismissal only touches React state', async () => {
  * page showing one paper has nothing to drop, so it still asks for the account.
  */
 test('SOURCE: Skip without an account is opt-in, per surface', async () => {
-  const card = stripComments(await read('../components/Feed/PaperCard.jsx'));
+  const card = stripComments(await read('../components/Feed/PaperCard.tsx'));
   const start = card.indexOf('const handleNotInterested = (e) => {');
   const body = card.slice(start, card.indexOf('};', start));
   assert.match(body, /if \(publicMode\) \{[\s\S]{0,200}?if \(onGuestNotInterested\) \{[\s\S]{0,120}?onGuestNotInterested\(paper\?\.id\);[\s\S]{0,60}?return;[\s\S]{0,40}?\}[\s\S]{0,60}?requireAuthentication\('not_interested'\);/,
@@ -61,7 +61,7 @@ test('SOURCE: Skip without an account is opt-in, per surface', async () => {
   assert.doesNotMatch(card, /onGuestNotInterested = \(\) => \{\}/,
     'no default, or every surface would look guest-capable');
 
-  const container = stripComments(await read('../components/Feed/FeedContainer.jsx'));
+  const container = stripComments(await read('../components/Feed/FeedContainer.tsx'));
   // The prop is the surface's own dismissal, now wrapped so the card runs out
   // of the feed before it is dropped (utils/feedSkipExit.js). What must not
   // change is that it is CONDITIONAL on the surface having a list of its own:
@@ -75,7 +75,7 @@ test('SOURCE: Skip without an account is opt-in, per surface', async () => {
   assert.ok(wrapper, 'expected the wrapper around the surface dismissal');
   assert.match(wrapper, /dismissFromSource\?\.\(paperId\)/, 'which ends in the surface dropping the paper by id');
 
-  const guest = stripComments(await read('../components/Public/GuestFeedPage.jsx'));
+  const guest = stripComments(await read('../components/Public/GuestFeedPage.tsx'));
   assert.match(guest, /onNotInterested: guestFeed\.dismissPaper/,
     'and the guest feed is the surface that supplies it');
 });
@@ -85,7 +85,7 @@ test('SOURCE: Skip without an account is opt-in, per surface', async () => {
  * analytics half stays off even though the card now goes away.
  */
 test('SOURCE: a guest skip still records nothing', async () => {
-  const container = stripComments(await read('../components/Feed/FeedContainer.jsx'));
+  const container = stripComments(await read('../components/Feed/FeedContainer.tsx'));
   const start = container.indexOf('const handleSkip = useCallback(');
   const body = container.slice(start, container.indexOf('}, [', start));
   assert.match(body, /if \(publicMode\) return;/, 'the analytics path is still closed for a visitor');
@@ -96,7 +96,7 @@ test('SOURCE: a guest skip still records nothing', async () => {
  * must not inherit the guest skip.
  */
 test('SOURCE: the related-paper overlay does not forward the guest skip', async () => {
-  const card = stripComments(await read('../components/Feed/PaperCard.jsx'));
+  const card = stripComments(await read('../components/Feed/PaperCard.tsx'));
   const nested = card.slice(card.indexOf('paper={selectedRelatedPaper}'));
   const props = nested.slice(0, nested.indexOf('/>'));
   assert.doesNotMatch(props, /onGuestNotInterested/,

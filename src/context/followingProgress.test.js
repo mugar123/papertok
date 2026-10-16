@@ -24,7 +24,7 @@ function bounded(code, from, to, label, maxLines) {
  * paints those deliveries.
  */
 test('SOURCE: the provider paints what each follow answered as it answers', async () => {
-  const code = stripComments(await read('./FollowingUpdatesContext.jsx'));
+  const code = stripComments(await read('./FollowingUpdatesContext.tsx'));
   const request = bounded(code, 'request = fetchFollowingUpdates(followedEntities, {', 'requestsInFlight.set(requestKey, request);', 'the request', 12);
   assert.match(request, /onProgress: applyProgress/);
   const apply = bounded(code, 'const applyProgress = useCallback(', '}, [userId]);', 'the progress handler', 30);

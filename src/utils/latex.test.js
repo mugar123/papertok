@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import katex from 'katex';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import ScientificText from '../components/ScientificText.js';
+import ScientificText from '../components/ScientificText.ts';
 import { loadKatex } from './katexLoader.ts';
 import { displayProse, katexSource, normalizeLatexText, normalizeScientificMarkup, proseSourceOffset, splitLatexText } from './latex.ts';
 

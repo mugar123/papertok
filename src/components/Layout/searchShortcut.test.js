@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { shouldOpenSearchOnSlash } from './searchShortcut.js';
+import { shouldOpenSearchOnSlash } from './searchShortcut.ts';
 
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
@@ -37,7 +37,7 @@ test('cualquier otra tecla no es el atajo', () => {
 });
 
 test('SOURCE: la navbar delega en la puerta en vez de llevar la suya', async () => {
-  const jsx = stripComments(await readFile(new URL('./Navbar.jsx', import.meta.url), 'utf8'));
+  const jsx = stripComments(await readFile(new URL('./Navbar.tsx', import.meta.url), 'utf8'));
   assert.match(jsx, /import \{ shouldOpenSearchOnSlash \} from '\.\/searchShortcut\.js';/);
   assert.match(
     jsx,

@@ -14,7 +14,7 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '
  * id into a legal document name, and every reader must decode it back.
  */
 test('SOURCE: no interaction document is addressed by a raw paper id anymore', async () => {
-  const code = stripComments(await read('./FeedContext.jsx'));
+  const code = stripComments(await read('./FeedContext.tsx'));
   assert.doesNotMatch(code, /doc\(db, 'users', userId, 'interactions'/,
     'a raw doc() call throws on a slash-bearing id after the aggregate was already written');
   const uses = code.match(/interactionDocRef\(userId, (?:paper\.id|paperId)\)/g) || [];
@@ -45,7 +45,7 @@ test('SOURCE: the aggregate rebuild scan decodes ids, or a rebuilt aggregate wou
  * row can build its link and its kicker from the same copy.
  */
 test('SOURCE: a like stores the serialized paper beside the flag, the way a save does', async () => {
-  const code = stripComments(await read('./FeedContext.jsx'));
+  const code = stripComments(await read('./FeedContext.tsx'));
   const start = code.indexOf('const toggleLike = useCallback(');
   const like = code.slice(start, code.indexOf('const markNotInterested = useCallback(', start));
   assert.ok(like.length > 0, 'expected to have found toggleLike');

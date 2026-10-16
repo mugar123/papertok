@@ -16,7 +16,7 @@ const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
  * button's look, and its press is the base's 0.97.
  */
 test('the brand button stays on the page under the pointer; only its icon moves', async () => {
-  const source = await read('./button-variants.js');
+  const source = await read('./button-variants.ts');
   const brand = source.match(/^\s*brand: '([^']*)',$/m)?.[1];
   assert.ok(brand, 'the brand variant is one string');
   const classes = brand.split(/\s+/);

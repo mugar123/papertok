@@ -22,7 +22,7 @@ function bounded(code, from, to, label, maxLines) {
  * onboarding → the search); these pin the three pieces that made it work.
  */
 test('SOURCE: the destination lives outside the tree the sign-in remounts', async () => {
-  const code = stripComments(await read('../App.jsx'));
+  const code = stripComments(await read('../App.tsx'));
   assert.doesNotMatch(code, /pendingReturn/, 'no copy of the destination in AppContent state');
   const block = bounded(code, 'const authArrivalKey = ', 'onboardingComplete || profileLoadError) return', 'the arrival and trip effects', 30);
   assert.match(block, /useEffect\(\(\) => \{\s*if \(!authArrivalKey\) return\s*offerAuthReturn\(arrivalReturnTo\)\s*navigate\(`\$\{location\.pathname\}\$\{location\.search\}`, \{ replace: true, state: null \}\)/);
@@ -30,13 +30,13 @@ test('SOURCE: the destination lives outside the tree the sign-in remounts', asyn
 });
 
 test('SOURCE: a door opened from the page drops the trip an earlier bounce left', async () => {
-  const code = stripComments(await read('../App.jsx'));
+  const code = stripComments(await read('../App.tsx'));
   const block = bounded(code, 'const requestAuthentication = useCallback(', '}, [])', 'requestAuthentication', 6);
   assert.match(block, /clearAuthReturn\(\)\s*setAuthPromptOpen\(true\)/);
 });
 
 test('SOURCE: every redirect to the onboarding carries the destination the sign-in brought', async () => {
-  const code = stripComments(await read('../components/Auth/ProtectedRoute.jsx'));
+  const code = stripComments(await read('../components/Auth/ProtectedRoute.tsx'));
   assert.match(code, /const \[carriedDestination\] = useState\(peekAuthReturn\);\s*const onboardingReturnTo = carriedDestination \?\? requestedPath;\s*const onboardingState = useMemo\(\(\) => \(\{ returnTo: onboardingReturnTo \}\), \[onboardingReturnTo\]\);/);
   assert.match(code, /<Navigate to="\/onboarding" replace state=\{onboardingState\} \/>/);
 });

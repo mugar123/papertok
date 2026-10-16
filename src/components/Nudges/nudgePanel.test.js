@@ -21,10 +21,10 @@ const stripComments = source => source
   .replace(/^\s*\/\/.*$/gm, '');
 
 const read = path => readFile(new URL(path, import.meta.url), 'utf8').then(stripComments);
-const panelJsx = read('./NudgePanel.jsx');
+const panelJsx = read('./NudgePanel.tsx');
 const panelCss = read('./NudgePanel.css');
-const hostJsx = read('./NudgeHost.jsx');
-const appJsx = read('../../App.jsx');
+const hostJsx = read('./NudgeHost.tsx');
+const appJsx = read('../../App.tsx');
 
 const motionClock = (block, property) => {
   const match = block.match(new RegExp(`(?<![A-Za-z-])${property}: \\{ duration: ([\\d.]+), ease: ([^}]+?) \\}`));

@@ -19,7 +19,7 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/g
  * words landed, ~305px over five.
  */
 test('the skeleton paper row reserves the live row\'s line boxes, summary included', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
+  const jsx = await read('./EntityExplorer.tsx');
   const rows = jsx.match(/<div className="ex-skel ex-skel-title"><\/div>\s*<div className="ex-skel ex-skel-title"><\/div>\s*<div className="ex-skel ex-skel-authors"><\/div>\s*<div className="ex-skel ex-skel-summary"><\/div>\s*<div className="ex-skel ex-skel-summary ex-skel-summary--short"><\/div>/g) || [];
   assert.equal(rows.length, 2, 'both the page skeleton and the list skeleton paint the summary');
 
@@ -43,7 +43,7 @@ test('the skeleton paper row reserves the live row\'s line boxes, summary includ
  * happened, animated. Born resolved, there is no skeleton frame at all.
  */
 test('a query topic is born resolved rather than loading', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
+  const jsx = await read('./EntityExplorer.tsx');
   // A local topic — the id a category pill on a card navigates to — resolves
   // from CATEGORIES with no fetch either. Born loading, it painted the skeleton
   // for one commit and settled 109→146 DURING the page's own entrance.
@@ -66,7 +66,7 @@ test('a query topic is born resolved rather than loading', async () => {
  * which are sized in em — so the box sets the size the rows measure against.
  */
 test('the project skeleton reserves its summary box and the stat cells that land', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
+  const jsx = await read('./EntityExplorer.tsx');
   assert.match(jsx, /const ProjectSummarySkeleton = \(\) => \(\s*<div className="project-summary-box project-summary-box--reserved" aria-hidden="true">\s*<div className="ehc-wiki-skeleton">/);
   assert.match(jsx, /\{shape\.aside === 'summary' && <ProjectSummarySkeleton \/>\}/);
   // Block body since Task 3 (2026-09-09): the last cell needs to know whether
@@ -78,7 +78,7 @@ test('the project skeleton reserves its summary box and the stat cells that land
 });
 
 test('the page skeleton asks the route whether an ORCID card is coming', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
+  const jsx = await read('./EntityExplorer.tsx');
   assert.match(jsx, /const shape = explorerSkeletonShape\(type, \{ hasOrcid: Boolean\(extractOrcid\(id\)\) \}\);/);
 });
 
@@ -113,7 +113,7 @@ test('the impact cell and its grid are born at the size the score will take', as
   // span, not the flex `.ehc-stat-box`, so without it the bar stays inline and
   // width/height do nothing.
   assert.match(css, /\.ex-skel-stat-detail \{ display: block; width: 96px; height: 8px; margin-top: 2px; \}/);
-  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
   // The skeleton's last cell IS the impact cell on those pages: it carries the
   // class the `:has()` above keys on, and the detail box that sets the height.
   assert.match(jsx, /const isImpact = shape\.impact && i === shape\.stats - 1;/);
@@ -125,7 +125,7 @@ test('the impact cell and its grid are born at the size the score will take', as
   // back to measuring to content, so the score's second line takes it from
   // 249 to 264 and drops the ORCID card 10.3px again — with every assertion
   // above still green, because they only ever look at the skeleton's copy.
-  const impactJsx = stripComments(await read('./RecentImpactStat.jsx'));
+  const impactJsx = stripComments(await read('./RecentImpactStat.tsx'));
   assert.match(impactJsx, /className=\{`ehc-stat-box ehc-stat-box--impact\$\{impact\?\.stale \? ' ehc-stat-box--stale' : ''\}`\}/);
   // The other half: which pages mount that cell at all. This list and
   // `explorerSkeletonShape.impact` (author || institution) are two copies of
@@ -145,7 +145,7 @@ test('the impact cell and its grid are born at the size the score will take', as
  * details land (or, name-less, once the id-as-name fallback lands instead).
  */
 test('a project arriving with a name from the pill paints the hero right away and reserves inside it what OpenAIRE has not answered yet', async () => {
-  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
   assert.match(
     jsx,
     /setEntity\(\{ id, display_name: name, type: 'project', funder, _detailsPending: true \}\);\s*setIsLoadingEntity\(false\);/,
@@ -194,7 +194,7 @@ test('a project arriving with a name from the pill paints the hero right away an
  * title. The page already has bilingual wording for what this is.
  */
 test('a project whose lookup failed still links out and still has a title', async () => {
-  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
 
   assert.doesNotMatch(jsx, /display_name: name \|\| id,/, 'the raw id is no longer a title');
   // The wording stands in where the title is RENDERED, never inside the

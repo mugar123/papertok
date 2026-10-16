@@ -8,7 +8,7 @@ const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 
 test('SOURCE: the onboarding refuses to leave the topics screen, or to finish, over the cap', async () => {
-  const code = stripComments(await read('./OnboardingFlow.jsx'));
+  const code = stripComments(await read('./OnboardingFlow.tsx'));
   assert.match(code, /import \{ USER_PREFERENCES_MAX \} from '\.\.\/\.\.\/utils\/accountOnboarding\.ts';/);
   // guestSeedCategoriesForAreas cuts at the cap by itself, so the cap is
   // judged on the count before that cut: every ticked topic, and the first
@@ -34,7 +34,7 @@ test('SOURCE: the onboarding refuses to leave the topics screen, or to finish, o
 });
 
 test('SOURCE: the settings picker refuses to save over the cap, before the write', async () => {
-  const code = stripComments(await read('../Settings/EditInterestsModal.jsx'));
+  const code = stripComments(await read('../Settings/EditInterestsModal.tsx'));
   assert.match(code, /import \{ USER_PREFERENCES_MAX \} from '\.\.\/\.\.\/utils\/accountOnboarding\.ts';/);
   const guard = code.match(/if \(selected\.size > USER_PREFERENCES_MAX\) \{[\s\S]*?return;\s*\}/);
   assert.ok(guard, 'the save handler has no cap guard');

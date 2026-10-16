@@ -50,7 +50,7 @@ test('the mobile side rail is centred with `translate`, so the arrival animation
  * at 4x CPU on a switch back to For You, where there had been none.
  */
 test('the abstract toggle keeps its place from the first frame, so the arrival plays over a still layout', async () => {
-  const jsx = await read('./PaperCard.jsx');
+  const jsx = await read('./PaperCard.tsx');
   // Rendered for every abstract; the verdict picks the modifier, not the mount.
   assert.match(jsx, /\{abstractText && \(\s*<button\s+type="button"\s+className=\{`pc-abstract-toggle\$\{abstractClipped === true \|\| expanded \? '' : ' pc-abstract-toggle--reserved'\}`\}/);
   const css = await read('./PaperCard.css');
@@ -73,7 +73,7 @@ test('the abstract toggle keeps its place from the first frame, so the arrival p
  * space is 60% open (120ms), landing together with it.
  */
 test('the project badge opens its space gently over 320ms, and arrives once the space is mostly open', async () => {
-  const jsx = await read('./PaperCard.jsx');
+  const jsx = await read('./PaperCard.tsx');
   const slot = jsx.match(/className="pc-project-badge-slot"[\s\S]*?className="pc-project-badge-motion"[\s\S]*?>\s*<button/);
   assert.ok(slot, 'the badge slot and its motion wrapper are still there');
   // Anchored to the outer slot alone, so the inner motion's literal cannot

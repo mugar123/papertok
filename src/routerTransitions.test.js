@@ -17,7 +17,7 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '
  * exit started 11 ms after the tap. The prop is what keeps it synchronous.
  */
 test('SOURCE: the router updates its location synchronously, so a tab tap is acknowledged on the next frame', async () => {
-  const code = stripComments(await read('./main.jsx'));
+  const code = stripComments(await read('./main.tsx'));
   assert.match(code, /<BrowserRouter useTransitions=\{false\}>/, 'navigation must not be a React transition');
   assert.doesNotMatch(code, /<BrowserRouter>/, 'a bare <BrowserRouter> falls back to transitions');
 });
@@ -38,7 +38,7 @@ test('SOURCE: the router updates its location synchronously, so a tab tap is ack
  * basename that disagreed with the server would match nothing at all.
  */
 test('SOURCE: the router reads the path, not the fragment', async () => {
-  const code = stripComments(await read('./main.jsx'));
+  const code = stripComments(await read('./main.tsx'));
   assert.match(
     code,
     /import \{ BrowserRouter \} from 'react-router-dom'/,
@@ -62,7 +62,7 @@ test('SOURCE: the router reads the path, not the fragment', async () => {
  * the catch-all is the not-found page.
  */
 test('SOURCE: the feed lives at /feed, / redirects there, and the catch-all is the not-found page', async () => {
-  const code = stripComments(await read('./App.jsx'));
+  const code = stripComments(await read('./App.tsx'));
 
   assert.match(code, /path="\/feed"/, 'the feed route must be /feed');
   assert.doesNotMatch(code, /\n\s*path="\/"\n/, 'no page may be routed at "/"');
@@ -101,7 +101,7 @@ test('SOURCE: the feed lives at /feed, / redirects there, and the catch-all is t
  * nothing calls fixes nothing.
  */
 test('SOURCE: the provider tree is keyed on a generation, not on the account, so resolving a session does not remount the app', async () => {
-  const code = stripComments(await read('./App.jsx'));
+  const code = stripComments(await read('./App.tsx'));
 
   const scoped = code.match(/function UserScopedAppContent\(\)\s*\{[\s\S]*?\n\}/);
   assert.ok(scoped, 'UserScopedAppContent must still be the thing that carries the key');
@@ -138,8 +138,8 @@ test('SOURCE: the provider tree is keyed on a generation, not on the account, so
  */
 test('SOURCE: the providers below the key re-read the account during render, instead of trusting the mount', async () => {
   const cases = [
-    { file: './context/FollowingContext.jsx', id: 'accountId' },
-    { file: './context/EmailNotificationsContext.jsx', id: 'userId' },
+    { file: './context/FollowingContext.tsx', id: 'accountId' },
+    { file: './context/EmailNotificationsContext.tsx', id: 'userId' },
   ];
   for (const { file, id } of cases) {
     const code = stripComments(await read(file));

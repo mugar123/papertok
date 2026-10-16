@@ -53,7 +53,7 @@ test('the exit is short enough to stay out of the way', () => {
  * Wiring only one leaves the other teleporting.
  */
 test('SOURCE: both skip paths run the card out before removing it', async () => {
-  const code = stripComments(await read('./FeedContainer.jsx'));
+  const code = stripComments(await read('./FeedContainer.tsx'));
 
   const signedIn = bounded(code, 'const handleNotInterested = useCallback(', '}, [', 'handleNotInterested', 14);
   assert.match(signedIn, /beginSkipExit\(/, 'the signed-in skip starts the exit');
@@ -78,7 +78,7 @@ test('SOURCE: both skip paths run the card out before removing it', async () => 
  * that turns the animation off would otherwise strand the card forever).
  */
 test('SOURCE: the deferred removal cannot be stranded', async () => {
-  const code = stripComments(await read('./FeedContainer.jsx'));
+  const code = stripComments(await read('./FeedContainer.tsx'));
   const block = bounded(code, 'const beginSkipExit = useCallback(', '}, [', 'beginSkipExit', 30);
 
   assert.match(block, /setTimeout\(/, 'a clock backs the animation up');

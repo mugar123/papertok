@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 test('SOURCE: first-run onboarding opens on a greeting, asks for topics only without a guest answer, and the university comes last', async () => {
-  const source = await readFile(new URL('./OnboardingFlow.jsx', import.meta.url), 'utf8');
+  const source = await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   assert.match(code, /onboardingComplete/);
   // The onboarding writes the account's preferences and nothing public: no
@@ -33,7 +33,7 @@ test('SOURCE: first-run onboarding opens on a greeting, asks for topics only wit
 });
 
 test('SOURCE: the onboarding is drawn in the welcome\'s shell, with the welcome\'s pickers', async () => {
-  const source = await readFile(new URL('./OnboardingFlow.jsx', import.meta.url), 'utf8');
+  const source = await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   assert.match(code, /import \{ AreaPicker, SubtopicsPicker, WelcomeCopy, WelcomeShell \} from '\.\.\/Public\/WelcomeShell\.jsx';/);
   assert.equal((code.match(/<WelcomeShell\b/g) || []).length, 1);
@@ -44,7 +44,7 @@ test('SOURCE: the onboarding is drawn in the welcome\'s shell, with the welcome\
 });
 
 test('SOURCE: the greeting writes its title glyph by glyph once, and draws it whole when motion is refused', async () => {
-  const source = await readFile(new URL('./OnboardingFlow.jsx', import.meta.url), 'utf8');
+  const source = await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   assert.match(code, /kicker: firstName => \(firstName \? `Hello, \$\{firstName\}` : 'Hello'\)/);
   assert.match(code, /title: 'Welcome to PaperTok',/);
@@ -75,7 +75,7 @@ test('SOURCE: the greeting writes its title glyph by glyph once, and draws it wh
 });
 
 test('the greeting settles inside three seconds under the baked glyph data', async () => {
-  const code = (await readFile(new URL('./OnboardingFlow.jsx', import.meta.url), 'utf8'))
+  const code = (await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   const constant = name => Number(code.match(new RegExp(`const ${name} = ([\\d.]+);`))[1]);
   const { default: data } = await import('./welcomeTitlePaths.js');
@@ -104,7 +104,7 @@ test('the greeting settles inside three seconds under the baked glyph data', asy
 });
 
 test('SOURCE: the title is baked outlines from a checked-in generator, and no script face loads at runtime', async () => {
-  const code = (await readFile(new URL('./OnboardingFlow.jsx', import.meta.url), 'utf8'))
+  const code = (await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   assert.match(code, /^import WELCOME_TITLE from '\.\/welcomeTitlePaths\.js';$/m);
   assert.doesNotMatch(code, /@fontsource\/pinyon-script/);
@@ -125,7 +125,7 @@ test('SOURCE: the title is baked outlines from a checked-in generator, and no sc
 });
 
 test('SOURCE: there is no sign-in page; a guest off a protected route gets the feed with the door open', async () => {
-  const guard = (await readFile(new URL('../Auth/ProtectedRoute.jsx', import.meta.url), 'utf8'))
+  const guard = (await readFile(new URL('../Auth/ProtectedRoute.tsx', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   // The state is one object per destination (a literal re-issued the redirect
   // on every render), and it still carries the full requested path.
@@ -133,7 +133,7 @@ test('SOURCE: there is no sign-in page; a guest off a protected route gets the f
   assert.match(guard, /const signInState = useMemo\(\(\) => \(\{ authRequired: true, returnTo: requestedPath \}\), \[requestedPath\]\);/);
   assert.match(guard, /<Navigate to="\/feed" replace state=\{signInState\} \/>/);
   assert.doesNotMatch(guard, /to="\/login"/);
-  const app = await readFile(new URL('../../App.jsx', import.meta.url), 'utf8');
+  const app = await readFile(new URL('../../App.tsx', import.meta.url), 'utf8');
   assert.doesNotMatch(app, /LoginPage/);
   assert.match(app, /<Route path="\/login" element=\{<LoginRedirect \/>\} \/>/, 'old /login links still land somewhere');
   assert.match(app, /if \(!user\) setAuthPromptOpen\(true\)/, 'the sign-in dialog opens for the bounced guest');
@@ -150,7 +150,7 @@ test('SOURCE: there is no sign-in page; a guest off a protected route gets the f
  * leave it waiting for the next new account on the same device.
  */
 test('SOURCE: the onboarding is seeded from the guest answer', async () => {
-  const source = await readFile(new URL('./OnboardingFlow.jsx', import.meta.url), 'utf8');
+  const source = await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   // Read once, in one place.
   assert.match(code, /const \[guestAnswer\] = useState\(\(\) => readGuestInterests\(\)\);/);
@@ -171,7 +171,7 @@ test('SOURCE: the onboarding is seeded from the guest answer', async () => {
 });
 
 test('SOURCE: the university screen asks for the address itself, in a field that starts empty', async () => {
-  const source = await readFile(new URL('./OnboardingFlow.jsx', import.meta.url), 'utf8');
+  const source = await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   assert.match(code, /const \[institutionEmail, setInstitutionEmail\] = useState\(''\);/);
   assert.doesNotMatch(code, /guestAnswer\?\.institutionEmail/, 'the welcome no longer carries an address');
@@ -187,7 +187,7 @@ test('SOURCE: the university screen asks for the address itself, in a field that
 });
 
 test('SOURCE: the guest answer is cleared where the profile takes over', async () => {
-  const source = await readFile(new URL('../../context/AuthContext.jsx', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../../context/AuthContext.tsx', import.meta.url), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   const complete = code.match(/const completeOnboarding = useCallback\(async \(preferences\) => \{[\s\S]*?\n {2}\}, \[readingPreferences, user\?\.uid\]\);/);
   assert.ok(complete, 'completeOnboarding is gone or reshaped');
@@ -218,7 +218,7 @@ test('SOURCE: the guest answer is cleared where the profile takes over', async (
  * than leaving "Start exploring" spinning with no message.
  */
 test('SOURCE: handleFinish tells a write timeout apart from a generic save failure', async () => {
-  const source = await readFile(new URL('./OnboardingFlow.jsx', import.meta.url), 'utf8');
+  const source = await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   const handleFinish = code.match(/const handleFinish = async \(\) => \{[\s\S]*?\n {2}\};/);
   assert.ok(handleFinish, 'handleFinish is gone or reshaped');
@@ -235,7 +235,7 @@ test('SOURCE: handleFinish tells a write timeout apart from a generic save failu
 });
 
 test('SOURCE: on the university screen a typed address makes the primary the link\'s submit', async () => {
-  const code = (await readFile(new URL('./OnboardingFlow.jsx', import.meta.url), 'utf8'))
+  const code = (await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   assert.match(code, /const linksOnPress = step === 'university' && !institution && institutionEmail\.trim\(\) !== '';/);
   const primary = code.match(/primary=\{linksOnPress && !saving\s*\? \{[\s\S]*?\}\s*: \{[\s\S]*?\n {8}\}\}/);
@@ -253,7 +253,7 @@ test('SOURCE: on the university screen a typed address makes the primary the lin
   assert.match(code, /<LibraryPreview still=\{still\} stamp=\{<PetriStamp \/>\} \/>/);
   assert.match(code, /import \{ LibraryPreview \} from '\.\.\/Public\/GuestWelcomePreferences\.jsx';/);
 
-  const shell = (await readFile(new URL('../Public/WelcomeShell.jsx', import.meta.url), 'utf8'))
+  const shell = (await readFile(new URL('../Public/WelcomeShell.tsx', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   assert.match(shell, /type=\{primary\.form \? 'submit' : 'button'\}\s*form=\{primary\.form\}\s*onClick=\{primary\.form \? undefined : primary\.onClick\}/);
 });
@@ -269,13 +269,13 @@ test('SOURCE: the onboarding CSS draws on white ground, with no tint behind its 
   assert.doesNotMatch(css, /border-radius:\s*\d/, 'radius tokens only');
   // The yellow is the greeting's rule, and nothing else here.
   assert.equal((css.match(/--brand-yellow/g) || []).length, 1);
-  const code = (await readFile(new URL('./OnboardingFlow.jsx', import.meta.url), 'utf8'))
+  const code = (await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   assert.doesNotMatch(code, /--area-accent|onboarding-stage|onboarding-plate|PagePreview/);
 });
 
 test('SOURCE: the university screen keeps the welcome\'s layout, and its platforms stagger only with motion allowed', async () => {
-  const code = (await readFile(new URL('./OnboardingFlow.jsx', import.meta.url), 'utf8'))
+  const code = (await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   const block = screenBlock(code, 'university');
   assert.ok(block, 'the university screen is gone or reshaped');

@@ -13,9 +13,9 @@ import { readFile } from 'node:fs/promises';
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 const css = await read('./SearchCommand.css');
-const palette = await read('./SearchCommand.jsx');
-const command = await read('../ui/command.jsx');
-const app = await read('../../App.jsx');
+const palette = await read('./SearchCommand.tsx');
+const command = await read('../ui/command.tsx');
+const app = await read('../../App.tsx');
 
 /** The phone block: every `@media (max-width: 640px)` rule set, joined. */
 const phone = [...css.matchAll(/@media \(max-width: 640px\) \{([\s\S]*?)\n\}/g)].map(match => match[1]).join('\n');

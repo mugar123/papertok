@@ -22,8 +22,8 @@ const stripComments = source => source
   .replace(/^\s*\/\/.*$/gm, '');
 
 const read = (path) => readFile(new URL(path, import.meta.url), 'utf8').then(stripComments);
-const explorerJsx = read('./EntityExplorer.jsx');
-const gateJsx = read('./ExplorerGuestGate.jsx');
+const explorerJsx = read('./EntityExplorer.tsx');
+const gateJsx = read('./ExplorerGuestGate.tsx');
 const gateCss = read('./ExplorerGuestGate.css');
 
 test('las dos listas se recortan por el mismo sitio', async () => {

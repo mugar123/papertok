@@ -8,7 +8,7 @@ const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
  * SOURCE tests for how an entity page opens and how the feed comes back.
  */
 test('the explorer paints the name a link handed over before the entity answers', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
+  const jsx = await read('./EntityExplorer.tsx');
   assert.match(jsx, /const seedName = useMemo\(/);
   assert.match(jsx, /seedName\s*\?\s*<h1 className="ehc-name"[^>]*>\{seedName\}<\/h1>\s*:\s*<div className="ex-skel ex-skel-name"><\/div>/);
   const css = await read('./EntityExplorer.css');
@@ -22,12 +22,12 @@ test('the explorer paints the name a link handed over before the entity answers'
 });
 
 test('the explorer chunk is preloaded with the other screens a session reaches', async () => {
-  const app = await read('../../App.jsx');
+  const app = await read('../../App.tsx');
   assert.match(app, /EntityExplorer\.preload\(\)\.catch/);
 });
 
 test('coming back to the feed resumes it at rest instead of replaying the arrival', async () => {
-  const transition = await read('../Layout/PageTransition.jsx');
+  const transition = await read('../Layout/PageTransition.tsx');
   assert.match(transition, /data-nav-direction=\{present \? direction : arrivedWith\}/);
   const css = await read('../Feed/PaperCard.css');
   assert.match(css, /:is\(\[data-nav-direction="-1"\], \[data-nav-lateral="true"\]\) \.pc-sheet,[\s\S]*?:is\(\[data-nav-direction="-1"\], \[data-nav-lateral="true"\]\) \.pc-side-actions \{\s*animation: none;\s*\}/);
@@ -36,7 +36,7 @@ test('coming back to the feed resumes it at rest instead of replaying the arriva
 test('the hero settles between its heights instead of snapping at the handover', async () => {
   // Comments are prose, not code: the call carries a comment between its
   // dependency list and its options, and this must read through it.
-  const jsx = (await read('./EntityExplorer.jsx')).replace(/^\s*\/\/.*$/gm, '');
+  const jsx = (await read('./EntityExplorer.tsx')).replace(/^\s*\/\/.*$/gm, '');
   assert.match(jsx, /import \{ useHeightSettle \} from '\.\.\/\.\.\/hooks\/useHeightSettle\.ts';/);
   // `suspended` is the route transition's own gate: a settle under a page that
   // is still travelling is a second owner of the same displacement.
@@ -88,7 +88,7 @@ test('the skeleton tab strip stands as tall as the live one', async () => {
 });
 
 test('the explorer is born with the entity a link handed over, and treats its own fetch as an upgrade', async () => {
-  const jsx = (await read('./EntityExplorer.jsx')).replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
+  const jsx = (await read('./EntityExplorer.tsx')).replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
   assert.match(jsx, /import \{ useParams, useNavigate, useSearchParams, useLocation \} from 'react-router-dom';/);
   assert.match(jsx, /import \{ handedEntityFor, handoverFromSearchRow \} from '\.\.\/\.\.\/utils\/explorerHandover\.ts';/);
   assert.match(jsx, /const handedEntity = useMemo\(\(\) => handedEntityFor\(type, id, location\.state\), \[id, location\.state, type\]\);/);
@@ -112,12 +112,12 @@ test('the explorer is born with the entity a link handed over, and treats its ow
  * correct: there is genuinely nothing to show.
  */
 test('a thrown fetch keeps the hero the palette already painted, instead of demolishing it', async () => {
-  const jsx = (await read('./EntityExplorer.jsx')).replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
+  const jsx = (await read('./EntityExplorer.tsx')).replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
   assert.match(jsx, /loadEntity\(\)\.catch\(error => \{\s*if \(isCancelled\) return;\s*console\.error\('Failed to load entity', error\);\s*setEntity\(handedEntity \|\| cachedEntity \|\| null\);\s*setEntityError\('ENTITY_LOAD_FAILED'\);\s*setIsLoadingEntity\(false\);\s*setIsLoadingOrcid\(false\);\s*\}\);/);
 });
 
 test('an entity already in the persistent cache is born resolved, like one handed over from the palette', async () => {
-  const jsx = (await read('./EntityExplorer.jsx')).replace(/^\s*\/\/.*$/gm, '');
+  const jsx = (await read('./EntityExplorer.tsx')).replace(/^\s*\/\/.*$/gm, '');
   assert.match(jsx, /import \{[^}]*\bpeekEntity\b[^}]*\} from '\.\.\/\.\.\/services\/openAlexService/);
   assert.match(jsx, /const cachedEntity = useMemo\(\(\) => peekEntity\(type, id\), \[id, type\]\);/);
   assert.match(jsx, /const bornResolved = Boolean\(handedEntity\) \|\| Boolean\(localTopic\) \|\| Boolean\(cachedEntity\) \|\| \(type === 'topic' && isOpaqueQueryTopicText\(id\)\);/);
@@ -186,7 +186,7 @@ test('the blocks a project fills in rise in sequence instead of landing in one f
   );
   // The hook they are scoped by. Without the type on the live container this
   // would reach every entity page's stats.
-  const jsx = await read('./EntityExplorer.jsx');
+  const jsx = await read('./EntityExplorer.tsx');
   assert.match(jsx, /className=\{`explorer-container explorer-container--\$\{type \|\| 'entity'\}\$\{appChromeClass\}`\}/);
 
   // Reduced motion lands them instantly. The height settle they arrive inside

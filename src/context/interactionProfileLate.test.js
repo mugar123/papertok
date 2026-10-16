@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 test('SOURCE: a profile that lands after the feed budget still applies, the same way as one in time', async () => {
-  const code = stripComments(await readFile(new URL('./FeedContext.jsx', import.meta.url), 'utf8'));
+  const code = stripComments(await readFile(new URL('./FeedContext.tsx', import.meta.url), 'utf8'));
 
   // One applier for both arrivals: the sets, the affinities, the generation
   // bump and the semantic overlay all live in it.
@@ -25,7 +25,7 @@ test('SOURCE: a profile that lands after the feed budget still applies, the same
 });
 
 test('SOURCE: the account profile read is patient, refuses a cache-served absence, and heals its own error late', async () => {
-  const code = stripComments(await readFile(new URL('./AuthContext.jsx', import.meta.url), 'utf8'));
+  const code = stripComments(await readFile(new URL('./AuthContext.tsx', import.meta.url), 'utf8'));
   const call = code.match(/patientRead\(\(\) => getDoc\(userRef\), \{[\s\S]*?\}\),\s*PROFILE_NETWORK_TIMEOUT_MS,\s*\);/);
   assert.ok(call, 'the profile read is not a patientRead any more');
   assert.match(call[0], /isAnswer: documentIsAuthoritative/);

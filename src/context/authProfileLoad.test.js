@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const SOURCE = new URL('./AuthContext.jsx', import.meta.url);
+const SOURCE = new URL('./AuthContext.tsx', import.meta.url);
 
 test('SOURCE: a remembered onboarding never stands in for a profile that failed to load', async () => {
   const source = await readFile(SOURCE, 'utf8');

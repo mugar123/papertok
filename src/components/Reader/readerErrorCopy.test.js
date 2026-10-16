@@ -16,7 +16,7 @@ import { readFile } from 'node:fs/promises';
  * what needs holding is the table, not the tree.
  */
 
-const read = () => readFile(new URL('./PaperReader.jsx', import.meta.url), 'utf8');
+const read = () => readFile(new URL('./PaperReader.tsx', import.meta.url), 'utf8');
 const stripComments = source => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '');

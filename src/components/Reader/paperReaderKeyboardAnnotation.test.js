@@ -24,7 +24,7 @@ const read = async (path) => stripComments(await readFile(new URL(path, import.m
 const matchParagraphElement = (jsx) => jsx.match(/<p\s+key=\{paragraphIndex\}[\s\S]*?<\/p>\s*\);\s*\}\)\}/);
 
 test('paragraphs are keyboard-focusable on the desktop selection route', async () => {
-  const jsx = await read('./PaperReader.jsx');
+  const jsx = await read('./PaperReader.tsx');
 
   const paragraph = matchParagraphElement(jsx);
   assert.ok(
@@ -41,7 +41,7 @@ test('paragraphs are keyboard-focusable on the desktop selection route', async (
 });
 
 test('a focused paragraph opens the annotation menu on Enter', async () => {
-  const jsx = await read('./PaperReader.jsx');
+  const jsx = await read('./PaperReader.tsx');
 
   const paragraph = matchParagraphElement(jsx);
   assert.ok(
@@ -78,7 +78,7 @@ test('a focused paragraph opens the annotation menu on Enter', async () => {
 });
 
 test('the mouse route is unchanged in shape: handleSelection keeps its signature and the paragraph no longer owns the mouse-up', async () => {
-  const jsx = await read('./PaperReader.jsx');
+  const jsx = await read('./PaperReader.tsx');
 
   assert.doesNotMatch(
     jsx,
@@ -95,7 +95,7 @@ test('the mouse route is unchanged in shape: handleSelection keeps its signature
 });
 
 test('the paragraph carries a hidden, screen-reader-only instruction for the Enter action', async () => {
-  const jsx = await read('./PaperReader.jsx');
+  const jsx = await read('./PaperReader.tsx');
 
   assert.match(
     jsx,
@@ -114,7 +114,7 @@ test('the paragraph carries a hidden, screen-reader-only instruction for the Ent
 });
 
 test('SelectionMenu moves focus into itself as soon as it opens, not only once composing starts', async () => {
-  const jsx = await read('./SelectionMenu.jsx');
+  const jsx = await read('./SelectionMenu.tsx');
 
   // The bug this closes: the only focus() call in the old file ran inside
   // `if (composing) textareaRef.current?.focus()`, so the menu's first,

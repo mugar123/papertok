@@ -43,8 +43,8 @@ const NOT_CLASS_NAMES = new Set([
 ]);
 
 const PAIRS = [
-  { prefix: 'save-modal', jsx: './SaveToListModal.jsx', css: './SaveToListModal.css' },
-  { prefix: 'create-list', jsx: './CreateListDialog.jsx', css: './CreateListDialog.css' },
+  { prefix: 'save-modal', jsx: './SaveToListModal.tsx', css: './SaveToListModal.css' },
+  { prefix: 'create-list', jsx: './CreateListDialog.tsx', css: './CreateListDialog.css' },
 ];
 
 for (const { prefix, jsx, css } of PAIRS) {

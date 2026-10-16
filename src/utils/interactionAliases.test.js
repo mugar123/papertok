@@ -57,7 +57,7 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '
  * a mark looks it up under the resolved id too.
  */
 test('SOURCE: the context builds the alias table and writes every mark under the resolved id', async () => {
-  const code = stripComments(await read('../context/FeedContext.jsx'));
+  const code = stripComments(await read('../context/FeedContext.tsx'));
   assert.match(code, /const interactionAliasIndex = useMemo\(\(\) => buildInteractionAliasIndex\(\[\s*\.\.\.Object\.entries\(libraryPapers\),\s*\.\.\.Object\.entries\(personalLibrary\)/,
     'from the stored copies, no new read');
   for (const name of ['toggleLike', 'markNotInterested', 'markAsRead', 'toggleReadLater']) {
@@ -69,7 +69,7 @@ test('SOURCE: the context builds the alias table and writes every mark under the
 });
 
 test('SOURCE: a direct link is answered with the reader\'s own copy when the library holds one', async () => {
-  const code = stripComments(await read('../components/Public/PublicPaperPage.jsx'));
+  const code = stripComments(await read('../components/Public/PublicPaperPage.tsx'));
   assert.match(code, /if \(!loadedPaper \|\| seededPaper\) return loadedPaper;\s*const copy = libraryCopyFor\(loadedPaper\);\s*if \(copy\) return hydrateSeededPaper\(paperLegacyAdapter\(\{ \.\.\.copy\.paper, id: copy\.id \}\), loadedPaper\);/,
     'the copy is laid over the provider\'s answer exactly as a list\'s copy is');
   assert.match(code, /const id = interactionIdFor\(loadedPaper\);\s*return id === loadedPaper\.id \? loadedPaper : \{ \.\.\.loadedPaper, id \};/,
@@ -79,10 +79,10 @@ test('SOURCE: a direct link is answered with the reader\'s own copy when the lib
 
 test('SOURCE: every card surface looks a mark up under the resolved id', async () => {
   for (const [path, subject] of [
-    ['../components/Feed/FeedContainer.jsx', 'paper'],
-    ['../components/Search/SearchPage.jsx', 'shownPaper'],
-    ['../components/Explorer/EntityExplorer.jsx', 'shownPaper'],
-    ['../components/Lists/ListsPage.jsx', 'shownPaper'],
+    ['../components/Feed/FeedContainer.tsx', 'paper'],
+    ['../components/Search/SearchPage.tsx', 'shownPaper'],
+    ['../components/Explorer/EntityExplorer.tsx', 'shownPaper'],
+    ['../components/Lists/ListsPage.tsx', 'shownPaper'],
   ]) {
     const code = stripComments(await read(path));
     assert.doesNotMatch(code, new RegExp(`PaperIds\\??\\.has\\(${subject}\\.id\\)`), `${path} still reads a mark by the raw id`);

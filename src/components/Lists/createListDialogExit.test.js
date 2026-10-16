@@ -33,7 +33,7 @@ const stripComments = source => source
 const read = async (path) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
 
 test('the window keeps the list it was opened with until its exit has played', async () => {
-  const jsx = await read('./CreateListDialog.jsx');
+  const jsx = await read('./CreateListDialog.tsx');
 
   assert.match(jsx, /const \[openedWith, setOpenedWith\] = useState\(list\);/, 'the list it was opened with is not held anywhere');
   // Written while rendering, not from an effect: an effect runs after the
@@ -49,7 +49,7 @@ test('the window keeps the list it was opened with until its exit has played', a
 });
 
 test('every field that tells the two windows apart reads the held list, never the prop', async () => {
-  const jsx = await read('./CreateListDialog.jsx');
+  const jsx = await read('./CreateListDialog.tsx');
 
   assert.match(jsx, /const editing = Boolean\(activeList\);/);
   assert.match(jsx, /const \{ id: listId, name: listName, emoji: listIcon \} = activeList \?\? \{\};/);
@@ -63,7 +63,7 @@ test('every field that tells the two windows apart reads the held list, never th
 });
 
 test('the title, the note and the submit button still hang off `editing`, so holding it holds all four', async () => {
-  const jsx = await read('./CreateListDialog.jsx');
+  const jsx = await read('./CreateListDialog.tsx');
 
   assert.match(jsx, /\{editing \? copy\.editTitle : copy\.title\}/);
   assert.match(jsx, /\{editing \? copy\.colorHintEdit : copy\.colorHint\}/);

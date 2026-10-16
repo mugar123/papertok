@@ -8,7 +8,7 @@ import { readFile } from 'node:fs/promises';
 const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 test('optimistic rollbacks only run for the session that started the write', async () => {
-  const src = stripComments(await readFile(new URL('./AuthContext.jsx', import.meta.url), 'utf8'));
+  const src = stripComments(await readFile(new URL('./AuthContext.tsx', import.meta.url), 'utf8'));
   const rollbacks = src.match(/catch \(updateError\) \{[^}]*\}/g) || [];
   assert.equal(rollbacks.length, 2);
   const setters = [];
@@ -28,7 +28,7 @@ test('completeOnboarding flips the flag only after the document write has landed
   // moment the flag is true) while the write was in flight: a refused write
   // failed against an unmounted page, left no local memory, and the next
   // reload asked everything again (audit of 2026-09-16, hallazgo 4).
-  const src = stripComments(await readFile(new URL('./AuthContext.jsx', import.meta.url), 'utf8'));
+  const src = stripComments(await readFile(new URL('./AuthContext.tsx', import.meta.url), 'utf8'));
   const fn = src.match(/const completeOnboarding = useCallback\(async \(preferences\) => \{[\s\S]*?\n {2}\}, \[user\?\.uid\]\);/);
   assert.ok(fn, 'completeOnboarding is gone or reshaped');
   const body = fn[0];
@@ -53,7 +53,7 @@ test('completeOnboarding bounds the write with settleWithin and never flips on a
   // into a thrown error itself, before either setter or the local cache
   // write runs. A retry must find the same starting point it found the
   // first time, not a half-applied one.
-  const src = stripComments(await readFile(new URL('./AuthContext.jsx', import.meta.url), 'utf8'));
+  const src = stripComments(await readFile(new URL('./AuthContext.tsx', import.meta.url), 'utf8'));
   const fn = src.match(/const completeOnboarding = useCallback\(async \(preferences\) => \{[\s\S]*?\n {2}\}, \[user\?\.uid\]\);/);
   assert.ok(fn, 'completeOnboarding is gone or reshaped');
   const body = fn[0];
@@ -87,7 +87,7 @@ test('completeOnboarding bounds the write with settleWithin and never flips on a
 });
 
 test('completeOnboarding gives a write timeout a stable code, and leaves a rejection as itself', async () => {
-  const src = stripComments(await readFile(new URL('./AuthContext.jsx', import.meta.url), 'utf8'));
+  const src = stripComments(await readFile(new URL('./AuthContext.tsx', import.meta.url), 'utf8'));
   const fn = src.match(/const completeOnboarding = useCallback\(async \(preferences\) => \{[\s\S]*?\n {2}\}, \[user\?\.uid\]\);/);
   assert.ok(fn, 'completeOnboarding is gone or reshaped');
   assert.match(
@@ -101,7 +101,7 @@ test('completeOnboarding gives a write timeout a stable code, and leaves a rejec
 test('updateProfilePhoto bounds its write and names the timeout', async () => {
   // The settings screen holds its photo spinner until this settles, and a
   // Firestore write against a stalled connection never settles on its own.
-  const src = stripComments(await readFile(new URL('./AuthContext.jsx', import.meta.url), 'utf8'));
+  const src = stripComments(await readFile(new URL('./AuthContext.tsx', import.meta.url), 'utf8'));
   const fn = src.match(/const updateProfilePhoto = useCallback\(async \(value\) => \{[\s\S]*?\n {2}\}, \[profilePhoto, user\?\.uid\]\);/);
   assert.ok(fn, 'updateProfilePhoto is gone or reshaped');
   assert.match(fn[0], /await settleWithin\(\s*setDoc\(doc\(db, 'users', userId\)/);

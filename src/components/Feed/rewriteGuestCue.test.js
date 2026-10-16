@@ -8,10 +8,10 @@ import { readFileSync } from 'node:fs';
 // for assistive tech — without touching its accessible name, which
 // paperCardActionNames.test.js keeps equal to what it shows (WCAG 2.5.3).
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-const card = stripComments(readFileSync(new URL('./PaperCard.jsx', import.meta.url), 'utf8'));
+const card = stripComments(readFileSync(new URL('./PaperCard.tsx', import.meta.url), 'utf8'));
 // The first visit's copy lives on the welcome page now (GuestWelcome); the
 // interests sheet only edits areas and says nothing about reading.
-const welcome = stripComments(readFileSync(new URL('../Public/GuestWelcome.jsx', import.meta.url), 'utf8'));
+const welcome = stripComments(readFileSync(new URL('../Public/GuestWelcome.tsx', import.meta.url), 'utf8'));
 
 function rewriteButton() {
   const start = card.indexOf('<Button\n                variant="brand"');

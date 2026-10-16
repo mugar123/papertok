@@ -3024,9 +3024,9 @@ Firestore no aceptó, y el sync publicaría una lista que la cuenta nunca acord�
 | `sanitizePublicPaperForSync()`, `sanitizeSyncPaperIds()` | `src/services/publicListPayload.ts` |
 | Motor de cola: debounce, fusión, reintento, cancelación, suscripción | `src/services/publicListSync.ts` (nuevo) |
 | `listNeedsPublicSync()`, `toEpochMillis()`, `publicListSyncKey()` | `src/utils/publicListFreshness.ts` (nuevo) |
-| Fuera el botón Actualizar; chapa-indicador, efecto de sync, sellos, cancelación | `src/components/Lists/ListsPage.jsx` (+`.css`) |
-| Sellos `updatedAt` y encolado tras guardar | `src/components/Lists/SaveToListModal.jsx` |
-| El abstract pasa por `ScientificText` (LaTeX) | `src/components/Lists/PublicListPage.jsx` |
+| Fuera el botón Actualizar; chapa-indicador, efecto de sync, sellos, cancelación | `src/components/Lists/ListsPage.tsx` (+`.css`) |
+| Sellos `updatedAt` y encolado tras guardar | `src/components/Lists/SaveToListModal.tsx` |
+| El abstract pasa por `ScientificText` (LaTeX) | `src/components/Lists/PublicListPage.tsx` |
 
 ### La trampa del id, que NO se evitó a la primera
 
@@ -3837,7 +3837,7 @@ búsqueda no lo reabre, lee una colección aparte.
 | Los cinco caminos de escritura de perfil mantienen el índice en el mismo batch | `src/services/userProfileService.js` |
 | Página `/search/users` con filas nombre+handle+monograma | `src/components/Search/UserSearchPage.{jsx,css}` |
 | Punto de entrada provisional "Buscar personas en PaperTok" | `src/components/Search/SearchPage.{jsx,css}` |
-| Ruta protegida | `src/App.jsx` |
+| Ruta protegida | `src/App.tsx` |
 | La copy de privacidad dice que un perfil público aparece en la búsqueda, y que uno privado no | `src/components/Profile/visibilityCopy.js` |
 
 ### Dos desvíos del diseño escrito, y por qué
@@ -3983,7 +3983,7 @@ posible es Google↔GitHub.
 | --- | --- |
 | `GithubAuthProvider` con scope `user:email` explícito | `src/services/firebase.ts` |
 | `authIdentityService`: `signInWithProvider`, `linkSignInProvider`, `providerIdsOf`, y tres errores clasificados; inyección de dependencias como el resto de servicios | `src/services/authIdentityService.ts` (+21 tests) |
-| `signInWithGitHub`, `linkGitHubAccount` y `signInProviders` en el contexto; Google pasa por el mismo camino | `src/context/AuthContext.jsx` |
+| `signInWithGitHub`, `linkGitHubAccount` y `signInProviders` en el contexto; Google pasa por el mismo camino | `src/context/AuthContext.tsx` |
 | Botón "Continuar con GitHub" y el aviso de colisión de correo | `src/components/Auth/LoginPage.{jsx,css}` |
 | Sección "Formas de entrar" con "Conectar", y la insignia de la cuenta que ya no dice siempre Google | `src/components/Settings/SettingsPage.{jsx,css}` |
 | `AUTH_LINK_FAILED`, `AUTH_EMAIL_ALREADY_USED`, `AUTH_IDENTITY_TAKEN`, `auth/cancelled-popup-request` | `src/utils/errorMessages.ts` |
@@ -4702,9 +4702,9 @@ en la Navbar y renderiza incluso sin perfil público creado, con CTA al editor).
 | `src/components/Public/PublicProfilePage.{jsx,css}` | Ahora es LA página de perfil: cabecera con contadores, engranaje (→ `/settings`) y "Editar perfil" (→ `/settings/profile`) solo del dueño; pestañas Listas/Guardados/Me gusta. Conserva skeleton, estados de error, metadata y la animación de entrada. |
 | `src/utils/profileAccess.{js,test.js}` | El gating dueño/visitante como función pura. Visitante = solo pestaña Listas. |
 | `src/services/userProfileService.js` (+tests) | `readOwnLists()`: todas las listas propias, una página `limit(60)` sin `orderBy` (para no perder docs sin `createdAt`), orden en cliente, insignia `isPublished`. Pasa el test SOURCE de límites. |
-| `src/context/FeedContext.jsx` | +6 líneas: `getCuratedInteractionIds(name)` expone los ids curados del agregado en orden de recencia. Solo memoria, cero lecturas. |
-| `src/components/Layout/Navbar.jsx` | La foto navega **síncrono** a `/profile` (el navigate asíncrono se atasca con `AnimatePresence mode="wait"`). El desplegable entero desaparecido: Ajustes y Cerrar sesión ya vivían en SettingsPage (engranaje), "Mis listas" ahora es enlace "Gestionar" en la pestaña Listas. |
-| `src/App.jsx` | Ruta `/profile` + entrada en `navbarRoutes`. |
+| `src/context/FeedContext.tsx` | +6 líneas: `getCuratedInteractionIds(name)` expone los ids curados del agregado en orden de recencia. Solo memoria, cero lecturas. |
+| `src/components/Layout/Navbar.tsx` | La foto navega **síncrono** a `/profile` (el navigate asíncrono se atasca con `AnimatePresence mode="wait"`). El desplegable entero desaparecido: Ajustes y Cerrar sesión ya vivían en SettingsPage (engranaje), "Mis listas" ahora es enlace "Gestionar" en la pestaña Listas. |
+| `src/App.tsx` | Ruta `/profile` + entrada en `navbarRoutes`. |
 | `src/components/Profile/ProfilePage.jsx` | Solo el botón volver: ahora → `/profile` (su padre natural). El editor sigue en `/settings/profile`. |
 | `vite.config.js` | El server respeta `process.env.PORT` (dos sesiones de dev a la vez); sin PORT sigue siendo 5173. |
 | `src/utils/myProfileRoute.{js,test.js}` | **Borrados**: la entrada de menú que resolvía el destino por lectura quedó superseded por la ruta fija `/profile`. |
@@ -5080,7 +5080,7 @@ es paralelizable.
 | `tests/firestore.rules.test.js` + `tests/README.md` | 26 tests de comportamiento contra el emulador. `npm run test:rules`. |
 | `src/utils/publicNavigation.ts` | `getPublicProfilePath/Url`. |
 | `src/utils/profileImage.ts` | `PUBLIC_AVATAR_PRESET` (≤60 KB) y opciones en `prepareProfileImage`; los valores por defecto no cambian. |
-| `src/App.jsx`, `src/components/Settings/SettingsPage.jsx` | Rutas y punto de entrada. |
+| `src/App.tsx`, `src/components/Settings/SettingsPage.tsx` | Rutas y punto de entrada. |
 
 ### Endurecimiento tras la revisión adversarial (2026-08-19)
 
@@ -5288,7 +5288,7 @@ Detalle en `docs/INTERACTION_PROFILE.md`.
 
 ## Pendiente: acotar `enrichPapersBatch` en el perfil semántico del feed
 
-**Dónde:** [src/context/FeedContext.jsx](src/context/FeedContext.jsx), bloque
+**Dónde:** [src/context/FeedContext.tsx](src/context/FeedContext.tsx), bloque
 "OpenAlex Semantic Profile" dentro de `loadInteractions`, y
 [src/services/openAlexService.ts](src/services/openAlexService.ts).
 

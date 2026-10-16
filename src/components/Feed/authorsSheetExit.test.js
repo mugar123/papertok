@@ -18,7 +18,7 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '
  * author moves it to its leaving pose in phase with the page.
  */
 test('the authors sheet is a Base UI Drawer, which lives on the body, outside the page the transition transforms', async () => {
-  const jsx = stripComments(await read('./PaperCard.jsx'));
+  const jsx = stripComments(await read('./PaperCard.tsx'));
   const sheet = jsx.match(/<Drawer\s[\s\S]*?overlayClassName="pc-authors-modal-overlay"[\s\S]*?<\/Drawer>/);
   assert.ok(sheet, 'the authors sheet is not a Drawer');
   assert.match(sheet[0], /<DrawerContent\s[\s\S]*?className=\{`pc-authors-modal-sheet /);
@@ -28,14 +28,14 @@ test('the authors sheet is a Base UI Drawer, which lives on the body, outside th
   // The drawer's viewport is fixed to the real viewport, which is why the
   // sheet cannot sit inside a transformed page — the primitive portals it
   // to `document.body`.
-  const drawer = await read('../ui/drawer.jsx');
+  const drawer = await read('../ui/drawer.tsx');
   assert.match(drawer, /<DrawerPortal>[\s\S]*?<DrawerPrimitive\.Viewport/);
   const drawerCss = await read('../ui/drawer.css');
   assert.match(drawerCss, /\.ui-drawer-viewport \{\s*position: fixed;/);
 });
 
 test('picking an author moves the sheet to its leaving pose and lets the page take it; dismissing it slides it back down', async () => {
-  const jsx = stripComments(await read('./PaperCard.jsx'));
+  const jsx = stripComments(await read('./PaperCard.tsx'));
   assert.match(jsx, /const \[authorsSheetLeaving, setAuthorsSheetLeaving\] = useState\(false\);/);
   // Somewhere to go: the sheet closes in its leaving pose, in the same
   // render, so the primitive's `data-ending-style` lands with the class;

@@ -219,7 +219,7 @@ test('un arranque normal no toca el historial', () => {
 });
 
 test('SOURCE: main.jsx limpia el marcador antes de renderizar', async () => {
-  const code = stripComments(await read('../main.jsx'));
+  const code = stripComments(await read('../main.tsx'));
   assert.match(code, /import \{ clearStaleOverlayMarker \} from '\.\/hooks\/useOverlayHistory\.ts'/);
   const callAt = code.indexOf('clearStaleOverlayMarker({');
   const renderAt = code.indexOf('ReactDOM.createRoot');
@@ -247,7 +247,7 @@ test('SOURCE: useOverlayHistory arma en el frame siguiente y cancela en la limpi
 });
 
 test('SOURCE: el lector de PaperCard usa useOverlayHistory con el tag reader', async () => {
-  const code = stripComments(await read('../components/Feed/PaperCard.jsx'));
+  const code = stripComments(await read('../components/Feed/PaperCard.tsx'));
   assert.match(
     code,
     /import \{ useOverlayHistory \} from '\.\.\/\.\.\/hooks\/useOverlayHistory\.ts';/,
@@ -261,7 +261,7 @@ test('SOURCE: el lector de PaperCard usa useOverlayHistory con el tag reader', a
 });
 
 test('SOURCE: el visor de PDF de App usa useOverlayHistory con el tag pdf', async () => {
-  const code = stripComments(await read('../App.jsx'));
+  const code = stripComments(await read('../App.tsx'));
   assert.match(
     code,
     /import \{ useOverlayHistory \} from '\.\/hooks\/useOverlayHistory\.ts'/,
@@ -280,7 +280,7 @@ test('SOURCE: el visor de PDF de App usa useOverlayHistory con el tag pdf', asyn
 });
 
 test('SOURCE: el visor de PDF propio de EntityExplorer usa useOverlayHistory con el tag pdf', async () => {
-  const code = stripComments(await read('../components/Explorer/EntityExplorer.jsx'));
+  const code = stripComments(await read('../components/Explorer/EntityExplorer.tsx'));
   assert.match(
     code,
     /import \{ useOverlayHistory \} from '\.\.\/\.\.\/hooks\/useOverlayHistory\.ts';/,
@@ -303,7 +303,7 @@ test('SOURCE: el visor de PDF propio de SearchPage usa useOverlayHistory con el 
   // way App's and EntityExplorer's already are — each PDFViewer is a modal
   // that makes the rest of the page inert while it is open, so no two of the
   // four can ever be mounted at once for this to collide against.
-  const code = stripComments(await read('../components/Search/SearchPage.jsx'));
+  const code = stripComments(await read('../components/Search/SearchPage.tsx'));
   assert.match(
     code,
     /import \{ useOverlayHistory \} from '\.\.\/\.\.\/hooks\/useOverlayHistory\.ts';/,
@@ -379,7 +379,7 @@ const publishedClose = (code) => code.match(/useImperativeHandle\(closeRef, \(\)
 const dialogClose = (code) => code.match(/onOpenChange=\{\((\w+)\) => \{ if \(!\1\) (\w+)\(\); \}\}/)?.[2];
 
 test('SOURCE: en el lector, Atrás y la X terminan en la misma función', async () => {
-  const code = stripComments(await read('../components/Reader/PaperReader.jsx'));
+  const code = stripComments(await read('../components/Reader/PaperReader.tsx'));
   const published = publishedClose(code);
   const dialog = dialogClose(code);
   assert.ok(published, 'PaperReader tiene que publicar su cierre en closeRef');
@@ -394,7 +394,7 @@ test('SOURCE: en el lector, Atrás y la X terminan en la misma función', async 
 });
 
 test('SOURCE: en el visor de PDF, Atrás y la X terminan en la misma función', async () => {
-  const code = stripComments(await read('../components/PDF/PDFViewer.jsx'));
+  const code = stripComments(await read('../components/PDF/PDFViewer.tsx'));
   const published = publishedClose(code);
   const dialog = dialogClose(code);
   assert.ok(published, 'PDFViewer tiene que publicar su cierre en closeRef');

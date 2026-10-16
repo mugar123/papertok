@@ -1,0 +1,909 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ArrowLeft,
+  CaretRight,
+  Crosshair,
+  GitBranch,
+  Graph,
+  List,
+  Lock,
+  Sparkle,
+  Warning,
+  X,
+} from '@phosphor-icons/react';
+import { useReducedMotion } from 'framer-motion';
+import { getCitationGraph, getCitationGraphDoi } from '../../services/citationGraphService.ts';
+import { getRelatedPapers } from '../../services/relatedPapersService.ts';
+import { isSignInRequiredError } from '../../utils/signInRequired.ts';
+import { buildCitationMapLayout } from '../../utils/citationMap.ts';
+import { areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.ts';
+import {
+  buildRelatedPaperEntries,
+  getRelatedPaperIdentity,
+} from '../../utils/relatedPaperTransition.ts';
+import ScientificText from '../ScientificText.ts';
+import { Toggle } from '../ui/toggle.tsx';
+import { useLanguage } from '../../context/LanguageContext.tsx';
+import { usePopupOpenOnMount } from '../../hooks/usePopupOpenOnMount.ts';
+import { Drawer, DrawerClose, DrawerContent, DrawerTitle } from '../ui/drawer.tsx';
+import { Tabs, TabsList, TabsTrigger } from '../ui/tabs.tsx';
+import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.tsx';
+
+const INITIAL_GRAPH = {
+  references: [],
+  citations: [],
+  counts: { references: 0, citations: 0 },
+  source: '',
+  partial: false,
+  degraded: false,
+};
+
+/**
+ * Centring on a neighbour is a move inside one space, not a change of screen:
+ * the node travels up to the rule while everything else fades, and the new
+ * neighbourhood is drawn around it. `LEAVE` is how long that trip takes;
+ * `PLACEHOLDER` is how long the sheet waits, after the node lands, before it
+ * admits it is waiting — with the answer in the service cache the skeleton
+ * never appears at all.
+ */
+const WALK = { SETTLE: 40, LEAVE: 440, REVEAL: 1200, PLACEHOLDER: 320 };
+
+/**
+ * A neighbourhood that has an answer, whatever the answer is. Absent means the
+ * request is still out. `error` belongs here too: the effect re-runs whenever
+ * `graphs` changes, so treating a failure as unanswered would spin a hot retry
+ * loop against a Worker route that reserves nine OpenAlex calls a time. The
+ * retry is closing the sheet and opening it again.
+ */
+// `signin`: the Worker routes behind both views are session-only, and a
+// missing or expired session is not a provider failure worth an «ahora».
+const SETTLED = new Set(['ready', 'empty', 'error', 'signin']);
+
+function formatCount(value, locale = 'es-ES') {
+  return new Intl.NumberFormat(locale).format(Math.max(0, Number(value) || 0));
+}
+
+/** The node label has room for one word: the first author's family name. */
+function nodeAuthorLabel(paper) {
+  const first = paper?.authors?.[0];
+  const name = String(first?.name || first || '').trim();
+  if (name) return name.split(/\s+/).pop();
+  return String(paper?.title || '').split(/\s+/)[0] || '';
+}
+
+function shortTitle(title, max) {
+  const text = String(title || '').trim();
+  return text.length > max ? `${text.slice(0, max).trim()}…` : text;
+}
+
+function LoadingState({ label }) {
+  return (
+    <div className="related-state related-loading" role="status" aria-live="polite">
+      <span className="visually-hidden">{label}</span>
+      <div className="related-skeletons" aria-hidden="true">
+        {[0, 1].map(index => <span className="related-skeleton" key={index} style={{ '--skeleton-index': index }} />)}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A Base UI Drawer (ui/drawer.jsx): a bottom sheet a thumb can swipe away.
+ * PaperCard mounts the sheet and unmounts it on `onClose`, so the sheet owns
+ * its open state — mounted closed and opened on the next frame, which is the
+ * price of arriving instead of appearing (`usePopupOpenOnMount`: the drawer's
+ * whole entrance lives in `data-starting-style`, and Base UI does not give
+ * that to a popup that was already open on its first render). Every way out
+ * — the X, Escape, the scrim, a swipe, a paper chosen from the list — takes
+ * `open` down, the primitive plays the exit (the drawer's slide, or the
+ * settle-and-fade of `is-selecting-paper` in PaperCard.css) and only then,
+ * from `onOpenChangeComplete(false)`, is the parent told: `onSelectPaper`
+ * when a paper is waiting, `onClose` otherwise. The primitive also owns the
+ * focus trap, Escape and the restore.
+ */
+export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onSelectPaper }) {
+  const { locale } = useLanguage();
+  const { open, setOpen } = usePopupOpenOnMount();
+  const hasGraphIdentifier = Boolean(getCitationGraphDoi(paper));
+  const [mode, setMode] = useState(hasGraphIdentifier ? 'graph' : 'similar');
+  const [view, setView] = useState('map');
+  const [trail, setTrail] = useState([paper]);
+  const [graphs, setGraphs] = useState({});
+  const [papers, setPapers] = useState([]);
+  const [relatedStatus, setRelatedStatus] = useState(hasGraphIdentifier ? 'idle' : 'loading');
+  const [isSelectionReady, setIsSelectionReady] = useState(false);
+  const [selectedPaperKey, setSelectedPaperKey] = useState(null);
+  const [focusedKey, setFocusedKey] = useState(null);
+  const [box, setBox] = useState({ width: 0, height: 0 });
+  const [phase, setPhase] = useState('idle');
+  const [travel, setTravel] = useState(null);
+  const [hasTravelled, setHasTravelled] = useState(false);
+  const [previousCenterX, setPreviousCenterX] = useState(0);
+  const [hasSlid, setHasSlid] = useState(true);
+  const [placeholderFor, setPlaceholderFor] = useState('');
+
+  const closingRef = useRef(false);
+  const mountedRef = useRef(false);
+  const pendingSelectionRef = useRef(null);
+  const closeButtonRef = useRef(null);
+  const walkTimersRef = useRef([]);
+  const walkingRef = useRef(false);
+  const resizeRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  const onPreparePaperRef = useRef(onPreparePaper);
+  const onSelectPaperRef = useRef(onSelectPaper);
+  const relatedRequestedRef = useRef(!hasGraphIdentifier);
+  const prefersReducedMotion = useReducedMotion();
+
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+  useEffect(() => { onPreparePaperRef.current = onPreparePaper; }, [onPreparePaper]);
+  useEffect(() => { onSelectPaperRef.current = onSelectPaper; }, [onSelectPaper]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      pendingSelectionRef.current = null;
+      walkTimersRef.current.forEach(clearTimeout);
+      resizeRef.current?.disconnect();
+    };
+  }, []);
+
+  const later = useCallback((ms, action) => {
+    walkTimersRef.current.push(setTimeout(() => {
+      if (mountedRef.current) action();
+    }, ms));
+  }, []);
+
+  const finishClose = useCallback(() => {
+    if (!mountedRef.current || !closingRef.current) return;
+    closingRef.current = false;
+    onCloseRef.current();
+  }, []);
+
+  const finishSelection = useCallback(() => {
+    if (!mountedRef.current) return;
+    const pendingSelection = pendingSelectionRef.current;
+    if (!pendingSelection) return;
+    pendingSelectionRef.current = null;
+    closingRef.current = false;
+    onSelectPaperRef.current(pendingSelection.paper);
+  }, []);
+
+  const requestClose = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    pendingSelectionRef.current = null;
+    setIsSelectionReady(false);
+    setOpen(false);
+  }, [setOpen]);
+
+  const requestPaper = useCallback((relatedPaper, paperKey) => {
+    if (closingRef.current) return;
+    onPreparePaperRef.current?.(relatedPaper);
+    pendingSelectionRef.current = { paper: relatedPaper, key: paperKey };
+    closingRef.current = true;
+    setSelectedPaperKey(paperKey);
+    setIsSelectionReady(true);
+    setOpen(false);
+  }, [setOpen]);
+
+  // The primitive has finished the exit — the parent hears of it here and
+  // nowhere else. A paper chosen from the sheet is handed over; anything
+  // else was a dismissal.
+  const handleOpenChangeComplete = useCallback((nextOpen) => {
+    if (nextOpen) return;
+    if (pendingSelectionRef.current) finishSelection();
+    else finishClose();
+  }, [finishClose, finishSelection]);
+
+  const center = trail[trail.length - 1];
+  const centerDoi = getCitationGraphDoi(center);
+  const centerEntry = centerDoi ? graphs[centerDoi] : null;
+  const graph = centerEntry?.data || INITIAL_GRAPH;
+  const graphStatus = centerDoi ? (centerEntry?.status || 'loading') : 'unavailable';
+
+  /**
+   * No ref remembers which neighbourhoods were asked for. StrictMode mounts,
+   * tears down and mounts again, and a guard like that would hand the request
+   * to the run whose result the teardown throws away — the sheet would wait
+   * for an answer nobody was going to deliver. The service holds one request
+   * per neighbourhood and a day of cache, so asking again is free.
+   */
+  useEffect(() => {
+    if (!centerDoi || SETTLED.has(graphs[centerDoi]?.status)) return undefined;
+    let cancelled = false;
+    getCitationGraph(center).then(result => {
+      if (cancelled || !mountedRef.current) return;
+      const data = result || INITIAL_GRAPH;
+      const empty = !data.references.length && !data.citations.length;
+      setGraphs(previous => ({ ...previous, [centerDoi]: { status: empty ? 'empty' : 'ready', data } }));
+    }).catch(error => {
+      if (cancelled || !mountedRef.current) return;
+      console.error('Could not load the citation graph', error);
+      setGraphs(previous => ({ ...previous, [centerDoi]: { status: isSignInRequiredError(error) ? 'signin' : 'error' } }));
+    });
+    return () => { cancelled = true; };
+  }, [center, centerDoi, graphs]);
+
+  /**
+   * A placeholder that appears before the answer has had a chance to arrive
+   * reads as slowness the app invented. Nothing is drawn for the first
+   * `PLACEHOLDER` milliseconds; a cached neighbourhood beats the timer.
+   */
+  useEffect(() => {
+    if (graphStatus !== 'loading') return undefined;
+    const timer = setTimeout(() => {
+      if (mountedRef.current) setPlaceholderFor(centerDoi);
+    }, WALK.PLACEHOLDER);
+    return () => clearTimeout(timer);
+  }, [graphStatus, centerDoi]);
+  const showPlaceholder = graphStatus === 'loading' && placeholderFor === centerDoi;
+
+  useEffect(() => {
+    if (mode !== 'similar' || relatedRequestedRef.current) return undefined;
+    relatedRequestedRef.current = true;
+    let cancelled = false;
+    setRelatedStatus('loading');
+    getRelatedPapers(paper).then(results => {
+      if (cancelled) return;
+      setPapers(results);
+      setRelatedStatus(results.length ? 'ready' : 'empty');
+    }).catch(error => {
+      if (cancelled) return;
+      console.error('No se pudieron cargar papers relacionados', error);
+      setRelatedStatus(isSignInRequiredError(error) ? 'signin' : 'error');
+    });
+    return () => { cancelled = true; };
+  }, [mode, paper]);
+
+  useEffect(() => {
+    if (hasGraphIdentifier) return undefined;
+    let cancelled = false;
+    getRelatedPapers(paper).then(results => {
+      if (cancelled) return;
+      setPapers(results);
+      setRelatedStatus(results.length ? 'ready' : 'empty');
+    }).catch(error => {
+      if (cancelled) return;
+      console.error('No se pudieron cargar papers relacionados', error);
+      setRelatedStatus(isSignInRequiredError(error) ? 'signin' : 'error');
+    });
+    return () => { cancelled = true; };
+  }, [hasGraphIdentifier, paper]);
+
+  const measurePlot = useCallback((node) => {
+    resizeRef.current?.disconnect();
+    resizeRef.current = null;
+    if (!node || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(entries => {
+      const rect = entries[0]?.contentRect;
+      if (!rect || !mountedRef.current) return;
+      setBox({ width: Math.round(rect.width), height: Math.round(rect.height) });
+    });
+    observer.observe(node);
+    resizeRef.current = observer;
+  }, []);
+
+  const layout = useMemo(() => buildCitationMapLayout({
+    width: box.width,
+    height: box.height,
+    center,
+    references: graph.references,
+    citations: graph.citations,
+  }), [box.width, box.height, center, graph]);
+
+  const focusedNode = useMemo(
+    () => layout.nodes.find(node => node.key === focusedKey) || null,
+    [layout.nodes, focusedKey],
+  );
+  const listEntries = useMemo(() => ({
+    references: buildRelatedPaperEntries(graph.references),
+    citations: buildRelatedPaperEntries(graph.citations),
+  }), [graph]);
+  const focusedListPaper = useMemo(() => {
+    if (focusedNode) return focusedNode.paper;
+    const all = [...listEntries.references, ...listEntries.citations];
+    return all.find(entry => `list:${entry.key}` === focusedKey)?.paper || null;
+  }, [focusedNode, listEntries, focusedKey]);
+
+  const appendToTrail = useCallback((next) => {
+    setTrail(previous => {
+      const identity = getRelatedPaperIdentity(next);
+      const seen = previous.findIndex(item => getRelatedPaperIdentity(item) === identity);
+      // A citation graph has cycles; a trail of breadcrumbs must not.
+      return seen >= 0 ? previous.slice(0, seen + 1) : [...previous, next];
+    });
+  }, []);
+
+  const requestCentre = useCallback((targetPaper, origin, currentCenterX) => {
+    if (walkingRef.current || closingRef.current) return;
+    if (!getCitationGraphDoi(targetPaper)) return;
+    walkTimersRef.current.forEach(clearTimeout);
+    walkTimersRef.current = [];
+    setView('map');
+
+    if (prefersReducedMotion || !origin) {
+      appendToTrail(targetPaper);
+      setFocusedKey(null);
+      return;
+    }
+
+    walkingRef.current = true;
+    setPhase('leaving');
+    setTravel({ x: origin.x, y: origin.y, accent: areaAccentForPaper(targetPaper) });
+    setHasTravelled(false);
+    later(WALK.SETTLE, () => setHasTravelled(true));
+    later(WALK.LEAVE, () => {
+      // The mark slides from where the centre stood to the column its new
+      // citation count earns, so the departing position is captured here.
+      setPreviousCenterX(currentCenterX);
+      setHasSlid(false);
+      appendToTrail(targetPaper);
+      setFocusedKey(null);
+      setTravel(null);
+      setPhase('arriving');
+      later(WALK.SETTLE, () => setHasSlid(true));
+      later(WALK.REVEAL, () => {
+        setPhase('idle');
+        walkingRef.current = false;
+      });
+    });
+  }, [appendToTrail, later, prefersReducedMotion]);
+
+  const goBackTo = useCallback((index) => {
+    if (walkingRef.current) return;
+    walkTimersRef.current.forEach(clearTimeout);
+    walkTimersRef.current = [];
+    setPhase('idle');
+    setTravel(null);
+    setHasSlid(true);
+    setFocusedKey(null);
+    // Going back is not a discovery: it does not get the travelling animation.
+    setTrail(previous => (index < previous.length - 1 ? previous.slice(0, index + 1) : previous));
+  }, []);
+
+  const isWalking = trail.length > 1;
+  const previousCentre = isWalking ? trail[trail.length - 2] : null;
+  const previousIdentity = previousCentre ? getRelatedPaperIdentity(previousCentre) : '';
+  const isLeaving = phase === 'leaving';
+  const isArriving = phase === 'arriving';
+
+  const graphEmptyLabel = isWalking
+    ? ('OpenCitations has no links for this work. That happens with very recent papers, and with anything published where nobody deposits their citations.')
+    : ('No linked references or later works were found for this paper.');
+
+  const visibleStatus = mode === 'graph' ? graphStatus : relatedStatus;
+  const similarEntries = useMemo(() => buildRelatedPaperEntries(papers), [papers]);
+  const sourceLabel = graph.source === 'opencitations' ? 'OpenCitations' : 'OpenCitations + OpenAlex';
+  const isSelectingPaper = Boolean(selectedPaperKey) && isSelectionReady;
+  // Which side of the dot the label sits on. Decided from the settled column,
+  // so it commits once and the slide below carries the crossing.
+  const chipOnLeft = layout.centerX > box.width - 180;
+  const isMap = mode === 'graph' && view === 'map';
+  const isList = mode === 'graph' && view === 'list';
+  // Only the short states shrink the sheet: a map that is still loading keeps
+  // its frame, because the frame is what the loading state is made of.
+  const sheetStatus = visibleStatus === 'loading' && mode === 'graph' ? 'ready' : visibleStatus;
+
+  /**
+   * The list shows every paper the sheet fetched; the map can only show as
+   * many as its band has 24px slots for (`citationMap.js`). Sharing one
+   * headline number between them would make one of the two views lie, so
+   * `context` picks which count `shown` reports — the fetch, for the list
+   * that draws all of it, or `layout.shown`, for the map that may not.
+   */
+  const bandCaption = (relation, context = 'map') => {
+    // Nothing is known until the neighbourhood lands, and "0 of 0" on both
+    // bands is how a sheet that is merely waiting looks broken.
+    if (graphStatus !== 'ready') return '—';
+    const fetched = relation === 'reference' ? graph.references.length : graph.citations.length;
+    const shown = context === 'list'
+      ? fetched
+      : (relation === 'reference' ? layout.shown.references : layout.shown.citations);
+    const total = relation === 'reference' ? graph.counts.references : graph.counts.citations;
+    const totalLabel = formatCount(Math.max(total, shown), locale);
+    if (relation === 'reference') {
+      return `${shown} most cited of ${totalLabel}`;
+    }
+    return `${shown} most recent of ${totalLabel}`;
+  };
+
+  const renderNode = (node) => {
+    const isFocused = focusedKey === node.key;
+    const accent = areaAccentForPaper(node.paper);
+    const descending = isArriving && getRelatedPaperIdentity(node.paper) === previousIdentity;
+    const travelling = isLeaving && travel;
+    const classes = ['graph-node'];
+    if (isFocused) classes.push('is-focused');
+    if (travelling) classes.push(isFocused ? 'is-travelling' : 'is-fading');
+    else if (descending) classes.push(node.relation === 'reference' ? 'is-arriving-up' : 'is-arriving-down');
+    else classes.push('is-entering');
+
+    const style = {
+      top: `${node.y - node.rowHeight / 2}px`,
+      height: `${node.rowHeight}px`,
+      '--node-delay': `${node.delay}ms`,
+      '--node-accent': accent,
+    };
+    if (node.side === 'left') style.right = `${box.width - node.x - 22}px`;
+    else style.left = `${node.x - 22}px`;
+
+    const citations = node.paper.citationCountKnown
+      ? `${formatCount(node.paper.citationCount, locale)} ${'citations'}`
+      : ('citations unknown');
+
+    return (
+      <Toggle
+        key={node.key}
+        className={classes.join(' ')}
+        data-side={node.side}
+        data-relation={node.relation}
+        style={style}
+        onClick={() => setFocusedKey(isFocused ? null : node.key)}
+        disabled={Boolean(selectedPaperKey) || isLeaving}
+        pressed={isFocused}
+        aria-label={`${node.paper.title} · ${node.paper.year} · ${citations}`}
+      >
+        <span className="graph-node-dot" aria-hidden="true"><i /></span>
+        <span className="graph-node-label" aria-hidden="true">
+          <b>{nodeAuthorLabel(node.paper)}</b> {`’${String(node.paper.year).slice(2)}`}
+        </span>
+      </Toggle>
+    );
+  };
+
+  const renderPeek = () => {
+    const peekPaper = focusedListPaper;
+    if (!peekPaper) return null;
+    const accent = areaAccentForPaper(peekPaper);
+    const fieldLabel = areaLabelForPaper(peekPaper);
+    const canCentre = Boolean(getCitationGraphDoi(peekPaper));
+    const focusedEntry = focusedNode
+      || [...listEntries.references, ...listEntries.citations].find(entry => `list:${entry.key}` === focusedKey);
+    const openKey = focusedNode ? focusedNode.key : focusedKey;
+
+    return (
+      <div className={`graph-peek ${isLeaving ? 'is-leaving' : ''}`}>
+        <div className="graph-peek-meta">
+          <span className="graph-peek-field" style={{ color: accent }}>{fieldLabel}</span>
+          <span className="graph-peek-dot" aria-hidden="true">·</span>
+          <span>{peekPaper.year}</span>
+          <span className="graph-peek-dot" aria-hidden="true">·</span>
+          <span>
+            {peekPaper.citationCountKnown
+              ? `${formatCount(peekPaper.citationCount, locale)} ${'citations'}`
+              : ('citations unknown')}
+          </span>
+          {peekPaper.openAccess && (
+            <span className="graph-peek-open">
+              <Lock size={11} aria-hidden="true" />
+              {'Open access'}
+            </span>
+          )}
+          <button
+            type="button"
+            className="graph-peek-close"
+            onClick={() => setFocusedKey(null)}
+            aria-label={'Close details'}
+          >
+            <X size={15} />
+          </button>
+        </div>
+        <strong className="graph-peek-title"><ScientificText>{peekPaper.title}</ScientificText></strong>
+        <small className="graph-peek-authors">
+          {peekPaper.authors.slice(0, 4).map(author => author.name || author).join(', ')}
+        </small>
+        <div className="graph-peek-actions">
+          <button
+            type="button"
+            className="graph-peek-open-action"
+            onClick={() => requestPaper(peekPaper, openKey || getRelatedPaperIdentity(peekPaper))}
+            disabled={Boolean(selectedPaperKey)}
+          >
+            {'Open'}
+          </button>
+          <button
+            type="button"
+            className="graph-peek-centre"
+            onClick={() => requestCentre(peekPaper, focusedNode, layout.centerX)}
+            disabled={!canCentre || Boolean(selectedPaperKey) || phase !== 'idle'}
+            title={canCentre
+              ? undefined
+              : ('This work has no DOI to follow')}
+          >
+            <Crosshair size={15} aria-hidden="true" />
+            {'Centre here'}
+          </button>
+          {focusedEntry?.paper?.doi && (
+            <span className="graph-peek-doi">{`doi:${focusedEntry.paper.doi}`}</span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderMap = () => (
+    <div className="graph-map">
+      <div className="graph-band-head">
+        <span className="graph-band-name">{'Before · what it cites'}</span>
+        <span className="graph-band-count">
+          {bandCaption('reference')}
+          {layout.omitted.references > 0 && (
+            <button type="button" className="graph-omitted" onClick={() => setView('list')}>
+              {`+${layout.omitted.references} in the list`}
+            </button>
+          )}
+        </span>
+      </div>
+
+      <div className="graph-plot" ref={measurePlot}>
+        {layout.ready && (
+          <>
+            <svg className="graph-lines" width={box.width} height={box.height} aria-hidden="true">
+              {layout.ticks.map(tick => (
+                <line key={`tick-${tick.value}`} className="graph-grid" x1={tick.x} y1="0" x2={tick.x} y2={box.height} />
+              ))}
+              {layout.nodes.map(node => (
+                <line
+                  key={`edge-${node.key}`}
+                  className={`graph-edge ${focusedKey === node.key ? 'is-focused' : ''} ${focusedKey && focusedKey !== node.key ? 'is-dimmed' : ''} ${isLeaving ? 'is-gone' : ''}`}
+                  x1={layout.centerX}
+                  y1={layout.ruleY}
+                  x2={node.x}
+                  y2={node.y}
+                  style={{ '--edge-delay': `${node.edgeDelay}ms` }}
+                />
+              ))}
+            </svg>
+
+            <div className="graph-rule" style={{ top: `${layout.ruleY}px`, transformOrigin: `${layout.centerX}px 50%` }} />
+            {/* The column each of these stands in is handed over as
+                `--mark-x` / `--chip-x`, which PaperCard.css puts on the
+                native `translate` property and transitions. That is what
+                makes the centre MOVE when the neighbourhood arrives and
+                builds the axis under it, instead of teleporting 533px
+                across the plot in one frame. */}
+            <div
+              className={`graph-mark ${isLeaving ? 'is-gone' : ''} ${isArriving ? 'is-sliding' : ''}`}
+              style={{
+                '--mark-x': `${(isArriving && !hasSlid ? previousCenterX : layout.centerX) - 8}px`,
+                top: `${layout.ruleY - 8}px`,
+              }}
+            />
+            <span
+              className={`graph-chip ${isLeaving ? 'is-gone' : ''}`}
+              data-side={chipOnLeft ? 'left' : 'right'}
+              style={{
+                // Both sides are measured from the same edge, so crossing over
+                // is one value changing rather than two anchors swapping.
+                '--chip-x': chipOnLeft
+                  ? `calc(${layout.centerX - 16}px - 100%)`
+                  : `${layout.centerX + 16}px`,
+                top: `${layout.ruleY}px`,
+              }}
+            >
+              {isWalking
+                ? `${'Centre'} · ${center.year}`
+                : `${'This paper'} · ${center.year}`}
+            </span>
+
+            {graphStatus === 'ready' && layout.nodes.map(renderNode)}
+
+            {graphStatus === 'loading' && showPlaceholder && Array.from({ length: 12 }, (_, index) => {
+              const above = index < 6;
+              const columns = 6;
+              const spread = Math.max(0, box.width - 60);
+              return (
+                <span
+                  key={`skeleton-${index}`}
+                  className="graph-skeleton"
+                  aria-hidden="true"
+                  style={{
+                    left: `${30 + ((index % columns) + 0.5) / columns * spread + (above ? 0 : 24)}px`,
+                    top: `${above
+                      ? layout.bands.references.top + 18 + (index % columns) * 20
+                      : layout.bands.citations.top + 14 + (index % columns) * 20}px`,
+                    '--skeleton-delay': `${index * 70}ms`,
+                  }}
+                />
+              );
+            })}
+
+            {travel && (
+              <span
+                className="graph-travel"
+                aria-hidden="true"
+                style={{
+                  left: `${travel.x}px`,
+                  top: `${hasTravelled ? layout.ruleY : travel.y}px`,
+                  background: hasTravelled ? 'var(--accent-primary)' : travel.accent,
+                  transform: `scale(${hasTravelled ? 1.45 : 1.28})`,
+                }}
+              />
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="graph-band-head">
+        <span className="graph-band-name">{'After · what cites it'}</span>
+        <span className="graph-band-count">
+          {bandCaption('citation')}
+          {layout.omitted.citations > 0 && (
+            <button type="button" className="graph-omitted" onClick={() => setView('list')}>
+              {`+${layout.omitted.citations} in the list`}
+            </button>
+          )}
+        </span>
+      </div>
+
+      <div className="graph-axis">
+        {layout.ticks.length > 0 && layout.ticks[0].x > 110 && (
+          <span className="graph-axis-name">{'Citations received'}</span>
+        )}
+        {layout.ticks.map(tick => (
+          <span key={`label-${tick.value}`} className="graph-axis-tick" style={{ left: `${tick.x}px` }}>{tick.label}</span>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderList = () => (
+    <div className="related-list" key={`list-${trail.length}`}>
+      {[
+        { relation: 'reference', entries: listEntries.references },
+        { relation: 'citation', entries: listEntries.citations },
+      ].map(({ relation, entries }) => (entries.length ? (
+        <div key={relation}>
+          <div className="graph-list-head">
+            <span className="graph-band-name">
+              {relation === 'reference'
+                ? ('Before · what it cites')
+                : ('After · what cites it')}
+            </span>
+            <span className="graph-band-count">{bandCaption(relation, 'list')}</span>
+          </div>
+          {entries.map(({ paper: related, key }, index) => {
+            const listKey = `list:${key}`;
+            return (
+              <Toggle
+                key={key}
+                className={`related-item ${focusedKey === listKey ? 'is-selected' : ''}`}
+                style={{ '--related-index': index }}
+                onClick={() => setFocusedKey(focusedKey === listKey ? null : listKey)}
+                disabled={Boolean(selectedPaperKey)}
+                pressed={focusedKey === listKey}
+              >
+                <span
+                  className={`graph-list-dot ${relation === 'reference' ? 'is-hollow' : 'is-filled'}`}
+                  style={{ '--node-accent': areaAccentForPaper(related) }}
+                  aria-hidden="true"
+                />
+                <span className="related-item-copy">
+                  <strong><ScientificText>{related.title}</ScientificText></strong>
+                  <small>
+                    {related.authors.slice(0, 2).map(author => author.name || author).join(', ')}
+                    {related.year ? ` · ${related.year}` : ''}
+                    {related.citationCountKnown ? ` · ${related.citationCount} ${'citations'}` : ''}
+                  </small>
+                </span>
+                <CaretRight size={18} />
+              </Toggle>
+            );
+          })}
+        </div>
+      ) : null))}
+    </div>
+  );
+
+  return (
+    <Drawer
+      open={open}
+      onOpenChange={(nextOpen) => { if (!nextOpen) requestClose(); }}
+      onOpenChangeComplete={handleOpenChangeComplete}
+    >
+      <DrawerContent
+        render={<section />}
+        className={`related-sheet related-sheet--graph related-sheet--${sheetStatus} ${isSelectingPaper ? 'is-selecting-paper' : ''}`}
+        overlayClassName="related-overlay"
+        aria-modal="true"
+        aria-busy={visibleStatus === 'loading'}
+        // The X, not the first tabbable thing (the map/list switch): a
+        // keyboard user who opened the sheet by mistake leaves it at once.
+        initialFocus={closeButtonRef}
+      >
+        <div className="related-grabber" aria-hidden="true" />
+        <header className="related-header">
+          <div>
+            <Graph size={18} />
+            <DrawerTitle render={<h3 />}>{'Paper connections'}</DrawerTitle>
+          </div>
+          <div className="related-header-actions">
+            {mode === 'graph' && (
+              <>
+                {/* Single-select, and a press on the pressed one reports []:
+                    the view never goes to "neither". */}
+                <ToggleGroup
+                  className="graph-view-toggle"
+                  value={[view]}
+                  onValueChange={([next]) => { if (next) setView(next); }}
+                  aria-label={'Graph view'}
+                >
+                  <ToggleGroupItem
+                    value="map"
+                    size="icon"
+                    className="graph-view-button"
+                    aria-label={'Map view'}
+                    title={'Map'}
+                  >
+                    <Graph size={17} />
+                  </ToggleGroupItem>
+                  <ToggleGroupItem
+                    value="list"
+                    size="icon"
+                    className="graph-view-button"
+                    aria-label={'List view'}
+                    title={'List'}
+                  >
+                    <List size={17} />
+                  </ToggleGroupItem>
+                </ToggleGroup>
+                <span className="related-header-divider" aria-hidden="true" />
+              </>
+            )}
+            <DrawerClose
+              ref={closeButtonRef}
+              aria-label={'Close'}
+              title={'Close'}
+            >
+              <X size={20} />
+            </DrawerClose>
+          </div>
+        </header>
+
+        {/* ui/tabs.jsx, in the pill shape the sheet has always drawn: the
+            content below is switched by `mode` rather than held in panels,
+            because most of it is shared between the two. */}
+        <Tabs value={mode} onValueChange={(next) => setMode(next)}>
+          <TabsList variant="pill" className="related-mode-tabs" aria-label={'Connection type'}>
+            <TabsTrigger value="graph" disabled={!hasGraphIdentifier || Boolean(selectedPaperKey)}>
+              <GitBranch size={16} />{'Graph'}
+            </TabsTrigger>
+            <TabsTrigger value="similar" disabled={Boolean(selectedPaperKey)}>
+              <Sparkle size={16} />{'Similar'}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        {mode === 'graph' && (
+          <div className="graph-trail" aria-label={'Path through the graph'}>
+            {isWalking && (
+              <button
+                type="button"
+                className="graph-trail-back"
+                onClick={() => goBackTo(trail.length - 2)}
+                aria-label={'Back'}
+                title={'Back'}
+              >
+                <ArrowLeft size={15} />
+              </button>
+            )}
+            <span className="graph-trail-label">
+              {isWalking ? ('Path') : ('This paper')}
+            </span>
+            <div className="graph-trail-steps">
+              {trail.map((step, index) => {
+                const last = index === trail.length - 1;
+                return (
+                  <span className="graph-trail-step" key={getRelatedPaperIdentity(step) || index}>
+                    {index > 0 && <CaretRight size={12} aria-hidden="true" />}
+                    <button
+                      type="button"
+                      className={`graph-crumb ${last ? 'is-current' : ''}`}
+                      onClick={() => goBackTo(index)}
+                      aria-current={last ? 'true' : undefined}
+                    >
+                      {shortTitle(step.title, last ? 40 : 22)}
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {mode === 'graph' && graph.degraded && graphStatus === 'ready' && (
+          <p className="graph-degraded" role="status">
+            <Warning size={14} aria-hidden="true" />
+            {'Incomplete neighbourhood — one source did not answer, and this is what the other could give.'}
+          </p>
+        )}
+
+        {isMap && (graphStatus === 'ready' || graphStatus === 'loading') && renderMap()}
+        {isList && graphStatus === 'ready' && renderList()}
+
+        {mode === 'similar' && visibleStatus === 'loading' && (
+          <LoadingState label={'Finding connections...'} />
+        )}
+        {visibleStatus === 'unavailable' && (
+          <div className="related-state">
+            {'The bibliographic graph needs a valid DOI.'}
+          </div>
+        )}
+        {visibleStatus === 'empty' && (
+          <div className="related-state graph-state">
+            <p>
+              {mode === 'graph'
+                ? graphEmptyLabel
+                : ('No recommendations are available for this paper.')}
+            </p>
+            {mode === 'graph' && isWalking && (
+              <button type="button" className="graph-back-button" onClick={() => goBackTo(trail.length - 2)}>
+                <ArrowLeft size={15} aria-hidden="true" />
+                {'Back to'} {shortTitle(previousCentre?.title, 24)}
+              </button>
+            )}
+          </div>
+        )}
+        {visibleStatus === 'error' && (
+          <div className="related-state" role="status">
+            {'These connections could not be loaded right now. The rest of PaperTok will continue to work normally.'}
+          </div>
+        )}
+        {visibleStatus === 'signin' && (
+          <div className="related-state" role="status">
+            {'A paper’s connections need an account. Sign in to see its citation graph and similar papers.'}
+          </div>
+        )}
+
+        {mode === 'similar' && visibleStatus === 'ready' && (
+          <div className="related-list" key="similar">
+            {similarEntries.map(({ paper: related, key }, index) => (
+              <button
+                key={key}
+                type="button"
+                className={`related-item ${selectedPaperKey === key ? 'is-selected' : ''}`}
+                style={{ '--related-index': index }}
+                onClick={() => requestPaper(related, key)}
+                disabled={Boolean(selectedPaperKey)}
+              >
+                <span className="related-item-copy">
+                  <strong><ScientificText>{related.title}</ScientificText></strong>
+                  <small>
+                    {related.authors.slice(0, 2).map(author => author.name || author).join(', ')}
+                    {related.year ? ` · ${related.year}` : ''}
+                    {related.citationCountKnown ? ` · ${related.citationCount} ${'citations'}` : ''}
+                  </small>
+                </span>
+                <CaretRight size={18} />
+              </button>
+            ))}
+          </div>
+        )}
+
+        {mode === 'graph' && renderPeek()}
+
+        {/* Reserved, not conditional. This row is 30px tall and the sheet's
+            height is fixed, so the plot above it is whatever the column
+            leaves — and the centre of the map sits at half the plot
+            (`ruleY = height / 2`). Rendered only once the graph had loaded,
+            it took 30px off the plot the moment the data landed and moved
+            the dot and its "This paper" label 15px up, a second after the
+            sheet had finished arriving and stood still. It is rendered for
+            as long as the sheet stands at its graph height; only the text
+            waits for the data. */}
+        {mode === 'graph' && sheetStatus === 'ready' && (
+          <div className="knowledge-source">
+            {graphStatus === 'ready' && (
+              <>
+                <span>{sourceLabel}</span>
+                <span>{'One hop · cached 24 h'}</span>
+              </>
+            )}
+          </div>
+        )}
+      </DrawerContent>
+    </Drawer>
+  );
+}

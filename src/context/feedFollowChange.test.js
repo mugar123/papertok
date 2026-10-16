@@ -26,7 +26,7 @@ function bounded(code, from, to, label, maxLines) {
  * being in the seen set — and did so off the feed route, twice.
  */
 test('SOURCE: a reset asked to keep the visible card merges the fresh page below it', async () => {
-  const code = stripComments(await read('./FeedContext.jsx'));
+  const code = stripComments(await read('./FeedContext.tsx'));
   assert.match(code, /import \{ mergeFreshFeedPage, splitFeedForReRank \} from '\.\.\/utils\/feedReRankSplit\.ts';/);
   assert.match(
     code,
@@ -42,13 +42,13 @@ test('SOURCE: a reset asked to keep the visible card merges the fresh page below
 });
 
 test('SOURCE: the automatic retry after a failed reset keeps the option', async () => {
-  const code = stripComments(await read('./FeedContext.jsx'));
+  const code = stripComments(await read('./FeedContext.tsx'));
   const retry = bounded(code, 'if (reset && !autoRetryUsedRef.current) {', '}, 2500);', 'the automatic retry', 8);
   assert.match(retry, /loadPapersRef\.current\?\.\(true, activeMode, false, undefined, \{ keepThroughVisible \}\);/);
 });
 
 test('SOURCE: the following effect records nothing off the feed route and compares against the last applied signature', async () => {
-  const code = stripComments(await read('./FeedContext.jsx'));
+  const code = stripComments(await read('./FeedContext.tsx'));
   const effect = bounded(
     code,
     'const followingSignatureRef = useRef(null);',
@@ -73,7 +73,7 @@ test('SOURCE: the following effect records nothing off the feed route and compar
 });
 
 test('SOURCE: the topic warm-up still runs before the gate, so the prewarm test keeps its 12-line window', async () => {
-  const code = stripComments(await read('./FeedContext.jsx'));
+  const code = stripComments(await read('./FeedContext.tsx'));
   const head = bounded(code, 'const followingSignatureRef = useRef(null);', 'const signature = followedEntities', 'the head of the effect', 12);
   assert.match(head, /void loadTopicRetrieval\(\);/);
   assert.doesNotMatch(head, /feedRouteActive/, 'the gate comes after the signature, not before the warm-up');
@@ -91,7 +91,7 @@ test('SOURCE: the topic warm-up still runs before the gate, so the prewarm test 
  * so waiting for the account loses nothing.
  */
 test('SOURCE: the following baseline is recorded only under a known account', async () => {
-  const code = stripComments(await read('./FeedContext.jsx'));
+  const code = stripComments(await read('./FeedContext.tsx'));
   const effect = bounded(
     code,
     'const followingSignatureRef = useRef(null);',
@@ -120,7 +120,7 @@ test('SOURCE: the following baseline is recorded only under a known account', as
  * exactly what it was.
  */
 test('SOURCE: a project follow asks OpenAIRE with the funder stored on it', async () => {
-  const code = stripComments(await read('./FeedContext.jsx'));
+  const code = stripComments(await read('./FeedContext.tsx'));
   assert.match(
     code,
     /getPapersByProject\(follow\.canonicalId, 1, \{ funder: follow\.metadata\?\.funder \|\| '' \}\)/,

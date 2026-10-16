@@ -258,7 +258,7 @@ test('a throwing listener never loses a sync, and unsubscribing really stops', a
 
 test('SOURCE: the lists page has no manual public-list update control', async () => {
   const source = await readFile(
-    new URL('../components/Lists/ListsPage.jsx', import.meta.url),
+    new URL('../components/Lists/ListsPage.tsx', import.meta.url),
     'utf8',
   );
   assert.ok(!source.includes('updatePublicList'),
@@ -284,7 +284,7 @@ test('SOURCE: the lists page has no manual public-list update control', async ()
  * to think about it, not to stamp it to keep this quiet.
  */
 test('SOURCE: every list edit stamps updatedAt, or the recovery check goes blind', async () => {
-  for (const path of ['../components/Lists/ListsPage.jsx', '../components/Lists/SaveToListModal.jsx']) {
+  for (const path of ['../components/Lists/ListsPage.tsx', '../components/Lists/SaveToListModal.tsx']) {
     const source = await readFile(new URL(path, import.meta.url), 'utf8');
     const writes = source.match(/updateDoc\(/g) || [];
     const membership = source.match(/arrayUnion\(|arrayRemove\(/g) || [];

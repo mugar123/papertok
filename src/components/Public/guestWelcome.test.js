@@ -7,11 +7,11 @@ const stripComments = (source) => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/(^|[^:])\/\/.*$/gm, '$1');
 
-const jsxPromise = read('./GuestWelcome.jsx').then(stripComments);
+const jsxPromise = read('./GuestWelcome.tsx').then(stripComments);
 // The page, its foot and the pickers the welcome draws through.
-const shellPromise = read('./WelcomeShell.jsx').then(stripComments);
+const shellPromise = read('./WelcomeShell.tsx').then(stripComments);
 const cssPromise = read('./GuestWelcome.css').then(stripComments);
-const starsPromise = read('./Stars.jsx').then(stripComments);
+const starsPromise = read('./Stars.tsx').then(stripComments);
 
 /**
  * SOURCE test for the shape of the welcome: four screens in order — what
@@ -179,7 +179,7 @@ test('the welcome is the landing page, with its own way forward and decorative e
  * Spanish one left behind.
  */
 test('the welcome copy is English-only', async () => {
-  const source = await read('./GuestWelcome.jsx');
+  const source = await read('./GuestWelcome.tsx');
   assert.match(source, /const COPY = \{\n {2}en: \{/);
   assert.doesNotMatch(source, /^\s*es: \{/m, 'a Spanish copy block is back');
   assert.match(source, /const copy = COPY\.en;/);

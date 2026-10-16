@@ -73,7 +73,7 @@ test('the Wikipedia prose resolves from the same 0.35 as every other arrival in 
  * taller of the hero's two folds and the only one a click closes.
  */
 test('the ORCID experience panel closes on a curve of its own, not the arrival reversed', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
+  const jsx = await read('./EntityExplorer.tsx');
   const foldOut = jsx.match(/const EXPERIENCE_FOLD_OUT = \{[\s\S]*?\n\};/);
   assert.ok(foldOut, 'the panel has a closing transition');
   assert.match(foldOut[0], /opacity: \{ duration: 0\.16, ease: 'linear' \}/);
@@ -89,7 +89,7 @@ test('the ORCID experience panel closes on a curve of its own, not the arrival r
  * picture had settled.
  */
 test('the background wash arrives with the photograph it is made of', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
+  const jsx = await read('./EntityExplorer.tsx');
   const wash = jsx.match(/animate=\{\{ opacity: 0\.1 \}\}[\s\S]{0,240}?className="ehc-bg-blur"/);
   assert.ok(wash, 'the wash is still there');
   assert.match(wash[0], /duration: 0\.28, ease: \[0\.16, 1, 0\.3, 1\]/);
@@ -106,7 +106,7 @@ test('the background wash arrives with the photograph it is made of', async () =
  * not started. The box itself must stay mounted: it is the observer's target.
  */
 test('the sentinels spin only while something is actually loading, and stay mounted regardless', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
+  const jsx = await read('./EntityExplorer.tsx');
   // Still the observer's target, unconditionally within its gate.
   // `hasMore && rowsSettled` sigue abriendo la puerta; desde el 12-09 lleva
   // además una guarda para no invitar a bajar por una lista vacía, así que
@@ -152,7 +152,7 @@ test('reduced motion drops the movement and keeps the colour', async () => {
  * full height and the settle carries it; framer's entrance is for the toggle.
  */
 test('the ORCID experience panel mounts at full height on arrival and animates only for the toggle', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
+  const jsx = await read('./EntityExplorer.tsx');
   assert.match(jsx, /const \[experienceToggled, setExperienceToggled\] = useState\(false\);/);
   // The load owns the reset; a deferred overlay reset must not erase it.
   assert.match(jsx, /setIsLoadingOrcid\(type === 'author' && Boolean\(bornWith\?\.orcid \|\| extractOrcid\(id\)\)\);\s*setIsExperienceOpen\(true\);\s*setExperienceToggled\(false\);/);
@@ -172,7 +172,7 @@ test('the ORCID experience panel mounts at full height on arrival and animates o
  * curve the Wikipedia fold's collapse measured its way onto.
  */
 test('the hero body settles on a curve that lands, not the arrival curve', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
+  const jsx = await read('./EntityExplorer.tsx');
   const call = jsx.match(/useHeightSettle\(\s*heroBodyRef,[\s\S]*?\);/);
   assert.ok(call, 'the hero body is settled');
   assert.match(call[0], /easing: 'cubic-bezier\(0\.4, 0, 0\.2, 1\)'/);
@@ -200,7 +200,7 @@ test('nothing in the hero body gives way to the settle', async () => {
  * mounted a frame after the text.
  */
 test('the project summary box is a plain block; the settle owns its height', async () => {
-  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
   assert.match(jsx, /\{type === 'project' && entity\?\.summary && \(\s*<div\s+className=\{`project-summary-box/);
   const box = jsx.match(/<div\s+className=\{`project-summary-box[\s\S]*?<\/div>\s*\)\}/);
   assert.ok(box, 'the summary box is still rendered');
@@ -225,7 +225,7 @@ test('the error screen resolves in place instead of cutting', async () => {
  * arrival `wikiProseIn` promises. Keyed by source, the words arrive again.
  */
 test('the Wikipedia paragraph is keyed by its source so its arrival replays', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
+  const jsx = await read('./EntityExplorer.tsx');
   assert.match(jsx, /<p\s+key=\{visibleWikiInfo\?\.extract \? 'wiki' : 'fallback'\}\s+ref=\{wikiDescriptionTextRef\}/);
 });
 
@@ -236,13 +236,13 @@ test('the Wikipedia paragraph is keyed by its source so its arrival replays', as
  * name opens it on the reader's own press.
  */
 test('the experience panel arrives open only when it is short', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
+  const jsx = await read('./EntityExplorer.tsx');
   assert.match(jsx, /const EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS = 4;/);
   assert.match(jsx, /setOrcidInfo\(record\);\s*setIsExperienceOpen\(\(record\?\.employments\?\.length \?\? 0\) <= EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS\);/);
 });
 
 test('career organisations use native buttons and the row entrance has a bounded delay', async () => {
-  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
   assert.equal([...jsx.matchAll(/<button\s+type="button"\s+className="orcid-item-org orcid-item-org--link"/g)].length, 2,
     'employment and education are keyboard-operable without synthetic link handlers');
   assert.doesNotMatch(jsx, /<div\s+className="orcid-item-org orcid-item-org--link"/);
@@ -265,7 +265,7 @@ test('career organisations use native buttons and the row entrance has a bounded
  * moves once (146 → 155px), and the local description is what a MISS shows.
  */
 test('the Wikipedia block waits on its rows; the local description is the fallback for a miss, not a first draft', async () => {
-  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
   assert.match(jsx, /const wikiDescription = isWikiRequestPending\s*\?\s*''\s*:\s*\(visibleWikiInfo\?\.extract \|\| topicFallbackDescription\);/);
 });
 
@@ -313,7 +313,7 @@ test('the experience disclosure and its chevron share one clock, and it is under
   const seconds = Number(chevron[1]);
   assert.ok(seconds <= 0.3, `a disclosure stays under the 300ms ceiling, got ${seconds}s`);
 
-  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
   const panel = jsx.slice(jsx.indexOf('id="ehc-experience-panel"')).match(/height: \{ duration: ([\d.]+), ease: \[0\.4, 0, 0\.2, 1\] \},/);
   assert.ok(panel, 'the panel still opens on a height transition');
   assert.equal(chevron[2], 'cubic-bezier(0.4, 0, 0.2, 1)', 'the chevron follows the same easing as the fold');
@@ -338,7 +338,7 @@ test('the experience disclosure and its chevron share one clock, and it is under
  * settles from the right height.
  */
 test('the hero settle stands down while the page is still arriving', async () => {
-  const code = (await read('./EntityExplorer.jsx')).replace(/^\s*\/\/.*$/gm, '');
+  const code = (await read('./EntityExplorer.tsx')).replace(/^\s*\/\/.*$/gm, '');
   assert.match(code, /const isPageArriving = useIsPageArriving\(\);/,
     'the page asks the transition, rather than sniffing data-page-motion');
 
@@ -363,7 +363,7 @@ test('the hero settle stands down while the page is still arriving', async () =>
  * opacity only (explorerLoading.test.js pins the fold).
  */
 test('the settle carries the Wikipedia block: its mount and its contents are deps', async () => {
-  const code = (await read('./EntityExplorer.jsx')).replace(/^\s*\/\/.*$/gm, '');
+  const code = (await read('./EntityExplorer.tsx')).replace(/^\s*\/\/.*$/gm, '');
   const deps = code.match(/useHeightSettle\(\s*heroBodyRef,\s*\[([^\]]*)\]/);
   assert.ok(deps, 'the settle declares what is worth a movement');
   for (const dep of ['isLoadingEntity', 'entity', 'orcidInfo', 'isLoadingOrcid', 'recentImpact', 'hasLoadedWikiImage', 'showWikiBlock', 'wikiDescription', 'isWikiRequestPending', 'wikiFoldExits']) {
@@ -384,7 +384,7 @@ test('the settle carries the Wikipedia block: its mount and its contents are dep
  * swaps 30 rows for 30 cards).
  */
 test('the tab strip is marked by one rule that travels, not a border each tab paints', async () => {
-  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
   const css = stripComments(await read('./EntityExplorer.css'));
 
   // The row is held in STATE, not a ref: the live strip does not exist while
@@ -435,7 +435,7 @@ test('the wash keeps its image on a fixed box, so the hero growing does not resc
   assert.doesNotMatch(container, /background|filter|top: -20%|bottom: 0/);
   assert.match(container, /mask-image: linear-gradient\(to bottom, black 30%, transparent 100%\);/);
   assert.match(css, /\.ehc-bg-blur::before \{\s*content: '';\s*position: absolute;\s*top: -96px;\s*left: -10%;\s*right: -10%;\s*height: 720px;\s*background-image: var\(--ehc-wash-image\);\s*background-size: cover;\s*background-position: center;\s*filter: blur\(48px\) saturate\(1\.1\);\s*\}/);
-  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
   assert.match(jsx, /className="ehc-bg-blur"\s*style=\{\{ '--ehc-wash-image': `url\(\$\{visibleWikiInfo\.thumbnail\}\)` \}\}/);
   assert.doesNotMatch(jsx, /backgroundImage: `url\(\$\{visibleWikiInfo\.thumbnail\}\)`/);
 });

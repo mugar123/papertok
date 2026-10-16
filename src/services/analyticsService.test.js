@@ -764,7 +764,7 @@ test('every event the app emits is registered, with a surface that survives', as
  */
 test('every route the app declares is a named analytics path', async () => {
   const { readFile } = await import('node:fs/promises');
-  const app = await readFile(new URL('../App.jsx', import.meta.url), 'utf8');
+  const app = await readFile(new URL('../App.tsx', import.meta.url), 'utf8');
 
   const declared = [...app.matchAll(/\bpath="([^"]+)"/g)]
     .map(([, path]) => path)

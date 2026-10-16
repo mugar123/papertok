@@ -11,9 +11,9 @@ import { readFile } from 'node:fs/promises';
  * un listener sin emisor y un keyframes sin consumidor compilan sin queja.
  */
 
-const navbarJsx = readFile(new URL('./Navbar.jsx', import.meta.url), 'utf8');
+const navbarJsx = readFile(new URL('./Navbar.tsx', import.meta.url), 'utf8');
 const navbarCss = readFile(new URL('./Navbar.css', import.meta.url), 'utf8');
-const accountJsx = readFile(new URL('./AccountMenu.jsx', import.meta.url), 'utf8');
+const accountJsx = readFile(new URL('./AccountMenu.tsx', import.meta.url), 'utf8');
 const accountCss = readFile(new URL('./AccountMenu.css', import.meta.url), 'utf8');
 
 test('la navbar no dibuja el botón de recargar ni escucha al informe', async () => {
@@ -84,7 +84,7 @@ test('the account menu animates in and out with CSS, and keeps its items focusab
 });
 
 test('el interruptor de tema del header invitado es el Toggle de ui/', async () => {
-  const jsx = await readFile(new URL('./ThemeToggle.jsx', import.meta.url), 'utf8');
+  const jsx = await readFile(new URL('./ThemeToggle.tsx', import.meta.url), 'utf8');
   const css = await readFile(new URL('./ThemeToggle.css', import.meta.url), 'utf8');
   assert.match(jsx, /from '\.\.\/ui\/toggle\.jsx'/);
   assert.match(jsx, /<Toggle[\s\S]*?pressed=\{isDark\}[\s\S]*?onPressedChange=\{\(\) => toggleTheme\(buttonRef\.current\)\}/);
