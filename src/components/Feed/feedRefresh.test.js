@@ -13,7 +13,6 @@ test('SOURCE: el feed expone un refresco visible en el primer paper y por arrast
     'touchmove NO pasivo: React lo registra pasivo en la ra\u00edz y ah\u00ed preventDefault se ignora');
   assert.doesNotMatch(src, /onTouchStart=|onTouchMove=|onTouchEnd=/, 'nada de props t\u00e1ctiles de React en el scroller');
   assert.match(src, /setActiveIndex\(index\)/);
-  assert.match(src, /isActive=\{index === activeIndex\}/);
 });
 
 test('SOURCE: la píldora no existe para el invitado, y el tirón tampoco', async () => {

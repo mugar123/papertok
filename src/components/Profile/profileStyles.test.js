@@ -30,10 +30,10 @@ const INJECTED_PROPERTIES = new Map([
   // measurement.
   ['--settings-active', '../Settings/SettingsPage.jsx'],
   ['--follow-rows', '../Public/FollowSheet.jsx'],
-  // The comments sheet takes the research field of the paper it hangs off, the
-  // same way a card or an entity header does, so its rules and monogram are
-  // tinted by the data rather than by a decorative default.
-  ['--area-accent', '../Comments/CommentsSheet.jsx'],
+  // A row takes the research field of its paper, the same way a card or an
+  // entity header does, so its rules are tinted by the data rather than by a
+  // decorative default. The lists page sets it per row.
+  ['--area-accent', '../Lists/ListsPage.jsx'],
   // A list's colour is the owner's choice, so it cannot be a token: the lists
   // page resolves it per list and sets it on the card. It is deliberately not
   // `--area-accent` — inside an open list both appear at once, the header
@@ -45,9 +45,6 @@ const OWNED = [
   '../Profile/ProfileEditor.css',
   '../Public/PublicProfilePage.css',
   '../Public/FollowSheet.css',
-  '../Comments/CommentsSheet.css',
-  '../Settings/MyCommentsPage.css',
-  '../Admin/ModerationPage.css',
   // Added with the save-and-organize fix, which introduced `.save-modal-retry`.
   // The file was already clean, so this costs nothing and stops the next token
   // added here from being the one nobody notices.

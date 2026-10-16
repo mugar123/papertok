@@ -169,9 +169,9 @@ async function deleteFollows(admin, uid, field) {
  * The paper stub itself stays: it is a shared document every other reader's
  * saves, comments and lists point at. Only the attribution goes.
  *
- * `reports.reporterUid` and `reports.targetAuthorUid` are deliberately kept.
- * Nobody but the admin console reads them, and they are the moderation record
- * of a decision that outlives the account.
+ * `reports.reporterUid` and `reports.targetAuthorUid` are deliberately kept:
+ * they are the moderation record of a decision that outlives the account.
+ * Nothing in the app reads them since the moderation console was removed.
  */
 async function dissociatePapers(admin, uid) {
   const rows = await admin.runQuery({

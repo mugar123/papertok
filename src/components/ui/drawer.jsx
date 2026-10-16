@@ -5,9 +5,9 @@ import './drawer.css';
 /**
  * The bottom sheet a thumb dismisses — Base UI's Drawer: a Dialog plus
  * swipe-to-dismiss, snap points and the swipe-progress variables its
- * stylesheet reads. Comments, the follow sheet, related papers, the authors
- * sheet: anything that arrives from the bottom of a phone and should leave
- * the same way, by hand or by gesture. For a panel with no gesture, Sheet.
+ * stylesheet reads. The follow sheet, related papers, the authors sheet:
+ * anything that arrives from the bottom of a phone and should leave the same
+ * way, by hand or by gesture. For a panel with no gesture, Sheet.
  *
  * The one stylesheet in `ui/` (drawer.css): the swipe follows `calc()` over
  * Base UI's `--drawer-swipe-*` variables, and that is a paragraph of CSS,

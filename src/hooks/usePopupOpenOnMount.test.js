@@ -27,17 +27,3 @@ test('the popup mounts closed and opens on the next frame', async () => {
   assert.match(hook, /const frame = requestAnimationFrame\(\(\) => setOpen\(true\)\);/, 'and opens a frame later');
   assert.match(hook, /return \(\) => cancelAnimationFrame\(frame\);/, 'a sheet dismissed inside that frame leaves nothing armed');
 });
-
-test('the comments sheet takes its open state from the hook', async () => {
-  const jsx = await read('../components/Comments/CommentsSheet.jsx');
-  assert.match(jsx, /import \{ usePopupOpenOnMount \} from '\.\.\/\.\.\/hooks\/usePopupOpenOnMount\.js';/);
-  assert.match(jsx, /const \{ open, setOpen, requestClose \} = usePopupOpenOnMount\(\);/);
-  assert.doesNotMatch(jsx, /const \[open, setOpen\] = useState\(true\);/, 'never open on the first render');
-  // The thread's reveal is keyed to that flip and not to mount, because the
-  // slide it waits for does not start until the flag does.
-  assert.match(
-    jsx,
-    /if \(!open\) return undefined;\s*const timer = setTimeout\(\(\) => setSheetArrived\(true\), SHEET_ARRIVAL\);/,
-    'the beat belongs to the slide',
-  );
-});

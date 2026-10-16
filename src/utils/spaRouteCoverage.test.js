@@ -56,7 +56,7 @@ test('every route App.jsx declares still reaches the app', async () => {
 
 test('an address nobody declared is left to the 404 page', async () => {
   const matches = await spaMatcher();
-  for (const path of ['/esto-no-existe', '/perfil-papertok.html', '/feeds', '/publico/paper/x', '/wp-login.php']) {
+  for (const path of ['/esto-no-existe', '/perfil-papertok.html', '/feeds', '/publico/paper/x', '/wp-login.php', '/admin/moderation']) {
     assert.ok(!matches(path), `${path} still gets the app with a 200`);
   }
 });

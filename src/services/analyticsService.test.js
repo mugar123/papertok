@@ -173,8 +173,6 @@ test('normalizes entity identifiers and strips query strings from analytics path
 test('names the routes that reach analytics through the static list', () => {
   assert.equal(normalizeAnalyticsPath('/profile'), '/profile');
   assert.equal(normalizeAnalyticsPath('/settings/profile'), '/settings/profile');
-  assert.equal(normalizeAnalyticsPath('/settings/comments'), '/settings/comments');
-  assert.equal(normalizeAnalyticsPath('/admin/moderation'), '/admin/moderation');
   assert.equal(normalizeAnalyticsPath('/report'), '/report');
   assert.equal(normalizeAnalyticsPath('/public/user/nicolas?ref=share'), '/public/user/:handle');
 });

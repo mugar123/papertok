@@ -337,13 +337,12 @@ test('SOURCE: nothing on the feed path imports any social service', async () => 
     '../services/interactionProfileStore.js',
   ]) {
     // Comments stripped first: the claim is about code. A file on this path
-    // may legitimately NAME a service in prose — PaperCard.jsx does, to say
-    // which single door its comment count goes through — without importing
-    // a line of it. Strings are untouched, so a dynamic import still trips.
+    // may legitimately NAME a service in prose without importing a line of
+    // it. Strings are untouched, so a dynamic import still trips.
     const source = stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
     assert.doesNotMatch(
       source,
-      /followUserService|commentService|paperStubService|reportService/,
+      /followUserService|userSearchService/,
       `${path} must stay off the social collections`,
     );
   }

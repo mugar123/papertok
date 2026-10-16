@@ -22,7 +22,6 @@ const NO_AREAS = Object.freeze([]);
 export default function GuestFeedPage({
   onAuthRequired,
   onOpenPdf,
-  onOpenComments = null,
 }) {
   const { language } = useLanguage();
   const { consent, trackEvent } = useAnalyticsConsent();
@@ -171,7 +170,6 @@ export default function GuestFeedPage({
           scrollKey="guest"
           onOpenPdf={onOpenPdf}
           onSaveToList={() => requestAccount('list')}
-          onOpenComments={onOpenComments}
         />
       </main>
 

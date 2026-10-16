@@ -14,10 +14,10 @@ function block(code, from, to, label) {
 }
 
 /**
- * Crossing a card boundary re-renders exactly two `PaperCard`s — the one that
- * stops being active and the one that starts. Measured: 2 of 15 mounted, with
- * the memo skipping the rest and no new paper objects, so the fan-out this
- * file's sibling fixed in September has stayed fixed.
+ * Crossing a card boundary used to re-render exactly two `PaperCard`s — the one
+ * that stopped being active and the one that started (measured: 2 of 15
+ * mounted). Since the comment count went, the card takes no active flag at all,
+ * and the active card only steers the mount window.
  *
  * WHAT THE TRANSITION IS WORTH, honestly: on a desktop production build,
  * nothing measurable. Measured against a control on the same tree, with and
@@ -64,16 +64,15 @@ test('SOURCE: the resume still sets the active card synchronously', async () => 
 });
 
 /**
- * The thing that makes the transition safe. If `isActive` ever grows a second
- * job inside the card — anything visual, anything animated — a value that
- * lands a frame or two late stops being invisible and this decision needs
- * revisiting rather than silently shipping a flicker.
+ * The thing that makes the transition safe. If the card ever takes the active
+ * flag again for anything visual or animated, a value that lands a frame or
+ * two late stops being invisible and this decision needs revisiting rather
+ * than silently shipping a flicker.
  */
-test('SOURCE: isActive still only gates the comment count inside the card', async () => {
-  const code = stripComments(await read('./PaperCard.jsx'));
-  const uses = [...code.matchAll(/\bisActive\b/g)];
+test('SOURCE: the card takes no active flag from the feed', async () => {
+  const card = stripComments(await read('./PaperCard.jsx'));
+  const feed = stripComments(await read('./FeedContainer.jsx'));
 
-  assert.equal(uses.length, 2, `isActive is read in ${uses.length} places, not 2 — see the test's reasoning`);
-  assert.match(code, /isActive = false,/, 'one is the prop default');
-  assert.match(code, /useCommentCount\(paper, Boolean\(isActive &&/, 'the other is the comment count');
+  assert.doesNotMatch(card, /\bisActive\b/, "PaperCard reads an active flag again — see the test's reasoning");
+  assert.doesNotMatch(feed, /isActive=/, 'FeedContainer hands the card an active flag again');
 });

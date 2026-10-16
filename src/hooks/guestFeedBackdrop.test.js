@@ -35,5 +35,5 @@ test('the guest page enables its feed once the visitor has answered', () => {
 
   const app = stripComments(readFileSync(new URL('../App.jsx', import.meta.url), 'utf8'));
   const feedRoute = app.slice(app.indexOf('path="/feed"'), app.indexOf('path="/lists"'));
-  assert.match(feedRoute, /<GuestFeedPage\s+onAuthRequired=\{requestAuthentication\}\s+onOpenPdf=\{openPdf\}\s+onOpenComments=\{setCommentsPaper\}/);
+  assert.match(feedRoute, /<GuestFeedPage\s+onAuthRequired=\{requestAuthentication\}\s+onOpenPdf=\{openPdf\}/);
 });

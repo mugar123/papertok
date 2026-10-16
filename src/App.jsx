@@ -50,14 +50,11 @@ const OnboardingFlow = lazyWithPreload(() => import('./components/Onboarding/Onb
 const ListsPage = lazyWithPreload(() => import('./components/Lists/ListsPage'))
 const PDFViewer = lazyWithPreload(() => import('./components/PDF/PDFViewer'))
 const SaveToListModal = lazyWithPreload(() => import('./components/Lists/SaveToListModal'))
-const CommentsSheet = lazyWithPreload(() => import('./components/Comments/CommentsSheet'))
 const SearchPage = lazyWithPreload(() => import('./components/Search/SearchPage'))
 const EntityExplorer = lazyWithPreload(() => import('./components/Explorer/EntityExplorer'))
 const FollowingFeedPage = lazyWithPreload(() => import('./components/Following/FollowingFeedPage'))
 const SettingsPage = lazyWithPreload(() => import('./components/Settings/SettingsPage'))
 const FollowingSettingsPage = lazyWithPreload(() => import('./components/Settings/FollowingSettingsPage'))
-const MyCommentsPage = lazyWithPreload(() => import('./components/Settings/MyCommentsPage'))
-const ModerationPage = lazyWithPreload(() => import('./components/Admin/ModerationPage'))
 const PublicPaperPage = lazyWithPreload(() => import('./components/Public/PublicPaperPage'))
 const PublicListPage = lazyWithPreload(() => import('./components/Lists/PublicListPage'))
 const PublicProfilePage = lazyWithPreload(() => import('./components/Public/PublicProfilePage'))
@@ -104,11 +101,6 @@ function AppContent() {
   // it does on a desktop (2026-10-09).
   const openPdf = setPdfPaper
   const [saveModalPaper, setSaveModalPaper] = useState(null)
-  // The comment sheet is hosted here, next to the PDF viewer and the save
-  // modal, for the same reason those are: the feed hands over a paper and
-  // nothing else, so no social service ever enters the feed's module graph
-  // and a feed load keeps costing one read.
-  const [commentsPaper, setCommentsPaper] = useState(null)
   const [authPromptOpen, setAuthPromptOpen] = useState(false)
   const [authPromptReason, setAuthPromptReason] = useState('default')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -143,7 +135,7 @@ function AppContent() {
   const pageTransitionCustom = usePageTransitionCustom()
   const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
-  const navbarRoutes = ['/feed', '/lists', '/following', '/profile', '/settings', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following', '/settings/comments']
+  const navbarRoutes = ['/feed', '/lists', '/following', '/profile', '/settings', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following']
   // The paper, profile, list and entity pages keep the app chrome for a
   // signed-in user — reaching a paper from Liked, a profile from the follow
   // sheet, a list from someone's shared link, or an author from a card, must
@@ -242,11 +234,10 @@ function AppContent() {
       // then commits the Suspense fallback and holds it for its 300 ms
       // throttle. Measured on the screens: a 300 ms blank beat between exit
       // and entrance on the first visit to Research or Following, chunk
-      // cached or not. Measured on the overlays: the comments sheet appeared
-      // ~420 ms after the tap that opened it the first time in a session,
-      // chunk cached or not, and at once every time after. Preloaded, the
-      // first time is every other time.
-      CommentsSheet.preload().catch(() => {})
+      // cached or not. Measured on the overlays (on the comments sheet, since
+      // removed): it appeared ~420 ms after the tap that opened it the first
+      // time in a session, chunk cached or not, and at once every time after.
+      // Preloaded, the first time is every other time.
       PDFViewer.preload().catch(() => {})
       SaveToListModal.preload().catch(() => {})
       FollowingFeedPage.preload().catch(() => {})
@@ -261,9 +252,6 @@ function AppContent() {
       // the tap, the chunk and the fallback throttle in front of it.
       PublicListPage.preload().catch(() => {})
       SettingsPage.preload().catch(() => {})
-      // One row inside Settings; small chunk, and the first visit used to pay
-      // it on top of the cold Firestore read the page then makes.
-      MyCommentsPage.preload().catch(() => {})
       // Every card links to authors, topics and projects; the first of those
       // opened in a session used to pay the chunk and the fallback throttle.
       EntityExplorer.preload().catch(() => {})
@@ -349,7 +337,6 @@ function AppContent() {
                       }}
                       onOpenPdf={openPdf}
                       onSaveToList={setSaveModalPaper}
-                      onOpenComments={setCommentsPaper}
                     />
                   </PageTransition>
                 </ProtectedRoute>
@@ -358,7 +345,6 @@ function AppContent() {
                   <GuestFeedPage
                     onAuthRequired={requestAuthentication}
                     onOpenPdf={openPdf}
-                    onOpenComments={setCommentsPaper}
                   />
                 </PageTransition>
               )
@@ -387,7 +373,6 @@ function AppContent() {
                   <FollowingFeedPage
                     onOpenPdf={openPdf}
                     onSaveToList={setSaveModalPaper}
-                    onOpenComments={setCommentsPaper}
                   />
                 </PageTransition>
               </ProtectedRoute>
@@ -489,28 +474,6 @@ function AppContent() {
             }
           />
           <Route
-            path="/settings/comments"
-            element={
-              <ProtectedRoute>
-                <PageTransition>
-                  <MyCommentsPage />
-                </PageTransition>
-              </ProtectedRoute>
-            }
-          />
-          {/* Unlisted, not secret: the rules deny the queue to any uid that
-              is not the admin's, and the page says so. */}
-          <Route
-            path="/admin/moderation"
-            element={
-              <ProtectedRoute>
-                <PageTransition>
-                  <ModerationPage />
-                </PageTransition>
-              </ProtectedRoute>
-            }
-          />
-          <Route
             path="/explorer/:type/:id"
             element={
               <PageTransition>
@@ -606,20 +569,6 @@ function AppContent() {
       {/* Each overlay suspends on its own: while its chunk downloads (idle
           prefetch usually has it already) nothing flashes, and the rest of
           the screen stays interactive. */}
-      <Suspense fallback={null}>
-        <AnimatePresence>
-          {commentsPaper && (
-            <CommentsSheet
-              paper={commentsPaper}
-              isAuthenticated={Boolean(user)}
-             
-              onClose={() => setCommentsPaper(null)}
-              onAuthRequired={requestAuthentication}
-            />
-          )}
-        </AnimatePresence>
-      </Suspense>
-
       <Suspense fallback={null}>
         {pdfPaper && (
           <PDFViewer paper={pdfPaper} closeRef={pdfCloseRef} onClose={() => setPdfPaper(null)} />
