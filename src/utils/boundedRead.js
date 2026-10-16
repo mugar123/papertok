@@ -16,7 +16,8 @@
  * A stall has **two shapes**, and missing the second one is what kept the
  * comment sheet ending in "could not be loaded":
  *
- *   1. The read never settles. That is what `withReadTimeout` bounds.
+ *   1. The read never settles. `patientRead` bounds every attempt with its
+ *      own timer.
  *   2. The read settles — as a *rejection* — ten seconds later, because the
  *      SDK gave up before we did. `isTransientReadError` is what tells that
  *      apart from a real refusal, and `patientRead` is what keeps waiting.
@@ -108,8 +109,8 @@ export function isTransientReadError(error) {
   if (!error) return false;
   if (error.timedOut === true) return true;
   // A service that knows its own error is a "not now" says so on the error
-  // itself (ProfileReadUnconfirmedError): the cache answered instead of the
-  // server, and asking again is the right response, not a verdict.
+  // itself (`retryable`), and asking again is the right response, not a
+  // verdict.
   if (error.retryable === true) return true;
   return TRANSIENT_READ_CODES.includes(error.code);
 }
@@ -157,42 +158,6 @@ function subscribeToOnline(listener) {
   }
   window.addEventListener('online', listener);
   return () => window.removeEventListener('online', listener);
-}
-
-export function withReadTimeout(promise, options = {}) {
-  const {
-    ms = DEFAULT_READ_TIMEOUT_MS,
-    label = 'read',
-    setTimer = setTimeout,
-    clearTimer = clearTimeout,
-  } = options;
-
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const timer = setTimer(() => {
-      if (settled) return;
-      settled = true;
-      reject(new ReadTimedOutError(label));
-    }, ms);
-
-    Promise.resolve(promise).then(
-      (value) => {
-        clearTimer(timer);
-        // The underlying read is never cancelled — Firestore has no such
-        // affordance — so a late answer simply arrives after the caller has
-        // moved on, and must not resolve a promise already rejected.
-        if (settled) return;
-        settled = true;
-        resolve(value);
-      },
-      (error) => {
-        clearTimer(timer);
-        if (settled) return;
-        settled = true;
-        reject(error);
-      },
-    );
-  });
 }
 
 /**

@@ -1,4 +1,3 @@
-import { PROFILE_VISIBILITY } from '../../services/userProfileService.js';
 import PetriFrame, { ANTENNAE } from './PetriFrame.jsx';
 
 
@@ -7,7 +6,7 @@ export default function PetriProfile({ visibility, label, className }) {
     <PetriFrame
       label={label}
       className={className}
-      svgProps={{ 'data-private': visibility === PROFILE_VISIBILITY.private || undefined }}
+      svgProps={{ 'data-private': visibility === 'private' || undefined }}
     >
       <path d={ANTENNAE} fill="none" strokeWidth="2" />
       <g className="onboarding-petri-smile">

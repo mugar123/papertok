@@ -1,10 +1,10 @@
 /**
- * Behavioural tests for the F1 rules, executed against the Firestore emulator.
+ * Behavioural tests for `firestore.rules`, executed against the Firestore emulator.
  *
- * These exist because the assertions in `src/services/userProfileService.test.js`
- * read `firestore.rules` as text: they catch a clause being deleted, but they
- * cannot catch a clause that was never written. Everything here performs a real
- * write and asserts on what the rules engine actually decides.
+ * These exist because the tests under `src/` that read `firestore.rules` as text
+ * catch a clause being deleted, but they cannot catch a clause that was never
+ * written. Everything here performs a real request and asserts on what the
+ * rules engine actually decides.
  *
  * Run with `npm run test:rules`, which starts the emulator around this file.
  * The emulator needs a JRE; without one the suite skips loudly rather than

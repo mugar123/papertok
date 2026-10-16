@@ -3,11 +3,10 @@
 `tests/firestore.rules.test.js` runs the real `firestore.rules` against the
 Firestore emulator and asserts on what the rules engine actually decides.
 
-The assertions in `src/services/userProfileService.test.js` read the rules file
-as text. Those catch a clause being deleted; they cannot catch a clause that was
-never written — which is exactly how the pinned-list ownership check, the
-`followerCount` freeze and the handle-freeing delete were all missing while the
-text tests stayed green. This suite exists to close that gap.
+Some tests under `src/` read the rules file as text
+(`savedPaperPayload.test.js`, `accountOnboarding.test.js`,
+`publicListService.test.js`). Those catch a clause being deleted; they cannot
+catch a clause that was never written. This suite exists to close that gap.
 
 ## Running
 

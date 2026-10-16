@@ -96,7 +96,9 @@ export function getOwnListsStorageKey(userId) {
   return `${OWN_LISTS_KEY_PREFIX}${encodeURIComponent(userId)}`;
 }
 
-export function getOwnProfileStorageKey(userId) {
+// Written by the removed public-profile editor. Nothing writes it now;
+// sign-out still sweeps it from devices that stored one.
+function getOwnProfileStorageKey(userId) {
   if (!userId) return null;
   return `${OWN_PROFILE_KEY_PREFIX}${encodeURIComponent(userId)}`;
 }
@@ -182,83 +184,6 @@ export function saveStoredLists(userId, lists, storage, budgetBytes = OWN_LISTS_
     else target.setItem(key, JSON.stringify(stored));
   } catch {
     // A device that cannot store them just pays the read, as before.
-  }
-}
-
-/**
- * The owner's public profile, as this device last saw it.
- *
- * The session cache already covers remounts inside a tab. After a reload the
- * profile settings would otherwise wait on `userProfiles/{uid}` — a document
- * the auth bootstrap never reads (that one is the private `users/{uid}`).
- * Remembering the public half here lets the editor paint from what this
- * device already knew, and the network read corrects it behind.
- *
- * Photo is deliberately omitted: it can be tens of kilobytes, and the account
- * photo is the private one AuthContext already holds.
- */
-export function readStoredProfile(userId, storage) {
-  const key = getOwnProfileStorageKey(userId);
-  const target = getStorage(storage);
-  if (!key || !target) return null;
-
-  try {
-    const parsed = JSON.parse(target.getItem(key) || 'null');
-    if (!parsed || typeof parsed !== 'object') return null;
-    const uid = typeof parsed.uid === 'string' ? parsed.uid : '';
-    const handle = typeof parsed.handle === 'string' ? parsed.handle : '';
-    const displayName = typeof parsed.displayName === 'string' ? parsed.displayName : '';
-    if (!uid || !handle || !displayName) return null;
-    return {
-      uid,
-      handle,
-      displayName,
-      bio: typeof parsed.bio === 'string' ? parsed.bio : '',
-      visibility: parsed.visibility === 'private' ? 'private' : 'public',
-      createdAt: typeof parsed.createdAt === 'string' ? parsed.createdAt : null,
-      pinnedShareIds: Array.isArray(parsed.pinnedShareIds) ? parsed.pinnedShareIds : [],
-      showPinnedLists: parsed.showPinnedLists !== false,
-    };
-  } catch {
-    return null;
-  }
-}
-
-export function saveStoredProfile(userId, profile, storage) {
-  const key = getOwnProfileStorageKey(userId);
-  const target = getStorage(storage);
-  if (!key || !target || !profile?.uid || !profile.handle || !profile.displayName) return;
-
-  try {
-    const createdAt = typeof profile.createdAt === 'string'
-      ? profile.createdAt
-      : (typeof profile.createdAt?.toDate === 'function'
-        ? profile.createdAt.toDate()?.toISOString?.()
-        : (profile.createdAt instanceof Date ? profile.createdAt.toISOString() : null));
-    target.setItem(key, JSON.stringify({
-      uid: profile.uid,
-      handle: profile.handle,
-      displayName: profile.displayName,
-      bio: typeof profile.bio === 'string' ? profile.bio : '',
-      visibility: profile.visibility === 'private' ? 'private' : 'public',
-      createdAt: createdAt || null,
-      pinnedShareIds: Array.isArray(profile.pinnedShareIds) ? profile.pinnedShareIds : [],
-      showPinnedLists: profile.showPinnedLists !== false,
-    }));
-  } catch {
-    // A profile that cannot be remembered simply waits for its read again.
-  }
-}
-
-export function clearStoredProfile(userId, storage) {
-  const key = getOwnProfileStorageKey(userId);
-  const target = getStorage(storage);
-  if (!key || !target) return;
-
-  try {
-    target.removeItem(key);
-  } catch {
-    // A copy that cannot be removed is corrected by the next read, as before.
   }
 }
 

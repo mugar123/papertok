@@ -2,22 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  clearStoredProfile,
   clearUserScopedStorage,
   getLocalHiddenStorageKey,
   getOnboardingStorageKey,
   getOwnListsStorageKey,
-  getOwnProfileStorageKey,
   getSeenPapersStorageKey,
   readSeenPaperIds,
   readStoredLists,
   readStoredOnboarding,
-  readStoredProfile,
   removeLegacySeenPaperIds,
   saveSeenPaperIds,
   saveStoredLists,
   saveStoredOnboarding,
-  saveStoredProfile,
 } from './userScopedStorage.js';
 
 function createStorage() {
@@ -101,6 +97,23 @@ test('signing out takes the legacy follow counters with everything else', () => 
   assert.equal(storage.getItem('papertok_followStats:user-g'), null);
   assert.ok(storage.getItem('papertok_followStats:user-h'), 'another account keeps its own key');
   assert.deepEqual([...readSeenPaperIds('user-g', storage)], []);
+});
+
+/**
+ * The removed public-profile editor remembered the owner's profile under
+ * `papertok_ownProfile:{uid}`. Nothing writes that key any more either.
+ */
+
+test('signing out takes the legacy stored profile with everything else', () => {
+  const storage = createStorage();
+
+  storage.setItem('papertok_ownProfile:user-i', JSON.stringify({ uid: 'user-i', handle: 'alice', displayName: 'Alice' }));
+  storage.setItem('papertok_ownProfile:user-j', JSON.stringify({ uid: 'user-j', handle: 'bob', displayName: 'Bob' }));
+
+  clearUserScopedStorage('user-i', storage);
+
+  assert.equal(storage.getItem('papertok_ownProfile:user-i'), null);
+  assert.ok(storage.getItem('papertok_ownProfile:user-j'), 'another account keeps its own key');
 });
 
 /* --- The owner's lists, remembered across reloads ------------------------- */
@@ -207,39 +220,6 @@ test('signing out takes the lists with it', () => {
   clearUserScopedStorage('uid-l6', storage);
   assert.equal(readStoredLists('uid-l6', storage), null,
     'another account on this device must never be seeded with these');
-});
-
-test('the owner public profile is remembered without its photo', () => {
-  const storage = listStore();
-  saveStoredProfile('uid-p1', {
-    uid: 'uid-p1',
-    handle: 'alice',
-    displayName: 'Alice',
-    bio: 'Hello',
-    photo: 'data:image/png;base64,AAAA',
-    visibility: 'public',
-    createdAt: '2026-03-01T00:00:00.000Z',
-  }, storage);
-  const read = readStoredProfile('uid-p1', storage);
-  assert.equal(read.handle, 'alice');
-  assert.equal(read.displayName, 'Alice');
-  assert.equal(read.photo, undefined);
-  assert.equal(read.createdAt, '2026-03-01T00:00:00.000Z');
-  assert.equal(readStoredProfile('uid-p1', null), null);
-
-  clearUserScopedStorage('uid-p1', storage);
-  assert.equal(readStoredProfile('uid-p1', storage), null);
-  assert.ok(getOwnProfileStorageKey('uid-p1').includes('ownProfile'));
-});
-
-test('clearing the remembered profile leaves the rest of the device state alone', () => {
-  const storage = listStore();
-  saveStoredProfile('uid-p2', { uid: 'uid-p2', handle: 'bob', displayName: 'Bob' }, storage);
-  saveStoredLists('uid-p2', [{ id: 'l1', name: 'Notes', paperIds: ['p1'] }], storage);
-  clearStoredProfile('uid-p2', storage);
-  assert.equal(readStoredProfile('uid-p2', storage), null);
-  assert.equal(readStoredLists('uid-p2', storage)?.[0]?.id, 'l1');
-  clearStoredProfile('uid-p2', null);
 });
 
 test('onboarding completion survives a reload, per account', () => {

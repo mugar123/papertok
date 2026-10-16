@@ -474,9 +474,8 @@
   flex: 0 0 auto;
 }
 
-/* ProfileEditor.css is no longer loaded on these pages, so the profile-*
-   classes they still render have their rules here: the photo's hint and the
-   analytics switch. */
+/* The photo's hint and the analytics switch: the profile-* classes these
+   pages render, which no other stylesheet defines. */
 .profile-hint {
   margin: 0;
   color: var(--text-tertiary);
