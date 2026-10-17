@@ -62,7 +62,7 @@ The plan named `tabDirection.js`, `PageTransition.jsx` and their tests. Two
 things forced more:
 
 1. **`PageTransition.jsx` may not export a function.** `react-refresh/only-export-components`
-   fails the build's lint. The hook moved to `src/hooks/usePageTransitionCustom.js`.
+   fails the build's lint. The hook moved to `src/hooks/usePageTransitionCustom.ts`.
 2. **The page on its way out could not be told.** `AnimatePresence` keeps the
    previous element mounted rather than re-rendering it, so the outgoing
    `PageTransition` resolved its exit against the `custom` it mounted with —
@@ -110,7 +110,7 @@ that could regress navigation away from the others.
 ## Dependencies and collisions
 
 - **001 and 002 edit the same JSX element's neighbourhood** in
-  `src/components/Explorer/EntityExplorer.jsx`:
+  `src/components/Explorer/EntityExplorer.tsx`:
   - 002 edits the `transition` prop of `<motion.div layout className="ehc-wiki-fold">` (lines 1859-1867).
   - 001 edits the skeleton/prose ternary *inside* it (lines 1873-1900).
 
@@ -147,7 +147,7 @@ Neither is a motion problem; both surfaced from the same runs and are recorded
 here so they are not lost.
 
 1. **Wikipedia's search endpoint fails intermittently.**
-   `src/services/wikiService.js:75-89` builds an
+   `src/services/wikiService.ts:75-89` builds an
    `action=query&generator=search` request. Verified directly: it returned
    `503 upstream connect error … reset reason: overflow`, and the identical query
    succeeded on retry moments later. Across four probe runs the explanation
@@ -171,7 +171,7 @@ not independently confirmed.
 | --- | --- |
 | `src/components/Feed/PaperCard.css:23` | `.pc { transition: opacity 0.9s ease; }` — 900ms, three times the UI budget, on the most-mounted element in the app. It is vestigial: `pc--visible` is applied at `PaperCard.jsx:1035` but **no rule anywhere defines it**, and nothing else changes `.pc`'s opacity. The fix is deletion. |
 | `src/components/Lists/ListsPage.css:1047` and `src/components/Explorer/EntityExplorer.css:1262` | `@keyframes staggerFadeUp` is defined **twice with different values** (`opacity 0 → 1, translateY(8px)` vs `opacity 0.35 → 1, translateY(6px)`). `@keyframes` is a global namespace and both files ship in lazy chunks, so whichever route is visited first wins for both components. Non-deterministic across sessions. |
-| `src/components/ui/button-variants.js:5` | The shared `Button` has **zero** `active:` styles across the base string and all variants — only `transition-colors`. The feed's two primary reading CTAs (`PaperCard.jsx:1572`, `:1578`) are this component, so on touch the app's highest-frequency control acknowledges a press with nothing. |
+| `src/components/ui/button-variants.ts:5` | The shared `Button` has **zero** `active:` styles across the base string and all variants — only `transition-colors`. The feed's two primary reading CTAs (`PaperCard.jsx:1572`, `:1578`) are this component, so on touch the app's highest-frequency control acknowledges a press with nothing. |
 | `src/components/Settings/EditInterestsModal.css` | The only component stylesheet with animations and **no** `prefers-reduced-motion` block at all (0 matches), and its JSX imports no `useReducedMotion` either. It opens with `translateY(20px) scale(0.98)` and closes with a slide-down. |
 | `src/styles/variables.css:507, 512, 517, 522, 537, 542, 555` | Seven global `@keyframes` with zero consumers — `slideDown`, `slideInFromBottom`, `slideOutToBottom`, `scaleIn`, `bounce`, `heartBeat`, `ripple`. Verified by grepping every `animation:` / `animation-name:` in CSS and JSX. `ripple` also starts at `scale(0)`. |
 
@@ -181,3 +181,57 @@ opposite: **the global `button { transition: all }` no longer exists.**
 rationale at `src/components/Profile/ProfilePage.css:64` and the comment in
 `src/components/Profile/profileStyles.test.js:255-257` are stale, though the
 assertion they wrap is still worth keeping.
+
+---
+
+# Second pass, 2026-10-17
+
+Written by the `improve-animations` advisor pass against commit `20c4fcb0`,
+covering the animations added or changed on `asier/local-ui-polish`. All ten
+were applied the same day in the recommended order; 012 later also gained
+`--ease-in-out` as a CSS token and `animateSize()`, and 014 stayed a comment.
+
+| # | Title | Severity | Category | Files | Status |
+| --- | --- | --- | --- | --- | --- |
+| [006](006-palette-cascade-once.md) | Cascade the palette's results once per opening | MEDIUM | Purpose & frequency | 1 source | **DONE** |
+| [007](007-slot-morph-timing.md) | Shorten the abstract ⇄ map morph to 240ms, ease-in-out | MEDIUM | Easing & duration | 2 source | **DONE** |
+| [008](008-shared-tooltip-provider.md) | One tooltip provider for the app | MEDIUM | Delay, cohesion | 2 source | **DONE** |
+| [009](009-explorer-fold-duration.md) | Explorer read-more fold 380ms → 280ms | LOW | Duration | 1 source | **DONE** |
+| [010](010-framer-full-transform-strings.md) | Full transform strings instead of framer shorthands | LOW | Performance | 3 source | **DONE** |
+| [011](011-graph-travel-translate.md) | Graph travel dot moves with `translate` | LOW | Performance | 2 source | **DONE** |
+| [012](012-shared-motion-curves.md) | One JS module for the motion curves | LOW | Tokens | 1 new + ~7 source | **DONE** |
+| [013](013-graph-edge-easing.md) | Graph edges use `var(--ease-out)` | LOW | Easing | 1 source | **DONE** |
+| [014](014-tabs-indicator-width.md) | Keep the tab indicator's width transition; document why | LOW | Performance (accepted) | 1 source | **DONE** |
+| [015](015-public-list-glyph-scale.md) | Share glyph enters from 0.95, not 0.8 | LOW | Physicality | 1 source | **DONE** |
+
+## Recommended order
+
+**006 → 007 → 008 → 010 → 011 → 013 → 009 → 015 → 014 → 012**
+
+- **006 first.** It is the one finding on a keyboard, 100+/day surface.
+- **007 next.** The card's Connections toggle is flipped several times per
+  paper; it is the most-felt duration in the PR.
+- **008** changes every tooltip's grouping at once; easy to verify on the map.
+- **010, 011, 013, 009, 015, 014** are small and independent.
+- **012 last.** It is mechanical and rewrites the same `ease:` lines 007 and
+  010 edit; done earlier, it would make both plans' excerpts stale.
+
+## Dependencies and collisions
+
+- **012 depends on 007 and 010.** All three edit `ease:` values in
+  `PaperCard.jsx`, `FeedContainer.jsx`, `AnnotationRail.jsx` and
+  `PaperReader.jsx`. Re-read line numbers before starting 012.
+- **007, 011 and 013 all edit `PaperCard.css`**, in different rules
+  (`.pc-slot--morphing` at 1563, `.graph-travel` at 2035, `.graph-edge` /
+  `.graph-now` at 1737 / 1780). No overlap if each stays in its rule.
+- **007 must not change `CARD_DURATION_MS` or `CARD_EASE`**; the feed scroll
+  tween uses them.
+- Several plans may meet a source test that pins the old literal
+  (`graphStyles.test.js`, `explorerMotion.test.js`, `feedAtomVeil.test.js`).
+  Update the pattern, keep the assertion.
+
+## Not reported, by design
+
+- The palette sheet's own 150ms open (`scSheetIn`) is documented as deliberate
+  in `SearchCommand.css`; a keyboard-opened sheet would normally get none.
+  Left alone per the "don't re-litigate" rule.

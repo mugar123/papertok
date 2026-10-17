@@ -5,7 +5,7 @@
    stand, and /login (LoginPage.css) is the same act on a page of its own, for
    direct links and for guests bounced off a protected route. Both are drawn
    from the same parts so they cannot drift — a white sheet (here on an ink
-   scrim), the brand mark in yellow, the headline in the edition serif, and two
+   scrim), the brand mark in yellow, the headline in the serif, and two
    provider buttons from the shared Button component.
    ============================================ */
 
@@ -64,7 +64,7 @@
 
 .auth-modal-lede {
   margin: 0 auto var(--space-6);
-  max-width: 30ch;
+  max-width: 40ch;
   color: var(--text-secondary);
   font-size: var(--fs-sm);
   line-height: 1.6;

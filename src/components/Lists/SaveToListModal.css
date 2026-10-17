@@ -10,7 +10,7 @@
    Language: design.md. An overlay surface (ink scrim + a white sheet with a
    hairline border and a short drop), structure from rules rather than shadows,
    mono for machine data, serif for the paper's own words, and every control
-   from `src/components/ui/button.jsx`. */
+   from `src/components/ui/button.tsx`. */
 
 /* The window is a Base UI Dialog (ui/dialog.jsx): the primitive centres the
    popup and portals it to <body>, and marks it `data-open` on the way in and
@@ -27,17 +27,6 @@
   background: var(--scrim);
 }
 
-/* The scrim used to finish 60ms before the window it is behind, so the
-   backdrop settled while the card was still arriving. Same length, same
-   curve, one movement. */
-.save-modal-scrim[data-open] {
-  animation: fadeIn 0.36s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.save-modal-scrim[data-closed] {
-  animation: fadeOut 0.32s cubic-bezier(0.4, 0, 1, 1) forwards;
-}
-
 .save-modal {
   display: flex;
   flex-direction: column;
@@ -47,110 +36,51 @@
      the screen instead of cutting the list while the page sits empty. */
   max-height: min(90vh, 720px);
   max-height: min(90dvh, 720px);
+  /* While the sections swap, the leaving one is lifted out of the flow at
+     its full height over a window already resizing to the arriving one: the
+     window clips it, as the phone's drawer does. */
+  overflow: hidden;
   background: var(--bg-card);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-2xl);
   box-shadow: var(--shadow-xl);
 }
 
-/* The previous `scaleIn` was a 2% scale over 200ms — below the threshold at
-   which a 440px sheet reads as arriving, so opening looked like a hard cut.
-   16px of travel and 4% of scale, on the same spring the comments sheet uses
-   on desktop, is what makes the window drop into place. `transform`, never
-   `translate`: the primitive centres the popup with the `translate` property
-   and a keyframe touching it would drag the window to the corner. */
-.save-modal[data-open] {
-  animation: saveModalIn 0.36s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-/* The new-list window opens nested inside this one, and a nested Base UI
-   dialog draws no scrim of its own (dialog.md, "Nested dialogs"): the parent
-   is asked to dim itself instead, which is what this veil is.
-   `inset: -1px` because an absolute box starts inside the border: at 0 the
-   window's light 1px border stayed undimmed and read as a white rim around
-   the veil. At -1px the veil and the border share the outer edge, so the
-   inherited radius matches the window's own corners too. */
-.save-modal[data-nested-dialog-open]::after {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  background: var(--scrim);
-  pointer-events: none;
-  animation: fadeIn 0.15s ease;
-}
-
-@keyframes saveModalIn {
-  from { opacity: 0; transform: translateY(16px) scale(0.96); }
-  to { opacity: 1; transform: none; }
-}
-
-/* Leaving used to be an afterthought: 160ms against an entrance of 280, over
-   half the distance (8px and 2% against 16px and 4%), on `ease` — which for a
-   departure spends its first frames barely moving and then drops the window in
-   the last few. Short is not the same as quick, and this was short enough to
-   read as the window being deleted rather than dismissed. It now travels the
-   same distance it arrived from, on the ease-in the page transition and the
-   filter panel already leave by: it holds while it goes, and goes at the end.
-   240ms was then trimmed to 200: a dismissal is read in its first frames, and
-   the last 40ms were the reader waiting on a window already gone in their
-   head. The primitive reads the length from the animation itself, so there
-   is no timer left to keep in step; `saveModalMotion.test.js` pins the pair.
-
-   Then up again, to 300 (and the entrance to 360, the scrim on both clocks):
-   asked for on 2026-09-03 — both read as too quick in use, the window there
-   and gone before it had registered as a window. Same curves, same distance,
-   half as long again. */
-@keyframes saveModalOut {
-  from { opacity: 1; transform: none; }
-  to { opacity: 0; transform: translateY(16px) scale(0.96); }
-}
-
-/* `forwards` matters: the window stays mounted for the length of this, and
-   without it the card would snap back to full opacity for the last frame.
-   No taps land on a window that is leaving. */
+/* Arriving and leaving are the dialog's own (ui/dialog.jsx, `dialogIn` /
+   `dialogOut`), like every window in the app: no motion of its own here. */
+/* No taps land on a window that is leaving. */
 .save-modal[data-closed] {
-  animation: saveModalOut 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
   pointer-events: none;
 }
 
 /* ── Head ─────────────────────────────────────────────────────────────── */
 
 .save-modal-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-5) var(--space-5) 0;
-}
-
-.save-modal-kicker {
-  margin: 0 0 var(--space-1);
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-
-.save-modal-header h2 {
-  margin: 0;
-  font-family: var(--font-heading);
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-semibold);
-  color: var(--text-primary);
-  line-height: var(--lh-tight);
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 1;
 }
 
 /* The paper's own title is prose, so it is set in the serif — the same voice
    the card and the reader give it. */
 .save-modal-paper-title {
-  margin: var(--space-3) var(--space-5) 0;
+  /* Never squeezed: with the create form open the body is what scrolls. */
+  flex-shrink: 0;
+  margin: var(--space-5) var(--space-5) 0;
+  padding-right: var(--space-8);
   padding-bottom: var(--space-4);
   border-bottom: 1px solid var(--border-subtle);
   font-family: var(--font-serif);
   font-size: var(--fs-sm);
   line-height: var(--lh-normal);
   color: var(--text-secondary);
+}
+
+/* The clamp sits on the text, not the paragraph: overflow on the paragraph
+   clips at its padding box, so a third line showed through the padding above
+   the rule. */
+.save-modal-paper-title-text {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -193,10 +123,25 @@
   color: var(--text-secondary);
 }
 
-.save-modal-section-hint {
-  margin: 0;
+.save-modal-field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+/* The note and tags are the reader's own: a chip says so. */
+.save-modal-private {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border: 1px solid var(--tint-neutral-line);
+  border-radius: var(--radius-sm);
+  background: var(--tint-neutral-bg);
+  color: var(--tint-neutral-fg);
   font-size: var(--fs-xs);
-  color: var(--text-tertiary);
+  font-weight: var(--fw-medium);
 }
 
 /* ── Destinations: one family of ruled rows ───────────────────────────── */
@@ -216,11 +161,21 @@
   gap: var(--space-3);
   width: 100%;
   padding: var(--space-3) var(--space-4);
-  background: var(--bg-card);
+  background: transparent;
   color: var(--text-primary);
   text-align: left;
   cursor: pointer;
   transition: background var(--transition-fast);
+}
+
+/* Read later is a ui Toggle: its chip look (a 2rem row, centred, rounded,
+   a raised shadow when pressed) is undone so it is the same row as a list's. */
+.save-modal-row[data-slot="toggle"] {
+  height: auto;
+  justify-content: flex-start;
+  border-radius: 0;
+  box-shadow: none;
+  white-space: normal;
 }
 
 .save-modal-row + .save-modal-row {
@@ -231,7 +186,8 @@
   .save-modal-row:hover { background: var(--bg-secondary); }
 }
 
-.save-modal-row.is-selected { background: var(--bg-sunken); }
+/* Selected rows keep the modal's ground; the tick says they are chosen. */
+.save-modal-row.is-selected { background: transparent; }
 
 /* The list rows' checkbox is the Base UI Checkbox (ui/checkbox.jsx): a
    focusable `role="checkbox"` box the row labels, in the tab order — the old
@@ -382,7 +338,10 @@
   color: var(--text-tertiary);
 }
 
-.save-modal-create-toggle { justify-content: flex-start; }
+/* Create a new list: a row without a tick, its icon at the row's start. */
+.save-modal-create-row {
+  color: var(--text-secondary);
+}
 
 /* ── Note and tags ────────────────────────────────────────────────────── */
 
@@ -425,11 +384,14 @@
   line-height: var(--lh-normal);
 }
 
+/* Chips and the input share one 24px line, so a row is the same height with
+   or without tags, and the empty editor stands as tall as a plain input. */
 .save-modal-tag-editor {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1) var(--space-2);
+  padding-block: var(--space-2);
   cursor: text;
 }
 
@@ -443,7 +405,8 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 2px var(--space-2);
+  height: 24px;
+  padding: 0 var(--space-2);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   background: var(--bg-secondary);
@@ -451,7 +414,8 @@
   color: var(--text-secondary);
   max-width: 100%;
   overflow: hidden;
-  animation: save-modal-chip-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  animation: save-modal-chip-in 160ms var(--ease-out-expo);
 }
 
 @keyframes save-modal-chip-in {
@@ -468,17 +432,55 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .save-modal-tag-remove:hover { color: var(--accent-danger); }
+  .save-modal-tag-chip:hover .save-modal-tag-remove { color: var(--accent-danger); }
+}
+
+/* Suggestions: dashed, so they read as offers rather than tags. */
+.save-modal-tag-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.save-modal-tag-suggestion {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast), scale 100ms var(--ease-out-cubic);
+}
+
+.save-modal-tag-suggestion:active { scale: var(--press-scale); }
+
+@media (hover: hover) and (pointer: fine) {
+  .save-modal-tag-suggestion:hover {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .save-modal-tag-suggestion { transition: none; }
+  .save-modal-tag-suggestion:active { scale: 1; }
 }
 
 /* ui/input.jsx, undressed: the editor around it is the field, so the input
    gives up its own box, height and padding and shares the line with the
    chips. */
+/* It takes whatever the last row leaves, down to a couple of characters:
+   at 8ch it jumped to a row of its own after a few chips, leaving an empty
+   line under them. Now a new row starts only when a chip needs it. */
 .save-modal-tag-input {
-  flex: 1;
+  flex: 1 1 0;
   width: auto;
-  min-width: 8ch;
-  height: auto;
+  min-width: 3ch;
+  height: 24px;
   padding: 0;
   border: none;
   border-radius: 0;
@@ -498,41 +500,26 @@
   border: none;
 }
 
-/* ── Utility group: rule 6, primary left, utilities right behind a rule ── */
-
-.save-modal-footer {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--border-subtle);
-}
-
-.save-modal-footer-label {
-  margin-right: auto;
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-
-.save-modal-export {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-
 /* ── The one commit ───────────────────────────────────────────────────── */
 
 .save-modal-savebar {
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: var(--space-3);
   padding: var(--space-4) var(--space-5);
-  border-top: 1px solid var(--border-default);
-  background: var(--bg-secondary);
-  border-radius: 0 0 var(--radius-2xl) var(--radius-2xl);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* The button fits its word, on the right; the error and the discard prompt
+   still take the bar's width. */
+.save-modal-save {
+  min-width: 96px;
+}
+
+.save-modal-save-error,
+.save-modal-discard {
+  align-self: stretch;
 }
 
 .save-modal-save-error {
@@ -551,12 +538,28 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
-  animation: save-modal-discard-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  /* The Save button's height (40px): the prompt takes its place without the
+     bar changing height, so the centred window does not shift when it
+     arrives or leaves. Its buttons stay small (inline, beside a sentence)
+     so the sentence and both fit one line. */
+  min-height: 40px;
+}
+
+/* Only what is new arrives: the sentence and Discard. Keep editing takes the
+   Save button's place, in the same ink, so it is there from the first frame;
+   fading it in made that corner flash navy, paper, navy. */
+.save-modal-discard p,
+.save-modal-discard-actions > :first-child {
+  animation: save-modal-discard-in 180ms var(--ease-out-expo);
 }
 
 @keyframes save-modal-discard-in {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: none; }
+}
+
+@keyframes save-modal-discard-fade {
+  from { opacity: 0; }
 }
 
 .save-modal-discard p {
@@ -576,14 +579,14 @@
 /* With no animation to wait for, the primitive unmounts the window at once
    and the parent hears of the close in the same tick. */
 @media (prefers-reduced-motion: reduce) {
-  .save-modal[data-open],
-  .save-modal[data-closed],
-  .save-modal-scrim[data-open],
-  .save-modal-scrim[data-closed],
-  .save-modal[data-nested-dialog-open]::after,
-  .save-modal-tag-chip,
-  .save-modal-discard {
+  .save-modal-tag-chip {
     animation: none;
+  }
+
+  /* No rise, but still a fade: the prompt arrives rather than appearing. */
+  .save-modal-discard p,
+  .save-modal-discard-actions > :first-child {
+    animation: save-modal-discard-fade 120ms var(--ease-out);
   }
 
   .save-modal-tick > svg,
@@ -593,4 +596,54 @@
     transition: none;
     transform: none;
   }
+}
+
+/* ── Views ────────────────────────────────────────────────────────────── */
+
+/* The window's content is one view at a time: the main one, or below an iPad's
+   width the create-a-list view. A view is the column the window used to be. */
+.save-modal-view {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* The phone's create view: a back arrow and its name, then the form. */
+.save-modal-view-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
+.save-modal-view-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-serif);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  letter-spacing: -0.01em;
+}
+
+.save-modal-view--forward {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.save-modal-view--forward .create-list-plain {
+  padding: 0 var(--space-5) var(--space-5);
+}
+
+/* ── Phone: a bottom drawer ───────────────────────────────────────────── */
+
+/* ui/drawer.jsx draws the sheet (paper, top radius, the bleed below the
+   edge, the safe-area inset) and lets a thumb swipe it away. This only keeps
+   the scroll inside the view, so the save bar stays at the bottom. */
+.save-modal--sheet {
+  overflow: hidden;
+}
+
+.save-modal--sheet .save-modal-header {
+  top: var(--space-4);
 }

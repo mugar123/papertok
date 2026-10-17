@@ -142,14 +142,13 @@ components:
 The interface language every screen is built in. Read this before adding a
 feature; copy these conventions rather than inventing new ones. The tokens in
 the frontmatter above are normative and mirror `src/styles/variables.css`; the
-prose says where and why to use them. The language already ships in five
+prose says where and why to use them. The language already ships in four
 reference files — look at them when a rule is unclear:
 
 | File | What it shows |
 | --- | --- |
 | `src/components/Feed/PaperCard.css` | the card, the field colour, the voices |
 | `src/components/Reader/PaperReader.css` | long-form reading, floating controls |
-| `src/components/Report/ScientificReport.css` | editorial layout, ruled columns |
 | `src/components/Layout/Navbar.css` | flat chrome, the brand thread |
 | `src/components/Search/SearchCommand.css` | overlay surfaces |
 
@@ -278,8 +277,7 @@ the voice of an index set by hand.
   label — `font: var(--mono-label); letter-spacing: var(--mono-track);`.
 
 The scale tokens are `--fs-xs … --fs-5xl`, weights `--fw-regular … bold`, line
-heights `--lh-tight / normal / relaxed`. `--font-rounded` (Nunito) is reserved
-for the one line a person wrote about themselves: a profile's bio.
+heights `--lh-tight / normal / relaxed`.
 
 ### Named Rules
 
@@ -390,10 +388,10 @@ handler or a hand-rolled overlay.
 ink frame around a yellow plate) and `halftone` (a paper plate over a 1-bit
 checker shadow) draw the eye, and a pattern on every screen stops being one.
 `engraved` is the one primary action of the landing (Get started) and of the
-welcome/onboarding foot; `halftone` is the landing's account button and its
-theme switch. Never more than one engraved button on a screen, never on icon
-buttons inside the app, never in dense screens (feed, reader, explorer,
-settings, dialogs). `buttonPatterns.test.js` holds the list; a new place is a
+welcome/onboarding foot; `halftone` is the landing's account button, its
+theme switch and the Privacy button beside it. Never more than one engraved
+button on a screen, never on icon buttons inside the app, never in dense
+screens (feed, reader, explorer, settings, dialogs). `buttonPatterns.test.js` holds the list; a new place is a
 design decision, made here and there together. The label always sits on a
 solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
 `src/components/ui/button.css`).
@@ -409,11 +407,11 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   the type does the work a container used to do.
 - **Ruled rows:** a list is hairline-separated rows on paper, each with a short
   `3px` field rule down the inner edge, a mono meta line and a serif title
-  (Explorer's `.explorer-grid`, Report's `.sr-bento`).
+  (Explorer's `.explorer-grid`).
 - **Field rule:** a `34px × 3px` bar of `var(--area-accent)` above a headline
   (`.pc-body::before`, `.ehc-info::before`).
 - **Stat block:** mono tabular-nums value over a mono uppercase label, in a
-  ruled grid (`.ehc-stats-grid`, `.sr-stat`).
+  ruled grid (`.ehc-stats-grid`).
 
 ### Inputs / Fields
 - **Style:** a hairline frame on paper, near-square.
@@ -447,11 +445,14 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   in at the top, clear of the thumb.
 
 ### The Action Rail (signature)
-The card's right-hand column of 40px tiles: Like, Comments, Save, Share, each a
-faint tint of its own colour (`--rail`) that fills on hover and gives under the
-press. Icons only, with the count under them in mono; the names stay in the DOM
-for assistive tech and in a native `title`. Mark as read, Skip and Related fold
-into a group opened from the action bar, one choice for the whole feed.
+The card's right-hand column of 40px tiles: Like, Save, Share, Connections,
+each a faint tint of its own colour (`--rail`) that fills on hover and gives
+under the press. Icons only, without counts until per-paper totals exist; the
+names stay in the DOM for assistive tech and in a native `title`. Connections
+is a toggle: wider than a phone it swaps the abstract for the citation map
+until it is pressed again; on a phone it opens the map as a sheet. A last tile, More (⋯), opens Mark as read, Skip and
+the BibTeX/RIS citation exports the way Share opens: a menu off the tile, or a
+drawer on a phone (`Feed/MoreActions.jsx`).
 
 ### Status Screens (signature)
 An error, a not-found or an empty result is a glyph on a `56px` tinted square
@@ -517,7 +518,7 @@ Tailwind v4 is wired via `@tailwindcss/vite`; utility classes (`w-full`,
 Sign-in has two entry points. Which one you reach for is decided by a single
 question: **did the user already get taken somewhere else?**
 
-**The modal — `src/components/Public/AuthPrompt.jsx`.** The in-context door,
+**The modal — `src/components/Public/AuthPrompt.tsx`.** The in-context door,
 opened by calling `requestAuthentication` (passed to screens as
 `onAuthRequired`). It does Google + GitHub sign-in on the spot and closes itself
 once a session exists, leaving the user exactly where they were. That is the
@@ -599,8 +600,8 @@ bug this pattern exists to prevent.
   actions at the foot (the price of keeping the actions where the thumb is; on
   a desktop the sheet centres instead).
 - Figures are not licence-checked; arXiv licences vary.
-- The rail's like, comment and save counts are a mock
-  (`src/components/Feed/mockRailCounts.js`) until per-paper totals exist.
+- The rail shows no like or save counts: likes and saves are stored per user,
+  and no per-paper totals exist yet.
 
 ---
 

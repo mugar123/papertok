@@ -25,7 +25,7 @@
    makes a shadcn component's `dark:` utilities mean the same thing as the
    token re-binding in variables.css. */
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
-@source '../**/*.{js,jsx}';
+@source '../**/*.{js,jsx,ts,tsx}';
 
 /* shadcn expects semantic token names. Rather than a parallel palette, they are
    aliases onto the design system above, so there is one source of colour. */

@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": [
+      "node",
+      "vite/client",
+      "vite-plugin-pwa/client"
+    ]
+  },
+  "include": [
+    "src/**/*.test.ts",
+    "src/types/**/*.d.ts"
+  ],
+  "exclude": [
+    "src/services/paperFigureService.test.ts",
+    "src/components/Institution/publisherLogos.test.ts",
+    "src/utils/aiExplanation.test.ts"
+  ]
+}

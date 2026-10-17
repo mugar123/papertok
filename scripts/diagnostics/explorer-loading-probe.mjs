@@ -177,18 +177,6 @@ try {
     console.log(JSON.stringify(report, null, 0).replace(/\},\{/g, '},\n{'));
   }
 
-  if (mode === 'comments') {
-    // The feed as a guest, the first card's comments opened: sample the
-    // skeleton and the empty state every frame through the handover.
-    await cdp.send('Page.navigate', { url });
-    const card = await pollUntil(cdp, "[...document.querySelectorAll('.pc-side-btn')].some(b => /coment|comment/i.test(b.textContent))", 45000, 250);
-    console.log('comments button:', card);
-    await cdp.eval(`(() => { window.__cs = []; const tick = () => { const l = document.querySelector('.comments-sheet-loading'); const e = document.querySelector('.comments-sheet-state'); window.__cs.push({ t: Math.round(performance.now()), skel: l ? Number(getComputedStyle(l).opacity).toFixed(2) : null, skelPos: l ? getComputedStyle(l).position : null, empty: e ? Number(getComputedStyle(e).opacity).toFixed(2) : null, emptyY: e ? getComputedStyle(e).transform : null }); if (window.__cs.length < 900) requestAnimationFrame(tick); }; requestAnimationFrame(tick); const b = [...document.querySelectorAll('.pc-side-btn')].find(x => /coment|comment/i.test(x.textContent)); b.click(); return b.textContent.trim(); })()`).then((c) => console.log('clicked:', c));
-    await sleep(6000);
-    const report = await cdp.eval(`(() => { const p = window.__cs; const changes = []; let last = ''; for (const x of p) { const k = JSON.stringify([x.skel, x.skelPos, x.empty, x.emptyY]); if (k !== last) { last = k; changes.push(x); } } return { frames: p.length, changes: changes.slice(0, 60) }; })()`);
-    console.log(JSON.stringify(report, null, 0).replace(/\},\{/g, '},\n{'));
-  }
-
   if (mode === 'feedload') {
     // The guest feed from cold: every frame, the atom veil (presence, opacity,
     // the atom's transform) against the first card's sheet, through the

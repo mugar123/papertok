@@ -24,7 +24,7 @@
          itself has always been normalized (`sanitizeAnalyticsEventUrl`), and
          under HashRouter the header was harmless too: a fragment is stripped
          from `Referer`, so it read `https://papertok.app/` whatever route you
-         were on. Real paths (src/main.jsx) put the identifier back in it.
+         were on. Real paths (src/main.tsx) put the identifier back in it.
 
          /privacy.html promises the opposite in as many words: "Reading a
          specific paper is recorded as /public/paper/:id [...] which one never
@@ -37,7 +37,7 @@
     <!-- El tema, resuelto antes del primer pintado. Decidirlo en React es
          decidirlo después de haber pintado la página en blanco: un fogonazo
          blanco en cada carga para quien lee a oscuras. Es el espejo de
-         src/utils/theme.js — si cambia uno, cambia el otro. -->
+         src/utils/theme.ts — si cambia uno, cambia el otro. -->
     <script>
       (function () {
         try {
@@ -88,7 +88,7 @@
         "inLanguage": ["en-US", "es-ES"]
       }
     </script>
-    <!-- Fonts are self-hosted (see src/main.jsx) — no more Google Fonts
+    <!-- Fonts are self-hosted (see src/main.tsx) — no more Google Fonts
          preconnect or render-blocking cross-origin stylesheet here. -->
     <!-- The first three requests of every session, in order: the auth gate
          (identitytoolkit), the Firestore listens behind it, and the Worker.
@@ -100,6 +100,6 @@
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

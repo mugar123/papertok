@@ -29,6 +29,7 @@
 .public-paper-card {
   width: 100%;
   height: 100%;
+  isolation: isolate;
 }
 
 /* The way back, signed in.
@@ -141,78 +142,15 @@
 }
 
 .public-paper-state {
-  display: flex;
   width: min(520px, calc(100% - 40px));
   height: 100%;
   margin: 0 auto;
-  align-items: center;
   justify-content: center;
-  flex-direction: column;
-  gap: 14px;
-  /* 32px, not the 88px that used to stand in for the bar: the page now pads
-     the bar off above this box, and the centre stays where it was. */
-  padding: 32px 0;
-  text-align: center;
-}
-
-.public-paper-state h1 {
-  margin: 0;
-  font-family: var(--font-heading);
-  font-size: clamp(24px, 4vw, 34px);
-  line-height: 1.15;
-  letter-spacing: 0;
-}
-
-.public-paper-state p {
-  max-width: 440px;
-  margin: 0;
-  color: var(--text-secondary);
-  line-height: 1.6;
-}
-
-.public-paper-state-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.public-paper-primary-action,
-.public-paper-secondary-action {
-  display: inline-flex;
-  min-height: 42px;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 0 15px;
-  border-radius: var(--radius-md);
-  font-size: 13px;
-  font-weight: 750;
-}
-
-.public-paper-primary-action {
-  color: var(--text-inverse);
-  background: var(--accent-primary);
-}
-
-.public-paper-secondary-action {
-  color: var(--text-primary);
-  border: 1px solid var(--border-default);
-  background: var(--bg-secondary);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .public-paper-nav-button:hover,
-  .public-paper-secondary-action:hover {
+  .public-paper-nav-button:hover {
     color: var(--text-primary);
     background: var(--bg-glass-hover);
-  }
-
-  /* Same orphan the analytics banner's CSS carried (retired 2026-09-17), same
-     fix: the button rests on --accent-primary, so it hovers on that accent's
-     hover. */
-  .public-paper-primary-action:hover {
-    background: var(--accent-primary-hover);
   }
 }

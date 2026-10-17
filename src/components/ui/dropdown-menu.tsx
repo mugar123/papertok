@@ -1,0 +1,50 @@
+import type { StyledProps } from './props.ts';
+import type { ComponentProps } from 'react';
+
+import { Menu as MenuPrimitive } from '@base-ui/react/menu';
+import { cn } from '../../lib/utils.ts';
+
+/**
+ * A menu of actions: `role="menu"`, arrow keys, typeahead, submenus. The
+ * Explorer's sort menu and anything else that lists commands. Not for a
+ * tray of settings that are not commands — that is a Popover.
+ */
+function DropdownMenu(props: ComponentProps<typeof MenuPrimitive.Root>) {
+  return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
+}
+
+function DropdownMenuTrigger(props: ComponentProps<typeof MenuPrimitive.Trigger>) {
+  return <MenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props} />;
+}
+
+function DropdownMenuContent({ align = 'start', alignOffset = 0, side = 'bottom', sideOffset = 6, className, ...props }: StyledProps<typeof MenuPrimitive.Popup> & Pick<ComponentProps<typeof MenuPrimitive.Positioner>, 'align' | 'alignOffset' | 'side' | 'sideOffset'>) {
+  return (
+    <MenuPrimitive.Portal>
+      <MenuPrimitive.Positioner
+        className="isolate z-[12055] outline-none"
+        align={align}
+        alignOffset={alignOffset}
+        side={side}
+        sideOffset={sideOffset}
+      >
+        <MenuPrimitive.Popup
+          data-slot="dropdown-menu-content"
+          className={cn(
+            'max-h-(--available-height) min-w-40 origin-(--transform-origin) overflow-y-auto overflow-x-hidden',
+            'rounded-lg border border-border bg-card p-1 text-[0.8125rem] text-foreground shadow-[var(--shadow-lg)] outline-none',
+            'motion-safe:transition-[opacity,scale] motion-safe:duration-150 motion-safe:ease-[var(--ease-out-expo)]',
+            'data-starting-style:opacity-0 data-starting-style:scale-[0.97] data-ending-style:opacity-0 data-ending-style:scale-[0.98]',
+            className,
+          )}
+          {...props}
+        />
+      </MenuPrimitive.Positioner>
+    </MenuPrimitive.Portal>
+  );
+}
+
+export {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+};

@@ -1,0 +1,39 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { guestFeedLoadDecision } from './useGuestFeed.ts';
+
+// Behind the mandatory welcome sheet the guest feed used to load the default
+// sample — six fields the visitor never chose, with bioRxiv, enrichment,
+// figures and KaTeX — about twenty requests for a backdrop nobody can read,
+// thrown away the moment the visitor answered (audit 2026-09-23, issue 11a;
+// decision of 2026-09-23: load nothing until the answer).
+test('nothing loads until the feed is enabled, and the first load after it is not a refresh', () => {
+  assert.equal(guestFeedLoadDecision({ enabled: false, previousKey: null, planKey: 'default' }), null);
+  assert.deepEqual(guestFeedLoadDecision({ enabled: true, previousKey: null, planKey: 'cs+med' }), { refresh: false });
+  assert.deepEqual(guestFeedLoadDecision({ enabled: true, previousKey: 'cs+med', planKey: 'cs+med+bio' }), { refresh: true });
+  assert.equal(guestFeedLoadDecision({ enabled: true, previousKey: 'cs+med', planKey: 'cs+med' }), null);
+});
+
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+
+test('the guest page enables its feed once the visitor has answered', () => {
+  const page = stripComments(readFileSync(new URL('../components/Public/GuestFeedPage.tsx', import.meta.url), 'utf8'));
+  // `firstVisit` is `interests === null`: the welcome page is up until then.
+  assert.match(page, /const firstVisit = interests === null;/);
+  assert.match(page, /const guestFeed = useGuestFeed\(\{ areas, topics, enabled: !firstVisit \}\);/);
+  // The welcome asks for no account, but an existing one can sign in from it
+  // through the same door as the feed's header.
+  assert.match(page, /<GuestWelcome\s+initialAreas=\{NO_AREAS\}\s+onComplete=\{submitInterests\}\s+onSignIn=\{\(\) => requestAccount\('other'\)\}\s+\/>/);
+  // The areas sheet keeps what the welcome stored for the account to come.
+  assert.match(page, /readingLevel: interests\?\.readingLevel,\s*emailDigest: interests\?\.emailDigest === true,/);
+
+  const hook = stripComments(readFileSync(new URL('./useGuestFeed.ts', import.meta.url), 'utf8'));
+  assert.match(hook, /export function useGuestFeed\(\{ areas = \[\], topics = \[\], enabled = true \}: \{ areas\?: readonly string\[\]; topics\?: readonly string\[\]; enabled\?: boolean \} = \{\}\)/);
+  assert.match(hook, /const decision = guestFeedLoadDecision\(\{ enabled, previousKey, planKey: plan\.key \}\);\s*if \(!decision\) return undefined;/);
+  assert.match(hook, /load\(plan, decision\.refresh \? \{ refresh: true, forceRefresh: false \} : \{\}\);/);
+
+  const app = stripComments(readFileSync(new URL('../App.tsx', import.meta.url), 'utf8'));
+  const feedRoute = app.slice(app.indexOf('path="/feed"'), app.indexOf('path="/lists"'));
+  assert.match(feedRoute, /<GuestFeedPage\s+onAuthRequired=\{requestAuthentication\}\s+onOpenPdf=\{openPdf\}/);
+});

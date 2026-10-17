@@ -37,7 +37,7 @@ and the photo is still at 0.99.
 The cause is two independent transitions on one handover:
 
 ```jsx
-// src/components/Explorer/EntityExplorer.jsx:1385-1404 — current
+// src/components/Explorer/EntityExplorer.tsx:1385-1404 — current
 <div className="ehc-visual-slot">
   <motion.div
     className="ehc-icon"
@@ -91,7 +91,7 @@ latency, not the animation, and this plan does not address it.
 One handover, one clock, complementary opacities.
 
 ```jsx
-/* target — src/components/Explorer/EntityExplorer.jsx */
+/* target — src/components/Explorer/EntityExplorer.tsx */
 /* the tile */
 transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
 
@@ -130,7 +130,7 @@ as one thing replacing another in depth rather than a flat dissolve.
 
 ## Steps
 
-1. In `src/components/Explorer/EntityExplorer.jsx`, on the `motion.div.ehc-icon`
+1. In `src/components/Explorer/EntityExplorer.tsx`, on the `motion.div.ehc-icon`
    (currently line **1389**), change `duration: 0.32` to `duration: 0.28`. Leave
    the easing array, the `prefersReducedMotion` ternary, `initial={false}`,
    `animate` and `aria-hidden` exactly as they are.

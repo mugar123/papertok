@@ -1,0 +1,88 @@
+import type { StyledProps } from './props.ts';
+import type { ComponentProps } from 'react';
+
+import { Popover as PopoverPrimitive } from '@base-ui/react/popover';
+import { cn } from '../../lib/utils.ts';
+
+/**
+ * A non-modal panel anchored to its trigger: a preferences tray, a date
+ * picker, an export card. Base UI positions it (`--transform-origin` is
+ * where it grows from), closes it on outside press and Escape, and keeps
+ * focus sane. Transitions, not animations, because a popover the user
+ * closes mid-arrival should turn back smoothly.
+ */
+function Popover(props: ComponentProps<typeof PopoverPrimitive.Root>) {
+  return <PopoverPrimitive.Root data-slot="popover" {...props} />;
+}
+
+function PopoverTrigger(props: ComponentProps<typeof PopoverPrimitive.Trigger>) {
+  return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />;
+}
+
+function PopoverClose(props: ComponentProps<typeof PopoverPrimitive.Close>) {
+  return <PopoverPrimitive.Close data-slot="popover-close" {...props} />;
+}
+
+/** The popup's name (an `<h2>`); Base UI points `aria-labelledby` at it. */
+function PopoverTitle(props: ComponentProps<typeof PopoverPrimitive.Title>) {
+  return <PopoverPrimitive.Title data-slot="popover-title" {...props} />;
+}
+
+/** Read out with the name when the popup opens, through `aria-describedby`. */
+function PopoverDescription(props: ComponentProps<typeof PopoverPrimitive.Description>) {
+  return <PopoverPrimitive.Description data-slot="popover-description" {...props} />;
+}
+
+function PopoverContent({
+  className,
+  align = 'center',
+  alignOffset = 0,
+  side = 'bottom',
+  sideOffset = 6,
+  positionerClassName,
+  ...props
+}: StyledProps<typeof PopoverPrimitive.Popup> & Pick<ComponentProps<typeof PopoverPrimitive.Positioner>, 'align' | 'alignOffset' | 'side' | 'sideOffset'> & { positionerClassName?: string }) {
+  return (
+    <PopoverPrimitive.Portal>
+      <PopoverPrimitive.Positioner
+        align={align}
+        alignOffset={alignOffset}
+        side={side}
+        sideOffset={sideOffset}
+        className={cn('isolate z-[12055]', positionerClassName)}
+      >
+        <PopoverPrimitive.Popup
+          data-slot="popover-content"
+          className={cn(
+            'w-72 origin-(--transform-origin) rounded-lg border border-border bg-card p-3 text-[0.8125rem] text-foreground shadow-[var(--shadow-lg)] outline-none',
+            /* Two properties, two curves. Driving both from one expo-out was
+               measured by frame on the reader's export card: 0 → 0.53 opacity
+               in the first 16ms, then 116ms crawling from almost-there to
+               there. That curve is right for the growth — it arrives and
+               settles — and wrong for the fade, where spending half the
+               distance in one frame is a flash, not an appearance. */
+            /* `translate` is listed but left unset: a small popover has nowhere
+               to travel from, and one that does — the reader's export card —
+               sets its own distance in Export.css. Naming the property here is
+               what makes that a movement rather than a jump. */
+            'motion-safe:[transition:opacity_150ms_linear,scale_180ms_var(--ease-out-expo),translate_180ms_var(--ease-out-expo)]',
+            'motion-reduce:[transition:opacity_150ms_linear]',
+            'motion-safe:data-ending-style:[transition:opacity_120ms_linear,scale_120ms_var(--ease-out-expo),translate_120ms_var(--ease-out-expo)]',
+            'data-starting-style:opacity-0 data-starting-style:scale-[0.96] data-ending-style:opacity-0 data-ending-style:scale-[0.98]',
+            className,
+          )}
+          {...props}
+        />
+      </PopoverPrimitive.Positioner>
+    </PopoverPrimitive.Portal>
+  );
+}
+
+export {
+  Popover,
+  PopoverClose,
+  PopoverContent,
+  PopoverDescription,
+  PopoverTitle,
+  PopoverTrigger,
+};

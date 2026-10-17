@@ -1,6 +1,6 @@
 import { renderToString } from 'react-dom/server';
 import React from 'react';
-import EntityExplorer from '../../src/components/Explorer/EntityExplorer';
+import EntityExplorer from '../../src/components/Explorer/EntityExplorer.tsx';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import fetch from 'node-fetch';
 

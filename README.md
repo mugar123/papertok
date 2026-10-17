@@ -124,13 +124,16 @@ Usage analytics use two services, both without cookies and behind one opt-out. *
 Analytics** counts visits, pages and countries. **PostHog**'s EU cloud receives product
 events (searches, follows, saves, rewrites and so on) in cookieless mode, through the
 `/ingest` rewrite in `vercel.json`, and only from the production site. What is sent, and
-what never is, lives in `src/services/analyticsService.js`.
+what never is, lives in `src/services/analyticsService.ts`.
 
 A **Cloudflare Worker** is used for server-side functionality such as caching scientific queries, protecting provider credentials and proxying APIs that should not be called directly from the browser. It also serves the AI features — plain-words rewriting and passage explanations — behind a server-enforced daily allowance that reserves usage before the model runs and refunds it on failure.
 
 This keeps the main application lightweight while allowing integrations that require server-side secrets.
 
 ## Running PaperTok locally
+
+Use Node 22.18 or later (CI uses Node 22; local checks also cover Node 24).
+Application code uses strict TypeScript; Vite and Wrangler produce the builds.
 
 Clone the repository:
 
@@ -164,6 +167,10 @@ and run the test suite with:
 ```bash
 npm test
 ```
+
+`npm run check` runs the secret scan, lint, type checks, application tests,
+production build and Worker dry-run. Run `npm run test:rules` separately with
+Java 21 or later and firebase-tools; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Some integrations require additional environment variables or API credentials. The frontend can still be developed independently, while server-side integrations are handled through the Worker.
 
@@ -209,7 +216,6 @@ Current areas of development include:
 - improving recommendation quality
 - expanding and improving scientific data sources
 - better deduplication across providers
-- scientific discovery and trend tools
 - offline support for the installed app (a service worker)
 - a three-state theme control (light / system / dark)
 - performance and reliability

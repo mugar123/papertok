@@ -1,4 +1,4 @@
-import { fetchPapersByDois } from '../../src/services/openAlexService.js';
+import { fetchPapersByDois } from '../../src/services/openAlexService.ts';
 fetchPapersByDois([
     '10.3390/condmat10020025',
     '10.3390/ijms25052546',

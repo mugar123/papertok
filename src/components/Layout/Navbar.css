@@ -107,7 +107,7 @@
   padding: 0 var(--space-3);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  background: var(--bg-secondary);
+  background: var(--bg-primary);
   color: var(--text-tertiary);
   font-size: var(--fs-sm);
   cursor: pointer;
@@ -126,7 +126,7 @@
    above is the whole animation: it fades in on open and back out on close. */
 .navbar-search.is-open {
   border-color: var(--border-ink);
-  background: var(--bg-primary);
+  background: var(--bg-secondary);
   color: var(--text-secondary);
 }
 
@@ -143,7 +143,7 @@
   padding: 1px 5px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
-  background: var(--bg-primary);
+  background: var(--bg-secondary);
   color: var(--text-tertiary);
   font: 500 0.6875rem/1.4 var(--font-mono);
 }
@@ -151,7 +151,7 @@
 @media (hover: hover) and (pointer: fine) {
   .navbar-search:hover {
     border-color: var(--border-strong);
-    background: var(--bg-primary);
+    background: var(--bg-secondary);
   }
 }
 
@@ -429,24 +429,6 @@
     gap: var(--space-2);
   }
 
-  /* El rótulo sale de la VISTA, no del árbol. Con `display: none` entre 481 y
-     768 px el botón se quedaba con la marca «PT» por toda compañía, y la marca
-     es `aria-hidden`: sin el `aria-label` que llevaba el botón, ese tramo —que
-     ninguna de las dos anchuras de la auditoría mira— se habría quedado sin
-     nombre. Recortado sigue midiendo 1x1 en posición absoluta, así que la
-     marca no se mueve: 26.0x26.0 medidos a 700 y a 520, iguales que antes. */
-  .navbar-brand-word {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
-
   .navbar-links {
     gap: 0;
   }
@@ -466,14 +448,6 @@
   }
 }
 
-/* On phones the brand yields its corner to the links: "For you" wraps onto
-   two lines at ≤430px with the PT mark present, and "For you" is itself a
-   route home, so the mark buys nothing the row can't already do. */
-@media (max-width: 480px) {
-  .navbar-brand {
-    display: none;
-  }
-}
 
 @media (max-width: 420px) {
   .navbar-link {
@@ -487,8 +461,8 @@
   }
 }
 
-/* The last squeeze: below 380px even a hidden brand leaves the three links
-   short of one line, so the row gives up its remaining slack instead. */
+/* The last squeeze: below 380px the row gives up its remaining slack so the
+   logo and both links keep one line. */
 @media (max-width: 380px) {
   .navbar-inner {
     padding: 0 var(--space-2);
@@ -501,6 +475,24 @@
   .navbar-right {
     padding-left: var(--space-1);
     margin-left: 0;
+  }
+}
+
+/* The logo stays on every width: with two links the bar has room for the
+   whole wordmark down to 360px (measured at 375: 64px spare; at 320 only 9px).
+   Below 360 it is the PT mark alone. The word is clipped out of view, not
+   removed: the mark is `aria-hidden`, so the word is the button's name. */
+@media (max-width: 359px) {
+  .navbar-brand-word {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 }
 

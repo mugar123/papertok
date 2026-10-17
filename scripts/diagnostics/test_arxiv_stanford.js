@@ -1,6 +1,6 @@
 global.import = { meta: { env: { DEV: false } } };
-import { fetchPapersByIds } from '../../src/services/arxivService.js';
-import { getWorksByEntity } from '../../src/services/openAlexService.js';
+import { fetchPapersByIds } from '../../src/services/arxivService.ts';
+import { getWorksByEntity } from '../../src/services/openAlexService.ts';
 
 getWorksByEntity('institution', 'I97018004').then(arxivIds => {
   console.log("Fetched IDs from OpenAlex:", arxivIds);

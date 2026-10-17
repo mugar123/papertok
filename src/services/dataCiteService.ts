@@ -1,0 +1,224 @@
+import type { PaperResearchResource } from '../models/Paper.ts';
+type ResourceKind = 'dataset' | 'software' | 'material' | 'version';
+interface DataCiteAttributes {
+  doi?: string; titles?: Array<{ title?: string }>; types?: { resourceTypeGeneral?: string; resourceType?: string };
+  relatedIdentifiers?: Array<{ relatedIdentifier?: string; relatedIdentifierType?: string; relationType: string; resourceTypeGeneral?: string }>;
+  url?: string; publisher?: string | { name?: string }; publicationYear?: number | string;
+  viewCount?: number; downloadCount?: number; citationCount?: number;
+}
+interface DataCiteRecord { id?: string; attributes?: DataCiteAttributes; }
+export interface DataCiteResource extends PaperResearchResource { kind: ResourceKind; doi?: string; relationType: string; resourceType: string; publisher: string; year: number | null; viewCount: number; downloadCount: number; citationCount: number; }
+interface CacheEntry { value: DataCiteResource[]; timestamp: number; ttl: number; }
+
+import { normalizeDoi } from './unpaywallService.ts';
+import { safeCatalogUrl } from '../utils/externalUrl.ts';
+import { withRequestDeadline } from '../utils/requestDeadline.ts';
+
+const API_BASE = 'https://api.datacite.org/dois';
+const CACHE_PREFIX = 'papertok_datacite_';
+const POSITIVE_TTL = 7 * 24 * 60 * 60 * 1000;
+const NEGATIVE_TTL = 24 * 60 * 60 * 1000;
+const MEMORY_CACHE = new Map<string, CacheEntry>();
+const MAX_RESOURCES = 8;
+
+const RESOURCE_TYPES = Object.freeze({
+  dataset: new Set(['dataset']),
+  software: new Set(['software', 'workflow', 'computationalnotebook']),
+  material: new Set(['collection', 'physicalobject', 'image', 'audiovisual', 'interactiveresource', 'model', 'instrument']),
+});
+
+const VERSION_RELATIONS = new Set([
+  'HasVersion', 'IsVersionOf', 'IsNewVersionOf', 'IsPreviousVersionOf', 'IsIdenticalTo',
+]);
+
+const DIRECT_RELATIONS = new Set([
+  ...VERSION_RELATIONS,
+  'HasPart', 'IsPartOf', 'IsSupplementTo', 'IsSupplementedBy', 'IsDocumentedBy',
+  'Documents', 'IsCompiledBy', 'Compiles', 'IsSourceOf', 'IsDerivedFrom', 'IsMetadataFor', 'HasMetadata',
+]);
+
+const TITLE_STOP_WORDS = new Set([
+  'about', 'associated', 'data', 'dataset', 'datos', 'from', 'para', 'paper', 'related',
+  'sobre', 'supplement', 'supplementary', 'the', 'with', 'this', 'that', 'using',
+]);
+
+function getResourceKind(resourceTypeGeneral: unknown, relationType: string): ResourceKind | null {
+  const normalizedType = String(resourceTypeGeneral || '').toLowerCase().replace(/[^a-z]/g, '');
+  if (VERSION_RELATIONS.has(relationType)) return 'version';
+  return Object.entries(RESOURCE_TYPES).find(([, values]) => values.has(normalizedType))?.[0] as ResourceKind || null;
+}
+
+function getResourceUrl(identifier: unknown, identifierType: unknown) {
+  if (String(identifierType || '').toUpperCase() === 'DOI') {
+    const doi = normalizeDoi(identifier);
+    return doi ? `https://doi.org/${doi}` : '';
+  }
+  return safeCatalogUrl(identifier);
+}
+
+function getTitle(attributes: DataCiteAttributes, kind: ResourceKind) {
+  const title = attributes?.titles?.find(candidate => candidate?.title)?.title;
+  return String(title || '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    || ({ dataset: 'Associated dataset', software: 'Associated software', material: 'Associated material', version: 'Related version' }[kind]);
+}
+
+function getMeaningfulTitleTokens(value: unknown) {
+  return new Set(String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(token => token.length >= 5 && !TITLE_STOP_WORDS.has(token)));
+}
+
+function hasMeaningfulTitleOverlap(paperTitle: string, resourceTitle: string) {
+  if (!paperTitle) return true;
+  const paperTokens = getMeaningfulTitleTokens(paperTitle);
+  const resourceTokens = getMeaningfulTitleTokens(resourceTitle);
+  const shared = [...paperTokens].filter(token => resourceTokens.has(token));
+  return shared.length >= 2 || shared.some(token => token.length >= 12);
+}
+
+export function mapDataCiteRecord(record: DataCiteRecord, targetDoi: unknown, targetTitle = ''): DataCiteResource | null {
+  const attributes = record?.attributes;
+  const doi = normalizeDoi(attributes?.doi || record?.id);
+  const normalizedTarget = normalizeDoi(targetDoi);
+  if (!attributes || !doi || doi === normalizedTarget) return null;
+
+  const matchingRelation = (attributes.relatedIdentifiers || []).find(relation => (
+    normalizeDoi(relation?.relatedIdentifier) === normalizedTarget
+  ));
+  if (!matchingRelation || !DIRECT_RELATIONS.has(matchingRelation.relationType)) return null;
+
+  const kind = getResourceKind(attributes.types?.resourceTypeGeneral, matchingRelation.relationType);
+  if (!kind) return null;
+  const title = getTitle(attributes, kind);
+  if (!hasMeaningfulTitleOverlap(targetTitle, title)) return null;
+
+  const url = safeCatalogUrl(attributes.url) || `https://doi.org/${doi}`;
+  return {
+    id: doi,
+    doi,
+    kind,
+    title,
+    relationType: matchingRelation.relationType || '',
+    resourceType: attributes.types?.resourceType || attributes.types?.resourceTypeGeneral || '',
+    publisher: typeof attributes.publisher === 'string' ? attributes.publisher : attributes.publisher?.name || '',
+    year: Number(attributes.publicationYear) || null,
+    url,
+    viewCount: Number(attributes.viewCount) || 0,
+    downloadCount: Number(attributes.downloadCount) || 0,
+    citationCount: Number(attributes.citationCount) || 0,
+  };
+}
+
+export function mapDataCiteDirectRelations(record: DataCiteRecord, targetDoi: unknown): DataCiteResource[] {
+  const attributes = record?.attributes;
+  if (!attributes) return [];
+
+  return (attributes.relatedIdentifiers || []).flatMap(relation => {
+    if (!DIRECT_RELATIONS.has(relation?.relationType)) return [];
+    const kind = getResourceKind(relation.resourceTypeGeneral, relation.relationType);
+    if (!kind) return [];
+    const url = getResourceUrl(relation.relatedIdentifier, relation.relatedIdentifierType);
+    if (!url) return [];
+    const relatedDoi = String(relation.relatedIdentifierType || '').toUpperCase() === 'DOI'
+      ? normalizeDoi(relation.relatedIdentifier)
+      : '';
+    if (relatedDoi && relatedDoi === normalizeDoi(targetDoi)) return [];
+    return [{
+      id: relatedDoi || url,
+      doi: relatedDoi || undefined,
+      kind,
+      title: ({ dataset: 'Associated dataset', software: 'Associated software', material: 'Associated material', version: 'Related version' }[kind]),
+      relationType: relation.relationType,
+      resourceType: relation.resourceTypeGeneral || '',
+      publisher: '',
+      year: null,
+      url,
+      viewCount: 0,
+      downloadCount: 0,
+      citationCount: 0,
+    }];
+  });
+}
+
+function readCache(doi: string) {
+  const memory = MEMORY_CACHE.get(doi);
+  if (memory && Date.now() - memory.timestamp < memory.ttl) return memory.value;
+  if (typeof localStorage === 'undefined') return undefined;
+  try {
+    const stored = JSON.parse(localStorage.getItem(`${CACHE_PREFIX}${doi}`)!) as CacheEntry | null;
+    if (stored && Date.now() - stored.timestamp < stored.ttl) {
+      MEMORY_CACHE.set(doi, stored);
+      return stored.value;
+    }
+  } catch { /* Cache is optional. */ }
+  return undefined;
+}
+
+function writeCache(doi: string, value: DataCiteResource[]) {
+  const entry = { value, timestamp: Date.now(), ttl: value.length > 0 ? POSITIVE_TTL : NEGATIVE_TTL };
+  MEMORY_CACHE.set(doi, entry);
+  if (typeof localStorage !== 'undefined') {
+    try { localStorage.setItem(`${CACHE_PREFIX}${doi}`, JSON.stringify(entry)); } catch { /* Cache is optional. */ }
+  }
+}
+
+/**
+ * Exported for its regression test, which needs a deadline short enough to wait
+ * for: the real ones are seven seconds.
+ */
+export async function fetchJson<T>(url: string | URL, timeoutMs = 7000): Promise<T | null> {
+  const response = await fetch(url, withRequestDeadline({
+    headers: { Accept: 'application/vnd.api+json' },
+  }, timeoutMs));
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`DataCite Error: ${response.status}`);
+  return response.json();
+}
+
+function deduplicateResources(resources: DataCiteResource[]) {
+  const seen = new Set<string>();
+  const priority = { dataset: 0, software: 1, material: 2, version: 3 };
+  return resources
+    .filter(resource => {
+      const key = resource.doi || resource.url;
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => (
+      (priority[a.kind] ?? 9) - (priority[b.kind] ?? 9)
+      || (b.downloadCount + b.viewCount + b.citationCount) - (a.downloadCount + a.viewCount + a.citationCount)
+    ))
+    .slice(0, MAX_RESOURCES);
+}
+
+export async function getRelatedResearchResources(rawDoi: unknown, { title = '' } = {}) {
+  const doi = normalizeDoi(rawDoi);
+  if (!doi || !doi.startsWith('10.')) return [];
+  const cached = readCache(doi);
+  if (cached !== undefined) return cached;
+
+  const reverseUrl = new URL(API_BASE);
+  reverseUrl.searchParams.set('query', `relatedIdentifiers.relatedIdentifier:"${doi}" AND relatedIdentifiers.relationType:(HasVersion OR IsVersionOf OR IsNewVersionOf OR IsPreviousVersionOf OR IsIdenticalTo OR HasPart OR IsPartOf OR IsSupplementTo OR IsSupplementedBy OR IsDocumentedBy OR Documents OR IsCompiledBy OR Compiles OR IsSourceOf OR IsDerivedFrom OR IsMetadataFor OR HasMetadata) AND types.resourceTypeGeneral:(Dataset OR Software OR Workflow OR ComputationalNotebook OR Collection OR PhysicalObject OR Image OR Audiovisual OR InteractiveResource OR Model OR Instrument)`);
+  reverseUrl.searchParams.set('page[size]', '20');
+
+  const [directResult, reverseResult] = await Promise.allSettled([
+    fetchJson<{ data: DataCiteRecord }>(`${API_BASE}/${encodeURIComponent(doi)}`),
+    fetchJson<{ data?: DataCiteRecord[] }>(reverseUrl),
+  ]);
+  const directResources = directResult.status === 'fulfilled' && directResult.value
+    ? mapDataCiteDirectRelations(directResult.value.data, doi)
+    : [];
+  const reverseResources = reverseResult.status === 'fulfilled'
+    ? (reverseResult.value?.data || []).map(record => mapDataCiteRecord(record, doi, title)).filter(Boolean) as DataCiteResource[]
+    : [];
+  const resources = deduplicateResources([...reverseResources, ...directResources]);
+  writeCache(doi, resources);
+  return resources;
+}

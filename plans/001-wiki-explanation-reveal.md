@@ -29,7 +29,7 @@ teleport.
 The swap is a bare ternary with no presence wrapper and no key:
 
 ```jsx
-// src/components/Explorer/EntityExplorer.jsx:1873-1900 — current
+// src/components/Explorer/EntityExplorer.tsx:1873-1900 — current
 {isWikiRequestPending && !wikiDescription ? (
   <div className="ehc-wiki-skeleton" role="status" aria-label={isEnglish ? 'Loading topic details' : 'Cargando información del tema'}>
     <span />
@@ -78,7 +78,7 @@ house arrival curve, and the text is the slower of the two so it is what the eye
 lands on:
 
 ```jsx
-/* target — src/components/Explorer/EntityExplorer.jsx */
+/* target — src/components/Explorer/EntityExplorer.tsx */
 <AnimatePresence mode="wait" initial={false}>
   {isWikiRequestPending && !wikiDescription ? (
     <motion.div
@@ -137,11 +137,11 @@ fight.
 - **Arrivals ride `[0.16, 1, 0.3, 1]`, exits ride `[0.4, 0, 1, 1]`.** This is a
   documented house rule; the rationale is at
   `src/components/Comments/CommentsSheet.jsx:185` and
-  `src/components/Layout/PageTransition.jsx:40`.
+  `src/components/Layout/PageTransition.tsx:40`.
 - **Every Framer value is branched on `prefersReducedMotion`.** The variable is
   already in scope in this component — it is used at
   `EntityExplorer.jsx:1856-1866` and `:1389`.
-- **Exemplar to imitate**: `src/components/Explorer/EntityExplorer.jsx:1385-1412`
+- **Exemplar to imitate**: `src/components/Explorer/EntityExplorer.tsx:1385-1412`
   — the hero's visual slot, which cross-fades the tinted tile to the institution's
   photograph with `AnimatePresence`, a `key`, branched transitions and the house
   curve. Same file, same hero, same shape of problem.
@@ -149,7 +149,7 @@ fight.
 
 ## Steps
 
-1. In `src/components/Explorer/EntityExplorer.jsx`, confirm `AnimatePresence` and
+1. In `src/components/Explorer/EntityExplorer.tsx`, confirm `AnimatePresence` and
    `motion` are already imported at the top of the file. They are — the file uses
    both extensively. Do not add an import.
 
