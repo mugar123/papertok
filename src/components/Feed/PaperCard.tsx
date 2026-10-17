@@ -207,6 +207,9 @@ const RELATED_PAPER_HYDRATION_TIMEOUT_MS = 8_000;
 // delay every loading placeholder waits: a cached answer, or a fast one, goes
 // straight from the record's label to the library's.
 const LIBRARY_CHECKING_DELAY_MS = 320;
+// Once on screen, "Checking" stays at least this long, so it reads as a step
+// rather than a flicker when the answer lands just after it appeared.
+const LIBRARY_CHECKING_MIN_MS = 1_000;
 // How long a press during "Checking" waits for the library before opening
 // what the record offers: under the browser's ~5 s of user activation, after
 // which the new tab would be blocked.
@@ -458,8 +461,8 @@ const PaperCard = memo(function PaperCard({
   // and which way: forward to "Checking" or the library, back to the record.
   const [actionPush, setActionPush] = useState<{ from: 'record' | 'checking'; dir: 'forward' | 'back' } | null>(null);
   const readButtonRef = useRef<HTMLButtonElement | null>(null);
-  // The button's width before its label changes, and whether the change pushes.
-  const readButtonFrom = useRef<{ width: number; push: boolean } | null>(null);
+  // The button's width before its label changes, for the push to travel from.
+  const readButtonFrom = useRef<number | null>(null);
   const [linkedResources, setLinkedResources] = useState<{ paperId: string | null; items: PaperResearchResource[] }>({ paperId: null, items: [] });
   const [isCardVisible, setIsCardVisible] = useState(false);
   // Whether the clippings are lit. Deliberately NOT `isCardVisible`: the two
@@ -1410,37 +1413,40 @@ const PaperCard = memo(function PaperCard({
     }
     const paperId = paper.id;
     const { domain } = institution;
-    // Each label change records the button's width first, for the layout
-    // effect below to travel from.
-    const measure = (push: boolean) => {
-      const width = readButtonRef.current?.offsetWidth;
-      readButtonFrom.current = width ? { width, push } : null;
+    // Every label change is a push, and records the button's width first
+    // for the layout effect below to travel from.
+    const push = (from: 'record' | 'checking', dir: 'forward' | 'back') => {
+      readButtonFrom.current = readButtonRef.current?.offsetWidth || null;
+      setActionPush({ from, dir });
     };
-    let checking = false;
+    let checkingSince = 0;
+    let settle: ReturnType<typeof setTimeout> | undefined;
     const slow = setTimeout(() => {
-      checking = true;
-      measure(true);
-      setActionPush({ from: 'record', dir: 'forward' });
+      checkingSince = Date.now();
+      push('record', 'forward');
       setCheckingLibraryFor(`${paperId}|${domain}`);
     }, LIBRARY_CHECKING_DELAY_MS);
     findInstitutionAccess(paper.doi, institution).then(access => {
       clearTimeout(slow);
       if (!active) return;
       const entitled = access?.status === 'entitled';
-      if (checking) {
+      const answer = () => {
         // "Checking" leaves either way: forward to the library, or back to
-        // the record's label, where it came from.
-        measure(true);
-        setActionPush({ from: 'checking', dir: entitled ? 'forward' : 'back' });
-      } else if (entitled) {
-        measure(false);
-      }
-      setCheckingLibraryFor(null);
-      if (access) setInstitutionAccess({ paperId, domain, access });
+        // the record's label, where it came from. A quick answer pushes the
+        // record's label straight out to the library's: the same movement,
+        // without a wait for something already known.
+        if (checkingSince) push('checking', entitled ? 'forward' : 'back');
+        else if (entitled) push('record', 'forward');
+        setCheckingLibraryFor(null);
+        if (access) setInstitutionAccess({ paperId, domain, access });
+      };
+      if (checkingSince) settle = setTimeout(answer, Math.max(0, LIBRARY_CHECKING_MIN_MS - (Date.now() - checkingSince)));
+      else answer();
     });
     return () => {
       active = false;
       clearTimeout(slow);
+      clearTimeout(settle);
       // A card that stops being looked at mid-check starts over when it is
       // looked at again, rather than coming back already saying "Checking".
       setCheckingLibraryFor(null);
@@ -1557,29 +1563,27 @@ const PaperCard = memo(function PaperCard({
     ? ('Finding access...')
     : restingActionLabel;
   // What the phone shows, where the full label does not fit: its first word
-  // ("Read", "Source"), or the library's name alone, since "Via" says nothing
-  // by itself. Derived rather than written twice, so it cannot drift from the
+  // ("Read", "Source"), or the library's label whole, since the name alone
+  // does not say the paper opens through it (asked for on 2026-10-17).
+  // Derived rather than written twice, so it cannot drift from the
   // full label, which is the accessible name and so always contains the word
   // on screen (WCAG 2.5.3). While access is being looked up the word is hidden
   // under the spinner (PaperCard.css), so the resting one keeps the button's
   // width: "Finding" would not fit the row at 360px.
-  const primaryActionShortLabel = libraryLabel || restingActionLabel.split(' ')[0];
+  const primaryActionShortLabel = libraryLabel ? restingActionLabel : restingActionLabel.split(' ')[0];
   const actionFace = libraryLabel ? 'library' : isCheckingLibrary ? 'checking' : 'record';
-  const actionFaceClass = libraryLabel ? ' pc-action-swap' : isCheckingLibrary ? ' pc-action-checking' : '';
+  const actionFaceClass = isCheckingLibrary ? ' pc-action-checking' : '';
   /* A label change changes the button's width, and "Read in plain words"
      beside it jumped in one frame. The button travels from the width it had
-     to the one it lands on; the sibling rides on the layout. With the push
-     (record → "Checking" → library or back) it travels on the push's clock;
-     a direct swap (a cached answer) on the fade's. `overflow: hidden` keeps
-     the arriving word inside a box still narrower than it. Reduced motion
-     keeps the jump and the fade. */
+     to the one it lands on, on the push's clock; the sibling rides on the
+     layout. `overflow: hidden` keeps the arriving word inside a box still
+     narrower than it. Reduced motion keeps the jump and the cross-fade. */
   useLayoutEffect(() => {
     const button = readButtonRef.current;
     const from = readButtonFrom.current;
     readButtonFrom.current = null;
-    if (!button || !from || prefersReducedMotion) return;
-    if (from.push) animateSize(button, 'width', from.width, 280, EASE_IN_OUT, { overflow: 'hidden' });
-    else animateSize(button, 'width', from.width, 220, EASE_OUT, { overflow: 'hidden' });
+    if (!button || from == null || prefersReducedMotion) return;
+    animateSize(button, 'width', from, 280, EASE_IN_OUT, { overflow: 'hidden' });
   }, [actionFace, prefersReducedMotion]);
   /* El `aria-label` repite EL MISMO rótulo, no uno mejor. En móvil
    `.pc-action-label` es `display: none` (PaperCard.css), y eso no
@@ -1603,10 +1607,9 @@ const PaperCard = memo(function PaperCard({
     >
       {isResolvingAccess
         ? <CircleNotch className="spinning" size={16} />
-        : libraryLabel ? <GraduationCap className="pc-action-swap" size={16} /> : isCheckingLibrary ? null : <FileText size={16} />}
-      {/* Keyed on the face so each word mounts fresh when it changes, and
-          slides in with the push or, for a cached answer, fades in
-          (`.pc-action-swap`), instead of the text teleporting under the
+        : libraryLabel ? <GraduationCap size={16} /> : isCheckingLibrary ? null : <FileText size={16} />}
+      {/* Keyed on the face so each word mounts fresh when it changes and
+          slides in with the push, instead of the text teleporting under the
           reader's eyes. The record's own labels keep one key: their changes
           come before the card is looked at. */}
       <span key={actionFace} className={`pc-action-label${actionFaceClass}`}>{primaryActionLabel}</span>
