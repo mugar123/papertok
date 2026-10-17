@@ -2219,6 +2219,24 @@ const PaperCard = memo(function PaperCard({
           <span className="pc-side-label">{'Save'}</span>
         </Toggle>
 
+        {/* The paper's connections: on a wider screen the map takes the
+            abstract's place until the tile is pressed again; on a phone it
+            opens as a sheet. */}
+        {hasRelated && (
+          <Toggle
+            className="pc-side-btn pc-side-btn--connections"
+            pressed={showRelated}
+            onPressedChange={toggleRelated}
+            onClick={swallowClick}
+            title={'Connections'}
+          >
+            <span className="pc-side-icon">
+              <Graph size={20} weight={showRelated ? 'fill' : 'regular'} aria-hidden="true" />
+            </span>
+            <span className="pc-side-label">{'Connections'}</span>
+          </Toggle>
+        )}
+
         {shareUrl && (
           <SharePanel
             title={paper.title}
@@ -2240,26 +2258,8 @@ const PaperCard = memo(function PaperCard({
           />
         )}
 
-        {/* The paper's connections: on a wider screen the map takes the
-            abstract's place until the tile is pressed again; on a phone it
-            opens as a sheet. */}
-        {hasRelated && (
-          <Toggle
-            className="pc-side-btn pc-side-btn--connections"
-            pressed={showRelated}
-            onPressedChange={toggleRelated}
-            onClick={swallowClick}
-            title={'Connections'}
-          >
-            <span className="pc-side-icon">
-              <Graph size={20} weight={showRelated ? 'fill' : 'regular'} aria-hidden="true" />
-            </span>
-            <span className="pc-side-label">{'Connections'}</span>
-          </Toggle>
-        )}
-
         {/* The card's secondary actions, behind one more tile: the rail leads
-            with like, save and share, and the rest opens the way
+            with like, save, connections and share, and the rest opens the way
             share does — a menu off the tile, or a drawer on a phone. */}
         <MoreActions
           items={[
