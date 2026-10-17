@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { CircleNotch, Trash, X } from '@phosphor-icons/react';
 import { deleteAccount } from '../../services/accountDeletionService.ts';
 import { reauthenticateCurrentUser } from '../../services/authIdentityService.ts';
@@ -52,6 +52,13 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
 
   const confirmed = typed.trim() === copy.phrase;
   const working = step !== '';
+
+  // The input and buttons are disabled while the sign-in window and the
+  // deletion run, so focus falls out of the dialog. On an error it goes back to
+  // the input, which the error is attached to.
+  useEffect(() => {
+    if (error && !working) inputRef.current?.focus();
+  }, [error, working]);
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (working) return;
