@@ -4,6 +4,7 @@ export interface VerifiedIdentity {
   uid: string;
   email: string;
   emailVerified: boolean;
+  authTime: number | null;
 }
 
 interface IdentityLookup {
@@ -40,7 +41,7 @@ const IDENTITY_TOOLKIT_TIMEOUT_MS = 4000;
 /** A token this close to expiry is still worth asking Google about. */
 const CLOCK_SKEW_SECONDS = 60;
 
-function decodeSegment(segment: string): { exp?: unknown; aud?: unknown } | null {
+function decodeSegment(segment: string): { exp?: unknown; aud?: unknown; auth_time?: unknown } | null {
   const binary = atob(segment.replace(/-/g, '+').replace(/_/g, '/'));
   const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
   return JSON.parse(new TextDecoder().decode(bytes));
@@ -62,21 +63,23 @@ function decodeSegment(segment: string): { exp?: unknown; aud?: unknown } | null
  * negative the day Firebase changes one of them. And `aud` is only checked when
  * the project id is configured — a Worker that does not know its own project
  * must not answer 401 to everybody.
+ *
+ * Returns the claims, still unverified, or null when the token fails a check.
  */
-function looksLikeIdToken(token: string, env: WorkerEnv, nowSeconds: number) {
+function screenIdToken(token: string, env: WorkerEnv, nowSeconds: number) {
   const segments = token.split('.');
-  if (segments.length !== 3 || segments.some(segment => !segment)) return false;
+  if (segments.length !== 3 || segments.some(segment => !segment)) return null;
   let claims;
   try {
     decodeSegment(segments[0]);
     claims = decodeSegment(segments[1]);
   } catch {
-    return false;
+    return null;
   }
-  if (!claims || typeof claims !== 'object') return false;
-  if (!Number.isFinite(claims.exp) || (claims.exp as number) + CLOCK_SKEW_SECONDS < nowSeconds) return false;
+  if (!claims || typeof claims !== 'object') return null;
+  if (!Number.isFinite(claims.exp) || (claims.exp as number) + CLOCK_SKEW_SECONDS < nowSeconds) return null;
   const projectId = String(env.FIREBASE_PROJECT_ID || '').trim();
-  return !projectId || claims.aud === projectId;
+  return !projectId || claims.aud === projectId ? claims : null;
 }
 
 async function lookupIdentity(token: string, env: WorkerEnv) {
@@ -131,9 +134,8 @@ export async function verifyIdToken(token: string, env: WorkerEnv, { allowCache 
   // After the cache, not before it: only a verified identity is ever cached, so
   // a token that fails this filter could not have produced a hit anyway, and
   // the warm path keeps costing what it costs today.
-  if (!looksLikeIdToken(token, env, Math.floor(Date.now() / 1000))) {
-    throw new WorkerAuthError('AUTH_REQUIRED', 401);
-  }
+  const claims = screenIdToken(token, env, Math.floor(Date.now() / 1000));
+  if (!claims) throw new WorkerAuthError('AUTH_REQUIRED', 401);
 
   let lookup;
   try {
@@ -151,11 +153,16 @@ export async function verifyIdToken(token: string, env: WorkerEnv, { allowCache 
   // account without a second lookup, and `emailVerified` travels with it because
   // an unverified address is a claim rather than an identity — anything that
   // grants on the strength of an email has to see both.
+  //
+  // `authTime` is when the user last signed in for this session, in seconds.
+  // The claim can be trusted only because Identity Toolkit accepted the token
+  // that carries it; a token it refuses never gets this far.
   const identity = user?.localId
     ? {
       uid: user.localId,
       email: String(user.email || '').trim().toLowerCase(),
       emailVerified: user.emailVerified === true,
+      authTime: typeof claims.auth_time === 'number' && Number.isFinite(claims.auth_time) ? claims.auth_time : null,
     }
     : null;
   if (!lookup.ok || !identity) throw new WorkerAuthError('AUTH_REQUIRED', 401);
