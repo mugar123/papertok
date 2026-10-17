@@ -102,8 +102,6 @@ export async function getRelatedPapers(paper: Partial<Paper>, limit = 8, { fetch
   return related.slice(0, limit);
 }
 
-// Same escape hatch `semanticScholarService` exposes: a module-level cache that
-// survives between tests makes the second one lie about what the first proved.
 export function clearRelatedPapersCache() {
   CACHE.clear();
   IN_FLIGHT.clear();

@@ -1,24 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { clearRecommendationCache, getPaperRecommendations } from './semanticScholarService.ts';
-import { getSemanticScholarPaperId } from './relatedPapersService.ts';
+import { getPaperRecommendations } from './semanticScholarService.ts';
+import { clearRelatedPapersCache, getRelatedPapers, getSemanticScholarPaperId } from './relatedPapersService.ts';
 
 // The recommendations used to leave the browser for `api.semanticscholar.org`
 // behind a module-variable limiter that did not even serialize: it read
 // `lastRequestTime`, awaited, and only then wrote it, so concurrent callers all
 // read the same stale value and fired together. They now go through `/related`.
 
-test('turns the related papers from the Worker into arXiv identifiers, once per paper', async () => {
-  clearRecommendationCache();
-  const asked: unknown[] = [];
-  const fetchRelated: NonNullable<NonNullable<Parameters<typeof getPaperRecommendations>[1]>['fetchRelated']> = async (paper, limit) => {
-    asked.push({ paper, limit });
-    return [
-      { arxivId: '2601.00001' },
-      { arxivId: null },
-      { arxivId: '2602.00002' },
-    ];
+test('uses the shared cache for arXiv versions and returns only arXiv identifiers', async () => {
+  clearRelatedPapersCache();
+  const asked: string[] = [];
+  const fetchWorker = async (url: string | URL) => {
+    asked.push(String(url));
+    return new Response(JSON.stringify({
+      recommendedPapers: [
+        { paperId: 's2-1', title: 'First', externalIds: { ArXiv: '2601.00001' }, authors: [] },
+        { paperId: 's2-2', title: 'No arXiv copy', externalIds: {}, authors: [] },
+        { paperId: 's2-3', title: 'Second', externalIds: { ArXiv: '2602.00002' }, authors: [] },
+      ],
+    }), { headers: { 'content-type': 'application/json' } });
   };
+  const fetchRelated = (paper: Parameters<typeof getRelatedPapers>[0], limit: number) => getRelatedPapers(
+    paper, limit, { fetchWorker, apiBase: 'https://papertok-report-api.example' },
+  );
 
   const ids = await getPaperRecommendations({ arxivId: '2607.12345v3' }, { fetchRelated });
   const again = await getPaperRecommendations({ arxivId: '2607.12345v2' }, { fetchRelated });
@@ -28,13 +33,17 @@ test('turns the related papers from the Worker into arXiv identifiers, once per 
   // v2 and v3 of one paper are one lookup: the cache is keyed by the
   // version-free Semantic Scholar id, the same one `/related` is asked with.
   assert.equal(asked.length, 1);
-  assert.equal((asked[0] as { limit: number }).limit, 20);
+  assert.equal(new URL(asked[0]).searchParams.get('paper_id'), 'ARXIV:2607.12345');
 });
 
 test('asks for a paper that has a DOI and no arXiv id, and hands over the paper itself', async () => {
-  clearRecommendationCache();
   const asked: unknown[] = [];
-  const fetchRelated: NonNullable<NonNullable<Parameters<typeof getPaperRecommendations>[1]>['fetchRelated']> = async paper => { asked.push(paper); return [{ arxivId: '2601.00001' }]; };
+  let requestedLimit = 0;
+  const fetchRelated: NonNullable<NonNullable<Parameters<typeof getPaperRecommendations>[1]>['fetchRelated']> = async (paper, limit) => {
+    asked.push(paper);
+    requestedLimit = limit;
+    return [{ arxivId: '2601.00001' }];
+  };
 
   // A PubMed or OpenAlex paper used to be `getPaperRecommendations(undefined)`:
   // no recommendation, no log, and nobody knew the feed only expanded from
@@ -48,10 +57,10 @@ test('asks for a paper that has a DOI and no arXiv id, and hands over the paper 
   // the identifiers would pass a `deepEqual` on `{ doi }` and still lose the id.
   assert.equal(asked.length, 1);
   assert.equal(asked[0], paper, 'the paper must be forwarded as-is, not rebuilt from its identifiers');
+  assert.equal(requestedLimit, 20);
 });
 
 test('has nothing to ask for a paper with neither DOI nor arXiv id', async () => {
-  clearRecommendationCache();
   let calls = 0;
   const ids = await getPaperRecommendations({ id: 'local-only' }, { fetchRelated: async () => { calls += 1; return []; } });
   assert.deepEqual(ids, []);
@@ -59,7 +68,6 @@ test('has nothing to ask for a paper with neither DOI nor arXiv id', async () =>
 });
 
 test('asks under the same identity the related-papers sheet would use, for a paper with both a DOI and an arXiv id', async () => {
-  clearRecommendationCache();
   let askedPaper: Parameters<typeof getPaperRecommendations>[0] | null = null;
   const fetchRelated: NonNullable<NonNullable<Parameters<typeof getPaperRecommendations>[1]>['fetchRelated']> = async paper => { askedPaper = paper; return [{ arxivId: '2601.00001' }]; };
 
@@ -75,7 +83,7 @@ test('asks under the same identity the related-papers sheet would use, for a pap
 });
 
 test('does not reach Semantic Scholar directly when the route is unavailable', async () => {
-  clearRecommendationCache();
+  clearRelatedPapersCache();
   const escaped: unknown[] = [];
   const originalFetch = globalThis.fetch;
   const originalWarn = console.warn;
@@ -99,7 +107,6 @@ test('does not reach Semantic Scholar directly when the route is unavailable', a
 });
 
 test('does not cache a failure as an empty recommendation set', async () => {
-  clearRecommendationCache();
   let attempts = 0;
   const fetchRelated = async () => {
     attempts += 1;
@@ -110,4 +117,32 @@ test('does not cache a failure as an empty recommendation set', async () => {
   assert.deepEqual(await getPaperRecommendations({ arxivId: '2607.12345' }, { fetchRelated }), []);
   assert.deepEqual(await getPaperRecommendations({ arxivId: '2607.12345' }, { fetchRelated }), ['2601.00001']);
   assert.equal(attempts, 2);
+});
+
+test('the feed uses the refreshed related papers after their cache expires', async t => {
+  clearRelatedPapersCache();
+  t.mock.timers.enable({ apis: ['Date'], now: 0 });
+  let calls = 0;
+  const fetchWorker = async () => {
+    calls += 1;
+    return new Response(JSON.stringify({
+      recommendedPapers: [{
+        paperId: `s2-${calls}`,
+        title: `Recommendation ${calls}`,
+        externalIds: { ArXiv: calls === 1 ? '2601.00001' : '2602.00002' },
+        authors: [],
+      }],
+    }), { headers: { 'content-type': 'application/json' } });
+  };
+  const fetchRelated = (paper: Parameters<typeof getRelatedPapers>[0], limit: number) => getRelatedPapers(
+    paper, limit, { fetchWorker, apiBase: 'https://papertok-report-api.example' },
+  );
+  const paper = { arxivId: '2607.12345' };
+
+  assert.deepEqual(await getPaperRecommendations(paper, { fetchRelated }), ['2601.00001']);
+  t.mock.timers.tick(25 * 60 * 60 * 1000);
+  const forSheet = await fetchRelated(paper, 8);
+  assert.equal(forSheet[0].arxivId, '2602.00002');
+  assert.deepEqual(await getPaperRecommendations(paper, { fetchRelated }), ['2602.00002']);
+  assert.equal(calls, 2);
 });
