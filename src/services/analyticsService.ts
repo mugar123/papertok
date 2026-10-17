@@ -1,4 +1,5 @@
 import type { CaptureResult, PostHog, PostHogConfig } from 'posthog-js';
+import { PRELOAD_RELOAD_KEY, PRELOAD_RELOAD_WINDOW_MS } from '../utils/appReload.ts';
 type Consent = typeof ANALYTICS_CONSENT[keyof typeof ANALYTICS_CONSENT];
 type AnalyticsStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 interface AcquisitionLocation { referrer?: string; location?: Pick<Location, 'origin' | 'search'> }
@@ -56,6 +57,9 @@ export const PRODUCT_ANALYTICS_EVENTS = Object.freeze([
   // `set` is an answer, `skip` a "not now", `clear` a pick emptied out from
   // the header chip; `areas` is how many areas the answer holds.
   'guest_interests',
+  // A failure the reader is left looking at: the error boundary's screen or the
+  // feed's "Error loading papers". Only the kind travels, never the error.
+  'app_error',
 ]);
 
 const ANALYTICS_CONSENT_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
@@ -137,6 +141,7 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   rewrite_level: new Set(['beginner', 'university', 'researcher']),
   annotation_origin: new Set(['user', 'ai']),
   export_format: new Set(['tex']),
+  app_error_kind: new Set(['render_crash', 'chunk_load_failed', 'feed_load_failed']),
   search_type: new Set(['all', 'papers', 'authors', 'institutions', 'projects', 'topics']),
   // `reader` and `auth_prompt` are the two surfaces the light redesign added.
   // A surface that is emitted but not listed here is not an error anywhere: the
@@ -174,6 +179,7 @@ const EVENT_PARAMETER_SCHEMAS: Readonly<Record<string, Record<string, string>>> 
   // as one funnel; `position` is how many papers were behind the reader.
   guest_demo_end: { position: 'boundedNumber', language: 'language' },
   guest_interests: { action: 'guest_interests_action', areas: 'boundedNumber', language: 'language' },
+  app_error: { kind: 'app_error_kind' },
 });
 
 let acquisitionTrackedInMemory = false;
@@ -648,4 +654,37 @@ export async function trackDay7Return({ storage = getBrowserStorage(), now = Dat
   } catch {
     return false;
   }
+}
+
+// main.tsx imports this module through the boundary, so it is evaluated before
+// main.tsx can write a mark. Date.now() is the clock main.tsx writes with.
+const PAGE_LOADED_AT = Date.now();
+// The error boundary's fallback stays up until the reader reloads, so one
+// report per page load covers it.
+let appCrashReported = false;
+
+/**
+ * The report for GlobalErrorBoundary, which sits outside AnalyticsProvider.
+ * A crash inside main.tsx's window after an earlier page's reload counts as
+ * the chunk failing again. A mark written by this page means that reload is
+ * already under way: the crash is its side effect, and the next page reports
+ * if the chunk still fails.
+ */
+export async function trackAppCrash({
+  storage = getSessionStorage(),
+  now = Date.now(),
+  pageLoadedAt = PAGE_LOADED_AT,
+  track = trackProductEvent,
+}: Omit<TrackingOptions, 'now'> & { now?: number; pageLoadedAt?: number } = {}) {
+  if (appCrashReported) return false;
+  let reloadedAt = 0;
+  try {
+    reloadedAt = Number(storage?.getItem(PRELOAD_RELOAD_KEY)) || 0;
+  } catch {
+    // Without session storage main.tsx does not reload either.
+  }
+  if (reloadedAt >= pageLoadedAt) return false;
+  appCrashReported = true;
+  const kind = now - reloadedAt < PRELOAD_RELOAD_WINDOW_MS ? 'chunk_load_failed' : 'render_crash';
+  return track('app_error', { kind });
 }

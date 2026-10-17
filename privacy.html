@@ -48,7 +48,7 @@
 
     <main class="lp-doc">
       <h1>Privacy policy</h1>
-      <p class="lp-updated">Last updated 16 October 2026.</p>
+      <p class="lp-updated">Last updated 17 October 2026.</p>
 
       <p class="lp-lede">
         PaperTok is an application for discovering and reading scientific research. This
@@ -194,7 +194,9 @@
         recorded as <code>/public/paper/:id</code>, and visiting an author's profile as
         <code>/explorer/author/:id</code>: which one never travels. A search is recorded as a
         search, with its type and how many results it returned, never with what you
-        searched for. Each event also carries the type of device, the browser and the
+        searched for. When the application stops with an error or the feed cannot load,
+        PostHog receives only which kind of failure happened, never the error itself.
+        Each event also carries the type of device, the browser and the
         operating system. Nothing from your account is sent.
       </p>
       <p>
