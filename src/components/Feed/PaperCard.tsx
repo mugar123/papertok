@@ -207,6 +207,9 @@ const RELATED_PAPER_HYDRATION_TIMEOUT_MS = 8_000;
 // delay every loading placeholder waits: a cached answer, or a fast one, goes
 // straight from the record's label to the library's.
 const LIBRARY_CHECKING_DELAY_MS = 320;
+// Once on screen, "Checking" stays at least this long, so it reads as a step
+// rather than a flicker when the answer lands just after it appeared.
+const LIBRARY_CHECKING_MIN_MS = 1_000;
 // How long a press during "Checking" waits for the library before opening
 // what the record offers: under the browser's ~5 s of user activation, after
 // which the new tab would be blocked.
@@ -1416,9 +1419,10 @@ const PaperCard = memo(function PaperCard({
       const width = readButtonRef.current?.offsetWidth;
       readButtonFrom.current = width ? { width, push } : null;
     };
-    let checking = false;
+    let checkingSince = 0;
+    let settle: ReturnType<typeof setTimeout> | undefined;
     const slow = setTimeout(() => {
-      checking = true;
+      checkingSince = Date.now();
       measure(true);
       setActionPush({ from: 'record', dir: 'forward' });
       setCheckingLibraryFor(`${paperId}|${domain}`);
@@ -1427,20 +1431,25 @@ const PaperCard = memo(function PaperCard({
       clearTimeout(slow);
       if (!active) return;
       const entitled = access?.status === 'entitled';
-      if (checking) {
-        // "Checking" leaves either way: forward to the library, or back to
-        // the record's label, where it came from.
-        measure(true);
-        setActionPush({ from: 'checking', dir: entitled ? 'forward' : 'back' });
-      } else if (entitled) {
-        measure(false);
-      }
-      setCheckingLibraryFor(null);
-      if (access) setInstitutionAccess({ paperId, domain, access });
+      const answer = () => {
+        if (checkingSince) {
+          // "Checking" leaves either way: forward to the library, or back to
+          // the record's label, where it came from.
+          measure(true);
+          setActionPush({ from: 'checking', dir: entitled ? 'forward' : 'back' });
+        } else if (entitled) {
+          measure(false);
+        }
+        setCheckingLibraryFor(null);
+        if (access) setInstitutionAccess({ paperId, domain, access });
+      };
+      if (checkingSince) settle = setTimeout(answer, Math.max(0, LIBRARY_CHECKING_MIN_MS - (Date.now() - checkingSince)));
+      else answer();
     });
     return () => {
       active = false;
       clearTimeout(slow);
+      clearTimeout(settle);
       // A card that stops being looked at mid-check starts over when it is
       // looked at again, rather than coming back already saying "Checking".
       setCheckingLibraryFor(null);

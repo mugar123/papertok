@@ -155,7 +155,9 @@ test('SOURCE: the library\'s word and glyph fade in instead of teleporting', asy
 /**
  * A library that takes a while to answer says so (2026-10-17): "Checking"
  * pushes the record's label out, and the answer pushes "Checking" out to the
- * library or back to the record's label. "Checking" is the resting label for
+ * library or back to the record's label. Once up, "Checking" stays for a
+ * minimum before the answer replaces it, so a late-but-quick answer does not
+ * flash it (asked for on 2026-10-17). "Checking" is the resting label for
  * that while, so it is also the button's name (2.5.3, checked above), on the
  * phone too. The leaving face is a decorative copy, and under reduced motion
  * the faces only cross-fade and the band stops.
@@ -167,6 +169,12 @@ test('SOURCE: a slow library lookup says "Checking", named and pushed', async ()
     /const restingActionLabel = libraryLabel\s*\?\s*`Via \$\{libraryLabel\}`\s*:\s*isCheckingLibrary\s*\?\s*\(?'Checking'\)?\s*:\s*recordActionLabel;/,
     '"Checking" is no longer the resting label while the library is asked, so the name can stop containing it',
   );
+  assert.match(
+    card,
+    /if \(checkingSince\) settle = setTimeout\(answer, Math\.max\(0, LIBRARY_CHECKING_MIN_MS - \(Date\.now\(\) - checkingSince\)\)\);\s*else answer\(\);/,
+    'the answer replaces "Checking" however briefly it has been on screen',
+  );
+  assert.match(card, /clearTimeout\(settle\);/, 'a held answer still lands after the card is left or another paper takes its place');
   const boton = bloque(card, 'className={`pc-action-read');
   assert.match(boton, /data-push=\{actionPush\?\.dir\}/, 'the button no longer says which way it is pushing');
   assert.match(boton, /className="pc-action-out"\s*aria-hidden="true"/, 'the leaving face is read out again by assistive tech');
