@@ -1243,6 +1243,15 @@ export default function EntityExplorer({
         if (doiResult.status === 'fulfilled') fetchedPapers.push(...doiResult.value);
         
         fetchedPapers = PaperBuilder.deduplicate(fetchedPapers);
+        // The filters and the sort apply to every row the page draws on, not
+        // only to what OpenAlex already filtered: an author's name-searched
+        // rows (Semantic Scholar, PubMed, Scopus), a topic's arXiv and
+        // relevance rows and an institution's Crossref rows arrive
+        // unfiltered, so the sheet seemed to do nothing. A project's rows are
+        // filtered, and searched, further down.
+        if (type !== 'project') {
+          fetchedPapers = filterAndSortEntityPapers(fetchedPapers, { filters, sortBy });
+        }
         // 3. Guarantee source paper is ALWAYS first in the list
         if (page === 1) {
            const sourceArxivId = sourceArxivIdFrom(searchParams.get('arxivId'));
@@ -1262,7 +1271,10 @@ export default function EntityExplorer({
                // Paper is missing, fetch it and put it in front
                try {
                  const sourcePaperReq = await fetchPapersByIds([cleanSourceId]);
-                 if (sourcePaperReq && sourcePaperReq.length > 0) {
+                 // Not past the reader's filters, though: a source paper
+                 // they exclude stays out.
+                 if (sourcePaperReq?.length > 0
+                   && filterAndSortEntityPapers(sourcePaperReq.slice(0, 1), { filters }).length > 0) {
                    fetchedPapers.unshift(sourcePaperReq[0]);
                  }
                } catch (e) {
