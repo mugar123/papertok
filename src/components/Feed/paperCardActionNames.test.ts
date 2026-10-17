@@ -94,9 +94,9 @@ test('SOURCE: la palabra que el botón principal enseña en móvil está en su n
   );
   assert.match(
     card,
-    /const primaryActionLabel = isResolvingAccess\s*\?\s*\(?'[^']*'\)?\s*:\s*restingActionLabel;\s*const primaryActionShortLabel = libraryLabel \|\| restingActionLabel\.split\(' '\)\[0\];/,
-    'la palabra corta ya no es la primera del rótulo en reposo (o la biblioteca, que '
-    + 'está en «Via <biblioteca>»), así que el nombre accesible puede dejar de contenerla (2.5.3)',
+    /const primaryActionLabel = isResolvingAccess\s*\?\s*\(?'[^']*'\)?\s*:\s*restingActionLabel;\s*const primaryActionShortLabel = libraryLabel \? restingActionLabel : restingActionLabel\.split\(' '\)\[0\];/,
+    'la palabra corta ya no es la primera del rótulo en reposo (o «Via <biblioteca>» '
+    + 'entero), así que el nombre accesible puede dejar de contenerla (2.5.3)',
   );
 
   const css = stripComments(await read('./PaperCard.css'));
@@ -123,33 +123,30 @@ test('SOURCE: the primary button names the library it opens the paper through', 
     'an entitled library no longer renames the primary button',
   );
   const boton = bloque(card, 'className={`pc-action-read');
-  assert.match(boton, /libraryLabel \? <GraduationCap className="pc-action-swap" size=\{16\} \/> : isCheckingLibrary \? null : <FileText size=\{16\} \/>/, 'the library button lost its glyph');
+  assert.match(boton, /libraryLabel \? <GraduationCap size=\{16\} \/> : isCheckingLibrary \? null : <FileText size=\{16\} \/>/, 'the library button lost its glyph');
   assert.doesNotMatch(card, /institutionAccess: currentInstitutionAccess/, 'the chip is asking about the library again');
 });
 
 /**
- * The answer arrives on a button already on screen, so the swap is eased:
- * the library's glyph and word mount fresh with `.pc-action-swap`, which
- * fades them in from `@starting-style` (opacity and a 3px settle; opacity
- * alone under reduced motion). The record's own labels never carry the
- * class, so a card's first paint does not animate.
+ * The answer arrives on a button already on screen, so every change of its
+ * face is the same push (asked for on 2026-10-17, replacing a fade that read
+ * as a cut next to it): the words mount fresh per face and slide in while the
+ * leaving face slides out, and a quick entitled answer pushes the record's
+ * label straight out to the library's instead of waiting on "Checking".
  */
-test('SOURCE: the library\'s word and glyph fade in instead of teleporting', async () => {
+test('SOURCE: a quick library answer pushes the record\'s label out, like a slow one', async () => {
   const card = stripComments(await read('./PaperCard.tsx'));
   const boton = bloque(card, 'className={`pc-action-read');
-  assert.match(boton, /<GraduationCap className="pc-action-swap" size=\{16\} \/>/, 'the cap no longer fades in');
   assert.match(card, /const actionFace = libraryLabel \? 'library' : isCheckingLibrary \? 'checking' : 'record';/, 'the words are no longer keyed on what the button says');
-  assert.match(card, /const actionFaceClass = libraryLabel \? ' pc-action-swap' : isCheckingLibrary \? ' pc-action-checking' : '';/,
-    'the swap class reaches the record\'s own labels, or left the library\'s');
   assert.match(boton, /key=\{actionFace\} className=\{`pc-action-label\$\{actionFaceClass\}`\}/, 'the long word no longer mounts fresh per face');
   assert.match(boton, /key=\{`\$\{actionFace\}-short`\} className=\{`pc-action-label--short\$\{actionFaceClass\}`\}/, 'the short word no longer mounts fresh per face');
-
+  assert.match(
+    card,
+    /if \(checkingSince\) push\('checking', entitled \? 'forward' : 'back'\);\s*else if \(entitled\) push\('record', 'forward'\);/,
+    'a quick entitled answer no longer pushes, so it lands with a different movement than a slow one',
+  );
   const css = stripComments(await read('./PaperCard.css'));
-  assert.match(css, /\.pc-action-swap \{\s*transition: opacity 180ms var\(--ease-out\), transform 180ms var\(--ease-out\);\s*\}/, 'the swap lost its transition');
-  assert.match(css, /@starting-style \{\s*\.pc-action-swap \{\s*opacity: 0;\s*transform: translateY\(3px\);\s*\}\s*\}/, 'the swap lost its starting style');
-  const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce) {', css.indexOf('.pc-action-swap')));
-  assert.match(reduced, /\.pc-action-swap \{\s*transition: opacity 180ms var\(--ease-out\);\s*\}/, 'reduced motion no longer keeps the fade alone');
-  assert.match(reduced, /@starting-style \{\s*\.pc-action-swap \{\s*transform: none;\s*\}\s*\}/, 'reduced motion no longer drops the settle');
+  assert.doesNotMatch(css, /pc-action-swap/, 'the fade that the push replaced is back');
 });
 
 /**
