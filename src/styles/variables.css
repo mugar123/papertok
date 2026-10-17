@@ -273,6 +273,22 @@
      then 5.9, 5.2, 4.4 …) and still spends eleven of its seventeen frames
      moving more than a pixel, which is the property the expo lacks. */
   --ease-out-cubic: cubic-bezier(0.33, 1, 0.68, 1);
+  /* How far a control gives under a press — one value for every button that
+     does (2026-10-15), instead of 0.94, 0.96 and 0.97 by screen. */
+  /* The strong ease-out every UI entrance and exit rides (2026-10-15): the
+     dialog's exit, the palette, the save views. One token instead of the
+     literal typed by hand. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  /* Its pair for movement on screen: something already there travelling or
+     resizing (the card's abstract ⇄ map swap, the save window's views). */
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --press-scale: 0.97;
+  /* Unfolding in place (rows 0fr → 1fr): the card's author list opens and
+     closes on these, so every fold in the app moves alike. ease-in-out because what sits below is already on screen
+     and only moves. */
+  --unfold-ease: cubic-bezier(0.645, 0.045, 0.355, 1);
+  --unfold-open: 240ms;
+  --unfold-close: 200ms;
 
   /* ── Z-index ── */
   --z-base: 1;

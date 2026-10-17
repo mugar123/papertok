@@ -1,8 +1,12 @@
+import PetriBell from './PetriBell.jsx';
+import PetriBlankPage from './PetriBlankPage.jsx';
 import PetriFlask from './PetriFlask.jsx';
 import PetriKey from './PetriKey.jsx';
 import PetriProfile from './PetriProfile.jsx';
 import PetriReading from './PetriReading.jsx';
+import PetriStar from './PetriStar.jsx';
 import PetriThinking from './PetriThinking.jsx';
+import PetriUpset from './PetriUpset.jsx';
 import PetriWelcome from './PetriWelcome.jsx';
 
 // Every pose Petri has, by name. Each is drawn on the same frame
@@ -16,6 +20,10 @@ const POSES = {
   reading: PetriReading,
   profile: PetriProfile,
   thinking: PetriThinking,
+  bell: PetriBell,
+  blankPage: PetriBlankPage,
+  upset: PetriUpset,
+  star: PetriStar,
 };
 
 /**

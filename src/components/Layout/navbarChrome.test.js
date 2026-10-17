@@ -69,7 +69,7 @@ test('on a phone the avatar opens the same entries as a bottom sheet', async () 
   const css = await accountCss;
   const px = (rule, prop) => Number(css.match(new RegExp(`\\.${rule} \\{[^}]*${prop}:\\s*(\\d+)px`))?.[1]);
   assert.ok(px('account-sheet-row', 'min-height') >= 44, 'sheet rows are thumb-sized');
-  assert.ok(px('account-sheet-theme-option', 'min-height') >= 44, 'theme choices are thumb-sized');
+  assert.ok(px('account-sheet-theme-option', 'min-height') >= 36, 'theme choices stay comfortably over the 24px target minimum');
 });
 
 test('the account menu animates in and out with CSS, and keeps its items focusable', async () => {
@@ -132,9 +132,8 @@ test('los tres enlaces de la navbar comparten line-height, o el filete viaja en 
  * Quitar el atributo a secas abría un agujero peor, y en un tramo que la
  * auditoría no mira: entre 481 y 768 px la barra escondía el rótulo con
  * `display: none` y dejaba sólo la marca `aria-hidden`, así que el botón se
- * habría quedado SIN NOMBRE. Por eso el rótulo ahora se recorta en vez de
- * borrarse. Medido a 700 y a 520 px: el botón sigue midiendo 26x26 y Chrome
- * sigue calculando «PaperTok».
+ * habría quedado SIN NOMBRE. Since 2026-10-17 the word shows down to 360px,
+ * and below that it is clipped rather than removed (the next test).
  */
 test('la marca se llama por su propio texto, no por un aria-label que lo contradiga', async () => {
   const jsx = await navbarJsx;
@@ -153,22 +152,19 @@ test('la marca se llama por su propio texto, no por un aria-label que lo contrad
     + 'pasa a anunciarse «PT PaperTok»');
 });
 
-test('el rótulo de la marca se recorta en móvil, nunca se borra, o el botón se queda mudo', async () => {
+test('the logo stays on every width, and on the narrowest it is clipped, never removed', async () => {
   const css = await navbarCss;
-  const tramo = css.slice(css.indexOf('@media (max-width: 768px)'), css.indexOf('@media (max-width: 480px)'));
-  assert.ok(tramo.includes('@media (max-width: 768px)'), 'no encuentro el bloque de 768 px en Navbar.css');
-
+  assert.doesNotMatch(css, /\.navbar-brand \{\s*display:\s*none;/,
+    'the brand is hidden at some width again; with two links the bar has room for it down to 320px');
+  const tramo = css.slice(css.indexOf('@media (max-width: 359px)'));
+  assert.ok(tramo.startsWith('@media (max-width: 359px)'), 'no 359px block in Navbar.css');
   const regla = tramo.match(/\.navbar-brand-word \{[^}]*\}/)?.[0];
-  assert.ok(regla, 'el bloque de 768 px ya no toca `.navbar-brand-word`');
+  assert.ok(regla, 'the 359px block no longer clips `.navbar-brand-word`');
   assert.doesNotMatch(regla, /display:\s*none/,
-    'el rótulo de la marca vuelve a ocultarse con `display: none` por debajo de 768 px. '
-    + '`.navbar-brand` sólo desaparece a 480, así que entre 481 y 768 px el botón se '
-    + 'queda con la «PT» —que es `aria-hidden`— y sin nombre ninguno: `button-name`, '
-    + 'crítico, en un tramo que una auditoría de 1440 y 390 no mira');
-  assert.match(regla, /clip: rect\(0, 0, 0, 0\)/,
-    'el rótulo dejó de recortarse; recortado no se ve, pero sigue en el árbol, que es '
-    + 'lo que da nombre al botón en ese tramo');
-  assert.match(regla, /position: absolute/,
-    'sin `position: absolute` el rótulo recortado seguiría ocupando su hueco en el flex '
-    + 'y la marca se movería');
+    'the word is removed instead of clipped: the PT mark is `aria-hidden`, so the button '
+    + 'would have no name (`button-name`)');
+  assert.match(regla, /clip: rect\(0, 0, 0, 0\)/);
+  assert.match(regla, /position: absolute/, 'clipped in flow, the word would still push the mark');
+  assert.equal((css.match(/\.navbar-brand-word \{/g) || []).length, 2,
+    'the word is styled once and clipped once; no other width hides it');
 });

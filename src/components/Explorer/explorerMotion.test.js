@@ -92,7 +92,7 @@ test('the background wash arrives with the photograph it is made of', async () =
   const jsx = await read('./EntityExplorer.jsx');
   const wash = jsx.match(/animate=\{\{ opacity: 0\.1 \}\}[\s\S]{0,240}?className="ehc-bg-blur"/);
   assert.ok(wash, 'the wash is still there');
-  assert.match(wash[0], /duration: 0\.28, ease: \[0\.16, 1, 0\.3, 1\]/);
+  assert.match(wash[0], /duration: 0\.28, ease: EASE_OUT_EXPO/);
   assert.match(wash[0], /prefersReducedMotion/, 'and it is branched');
   // The same clock the visual slot's cross-fade runs on.
   const slot = jsx.match(/className="ehc-icon"[\s\S]{0,400}?transition=\{prefersReducedMotion \? \{ duration: 0 \} : \{ duration: ([\d.]+)/);
@@ -216,7 +216,7 @@ test('the project summary box is a plain block; the settle owns its height', asy
  */
 test('the error screen resolves in place instead of cutting', async () => {
   const css = stripComments(await read('./EntityExplorer.css'));
-  assert.match(css, /\.explorer-error \{[^}]*animation: slideUpFade 0\.42s cubic-bezier\(0\.16, 1, 0\.3, 1\) both;[^}]*\}/);
+  assert.match(css, /\.explorer-error \{[^}]*animation: slideUpFade 0\.42s var\(--ease-out-expo\) both;[^}]*\}/);
 });
 
 /**

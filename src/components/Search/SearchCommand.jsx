@@ -1,4 +1,4 @@
-import { Children, cloneElement, useCallback, useLayoutEffect, useMemo, useState } from 'react';
+import { Children, cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Briefcase,
@@ -44,7 +44,6 @@ const COPY = {
     projects: 'Projects',
     empty: 'No results',
     searching: 'Searching...',
-    hint: 'Type to search papers, authors, topics, institutions and funded projects.',
     suggested: 'Suggestions',
     partial: 'Some sources did not answer; showing what is available.',
     follow: 'Follow',
@@ -60,6 +59,7 @@ const SUGGESTIONS = [
   { label: 'MIT', query: 'Massachusetts Institute of Technology', Icon: Buildings },
   { label: 'CRISPR Cas9', query: 'CRISPR Cas9', Icon: FileText },
   { label: 'Geoffrey Hinton', query: 'Geoffrey Hinton', Icon: Users },
+  { label: 'Human Brain Project', query: 'Human Brain Project', Icon: Briefcase },
 ];
 
 // Every section the palette can paint. Each one also has to be in
@@ -78,6 +78,8 @@ const SECTIONS = ['papers', 'authors', 'institutions', 'topics', 'projects'];
  * their eye. Ten steps of 24 ms puts the last row in at 240 ms.
  */
 const ENTER_STAGGER_CAP = 10;
+const ENTER_STEP_MS = 24;
+const ENTER_RISE_MS = 260;
 
 const SECTION_ICONS = {
   papers: FileText,
@@ -114,6 +116,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
     isPending, hasSearched, searchIssue, reset,
   } = useEntitySearch();
   const [pendingEntity, setPendingEntity] = useState(null);
+  const [cascadeDone, setCascadeDone] = useState(false);
 
   // Cleared on the way in, never on the way out. The palette stays mounted
   // between opens (App.jsx), so `open` turning false is the START of the exit,
@@ -131,9 +134,16 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
     if (open) {
       reset();
       setLeavingBySelect(false);
+      setCascadeDone(false);
     }
   }, [open, reset]);
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  useEffect(() => {
+    if (!open || cascadeDone || totalResults === 0) return undefined;
+    const done = setTimeout(() => setCascadeDone(true), ENTER_STAGGER_CAP * ENTER_STEP_MS + ENTER_RISE_MS);
+    return () => clearTimeout(done);
+  }, [open, cascadeDone, totalResults]);
 
   const go = useCallback((path, state = null) => {
     setLeavingBySelect(true);
@@ -313,7 +323,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
     const SectionIcon = SECTION_ICONS[section];
     const headingIndex = Math.min(enterIndex, ENTER_STAGGER_CAP);
     enterIndex += 1;
-    const rows = Children.map(sectionContent[section](), (child, offset) => cloneElement(child, {
+    const rows = cascadeDone ? sectionContent[section]() : Children.map(sectionContent[section](), (child, offset) => cloneElement(child, {
       className: [child.props.className, 'sc-enter'].filter(Boolean).join(' '),
       style: {
         ...child.props.style,
@@ -325,7 +335,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
       <CommandGroup
         key={section}
         heading={
-          <span className="sc-heading sc-enter" style={{ '--sc-enter-index': headingIndex }}>
+          <span className={cascadeDone ? 'sc-heading' : 'sc-heading sc-enter'} style={cascadeDone ? undefined : { '--sc-enter-index': headingIndex }}>
             <SectionIcon size={11} /> {copy[section]}
           </span>
         }
@@ -337,20 +347,14 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} finalFocus={finalFocus} title={copy.placeholder} className={`sc-sheet${leavingBySelect ? ' sc-sheet--select' : ''}`} overlayClassName={`sc-scrim${leavingBySelect ? ' sc-scrim--select' : ''}`}>
-      {/* The field leads the entrance rather than sitting it out.
-          Everything in the list below already rose into place while the one
-          element the palette exists for — the field you are about to type in —
-          was welded to the sheet, fully painted from the first frame. Index 0
-          means it starts with the sheet and lags it by the same 6px every row
-          does, so the eye lands on the caret first and the list resolves under
-          it. */}
+      {/* The field is still from the first frame: it is opened from the
+          keyboard and typed into at once, so the sheet's own entrance is the
+          only movement. */}
       <CommandInput
         value={query}
         onValueChange={setQuery}
         placeholder={copy.placeholder}
         autoFocus
-        wrapperClassName="sc-enter"
-        wrapperStyle={{ '--sc-enter-index': 0 }}
       >
         {/* The way out on a phone. There the sheet is the whole screen
             (SearchCommand.css): no scrim to tap and no Escape key, so without
@@ -374,27 +378,16 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
       </CommandInput>
 
       <CommandList>
-        {/* The suggestions ride the same cascade the results do.
-            They did not, and this is the one moment the entrance is most felt:
-            opening the palette is the only time the sheet arrives with content
-            already in it, and that content was simply *there*, fully painted,
-            the instant the box appeared. The sheet moved and its contents did
-            not, which is what makes an opening read as a box rather than as an
-            arrival. */}
+        {/* The suggestions are simply there when the palette opens: the sheet's
+            own entrance is the only movement (2026-10-15). */}
         {!query.trim() && (
           <CommandGroup
-            heading={
-              <span className="sc-heading sc-enter" style={{ '--sc-enter-index': 1 }}>
-                {copy.suggested}
-              </span>
-            }
+            heading={<span className="sc-heading">{copy.suggested}</span>}
           >
-            {SUGGESTIONS.map((item, index) => (
+            {SUGGESTIONS.map((item) => (
               <CommandItem
                 key={item.label}
                 value={`suggestion-${item.label}`}
-                className="sc-enter"
-                style={{ '--sc-enter-index': Math.min(index + 2, ENTER_STAGGER_CAP) }}
                 onSelect={() => setQuery(item.query)}
               >
                 <item.Icon size={14} className="sc-icon" />
@@ -443,21 +436,12 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }) {
             waits out its debounce, the previous rows stay up dimmed. */}
         {!isPending && renderedSections}
 
-        {/* The tail of the same cascade. It was the last thing on the sheet
-            still arriving fully painted while the rows above it rose — the
-            exact fault the suggestions block above documents, left behind when
-            that one was fixed. It fades rather than rises: a footnote that
-            travels is the last thing on the sheet to stop moving, and so the
-            one the eye is left on. */}
-        {!query.trim() && (
-          <div
-            className="sc-status sc-status--hint sc-enter sc-enter--quiet"
-            style={{ '--sc-enter-index': SUGGESTIONS.length + 2 }}
-          >
-            {copy.hint}
-          </div>
-        )}
       </CommandList>
+      <div className="sc-footer" aria-hidden="true">
+        <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
+        <span><kbd>↵</kbd> Open</span>
+        <span><kbd>Esc</kbd> Close</span>
+      </div>
     </CommandDialog>
   );
 }

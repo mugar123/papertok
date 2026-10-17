@@ -28,7 +28,7 @@
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-5) var(--space-3);
+  padding: var(--space-2) var(--space-5) var(--space-4);
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -37,38 +37,19 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-2);
 }
 
 .abstract-sheet-kicker {
   font: var(--mono-label);
   letter-spacing: var(--mono-track);
   text-transform: uppercase;
-  color: var(--text-secondary);
+  font-weight: 600;
+  color: var(--area-accent, var(--accent-primary));
 }
 
 .abstract-sheet-title {
   margin: 0;
-}
-
-.abstract-sheet-authors {
-  margin: 0;
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-}
-
-.abstract-sheet-close {
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  cursor: pointer;
 }
 
 /* The words, at the reader's own measure (.rd-p), scrolling inside the sheet

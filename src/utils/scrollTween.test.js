@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CARD_DURATION_MS, CARD_EASE, cubicBezier, tweenScrollTop } from './scrollTween.js';
+import { CARD_DURATION_MS, cubicBezier, tweenScrollTop } from './scrollTween.js';
+import { EASE_OUT_EXPO } from './motionCurves.js';
 
 /** A stand-in for the abstract: the tween only ever touches `scrollTop`. */
 function node(scrollTop = 0) {
@@ -29,7 +30,7 @@ function clock() {
 }
 
 test('the easing starts at 0, ends at 1 and never turns back', () => {
-  const ease = cubicBezier(...CARD_EASE);
+  const ease = cubicBezier(...EASE_OUT_EXPO);
   assert.equal(ease(0), 0);
   assert.equal(ease(1), 1);
 
@@ -42,7 +43,7 @@ test('the easing starts at 0, ends at 1 and never turns back', () => {
 });
 
 test('the curve front-loads, which is what makes it read as a settle', () => {
-  const ease = cubicBezier(...CARD_EASE);
+  const ease = cubicBezier(...EASE_OUT_EXPO);
   // `0.16, 1, 0.3, 1` is a decelerating curve: a quarter of the time should
   // already have covered well over half the distance. A linear ramp would put
   // 0.25 here, and the difference is the whole character of the motion.

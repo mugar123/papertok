@@ -16,12 +16,6 @@
   height: calc(100dvh - var(--nav-total));
   margin-top: var(--nav-total);
   background: var(--bg-secondary);
-  /* The pull writes both of these here rather than on the pill, because the
-     papers follow the finger too and this is the one ancestor they share
-     (FeedContainer's `setPull`). `--pull` is 0..1 and drives what grows;
-     `--pull-y` is the resisted distance in px and drives what travels. */
-  --pull: 0;
-  --pull-y: 0px;
 }
 
 .feed-container {
@@ -157,9 +151,7 @@
 
 /* Manual refresh for For You. Hidden under the navbar until asked for: on a
    fine pointer, while the mouse is in the band beneath the bar (`is-visible`,
-   set by FeedContainer); on touch, as the pull on the first card progresses
-   (`is-pulling` + `--pull`, 0..1, written straight to the element so a drag
-   never re-renders the feed). While a refresh runs it stays out and spins;
+   set by FeedContainer), or to the keyboard. While a refresh runs it stays out and spins;
    when it lands it gives one beat (`is-done`) and goes back under the bar.
    `translate`, not `transform`, centres it (papertok-transform-centering-vs-arrival).
    `top: 12px`, not `--nav-total + 12px`: this is an absolutely-positioned
@@ -199,74 +191,6 @@
   scale: 1;
   pointer-events: auto;
   transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1), translate 200ms cubic-bezier(0.2, 0, 0, 1), scale 200ms cubic-bezier(0.2, 0, 0, 1);
-}
-/* Under the finger. Three things move together and none of them is on a
-   clock: what the reader sees IS the gesture, so every value here is read
-   straight off `--pull` / `--pull-y` and `transition: none` keeps a clock
-   from lagging behind the thumb.
-
-   The pill rides the gap the papers open rather than a distance of its own
-   (it used to be a flat 30px however far you pulled), so it stays in the
-   space that appears under the bar instead of drifting out of it. And the
-   icon turns with the pull — half a revolution by the threshold — which is
-   the one part of this that says "far enough" without a second state to
-   arm: it hands over to the spin already part-way round. */
-.feed-wrapper[data-pull='pulling'] .feed-refresh {
-  transition: none;
-  opacity: var(--pull);
-  translate: -50% calc(-40px + 0.9 * var(--pull-y));
-  scale: calc(0.9 + 0.12 * var(--pull));
-  pointer-events: none;
-}
-.feed-wrapper[data-pull='pulling'] .feed-refresh-icon {
-  rotate: calc(var(--pull) * 180deg);
-}
-/* El aterrizaje: el fotograma en que el pulgar suelta y el refresco empieza.
-   La píldora va desde donde la dejó el tirón hasta su pose de trabajo, que es
-   letra por letra la de `is-visible` — así que cuando React llega con
-   `is-visible` e `is-refreshing` no hay nada que corregir y el relevo no se
-   ve. Sin esto, entre soltar y el commit de React la píldora se queda sin
-   ninguna clase, y sin clase su transición es la de IRSE: arranca hacia
-   debajo de la barra y la renderización siguiente la trae de vuelta. En un
-   tirón rápido, que suelta con la píldora a medio salir, eso es un asomo, un
-   retroceso y un tirón, los tres en menos de 100 ms.
-
-   Y los papers no vuelven con el muelle de la goma: entran en el hundimiento
-   del velo con el reloj y la curva del velo (180 ms `--ease-out-quad`, los
-   mismos de `.feed-container--refreshing`), así que entre el pulgar y el velo
-   el lector ve UN movimiento y no tres relojes. Un tirón cancelado sigue
-   siendo un muelle — un `transform` que vuelve a `none` con la expo de `.pc`
-   — porque significa otra cosa. */
-.feed-wrapper[data-pull='landing'] .feed-refresh {
-  opacity: 1;
-  translate: -50% 0;
-  scale: 1;
-  pointer-events: none;
-  transition:
-    opacity 180ms var(--ease-out-quad),
-    translate 180ms var(--ease-out-quad),
-    scale 180ms var(--ease-out-quad);
-}
-.feed-wrapper[data-pull='landing'] .feed-refresh-icon {
-  rotate: 180deg;
-  transition: rotate 180ms var(--ease-out-quad);
-}
-.feed-wrapper[data-pull='landing'] .pc {
-  transform: none;
-  transition: transform 180ms var(--ease-out-quad);
-}
-
-/* The papers themselves. `transform`, not the `translate` the refresh veil
-   uses on this same element: the two compose instead of overwriting one
-   another, so the hand-over from "released" to "refreshing" is one movement
-   — measured, monotonic upward, no bounce in the middle. The travel is
-   resisted in JS (`pullTravelPx`), not here, because the clamp that makes
-   the pill stop at the threshold must NOT be what the papers obey: going
-   dead under the thumb at the moment the reader is deciding is the fault
-   this whole rule exists to fix. */
-.feed-wrapper[data-pull='pulling'] .pc {
-  transform: translateY(var(--pull-y));
-  transition: none;
 }
 .feed-refresh:active:not(:disabled) { scale: 0.96; transition-duration: 80ms; }
 .feed-refresh:disabled { cursor: default; }
@@ -395,17 +319,6 @@
   .feed-container--refreshing { transition: opacity 120ms linear; }
   .feed-container--refreshing .pc { translate: none; }
   .feed-refresh, .feed-refresh.is-visible { transition: opacity 120ms linear; translate: -50% 0; scale: 1; }
-  /* The pull keeps its only unambiguous signal — the pill fading up with the
-     distance — and gives up everything that travels. The papers stay put. */
-  .feed-wrapper[data-pull='pulling'] .feed-refresh { translate: -50% 0; scale: 1; }
-  .feed-wrapper[data-pull='pulling'] .feed-refresh-icon { rotate: none; }
-  .feed-wrapper[data-pull='pulling'] .pc { transform: none; }
-  /* El aterrizaje también: la píldora se queda, y lo que viaja se va. Estas
-     reglas ganan por especificidad a las de arriba, así que si no están, el
-     recorrido vuelve por la puerta de atrás con el movimiento rechazado. */
-  .feed-wrapper[data-pull='landing'] .feed-refresh { transition: opacity 120ms linear; translate: -50% 0; scale: 1; }
-  .feed-wrapper[data-pull='landing'] .feed-refresh-icon { rotate: none; transition: none; }
-  .feed-wrapper[data-pull='landing'] .pc { transform: none; transition: none; }
   .feed-refresh.is-done,
   .feed-refresh-icon--spinning { animation: none; }
 }
@@ -446,19 +359,8 @@
   animation: none;
 }
 
-/* A drawn glyph on a red wash rather than an emoji: the emoji came in the
-   platform's own colours and weight, and was the one thing on the screen not
-   set in the app's vocabulary. */
-.feed-empty-icon {
-  display: grid;
-  place-items: center;
-  width: 56px;
-  height: 56px;
-  margin-bottom: var(--space-5);
-  border: 1px solid var(--tint-red-line);
-  border-radius: var(--radius-2xl);
-  background: var(--tint-red-bg);
-  color: var(--tint-red-fg);
+.petri.feed-error-petri .onboarding-petri-body {
+  animation: none;
 }
 
 /* The loading slot at the end of the feed (FeedContainer.jsx): a full snap
@@ -501,24 +403,19 @@
   justify-content: center;
 }
 
-.atom-loader-icon {
-  color: var(--text-primary);
-  animation: pulseNucleus 2s infinite alternate ease-in-out;
-}
-
-@keyframes pulseNucleus {
-  0% { transform: scale(0.96); opacity: 0.75; }
-  100% { transform: scale(1.04); opacity: 1; }
+.atom-loader .petri {
+  width: 100%;
+  height: 100%;
+  margin: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .feed-empty,
-  .atom-loader-icon {
+  .feed-empty {
     animation: none;
   }
 }
 
-.feed-empty h2 {
+.feed-empty h2:not(.empty-state-title) {
   font-family: var(--font-serif);
   font-size: var(--fs-3xl);
   font-weight: var(--fw-semibold);
@@ -528,7 +425,7 @@
   margin-bottom: var(--space-3);
 }
 
-.feed-empty p {
+.feed-empty p:not(.empty-state-body) {
   color: var(--text-secondary);
   font-size: var(--fs-base);
   line-height: var(--lh-normal);

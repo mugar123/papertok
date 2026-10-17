@@ -75,14 +75,14 @@
   transform: scale(1);
   transition:
     opacity 180ms ease 140ms,
-    transform 220ms cubic-bezier(0.16, 1, 0.3, 1) 120ms;
+    transform 220ms var(--ease-out-expo) 120ms;
 }
 
 .theme-toggle-core {
   transform: scale(0.5);
   fill-opacity: 0;
   transition:
-    transform 240ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 240ms var(--ease-out-expo),
     fill-opacity 140ms ease;
 }
 
@@ -106,13 +106,13 @@
   transform: scale(1);
   fill-opacity: 1;
   transition:
-    transform 180ms cubic-bezier(0.16, 1, 0.3, 1) 60ms,
+    transform 180ms var(--ease-out-expo) 60ms,
     fill-opacity 140ms ease 60ms;
 }
 
 .theme-toggle[aria-pressed='true'] .theme-toggle-bite {
   transform: translate(4px, -4px);
-  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1) 100ms;
+  transition: transform 220ms var(--ease-out-expo) 100ms;
 }
 
 /* The bar drops its icons to 28 px on the narrowest screens; this one stays at

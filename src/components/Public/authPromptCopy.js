@@ -7,31 +7,26 @@
  * for an account (audit 2026-09-23, issues 2, 9 and 10). A reason is one of
  * the keys below; anything else — a click event handed over by an
  * `onClick={requestAuthentication}`, a paper handed over by `onSaveToList` —
- * opens the general door.
+ * opens the general door. «Read in plain words» opens it too:
+ * its reason, `paper_rewrite`, is no longer a key.
  */
 const COPY = Object.freeze({
   default: {
     en: {
-      title: 'Make PaperTok yours',
-      lede: 'Like, save and follow research, and train a feed that learns what you read.',
-    },
-  },
-  paper_rewrite: {
-    en: {
-      title: 'Reading in plain words needs an account',
-      lede: 'With a free account, papers with full text can be read explained in plain words. You can also save, follow research and train your feed.',
+      title: 'Join PaperTok',
+      lede: 'Like and save papers, follow authors, and get a feed that learns what you read.',
     },
   },
   related: {
     en: {
       title: 'Connections need an account',
-      lede: 'With a free account you can see the citation graph and the similar papers of every paper, and save and follow research.',
+      lede: 'Like and save papers, follow authors, and get a feed that learns what you read.',
     },
   },
   explorer_search: {
     en: {
       title: 'Search and filters need an account',
-      lede: 'With a free account the whole list of this topic, author or institution opens, with its search and its filters.',
+      lede: 'Like and save papers, follow authors, and get a feed that learns what you read.',
     },
   },
 });

@@ -4,22 +4,17 @@ import { readFile } from 'node:fs/promises';
 const read = (p) => readFile(new URL(p, import.meta.url), 'utf8');
 const strip = (s) => s.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
-test('SOURCE: el feed expone un refresco visible en el primer paper y por arrastre', async () => {
+test('SOURCE: el feed expone un refresco visible en el primer paper, y pasarse por arriba ya no refresca', async () => {
   const src = strip(await read('./FeedContainer.jsx'));
   assert.match(src, /className=\{`feed-refresh[\s\S]{0,260}onClick=\{handleRefresh\}/);
-  const listeners = src.slice(src.indexOf("el.addEventListener('touchstart'"), src.indexOf("return () => {", src.indexOf("el.addEventListener('touchstart'")));
-  assert.match(listeners, /touchstart[\s\S]{0,120}touchmove[\s\S]{0,120}touchend[\s\S]{0,120}touchcancel/, 'las cuatro fases del gesto');
-  assert.match(listeners, /'touchmove', onMove, \{ passive: false \}/,
-    'touchmove NO pasivo: React lo registra pasivo en la ra\u00edz y ah\u00ed preventDefault se ignora');
+  assert.doesNotMatch(src, /addEventListener\('(touchstart|touchmove|wheel)'/);
   assert.doesNotMatch(src, /onTouchStart=|onTouchMove=|onTouchEnd=/, 'nada de props t\u00e1ctiles de React en el scroller');
   assert.match(src, /setActiveIndex\(index\)/);
 });
 
-test('SOURCE: la píldora no existe para el invitado, y el tirón tampoco', async () => {
+test('SOURCE: la píldora no existe para el invitado', async () => {
   const src = strip(await read('./FeedContainer.jsx'));
   assert.match(src, /\{!publicMode && papers\.length > 0 && \(\s*<button/, 'sin cuenta no hay píldora');
-  const attach = src.slice(src.indexOf('const el = feedRef.current;'), src.indexOf('const onStart ='));
-  assert.match(attach, /if \(!el \|\| publicMode\) return undefined;/, 'sin cuenta el tirón ni se engancha');
   // La captura NO se acota con el literal de las dependencias: cuando cambiaron
   // (el nodo entró en la lista) ese `indexOf` pasó a valer -1 y el slice se
   // comió medio fichero, con lo que estos asserts casaban contra código de otro
@@ -32,106 +27,6 @@ test('SOURCE: la píldora no existe para el invitado, y el tirón tampoco', asyn
   assert.match(hover, /pointer: fine/, 'el hover es solo de puntero fino');
   assert.match(hover, /feedNode\?\.parentElement/, 'se escucha en el envoltorio, padre del scroller y de la píldora');
   assert.doesNotMatch(src, /onMouseMove=\{handleMouseMove\}|onMouseLeave=/, 'nunca en el scroller: la píldora es su hermano y entrar en ella era un mouseleave');
-});
-
-test('SOURCE: el tirón escribe su progreso en el elemento, no en el estado del feed', async () => {
-  const src = strip(await read('./FeedContainer.jsx'));
-  const move = src.slice(src.indexOf('const onMove = (event) => {'), src.indexOf('const onEnd = (event) => {'));
-  assert.match(move, /setPull\(\s*pullProgress\(/);
-  assert.match(move, /pullTravelPx\(\{ startY: state\.startY, currentY: touch\.clientY \}\)/,
-    'el recorrido resistido viaja con el progreso: es lo que siguen los papers');
-  assert.doesNotMatch(move, /set(?!Pull\b)[A-Z]\w*\(/, 'ningún setState por evento de arrastre');
-  const pull = src.slice(src.indexOf('const setPull = useCallback('), src.indexOf('const handleMouseMove'));
-  assert.match(pull, /style\.setProperty\('--pull'/);
-  assert.match(pull, /style\.setProperty\('--pull-y'/);
-  // Un ATRIBUTO, no una clase: `className` en `.feed-wrapper` es un literal
-  // del JSX, así que React lo reescribe entero en cada commit. Medido: la
-  // clase de aterrizaje se ponía y la renderización que dispara el refresco
-  // la borraba en el mismo fotograma.
-  assert.match(pull, /wrapper\.setAttribute\('data-pull', progress > 0 \? 'pulling' : ''\);/);
-  assert.doesNotMatch(pull, /classList/, 'una clase aquí no sobrevive al primer render');
-  // `setAttribute`, no `dataset.x = …`: el lint del repo trata la asignación
-  // sobre algo derivado de un ref como una mutación prohibida.
-  assert.doesNotMatch(pull, /dataset\./);
-  // Al envoltorio, no a la píldora: los papers también tienen que seguir al
-  // dedo, y el envoltorio es el único ancestro que comparten.
-  assert.match(pull, /const wrapper = feedRef\.current\?\.parentElement;/);
-  assert.doesNotMatch(pull, /refreshPillRef/, 'escribirlo en la píldora no llega a las tarjetas');
-});
-
-/**
- * El tirón en móvil. Mientras esto sólo hacía crecer una píldora, el lector
- * arrastraba 110px y el mundo no se movía: el único gesto de manipulación
- * directa de toda la app no tenía nada bajo el pulgar salvo una insignia.
- */
-test('SOURCE: al tirar, los papers vienen con el dedo y sin reloj de por medio', async () => {
-  const css = strip(await read('./FeedContainer.css'));
-  const at = css.indexOf(".feed-wrapper[data-pull='pulling'] .pc {");
-  assert.ok(at > 0, 'la regla que arrastra las tarjetas sigue ahí');
-  const carry = css.slice(at, css.indexOf('}', at));
-  assert.match(carry, /transform: translateY\(var\(--pull-y\)\)/,
-    '`transform`, no `translate`: el velo del refresco ya usa `translate` en este mismo elemento y los dos tienen que componerse');
-  assert.doesNotMatch(carry, /translate:/, 'si el tirón pisa `translate`, el hundimiento del velo deja de existir');
-  assert.match(carry, /transition: none/, 'un reloj entre el pulgar y el papel es retraso');
-  // El release es CSS, así que sobrevive al re-render que trae el refresco.
-  const card = strip(await read('./PaperCard.css'));
-  assert.match(card, /transition:\s*opacity 0\.9s ease,\s*translate var\(--pc-travel\),\s*transform \d+ms var\(--ease-out-[a-z]+\)/,
-    'la tarjeta sabe volver sola al soltar, y sin perder ni la opacidad ni el hundimiento');
-  const pill = css.slice(css.indexOf(".feed-wrapper[data-pull='pulling'] .feed-refresh {"), css.indexOf('}', css.indexOf(".feed-wrapper[data-pull='pulling'] .feed-refresh {")));
-  assert.match(pill, /translate: -50% calc\(-40px \+ [\d.]+ \* var\(--pull-y\)\)/,
-    'la píldora va en el hueco que abren los papers, no en una distancia suya');
-  assert.match(css, /\.feed-wrapper\[data-pull='pulling'\] \.feed-refresh-icon \{\s*rotate: calc\(var\(--pull\) \* 180deg\)/,
-    'el icono gira con el tirón y entrega medio giro hecho al spinner');
-  const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
-  assert.match(reduced, /\.feed-wrapper\[data-pull='pulling'\] \.pc \{ transform: none; \}/);
-  assert.match(reduced, /\.feed-wrapper\[data-pull='pulling'\] \.feed-refresh-icon \{ rotate: none; \}/);
-});
-
-/**
- * Soltar no es una sola cosa. Un tirón que no llega al umbral se CANCELA y la
- * goma devuelve todo con su muelle; uno que refresca ENTREGA, y lo que
- * entrega tiene que llegar sin que se vea el relevo.
- *
- * Sin esto, entre soltar y el commit de React la píldora se queda sin estado,
- * y sin estado su transición es la de marcharse: arranca hacia debajo de la
- * barra y la renderización siguiente la trae de vuelta. En un tirón rápido,
- * que suelta con la píldora a medio salir, eso es asomo + retroceso + tirón en
- * menos de 100ms. Medido con el aterrizaje puesto: opacidad 0,71 → 0,81 →
- * 0,98 → 1,00 y la y de 3,65 a 0, monótono, sin retroceso, y el fotograma en
- * que el atributo se va no se nota porque la pose es la misma.
- */
-test('SOURCE: el tirón que refresca aterriza; el que no, vuelve con la goma', async () => {
-  const src = strip(await read('./FeedContainer.jsx'));
-  const end = src.slice(src.indexOf('const onEnd = (event) => {'), src.indexOf('const onCancel ='));
-  assert.match(end, /if \(outcome === 'refresh' && !busy && !running\) \{\s*landPull\(\);\s*refresh\?\.\(\);\s*\} else \{\s*setPull\(0, 0\);\s*\}/,
-    'las dos salidas son distintas a propósito: entregar y cancelar no significan lo mismo');
-  const land = src.slice(src.indexOf('const landPull = useCallback('), src.indexOf('}, []);', src.indexOf('const landPull = useCallback(')));
-  assert.match(land, /wrapper\.setAttribute\('data-pull', 'landing'\);/);
-  assert.match(land, /clearTimeout\(pullLandingTimerRef\.current\);/, 'dos aterrizajes seguidos no se pisan el temporizador');
-  assert.match(src, /useEffect\(\(\) => \(\) => clearTimeout\(pullLandingTimerRef\.current\), \[\]\);/,
-    'ni queda vivo tras desmontar');
-
-  const css = strip(await read('./FeedContainer.css'));
-  const grab = (sel) => { const at = css.indexOf(sel); assert.ok(at > 0, `falta ${sel}`); return css.slice(at, css.indexOf('}', at)); };
-  const landing = grab(".feed-wrapper[data-pull='landing'] .feed-refresh {");
-  const visible = grab('.feed-refresh.is-visible,');
-  // La pose de aterrizaje TIENE que ser la de trabajo, o al llegar React se
-  // ve el salto que todo esto existe para quitar.
-  for (const decl of ['opacity: 1', 'translate: -50% 0', 'scale: 1']) {
-    assert.ok(landing.includes(decl), `el aterrizaje aterriza en la pose de trabajo (${decl})`);
-    assert.ok(visible.includes(decl), `y es la misma que la de is-visible (${decl})`);
-  }
-  // Y con el reloj del velo, para que del pulgar al velo haya un movimiento.
-  const dip = grab('.feed-container--refreshing {');
-  const dipMs = /opacity (\d+)ms/.exec(dip)[1];
-  assert.ok(landing.includes(`opacity ${dipMs}ms var(--ease-out-quad)`),
-    `el aterrizaje corre el reloj del velo (${dipMs}ms), no uno suyo`);
-  const cards = grab(".feed-wrapper[data-pull='landing'] .pc {");
-  assert.match(cards, /transform: none/, 'los papers entran en el hundimiento del velo');
-  assert.ok(cards.includes(`transform ${dipMs}ms var(--ease-out-quad)`),
-    'y en el mismo reloj: con el muelle de la goma serían dos movimientos');
-  const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
-  assert.match(reduced, /\.feed-wrapper\[data-pull='landing'\] \.pc \{ transform: none; transition: none; \}/);
 });
 
 test('SOURCE: la primera visita es la bienvenida, en el primer render y sin cargar el feed', async () => {
@@ -147,24 +42,6 @@ test('SOURCE: la primera visita es la bienvenida, en el primer render y sin carg
   const hook = strip(await read('../../hooks/useGuestFeed.js'));
   // `guestFeedLoadDecision` answers null while the feed is not enabled.
   assert.match(hook, /const decision = guestFeedLoadDecision\(\{ enabled, previousKey, planKey: plan\.key \}\);\s*if \(!decision\) return undefined;/);
-});
-
-/**
- * The band is what lets the pull exist on a card that is not the first, and
- * the takeover on the first move is what keeps it from stealing the swipe to
- * the previous paper. Both have to stay wired, and the feed has to stop
- * scrolling the moment the gesture is ours.
- */
-test('SOURCE: el tirón se decide en el primer movimiento y entonces detiene el feed', async () => {
-  const src = strip(await read('./FeedContainer.jsx'));
-  const start = src.slice(src.indexOf('const onStart = (event) => {'), src.indexOf('const onMove = (event) => {'));
-  assert.match(start, /containerTop: box\.top,\s*containerHeight: box\.height,/, 'la franja se mide desde el borde del scroller y escala con su alto');
-  const move = src.slice(src.indexOf('const onMove = (event) => {'), src.indexOf('const onEnd = (event) => {'));
-  assert.match(move, /if \(!pullTakesOver\(\{[\s\S]{0,200}\}\)\) \{\s*state\.phase = 'idle';/,
-    'un primer movimiento hacia arriba suelta el gesto para el resto del arrastre');
-  assert.ok(move.indexOf("state.phase = 'owning';") < move.indexOf('event.preventDefault()'),
-    'primero se reclama el gesto, y sólo entonces se impide el scroll');
-  assert.match(move, /if \(event\.cancelable\) event\.preventDefault\(\);/);
 });
 
 /**
@@ -476,3 +353,4 @@ test('SOURCE: el hover se engancha al envoltorio vivo, no al del primer commit',
   assert.doesNotMatch(deps, /papers\.length/,
     'y no `papers.length`, que vale lo mismo antes y después de que el contenedor exista');
 });
+

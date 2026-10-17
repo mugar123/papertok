@@ -17,14 +17,6 @@
   background: var(--scrim);
 }
 
-.create-list-scrim[data-open] {
-  animation: fadeIn 0.15s ease;
-}
-
-.create-list-scrim[data-closed] {
-  animation: fadeOut 0.16s ease forwards;
-}
-
 .create-list-card {
   width: min(calc(100vw - var(--space-8)), 380px);
   max-width: none;
@@ -35,29 +27,9 @@
   box-shadow: var(--shadow-xl);
 }
 
-/* A matched pair, and the exit is the shorter of the two: an entrance is worth
-   watching because the window is arriving, while a dismissal that lingers is
-   just the interface holding on after the decision was made. `transform`,
-   never `translate`: the primitive centres the popup with the `translate`
-   property and a keyframe touching it would drag the window to the corner. */
-@keyframes createListIn {
-  from { opacity: 0; transform: translateY(6px) scale(0.98); }
-  to { opacity: 1; transform: none; }
-}
-
-@keyframes createListOut {
-  from { opacity: 1; transform: none; }
-  to { opacity: 0; transform: translateY(4px) scale(0.985); }
-}
-
-.create-list-card[data-open] {
-  animation: createListIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-/* `forwards` matters: the window stays mounted for the length of this, and
-   without it the card would snap back to full opacity for the last frame. */
+/* Arriving and leaving are the dialog's own (ui/dialog.jsx), like every
+   window in the app. No taps land on a window that is leaving. */
 .create-list-card[data-closed] {
-  animation: createListOut 0.16s ease forwards;
   pointer-events: none;
 }
 
@@ -115,7 +87,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all var(--transition-fast);
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast),
+    transform var(--transition-fast);
   border: 1px solid var(--border-subtle);
   color: var(--text-secondary);
 }
@@ -147,7 +120,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 36px;
+  /* Square, whatever the width the row gives it. */
+  aspect-ratio: 1;
   border: 1px solid color-mix(in srgb, var(--swatch) 72%, var(--text-primary));
   border-radius: var(--radius-md);
   background: var(--swatch);
@@ -158,7 +132,7 @@
 }
 
 .create-list-color-btn:active {
-  transform: scale(0.94);
+  transform: scale(var(--press-scale));
 }
 
 /* The tick lands rather than appearing. Eight swatches is a row the eye scans,
@@ -184,32 +158,54 @@
   outline-offset: 2px;
 }
 
-.create-list-color-hint {
-  margin: 0;
-  color: var(--text-tertiary);
-  font-size: var(--fs-xs);
-  line-height: var(--lh-normal);
-}
-
-/* Eight across is 35px a swatch, which is fine for a pointer and not for a
-   thumb. Four across on a phone clears the 44px floor. */
+/* On a phone the eight stay on one row, a tighter gap buying each square
+   about 40px for a thumb (wrapping them left a ragged second row). */
 @media (max-width: 420px) {
   .create-list-color-picker {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .create-list-color-btn {
-    height: 44px;
+    gap: var(--space-1);
   }
 }
 
-.create-list-note {
-  margin: 0;
-  color: var(--text-tertiary);
-  font-size: var(--fs-xs);
+/* Private or public, asked once when the list is made: two halves of one
+   control, the chosen one inked like a picked icon. */
+.create-list-visibility {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.create-list-visibility-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 38px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .create-list-visibility-btn:hover { background: var(--bg-secondary); }
+}
+
+.create-list-visibility-btn[data-checked] {
+  border-color: var(--border-ink);
+  background: var(--bg-sunken);
+  color: var(--text-primary);
+}
+
+/* It arrives rather than appearing: a short fade and drop, so the actions it
+   pushes down move with something the eye can follow. */
+@keyframes createListErrorIn {
+  from { opacity: 0; transform: translateY(-4px); }
 }
 
 .create-list-error {
+  animation: createListErrorIn 160ms var(--ease-out);
   margin: var(--space-3) 0 0;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--tint-red-line);
@@ -228,16 +224,13 @@
 }
 
 .create-list-icon-btn:active {
-  transform: scale(0.94);
+  transform: scale(var(--press-scale));
 }
 
 /* With no animation to wait for, the primitive unmounts the window at once. */
 @media (prefers-reduced-motion: reduce) {
-  .create-list-card[data-open],
-  .create-list-card[data-closed],
-  .create-list-scrim[data-open],
-  .create-list-scrim[data-closed],
-  .create-list-color-btn > svg {
+  .create-list-color-btn > svg,
+  .create-list-error {
     animation: none;
   }
 
@@ -245,4 +238,17 @@
   .create-list-icon-btn:active {
     transform: none;
   }
+}
+
+/* The fields already carry their own space below (`.create-list-field`), so
+   the plain form adds none between them: the gap on top of the
+   margins is what doubled the spacing. The actions sit one field-step down. */
+.create-list-plain .create-list-actions {
+  margin-top: 0;
+}
+
+/* The plain form: a view of its own (the save window's create view). */
+.create-list-plain {
+  display: flex;
+  flex-direction: column;
 }

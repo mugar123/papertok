@@ -34,14 +34,24 @@ function layout(overrides = {}) {
   });
 }
 
-function band(result, relation) {
-  return result.nodes.filter(node => node.relation === relation);
+const half = CITATION_MAP_GEOMETRY.minGap / 2;
+const square = node => ({ left: node.x - half, right: node.x + half, top: node.y - half, bottom: node.y + half });
+const overlaps = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+
+function assertNoSharedTargets(result) {
+  const boxes = result.nodes.map(square);
+  boxes.push(square({ x: result.centerX, y: result.centerY }));
+  for (let i = 0; i < boxes.length; i += 1) {
+    for (let j = i + 1; j < boxes.length; j += 1) {
+      assert.equal(overlaps(boxes[i], boxes[j]), false, `targets ${i} and ${j} share pixels`);
+    }
+  }
 }
 
 test('a paper is mappable only when both of its coordinates are known', () => {
   assert.equal(isMappableCitationPaper(paper()), true);
   // A count of zero is a measurement; an unknown count is not, and the
-  // horizontal axis cannot place what nobody counted.
+  // citation axis cannot place what nobody counted.
   assert.equal(isMappableCitationPaper(paper({ citationCount: 0 })), true);
   assert.equal(isMappableCitationPaper(paper({ citationCountKnown: false })), false);
   assert.equal(isMappableCitationPaper(paper({ year: undefined })), false);
@@ -54,283 +64,225 @@ test('the layout waits for a measured box instead of dividing by zero', () => {
   assert.equal(pending.ready, false);
   assert.equal(pending.nodes.length, 0);
   assert.ok(Number.isFinite(pending.centerX));
+  assert.ok(Number.isFinite(pending.centerY));
 });
 
-test('before the box is measured, nothing is trimmed for space yet', () => {
-  // Capacity depends on a band height that only exists once the plot has
-  // been measured. Trimming for space before then would flash a wrong
-  // omitted count for one frame, ahead of the real one.
-  const pending = layout({
-    width: 0,
-    height: 0,
-    references: series(10, index => paper({ id: `r${index}`, year: 2000 + index })),
-  });
-  assert.equal(pending.ready, false);
-  assert.equal(pending.shown.references, 10);
-  assert.equal(pending.omitted.references, 0);
-});
-
-test('every node stays inside the band it belongs to', () => {
-  const result = layout({
-    references: series(8, index => paper({ id: `r${index}`, year: 1997 + index * 2, citationCount: 500 * (index + 1) })),
-    citations: series(8, index => paper({ id: `c${index}`, year: 2018 + index, citationCount: 800 * (index + 1) })),
-  });
-
-  const referenceBand = result.bands.references;
-  const citationBand = result.bands.citations;
-  assert.ok(referenceBand.bottom < result.ruleY);
-  assert.ok(citationBand.top > result.ruleY);
-
-  for (const node of band(result, 'reference')) {
-    assert.ok(node.y - node.rowHeight / 2 >= referenceBand.top - 0.001, `top ${node.y}`);
-    assert.ok(node.y + node.rowHeight / 2 <= referenceBand.bottom + 0.001, `bottom ${node.y}`);
-  }
-  for (const node of band(result, 'citation')) {
-    assert.ok(node.y - node.rowHeight / 2 >= citationBand.top - 0.001, `top ${node.y}`);
-    assert.ok(node.y + node.rowHeight / 2 <= citationBand.bottom + 0.001, `bottom ${node.y}`);
-  }
-});
-
-test('hit rows tile without ever sharing a pixel', () => {
-  const result = layout({
-    // Six of these share a year, so the whole band leans on the spreading pass.
-    references: series(8, index => paper({ id: `r${index}`, year: index < 6 ? 2014 : 1997 + index, citationCount: 400 + index })),
-  });
-
-  const rows = band(result, 'reference').slice().sort((a, b) => a.y - b.y);
-  for (let index = 1; index < rows.length; index += 1) {
-    const previousBottom = rows[index - 1].y + rows[index - 1].rowHeight / 2;
-    const currentTop = rows[index].y - rows[index].rowHeight / 2;
-    assert.ok(currentTop >= previousBottom - 0.001, `row ${index} overlaps the one above`);
-  }
-});
-
-test('a realistic short mobile plot never overlaps two nodes, and counts what it could not fit', () => {
-  // 345x198.58 is the real, measured `.graph-plot` box on a 375x667 viewport
-  // (iPhone SE-class) with the sheet's actual CSS -- the shortest realistic
-  // case, and shorter than the 396px-tall BOX every other test in this file
-  // uses, which is roomy enough to never have exercised this band's true
-  // floor. 8 references is the service's default fetch cap per band, and
-  // the common case for anything with a resolvable citation graph: most
-  // papers cite at least eight references outright.
-  const result = layout({
-    width: 345,
-    height: 198.58,
-    references: series(8, index => paper({ id: `r${index}`, year: 2010 + index, citationCount: 50 * (index + 1) })),
-  });
-
-  const rows = band(result, 'reference').slice().sort((a, b) => a.y - b.y);
-  assert.equal(rows.length, 2);
-  assert.equal(result.shown.references, 2);
-  assert.equal(result.omitted.references, 6);
-  for (const node of rows) assert.equal(node.rowHeight, 24);
-  for (let index = 1; index < rows.length; index += 1) {
-    const previousBottom = rows[index - 1].y + rows[index - 1].rowHeight / 2;
-    const currentTop = rows[index].y - rows[index].rowHeight / 2;
-    assert.ok(currentTop >= previousBottom - 0.001, `row ${index} overlaps the one above`);
-  }
-});
-
-test('omitted counts both unmappable papers and mappable ones a full band has no room for', () => {
-  const result = layout({
-    height: 120, // one 24px slot in the reference band
-    references: [
-      paper({ id: 'no-year', year: undefined, citationCount: 10 }),
-      ...series(3, index => paper({ id: `r${index}`, year: 2000 + index })),
-    ],
-  });
-
-  // 1 unmappable + 2 mappable-but-unfit (3 mappable, 1 slot) = 3 omitted.
-  assert.equal(result.shown.references, 1);
-  assert.equal(result.omitted.references, 3);
-  assert.equal(result.shown.references + result.omitted.references, 4);
-});
-
-test('crowding drops nodes now, not their row height', () => {
-  const roomy = layout({ references: series(4, index => paper({ id: `r${index}`, year: 2000 + index * 4 })) });
-  const crowded = layout({ references: series(10, index => paper({ id: `r${index}`, year: 2000 + index })) });
-
-  assert.equal(roomy.nodes[0].rowHeight, CITATION_MAP_GEOMETRY.minGap);
-  assert.equal(roomy.nodes.length, 4);
-  assert.equal(roomy.omitted.references, 0);
-
-  // This BOX gives the reference band 162px (height/2 - ruleGap - bandPadding),
-  // room for six 24px slots -- so four of the ten crowded references are left
-  // out of the map, not squeezed into a row smaller than the WCAG floor.
-  assert.equal(crowded.nodes.length, 6);
-  assert.equal(crowded.omitted.references, 4);
-  for (const node of crowded.nodes) assert.equal(node.rowHeight, CITATION_MAP_GEOMETRY.minGap);
-});
-
-test('spreading crowded nodes never reorders them in time', () => {
-  const result = layout({
-    references: series(8, index => paper({ id: `r${index}`, year: index < 5 ? 2014 : 2015 + index })),
-  });
-
-  const rows = band(result, 'reference');
-  const byYear = rows.slice().sort((a, b) => a.paper.year - b.paper.year || a.paper.id.localeCompare(b.paper.id));
-  const byPosition = rows.slice().sort((a, b) => a.y - b.y);
-  assert.deepEqual(byPosition.map(node => node.paper.id), byYear.map(node => node.paper.id));
-});
-
-test('the horizontal axis is monotonic in citations and stays inside the plot', () => {
+test('time runs left to right and citations run bottom to top', () => {
   const result = layout({
     references: [
-      paper({ id: 'few', year: 2001, citationCount: 120 }),
-      paper({ id: 'some', year: 2005, citationCount: 4200 }),
-      paper({ id: 'many', year: 2009, citationCount: 96000 }),
+      paper({ id: 'old', year: 2001, citationCount: 50 }),
+      paper({ id: 'newer', year: 2012, citationCount: 50 }),
+    ],
+    citations: [
+      paper({ id: 'quiet', year: 2020, citationCount: 10 }),
+      paper({ id: 'loud', year: 2021, citationCount: 10000 }),
     ],
   });
+  const at = id => result.nodes.find(node => node.paper.id === id);
+  assert.ok(at('old').x < at('newer').x, 'an older paper stands further left');
+  assert.ok(at('newer').x < result.centerX, 'a paper from before the centre stands to its left');
+  assert.ok(at('quiet').x > result.centerX, 'a paper from after the centre stands to its right');
+  assert.ok(at('loud').y < at('quiet').y, 'a more cited paper stands higher');
+});
 
-  const x = Object.fromEntries(result.nodes.map(node => [node.paper.id, node.x]));
-  assert.ok(x.few < x.some);
-  assert.ok(x.some < x.many);
+test('a node is never moved up or down to make room: its height is its count', () => {
+  // Five papers from one year with one count all want the same spot.
+  const crowd = series(5, index => paper({ id: `same-${index}`, year: 2015, citationCount: 300 }));
+  const result = layout({ references: crowd });
+  const heights = new Set(result.nodes.map(node => Math.round(node.y * 1000)));
+  assert.equal(heights.size, 1, 'every placed node keeps the height of its own count');
+  assertNoSharedTargets(result);
+});
+
+test('papers that want the same spot spread sideways, within their own year', () => {
+  const crowd = series(4, index => paper({ id: `same-${index}`, year: 2015, citationCount: 300 }));
+  const result = layout({ references: crowd });
+  const neighbour = layout({ references: [paper({ id: 'a', year: 2015, citationCount: 300 }), paper({ id: 'b', year: 2016, citationCount: 300 })] });
+  const [first, next] = neighbour.nodes.map(node => node.x).sort((p, q) => p - q);
+  const pxPerYear = next - first;
   for (const node of result.nodes) {
-    assert.ok(node.x >= CITATION_MAP_GEOMETRY.sidePadding - 0.001);
-    assert.ok(node.x <= BOX.width - CITATION_MAP_GEOMETRY.sidePadding + 0.001);
+    assert.ok(Math.abs(node.x - first) < pxPerYear / 2, 'a spread node stays within half a year of its own');
   }
 });
 
-test('a neighbourhood with one citation count does not collapse onto a single column', () => {
-  const result = layout({
-    center: paper({ id: 'center', year: 2017, citationCount: 900 }),
-    references: series(3, index => paper({ id: `r${index}`, year: 2000 + index, citationCount: 900 })),
-  });
-
-  for (const node of result.nodes) assert.ok(Number.isFinite(node.x));
-  assert.ok(result.ticks.every(tick => Number.isFinite(tick.x)));
+test('no two targets ever share a pixel, the centre mark included', () => {
+  const references = series(30, index => paper({ id: `r-${index}`, year: 2000 + (index % 8), citationCount: 10 ** (1 + (index % 4)) }));
+  const citations = series(30, index => paper({ id: `c-${index}`, year: 2018 + (index % 6), citationCount: 10 ** (index % 3) }));
+  assertNoSharedTargets(layout({ references, citations }));
+  assertNoSharedTargets(layout({ width: 360, height: 300, references, citations }));
 });
 
-test('ticks are powers of ten that fall inside the plot', () => {
-  const result = layout({
-    references: [paper({ id: 'a', year: 2001, citationCount: 300 })],
-    citations: [paper({ id: 'b', year: 2020, citationCount: 90000 })],
-  });
+test('crowding drops nodes into the list rather than shrinking their targets', () => {
+  const crowd = series(40, index => paper({ id: `same-${index}`, year: 2015, citationCount: 300 }));
+  const result = layout({ references: crowd });
+  assert.ok(result.nodes.length < 40, 'a single crowded spot cannot hold forty targets');
+});
 
+test('a crowded map keeps the leading papers of both neighbourhoods', () => {
+  // Both ranked lists want the same spot; the first of each must survive.
+  const references = series(20, index => paper({ id: `r-${index}`, year: 2017, citationCount: 300 }));
+  const citations = series(20, index => paper({ id: `c-${index}`, year: 2017, citationCount: 300 }));
+  const result = layout({ references, citations, center: paper({ id: 'center', year: 2010, citationCount: 5 }) });
+  const ids = result.nodes.map(node => node.paper.id);
+  assert.ok(ids.includes('r-0'), 'the most cited reference is drawn');
+  assert.ok(ids.includes('c-0'), 'the most recent citation is drawn');
+});
+
+test('every node and the centre stay inside the plot', () => {
+  const result = layout({
+    references: series(8, index => paper({ id: `r-${index}`, year: 1990 + index * 3, citationCount: 10 ** index })),
+    citations: series(8, index => paper({ id: `c-${index}`, year: 2018 + index, citationCount: index * 5 })),
+  });
+  for (const node of [...result.nodes, { x: result.centerX, y: result.centerY }]) {
+    assert.ok(node.x - half >= 0 && node.x + half <= BOX.width, 'inside horizontally');
+    assert.ok(node.y >= result.plot.top && node.y <= result.plot.bottom, 'inside vertically');
+  }
+});
+
+test('a neighbourhood with one citation count does not collapse onto the floor or ceiling', () => {
+  const result = layout({
+    center: paper({ id: 'center', year: 2017, citationCount: 40 }),
+    references: [paper({ id: 'a', year: 2010, citationCount: 40 })],
+  });
+  const node = result.nodes[0];
+  assert.ok(node.y > result.plot.top && node.y < result.plot.bottom, 'the shared count sits inside the scale');
+});
+
+test('citation ticks are powers of ten, larger ones higher, inside the plot', () => {
+  const result = layout({
+    references: [paper({ id: 'a', citationCount: 3 }), paper({ id: 'b', citationCount: 40000 })],
+  });
   assert.ok(result.ticks.length >= 2);
   for (const tick of result.ticks) {
-    const exponent = Math.log10(tick.value);
-    assert.equal(exponent, Math.round(exponent));
-    assert.ok(tick.x > 0 && tick.x < BOX.width);
+    assert.equal(Math.log10(tick.value) % 1, 0, `${tick.value} is a power of ten`);
+    assert.ok(tick.y >= result.plot.top && tick.y <= result.plot.bottom);
+  }
+  const ys = result.ticks.map(tick => tick.y);
+  assert.deepEqual([...ys].sort((p, q) => q - p), ys, 'larger values sit higher');
+});
+
+test('year ticks are round years, far enough apart to read', () => {
+  const result = layout({
+    references: [paper({ id: 'a', year: 1975 })],
+    citations: [paper({ id: 'b', year: 2024 })],
+  });
+  assert.ok(result.yearTicks.length >= 2);
+  for (let index = 1; index < result.yearTicks.length; index += 1) {
+    const gap = result.yearTicks[index].x - result.yearTicks[index - 1].x;
+    assert.ok(gap >= CITATION_MAP_GEOMETRY.minYearTickGap, 'labels do not crowd');
   }
 });
 
 test('tick labels stay short at every scale', () => {
-  assert.equal(formatCitationTick(100), '100');
+  assert.equal(formatCitationTick(1), '1');
   assert.equal(formatCitationTick(1000), '1K');
   assert.equal(formatCitationTick(10000), '10K');
   assert.equal(formatCitationTick(1000000), '1M');
 });
 
-test('a label near the right edge flips to the other side of its node', () => {
-  const result = layout({
-    references: [
-      paper({ id: 'left', year: 2001, citationCount: 100 }),
-      paper({ id: 'right', year: 2010, citationCount: 500000 }),
-    ],
-  });
-
-  const sides = Object.fromEntries(result.nodes.map(node => [node.paper.id, node.side]));
-  assert.equal(sides.left, 'right');
-  assert.equal(sides.right, 'left');
+test('a label near the right edge sits on the other side of its node', () => {
+  const result = layout({ citations: [paper({ id: 'late', year: 2030, citationCount: 100 })] });
+  const node = result.nodes[0];
+  assert.ok(node.x > BOX.width - CITATION_MAP_GEOMETRY.labelWidth - CITATION_MAP_GEOMETRY.flipMargin);
+  assert.equal(node.side, 'left');
 });
 
-test('papers without both coordinates are counted out instead of being placed', () => {
-  const result = layout({
-    references: [
-      paper({ id: 'placed', year: 2001, citationCount: 100 }),
-      paper({ id: 'no-count', year: 2002, citationCount: 0, citationCountKnown: false }),
-      paper({ id: 'no-year', year: undefined, citationCount: 40 }),
-    ],
-    citations: [paper({ id: 'also-placed', year: 2020, citationCount: 300 })],
-  });
-
-  assert.deepEqual(result.nodes.map(node => node.paper.id), ['placed', 'also-placed']);
-  assert.equal(result.omitted.references, 2);
-  assert.equal(result.omitted.citations, 0);
-});
-
-test('a single node in a band sits inside it', () => {
-  const result = layout({ references: [paper({ id: 'only', year: 2004 })] });
-  const only = result.nodes[0];
-  assert.ok(Number.isFinite(only.y));
-  assert.ok(only.y >= result.bands.references.top);
-  assert.ok(only.y <= result.bands.references.bottom);
-});
-
-test('the centre marker sits at the citation count of the paper you are looking at', () => {
-  const modest = layout({
-    center: paper({ id: 'center', year: 2017, citationCount: 200 }),
-    references: [paper({ id: 'r', year: 2001, citationCount: 100 })],
-    citations: [paper({ id: 'c', year: 2020, citationCount: 90000 })],
-  });
-  const huge = layout({
-    center: paper({ id: 'center', year: 2017, citationCount: 80000 }),
-    references: [paper({ id: 'r', year: 2001, citationCount: 100 })],
-    citations: [paper({ id: 'c', year: 2020, citationCount: 90000 })],
-  });
-
-  assert.ok(modest.centerX < huge.centerX);
-  assert.ok(modest.centerX >= CITATION_MAP_GEOMETRY.sidePadding - 0.001);
-  assert.ok(huge.centerX <= BOX.width - CITATION_MAP_GEOMETRY.sidePadding + 0.001);
-});
-
-test('a centre with an unknown citation count still gets a marker', () => {
-  const result = layout({
-    center: paper({ id: 'center', year: 2017, citationCount: 0, citationCountKnown: false }),
-    references: [paper({ id: 'r', year: 2001, citationCount: 100 })],
-  });
-  assert.ok(Number.isFinite(result.centerX));
-  assert.equal(result.centerImpactKnown, false);
-});
-
-test('the stagger restarts on each band so sixteen nodes do not queue up', () => {
-  const result = layout({
-    references: series(3, index => paper({ id: `r${index}`, year: 2000 + index })),
-    citations: series(3, index => paper({ id: `c${index}`, year: 2020 + index })),
-  });
-
-  const references = band(result, 'reference').slice().sort((a, b) => a.delay - b.delay);
-  const citations = band(result, 'citation').slice().sort((a, b) => a.delay - b.delay);
-  const { nodeDelayBase, nodeDelayStep, edgeDelayBase, edgeDelayStep } = CITATION_MAP_GEOMETRY;
-
-  assert.deepEqual(references.map(node => node.delay), [0, 1, 2].map(i => nodeDelayBase + i * nodeDelayStep));
-  assert.deepEqual(citations.map(node => node.delay), [0, 1, 2].map(i => nodeDelayBase + i * nodeDelayStep));
-  assert.deepEqual(references.map(node => node.edgeDelay), [0, 1, 2].map(i => edgeDelayBase + i * edgeDelayStep));
-});
-
-test('a band too short for every node omits the rest instead of shrinking below the floor', () => {
-  const cramped = layout({
-    height: 120,
-    references: series(4, index => paper({ id: `r${index}`, year: 2000 + index })),
-    citations: series(4, index => paper({ id: `c${index}`, year: 2020 + index })),
-  });
-
-  // Each band is exactly 24px tall at this height -- room for one node, not
-  // the four offered on either side of the rule.
-  assert.equal(cramped.nodes.length, 2);
-  assert.equal(cramped.omitted.references, 3);
-  assert.equal(cramped.omitted.citations, 3);
-  for (const node of cramped.nodes) {
-    assert.equal(node.rowHeight, CITATION_MAP_GEOMETRY.minGap);
-    assert.ok(Number.isFinite(node.y), 'a node landed nowhere');
-    assert.ok(node.y >= 0 && node.y <= 120, `a node left the plot at ${node.y}`);
+test('a label with no free room waits for hover or focus instead of covering another node', () => {
+  const crowd = series(6, index => paper({ id: `same-${index}`, year: 2015, citationCount: 300 }));
+  const result = layout({ references: crowd });
+  const labelBox = (node) => {
+    const top = node.y - CITATION_MAP_GEOMETRY.labelHeight / 2;
+    const bottom = node.y + CITATION_MAP_GEOMETRY.labelHeight / 2;
+    return node.side === 'right'
+      ? { left: node.x + half, right: node.x + half + CITATION_MAP_GEOMETRY.labelWidth, top, bottom }
+      : { left: node.x - half - CITATION_MAP_GEOMETRY.labelWidth, right: node.x - half, top, bottom };
+  };
+  for (const node of result.nodes.filter(entry => !entry.labelHidden)) {
+    for (const other of result.nodes) {
+      if (other !== node) assert.equal(overlaps(labelBox(node), square(other)), false, 'a shown label covers no target');
+    }
   }
+  assert.ok(result.nodes.some(node => node.labelHidden), 'the crowd leaves some labels for hover');
 });
 
-test('a band with no room at all omits every node rather than drawing one that overlaps its neighbour', () => {
-  const nothing = layout({
-    height: 40, // half-height 20, minus ruleGap alone already clears the band's top past its bottom
-    references: series(3, index => paper({ id: `r${index}`, year: 2000 + index })),
+test('the centre keeps its own spot; a neighbour that wants it is moved aside', () => {
+  const result = layout({
+    center: paper({ id: 'center', year: 2017, citationCount: 1000 }),
+    references: [paper({ id: 'r', year: 2017, citationCount: 1000 })],
   });
-
-  assert.equal(nothing.nodes.length, 0);
-  assert.equal(nothing.omitted.references, 3);
+  const node = result.nodes[0];
+  assert.equal(Math.round(node.y), Math.round(result.centerY), 'same count, same height');
+  assert.notEqual(Math.round(node.x), Math.round(result.centerX), 'moved sideways, not onto the centre');
 });
 
-test('an empty neighbourhood still draws a rule and a marker', () => {
+test('a centre with an unknown citation count stands mid-height rather than at an invented count', () => {
+  const result = layout({
+    center: paper({ id: 'center', year: 2017, citationCountKnown: false }),
+    references: [paper({ id: 'r', year: 2010, citationCount: 10 })],
+  });
+  assert.equal(result.centerY, BOX.height / 2);
+});
+
+test('the stagger restarts for each neighbourhood so a full map does not queue up', () => {
+  const result = layout({
+    references: series(8, index => paper({ id: `r-${index}`, year: 2000 + index, citationCount: 10 + index * 100 })),
+    citations: series(8, index => paper({ id: `c-${index}`, year: 2018 + index, citationCount: 10 + index * 100 })),
+  });
+  const first = relation => result.nodes.find(node => node.relation === relation);
+  assert.equal(first('reference').delay, CITATION_MAP_GEOMETRY.nodeDelayBase);
+  assert.equal(first('citation').delay, CITATION_MAP_GEOMETRY.nodeDelayBase);
+});
+
+test('an empty neighbourhood still draws the centre', () => {
   const result = layout();
   assert.equal(result.ready, true);
   assert.equal(result.nodes.length, 0);
-  assert.ok(result.ruleY > 0 && result.ruleY < BOX.height);
+  assert.ok(Number.isFinite(result.centerX) && Number.isFinite(result.centerY));
+});
+
+test('a narrow neighbourhood gets the 2 and 5 steps, so the scale has more than one mark', () => {
+  const result = layout({
+    center: paper({ id: 'center', year: 2017, citationCount: 900 }),
+    references: [paper({ id: 'a', year: 2010, citationCount: 700 }), paper({ id: 'b', year: 2012, citationCount: 1500 })],
+  });
+  assert.ok(result.ticks.length >= 2, 'more than one mark');
+  for (const tick of result.ticks) {
+    const lead = tick.value / 10 ** Math.floor(Math.log10(tick.value));
+    assert.ok([1, 2, 5].includes(lead), `${tick.value} is a 1, 2 or 5 step`);
+  }
+});
+
+test('a star at the first year or the top count stays clear of the scale beside and above the plot', () => {
+  const result = layout({
+    references: [paper({ id: 'oldest', year: 1950, citationCount: 90000 })],
+  });
+  const node = result.nodes.find(entry => entry.paper.id === 'oldest');
+  assert.ok(node, 'the oldest, most cited paper is drawn');
+  assert.ok(node.x - half >= result.plot.left, 'its target starts inside the plot, not on the scale labels');
+  assert.ok(node.y - half >= result.plot.top, 'its target starts below the scale name');
+});
+
+test('no star label lands on the centre chip', () => {
+  const geometry = CITATION_MAP_GEOMETRY;
+  const result = layout({
+    // Just left of the centre at its count: a label on its right would run
+    // into the chip, which stands right of the mark here.
+    citations: [paper({ id: 'beside', year: 2016, citationCount: 131204 })],
+  });
+  assert.equal(result.chipSide, 'right');
+  const chipLeft = result.centerX + geometry.chipGap;
+  const chip = {
+    left: chipLeft,
+    right: chipLeft + geometry.chipWidth,
+    top: result.centerY - geometry.chipHeight / 2,
+    bottom: result.centerY + geometry.chipHeight / 2,
+  };
+  for (const node of result.nodes.filter(entry => !entry.labelHidden)) {
+    const top = node.y - geometry.labelHeight / 2;
+    const bottom = node.y + geometry.labelHeight / 2;
+    const label = node.side === 'right'
+      ? { left: node.x + half, right: node.x + half + geometry.labelWidth, top, bottom }
+      : { left: node.x - half - geometry.labelWidth, right: node.x - half, top, bottom };
+    assert.ok(!overlaps(label, chip), `${node.paper.id}'s label covers the chip`);
+  }
 });

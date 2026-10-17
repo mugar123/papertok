@@ -1,6 +1,6 @@
 import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState, startTransition } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ArrowsClockwise, Check, CloudSlash } from '@phosphor-icons/react';
+import { ArrowsClockwise, Check } from '@phosphor-icons/react';
 import { Button } from '../ui/button.jsx';
 import { useFeed } from '../../context/FeedContext';
 import { getUiErrorMessage } from '../../utils/errorMessages';
@@ -19,12 +19,13 @@ import {
   resumeIndex,
   windowReachingReader,
 } from '../../utils/feedMountWindow.js';
-import AnimatedAtom from './AnimatedAtom';
+import Petri from '../Onboarding/Petri.jsx';
+import { EmptyState } from '../ui/empty-state.jsx';
 import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feedLoadingState';
 import { createFeedResumeMemory } from '../../utils/feedResumeMemory.js';
-import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feedPullToRefresh.js';
 import { SKIP_EXIT_MS, skipExitSlot } from '../../utils/feedSkipExit.js';
 import './FeedContainer.css';
+import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motionCurves.js';
 
 // Per-surface memory of the card each feed was left on: the Siguiendo feed
 // shares this container with For You and must not clobber its place. The
@@ -61,11 +62,6 @@ const REFRESH_HOVER_BAND_PX = 120;
 // feedRefresh.test.js holds the two together: everything this number is used
 // for here is about waiting until the cover is actually down.
 const REFRESH_DIP_MS = 180;
-// Cuánto se sostiene la pose de aterrizaje del tirón (`landPull`). Sólo tiene
-// que cubrir el fotograma o dos que React tarda en dar `is-visible` por
-// `isRefreshing`, más la transición que la lleva ahí; pasado eso la clase
-// sobra y quitarla no se ve, porque la pose es la misma con ella y sin ella.
-const PULL_LANDING_MS = 420;
 // Lo que tarda la píldora en meterse bajo la barra (`.feed-refresh`, 280ms de
 // recorrido). La cara se queda en «Actualizado» todo ese rato y sólo vuelve a
 // «Actualizar» cuando ya no se la ve.
@@ -162,15 +158,15 @@ const SCROLL_INTERACTION_SETTLE_MS = 220;
  */
 const ATOM_VEIL_VARIANTS = {
   shown: { opacity: 1 },
-  gone: { opacity: 0, transition: { duration: 0.42, ease: [0.16, 1, 0.3, 1] } },
+  gone: { opacity: 0, transition: { duration: 0.42, ease: EASE_OUT_EXPO } },
 };
 const ATOM_VARIANTS = {
-  shown: { opacity: 1, scale: 1, y: 0 },
-  gone: { opacity: 0, scale: 0.62, y: -16, transition: { duration: 0.36, ease: [0.16, 1, 0.3, 1] } },
+  shown: { opacity: 1, transform: 'translateY(0px) scale(1)' },
+  gone: { opacity: 0, transform: 'translateY(-16px) scale(0.62)', transition: { duration: 0.36, ease: EASE_OUT_EXPO } },
 };
 const ATOM_COPY_VARIANTS = {
-  shown: { opacity: 1, y: 0 },
-  gone: { opacity: 0, y: 6, transition: { duration: 0.24, ease: [0.4, 0, 1, 1] } },
+  shown: { opacity: 1, transform: 'translateY(0px)' },
+  gone: { opacity: 0, transform: 'translateY(6px)', transition: { duration: 0.24, ease: EASE_OUT } },
 };
 const ATOM_VEIL_REDUCED_VARIANTS = {
   shown: { opacity: 1 },
@@ -274,24 +270,12 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // the scroll event corrected it. The restore effect below re-seeds it for
   // the other resume shape, a reload whose papers had not arrived yet.
   const [activeIndex, setActiveIndex] = useState(() => resumeAnchor(papers, scrollKey).index);
-  // Where a touch-driven pull-to-refresh started, or null when the current
-  // touch isn't a pull (it didn't begin at scrollTop 0). A ref, not state:
-  // the drag distance is only read once, on touchend.
-  // One gesture's worth of state. `phase` is 'idle' until a touch lands
-  // somewhere a pull may begin, 'pending' until its first move says which
-  // way it is going, and 'owning' once it is ours — from there the feed is
-  // stopped from scrolling under it.
-  const pullRef = useRef({ phase: 'idle', startY: 0, startX: 0, startedAt: 0 });
-  // The listeners below are attached once per mount, not per render, so what
-  // they need from the render lives here instead of in their closure.
-  const pullDepsRef = useRef({ handleRefresh: null, loading: false, isRefreshing: false });
   const refreshPillRef = useRef(null);
   // Whether the scroll back to the top is still owed (see the effect below).
   const refreshJumpOwedRef = useRef(false);
-  // Temporizador que retira la pose de aterrizaje (ver `landPull`).
-  const pullLandingTimerRef = useRef(null);
   // Desktop: the pill lives hidden under the navbar and shows while the mouse
-  // is in the band beneath it. Touch: it shows as the pull progresses.
+  // is in the band beneath it. Pulling past the top no longer refreshes
+  // (removed 2026-10-15): the pill is the one way to ask for it.
   const [refreshPillHover, setRefreshPillHover] = useState(false);
   // True until the pointer leaves the hover band once. Stops the pill from
   // flashing when the feed returns under a cursor that never left the band.
@@ -617,10 +601,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     return () => observer.disconnect();
   }, [hasMore, loading, loadMore]);
 
-  const isScrollingRef = useRef(false);
-
-  // Wheel and trackpad input stay entirely native. CSS scroll snapping keeps
-  // cards aligned without a non-passive listener blocking momentum scrolling.
+  // Wheel and trackpad scrolling stay entirely native. CSS scroll snapping
+  // keeps cards aligned without a non-passive listener blocking momentum
+  // scrolling, and nothing here listens to the wheel.
 
   // Implement keyboard arrow navigation on desktop
   useEffect(() => {
@@ -640,8 +623,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
         if (isInteractive || hasOpenModal) return;
 
         e.preventDefault();
-        if (isScrollingRef.current) return;
-
         const direction = e.key === 'ArrowDown' ? 1 : -1;
         const cardHeight = container.clientHeight;
         const currentScroll = container.scrollTop;
@@ -650,15 +631,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
 
         const itemCount = papers.length + (loading ? 1 : 0) + (showEndCard ? 1 : 0);
         if (nextIndex >= 0 && nextIndex < itemCount) {
-          isScrollingRef.current = true;
-          container.scrollTo({
-            top: nextIndex * cardHeight,
-            behavior: prefersReducedMotion ? 'auto' : 'smooth'
-          });
-
-          setTimeout(() => {
-            isScrollingRef.current = false;
-          }, prefersReducedMotion ? 0 : 700);
+          container.scrollTo({ top: nextIndex * cardHeight, behavior: 'auto' });
         }
       }
     };
@@ -667,73 +640,12 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [papers.length, loading, prefersReducedMotion, showEndCard]);
+  }, [papers.length, loading, showEndCard]);
 
   const handleRefresh = useCallback(() => {
     refreshFeed();
   }, [refreshFeed]);
 
-  // Pull-to-refresh, touch only — a mouse has no touch events to answer to,
-  // and wheel/trackpad stay native as noted above. touchstart records a start
-  // position only when the pull begins at the very top of the scroller AND
-  // not inside a scroller of the card's own (utils/feedPullToRefresh.js says
-  // which, and why an expanded abstract answering its own drag used to
-  // replace the feed under the reader); touchend reads the distance and
-  // clears it either way. Neither calls preventDefault, so native scrolling
-  // and the CSS scroll-snap are untouched.
-  // Written to the WRAPPER, not to the pill: the papers have to follow the
-  // finger too, and the wrapper is the one ancestor both they and the pill
-  // hang off. Still not a single setState per drag event — that is the whole
-  // point of writing it to an element.
-  const setPull = useCallback((progress, travelPx = 0) => {
-    const wrapper = feedRef.current?.parentElement;
-    if (!wrapper) return;
-    wrapper.style.setProperty('--pull', String(progress));
-    wrapper.style.setProperty('--pull-y', `${travelPx.toFixed(1)}px`);
-    // Un ATRIBUTO DE DATOS, no una clase. `className` en `.feed-wrapper` es un
-    // literal del JSX, así que React lo reescribe entero en cada commit y se
-    // lleva por delante cualquier clase puesta a mano — medido: `landPull`
-    // ponía la suya y la renderización que dispara el refresco la borraba en
-    // el mismo fotograma. Un atributo que el JSX no menciona sobrevive. (Los
-    // `--pull*` de arriba ya sobrevivían: `style` tampoco está en el JSX.)
-    // Escribir el estado entero en vez de alternarlo cancela de paso el
-    // aterrizaje del tirón anterior, siga vivo o no su temporizador.
-    wrapper.setAttribute('data-pull', progress > 0 ? 'pulling' : '');
-  }, []);
-
-  // El tirón que SÍ refresca no suelta: aterriza.
-  //
-  // Soltar y poner el progreso a cero deja a la píldora sin ninguna clase
-  // durante el fotograma o dos que React tarda en darle `is-visible` por
-  // `isRefreshing` — y sin clase, su transición es la de MARCHARSE, así que
-  // arranca hacia debajo de la barra y la siguiente renderización la trae de
-  // vuelta. En un tirón lento se nota poco; en uno rápido la píldora ni
-  // siquiera había acabado de salir, así que el lector ve medio asomo, un
-  // retroceso y un tirón de vuelta, todo en 100ms.
-  //
-  // Con `is-pull-landing` la píldora va desde donde la dejó el pulgar hasta
-  // su pose de trabajo, que es exactamente la misma que le darán `is-visible`
-  // e `is-refreshing`: cuando React llega, no hay nada que corregir. Y los
-  // papers no vuelven a cero con el muelle de la goma, sino que entran en el
-  // hundimiento del velo con el reloj y la curva del velo — un tirón
-  // cancelado es un muelle, uno que aterriza es una entrega.
-  const landPull = useCallback(() => {
-    const wrapper = feedRef.current?.parentElement;
-    if (!wrapper) return;
-    wrapper.style.setProperty('--pull', '1');
-    wrapper.style.setProperty('--pull-y', '0px');
-    wrapper.setAttribute('data-pull', 'landing');
-    clearTimeout(pullLandingTimerRef.current);
-    // Se quita a ciegas: para entonces React ya es dueño de la píldora y la
-    // pose bajo la clase y sin ella es la misma, así que quitarla no se ve.
-    pullLandingTimerRef.current = setTimeout(() => {
-      if (wrapper.getAttribute('data-pull') === 'landing') wrapper.setAttribute('data-pull', '');
-    }, PULL_LANDING_MS);
-  }, []);
-  useEffect(() => () => clearTimeout(pullLandingTimerRef.current), []);
-  useEffect(() => {
-    pullDepsRef.current = { handleRefresh, loading, isRefreshing };
-  });
 
   // Fine pointer only: a touch also fires a synthetic mousemove where it
   // landed, and a tap on the card's top edge is not a request for the pill.
@@ -913,85 +825,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   });
   const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing });
 
-  // Native listeners, not React's: React registers `touchmove` at the root as
-  // passive, so `preventDefault` inside an `onTouchMove` prop is ignored —
-  // and preventing the scroll is the whole point once the pull is ours.
-  useEffect(() => {
-    const el = feedRef.current;
-    if (!el || publicMode) return undefined;
-    const state = pullRef.current;
-    const onStart = (event) => {
-      const touch = event.touches[0];
-      if (!touch) return;
-      const box = el.getBoundingClientRect();
-      const startY = pullStartFrom({
-        target: event.target,
-        scrollTop: el.scrollTop,
-        clientY: touch.clientY,
-        containerTop: box.top,
-        containerHeight: box.height,
-      });
-      state.phase = startY === null ? 'idle' : 'pending';
-      state.startY = startY ?? 0;
-      state.startX = touch.clientX;
-      state.startedAt = performance.now();
-    };
-    const onMove = (event) => {
-      if (state.phase === 'idle') return;
-      const touch = event.touches[0];
-      if (!touch) return;
-      if (state.phase === 'pending') {
-        if (touch.clientY === state.startY && touch.clientX === state.startX) return;
-        if (!pullTakesOver({
-          startY: state.startY, startX: state.startX, currentY: touch.clientY, currentX: touch.clientX,
-        })) {
-          state.phase = 'idle';
-          return;
-        }
-        state.phase = 'owning';
-      }
-      if (event.cancelable) event.preventDefault();
-      setPull(
-        pullProgress({ startY: state.startY, currentY: touch.clientY }),
-        pullTravelPx({ startY: state.startY, currentY: touch.clientY }),
-      );
-    };
-    const onEnd = (event) => {
-      const owning = state.phase === 'owning';
-      state.phase = 'idle';
-      if (!owning) return;
-      const touch = event.changedTouches[0];
-      if (!touch) { setPull(0, 0); return; }
-      const outcome = pullOutcome({
-        startY: state.startY,
-        endY: touch.clientY,
-        elapsedMs: performance.now() - state.startedAt,
-      });
-      const { handleRefresh: refresh, loading: busy, isRefreshing: running } = pullDepsRef.current;
-      // Soltar sin refrescar es un muelle: se devuelve todo y la goma vuelve.
-      // Soltar refrescando es una entrega: ver `landPull`.
-      if (outcome === 'refresh' && !busy && !running) {
-        landPull();
-        refresh?.();
-      } else {
-        setPull(0, 0);
-      }
-    };
-    const onCancel = () => {
-      state.phase = 'idle';
-      setPull(0, 0);
-    };
-    el.addEventListener('touchstart', onStart, { passive: true });
-    el.addEventListener('touchmove', onMove, { passive: false });
-    el.addEventListener('touchend', onEnd, { passive: true });
-    el.addEventListener('touchcancel', onCancel, { passive: true });
-    return () => {
-      el.removeEventListener('touchstart', onStart);
-      el.removeEventListener('touchmove', onMove);
-      el.removeEventListener('touchend', onEnd);
-      el.removeEventListener('touchcancel', onCancel);
-    };
-  }, [publicMode, setPull, landPull, displayState, atomVeil]);
+
 
 
   // Las ramas de abajo también llevan el landmark. La auditoría vio
@@ -1001,17 +835,19 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   if (displayState === FEED_DISPLAY_STATES.ERROR) {
     return (
       <FeedLandmark landmark={landmark} className="feed-empty">
-        {/* The failure is announced as it appears: `role="alert"` on the
-            sentence rather than on the page, which may be the landmark. */}
-        <div className="feed-empty-icon" aria-hidden="true">
-          <CloudSlash size={26} />
-        </div>
-        <h2>{'Error loading papers'}</h2>
-        <p role="alert">{getUiErrorMessage(error, 'FEED_LOAD_FAILED')}</p>
-        <Button size="lg" onClick={handleRefresh}>
-          <ArrowsClockwise size={16} aria-hidden="true" />
-          {'Try again'}
-        </Button>
+        <EmptyState
+          role="alert"
+          art={<Petri pose="upset" className="feed-error-petri" />}
+          title={'Error loading papers'}
+          actions={(
+            <Button size="sm" onClick={handleRefresh}>
+              <ArrowsClockwise size={16} aria-hidden="true" />
+              {'Try again'}
+            </Button>
+          )}
+        >
+          {getUiErrorMessage(error, 'FEED_LOAD_FAILED')}
+        </EmptyState>
       </FeedLandmark>
     );
   }
@@ -1036,7 +872,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     return (
       <FeedLandmark landmark={landmark} className="feed-empty">
         <div className="atom-loader">
-          <AnimatedAtom size={80} strokeWidth={1} className="atom-loader-icon" />
+          <Petri pose="flask" className="petri-loader" />
         </div>
         <h2>{'Searching for discoveries...'}</h2>
         <p>
@@ -1178,7 +1014,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           <div key={`tail-${papers.length}`} className="feed-snap-item feed-snap-item--tail">
             <div className="feed-tail">
               <div className="atom-loader feed-tail-atom" aria-hidden="true">
-                <AnimatedAtom size={56} strokeWidth={1} className="atom-loader-icon" />
+                <Petri pose="flask" className="petri-loader" />
               </div>
               <p className="feed-tail-label" aria-hidden="true">{'Loading more papers…'}</p>
               {/* Spoken only while a page is actually on its way: the slot
@@ -1215,7 +1051,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
             exit="gone"
           >
             <motion.div className="atom-loader" aria-hidden="true" variants={prefersReducedMotion ? undefined : ATOM_VARIANTS}>
-              <AnimatedAtom size={80} strokeWidth={1} className="atom-loader-icon" />
+              <Petri pose="flask" className="petri-loader" />
             </motion.div>
             <motion.div className="feed-empty-copy" variants={prefersReducedMotion ? undefined : ATOM_COPY_VARIANTS}>
               <h2>

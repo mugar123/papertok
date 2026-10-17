@@ -6,6 +6,10 @@ import { useFeed } from '../../context/FeedContext';
 import { MagnifyingGlass, Stack, UserCheck } from '@phosphor-icons/react';
 import AccountMenu from './AccountMenu.jsx';
 import { shouldOpenSearchOnSlash } from './searchShortcut.js';
+
+// The palette's chord is shown the way this keyboard spells it (searchShortcut.js takes both).
+const IS_MAC = typeof navigator !== 'undefined'
+  && /mac|iphone|ipad/i.test(navigator.userAgentData?.platform || navigator.platform || '');
 import './Navbar.css';
 
 /**
@@ -212,7 +216,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
         >
           <MagnifyingGlass size={15} aria-hidden="true" />
           <span>{'Search papers, authors, topics...'}</span>
-          <kbd aria-hidden="true">/</kbd>
+          <kbd aria-hidden="true">{IS_MAC ? '⌘K' : 'Ctrl K'}</kbd>
         </button>
 
         <div className="navbar-links" ref={linksRef}>

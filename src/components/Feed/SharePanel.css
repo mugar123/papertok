@@ -1,0 +1,157 @@
+/* The paper card's share panel (SharePanel.jsx): one list of destinations,
+   a menu on desktop and a bottom drawer on a phone. */
+
+/* The account menu's look (AccountMenu.css): a hairline frame, rows that
+   take a sunken fill when highlighted, grown from the share button. */
+.pc-share-menu-positioner {
+  z-index: 12055;
+}
+
+.pc-share-menu {
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 13px;
+  transform-origin: var(--transform-origin);
+  transition: opacity 150ms var(--ease-out-expo), transform 150ms var(--ease-out-expo);
+}
+
+.pc-share-menu[data-starting-style],
+.pc-share-menu[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.97);
+}
+
+.pc-share-menu-item {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.pc-share-menu-item svg {
+  color: var(--text-secondary);
+}
+
+.pc-share-menu-item[data-highlighted] {
+  background: var(--bg-sunken);
+}
+
+.pc-share-menu-note {
+  margin-left: auto;
+  font: 500 0.6875rem/1 var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+.pc-share-menu-separator {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--border-subtle);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-share-menu {
+    transition: opacity 120ms linear;
+  }
+
+  .pc-share-menu[data-starting-style],
+  .pc-share-menu[data-ending-style] {
+    transform: none;
+  }
+}
+
+/* On a phone: the same list in a bottom drawer, its rows grown to a thumb's
+   52px; the first one shows the link itself, with a copy button. */
+.pc-share-sheet {
+  background: var(--bg-card);
+  border-top: 1px solid var(--border-default);
+  border-top-left-radius: var(--radius-2xl);
+  border-top-right-radius: var(--radius-2xl);
+  padding: 0 var(--space-2);
+  padding-bottom: calc(var(--inset-bottom) + var(--space-4) + var(--bleed));
+}
+
+.pc-share-sheet-title {
+  margin: var(--space-2) var(--space-3) var(--space-3);
+}
+
+.pc-share-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pc-share-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-primary);
+  font: 500 1rem/1 var(--font-body);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+
+.pc-share-row svg {
+  flex: none;
+  color: var(--text-secondary);
+}
+
+.pc-share-row:active {
+  background: var(--bg-sunken);
+}
+
+.pc-share-row--link {
+  color: var(--text-secondary);
+  font-weight: 400;
+  font-size: var(--fs-sm);
+}
+
+.pc-share-url {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The rail's icon tile (PaperCard.css .pc-side-icon), a size down. */
+.pc-share-copy {
+  --rail: var(--text-tertiary);
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  color: var(--rail);
+  background: color-mix(in srgb, var(--rail) 7%, var(--bg-card));
+  border: 1px solid color-mix(in srgb, var(--rail) 20%, var(--bg-card));
+}
+
+.pc-share-list-separator {
+  height: 1px;
+  margin: 4px var(--space-3);
+  background: var(--border-subtle);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-share-row {
+    transition: none;
+  }
+}

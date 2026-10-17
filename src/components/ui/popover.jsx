@@ -63,6 +63,7 @@ function PopoverContent({
                sets its own distance in Export.css. Naming the property here is
                what makes that a movement rather than a jump. */
             'motion-safe:[transition:opacity_150ms_linear,scale_180ms_var(--ease-out-expo),translate_180ms_var(--ease-out-expo)]',
+            'motion-reduce:[transition:opacity_150ms_linear]',
             'motion-safe:data-ending-style:[transition:opacity_120ms_linear,scale_120ms_var(--ease-out-expo),translate_120ms_var(--ease-out-expo)]',
             'data-starting-style:opacity-0 data-starting-style:scale-[0.96] data-ending-style:opacity-0 data-ending-style:scale-[0.98]',
             className,

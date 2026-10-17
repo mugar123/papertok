@@ -90,9 +90,8 @@ test('SOURCE: la tarjeta inferior del grafo se ancla al borde visible, no al san
   // `padding-bottom: calc(var(--inset-bottom) + var(--bleed))`, but an
   // absolutely positioned child's `bottom` is measured before padding is
   // applied, so it inherits none of that correction. `.graph-peek`'s
-  // `bottom: var(--graph-source-height)` (30px) therefore lands 30px above
-  // the padding-box edge, i.e. `--bleed` (48px) minus 30px = 18px BELOW the
-  // visible fold — the tarjeta's bottom ~18px render past the screen edge.
+  // `bottom` offset therefore lands `--bleed` (48px) BELOW the visible fold,
+  // and the tarjeta's bottom renders past the screen edge.
   // Adding `--bleed` (and `--inset-bottom`, for devices with a safe-area
   // inset) back into `bottom` restores the fold as the reference point.
   const css = stripComments(await readFile(new URL(CSS, import.meta.url), 'utf8'));
@@ -100,7 +99,7 @@ test('SOURCE: la tarjeta inferior del grafo se ancla al borde visible, no al san
 
   assert.match(
     peek,
-    /bottom:\s*calc\(var\(--graph-source-height\)\s*\+\s*var\(--inset-bottom\)\s*\+\s*var\(--bleed\)\)/,
+    /bottom:\s*calc\(var\(--inset-bottom\)\s*\+\s*var\(--bleed\)\)/,
     '.graph-peek must add --bleed and --inset-bottom back into its `bottom` offset, or it is '
     + "measured against .related-sheet's padding box (which the drawer deliberately bleeds below "
     + 'the viewport) instead of the visible fold, and its bottom edge renders under the sheet\'s own edge.',

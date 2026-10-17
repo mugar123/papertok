@@ -187,7 +187,7 @@
   cursor: pointer;
   transition: background var(--transition-fast), border-color var(--transition-fast);
   opacity: 0;
-  animation: staggerFadeUp 0.42s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: staggerFadeUp 0.42s var(--ease-out-expo) forwards;
   animation-delay: calc(var(--stagger-index, 0) * 0.035s);
 }
 
@@ -760,7 +760,7 @@
    once, on the row's first appearance — not again when the metadata lands. */
 .lists-paper-item {
   opacity: 0;
-  animation: staggerFadeUp 0.42s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: staggerFadeUp 0.42s var(--ease-out-expo) forwards;
   animation-delay: calc(var(--stagger-index, 0) * 0.035s);
 }
 
@@ -968,7 +968,7 @@
   border-bottom: 1px solid var(--border-default);
   background: var(--bg-card);
   opacity: 0;
-  animation: staggerFadeUp 0.42s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: staggerFadeUp 0.42s var(--ease-out-expo) forwards;
   animation-delay: calc(var(--stagger-index, 0) * 0.045s);
 }
 

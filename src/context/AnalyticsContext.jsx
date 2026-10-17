@@ -19,11 +19,6 @@ import {
   trackProductEvent,
 } from '../services/analyticsService';
 
-// Declared once, outside the component: `<Analytics />` re-registers its
-// `beforeSend` on every change of identity, so an inline arrow would re-register
-// it on every render of the whole app. It takes only the event, so the stored
-// choice is read at send time (`sanitizeVercelEvent`).
-const sanitizeOutgoingEvent = event => sanitizeVercelEvent(event);
 
 export function AnalyticsProvider({ children }) {
   const location = useLocation();
@@ -98,7 +93,7 @@ export function AnalyticsProvider({ children }) {
         <Analytics
           mode={import.meta.env.DEV ? 'development' : 'production'}
           route={analyticsPath}
-          beforeSend={sanitizeOutgoingEvent}
+          beforeSend={sanitizeVercelEvent}
         />
       ) : null}
     </AnalyticsContext.Provider>

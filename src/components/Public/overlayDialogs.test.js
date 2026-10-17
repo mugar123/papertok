@@ -46,7 +46,9 @@ test('the sign-in prompt keeps its close control, its name, and its initial focu
   assert.match(jsx, /<DialogDescription className="auth-modal-lede">/);
   // The analytics contract of the door is unchanged: the shared sign-in hook
   // reports the press with the surface this door names, then the outcome.
-  assert.match(jsx, /useProviderSignIn\('auth_prompt'\)/);
+  assert.match(jsx, /<SignInMethods \/>/);
+  const methods = await readFile(new URL('./SignInMethods.jsx', import.meta.url), 'utf8');
+  assert.match(methods, /useProviderSignIn\('auth_prompt'\)/);
   const hook = await readFile(new URL('./useProviderSignIn.js', import.meta.url), 'utf8');
   assert.match(hook, /trackEvent\('select_content', \{ content_type: 'signup_cta', surface, method \}\)/);
   assert.match(hook, /trackEvent\(result\?\.isNewUser \? 'sign_up' : 'login', \{ method \}\)/);
@@ -87,11 +89,18 @@ test('the interests prompt is a modal Dialog and settles into one parent callbac
   // The chips are the shared Toggle: a native button on which Base UI
   // writes `aria-pressed` and `data-pressed`; the CSS reads the attribute.
   assert.match(jsx, /import \{ Toggle \} from '\.\.\/ui\/toggle\.jsx'/);
-  assert.match(jsx, /<Toggle\s[\s\S]*?className="gip-area"\s+pressed=\{isSelected\}\s+onPressedChange=\{\(\) => toggle\(key\)\}/);
+  assert.match(jsx, /<Toggle\s[\s\S]*?className="gip-area"\s+pressed=\{pressed\}\s+onPressedChange=\{onPressedChange\}/);
+  assert.match(jsx, /<AreaTile\s+key=\{key\}\s+area=\{area\}\s+pressed=\{selected\.has\(key\)\}\s+onPressedChange=\{\(\) => toggle\(key\)\}/);
+  assert.match(jsx, /const \{ ref: nameRef, \.\.\.tooltip \} = useClipTooltip\(\);/);
+  assert.match(jsx, /<span className="gip-area-name" ref=\{nameRef\}>/, 'measured on the clamped name');
+  const hook = await readFile(new URL('../../hooks/useClipTooltip.js', import.meta.url), 'utf8');
+  assert.match(hook, /node\.scrollHeight > node\.clientHeight/, 'a name held to two lines counts as cut');
   assert.doesNotMatch(jsx, /aria-pressed=|is-selected/);
   const css = await gipCss;
   assert.match(css, /\.gip-area\[data-pressed\]\s*\{/);
   assert.doesNotMatch(css, /\.gip-area\.is-selected|:not\(\.is-selected\)/);
+  assert.match(css, /\.gip-area \{[^}]*height: calc\(2 \* 1\.2em \+ 2 \* var\(--space-2\) \+ 2px\);/);
+  assert.match(css, /\.gip-area-name \{[^}]*-webkit-line-clamp: 2;[^}]*overflow: hidden;/);
 });
 
 test('SOURCE: el onboarding enfoca el título, no el primer chip', async () => {

@@ -131,22 +131,16 @@ test('SOURCE: el botón de reescritura se llama por lo que dibuja, sin aria-labe
 
 test('SOURCE: el nombre del botón de autores empieza por lo que el botón enseña', async () => {
   const card = stripComments(await read('./PaperCard.jsx'));
-  const boton = bloque(card, 'className="pc-authors-more"', '</button>');
+  const boton = bloque(card, 'pc-authors-more"', '</button>');
 
-  const dibujado = boton.slice(boton.lastIndexOf('>') + 1).trim();
-  assert.ok(dibujado.length > 0, 'el botón de autores dejó de dibujar texto');
-
-  const nombres = idiomas(boton.match(/aria-label=\{([\s\S]*?)\}\s*\n/)?.[1] || '');
-  assert.equal(nombres.length, 1, 'the authors button lost its `aria-label`');
-  for (const nombre of nombres) {
-    assert.ok(
-      nombre.toLowerCase().includes(dibujado.toLowerCase()),
-      `el nombre accesible «${nombre}» no contiene «${dibujado}», que es lo único `
-      + 'escrito en el botón. Es el criterio 2.5.3: quien navega por voz dice lo que '
-      + 've. Antes ponía sólo «Ver todos los autores» y axe lo cantaba como '
-      + '`label-content-name-mismatch`.',
-    );
-  }
+  // Lo único escrito en los puntos es el «+N»; las iniciales son decoración.
+  // El nombre accesible arranca por esa misma plantilla (criterio 2.5.3:
+  // quien navega por voz dice lo que ve).
+  const dibujado = boton.match(/aria-hidden="true">\s*\{`(\+[^`]+)`\}/)?.[1];
+  assert.ok(dibujado, 'el botón de autores dejó de dibujar el «+N»');
+  const nombre = boton.match(/\? `(\+[^`]+)`/)?.[1];
+  assert.ok(nombre?.startsWith(dibujado), `el nombre accesible no empieza por «${dibujado}»`);
+  assert.match(boton, /aria-expanded=\{authorsExpanded\}/);
 });
 
 /**
@@ -173,4 +167,12 @@ test('el rótulo largo se esconde en móvil y el corto lo releva, que es de dond
     'el rótulo corto dejó de aparecer en móvil. Es el nombre accesible del botón de '
     + 'reescritura en esa anchura: sin él el botón se queda con el icono y sin nombre.',
   );
+});
+
+test('SOURCE: with no abstract, the read button sits in the no-abstract empty state, a size down, and leaves the bar', async () => {
+  const card = stripComments(await read('./PaperCard.jsx'));
+  assert.match(card, /size=\{abstractText \? 'default' : 'sm'\}/);
+  assert.match(card, /title=\{'No abstract'\}\s*actions=\{readAction\}/);
+  assert.match(card, /<div className="pc-action-primary">\s*\{abstractText && readAction\}/);
+  assert.equal((card.match(/className=\{`pc-action-read/g) || []).length, 1, 'one button, placed in one of two spots');
 });

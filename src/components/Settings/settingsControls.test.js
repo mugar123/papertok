@@ -67,7 +67,8 @@ test('the settings page uses the shared Switch and RadioGroup, and styles them o
 test('each settings page is its own route, so the rail is links rather than a scroll spy', async () => {
   const jsx = await read('./SettingsPage.jsx');
   assert.match(jsx, /<NavLink\s+key=\{entry\.slug\}\s+to=\{`\/settings\/\$\{entry\.slug\}`\}\s+replace/);
-  assert.doesNotMatch(jsx, /useSectionSpy|scrollIntoView/);
+  assert.doesNotMatch(jsx, /useSectionSpy/);
+  assert.deepEqual(jsx.match(/[\w?.()'-]+\.scrollIntoView\(/g), ["indexListRef.current?.querySelector('a.is-active')?.scrollIntoView("]);
 });
 
 test('the settings pages carry their own field and switch styles, with no public-profile editor behind them', async () => {
