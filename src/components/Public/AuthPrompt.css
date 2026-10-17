@@ -86,6 +86,13 @@
   flex: 0 0 auto;
 }
 
+/* The ghost-button look comes with `whitespace-nowrap`; at 200% text the
+   policy link has to wrap instead. */
+.auth-modal-policy {
+  margin-top: var(--space-4);
+  white-space: normal;
+}
+
 /* ── States ── */
 .auth-modal-note {
   margin: var(--space-4) 0 0;

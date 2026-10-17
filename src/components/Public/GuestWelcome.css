@@ -471,8 +471,12 @@
 }
 
 
+/* Room for the stack that opens under the account button: 16px, two 44px
+   providers (40px on a phone) and the 32px policy link, 8px apart. The stack
+   opens over the page, and `.gw--landing` clips what overflows, so on a short
+   screen anything past this room would be cut off. */
 .gw--landing .gw-stage {
-  padding-bottom: 104px;
+  padding-bottom: 152px;
 }
 
 .gw-step--welcome {
@@ -564,6 +568,13 @@
   margin: 0;
   font-size: var(--fs-sm);
   color: var(--accent-danger);
+}
+
+/* The ghost-button look comes with `whitespace-nowrap`; at 200% text the
+   policy link has to wrap instead. */
+.gw-providers-policy {
+  justify-self: center;
+  white-space: normal;
 }
 
 

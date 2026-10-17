@@ -1,9 +1,11 @@
 import { useRef, useState } from 'react';
-import { X } from '@phosphor-icons/react';
+import { ArrowUpRight, X } from '@phosphor-icons/react';
 import { useAuth } from '../../context/AuthContext.tsx';
+import { cn } from '../../lib/utils.ts';
 import { authPromptCopy } from './authPromptCopy.ts';
 import SignInMethods from './SignInMethods.tsx';
 import { Button } from '../ui/button.tsx';
+import { buttonVariants } from '../ui/button-variants.ts';
 import Petri from '../Onboarding/Petri.tsx';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.tsx';
 import './AuthPrompt.css';
@@ -65,6 +67,17 @@ export default function AuthPrompt({ onClose, reason = 'default' }: { onClose: (
         </DialogDescription>
 
         <SignInMethods />
+
+        <a
+          href="/privacy.html"
+          target="_blank"
+          rel="noopener noreferrer"
+          className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'auth-modal-policy')}
+        >
+          {'Privacy policy'}
+          <ArrowUpRight size={14} aria-hidden="true" />
+          <span className="visually-hidden">{' (opens in a new tab)'}</span>
+        </a>
       </DialogContent>
     </Dialog>
   );

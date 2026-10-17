@@ -28,10 +28,38 @@ test('a visitor reaches the analytics switch and the policy from both guest bars
 
   // The policy is a page of its own, opened beside the app so the welcome keeps
   // its place, and a link rather than a Button (which Base UI would announce as
-  // a button). Nothing else in the app links a visitor to it.
+  // a button).
   const popover = await read('./PrivacyPopover.tsx');
   assert.match(popover, /<a\s+href="\/privacy\.html"\s+target="_blank"\s+rel="noopener noreferrer"/);
   assert.match(popover, /<span className="visually-hidden">\{COPY\.newTab\}<\/span>/);
+});
+
+// The policy link as the popover draws it: a new tab, and a hidden hint that
+// says so, since the visible text alone does not.
+const POLICY_LINK = /<a\s+href="\/privacy\.html"\s+target="_blank"\s+rel="noopener noreferrer"[\s\S]*?<span className="visually-hidden">[^<]+<\/span>\s*<\/a>/;
+
+// Where the link is, and that it comes after (under, and later in the tab
+// order than) every one of the providers.
+function policyLinkAfter(block: string, providers: string[]) {
+  const linkAt = block.search(POLICY_LINK);
+  assert.ok(linkAt >= 0, 'no policy link here');
+  for (const provider of providers) {
+    const at = block.indexOf(provider);
+    assert.ok(at >= 0, `${provider} not found`);
+    assert.ok(linkAt > at, `the policy link comes before ${provider}`);
+  }
+}
+
+test('whoever is about to sign in can open the policy under the providers', async () => {
+  const prompt = await read('./AuthPrompt.tsx');
+  const dialog = prompt.slice(prompt.indexOf('<DialogContent'), prompt.indexOf('</DialogContent>'));
+  policyLinkAfter(dialog, ['id="google-sign-in-btn"', 'id="github-sign-in-btn"']);
+
+  // On the landing it belongs to the stack that is inert while closed, so the
+  // keyboard reaches it only once the providers show.
+  const welcome = await read('./GuestWelcome.tsx');
+  const stack = welcome.slice(welcome.indexOf('id="gw-providers"'), welcome.indexOf("{step === 'how'"));
+  policyLinkAfter(stack, ['copy.welcome.github', 'copy.welcome.google']);
 });
 
 test('arrow keys in the Privacy panel stay in the panel on the feed', async () => {

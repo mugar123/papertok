@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowRight,
+  ArrowUpRight,
   BookmarkSimple,
   CaretDown,
   CaretUp,
@@ -15,7 +16,9 @@ import {
   UserPlus,
 } from '@phosphor-icons/react';
 import { CATEGORIES } from '../../data/categories.ts';
+import { cn } from '../../lib/utils.ts';
 import { Button } from '../ui/button.tsx';
+import { buttonVariants } from '../ui/button-variants.ts';
 import { GithubMark } from '../ui/GithubMark.tsx';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import GoogleMark from './GoogleMark.tsx';
@@ -76,6 +79,8 @@ const COPY = {
       signIn: 'I already have an account',
       github: 'Continue with GitHub',
       google: 'Continue with Google',
+      policy: 'Privacy policy',
+      newTab: ' (opens in a new tab)',
     },
     how: {
       kicker: 'Hello',
@@ -469,6 +474,16 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
                     {pendingProvider === 'google' ? <ProviderSpinner /> : <GoogleMark size={18} />}
                     {copy.welcome.google}
                   </Button>
+                  <a
+                    href="/privacy.html"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'gw-providers-policy')}
+                  >
+                    {copy.welcome.policy}
+                    <ArrowUpRight size={14} aria-hidden="true" />
+                    <span className="visually-hidden">{copy.welcome.newTab}</span>
+                  </a>
                   {/* Always mounted and displayed, even empty, so the alert is a
                       live region before its text arrives. */}
                   <p className="gw-providers-note" role="alert">
