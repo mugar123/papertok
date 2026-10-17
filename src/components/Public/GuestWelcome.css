@@ -443,12 +443,13 @@
   max-width: 50ch;
 }
 
-/* The areas' sentence is one line, and so is the account's university
-   screen's: their copy runs the screen's width rather than the reading
-   measure above, which is for the welcome's two-line lede and left these
-   sentences broken into short lines. */
+/* The areas' sentence is one line, and so are the stars screen's and the
+   account's university screen's: their copy runs the screen's width rather
+   than the reading measure above, which is for the welcome's two-line lede
+   and left these sentences broken into short lines. */
 .gw-step--topics .gw-lede,
 .gw-step--subtopics .gw-lede,
+.gw-step--support .gw-lede,
 .gw-step--university .gw-lede {
   max-width: none;
 }
@@ -566,7 +567,8 @@
 }
 
 
-.gw-bar-button.btn-halftone.theme-toggle {
+/* The landing's halftone bar buttons, the theme switch and Privacy, at one size. */
+.gw-bar-button.btn-halftone {
   width: 40px;
   height: 40px;
   margin-right: 4px;
@@ -583,13 +585,13 @@
 /* A size down on a phone, where the bar is narrower: still well over the 24px
    target minimum (WCAG 2.5.8). */
 @media (max-width: 640px) {
-  .gw-bar-button.btn-halftone.theme-toggle {
+  .gw-bar-button.btn-halftone {
     min-width: 32px;
     width: 32px;
     height: 32px;
   }
 
-  .gw-bar-button.btn-halftone.theme-toggle svg {
+  .gw-bar-button.btn-halftone svg {
     width: 15px;
     height: 15px;
   }

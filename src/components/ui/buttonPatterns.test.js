@@ -12,8 +12,7 @@ const ALLOWED = new Map([
   ['engraved', ['components/Public/GuestWelcome.jsx', 'components/Public/WelcomeShell.jsx']],
   ['halftone', ['components/Public/GuestWelcome.jsx']],
 ]);
-// The halftone class itself, outside the variant: the landing's theme switch.
-const HALFTONE_CLASS_ALLOWED = ['components/Public/WelcomeShell.jsx', 'components/ui/button-variants.js'];
+const HALFTONE_CLASS_ALLOWED = ['components/Public/GuestWelcome.jsx', 'components/Public/WelcomeShell.jsx', 'components/ui/button-variants.js'];
 
 async function sourcesUnder(dir) {
   const found = [];
