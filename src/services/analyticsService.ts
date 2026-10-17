@@ -1,4 +1,5 @@
 import type { CaptureResult, PostHog, PostHogConfig } from 'posthog-js';
+import { PRELOAD_RELOAD_KEY, PRELOAD_RELOAD_WINDOW_MS } from '../utils/appReload.ts';
 type Consent = typeof ANALYTICS_CONSENT[keyof typeof ANALYTICS_CONSENT];
 type AnalyticsStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 interface AcquisitionLocation { referrer?: string; location?: Pick<Location, 'origin' | 'search'> }
@@ -655,11 +656,6 @@ export async function trackDay7Return({ storage = getBrowserStorage(), now = Dat
   }
 }
 
-// The mark and the window of main.tsx's `vite:preloadError` handler, which
-// reloads once for a missing chunk and lets a second failure inside the window
-// reach the error boundary. Read here, never written.
-const PRELOAD_RELOAD_KEY = 'papertok_preload_reloaded_at';
-const PRELOAD_RELOAD_WINDOW_MS = 60_000;
 // main.tsx imports this module through the boundary, so it is evaluated before
 // main.tsx can write a mark. Date.now() is the clock main.tsx writes with.
 const PAGE_LOADED_AT = Date.now();

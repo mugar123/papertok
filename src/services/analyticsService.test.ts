@@ -1,3 +1,4 @@
+import { PRELOAD_RELOAD_KEY } from '../utils/appReload.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -592,17 +593,6 @@ test('an app error leaves with its kind and nothing from the error, and not at a
 const crashReporterOfPage = async (page: string): Promise<typeof import('./analyticsService.ts').trackAppCrash> =>
   (await import(`./analyticsService.ts?page=${page}`)).trackAppCrash;
 
-// The key main.tsx's `vite:preloadError` handler writes, read from main.tsx so
-// a rename there fails here instead of turning every chunk failure into a crash.
-async function preloadReloadKey() {
-  const { readFile } = await import('node:fs/promises');
-  const main = (await readFile(new URL('../main.tsx', import.meta.url), 'utf8'))
-    .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-  const key = main.match(/const PRELOAD_RELOAD_KEY = '([^']+)'/)?.[1];
-  assert.ok(key, 'main.tsx no longer declares its reload mark');
-  return key;
-}
-
 function recordingTrack() {
   const events: [string, Record<string, unknown> | undefined][] = [];
   const track = async (eventName: string, params?: Record<string, unknown>) => {
@@ -628,7 +618,7 @@ test('after a reload for a missing chunk, the reloaded page reports a chunk fail
   const storage = memoryStorage();
   const firstLoad = 1_000_000;
   const reloadedAt = firstLoad + 30_000;
-  storage.setItem(await preloadReloadKey(), String(reloadedAt));
+  storage.setItem(PRELOAD_RELOAD_KEY, String(reloadedAt));
 
   // The page main.tsx is reloading can crash on the chunk it could not load
   // before it unloads. The reload is the answer to that, not a failure yet.
