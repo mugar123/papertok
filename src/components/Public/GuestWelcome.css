@@ -471,12 +471,14 @@
 }
 
 
-/* Room for the stack that opens under the account button: 16px, two 44px
-   providers (40px on a phone) and the 32px policy link, 8px apart. The stack
-   opens over the page, and `.gw--landing` clips what overflows, so on a short
-   screen anything past this room would be cut off. */
+/* Room for the stack that opens under the account button: 1rem, two 2.75rem
+   providers (40px on a phone) and the 2rem policy link, 0.5rem apart, which
+   is 152px at the default text size. The stack opens over the page, and
+   `.gw--landing` clips what overflows, so on a short screen anything past
+   this room would be cut off. In rem, the room grows with larger text the
+   way the stack does. */
 .gw--landing .gw-stage {
-  padding-bottom: 152px;
+  padding-bottom: 9.5rem;
 }
 
 .gw-step--welcome {

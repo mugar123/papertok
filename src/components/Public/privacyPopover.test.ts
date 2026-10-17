@@ -62,6 +62,21 @@ test('whoever is about to sign in can open the policy under the providers', asyn
   policyLinkAfter(stack, ['copy.welcome.github', 'copy.welcome.google']);
 });
 
+// The link is the last control in both places, so it is the first thing lost
+// when the screen is short or the text is large.
+test('the policy link stays reachable on a short screen and at large text', async () => {
+  // The sign-in sheet is fixed over a locked page: past the screen's height
+  // it has to scroll, or its ends are out of reach.
+  const sheet = (await read('./AuthPrompt.css')).match(/\.auth-modal\s*\{[^}]*\}/)?.[0] ?? '';
+  assert.match(sheet, /max-height:[^;]*\d[sdl]?vh/, 'the sheet is not held to the screen');
+  assert.match(sheet, /overflow-y:\s*(?:auto|scroll)/, 'the sheet does not scroll');
+
+  // The landing's stack opens into room kept under the hero, and is sized in
+  // rem: room in px stays put while larger text grows the stack past it.
+  const reserve = (await read('./GuestWelcome.css')).match(/\.gw--landing \.gw-stage\s*\{[^}]*\}/)?.[0] ?? '';
+  assert.match(reserve, /padding-bottom:\s*[\d.]+rem;/, 'the room under the hero does not grow with the text');
+});
+
 test('arrow keys in the Privacy panel stay in the panel on the feed', async () => {
   // The feed turns ArrowUp/ArrowDown into a card change unless focus is in
   // something interactive; a non-modal popup is, whatever inside it has focus.
