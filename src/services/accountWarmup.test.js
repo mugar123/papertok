@@ -2,14 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from './accountWarmup.js';
-import { UnconfirmedProfileAbsenceError, readConfirmedOwnUserProfile } from './userProfileService.js';
-import { handleProfileKey, ownListsCache, ownProfileCache, ownProfileKey } from '../utils/profileSessionCaches.js';
-import { readStoredProfile, saveStoredLists, saveStoredProfile } from '../utils/userScopedStorage.js';
+import { ownListsCache } from '../utils/profileSessionCaches.js';
+import { readStoredLists, saveStoredLists } from '../utils/userScopedStorage.js';
 
-test('hydrateAccountCaches copies this device\'s lists and profile into the session', () => {
+test('hydrateAccountCaches copies this device\'s lists into the session', () => {
   resetAccountWarmup();
   ownListsCache.clear();
-  ownProfileCache.clear();
   const storage = {
     map: new Map(),
     getItem(key) { return this.map.has(key) ? this.map.get(key) : null; },
@@ -18,16 +16,11 @@ test('hydrateAccountCaches copies this device\'s lists and profile into the sess
     get length() { return this.map.size; },
   };
   saveStoredLists('uid-w1', [{ id: 'l1', name: 'Notes', paperIds: ['p1'] }], storage);
-  saveStoredProfile('uid-w1', {
-    uid: 'uid-w1', handle: 'alice', displayName: 'Alice',
-  }, storage);
 
   hydrateAccountCaches('uid-w1', { storage });
   assert.equal(ownListsCache.get('uid-w1')?.[0]?.id, 'l1');
-  assert.equal(ownProfileCache.get(ownProfileKey('uid-w1'))?.profile?.handle, 'alice');
 
   ownListsCache.clear();
-  ownProfileCache.clear();
   resetAccountWarmup();
 });
 
@@ -56,156 +49,42 @@ function deviceStorage() {
   };
 }
 
-test('an authoritative "no profile" clears the device copy instead of reviving it', async () => {
-  resetAccountWarmup();
-  ownProfileCache.clear();
-  const storage = deviceStorage();
-  saveStoredProfile('uid-w2', { uid: 'uid-w2', handle: 'gone', displayName: 'Gone' }, storage);
-
-  await warmAccountCaches('uid-w2', {
-    storage,
-    currentUid: () => 'uid-w2',
-    readProfile: async () => null,
-    readLists: async () => null,
-  });
-  assert.equal(readStoredProfile('uid-w2', storage), null, 'the unpublished profile came back from storage');
-  assert.deepEqual(ownProfileCache.get(ownProfileKey('uid-w2')), { profile: null });
-
-  ownProfileCache.clear();
-  resetAccountWarmup();
-});
-
-test('a failed profile read keeps the device copy: absence is not the same as silence', async () => {
-  resetAccountWarmup();
-  ownProfileCache.clear();
-  const storage = deviceStorage();
-  saveStoredProfile('uid-w3', { uid: 'uid-w3', handle: 'kept', displayName: 'Kept' }, storage);
-
-  await warmAccountCaches('uid-w3', {
-    storage,
-    currentUid: () => 'uid-w3',
-    readProfile: async () => { throw new Error('offline'); },
-    readLists: async () => null,
-  });
-  assert.equal(readStoredProfile('uid-w3', storage)?.handle, 'kept');
-  assert.equal(ownProfileCache.get(ownProfileKey('uid-w3'))?.profile?.handle, 'kept');
-
-  ownProfileCache.clear();
-  resetAccountWarmup();
-});
-
-/**
- * The owner document exactly as `getDoc` hands it back — metadata included,
- * because that is the whole difference between the two absences below.
- */
-function ownProfileApi(snapshot) {
+/** A lists query snapshot the server answered. */
+function listsSnapshot(lists) {
   return {
-    database: 'db',
-    currentUser: { uid: 'uid-w4' },
-    document: (...parts) => parts.join('/'),
-    getDocument: async () => snapshot,
-    isDemo: false,
+    empty: lists.length === 0,
+    size: lists.length,
+    metadata: { fromCache: false },
+    forEach: callback => lists.forEach(({ id, ...data }) => callback({ id, data: () => data })),
   };
 }
 
-test('an absence the cache invented erases nothing: the warm-up runs before any screen asks', async () => {
+test('a warm-up that is still current caches and stores the lists it read', async () => {
   resetAccountWarmup();
-  ownProfileCache.clear();
+  ownListsCache.clear();
   const storage = deviceStorage();
-  saveStoredProfile('uid-w4', { uid: 'uid-w4', handle: 'quiet', displayName: 'Quiet' }, storage);
-
-  const cacheMiss = ownProfileApi({ exists: () => false, metadata: { fromCache: true } });
-  await warmAccountCaches('uid-w4', {
-    storage,
-    currentUid: () => 'uid-w4',
-    readProfile: () => readConfirmedOwnUserProfile(cacheMiss),
-    readLists: async () => null,
-  });
-
-  assert.equal(readStoredProfile('uid-w4', storage)?.handle, 'quiet',
-    'a stalled channel answers "no such document" from memory in half a millisecond, and wiping the '
-    + 'device copy on that leaves the next reload with nothing to seed from either');
-  assert.equal(ownProfileCache.get(ownProfileKey('uid-w4'))?.profile?.handle, 'quiet',
-    'and the session cache keeps what it hydrated: the comments sheet seeds its footer from this entry, '
-    + 'so a null written here is "create your profile" for an account that has one');
-
-  ownProfileCache.clear();
-  resetAccountWarmup();
-});
-
-test('an absence the server confirmed still clears both copies', async () => {
-  resetAccountWarmup();
-  ownProfileCache.clear();
-  const storage = deviceStorage();
-  saveStoredProfile('uid-w4', { uid: 'uid-w4', handle: 'gone', displayName: 'Gone' }, storage);
-
-  const served = ownProfileApi({ exists: () => false, metadata: { fromCache: false } });
-  await warmAccountCaches('uid-w4', {
-    storage,
-    currentUid: () => 'uid-w4',
-    readProfile: () => readConfirmedOwnUserProfile(served),
-    readLists: async () => null,
-  });
-
-  assert.equal(readStoredProfile('uid-w4', storage), null, 'a real answer is still allowed to erase');
-  assert.deepEqual(ownProfileCache.get(ownProfileKey('uid-w4')), { profile: null });
-
-  ownProfileCache.clear();
-  resetAccountWarmup();
-});
-
-test('the unconfirmed absence reaches the warm-up as a failed read, by class', async () => {
-  resetAccountWarmup();
-  ownProfileCache.clear();
-  const storage = deviceStorage();
-  saveStoredProfile('uid-w5', { uid: 'uid-w5', handle: 'kept', displayName: 'Kept' }, storage);
 
   await warmAccountCaches('uid-w5', {
     storage,
     currentUid: () => 'uid-w5',
-    readProfile: async () => { throw new UnconfirmedProfileAbsenceError(); },
-    readLists: async () => null,
+    readLists: async () => listsSnapshot([{ id: 'l5', name: 'Reading', paperIds: ['p5'] }]),
   });
-  assert.equal(readStoredProfile('uid-w5', storage)?.handle, 'kept');
-  assert.equal(ownProfileCache.get(ownProfileKey('uid-w5'))?.profile?.handle, 'kept');
 
-  ownProfileCache.clear();
+  assert.equal(ownListsCache.get('uid-w5')?.[0]?.id, 'l5');
+  assert.equal(readStoredLists('uid-w5', storage)?.[0]?.id, 'l5');
+
+  ownListsCache.clear();
   resetAccountWarmup();
-});
-
-test('SOURCE: the warm-up asks for an absence the server has confirmed', async () => {
-  const source = await readFile(new URL('./accountWarmup.js', import.meta.url), 'utf8');
-  const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-  assert.match(code, /readProfile = readConfirmedOwnUserProfile,/,
-    'the default read is the seam every caller inherits, and it is the one that runs at sign-in');
-  assert.doesNotMatch(
-    code,
-    /readOwnUserProfile\b/,
-    'the plain read RESOLVES a cache-served miss as null. Here that non-answer was written into both '
-    + 'the session cache and the device copy before any screen had asked anything.',
-  );
-});
-
-test('SOURCE: unpublishing forgets the profile on this device, not only in the session', async () => {
-  const source = await readFile(new URL('../components/Profile/useProfileEditor.js', import.meta.url), 'utf8');
-  // Comments are prose, not code: useProfileEditor.js carries heavy explanatory
-  // comments elsewhere in the file, and a decoy reproducing this exact pair
-  // of calls must never make this test see a device-copy clear that is not
-  // really there. Strip them first, the same way analyticsPageviews.test.js
-  // does, so only real code is scanned below.
-  const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-  assert.match(code, /forgetOwnProfile\(user\.uid, unpublishedHandle\);\s*clearStoredProfile\(user\.uid\);/);
 });
 
 /* --- A warm-up outlives the session that started it ---
-   The two reads are a round trip each; signing out does not cancel them. What
-   lands afterwards used to be written into the caches the NEXT account reads,
-   which on the handle-keyed entry is another account's profile served to a
-   visitor who never asked for it. */
+   The lists read is a round trip; signing out does not cancel it. What lands
+   afterwards must not be cached for the next session, nor written back onto
+   the device the sign-out has just cleared. */
 
-test('a warm-up whose reads land after a sign-out writes nothing', async () => {
+test('a warm-up whose read lands after a sign-out writes nothing', async () => {
   resetAccountWarmup();
-  ownProfileCache.clear();
+  ownListsCache.clear();
   const storage = deviceStorage();
   let signedIn = 'uid-w6';
   let release;
@@ -214,25 +93,23 @@ test('a warm-up whose reads land after a sign-out writes nothing', async () => {
   const pending = warmAccountCaches('uid-w6', {
     storage,
     currentUid: () => signedIn,
-    readProfile: () => gate.then(() => ({ uid: 'uid-w6', handle: 'ada', visibility: 'public' })),
-    readLists: async () => null,
+    readLists: () => gate.then(() => listsSnapshot([{ id: 'l6', name: 'Private', paperIds: ['p6'] }])),
   });
-  signedIn = null; // Sign-out, with the profile read still in flight.
+  signedIn = null; // Sign-out, with the lists read still in flight.
   release();
   await pending;
 
-  assert.equal(ownProfileCache.get(handleProfileKey('ada')), undefined,
-    'the previous account\'s profile was published under its handle for whoever comes next');
-  assert.equal(ownProfileCache.get(ownProfileKey('uid-w6')), undefined);
-  assert.equal(readStoredProfile('uid-w6', storage), null, 'and nothing was written to the device either');
+  assert.equal(ownListsCache.get('uid-w6'), undefined,
+    'the signed-out account\'s lists were cached for whoever comes next');
+  assert.equal(readStoredLists('uid-w6', storage), null, 'and nothing was written to the device either');
 
-  ownProfileCache.clear();
+  ownListsCache.clear();
   resetAccountWarmup();
 });
 
 test('a warm-up the sign-out already reset writes nothing either', async () => {
   resetAccountWarmup();
-  ownProfileCache.clear();
+  ownListsCache.clear();
   const storage = deviceStorage();
   let release;
   const gate = new Promise(resolve => { release = resolve; });
@@ -240,17 +117,15 @@ test('a warm-up the sign-out already reset writes nothing either', async () => {
   const pending = warmAccountCaches('uid-w7', {
     storage,
     currentUid: () => 'uid-w7',
-    readProfile: () => gate.then(() => ({ uid: 'uid-w7', handle: 'bob', visibility: 'public' })),
-    readLists: async () => null,
+    readLists: () => gate.then(() => listsSnapshot([{ id: 'l7', name: 'Private', paperIds: ['p7'] }])),
   });
   resetAccountWarmup('uid-w7'); // What AuthContext does when the session ends.
   release();
   await pending;
 
-  assert.equal(ownProfileCache.get(handleProfileKey('bob')), undefined);
-  assert.equal(ownProfileCache.get(ownProfileKey('uid-w7')), undefined);
-  assert.equal(readStoredProfile('uid-w7', storage), null);
+  assert.equal(ownListsCache.get('uid-w7'), undefined);
+  assert.equal(readStoredLists('uid-w7', storage), null);
 
-  ownProfileCache.clear();
+  ownListsCache.clear();
   resetAccountWarmup();
 });

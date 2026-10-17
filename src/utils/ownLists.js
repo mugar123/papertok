@@ -12,6 +12,14 @@ import { queryIsAuthoritative } from './cacheAuthority.js';
 export { queryIsAuthoritative as snapshotIsAuthoritative };
 
 /**
+ * The ceiling for every read of an account's own `lists` collection: the lists
+ * page, the save-and-organize modal and the sign-in warm-up. A bounded page,
+ * never the whole collection: an account with thousands of lists must not turn
+ * opening a screen into an unbounded read.
+ */
+export const OWN_LISTS_PAGE_SIZE = 60;
+
+/**
  * Turns a lists snapshot into the two things both screens need: the lists
  * themselves, and which of them already hold this paper.
  *
@@ -102,43 +110,4 @@ export function mergeCreatedLists(fetched, created) {
   const known = new Set(fetched.map((list) => list?.id));
   const missing = created.filter((list) => list?.id && !known.has(list.id));
   return missing.length === 0 ? fetched : [...fetched, ...missing];
-}
-
-function createdAtMillis(value) {
-  if (typeof value?.toMillis === 'function') return value.toMillis();
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
-    const parsed = Date.parse(value);
-    return Number.isNaN(parsed) ? 0 : parsed;
-  }
-  return 0;
-}
-
-/**
- * The profile page paints cards (`title`, `paperCount`), while the save modal
- * and lists page cache full documents (`name`, `paperIds`). One mapper so a
- * cache written by one screen can seed the other without corrupting it.
- */
-export function toProfileListCards(lists) {
-  if (!Array.isArray(lists)) return [];
-  return lists
-    .map((list) => {
-      if (!list || typeof list !== 'object' || !list.id) return null;
-      const paperIds = Array.isArray(list.paperIds) ? list.paperIds : null;
-      const title = typeof list.title === 'string' && list.title
-        ? list.title
-        : (typeof list.name === 'string' ? list.name : '');
-      if (!title) return null;
-      return {
-        id: list.id,
-        title,
-        emoji: list.emoji ?? null,
-        color: list.color ?? null,
-        paperCount: paperIds ? paperIds.length : (Number.isFinite(list.paperCount) ? list.paperCount : 0),
-        isPublished: Boolean(list.publicShareId) || list.isPublished === true,
-        onProfile: list.onProfile === true,
-        createdAtMillis: createdAtMillis(list.createdAt) || list.createdAtMillis || 0,
-      };
-    })
-    .filter(Boolean);
 }

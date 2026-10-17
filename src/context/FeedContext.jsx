@@ -225,10 +225,10 @@ function bumpConceptAffinities(conceptMap, paper, delta) {
 }
 
 // `feedRouteActive` says whether the route that actually renders this feed is
-// on screen. The provider wraps every route so its consumers (save modal,
-// comments, PDF viewer) exist everywhere, but the multi-source fetch fan-out
-// must not: measured in production, a signed-in visit to a public profile
-// fired the full source cascade for a feed nobody was looking at.
+// on screen. The provider wraps every route so its consumers (save modal, PDF
+// viewer) exist everywhere, but the multi-source fetch fan-out must not:
+// measured in production, a signed-in visit to a public page fired the full
+// source cascade for a feed nobody was looking at.
 export function FeedProvider({ children, feedRouteActive = true }) {
   const { user, userPreferences, followedAuthors } = useAuth();
   const { followedEntities, loading: followingLoading } = useFollowing();
@@ -2405,15 +2405,6 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     }
   }, [withInteractionId, recordProfileEvent, user?.uid]);
 
-  // The curated interaction ids, most recent first, exactly as the aggregate
-  // holds them. `likedPaperIds` and friends are the same ids re-sorted for the
-  // screens that predate the aggregate; the profile page wants recency. Pure
-  // in-memory access — never a Firestore read.
-  const getCuratedInteractionIds = useCallback(
-    (name) => curatedIds(interactionProfile.current, name),
-    [],
-  );
-
   const getRecommendationProfileSnapshot = useCallback(() => ({
     userId: user?.uid || null,
     ready: recommendationProfileReady,
@@ -2456,7 +2447,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     papers, loading, error, hasMore, isRefreshing,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers,
-    ensurePersonalLibrary, getCuratedInteractionIds,
+    ensurePersonalLibrary,
     interactionIdFor, libraryCopyFor,
     feedMode, setFeedMode: handleSetFeedMode,
     loadPapers, loadMore, refreshFeed,
@@ -2469,7 +2460,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     papers, loading, error, hasMore, isRefreshing,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers,
-    ensurePersonalLibrary, getCuratedInteractionIds,
+    ensurePersonalLibrary,
     interactionIdFor, libraryCopyFor,
     feedMode, handleSetFeedMode,
     loadPapers, loadMore, refreshFeed,

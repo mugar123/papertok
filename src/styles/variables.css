@@ -183,17 +183,11 @@
   --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   /* The "machine" voice: IDs, counts, categories, timestamps, source names. */
   --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  /* Editorial voice, reserved for the Research magazine. Fontsource
-     registers the self-hosted variable font under this exact family name
-     (confirmed by reading its @font-face rules) — plain 'Newsreader' would
-     not match and silently fall through to the Georgia fallback. */
+  /* Editorial voice. Fontsource registers the self-hosted variable font
+     under this exact family name (confirmed by reading its @font-face
+     rules) — plain 'Newsreader' would not match and silently fall through
+     to the Georgia fallback. */
   --font-serif: 'Newsreader Variable', 'Iowan Old Style', Georgia, serif;
-  /* The one warm voice in the app: a person's bio, and nothing else. Rounded
-     terminals against a page built from hairlines and square corners — the
-     bio is the only line on a profile somebody wrote about themselves.
-     Fontsource registers it under this exact family name, same trap as
-     Newsreader above. */
-  --font-rounded: 'Nunito Variable', 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 
   --fs-xs: 0.75rem;
   --fs-sm: 0.875rem;

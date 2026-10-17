@@ -5,9 +5,9 @@ import './follow-toggle.css';
 
 /**
  * The one Follow control: authors, institutions, projects and topics in the
- * Explorer, and people on a public profile. An on/off state, so a Toggle
- * (`aria-pressed`): off, it invites in ink; on, it is the bordered chip that
- * says the relationship exists, with a check. Pressing it again unfollows.
+ * Explorer. An on/off state, so a Toggle (`aria-pressed`): off, it invites in
+ * ink; on, it is the bordered chip that says the relationship exists, with a
+ * check. Pressing it again unfollows.
  *
  * The labels come from the caller, which owns the language.
  */

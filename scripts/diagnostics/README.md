@@ -133,19 +133,16 @@ style recalculation; `old` restores the previous `background-position` shimmer
 by injecting a stylesheet, for a before/after on the same page. `PORT=9225`
 picks another debugging port so runs can go in parallel.
 
-Two more, added the same day:
+One more, added the same day:
 
 ```bash
 node scripts/diagnostics/explorer-loading-probe.mjs wikiexit '#/explorer/topic/query-ec129ead?q=gravitational+lensing+of+quasars&source=free-text'
-node scripts/diagnostics/explorer-loading-probe.mjs comments '#/'
 ```
 
 `wikiexit` opens a topic whose Wikipedia lookup misses and samples the list's
 top edge every frame while the reserved block folds away, reporting the biggest
 single-frame move — a fold that ends in a jump shows up as one frame carrying
-tens of pixels. `comments` opens the first card's thread in the guest feed and
-samples the skeleton's and the empty state's computed opacity every frame
-through the handover.
+tens of pixels.
 
 ```bash
 node scripts/diagnostics/explorer-loading-probe.mjs feedload '#/'
@@ -317,7 +314,6 @@ node scripts/diagnostics/page-transition-frames.mjs '.pc-topic-link' topic-deskt
 node scripts/diagnostics/page-transition-frames.mjs '.pc-author-link' back-desktop demo back
 node scripts/diagnostics/page-transition-frames.mjs '.pc-author-link' back-scrolled-desktop demo back scroll=600
 node scripts/diagnostics/page-transition-frames.mjs '.pc-author-link' back-mobile demo mobile back
-node scripts/diagnostics/page-transition-frames.mjs 'a[href="#/research"]' tab-desktop demo
 ```
 
 The summary line reads `sampler: 71 frames; bar in 71/71; void 0 (-); overlap 14;
@@ -363,37 +359,7 @@ opening measured 10, 9.6 and 7.9 px in its first three frames; the 320 ms
 steady state. `delay=MS` holds the OpenAIRE answer so the badge can be made to
 land while the title is still arriving or long after it.
 
-## `firestore-stall-probe.mjs` — a listen stream that died under a live client (2026-09-06)
-
-Behind "the feed / the lists / followers sometimes take forever and I have to
-reload". The SDK routes every `getDoc`/`getDocs` over one WebChannel stream and
-keeps it open for as long as anything listens (always, here: `following`). A
-stream that dies silently — sleep, a network change, a proxy dropping the
-connection — is not an error the SDK sees: reads issued against it had not
-settled after 96 s, network back or not. `disableNetwork` + `enableNetwork`
-rebuilds it in 6 ms, and `patientRead` now asks for that at `DEFAULT_STALL_MS`
-(see `src/utils/streamRecovery.js`).
-
-The probe reproduces the dead stream faithfully: it visits a public profile
-(two SDK reads, no session needed), notes the stream's `SID`, then holds at the
-network — never answers — every request carrying that `SID`, and navigates
-in-app to a second profile. The network is fine; only that stream is dead. It
-samples what the page shows, when it paints, and lists the Firestore requests,
-so a rebuilt stream shows up as a new handshake with a new `SID`.
-
-```bash
-ORIGIN=https://papertok.app PORT=9225 node scripts/diagnostics/firestore-stall-probe.mjs hold=30   # the deployed build
-ORIGIN=http://localhost:5173 PORT=9224 node scripts/diagnostics/firestore-stall-probe.mjs hold=30  # a dev server
-```
-
-Measured 2026-09-06: production, second profile **not painted after 30 s**, no
-new stream. With the fix, painted at **4.1 s**: the held request at 3 s, the new
-handshake at 3.8 s, the profile from the server right after. `HANDLE` and
-`HANDLE2` pick the two profiles (default `mugar`, `nick_mugar`). The comments
-sheet is not a usable surface for this as a guest: the thread anchor is
-resolved at the Worker and a paper without comments never touches Firestore.
-
-### Reading these two probes after 2026-09-10
+## Reading `explorer-hero-frames.mjs` and `entity-back-frames.mjs` after 2026-09-10
 
 `explorer-hero-frames.mjs` does NOT scope its `querySelector` to the page that stays, so
 while two route pages share the screen it reads the LEAVING page's elements. That shows up
@@ -461,40 +427,6 @@ authors, and none of it is reachable, because `.ee-tabs` is not sticky and a
 finger can only press a tab from `scrollY <= ~416`. From there the same switch
 measures a **0px** jump. `element.click()` will press a control no reader could
 reach; drive this from a position the strip is actually visible at.
-
-## `feed-return-figures-probe.mjs` — coming BACK to the feed, and the tab relay (2026-09-11)
-
-```
-node scripts/diagnostics/feed-return-figures-probe.mjs <label> [overlay] [back] [first] [from=following]
-```
-
-Needs a **production build** on :5174 (`npm run build && npx vite preview --port 5174
---strictPort`) and the signed-in probe profile at `~/.papertok-probe-profile`. The dev
-server roughly doubles every number here — `jsxDEV` alone turned a click into a freeze
-once, see the Explorer glitch notes above.
-
-Drives the reader's own path: feed (scrolled one card down, so the resume has something
-to restore) → Research → optionally open a paper in the overlay and close it → back to
-the feed. Records the last leg frame by frame plus a `requestAnimationFrame` sampler
-that notes, per frame: each route page's `data-page-motion` / `data-nav-direction` /
-opacity / transform / inline `top`, whether an overlay and an `aria-modal` are up, the
-inline styles on `html` and `body` (Base UI's scroll lock leaves them there), the feed's
-`scrollTop` and mounted card count, every running animation by name, and each
-`.pc-figure` as a three-letter state — `L`oaded class, `img.complete`, `src` present.
-A `PerformanceObserver` for `longtask` and the network requests of that leg print too.
-
-- `overlay` opens the hero paper and closes it before the way back, and records the
-  CLOSE separately as `<label>-close-frames` — that is where an overlay that unmounts
-  its card mid-exit shows up as a blank frame.
-- `first` also records the leg INTO Research, which is the tab relay.
-- `from=following` goes to Following before Research (60 mounted cards, not 15).
-- `back` returns with `history.back()` instead of the tab.
-
-Measured with it on 2026-09-11 (production build, real session): coming back, the page
-reached rest at 233ms and the four clippings only existed at 286ms — already
-`complete`, straight from `figureCache`, no request — and then played a 620-1040ms
-entrance over a page that had stopped moving. That is the whole "the images stay"
-glitch, and it reproduces WITHOUT opening the overlay.
 
 ## `offline-routes-probe.mjs` — qué sirve cada ruta sin red (2026-09-18)
 

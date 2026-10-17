@@ -154,11 +154,6 @@ test('a share path names its kind, its identity and the public page it stands fo
   assert.equal(list.kind, 'list');
   assert.equal(list.canonicalPath, `/public/list/${SHARE_ID}`);
 
-  const user = matchShareRoute(new URL('https://api.papertok.app/share/user/@Ada_L'));
-  assert.equal(user.kind, 'user');
-  assert.equal(user.handle, 'ada_l');
-  assert.equal(user.canonicalPath, '/public/user/ada_l');
-
   const author = matchShareRoute(new URL('https://api.papertok.app/share/entity/author/A5018713931'));
   assert.equal(author.kind, 'entity');
   assert.equal(author.type, 'author');
@@ -262,31 +257,6 @@ test('a list page names the list and links every paper in it', async () => {
   assert.match(html, new RegExp(`<a href="/public/paper/${ARXIV_KEY}">StudentBench: AI and human tutoring</a>`));
 });
 
-test('a profile page names the person and their handle', async () => {
-  const route = matchShareRoute(new URL('https://api.papertok.app/share/user/ada_l'));
-  const reads = [];
-  const outcome = await createShareLoader({
-    firestore: {
-      getDocument: async path => {
-        reads.push(path);
-        if (path === 'handles/ada_l') return { exists: true, id: 'ada_l', data: { uid: 'uid-123' } };
-        if (path === 'userProfiles/uid-123') {
-          return { exists: true, id: 'uid-123', data: { handle: 'ada_l', displayName: 'Ada Lovelace', bio: 'Analytical engines.', visibility: 'public' } };
-        }
-        throw new Error(`unexpected read ${path}`);
-      },
-    },
-  })(route);
-
-  const html = renderSharePage(SHELL, sharePageModel(route, outcome));
-  assert.deepEqual(reads, ['handles/ada_l', 'userProfiles/uid-123']);
-  assert.equal(titleOf(html), 'Ada Lovelace (@ada_l) | PaperTok');
-  assert.equal(metaContent(html, 'name', 'description'), 'Analytical engines.');
-  assert.equal(metaContent(html, 'property', 'og:type'), 'profile');
-  assert.equal(jsonLdOf(html)['@type'], 'ProfilePage');
-  assert.equal(jsonLdOf(html).mainEntity.name, 'Ada Lovelace');
-});
-
 test('an entity page names the entity and what kind of entity it is', async () => {
   const route = matchShareRoute(new URL('https://api.papertok.app/share/entity/author/A5018713931'));
   const asked = [];
@@ -338,23 +308,26 @@ test('text-direction controls from a URL do not reach the page', async () => {
 // ------------------------------------------------------------- escaping
 
 test('everything from a provider or a user is escaped, and no replacement pattern leaks', async () => {
-  const route = matchShareRoute(new URL('https://api.papertok.app/share/user/ada_l'));
+  // A public list's title and description are its owner's words.
+  const route = matchShareRoute(new URL(`https://api.papertok.app/share/list/${SHARE_ID}`));
   const outcome = await createShareLoader({
     firestore: {
-      getDocument: async path => (path === 'handles/ada_l'
-        ? { exists: true, id: 'ada_l', data: { uid: 'u1' } }
-        : { exists: true, id: 'u1', data: { handle: 'ada_l', displayName: 'Ada "</title><script>alert(1)</script>', bio: 'Costs $& and $1 & <b>bold</b> \u2028 end' } }),
+      getDocument: async () => ({
+        exists: true,
+        id: SHARE_ID,
+        data: { title: 'Ada "</title><script>alert(1)</script>', description: 'Costs $& and $1 & <b>bold</b> \u2028 end', papers: [] },
+      }),
     },
   })(route);
   const html = renderSharePage(SHELL, sharePageModel(route, outcome));
 
   assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
-  assert.equal(titleOf(html), 'Ada &quot;&lt;/title&gt;&lt;script&gt;alert(1)&lt;/script&gt; (@ada_l) | PaperTok');
+  assert.equal(titleOf(html), 'Ada &quot;&lt;/title&gt;&lt;script&gt;alert(1)&lt;/script&gt; | PaperTok public list');
   assert.match(metaContent(html, 'name', 'description'), /^Costs \$&amp; and \$1 &amp; &lt;b&gt;bold&lt;\/b&gt;/);
   const jsonLd = html.match(/<script id="papertok-jsonld" type="application\/ld\+json">([\s\S]*?)<\/script>/)[1];
   assert.doesNotMatch(jsonLd, /<\/script|<b>/i, 'the JSON-LD cannot close its own script element');
   assert.doesNotMatch(jsonLd, /\u2028/, 'nor carry a raw line separator');
-  assert.equal(JSON.parse(jsonLd).mainEntity.description.startsWith('Costs $& and $1 & <b>bold</b>'), true);
+  assert.equal(JSON.parse(jsonLd).description.startsWith('Costs $& and $1 & <b>bold</b>'), true);
 });
 
 test('LaTeX in a title becomes plain text in the head and stays LaTeX in the seed', async () => {
@@ -511,16 +484,11 @@ test('a DOI or a PMID OpenAlex has not indexed yet previews as PaperTok, not as 
 });
 
 // privacy.html: «from then on it is no longer served». A record kept a day
-// outlived making a profile private, unpublishing a list or deleting the
-// account by a day (review of 2026-09-25).
-test('a list or a profile is kept five minutes, so its owner\'s switch reaches the preview', async () => {
+// outlived unpublishing a list or deleting the account by a day (review of
+// 2026-09-25).
+test('a list is kept five minutes, so its owner\'s switch reaches the preview', async () => {
   const pages = [
     [`/share/list/${SHARE_ID}`, { getDocument: async () => ({ exists: true, id: SHARE_ID, data: { title: 'Tutoring', papers: [] } }) }],
-    ['/share/user/ada_l', {
-      getDocument: async path => (path === 'handles/ada_l'
-        ? { exists: true, id: 'ada_l', data: { uid: 'u1' } }
-        : { exists: true, id: 'u1', data: { handle: 'ada_l', displayName: 'Ada Lovelace', visibility: 'public' } }),
-    }],
   ];
   for (const [path, firestore] of pages) {
     const { deps } = handlerDeps({ loadRecord: createShareLoader({ firestore }) });
@@ -532,11 +500,14 @@ test('a list or a profile is kept five minutes, so its owner\'s switch reaches t
 });
 
 test('a path that names no page answers 404 and noindex without spending a lookup', async () => {
-  const { deps, loads } = handlerDeps();
-  const response = await handleSharePage(shareRequest('/share/paper/not-a-key'), deps);
-  assert.equal(response.status, 404);
-  assert.equal(metaContent(await response.text(), 'name', 'robots'), 'noindex, nofollow');
-  assert.equal(loads(), 0);
+  // Public profiles are gone: an old profile link is a page nobody names now.
+  for (const path of ['/share/paper/not-a-key', '/share/user/ada_l']) {
+    const { deps, loads } = handlerDeps();
+    const response = await handleSharePage(shareRequest(path), deps);
+    assert.equal(response.status, 404, path);
+    assert.equal(metaContent(await response.text(), 'name', 'robots'), 'noindex, nofollow', path);
+    assert.equal(loads(), 0, path);
+  }
 });
 
 test('HEAD answers the same status and headers with no body', async () => {
@@ -688,23 +659,6 @@ test('an arXiv answer with no entry is a paper that does not exist', async () =>
     arxiv: async () => '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"></feed>',
   })(paperRoute(ARXIV_KEY));
   assert.deepEqual(outcome, { found: false });
-});
-
-test('a private or unregistered profile is not found, whichever of the two it is', async () => {
-  const route = matchShareRoute(new URL('https://api.papertok.app/share/user/ada_l'));
-  const denied = await createShareLoader({
-    firestore: {
-      getDocument: async path => {
-        if (path === 'handles/ada_l') return { exists: true, id: 'ada_l', data: { uid: 'u1' } };
-        throw Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied', status: 403 });
-      },
-    },
-  })(route);
-  const free = await createShareLoader({
-    firestore: { getDocument: async () => ({ exists: false, id: 'ada_l', data: null }) },
-  })(route);
-  assert.deepEqual(denied, { found: false });
-  assert.deepEqual(free, { found: false });
 });
 
 test('a project is looked up in OpenAIRE by its OpenAIRE id', async () => {

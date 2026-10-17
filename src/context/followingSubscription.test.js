@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises';
  * Structural guards on the one Firestore listener the app has.
  *
  * There is no React renderer under `node --test` here, so these read the source
- * — the same technique `userProfileService.test.js` uses on the rules file. They
+ * — the same technique `publicListService.test.js` uses on the rules file. They
  * catch a dependency being added back, which is exactly how this regressed:
  * nothing about it is visible in behaviour, it just costs a teardown and a full
  * re-read of `users/{uid}/following` every time it happens.

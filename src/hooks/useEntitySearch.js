@@ -8,7 +8,6 @@ import {
 } from '../services/openAlexService';
 import { searchProjects } from '../services/openAireService';
 import { searchPapersAcrossSources } from '../services/paperSearchService';
-import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useAnalyticsConsent } from '../context/AnalyticsContext';
 import {
@@ -16,40 +15,21 @@ import {
   filterRelevantSearchResults,
   isOrganisationAuthorRecord,
 } from '../utils/searchRelevance';
-import { isTransientReadError, patientRead } from '../utils/boundedRead.js';
-import {
-  USER_SEARCH_DEBOUNCE_MS,
-  UserSearchAuthRequiredError,
-  UserSearchUnsupportedError,
-  isSearchableTerm,
-  normalizeUserSearchTerm,
-  searchUsers,
-} from '../services/userSearchService';
 
 /**
- * The search behind the command palette: five external sources and people.
+ * The search behind the command palette: five external sources.
  *
- * The five — papers, authors, institutions, topics, projects — are OpenAlex and
+ * Papers, authors, institutions, topics and projects are OpenAlex and
  * OpenAIRE over HTTP. Each has its own timeout, and the palette waits for all
  * of them before painting anything: the whole answer lands in one commit, so
  * no section can appear late or reshuffle the ranking under a reader who has
  * already started reading. A stale search can never overwrite a newer one nor
  * survive underneath it (see the commit in `performSearch`).
- *
- * People are the sixth section and deliberately NOT the sixth task. They come
- * from our own Firestore, on our own quota: they are kept out of `results` and
- * out of `searchIssue` so a Firestore hiccup can never reach a banner that
- * speaks for OpenAlex, they run on their own 400 ms clock with a two-character
- * floor, and they are only looked up when the caller says the section is going
- * to be painted. `src/components/Search/searchIntegration.test.js` pins all
- * three, for this file and for the page that did it first.
  */
 
 const SEARCH_DEBOUNCE_MS = 320;
 const SEARCH_TIMEOUT_MS = 6_000;
 const SEARCH_MIN_LOADING_MS = 180;
-/** Firestore has no client-side timeout; this is the one the palette imposes. */
-const USER_SEARCH_TIMEOUT_MS = 6_000;
 
 const EMPTY_RESULTS = Object.freeze({
   papers: [],
@@ -58,20 +38,6 @@ const EMPTY_RESULTS = Object.freeze({
   topics: [],
   projects: [],
 });
-
-/**
- * The people channel, as one value.
- *
- * `term` is the question the channel is working on; `rowsTerm` is the question
- * `rows` are the answer to. They differ exactly while a search is in flight,
- * which is the window in which the palette must not pass the previous rows off
- * as this answer — and keeping both here means "a people query is still owed"
- * is something the render can derive, instead of a status the query effect has
- * to go and write on every keystroke.
- *
- * status: idle | searching | slow | done | failed | needs-session | unsupported
- */
-const EMPTY_PEOPLE = Object.freeze({ status: 'idle', term: '', rows: [], rowsTerm: '' });
 
 const wait = (delayMs) => new Promise(resolve => setTimeout(resolve, delayMs));
 
@@ -93,15 +59,8 @@ function settleSearch(promise, fallback = [], timeoutMs = SEARCH_TIMEOUT_MS) {
   });
 }
 
-/**
- * `usersRequested` is a spend gate, not a preference: every other source is
- * somebody else's quota and costs nothing to over-ask, while a people search is
- * two Firestore reads on ours. It defaults to off so a caller that never
- * renders the section never pays for it by accident.
- */
-export function useEntitySearch({ usersRequested = false } = {}) {
+export function useEntitySearch() {
   const { language } = useLanguage();
-  const { user } = useAuth();
   const { trackEvent } = useAnalyticsConsent();
 
   const [query, setQuery] = useState('');
@@ -114,14 +73,9 @@ export function useEntitySearch({ usersRequested = false } = {}) {
   const [hasSearched, setHasSearched] = useState(false);
   const [searchIssue, setSearchIssue] = useState(null);
 
-  // People live in their own state, not in `results`, so that they cannot end
-  // up in `unavailableSections` — the list that feeds a banner naming OpenAlex.
-  const [people, setPeople] = useState(EMPTY_PEOPLE);
-
   const debounceRef = useRef(null);
   const requestAbortRef = useRef(null);
   const searchIdRef = useRef(0);
-  const userSearchIdRef = useRef(0);
 
   const performSearch = useCallback(async (searchTerm) => {
     const searchStartedAt = Date.now();
@@ -227,8 +181,8 @@ export function useEntitySearch({ usersRequested = false } = {}) {
     // The trade, deliberately: `results` is NOT emptied when a search starts.
     // Emptying it there is the obvious fix and the wrong one — it would turn
     // every keystroke into a blink to nothing and back. So the previous answers
-    // stay up until this single commit, whole and never interleaved with the
-    // new ones, and `isStale` below marks them while they do.
+    // stay in state until this single commit, whole and never interleaved with
+    // the new ones, and `isPending` below keeps them off screen meanwhile.
     const revealedResults = { ...EMPTY_RESULTS };
     outcomes.forEach((outcome) => { revealedResults[outcome.section] = outcome.value; });
     setResults(revealedResults);
@@ -251,80 +205,13 @@ export function useEntitySearch({ usersRequested = false } = {}) {
     if (requestAbortRef.current === requestController) requestAbortRef.current = null;
   }, [language, trackEvent]);
 
-  /**
-   * The people channel. Never routed through `settleSearch`: that envelope
-   * turns a failure into an empty array plus an entry in `unavailableSections`,
-   * and the banner those feed says the external providers are down. Firestore
-   * failing is a different sentence, so it gets its own status and says it
-   * itself.
-   */
-  const performUserSearch = useCallback(async (term) => {
-    const searchId = ++userSearchIdRef.current;
-    const isCurrent = () => searchId === userSearchIdRef.current;
-    // Rows are only replaced by an answer. A search that is merely starting,
-    // or one that has gone slow, leaves the previous rows where they are —
-    // clearing them would blink the section to empty on every keystroke — and
-    // `rowsTerm` keeps saying which question they answered.
-    const settlePeople = (status, rows) => setPeople(current => (
-      rows ? { status, term, rows, rowsTerm: term } : { ...current, status, term }
-    ));
-
-    // Checked before the request, as the page does: the service refuses a
-    // signed-out search before the network. The palette only mounts with a
-    // session, so this is a state nobody should reach — and if they do it is
-    // silent, not an error the palette invents.
-    if (!user) {
-      settlePeople('needs-session', []);
-      return;
-    }
-
-    settlePeople('searching');
-    try {
-      // Firestore has no client timeout: against a connection that is open but
-      // silent the promise never settles, and the palette would spin forever.
-      // `patientRead` bounds the wait without throwing the answer away — a
-      // stall that ends at nine seconds still fills the section at nine.
-      const found = await patientRead(() => searchUsers(term), {
-        attempts: 2,
-        ms: USER_SEARCH_TIMEOUT_MS,
-        label: 'user search',
-        onSlow: () => { if (isCurrent()) settlePeople('slow'); },
-        onLateResult: (rows) => { if (isCurrent()) settlePeople('done', rows); },
-      });
-      if (!isCurrent()) return;
-      settlePeople('done', found);
-    } catch (error) {
-      if (!isCurrent()) return;
-      if (error instanceof UserSearchAuthRequiredError) {
-        settlePeople('needs-session', []);
-        return;
-      }
-      // Demo builds have no people index at all. Not a failure, and not worth a
-      // word on screen: the section is simply not part of that build.
-      if (error instanceof UserSearchUnsupportedError) {
-        settlePeople('unsupported', []);
-        return;
-      }
-      // A timeout is not a failure, it is a wait that is still running: the
-      // late answer may still land through onLateResult.
-      if (isTransientReadError(error)) {
-        settlePeople('slow');
-        return;
-      }
-      console.error('User search failed:', error);
-      settlePeople('failed', []);
-    }
-  }, [user]);
-
   useEffect(() => {
     if (!query.trim()) {
       requestAbortRef.current?.abort();
       searchIdRef.current += 1;
-      userSearchIdRef.current += 1;
       const resetTimeout = setTimeout(() => {
         setResults(EMPTY_RESULTS);
         setResultsTerm('');
-        setPeople(EMPTY_PEOPLE);
         setIsSearching(false);
         setHasSearched(false);
         setSearchIssue(null);
@@ -334,11 +221,6 @@ export function useEntitySearch({ usersRequested = false } = {}) {
 
     requestAbortRef.current?.abort();
     searchIdRef.current += 1;
-    // A people answer for the term just abandoned can no longer paint. That a
-    // new one is owed needs no write here: `people.term` still names the old
-    // question, which is what keeps `peoplePending` true through the gap
-    // between the two debounces.
-    userSearchIdRef.current += 1;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => performSearch(query.trim()), SEARCH_DEBOUNCE_MS);
 
@@ -348,80 +230,35 @@ export function useEntitySearch({ usersRequested = false } = {}) {
     };
   }, [performSearch, query]);
 
-  // The second clock. The fan-out above debounces at 320 ms against APIs that
-  // do not bill us; this one waits the 400 ms the design fixed for our own
-  // quota, and below two characters no query is issued at all, so one typed
-  // word costs one search and two reads instead of one search per letter.
-  useEffect(() => {
-    const term = normalizeUserSearchTerm(query);
-    if (!usersRequested || !isSearchableTerm(term)) return undefined;
-    const timer = setTimeout(() => performUserSearch(term), USER_SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [query, usersRequested, performUserSearch]);
-
   const reset = useCallback(() => {
     requestAbortRef.current?.abort();
     searchIdRef.current += 1;
-    userSearchIdRef.current += 1;
     setQuery('');
     setResults(EMPTY_RESULTS);
     setResultsTerm('');
-    setPeople(EMPTY_PEOPLE);
     setIsSearching(false);
     setHasSearched(false);
     setSearchIssue(null);
   }, []);
 
   const typedTerm = query.trim();
-  const typedUserTerm = normalizeUserSearchTerm(typedTerm);
 
-  // A people query is owed while the channel is still working on an older
-  // question: the two debounces are 80 ms apart and the external one fires
-  // first, so between the keystroke and the people timer there is a window
-  // where nothing is running yet, and without counting it a fast external
-  // answer would settle the palette just before the people search starts.
-  // 'slow' deliberately does not count — that wait has already announced
-  // itself and still has a live read behind it.
-  const peopleWillRun = usersRequested && isSearchableTerm(typedUserTerm);
-  // Outside a search this channel is going to run, it has nothing to say: a
-  // failure from three keystrokes ago is not a fact about the term on screen
-  // now, and a note about it would be the palette talking to itself.
-  const userStatus = peopleWillRun ? people.status : 'idle';
-  const peoplePending = peopleWillRun
-    && (people.term !== typedUserTerm || userStatus === 'searching');
-
-  // Rows outlive the keystroke that made them stale on purpose, but only while
-  // an answer for what is being typed is still on its way. Once none is coming
-  // — the term fell below two characters, or the section stopped being painted
-  // at all — rows answering an older question are not "the previous answer"
-  // any more, they are simply wrong, and they go.
-  const users = people.rowsTerm === typedUserTerm || peoplePending
-    ? people.rows
-    : EMPTY_PEOPLE.rows;
-
-  const externalCount = Object.values(results)
+  const totalResults = Object.values(results)
     .reduce((total, list) => total + list.length, 0);
-  const totalResults = externalCount + users.length;
 
-  // True while what is on screen answers an older question than the one being
-  // typed. It is the price of not blinking to empty on every keystroke, and the
-  // palette pays it out loud: rows that are still the previous answer are
-  // dimmed rather than passed off as this one.
-  const isStale = Boolean(typedTerm) && (
-    (externalCount > 0 && resultsTerm !== typedTerm)
-    || (users.length > 0 && people.rowsTerm !== typedUserTerm)
-  );
+  // An answer is owed from the first keystroke, not from the end of the
+  // debounce. Until it lands the palette shows its skeleton, not the previous
+  // answer: rows left from an older query would still take Enter and be read
+  // out as results for the one being typed.
+  const isPending = isSearching
+    || (Boolean(typedTerm) && resultsTerm !== typedTerm);
 
   return {
     query,
     setQuery,
     results,
-    users,
-    userStatus,
     totalResults,
-    isSearching,
-    peoplePending,
-    isStale,
+    isPending,
     hasSearched,
     searchIssue,
     reset,

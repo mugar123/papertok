@@ -38,7 +38,6 @@ function sample(path) {
   return path
     .replace(':paperKey', 'ZG9pOjEwLjExNDUvMzU1NTE3NA')
     .replace(':shareId', '0123456789abcdef0123456789abcdef')
-    .replace(':handle', 'ada_l')
     .replace(':type', 'author')
     .replace(':id', 'A5018713931');
 }

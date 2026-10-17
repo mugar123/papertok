@@ -16,9 +16,9 @@ import { readFile } from 'node:fs/promises';
  * zero height, and the tag editor was a bare input. Meanwhile eight rules for
  * the deleted inline create-list form were still shipping.
  *
- * `profileStyles.test.js` checks that every token a stylesheet reaches for is
- * defined. This is the same idea one level up: that every class a component
- * reaches for is defined, and that nothing is left behind.
+ * `src/styles/designTokens.test.js` checks that every token a stylesheet
+ * reaches for is defined. This is the same idea one level up: that every class
+ * a component reaches for is defined, and that nothing is left behind.
  */
 
 /**

@@ -19,10 +19,11 @@
  * retrying — instead of as a lie. Rules are enforced by the server exactly as
  * for the SDK; a signed-in reader sends the same ID token the SDK would.
  *
- * Deliberately small: `runQuery` and `getDocument` are all the follow sheet
- * needs. `batchGet` is not here because it is all-or-nothing — one missing or
- * private document in the batch fails the whole request with 403 (measured),
- * which for a follower list would let one deleted account hide every name.
+ * Deliberately small: it reads single documents with `getDocument`, which is
+ * all the app and the Worker's share pages need. `batchGet` is not here
+ * because it is all-or-nothing: one
+ * missing or private document in the batch fails the whole request with 403
+ * (measured), so one deleted document would hide every other result.
  */
 
 export const FIRESTORE_REST_BASE = 'https://firestore.googleapis.com/v1';
@@ -122,8 +123,7 @@ export function createFirestoreRest({ projectId, fetchImpl = globalThis.fetch, g
       body = null;
     }
     if (!response.ok) {
-      // runQuery and batchGet report failures as a one-element array.
-      const detail = Array.isArray(body) ? body[0]?.error : body?.error;
+      const detail = body?.error;
       throw new FirestoreRestError(detail?.message || `HTTP ${response.status}`, {
         code: restErrorCode(response.status),
         status: response.status,
@@ -133,32 +133,6 @@ export function createFirestoreRest({ projectId, fetchImpl = globalThis.fetch, g
   }
 
   return {
-    /**
-     * One structured query at the database root. Rows only — the trailing
-     * readTime entry is dropped.
-     *
-     * The body is JSON but travels as `text/plain`, which Firestore accepts
-     * (measured) and which keeps the POST a CORS "simple request": with a
-     * JSON content type the browser sends a preflight first, a whole round
-     * trip before the query even leaves. Anonymous, this is one request.
-     */
-    async runQuery(structuredQuery, { signal } = {}) {
-      const body = await request(`${base}:runQuery`, {
-        method: 'POST',
-        headers: { 'content-type': 'text/plain', ...(await authorization()) },
-        body: JSON.stringify({ structuredQuery }),
-        signal,
-      });
-      return (Array.isArray(body) ? body : [])
-        .filter(entry => entry?.document?.name)
-        .map(({ document }) => ({
-          id: lastSegment(document.name),
-          name: document.name,
-          fields: document.fields || {},
-          data: decodeFields(document.fields),
-        }));
-    },
-
     /** One document by path. A 404 is a confirmed absence; a 403 is not (it stays an error). */
     async getDocument(path, { signal } = {}) {
       const id = lastSegment(path);

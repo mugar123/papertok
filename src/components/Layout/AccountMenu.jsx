@@ -9,7 +9,6 @@ import {
   Moon,
   SignOut,
   Sun,
-  UserCircle,
 } from '@phosphor-icons/react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -20,7 +19,6 @@ import { RadioGroup, RadioGroupItem } from '../ui/radio-group.jsx';
 import './AccountMenu.css';
 
 const LINKS = [
-  { to: '/profile', label: 'View my profile', Icon: UserCircle },
   { to: '/lists', label: 'My lists', Icon: FolderOpen },
   { to: '/settings', label: 'Settings', Icon: GearSix },
 ];
@@ -134,7 +132,7 @@ function AccountSheet({ user, photo, preference, setPreference, onSignOut }) {
 export default function AccountMenu() {
   const navigate = useNavigate();
   const isPhone = useIsPhone();
-  const { user, profilePhoto, signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const { preference, setPreference } = useTheme();
 
   const handleSignOut = async () => {
@@ -142,7 +140,7 @@ export default function AccountMenu() {
     navigate('/feed');
   };
 
-  const photo = profilePhoto || user.photoURL;
+  const photo = user.photoURL;
 
   if (isPhone) {
     return (

@@ -42,7 +42,8 @@ test('the navbar opens the account menu from the avatar, with no separate prefer
 test('the account menu gathers the account, the three-way theme and sign-out', async () => {
   const jsx = await accountJsx;
   assert.match(jsx, /from '@base-ui\/react\/menu'/);
-  for (const to of ['/profile', '/lists', '/settings']) assert.match(jsx, new RegExp(`to: '${to}'`));
+  for (const to of ['/lists', '/settings']) assert.match(jsx, new RegExp(`to: '${to}'`));
+  assert.doesNotMatch(jsx, /to: '\/profile'/, 'there is no profile page to open; /profile only redirects');
   assert.doesNotMatch(jsx, /to: '\/settings\//, 'settings is one entry; its pages are inside it');
   assert.match(jsx, /render=\{<Link to=\{to\} \/>\}/);
   assert.match(jsx, /<Menu\.RadioGroup[\s\S]*?value=\{preference\}[\s\S]*?onValueChange=\{setPreference\}/);

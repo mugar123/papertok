@@ -2,25 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  clearStoredProfile,
   clearUserScopedStorage,
-  getFollowStatsStorageKey,
   getLocalHiddenStorageKey,
   getOnboardingStorageKey,
   getOwnListsStorageKey,
-  getOwnProfileStorageKey,
   getSeenPapersStorageKey,
   readSeenPaperIds,
-  readStoredFollowStats,
   readStoredLists,
   readStoredOnboarding,
-  readStoredProfile,
   removeLegacySeenPaperIds,
   saveSeenPaperIds,
-  saveStoredFollowStats,
   saveStoredLists,
   saveStoredOnboarding,
-  saveStoredProfile,
 } from './userScopedStorage.js';
 
 function createStorage() {
@@ -87,61 +80,40 @@ test('logout removes only the current user personal caches', () => {
 });
 
 /**
- * The follow counters of your own profile, remembered across a reload.
- *
- * The session cache spares every re-entry within a tab but dies with it, and a
- * `count()` aggregation is server-only — so the first visit after a reload had
- * no local answer of any kind and said so with an ellipsis. This is the seed
- * that closes that last gap.
+ * The removed profile page remembered its follow counters under
+ * `papertok_followStats:{uid}`. Nothing writes that key any more, but devices
+ * that stored one still lose it when that account signs out.
  */
 
-test('follow counters survive a reload, per account', () => {
+test('signing out takes the legacy follow counters with everything else', () => {
   const storage = createStorage();
 
-  saveStoredFollowStats('user-a', {
-    followers: { count: 43, capped: false },
-    followed: { count: 7, capped: true },
-  }, storage);
-  saveStoredFollowStats('user-b', { followers: { count: 0, capped: false } }, storage);
-
-  assert.deepEqual(readStoredFollowStats('user-a', storage), {
-    followers: { count: 43, capped: false },
-    followed: { count: 7, capped: true },
-  });
-  assert.deepEqual(readStoredFollowStats('user-b', storage).followers, { count: 0, capped: false });
-  assert.equal(readStoredFollowStats('user-b', storage).followed, null, 'a counter never stored is not a zero');
-  assert.equal(readStoredFollowStats('user-c', storage), null);
-});
-
-test('a counter that failed to read is not written, and rubbish does not come back', () => {
-  const storage = createStorage();
-
-  saveStoredFollowStats('user-d', {
-    followers: { count: null, capped: false },
-    followed: null,
-  }, storage);
-  assert.equal(readStoredFollowStats('user-d', storage), null, 'nothing worth keeping, nothing written');
-
-  storage.setItem(getFollowStatsStorageKey('user-e'), '{ not json');
-  assert.equal(readStoredFollowStats('user-e', storage), null);
-
-  storage.setItem(getFollowStatsStorageKey('user-f'), JSON.stringify({ followers: { count: 'many' } }));
-  assert.equal(readStoredFollowStats('user-f', storage), null, 'a count that is not a number is not a count');
-
-  assert.equal(getFollowStatsStorageKey(null), null);
-  assert.equal(readStoredFollowStats(null, storage), null);
-});
-
-test('signing out takes the follow counters with everything else', () => {
-  const storage = createStorage();
-
-  saveStoredFollowStats('user-g', { followers: { count: 43, capped: false } }, storage);
+  storage.setItem('papertok_followStats:user-g', JSON.stringify({ followers: { count: 43, capped: false } }));
+  storage.setItem('papertok_followStats:user-h', JSON.stringify({ followers: { count: 2, capped: false } }));
   saveSeenPaperIds('user-g', new Set(['paper-a']), storage);
 
   clearUserScopedStorage('user-g', storage);
 
-  assert.equal(readStoredFollowStats('user-g', storage), null);
+  assert.equal(storage.getItem('papertok_followStats:user-g'), null);
+  assert.ok(storage.getItem('papertok_followStats:user-h'), 'another account keeps its own key');
   assert.deepEqual([...readSeenPaperIds('user-g', storage)], []);
+});
+
+/**
+ * The removed public-profile editor remembered the owner's profile under
+ * `papertok_ownProfile:{uid}`. Nothing writes that key any more either.
+ */
+
+test('signing out takes the legacy stored profile with everything else', () => {
+  const storage = createStorage();
+
+  storage.setItem('papertok_ownProfile:user-i', JSON.stringify({ uid: 'user-i', handle: 'alice', displayName: 'Alice' }));
+  storage.setItem('papertok_ownProfile:user-j', JSON.stringify({ uid: 'user-j', handle: 'bob', displayName: 'Bob' }));
+
+  clearUserScopedStorage('user-i', storage);
+
+  assert.equal(storage.getItem('papertok_ownProfile:user-i'), null);
+  assert.ok(storage.getItem('papertok_ownProfile:user-j'), 'another account keeps its own key');
 });
 
 /* --- The owner's lists, remembered across reloads ------------------------- */
@@ -248,39 +220,6 @@ test('signing out takes the lists with it', () => {
   clearUserScopedStorage('uid-l6', storage);
   assert.equal(readStoredLists('uid-l6', storage), null,
     'another account on this device must never be seeded with these');
-});
-
-test('the owner public profile is remembered without its photo', () => {
-  const storage = listStore();
-  saveStoredProfile('uid-p1', {
-    uid: 'uid-p1',
-    handle: 'alice',
-    displayName: 'Alice',
-    bio: 'Hello',
-    photo: 'data:image/png;base64,AAAA',
-    visibility: 'public',
-    createdAt: '2026-03-01T00:00:00.000Z',
-  }, storage);
-  const read = readStoredProfile('uid-p1', storage);
-  assert.equal(read.handle, 'alice');
-  assert.equal(read.displayName, 'Alice');
-  assert.equal(read.photo, undefined);
-  assert.equal(read.createdAt, '2026-03-01T00:00:00.000Z');
-  assert.equal(readStoredProfile('uid-p1', null), null);
-
-  clearUserScopedStorage('uid-p1', storage);
-  assert.equal(readStoredProfile('uid-p1', storage), null);
-  assert.ok(getOwnProfileStorageKey('uid-p1').includes('ownProfile'));
-});
-
-test('clearing the remembered profile leaves the rest of the device state alone', () => {
-  const storage = listStore();
-  saveStoredProfile('uid-p2', { uid: 'uid-p2', handle: 'bob', displayName: 'Bob' }, storage);
-  saveStoredLists('uid-p2', [{ id: 'l1', name: 'Notes', paperIds: ['p1'] }], storage);
-  clearStoredProfile('uid-p2', storage);
-  assert.equal(readStoredProfile('uid-p2', storage), null);
-  assert.equal(readStoredLists('uid-p2', storage)?.[0]?.id, 'l1');
-  clearStoredProfile('uid-p2', null);
 });
 
 test('onboarding completion survives a reload, per account', () => {

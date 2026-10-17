@@ -142,14 +142,13 @@ components:
 The interface language every screen is built in. Read this before adding a
 feature; copy these conventions rather than inventing new ones. The tokens in
 the frontmatter above are normative and mirror `src/styles/variables.css`; the
-prose says where and why to use them. The language already ships in five
+prose says where and why to use them. The language already ships in four
 reference files — look at them when a rule is unclear:
 
 | File | What it shows |
 | --- | --- |
 | `src/components/Feed/PaperCard.css` | the card, the field colour, the voices |
 | `src/components/Reader/PaperReader.css` | long-form reading, floating controls |
-| `src/components/Report/ScientificReport.css` | editorial layout, ruled columns |
 | `src/components/Layout/Navbar.css` | flat chrome, the brand thread |
 | `src/components/Search/SearchCommand.css` | overlay surfaces |
 
@@ -278,8 +277,7 @@ the voice of an index set by hand.
   label — `font: var(--mono-label); letter-spacing: var(--mono-track);`.
 
 The scale tokens are `--fs-xs … --fs-5xl`, weights `--fw-regular … bold`, line
-heights `--lh-tight / normal / relaxed`. `--font-rounded` (Nunito) is reserved
-for the one line a person wrote about themselves: a profile's bio.
+heights `--lh-tight / normal / relaxed`.
 
 ### Named Rules
 
@@ -409,11 +407,11 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   the type does the work a container used to do.
 - **Ruled rows:** a list is hairline-separated rows on paper, each with a short
   `3px` field rule down the inner edge, a mono meta line and a serif title
-  (Explorer's `.explorer-grid`, Report's `.sr-bento`).
+  (Explorer's `.explorer-grid`).
 - **Field rule:** a `34px × 3px` bar of `var(--area-accent)` above a headline
   (`.pc-body::before`, `.ehc-info::before`).
 - **Stat block:** mono tabular-nums value over a mono uppercase label, in a
-  ruled grid (`.ehc-stats-grid`, `.sr-stat`).
+  ruled grid (`.ehc-stats-grid`).
 
 ### Inputs / Fields
 - **Style:** a hairline frame on paper, near-square.
@@ -441,13 +439,13 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
 - **`popover.jsx`**, **`sheet.jsx`**, **`tooltip.jsx`**, **`tabs.jsx`**
   (`line` with the yellow underline, `pill` on a sunken track), and the form
   controls (`switch`, `checkbox`, `radio-group`, `select`, `input`,
-  `textarea`, `slider`).
+  `textarea`).
 - **Toasts:** Sonner (`ui/sonner.jsx`) on paper with a hairline; a success
   carries the check icon. On a phone, a toast confirming a sheet's action comes
   in at the top, clear of the thumb.
 
 ### The Action Rail (signature)
-The card's right-hand column of 40px tiles: Like, Comments, Save, Share, each a
+The card's right-hand column of 40px tiles: Like, Save, Share, each a
 faint tint of its own colour (`--rail`) that fills on hover and gives under the
 press. Icons only, with the count under them in mono; the names stay in the DOM
 for assistive tech and in a native `title`. Mark as read, Skip and Related fold
@@ -599,8 +597,6 @@ bug this pattern exists to prevent.
   actions at the foot (the price of keeping the actions where the thumb is; on
   a desktop the sheet centres instead).
 - Figures are not licence-checked; arXiv licences vary.
-- The rail's like, comment and save counts are a mock
-  (`src/components/Feed/mockRailCounts.js`) until per-paper totals exist.
 
 ---
 

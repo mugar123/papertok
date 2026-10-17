@@ -122,12 +122,18 @@ async function callWorker(api, path, body) {
   return payload;
 }
 
+/**
+ * `attributed: false` because there is no public profile to show the list on.
+ * The Worker attributes a publish by default, which would add a card nobody
+ * can see to `profileLists/{uid}` and refuse the 31st publish with
+ * `PROFILE_LISTS_FULL`.
+ */
 export async function publishPublicList(input, overrides) {
   const api = operations(overrides);
   requireSupported(api);
   const listId = validatePrivateListId(input?.listId);
   const payload = sanitizePublicList(input);
-  const result = await callWorker(api, '/lists/publish', { listId, ...payload });
+  const result = await callWorker(api, '/lists/publish', { listId, ...payload, attributed: false });
   return { ...payload, ...result };
 }
 
@@ -180,23 +186,6 @@ export async function syncPublicList(shareId, input, overrides) {
     shareId: normalizedShareId, listId, ...header, paperIds, papers,
   });
   return { ...header, paperIds, ...result };
-}
-
-/**
- * Turns attribution on or off for an already-published list (F12): whether it
- * appears, as a card, in the owner's public showcase (`profileLists/{uid}`).
- * The Worker owns both artifacts — the card and the `onProfile` mirror on the
- * private list — and moves them in one commit; asking for what is already
- * true succeeds. The published content and its share link are untouched.
- */
-export async function attributePublicList(shareId, attributed, overrides) {
-  const api = operations(overrides);
-  requireSupported(api);
-  const normalizedShareId = validateShareId(shareId);
-  if (typeof attributed !== 'boolean') throw new TypeError('Attribution must be true or false.');
-  return callWorker(api, '/lists/attribute', {
-    shareId: normalizedShareId, attributed,
-  });
 }
 
 export async function unpublishPublicList(shareId, listId, overrides) {

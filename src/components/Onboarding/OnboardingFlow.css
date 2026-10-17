@@ -5,11 +5,14 @@
    (WelcomeShell, GuestWelcomePreferences and GuestWelcome.css), and so is
    the idiom: white ground, one prop drawn in hairlines, one plain control
    in a 400px column under it. What is left here is the onboarding's own:
-   the greeting's written title, the handle screen's browser window, the
-   about screen's photo and name, the fields, and the library's platforms
-   arriving. Tokens only, so the dark theme needs nothing from this file.
+   Petri's profile pose, the greeting's written title, the university field,
+   and the library's platforms arriving. Tokens only, so the dark theme needs
+   nothing from this file.
    ============================================ */
 
+/* Petri's profile pose (PetriProfile.jsx): the smile, or shades when the
+   pose is drawn private. No onboarding screen uses it since the profile
+   screen left; the drawing is kept for reuse. */
 .onboarding-petri-smile,
 .onboarding-petri-shades {
   transition: opacity 160ms ease-out, translate 220ms cubic-bezier(0.23, 1, 0.32, 1);
@@ -63,300 +66,13 @@
   transform-origin: left center;
 }
 
-/* ── Profile: the two cards as the welcome's reading levels ──
-   Side by side from 240px each. The screen's heading asks the question, so
-   the group's legend is left to assistive tech. */
-.gw-step--profile {
-  width: min(640px, 100%);
-}
-
-
+/* The university screen opens on the library prop, wider than the pickers. */
 .gw-step--university > .gw-library-preview {
   margin: 0 0 var(--space-6);
 }
 
-/* The university screen is as wide as the profile one before it. */
 .gw-step--university {
   width: min(640px, 100%);
-}
-
-.onboarding-profile {
-  text-align: left;
-}
-
-.onboarding-profile .visibility-choice-legend {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-.onboarding-profile .visibility-option {
-  border-color: var(--border-strong);
-  background: var(--bg-card);
-}
-
-.onboarding-profile .visibility-option[data-checked] {
-  border-color: var(--border-ink);
-  background: var(--bg-sunken);
-  box-shadow: inset 0 -3px 0 var(--text-primary);
-}
-
-/* ── The fields: one plain column under the prop ── */
-.onboarding-fields {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-7);
-  width: min(400px, 100%);
-  margin: var(--space-6) auto 0;
-  text-align: left;
-}
-
-.onboarding-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-/* The labels speak in the welcome's field voice: the mono kicker. */
-.onboarding-field label,
-.onboarding-university .institution-link > label {
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-
-.onboarding-fields [data-slot='input'],
-.onboarding-university .institution-link-input {
-  min-height: 44px;
-}
-
-.onboarding-fields [data-slot='textarea'] {
-  max-height: 30vh;
-}
-
-.onboarding-field-hint {
-  margin: calc(-1 * var(--space-1)) 0 0;
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  line-height: var(--lh-normal);
-  color: var(--text-tertiary);
-}
-
-.onboarding-field-hint.is-error,
-.onboarding-profile-error {
-  color: var(--accent-danger);
-}
-
-/* Under the screen's content, on the profile or the university screen. */
-.onboarding-profile-error {
-  margin: var(--space-4) 0 0;
-  font-size: var(--fs-sm);
-}
-
-.onboarding-field-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.onboarding-bio-count {
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-tertiary);
-}
-
-/* The handle field's "@", painted inside the field in the body face, as in
-   the profile editor. A click on it has to reach the input underneath. */
-.onboarding-handle > .onboarding-fields {
-  margin-top: 0;
-}
-
-.onboarding-handle-input {
-  position: relative;
-}
-
-.onboarding-handle-input > span {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: var(--space-3);
-  display: grid;
-  place-items: center;
-  color: var(--text-tertiary);
-  font-family: var(--font-body);
-  font-size: var(--fs-base);
-  pointer-events: none;
-}
-
-.onboarding-handle-input > input {
-  padding-left: calc(var(--space-3) + 1.1em);
-  font-family: var(--font-mono);
-}
-
-/* ── Handle: the address in a browser window ──
-   The welcome's GitHub window (`.gw-gh*`), here 320px drawn at 1.25, so it
-   is as wide as the field column, and smaller where a phone has less room.
-   The address is the handle being typed: tertiary until it is valid, ink
-   once it is. Under the chrome, the page it opens as a faint skeleton. */
-.gw-gh.onboarding-window {
-  width: 320px;
-  margin: 0 auto var(--space-5);
-  zoom: 1.25;
-}
-
-.onboarding-window .gw-gh-url {
-  position: relative;
-  font-size: 0.6875rem;
-}
-
-.onboarding-window-address {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--text-tertiary);
-  transition: color 200ms ease;
-}
-
-.onboarding-window-address[data-valid] {
-  color: var(--text-primary);
-}
-
-.onboarding-window-cursor {
-  top: 55%;
-  left: 66%;
-  z-index: 1;
-}
-
-.onboarding-window-page {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  align-content: center;
-  gap: 8px 12px;
-  padding: 16px 14px 20px;
-}
-
-.onboarding-window-avatar {
-  grid-row: 1 / 3;
-  width: 40px;
-  height: 40px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  background: var(--bg-sunken);
-}
-
-
-.onboarding-window-avatar:has(> svg) {
-  overflow: hidden;
-  border-color: var(--border-strong);
-}
-
-.onboarding-window-avatar > svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-.onboarding-window-bar {
-  display: block;
-  align-self: end;
-  width: 58%;
-  height: 6px;
-  border-radius: var(--radius-sm);
-  background: var(--border-strong);
-}
-
-.onboarding-window-bar--short {
-  align-self: start;
-  width: 36%;
-  background: var(--border-default);
-}
-
-.onboarding-window-tabs {
-  grid-column: 1 / -1;
-  display: flex;
-  gap: 14px;
-  margin: 10px -14px 0;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--border-default);
-}
-
-.onboarding-window-tabs > span {
-  padding-bottom: 7px;
-}
-
-.onboarding-window-tabs > .is-active {
-  margin-bottom: -1px;
-  border-bottom: 2px solid var(--border-strong);
-}
-
-.onboarding-window-tabs i {
-  display: block;
-  width: 28px;
-  height: 4px;
-  border-radius: var(--radius-sm);
-  background: var(--border-default);
-}
-
-@media (max-width: 480px) {
-  .gw-gh.onboarding-window { zoom: 1; }
-}
-
-@media (max-width: 370px) {
-  .gw-gh.onboarding-window { zoom: 0.86; }
-}
-
-/* ── About: the photo ── */
-.onboarding-about {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-/* The account-photo switch: a row card, as the welcome's digest opt-in. */
-.onboarding-switch {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
-  background: var(--bg-card);
-  font-weight: var(--fw-regular);
-  line-height: var(--lh-normal);
-  text-align: left;
-  cursor: pointer;
-}
-
-.onboarding-switch:has(:focus-visible) {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 3px;
-}
-
-.onboarding-switch-copy {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.onboarding-switch-label {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  color: var(--text-primary);
-}
-
-.onboarding-switch-hint {
-  font-size: var(--fs-xs);
-  line-height: 1.6;
-  color: var(--text-secondary);
 }
 
 /* ── University: the library demo over the link form ──
@@ -367,6 +83,18 @@
   width: min(400px, 100%);
   margin: var(--space-4) auto 0;
   text-align: left;
+}
+
+/* The field's label speaks in the welcome's field voice: the mono kicker. */
+.onboarding-university .institution-link > label {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.onboarding-university .institution-link-input {
+  min-height: 44px;
 }
 
 .onboarding-university .institution-link.is-linked,
@@ -386,6 +114,13 @@
     opacity: 0;
     transform: translateY(16px);
   }
+}
+
+/* Under the screen's content, when the save fails. */
+.onboarding-profile-error {
+  margin: var(--space-4) 0 0;
+  font-size: var(--fs-sm);
+  color: var(--accent-danger);
 }
 
 @media (prefers-reduced-motion: reduce) {

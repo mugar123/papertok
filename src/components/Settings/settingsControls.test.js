@@ -63,3 +63,31 @@ test('the settings page uses the shared Switch and RadioGroup, and styles them o
   assert.match(css, /\.settings-levels button\[data-checked\][^{,]*\{/);
   assert.doesNotMatch(css, /\.settings-levels button\.is-active|\.settings-language button\.is-active|\.settings-toggle\.is-active|\.settings-toggle > span/);
 });
+
+test('each settings page is its own route, so the rail is links rather than a scroll spy', async () => {
+  const jsx = await read('./SettingsPage.jsx');
+  assert.match(jsx, /<NavLink\s+key=\{entry\.slug\}\s+to=\{`\/settings\/\$\{entry\.slug\}`\}\s+replace/);
+  assert.doesNotMatch(jsx, /useSectionSpy|scrollIntoView/);
+});
+
+test('the settings pages carry their own field and switch styles, with no public-profile editor behind them', async () => {
+  const jsx = await read('./SettingsPage.jsx');
+  // Nothing here reads or writes the public profile, and nothing imports the
+  // deleted Profile components or their stylesheets.
+  assert.doesNotMatch(jsx, /from '\.\.\/Profile\/|userProfileService|savePublicProfilePhoto/);
+  const css = await read('./SettingsPage.css');
+  const rendered = new Set((jsx.match(/className="[^"]*"/g) ?? [])
+    .flatMap(attribute => attribute.slice('className="'.length, -1).split(/\s+/))
+    .filter(name => name.startsWith('profile-')));
+  assert.ok(rendered.has('profile-switch'), 'expected to find the analytics switch class');
+  for (const name of rendered) {
+    assert.match(css, new RegExp(`\\.${name}\\s*[{,]`), `.${name} is rendered but SettingsPage.css has no rule for it`);
+  }
+  // The panel that holds them is drawn with the settings line, defined here
+  // for both themes and stronger on ink.
+  assert.match(css, /\.settings-page\s*\{[^}]*--settings-panel-line:\s*var\(--border-subtle\)/);
+  const dark = css.match(/:root\[data-theme='dark'\] \.settings-page\s*\{[^}]*\}/);
+  assert.ok(dark, 'SettingsPage.css has no dark-theme block for .settings-page');
+  assert.match(dark[0], /--settings-panel-line:\s*var\(--border-strong\)/);
+  assert.match(css, /\.profile-fields\s*\{[^}]*border:\s*1px solid var\(--settings-panel-line\)/);
+});

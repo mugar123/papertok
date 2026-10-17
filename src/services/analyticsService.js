@@ -65,8 +65,9 @@ const DAY_7_MS = 7 * 24 * 60 * 60 * 1000;
 // report. `/profile`, `/settings/profile`, `/settings/comments` and
 // `/admin/moderation` shipped missing and took a tenth of all page views with
 // them; `/research` (removed) and its legacy alias `/report` both
-// redirect to `/feed`, and they stay listed so those arrivals read as the old
-// link they came from rather than as noise. The test 'every route the app
+// redirect to `/feed`, `/profile` (removed) redirects to `/lists`, and they
+// stay listed so those arrivals read as the old link they came from rather
+// than as noise. The test 'every route the app
 // declares is a named analytics path' is what keeps this list from drifting
 // behind the router again.
 const STATIC_ANALYTICS_PATHS = new Set([
@@ -264,9 +265,6 @@ export function normalizeAnalyticsPath(pathname = '/') {
   }
   if (/^\/public\/paper\/[^/]+$/.test(path)) return '/public/paper/:id';
   if (/^\/public\/list\/[^/]+$/.test(path)) return '/public/list/:id';
-  // The handle is the person, so it never leaves the browser: the route
-  // collapses to a constant exactly like the id routes above.
-  if (/^\/public\/user\/[^/]+$/.test(path)) return '/public/user/:handle';
 
   return '/unknown';
 }

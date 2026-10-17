@@ -1,5 +1,6 @@
 /* The institution pill: mono, tinted, near-square — a status chip, not a badge
-   of honour. It sits beside a name in Settings and on the profile preview. */
+   of honour. It sits on the Settings institution row and in the institution
+   link, in Settings and in onboarding. */
 .institution-pill {
   display: inline-flex;
   align-items: center;

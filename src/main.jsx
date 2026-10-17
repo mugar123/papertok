@@ -44,9 +44,7 @@ import '@fontsource/inter/700.css'
 import '@fontsource/ibm-plex-mono/400.css'
 import '@fontsource/ibm-plex-mono/500.css'
 import '@fontsource/ibm-plex-mono/600.css'
-// Newsreader roman is the paper title face. Italic and Nunito (profile bio)
-// load on the screens that paint them — see src/utils/loadDisplayFonts.js —
-// so a feed-first session does not download those files before the first card.
+// Newsreader roman is the paper title face.
 import '@fontsource-variable/newsreader/opsz.css'
 // KaTeX's stylesheet ships with the on-demand KaTeX chunk (see
 // components/ScientificText.js); loading it here put 23 KB of CSS in front of

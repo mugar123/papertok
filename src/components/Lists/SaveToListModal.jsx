@@ -3,9 +3,8 @@ import { IS_DEMO, db } from '../../services/firebase';
 import { savedPaperDocRef } from '../../services/savedPaperStore.js';
 import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, serverTimestamp, setDoc, limit, query } from 'firebase/firestore';
 import { isReadTimeout, patientRead } from '../../utils/boundedRead';
-import { OWN_LISTS_PAGE_SIZE } from '../../services/userProfileService';
 import {
-  listsHolding, mergeCreatedLists, readOwnLists, withPaperMembership,
+  OWN_LISTS_PAGE_SIZE, listsHolding, mergeCreatedLists, readOwnLists, withPaperMembership,
 } from '../../utils/ownLists';
 import { queuePublicListSync } from '../../services/publicListSync.js';
 import { publicListSyncKey } from '../../utils/publicListFreshness.js';
@@ -105,8 +104,7 @@ export default function SaveToListModal({ paper, onClose }) {
   // fifty times, once per open, and that is what saturated: the reads pile up
   // on a channel already busy with a write per save to the same document.
   // The lists are the same lists every time, so the modal paints from the
-  // session cache the profile screens already share, and revalidates behind
-  // it. Membership is the one thing that is NOT cached — it is per paper, so
+  // session cache the lists page also reads, and revalidates behind it. Membership is the one thing that is NOT cached — it is per paper, so
   // it is derived here from the cached lists.
   const seededLists = user?.uid
     ? (ownListsCache.get(user.uid) ?? readStoredLists(user.uid))
@@ -124,7 +122,7 @@ export default function SaveToListModal({ paper, onClose }) {
   const [listsStatus, setListsStatus] = useState(seededLists ? 'ready' : 'loading');
   const [listsAttempt, setListsAttempt] = useState(0);
   // Whether THIS open started from the cache: a failed revalidation behind a
-  // painted view must stay quiet, the same rule the comment sheet follows.
+  // painted view must stay quiet, because the cached lists are still usable.
   const openedSeeded = useRef(Boolean(seededLists));
 
   // Server truth, and — kept apart from it — what the user did to it. Save

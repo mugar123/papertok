@@ -25,50 +25,6 @@ function jsonResponse(status, body) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
 }
 
-/** The answer runQuery really gives: matching rows, then a row with only a readTime. */
-const EDGE_ROWS = [
-  {
-    document: {
-      name: `${ROOT}/follows/alice_bob`,
-      fields: {
-        followerUid: { stringValue: 'alice' },
-        targetUid: { stringValue: 'bob' },
-        createdAt: { timestampValue: '2026-08-20T22:00:36.679Z' },
-      },
-      createTime: '2026-08-20T22:00:36.679000Z',
-      updateTime: '2026-08-20T22:00:36.679000Z',
-    },
-    readTime: '2026-09-06T15:31:59.331574Z',
-  },
-  { readTime: '2026-09-06T15:31:59.331574Z' },
-];
-
-test('runQuery posts the structured query to the database root and hands back decoded rows', async () => {
-  const { calls, fetchImpl } = fakeFetch(() => jsonResponse(200, EDGE_ROWS));
-  const rest = createFirestoreRest({ projectId: PROJECT, fetchImpl });
-  const structuredQuery = { from: [{ collectionId: 'follows' }], limit: 30 };
-
-  const rows = await rest.runQuery(structuredQuery);
-
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, `${FIRESTORE_REST_BASE}/${ROOT}:runQuery`);
-  assert.equal(calls[0].init.method, 'POST');
-  assert.deepEqual(calls[0].body, { structuredQuery });
-  // A CORS "simple request": Firestore accepts a JSON body under text/plain,
-  // and a JSON content type would cost a preflight round trip per query.
-  assert.equal(calls[0].init.headers['content-type'], 'text/plain');
-  assert.equal(calls[0].init.headers.Authorization, undefined);
-  assert.equal(rows.length, 1, 'the readTime-only trailer is not a row');
-  assert.equal(rows[0].id, 'alice_bob');
-  assert.equal(rows[0].name, `${ROOT}/follows/alice_bob`);
-  assert.deepEqual(rows[0].fields, EDGE_ROWS[0].document.fields, 'the raw fields travel with the row, for cursors');
-  assert.deepEqual(rows[0].data, {
-    followerUid: 'alice',
-    targetUid: 'bob',
-    createdAt: new Date('2026-08-20T22:00:36.679Z'),
-  });
-});
-
 test('getDocument fetches one document by path and reports a 404 as a confirmed absence', async () => {
   const profile = {
     name: `${ROOT}/userProfiles/u1`,
@@ -115,7 +71,7 @@ test('a request the network drops is "unavailable" — the one code patientRead 
   const { fetchImpl } = fakeFetch(() => { throw new TypeError('Failed to fetch'); });
   const rest = createFirestoreRest({ projectId: PROJECT, fetchImpl });
 
-  await assert.rejects(() => rest.runQuery({ from: [{ collectionId: 'follows' }], limit: 1 }), (error) => {
+  await assert.rejects(() => rest.getDocument('publicLists/s1'), (error) => {
     assert.equal(error.code, 'unavailable');
     assert.ok(isTransientReadError(error));
     return true;
@@ -137,41 +93,41 @@ test('an aborted request is "cancelled", not a network failure to retry', async 
 });
 
 test('the signal reaches fetch, so closing the screen ends the request', async () => {
-  const { calls, fetchImpl } = fakeFetch(() => jsonResponse(200, []));
+  const { calls, fetchImpl } = fakeFetch(() => jsonResponse(200, { fields: {} }));
   const rest = createFirestoreRest({ projectId: PROJECT, fetchImpl });
   const controller = new AbortController();
 
-  await rest.runQuery({ from: [{ collectionId: 'follows' }], limit: 1 }, { signal: controller.signal });
+  await rest.getDocument('publicLists/s1', { signal: controller.signal });
 
   assert.equal(calls[0].init.signal, controller.signal);
 });
 
 test('a session token travels as a bearer header; without one the request stays anonymous', async () => {
-  const { calls, fetchImpl } = fakeFetch(() => jsonResponse(200, []));
+  const { calls, fetchImpl } = fakeFetch(() => jsonResponse(200, { fields: {} }));
 
   await createFirestoreRest({ projectId: PROJECT, fetchImpl, getToken: async () => 'id-token' })
-    .runQuery({ from: [{ collectionId: 'follows' }], limit: 1 });
+    .getDocument('publicLists/s1');
   assert.equal(calls[0].init.headers.Authorization, 'Bearer id-token');
 
-  await createFirestoreRest({ projectId: PROJECT, fetchImpl }).runQuery({ from: [{ collectionId: 'follows' }], limit: 1 });
+  await createFirestoreRest({ projectId: PROJECT, fetchImpl }).getDocument('publicLists/s1');
   assert.equal(calls[1].init.headers.Authorization, undefined);
 
   await createFirestoreRest({ projectId: PROJECT, fetchImpl, getToken: async () => null })
-    .runQuery({ from: [{ collectionId: 'follows' }], limit: 1 });
+    .getDocument('publicLists/s1');
   assert.equal(calls[2].init.headers.Authorization, undefined);
 });
 
 test('a token provider that fails does not fail the read: public data still goes anonymously', async () => {
-  const { calls, fetchImpl } = fakeFetch(() => jsonResponse(200, []));
+  const { calls, fetchImpl } = fakeFetch(() => jsonResponse(200, { fields: {} }));
   const rest = createFirestoreRest({
     projectId: PROJECT,
     fetchImpl,
     getToken: async () => { throw new Error('auth/network-request-failed'); },
   });
 
-  const rows = await rest.runQuery({ from: [{ collectionId: 'follows' }], limit: 1 });
+  const document = await rest.getDocument('publicLists/s1');
 
-  assert.deepEqual(rows, []);
+  assert.deepEqual(document, { exists: true, id: 's1', data: {} });
   assert.equal(calls[0].init.headers.Authorization, undefined);
 });
 

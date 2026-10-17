@@ -4,6 +4,7 @@
  */
 
 import { CATEGORIES } from '../data/categories.js';
+import { areaKeyForCategory, openAlexFilterForArea } from '../utils/areaAccent.js';
 import { usableOpenAlexAbstract } from '../utils/openAlexAbstract.js';
 import { openAlexPublicationStatus } from '../utils/publicationStatus.js';
 import { usableOpenAlexConcepts } from '../utils/openAlexConcepts.js';
@@ -1459,20 +1460,6 @@ export async function getEntityRecentImpact(type, entityOrId, now = new Date()) 
   }
 }
 
-/**
- * OpenAlex Concept Mapping for PaperTok Categories
- */
-const OA_CONCEPT_MAP = {
-  'physics': 'C121332964',
-  'cs': 'C41008148',
-  'math': 'C33923547',
-  'q-bio': 'C86803240',
-  'stat': 'C105795698',
-  'econ': 'C162324750',
-  'eess': 'C127413603',
-  'q-fin': 'C144133560'
-};
-
 // What the entity screen waits before it paints without the list
 // (`ENTITY_PRIMARY_RENDER_BUDGET_MS`, EntityExplorer.jsx). Every deadline below
 // is carved out of it.
@@ -1520,10 +1507,8 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
     filterParams += ',primary_location.is_published:true';
   }
   if (filters.category) {
-    const prefix = filters.category.split('.')[0];
-    if (OA_CONCEPT_MAP[prefix]) {
-      filterParams += `,concepts.id:${OA_CONCEPT_MAP[prefix]}`;
-    }
+    const areaFilter = openAlexFilterForArea(areaKeyForCategory(filters.category));
+    if (areaFilter) filterParams += `,${areaFilter}`;
   }
   if (filters.dateRange) {
     const today = new Date();

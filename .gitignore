@@ -20,6 +20,8 @@ lint_output.txt
 # Firestore emulator artefacts (npm run test:rules)
 firestore-debug.log
 firebase-debug.log
+# Accounts and documents saved by `npm run dev:emulators` between runs
+/.firebase-emulators/
 
 # Espacio de trabajo de subagent-driven-development (scratch, no versionado)
 .superpowers/
