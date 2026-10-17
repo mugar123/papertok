@@ -445,7 +445,7 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   in at the top, clear of the thumb.
 
 ### The Action Rail (signature)
-The card's right-hand column of 40px tiles: Like, Save, Share, Connections,
+The card's right-hand column of 40px tiles: Like, Save, Connections, Share,
 each a faint tint of its own colour (`--rail`) that fills on hover and gives
 under the press. Icons only, without counts until per-paper totals exist; the
 names stay in the DOM for assistive tech and in a native `title`. Connections
