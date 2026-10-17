@@ -58,14 +58,14 @@ test('SOURCE: el botón principal se llama como su rótulo, que en móvil no se 
   );
   assert.match(
     boton,
-    /<span className="pc-action-label">\{primaryActionLabel\}<\/span>/,
+    /<span key=\{[^}]*\} className=\{`pc-action-label\$\{[^}]*\}`\}>\{primaryActionLabel\}<\/span>/,
     'el rótulo dibujado dejó de ser `primaryActionLabel`.',
   );
   // La promesa no es «tiene aria-label», es «el nombre y el rótulo son LA MISMA
   // expresión». Así el 2.5.3 se cumple por construcción en escritorio, donde
   // el rótulo sí se lee, y no por que hoy coincidan dos literales.
   const nombre = boton.match(/aria-label=\{([^}]+)\}/)?.[1];
-  const rotulo = boton.match(/<span className="pc-action-label">\{([^}]+)\}<\/span>/)?.[1];
+  const rotulo = boton.match(/<span key=\{[^}]*\} className=\{`pc-action-label\$\{[^}]*\}`\}>\{([^}]+)\}<\/span>/)?.[1];
   assert.equal(
     nombre,
     rotulo,
@@ -89,7 +89,7 @@ test('SOURCE: la palabra que el botón principal enseña en móvil está en su n
   const boton = bloque(card, 'className={`pc-action-read');
   assert.match(
     boton,
-    /<span className="pc-action-label--short">\{primaryActionShortLabel\}<\/span>/,
+    /<span key=\{[^}]*\} className=\{`pc-action-label--short\$\{[^}]*\}`\}>\{primaryActionShortLabel\}<\/span>/,
     'el botón principal dejó de dibujar su rótulo corto en móvil',
   );
   assert.match(
@@ -123,8 +123,32 @@ test('SOURCE: the primary button names the library it opens the paper through', 
     'an entitled library no longer renames the primary button',
   );
   const boton = bloque(card, 'className={`pc-action-read');
-  assert.match(boton, /libraryLabel \? <GraduationCap size=\{16\} \/> : <FileText size=\{16\} \/>/, 'the library button lost its glyph');
+  assert.match(boton, /libraryLabel \? <GraduationCap className="pc-action-swap" size=\{16\} \/> : <FileText size=\{16\} \/>/, 'the library button lost its glyph');
   assert.doesNotMatch(card, /institutionAccess: currentInstitutionAccess/, 'the chip is asking about the library again');
+});
+
+/**
+ * The answer arrives on a button already on screen, so the swap is eased:
+ * the library's glyph and word mount fresh with `.pc-action-swap`, which
+ * fades them in from `@starting-style` (opacity and a 3px settle; opacity
+ * alone under reduced motion). The record's own labels never carry the
+ * class, so a card's first paint does not animate.
+ */
+test('SOURCE: the library\'s word and glyph fade in instead of teleporting', async () => {
+  const card = stripComments(await read('./PaperCard.tsx'));
+  const boton = bloque(card, 'className={`pc-action-read');
+  assert.match(boton, /<GraduationCap className="pc-action-swap" size=\{16\} \/>/, 'the cap no longer fades in');
+  assert.match(boton, /key=\{libraryLabel \? 'library' : 'record'\} className=\{`pc-action-label\$\{libraryLabel \? ' pc-action-swap' : ''\}`\}/,
+    'the long word is no longer keyed on the library, or carries the swap class for the record too');
+  assert.match(boton, /key=\{libraryLabel \? 'library-short' : 'record-short'\} className=\{`pc-action-label--short\$\{libraryLabel \? ' pc-action-swap' : ''\}`\}/,
+    'the short word is no longer keyed on the library');
+
+  const css = stripComments(await read('./PaperCard.css'));
+  assert.match(css, /\.pc-action-swap \{\s*transition: opacity 180ms var\(--ease-out\), transform 180ms var\(--ease-out\);\s*\}/, 'the swap lost its transition');
+  assert.match(css, /@starting-style \{\s*\.pc-action-swap \{\s*opacity: 0;\s*transform: translateY\(3px\);\s*\}\s*\}/, 'the swap lost its starting style');
+  const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce) {', css.indexOf('.pc-action-swap')));
+  assert.match(reduced, /\.pc-action-swap \{\s*transition: opacity 180ms var\(--ease-out\);\s*\}/, 'reduced motion no longer keeps the fade alone');
+  assert.match(reduced, /@starting-style \{\s*\.pc-action-swap \{\s*transform: none;\s*\}\s*\}/, 'reduced motion no longer drops the settle');
 });
 
 test('SOURCE: el botón de reescritura se llama por lo que dibuja, sin aria-label que lo contradiga', async () => {

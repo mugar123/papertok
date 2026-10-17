@@ -1522,9 +1522,13 @@ const PaperCard = memo(function PaperCard({
     >
       {isResolvingAccess
         ? <CircleNotch className="spinning" size={16} />
-        : libraryLabel ? <GraduationCap size={16} /> : <FileText size={16} />}
-      <span className="pc-action-label">{primaryActionLabel}</span>
-      <span className="pc-action-label--short">{primaryActionShortLabel}</span>
+        : libraryLabel ? <GraduationCap className="pc-action-swap" size={16} /> : <FileText size={16} />}
+      {/* Keyed on the library so its word mounts fresh when the answer lands
+          and fades in (`.pc-action-swap`), instead of the text teleporting
+          under the reader's eyes. The record's own labels keep one key: their
+          changes come before the card is looked at. */}
+      <span key={libraryLabel ? 'library' : 'record'} className={`pc-action-label${libraryLabel ? ' pc-action-swap' : ''}`}>{primaryActionLabel}</span>
+      <span key={libraryLabel ? 'library-short' : 'record-short'} className={`pc-action-label--short${libraryLabel ? ' pc-action-swap' : ''}`}>{primaryActionShortLabel}</span>
     </Button>
   );
   return (
