@@ -668,12 +668,6 @@ a.pc-citations {
   flex: none;
 }
 
-.pc-chip[data-tone='blue'] {
-  border-color: var(--tint-blue-line);
-  background: var(--tint-blue-bg);
-  color: var(--tint-blue-fg);
-}
-
 .pc-chip[data-tone='amber'] {
   border-color: var(--tint-amber-line);
   background: var(--tint-amber-bg);

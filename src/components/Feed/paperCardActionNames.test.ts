@@ -94,9 +94,9 @@ test('SOURCE: la palabra que el botón principal enseña en móvil está en su n
   );
   assert.match(
     card,
-    /const primaryActionLabel = isResolvingAccess\s*\?\s*\(?'[^']*'\)?\s*:\s*restingActionLabel;\s*const primaryActionShortLabel = restingActionLabel\.split\(' '\)\[0\];/,
-    'la palabra corta ya no es la primera del rótulo en reposo, así que el nombre '
-    + 'accesible puede dejar de contenerla (2.5.3)',
+    /const primaryActionLabel = isResolvingAccess\s*\?\s*\(?'[^']*'\)?\s*:\s*restingActionLabel;\s*const primaryActionShortLabel = libraryLabel \|\| restingActionLabel\.split\(' '\)\[0\];/,
+    'la palabra corta ya no es la primera del rótulo en reposo (o la biblioteca, que '
+    + 'está en «Via <biblioteca>»), así que el nombre accesible puede dejar de contenerla (2.5.3)',
   );
 
   const css = stripComments(await read('./PaperCard.css'));
@@ -107,6 +107,24 @@ test('SOURCE: la palabra que el botón principal enseña en móvil está en su n
     'mientras se busca acceso la palabra en reposo queda a la vista, y el nombre '
     + '(«Buscando acceso...») ya no la contiene',
   );
+});
+
+/**
+ * A library that has the paper is named on the button, not on the chip: the
+ * button is what goes through the library, and the chip keeps telling
+ * everyone what the record says ("Subscription"). Asked for on 2026-10-17,
+ * after the chip had carried «Via USAL» for four days.
+ */
+test('SOURCE: the primary button names the library it opens the paper through', async () => {
+  const card = stripComments(await read('./PaperCard.tsx'));
+  assert.match(
+    card,
+    /const libraryLabel = currentInstitutionAccess\?\.status === 'entitled' \? institutionLabel\(institution\) : '';\s*const restingActionLabel = libraryLabel\s*\?\s*`Via \$\{libraryLabel\}`/,
+    'an entitled library no longer renames the primary button',
+  );
+  const boton = bloque(card, 'className={`pc-action-read');
+  assert.match(boton, /libraryLabel \? <GraduationCap size=\{16\} \/> : <FileText size=\{16\} \/>/, 'the library button lost its glyph');
+  assert.doesNotMatch(card, /institutionAccess: currentInstitutionAccess/, 'the chip is asking about the library again');
 });
 
 test('SOURCE: el botón de reescritura se llama por lo que dibuja, sin aria-label que lo contradiga', async () => {
