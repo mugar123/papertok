@@ -203,6 +203,14 @@ const RESOURCE_KIND_CONFIG = {
 const ENRICHMENT_SETTLE_DELAY_MS = 240;
 const SECONDARY_NETWORK_DELAY_MS = 900;
 const RELATED_PAPER_HYDRATION_TIMEOUT_MS = 8_000;
+// The library lookup says "Checking" only once it has taken this long, the
+// delay every loading placeholder waits: a cached answer, or a fast one, goes
+// straight from the record's label to the library's.
+const LIBRARY_CHECKING_DELAY_MS = 320;
+// How long a press during "Checking" waits for the library before opening
+// what the record offers: under the browser's ~5 s of user activation, after
+// which the new tab would be blocked.
+const LIBRARY_PRESS_WAIT_MS = 3_000;
 
 // Read once at module load, not per render: every card in the feed was
 // hitting localStorage on its own render just to show a panel almost nobody
@@ -443,6 +451,15 @@ const PaperCard = memo(function PaperCard({
   // The reader's library's answer, for this paper at this institution. Keyed by
   // both, so unlinking or switching accounts discards it without an effect.
   const [institutionAccess, setInstitutionAccess] = useState<{ paperId: string | null; domain: string | null; access: Awaited<ReturnType<typeof findInstitutionAccess>> }>({ paperId: null, domain: null, access: null });
+  // The library is being asked about this paper at this institution and has
+  // not answered within LIBRARY_CHECKING_DELAY_MS: the button says "Checking".
+  const [checkingLibraryFor, setCheckingLibraryFor] = useState<string | null>(null);
+  // The face the primary button is pushing out (PaperCard.css, `.pc-action-out`)
+  // and which way: forward to "Checking" or the library, back to the record.
+  const [actionPush, setActionPush] = useState<{ from: 'record' | 'checking'; dir: 'forward' | 'back' } | null>(null);
+  const readButtonRef = useRef<HTMLButtonElement | null>(null);
+  // The button's width before its label changes, and whether the change pushes.
+  const readButtonFrom = useRef<{ width: number; push: boolean } | null>(null);
   const [linkedResources, setLinkedResources] = useState<{ paperId: string | null; items: PaperResearchResource[] }>({ paperId: null, items: [] });
   const [isCardVisible, setIsCardVisible] = useState(false);
   // Whether the clippings are lit. Deliberately NOT `isCardVisible`: the two
@@ -1373,6 +1390,11 @@ const PaperCard = memo(function PaperCard({
     && institutionAccess.domain === institution.domain
     ? institutionAccess.access
     : null;
+  // Derived, so an unlinked library, another paper or a card scrolled away
+  // never keeps saying "Checking".
+  const isCheckingLibrary = isCardIdle
+    && !currentInstitutionAccess
+    && checkingLibraryFor === `${paper.id}|${institution?.domain}`;
   // Judged by the record alone, like the chip (`accessTagForPaper`): a free
   // copy found elsewhere must not decide whether the library is asked, or the
   // button's label would depend on which lookup answered first.
@@ -1388,16 +1410,55 @@ const PaperCard = memo(function PaperCard({
     }
     const paperId = paper.id;
     const { domain } = institution;
+    // Each label change records the button's width first, for the layout
+    // effect below to travel from.
+    const measure = (push: boolean) => {
+      const width = readButtonRef.current?.offsetWidth;
+      readButtonFrom.current = width ? { width, push } : null;
+    };
+    let checking = false;
+    const slow = setTimeout(() => {
+      checking = true;
+      measure(true);
+      setActionPush({ from: 'record', dir: 'forward' });
+      setCheckingLibraryFor(`${paperId}|${domain}`);
+    }, LIBRARY_CHECKING_DELAY_MS);
     findInstitutionAccess(paper.doi, institution).then(access => {
-      if (active && access) setInstitutionAccess({ paperId, domain, access });
+      clearTimeout(slow);
+      if (!active) return;
+      const entitled = access?.status === 'entitled';
+      if (checking) {
+        // "Checking" leaves either way: forward to the library, or back to
+        // the record's label, where it came from.
+        measure(true);
+        setActionPush({ from: 'checking', dir: entitled ? 'forward' : 'back' });
+      } else if (entitled) {
+        measure(false);
+      }
+      setCheckingLibraryFor(null);
+      if (access) setInstitutionAccess({ paperId, domain, access });
     });
-    return () => { active = false; };
+    return () => {
+      active = false;
+      clearTimeout(slow);
+      // A card that stops being looked at mid-check starts over when it is
+      // looked at again, rather than coming back already saying "Checking".
+      setCheckingLibraryFor(null);
+    };
   }, [institution, isCardIdle, isOpenByRecord, paper?.doi, paper?.id]);
 
   const handleOpenPaper = async (event: MouseEvent) => {
     event.stopPropagation();
+    // Pressed while the library is still being asked: its answer decides
+    // where the paper opens, so it is waited for, briefly.
+    let libraryAccess = currentInstitutionAccess;
+    if (isCheckingLibrary) {
+      setIsResolvingAccess(true);
+      libraryAccess = await resolveWithin(findInstitutionAccess(paper.doi, institution), LIBRARY_PRESS_WAIT_MS, null);
+      setIsResolvingAccess(false);
+    }
     // The library's resolver lands on the publisher's version of record.
-    const destination = currentInstitutionAccess?.status === 'entitled'
+    const destination = libraryAccess?.status === 'entitled'
       ? 'publisher'
       : resolvedOpenCopy?.pdfUrl
       || paper.openAccessPdfUrl
@@ -1416,7 +1477,7 @@ const PaperCard = memo(function PaperCard({
     // la cascada daba por bueno el primer candidato con URL: si el navegador la
     // rechazaba -- un `http://` de repositorio, lo más común en las copias que
     // este botón ofrece -- el clic terminaba ahí, en silencio.
-    const openBestTarget = (openCopy: OpenCopy) => openFirstTarget(openTargetsForPaper(paper, openCopy, currentInstitutionAccess), {
+    const openBestTarget = (openCopy: OpenCopy) => openFirstTarget(openTargetsForPaper(paper, openCopy, libraryAccess), {
       inline: (target) => {
         onOpenPdf({ ...paper, ...(openCopy || {}), pdfUrl: target.url, openAccess: true });
         return true;
@@ -1474,6 +1535,14 @@ const PaperCard = memo(function PaperCard({
     const reported = method === 'clipboard' || method === 'instagram' ? 'clipboard' : 'other';
     trackEvent('share', { method: reported, content_type: 'paper', surface: analyticsSurface });
   };
+  // What the button says from the paper's own record.
+  const recordActionLabel = resolvedOpenCopy
+    ? ('Read open version')
+    : paper.openAccessPdfUrl
+      ? ('Read full text')
+      : (!paper.pdfUrl && !paper.arxivId)
+        ? ('Source')
+        : ('Read article');
   // The library's short name when the button goes through it: an entitled
   // answer puts the library's version of record first among the open targets
   // (`paperOpenTargets.ts`), so the button says so instead of "Source", and
@@ -1481,13 +1550,9 @@ const PaperCard = memo(function PaperCard({
   const libraryLabel = currentInstitutionAccess?.status === 'entitled' ? institutionLabel(institution) : '';
   const restingActionLabel = libraryLabel
     ? `Via ${libraryLabel}`
-    : resolvedOpenCopy
-      ? ('Read open version')
-      : paper.openAccessPdfUrl
-        ? ('Read full text')
-        : (!paper.pdfUrl && !paper.arxivId)
-          ? ('Source')
-          : ('Read article');
+    : isCheckingLibrary
+      ? ('Checking')
+      : recordActionLabel;
   const primaryActionLabel = isResolvingAccess
     ? ('Finding access...')
     : restingActionLabel;
@@ -1499,6 +1564,23 @@ const PaperCard = memo(function PaperCard({
   // under the spinner (PaperCard.css), so the resting one keeps the button's
   // width: "Finding" would not fit the row at 360px.
   const primaryActionShortLabel = libraryLabel || restingActionLabel.split(' ')[0];
+  const actionFace = libraryLabel ? 'library' : isCheckingLibrary ? 'checking' : 'record';
+  const actionFaceClass = libraryLabel ? ' pc-action-swap' : isCheckingLibrary ? ' pc-action-checking' : '';
+  /* A label change changes the button's width, and "Read in plain words"
+     beside it jumped in one frame. The button travels from the width it had
+     to the one it lands on; the sibling rides on the layout. With the push
+     (record → "Checking" → library or back) it travels on the push's clock;
+     a direct swap (a cached answer) on the fade's. `overflow: hidden` keeps
+     the arriving word inside a box still narrower than it. Reduced motion
+     keeps the jump and the fade. */
+  useLayoutEffect(() => {
+    const button = readButtonRef.current;
+    const from = readButtonFrom.current;
+    readButtonFrom.current = null;
+    if (!button || !from || prefersReducedMotion) return;
+    if (from.push) animateSize(button, 'width', from.width, 280, EASE_IN_OUT, { overflow: 'hidden' });
+    else animateSize(button, 'width', from.width, 220, EASE_OUT, { overflow: 'hidden' });
+  }, [actionFace, prefersReducedMotion]);
   /* El `aria-label` repite EL MISMO rótulo, no uno mejor. En móvil
    `.pc-action-label` es `display: none` (PaperCard.css), y eso no
    esconde el texto: lo saca del árbol de accesibilidad, así que el
@@ -1514,21 +1596,38 @@ const PaperCard = memo(function PaperCard({
   // that says so, a size down, instead of in the bar below it.
   const readAction = (
     <Button
+      ref={readButtonRef}
       className={`pc-action-read${isResolvingAccess ? ' is-resolving' : ''}`}
       size={abstractText ? 'default' : 'sm'}
       onClick={handleOpenPaper}
       disabled={isResolvingAccess}
       aria-label={primaryActionLabel}
+      data-push={actionPush?.dir}
     >
       {isResolvingAccess
         ? <CircleNotch className="spinning" size={16} />
-        : libraryLabel ? <GraduationCap className="pc-action-swap" size={16} /> : <FileText size={16} />}
-      {/* Keyed on the library so its word mounts fresh when the answer lands
-          and fades in (`.pc-action-swap`), instead of the text teleporting
-          under the reader's eyes. The record's own labels keep one key: their
-          changes come before the card is looked at. */}
-      <span key={libraryLabel ? 'library' : 'record'} className={`pc-action-label${libraryLabel ? ' pc-action-swap' : ''}`}>{primaryActionLabel}</span>
-      <span key={libraryLabel ? 'library-short' : 'record-short'} className={`pc-action-label--short${libraryLabel ? ' pc-action-swap' : ''}`}>{primaryActionShortLabel}</span>
+        : libraryLabel ? <GraduationCap className="pc-action-swap" size={16} /> : isCheckingLibrary ? null : <FileText size={16} />}
+      {/* Keyed on the face so each word mounts fresh when it changes, and
+          slides in with the push or, for a cached answer, fades in
+          (`.pc-action-swap`), instead of the text teleporting under the
+          reader's eyes. The record's own labels keep one key: their changes
+          come before the card is looked at. */}
+      <span key={actionFace} className={`pc-action-label${actionFaceClass}`}>{primaryActionLabel}</span>
+      <span key={`${actionFace}-short`} className={`pc-action-label--short${actionFaceClass}`}>{primaryActionShortLabel}</span>
+      {/* The face being pushed out, drawn again over the arriving one until
+          its animation ends. Decorative: the name is the arriving label. */}
+      {actionPush && (
+        <span
+          key={`${actionPush.from}-${actionPush.dir}`}
+          className="pc-action-out"
+          aria-hidden="true"
+          onAnimationEnd={(event) => { if (event.target === event.currentTarget) setActionPush(null); }}
+        >
+          {actionPush.from === 'record' && <FileText size={16} />}
+          <span className="pc-action-label">{actionPush.from === 'record' ? recordActionLabel : 'Checking'}</span>
+          <span className="pc-action-label--short">{actionPush.from === 'record' ? recordActionLabel.split(' ')[0] : 'Checking'}</span>
+        </span>
+      )}
     </Button>
   );
   return (
