@@ -4,8 +4,10 @@ export type RecommendationWeights = { [K in keyof typeof DEFAULT_RECOMMENDATION_
 export interface RecentProperties { preprint: number; published: number; openAccess: number; subscription: number; journal: number; conference: number; }
 export interface RecommendationContext {
   weights?: Partial<RecommendationWeights>; now?: number; userPreferences?: string[] | null; followedAuthors?: string[];
-  followedEntities?: FollowInput[]; categoryAffinities?: Record<string, number>; categoryCooldowns?: Record<string, number | string>;
-  conceptAffinities?: Record<string, number>; temporalPreference?: number; recentPropsCount?: Partial<RecentProperties>;
+  followedEntities?: FollowInput[]; categoryAffinities?: Record<string, number>;
+  conceptAffinities?: Record<string, number>; authorAffinities?: Record<string, number>;
+  sessionAffinities?: Record<string, number>; interactionCount?: number;
+  temporalPreference?: number; recentPropsCount?: Partial<RecentProperties>;
 }
 interface Signal { id?: unknown; openAlexId?: unknown; canonicalId?: unknown; display_name?: unknown; displayName?: unknown; name?: unknown; label?: unknown; }
 type StableScore = ReturnType<typeof computeStableScore>;
@@ -16,11 +18,17 @@ interface ShuffleOptions<T> {
 
 // Every score component is bounded so the weights below describe the REAL
 // maximum contribution of each signal. Resulting hierarchy: preference and
-// learned affinity (<=100) > follows (<=70) > citations/classics (<=25) >
-// semantic concepts (<=semanticConceptMultiplier) > graph/diversity/recency.
+// learned category affinity (<=100) > follows (<=70) > learned concepts
+// (<=semanticConceptMultiplier) > learned authors and the session (<=30) >
+// citations/classics (<=25) > personal and graph candidates, diversity,
+// recency. The selected-category preference fades to minPreferenceShare of
+// itself over preferenceFadeInteractions interactions: what the reader does
+// takes over from what they picked at sign-up.
 export const DEFAULT_RECOMMENDATION_WEIGHTS = Object.freeze({
   selectedCategory: 100,
   relatedSelectedCategory: 80,
+  preferenceFadeInteractions: 300,
+  minPreferenceShare: 0.3,
   followedAuthor: 50,
   followedTopic: 35,
   followedInstitution: 30,
@@ -30,15 +38,20 @@ export const DEFAULT_RECOMMENDATION_WEIGHTS = Object.freeze({
   maxRecency: 5,
   recencyHalfLifeDays: 7,
   classicCitationMultiplier: 5,
-  semanticConceptMultiplier: 20,
+  semanticConceptMultiplier: 50,
+  // Learned author affinity saturates at learnedAuthorScale, five likes'
+  // worth on one author; the session at sessionScale, three strong reads.
+  maxLearnedAuthor: 30,
+  learnedAuthorScale: 25,
+  maxSession: 30,
+  sessionScale: 15,
   citationMultiplier: 5,
   maxCitationLog: 5,
   graphCandidate: 15,
+  personalCandidate: 20,
   explorationBaseWeight: 5,
   exploitBaseWeight: 15,
   minShuffleWeight: 0.1,
-  cooldownDays: 14,
-  minCooldownMultiplier: 0.1,
 });
 
 export function mergeRecommendationWeights(overrides: Partial<RecommendationWeights> = {}): RecommendationWeights {
@@ -227,13 +240,36 @@ export function getFollowedEntitySignals(paper: Partial<Paper>, followedEntities
   };
 }
 
-export function applyCategoryAffinityDelta(affinities: Record<string, number>, paper: Partial<Paper>, delta: number, secondaryMultiplier = 0.35) {
-  const categories = getPaperCategorySignals(paper);
-  categories.forEach((category, index) => {
-    const categoryDelta = index === 0 ? delta : delta * secondaryMultiplier;
-    affinities[category] = (affinities[category] || 0) + categoryDelta;
-  });
-  return affinities;
+// A collaboration paper can list hundreds of authors; the first ten are where a
+// reader's interest in a group shows, and they keep the author map bounded.
+const MAX_LEARNED_AUTHORS_PER_PAPER = 10;
+
+function openAlexKey(value: unknown) {
+  return String(value || '').trim().replace(/^https?:\/\/(?:api\.)?openalex\.org\//i, '');
+}
+
+function openAlexAuthorKey(author: PaperAuthor | string | null | undefined) {
+  const key = openAlexKey(typeof author === 'object' ? author?.id : '').toUpperCase();
+  return /^A\d+$/.test(key) ? key : '';
+}
+
+/**
+ * The OpenAlex concepts and authors a paper carries, keyed the way the
+ * interaction profile learns them and the ranking reads them back. Authors
+ * without an OpenAlex id are left out: a name is not an identity.
+ */
+export function paperAffinitySignals(paper: Partial<Paper>) {
+  const concepts = (paper?.openAlex?.concepts || [])
+    .map(concept => ({ id: openAlexKey(concept?.id), score: concept?.score }))
+    .filter(concept => concept.id);
+  const authorIds = [...new Set(
+    (paper?.authors || []).slice(0, MAX_LEARNED_AUTHORS_PER_PAPER).map(openAlexAuthorKey).filter(Boolean),
+  )];
+  return { concepts, authorIds };
+}
+
+function conceptWeight(score: number | undefined) {
+  return Number.isFinite(score) ? clamp(score!, 0, 1) : 1;
 }
 
 const NEUTRAL_RECENT_PROPS = Object.freeze({
@@ -252,8 +288,9 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
   const followedAuthors = context.followedAuthors || [];
   const followedEntities = context.followedEntities || [];
   const categoryAffinities = context.categoryAffinities || {};
-  const categoryCooldowns = context.categoryCooldowns || {};
   const conceptAffinities = context.conceptAffinities || {};
+  const authorAffinities = context.authorAffinities || {};
+  const sessionAffinities = context.sessionAffinities || {};
   const temporalPreference = context.temporalPreference || 0;
 
   const categorySignals = getPaperCategorySignals(paper);
@@ -269,11 +306,15 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
   // learned affinity never outweighs an explicit preference by accumulation alone.
   const affinity = clamp(rawAffinity, -weights.maxAffinity, weights.maxAffinity);
 
+  const preferenceShare = Math.max(
+    weights.minPreferenceShare,
+    1 - (context.interactionCount || 0) / weights.preferenceFadeInteractions,
+  );
   let preference = 0;
   if (primaryCategory && userPreferences.includes(primaryCategory)) {
-    preference = weights.selectedCategory;
+    preference = weights.selectedCategory * preferenceShare;
   } else if (allCategories.some((cat) => userPreferences.includes(cat))) {
-    preference = weights.relatedSelectedCategory;
+    preference = weights.relatedSelectedCategory * preferenceShare;
   }
 
   const authorBoost = paper.authors?.some((author) => followedAuthors.includes(((author as PaperAuthor)?.name || author) as string))
@@ -298,39 +339,42 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
   // (100), so semanticConceptMultiplier IS the maximum semantic contribution.
   // Before this, the raw product reached hundreds of points per concept and
   // whether OpenAlex enrichment had arrived decided the ranking's character.
-  const semanticMatch = (paper.openAlex?.concepts || []).reduce((sum, concept) => {
+  const { concepts, authorIds } = paperAffinitySignals(paper);
+  const semanticMatch = concepts.reduce((sum, concept) => {
     const affinityValue = conceptAffinities[concept.id] || 0;
-    return sum + (concept.score || 0) * (affinityValue / 100);
+    return sum + conceptWeight(concept.score) * (affinityValue / 100);
   }, 0);
   const semantic = clamp(semanticMatch, -1, 1) * weights.semanticConceptMultiplier;
+
+  // Authors the reader keeps engaging with, learned rather than followed.
+  const authorMatch = authorIds.reduce((sum, authorId) => sum + (authorAffinities[authorId] || 0), 0);
+  const learnedAuthor = clamp(authorMatch / weights.learnedAuthorScale, -1, 1) * weights.maxLearnedAuthor;
+
+  // What this session has been engaging with in the last dozen cards or so:
+  // the primary category and the concepts, each weighed as above.
+  const sessionMatch = (primaryCategory ? sessionAffinities[primaryCategory] || 0 : 0)
+    + concepts.reduce((sum, concept) => sum + conceptWeight(concept.score) * (sessionAffinities[concept.id] || 0), 0);
+  const sessionInterest = clamp(sessionMatch / weights.sessionScale, -1, 1) * weights.maxSession;
 
   const citations = citedBy > 0
     ? Math.min(Math.log10(citedBy + 1), weights.maxCitationLog) * weights.citationMultiplier
     : 0;
 
   const graphBoost = paper._isGraphCandidate ? weights.graphCandidate : 0;
+  const personalBoost = paper._isPersonalCandidate ? weights.personalCandidate : 0;
 
-  let cooldownMultiplier = 1;
-  if (primaryCategory && categoryCooldowns[primaryCategory]) {
-    const cooldownAge = daysSince(categoryCooldowns[primaryCategory], now);
-    if (cooldownAge < weights.cooldownDays) {
-      cooldownMultiplier = weights.minCooldownMultiplier
-        + ((1 - weights.minCooldownMultiplier) * (cooldownAge / weights.cooldownDays));
-      cooldownMultiplier = clamp(cooldownMultiplier, weights.minCooldownMultiplier, 1);
-    }
-  }
-
-  // The eight window-independent components, in the order the total used to sum
-  // them; the diversity boost is added afterwards, exactly where it always was,
-  // so the arithmetic is unchanged down to the last float.
+  // The window-independent components; the diversity boost is added afterwards.
   const stableParts = {
     affinity,
     preference,
     recency,
     classicBoost,
     semantic,
+    learnedAuthor,
+    sessionInterest,
     citations,
     graphBoost,
+    personalBoost,
     followBoost,
   };
 
@@ -343,14 +387,15 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
     followedAuthors: context.followedAuthors,
     followedEntities: context.followedEntities,
     categoryAffinities: context.categoryAffinities,
-    categoryCooldowns: context.categoryCooldowns,
     conceptAffinities: context.conceptAffinities,
+    authorAffinities: context.authorAffinities,
+    sessionAffinities: context.sessionAffinities,
+    interactionCount: context.interactionCount,
     temporalPreference: context.temporalPreference,
     explicitNow: context.now,
 
     stableParts,
     stableTotal: Object.values(stableParts).reduce((sum, value) => sum + value, 0),
-    cooldownMultiplier,
     authorBoost: Math.max(authorBoost, followedSignals.raw.author),
     followedEntityMatches: followedSignals.matches,
     isExploration,
@@ -393,10 +438,8 @@ function diversityBoostFor(stable: StableScore, recentPropsCount: Partial<Recent
 // half of each paper's score for exactly one shuffle and is dropped afterwards.
 //
 // It has to be scoped that tightly. A module-level cache keyed by paper would
-// go stale between re-ranks, because FeedContext mutates its affinity and
-// cooldown maps IN PLACE (applyCategoryAffinityDelta, categoryCooldowns.current
-// [category] = Date.now()): entries kept across runs would keep answering with
-// scores that ignore the reader's last swipe.
+// go stale between re-ranks: it would keep answering with the affinities of the
+// run that filled it, which ignore the reader's last swipe.
 let activeScoringRun: Map<Partial<Paper>, StableScore> | null = null;
 
 function beginScoringRun() {
@@ -416,8 +459,10 @@ function stableScoreFor(paper: Partial<Paper>, context: RecommendationContext) {
     && cached.followedAuthors === context.followedAuthors
     && cached.followedEntities === context.followedEntities
     && cached.categoryAffinities === context.categoryAffinities
-    && cached.categoryCooldowns === context.categoryCooldowns
     && cached.conceptAffinities === context.conceptAffinities
+    && cached.authorAffinities === context.authorAffinities
+    && cached.sessionAffinities === context.sessionAffinities
+    && cached.interactionCount === context.interactionCount
     && cached.temporalPreference === context.temporalPreference
     && cached.explicitNow === context.now) {
     return cached;
@@ -438,16 +483,13 @@ export function scorePaperForRecommendation(paper: Partial<Paper>, context: Reco
   if (stable.lastResult && stable.lastDiversityBoost === diversityBoost) return stable.lastResult;
 
   const parts = { ...stable.stableParts, diversityBoost };
-  const baseTotal = stable.stableTotal + diversityBoost;
-  const total = baseTotal * stable.cooldownMultiplier;
+  const total = stable.stableTotal + diversityBoost;
 
   const result = defineExplanation({
     total,
-    baseTotal,
     ...parts,
     authorBoost: stable.authorBoost,
     followedEntityMatches: stable.followedEntityMatches,
-    cooldownMultiplier: stable.cooldownMultiplier,
     isExploration: stable.isExploration,
   }, parts);
 
@@ -587,6 +629,57 @@ export function diversifiedWeightedShuffle<T extends Partial<Paper>>(papers: T[]
   }
 
   return result;
+}
+
+// Box–Muller: one standard normal draw from two uniforms.
+function standardNormal(random: () => number) {
+  const u = 1 - random();
+  const v = random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+// Marsaglia and Tsang, valid for shape >= 1, which is all a Beta with a uniform
+// prior ever needs. Almost every first try is accepted; the cap only stops a
+// degenerate random source from spinning forever.
+function sampleGamma(shape: number, random: () => number) {
+  const d = shape - 1 / 3;
+  const c = 1 / Math.sqrt(9 * d);
+  for (let attempt = 0; attempt < 64; attempt += 1) {
+    const x = standardNormal(random);
+    const v = (1 + c * x) ** 3;
+    if (v <= 0) continue;
+    if (Math.log(random()) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
+  }
+  return d;
+}
+
+function sampleBeta(alpha: number, beta: number, random: () => number) {
+  const x = sampleGamma(alpha, random);
+  return x / (x + sampleGamma(beta, random));
+}
+
+/**
+ * Thompson sampling over the categories offered for exploration. Each draws a
+ * plausible engagement rate from Beta(1 + engaged, 1 + not engaged) and the
+ * highest draws win. A category never shown draws from the uniform prior and
+ * gets its chance; one shown often and skipped draws low and stops being
+ * offered; one that keeps holding the reader keeps coming back.
+ */
+export function pickExplorationCategories(
+  categoryIds: string[],
+  exposure: Record<string, { shown: number; engaged: number }> = {},
+  count = 3,
+  random: () => number = Math.random,
+) {
+  return categoryIds
+    .map((id) => {
+      const shown = exposure[id]?.shown || 0;
+      const engaged = Math.min(shown, exposure[id]?.engaged || 0);
+      return [id, sampleBeta(1 + engaged, 1 + shown - engaged, random)] as const;
+    })
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, count)
+    .map(([id]) => id);
 }
 
 export function shouldLogRanking() {

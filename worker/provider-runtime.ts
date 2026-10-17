@@ -19,6 +19,9 @@ interface CacheOptions {
   identity?: Pick<VerifiedIdentity, 'uid'> | null;
   canonicalParams?: Record<string, unknown>;
   openAlexCalls?: number;
+  // The answer belongs to one reader: its key must name them, and the browser
+  // is told not to store or share it.
+  personal?: boolean;
 }
 
 type QuotaGate = { error?: Response; reservation?: QuotaRequest };
@@ -83,10 +86,10 @@ const DEFAULT_PROVIDER_GLOBAL_MINUTE_LIMIT = 2_000;
 // makes: origin gate plus edge cache plus a global per-minute ceiling reserved
 // only after a cache miss.
 //
-// `/related` shares the `s2` namespace with `/sources/s2` on purpose. Both spend
-// the same Semantic Scholar allowance, and a ceiling that only covered one of
-// them would leave alive exactly the failure this replaces -- a limiter that
-// counts per caller instead of per provider.
+// `/related` and `/recommendations` share the `s2` namespace with `/sources/s2`
+// on purpose. All three spend the same Semantic Scholar allowance, and a
+// ceiling that only covered one of them would leave alive exactly the failure
+// this replaces -- a limiter that counts per caller instead of per provider.
 //
 // `paced` puts a route on the one-a-second beat of `upstream-pace.js` under its
 // minute ceiling. Semantic Scholar is the provider that needs it: it admits one
@@ -106,6 +109,7 @@ const SHARED_MINUTE_CEILINGS: Readonly<Partial<Record<string, MinuteCeiling>>> =
   '/sources/pubmed': { namespace: 'pubmed', variable: 'PUBMED_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_PUBMED_GLOBAL_MINUTE_LIMIT },
   '/sources/s2': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
   '/related': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
+  '/recommendations': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
 });
 
 // The key is built from the values the handler is about to send upstream, never
@@ -141,11 +145,15 @@ export function canonicalCacheKey(request: Pick<Request, 'url'>, canonicalParams
 // back for whoever is asking now. `vary: Origin` travels with it so the caches
 // downstream of this one -- the browser's, any intermediary's -- do not
 // cross-serve what this one no longer needs to keep apart.
-export function serveCached(cached: Response, origin: string, env: WorkerEnv) {
+//
+// A personal answer is stored at the edge under a key that names its reader,
+// and leaves here as `private, no-store` whether it was a hit or a miss.
+export function serveCached(cached: Response, origin: string, env: WorkerEnv, { personal = false }: Pick<CacheOptions, 'personal'> = {}) {
   const headers = new Headers(cached.headers);
   headers.delete('access-control-allow-origin');
   headers.delete('vary');
   for (const [name, value] of Object.entries(corsHeaders(origin, env))) headers.set(name, value);
+  if (personal) headers.set('cache-control', 'private, no-store');
   return new Response(cached.body, { status: cached.status, headers });
 }
 
@@ -249,8 +257,8 @@ export async function reserveSharedMinuteQuota(ceiling: MinuteCeiling, env: Work
 // it is wall-clock time already slept into, and `awaitUpstreamSlot` only ever
 // proposes the current second or a later one, so it would refuse to re-grant
 // one already elapsed. That is safe only because no gate runs after an
-// accepted beat today -- the paced routes, `/sources/s2` and `/related`,
-// never pass `openAlexCalls` -- but a route that combined both would leak
+// accepted beat today -- the paced routes, `/sources/s2`, `/related` and
+// `/recommendations`, never pass `openAlexCalls` -- but a route that combined both would leak
 // this seat, with nothing left downstream to catch it.
 async function awaitSharedPace(ceiling: MinuteCeiling | undefined, env: WorkerEnv, origin: string) {
   if (!ceiling?.paced) return null;
@@ -322,9 +330,12 @@ async function reserveGates(origin: string, env: WorkerEnv, options: CacheOption
 // full TTL is something only the fetcher's result can say: a 200 assembled from a
 // fallback after the real provider refused is not worth six hours.
 export async function cacheResponse<T>(request: Request, origin: string, env: WorkerEnv, ttl: number | ((payload: T) => number), fetcher: () => Promise<T>, options: CacheOptions = {}) {
-  const cacheKey = canonicalCacheKey(request, options.canonicalParams);
+  if (options.personal && !options.identity?.uid) throw new Error('A personal response needs the verified identity it is keyed by.');
+  const cacheKey = canonicalCacheKey(request, options.personal
+    ? { ...options.canonicalParams, uid: options.identity!.uid }
+    : options.canonicalParams);
   const cached = await caches.default.match(cacheKey);
-  if (cached) return serveCached(cached, origin, env);
+  if (cached) return serveCached(cached, origin, env, options);
   // Resolved once here and handed to both gates: the beat used to re-parse the
   // URL to find the same ceiling the minute reservation had just looked up.
   const ceiling = SHARED_MINUTE_CEILINGS[new URL(request.url).pathname];
@@ -346,7 +357,7 @@ export async function cacheResponse<T>(request: Request, origin: string, env: Wo
     'cache-control': directives.join(', '),
   });
   await caches.default.put(cacheKey, response.clone());
-  return response;
+  return options.personal ? serveCached(response, origin, env, options) : response;
 }
 
 // Every upstream call in this file goes through here, and the deadline covers

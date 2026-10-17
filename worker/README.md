@@ -22,7 +22,7 @@ From the repository root, install dependencies with `npm ci`. Run the Worker wit
 
 For the frontend, copy `.env.example` to `.env.local` and run `npm run dev -- --port 5173` in another terminal. The example points both API variables to `http://localhost:8787`. Firebase web configuration is already in `src/services/firebase.ts`; signing in uses the configured Firebase project.
 
-To use the app with made-up accounts instead of real Google or GitHub sign-in, run `npm run dev:emulators` instead of `npm run dev` (`PORT=5174 npm run dev:emulators` picks another port). It starts the Firebase Auth and Firestore emulators, which need firebase-tools on `PATH` and Java 21 or later (see [`tests/README.md`](../tests/README.md)), and runs Vite in `emulators` mode against them. The app then signs in as `tester@example.com` whenever a page loads with nobody signed in. A new account starts at onboarding. Add `?as=<name>` to any URL, for example `http://localhost:5173/feed?as=alice`, to switch to `<name>@example.com`; the same name always reopens the same account. Guest screens show only between logging out and the next page load, so test them with `npm run dev`. Accounts and Firestore documents stay on this machine and are saved to the untracked `.firebase-emulators/` directory when you stop the command with Ctrl+C. The Worker still checks tokens against the real Firebase project, so routes that require a signed-in user answer 401 for emulator accounts: plain-words rewrites, passage explanations, related papers, the citation graph, the CORE, physics and Scopus sources, institution access, public lists, notifications and account deletion.
+To use the app with made-up accounts instead of real Google or GitHub sign-in, run `npm run dev:emulators` instead of `npm run dev` (`PORT=5174 npm run dev:emulators` picks another port). It starts the Firebase Auth and Firestore emulators, which need firebase-tools on `PATH` and Java 21 or later (see [`tests/README.md`](../tests/README.md)), and runs Vite in `emulators` mode against them. The app then signs in as `tester@example.com` whenever a page loads with nobody signed in. A new account starts at onboarding. Add `?as=<name>` to any URL, for example `http://localhost:5173/feed?as=alice`, to switch to `<name>@example.com`; the same name always reopens the same account. Guest screens show only between logging out and the next page load, so test them with `npm run dev`. Accounts and Firestore documents stay on this machine and are saved to the untracked `.firebase-emulators/` directory when you stop the command with Ctrl+C. The Worker still checks tokens against the real Firebase project, so routes that require a signed-in user answer 401 for emulator accounts: plain-words rewrites, passage explanations, related papers, personal recommendations, the citation graph, the CORE, physics and Scopus sources, institution access, public lists, notifications and account deletion.
 
 Run the entry-point and routing tests without credentials or live provider calls:
 
@@ -70,7 +70,7 @@ The native `https://papertok-report-api.<account>.workers.dev` route still answe
 still accepted by `src/services/workerApiClient.ts`, so a bundle built before the variable
 was flipped keeps working.
 
-Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity/:type/:id`, `/account/delete`, `/institution/link`, `/institution/unlink`, `/institution/services`, `/access`, `/related`, `/citation-graph`, `/oa`, `/arxiv`, `/pdf`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/ai/rewrite`, `/ai/annotate`, `/ai/quota`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. `/oa` asks Unpaywall first; when Unpaywall has not indexed a DOI yet (a 404, which is every paper a day old), it reads the Crossref licence instead and answers in Unpaywall's shape with `source: 'crossref'` — only a Creative Commons licence on the version of record (`vor` or `unspecified`) whose `start` has passed counts, so a publisher's text-mining licence or a licence on the accepted manuscript alone does not. A DOI neither can answer for comes back as `source: 'unresolved'` and is cached for six hours; an upstream outage is a 502 and is not cached. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback. `/pdf?url=` relays a paper's PDF to the touch-screen viewer, which draws the pages itself with pdf.js because framed PDFs do not work on phones: only the hosts the AI routes already read (arXiv, Europe PMC, PMC) are accepted, redirects are checked against the same list, the body must be a PDF of at most 8 MB, the request must carry an allowed `Origin`, a hit is served from the edge cache for a day, and misses share a per-minute ceiling (`PDF_GLOBAL_MINUTE_LIMIT`, 120 by default) that closes when the ledger is missing.
+Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity/:type/:id`, `/account/delete`, `/institution/link`, `/institution/unlink`, `/institution/services`, `/access`, `/related`, `/recommendations`, `/citation-graph`, `/oa`, `/arxiv`, `/pdf`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/ai/rewrite`, `/ai/annotate`, `/ai/quota`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. `/oa` asks Unpaywall first; when Unpaywall has not indexed a DOI yet (a 404, which is every paper a day old), it reads the Crossref licence instead and answers in Unpaywall's shape with `source: 'crossref'` — only a Creative Commons licence on the version of record (`vor` or `unspecified`) whose `start` has passed counts, so a publisher's text-mining licence or a licence on the accepted manuscript alone does not. A DOI neither can answer for comes back as `source: 'unresolved'` and is cached for six hours; an upstream outage is a 502 and is not cached. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback. `/pdf?url=` relays a paper's PDF to the touch-screen viewer, which draws the pages itself with pdf.js because framed PDFs do not work on phones: only the hosts the AI routes already read (arXiv, Europe PMC, PMC) are accepted, redirects are checked against the same list, the body must be a PDF of at most 8 MB, the request must carry an allowed `Origin`, a hit is served from the edge cache for a day, and misses share a per-minute ceiling (`PDF_GLOBAL_MINUTE_LIMIT`, 120 by default) that closes when the ledger is missing.
 
 `POST /account/delete` deletes the signed-in Firebase account. It is authenticated with a Firebase ID token (no identity cache), uses the Firestore service account, and is safe to retry: each request does one bounded stage (delete the comments and content reports from before comments were removed, drop public lists, follows, clear `createdBy` on paper stubs, profile and handle, the private user tree, newsletter KV, then Auth last). Replies other accounts wrote under a deleted comment stay. This is a **new** route: deploy the Worker before the frontend.
 
@@ -94,9 +94,24 @@ answer can be served.
 feed reads PubMed and the author pages are public, so demanding a session would make those branches
 run, fail locally and be swallowed. They take the same trade `/openalex/*` does — origin gate, edge
 cache, and a **global** per-minute ceiling reserved only after a cache miss
-(`PUBMED_GLOBAL_MINUTE_LIMIT`, `S2_GLOBAL_MINUTE_LIMIT`). `/related` shares the Semantic Scholar
-ceiling with `/sources/s2` because both spend the same provider allowance; the browser's old
-per-tab limiter counted per caller, so N tabs were N times the limit.
+(`PUBMED_GLOBAL_MINUTE_LIMIT`, `S2_GLOBAL_MINUTE_LIMIT`). `/related` and `/recommendations` share
+the Semantic Scholar ceiling with `/sources/s2` because all three spend the same provider allowance;
+the browser's old per-tab limiter counted per caller, so N tabs were N times the limit.
+
+`/recommendations` is the For You feed's personal retrieval. It takes `POST { positive, negative }`:
+up to 10 Semantic Scholar ids of papers the reader liked, saved or read at length, and up to 10 they
+rejected, each `ARXIV:`, `DOI:`, `PMID:` or a 40-character corpus hash. One malformed id refuses the
+request with `400 INVALID_EXAMPLES` before anything is spent. The ids are sorted and deduplicated,
+sent to Semantic Scholar's `POST /recommendations/v1/papers`, and the answer is reduced to
+`{ papers: [{ arxivId, doi }] }`, in Semantic Scholar's order and without the papers that carry
+neither; the browser fetches the papers themselves from arXiv and OpenAlex. When none of the
+positive examples is in Semantic Scholar's corpus it answers 400 `No positive paper examples given`
+(measured 2026-10-17), which the route returns as an empty list cached for two minutes; any other
+refusal is relayed like `/related`'s. The answer is the reader's own: it requires a Firebase ID
+token, its edge-cache key carries the verified uid beside the examples, and it leaves the Worker as
+`private, no-store`. The browser makes one request each time the interaction profile loads, about
+one interest: the category of an example drawn at random, so each interest comes up as often as the
+reader gives examples of it.
 
 `/share/*` answers HTML, not JSON: the page a crawler reads for a shared link
 (`worker/share-pages.ts`). `vercel.json`
@@ -131,8 +146,9 @@ does this now, not only Scopus.
 
 The key's introductory rate limit is **1 RPS**, and Semantic Scholar applies it per second: of
 five requests in one second, one is answered and four refused at once, with no `retry-after`
-(measured 2026-09-03). `S2_GLOBAL_MINUTE_LIMIT` (60, shared by `/sources/s2` and `/related`) is
-the same average and no say over which second, so under it both routes keep a one-a-second beat
+(measured 2026-09-03). `S2_GLOBAL_MINUTE_LIMIT` (60, shared by `/sources/s2`, `/related` and
+`/recommendations`) is the same average and no say over which second, so under it the three routes
+keep a one-a-second beat
 (`worker/upstream-pace.ts`): a caller takes the first free second in the shared ledger and sleeps
 for it — at most 2.5 s of sleep, which does not count the handful of ledger round trips around it —
 and is refused here with `retry-after: 3` rather than upstream when none is free within that budget.
@@ -200,7 +216,7 @@ so concurrent tabs cannot exceed the configured limit and failed provider calls 
 Nothing uses the `KimiBudgetLedger` Durable Object; its class is still exported only so that a
 later, separate change can delete it with a `deleted_classes` migration.
 
-Routes backed by PaperTok provider credentials (`/related`,
+Routes backed by PaperTok provider credentials (`/related`, `/recommendations`,
 `/citation-graph`, `/sources/core`, `/sources/physics`, and `/sources/scopus`) require a valid
 Firebase ID token. They also reserve an atomic per-user and global request allowance per UTC
 minute through `RequestQuotaLedger`. Cache keys are built only from validated, output-affecting

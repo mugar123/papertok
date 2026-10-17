@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  applyCategoryAffinityDelta,
   applyRecommendationScore,
   diversifiedWeightedShuffle,
   FEED_SHUFFLE_POOL_CAP,
+  paperAffinitySignals,
+  pickExplorationCategories,
   scorePaperForRecommendation,
   trimScoredCandidatePool,
 } from './recommendationEngine.ts';
@@ -31,38 +32,15 @@ test('selected user category dominates neutral papers', () => {
   assert.match(score.explanation, /preference/);
 });
 
-test('cooldown suppresses recently rejected categories', () => {
-  const noCooldown = scorePaperForRecommendation(
-    {
-      id: 'paper-a',
-      primaryCategory: 'cs.LG',
-      allCategories: ['cs.LG'],
-      published: '2026-07-05T00:00:00Z',
-    },
-    {
-      now: NOW,
-      userPreferences: ['cs.LG'],
-    }
-  );
+test('the selected categories give way to learned behaviour as interactions accumulate', () => {
+  const paper = { id: 'paper-a', primaryCategory: 'cs.AI', published: '2026-07-05T00:00:00Z' };
+  const preferenceAfter = (interactionCount: number) => scorePaperForRecommendation(paper, {
+    now: NOW, userPreferences: ['cs.AI'], interactionCount,
+  }).preference;
 
-  const cooledDown = scorePaperForRecommendation(
-    {
-      id: 'paper-b',
-      primaryCategory: 'cs.LG',
-      allCategories: ['cs.LG'],
-      published: '2026-07-05T00:00:00Z',
-    },
-    {
-      now: NOW,
-      userPreferences: ['cs.LG'],
-      categoryCooldowns: {
-        'cs.LG': NOW,
-      },
-    }
-  );
-
-  assert.equal(cooledDown.cooldownMultiplier, 0.1);
-  assert.ok(cooledDown.total < noCooldown.total);
+  assert.equal(preferenceAfter(0), 100);
+  assert.equal(preferenceAfter(150), 50);
+  assert.equal(preferenceAfter(5000), 30, 'never below a third of the original weight');
 });
 
 test('semantic and citation signals contribute to score', () => {
@@ -85,29 +63,33 @@ test('semantic and citation signals contribute to score', () => {
   assert.ok(score.semantic > 0);
   assert.ok(score.citations > 0);
   assert.match(score.explanation, /semantic|citations/);
+
+  // A concept OpenAlex gave no score counts in full, as it does when learned.
+  const unscored = scorePaperForRecommendation(
+    { id: 'paper-b', primaryCategory: 'cs.CL', openAlex: { concepts: [{ id: 'concept-1' }] } },
+    { now: NOW, conceptAffinities: { 'concept-1': 50 } },
+  );
+  assert.equal(unscored.semantic, 25);
 });
 
 test('category signals preserve personalization without OpenAlex enrichment', () => {
-  const categoryAffinities: Record<string, number> = {};
   const paper = {
     id: 'paper-local',
     primaryCategory: 'physics.optics',
     allCategories: ['physics.optics', 'quant-ph'],
     published: '2026-07-01T00:00:00Z',
   };
-  applyCategoryAffinityDelta(categoryAffinities, paper, 10);
 
   const score = scorePaperForRecommendation(paper, {
     now: NOW,
     userPreferences: ['quant-ph'],
-    categoryAffinities,
+    categoryAffinities: { 'physics.optics': 10, 'quant-ph': 10 },
   });
 
-  assert.equal(categoryAffinities['physics.optics'], 10);
-  assert.equal(categoryAffinities['quant-ph'], 3.5);
   assert.equal(score.semantic, 0);
   assert.equal(score.preference, 80);
-  assert.ok(score.affinity > 10);
+  // The primary category in full, a secondary one at 0.35.
+  assert.equal(score.affinity, 13.5);
 });
 
 test('every score component is bounded by its designed maximum', () => {
@@ -130,9 +112,22 @@ test('every score component is bounded by its designed maximum', () => {
   );
 
   assert.equal(score.affinity, 100);
-  assert.equal(score.semantic, 20);
+  assert.equal(score.semantic, 50);
   assert.equal(score.citations, 25);
   assert.ok(score.classicBoost <= 25);
+
+  const learned = scorePaperForRecommendation({
+    id: 'paper-learned',
+    primaryCategory: 'cs.AI',
+    authors: Array.from({ length: 10 }, (_, index) => ({ name: `Author ${index}`, id: `https://openalex.org/A${index}` })),
+    openAlex: { concepts: extremeConcepts },
+  }, {
+    now: NOW,
+    authorAffinities: Object.fromEntries(Array.from({ length: 10 }, (_, index) => [`A${index}`, 100])),
+    sessionAffinities: { 'cs.AI': 1000, ...Object.fromEntries(extremeConcepts.map(concept => [concept.id, 1000])) },
+  });
+  assert.equal(learned.learnedAuthor, 30);
+  assert.equal(learned.sessionInterest, 30);
 });
 
 test('negative concept affinities subtract but stay bounded', () => {
@@ -150,7 +145,7 @@ test('negative concept affinities subtract but stay bounded', () => {
   );
 
   assert.ok(score.semantic < 0);
-  assert.ok(score.semantic >= -20);
+  assert.ok(score.semantic >= -50);
 });
 
 test('stable followed entities boost papers and cap the combined signal', () => {
@@ -212,6 +207,71 @@ test('matches followed topics directly across categories, concepts, topics, and 
     title: 'Spatial transcriptomics maps tissue',
   }, { now: NOW, followedEntities: [queryFollow] });
   assert.equal(titleOnly.followedEntityMatches.topic, false);
+});
+
+test('learned authors count only by their OpenAlex id', () => {
+  const score = (authors: Array<{ name: string; id?: string }>) => scorePaperForRecommendation(
+    { id: 'paper-authors', primaryCategory: 'cs.AI', authors },
+    { now: NOW, authorAffinities: { A42: 10 } },
+  ).learnedAuthor;
+
+  assert.equal(score([{ name: 'Ada', id: 'https://openalex.org/A42' }]), 12);
+  assert.equal(score([{ name: 'Ada' }]), 0, 'a name alone is not an identity');
+  assert.equal(score([{ name: 'Ada', id: '1741101' }]), 0, 'another provider\'s author id is not this one');
+});
+
+test('the session lifts what the reader has just engaged with and sinks what they keep skipping', () => {
+  const paper = {
+    id: 'paper-session',
+    primaryCategory: 'cs.AI',
+    openAlex: { concepts: [{ id: 'https://openalex.org/C1', display_name: 'Diffusion', score: 0.5 }] },
+  };
+  const engaged = scorePaperForRecommendation(paper, { now: NOW, sessionAffinities: { 'cs.AI': 5, C1: 5 } });
+  const skipped = scorePaperForRecommendation(paper, { now: NOW, sessionAffinities: { 'cs.AI': -3 } });
+
+  // (5 + 0.5 * 5) / 15 of the 30-point ceiling.
+  assert.equal(engaged.sessionInterest, 15);
+  assert.equal(skipped.sessionInterest, -6);
+});
+
+test('a paper recommended for the reader\'s own examples is boosted', () => {
+  const plain = scorePaperForRecommendation({ id: 'plain', primaryCategory: 'cs.AI' }, { now: NOW });
+  const personal = scorePaperForRecommendation({ id: 'personal', primaryCategory: 'cs.AI', _isPersonalCandidate: true }, { now: NOW });
+
+  assert.equal(plain.personalBoost, 0);
+  assert.equal(personal.personalBoost, 20);
+  assert.equal(personal.total - plain.total, 20);
+});
+
+test('a paper lends the profile its OpenAlex concepts and first ten OpenAlex authors', () => {
+  const signals = paperAffinitySignals({
+    authors: [
+      { name: 'Named only' },
+      ...Array.from({ length: 12 }, (_, index) => ({ name: `Author ${index}`, id: `https://openalex.org/a${index}` })),
+    ],
+    openAlex: { concepts: [{ id: 'https://openalex.org/C41008148', display_name: 'Computer science', score: 0.7 }] },
+  });
+
+  assert.deepEqual(signals.concepts, [{ id: 'C41008148', score: 0.7 }]);
+  assert.deepEqual(signals.authorIds, Array.from({ length: 9 }, (_, index) => `A${index}`));
+});
+
+test('exploration keeps offering what holds the reader, still tries the unseen and drops what they skip', () => {
+  const random = seededRandom(11);
+  const exposure = {
+    'q-fin.GN': { shown: 40, engaged: 30 },
+    'q-fin.RM': { shown: 40, engaged: 1 },
+  };
+  const picks: Record<string, number> = { 'q-fin.GN': 0, 'q-fin.RM': 0, 'q-fin.ST': 0 };
+  const draws = 2000;
+  for (let index = 0; index < draws; index += 1) {
+    picks[pickExplorationCategories(['q-fin.GN', 'q-fin.RM', 'q-fin.ST'], exposure, 1, random)[0]] += 1;
+  }
+
+  assert.ok(picks['q-fin.GN'] / draws > 0.6, `engaging category drawn ${picks['q-fin.GN']} times`);
+  assert.ok(picks['q-fin.ST'] / draws > 0.1, `unseen category drawn ${picks['q-fin.ST']} times`);
+  assert.ok(picks['q-fin.RM'] / draws < 0.02, `skipped category drawn ${picks['q-fin.RM']} times`);
+  assert.deepEqual(pickExplorationCategories(['a', 'b', 'c', 'd'], {}, 3, random).length, 3);
 });
 
 test('diversified shuffle limits consecutive papers from the same category', () => {

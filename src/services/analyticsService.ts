@@ -56,6 +56,10 @@ export const PRODUCT_ANALYTICS_EVENTS = Object.freeze([
   // `set` is an answer, `skip` a "not now", `clear` a pick emptied out from
   // the header chip; `areas` is how many areas the answer holds.
   'guest_interests',
+  // How the For You feed is landing, one event per twenty cards: of those
+  // cards, how many were skipped, read past the reader's own median dwell,
+  // liked and saved. Counts only; no paper, topic or account travels with it.
+  'feed_engagement',
 ]);
 
 const ANALYTICS_CONSENT_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
@@ -174,6 +178,9 @@ const EVENT_PARAMETER_SCHEMAS: Readonly<Record<string, Record<string, string>>> 
   // as one funnel; `position` is how many papers were behind the reader.
   guest_demo_end: { position: 'boundedNumber', language: 'language' },
   guest_interests: { action: 'guest_interests_action', areas: 'boundedNumber', language: 'language' },
+  feed_engagement: {
+    cards: 'boundedNumber', skips: 'boundedNumber', deep_reads: 'boundedNumber', likes: 'boundedNumber', saves: 'boundedNumber',
+  },
 });
 
 let acquisitionTrackedInMemory = false;

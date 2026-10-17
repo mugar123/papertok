@@ -1542,11 +1542,17 @@ const PaperCard = memo(function PaperCard({
           {paper._debugScore.citations! > 0 && (
             <div style={{color: 'var(--primary)'}}>Citation Boost: {paper._debugScore.citations!.toFixed(2)}</div>
           )}
+          {(paper._debugScore.learnedAuthor ?? 0) !== 0 && (
+            <div>Learned Authors: {paper._debugScore.learnedAuthor!.toFixed(2)}</div>
+          )}
+          {(paper._debugScore.sessionInterest ?? 0) !== 0 && (
+            <div>Session: {paper._debugScore.sessionInterest!.toFixed(2)}</div>
+          )}
           {paper._debugScore.graphBoost! > 0 && (
             <div style={{color: 'var(--warning)'}}>Graph Connection: {paper._debugScore.graphBoost!.toFixed(2)}</div>
           )}
-          {paper._debugScore.cooldownMultiplier! < 1.0 && (
-            <div style={{color: 'var(--danger)'}}>Cooldown: x{paper._debugScore.cooldownMultiplier!.toFixed(2)}</div>
+          {paper._debugScore.personalBoost! > 0 && (
+            <div style={{color: 'var(--warning)'}}>Personal Recommendation: {paper._debugScore.personalBoost!.toFixed(2)}</div>
           )}
           <div>Exploration: {paper._debugScore.isExploration ? 'YES' : 'NO'}</div>
         </div>

@@ -17,7 +17,7 @@ import {
   curatedIds,
   recordInteractionEvent,
   isPaperKnown,
-  readCategorySignals,
+  readProfileSignals,
   serializeInteractionProfile,
 } from './interactionProfile.ts';
 
@@ -134,7 +134,7 @@ test('COST: a feed load for a 3000 interaction account is ONE Firestore read', a
   // And it is the same profile, not an empty one bought cheaply.
   assert.equal(result.status, INTERACTION_PROFILE_STATUS.LOADED);
   assert.equal(curatedIds(result.profile, 'liked').length, 3000 / LIKED_EVERY);
-  assert.ok(Object.keys(readCategorySignals(result.profile, NOW).affinities).length > 0);
+  assert.ok(Object.keys(readProfileSignals(result.profile, NOW).categoryAffinities).length > 0);
 });
 
 test('the cold rebuild reads each interaction once and no more', async () => {
@@ -281,7 +281,7 @@ test('a genuinely new account is EMPTY, and a stored empty aggregate is LOADED',
 
   assert.equal(fresh.status, INTERACTION_PROFILE_STATUS.EMPTY);
   assert.ok(hasInteractionProfile(fresh), 'an empty account still has a usable profile');
-  assert.deepEqual(readCategorySignals(fresh.profile, NOW), { affinities: {}, cooldowns: {} });
+  assert.deepEqual(readProfileSignals(fresh.profile, NOW).categoryAffinities, {});
   assert.equal(newAccount.aggregateReads, 1);
   assert.equal(newAccount.interactionReads, 0);
 

@@ -1,8 +1,21 @@
 import type { WorkerEnv } from './env.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
 
+import type { UpstreamError } from './provider-runtime.ts';
+
+import { readBoundedJson } from './bounded-body.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
-import { cacheResponse, fetchJsonUpstream, safeSourceQuery, sourceCacheParams, sourceRequestContext, SOURCE_CACHE_SECONDS } from './provider-runtime.ts';
+import {
+  cacheResponse,
+  DEGRADED_CACHE_SECONDS,
+  fetchJsonUpstream,
+  fetchWithDeadline,
+  safeSourceQuery,
+  sourceCacheParams,
+  sourceRequestContext,
+  SOURCE_CACHE_SECONDS,
+  SOURCE_UPSTREAM_TIMEOUT_MS,
+} from './provider-runtime.ts';
 
 const RELATED_CACHE_SECONDS = 24 * 60 * 60;
 const RELATED_UPSTREAM_LIMIT = 20;
@@ -41,6 +54,111 @@ export async function handleRelated(request: Request, env: WorkerEnv, identity?:
     // to a provider that is by hypothesis already slow.
     return fetchJsonUpstream(url, env.SEMANTIC_SCHOLAR_API_KEY ? { 'x-api-key': env.SEMANTIC_SCHOLAR_API_KEY } : {});
   }, { identity, canonicalParams: { paper_id: paperId } });
+}
+
+const PERSONAL_CACHE_SECONDS = 6 * 60 * 60;
+// Semantic Scholar answers up to 500. Fifty per request is a session's worth,
+// and many come back with neither an arXiv id nor a DOI the feed can fetch by.
+const PERSONAL_UPSTREAM_LIMIT = 50;
+const MAX_PERSONAL_POSITIVE_EXAMPLES = 10;
+const MAX_PERSONAL_NEGATIVE_EXAMPLES = 10;
+const PERSONAL_BODY_LIMIT_BYTES = 8 * 1024;
+const EXAMPLE_ID_PATTERN = /^(?:DOI:10\.\S{1,250}|ARXIV:[\w./-]{4,40}|PMID:\d{1,12}|[a-f0-9]{40})$/i;
+const RECOMMENDED_ARXIV_ID = /^[\w./-]{4,40}$/;
+const RECOMMENDED_DOI = /^10\.\S{1,250}$/;
+
+class RecommendationRequestError extends Error {
+  declare code: string;
+  declare status: number;
+
+  constructor(code: string, status: number) {
+    super(code);
+    this.name = 'RecommendationRequestError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
+// Sorted and deduplicated, so the key and the upstream body are the same
+// question however the client ordered it. One malformed id refuses the list.
+function exampleIds(value: unknown, maximum: number) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > maximum) return null;
+  const ids = value.map(id => (typeof id === 'string' ? id.trim() : ''));
+  if (ids.some(id => !EXAMPLE_ID_PATTERN.test(id))) return null;
+  return [...new Set(ids)].sort();
+}
+
+function recommendedPaper(item: unknown) {
+  const externalIds = (item as { externalIds?: Record<string, unknown> } | null)?.externalIds || {};
+  const arxivId = typeof externalIds.ArXiv === 'string' && RECOMMENDED_ARXIV_ID.test(externalIds.ArXiv) ? externalIds.ArXiv : null;
+  const doi = typeof externalIds.DOI === 'string' && RECOMMENDED_DOI.test(externalIds.DOI) ? externalIds.DOI : null;
+  return arxivId || doi ? { arxivId, doi } : null;
+}
+
+/**
+ * Papers like the reader's examples: `POST { positive, negative }` with
+ * Semantic Scholar ids (`ARXIV:`, `DOI:`, `PMID:` or a corpus hash), answered
+ * as `{ papers: [{ arxivId, doi }] }` in Semantic Scholar's order. Only the
+ * identifiers travel; the client fetches the papers through the sources that
+ * already normalize them. The answer is the reader's own, so it is cached under
+ * their uid and never shared.
+ */
+export async function handlePersonalRecommendations(request: Request, env: WorkerEnv, identity: Pick<VerifiedIdentity, 'uid'>) {
+  const origin = request.headers.get('origin') || '';
+  if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+  if (request.method !== 'POST') return json({ code: 'METHOD_NOT_ALLOWED' }, 405, corsHeaders(origin, env));
+
+  let body: { positive?: unknown; negative?: unknown } | null;
+  try {
+    body = await readBoundedJson<{ positive?: unknown; negative?: unknown }>(request, PERSONAL_BODY_LIMIT_BYTES, {
+      tooLarge: () => new RecommendationRequestError('BODY_TOO_LARGE', 413),
+      invalid: () => new RecommendationRequestError('INVALID_BODY', 400),
+    });
+  } catch (error) {
+    if (!(error instanceof RecommendationRequestError)) throw error;
+    return json({ code: error.code }, error.status, corsHeaders(origin, env));
+  }
+  const positive = exampleIds(body?.positive, MAX_PERSONAL_POSITIVE_EXAMPLES);
+  const negative = exampleIds(body?.negative, MAX_PERSONAL_NEGATIVE_EXAMPLES);
+  if (!positive?.length || !negative) return json({ code: 'INVALID_EXAMPLES' }, 400, corsHeaders(origin, env));
+
+  return cacheResponse(
+    request,
+    origin,
+    env,
+    (payload: { papers: unknown[] }) => (payload.papers.length > 0 ? PERSONAL_CACHE_SECONDS : DEGRADED_CACHE_SECONDS),
+    async () => {
+      const url = `https://api.semanticscholar.org/recommendations/v1/papers?fields=externalIds&limit=${PERSONAL_UPSTREAM_LIMIT}`;
+      const response = await fetchWithDeadline(url, {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+          'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
+          ...(env.SEMANTIC_SCHOLAR_API_KEY ? { 'x-api-key': env.SEMANTIC_SCHOLAR_API_KEY } : {}),
+        },
+        body: JSON.stringify({ positivePaperIds: positive, negativePaperIds: negative }),
+      }, SOURCE_UPSTREAM_TIMEOUT_MS);
+      if (response.status === 400) {
+        const detail = await response.json<{ error?: unknown }>().catch(() => null);
+        // What Semantic Scholar answers when none of the positive examples is
+        // in its corpus (measured 2026-10-17): there is nothing to recommend
+        // from, which is an empty answer rather than a failure.
+        if (/no positive paper examples/i.test(String(detail?.error || ''))) return { papers: [] };
+      }
+      if (!response.ok) {
+        const error: UpstreamError = new Error(`Upstream error: ${response.status}`);
+        error.status = response.status;
+        error.retryAfter = response.headers.get('retry-after') || '';
+        throw error;
+      }
+      const payload = await response.json<{ recommendedPapers?: unknown }>();
+      const items = Array.isArray(payload?.recommendedPapers) ? payload.recommendedPapers : [];
+      return { papers: items.map(recommendedPaper).filter(Boolean) };
+    },
+    { identity, personal: true, canonicalParams: { positive: positive.join(','), negative: negative.join(',') } },
+  );
 }
 
 // `externalIds` carries the DOI and the arXiv id; without them a paper from

@@ -62,19 +62,20 @@ export interface PaperFollowMatch {
 
 export interface PaperRecommendationScore {
   total: number;
-  baseTotal: number;
   affinity: number;
   preference: number;
   recency: number;
   classicBoost: number;
   semantic: number;
+  learnedAuthor: number;
+  sessionInterest: number;
   citations: number;
   graphBoost: number;
+  personalBoost: number;
   followBoost: number;
   diversityBoost: number;
   authorBoost: number;
   followedEntityMatches: Record<PaperFollowMatch['type'], boolean>;
-  cooldownMultiplier: number;
   isExploration: boolean;
   explanation: string;
 }
@@ -157,8 +158,9 @@ export interface Paper {
   provider?: string;
   citationMetadataResolved?: boolean;
   _followedEntityMatches?: Array<PaperFollowMatch | string>;
-  _type?: 'followed' | 'graph' | 'exploit' | 'exploration';
+  _type?: 'followed' | 'graph' | 'personal' | 'exploit' | 'exploration';
   _isGraphCandidate?: boolean;
+  _isPersonalCandidate?: boolean;
   _dynamicScore?: number;
   _isOpenAlexEnriched?: boolean;
   _debugScore?: Partial<PaperRecommendationScore>;

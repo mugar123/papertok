@@ -1,14 +1,37 @@
 import type { BloomFilter } from 'bloomfilter';
 import type { Paper } from '../models/Paper.ts';
 export type CuratedSetName = 'liked' | 'saved' | 'read' | 'notInterested' | 'readLater';
+export interface DecayedAffinity { value: number; at: number; }
+export interface CategoryExposure { shown: number; engaged: number; }
+export interface PositiveExample { id: string; category: string; }
+export interface WeightedConcept { id: string; score?: number; }
 export interface InteractionProfile {
   version: number; updatedAt: string | null;
   categories: Map<string, { cohorts: Map<number, { weighted: number; raw: number }>; aged: number }>;
-  cooldowns: Map<string, number>;
+  concepts: Map<string, DecayedAffinity>;
+  authors: Map<string, DecayedAffinity>;
+  exposure: Map<string, CategoryExposure>;
+  dwell: { median: number };
+  positives: PositiveExample[];
+  // In memory only: what this session has engaged with, faded on every event.
+  session: Map<string, number>;
   curated: Map<CuratedSetName, { order: string[]; members: Set<string> }>;
   seenFilter: BloomFilter | null;
   counters: { interactions: number; evicted: number }; countedPapers: Set<string>;
   sourceDocCount: number; truncated: boolean;
+}
+export interface InteractionEvent {
+  paperId: string; kind: string; category?: string; timestamp?: number | string; viewTime?: number; value?: boolean;
+  concepts?: WeightedConcept[]; authorIds?: string[];
+}
+export interface ProfileSignals {
+  categoryAffinities: Record<string, number>;
+  conceptAffinities: Record<string, number>;
+  authorAffinities: Record<string, number>;
+  sessionAffinities: Record<string, number>;
+  categoryExposure: Record<string, CategoryExposure>;
+  interactionCount: number;
+  dwellMedianSeconds: number;
 }
 export interface StoredInteractionProfile {
   schemaVersion: number; updatedAt: string; affinities: string; curated: string; seenFilter?: string;
@@ -32,11 +55,13 @@ export interface InteractionDocument { id: string; data: InteractionDocumentData
  * single document that is maintained incrementally, so a feed load costs one
  * read no matter how old the account is.
  *
- * The individual interaction documents remain the source of truth. Everything
- * here is reconstructible from them, which is what makes it safe for the
- * browser to write the aggregate directly: a corrupt or stale aggregate is
- * repaired by bumping the schema version and letting the bounded rebuild path
- * run once.
+ * The individual interaction documents remain the source of truth for the
+ * curated sets and the category affinities. Those are reconstructible from them,
+ * which is what makes it safe for the browser to write the aggregate directly:
+ * a corrupt or stale aggregate is repaired by bumping the schema version and
+ * letting the bounded rebuild path run once. Concept and author affinities are
+ * the exception: the documents store neither, so a rebuild starts them empty and
+ * `seedLearnedAffinities` refills them from the liked and saved papers.
  *
  * ── How the category affinities survive being incremental ──
  * The old full scan weighted every interaction by `max(0.2, exp(-ageDays/30))`,
@@ -50,8 +75,12 @@ export interface InteractionDocument { id: string; data: InteractionDocumentData
  * exactly. Once a whole bucket falls past the floor its raw impact merges into
  * a single aged accumulator weighted at the flat 0.2, and the bucket is
  * dropped. That bounds a category at ~50 numbers regardless of history.
+ *
+ * Concepts and authors are far more numerous than categories, so they cannot
+ * afford fifty numbers each. They keep one value and the time it was last
+ * moved, decayed by the same 30-day exponential with no floor: a narrow
+ * interest that is never touched again fades out instead of lasting forever.
  */
-import { CATEGORIES, getCategorySimilarity } from '../data/categories.ts';
 import {
   addSeenPaper,
   createSeenFilter,
@@ -64,6 +93,7 @@ import {
 export const INTERACTION_PROFILE_SCHEMA_VERSION = 1;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MINUTE_MS = 60 * 1000;
 const DECAY_DAYS = 30;
 const DECAY_FLOOR = 0.2;
 // exp(-age/30) crosses the 0.2 floor here; buckets older than this plus a full
@@ -74,15 +104,43 @@ const MAX_COHORT_AGE_DAYS = FLOOR_AGE_DAYS + 1;
 export const AFFINITY_MIN = -10;
 export const AFFINITY_MAX = 100;
 
-// Impact weights, byte for byte the ones the full scan used.
 const IMPACT_LIKED = 5;
 const IMPACT_SAVED = 8;
 const IMPACT_OPENED_PDF = 4;
-const IMPACT_VIEW_TIME_PER_SECOND = 0.25;
-const IMPACT_VIEW_TIME_CAP_SECONDS = 60;
 const IMPACT_SKIP = -1;
 const IMPACT_PDF_BOUNCE = -2;
 const IMPACT_NOT_INTERESTED = -10;
+// A rejection is about this paper's topics and authors, which take the full
+// penalty. Its category keeps only a mild one: refusing one paper on LLM
+// benchmarks used to sink every cs.CL paper and its sibling categories for two
+// weeks.
+const IMPACT_NOT_INTERESTED_CATEGORY = -3;
+
+// Dwell is judged against the reader's own typical dwell rather than in raw
+// seconds: a long abstract earns seconds a short one cannot, and two seconds
+// used to count as interest. At the median a view says nothing; each doubling
+// above it is worth half the old 60-second cap, and a view under half the
+// median weighs what a skip does.
+const DEFAULT_DWELL_MEDIAN_SECONDS = 6;
+const DWELL_MEDIAN_MIN_SECONDS = 2;
+const DWELL_MEDIAN_MAX_SECONDS = 60;
+// The median is tracked online: each view nudges it by this fraction towards
+// its own side, so one tab left open for an hour moves it by 5% and no more.
+const DWELL_MEDIAN_STEP = 0.05;
+const IMPACT_VIEW_TIME_MAX = 15;
+const IMPACT_VIEW_TIME_MIN = IMPACT_SKIP;
+// Twice the reader's median is the read the personal recommendations treat as
+// an example of what they want, alongside likes and saves.
+const STRONG_READ_RATIO = 2;
+
+// What the personal recommendations are asked about: the most recent examples
+// across every interest, newest first.
+const MAX_POSITIVE_EXAMPLES = 50;
+
+// Each event fades what the session held before it by this factor, so the last
+// dozen cards dominate and an interest from twenty cards ago is nearly gone.
+const SESSION_DECAY = 0.85;
+const SESSION_MIN_WEIGHT = 0.05;
 
 export const CURATED_SETS = Object.freeze(['liked', 'saved', 'read', 'notInterested', 'readLater'] as const);
 
@@ -100,6 +158,14 @@ export const CURATED_ID_CAPS = Object.freeze({
 export const MAX_CURATED_JSON_BYTES = 320000;
 export const MAX_AFFINITY_JSON_BYTES = 120000;
 export const MAX_TRACKED_CATEGORIES = 300;
+const MAX_TRACKED_CONCEPTS = 400;
+const MAX_TRACKED_AUTHORS = 300;
+// Below this a learned concept or author no longer moves a score.
+const NEGLIGIBLE_AFFINITY = 0.01;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
 
 function dayIndexOf(timestampMs: number) {
   return Math.floor(timestampMs / DAY_MS);
@@ -119,7 +185,12 @@ export function createEmptyInteractionProfile(): InteractionProfile {
     version: INTERACTION_PROFILE_SCHEMA_VERSION,
     updatedAt: null,
     categories: new Map(),
-    cooldowns: new Map(),
+    concepts: new Map(),
+    authors: new Map(),
+    exposure: new Map(),
+    dwell: { median: DEFAULT_DWELL_MEDIAN_SECONDS },
+    positives: [],
+    session: new Map(),
     curated: new Map(CURATED_SETS.map(name => [name, { order: [], members: new Set() }])),
     seenFilter: null,
     counters: { interactions: 0, evicted: 0 },
@@ -129,6 +200,25 @@ export function createEmptyInteractionProfile(): InteractionProfile {
     sourceDocCount: 0,
     truncated: false,
   };
+}
+
+/**
+ * The category impact of a view lasting `seconds`, against the reader's
+ * median: 0 at the median, +7.5 at twice it, +15 from four times it on, and
+ * down to a skip's -1 at half of it and below.
+ */
+function viewTimeImpact(seconds: number, medianSeconds = DEFAULT_DWELL_MEDIAN_SECONDS) {
+  if (!(seconds > 0) || !(medianSeconds > 0)) return 0;
+  const doublings = Math.log2(seconds / medianSeconds);
+  return doublings >= 0
+    ? Math.min(doublings, 2) * (IMPACT_VIEW_TIME_MAX / 2)
+    : Math.max(doublings, -1) * -IMPACT_VIEW_TIME_MIN;
+}
+
+function observeDwell(dwell: InteractionProfile['dwell'], seconds: number) {
+  const step = dwell.median * DWELL_MEDIAN_STEP;
+  const direction = Math.sign(seconds - dwell.median);
+  dwell.median = clamp(dwell.median + direction * step, DWELL_MEDIAN_MIN_SECONDS, DWELL_MEDIAN_MAX_SECONDS);
 }
 
 function categoryBucket(profile: InteractionProfile, category: string) {
@@ -192,40 +282,187 @@ function categoryAffinityAt(profile: InteractionProfile, category: string, now: 
   return total;
 }
 
-/**
- * Materialises the two maps `scorePaperForRecommendation` consumes.
- */
-export function readCategorySignals(profile: InteractionProfile | null | undefined, now = Date.now()) {
-  const affinities: Record<string, number> = {};
-  const cooldowns: Record<string, number> = {};
-  if (!profile) return { affinities, cooldowns };
-
-  profile.categories.forEach((_bucket, category) => {
-    affinities[category] = Math.max(
-      AFFINITY_MIN,
-      Math.min(AFFINITY_MAX, categoryAffinityAt(profile, category, now)),
-    );
-  });
-  profile.cooldowns.forEach((timestampMs, category) => {
-    cooldowns[category] = timestampMs;
-  });
-  return { affinities, cooldowns };
+function decayOver(elapsedMs: number) {
+  return Math.exp(-Math.max(0, elapsedMs) / (DECAY_DAYS * DAY_MS));
 }
 
-function applyNotInterestedSpread(profile: InteractionProfile, category: string, timestampMs: number) {
-  // The full scan walked every leaf category and penalised the ones that share
-  // an area with the rejected one. getCategorySimilarity only ever returns 0.8
-  // (same prefix) or 0.4 (same area) for distinct categories, so the walk is
-  // bounded by the largest area.
-  Object.keys(CATEGORIES).forEach((areaKey) => {
-    Object.keys(CATEGORIES[areaKey as keyof typeof CATEGORIES].subcategories).forEach((otherCategory) => {
-      if (otherCategory === category) return;
-      const similarity = getCategorySimilarity(category, otherCategory);
-      if (similarity <= 0) return;
-      const penalty = similarity >= 0.8 ? -5 : similarity >= 0.4 ? -3 : -1;
-      addImpact(profile, otherCategory, penalty, timestampMs);
+function decayedValueAt(entry: DecayedAffinity, now: number) {
+  return entry.value * decayOver(now - entry.at);
+}
+
+/**
+ * One exponential, kept as a value and the moment it was last moved. An event
+ * older than that moment (a rebuild replaying history, two tabs out of order)
+ * is decayed into the present value rather than moving the clock back.
+ */
+function addDecayedImpact(map: Map<string, DecayedAffinity>, key: string, impact: number, timestampMs: number) {
+  if (!key || !impact) return;
+  const entry = map.get(key);
+  if (!entry) {
+    map.set(key, { value: impact, at: timestampMs });
+  } else if (timestampMs >= entry.at) {
+    entry.value = entry.value * decayOver(timestampMs - entry.at) + impact;
+    entry.at = timestampMs;
+  } else {
+    entry.value += impact * decayOver(entry.at - timestampMs);
+  }
+}
+
+function compactDecayed(map: Map<string, DecayedAffinity>, cap: number, now: number) {
+  map.forEach((entry, key) => {
+    if (Math.abs(decayedValueAt(entry, now)) < NEGLIGIBLE_AFFINITY) map.delete(key);
+  });
+  if (map.size <= cap) return;
+  [...map.entries()]
+    .map(([key, entry]) => [key, Math.abs(decayedValueAt(entry, now))] as const)
+    .sort((a, b) => b[1] - a[1])
+    .slice(cap)
+    .forEach(([key]) => map.delete(key));
+}
+
+// OpenAlex reports how strongly a work belongs to each concept. A concept
+// without a score (some topic fallbacks) counts in full.
+function conceptWeight(concept: WeightedConcept) {
+  return Number.isFinite(concept.score) ? clamp(concept.score!, 0, 1) : 1;
+}
+
+function usableConcepts(concepts: unknown): WeightedConcept[] {
+  if (!Array.isArray(concepts)) return [];
+  return concepts.filter((concept): concept is WeightedConcept => (
+    typeof concept?.id === 'string' && concept.id.length > 0
+  ));
+}
+
+function usableAuthorIds(authorIds: unknown): string[] {
+  if (!Array.isArray(authorIds)) return [];
+  return [...new Set(authorIds.filter((id): id is string => typeof id === 'string' && id.length > 0))];
+}
+
+function recordExposure(profile: InteractionProfile, category: string, engaged: boolean) {
+  if (!category) return;
+  const entry = profile.exposure.get(category) || { shown: 0, engaged: 0 };
+  entry.shown += 1;
+  if (engaged) entry.engaged += 1;
+  profile.exposure.set(category, entry);
+  if (profile.exposure.size <= MAX_TRACKED_CATEGORIES) return;
+  // The least shown category has the least evidence to lose.
+  const leastShown = [...profile.exposure.entries()].sort((a, b) => a[1].shown - b[1].shown)[0];
+  if (leastShown) profile.exposure.delete(leastShown[0]);
+}
+
+function addPositive(profile: InteractionProfile, paperId: string, category: string) {
+  profile.positives = [
+    { id: paperId, category },
+    ...profile.positives.filter(example => example.id !== paperId),
+  ].slice(0, MAX_POSITIVE_EXAMPLES);
+}
+
+function removePositive(profile: InteractionProfile, paperId: string) {
+  profile.positives = profile.positives.filter(example => example.id !== paperId);
+}
+
+// Undoing a like leaves the paper an example while it is still saved, and the
+// other way round, as a rebuild from its document would.
+function removeUnkeptPositive(profile: InteractionProfile, paperId: string) {
+  if (curatedSet(profile, 'liked')!.members.has(paperId) || curatedSet(profile, 'saved')!.members.has(paperId)) return;
+  removePositive(profile, paperId);
+}
+
+function recordSessionImpact(
+  profile: InteractionProfile,
+  category: string,
+  categoryImpact: number,
+  concepts: WeightedConcept[],
+  impact: number,
+) {
+  profile.session.forEach((value, key) => {
+    const faded = value * SESSION_DECAY;
+    if (Math.abs(faded) < SESSION_MIN_WEIGHT) profile.session.delete(key);
+    else profile.session.set(key, faded);
+  });
+  const add = (key: string, amount: number) => {
+    if (key && amount) profile.session.set(key, (profile.session.get(key) || 0) + amount);
+  };
+  add(category, categoryImpact);
+  concepts.forEach(concept => add(concept.id, impact * conceptWeight(concept)));
+}
+
+/**
+ * Materialises every map `scorePaperForRecommendation` consumes. Each call
+ * builds new objects, so a re-rank after an interaction never meets a map an
+ * earlier scoring run cached against.
+ */
+export function readProfileSignals(profile: InteractionProfile | null | undefined, now = Date.now()): ProfileSignals {
+  const signals: ProfileSignals = {
+    categoryAffinities: {},
+    conceptAffinities: {},
+    authorAffinities: {},
+    sessionAffinities: {},
+    categoryExposure: {},
+    interactionCount: 0,
+    dwellMedianSeconds: DEFAULT_DWELL_MEDIAN_SECONDS,
+  };
+  if (!profile) return signals;
+
+  profile.categories.forEach((_bucket, category) => {
+    signals.categoryAffinities[category] = clamp(categoryAffinityAt(profile, category, now), AFFINITY_MIN, AFFINITY_MAX);
+  });
+  profile.concepts.forEach((entry, key) => {
+    signals.conceptAffinities[key] = clamp(decayedValueAt(entry, now), AFFINITY_MIN, AFFINITY_MAX);
+  });
+  profile.authors.forEach((entry, key) => {
+    signals.authorAffinities[key] = clamp(decayedValueAt(entry, now), AFFINITY_MIN, AFFINITY_MAX);
+  });
+  profile.session.forEach((value, key) => {
+    signals.sessionAffinities[key] = value;
+  });
+  profile.exposure.forEach((entry, category) => {
+    signals.categoryExposure[category] = { ...entry };
+  });
+  signals.interactionCount = profile.counters.interactions;
+  signals.dwellMedianSeconds = profile.dwell.median;
+  return signals;
+}
+
+/**
+ * The newest positive examples, for the personal recommendations: likes,
+ * saves and reads of at least twice the reader's median, with the category
+ * each was filed under ('' when it was not known).
+ */
+export function positiveExamples(profile: InteractionProfile | null | undefined): PositiveExample[] {
+  return profile ? profile.positives.map(example => ({ ...example })) : [];
+}
+
+/**
+ * Concept and author affinities cannot be rebuilt from the interaction
+ * documents, which store neither. A profile loaded without any — an aggregate
+ * written before they existed, or one just rebuilt — needs them seeded from
+ * the enrichment of the reader's liked and saved papers.
+ */
+export function lacksLearnedAffinities(profile: InteractionProfile) {
+  return profile.concepts.size === 0 && profile.authors.size === 0;
+}
+
+/**
+ * Adds each example as a like made now. The caller decides, when the profile
+ * loads, whether it needs seeding: by the time the enrichment comes back the
+ * reader may already have added entries of their own, which the seed joins.
+ */
+export function seedLearnedAffinities(
+  profile: InteractionProfile,
+  examples: Array<{ concepts?: WeightedConcept[]; authorIds?: string[] }>,
+  now = Date.now(),
+) {
+  examples.forEach((example) => {
+    usableConcepts(example.concepts).forEach((concept) => {
+      addDecayedImpact(profile.concepts, concept.id, IMPACT_LIKED * conceptWeight(concept), now);
+    });
+    usableAuthorIds(example.authorIds).forEach((authorId) => {
+      addDecayedImpact(profile.authors, authorId, IMPACT_LIKED, now);
     });
   });
+  compactDecayed(profile.concepts, MAX_TRACKED_CONCEPTS, now);
+  compactDecayed(profile.authors, MAX_TRACKED_AUTHORS, now);
 }
 
 function curatedSet(profile: InteractionProfile, name: CuratedSetName) {
@@ -308,40 +545,46 @@ function isPaperAccountedFor(profile: InteractionProfile, paperId: string) {
 /**
  * Folds one interaction into the profile.
  *
- * @param {object} profile
- * @param {object} event
- * @param {string} event.paperId
- * @param {string} event.kind one of like, unlike, save, unsave, read, unread, readLater,
- *   notInterested, openedPdf, pdfBounce, skip, viewTime, metadata
- * @param {string} [event.category] the paper's primary category
- * @param {number|string} [event.timestamp]
- * @param {number} [event.viewTime] seconds, for kind === 'viewTime'
- * @param {boolean} [event.value] for the toggles that carry one
+ * `kind` is one of like, unlike, save, unsave, read, unread, readLater,
+ * notInterested, openedPdf, pdfBounce, skip, viewTime, metadata. `category` is
+ * the paper's primary category, `concepts` and `authorIds` its OpenAlex
+ * concepts and authors, already keyed the way the ranking reads them.
+ * `viewTime` is in seconds and `value` belongs to the toggles that carry one.
+ *
+ * An event's impact lands in full on its concepts, its authors and the
+ * session. Its category takes the same impact, except for a rejection.
  */
-export function recordInteractionEvent(profile: InteractionProfile, event: { paperId: string; kind: string; category?: string; timestamp?: number|string; viewTime?: number; value?: boolean; }, now = Date.now()) {
+export function recordInteractionEvent(profile: InteractionProfile, event: InteractionEvent, now = Date.now()) {
   if (!profile || !event || typeof event.paperId !== 'string' || !event.paperId) return profile;
   const timestampMs = toTimestampMs(event.timestamp) ?? now;
   const category = typeof event.category === 'string' ? event.category : '';
   // Sampled before the switch: applying the event may add the id to a curated
   // set, which would make it look accounted for when it is not yet.
   const alreadyAccountedFor = isPaperAccountedFor(profile, event.paperId);
+  // null for the kinds that say nothing about what the reader wants.
+  let impact: number | null = null;
+  let categoryImpact: number | null = null;
 
   switch (event.kind) {
     case 'like':
       addCurated(profile, 'liked', event.paperId);
-      addImpact(profile, category, IMPACT_LIKED, timestampMs);
+      addPositive(profile, event.paperId, category);
+      impact = IMPACT_LIKED;
       break;
     case 'unlike':
       removeCurated(profile, 'liked', event.paperId);
-      addImpact(profile, category, -IMPACT_LIKED, timestampMs);
+      removeUnkeptPositive(profile, event.paperId);
+      impact = -IMPACT_LIKED;
       break;
     case 'save':
       addCurated(profile, 'saved', event.paperId);
-      addImpact(profile, category, IMPACT_SAVED, timestampMs);
+      addPositive(profile, event.paperId, category);
+      impact = IMPACT_SAVED;
       break;
     case 'unsave':
       removeCurated(profile, 'saved', event.paperId);
-      addImpact(profile, category, -IMPACT_SAVED, timestampMs);
+      removeUnkeptPositive(profile, event.paperId);
+      impact = -IMPACT_SAVED;
       break;
     case 'read':
       addCurated(profile, 'read', event.paperId);
@@ -355,37 +598,51 @@ export function recordInteractionEvent(profile: InteractionProfile, event: { pap
       break;
     case 'notInterested':
       addCurated(profile, 'notInterested', event.paperId);
-      addImpact(profile, category, IMPACT_NOT_INTERESTED, timestampMs);
-      if (category) {
-        applyNotInterestedSpread(profile, category, timestampMs);
-        const current = profile.cooldowns.get(category);
-        if (!current || timestampMs > current) profile.cooldowns.set(category, timestampMs);
-      }
+      removePositive(profile, event.paperId);
+      impact = IMPACT_NOT_INTERESTED;
+      categoryImpact = IMPACT_NOT_INTERESTED_CATEGORY;
       break;
     case 'openedPdf':
-      addImpact(profile, category, IMPACT_OPENED_PDF, timestampMs);
+      impact = IMPACT_OPENED_PDF;
       break;
     case 'pdfBounce':
-      addImpact(profile, category, IMPACT_PDF_BOUNCE, timestampMs);
+      impact = IMPACT_PDF_BOUNCE;
       break;
     case 'skip':
-      addImpact(profile, category, IMPACT_SKIP, timestampMs);
+      recordExposure(profile, category, false);
+      impact = IMPACT_SKIP;
       break;
     case 'viewTime': {
       const seconds = Number(event.viewTime);
       if (!Number.isFinite(seconds) || seconds <= 0) return profile;
-      addImpact(
-        profile,
-        category,
-        Math.min(seconds, IMPACT_VIEW_TIME_CAP_SECONDS) * IMPACT_VIEW_TIME_PER_SECOND,
-        timestampMs,
-      );
+      // Judged against the median as it stood before this view moved it.
+      const median = profile.dwell.median;
+      impact = viewTimeImpact(seconds, median);
+      recordExposure(profile, category, seconds >= median);
+      if (seconds >= median * STRONG_READ_RATIO && !curatedSet(profile, 'notInterested')!.members.has(event.paperId)) {
+        addPositive(profile, event.paperId, category);
+      }
+      observeDwell(profile.dwell, seconds);
       break;
     }
     case 'metadata':
       break;
     default:
       return profile;
+  }
+
+  if (impact !== null) {
+    addImpact(profile, category, categoryImpact ?? impact, timestampMs);
+    if (impact !== 0) {
+      const concepts = usableConcepts(event.concepts);
+      concepts.forEach((concept) => {
+        addDecayedImpact(profile.concepts, concept.id, impact! * conceptWeight(concept), timestampMs);
+      });
+      usableAuthorIds(event.authorIds).forEach((authorId) => {
+        addDecayedImpact(profile.authors, authorId, impact!, timestampMs);
+      });
+      recordSessionImpact(profile, category, categoryImpact ?? impact, concepts, impact);
+    }
   }
 
   if (!alreadyAccountedFor) {
@@ -397,24 +654,24 @@ export function recordInteractionEvent(profile: InteractionProfile, event: { pap
   profile.counters.interactions += 1;
   profile.updatedAt = new Date(now).toISOString();
   compactCategories(profile, now);
+  compactDecayed(profile.concepts, MAX_TRACKED_CONCEPTS, now);
+  compactDecayed(profile.authors, MAX_TRACKED_AUTHORS, now);
   return profile;
 }
 
 /**
- * Impact of one interaction document from its final state, exactly as the old
- * full scan derived it.
+ * Category impact of one interaction document from its final state. The view
+ * time's share depends on the median at the moment it was read, so the caller
+ * computes it while replaying the history in order.
  */
-export function interactionDocumentImpact(data: InteractionDocumentData) {
-  let impact = 0;
+function documentCategoryImpact(data: InteractionDocumentData, viewImpact: number) {
+  let impact = viewImpact;
   if (data.liked) impact += IMPACT_LIKED;
   if (data.saved) impact += IMPACT_SAVED;
   if (data.openedPdf) impact += IMPACT_OPENED_PDF;
-  if (data.viewTime) {
-    impact += Math.min(data.viewTime, IMPACT_VIEW_TIME_CAP_SECONDS) * IMPACT_VIEW_TIME_PER_SECOND;
-  }
   if (data.skip) impact += IMPACT_SKIP;
   if (data.pdfBounce) impact += IMPACT_PDF_BOUNCE;
-  if (data.notInterested) impact += IMPACT_NOT_INTERESTED;
+  if (data.notInterested) impact += IMPACT_NOT_INTERESTED_CATEGORY;
   return impact;
 }
 
@@ -427,10 +684,13 @@ export function interactionDocumentImpact(data: InteractionDocumentData) {
  */
 export function buildProfileFromInteractionDocuments(documents: Array<{ id: string; data: InteractionDocumentData; }>, { now = Date.now() } = {}) {
   const profile = createEmptyInteractionProfile();
+  const viewImpacts = new Map<string, number>();
 
   // addCurated puts each id in front, which is newest first when events arrive
   // one by one. The documents come newest first, so they are replayed oldest
-  // first: the newest ids end up in front and a cap evicts the oldest.
+  // first: the newest ids end up in front and a cap evicts the oldest. The
+  // dwell median, the exposure counts and the positive examples are built in
+  // the same pass because each depends on what came before it.
   for (let index = documents.length - 1; index >= 0; index -= 1) {
     const { id, data } = documents[index];
     if (typeof id !== 'string' || !id || !data) continue;
@@ -439,6 +699,20 @@ export function buildProfileFromInteractionDocuments(documents: Array<{ id: stri
     if (data.read) addCurated(profile, 'read', id);
     if (data.notInterested) addCurated(profile, 'notInterested', id);
     if (data.readLater) addCurated(profile, 'readLater', id);
+
+    const category = typeof data.paperCategory === 'string' ? data.paperCategory : '';
+    const seconds = Number(data.viewTime);
+    let strongRead = false;
+    if (Number.isFinite(seconds) && seconds > 0) {
+      const median = profile.dwell.median;
+      viewImpacts.set(id, viewTimeImpact(seconds, median));
+      recordExposure(profile, category, seconds >= median);
+      strongRead = seconds >= median * STRONG_READ_RATIO;
+      observeDwell(profile.dwell, seconds);
+    } else if (data.skip) {
+      recordExposure(profile, category, false);
+    }
+    if (!data.notInterested && (data.liked || data.saved || strongRead)) addPositive(profile, id, category);
   }
 
   documents.forEach(({ id, data }) => {
@@ -451,18 +725,9 @@ export function buildProfileFromInteractionDocuments(documents: Array<{ id: stri
     // Mirror the full scan: a category seen at all exists, even at zero.
     categoryBucket(profile, category);
 
-    const timestampMs = toTimestampMs(data.timestamp);
     // No timestamp meant an undecayed weight of 1, which is a cohort dated now.
-    const effectiveTimestamp = timestampMs ?? now;
-    addImpact(profile, category, interactionDocumentImpact(data), effectiveTimestamp);
-
-    if (data.notInterested) {
-      applyNotInterestedSpread(profile, category, effectiveTimestamp);
-      if (timestampMs !== null) {
-        const current = profile.cooldowns.get(category);
-        if (!current || timestampMs > current) profile.cooldowns.set(category, timestampMs);
-      }
-    }
+    const timestampMs = toTimestampMs(data.timestamp) ?? now;
+    addImpact(profile, category, documentCategoryImpact(data, viewImpacts.get(id) ?? 0), timestampMs);
   });
 
   documents.forEach(({ id }) => profile.countedPapers.add(id));
@@ -470,6 +735,24 @@ export function buildProfileFromInteractionDocuments(documents: Array<{ id: stri
   profile.updatedAt = new Date(now).toISOString();
   compactCategories(profile, now);
   return profile;
+}
+
+type SerializedDecayed = Record<string, [number, number]>;
+
+function serializeDecayed(map: Map<string, DecayedAffinity>): SerializedDecayed {
+  const serialized: SerializedDecayed = {};
+  // Whole minutes are precision enough for a 30-day decay.
+  map.forEach((entry, key) => {
+    serialized[key] = [Number(entry.value.toPrecision(6)), Math.round(entry.at / MINUTE_MS)];
+  });
+  return serialized;
+}
+
+function weakestHalfRemoved(serialized: SerializedDecayed) {
+  const kept = Object.entries(serialized)
+    .sort((a, b) => Math.abs(b[1][0]) - Math.abs(a[1][0]))
+    .slice(0, Math.floor(Object.keys(serialized).length / 2));
+  return Object.fromEntries(kept);
 }
 
 function serializeAffinities(profile: InteractionProfile) {
@@ -483,11 +766,28 @@ function serializeAffinities(profile: InteractionProfile) {
     });
     categories[category] = { c: cohorts, a: Number(bucket.aged.toPrecision(6)) };
   });
-  const cooldowns: Record<string, number> = {};
-  profile.cooldowns.forEach((timestampMs, category) => {
-    cooldowns[category] = timestampMs;
+  const exposure: Record<string, [number, number]> = {};
+  profile.exposure.forEach((entry, category) => {
+    exposure[category] = [entry.shown, entry.engaged];
   });
-  return JSON.stringify({ categories, cooldowns });
+  const payload = {
+    categories,
+    concepts: serializeDecayed(profile.concepts),
+    authors: serializeDecayed(profile.authors),
+    exposure,
+    dwell: Number(profile.dwell.median.toPrecision(6)),
+    positives: profile.positives.map(example => [example.id, example.category]),
+  };
+  let serialized = JSON.stringify(payload);
+  // Concepts and authors are the part that can grow with use; the weakest go
+  // first. The categories are left to the check below, as they always were.
+  while (serialized.length > MAX_AFFINITY_JSON_BYTES
+    && Object.keys(payload.concepts).length + Object.keys(payload.authors).length > 0) {
+    payload.concepts = weakestHalfRemoved(payload.concepts);
+    payload.authors = weakestHalfRemoved(payload.authors);
+    serialized = JSON.stringify(payload);
+  }
+  return serialized;
 }
 
 function trimCuratedToBudget(payload: Record<CuratedSetName, string[]>) {
@@ -551,6 +851,22 @@ export function serializeInteractionProfile(profile: InteractionProfile): Stored
   return document;
 }
 
+function deserializeDecayed(serialized: unknown, map: Map<string, DecayedAffinity>) {
+  if (!serialized || typeof serialized !== 'object') return;
+  Object.entries(serialized).forEach(([key, pair]) => {
+    if (!Array.isArray(pair)) return;
+    const value = Number(pair[0]);
+    const minutes = Number(pair[1]);
+    if (Number.isFinite(value) && Number.isFinite(minutes)) map.set(key, { value, at: minutes * MINUTE_MS });
+  });
+}
+
+interface SerializedAffinities {
+  categories?: Record<string, { c?: Record<string, unknown>; a?: number }>;
+  concepts?: unknown; authors?: unknown; exposure?: Record<string, unknown>;
+  dwell?: unknown; positives?: unknown;
+}
+
 /**
  * @returns {object|null} null when the payload is missing, from another schema
  *   version or unparseable, which sends the caller down the rebuild path.
@@ -561,7 +877,7 @@ export function deserializeInteractionProfile(data: Partial<StoredInteractionPro
 
   const profile = createEmptyInteractionProfile();
   try {
-    const affinities = JSON.parse(data.affinities || '{}') as { categories?: Record<string, { c?: Record<string, unknown>; a?: number }>; cooldowns?: Record<string, unknown> };
+    const affinities = JSON.parse(data.affinities || '{}') as SerializedAffinities;
     Object.entries(affinities.categories || {}).forEach(([category, bucket]) => {
       const cohorts = new Map<number, { weighted: number; raw: number }>();
       Object.entries(bucket?.c || {}).forEach(([day, pair]) => {
@@ -570,10 +886,18 @@ export function deserializeInteractionProfile(data: Partial<StoredInteractionPro
       });
       profile.categories.set(category, { cohorts, aged: Number(bucket?.a) || 0 });
     });
-    Object.entries(affinities.cooldowns || {}).forEach(([category, timestampMs]) => {
-      const value = Number(timestampMs);
-      if (Number.isFinite(value)) profile.cooldowns.set(category, value);
+    deserializeDecayed(affinities.concepts, profile.concepts);
+    deserializeDecayed(affinities.authors, profile.authors);
+    Object.entries(affinities.exposure || {}).forEach(([category, pair]) => {
+      if (!Array.isArray(pair)) return;
+      const shown = Math.max(0, Math.floor(Number(pair[0]) || 0));
+      const engaged = Math.min(shown, Math.max(0, Math.floor(Number(pair[1]) || 0)));
+      if (shown > 0) profile.exposure.set(category, { shown, engaged });
     });
+    const median = Number(affinities.dwell);
+    if (affinities.dwell !== undefined && Number.isFinite(median)) {
+      profile.dwell.median = clamp(median, DWELL_MEDIAN_MIN_SECONDS, DWELL_MEDIAN_MAX_SECONDS);
+    }
 
     const curated = JSON.parse(data.curated || '{}') as Partial<Record<CuratedSetName, unknown[]>>;
     CURATED_SETS.forEach((name) => {
@@ -585,6 +909,21 @@ export function deserializeInteractionProfile(data: Partial<StoredInteractionPro
         set!.order.push(paperId);
       });
     });
+
+    if (Array.isArray(affinities.positives)) {
+      profile.positives = affinities.positives
+        .filter((pair): pair is [string, string] => Array.isArray(pair) && typeof pair[0] === 'string' && pair[0].length > 0)
+        .map(([id, category]) => ({ id, category: typeof category === 'string' ? category : '' }))
+        .slice(0, MAX_POSITIVE_EXAMPLES);
+    } else {
+      // An aggregate written before the examples were kept: its likes and
+      // saves are the examples, with no category on record for them.
+      const liked = curatedIds(profile, 'liked');
+      const saved = curatedIds(profile, 'saved');
+      profile.positives = [...new Set([...liked, ...saved])]
+        .slice(0, MAX_POSITIVE_EXAMPLES)
+        .map(id => ({ id, category: '' }));
+    }
   } catch {
     return null;
   }
