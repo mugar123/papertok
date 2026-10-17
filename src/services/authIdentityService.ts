@@ -222,6 +222,10 @@ export async function linkSignInProvider(providerId: string, overrides?: Identit
  * Call it directly from the click, before any other `await`: browsers block a
  * popup that a user gesture did not open. Choosing a different account in the
  * popup fails with `auth/user-mismatch` and leaves the session as it was.
+ *
+ * Resolves with the uid that signed in again, read when the click started.
+ * Another tab can switch this tab's session while the window is open, so a
+ * caller that acts on the confirmed account uses this uid, not the session.
  */
 export async function reauthenticateCurrentUser(overrides?: IdentityOperations) {
   const api = operations(overrides);
@@ -235,10 +239,11 @@ export async function reauthenticateCurrentUser(overrides?: IdentityOperations) 
     const google = user.providerData.find(entry => entry.providerId === SIGN_IN_PROVIDERS.google);
     if (!google?.uid) throw new Error('The emulator account has no Google identity to confirm.');
     await api.credentialReauthenticate(user, emulatorGoogleCredential(google.uid));
-    return;
+    return user.uid;
   }
   // Any door the account has proves the same uid, so the first one listed is used.
   const providerId = providerIdsOf(user).find(id => api.providers[id]);
   if (!providerId) throw new TypeError('The account has no sign-in provider to confirm.');
   await api.popupReauthenticate(user, requireProvider(api, providerId));
+  return user.uid;
 }

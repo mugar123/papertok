@@ -282,6 +282,21 @@ test('choosing another account in the popup reaches the caller as user-mismatch'
   await assert.rejects(() => reauthenticateCurrentUser(api), error => (error as { code?: string }).code === 'auth/user-mismatch');
 });
 
+test('signing in again reports the account that confirmed, even if the session switched meanwhile', async () => {
+  const alice = { uid: 'alice', providerData: [{ providerId: GOOGLE }] };
+  const bob = { uid: 'bob', providerData: [{ providerId: GOOGLE }] };
+  const authentication = { currentUser: alice };
+  const { api } = fakeApi({
+    authentication,
+    popupReauthenticate: async (user) => {
+      authentication.currentUser = bob; // another tab signs this one in as Bob
+      return { user };
+    },
+  });
+
+  assert.equal(await reauthenticateCurrentUser(api), 'alice');
+});
+
 test('demo mode and a missing session open no popup', async () => {
   const currentUser = { uid: 'user-1', providerData: [{ providerId: GOOGLE }] };
   const { api, calls } = fakeApi({ authentication: { currentUser }, isDemo: true });
