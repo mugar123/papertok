@@ -1,4 +1,5 @@
 import React from 'react';
+import { trackAppCrash } from './services/analyticsService.ts';
 
 const COPY = {
   title: 'Something went wrong',
@@ -20,6 +21,7 @@ export default class GlobalErrorBoundary extends React.Component<React.PropsWith
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     this.setState({ errorInfo });
     console.error("Uncaught error:", error, errorInfo);
+    trackAppCrash();
   }
 
   render() {
