@@ -31,7 +31,7 @@ import { handleCitationGraph } from './citation-graph.ts';
 import { handleOpenAccess } from './open-access.ts';
 import { handleArxiv } from './arxiv-api.ts';
 import { handlePdfProxy } from './pdf-proxy.ts';
-import { handleRelated, handleSemanticScholar } from './semantic-scholar.ts';
+import { handlePersonalRecommendations, handleRelated, handleSemanticScholar } from './semantic-scholar.ts';
 import { handleScopus, isScopusEgressConfigured } from './scopus-api.ts';
 import { handlePhysicsLiterature } from './physics-api.ts';
 import { handleShareRoute } from './share-route.ts';
@@ -67,6 +67,7 @@ const PROTECTED_PROVIDER_PATHS = new Set([
 const UPSTREAM_RETRY_AFTER_FALLBACK_SECONDS = Object.freeze<Record<string, string>>({
   '/sources/s2': '2',
   '/related': '2',
+  '/recommendations': '2',
 });
 const DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS = '60';
 
@@ -101,6 +102,18 @@ function upstreamFailureResponse(pathname: string, error: ProviderError, origin:
   }, status, {
     ...corsHeaders(origin, env),
     ...(rateLimited ? { 'retry-after': upstreamRetryAfter(pathname, error) } : {}),
+  });
+}
+
+// A credential that could not be checked is a refusal, not an outage to route
+// around: the protected provider routes answer it the same way.
+function providerAuthFailure(error: unknown, origin: string, env: WorkerEnv) {
+  const knownError = error instanceof WorkerAuthError;
+  const status = knownError ? error.status : 503;
+  return json({ code: knownError ? error.code : 'PROVIDER_AUTH_UNAVAILABLE' }, status, {
+    ...corsHeaders(origin, env),
+    'cache-control': 'no-store',
+    ...(status === 429 ? { 'retry-after': '60' } : {}),
   });
 }
 
@@ -327,6 +340,23 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
       );
     }
   }
+  // The one provider route asked with a body, so it is routed ahead of the
+  // GET-only gate below. Like the protected routes after that gate, it checks
+  // the reader's identity before anything else.
+  if (url.pathname === '/recommendations') {
+    let identity: VerifiedIdentity;
+    try {
+      identity = await verifyFirebaseIdentity(request, env);
+    } catch (error) {
+      return providerAuthFailure(error, origin, env);
+    }
+    try {
+      return await handlePersonalRecommendations(request, env, identity);
+    } catch (error) {
+      console.error('Personal recommendations failed', error);
+      return upstreamFailureResponse('/recommendations', error as ProviderError, origin, env, 'Recommendations unavailable');
+    }
+  }
   if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
   if (url.pathname === '/health') {
     return json({
@@ -407,13 +437,7 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
   try {
     protectedIdentity = await authenticateProtectedProviderRequest(request, env, url.pathname);
   } catch (error) {
-    const knownError = error instanceof WorkerAuthError;
-    const status = knownError ? error.status : 503;
-    return json({ code: knownError ? error.code : 'PROVIDER_AUTH_UNAVAILABLE' }, status, {
-      ...corsHeaders(origin, env),
-      'cache-control': 'no-store',
-      ...(status === 429 ? { 'retry-after': '60' } : {}),
-    });
+    return providerAuthFailure(error, origin, env);
   }
   if (url.pathname === '/related') {
     try {

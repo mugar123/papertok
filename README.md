@@ -75,15 +75,21 @@ PaperTok does not host research papers itself. Links to papers, PDFs and metadat
 
 ## Recommendation system
 
-The recommendation engine is intentionally built inside the project rather than relying on a black-box recommendation API.
+The ranking is intentionally built inside the project rather than delegated to a black-box recommendation API. Semantic Scholar's recommender supplies some of the candidates, but it does not decide their order.
 
 Each candidate paper can receive signals based on:
 
 **Explicit preferences**  
-Fields and categories selected by the user.
+Fields and categories selected by the user. Their weight fades as the user's own interactions accumulate.
 
 **Learned affinity**  
-Interactions gradually modify the user's affinity with scientific categories and concepts.
+Interactions gradually modify the user's affinity with scientific categories, concepts and authors. Reading time counts relative to the user's usual pace, not in raw seconds.
+
+**Session**  
+What the user engaged with or skipped in the last few cards counts for more, briefly.
+
+**Personal recommendations**  
+Semantic Scholar suggests papers similar to the ones the user liked, saved or read at length, one interest at a time. They are ranked like every other candidate.
 
 **Following**  
 Papers can be boosted when they relate to followed authors, topics, institutions or projects.
@@ -98,7 +104,7 @@ Citation information can contribute to ranking without allowing highly cited pap
 Scientific concepts associated with papers can be compared with learned user interests.
 
 **Exploration**  
-Some results intentionally come from outside the strongest known preferences to avoid creating an overly narrow feed.
+Some results intentionally come from outside the strongest known preferences to avoid creating an overly narrow feed. Nearby categories that held the user's attention before are explored more often, and unexplored ones still get a chance.
 
 **Diversity**  
 The ranking tries to avoid long sequences containing only one type of publication or source.

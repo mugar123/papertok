@@ -1,7 +1,8 @@
 import type { PropsWithChildren } from 'react';
 import type { Paper, PaperFollowMatch } from '../models/Paper.ts';
 import type { FollowEntity } from '../utils/following.ts';
-import type { CuratedSetName, InteractionDocumentData } from '../utils/interactionProfile.ts';
+import type { CuratedSetName, InteractionDocumentData, InteractionEvent, ProfileSignals } from '../utils/interactionProfile.ts';
+import type { PersonalCandidate } from '../services/personalRecommendationsService.ts';
 import type { ProfileLoadResult } from '../utils/interactionProfileLoader.ts';
 import type { RecentProperties, RecommendationContext } from '../utils/recommendationEngine.ts';
 interface FeedSnapshot { papers: Paper[]; page: number; hasMore: boolean }
@@ -46,6 +47,7 @@ import { useContext, useState, useCallback, useEffect, useMemo, useRef, useLayou
 import { FeedContext } from './contexts.ts';
 import { IS_DEMO, db } from '../services/firebase.ts';
 import { setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
+import { useAnalyticsConsent } from './AnalyticsContext.tsx';
 import { useAuth } from './AuthContext.tsx';
 import { useFollowing } from './FollowingContext.tsx';
 import { ARXIV_FEED_AREAS, fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers } from '../services/arxivService.ts';
@@ -58,12 +60,14 @@ import { getPapersByProject } from '../services/openAireService.ts';
 import { getPaperRecommendations } from '../services/semanticScholarService.ts';
 import { PaperBuilder } from '../services/PaperBuilder.ts';
 import {
-  applyCategoryAffinityDelta,
   applyRecommendationScore,
   diversifiedWeightedShuffle,
   logRankingBatch,
+  paperAffinitySignals,
+  pickExplorationCategories,
   readRecommendationWeights,
 } from '../utils/recommendationEngine.ts';
+import { fetchPersonalCandidates, personalRecommendationRequest } from '../services/personalRecommendationsService.ts';
 import { mergeFreshFeedPage, splitFeedForReRank } from '../utils/feedReRankSplit.ts';
 import { reRankHoldMs } from '../utils/feedReRankTiming.ts';
 import {
@@ -80,8 +84,11 @@ import {
   createEmptyInteractionProfile,
   curatedIds,
   isPaperKnown,
-  readCategorySignals,
+  lacksLearnedAffinities,
+  positiveExamples,
+  readProfileSignals,
   recordInteractionEvent,
+  seedLearnedAffinities,
 } from '../utils/interactionProfile.ts';
 import {
   hasInteractionProfile,
@@ -253,18 +260,27 @@ function mergeFollowEntityMatches(...groups: Array<Paper['_followedEntityMatches
   )) === index);
 }
 
-// Same clamp range as category affinities: without it, concept affinities grow
-// unbounded and the semantic component (x20 multiplier) drowns every other signal.
-const CONCEPT_AFFINITY_MIN = -10;
-const CONCEPT_AFFINITY_MAX = 100;
+// The For You feed's engagement goes out every this many cards: how many were
+// skipped, read past the reader's median, liked and saved. Counts only, so
+// the event names no paper, topic or account.
+const ENGAGEMENT_WINDOW_CARDS = 20;
+interface EngagementWindow { cards: number; skips: number; deepReads: number; likes: number; saves: number }
+const emptyEngagementWindow = (): EngagementWindow => ({ cards: 0, skips: 0, deepReads: 0, likes: 0, saves: 0 });
 
-function bumpConceptAffinities(conceptMap: Record<string, number>, paper: Partial<Paper>, delta: number) {
-  (paper?.openAlex?.concepts || []).forEach((concept) => {
-    conceptMap[concept.id] = Math.max(
-      CONCEPT_AFFINITY_MIN,
-      Math.min(CONCEPT_AFFINITY_MAX, (conceptMap[concept.id] || 0) + delta),
-    );
-  });
+// How many of the personal recommendations each page draws, like the five the
+// graph candidates contribute.
+const PERSONAL_CANDIDATES_PER_PAGE = 5;
+
+// Papers come back through the sources that already normalize them: arXiv for
+// an arXiv id, OpenAlex for a DOI.
+async function fetchPersonalPapers(candidates: PersonalCandidate[]) {
+  const arxivIds = candidates.map(candidate => candidate.arxivId).filter((id): id is string => Boolean(id));
+  const dois = candidates.filter(candidate => !candidate.arxivId && candidate.doi).map(candidate => candidate.doi as string);
+  const [arxivPapers, doiPapers] = await Promise.all([
+    arxivIds.length > 0 ? fetchPapersByIds(arxivIds).catch(() => []) : [],
+    dois.length > 0 ? fetchPapersByDois(dois).catch(() => []) : [],
+  ]);
+  return [...arxivPapers, ...doiPapers] as Paper[];
 }
 
 // `feedRouteActive` says whether the route that actually renders this feed is
@@ -344,10 +360,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // (measured 2026-09-11, ~200 ms of React work at each card change).
   const papersRef = useRef(papers);
   useEffect(() => { papersRef.current = papers; }, [papers]);
-  const categoryAffinities = useRef<Record<string, number>>({});
-  const categoryCooldowns = useRef<Record<string, number>>({});
-  const conceptAffinities = useRef<Record<string, number>>({});
+  // What the ranking reads from the interaction profile, read out again after
+  // every event. The profile is the one owner; nothing writes these maps.
+  const profileSignals = useRef<ProfileSignals>(readProfileSignals(null));
   const relatedCandidates = useRef<string[]>([]);
+  // Semantic Scholar's answer for this profile's examples, drawn page by page.
+  const personalCandidates = useRef<PersonalCandidate[]>([]);
   const temporalPreference = useRef(0); // -1 (classic) to +1 (recent)
   const recommendationWeights = useRef(readRecommendationWeights());
   const boredomLevel = useRef(0); // 0 = happy, higher = more bored
@@ -373,10 +391,34 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     [],
   );
 
-  const recordProfileEvent = useCallback((event: Parameters<typeof recordInteractionEvent>[1]) => {
+  const { trackEvent } = useAnalyticsConsent();
+  const engagementWindow = useRef(emptyEngagementWindow());
+  // Only cards of this feed count: the Following feed reports its views
+  // through the same handlers.
+  const countEngagement = useCallback((paperId: string, change: Partial<EngagementWindow>) => {
+    if (!papersRef.current.some(paper => paper.id === paperId)) return;
+    const counts = engagementWindow.current;
+    (Object.keys(change) as Array<keyof EngagementWindow>).forEach((key) => {
+      counts[key] += change[key] || 0;
+    });
+    if (counts.cards < ENGAGEMENT_WINDOW_CARDS) return;
+    engagementWindow.current = emptyEngagementWindow();
+    void trackEvent('feed_engagement', {
+      cards: counts.cards,
+      skips: counts.skips,
+      deep_reads: counts.deepReads,
+      likes: counts.likes,
+      saves: counts.saves,
+    });
+  }, [trackEvent]);
+
+  // The paper, when there is one, lends the event its OpenAlex concepts and
+  // authors. Called before the re-rank it feeds, so that re-rank sees it.
+  const recordProfileEvent = useCallback((event: InteractionEvent, paper?: Partial<Paper> | null) => {
     const userId = user?.uid;
     if (!userId || IS_DEMO) return;
-    recordInteractionEvent(interactionProfile.current, event);
+    recordInteractionEvent(interactionProfile.current, paper ? { ...event, ...paperAffinitySignals(paper) } : event);
+    profileSignals.current = readProfileSignals(interactionProfile.current);
     if (!interactionProfileHydrated.current) return;
     scheduleInteractionProfileFlush(userId, interactionProfile.current);
   }, [user?.uid]);
@@ -567,12 +609,15 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
   // --- TIKTOK-STYLE SCORING & RE-RANKING ---
   const calculateAndAttachScore = useCallback((paper: Paper, recentPropsCount: Partial<RecentProperties> = {}) => {
+    const signals = profileSignals.current;
     return applyRecommendationScore(paper, {
       userPreferences,
       followedEntities,
-      categoryAffinities: categoryAffinities.current,
-      categoryCooldowns: categoryCooldowns.current,
-      conceptAffinities: conceptAffinities.current,
+      categoryAffinities: signals.categoryAffinities,
+      conceptAffinities: signals.conceptAffinities,
+      authorAffinities: signals.authorAffinities,
+      sessionAffinities: signals.sessionAffinities,
+      interactionCount: signals.interactionCount,
       temporalPreference: temporalPreference.current,
       weights: recommendationWeights.current,
       recentPropsCount
@@ -833,6 +878,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       setReadPaperIds(new Set<string>());
       setPersonalLibrary({});
       interactionProfile.current = createEmptyInteractionProfile();
+      profileSignals.current = readProfileSignals(null);
+      relatedCandidates.current = [];
+      personalCandidates.current = [];
+      engagementWindow.current = emptyEngagementWindow();
       interactionProfileHydrated.current = false;
       loadedProfileUserId.current = null;
       personalLibraryStatus.current = { userId: null, generation: -1, state: 'idle' };
@@ -905,7 +954,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const notInterested = orderedSet('notInterested');
         const saved = orderedSet('saved');
         const read = orderedSet('read');
-        const { affinities, cooldowns } = readCategorySignals(profile);
 
         setLikedPaperIds(liked);
         setNotInterestedIds(notInterested);
@@ -920,14 +968,15 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // the screens that already asked for the library while the profile was
         // still loading ask again now that it has ids to work with.
         setInteractionProfileGeneration(generation => generation + 1);
-        categoryAffinities.current = affinities;
-        categoryCooldowns.current = cooldowns;
-        conceptAffinities.current = {};
+        profileSignals.current = readProfileSignals(profile);
         relatedCandidates.current = [];
+        personalCandidates.current = [];
         setRecommendationProfileUserId(userId);
 
-        // OpenAlex concept weights are a ranking overlay, not a gate. Cap the
-        // sample and run it after the first source wave has the network, so a
+        // The liked and saved papers' OpenAlex records seed the concept and
+        // author affinities when the profile has none, and their related works
+        // feed the graph candidates. An overlay, not a gate: the sample is
+        // capped and runs after the first source wave has the network, so a
         // large liked library cannot stall the first cards. The sample comes
         // from the aggregate's own order (newest first): `liked`/`saved` above
         // are Sets sorted by id for the lists, and cutting those to 24 kept
@@ -936,38 +985,49 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           curatedIds(profile, 'liked'),
           curatedIds(profile, 'saved'),
         );
+        // Decided now, before the reader's first event adds entries of its own.
+        const needsLearnedSeed = lacksLearnedAffinities(profile);
         const scheduleIdle = typeof requestIdleCallback === 'function'
           ? (fn: () => void) => requestIdleCallback(fn, { timeout: 2500 })
           : (fn: () => void) => setTimeout(fn, 0);
         const semanticIdleHandleId = scheduleIdle(() => {
           void (async () => {
-            if (cancelled) return;
-            const conceptWeights: Record<string, number> = {};
+            // A profile that arrived late replaces this one, and owns the work.
+            const superseded = () => cancelled || interactionProfile.current !== profile;
+            if (superseded()) return;
+            const seedExamples: Array<ReturnType<typeof paperAffinitySignals>> = [];
             const relatedWorksPool: string[] = [];
             if (positiveIds.length > 0) {
               const openAlexData = await enrichPapersBatch(positiveIds);
-              if (cancelled) return;
+              if (superseded()) return;
               positiveIds.forEach((id) => {
                 const pid = id.startsWith('arxiv:') ? id.split(':')[1].replace(/v\d+$/, '') : id.replace(/v\d+$/, '');
                 const data = openAlexData[pid];
                 if (!data) return;
-                data.concepts!.forEach((c) => {
-                  if (!conceptWeights[c.id]) conceptWeights[c.id] = 0;
-                  conceptWeights[c.id] += c.score!;
-                });
+                seedExamples.push(paperAffinitySignals({ openAlex: { concepts: data.concepts }, authors: data.authors }));
                 if (data.related_works) {
                   relatedWorksPool.push(...data.related_works);
                 }
               });
             }
             const relatedArxivIds = await getArxivIdsForOpenAlexWorks(relatedWorksPool);
-            if (cancelled) return;
-            Object.keys(conceptWeights).forEach((id) => {
-              conceptWeights[id] = Math.max(CONCEPT_AFFINITY_MIN, Math.min(CONCEPT_AFFINITY_MAX, conceptWeights[id]));
-            });
-            conceptAffinities.current = conceptWeights;
+            if (superseded()) return;
+            if (needsLearnedSeed && seedExamples.length > 0) {
+              seedLearnedAffinities(profile, seedExamples);
+              profileSignals.current = readProfileSignals(profile);
+              scheduleInteractionProfileFlush(userId, profile);
+            }
             relatedCandidates.current = relatedArxivIds;
             reRankFeedRef.current();
+
+            // Asked once per profile load, off the first paint; each page then
+            // draws from the answer.
+            const candidates = await fetchPersonalCandidates(personalRecommendationRequest(
+              positiveExamples(profile),
+              curatedIds(profile, 'notInterested'),
+            ));
+            if (superseded()) return;
+            personalCandidates.current = candidates;
           })();
         });
         semanticIdleHandle = semanticIdleHandleId;
@@ -1112,7 +1172,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // Ties are spread across areas (preferenceRanking.js): on a flat
         // profile the five slots below used to go to the first five of the
         // first area, whatever else the account had picked.
-        const rankedPreferences = rankPreferences([...userPreferences, ...followedTopicIds], categoryAffinities.current);
+        const rankedPreferences = rankPreferences([...userPreferences, ...followedTopicIds], profileSignals.current.categoryAffinities);
 
         // ─── STEP 2: Choose query mode based on temporal preference ───
         const pref = temporalPreference.current || 0;
@@ -1133,6 +1193,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // them (measured 2026-09-16: 2.3 s late on a cold entry, past the
         // first-paint budget).
         let graphCandidatesPromise = Promise.resolve<Paper[]>([]);
+        let personalCandidatesPromise = Promise.resolve<Paper[]>([]);
         let followedCandidatesPromise = Promise.resolve<Paper[]>([]);
 
         // ─── STEP 3: Fetch from USER'S CATEGORIES ONLY ───
@@ -1194,6 +1255,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
               [],
             );
           }
+          if (personalCandidates.current.length > 0) {
+            personalCandidatesPromise = resolveWithin(
+              fetchPersonalPapers(personalCandidates.current.splice(0, PERSONAL_CANDIDATES_PER_PAGE)),
+              OPTIONAL_SOURCE_RENDER_BUDGET_MS,
+              [],
+            );
+          }
           if (followedEntities.length > 0) {
             followedCandidatesPromise = resolveWithin(
               fetchFollowedEntityCandidates(followedEntities, queryMode),
@@ -1239,13 +1307,17 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const graphPapers = await graphCandidatesPromise;
         graphPapers.forEach(p => { p._type = 'graph'; p._isGraphCandidate = true; });
 
+        // Semantic Scholar's recommendations for this reader's own examples.
+        const personalPapers = await personalCandidatesPromise;
+        personalPapers.forEach(p => { p._type = 'personal'; p._isPersonalCandidate = true; });
+
         // ─── STEP 5: Followed topics, authors, institutions and projects ───
         const followedPapers = await followedCandidatesPromise;
 
         // Only give up when the OPTIONAL candidates cannot bootstrap the feed
-        // either: a dead arXiv must not blank a feed that graph/followed papers
-        // could populate on their own.
-        if (shouldAbortFeedLoad(mainSourceResults, mainPapers, graphPapers, followedPapers)) {
+        // either: a dead arXiv must not blank a feed that graph, personal or
+        // followed papers could populate on their own.
+        if (shouldAbortFeedLoad(mainSourceResults, mainPapers, graphPapers, personalPapers, followedPapers)) {
           throw new Error('No scientific provider returned usable papers.');
         }
 
@@ -1259,14 +1331,16 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           if (leaf) userAreas.add(leaf.area);
         });
 
-        // Fetch adjacent categories within the user's parent areas
-        const nearbyCats = allCategories
-          .filter(c => userAreas.has(c.area))
-          .filter(c => !userPreferences.includes(c.id))
-          .filter(c => (categoryAffinities.current[c.id] || 0) >= -2)
-          .map(c => c.id)
-          .sort(() => 0.5 - Math.random())
-          .slice(0, 3);
+        // Adjacent categories within the user's parent areas, chosen by what
+        // exploring each of them has returned so far.
+        const nearbyCats = pickExplorationCategories(
+          allCategories
+            .filter(c => userAreas.has(c.area))
+            .filter(c => !userPreferences.includes(c.id))
+            .filter(c => (profileSignals.current.categoryAffinities[c.id] || 0) >= -2)
+            .map(c => c.id),
+          profileSignals.current.categoryExposure,
+        );
 
         const boredomThreshold = getBoredomThreshold();
         const exploreCount = currentBoredom >= boredomThreshold
@@ -1422,7 +1496,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // ─── STEP 7: Merge, deduplicate, score, and shuffle ───
         const lateMain = lateSourceCandidatesRef.current.splice(0);
         lateMain.forEach(p => { p._type = 'exploit'; });
-        const allFetched = [...mainPapers, ...lateMain, ...graphPapers, ...followedPapers, ...explorationPapers];
+        const allFetched = [...mainPapers, ...lateMain, ...graphPapers, ...personalPapers, ...followedPapers, ...explorationPapers];
         
         const uniqueMap = new Map<string, Paper>();
         allFetched.forEach(p => {
@@ -1711,7 +1785,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [
     userPreferences, page, papers, loading, feedMode,
-    categoryAffinities, relatedCandidates, isKnownPaper,
+    profileSignals, relatedCandidates, personalCandidates, isKnownPaper,
     calculateAndAttachScore, followedEntities, recommendationProfileReady,
     scheduleFeedSnapshotWrite,
   ]);
@@ -1908,17 +1982,20 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     
     if (isCurrentlyLiked) {
       newLiked.delete(paper.id);
-      applyCategoryAffinityDelta(categoryAffinities.current, paper, -5);
     } else {
       newLiked.add(paper.id);
-      applyCategoryAffinityDelta(categoryAffinities.current, paper, 5);
-      bumpConceptAffinities(conceptAffinities.current, paper, 1);
-      
+      countEngagement(paperInput.id, { likes: 1 });
+
       // Update temporal preference
       const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);
       if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.1);
       else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.1);
     }
+    recordProfileEvent({
+      paperId: paper.id,
+      kind: isCurrentlyLiked ? 'unlike' : 'like',
+      category: paper.primaryCategory,
+    }, paper);
     setLikedPaperIds(newLiked);
     reRankFeed(paper.id);
 
@@ -1933,11 +2010,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       };
       demoSet('savedPapersData', allSaved);
     } else if (userId) {
-      recordProfileEvent({
-        paperId: paper.id,
-        kind: isCurrentlyLiked ? 'unlike' : 'like',
-        category: paper.primaryCategory,
-      });
       try {
         const ref = interactionDocRef(userId, paper.id);
         await setDoc(ref, definedFields({
@@ -1958,7 +2030,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         setLikedPaperIds(likedPaperIds);
       }
     }
-  }, [withInteractionId, recordProfileEvent, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork]);
+  }, [withInteractionId, recordProfileEvent, countEngagement, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork]);
 
   const markNotInterested = useCallback(async (paperInput: Paper) => {
     const paper = withInteractionId(paperInput);
@@ -1977,23 +2049,17 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       ? (papers[removedIndex + 1]?.id ?? papers[removedIndex - 1]?.id ?? null)
       : null;
     setPapers((prev) => prev.filter((p) => p.id !== paper.id));
-
-    if (paper.primaryCategory) {
-       applyCategoryAffinityDelta(categoryAffinities.current, paper, -10);
-       categoryCooldowns.current[paper.primaryCategory] = Date.now();
-    }
-    bumpConceptAffinities(conceptAffinities.current, paper, -2);
+    recordProfileEvent({
+      paperId: paper.id,
+      kind: 'notInterested',
+      category: paper.primaryCategory,
+    }, paper);
     reRankFeed(successorId || paper.id);
 
     if (IS_DEMO) {
       demoSet('notInterestedIds', Array.from(newNotInterested));
     } else if (userId) {
       try {
-        recordProfileEvent({
-          paperId: paper.id,
-          kind: 'notInterested',
-          category: paper.primaryCategory,
-        });
         const ref = interactionDocRef(userId, paper.id);
         await setDoc(ref, definedFields({
           notInterested: true, paperCategory: paper.primaryCategory,
@@ -2072,9 +2138,17 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       boredomLevel.current = Math.max(0, boredomLevel.current - 3);
     }
     
-    // Instantly update local weights for real-time re-ranking
-    applyCategoryAffinityDelta(categoryAffinities.current, paper, Math.min(timeInSeconds, 60) * 0.25);
-    bumpConceptAffinities(conceptAffinities.current, paper, Math.min(timeInSeconds, 60) * 0.05);
+    // Against the median as it stood before this view moves it.
+    countEngagement(paper.id, {
+      cards: 1,
+      deepReads: timeInSeconds >= profileSignals.current.dwellMedianSeconds ? 1 : 0,
+    });
+    recordProfileEvent({
+      paperId: paper.id,
+      kind: 'viewTime',
+      category: paper.primaryCategory,
+      viewTime: timeInSeconds,
+    }, paper);
     // Update temporal preference and expand graph on high dwell time
     if (timeInSeconds >= 10) {
       const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);
@@ -2092,12 +2166,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     if (userId && !IS_DEMO) {
       try {
-        recordProfileEvent({
-          paperId: paper.id,
-          kind: 'viewTime',
-          category: paper.primaryCategory,
-          viewTime: timeInSeconds,
-        });
         const ref = interactionDocRef(userId, paper.id);
         await setDoc(ref, definedFields({
           viewTime: increment(timeInSeconds),
@@ -2108,7 +2176,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         console.error('Error tracking view time:', err);
       }
     }
-  }, [scheduleReRank, recordProfileEvent, traverseAndExpandNetwork, user?.uid]);
+  }, [scheduleReRank, recordProfileEvent, countEngagement, traverseAndExpandNetwork, user?.uid]);
 
   const trackPdfOpened = useCallback(async (paper: Paper) => {
     const userId = user?.uid;
@@ -2116,18 +2184,15 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     boredomLevel.current = 0;
     traverseAndExpandNetwork(paper);
 
-    // Instantly update local weights for real-time re-ranking
-    applyCategoryAffinityDelta(categoryAffinities.current, paper, 4);
-    bumpConceptAffinities(conceptAffinities.current, paper, 1);
+    recordProfileEvent({
+      paperId: paper.id,
+      kind: 'openedPdf',
+      category: paper.primaryCategory,
+    }, paper);
     reRankFeed(paper.id);
 
     if (userId && !IS_DEMO) {
       try {
-        recordProfileEvent({
-          paperId: paper.id,
-          kind: 'openedPdf',
-          category: paper.primaryCategory,
-        });
         const ref = interactionDocRef(userId, paper.id);
         await setDoc(ref, definedFields({
           openedPdf: true,
@@ -2150,8 +2215,15 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // A fast gesture may cross several cards. Keep every recommendation signal,
     // but score and re-rank the remaining queue only once after the gesture.
     boredomLevel.current = Math.min(20, boredomLevel.current + skippedPapers.length);
+    const timestamp = new Date().toISOString();
     skippedPapers.forEach((paper) => {
-      applyCategoryAffinityDelta(categoryAffinities.current, paper, -1);
+      countEngagement(paper.id, { cards: 1, skips: 1 });
+      recordProfileEvent({
+        paperId: paper.id,
+        kind: 'skip',
+        category: paper.primaryCategory,
+        timestamp,
+      }, paper);
     });
     // Off the snap path, same as trackViewTime: a fling across several cards
     // must not pay a synchronous re-rank per card it crosses.
@@ -2160,16 +2232,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     if (userId && !IS_DEMO) {
       try {
         const batch = writeBatch(db);
-        const timestamp = new Date().toISOString();
         const deviceType = getDeviceInfo().type;
 
         skippedPapers.forEach((paper) => {
-          recordProfileEvent({
-            paperId: paper.id,
-            kind: 'skip',
-            category: paper.primaryCategory,
-            timestamp,
-          });
           const ref = interactionDocRef(userId, paper.id);
           batch.set(ref, definedFields({
             skip: increment(1),
@@ -2185,24 +2250,22 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         console.error('Error tracking skips:', err);
       }
     }
-  }, [scheduleReRank, recordProfileEvent, user?.uid]);
+  }, [scheduleReRank, recordProfileEvent, countEngagement, user?.uid]);
 
   const trackSkip = useCallback((paper: Paper) => trackSkips([paper]), [trackSkips]);
 
   const trackPdfBounce = useCallback(async (paper: Paper) => {
     const userId = user?.uid;
-    // Deduct category affinity for bounce (user opened PDF but closed it instantly)
-    applyCategoryAffinityDelta(categoryAffinities.current, paper, -3);
-    
+    // The PDF was opened and closed at once.
+    recordProfileEvent({
+      paperId: paper.id,
+      kind: 'pdfBounce',
+      category: paper.primaryCategory,
+    }, paper);
     reRankFeed(paper.id);
-    
+
     if (userId && !IS_DEMO) {
       try {
-        recordProfileEvent({
-          paperId: paper.id,
-          kind: 'pdfBounce',
-          category: paper.primaryCategory,
-        });
         const ref = interactionDocRef(userId, paper.id);
         await setDoc(ref, definedFields({
           pdfBounce: increment(1),
@@ -2231,7 +2294,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     boredomLevel.current = 0;
     // Attempt to update temporal preference
     if (paper) {
-      applyCategoryAffinityDelta(categoryAffinities.current, paper, 8);
       const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);
       if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.15);
       else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.15);
@@ -2244,6 +2306,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     nextSaved.add(paperId);
     savedPaperIdsRef.current = nextSaved;
     setSavedPaperIds(nextSaved);
+    countEngagement(typeof paperOrIdInput === 'string' ? paperOrIdInput : paperOrIdInput.id, { saves: 1 });
+    recordProfileEvent({
+      paperId,
+      kind: 'save',
+      category: paper?.primaryCategory,
+    }, paper);
     // Saving is the strongest positive signal; react immediately like the rest.
     reRankFeed(paperId);
 
@@ -2254,11 +2322,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     if (userId) {
       try {
-        recordProfileEvent({
-          paperId,
-          kind: 'save',
-          category: paper?.primaryCategory,
-        });
         const ref = interactionDocRef(userId, paperId);
         const interactionData: InteractionDocumentData & { deviceType: string } = {
           saved: true,
@@ -2276,7 +2339,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         console.error('Error saving recommendation interaction:', err);
       }
     }
-  }, [withInteractionId, papers, reRankFeed, recordProfileEvent, traverseAndExpandNetwork, user?.uid]);
+  }, [withInteractionId, papers, reRankFeed, recordProfileEvent, countEngagement, traverseAndExpandNetwork, user?.uid]);
 
   /**
    * The way back from markSaved: the paper has left every list and Read later,
@@ -2294,13 +2357,16 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const paper = typeof paperOrId === 'object'
       ? paperOrId
       : papers.find(p => p.id === paperId);
-    // Gives back exactly what markSaved lent the category.
-    if (paper) applyCategoryAffinityDelta(categoryAffinities.current, paper, -8);
-
     const nextSaved = new Set(savedPaperIdsRef.current);
     nextSaved.delete(paperId);
     savedPaperIdsRef.current = nextSaved;
     setSavedPaperIds(nextSaved);
+    // Gives back exactly what markSaved lent.
+    recordProfileEvent({
+      paperId,
+      kind: 'unsave',
+      category: paper?.primaryCategory,
+    }, paper);
     reRankFeed(paperId);
 
     if (IS_DEMO) {
@@ -2310,11 +2376,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     if (userId) {
       try {
-        recordProfileEvent({
-          paperId,
-          kind: 'unsave',
-          category: paper?.primaryCategory,
-        });
         await setDoc(interactionDocRef(userId, paperId), {
           saved: false,
           timestamp: new Date().toISOString(),
@@ -2454,9 +2515,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     userPreferences: [...(userPreferences || [])],
     followedAuthors: [...(followedAuthors || [])],
     followedEntities: followedEntities.map(entity => ({ ...entity })),
-    categoryAffinities: { ...categoryAffinities.current },
-    categoryCooldowns: { ...categoryCooldowns.current },
-    conceptAffinities: { ...conceptAffinities.current },
+    categoryAffinities: { ...profileSignals.current.categoryAffinities },
+    conceptAffinities: { ...profileSignals.current.conceptAffinities },
+    authorAffinities: { ...profileSignals.current.authorAffinities },
+    sessionAffinities: { ...profileSignals.current.sessionAffinities },
+    interactionCount: profileSignals.current.interactionCount,
     temporalPreference: temporalPreference.current,
     weights: { ...recommendationWeights.current },
     notInterestedIds: Array.from(notInterestedIdsRef.current),

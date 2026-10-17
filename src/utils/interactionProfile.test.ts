@@ -2,12 +2,12 @@ import type { InteractionDocument, InteractionDocumentData } from './interaction
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { CATEGORIES, getCategorySimilarity } from '../data/categories.ts';
 import {
   AFFINITY_MAX,
   AFFINITY_MIN,
   CURATED_ID_CAPS,
   INTERACTION_PROFILE_SCHEMA_VERSION,
+  MAX_AFFINITY_JSON_BYTES,
   MAX_CURATED_JSON_BYTES,
   buildProfileFromInteractionDocuments,
   createEmptyInteractionProfile,
@@ -15,8 +15,11 @@ import {
   deserializeInteractionProfile,
   interactionProfileNeedsRebuild,
   isPaperKnown,
-  readCategorySignals,
+  lacksLearnedAffinities,
+  positiveExamples,
+  readProfileSignals,
   recordInteractionEvent,
+  seedLearnedAffinities,
   serializeInteractionProfile,
 } from './interactionProfile.ts';
 
@@ -24,60 +27,54 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const NOW = Date.parse('2026-08-19T12:00:00.000Z');
 
 /**
- * The affinity maths exactly as FeedContext computed it while reading the whole
- * interactions subcollection. The incremental aggregate has to reproduce this,
- * because reproducing it is what "the ranking does not change" means.
+ * The category affinity rules, stated on their own: every interaction decays
+ * by `max(0.2, exp(-ageDays/30))`; a like is +5, a save +8, an opened PDF +4,
+ * a skip -1, a PDF bounce -2 and a rejection -3 on the category. A view is
+ * judged against the reader's median dwell, which starts at 6 s and moves 5%
+ * towards each view, oldest first, inside [2, 60]: 0 at the median, +7.5 per
+ * doubling above it up to +15, -1 per halving below it down to -1.
  */
-function legacyFullScan(documents: InteractionDocument[], now: number) {
-  const affinities: Record<string, number> = {};
-  const cooldowns: Record<string, number> = {};
+function referenceFullScan(documents: InteractionDocument[], now: number) {
+  let median = 6;
+  const viewImpacts = new Map<string, number>();
+  [...documents].reverse().forEach(({ id, data }) => {
+    if (!(Number(data.viewTime) > 0)) return;
+    const seconds = Number(data.viewTime);
+    const doublings = Math.log2(seconds / median);
+    viewImpacts.set(id, doublings >= 0 ? Math.min(doublings, 2) * 7.5 : Math.max(doublings, -1));
+    const step = median * 0.05;
+    median = Math.max(2, Math.min(60, median + (seconds > median ? step : seconds < median ? -step : 0)));
+  });
 
-  documents.forEach(({ data }) => {
+  const affinities: Record<string, number> = {};
+  documents.forEach(({ id, data }) => {
     const category = data.paperCategory;
     if (!category) return;
     if (!affinities[category]) affinities[category] = 0;
 
     let decayFactor = 1;
     if (data.timestamp) {
-      const timestamp = new Date(data.timestamp).getTime();
-      const daysOld = (now - timestamp) / DAY_MS;
+      const daysOld = (now - new Date(data.timestamp).getTime()) / DAY_MS;
       decayFactor = Math.max(0.2, Math.exp(-daysOld / 30));
-      if (data.notInterested && (!cooldowns[category] || timestamp > cooldowns[category])) {
-        cooldowns[category] = timestamp;
-      }
     }
 
-    let impact = 0;
+    let impact = viewImpacts.get(id) || 0;
     if (data.liked) impact += 5;
     if (data.saved) impact += 8;
     if (data.openedPdf) impact += 4;
-    if (data.viewTime) impact += Math.min(data.viewTime, 60) * 0.25;
     if (data.skip) impact -= 1;
     if (data.pdfBounce) impact -= 2;
-    if (data.notInterested) impact -= 10;
-
+    if (data.notInterested) impact -= 3;
     affinities[category] += impact * decayFactor;
-
-    if (data.notInterested) {
-      Object.keys(CATEGORIES).forEach((areaKey) => {
-        Object.keys(CATEGORIES[areaKey].subcategories).forEach((otherCategory) => {
-          if (otherCategory === category) return;
-          const similarity = getCategorySimilarity(category, otherCategory);
-          if (similarity <= 0) return;
-          if (!affinities[otherCategory]) affinities[otherCategory] = 0;
-          const penalty = similarity >= 0.8 ? -5 : similarity >= 0.4 ? -3 : -1;
-          affinities[otherCategory] += penalty * decayFactor;
-        });
-      });
-    }
   });
 
   Object.keys(affinities).forEach((category) => {
     affinities[category] = Math.max(AFFINITY_MIN, Math.min(AFFINITY_MAX, affinities[category]));
   });
-  return { affinities, cooldowns };
+  return affinities;
 }
 
+// Newest first, the order the loader and the backfill script pass.
 function makeDocuments(count: number, { spanDays = 30, seed = 1 } = {}) {
   const categories = ['cs.AI', 'cs.LG', 'quant-ph', 'math.NT', 'q-bio.NC'];
   let state = seed;
@@ -101,7 +98,7 @@ function makeDocuments(count: number, { spanDays = 30, seed = 1 } = {}) {
     else data.skip = 1 + Math.floor(random() * 3);
     if (random() < 0.6) data.viewTime = Number((random() * 90).toFixed(2));
     return { id: `arxiv:24${String(index).padStart(5, '0')}`, data };
-  });
+  }).sort((a, b) => Date.parse(b.data.timestamp as string) - Date.parse(a.data.timestamp as string));
 }
 
 function assertMapsClose(actual: Record<string,number>, expected: Record<string,number>, tolerance: number, label: string) {
@@ -120,10 +117,24 @@ function assertMapsClose(actual: Record<string,number>, expected: Record<string,
   });
 }
 
+const categoryAffinities = (profile: Parameters<typeof readProfileSignals>[0]) => readProfileSignals(profile, NOW).categoryAffinities;
+
+function assertClose(actual: number | undefined, expected: number, message?: string) {
+  assert.ok(actual !== undefined && Math.abs(actual - expected) < 1e-9, message || `${actual} is not ${expected}`);
+}
+
 test('a new profile is empty and at the current schema version', () => {
   const profile = createEmptyInteractionProfile();
   assert.equal(profile.version, INTERACTION_PROFILE_SCHEMA_VERSION);
-  assert.deepEqual(readCategorySignals(profile, NOW), { affinities: {}, cooldowns: {} });
+  assert.deepEqual(readProfileSignals(profile, NOW), {
+    categoryAffinities: {},
+    conceptAffinities: {},
+    authorAffinities: {},
+    sessionAffinities: {},
+    categoryExposure: {},
+    interactionCount: 0,
+    dwellMedianSeconds: 6,
+  });
   assert.equal(curatedIds(profile, 'liked').length, 0);
   assert.equal(isPaperKnown(profile, 'arxiv:2401.00001'), false);
 });
@@ -149,11 +160,11 @@ test('records interactions incrementally into the curated sets', () => {
 test('undoing an interaction removes it from the curated set and the affinity', () => {
   const profile = createEmptyInteractionProfile();
   recordInteractionEvent(profile, { paperId: 'a', kind: 'like', category: 'cs.AI' }, NOW);
-  assert.ok(readCategorySignals(profile, NOW).affinities['cs.AI'] > 4.9);
+  assert.ok(categoryAffinities(profile)['cs.AI'] > 4.9);
 
   recordInteractionEvent(profile, { paperId: 'a', kind: 'unlike', category: 'cs.AI' }, NOW);
   assert.deepEqual(curatedIds(profile, 'liked'), []);
-  assert.ok(Math.abs(readCategorySignals(profile, NOW).affinities['cs.AI']) < 1e-9);
+  assert.ok(Math.abs(categoryAffinities(profile)['cs.AI']) < 1e-9);
 
   recordInteractionEvent(profile, { paperId: 'r', kind: 'read', category: 'cs.AI' }, NOW);
   recordInteractionEvent(profile, { paperId: 'r', kind: 'unread' }, NOW);
@@ -164,55 +175,55 @@ test('unsaving takes the paper out of the saved set and gives the affinity back'
   const profile = createEmptyInteractionProfile();
   recordInteractionEvent(profile, { paperId: 's', kind: 'save', category: 'cs.AI' }, NOW);
   assert.deepEqual(curatedIds(profile, 'saved'), ['s']);
-  assert.ok(readCategorySignals(profile, NOW).affinities['cs.AI'] > 7.9);
+  assert.ok(categoryAffinities(profile)['cs.AI'] > 7.9);
 
   recordInteractionEvent(profile, { paperId: 's', kind: 'unsave', category: 'cs.AI' }, NOW);
   assert.deepEqual(curatedIds(profile, 'saved'), []);
-  assert.ok(Math.abs(readCategorySignals(profile, NOW).affinities['cs.AI']) < 1e-9);
+  assert.ok(Math.abs(categoryAffinities(profile)['cs.AI']) < 1e-9);
 });
 
-test('not interested spreads a penalty across the same research area only', () => {
+test('a rejection lands on the paper\'s concepts and authors, and only lightly on its category', () => {
   const profile = createEmptyInteractionProfile();
-  recordInteractionEvent(profile, { paperId: 'p', kind: 'notInterested', category: 'cs.AI' }, NOW);
-  const { affinities, cooldowns } = readCategorySignals(profile, NOW);
+  recordInteractionEvent(profile, {
+    paperId: 'p',
+    kind: 'notInterested',
+    category: 'cs.CL',
+    concepts: [{ id: 'C-benchmarks', score: 1 }],
+    authorIds: ['A1'],
+  }, NOW);
+  const signals = readProfileSignals(profile, NOW);
 
-  assert.ok(affinities['cs.AI'] < 0);
-  assert.ok(affinities['cs.LG'] < 0, 'a sibling cs category should be penalised');
-  assert.equal(affinities['q-bio.NC'], undefined, 'another area must be untouched');
-  assert.equal(cooldowns['cs.AI'], NOW);
+  assertClose(signals.categoryAffinities['cs.CL'], -3);
+  assert.equal(signals.categoryAffinities['cs.AI'], undefined, 'a sibling category is left alone');
+  assertClose(signals.conceptAffinities['C-benchmarks'], -10);
+  assertClose(signals.authorAffinities.A1, -10);
+  assertClose(signals.sessionAffinities['cs.CL'], -3, 'nor does the session sink the whole category');
+  assertClose(signals.sessionAffinities['C-benchmarks'], -10);
 });
 
 test('reproduces the affinities of the full subcollection scan', () => {
   const documents = makeDocuments(3000, { spanDays: 40 });
-  const expected = legacyFullScan(documents, NOW);
   const profile = buildProfileFromInteractionDocuments(documents, { now: NOW });
-  const actual = readCategorySignals(profile, NOW);
 
-  assertMapsClose(actual.affinities, expected.affinities, 1e-9, 'recent history');
-  assert.deepEqual(actual.cooldowns, expected.cooldowns);
+  assertMapsClose(categoryAffinities(profile), referenceFullScan(documents, NOW), 1e-9, 'recent history');
 });
 
 test('reproduces the full scan across a two year history, floor included', () => {
   const documents = makeDocuments(3000, { spanDays: 730, seed: 7 });
-  const expected = legacyFullScan(documents, NOW);
   const profile = buildProfileFromInteractionDocuments(documents, { now: NOW });
-  const actual = readCategorySignals(profile, NOW);
 
   // Interactions past the 0.2 decay floor are aggregated a day-bucket at a time
   // rather than one by one, which costs a fraction of a percent at the boundary.
-  assertMapsClose(actual.affinities, expected.affinities, 0.01, 'long history');
-  assert.deepEqual(actual.cooldowns, expected.cooldowns);
+  assertMapsClose(categoryAffinities(profile), referenceFullScan(documents, NOW), 0.01, 'long history');
 });
 
 test('the incremental path agrees with a rebuild from the same interactions', () => {
   const documents = makeDocuments(400, { spanDays: 20, seed: 3 });
-  const rebuilt = readCategorySignals(
-    buildProfileFromInteractionDocuments(documents, { now: NOW }),
-    NOW,
-  );
+  const rebuilt = categoryAffinities(buildProfileFromInteractionDocuments(documents, { now: NOW }));
 
+  // The events arrive oldest first, as they happened.
   const incremental = createEmptyInteractionProfile();
-  documents.forEach(({ id, data }) => {
+  [...documents].reverse().forEach(({ id, data }) => {
     const shared = { paperId: id, category: data.paperCategory, timestamp: data.timestamp };
     if (data.liked) recordInteractionEvent(incremental, { ...shared, kind: 'like' }, NOW);
     if (data.saved) recordInteractionEvent(incremental, { ...shared, kind: 'save' }, NOW);
@@ -226,12 +237,7 @@ test('the incremental path agrees with a rebuild from the same interactions', ()
     }
   });
 
-  assertMapsClose(
-    readCategorySignals(incremental, NOW).affinities,
-    rebuilt.affinities,
-    1e-9,
-    'incremental vs rebuild',
-  );
+  assertMapsClose(categoryAffinities(incremental), rebuilt, 1e-9, 'incremental vs rebuild');
 });
 
 test('a rebuild keeps the newest like first, as the incremental path does', () => {
@@ -278,7 +284,7 @@ test('affinities stay inside the clamp however lopsided the history', () => {
       NOW,
     );
   }
-  Object.values(readCategorySignals(profile, NOW).affinities).forEach((value) => {
+  Object.values(categoryAffinities(profile)).forEach((value) => {
     assert.ok(value >= AFFINITY_MIN && value <= AFFINITY_MAX, `${value} escaped the clamp`);
   });
 });
@@ -290,12 +296,7 @@ test('survives serialisation and reload', () => {
   const reloaded = deserializeInteractionProfile(stored);
 
   assert.equal(stored.schemaVersion, INTERACTION_PROFILE_SCHEMA_VERSION);
-  assertMapsClose(
-    readCategorySignals(reloaded, NOW).affinities,
-    readCategorySignals(profile, NOW).affinities,
-    1e-4,
-    'after a round trip',
-  );
+  assertMapsClose(categoryAffinities(reloaded), categoryAffinities(profile), 1e-4, 'after a round trip');
   assert.deepEqual(
     curatedIds(reloaded, 'liked').sort(),
     curatedIds(profile, 'liked').sort(),
@@ -356,4 +357,176 @@ test('stays well inside the 1 MiB document limit at every cap', () => {
 
   assert.ok(stored.curated.length <= MAX_CURATED_JSON_BYTES, `curated is ${stored.curated.length}`);
   assert.ok(bytes < 1048576 * 0.75, `document would be ${bytes} bytes, too close to the 1 MiB limit`);
+});
+
+test('a view counts against the reader\'s median dwell, not in raw seconds', () => {
+  const viewOf = (seconds: number) => {
+    const profile = createEmptyInteractionProfile();
+    recordInteractionEvent(profile, { paperId: 'p', kind: 'viewTime', category: 'cs.AI', viewTime: seconds }, NOW);
+    return categoryAffinities(profile)['cs.AI'];
+  };
+
+  // A new reader's median is six seconds.
+  assertClose(viewOf(6), 0, 'a view at the median says nothing');
+  assertClose(viewOf(12), 7.5, 'twice the median');
+  assertClose(viewOf(24), 15, 'four times the median');
+  assertClose(viewOf(600), 15, 'a tab left open is worth no more than a long read');
+  assertClose(viewOf(3), -1, 'half the median weighs what a skip does');
+  assertClose(viewOf(1), -1, 'and no more');
+});
+
+test('the median follows the reader, so a habitual pace stops counting as interest', () => {
+  const profile = createEmptyInteractionProfile();
+  for (let index = 0; index < 100; index += 1) {
+    recordInteractionEvent(profile, { paperId: `p${index}`, kind: 'viewTime', category: 'cs.LG', viewTime: 20 }, NOW);
+  }
+  recordInteractionEvent(profile, { paperId: 'q', kind: 'viewTime', category: 'cs.AI', viewTime: 20 }, NOW);
+
+  // Against a fresh six-second median, twenty seconds would be worth +13.
+  assert.ok(Math.abs(categoryAffinities(profile)['cs.AI']) < 1, `${categoryAffinities(profile)['cs.AI']}`);
+  assert.ok(Math.abs(readProfileSignals(profile, NOW).dwellMedianSeconds - 20) < 1.5);
+});
+
+test('likes, saves and long reads become examples, newest first; undoing or rejecting takes them back', () => {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, { paperId: 'liked', kind: 'like', category: 'cs.AI' }, NOW);
+  recordInteractionEvent(profile, { paperId: 'glanced', kind: 'viewTime', category: 'cs.LG', viewTime: 7 }, NOW);
+  recordInteractionEvent(profile, { paperId: 'read', kind: 'viewTime', category: 'q-bio.NC', viewTime: 30 }, NOW);
+  recordInteractionEvent(profile, { paperId: 'saved', kind: 'save', category: 'quant-ph' }, NOW);
+
+  assert.deepEqual(positiveExamples(profile), [
+    { id: 'saved', category: 'quant-ph' },
+    { id: 'read', category: 'q-bio.NC' },
+    { id: 'liked', category: 'cs.AI' },
+  ]);
+
+  recordInteractionEvent(profile, { paperId: 'liked', kind: 'unlike', category: 'cs.AI' }, NOW);
+  recordInteractionEvent(profile, { paperId: 'read', kind: 'notInterested', category: 'q-bio.NC' }, NOW);
+  assert.deepEqual(positiveExamples(profile), [{ id: 'saved', category: 'quant-ph' }]);
+
+  // Still liked, so still an example after the save is undone.
+  recordInteractionEvent(profile, { paperId: 'saved', kind: 'like', category: 'quant-ph' }, NOW);
+  recordInteractionEvent(profile, { paperId: 'saved', kind: 'unsave', category: 'quant-ph' }, NOW);
+  assert.deepEqual(positiveExamples(profile), [{ id: 'saved', category: 'quant-ph' }]);
+});
+
+test('a rebuild recovers the examples and the exposure from the documents', () => {
+  const documents = [
+    { id: 'skipped', data: { skip: 2, paperCategory: 'cs.LG', timestamp: NOW - 1000 } },
+    { id: 'liked', data: { liked: true, viewTime: 4, paperCategory: 'cs.AI', timestamp: NOW - 2000 } },
+    { id: 'rejected', data: { notInterested: true, viewTime: 40, paperCategory: 'cs.AI', timestamp: NOW - 3000 } },
+  ];
+  const profile = buildProfileFromInteractionDocuments(documents, { now: NOW });
+
+  assert.deepEqual(positiveExamples(profile), [{ id: 'liked', category: 'cs.AI' }]);
+  assert.deepEqual(readProfileSignals(profile, NOW).categoryExposure, {
+    'cs.AI': { shown: 2, engaged: 1 },
+    'cs.LG': { shown: 1, engaged: 0 },
+  });
+});
+
+test('exposure counts every card shown and the ones read past the median', () => {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, { paperId: 'a', kind: 'skip', category: 'math.NT' }, NOW);
+  recordInteractionEvent(profile, { paperId: 'b', kind: 'viewTime', category: 'math.NT', viewTime: 2 }, NOW);
+  recordInteractionEvent(profile, { paperId: 'c', kind: 'viewTime', category: 'math.NT', viewTime: 30 }, NOW);
+
+  assert.deepEqual(readProfileSignals(profile, NOW).categoryExposure, { 'math.NT': { shown: 3, engaged: 1 } });
+});
+
+test('concepts and authors decay over thirty days', () => {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, {
+    paperId: 'old',
+    kind: 'like',
+    category: 'cs.AI',
+    timestamp: NOW - 30 * DAY_MS,
+    concepts: [{ id: 'C1', score: 0.5 }],
+    authorIds: ['A1'],
+  }, NOW);
+  const signals = readProfileSignals(profile, NOW);
+
+  assertClose(signals.conceptAffinities.C1, 2.5 * Math.exp(-1), 'a like weighs the concept by its score');
+  assertClose(signals.authorAffinities.A1, 5 * Math.exp(-1));
+});
+
+test('the session remembers the last few cards and fades with every new one', () => {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, {
+    paperId: 'liked', kind: 'like', category: 'cs.AI', concepts: [{ id: 'C1', score: 1 }],
+  }, NOW);
+  assertClose(readProfileSignals(profile, NOW).sessionAffinities['cs.AI'], 5);
+  assertClose(readProfileSignals(profile, NOW).sessionAffinities.C1, 5);
+
+  for (let index = 0; index < 10; index += 1) {
+    recordInteractionEvent(profile, { paperId: `s${index}`, kind: 'skip', category: 'math.NT' }, NOW);
+  }
+  assertClose(readProfileSignals(profile, NOW).sessionAffinities['cs.AI'], 5 * 0.85 ** 10);
+
+  const reloaded = deserializeInteractionProfile(serializeInteractionProfile(profile));
+  assert.deepEqual(readProfileSignals(reloaded, NOW).sessionAffinities, {}, 'a session does not outlive the tab');
+});
+
+test('the learned maps, the examples, the exposure and the median survive a reload', () => {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, {
+    paperId: 'a', kind: 'save', category: 'cs.AI', concepts: [{ id: 'C1', score: 0.8 }], authorIds: ['A1'],
+  }, NOW - DAY_MS);
+  recordInteractionEvent(profile, { paperId: 'b', kind: 'viewTime', category: 'cs.LG', viewTime: 30 }, NOW);
+  const reloaded = deserializeInteractionProfile(serializeInteractionProfile(profile));
+  const before = readProfileSignals(profile, NOW);
+  const after = readProfileSignals(reloaded, NOW);
+
+  assert.ok(Math.abs(after.conceptAffinities.C1 - before.conceptAffinities.C1) < 1e-3);
+  assert.ok(Math.abs(after.authorAffinities.A1 - before.authorAffinities.A1) < 1e-3);
+  assert.deepEqual(after.categoryExposure, before.categoryExposure);
+  assert.equal(after.dwellMedianSeconds, before.dwellMedianSeconds);
+  assert.deepEqual(positiveExamples(reloaded), positiveExamples(profile));
+});
+
+test('an aggregate stored before the examples existed takes its likes and saves as examples', () => {
+  const stored = serializeInteractionProfile(buildProfileFromInteractionDocuments([
+    { id: 'saved', data: { saved: true, paperCategory: 'cs.AI', timestamp: NOW } },
+    { id: 'liked', data: { liked: true, paperCategory: 'cs.LG', timestamp: NOW - DAY_MS } },
+  ], { now: NOW }));
+  const legacy = JSON.parse(stored.affinities);
+  delete legacy.positives;
+  legacy.cooldowns = { 'cs.LG': NOW };
+
+  const reloaded = deserializeInteractionProfile({ ...stored, affinities: JSON.stringify(legacy) });
+  assert.deepEqual(positiveExamples(reloaded), [
+    { id: 'liked', category: '' },
+    { id: 'saved', category: '' },
+  ]);
+});
+
+test('the liked papers seed learned affinities as likes, joining what the reader added meanwhile', () => {
+  const profile = createEmptyInteractionProfile();
+  assert.equal(lacksLearnedAffinities(profile), true);
+
+  // The reader likes a paper while the enrichment of the old likes is in flight.
+  recordInteractionEvent(profile, { paperId: 'new', kind: 'like', category: 'cs.AI', concepts: [{ id: 'C1', score: 1 }] }, NOW);
+  seedLearnedAffinities(profile, [{ concepts: [{ id: 'C1', score: 1 }], authorIds: ['A1'] }], NOW);
+
+  assertClose(readProfileSignals(profile, NOW).conceptAffinities.C1, 10);
+  assertClose(readProfileSignals(profile, NOW).authorAffinities.A1, 5);
+  assert.equal(lacksLearnedAffinities(profile), false);
+});
+
+test('a heavily used profile keeps its learned maps inside the stored budget', () => {
+  const profile = createEmptyInteractionProfile();
+  for (let index = 0; index < 2000; index += 1) {
+    recordInteractionEvent(profile, {
+      paperId: `p${index}`,
+      kind: 'like',
+      category: `cat.${index % 120}`,
+      timestamp: NOW - (index % 45) * DAY_MS,
+      concepts: Array.from({ length: 12 }, (_, offset) => ({ id: `C${index * 12 + offset}`, score: 0.5 })),
+      authorIds: Array.from({ length: 10 }, (_, offset) => `A${index * 10 + offset}`),
+    }, NOW);
+  }
+
+  const stored = serializeInteractionProfile(profile);
+  assert.ok(stored.affinities.length <= MAX_AFFINITY_JSON_BYTES, `affinities are ${stored.affinities.length}`);
+  assert.ok(Object.keys(readProfileSignals(deserializeInteractionProfile(stored), NOW).conceptAffinities).length > 0);
 });

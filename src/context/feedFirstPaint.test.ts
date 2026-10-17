@@ -184,7 +184,7 @@ test('SOURCE: followed topics rank the main query again, inside a budget', async
   );
   assert.match(
     code,
-    /const rankedPreferences = rankPreferences\(\[\.\.\.userPreferences, \.\.\.followedTopicIds\], categoryAffinities\.current\);/,
+    /const rankedPreferences = rankPreferences\(\[\.\.\.userPreferences, \.\.\.followedTopicIds\], profileSignals\.current\.categoryAffinities\);/,
     'and the ids actually widen the ranked preferences, ranked with ties spread across areas',
   );
   assert.doesNotMatch(code, /const rankedPreferences = \[\.\.\.new Set\(/, 'the inline stable sort is gone: it kept taxonomy order on a flat profile');
@@ -220,15 +220,17 @@ test('SOURCE: the main sources are requested before the optional candidates, and
     "queryMode = Math.random() > 0.5 ? 'recent' : 'relevance';",
     'let sourceResults = await first;',
     'the source fan-out',
-    90,
+    100,
   );
   const domainAt = block.indexOf('const domainProm = fetchDomainPapers(');
   const settleAt = block.indexOf('const { first, all } = settleSourcesForFirstPaint(');
   // The assignments that issue the requests, not the declarations above them.
   const graphAt = block.indexOf('graphCandidatesPromise = resolveWithin(');
   const followedAt = block.indexOf('followedCandidatesPromise = resolveWithin(');
+  const personalAt = block.indexOf('personalCandidatesPromise = resolveWithin(');
   assert.ok(domainAt >= 0 && settleAt > domainAt, 'the main sources are issued inside the block');
   assert.ok(graphAt > domainAt && graphAt < settleAt, 'the graph candidates are asked for after the main sources have been issued');
+  assert.ok(personalAt > domainAt && personalAt < settleAt, 'the personal recommendations are asked for after the main sources have been issued');
   assert.ok(followedAt > domainAt && followedAt < settleAt, 'the followed candidates are asked for after the main sources have been issued');
   assert.match(
     block,
