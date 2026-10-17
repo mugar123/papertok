@@ -6,9 +6,10 @@ export const EASE_IN_OUT = Object.freeze([0.77, 0, 0.175, 1] as const); // --eas
 
 // A box whose size `auto` cannot interpolate: it travels from the size it had
 // (`from`, measured before the change) to the one it lands on, unless the two
-// match. `extra` rides on both keyframes.
-export function animateSize(element: Pick<HTMLElement, 'offsetHeight' | 'animate'>, property: string, from: number, duration: number, ease: readonly [number, number, number, number], extra: Keyframe = {}) {
-  const to = element.offsetHeight;
+// match. `width` travels across, any other property down. `extra` rides on
+// both keyframes.
+export function animateSize(element: Pick<HTMLElement, 'offsetWidth' | 'offsetHeight' | 'animate'>, property: string, from: number, duration: number, ease: readonly [number, number, number, number], extra: Keyframe = {}) {
+  const to = property === 'width' ? element.offsetWidth : element.offsetHeight;
   if (Math.abs(to - from) < 2) return;
   element.animate(
     [{ [property]: `${from}px`, ...extra }, { [property]: `${to}px`, ...extra }],

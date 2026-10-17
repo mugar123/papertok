@@ -89,7 +89,7 @@ test('SOURCE: la palabra que el botón principal enseña en móvil está en su n
   const boton = bloque(card, 'className={`pc-action-read');
   assert.match(
     boton,
-    /<span key=\{[^}]*\} className=\{`pc-action-label--short\$\{[^}]*\}`\}>\{primaryActionShortLabel\}<\/span>/,
+    /<span key=\{[^>]*\} className=\{`pc-action-label--short\$\{[^}]*\}`\}>\{primaryActionShortLabel\}<\/span>/,
     'el botón principal dejó de dibujar su rótulo corto en móvil',
   );
   assert.match(
@@ -123,7 +123,7 @@ test('SOURCE: the primary button names the library it opens the paper through', 
     'an entitled library no longer renames the primary button',
   );
   const boton = bloque(card, 'className={`pc-action-read');
-  assert.match(boton, /libraryLabel \? <GraduationCap className="pc-action-swap" size=\{16\} \/> : <FileText size=\{16\} \/>/, 'the library button lost its glyph');
+  assert.match(boton, /libraryLabel \? <GraduationCap className="pc-action-swap" size=\{16\} \/> : isCheckingLibrary \? null : <FileText size=\{16\} \/>/, 'the library button lost its glyph');
   assert.doesNotMatch(card, /institutionAccess: currentInstitutionAccess/, 'the chip is asking about the library again');
 });
 
@@ -138,10 +138,11 @@ test('SOURCE: the library\'s word and glyph fade in instead of teleporting', asy
   const card = stripComments(await read('./PaperCard.tsx'));
   const boton = bloque(card, 'className={`pc-action-read');
   assert.match(boton, /<GraduationCap className="pc-action-swap" size=\{16\} \/>/, 'the cap no longer fades in');
-  assert.match(boton, /key=\{libraryLabel \? 'library' : 'record'\} className=\{`pc-action-label\$\{libraryLabel \? ' pc-action-swap' : ''\}`\}/,
-    'the long word is no longer keyed on the library, or carries the swap class for the record too');
-  assert.match(boton, /key=\{libraryLabel \? 'library-short' : 'record-short'\} className=\{`pc-action-label--short\$\{libraryLabel \? ' pc-action-swap' : ''\}`\}/,
-    'the short word is no longer keyed on the library');
+  assert.match(card, /const actionFace = libraryLabel \? 'library' : isCheckingLibrary \? 'checking' : 'record';/, 'the words are no longer keyed on what the button says');
+  assert.match(card, /const actionFaceClass = libraryLabel \? ' pc-action-swap' : isCheckingLibrary \? ' pc-action-checking' : '';/,
+    'the swap class reaches the record\'s own labels, or left the library\'s');
+  assert.match(boton, /key=\{actionFace\} className=\{`pc-action-label\$\{actionFaceClass\}`\}/, 'the long word no longer mounts fresh per face');
+  assert.match(boton, /key=\{`\$\{actionFace\}-short`\} className=\{`pc-action-label--short\$\{actionFaceClass\}`\}/, 'the short word no longer mounts fresh per face');
 
   const css = stripComments(await read('./PaperCard.css'));
   assert.match(css, /\.pc-action-swap \{\s*transition: opacity 180ms var\(--ease-out\), transform 180ms var\(--ease-out\);\s*\}/, 'the swap lost its transition');
@@ -149,6 +150,35 @@ test('SOURCE: the library\'s word and glyph fade in instead of teleporting', asy
   const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce) {', css.indexOf('.pc-action-swap')));
   assert.match(reduced, /\.pc-action-swap \{\s*transition: opacity 180ms var\(--ease-out\);\s*\}/, 'reduced motion no longer keeps the fade alone');
   assert.match(reduced, /@starting-style \{\s*\.pc-action-swap \{\s*transform: none;\s*\}\s*\}/, 'reduced motion no longer drops the settle');
+});
+
+/**
+ * A library that takes a while to answer says so (2026-10-17): "Checking"
+ * pushes the record's label out, and the answer pushes "Checking" out to the
+ * library or back to the record's label. "Checking" is the resting label for
+ * that while, so it is also the button's name (2.5.3, checked above), on the
+ * phone too. The leaving face is a decorative copy, and under reduced motion
+ * the faces only cross-fade and the band stops.
+ */
+test('SOURCE: a slow library lookup says "Checking", named and pushed', async () => {
+  const card = stripComments(await read('./PaperCard.tsx'));
+  assert.match(
+    card,
+    /const restingActionLabel = libraryLabel\s*\?\s*`Via \$\{libraryLabel\}`\s*:\s*isCheckingLibrary\s*\?\s*\(?'Checking'\)?\s*:\s*recordActionLabel;/,
+    '"Checking" is no longer the resting label while the library is asked, so the name can stop containing it',
+  );
+  const boton = bloque(card, 'className={`pc-action-read');
+  assert.match(boton, /data-push=\{actionPush\?\.dir\}/, 'the button no longer says which way it is pushing');
+  assert.match(boton, /className="pc-action-out"\s*aria-hidden="true"/, 'the leaving face is read out again by assistive tech');
+
+  const css = stripComments(await read('./PaperCard.css'));
+  const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce) {', css.indexOf('.pc-action-checking {')));
+  assert.match(reduced, /\.pc-action-read\[data-push\] > :not\(\.pc-action-out, \.spinning\) \{\s*animation: fadeIn [^;]*;\s*\}/, 'reduced motion still slides the arriving face');
+  assert.match(reduced, /\.pc-action-out \{\s*animation: fadeOut [^;]*;\s*\}/, 'reduced motion still slides the leaving face');
+  assert.match(reduced, /\.pc-action-checking \{\s*animation: none;/, 'reduced motion still sweeps the band across "Checking"');
+  const movil = css.slice(css.indexOf('@media (max-width: 640px)'), css.indexOf('@media (max-width: 420px)'));
+  assert.match(movil, /\.pc-action-read svg:not\(\.spinning\) \{\s*display: none;\s*\}/,
+    'on the phone the leaving face shows the glyph the arriving one hides');
 });
 
 test('SOURCE: el botón de reescritura se llama por lo que dibuja, sin aria-label que lo contradiga', async () => {
