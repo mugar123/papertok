@@ -1,6 +1,6 @@
-import { getPapersByProject } from '../../src/services/openAireService.js';
-import { fetchPapersByIds } from '../../src/services/arxivService.js';
-import { fetchPapersByDois } from '../../src/services/openAlexService.js';
+import { getPapersByProject } from '../../src/services/openAireService.ts';
+import { fetchPapersByIds } from '../../src/services/arxivService.ts';
+import { fetchPapersByDois } from '../../src/services/openAlexService.ts';
 
 async function test() {
   const { arxivIds, dois, total } = await getPapersByProject('101079773', 1);

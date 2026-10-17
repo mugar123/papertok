@@ -45,7 +45,7 @@ The cause is that direction is derived from the history index, and every tab
 press is a push, so the index only ever grows:
 
 ```js
-// src/utils/routeDirection.js:59-68 — current
+// src/utils/routeDirection.ts:59-68 — current
 export function directionForHistoryIndex(historyIndex, memory = historyDirectionMemory, navigationType = null) {
   if (typeof historyIndex !== 'number') return directionForNavigationType(navigationType);
   if (memory.index === historyIndex) return memory.direction;
@@ -65,13 +65,13 @@ Following are siblings**. Neither is inside the other. Sliding one "deeper" than
 the next asserts a nesting that does not exist, and returning to a tab you were
 just on reads as arriving somewhere new.
 
-The bar itself already knows better: `src/utils/navRule.js` slides the 1px
+The bar itself already knows better: `src/utils/navRule.ts` slides the 1px
 underline laterally between tabs (`Navbar.css:227-243`, 280ms). The indicator
 moves sideways while the page it indicates moves forward.
 
 ### 2. Half a second, strictly sequential, for two tabs of one bar
 
-`AnimatePresence mode="wait"` (`src/App.jsx:197`) means the outgoing page must
+`AnimatePresence mode="wait"` (`src/App.tsx:197`) means the outgoing page must
 finish before the incoming one starts — confirmed by **0 frames with both pages**
 in both directions. With `ENTER_MS = 0.3` and `EXIT_MS = 0.2`
 (`PageTransition.jsx:25-26`) the handover is 200ms + 300ms plus the presence
@@ -113,7 +113,7 @@ both. That is `direction = Math.sign(nextTabIndex - previousTabIndex)` — the
 same sign convention the existing code already uses, just measured along the bar
 instead of along history.
 
-**New module** `src/utils/tabDirection.js`:
+**New module** `src/utils/tabDirection.ts`:
 
 ```js
 /**
@@ -156,7 +156,7 @@ export function lateralTabDirection(pathname, memory = tabMemory) {
 **In `PageTransition.jsx`**, prefer the lateral answer when there is one:
 
 ```jsx
-/* target — src/components/Layout/PageTransition.jsx */
+/* target — src/components/Layout/PageTransition.tsx */
 const historyDirection = directionForHistoryIndex(
   typeof window !== 'undefined' ? window.history.state?.idx : null,
   undefined,
@@ -184,7 +184,7 @@ mirror each other, and pressing back to a tab retraces the step it came by.
 ## Repo conventions to follow
 
 - **Direction logic lives in a pure, tested util under `src/utils/`, not in the
-  component.** `src/utils/routeDirection.js` + `src/utils/routeDirection.test.js`
+  component.** `src/utils/routeDirection.ts` + `src/utils/routeDirection.test.js`
   is the exemplar to copy exactly — module-scope memory object, an injectable
   `memory` parameter so tests can pass their own, and a long comment explaining
   the measurement that motivated it.
@@ -198,7 +198,7 @@ mirror each other, and pressing back to a tab retraces the step it came by.
 
 ## Steps
 
-1. Create `src/utils/tabDirection.js` with exactly the module in Target.
+1. Create `src/utils/tabDirection.ts` with exactly the module in Target.
 
 2. Create `src/utils/tabDirection.test.js` covering, at minimum:
    - moving right along the bar returns `1` (`/` then `/following` → `1`);
@@ -211,7 +211,7 @@ mirror each other, and pressing back to a tab retraces the step it came by.
    Each test must pass its own `memory` object, as `routeDirection.test.js` does
    for `directionForHistoryIndex`.
 
-3. In `src/components/Layout/PageTransition.jsx`:
+3. In `src/components/Layout/PageTransition.tsx`:
    - add `import { useLocation, useNavigationType } from 'react-router-dom'`
      (the file currently imports only `useNavigationType`);
    - add `import { lateralTabDirection } from '../../utils/tabDirection.js'`;
@@ -239,18 +239,18 @@ mirror each other, and pressing back to a tab retraces the step it came by.
 
 ## Boundaries
 
-- Do **NOT** change `AnimatePresence mode="wait"` in `src/App.jsx:197`. The
+- Do **NOT** change `AnimatePresence mode="wait"` in `src/App.tsx:197`. The
   comment at `App.jsx:31-38` records that the Suspense fallback depends on the
   incoming screen being mounted from the exit-complete callback; removing
   `mode="wait"` changes how every route in the app loads, which is far beyond
   this plan. The 33–35ms of dead air is not worth that risk.
-- Do **NOT** change `src/utils/routeDirection.js` or its test. The hierarchy
+- Do **NOT** change `src/utils/routeDirection.ts` or its test. The hierarchy
   behaviour is correct and is what the Explorer's back arrow depends on.
 - Do **NOT** touch `PaperCard.css`'s arrival (`:241-296`) or the
   `[data-nav-direction="-1"]` rest rules (`:285-296`). Measured: the card arrival
   already settles with the page. Changing it is a separate decision.
 - Do **NOT** change `TRAVEL_PX`, `EASE`, or `EASE_LEAVING`.
-- Do **NOT** change `src/utils/navRule.js` or the navbar underline. It is already
+- Do **NOT** change `src/utils/navRule.ts` or the navbar underline. It is already
   lateral and already correct — it is the exemplar, not the target.
 - Do **NOT** add a dependency.
 - `TAB_ORDER` must stay in sync with the render order in `Navbar.jsx:147-176`. If

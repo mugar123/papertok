@@ -1,0 +1,114 @@
+/**
+ * Deciding whether two spellings name the same author.
+ *
+ * arXiv writes "Nicolás Cuello" where OpenAlex writes "Cuello, N.", and PubMed
+ * writes "Li WN" for Wan-Ning Li, so anything that carries an OpenAlex id back
+ * to an author a card is already showing has to match on the person rather
+ * than on the string. It lives in `utils` rather than beside its first caller
+ * because both `PaperBuilder` and `openAlexService` need it, and the service
+ * already imports the builder.
+ *
+ * The surname is the anchor and the given names must agree with it in order,
+ * a given name matching its initial. The matcher before this one accepted any
+ * subset of loosely equal parts: "Li WN" matched "Po-Wn Li" and not
+ * "Wan-Ning Li", and "Chen YC" matched "Y. C. Pan" (audit 2026-09-23).
+ */
+
+function normalizeText(value: unknown) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '');
+}
+
+function words(value: string) {
+  return value.toLowerCase().replace(/[^a-z\s-]/g, ' ').split(/[\s-]+/).filter(Boolean);
+}
+
+export function normalizeNameForMatch(name: string) {
+  return words(normalizeText(name).replace(/\./g, ' '));
+}
+
+// "WN", "V.K.", "J" -> ['w', 'n'] … : a run of capitals written as initials.
+function initialsOf(token: string) {
+  const letters = token.replace(/\./g, '');
+  return /^[A-Z]{1,3}$/.test(letters) ? letters.toLowerCase().split('') : null;
+}
+
+// Given-name parts, with initials split: "Wan-Ning" -> ['wan', 'ning'], "A." -> ['a'].
+function givenParts(tokens: string[]) {
+  return tokens.flatMap(token => initialsOf(token) || normalizeNameForMatch(token));
+}
+
+/**
+ * The readings a written name allows, each `{ surname: string[], given: string[] }`.
+ * "Surname, Given" has one; PubMed's "Surname INITIALS" has one; a plain
+ * name has "given… surname", and a two-word name also the reverse, because
+ * Chinese names reach us in both orders ("Wei Zhang", "Zhang Wei").
+ */
+function readings(name: unknown) {
+  const text = normalizeText(name).replace(/\s+/g, ' ').trim();
+  if (!text) return [];
+  if (text.includes(',')) {
+    const [surname, ...rest] = text.split(',');
+    return [{ surname: normalizeNameForMatch(surname), given: givenParts(rest.join(' ').split(/\s+/).filter(Boolean)) }];
+  }
+  const tokens = text.split(' ');
+  const last = tokens[tokens.length - 1];
+  if (tokens.length >= 2 && initialsOf(last)) {
+    return [{ surname: normalizeNameForMatch(tokens.slice(0, -1).join(' ')), given: initialsOf(last)! }];
+  }
+  const plain = { surname: normalizeNameForMatch(last), given: givenParts(tokens.slice(0, -1)) };
+  // A Spanish or Portuguese name ends in two surnames, and is often indexed
+  // with the first alone: "Nicolás Muñoz García" is also "Nicolás Muñoz".
+  if (tokens.length >= 3 && !initialsOf(tokens[tokens.length - 2])) {
+    return [plain, {
+      surname: normalizeNameForMatch(tokens.slice(-2).join(' ')),
+      given: givenParts(tokens.slice(0, -2)),
+    }];
+  }
+  // A hyphenated first word is a given name ("Yong-Wei Zhang"), never a
+  // surname written first.
+  if (tokens.length !== 2 || initialsOf(tokens[0]) || tokens[0].includes('-')) return [plain];
+  return [plain, { surname: normalizeNameForMatch(tokens[0]), given: givenParts([tokens[1]]) }];
+}
+
+function sameSurname(a: string[], b: string[]) {
+  if (a.length === 0 || b.length === 0) return false;
+  if (a.join(' ') === b.join(' ')) return true;
+  // A compound surname written whole on one side and in part on the other
+  // ("García-Márquez" / "Márquez") is still one surname.
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  return shorter.every(part => longer.includes(part));
+}
+
+function sameGivenPart(a: string, b: string) {
+  if (a === b) return true;
+  if (a.length === 1 || b.length === 1) return a[0] === b[0];
+  return a.length > 3 && b.length > 3 && (a.startsWith(b) || b.startsWith(a));
+}
+
+// Given names agree in order as far as both go; a side with fewer (or none)
+// does not contradict the other.
+function givenInOrder(a: string[], b: string[]) {
+  const length = Math.min(a.length, b.length);
+  for (let index = 0; index < length; index += 1) {
+    if (!sameGivenPart(a[index], b[index])) return false;
+  }
+  return true;
+}
+
+// A first initial is often dropped in front of the name a person goes by:
+// "J. Robert Oppenheimer" is "Robert Oppenheimer". The side with more given
+// names may skip its leading initial; nothing else is skipped.
+function sameGiven(a: string[], b: string[]) {
+  if (givenInOrder(a, b)) return true;
+  const [longer, shorter] = a.length > b.length ? [a, b] : [b, a];
+  return longer.length > shorter.length && longer[0].length === 1 && givenInOrder(longer.slice(1), shorter);
+}
+
+export function matchesAuthorName(reqName: unknown, oaName: unknown) {
+  if (!reqName || !oaName) return false;
+  const left = readings(reqName);
+  const right = readings(oaName);
+  return left.some(a => right.some(b => sameSurname(a.surname, b.surname) && sameGiven(a.given, b.given)));
+}

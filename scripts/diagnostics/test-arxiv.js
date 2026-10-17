@@ -1,4 +1,4 @@
-import { fetchPapers } from '../../src/services/arxivService.js';
+import { fetchPapers } from '../../src/services/arxivService.ts';
 import { CATEGORIES } from '../../src/data/categories.js';
 
 const physicsCats = Object.keys(CATEGORIES.physics.subcategories);

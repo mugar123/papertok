@@ -1,5 +1,5 @@
 // Imported into the generated service worker via `workbox.importScripts`
-// (see vite.config.js) -- generateSW's own template offers no hook for
+// (see vite.config.ts) -- generateSW's own template offers no hook for
 // custom install logic, so this small file sits alongside it instead.
 //
 // `papertok-html`, the NetworkFirst cache the generated sw.js reads and

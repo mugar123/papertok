@@ -1,4 +1,4 @@
-import { SemanticScholarAdapter } from '../../src/services/adapters/SemanticScholarAdapter.js';
+import { SemanticScholarAdapter } from '../../src/services/adapters/SemanticScholarAdapter.ts';
 
 async function testMech() {
   const semanticScholarAdapter = new SemanticScholarAdapter();

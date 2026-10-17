@@ -1,0 +1,350 @@
+import type { Paper, PaperAuthor } from '../models/Paper.ts';
+import type { AIQuota, RewriteMeta, RewriteSection } from '../models/Rewrite.ts';
+export type { RewriteSection } from '../models/Rewrite.ts';
+type RewritePaperInput = Partial<Paper> & { journalRef?: string };
+export type ClientRewriteMeta = Pick<RewriteMeta, 'level' | 'language'> & Partial<RewriteMeta> & { cached?: boolean; remainingUses?: number | null };
+export interface RewriteResult { meta: ClientRewriteMeta; sections: RewriteSection[]; incomplete?: boolean }
+type RewriteEvent = ({ type: 'meta' } & ClientRewriteMeta) | ({ type: 'section' } & RewriteSection)
+  | { type: 'error'; code?: string; quota?: AIQuota | null; partial?: boolean; finishReason?: string }
+  | { type: 'ping'; stage?: string } | { type: 'done' };
+interface RewriteOptions {
+  language?: string;
+  force?: boolean;
+  signal?: AbortSignal;
+  onMeta?: (meta: ClientRewriteMeta) => void;
+  onSection?: (section: RewriteSection, index: number) => void;
+  onProgress?: (progress: { stage: string }) => void;
+}
+
+import { isAIReadablePdfUrl } from '../utils/aiExplanationAccess.ts';
+import { authenticatedWorkerFetch } from './workerApiClient.ts';
+
+/**
+ * Client for the streaming paper rewrite.
+ *
+ * The worker answers with NDJSON, one line per event, so sections can be shown
+ * while the rest of the paper is still being written. Callers get an
+ * `onSection` callback rather than a resolved array; the returned promise only
+ * settles when the stream ends.
+ *
+ * Completed rewrites are also kept in memory per (paper, level, language), so
+ * flipping between levels a second time is instant.
+ */
+
+const rewriteCache = new Map<string, RewriteResult>();
+
+/**
+ * No bytes for this long means the stream is dead, not slow. The worker sends a
+ * heartbeat every 8s while the model is still thinking, so real silence this
+ * long means the connection is gone rather than the paper being long.
+ */
+const STALL_TIMEOUT_MS = 45_000;
+
+export const PAPER_REWRITE_LEVELS = Object.freeze([
+  { id: 'beginner', label: 'Beginner' },
+  { id: 'university', label: 'University' },
+  { id: 'researcher', label: 'Researcher' },
+]);
+
+export class PaperRewriteError extends Error {
+  declare code: string | undefined;
+  declare quota: AIQuota | null;
+  declare partial: boolean;
+  declare finishReason?: string;
+  constructor(code: string|undefined, quota: AIQuota | null = null, { partial = false } = {}) {
+    super(code);
+    this.name = 'PaperRewriteError';
+    this.code = code;
+    this.quota = quota;
+    this.partial = partial;
+  }
+}
+
+function cleanText(value: unknown, maxLength: number) {
+  return String(value || '').trim().slice(0, maxLength);
+}
+
+function paperCacheId(paper: RewritePaperInput | null | undefined) {
+  return cleanText(paper?.id || paper?.doi || paper?.arxivId || paper?.title, 500).toLowerCase();
+}
+
+/**
+ * The rewrite needs a PDF the worker is actually allowed to read, which is why
+ * an abstract is not enough here — unlike the old explainer.
+ */
+export function getRewritablePdfUrl(paper: RewritePaperInput | null | undefined) {
+  const candidates = [paper?.openAccessPdfUrl];
+  if (paper?.arxivId) {
+    const arxivId = String(paper.arxivId).replace(/^arxiv:/i, '').replace(/v\d+$/i, '');
+    candidates.push(`https://arxiv.org/pdf/${arxivId}.pdf`);
+  }
+  if (paper?.openAccess && paper?.pdfUrl) candidates.push(paper.pdfUrl);
+  // Europe PMC rather than PMC itself: `pmc.ncbi.nlm.nih.gov/articles/<id>/pdf/`
+  // answers anything without a browser with a 1.8 KB HTML interstitial, so the
+  // worker downloaded a "preparing to download" page and reported every PubMed
+  // paper as having no full text. The Europe PMC render of the same article
+  // serves `application/pdf` on the first response.
+  if (paper?.pmcid) candidates.push(`https://europepmc.org/articles/${encodeURIComponent(paper.pmcid)}?pdf=render`);
+  return candidates.find(isAIReadablePdfUrl) || '';
+}
+
+/**
+ * How many of the day's AI uses are left, without spending one.
+ *
+ * The rewrite already reports `remainingUses` on the `meta` line, but only once
+ * a rewrite is under way — which is to say, only after it has cost a use, and
+ * never at all when the answer comes from cache or the request fails. The reader
+ * shows the number the moment it opens, so it needs a way to ask.
+ *
+ * Returns `null` rather than throwing: a reader that cannot show the count is
+ * still a working reader, and this must never be the thing that breaks it.
+ */
+export async function fetchRemainingAIUses({ signal }: { signal?: AbortSignal } = {}) {
+  const apiBase = import.meta.env.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '');
+  if (!apiBase) return null;
+  try {
+    const response = await authenticatedWorkerFetch(`${apiBase}/ai/quota`, { method: 'GET', signal });
+    if (!response.ok) return null;
+    const payload = await response.json() as { remainingUses?: unknown; dailyLimit?: unknown; unlimited?: unknown };
+    const remainingUses = Number(payload?.remainingUses);
+    const dailyLimit = Number(payload?.dailyLimit);
+    if (!Number.isFinite(remainingUses) || !Number.isFinite(dailyLimit)) return null;
+    // An exempt account has a ceiling too — the global one — but showing it as
+    // "993/1000 today" would be a true sentence nobody reads as "no limit".
+    return { remainingUses, dailyLimit, unlimited: payload?.unlimited === true };
+  } catch {
+    return null;
+  }
+}
+
+export function canRewritePaper(paper: RewritePaperInput | null | undefined) {
+  return Boolean(getRewritablePdfUrl(paper));
+}
+
+export function serializePaperForRewrite(paper: RewritePaperInput | null | undefined) {
+  return {
+    id: cleanText(paper?.id, 400),
+    title: cleanText(paper?.title, 1_000),
+    abstract: cleanText(paper?.abstract || paper?.summary, 30_000),
+    authors: Array.isArray(paper?.authors)
+      ? paper.authors.slice(0, 30).map(author => ({ name: cleanText((author as PaperAuthor)?.name || author, 160) }))
+      : [],
+    year: paper?.year || (paper?.published ? new Date(paper.published).getFullYear() : null),
+    doi: cleanText(paper?.doi, 300),
+    arxivId: cleanText(paper?.arxivId, 100),
+    journal: cleanText(paper?.journal || paper?.journalRef, 300),
+    categories: Array.isArray(paper?.categories)
+      ? paper.categories.slice(0, 20)
+      : [paper?.primaryCategory].filter(Boolean),
+    pdfUrl: getRewritablePdfUrl(paper),
+  };
+}
+
+/**
+ * Identifies a rewrite by what actually makes one different from another. The
+ * paper half is derived from `id || doi || arxivId || title` rather than from
+ * the object, so a caller handed a freshly rebuilt `paper` with the same
+ * contents can tell that it is not looking at a new request.
+ */
+export function rewriteCacheKey(paper: RewritePaperInput | null | undefined, level: string, language: string) {
+  return `${paperCacheId(paper)}:${level}:${language}`;
+}
+
+export function getCachedRewrite(paper: RewritePaperInput | null | undefined, level: string, language = 'en') {
+  return rewriteCache.get(rewriteCacheKey(paper, level, language)) || null;
+}
+
+/**
+ * Splits an incoming byte stream into complete NDJSON events, holding any
+ * partial trailing line until its newline arrives.
+ */
+export function createNdjsonParser<T = unknown>() {
+  let buffer = '';
+  const parse = (line: string) => {
+    const trimmed = line.trim();
+    if (!trimmed) return null;
+    try {
+      return JSON.parse(trimmed) as T;
+    } catch {
+      return null;
+    }
+  };
+  return {
+    push(text: string) {
+      buffer += text;
+      const events = [];
+      let newlineAt = buffer.indexOf('\n');
+      while (newlineAt !== -1) {
+        const event = parse(buffer.slice(0, newlineAt));
+        if (event) events.push(event);
+        buffer = buffer.slice(newlineAt + 1);
+        newlineAt = buffer.indexOf('\n');
+      }
+      return events;
+    },
+    flush() {
+      const event = parse(buffer);
+      buffer = '';
+      return event ? [event] : [];
+    },
+  };
+}
+
+/**
+ * What a failure is called by the time the reader sees it.
+ *
+ * The worker names its own refusals and those arrive as `PaperRewriteError`
+ * already; what this is for is the failures that never reach it. An expired or
+ * revoked session fails inside `getIdToken`, before a single byte leaves the
+ * browser, and collapsing that into `AI_UNAVAILABLE` told the reader that
+ * something had broken and to try again — when trying again was the one thing
+ * that could not work, and signing in was.
+ */
+export function toRewriteError(error: unknown, { cancelled = false } = {}) {
+  if (error instanceof PaperRewriteError) return error;
+  if ((error as { name?: string } | null)?.name === 'AbortError') {
+    return new PaperRewriteError(cancelled ? 'AI_CANCELLED' : 'AI_TIMEOUT');
+  }
+  if ((error as { name?: string } | null)?.name === 'WorkerApiAuthError') return new PaperRewriteError('AI_AUTH_REQUIRED');
+  // Firebase reports a revoked, expired or unreachable session through its own
+  // `auth/*` codes, which never travel over the wire.
+  if (typeof (error as { code?: unknown } | null)?.code === 'string' && (error as { code: string }).code.startsWith('auth/')) {
+    return new PaperRewriteError('AI_AUTH_REQUIRED');
+  }
+  return new PaperRewriteError('AI_UNAVAILABLE');
+}
+
+export async function rewritePaper(paper: RewritePaperInput, level = 'university', {
+  force = false,
+  signal,
+  onMeta,
+  onSection,
+  onProgress,
+}: RewriteOptions = {}) {
+  if (!PAPER_REWRITE_LEVELS.some(item => item.id === level)) {
+    throw new PaperRewriteError('AI_INVALID_LEVEL');
+  }
+  // A signal that already fired will never fire again, so the listener installed
+  // further down would never run: the POST would go out and burn one of the ten
+  // daily uses on a stream the caller has already walked away from. Everything
+  // between here and that POST is synchronous, so this is the only place where
+  // an early abort can still be noticed.
+  if (signal?.aborted) throw new PaperRewriteError('AI_CANCELLED');
+  const rewriteLanguage = 'en';
+  const cacheKey = rewriteCacheKey(paper, level, rewriteLanguage);
+
+  if (!force && rewriteCache.has(cacheKey)) {
+    const cached = rewriteCache.get(cacheKey)!;
+    onMeta?.({ ...cached.meta, cached: true, remainingUses: null });
+    cached.sections.forEach((section, index) => onSection?.(section, index));
+    return cached;
+  }
+
+  if (!canRewritePaper(paper)) throw new PaperRewriteError('AI_REWRITE_NEEDS_FULL_TEXT');
+
+  const apiBase = import.meta.env.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '');
+  if (!apiBase) throw new PaperRewriteError('AI_NOT_CONFIGURED');
+
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort();
+  signal?.addEventListener('abort', abortFromCaller, { once: true });
+  // A stall timer rather than a total deadline: a long paper is allowed to take
+  // its time as long as bytes keep arriving.
+  let stallTimer: ReturnType<typeof setTimeout> | null | undefined = null;
+  const resetStallTimer = () => {
+    if (stallTimer) clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => controller.abort(), STALL_TIMEOUT_MS);
+  };
+
+  let meta: ClientRewriteMeta | null = null;
+  const sections: RewriteSection[] = [];
+  let streamError: PaperRewriteError | null = null;
+
+  try {
+    resetStallTimer();
+    const response = await authenticatedWorkerFetch(`${apiBase}/ai/rewrite`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        paper: serializePaperForRewrite(paper),
+        level,
+        language: rewriteLanguage,
+      }),
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({})) as { code?: string; quota?: AIQuota };
+      throw new PaperRewriteError(payload.code || 'AI_UNAVAILABLE', payload.quota || null);
+    }
+    if (!response.body) throw new PaperRewriteError('AI_UNAVAILABLE');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    const parser = createNdjsonParser<RewriteEvent>();
+
+    const handleEvent = (event: RewriteEvent) => {
+      if (event.type === 'meta') {
+        meta = event;
+        onMeta?.(event);
+        // The first ping is eight seconds out; without this the reader would
+        // spend those eight seconds on a generic label.
+        onProgress?.({ stage: 'source' });
+        return;
+      }
+      if (event.type === 'section') {
+        const section = {
+          id: event.id,
+          kind: event.kind,
+          heading: event.heading,
+          originalHeading: event.originalHeading,
+          paragraphs: Array.isArray(event.paragraphs) ? event.paragraphs : [],
+          highlights: Array.isArray(event.highlights) ? event.highlights : [],
+        };
+        onSection?.(section, sections.length);
+        sections.push(section);
+        onProgress?.({ stage: 'writing' });
+        return;
+      }
+      if (event.type === 'error') {
+        streamError = new PaperRewriteError(
+          event.code || 'AI_UNAVAILABLE',
+          event.quota || null,
+          { partial: Boolean(event.partial) },
+        );
+        if (event.finishReason) streamError.finishReason = event.finishReason;
+        return;
+      }
+      // A `ping` carries no rewrite, and receiving one is most of the point: it
+      // is what keeps the stall timer above from firing while the worker is
+      // downloading the paper and the model is reading it. What it does carry is
+      // which of those two the wait is currently in, which is the difference
+      // between a minute that looks broken and a minute that looks busy.
+      if (event.type === 'ping') {
+        onProgress?.({ stage: event.stage || 'reading' });
+      }
+    };
+
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      resetStallTimer();
+      parser.push(decoder.decode(value, { stream: true })).forEach(handleEvent);
+    }
+    parser.flush().forEach(handleEvent);
+
+    if (streamError && sections.length === 0) throw streamError;
+    if (sections.length === 0) throw new PaperRewriteError('AI_INVALID_RESPONSE');
+
+    const result = { meta: meta || { level, language: rewriteLanguage }, sections };
+    // A stream cut short is still worth showing, but must not be cached as if
+    // it were the whole paper.
+    if (!streamError) rewriteCache.set(cacheKey, result);
+    return { ...result, incomplete: Boolean(streamError) };
+  } catch (error) {
+    throw toRewriteError(error, { cancelled: Boolean(signal?.aborted) });
+  } finally {
+    if (stallTimer) clearTimeout(stallTimer);
+    signal?.removeEventListener('abort', abortFromCaller);
+  }
+}

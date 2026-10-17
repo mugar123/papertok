@@ -1,0 +1,126 @@
+import type { StyledProps } from './props.ts';
+import type { ComponentProps } from 'react';
+
+import { Dialog as SheetPrimitive } from '@base-ui/react/dialog';
+import { X } from '@phosphor-icons/react';
+import { cn } from '../../lib/utils.ts';
+
+/**
+ * A panel that slides in from an edge and does not need a swipe gesture —
+ * a positioned Dialog, as Base UI's own guidance puts it (the Drawer next
+ * door is the one with gestures and snap points, for the bottom sheets a
+ * thumb dismisses). Filters, side rails, a settings tray.
+ *
+ * The slide keyframes are the repo's `slideInFrom*` / `slideOutTo*`, which
+ * animate `transform` — safe here because, unlike the centred Dialog, a
+ * sheet is pinned to an edge with `inset-*`, never with `translate`.
+ */
+function Sheet(props: ComponentProps<typeof SheetPrimitive.Root>) {
+  return <SheetPrimitive.Root data-slot="sheet" {...props} />;
+}
+
+function SheetClose(props: ComponentProps<typeof SheetPrimitive.Close>) {
+  return <SheetPrimitive.Close data-slot="sheet-close" {...props} />;
+}
+
+function SheetPortal(props: ComponentProps<typeof SheetPrimitive.Portal>) {
+  return <SheetPrimitive.Portal data-slot="sheet-portal" {...props} />;
+}
+
+function SheetOverlay({ className, ...props }: StyledProps<typeof SheetPrimitive.Backdrop>) {
+  return (
+    <SheetPrimitive.Backdrop
+      data-slot="sheet-overlay"
+      className={cn(
+        'fixed inset-0 z-[12050] bg-[var(--scrim)]',
+        'motion-safe:data-open:[animation:fadeIn_150ms_ease]',
+        'motion-safe:data-closed:[animation:fadeOut_150ms_ease_both]',
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+const SIDE_CLASSES = {
+  right: [
+    'inset-y-0 right-0 h-full w-[min(420px,calc(100vw-40px))] border-l',
+    'motion-safe:data-open:[animation:slideInFromRight_260ms_var(--ease-out-expo)]',
+    'motion-safe:data-closed:[animation:slideOutToRight_200ms_var(--ease-out)_both]',
+  ],
+  left: [
+    'inset-y-0 left-0 h-full w-[min(420px,calc(100vw-40px))] border-r',
+    'motion-safe:data-open:[animation:slideInFromLeft_260ms_var(--ease-out-expo)]',
+    'motion-safe:data-closed:[animation:slideOutToLeft_200ms_var(--ease-out)_both]',
+  ],
+  top: [
+    'inset-x-0 top-0 max-h-[85dvh] border-b',
+    'motion-safe:data-open:[animation:slideInFromTop_260ms_var(--ease-out-expo)]',
+    'motion-safe:data-closed:[animation:slideOutToTop_200ms_var(--ease-out)_both]',
+  ],
+  bottom: [
+    'inset-x-0 bottom-0 max-h-[85dvh] rounded-t-2xl border-t pb-[var(--inset-bottom)]',
+    'motion-safe:data-open:[animation:slideInFromBottom_260ms_var(--ease-out-expo)]',
+    'motion-safe:data-closed:[animation:slideOutToBottom_200ms_var(--ease-out)_both]',
+  ],
+};
+
+function SheetContent({
+  className,
+  children,
+  side = 'right',
+  showClose = true,
+  showCloseButton,
+  closeLabel = 'Close',
+  overlayClassName,
+  ...props
+}: StyledProps<typeof SheetPrimitive.Popup> & { side?: keyof typeof SIDE_CLASSES; showClose?: boolean; showCloseButton?: boolean; closeLabel?: string; overlayClassName?: string }) {
+  const withClose = showCloseButton ?? showClose;
+  return (
+    <SheetPortal>
+      <SheetOverlay className={overlayClassName} />
+      <SheetPrimitive.Popup
+        aria-modal="true"
+        data-slot="sheet-content"
+        data-side={side}
+        className={cn(
+          'fixed z-[12051] flex flex-col overflow-y-auto overscroll-contain',
+          'border-border bg-card shadow-[var(--shadow-xl)] outline-none',
+          ...(SIDE_CLASSES[side] ?? SIDE_CLASSES.right),
+          className,
+        )}
+        {...props}
+      >
+        {children}
+        {withClose && (
+          <SheetPrimitive.Close
+            data-slot="sheet-close"
+            className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            aria-label={closeLabel}
+          >
+            <X size={16} aria-hidden="true" />
+          </SheetPrimitive.Close>
+        )}
+      </SheetPrimitive.Popup>
+    </SheetPortal>
+  );
+}
+
+function SheetTitle({ className, ...props }: StyledProps<typeof SheetPrimitive.Title>) {
+  return (
+    <SheetPrimitive.Title
+      data-slot="sheet-title"
+      className={cn('font-serif text-[1.25rem] font-semibold leading-tight tracking-[-0.01em] text-foreground', className)}
+      {...props}
+    />
+  );
+}
+
+export {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetOverlay,
+  SheetPortal,
+  SheetTitle,
+};

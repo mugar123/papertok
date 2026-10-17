@@ -19,7 +19,7 @@ For every document under `users/`:
    version (unless `--force`).
 2. Pages through `users/{uid}/interactions` ordered by document id.
 3. Builds the aggregate with the same code the browser uses
-   (`src/utils/interactionProfile.js`), so the result is identical to what the
+   (`src/utils/interactionProfile.ts`), so the result is identical to what the
    client would have written.
 4. Writes it to `users/{uid}/aggregates/interactions`.
 
@@ -103,6 +103,6 @@ days if you want to stay inside the free tier's daily allowance.
 ## Schema changes
 
 The aggregate carries `schemaVersion`. When the format changes, bump
-`INTERACTION_PROFILE_SCHEMA_VERSION` in `src/utils/interactionProfile.js`. Every
+`INTERACTION_PROFILE_SCHEMA_VERSION` in `src/utils/interactionProfile.ts`. Every
 client then treats its stored aggregate as unreadable and rebuilds it once, so
 running this script after a bump is again optional.

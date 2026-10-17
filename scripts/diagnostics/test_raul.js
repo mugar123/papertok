@@ -1,4 +1,4 @@
-import { getWorksByEntity } from '../../src/services/openAlexService.js';
+import { getWorksByEntity } from '../../src/services/openAlexService.ts';
 import fetch from 'node-fetch';
 
 global.fetch = fetch;

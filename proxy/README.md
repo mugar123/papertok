@@ -1,6 +1,6 @@
 # PaperTok Scopus egress
 
-`scopus-proxy.js` exists for one reason, and it is worth writing down because the
+`scopus-proxy.ts` exists for one reason, and it is worth writing down because the
 symptom is misleading.
 
 `api.elsevier.com` resolves to `api.elsevier.com.cdn.cloudflare.net` — Elsevier's
@@ -35,11 +35,11 @@ production.
 
 Two ways in, at [dash.deno.com](https://dash.deno.com):
 
-- **Playground** — *New Playground*, paste `scopus-proxy.js`, set the variables,
+- **Playground** — *New Playground*, paste `scopus-proxy.ts`, set the variables,
   save. Nothing needs to be pushed, so this is the quickest way to prove the
   egress actually reaches Elsevier before wiring anything to it.
 - **Linked to the repository** — new project from GitHub with
-  `proxy/scopus-proxy.js` as the entry point, which redeploys on every push. The
+  `proxy/scopus-proxy.ts` as the entry point, which redeploys on every push. The
   right home once the playground has proved the route.
 
 Either way, set these on the project:
@@ -65,7 +65,7 @@ npx wrangler secret delete ELSEVIER_API_KEY  # it does nothing in Cloudflare
 npm run worker:deploy
 ```
 
-To run it locally: `deno run --allow-net --allow-env proxy/scopus-proxy.js`.
+To run it locally: `deno run --allow-net --allow-env proxy/scopus-proxy.ts`.
 
 ## Verify
 
@@ -93,7 +93,7 @@ the card with no summary and no AI explanation. The egress and the probe stay in
 place to report the day either of those changes.
 
 Turning the flow on is therefore a product decision, and it is recorded in
-`src/utils/deployFlags.js` rather than in a repository variable: `vite build`
+`src/utils/deployFlags.ts` rather than in a repository variable: `vite build`
 refuses a bundle whose `VITE_SCOPUS_ENABLED` disagrees with what is declared
 there. Change the declaration first, in the commit that records why — setting
 the variable alone only makes the build fail.

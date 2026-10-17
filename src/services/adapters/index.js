@@ -1,4 +1,0 @@
-export { SemanticScholarAdapter } from './SemanticScholarAdapter';
-export { PubmedAdapter } from './PubmedAdapter';
-export { OpenAlexAdapter } from './OpenAlexAdapter';
-export { ScopusAdapter, isScopusEnabled } from './ScopusAdapter';

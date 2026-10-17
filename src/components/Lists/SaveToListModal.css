@@ -10,7 +10,7 @@
    Language: design.md. An overlay surface (ink scrim + a white sheet with a
    hairline border and a short drop), structure from rules rather than shadows,
    mono for machine data, serif for the paper's own words, and every control
-   from `src/components/ui/button.jsx`. */
+   from `src/components/ui/button.tsx`. */
 
 /* The window is a Base UI Dialog (ui/dialog.jsx): the primitive centres the
    popup and portals it to <body>, and marks it `data-open` on the way in and

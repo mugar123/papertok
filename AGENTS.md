@@ -96,7 +96,7 @@ establish conformance; report manual evidence and anything not verified.
   Firestore writes off production. Worker routes that require identity reject emulator
   tokens, so report those flows as unverified; check guest flows with `npm run dev`.
 - Add or modify tests only for behavior introduced or fixed by this task. Assert observable
-  results through the existing test tools, using colocated `*.test.js` files; do not pin
+  results through the existing test tools, using colocated `*.test.ts` files; do not pin
   the implementation's own constants or add production APIs just to satisfy a mock.
 - Update existing contract and development documentation when adding routes, environment
   variables, providers or persistence. Historical investigation notes do not override code
