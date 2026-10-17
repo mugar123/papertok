@@ -21,10 +21,15 @@
 /* The sheet is the Dialog primitive's popup, centred by it; the primitive's
    enter/leave (dialogIn/dialogOut) plays on `[data-open]`/`[data-closed]`,
    so no motion is spelled here. The width keeps the page margin the old
-   grid padding gave the sheet on a narrow screen. */
+   grid padding gave the sheet on a narrow screen, and the height keeps the
+   same margin. The sheet is fixed over a page the modal locks, so when it is
+   taller than the screen (a phone on its side, 200% zoom) it scrolls rather
+   than losing its top and bottom, the policy link with them. */
 .auth-modal {
   width: min(400px, calc(100% - 2 * var(--space-5)));
   max-width: none;
+  max-height: calc(100dvh - 2 * var(--space-5));
+  overflow-y: auto;
   padding: var(--space-8) var(--space-6) var(--space-5);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-2xl);
@@ -84,6 +89,13 @@
 
 .auth-provider-icon {
   flex: 0 0 auto;
+}
+
+/* The ghost-button look comes with `whitespace-nowrap`; at 200% text the
+   policy link has to wrap instead. */
+.auth-modal-policy {
+  margin-top: var(--space-4);
+  white-space: normal;
 }
 
 /* ── States ── */

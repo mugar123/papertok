@@ -429,6 +429,13 @@
   font-size: var(--fs-xs);
 }
 
+/* The ghost-button look comes with `whitespace-nowrap`; at 200% text the
+   policy link has to wrap instead. */
+.settings-policy {
+  margin-top: var(--space-3);
+  white-space: normal;
+}
+
 @keyframes settingsSpin {
   to { transform: rotate(360deg); }
 }

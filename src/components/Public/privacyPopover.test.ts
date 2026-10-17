@@ -28,10 +28,59 @@ test('a visitor reaches the analytics switch and the policy from both guest bars
 
   // The policy is a page of its own, opened beside the app so the welcome keeps
   // its place, and a link rather than a Button (which Base UI would announce as
-  // a button). Nothing else in the app links a visitor to it.
+  // a button).
   const popover = await read('./PrivacyPopover.tsx');
   assert.match(popover, /<a\s+href="\/privacy\.html"\s+target="_blank"\s+rel="noopener noreferrer"/);
   assert.match(popover, /<span className="visually-hidden">\{COPY\.newTab\}<\/span>/);
+});
+
+// The policy link as the popover draws it: a new tab, and a hidden hint that
+// says so, since the visible text alone does not.
+const POLICY_LINK = /<a\s+href="\/privacy\.html"\s+target="_blank"\s+rel="noopener noreferrer"[\s\S]*?<span className="visually-hidden">[^<]+<\/span>\s*<\/a>/;
+
+// Where the link is, and that it comes after (under, and later in the tab
+// order than) every one of the providers.
+function policyLinkAfter(block: string, providers: string[]) {
+  const linkAt = block.search(POLICY_LINK);
+  assert.ok(linkAt >= 0, 'no policy link here');
+  for (const provider of providers) {
+    const at = block.indexOf(provider);
+    assert.ok(at >= 0, `${provider} not found`);
+    assert.ok(linkAt > at, `the policy link comes before ${provider}`);
+  }
+}
+
+test('whoever is about to sign in can open the policy under the providers', async () => {
+  const prompt = await read('./AuthPrompt.tsx');
+  const dialog = prompt.slice(prompt.indexOf('<DialogContent'), prompt.indexOf('</DialogContent>'));
+  // The providers are SignInMethods, the dialog's one sign-in block.
+  policyLinkAfter(dialog, ['<SignInMethods />']);
+  const methods = await read('./SignInMethods.tsx');
+  assert.ok(
+    methods.includes('id="google-sign-in-btn"') && methods.includes('id="github-sign-in-btn"'),
+    'SignInMethods no longer holds both providers',
+  );
+
+  // On the landing it belongs to the stack that is inert while closed, so the
+  // keyboard reaches it only once the providers show.
+  const welcome = await read('./GuestWelcome.tsx');
+  const stack = welcome.slice(welcome.indexOf('id="gw-providers"'), welcome.indexOf("{step === 'how'"));
+  policyLinkAfter(stack, ['copy.welcome.github', 'copy.welcome.google']);
+});
+
+// The link is the last control in both places, so it is the first thing lost
+// when the screen is short or the text is large.
+test('the policy link stays reachable on a short screen and at large text', async () => {
+  // The sign-in sheet is fixed over a locked page: past the screen's height
+  // it has to scroll, or its ends are out of reach.
+  const sheet = (await read('./AuthPrompt.css')).match(/\.auth-modal\s*\{[^}]*\}/)?.[0] ?? '';
+  assert.match(sheet, /max-height:[^;]*\d[sdl]?vh/, 'the sheet is not held to the screen');
+  assert.match(sheet, /overflow-y:\s*(?:auto|scroll)/, 'the sheet does not scroll');
+
+  // The landing's stack opens into room kept under the hero, and is sized in
+  // rem: room in px stays put while larger text grows the stack past it.
+  const reserve = (await read('./GuestWelcome.css')).match(/\.gw--landing \.gw-stage\s*\{[^}]*\}/)?.[0] ?? '';
+  assert.match(reserve, /padding-bottom:\s*[\d.]+rem;/, 'the room under the hero does not grow with the text');
 });
 
 test('arrow keys in the Privacy panel stay in the panel on the feed', async () => {

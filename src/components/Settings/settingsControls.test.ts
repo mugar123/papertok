@@ -64,6 +64,13 @@ test('the settings page uses the shared Switch and RadioGroup, and styles them o
   assert.doesNotMatch(css, /\.settings-levels button\.is-active|\.settings-language button\.is-active|\.settings-toggle\.is-active|\.settings-toggle > span/);
 });
 
+test('the Privacy page links to the policy in a new tab and says so', async () => {
+  const jsx = await read('./SettingsPage.tsx');
+  const page = jsx.slice(jsx.indexOf('function PrivacyPage('), jsx.indexOf('function DiscoveryPage('));
+  assert.match(page, /<a\s+href="\/privacy\.html"\s+target="_blank"\s+rel="noopener noreferrer"[\s\S]*?<span className="visually-hidden">\{copy\.newTab\}<\/span>\s*<\/a>/);
+  assert.match(jsx, /newTab: '[^']*opens in a new tab[^']*'/);
+});
+
 test('each settings page is its own route, so the rail is links rather than a scroll spy', async () => {
   const jsx = await read('./SettingsPage.tsx');
   assert.match(jsx, /<NavLink\s+key=\{entry\.slug\}\s+to=\{`\/settings\/\$\{entry\.slug\}`\}\s+replace/);

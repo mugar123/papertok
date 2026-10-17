@@ -4,6 +4,7 @@ import type { ReadingLevel } from '../../utils/userSettings.ts';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
+  ArrowUpRight,
   Bell,
   BookOpen,
   CaretRight,
@@ -21,6 +22,7 @@ import {
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { toastError } from '../ui/toast.ts';
+import { cn } from '../../lib/utils.ts';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { useLanguage } from '../../context/LanguageContext.tsx';
 import { useFollowing } from '../../context/FollowingContext.tsx';
@@ -38,6 +40,7 @@ import EditInterestsModal from './EditInterestsModal.tsx';
 import DeleteAccountDialog from './DeleteAccountDialog.tsx';
 import EmailNotificationModal from '../Following/EmailNotificationModal.tsx';
 import { Button } from '../ui/button.tsx';
+import { buttonVariants } from '../ui/button-variants.ts';
 import { GithubMark } from '../ui/GithubMark.tsx';
 import { Label } from '../ui/label.tsx';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group.tsx';
@@ -108,6 +111,8 @@ const SETTINGS_COPY = {
   usageAnalyticsDescription: 'Control the anonymous measurements used to improve PaperTok.',
   analyticsToggleLabel: 'Allow usage analytics',
   analyticsHint: 'Counts pages and actions anonymously, without cookies; never your searches, papers, interests or account. Saved on the spot.',
+  privacyPolicy: 'Privacy policy',
+  newTab: ' (opens in a new tab)',
   institution: 'University',
   institutionDescription: 'Verify where you study or work by signing in with your university\'s Google account.',
   institutionLinked: (name: string) => `Verified with ${name}.`,
@@ -364,6 +369,16 @@ function PrivacyPage() {
           />
         </Label>
       </div>
+      <a
+        href="/privacy.html"
+        target="_blank"
+        rel="noopener noreferrer"
+        className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'settings-policy')}
+      >
+        {copy.privacyPolicy}
+        <ArrowUpRight size={14} aria-hidden="true" />
+        <span className="visually-hidden">{copy.newTab}</span>
+      </a>
     </section>
   );
 }

@@ -11,6 +11,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { ANALYTICS_CONSENT_COOKIE_KEY } from '../services/analyticsService.ts';
 
 const ROOT = new URL('../../', import.meta.url);
 const read = (rel: string|URL) => readFileSync(fileURLToPath(new URL(rel, ROOT)), 'utf8');
@@ -74,6 +75,13 @@ test('the summary up top says the five things a reader needs', () => {
   // Settings needs an account; a visitor is told where their switch is.
   assert.match(block, /Privacy button/);
   assert.match(block, /mailto:nicomg60@gmail\.com/);
+});
+
+test('the policy names the cookie the analytics choice is kept in', () => {
+  // analyticsService writes it whenever a visitor makes the choice, so the
+  // policy has to say it exists; renaming it means updating the policy too.
+  const html = stripHtmlComments(read('privacy.html'));
+  assert.ok(html.includes(ANALYTICS_CONSENT_COOKIE_KEY), `privacy.html does not name ${ANALYTICS_CONSENT_COOKIE_KEY}`);
 });
 
 test('every section of the Spanish policy survives the translation', () => {
