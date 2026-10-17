@@ -1,10 +1,16 @@
 import type { PetriProps } from './PetriFrame.tsx';
 import { useId } from 'react';
 import PetriFrame, { ANTENNAE, Hatch } from './PetriFrame.tsx';
+import { MOUTH, mouthPath } from '../../utils/petriSmileExit.ts';
 
 const FLASK = 'M123 29v11l-11 24a3 3 0 0 0 2.7 4.3h22.6a3 3 0 0 0 2.7-4.3L129 40V29Z';
 
-export default function PetriFlask({ label, className }: PetriProps) {
+/**
+ * `smile` also draws the happy face, hidden, for the loading veil to turn to
+ * when the papers arrive (VeilPetri.tsx). The `petri-face-*` classes are the
+ * parts that exit animates.
+ */
+export default function PetriFlask({ label, className, smile = false }: PetriProps & { smile?: boolean }) {
   const liquid = useId();
   const glass = useId();
   return (
@@ -22,10 +28,19 @@ export default function PetriFlask({ label, className }: PetriProps) {
       behind={<path d="M104 100q10-6 10-32" fill="none" stroke="var(--brand-yellow)" strokeWidth="9" />}
     >
       <path d={ANTENNAE} fill="none" strokeWidth="2" />
-      <circle cx="74" cy="86" r="3.4" fill="var(--text-on-brand)" stroke="none" />
-      <circle cx="92" cy="86" r="3.4" fill="var(--text-on-brand)" stroke="none" />
-      <path d="M86 77q5-3 10 0" fill="none" stroke="var(--text-on-brand)" strokeWidth="2" />
-      <ellipse cx="82" cy="100" rx="2.4" ry="3" fill="var(--text-on-brand)" stroke="none" />
+      <g className="petri-face-eyes">
+        <circle cx="74" cy="86" r="3.4" fill="var(--text-on-brand)" stroke="none" />
+        <circle cx="92" cy="86" r="3.4" fill="var(--text-on-brand)" stroke="none" />
+      </g>
+      <path className="petri-face-brow" d="M86 77q5-3 10 0" fill="none" stroke="var(--text-on-brand)" strokeWidth="2" />
+      <ellipse className="petri-face-o" cx="82" cy="100" rx="2.4" ry="3" fill="var(--text-on-brand)" stroke="none" />
+      {smile && (
+        <>
+          <path className="petri-face-happy-eyes" d="M69.5 87q4.5-5.5 9 0M87.5 87q4.5-5.5 9 0" fill="none" stroke="var(--text-on-brand)" strokeWidth="2.4" opacity="0" />
+          {/* Its outline is the lip: sized in screen pixels while the camera flies in. */}
+          <path className="petri-face-smile" d={mouthPath(MOUTH.cx, MOUTH.yc, MOUTH.a, 0, MOUTH.closedDepth)} fill="var(--text-on-brand)" stroke="var(--text-on-brand)" strokeWidth="1.2" vectorEffect="non-scaling-stroke" opacity="0" />
+        </>
+      )}
       <path className="petri-prop-line" data-flat="" style={{ '--prop-fill': 'var(--bg-figure-plate)' }} d={FLASK} fill="var(--bg-figure-plate)" stroke="var(--text-on-brand)" />
       <path d="M116.1 55H135.9L140 64a3 3 0 0 1-2.7 4.3H114.7A3 3 0 0 1 112 64Z" fill={`url(#${liquid})`} stroke="none" />
       <path d="M116.1 55H135.9" stroke="var(--text-on-brand)" strokeWidth="1.6" />

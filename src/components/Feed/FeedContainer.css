@@ -409,6 +409,25 @@
   margin: 0;
 }
 
+/* The face parts the veil's exit scales (VeilPetri.tsx), each around its own
+   box: the eyes blink about their middle, the happy arcs grow up from their
+   base and the smile opens down from the lip line. */
+.feed-empty--veil .petri-face-eyes,
+.feed-empty--veil .petri-face-o,
+.feed-empty--veil .petri-face-happy-eyes,
+.feed-empty--veil .petri-face-smile {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+
+.feed-empty--veil .petri-face-happy-eyes {
+  transform-origin: 50% 100%;
+}
+
+.feed-empty--veil .petri-face-smile {
+  transform-origin: 50% 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .feed-empty {
     animation: none;

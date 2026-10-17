@@ -48,12 +48,14 @@ import {
   windowReachingReader,
 } from '../../utils/feedMountWindow.ts';
 import Petri from '../Onboarding/Petri.tsx';
+import VeilPetri from './VeilPetri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feedLoadingState.ts';
 import { createFeedResumeMemory } from '../../utils/feedResumeMemory.ts';
 import { SKIP_EXIT_MS, skipExitSlot } from '../../utils/feedSkipExit.ts';
 import './FeedContainer.css';
-import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motionCurves.ts';
+import { EASE_OUT } from '../../utils/motionCurves.ts';
+import { SMILE_EXIT } from '../../utils/petriSmileExit.ts';
 
 // Per-surface memory of the card each feed was left on: the Siguiendo feed
 // shares this container with For You and must not clobber its place. The
@@ -172,33 +174,29 @@ const SCROLL_INTERACTION_SETTLE_MS = 220;
 // una pantalla sin papers sigue siendo la página y necesita su landmark y su
 // encabezado igual que la que los tiene.
 /**
- * How the atom gives way to the paper.
+ * How the loading veil gives way to the paper.
  *
- * The atom screen and the feed were two return branches of this component,
- * so React swapped one for the other in a single frame: the atom, then a
- * paper composing in, with nothing between. The screen is now a veil laid
- * over the same container the cards mount into, and it leaves as the first
- * card composes: the ground fades over 0.42 s while the atom shrinks and
- * rises out of the way and the copy settles, on the curve everything on the
- * card arrives with. Labels rather than objects on the children: inside a
- * variant tree a child animates on the parent's label, not on an object of
- * its own, so the atom's `gone` plays the frame the veil's does.
+ * The veil is laid over the same container the cards mount into, so the
+ * cards compose under it while it leaves. Petri smiles and the camera flies
+ * into her smile, through which the feed shows (VeilPetri.tsx); the veil
+ * itself does not fade, it is removed the frame the mouth covers it. The copy
+ * settles out of the way as she smiles. Labels rather than objects on the
+ * children: inside a variant tree a child animates on the parent's label, not
+ * on an object of its own, so the copy's `gone` plays the frame the veil's
+ * does.
  */
 const ATOM_VEIL_VARIANTS: Variants = {
   shown: { opacity: 1 },
-  gone: { opacity: 0, transition: { duration: 0.42, ease: EASE_OUT_EXPO } },
-};
-const ATOM_VARIANTS = {
-  shown: { opacity: 1, transform: 'translateY(0px) scale(1)' },
-  gone: { opacity: 0, transform: 'translateY(-16px) scale(0.62)', transition: { duration: 0.36, ease: EASE_OUT_EXPO } },
+  gone: { opacity: 1 },
 };
 const ATOM_COPY_VARIANTS = {
   shown: { opacity: 1, transform: 'translateY(0px)' },
   gone: { opacity: 0, transform: 'translateY(6px)', transition: { duration: 0.24, ease: EASE_OUT } },
 };
+// Reduced motion: Petri smiles in place, and the veil fades once she has.
 const ATOM_VEIL_REDUCED_VARIANTS = {
   shown: { opacity: 1 },
-  gone: { opacity: 0, transition: { duration: 0.12 } },
+  gone: { opacity: 0, transition: { delay: SMILE_EXIT.reducedHoldMs / 1000, duration: 0.12 } },
 };
 
 // `className` porque los estados vacíos NO son `.feed-wrapper`: son
@@ -1078,9 +1076,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
             animate="shown"
             exit="gone"
           >
-            <motion.div className="atom-loader" aria-hidden="true" variants={prefersReducedMotion ? undefined : ATOM_VARIANTS}>
-              <Petri pose="flask" className="petri-loader" />
-            </motion.div>
+            <VeilPetri feedRef={feedRef} />
             <motion.div className="feed-empty-copy" variants={prefersReducedMotion ? undefined : ATOM_COPY_VARIANTS}>
               <h2>
                 {atomVeil === 'gathering'

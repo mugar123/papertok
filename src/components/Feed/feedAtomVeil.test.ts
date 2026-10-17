@@ -21,17 +21,23 @@ test('the atom screen is a veil over the feed, inside the same landmark as the c
   assert.doesNotMatch(jsx, /className="feed-empty feed-empty--initial-loading"/);
 });
 
-test('the veil recedes: the ground fades, the atom shrinks and rises, the copy settles', async () => {
+test('the veil leaves through Petri\'s smile, and fades only with reduced motion', async () => {
   const jsx = await read('./FeedContainer.tsx');
-  assert.match(jsx, /const ATOM_VEIL_VARIANTS: Variants = \{[\s\S]*?gone: \{ opacity: 0, transition: \{ duration: 0\.42, ease: EASE_OUT_EXPO \} \}/);
-  assert.match(jsx, /const ATOM_VARIANTS = \{[\s\S]*?gone: \{ opacity: 0, transform: 'translateY\(-16px\) scale\(0\.62\)', transition: \{ duration: 0\.36, ease: EASE_OUT_EXPO \} \}/);
+  // The ground does not fade: VeilPetri removes the veil when the mouth covers it.
+  assert.match(jsx, /const ATOM_VEIL_VARIANTS: Variants = \{\s*shown: \{ opacity: 1 \},\s*gone: \{ opacity: 1 \},\s*\}/);
   assert.match(jsx, /const ATOM_COPY_VARIANTS = \{[\s\S]*?gone: \{ opacity: 0, transform: 'translateY\(6px\)', transition: \{ duration: 0\.24, ease: EASE_OUT \} \}/);
-  assert.match(jsx, /const ATOM_VEIL_REDUCED_VARIANTS = \{[\s\S]*?gone: \{ opacity: 0, transition: \{ duration: 0\.12 \} \}/);
-  // Labels, not objects: the atom and the copy are children of the veil's
-  // variant tree, and their `gone` plays when the veil's does.
-  assert.match(jsx, /initial=\{false\}\s+animate="shown"\s+exit="gone"/);
-  assert.match(jsx, /<motion\.div className="atom-loader" aria-hidden="true" variants=\{prefersReducedMotion \? undefined : ATOM_VARIANTS\}>/);
+  // Reduced motion: she smiles in place, then the veil fades.
+  assert.match(jsx, /const ATOM_VEIL_REDUCED_VARIANTS = \{[\s\S]*?gone: \{ opacity: 0, transition: \{ delay: SMILE_EXIT\.reducedHoldMs \/ 1000, duration: 0\.12 \} \}/);
+  // Labels, not objects: the copy is a child of the veil's variant tree.
+  assert.match(jsx, /initial=\{false\}\s+animate="shown"\s+exit="gone"\s*>\s*<VeilPetri feedRef=\{feedRef\} \/>/);
   assert.match(jsx, /<motion\.div className="feed-empty-copy" variants=\{prefersReducedMotion \? undefined : ATOM_COPY_VARIANTS\}>/);
+
+  const petri = await read('./VeilPetri.tsx');
+  // The exit holds the veil until it has run.
+  assert.match(petri, /usePresence\(\)/);
+  // Run once per exit: the feed re-renders while it plays, handing out a new
+  // `safeToRemove` each time, and an effect keyed on it restarted the exit.
+  assert.match(petri, /\}, \[isPresent, reduceMotion, feedRef\]\);/);
 });
 
 test('the veil sits over the container and lets framer own its opacity', async () => {
