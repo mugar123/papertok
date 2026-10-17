@@ -66,9 +66,9 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
     setStep('signingIn');
     setError('');
     try {
-      await reauthenticateCurrentUser();
+      const confirmedUid = await reauthenticateCurrentUser();
       setStep('deleting');
-      await deleteAccount();
+      await deleteAccount(confirmedUid);
       await onDeleted();
     } catch (err) {
       setError(getUiErrorMessage(err, 'ACCOUNT_DELETION_FAILED'));

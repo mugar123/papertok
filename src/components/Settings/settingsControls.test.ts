@@ -35,6 +35,11 @@ test('deleting an account signs the person in again from the click, before anyth
   const handler = jsx.match(/const handleDelete = async \(\) => \{([\s\S]*?)\n {2}\};/)?.[1] ?? '';
   const awaited = [...handler.matchAll(/await (\w+)\(/g)].map(match => match[1]);
   assert.deepEqual(awaited.slice(0, 2), ['reauthenticateCurrentUser', 'deleteAccount']);
+  // The account deleted is the one that signed in again, not whoever holds the
+  // session when the window closes.
+  const confirmedUid = handler.match(/const (\w+) = await reauthenticateCurrentUser\(\)/)?.[1];
+  assert.ok(confirmedUid, 'the sign-in result is kept');
+  assert.match(handler, new RegExp(`await deleteAccount\\(${confirmedUid}\\)`));
 });
 
 test('the interests editor is a modal Dialog with a named close and pressed chips', async () => {
