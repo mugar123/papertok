@@ -14,13 +14,13 @@ test('a paper goes to the public paper page, never to the entity explorer', () =
 
 test('the path carries a key the public page can decode back', () => {
   const { path } = searchPaperDestination({ doi: 'https://doi.org/10.1038/nature12373' });
-  const key = decodeURIComponent(path.split('/').pop());
+  const key = decodeURIComponent(path.split('/').pop()!);
   assert.equal(decodePaperKey(key), 'doi:10.1038/nature12373');
 });
 
 test('an arXiv preprint with no DOI still has an address', () => {
   const { path } = searchPaperDestination({ arxivId: '2401.00001' });
-  const key = decodeURIComponent(path.split('/').pop());
+  const key = decodeURIComponent(path.split('/').pop()!);
   assert.equal(decodePaperKey(key), 'arxiv:2401.00001');
 });
 
@@ -29,7 +29,7 @@ test('the paper rides along so the page paints before the network answers', () =
   // own fetch as an upgrade. The palette already holds the whole paper.
   const paper = { doi: '10.1038/nature12373', title: 'A paper' };
   const { state } = searchPaperDestination(paper);
-  assert.equal(state.paper, paper);
+  assert.equal(state!.paper, paper);
 });
 
 test('a paper with no DOI and no arXiv id falls back to the search page, not to a dead link', () => {
@@ -45,6 +45,6 @@ test('the fallback uses the title when there is no query to carry', () => {
 
 test('a paper with nothing at all still lands on a real route', () => {
   for (const input of [null, undefined, {}, { title: '   ' }]) {
-    assert.equal(searchPaperDestination(input).path, '/search');
+    assert.equal(searchPaperDestination(input!).path, '/search');
   }
 });

@@ -21,7 +21,7 @@ interface QueuedRequest {
 }
 interface ClientOptions {
   fetchImpl?: typeof fetch;
-  storage?: Storage | null;
+  storage?: Pick<Storage, 'getItem' | 'setItem'> | null;
   now?: () => number;
   sleep?: (delayMs: number) => PromiseLike<unknown>;
   random?: () => number;
@@ -209,7 +209,7 @@ export function identifyOpenAlexUrl(rawUrl: string | URL, mailto = DEFAULT_MAILT
 
 export class OpenAlexClient {
   declare fetchImpl: typeof fetch | undefined;
-  declare storage: Storage | null;
+  declare storage: Pick<Storage, 'getItem' | 'setItem'> | null;
   declare now: () => number;
   declare sleep: (delayMs: number) => PromiseLike<unknown>;
   declare random: () => number;

@@ -16,12 +16,12 @@ import { readFile } from 'node:fs/promises';
  * vive en utils/entityExplorer.js y se prueba allí.
  */
 
-const stripComments = source => source
+const stripComments = (source: string) => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
   .replace(/^\s*\/\/.*$/gm, '');
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8').then(stripComments);
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8').then(stripComments);
 const explorerJsx = read('./EntityExplorer.tsx');
 const gateJsx = read('./ExplorerGuestGate.tsx');
 const gateCss = read('./ExplorerGuestGate.css');

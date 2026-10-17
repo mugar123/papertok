@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
 
 /** Comments are prose, not code: a decoy comment must never satisfy a test. */
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 /**
  * SOURCE tests for the authors sheet on a phone, which is the path to every
@@ -67,7 +67,7 @@ test('reduced motion drops the leaving pose\'s movement along with the drawer\'s
   assert.match(block, /\.pc-authors-modal-sheet\.is-leaving\[data-ending-style\] \{\s*transition: none;\s*transform: none;/);
 });
 
-function drawerExit(css) {
+function drawerExit(css: string) {
   const rule = css.match(/\.ui-drawer-popup\[data-starting-style\],\s*\.ui-drawer-popup\[data-ending-style\]\s*\{([^}]*)\}/);
   return rule ? rule[1] : '';
 }

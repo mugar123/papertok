@@ -45,7 +45,7 @@ test('an id that cannot be a document id never reaches a batch', () => {
   assert.equal(isFetchableDocumentId('.'), false);
   assert.equal(isFetchableDocumentId('..'), false);
   assert.equal(isFetchableDocumentId('__name__'), false);
-  assert.equal(isFetchableDocumentId(null), false);
+  assert.equal(isFetchableDocumentId(null!), false);
   assert.equal(isFetchableDocumentId(undefined), false);
   assert.equal(isFetchableDocumentId('x'.repeat(1501)), false);
   assert.equal(isFetchableDocumentId('x'.repeat(1500)), true);
@@ -108,7 +108,7 @@ test('nothing to ask for produces no requests at all', () => {
  * banner as though it had worked.
  */
 test('a retry is a fresh plan over what is still missing, or it is empty', () => {
-  const failedRequests = [
+  const failedRequests: NonNullable<Parameters<typeof planRetryRequests>[0]>['failedRequests'] = [
     { source: 'saved', paperIds: ['a', 'b', 'c'] },
     { source: 'saved', paperIds: ['d'] },
   ];
@@ -129,7 +129,7 @@ test('a retry is a fresh plan over what is still missing, or it is empty', () =>
 test('a retry rebatches rather than reissuing the shape that failed', () => {
   // A single stored request holding more than the cap — the shape that fails
   // identically however many times it is retried.
-  const overCap = [{ source: 'interaction', paperIds: Array.from({ length: 45 }, (_, i) => `id${i}`) }];
+  const overCap: NonNullable<Parameters<typeof planRetryRequests>[0]>['failedRequests'] = [{ source: 'interaction', paperIds: Array.from({ length: 45 }, (_, i) => `id${i}`) }];
   const missingIds = overCap[0].paperIds;
   const { requests } = planRetryRequests({ failedRequests: overCap, missingIds });
 
@@ -155,7 +155,7 @@ test('planLibraryBatches keeps a legacy arXiv id out of every batch', async () =
 test('planLibraryBatches has nothing to ask for when every id is illegal', async () => {
   const { planLibraryBatches } = await import('./listPaperMetadataPlan.ts');
   assert.deepEqual(planLibraryBatches(['hep-th/0603001'], 30), { batches: [], unfetchable: ['hep-th/0603001'] });
-  assert.deepEqual(planLibraryBatches(undefined, 30), { batches: [], unfetchable: [] });
+  assert.deepEqual(planLibraryBatches(undefined!, 30), { batches: [], unfetchable: [] });
 });
 
 // One liked paper with a pre-2007 arXiv id (`hep-th/0603001`) used to reject

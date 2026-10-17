@@ -21,7 +21,9 @@ const AREA_BY_CATEGORY = new Map(Object.entries(CATEGORIES)
   .flatMap(([areaKey, area]) => Object.keys(area.subcategories || {}).map(categoryId => [categoryId, areaKey] as const)));
 
 /** The taxonomy area a paper belongs to, from its category ids; `null` if none is ours. */
-export function areaOfPaper(paper: Partial<Paper> | null | undefined) {
+type CompositionPaper = Omit<Partial<Paper>, 'sources'> & { sources?: Partial<Paper['sources']> };
+
+export function areaOfPaper(paper: CompositionPaper | null | undefined) {
   if (!paper) return null;
   for (const value of [paper.primaryCategory, ...(paper.categories || [])]) {
     if (typeof value !== 'string') continue;
@@ -32,9 +34,9 @@ export function areaOfPaper(paper: Partial<Paper> | null | undefined) {
   return null;
 }
 
-const keyOf = (paper: Partial<Paper> | null | undefined) => String(paper?.doi || paper?.arxivId || paper?.id || '').toLowerCase();
+const keyOf = (paper: CompositionPaper | null | undefined) => String(paper?.doi || paper?.arxivId || paper?.id || '').toLowerCase();
 
-function uniqueByKey<T extends Partial<Paper>>(papers: T[]) {
+function uniqueByKey<T extends CompositionPaper>(papers: T[]) {
   const seen = new Set<string>();
   return papers.filter((paper) => {
     const key = keyOf(paper);
@@ -68,7 +70,7 @@ function groupInOrder<T>(papers: T[], keyFn: (paper: T) => string) {
 
 // Within one area: sources take turns, and inside a source its subcategories
 // do, so neither a fast source nor a busy subcategory fills the area's share.
-function orderWithinArea<T extends Partial<Paper>>(papers: T[]) {
+function orderWithinArea<T extends CompositionPaper>(papers: T[]) {
   const bySource = groupInOrder(papers, paper => paper?.sources?.primary || paper?.provider || '');
   return interleave(bySource.map(list => interleave(groupInOrder(list, paper => paper?.primaryCategory || ''))));
 }
@@ -97,7 +99,7 @@ function deal<T>(pools: Record<string, T[]>, areas: string[], limits: Record<str
   return picked;
 }
 
-function poolsFor<T extends Partial<Paper>>(candidates: T[], areas: string[], excludedKeys: Set<string>) {
+function poolsFor<T extends CompositionPaper>(candidates: T[], areas: string[], excludedKeys: Set<string>) {
   const pools = Object.fromEntries<T[]>(areas.map(area => [area, []]));
   const spill = [];
   for (const paper of uniqueByKey(candidates)) {
@@ -116,7 +118,7 @@ function poolsFor<T extends Partial<Paper>>(candidates: T[], areas: string[], ex
  * which `extendGuestPage` fills when it does. With no chosen areas the page is
  * the sources' own order, as before.
  */
-export function composeGuestPage<T extends Partial<Paper>>(candidates: T[], plan: AreaPlan | null | undefined, pageSize: number) {
+export function composeGuestPage<T extends CompositionPaper>(candidates: T[], plan: AreaPlan | null | undefined, pageSize: number) {
   const areas = plan?.areas || [];
   if (areas.length === 0) return uniqueByKey(candidates).slice(0, pageSize);
   const { pools } = poolsFor(candidates, areas, new Set<string>());
@@ -130,7 +132,7 @@ export function composeGuestPage<T extends Partial<Paper>>(candidates: T[], plan
  * share, then to whichever areas have papers left, and only then to papers
  * from areas nobody chose.
  */
-export function extendGuestPage<T extends Partial<Paper>>(shown: T[], candidates: T[], plan: AreaPlan | null | undefined, pageSize: number) {
+export function extendGuestPage<T extends CompositionPaper>(shown: T[], candidates: T[], plan: AreaPlan | null | undefined, pageSize: number) {
   const current = Array.isArray(shown) ? shown.slice(0, pageSize) : [];
   const areas = plan?.areas || [];
   const shownKeys = new Set(current.map(keyOf).filter(Boolean));
@@ -154,7 +156,7 @@ export function extendGuestPage<T extends Partial<Paper>>(shown: T[], candidates
  * chosen areas, four papers, as before. The caller's per-source budget still
  * bounds the wait when an area never answers.
  */
-export function guestPageReady(papers: Partial<Paper>[], plan: AreaPlan | null | undefined, pageSize: number) {
+export function guestPageReady(papers: CompositionPaper[], plan: AreaPlan | null | undefined, pageSize: number) {
   const areas = plan?.areas || [];
   if (areas.length === 0) return papers.length >= 4;
   const needed = Math.min(2, quotaFor(plan, pageSize));

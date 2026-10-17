@@ -6,14 +6,14 @@ import scopusProxy, { createScopusProxy } from './scopus-proxy.ts';
 const SECRET = 'a'.repeat(48);
 const ENV = { PROXY_SHARED_SECRET: SECRET, ELSEVIER_API_KEY: 'test-key' };
 
-function request(path, { secret = SECRET, method = 'GET' } = {}) {
+function request(path: string, { secret = SECRET, method = 'GET' } = {}) {
   return new Request(`https://scopus-proxy.example${path}`, {
     method,
     headers: secret ? { authorization: `Bearer ${secret}` } : {},
   });
 }
 
-async function withUpstream(implementation, callback) {
+async function withUpstream<T>(implementation: typeof fetch, callback: () => T): Promise<Awaited<T>> {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = implementation;
   try {
@@ -106,17 +106,17 @@ test('rejects an empty or oversized query before spending an upstream call', asy
 });
 
 test('sends the Elsevier credentials and never echoes them back', async () => {
-  let sentHeaders = null;
+  let sentHeaders: Record<string, string> | null = null;
   const response = await withUpstream(async (url, options) => {
-    sentHeaders = options.headers;
+    sentHeaders = options!.headers as Record<string, string>;
     return new Response('{"search-results":{}}', {
       status: 200,
       headers: { 'X-RateLimit-Remaining': '19998', 'X-ELS-ReqId': 'req-7', 'set-cookie': 'session=leak' },
     });
   }, () => createScopusProxy({ ...ENV, ELSEVIER_INST_TOKEN: 'inst-token' })(request('/scopus?query=test')));
 
-  assert.equal(sentHeaders['X-ELS-APIKey'], 'test-key');
-  assert.equal(sentHeaders['X-ELS-Insttoken'], 'inst-token');
+  assert.equal((sentHeaders as Record<string, string> | null)!['X-ELS-APIKey'], 'test-key');
+  assert.equal((sentHeaders as Record<string, string> | null)!['X-ELS-Insttoken'], 'inst-token');
 
   const body = await response.text();
   assert.equal(body, '{"search-results":{}}');
@@ -173,7 +173,7 @@ test('gives the Elsevier call a deadline that covers the body as well', async ()
   // deadline here the chain hangs link by link, and the Worker's own deadline
   // only ever cuts its half of it.
   assert.ok(seenSignal, 'the Elsevier fetch carries no AbortSignal');
-  assert.equal(seenSignal.aborted, false);
+  assert.equal((seenSignal as AbortSignal).aborted, false);
 });
 
 test('answers a stalled Elsevier with a status the Worker can read', async () => {
@@ -204,7 +204,7 @@ test('compares the shared secret without letting its length leak through timing'
     return originalDigest.call(crypto.subtle, algorithm, data);
   };
   try {
-    const refuse = secret => withUpstream(async () => {
+    const refuse = (secret: string) => withUpstream(async () => {
       throw new Error('No upstream request should be made');
     }, () => createScopusProxy(ENV)(request('/scopus?query=test', { secret })));
 

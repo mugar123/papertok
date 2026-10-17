@@ -64,7 +64,7 @@ test('both files spell the same two patterns', async () => {
     readFile(new URL('./paperFigureService.ts', import.meta.url), 'utf8'),
     readFile(new URL('../../worker/paper-figures.ts', import.meta.url), 'utf8'),
   ]);
-  const patterns = (source) => (source.match(/\/\^[^\n]*?\$\//g) || [])
+  const patterns = (source: string) => (source.match(/\/\^[^\n]*?\$\//g) || [])
     .map(value => value.trim())
     .sort();
 
@@ -104,7 +104,7 @@ test('peekPaperFigures answers null for anything the cache has not seen', () => 
 
 test('peekPaperFigures answers in the same tick, not in a promise', () => {
   const answer = peekPaperFigures({ arxivId: '2401.12345' });
-  assert.notEqual(typeof answer?.then, 'function', 'a thenable would put the answer a frame away');
+  assert.notEqual(typeof (answer as { then?: unknown } | null)?.then, 'function', 'a thenable would put the answer a frame away');
 });
 
 test('peekPaperFigures reads the same cache getPaperFigures writes, with no waiting', async () => {

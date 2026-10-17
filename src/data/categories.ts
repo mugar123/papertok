@@ -24,7 +24,7 @@ import {
 } from '@phosphor-icons/react';
 import { CATEGORIES as AREAS } from './categoryTaxonomy.ts';
 
-const AREA_ICONS = {
+const AREA_ICONS: Record<string, typeof Atom> = {
   physics: Atom,
   cs: Monitor,
   math: Calculator,

@@ -1,11 +1,12 @@
+import type { PaperAuthor } from '../models/Paper.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { hydrateSeededPaper, hydratedAbstract, hydratedAuthors, seedPaintsWhole } from './paperSeed.ts';
 import { LEGACY_STORED_SUMMARY_CAP, STORED_AUTHOR_CAP, STORED_SUMMARY_CAP } from './readingLibrary.ts';
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 test('a handed-over copy paints only when it carries a title and a real abstract', () => {
   assert.equal(seedPaintsWhole({ title: 'T', abstract: 'Despite growing interest in open access…' }), true);
@@ -65,8 +66,8 @@ const provider = {
   authors: [{ name: 'Sieu D. Ha', id: 'https://openalex.org/A1' }, { name: 'Jian Shi' }, { name: 'Yasmine Meroz' }],
   abstract: 'A crucial feature of biological neural architectures is their ability to learn, and unlearn.',
   categories: ['Electronic circuit', 'Feature (linguistics)'],
-  concepts: [{ display_name: 'Electronic circuit' }],
-  primaryTopic: { field: { display_name: 'Electrical & Electronic Engineering' } },
+  concepts: [({ display_name: 'Electronic circuit' } as import('../models/Paper.ts').PaperSubject & Record<string, unknown>)],
+  primaryTopic: ({ field: { display_name: 'Electrical & Electronic Engineering' } } as import('../models/Paper.ts').PaperSubject),
   doi: 'https://doi.org/10.1103/physrevapplied.2.064003',
   year: 2014,
   published: '2014-12-01',
@@ -80,31 +81,31 @@ const provider = {
 
 test('the hydrated paper is the provider\'s, keyed and filed as the copy was', () => {
   const paper = hydrateSeededPaper(seed, provider);
-  assert.equal(paper.id, 'openalex:W77', 'the id the read mark and the like are keyed by');
-  assert.equal(paper.primaryCategory, 'cond-mat.str-el', 'the branch the feed filed it under');
-  assert.deepEqual(paper.categories, ['cond-mat.str-el', 'cs.ET', 'q-bio.NC']);
-  assert.deepEqual(paper.authors.map((a) => a.name), ['Ha, Sieu D.', 'Shi, Jian', 'Meroz, Yasmine'], 'as the reader saw them');
-  assert.equal(paper.abstract, seed.abstract, 'the text the reader read in the feed');
-  assert.equal(paper.title, seed.title);
-  assert.equal(paper.doi, seed.doi);
-  assert.equal(paper.journal, 'Physical Review Applied');
-  assert.equal(paper.citationCount, 58, 'what the copy never carried comes from the provider');
-  assert.equal(paper.openAccess, true);
-  assert.equal(paper.pdfUrl, provider.pdfUrl, 'a link the copy lacked is filled in');
-  assert.deepEqual(paper.institutions, provider.institutions);
-  assert.deepEqual(paper.concepts, provider.concepts);
-  assert.equal(paper.published, '2014-12-01', 'the date is taken fresh');
-  assert.equal(paper.sources.primary, 'openalex');
+  assert.equal(paper!.id, 'openalex:W77', 'the id the read mark and the like are keyed by');
+  assert.equal(paper!.primaryCategory, 'cond-mat.str-el', 'the branch the feed filed it under');
+  assert.deepEqual(paper!.categories, ['cond-mat.str-el', 'cs.ET', 'q-bio.NC']);
+  assert.deepEqual(paper!.authors!.map((a) => (a as PaperAuthor).name), ['Ha, Sieu D.', 'Shi, Jian', 'Meroz, Yasmine'], 'as the reader saw them');
+  assert.equal(paper!.abstract, seed.abstract, 'the text the reader read in the feed');
+  assert.equal(paper!.title, seed.title);
+  assert.equal(paper!.doi, seed.doi);
+  assert.equal(paper!.journal, 'Physical Review Applied');
+  assert.equal(paper!.citationCount, 58, 'what the copy never carried comes from the provider');
+  assert.equal(paper!.openAccess, true);
+  assert.equal(paper!.pdfUrl, provider.pdfUrl, 'a link the copy lacked is filled in');
+  assert.deepEqual(paper!.institutions, provider.institutions);
+  assert.deepEqual(paper!.concepts, provider.concepts);
+  assert.equal(paper!.published, '2014-12-01', 'the date is taken fresh');
+  assert.equal(paper!.sources!.primary, 'openalex');
 });
 
 test('the copy only lays over the provider where it speaks', () => {
   const thin = { id: 'arxiv:2401.12345', title: 'T', authors: [], abstract: 'No abstract available.', categories: [] };
   const paper = hydrateSeededPaper(thin, provider);
-  assert.equal(paper.id, 'arxiv:2401.12345');
-  assert.deepEqual(paper.authors, provider.authors);
-  assert.equal(paper.abstract, provider.abstract, 'the placeholder is not an abstract');
-  assert.deepEqual(paper.categories, provider.categories);
-  assert.equal(paper.primaryCategory, undefined);
+  assert.equal(paper!.id, 'arxiv:2401.12345');
+  assert.deepEqual(paper!.authors, provider.authors);
+  assert.equal(paper!.abstract, provider.abstract, 'the placeholder is not an abstract');
+  assert.deepEqual(paper!.categories, provider.categories);
+  assert.equal(paper!.primaryCategory, undefined);
   assert.equal(hydrateSeededPaper(null, provider), provider);
   assert.equal(hydrateSeededPaper(seed, null), seed, 'no answer: the copy is the paper, as before');
 });

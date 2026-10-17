@@ -33,7 +33,7 @@ const SHARED_ON_PURPOSE = new Map([
 
 const COLOUR = /#[0-9a-f]{3,8}\b|rgba?\(/i;
 
-function tokensIn(css, blockStart) {
+function tokensIn(css: string, blockStart: string) {
   const start = css.indexOf(blockStart);
   assert.notEqual(start, -1, `expected to find the ${blockStart} block`);
   const end = css.indexOf('\n}', start);

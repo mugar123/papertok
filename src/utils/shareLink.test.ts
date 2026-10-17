@@ -8,7 +8,7 @@ import { paperShareData, shareOrCopyLink } from './shareLink.ts';
 const URL_UNDER_TEST = 'https://example.test/public/list/abc';
 
 test('prefers the native sheet and never touches the clipboard when it works', async () => {
-  const calls = [];
+  const calls: unknown[] = [];
   const outcome = await shareOrCopyLink({
     url: URL_UNDER_TEST,
     title: 'Reading list',
@@ -22,7 +22,7 @@ test('prefers the native sheet and never touches the clipboard when it works', a
 test('a dismissed sheet is not an error and does not copy behind the user', async () => {
   // Closing the share sheet means "never mind" — silently copying anyway
   // would put the link on the clipboard against an explicit decision.
-  const calls = [];
+  const calls: unknown[] = [];
   const outcome = await shareOrCopyLink({
     url: URL_UNDER_TEST,
     share: async () => { throw Object.assign(new Error('cancelled'), { name: 'AbortError' }); },
@@ -35,7 +35,7 @@ test('a dismissed sheet is not an error and does not copy behind the user', asyn
 test('falls back to the clipboard when the sheet refuses', async () => {
   // Transient activation expires while a publish request is awaited, and the
   // sheet then throws NotAllowedError; the link must still leave the app.
-  const copied = [];
+  const copied: unknown[] = [];
   const outcome = await shareOrCopyLink({
     url: URL_UNDER_TEST,
     share: async () => { throw Object.assign(new Error('no activation'), { name: 'NotAllowedError' }); },
@@ -46,7 +46,7 @@ test('falls back to the clipboard when the sheet refuses', async () => {
 });
 
 test('copies directly when there is no native sheet', async () => {
-  const copied = [];
+  const copied: unknown[] = [];
   const outcome = await shareOrCopyLink({
     url: URL_UNDER_TEST,
     share: null,
@@ -68,7 +68,7 @@ test('a clipboard failure propagates to the caller that knows how to render it',
 });
 
 test('requires the copy fallback up front', async () => {
-  await assert.rejects(shareOrCopyLink({ url: URL_UNDER_TEST, share: null }), TypeError);
+  await assert.rejects(shareOrCopyLink({ url: URL_UNDER_TEST, share: null } as Parameters<typeof shareOrCopyLink>[0]), TypeError);
 });
 
 // A shared paper used to leave as `{ title, url }`, and most share targets
@@ -88,7 +88,7 @@ test('a paper leaves with its title as plain text, for the target to print besid
 });
 
 test('the text reaches the native sheet with the title and the link', async () => {
-  const calls = [];
+  const calls: unknown[] = [];
   await shareOrCopyLink({
     url: URL_UNDER_TEST,
     title: 'Attention Is All You Need',

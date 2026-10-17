@@ -13,14 +13,14 @@ test('the SPA rewrite never answers a missing chunk with the app document', asyn
   // rule sharing this destination has existed before (the `/feed` one, while
   // the app lived at app.html), and destination-only lookup would silently
   // grab that one instead of the catch-all this test means.
-  const spa = config.rewrites.find(rule => rule.source.startsWith('/:path('));
+  const spa = config.rewrites.find((rule: { source: string; }) => rule.source.startsWith('/:path('));
   assert.ok(spa, 'the SPA rewrite is gone');
   assert.equal(spa.destination, '/index.html');
   // Vercel compiles `/:path(<pattern>)` with path-to-regexp; the custom
   // pattern inside the parentheses is a plain regex, which is what this runs.
   const pattern = spa.source.match(/^\/:path\((.+)\)$/)?.[1];
   assert.ok(pattern, `unexpected rewrite source ${spa.source}`);
-  const matches = value => new RegExp(`^${pattern}$`).test(value);
+  const matches = (value: string) => new RegExp(`^${pattern}$`).test(value);
   assert.ok(matches('lists'));
   assert.ok(matches('public/paper/10.1234%2Fabc'));
   assert.ok(!matches('_vercel/insights/script.js'));
@@ -37,7 +37,7 @@ test('the SPA rewrite never answers a missing chunk with the app document', asyn
 
 test('sign-in redirects to our own domain, and its handler reaches Firebase', async () => {
   const config = JSON.parse(await readFile(VERCEL, 'utf8'));
-  const proxy = config.rewrites.find(rule => rule.source.startsWith('/__/auth/'));
+  const proxy = config.rewrites.find((rule: { source: string; }) => rule.source.startsWith('/__/auth/'));
   assert.ok(proxy, 'the auth handler proxy is gone');
   assert.equal(proxy.source, '/__/auth/:path*');
   // `handler` pulls `handler.js` and `experiments.js` as relative paths, so the
@@ -50,7 +50,7 @@ test('sign-in redirects to our own domain, and its handler reaches Firebase', as
   // rule would never run, and the exclusion above would be the only guard.
   // Matched by source, not destination: a rule sharing the SPA catch-all's
   // own destination has sat before it before, and would be found first.
-  const spa = config.rewrites.findIndex(rule => rule.source.startsWith('/:path('));
+  const spa = config.rewrites.findIndex((rule: { source: string; }) => rule.source.startsWith('/:path('));
   assert.ok(
     config.rewrites.indexOf(proxy) < spa,
     'the proxy must come before the SPA rewrite',
@@ -77,10 +77,10 @@ test('analytics leaves through our own domain and reaches PostHog\'s EU host', a
 
   // Renaming either side alone sends every event to a 404, and nothing in the
   // app would notice: PostHog's requests fail silently.
-  const proxy = config.rewrites.find(rule => rule.source === `${apiHost}/:path(.*)`);
+  const proxy = config.rewrites.find((rule: { source: string; }) => rule.source === `${apiHost}/:path(.*)`);
   assert.ok(proxy, `no rewrite forwards ${apiHost}/* to PostHog`);
   assert.equal(proxy.destination, 'https://eu.i.posthog.com/:path');
-  const spa = config.rewrites.findIndex(rule => rule.source.startsWith('/:path('));
+  const spa = config.rewrites.findIndex((rule: { source: string; }) => rule.source.startsWith('/:path('));
   assert.ok(config.rewrites.indexOf(proxy) < spa, 'the proxy must come before the SPA rewrite');
 });
 

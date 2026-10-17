@@ -15,12 +15,12 @@ function node(scrollTop = 0) {
  */
 function clock() {
   let time = 0;
-  const queue = [];
+  const queue: (() => void)[] = [];
   return {
     now: () => time,
-    raf: (callback) => queue.push(callback),
+    raf: (callback: () => void) => queue.push(callback),
     cancelRaf: () => {},
-    advance(ms) {
+    advance(ms: number) {
       time += ms;
       const pending = queue.splice(0, queue.length);
       pending.forEach(callback => callback());
@@ -77,7 +77,7 @@ test('reduced motion gets the destination and no frames at all', () => {
   tweenScrollTop(element, 0, {
     immediate: true,
     now: timer.now,
-    raf: (callback) => { framesAsked += 1; return timer.raf(callback); },
+    raf: (callback: () => void) => { framesAsked += 1; return timer.raf(callback); },
     cancelRaf: timer.cancelRaf,
   });
 
@@ -104,7 +104,7 @@ test('a scroll that is already there does not schedule a frame', () => {
   let framesAsked = 0;
   tweenScrollTop(element, 0, {
     now: timer.now,
-    raf: (callback) => { framesAsked += 1; return timer.raf(callback); },
+    raf: (callback: () => void) => { framesAsked += 1; return timer.raf(callback); },
     cancelRaf: timer.cancelRaf,
   });
   assert.equal(framesAsked, 0);

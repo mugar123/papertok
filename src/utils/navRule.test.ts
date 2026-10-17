@@ -10,7 +10,7 @@ test('the rule is translated to the label and scaled to its width', () => {
 });
 
 test('nothing to mark yields no transform', () => {
-  assert.equal(ruleTransform(null, 0, 10), '');
+  assert.equal(ruleTransform(null!, 0, 10), '');
   assert.equal(ruleTransform({ left: 0, width: 10 }, 0, 10), '', 'a label narrower than its insets');
   assert.equal(ruleTransform({ left: NaN, width: 10 }, 0, 0), '');
 });
@@ -18,7 +18,7 @@ test('nothing to mark yields no transform', () => {
 test('SOURCE: the navbar rule is one compositor-driven element, not a framer layoutId', async () => {
   // Comments are prose, not code: the hook's own comment explains the
   // `layoutId` it replaced, so only real code is scanned for it.
-  const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+  const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   const jsx = stripComments(await readFile(new URL('../components/Layout/Navbar.tsx', import.meta.url), 'utf8'));
   const css = await readFile(new URL('../components/Layout/Navbar.css', import.meta.url), 'utf8');
   assert.doesNotMatch(jsx, /layoutId/, 'a JS-driven layout animation freezes with the main thread');

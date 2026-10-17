@@ -25,7 +25,7 @@ test('contains a rejected optional source', async () => {
 
 test('paints when the first source already has enough papers', async () => {
   let slowStarted = false;
-  const slow = new Promise((resolve) => {
+  const slow = new Promise<{ id: string }[]>((resolve) => {
     slowStarted = true;
     setTimeout(() => resolve([{ id: 'late' }]), 80);
   });
@@ -42,7 +42,7 @@ test('paints when the first source already has enough papers', async () => {
 });
 
 test('a source that answers after the first-paint budget still reaches `all`', async () => {
-  const late = new Promise((resolve) => setTimeout(() => resolve([{ id: 'late' }]), 60));
+  const late = new Promise<{ id: string }[]>((resolve) => setTimeout(() => resolve([{ id: 'late' }]), 60));
   const { first, all } = settleSourcesForFirstPaint([late], 20, () => false, { allTimeoutMs: 500 });
   const early = await first;
   assert.equal(early[0].status, 'timed_out');
@@ -52,7 +52,7 @@ test('a source that answers after the first-paint budget still reaches `all`', a
 });
 
 test('`all` still has a ceiling of its own', async () => {
-  const never = new Promise(() => {});
+  const never = new Promise<{ id: string }[]>(() => {});
   const { all } = settleSourcesForFirstPaint([never], 5, () => false, { allTimeoutMs: 30 });
   const settled = await all;
   assert.equal(settled[0].status, 'timed_out');

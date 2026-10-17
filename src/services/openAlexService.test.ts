@@ -1,3 +1,5 @@
+import type { PaperAuthor } from '../models/Paper.ts';
+import type { OpenAlexAuthor, OpenAlexWork } from './adapters/openAlexTypes.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -33,10 +35,10 @@ import {
 test('names local topic entities without changing their canonical category identity', () => {
   const topic = getLocalTopicEntity('gr-qc');
 
-  assert.equal(topic.id, 'gr-qc');
-  assert.equal(topic.display_name, 'General Relativity and Quantum Cosmology');
-  assert.deepEqual(topic.categoryIds, ['gr-qc']);
-  assert.equal(topic._localTopic, true);
+  assert.equal(topic!.id, 'gr-qc');
+  assert.equal(topic!.display_name, 'General Relativity and Quantum Cosmology');
+  assert.deepEqual(topic!.categoryIds, ['gr-qc']);
+  assert.equal(topic!._localTopic, true);
 });
 
 /**
@@ -52,8 +54,8 @@ test('a subcategory does not inherit its area\'s description', () => {
   const topic = getLocalTopicEntity('astro-ph.SR');
   const [searched] = searchLocalTopics('Solar and Stellar Astrophysics');
 
-  assert.ok(area.description);
-  assert.equal(topic.description, undefined);
+  assert.ok(area!.description);
+  assert.equal(topic!.description, undefined);
   assert.equal(searched.id, 'astro-ph.SR');
   assert.equal(searched.description, undefined);
 });
@@ -72,7 +74,7 @@ test('returns real local topic metadata instead of invented work counts', () => 
 
   assert.equal(physics.id, 'physics');
   assert.equal(physics.works_count, null);
-  assert.ok(physics.subcategoryCount > 0);
+  assert.ok(physics.subcategoryCount! > 0);
   assert.equal(physics._localTopic, true);
 });
 
@@ -84,15 +86,15 @@ test('builds recent-impact samples for institutions and authors on the same FWCI
   assert.equal(normalizeRecentImpactEntityId('institution', { id: 'https://openalex.org/I63966007' }), 'I63966007');
   assert.equal(normalizeRecentImpactEntityId('author', 'https://openalex.org/A123'), 'A123');
   assert.equal(normalizeRecentImpactEntityId('project', 'P123'), '');
-  assert.match(institutionUrl.searchParams.get('filter'), /^institutions\.id:I63966007,/);
+  assert.match(institutionUrl.searchParams.get('filter')!, /^institutions\.id:I63966007,/);
   assert.equal(institutionUrl.searchParams.get('sample'), '200');
-  assert.match(authorUrl.searchParams.get('filter'), /^author\.id:A123,/);
+  assert.match(authorUrl.searchParams.get('filter')!, /^author\.id:A123,/);
   assert.equal(authorUrl.searchParams.get('sample'), '100');
 });
 
 test('retries a full recent-impact sample only when FWCI coverage is insufficient', async () => {
   const calls = [];
-  const fetchJson = async (url) => {
+  const fetchJson = async (url: string) => {
     calls.push(url);
     const offset = calls.length === 1 ? 0 : 100;
     return {
@@ -143,15 +145,15 @@ test('maps real-shaped OpenAlex arXiv enrichment without a top-level id', () => 
     }],
   });
 
-  assert.equal(mapped.openAlexId, 'W2626778328');
-  assert.equal(mapped.arxivId, '1706.03762');
-  assert.equal(mapped.enrichment.citationCount, 6590);
-  assert.equal(mapped.enrichment.citationCountKnown, true);
-  assert.equal(mapped.enrichment.publicationType, 'preprint');
-  assert.equal(mapped.enrichment.publicationStatus, 'preprint');
-  assert.equal(mapped.enrichment.openAccess, true);
-  assert.equal(mapped.enrichment.pdfUrl, 'https://arxiv.org/pdf/1706.03762');
-  assert.equal(mapped.enrichment.doi, undefined);
+  assert.equal(mapped!.openAlexId, 'W2626778328');
+  assert.equal(mapped!.arxivId, '1706.03762');
+  assert.equal(mapped!.enrichment.citationCount, 6590);
+  assert.equal(mapped!.enrichment.citationCountKnown, true);
+  assert.equal(mapped!.enrichment.publicationType, 'preprint');
+  assert.equal(mapped!.enrichment.publicationStatus, 'preprint');
+  assert.equal(mapped!.enrichment.openAccess, true);
+  assert.equal(mapped!.enrichment.pdfUrl, 'https://arxiv.org/pdf/1706.03762');
+  assert.equal(mapped!.enrichment.doi, undefined);
 });
 
 test('keeps a published DOI while enriching an arXiv paper', () => {
@@ -167,9 +169,9 @@ test('keeps a published DOI while enriching an arXiv paper', () => {
     }],
   });
 
-  assert.equal(mapped.arxivId, '2401.12345');
-  assert.equal(mapped.enrichment.doi, '10.1000/published-paper');
-  assert.equal(mapped.enrichment.publicationStatus, 'published');
+  assert.equal(mapped!.arxivId, '2401.12345');
+  assert.equal(mapped!.enrichment.doi, '10.1000/published-paper');
+  assert.equal(mapped!.enrichment.publicationStatus, 'published');
 });
 
 test('keeps enrichment for a native OpenAlex work without an arXiv copy', () => {
@@ -181,10 +183,10 @@ test('keeps enrichment for a native OpenAlex work without an arXiv copy', () => 
     locations: [],
   });
 
-  assert.equal(mapped.openAlexId, 'W456');
-  assert.equal(mapped.arxivId, '');
-  assert.equal(mapped.enrichment.citationCount, 24);
-  assert.equal(mapped.enrichment.doi, '10.1000/openalex-only');
+  assert.equal(mapped!.openAlexId, 'W456');
+  assert.equal(mapped!.arxivId, '');
+  assert.equal(mapped!.enrichment.citationCount, 24);
+  assert.equal(mapped!.enrichment.doi, '10.1000/openalex-only');
 });
 
 test('falls back to current OpenAlex topics when legacy concepts are absent', () => {
@@ -196,8 +198,8 @@ test('falls back to current OpenAlex topics when legacy concepts are absent', ()
     locations: [],
   });
 
-  assert.equal(mapped.enrichment.concepts[0].display_name, 'Quantum sensing');
-  assert.equal(mapped.enrichment.primaryTopic.id, 'https://openalex.org/T123');
+  assert.equal(mapped!.enrichment.concepts![0].display_name, 'Quantum sensing');
+  assert.equal(mapped!.enrichment.primaryTopic!.id, 'https://openalex.org/T123');
 });
 
 test('collapses fragmented author records sharing a name, keeping the richest profile', () => {
@@ -224,7 +226,7 @@ test('adds localized ROR institution names to author profiles', async () => {
   }), { status: 200, headers: { 'content-type': 'application/json' } });
 
   try {
-    const author = await enrichAuthorInstitutionLocalization({
+    const author = await enrichAuthorInstitutionLocalization<OpenAlexAuthor>({
       id: 'https://openalex.org/A123',
       display_name: 'Raúl Muñoz',
       last_known_institutions: [{
@@ -234,8 +236,8 @@ test('adds localized ROR institution names to author profiles', async () => {
       }],
     });
 
-    assert.equal(author.institutionData.localized_names.en, 'University of Salamanca');
-    assert.equal(author.last_known_institutions[0].localized_names.en, 'University of Salamanca');
+    assert.equal(author!.institutionData!.localized_names!.en, 'University of Salamanca');
+    assert.equal(author!.last_known_institutions![0].localized_names!.en, 'University of Salamanca');
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -365,7 +367,7 @@ test('the deadline covers a non-OpenAlex body that never finishes', async () => 
 // Live ROR, 2026-08-26: `?query=MIT` answers with 47 organisations, 20 on the
 // page, SEVEN of which carry MIT in `acronyms`. Every one of them scores 100,
 // and Massachusetts Institute of Technology is seventh in ROR's own order.
-const ROR_MIT_ITEMS = [
+const ROR_MIT_ITEMS = ([
   ['04mtcj695', 'University of Southern Mindanao', ['MIT', 'USM']],
   ['047m6hg73', 'Management Intelligenter Technologien (Germany)', ['MIT']],
   ['002r67t24', 'Manukau Institute of Technology', ['MIT']],
@@ -373,7 +375,7 @@ const ROR_MIT_ITEMS = [
   ['02qk9nj07', 'Ministry of Infrastructures and Transport', ['MIT']],
   ['02yyma482', 'International Tourism Institute', ['ITI', 'MIT']],
   ['042nb2s44', 'Massachusetts Institute of Technology', ['MIT']],
-].map(([rorId, displayName, acronyms]) => ({
+] as [string, string, string[]][]).map(([rorId, displayName, acronyms]) => ({
   id: `https://ror.org/${rorId}`,
   names: [
     { value: displayName, lang: 'en', types: ['ror_display', 'label'] },
@@ -384,7 +386,7 @@ const ROR_MIT_ITEMS = [
 }));
 
 // The real OpenAlex figures for those same ROR ids.
-const OPENALEX_MIT_STATS = [
+const OPENALEX_MIT_STATS = ([
   ['042nb2s44', 355652, 65816719],
   ['002r67t24', 1004, 22797],
   ['04mtcj695', 974, 8769],
@@ -392,7 +394,7 @@ const OPENALEX_MIT_STATS = [
   ['02qk9nj07', 150, 3472],
   ['047m6hg73', 128, 1225],
   ['02yyma482', 122, 338],
-].map(([rorId, works_count, cited_by_count]) => ({
+] as [string, number, number][]).map(([rorId, works_count, cited_by_count]) => ({
   ror: `https://ror.org/${rorId}`,
   works_count,
   cited_by_count,
@@ -403,14 +405,14 @@ const OPENALEX_MIT_STATS = [
 // client bound `globalThis.fetch` when its module loaded, so it has to be
 // injected instead — see `fetchInstitutionProminence`.
 function stubRorFetch() {
-  return async (input) => {
-    const href = String(input?.url || input);
+  return async (input: string | URL | Request) => {
+    const href = String((input as Request)?.url || input);
     if (!href.includes('api.ror.org')) throw new Error(`unexpected request: ${href}`);
     return new Response(JSON.stringify({ items: ROR_MIT_ITEMS }), { status: 200 });
   };
 }
 
-async function withRorFetch(run) {
+async function withRorFetch<T>(run: () => T): Promise<Awaited<T>> {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = stubRorFetch();
   try {
@@ -423,7 +425,7 @@ async function withRorFetch(run) {
 test('an acronym search does not cut off the institution everybody meant', async () => {
   // The whole bug in one assertion: six organisations tie at 100 above MIT, the
   // slice keeps five, so a search for "MIT" answered without MIT in it.
-  const requested = [];
+  const requested: string[] = [];
   const results = await withRorFetch(() => searchInstitutions('MIT', {
     openAlexJson: async (url) => {
       requested.push(url);
@@ -506,17 +508,17 @@ const WORK_FIXTURE = {
 };
 
 test('opens an OpenAlex work id or a PubMed id through /works/{id}, keyed as the feed keys it', async () => {
-  const requested = [];
-  const openAlexJson = async (url) => { requested.push(url); return WORK_FIXTURE; };
+  const requested: unknown[] = [];
+  const openAlexJson = async (url: unknown) => { requested.push(url); return WORK_FIXTURE; };
 
   const byWork = await fetchPaperByWorkId('openalex', 'w2741809807', { openAlexJson });
-  assert.equal(byWork.id, 'openalex:W2741809807');
-  assert.equal(byWork.title, 'The state of OA');
-  assert.equal(byWork.doi, '10.7717/peerj.4375');
-  assert.equal(byWork.abstract, 'Open access to research articles keeps growing every year');
+  assert.equal(byWork!.id, 'openalex:W2741809807');
+  assert.equal(byWork!.title, 'The state of OA');
+  assert.equal(byWork!.doi, '10.7717/peerj.4375');
+  assert.equal(byWork!.abstract, 'Open access to research articles keeps growing every year');
 
   const byPmid = await fetchPaperByWorkId('pmid', '31234567', { openAlexJson });
-  assert.equal(byPmid.id, 'pmid:31234567');
+  assert.equal(byPmid!.id, 'pmid:31234567');
 
   assert.deepEqual(requested, [
     'https://api.openalex.org/works/W2741809807',
@@ -550,9 +552,9 @@ test('a works page and an authors page persist as what the Explorer shows, not a
     id: 'https://openalex.org/W1', title: 'A paper', publication_date: '2024-02-01', cited_by_count: 3,
     abstract_inverted_index: { This: [0], abstract: [1], describes: [2], a: [3], paper: [4], about: [5], experimental: [6], physics: [7], results: [8] },
     authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Ada' }, institutions: [{ id: 'I1', display_name: 'Uni' }] }],
-    concepts: [{ display_name: 'Physics' }], primary_location: { source: { type: 'journal', display_name: 'J' }, is_published: true },
+    concepts: [{ display_name: 'Physics' } as import('../models/Paper.ts').PaperSubject], primary_location: { source: { type: 'journal', display_name: 'J' }, is_published: true },
   };
-  const page = slimWorksPage({ results: [work], meta: { count: 42 } });
+  const page = slimWorksPage({ results: [work as OpenAlexWork], meta: { count: 42 } });
   assert.equal(page.total, 42);
   assert.equal(page.papers.length, 1);
   assert.equal(page.papers[0].title, 'A paper');
@@ -560,7 +562,7 @@ test('a works page and an authors page persist as what the Explorer shows, not a
   assert.ok(!('abstract_inverted_index' in page.papers[0]));
   assert.deepEqual(slimWorksPage(null), { papers: [], total: 0 });
 
-  const authors = slimAuthorsPage({ results: [{ id: 'A1', display_name: 'Ada', works_count: 2, summary_stats: { h_index: 5 }, last_known_institutions: [{ display_name: 'Uni' }], x_concepts: [1, 2, 3, 4] }], meta: { count: 9 } });
+  const authors = (slimAuthorsPage as (data: unknown) => unknown)({ results: [{ id: 'A1', display_name: 'Ada', works_count: 2, summary_stats: { h_index: 5 }, last_known_institutions: [{ display_name: 'Uni' }], x_concepts: [1, 2, 3, 4] }], meta: { count: 9 } });
   assert.deepEqual(authors, { authors: [{ id: 'A1', display_name: 'Ada', works_count: 2, cited_by_count: 0, h_index: 5, institution: 'Uni', concepts: [1, 2, 3] }], total: 9 });
 });
 
@@ -583,7 +585,7 @@ test('the enrichment carries the authors with their OpenAlex ids', () => {
     ],
   });
 
-  assert.deepEqual(mapped.enrichment.authors, [
+  assert.deepEqual(mapped!.enrichment.authors, [
     { name: 'A. M. Gavrilik', id: 'https://openalex.org/A5006398227' },
     // OpenAlex leaves an authorship undisambiguated often enough to matter --
     // 3 of 18 papers on a measured feed page -- and the name is still worth
@@ -595,7 +597,7 @@ test('the enrichment carries the authors with their OpenAlex ids', () => {
 
 test('a work with no authorships enriches without an authors key', () => {
   const mapped = mapOpenAlexEnrichmentWork({ id: 'https://openalex.org/W123' });
-  assert.equal('authors' in mapped.enrichment, false, 'nothing to graft is not the same as an empty list');
+  assert.equal('authors' in mapped!.enrichment, false, 'nothing to graft is not the same as an empty list');
 });
 
 /**
@@ -612,10 +614,10 @@ test('the mapped authorships are capped, in authorship order', () => {
     author: { id: `https://openalex.org/A${i}`, display_name: `Author ${i}` },
   }));
   const mapped = mapOpenAlexEnrichmentWork({ id: 'https://openalex.org/W1', authorships });
-  assert.equal(mapped.enrichment.authors.length, MAX_ENRICHMENT_AUTHORS);
-  assert.equal(mapped.enrichment.authors[0].id, 'https://openalex.org/A0');
-  assert.equal(mapped.enrichment.authors[MAX_ENRICHMENT_AUTHORS - 1].id, `https://openalex.org/A${MAX_ENRICHMENT_AUTHORS - 1}`);
-  assert.ok(JSON.stringify(mapped.enrichment).length < 20_000, 'and the entry stays far under the persistent cap');
+  assert.equal(mapped!.enrichment.authors!.length, MAX_ENRICHMENT_AUTHORS);
+  assert.equal((mapped!.enrichment.authors![0] as PaperAuthor).id, 'https://openalex.org/A0');
+  assert.equal((mapped!.enrichment.authors![MAX_ENRICHMENT_AUTHORS - 1] as PaperAuthor).id, `https://openalex.org/A${MAX_ENRICHMENT_AUTHORS - 1}`);
+  assert.ok(JSON.stringify(mapped!.enrichment).length < 20_000, 'and the entry stays far under the persistent cap');
 });
 
 test('SOURCE: the enrichment request asks OpenAlex for the authorships', async () => {
@@ -635,7 +637,7 @@ test('a DOI-keyed id is fetched by DOI and comes back under that key', async () 
   // client binds its own at construction, so a global stub never reaches it
   // and the test would go to the real network and pass for the wrong reason.
   const realFetch = openAlexClient.fetchImpl;
-  const urls = [];
+  const urls: string[] = [];
   openAlexClient.fetchImpl = async (url) => {
     urls.push(String(url));
     return new Response(JSON.stringify({
@@ -655,7 +657,7 @@ test('a DOI-keyed id is fetched by DOI and comes back under that key', async () 
     const asked = urls.map(url => decodeURIComponent(url));
     assert.ok(asked.some(url => url.includes('filter=doi:10.1142/s0218271826500495')), `asked by DOI, got ${asked.join(' ')}`);
     assert.ok(result['doi:10.1142/s0218271826500495'], 'keyed by the id the feed will look it up with');
-    assert.equal(result['doi:10.1142/s0218271826500495'].authors[0].id, 'https://openalex.org/A7');
+    assert.equal((result['doi:10.1142/s0218271826500495'].authors![0] as PaperAuthor).id, 'https://openalex.org/A7');
   } finally {
     openAlexClient.fetchImpl = realFetch;
   }
@@ -663,11 +665,11 @@ test('a DOI-keyed id is fetched by DOI and comes back under that key', async () 
 
 // A helper for the two tests below: they both need to know WHEN each request
 // was issued, not only that it was.
-function recordingFetch(handlers) {
-  const urls = [];
+function recordingFetch(handlers: [string, () => Response | Promise<Response>][]) {
+  const urls: string[] = [];
   return {
     urls,
-    impl: async (url) => {
+    impl: async (url: string | URL | Request) => {
       const decoded = decodeURIComponent(String(url));
       urls.push(decoded);
       for (const [pattern, respond] of handlers) {
@@ -683,8 +685,8 @@ test('the name search does not wait for the work lookup to fail', async () => {
   // links on a measured feed page -- and there the work lookup can only 404.
   // Running the name search behind it made three round trips out of one.
   const realFetch = openAlexClient.fetchImpl;
-  let releaseWork;
-  const workHeld = new Promise((resolve) => { releaseWork = resolve; });
+  let releaseWork!: () => void;
+  const workHeld = new Promise<void>((resolve) => { releaseWork = resolve; });
   const { urls, impl } = recordingFetch([
     ['works/doi:', async () => { await workHeld; return new Response('{}', { status: 404 }); }],
     ['authors?search=', () => new Response(JSON.stringify({
@@ -704,7 +706,7 @@ test('the name search does not wait for the work lookup to fail', async () => {
 
     releaseWork();
     const profile = await pending;
-    assert.equal(profile.id, 'https://openalex.org/A5139858328');
+    assert.equal(profile!.id, 'https://openalex.org/A5139858328');
     assert.ok(
       !urls.some(url => url.includes('works?filter=doi:')),
       'the standby DOI query is gone: measured 2026-09-07, it rescued 0 of 8 and was strictly worse in 2',
@@ -734,8 +736,8 @@ test('the authorship match still beats the name search when the work is there', 
 
   try {
     const profile = await getAuthorProfileExact('A. M. Gavrilik', '2309.03290');
-    assert.equal(profile.id, 'https://openalex.org/A5008807080');
-    assert.equal(profile.h_index, 15);
+    assert.equal(profile!.id, 'https://openalex.org/A5008807080');
+    assert.equal(profile!.h_index, 15);
     assert.ok(!urls.some(url => url.includes('works?filter=doi:')), 'still no standby query');
   } finally {
     openAlexClient.fetchImpl = realFetch;
@@ -766,7 +768,7 @@ test('an authorship without an id falls back to a search from the spelling the w
   openAlexClient.fetchImpl = impl;
   try {
     const profile = await getAuthorProfileExact('N. Cuello', '2310.04521');
-    assert.equal(profile.id, 'https://openalex.org/A5', 'found from the spelling the work used');
+    assert.equal(profile!.id, 'https://openalex.org/A5', 'found from the spelling the work used');
     assert.ok(urls.some((url) => url.includes('authors?search=Nicol')), 'the second search ran');
   } finally {
     openAlexClient.fetchImpl = realFetch;
@@ -798,8 +800,8 @@ test('a PubMed paper is looked up by its PMID, and the author it names is the ve
   openAlexClient.fetchImpl = impl;
   try {
     const profile = await getAuthorProfileExact('Li WN', 'pmid:42774036');
-    assert.equal(profile.id, 'https://openalex.org/A5075361382');
-    assert.equal(profile.verified, true);
+    assert.equal(profile!.id, 'https://openalex.org/A5075361382');
+    assert.equal(profile!.verified, true);
     assert.ok(!urls.some(url => url.includes('arxiv.pmid')), `no arXiv DOI built from a PMID: ${urls.join(' ')}`);
   } finally {
     openAlexClient.fetchImpl = realFetch;
@@ -821,7 +823,7 @@ test('a paper with a DOI is looked up by that DOI', async () => {
   openAlexClient.fetchImpl = impl;
   try {
     const profile = await getAuthorProfileExact('Li WN', 'doi:10.3389/fendo.2026.1980821');
-    assert.equal(profile.verified, true);
+    assert.equal(profile!.verified, true);
     assert.ok(urls.some(url => url.includes('works/doi:10.3389/fendo.2026.1980821')));
   } finally {
     openAlexClient.fetchImpl = realFetch;
@@ -852,7 +854,7 @@ test('a byline two authorships of the paper share is not a verified identity', a
   openAlexClient.fetchImpl = impl;
   try {
     const profile = await getAuthorProfileExact('Zhang W', 'doi:10.1000/two-zhangs');
-    assert.notEqual(profile.verified, true, 'the paper cannot say which of the two was meant');
+    assert.notEqual(profile!.verified, true, 'the paper cannot say which of the two was meant');
     assert.ok(!urls.some(url => /authors\/A900[12]/.test(url)), `neither author was opened as the one: ${urls.join(' ')}`);
   } finally {
     openAlexClient.fetchImpl = realFetch;
@@ -871,8 +873,8 @@ test('a profile found only by the name is not verified', async () => {
   try {
     // Another name than the tests above: the client caches searches by URL.
     const profile = await getAuthorProfileExact('Zhou XY', '2609.05199');
-    assert.equal(profile.id, 'https://openalex.org/A5024723899');
-    assert.notEqual(profile.verified, true);
+    assert.equal(profile!.id, 'https://openalex.org/A5024723899');
+    assert.notEqual(profile!.verified, true);
   } finally {
     openAlexClient.fetchImpl = realFetch;
   }
@@ -889,8 +891,8 @@ test('a profile found only by the name is not verified', async () => {
 test('peekEntity answers the persistent cache synchronously, fresh entries only, authors and institutions only', () => {
   const previousStorage = openAlexClient.storage;
   const previousStore = openAlexClient.persistentStore;
-  const memory = new Map();
-  openAlexClient.storage = { getItem: (k) => memory.get(k) ?? null, setItem: (k, v) => memory.set(k, v), removeItem: (k) => memory.delete(k) };
+  const memory = new Map<string, string>();
+  openAlexClient.storage = { getItem: (k) => memory.get(k) ?? null, setItem: (k, v) => memory.set(k, v), removeItem: (k: string) => memory.delete(k) } as NonNullable<typeof openAlexClient.storage> & Record<string, unknown>;
   openAlexClient.persistentStore = null;
   try {
     writeOpenAlexPersistent('entity:author:A5000000001', { id: 'https://openalex.org/A5000000001', display_name: 'Ada Lovelace', works_count: 3 });
@@ -916,8 +918,8 @@ test('peekEntity answers the persistent cache synchronously, fresh entries only,
  * an `AbortController`: a stub that ignored it would take its own sweet time
  * whatever the timeout said.
  */
-function slowOpenAlexThenCrossref(openAlexDelayMs, crossrefDelayMs) {
-  const openAlex = (url, options = {}) => new Promise((resolve, reject) => {
+function slowOpenAlexThenCrossref(openAlexDelayMs: number|undefined, crossrefDelayMs: number|undefined) {
+  const openAlex: typeof fetch = (url, options = {}) => new Promise<Response>((resolve, reject) => {
     const timer = setTimeout(
       () => resolve(new Response('{}', { status: 503 })),
       openAlexDelayMs,
@@ -928,7 +930,7 @@ function slowOpenAlexThenCrossref(openAlexDelayMs, crossrefDelayMs) {
     }, { once: true });
   });
 
-  const crossref = () => new Promise((resolve) => {
+  const crossref = () => new Promise<Response>((resolve) => {
     setTimeout(() => resolve(new Response(JSON.stringify({
       message: {
         items: [{

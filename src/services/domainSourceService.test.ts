@@ -24,9 +24,9 @@ import {
 test('a degraded bioRxiv answer is a source failure, not an empty result', () => {
   assert.throws(
     () => readBioRxivResponse({ collection: [], _papertok: { degraded: 'UPSTREAM_TIMEOUT' } }, ['bio.neuro'], 10),
-    (error) => error.code === 'UPSTREAM_TIMEOUT',
+    (error) => (error as Error & { code?: string; status?: number; retryAfterMs?: number }).code === 'UPSTREAM_TIMEOUT',
   );
-  assert.deepEqual(readBioRxivResponse({ messages: [{ status: 'no posts found' }], collection: [] }, ['bio.neuro'], 10), []);
+  assert.deepEqual(readBioRxivResponse({ messages: [{ status: 'no posts found' }], collection: [] } as NonNullable<Parameters<typeof readBioRxivResponse>[0]> & Record<string, unknown>, ['bio.neuro'], 10), []);
   const papers = readBioRxivResponse({
     collection: [{ doi: '10.1101/2026.09.01.000001', title: 'A preprint', authors: 'Doe, J.', date: '2026-09-01', category: 'neuroscience', version: '1' }],
   }, ['bio.neuro'], 10);
@@ -69,14 +69,14 @@ test('maps a bioRxiv preprint without losing its selected PaperTok category', ()
     category: 'Cell Biology',
     license: 'cc_by',
   }, ['bio.cell']);
-  assert.equal(paper.primaryCategory, 'bio.cell');
-  assert.equal(paper.publicationStatus, 'preprint');
-  assert.equal(paper.openAccess, true);
-  assert.equal(paper.id.includes('/'), false);
-  assert.equal(paper.doi, '10.1101/2026.01.01.123456');
-  assert.match(paper.pdfUrl, /\.full\.pdf$/);
-  assert.match(paper.landingPageUrl, /10\.1101\/2026/);
-  assert.equal(paper.authors.length, 2);
+  assert.equal(paper!.primaryCategory, 'bio.cell');
+  assert.equal(paper!.publicationStatus, 'preprint');
+  assert.equal(paper!.openAccess, true);
+  assert.equal(paper!.id.includes('/'), false);
+  assert.equal(paper!.doi, '10.1101/2026.01.01.123456');
+  assert.match(paper!.pdfUrl!, /\.full\.pdf$/);
+  assert.match(paper!.landingPageUrl!, /10\.1101\/2026/);
+  assert.equal(paper!.authors.length, 2);
 });
 
 test('maps Europe PMC search results including free full text and biomedical terms', () => {
@@ -95,24 +95,24 @@ test('maps Europe PMC search results including free full text and biomedical ter
     keywordList: { keyword: ['Cell Biology'] },
     citedByCount: 9,
   }, ['bio.cell']);
-  assert.equal(paper.doi, '10.1000/bio');
-  assert.equal(paper.abstract, 'Useful abstract');
-  assert.equal(paper.openAccess, true);
-  assert.equal(paper.accessSource, 'europepmc');
-  assert.equal(paper.citationCount, 9);
-  assert.equal(paper.primaryCategory, 'bio.cell');
+  assert.equal(paper!.doi, '10.1000/bio');
+  assert.equal(paper!.abstract, 'Useful abstract');
+  assert.equal(paper!.openAccess, true);
+  assert.equal(paper!.accessSource, 'europepmc');
+  assert.equal(paper!.citationCount, 9);
+  assert.equal(paper!.primaryCategory, 'bio.cell');
 });
 
 test('maps CORE, OSTI and NASA records to stable open paper records', () => {
   const core = mapCoreWork({ id: 1, title: 'Mechanical result', authors: [{ name: 'A' }], downloadUrl: 'https://core.ac.uk/download/1.pdf', yearPublished: 2025 }, ['mech.mfg']);
   const osti = mapOstiRecord({ osti_id: '2', title: 'Battery result', description: 'Energy storage', publication_date: '2026-01-01', links: [{ rel: 'fulltext', href: 'https://www.osti.gov/servlets/purl/2' }] }, ['chemeng.energy']);
   const nasa = mapNasaRecord({ id: 3, title: 'Aerodynamic result', abstract: 'Flight', publications: [{ publicationDate: '2024-01-01' }], downloads: [{ links: { pdf: '/api/citations/3/downloads/paper.pdf' } }] }, ['mech.aero']);
-  assert.equal(core.primaryCategory, 'mech.mfg');
-  assert.equal(core.openAccess, true);
-  assert.equal(osti.primaryCategory, 'chemeng.energy');
-  assert.equal(osti.openAccess, true);
-  assert.equal(nasa.primaryCategory, 'mech.aero');
-  assert.equal(nasa.pdfUrl, 'https://ntrs.nasa.gov/api/citations/3/downloads/paper.pdf');
+  assert.equal(core!.primaryCategory, 'mech.mfg');
+  assert.equal(core!.openAccess, true);
+  assert.equal(osti!.primaryCategory, 'chemeng.energy');
+  assert.equal(osti!.openAccess, true);
+  assert.equal(nasa!.primaryCategory, 'mech.aero');
+  assert.equal(nasa!.pdfUrl, 'https://ntrs.nasa.gov/api/citations/3/downloads/paper.pdf');
 });
 
 test('maps NASA ADS records with citations, references and physics concepts', () => {
@@ -134,18 +134,18 @@ test('maps NASA ADS records with citations, references and physics concepts', ()
     doctype: 'article',
   }, ['astro-ph.CO']);
 
-  assert.equal(paper.sources.primary, 'nasa-ads');
-  assert.equal(paper.primaryCategory, 'astro-ph.CO');
-  assert.equal(paper.arxivId, '2601.12345');
-  assert.equal(paper.doi, '10.1000/ads');
-  assert.equal(paper.citationCount, 17);
-  assert.equal(paper.referenceCount, 1);
-  assert.equal(paper.peerReviewed, true);
-  assert.equal(paper.openAccess, true);
-  assert.match(paper.adsUrl, /ui\.adsabs\.harvard\.edu/);
-  assert.deepEqual(paper.categories, ['astro-ph.CO', 'Cosmology']);
-  assert.ok(!paper.concepts.some(concept => concept.display_name === '11.25.Tq'));
-  assert.ok(paper.keywords.includes('11.25.Tq'));
+  assert.equal(paper!.sources.primary, 'nasa-ads');
+  assert.equal(paper!.primaryCategory, 'astro-ph.CO');
+  assert.equal(paper!.arxivId, '2601.12345');
+  assert.equal(paper!.doi, '10.1000/ads');
+  assert.equal(paper!.citationCount, 17);
+  assert.equal(paper!.referenceCount, 1);
+  assert.equal(paper!.peerReviewed, true);
+  assert.equal(paper!.openAccess, true);
+  assert.match(paper!.adsUrl!, /ui\.adsabs\.harvard\.edu/);
+  assert.deepEqual(paper!.categories, ['astro-ph.CO', 'Cosmology']);
+  assert.ok(!paper!.concepts!.some(concept => concept.display_name === '11.25.Tq'));
+  assert.ok(paper!.keywords!.includes('11.25.Tq'));
 });
 
 // Real record, 2026NatSR..16.2819Z as ADS served it on 2026-09-23: the title
@@ -169,9 +169,9 @@ test('reads the markup of an ADS title and abstract instead of flattening it to 
     doi: ['10.1038/s41598-025-32723-2'],
   }, ['quant-ph']);
 
-  assert.equal(paper.title, 'Quantum avalanches in \\({Z}_2\\)-preserving interacting Ising Majorana chain');
+  assert.equal(paper!.title, 'Quantum avalanches in \\({Z}_2\\)-preserving interacting Ising Majorana chain');
   assert.equal(
-    paper.abstract,
+    paper!.abstract,
     'Here, we consider the transition temperature \\({T}_{{{{{c}}}}}^{0}\\) of La2-xSrxCuO4. Supported by NSF.',
   );
 });
@@ -196,18 +196,18 @@ test('maps INSPIRE papers as a keyless high-energy physics fallback', () => {
     },
   }, ['hep-ph']);
 
-  assert.equal(paper.sources.primary, 'inspire');
-  assert.equal(paper.primaryCategory, 'hep-ph');
-  assert.equal(paper.citationCount, 8);
-  assert.equal(paper.citationCountKnown, true);
-  assert.equal(paper.publicationStatus, 'published');
-  assert.match(paper.inspireUrl, /inspirehep\.net\/literature\/12345/);
+  assert.equal(paper!.sources.primary, 'inspire');
+  assert.equal(paper!.primaryCategory, 'hep-ph');
+  assert.equal(paper!.citationCount, 8);
+  assert.equal(paper!.citationCountKnown, true);
+  assert.equal(paper!.publicationStatus, 'published');
+  assert.match(paper!.inspireUrl!, /inspirehep\.net\/literature\/12345/);
 });
 
-function eligiblePaths(plan, options) {
+function eligiblePaths(plan: { biology: string[]; engineering: string[]; physics: string[]; inspirePhysics: string[]; scopus: string[]; biorxivCategory: string; osti: string[]; nasa: string[]; openReview: string[]; huggingFace: string[]; }, options: { hasSession?: boolean|undefined; scopusEnabled?: boolean|undefined; }|undefined) {
   return Object.entries(getEligibleDomainSources(plan, options))
     .filter(([, isEligible]) => isEligible)
-    .map(([source]) => DOMAIN_SOURCE_PATHS[source]);
+    .map(([source]) => DOMAIN_SOURCE_PATHS[source as keyof typeof DOMAIN_SOURCE_PATHS]);
 }
 
 // The guest feed used to spend every load asking `/sources/physics` for papers:
@@ -238,11 +238,11 @@ test('the same categories reach the protected sources once there is a session', 
 });
 
 test('a rejected source names its path instead of vanishing', () => {
-  const logged = [];
+  const logged: string[] = [];
   const settled = [
-    { status: 'fulfilled', value: [] },
-    { status: 'rejected', reason: Object.assign(new Error('WORKER_AUTH_REQUIRED'), { code: 'WORKER_AUTH_REQUIRED' }) },
-    { status: 'rejected', reason: new Error('/sources/nasa returned 429') },
+    { status: 'fulfilled' as const, value: [] },
+    { status: 'rejected' as const, reason: Object.assign(new Error('WORKER_AUTH_REQUIRED'), { code: 'WORKER_AUTH_REQUIRED' }) },
+    { status: 'rejected' as const, reason: new Error('/sources/nasa returned 429') },
   ];
   const entries = [
     { path: '/sources/biorxiv' },
@@ -263,7 +263,7 @@ test('a rejected source names its path instead of vanishing', () => {
 // away the papers its siblings had already delivered. Budgeting each source on
 // its own is what keeps a stall local to the source that stalled.
 test('a source that hangs past its budget does not discard the ones that answered', async () => {
-  const logged = [];
+  const logged: string[] = [];
   const requests = [
     { path: '/sources/biorxiv', promise: new Promise(() => {}) },
     { path: '/sources/europepmc', promise: Promise.resolve([{ id: 'europepmc-1' }]) },
@@ -273,13 +273,13 @@ test('a source that hangs past its budget does not discard the ones that answere
   const settled = await settleDomainSources(requests, 20, message => logged.push(message));
 
   assert.deepEqual(settled.map(result => result.status), ['timed_out', 'fulfilled', 'fulfilled']);
-  assert.deepEqual(settled[1].value, [{ id: 'europepmc-1' }]);
-  assert.deepEqual(settled[2].value, [{ id: 'hf-1' }]);
+  assert.deepEqual((settled[1] as { status: 'fulfilled'; value: unknown }).value, [{ id: 'europepmc-1' }]);
+  assert.deepEqual((settled[2] as { status: 'fulfilled'; value: unknown }).value, [{ id: 'hf-1' }]);
   assert.match(logged.join('\n'), /\/sources\/biorxiv/, 'a stalled source is named, not silent');
 });
 
 test('a rejected source still names its path once each source is budgeted alone', async () => {
-  const logged = [];
+  const logged: string[] = [];
   const requests = [
     { path: '/sources/openreview', promise: Promise.reject(new Error('/sources/openreview returned 502')) },
     { path: '/sources/europepmc', promise: Promise.resolve([{ id: 'europepmc-1' }]) },
@@ -299,7 +299,7 @@ test('a refused source keeps the Worker body on the error instead of only the st
   const masked = sourceResponseError('/sources/openreview', 502, {
     error: 'Specialist source unavailable',
     upstreamStatus: 400,
-  });
+  } as NonNullable<Parameters<typeof sourceResponseError>[2]> & Record<string, unknown>);
   assert.equal(masked.status, 502);
   assert.equal(masked.upstreamStatus, 400);
   assert.equal(masked.code, undefined);
@@ -308,7 +308,7 @@ test('a refused source keeps the Worker body on the error instead of only the st
   const refused = sourceResponseError('/sources/pubmed', 429, {
     error: 'Specialist source unavailable',
     code: 'UPSTREAM_RATE_LIMITED',
-  });
+  } as NonNullable<Parameters<typeof sourceResponseError>[2]> & Record<string, unknown>);
   assert.equal(refused.code, 'UPSTREAM_RATE_LIMITED');
   assert.equal(refused.message, '/sources/pubmed returned 429 (UPSTREAM_RATE_LIMITED)');
 
@@ -317,15 +317,15 @@ test('a refused source keeps the Worker body on the error instead of only the st
   assert.equal(bare.code, undefined);
   assert.equal(bare.upstreamStatus, undefined);
 
-  const hostile = sourceResponseError('/sources/core', 502, { code: 42, upstreamStatus: '400' });
+  const hostile = sourceResponseError('/sources/core', 502, { code: 42, upstreamStatus: '400' as never });
   assert.equal(hostile.code, undefined, 'a code that is not a string is not a code');
   assert.equal(hostile.upstreamStatus, undefined, 'a status that is not an integer is not a status');
 });
 
 test('the failure report shows the upstream status once the body travels on the error', () => {
-  const logged = [];
+  const logged: string[] = [];
   reportDomainSourceFailures(
-    [{ status: 'rejected', reason: sourceResponseError('/sources/openreview', 502, { upstreamStatus: 400 }) }],
+    [{ status: 'rejected' as const, reason: sourceResponseError('/sources/openreview', 502, { upstreamStatus: 400 }) }],
     [{ path: '/sources/openreview' }],
     message => logged.push(message),
   );

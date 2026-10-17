@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
-const strip = (source) => source.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
+const strip = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
 
 /**
  * A grant code is not unique across funders (`grantID=100010` answers for

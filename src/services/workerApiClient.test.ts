@@ -50,7 +50,7 @@ test('bounds the request and rejects a non-200 rather than parsing it', async ()
     },
   });
   assert.ok(seenSignal, 'the Worker request carries no AbortSignal');
-  assert.equal(seenSignal.aborted, false);
+  assert.equal((seenSignal as AbortSignal).aborted, false);
 
   await assert.rejects(
     () => fetchWorkerSourceJson('/sources/s2', { q: 'malaria' }, {
@@ -76,11 +76,11 @@ test('a refused source route keeps the Worker body on the error, not just its st
       ),
     }),
     error => {
-      assert.equal(error.status, 429);
-      assert.equal(error.code, 'UPSTREAM_RATE_LIMITED');
-      assert.equal(error.upstreamStatus, 429);
+      assert.equal((error as Error & { code?: string; status?: number; retryAfterMs?: number; upstreamStatus?: number }).status, 429);
+      assert.equal((error as Error & { code?: string; status?: number; retryAfterMs?: number; upstreamStatus?: number }).code, 'UPSTREAM_RATE_LIMITED');
+      assert.equal((error as Error & { code?: string; status?: number; retryAfterMs?: number; upstreamStatus?: number }).upstreamStatus, 429);
       // Both halves of the body reach a log that only prints the message.
-      assert.equal(error.message, '/sources/pubmed returned 429 (UPSTREAM_RATE_LIMITED, upstream 429)');
+      assert.equal((error as Error & { code?: string; status?: number; retryAfterMs?: number; upstreamStatus?: number }).message, '/sources/pubmed returned 429 (UPSTREAM_RATE_LIMITED, upstream 429)');
       return true;
     },
   );
@@ -93,10 +93,10 @@ test('an error body that is not JSON leaves the error exactly as the bare status
       fetchImpl: async () => new Response('<html>502 Bad Gateway</html>', { status: 502 }),
     }),
     error => {
-      assert.equal(error.status, 502);
-      assert.equal(error.code, undefined);
-      assert.equal(error.upstreamStatus, undefined);
-      assert.equal(error.message, '/sources/pubmed returned 502');
+      assert.equal((error as Error & { code?: string; status?: number; retryAfterMs?: number; upstreamStatus?: number }).status, 502);
+      assert.equal((error as Error & { code?: string; status?: number; retryAfterMs?: number; upstreamStatus?: number }).code, undefined);
+      assert.equal((error as Error & { code?: string; status?: number; retryAfterMs?: number; upstreamStatus?: number }).upstreamStatus, undefined);
+      assert.equal((error as Error & { code?: string; status?: number; retryAfterMs?: number; upstreamStatus?: number }).message, '/sources/pubmed returned 502');
       return true;
     },
   );

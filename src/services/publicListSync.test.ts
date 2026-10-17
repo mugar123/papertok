@@ -3,21 +3,22 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 import { createPublicListSyncEngine } from './publicListSync.ts';
+import type { PublicListInput } from './publicListPayload.ts';
 
 /** A hand-cranked clock, so the tests never wait in real time. */
 function fakeTimers() {
   let nextId = 1;
   let now = 0;
-  const pending = new Map();
+  const pending = new Map<number, { callback: () => void; at: number; ms: number }>();
   return {
-    setTimer(callback, ms) {
+    setTimer(callback: () => void, ms: number) {
       const id = nextId; nextId += 1;
       pending.set(id, { callback, at: now + ms, ms });
       return id;
     },
-    clearTimer(id) { pending.delete(id); },
+    clearTimer(id: number | ReturnType<typeof setTimeout>) { pending.delete(id as number); },
     /** Fires everything due within `ms`, including timers armed while firing. */
-    async advance(ms) {
+    async advance(ms: number) {
       const target = now + ms;
       for (;;) {
         const due = [...pending.entries()]
@@ -41,10 +42,10 @@ async function settle() {
   for (let index = 0; index < 8; index += 1) await Promise.resolve();
 }
 
-function harness(overrides = {}) {
+function harness(overrides: { outcomes?: (Error | import('./publicListService.ts').ListOperationResult)[]; engine?: Parameters<typeof createPublicListSyncEngine>[0] } = {}) {
   const timers = fakeTimers();
-  const calls = [];
-  const events = [];
+  const calls: { shareId: string; input: PublicListInput; }[] = [];
+  const events: { key: string; status: "error"|"idle"|"syncing"|"pending"|"synced"|null; code: string|null; }[] = [];
   let outcomes = overrides.outcomes || [];
   const engine = createPublicListSyncEngine({
     setTimer: timers.setTimer,
@@ -59,7 +60,7 @@ function harness(overrides = {}) {
     },
   });
   engine.subscribe((key, state) => events.push({ key, status: state?.status ?? null, code: state?.code ?? null }));
-  return { engine, timers, calls, events, fail: (error) => { outcomes = [error, ...outcomes]; } };
+  return { engine, timers, calls, events, fail: (error: Error) => { outcomes = [error, ...outcomes]; } };
 }
 
 const REQUEST = {
@@ -104,12 +105,12 @@ test('hydrated papers accumulate across queued edits instead of overwriting', as
   await timers.advance(900);
 
   assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0].input.papers.map(paper => paper.id), ['p1', 'p2']);
+  assert.deepEqual(calls[0].input.papers!.map(paper => paper.id), ['p1', 'p2']);
 });
 
 test('an edit arriving mid-flight is not raced, it is re-run afterwards', async () => {
   const timers = fakeTimers();
-  const calls = [];
+  const calls: unknown[] = [];
   let release;
   const engine = createPublicListSyncEngine({
     setTimer: timers.setTimer,
@@ -127,7 +128,7 @@ test('an edit arriving mid-flight is not raced, it is re-run afterwards', async 
 
   engine.queue({ ...REQUEST, paperIds: ['a', 'b'] });
   assert.equal(calls.length, 1, 'the second edit must wait for the first request');
-  release();
+  release!();
   await settle();
   await timers.advance(900);
   assert.deepEqual(calls, [['a'], ['a', 'b']]);
@@ -144,7 +145,7 @@ test('a first failure is retried on its own and never reaches the UI', async () 
 
   await timers.advance(4_000);
   assert.equal(calls.length, 2);
-  assert.equal(events.at(-1).status, 'synced');
+  assert.equal(events.at(-1)!.status, 'synced');
 });
 
 test('a second failure surfaces with the Worker code, and retry runs it again', async () => {
@@ -158,21 +159,21 @@ test('a second failure surfaces with the Worker code, and retry runs it again', 
 
   assert.equal(calls.length, 2);
   assert.deepEqual(
-    { status: events.at(-1).status, code: events.at(-1).code },
+    { status: events.at(-1)!.status, code: events.at(-1)!.code },
     { status: 'error', code: 'PUBLISH_QUOTA_EXCEEDED' },
   );
 
   engine.retry('uid:list_1');
   await timers.advance(0);
   assert.equal(calls.length, 3);
-  assert.equal(engine.getState('uid:list_1').status, 'synced');
+  assert.equal(engine.getState('uid:list_1')!.status, 'synced');
 });
 
 test('a synced list stops announcing itself once the notice has been read', async () => {
   const { engine, timers } = harness();
   engine.queue(REQUEST);
   await timers.advance(900);
-  assert.equal(engine.getState('uid:list_1').status, 'synced');
+  assert.equal(engine.getState('uid:list_1')!.status, 'synced');
   await timers.advance(2_500);
   assert.equal(engine.getState('uid:list_1'), null, 'the badge goes quiet again');
 });
@@ -185,7 +186,7 @@ test('the next sync names published papers by id and re-sends only the new one',
   await timers.advance(900);
 
   assert.deepEqual(calls[1].input.paperIds, ['p1', 'p2']);
-  assert.deepEqual(calls[1].input.papers.map(paper => paper.id), ['p2'],
+  assert.deepEqual(calls[1].input.papers!.map(paper => paper.id), ['p2'],
     'the Worker merge keeps p1 from the published copy; re-sending it is waste');
 });
 
@@ -204,14 +205,14 @@ test('unpublishing cancels the queued sync instead of firing it at a dead share'
   await timers.advance(5_000);
 
   assert.equal(calls.length, 0, 'the share id is gone; the request has nowhere to land');
-  assert.equal(events.at(-1).status, null, 'and the badge clears with it');
+  assert.equal(events.at(-1)!.status, null, 'and the badge clears with it');
   assert.equal(engine.getState('uid:list_1'), null);
 });
 
 test('a sync cancelled mid-flight fails quietly instead of blaming the owner', async () => {
   const timers = fakeTimers();
   const reported = [];
-  const events = [];
+  const events: (string|null)[] = [];
   let reject;
   const engine = createPublicListSyncEngine({
     setTimer: timers.setTimer,
@@ -224,7 +225,7 @@ test('a sync cancelled mid-flight fails quietly instead of blaming the owner', a
   engine.queue(REQUEST);
   await timers.advance(900);
   engine.cancel('uid:list_1');
-  reject(new Error('share not found'));
+  reject!(new Error('share not found'));
   await settle();
   await timers.advance(10_000);
 
@@ -234,7 +235,7 @@ test('a sync cancelled mid-flight fails quietly instead of blaming the owner', a
 
 test('a throwing listener never loses a sync, and unsubscribing really stops', async () => {
   const { engine, timers, calls } = harness();
-  const seen = [];
+  const seen: (string|null)[] = [];
   engine.subscribe(() => { throw new Error('render blew up'); });
   const stop = engine.subscribe((key, state) => seen.push(state?.status ?? null));
 

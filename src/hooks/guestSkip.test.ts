@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { dropPaperById } from './useGuestFeed.ts';
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 /**
  * A visitor without an account pressed Skip and got a sign-in prompt instead of
@@ -22,13 +22,13 @@ test('dropPaperById leaves the list untouched for an id that is not there', () =
   const papers = [{ id: 'a' }, { id: 'b' }];
   assert.equal(dropPaperById(papers, 'zzz'), papers, 'same reference: no re-render for nothing');
   assert.equal(dropPaperById(papers, ''), papers);
-  assert.equal(dropPaperById(papers, null), papers);
-  assert.equal(dropPaperById(papers, undefined), papers);
+  assert.equal(dropPaperById(papers, null!), papers);
+  assert.equal(dropPaperById(papers, undefined!), papers);
 });
 
 test('dropPaperById survives a list that is not a list', () => {
-  assert.deepEqual(dropPaperById(null, 'a'), []);
-  assert.deepEqual(dropPaperById(undefined, 'a'), []);
+  assert.deepEqual(dropPaperById(null!, 'a'), []);
+  assert.deepEqual(dropPaperById(undefined!, 'a'), []);
 });
 
 /**

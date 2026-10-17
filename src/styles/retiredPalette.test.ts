@@ -16,15 +16,15 @@ import { readdir, readFile } from 'node:fs/promises';
  * un token para eso (`--accent-violet`) y este test no lo toca.
  */
 
-const RETIRED_PURPLE = [
+const RETIRED_PURPLE: [string, RegExp][] = [
   ['el acento de antes de e56a7ea', /rgba?\(\s*124\s*,\s*58\s*,\s*237|#7c3aed\b/i],
   ['su hover más claro', /rgba?\(\s*139\s*,\s*74\s*,\s*242|#8b4af2\b/i],
 ];
 
-async function stylesheetsUnder(dir) {
+async function stylesheetsUnder(dir: URL): Promise<URL[]> {
   const found = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {
-    const path = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, dir);
+    const path = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, dir!);
     if (entry.isDirectory()) found.push(...await stylesheetsUnder(path));
     else if (entry.name.endsWith('.css')) found.push(path);
   }

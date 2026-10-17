@@ -28,12 +28,12 @@ const CSS = new URL('./PublicPaperPage.css', import.meta.url);
 const JSX = new URL('./PublicPaperPage.tsx', import.meta.url);
 
 /** Comments name selectors and properties in prose; matching them would invent both sides. */
-const stripComments = source => source
+const stripComments = (source: string) => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '');
 
 /** The declarations of one rule, by exact selector. */
-function ruleBody(css, selector) {
+function ruleBody(css: string, selector: string) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const pattern = new RegExp(`(?:^|[};])\\s*${escaped}\\s*\\{([^}]*)\\}`);
   const match = css.match(pattern);

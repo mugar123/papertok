@@ -1,6 +1,6 @@
 import type { PublicListInput, PublicListPayload } from './publicListPayload.ts';
 export interface ListOperationResult { code?: string; shareId?: string; paperCount?: number; listCount?: number; skipped?: number; publishedAt?: string; updatedAt?: string }
-interface ListOperations { isDemo?: boolean; rest?: typeof firestoreRest; request?: typeof authenticatedWorkerFetch; apiBase?: string }
+interface ListOperations { isDemo?: boolean; rest?: Pick<typeof firestoreRest, 'getDocument'>; request?: typeof authenticatedWorkerFetch; apiBase?: string }
 
 /**
  * Publishing goes through the Worker; reading does not.

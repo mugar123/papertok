@@ -10,8 +10,8 @@ import { getSemanticScholarPaperId } from './relatedPapersService.ts';
 
 test('turns the related papers from the Worker into arXiv identifiers, once per paper', async () => {
   clearRecommendationCache();
-  const asked = [];
-  const fetchRelated = async (paper, limit) => {
+  const asked: unknown[] = [];
+  const fetchRelated: NonNullable<NonNullable<Parameters<typeof getPaperRecommendations>[1]>['fetchRelated']> = async (paper, limit) => {
     asked.push({ paper, limit });
     return [
       { arxivId: '2601.00001' },
@@ -28,13 +28,13 @@ test('turns the related papers from the Worker into arXiv identifiers, once per 
   // v2 and v3 of one paper are one lookup: the cache is keyed by the
   // version-free Semantic Scholar id, the same one `/related` is asked with.
   assert.equal(asked.length, 1);
-  assert.equal(asked[0].limit, 20);
+  assert.equal((asked[0] as { limit: number }).limit, 20);
 });
 
 test('asks for a paper that has a DOI and no arXiv id, and hands over the paper itself', async () => {
   clearRecommendationCache();
-  const asked = [];
-  const fetchRelated = async paper => { asked.push(paper); return [{ arxivId: '2601.00001' }]; };
+  const asked: unknown[] = [];
+  const fetchRelated: NonNullable<NonNullable<Parameters<typeof getPaperRecommendations>[1]>['fetchRelated']> = async paper => { asked.push(paper); return [{ arxivId: '2601.00001' }]; };
 
   // A PubMed or OpenAlex paper used to be `getPaperRecommendations(undefined)`:
   // no recommendation, no log, and nobody knew the feed only expanded from
@@ -60,8 +60,8 @@ test('has nothing to ask for a paper with neither DOI nor arXiv id', async () =>
 
 test('asks under the same identity the related-papers sheet would use, for a paper with both a DOI and an arXiv id', async () => {
   clearRecommendationCache();
-  let askedPaper = null;
-  const fetchRelated = async paper => { askedPaper = paper; return [{ arxivId: '2601.00001' }]; };
+  let askedPaper: Parameters<typeof getPaperRecommendations>[0] | null = null;
+  const fetchRelated: NonNullable<NonNullable<Parameters<typeof getPaperRecommendations>[1]>['fetchRelated']> = async paper => { askedPaper = paper; return [{ arxivId: '2601.00001' }]; };
 
   // `RelatedPapersSheet` calls `getRelatedPapers(paper)` with the whole paper, and
   // `getSemanticScholarPaperId` prefers DOI over arXiv id. Before this change, the
@@ -71,16 +71,16 @@ test('asks under the same identity the related-papers sheet would use, for a pap
   // Assert on the resolved identity itself, not on the shape of what was forwarded.
   await getPaperRecommendations({ doi: '10.1000/xyz', arxivId: '2607.12345' }, { fetchRelated });
 
-  assert.equal(getSemanticScholarPaperId(askedPaper), 'DOI:10.1000/xyz');
+  assert.equal(getSemanticScholarPaperId(askedPaper!), 'DOI:10.1000/xyz');
 });
 
 test('does not reach Semantic Scholar directly when the route is unavailable', async () => {
   clearRecommendationCache();
-  const escaped = [];
+  const escaped: unknown[] = [];
   const originalFetch = globalThis.fetch;
   const originalWarn = console.warn;
   globalThis.fetch = async input => {
-    escaped.push(String(input?.url || input));
+    escaped.push(String((input as Request)?.url || input));
     return new Response('{}', { status: 500 });
   };
   console.warn = () => {};

@@ -545,11 +545,11 @@ async function fetchJson<T>(path: string, params: Record<string, unknown>): Prom
   return response.json();
 }
 
-function sourceQuery(categories: string[]) {
+function sourceQuery(categories: readonly string[]) {
   return categories.map(categoryLabel).map(label => `"${label}"`).join(' OR ');
 }
 
-export function getDomainSourcePlan(categories: string[] = []) {
+export function getDomainSourcePlan(categories: readonly string[] = []) {
   const unique = [...new Set(categories)].filter(Boolean);
   const biology = unique.filter(category => category.startsWith('bio.'));
   const engineering = unique.filter(category => /^(?:eess|mech|civil|chemeng)\./.test(category));
@@ -632,7 +632,7 @@ export async function settleDomainSources<T>(requests: SourceRequest<T>[], sourc
   return settled;
 }
 
-export async function fetchDomainPapers(categories: string[], page = 1, limit = 8, queryMode = 'recent', { sourceBudgetMs = DOMAIN_SOURCE_BUDGET_MS } = {}) {
+export async function fetchDomainPapers(categories: readonly string[], page = 1, limit = 8, queryMode = 'recent', { sourceBudgetMs = DOMAIN_SOURCE_BUDGET_MS } = {}) {
   const plan = getDomainSourcePlan(categories);
   const eligible = getEligibleDomainSources(plan, {
     hasSession: hasWorkerSession(),

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-const read = (p) => readFile(new URL(p, import.meta.url), 'utf8');
-const strip = (s) => s.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const read = (p: string|URL) => readFile(new URL(p, import.meta.url), 'utf8');
+const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 test('SOURCE: el feed expone un refresco visible en el primer paper y por arrastre', async () => {
   const src = strip(await read('./FeedContainer.tsx'));
@@ -112,7 +112,7 @@ test('SOURCE: el tirón que refresca aterriza; el que no, vuelve con la goma', a
     'ni queda vivo tras desmontar');
 
   const css = strip(await read('./FeedContainer.css'));
-  const grab = (sel) => { const at = css.indexOf(sel); assert.ok(at > 0, `falta ${sel}`); return css.slice(at, css.indexOf('}', at)); };
+  const grab = (sel: string) => { const at = css.indexOf(sel); assert.ok(at > 0, `falta ${sel}`); return css.slice(at, css.indexOf('}', at)); };
   const landing = grab(".feed-wrapper[data-pull='landing'] .feed-refresh {");
   const visible = grab('.feed-refresh.is-visible,');
   // La pose de aterrizaje TIENE que ser la de trabajo, o al llegar React se
@@ -123,7 +123,7 @@ test('SOURCE: el tirón que refresca aterriza; el que no, vuelve con la goma', a
   }
   // Y con el reloj del velo, para que del pulgar al velo haya un movimiento.
   const dip = grab('.feed-container--refreshing {');
-  const dipMs = /opacity (\d+)ms/.exec(dip)[1];
+  const dipMs = /opacity (\d+)ms/.exec(dip)![1];
   assert.ok(landing.includes(`opacity ${dipMs}ms var(--ease-out-quad)`),
     `el aterrizaje corre el reloj del velo (${dipMs}ms), no uno suyo`);
   const cards = grab(".feed-wrapper[data-pull='landing'] .pc {");
@@ -182,7 +182,7 @@ test('SOURCE: el feed se cubre mientras se refresca, y el scroller sigue quieto'
   assert.match(src, /className=\{`feed-container\$\{isRefreshing \? ' feed-container--refreshing' : ''\}`\}/);
   const css = strip(await read('./FeedContainer.css'));
   const dip = css.slice(css.indexOf('.feed-container--refreshing {'), css.indexOf('}', css.indexOf('.feed-container--refreshing {')));
-  const cover = Number(/opacity: (0?\.\d+)/.exec(dip)[1]);
+  const cover = Number(/opacity: (0?\.\d+)/.exec(dip)![1]);
   assert.ok(cover <= 0.25, `el velo tapa de verdad (${cover}): a 0.4 el título y el abstract se seguían leyendo`);
   assert.doesNotMatch(dip, /transform|translate|scale|height|filter/,
     'nada que toque la geometría: debajo hay un scroll-snap que medir');
@@ -198,19 +198,19 @@ test('SOURCE: el feed se cubre mientras se refresca, y el scroller sigue quieto'
     'la tarjeta sabe deslizar, y sin perder su propia transición de opacidad');
   const back = [...css.matchAll(/\.feed-container \{([^}]*)\}/g)]
     .map((m) => m[1]).find((b) => /transition:\s*opacity \d+ms/.test(b));
-  const outMs = Number(/opacity (\d+)ms/.exec(back)[1]);
-  const inMs = Number(/opacity (\d+)ms/.exec(dip)[1]);
+  const outMs = Number(/opacity (\d+)ms/.exec(back!)![1]);
+  const inMs = Number(/opacity (\d+)ms/.exec(dip)![1]);
   assert.ok(outMs > inMs, `la vuelta (${outMs}ms) es más lenta que la ida (${inMs}ms): llega, no aparece de golpe`);
-  assert.match(back, /opacity \d+ms \d+ms/,
+  assert.match(back!, /opacity \d+ms \d+ms/,
     'y espera antes de empezar: montar el feed nuevo cuesta fotogramas de 90-173ms que van bajo el velo');
   // Un solo reloj por sentido, o son dos llegadas y no una: medido antes de
   // esto, la tarjeta estaba en casa a 134ms con el velo todavía subiendo a 400.
-  const clock = (decl) => /transition: opacity ([^;]+)/.exec(decl)[1].replace('opacity ', '');
-  assert.equal(/--pc-travel: ([^;]+);/.exec(card)[1], clock(back),
+  const clock = (decl: string) => /transition: opacity ([^;]+)/.exec(decl)![1].replace('opacity ', '');
+  assert.equal(/--pc-travel: ([^;]+);/.exec(card)![1], clock(back!),
     'la subida de la tarjeta corre el mismo reloj que la vuelta del velo');
-  assert.equal(/--pc-travel: ([^;]+);/.exec(sink)[1], clock(dip),
+  assert.equal(/--pc-travel: ([^;]+);/.exec(sink)![1], clock(dip),
     'y el hundimiento, el mismo que la ida');
-  assert.doesNotMatch(clock(back), /expo/,
+  assert.doesNotMatch(clock(back!), /expo/,
     'nada de expo en la vuelta: 0.20 → 0.83 en 67ms y luego 250ms arrastrando el último sexto es, medido, un corte con buen perfil');
   const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
   assert.match(reduced, /\.feed-container--refreshing \.pc \{ translate: none; \}/,
@@ -267,11 +267,11 @@ test('SOURCE: el ancho de la píldora no depende de qué cara lleve puesta', asy
 test('SOURCE: la píldora se retira bajo la barra, no se apaga en el aire', async () => {
   const css = strip(await read('./FeedContainer.css'));
   const rest = css.slice(css.indexOf('.feed-refresh {'), css.indexOf('}', css.indexOf('.feed-refresh {')));
-  const up = Number(/translate: -50% -(\d+)px/.exec(rest)[1]);
+  const up = Number(/translate: -50% -(\d+)px/.exec(rest)![1]);
   assert.ok(up >= 34, `el reposo está bajo la barra (${up}px): con menos, la píldora no llega y se deshace a la vista`);
   assert.doesNotMatch(rest, /ease-in[;,)\s]/, 'la salida no arranca lenta');
-  const [, opMs, opDelay] = /opacity (\d+)ms (\d+)ms/.exec(rest);
-  const travelMs = Number(/translate (\d+)ms/.exec(rest)[1]);
+  const [, opMs, opDelay] = /opacity (\d+)ms (\d+)ms/.exec(rest)!;
+  const travelMs = Number(/translate (\d+)ms/.exec(rest)![1]);
   assert.ok(Number(opDelay) > 0, 'la opacidad espera: si se apaga a la vez que sube, no se ve meterse debajo');
   assert.ok(Number(opMs) + Number(opDelay) <= travelMs, 'y termina dentro del recorrido, no después');
 });
@@ -305,10 +305,10 @@ test('SOURCE: la cara no vuelve al verbo mientras la píldora se ve', async () =
     'y ya no depende del puntero: la píldora se va diciendo «Actualizado» con el dedo y con el ratón');
   // La cola tiene que cubrir la salida entera, o el texto cambia todavía a la
   // vista, que es exactamente lo reportado.
-  const exitMs = Number(/const PILL_EXIT_MS = (\d+);/.exec(src)[1]);
+  const exitMs = Number(/const PILL_EXIT_MS = (\d+);/.exec(src)![1]);
   const css = strip(await read('./FeedContainer.css'));
   const rest = css.slice(css.indexOf('.feed-refresh {'), css.indexOf('}', css.indexOf('.feed-refresh {')));
-  const travelMs = Number(/translate (\d+)ms/.exec(rest)[1]);
+  const travelMs = Number(/translate (\d+)ms/.exec(rest)![1]);
   assert.ok(exitMs >= travelMs, `la cola (${exitMs}ms) cubre el recorrido de salida (${travelMs}ms)`);
   // Y NO toca ni a `is-visible` ni a `is-done`: la píldora se va cuando se iba
   // y el acuse no se repite.
@@ -329,8 +329,8 @@ test('SOURCE: las caras de la píldora no se leen a la vez', async () => {
   const src = strip(await read('./FeedContainer.tsx'));
   const block = src.slice(src.indexOf('function refreshFaceMotion('), src.indexOf('const SCROLL_IDLE_DELAY_MS'));
   assert.ok(block.length > 0 && block.length < 2200, 'el relevo vive en una función suya');
-  const out = Number(/const FACE_OUT_S = ([\d.]+);/.exec(src)[1]);
-  const delay = Number(/const FACE_IN_DELAY_S = ([\d.]+);/.exec(src)[1]);
+  const out = Number(/const FACE_OUT_S = ([\d.]+);/.exec(src)![1]);
+  const delay = Number(/const FACE_IN_DELAY_S = ([\d.]+);/.exec(src)![1]);
   assert.ok(delay > 0, 'la que llega espera a la que se va: sin retardo se leen las dos');
   assert.ok(delay < out,
     `y arranca antes de que aquella termine (${delay}s < ${out}s), o queda un fotograma de píldora vacía`);
@@ -381,7 +381,7 @@ test('SOURCE: la píldora trabaja sin halo, y el aterrizaje conserva su spring',
   assert.doesNotMatch(spin, /scale|zoom/, 'y nada de zoom por otra puerta');
   assert.match(spin, /animation: feedRefreshSpin [\d.]+s linear infinite;/, 'una sola animación, y lineal');
   const doneKf = css.slice(css.indexOf('@keyframes feedRefreshDone'), css.indexOf('100% { scale: 1; }', css.indexOf('@keyframes feedRefreshDone')));
-  const peak = Number(/scale: ([\d.]+);/.exec(doneKf.slice(doneKf.indexOf('0% { scale: 1; }') + 16))[1]);
+  const peak = Number(/scale: ([\d.]+);/.exec(doneKf.slice(doneKf.indexOf('0% { scale: 1; }') + 16))![1]);
   assert.ok(peak > 1 && peak <= 1.06,
     `el acuse es un respiro (${peak}): un pop grande multiplica con la entrada de la cara que corre debajo`);
   assert.doesNotMatch(doneKf, /scale: 0\./,
@@ -389,8 +389,8 @@ test('SOURCE: la píldora trabaja sin halo, y el aterrizaje conserva su spring',
   const dip = css.slice(css.indexOf('.feed-container--refreshing {'), css.indexOf('}', css.indexOf('.feed-container--refreshing {')));
   const back = [...css.matchAll(/\.feed-container \{([^}]*)\}/g)]
     .map((m) => m[1]).find((b) => /transition:\s*opacity \d+ms/.test(b));
-  const outMs = Number(/opacity (\d+)ms/.exec(back)[1]);
-  const inMs = Number(/opacity (\d+)ms/.exec(dip)[1]);
+  const outMs = Number(/opacity (\d+)ms/.exec(back!)![1]);
+  const inMs = Number(/opacity (\d+)ms/.exec(dip)![1]);
   assert.ok(outMs >= 300, `vuelta más suave (${outMs}ms)`);
   assert.ok(inMs <= 200, `ida más rápida (${inMs}ms)`);
   const src = strip(await read('./FeedContainer.tsx'));
@@ -410,10 +410,10 @@ test('SOURCE: la píldora trabaja sin halo, y el aterrizaje conserva su spring',
  */
 test('SOURCE: el refresco salta arriba bajo el velo, no viaja a la vista', async () => {
   const src = strip(await read('./FeedContainer.tsx'));
-  const dipMs = Number(/const REFRESH_DIP_MS = (\d+);/.exec(src)[1]);
+  const dipMs = Number(/const REFRESH_DIP_MS = (\d+);/.exec(src)![1]);
   const css = strip(await read('./FeedContainer.css'));
   const dip = css.slice(css.indexOf('.feed-container--refreshing {'), css.indexOf('}', css.indexOf('.feed-container--refreshing {')));
-  assert.equal(dipMs, Number(/opacity (\d+)ms/.exec(dip)[1]),
+  assert.equal(dipMs, Number(/opacity (\d+)ms/.exec(dip)![1]),
     'el JS espera exactamente lo que la hoja tarda en bajar el velo');
   const start = src.indexOf('refreshJumpOwedRef.current = true;');
   assert.ok(start > 0, 'el salto sigue colgando de isRefreshing');
@@ -470,7 +470,7 @@ test('SOURCE: el hover se engancha al envoltorio vivo, no al del primer commit',
 
   const at = src.indexOf('const wrapper = feedNode?.parentElement;');
   assert.ok(at > 0, 'el efecto del hover parte del nodo publicado, no de una lectura del ref');
-  const deps = /\}, \[([^\]]*)\]\);/.exec(src.slice(at))[1];
+  const deps = /\}, \[([^\]]*)\]\);/.exec(src.slice(at))![1];
   assert.match(deps, /(^|[\s,])feedNode([\s,]|$)/,
     'el nodo es la dependencia: cuando el contenedor aparece, el oyente se reengancha al que está vivo');
   assert.doesNotMatch(deps, /papers\.length/,

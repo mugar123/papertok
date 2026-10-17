@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const stripComments = (source) => source
+const stripComments = (source: string) => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^[ \t]*\/\/.*$/gm, '');
-const read = async (path) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
+const read = async (path: string|URL) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
 
 /**
  * SOURCE tests: the entity pages keep the app bar for a signed-in reader,

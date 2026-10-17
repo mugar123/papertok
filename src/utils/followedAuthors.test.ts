@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { toggleFollowedAuthor } from './followedAuthors.ts';
 
 const transforms = {
-  union: name => ({ op: 'union', name }),
-  remove: name => ({ op: 'remove', name }),
+  union: (name: unknown) => ({ op: 'union', name } as import('firebase/firestore').FieldValue & { op: string; name: string }),
+  remove: (name: unknown) => ({ op: 'remove', name } as import('firebase/firestore').FieldValue & { op: string; name: string }),
 };
 
 test('following adds locally and sends a union, never the whole array', () => {

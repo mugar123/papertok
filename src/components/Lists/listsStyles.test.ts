@@ -87,7 +87,7 @@ for (const { prefix, jsx, css } of PAIRS) {
  * design system's own notes call out ("tokens don't reach hardcoded values").
  */
 test('the lists surfaces carry no hardcoded radius or colour literal', async () => {
-  const offences = [];
+  const offences: unknown[] = [];
   for (const { css } of PAIRS) {
     const stylesheet = await readFile(new URL(css, import.meta.url), 'utf8');
     stylesheet.split('\n').forEach((line, index) => {

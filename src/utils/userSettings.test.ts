@@ -19,15 +19,15 @@ test('normalizes the preferred AI explanation level', () => {
 });
 
 test('normalizes the interface language', () => {
-  assert.deepEqual(normalizeReadingPreferences({ language: 'en' }), {
+  assert.deepEqual(normalizeReadingPreferences({ language: 'en' } as NonNullable<Parameters<typeof normalizeReadingPreferences>[0]> & Record<string, unknown>), {
     aiExplanationLevel: DEFAULT_READING_PREFERENCES.aiExplanationLevel,
     language: 'en',
     languagePreferenceSet: false,
   });
-  assert.equal(normalizeReadingPreferences({ language: 'fr' }).language, 'en');
+  assert.equal(normalizeReadingPreferences({ language: 'fr' } as NonNullable<Parameters<typeof normalizeReadingPreferences>[0]> & Record<string, unknown>).language, 'en');
 });
 
 test('keeps track of whether the language was selected manually', () => {
-  assert.equal(normalizeReadingPreferences({ language: 'en' }).languagePreferenceSet, false);
-  assert.equal(normalizeReadingPreferences({ language: 'en', languagePreferenceSet: true }).languagePreferenceSet, true);
+  assert.equal(normalizeReadingPreferences({ language: 'en' } as NonNullable<Parameters<typeof normalizeReadingPreferences>[0]> & Record<string, unknown>).languagePreferenceSet, false);
+  assert.equal(normalizeReadingPreferences({ language: 'en', languagePreferenceSet: true } as NonNullable<Parameters<typeof normalizeReadingPreferences>[0]> & Record<string, unknown>).languagePreferenceSet, true);
 });

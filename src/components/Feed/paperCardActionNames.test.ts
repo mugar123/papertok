@@ -20,16 +20,16 @@ import { readFile } from 'node:fs/promises';
  * sin cambiar el nombre tiene que fallar aquí.
  */
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
 // Los comentarios de este mismo fichero de origen explican los `aria-label`
 // que se buscan abajo. Sin despojarlos, una prosa que promete el atributo
 // bastaría para que la aserción pasara con el atributo borrado.
-const stripComments = (source) => source
+const stripComments = (source: string) => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^[ \t]*\/\/.*$/gm, '');
 
 /** El trozo de JSX de un botón, desde su apertura hasta su `</Button>`. */
-const bloque = (jsx, ancla, cierre = '</Button>') => {
+const bloque = (jsx: string, ancla: string, cierre = '</Button>') => {
   const desde = jsx.indexOf(ancla);
   assert.notEqual(desde, -1, `no encuentro «${ancla}» en PaperCard.tsx`);
   const hasta = jsx.indexOf(cierre, desde);
@@ -38,7 +38,7 @@ const bloque = (jsx, ancla, cierre = '</Button>') => {
 };
 
 /** The string literal of an expression (the interface is English-only). */
-const idiomas = (expresion) => {
+const idiomas = (expresion: string) => {
   const suelto = expresion.match(/'([^']*)'/);
   return suelto ? [suelto[1]] : [];
 };

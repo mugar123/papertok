@@ -41,7 +41,7 @@ test('marks each mention instead of stacking on the first', () => {
 });
 
 test('splits a text chunk into plain and marked segments', () => {
-  const segments = segmentTextChunk(0, 'alpha beta gamma', [{ start: 6, end: 10, kind: 'number' }]);
+  const segments = segmentTextChunk(0, 'alpha beta gamma', ([{ start: 6, end: 10, kind: 'number' }] as import('./textHighlights.ts').HighlightRange[]));
   assert.deepEqual(segments.map(segment => segment.type), ['text', 'mark', 'text']);
   assert.equal(segments[1].value, 'beta');
   assert.equal(segments[1].kind, 'number');
@@ -74,8 +74,8 @@ test('a plan concatenates back to the normalized text', () => {
 test('builds an anchor from a usable selection only', () => {
   assert.equal(buildSelectionAnchor('ok'), null);
   const anchor = buildSelectionAnchor('  a long enough selection  ');
-  assert.equal(anchor.quote, 'a long enough selection');
-  assert.equal(anchor.kind, 'user');
+  assert.equal(anchor!.quote, 'a long enough selection');
+  assert.equal(anchor!.kind, 'user');
 });
 
 test('every item carries its span in normalized space', () => {
@@ -95,16 +95,16 @@ test('a highlight that swallows a formula marks the formula too', () => {
   const text = 'the value $\\omega_b = 0.02$ was fixed throughout';
   const plan = buildHighlightPlan(text, [{ quote: 'the value $\\omega_b = 0.02$ was fixed', kind: 'number' }]);
   const math = plan.find(item => item.type === 'math');
-  assert.equal(math.kind, 'number');
+  assert.equal(math!.kind, 'number');
   // Marked whole, and still handed to KaTeX as valid LaTeX.
-  assert.equal(math.value, '\\omega_b = 0.02');
+  assert.equal(math!.value, '\\omega_b = 0.02');
 });
 
 test('a highlight that stops inside a formula leaves it unmarked', () => {
   const text = 'the value $\\omega_b = 0.02$ was fixed throughout';
   const plan = buildHighlightPlan(text, [{ quote: 'the value $\\omega' }]);
   const math = plan.find(item => item.type === 'math');
-  assert.equal(math.kind, null);
+  assert.equal(math!.kind, null);
 });
 
 test('builds an anchor from offsets when the selected string cannot be trusted', () => {
@@ -112,10 +112,10 @@ test('builds an anchor from offsets when the selected string cannot be trusted',
   // The span of "measured $x^2$ across", counted in the normalized source.
   const start = text.indexOf('measured');
   const anchor = buildRangeAnchor(text, start, text.indexOf(' three'));
-  assert.equal(anchor.quote, 'measured $x^2$ across');
-  assert.equal(anchor.kind, 'user');
+  assert.equal(anchor!.quote, 'measured $x^2$ across');
+  assert.equal(anchor!.kind, 'user');
   // And it resolves back onto the same text, which is the whole point.
-  const ranges = resolveHighlightRanges(text, [anchor]);
+  const ranges = resolveHighlightRanges(text, [anchor!]);
   assert.equal(ranges.length, 1);
   assert.equal(ranges[0].start, start);
 });
@@ -128,7 +128,7 @@ test('a range too short to anchor is refused like any other', () => {
 test('a quote whose only mention lies under a mark of another source is kept, not dropped', () => {
   const text = 'La idea central es sencilla: quien convive más comparte más microbios, y el mapa se parece.';
   const ranges = resolveHighlightRanges(text, [
-    { quote: 'sencilla: quien convive más', kind: 'user', source: 'user' },
+    { quote: 'sencilla: quien convive más', kind: 'user' as const, source: 'user' },
     { quote: 'quien convive más comparte más microbios', kind: 'finding', source: 'ai' },
   ]);
   assert.equal(ranges.length, 2, 'both survive: they belong to different sources');
@@ -148,18 +148,18 @@ test('a repeated quote of the same source still moves on to the next mention, an
 test('a pending selection may sit on top of anything, including the reader\'s own saved mark', () => {
   const text = 'quien convive más comparte más microbios, y el mapa de amistades se parece';
   const ranges = resolveHighlightRanges(text, [
-    { quote: 'quien convive más comparte más', kind: 'user', source: 'user', id: 'saved' },
-    { quote: 'quien convive más comparte más', kind: 'user', source: 'user', id: 'pending', pending: true },
+    { quote: 'quien convive más comparte más', kind: 'user' as const, source: 'user', id: 'saved' },
+    { quote: 'quien convive más comparte más', kind: 'user' as const, source: 'user', id: 'pending', pending: true },
   ]);
   assert.equal(ranges.length, 2);
 });
 
 test('overlapping marks are cut at every boundary, the reader\'s on top and the model\'s remembered underneath', () => {
   // user: 4..14, ai: 10..20 over 'abcdefghijklmnopqrstuv'
-  const segments = segmentTextChunk(0, 'abcdefghijklmnopqrstuv', [
-    { start: 4, end: 14, kind: 'user', source: 'user', id: 'u' },
+  const segments = segmentTextChunk(0, 'abcdefghijklmnopqrstuv', ([
+    { start: 4, end: 14, kind: 'user' as const, source: 'user', id: 'u' },
     { start: 10, end: 20, kind: 'finding', source: 'ai', id: 'a' },
-  ]);
+  ] as import('./textHighlights.ts').HighlightRange[]));
   assert.deepEqual(segments.map(s => [s.type, s.value, s.source || null, s.under || null]), [
     ['text', 'abcd', null, null],
     ['mark', 'efghij', 'user', []],
@@ -168,10 +168,10 @@ test('overlapping marks are cut at every boundary, the reader\'s on top and the 
     ['text', 'uv', null, null],
   ]);
   // The reader's mark wins the top even when the model's range started first.
-  const reversed = segmentTextChunk(0, 'abcdefghijklmnopqrstuv', [
+  const reversed = segmentTextChunk(0, 'abcdefghijklmnopqrstuv', ([
     { start: 4, end: 14, kind: 'finding', source: 'ai', id: 'a' },
-    { start: 10, end: 20, kind: 'user', source: 'user', id: 'u' },
-  ]);
+    { start: 10, end: 20, kind: 'user' as const, source: 'user', id: 'u' },
+  ] as import('./textHighlights.ts').HighlightRange[]));
   assert.deepEqual(reversed.map(s => [s.value, s.source, s.under]), [
     ['abcd', undefined, undefined],
     ['efghij', 'ai', []],
@@ -185,12 +185,12 @@ test('a plan with overlapping marks still concatenates back to the text and carr
   const text = 'usan una fórmula $S = 1$ entre pares y la comparan';
   const plan = buildHighlightPlan(text, [
     { quote: 'una fórmula $S = 1$ entre', kind: 'finding', source: 'ai' },
-    { quote: 'fórmula $S = 1$ entre pares', kind: 'user', source: 'user', pending: true },
+    { quote: 'fórmula $S = 1$ entre pares', kind: 'user' as const, source: 'user', pending: true },
   ]);
   const rebuilt = plan.map(item => item.type === 'math' ? item.raw : item.value).join('');
   assert.equal(rebuilt, 'usan una fórmula $S = 1$ entre pares y la comparan');
   const math = plan.find(item => item.type === 'math');
-  assert.equal(math.source, 'user', 'the pending selection paints the formula');
-  assert.deepEqual(math.under, ['ai']);
+  assert.equal(math!.source, 'user', 'the pending selection paints the formula');
+  assert.deepEqual(math!.under, ['ai']);
   assert.ok(plan.every(item => item.type === 'text' || Array.isArray(item.under)));
 });

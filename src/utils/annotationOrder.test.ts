@@ -77,9 +77,9 @@ test('an unknown filter shows everything rather than nothing', () => {
 
 test('marks and notes are counted apart, because they are not the same thing', () => {
   const counted = countAnnotations([
-    { kind: 'user' },
-    { kind: 'user', note: 'mía' },
-    { kind: 'ai', note: 'del modelo' },
+    { kind: 'user' } as NonNullable<NonNullable<Parameters<typeof countAnnotations>[0]>[number]> & Record<string, unknown>,
+    { kind: 'user', note: 'mía' } as NonNullable<NonNullable<Parameters<typeof countAnnotations>[0]>[number]> & Record<string, unknown>,
+    { kind: 'ai', note: 'del modelo' } as NonNullable<NonNullable<Parameters<typeof countAnnotations>[0]>[number]> & Record<string, unknown>,
   ]);
   assert.deepEqual(counted, { notes: 2, marks: 1, total: 3 });
 });

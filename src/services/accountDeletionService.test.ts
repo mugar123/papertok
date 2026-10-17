@@ -82,7 +82,7 @@ test('AUTH_RECENT_LOGIN_REQUIRED is never success, even after work started', asy
         return new Response(JSON.stringify({ code: 'AUTH_RECENT_LOGIN_REQUIRED' }), { status: 401 });
       },
     }),
-    (error) => error.code === 'AUTH_RECENT_LOGIN_REQUIRED',
+    (error) => (error as Error & { code?: string; status?: number; retryAfterMs?: number }).code === 'AUTH_RECENT_LOGIN_REQUIRED',
   );
   assert.equal(calls, 2);
 });
@@ -100,7 +100,7 @@ test('a 401 before the user tree was reached is an error, not completion', async
         return new Response(JSON.stringify({ code: 'AUTH_REQUIRED' }), { status: 401 });
       },
     }),
-    (error) => error.code === 'AUTH_REQUIRED' && error.status === 401,
+    (error) => (error as Error & { code?: string; status?: number; retryAfterMs?: number }).code === 'AUTH_REQUIRED' && (error as Error & { code?: string; status?: number; retryAfterMs?: number }).status === 401,
   );
   assert.equal(calls, 2);
 });

@@ -1,3 +1,5 @@
+type GuestStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+
 type GuestAnswer = { areas?: unknown; topics?: unknown; readingLevel?: unknown; emailDigest?: unknown };
 
 import { CATEGORIES } from '../data/categories.ts';
@@ -27,7 +29,7 @@ export const GUEST_INTERESTS_STORAGE_KEY = 'papertok_guestInterests';
 
 const AREA_KEYS = Object.freeze(Object.keys(CATEGORIES) as Array<Extract<keyof typeof CATEGORIES, string>>);
 
-function getStorage(storage?: Storage | null) {
+function getStorage(storage?: GuestStorage | null) {
   if (storage) return storage;
   if (typeof window === 'undefined') return null;
   try {
@@ -152,7 +154,7 @@ export function guestSeedCategoriesForAreas(areas: readonly string[], perArea = 
  * which the prompt honours by not asking again — the header chip stays as
  * the way back in.
  */
-export function readGuestInterests(storage?: Storage | null) {
+export function readGuestInterests(storage?: GuestStorage | null) {
   const target = getStorage(storage);
   if (!target) return null;
 
@@ -180,7 +182,7 @@ export function readGuestInterests(storage?: Storage | null) {
  * travels with this guest bridge until account onboarding saves it to the UID,
  * and so does an explicit yes to the email digest (`emailDigest: true`).
  */
-export function saveGuestInterests(answer: GuestAnswer | unknown[] | null | undefined, storage?: Storage | null) {
+export function saveGuestInterests(answer: GuestAnswer | unknown[] | null | undefined, storage?: GuestStorage | null) {
   const areas = Array.isArray(answer) ? answer : answer?.areas;
   const normalized = normalizeGuestAreas(areas);
   const topics = Array.isArray(answer) ? [] : normalizeGuestTopics(answer?.topics, normalized);
@@ -209,11 +211,11 @@ export function saveGuestInterests(answer: GuestAnswer | unknown[] | null | unde
   return normalized;
 }
 
-export function dismissGuestInterests(storage?: Storage | null) {
+export function dismissGuestInterests(storage?: GuestStorage | null) {
   saveGuestInterests([], storage);
 }
 
-export function clearGuestInterests(storage?: Storage | null) {
+export function clearGuestInterests(storage?: GuestStorage | null) {
   const target = getStorage(storage);
   if (!target) return;
 

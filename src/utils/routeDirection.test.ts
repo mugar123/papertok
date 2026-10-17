@@ -20,7 +20,7 @@ test('a replace is not a step and gets no travel', () => {
 });
 
 test('anything the router does not name is treated as no direction', () => {
-  assert.equal(directionForNavigationType(undefined), 0);
+  assert.equal(directionForNavigationType(undefined!), 0);
   assert.equal(directionForNavigationType(null), 0);
   assert.equal(directionForNavigationType('SOMETHING_NEW'), 0);
 });

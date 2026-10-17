@@ -18,7 +18,9 @@
 const CACHE_KEY = 'papertok_source_cache_v1';
 const MAX_ENTRIES = 6;
 
-function getStore(storage: Storage) {
+type SourceStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+
+function getStore(storage: SourceStorage) {
   try {
     const raw = storage.getItem(CACHE_KEY);
     const parsed = (raw ? JSON.parse(raw) : null) as Record<string, { t: number; v: unknown }> | null;
@@ -28,7 +30,7 @@ function getStore(storage: Storage) {
   }
 }
 
-export function readSourceCache<T = unknown>(key: string, ttlMs: number, storage = globalThis.localStorage) {
+export function readSourceCache<T = unknown>(key: string, ttlMs: number, storage: SourceStorage | null = globalThis.localStorage) {
   if (!storage || !key || !(ttlMs > 0)) return null;
   try {
     const entry = getStore(storage)[key];
@@ -40,7 +42,7 @@ export function readSourceCache<T = unknown>(key: string, ttlMs: number, storage
   }
 }
 
-export function writeSourceCache(key: string, value: unknown, storage = globalThis.localStorage) {
+export function writeSourceCache(key: string, value: unknown, storage: SourceStorage | null = globalThis.localStorage) {
   if (!storage || !key || value === undefined) return;
   try {
     const store = getStore(storage);

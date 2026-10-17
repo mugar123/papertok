@@ -3,15 +3,16 @@ import type { PaperSearchResult } from './adapters/index.ts';
 import type { TopicInput } from '../utils/topicNavigation.ts';
 import type { FollowInput } from '../utils/following.ts';
 type RetrievalTopic = TopicInput & { canonicalId?: string; _queryTopic?: boolean };
+type TopicProvider<F extends (...args: never[]) => unknown> = (...args: Parameters<F>) => Paper[] | Pick<PaperSearchResult, 'papers'> | Promise<Paper[] | Pick<PaperSearchResult, 'papers'>>;
 interface TopicProviders {
-  fetchOpenAlexEntity: typeof getWorksByEntity;
-  fetchArxivCategories: typeof fetchPapers;
-  fetchDomainCategories: typeof fetchDomainPapers;
-  searchArxiv: typeof searchPapers;
-  searchOpenAlex: OpenAlexAdapter['search'];
-  searchPubmed: PubmedAdapter['search'];
+  fetchOpenAlexEntity: TopicProvider<typeof getWorksByEntity>;
+  fetchArxivCategories: (categories: string[], ...options: Parameters<typeof fetchPapers> extends [unknown, ...infer R] ? R : never) => Paper[] | Promise<Paper[]>;
+  fetchDomainCategories: TopicProvider<typeof fetchDomainPapers>;
+  searchArxiv: TopicProvider<typeof searchPapers>;
+  searchOpenAlex: TopicProvider<OpenAlexAdapter['search']>;
+  searchPubmed: TopicProvider<PubmedAdapter['search']>;
 }
-interface TopicRequest { name: string; kind: string; promise: Promise<Paper[] | PaperSearchResult>; relevanceTopic?: TopicInput; }
+interface TopicRequest { name: string; kind: string; promise: Promise<Paper[] | Pick<PaperSearchResult, 'papers'>>; relevanceTopic?: TopicInput; }
 export interface TopicRetrievalOptions {
   allowLegacyDisplayName?: boolean; filters?: Parameters<typeof getWorksByEntity>[5]; maxPapers?: number; mode?: string;
   page?: number; pageSize?: number; providers?: Partial<TopicProviders>; searchQuery?: string; sortBy?: string;
@@ -146,7 +147,7 @@ const DEFAULT_PROVIDERS: Readonly<TopicProviders> = Object.freeze<TopicProviders
   searchPubmed: (query, page, options) => new PubmedAdapter().search(query, page, options),
 });
 
-function papersFromResult(value: Paper[] | PaperSearchResult) {
+function papersFromResult(value: Paper[] | Pick<PaperSearchResult, 'papers'>) {
   if (Array.isArray(value)) return value;
   return Array.isArray(value?.papers) ? value.papers : [];
 }
@@ -159,7 +160,7 @@ function addRequest(requests: TopicRequest[], name: string, kind: string, promis
   requests.push({ name, kind, promise });
 }
 
-function invokeProvider<Args extends unknown[], Result>(provider: (...args: Args) => Promise<Result>, args: Args) {
+function invokeProvider<Args extends unknown[], Result>(provider: (...args: Args) => Result | Promise<Result>, args: Args) {
   return Promise.resolve().then(() => provider(...args));
 }
 

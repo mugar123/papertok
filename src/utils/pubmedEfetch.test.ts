@@ -1,3 +1,4 @@
+import type { PaperAuthor } from '../models/Paper.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseXmlDocument } from '../test-support/xmlDomShim.ts';
@@ -128,12 +129,12 @@ test('the card\'s authors get those identifiers, by position or by name, and kee
   const fromEfetch = pubmedAuthors(article);
 
   const merged = mergePubmedAuthors([{ name: 'Pidugu VK' }, { name: 'Huang HC' }, { name: 'Li WN' }, { name: 'The Endocrine Consortium' }], fromEfetch);
-  assert.equal(merged[2].name, 'Li WN');
-  assert.equal(merged[2].orcid, '0000-0002-1825-0097');
-  assert.equal(merged[2].fullName, 'Wan-Ning Li');
+  assert.equal((merged[2] as PaperAuthor).name, 'Li WN');
+  assert.equal((merged[2] as PaperAuthor).orcid, '0000-0002-1825-0097');
+  assert.equal((merged[2] as PaperAuthor).fullName, 'Wan-Ning Li');
 
   // esummary sometimes drops the collective author: then names decide.
   const byName = mergePubmedAuthors([{ name: 'Li WN' }, { name: 'Pidugu VK' }], fromEfetch);
-  assert.deepEqual(byName.map(author => author.fullName), ['Wan-Ning Li', 'Vijaya Kumar Pidugu']);
+  assert.deepEqual(byName.map(author => (author as PaperAuthor).fullName), ['Wan-Ning Li', 'Vijaya Kumar Pidugu']);
   assert.deepEqual(mergePubmedAuthors([{ name: 'Someone Else' }], fromEfetch), [{ name: 'Someone Else' }]);
 });

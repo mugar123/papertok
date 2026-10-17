@@ -1,3 +1,4 @@
+import type { PaperAuthor } from '../models/Paper.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PaperBuilder } from './PaperBuilder.ts';
@@ -39,7 +40,7 @@ test('OpenAlex enrichment remains available to the recommendation engine', () =>
     conceptAffinities: { 'concept-1': 1 },
   });
 
-  assert.equal(enriched.openAlex.citationCount, 42);
+  assert.equal(enriched.openAlex!.citationCount, 42);
   assert.equal(enriched.citationCountKnown, true);
   assert.ok(score.citations > 0);
   assert.ok(score.semantic > 0);
@@ -61,11 +62,11 @@ test('does not treat an OpenAlex repository as a verified publication', () => {
     id: 'arxiv:2607.08264',
     title: 'New arXiv paper',
     publicationType: 'preprint',
-    publicationStatus: 'preprint',
+    publicationStatus: 'preprint' as const,
   });
   const enriched = PaperBuilder.merge(paper, {
     publicationType: 'repository',
-    publicationStatus: 'preprint',
+    publicationStatus: 'preprint' as const,
   }, 'openalex');
 
   assert.equal(enriched.publicationType, 'preprint');
@@ -78,7 +79,7 @@ test('does not mark a repository-hosted preprint as peer reviewed', () => {
     id: 'openalex:W7168054384',
     title: 'Repository preprint',
     publicationType: 'repository',
-    publicationStatus: 'preprint',
+    publicationStatus: 'preprint' as const,
   });
 
   assert.equal(paper.peerReviewed, false);
@@ -93,7 +94,7 @@ test('merging an abstract does not manufacture peer review', () => {
     id: 'ads:1',
     title: 'Report',
     publicationType: 'techreport',
-    publicationStatus: 'published',
+    publicationStatus: 'published' as const,
     peerReviewed: false,
   });
   const merged = PaperBuilder.merge(base, { abstract: 'Now with text.' }, 'ads');
@@ -337,7 +338,7 @@ test('co-authors sharing a surname get their own ids, by position', () => {
   const merged = PaperBuilder.merge(base, {
     authors: [{ name: 'Wang, J.', id: 'https://openalex.org/A1' }, { name: 'Wang, J.', id: 'https://openalex.org/A2' }],
   }, 'openalex');
-  assert.deepEqual(merged.authors.map((a) => a.id), ['https://openalex.org/A1', 'https://openalex.org/A2']);
+  assert.deepEqual(merged.authors.map((a) => (a as PaperAuthor).id), ['https://openalex.org/A1', 'https://openalex.org/A2']);
 });
 
 test('when the lists differ in length, an ambiguous name carries no id', () => {
@@ -352,7 +353,7 @@ test('when the lists differ in length, an ambiguous name carries no id', () => {
       { name: 'Grace Hopper', id: 'https://openalex.org/A3' },
     ],
   }, 'openalex');
-  assert.equal(merged.authors[0].id, null, 'two Smiths match: the door stays the slow one rather than the wrong one');
+  assert.equal((merged.authors[0] as PaperAuthor).id, null, 'two Smiths match: the door stays the slow one rather than the wrong one');
 });
 
 test('a position that does not match the name falls back to a unique match', () => {
@@ -364,7 +365,7 @@ test('a position that does not match the name falls back to a unique match', () 
   const merged = PaperBuilder.merge(base, {
     authors: [{ name: 'Hopper, G.', id: 'https://openalex.org/A2' }, { name: 'Lovelace, A.', id: 'https://openalex.org/A1' }],
   }, 'openalex');
-  assert.deepEqual(merged.authors.map((a) => a.id), ['https://openalex.org/A1', 'https://openalex.org/A2']);
+  assert.deepEqual(merged.authors.map((a) => (a as PaperAuthor).id), ['https://openalex.org/A1', 'https://openalex.org/A2']);
 });
 
 test('an id the paper already carries is never overwritten by the enrichment', () => {
@@ -377,7 +378,7 @@ test('an id the paper already carries is never overwritten by the enrichment', (
     authors: [{ name: 'A. Lovelace', id: 'https://openalex.org/A999' }],
   }, 'openalex');
 
-  assert.equal(merged.authors[0].id, 'https://openalex.org/A1');
+  assert.equal((merged.authors[0] as PaperAuthor).id, 'https://openalex.org/A1');
 });
 
 test('a paper that arrives with no authors takes the enrichment list whole', () => {
@@ -416,7 +417,7 @@ test('one paper, two records, the first author\'s name in two orders: one result
     title: 'Segment Anything in High Quality',
     authors: [{ name: 'Ke Jian Lei' }, { name: 'Mingqiao Ye' }, { name: 'Martin Danelljan' }],
     year: 2023,
-    publicationStatus: 'preprint',
+    publicationStatus: 'preprint' as const,
     publicationType: 'preprint',
     citationsCount: 110,
     provider: 'openalex_search',
@@ -428,7 +429,7 @@ test('one paper, two records, the first author\'s name in two orders: one result
     title: 'Segment Anything in High Quality',
     authors: [{ name: 'Lei Ke' }, { name: 'Mingqiao Ye' }, { name: 'Martin Danelljan' }],
     year: 2023,
-    publicationStatus: 'published',
+    publicationStatus: 'published' as const,
     publicationType: 'conference-paper',
     citationsCount: 85,
     provider: 'openalex_search',

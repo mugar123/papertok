@@ -28,7 +28,7 @@ test('the library link goes first, in a new tab', () => {
     status: 'entitled',
     collection: 'Publisher Journals',
     url: resolver,
-  });
+  } as NonNullable<Parameters<typeof openTargetsForPaper>[2]> & Record<string, unknown>);
 
   assert.deepEqual(targets, [
     { mode: 'external', url: resolver },
@@ -69,7 +69,7 @@ test('no repite una misma URL que llega por dos campos', () => {
 });
 
 test('sigue al siguiente destino cuando el primero no abre', () => {
-  const attempted = [];
+  const attempted: unknown[] = [];
   const opened = openFirstTarget([
     { mode: 'external', url: 'https://blocked.example/paper.pdf' },
     { mode: 'external', url: 'https://publisher.example/paper' },

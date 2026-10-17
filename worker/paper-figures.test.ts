@@ -21,7 +21,7 @@ function figureHtml(name: string) {
   return `<figure class="ltx_figure"><img src="${name}"><figcaption>Figure 1: ${name}</figcaption></figure>`;
 }
 
-function rendererOf(url: string) {
+function rendererOf(url: Parameters<typeof fetch>[0]) {
   return String(url).startsWith(ARXIV) ? 'arxiv' : 'ar5iv';
 }
 
@@ -252,7 +252,7 @@ test('abandons a renderer page that runs past the ceiling without buffering it',
 test('asks both renderers at once and still prefers arXiv', async () => {
   const asked: string[] = [];
   let bothInFlight = false;
-  const stub = async (url: string) => {
+  const stub: typeof fetch = async (url) => {
     asked.push(rendererOf(url));
     if (rendererOf(url) === 'ar5iv') return htmlResponse(figureHtml('ar5iv-copy.png'));
     // arXiv is the slow one here, and ar5iv has long since answered with
@@ -272,7 +272,7 @@ test('asks both renderers at once and still prefers arXiv', async () => {
 
 test('falls back to ar5iv when arXiv has not rendered the paper', async () => {
   const asked: string[] = [];
-  const stub = async (url: string) => {
+  const stub: typeof fetch = async (url) => {
     asked.push(String(url));
     if (rendererOf(url) === 'arxiv') return new Response('', { status: 404 });
     return htmlResponse(figureHtml('phase-diagram.png'));

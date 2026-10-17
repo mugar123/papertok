@@ -34,14 +34,14 @@ const ROR_RECORD = {
 
 test('normalizes ROR v2 institutional metadata', () => {
   const institution = normalizeRorInstitution(ROR_RECORD);
-  assert.equal(institution.display_name, 'Universidad de Salamanca');
-  assert.deepEqual(institution.localized_names, {
+  assert.equal(institution!.display_name, 'Universidad de Salamanca');
+  assert.deepEqual(institution!.localized_names, {
     en: 'University of Salamanca',
   });
-  assert.equal(institution.domains[0], 'usal.es');
-  assert.equal(institution.geo.city, 'Salamanca');
-  assert.equal(institution.relationships[0].rorId, '04rxrdv16');
-  assert.equal(institution.rorVerified, true);
+  assert.equal(institution!.domains![0], 'usal.es');
+  assert.equal(institution!.geo!.city, 'Salamanca');
+  assert.equal(institution!.relationships![0].rorId, '04rxrdv16');
+  assert.equal(institution!.rorVerified, true);
 });
 
 // ROR guarda los enlaces tal como los declaró la institución, y una parte de
@@ -57,8 +57,8 @@ test('sube a HTTPS los enlaces que ROR entrega en claro', () => {
     ],
   });
 
-  assert.equal(institution.homepage_url, 'https://www.usal.es/');
-  assert.equal(institution.wikipedia_url, 'https://es.wikipedia.org/wiki/Universidad_de_Salamanca');
+  assert.equal(institution!.homepage_url, 'https://www.usal.es/');
+  assert.equal(institution!.wikipedia_url, 'https://es.wikipedia.org/wiki/Universidad_de_Salamanca');
 });
 
 test('merges ROR identity without losing OpenAlex metrics', () => {
@@ -70,12 +70,12 @@ test('merges ROR identity without losing OpenAlex metrics', () => {
     cited_by_count: 4500000,
     summary_stats: { h_index: 200 },
   }, ror);
-  assert.equal(merged.id, 'https://openalex.org/I123');
-  assert.equal(merged.display_name, 'Universidad de Salamanca');
-  assert.equal(merged.localized_names.en, 'University of Salamanca');
-  assert.equal(merged.works_count, 120000);
-  assert.equal(merged.summary_stats.h_index, 200);
-  assert.equal(merged._metadataSource, 'openalex+ror');
+  assert.equal(merged!.id, 'https://openalex.org/I123');
+  assert.equal(merged!.display_name, 'Universidad de Salamanca');
+  assert.equal(merged!.localized_names!.en, 'University of Salamanca');
+  assert.equal(merged!.works_count, 120000);
+  assert.equal(merged!.summary_stats!.h_index, 200);
+  assert.equal(merged!._metadataSource, 'openalex+ror');
 });
 
 test('normalizes full and compact ROR identifiers', () => {
@@ -89,11 +89,11 @@ test('caches repeated institution searches in memory', async () => {
   let fetchCount = 0;
   globalThis.fetch = async () => {
     fetchCount += 1;
-    return {
+    return ({
       ok: true,
       status: 200,
       json: async () => ({ items: [ROR_RECORD] }),
-    };
+    } as Response);
   };
 
   try {

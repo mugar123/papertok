@@ -15,10 +15,10 @@ const ALLOWED = new Map([
 // The halftone class itself, outside the variant: the landing's theme switch.
 const HALFTONE_CLASS_ALLOWED = ['components/Public/WelcomeShell.tsx', 'components/ui/button-variants.ts'];
 
-async function sourcesUnder(dir) {
+async function sourcesUnder(dir: URL): Promise<URL[]> {
   const found = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {
-    const path = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, dir);
+    const path = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, dir!);
     if (entry.isDirectory()) found.push(...await sourcesUnder(path));
     else if (/\.[jt]sx?$/.test(entry.name) && !/\.test\.[jt]sx?$/.test(entry.name)) found.push(path);
   }

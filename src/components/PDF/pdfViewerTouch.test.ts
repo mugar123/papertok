@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 // Sin comentarios: un test de fuente no debe aprobar porque un comentario
 // cite el código que pide.
-const stripComments = source => source
+const stripComments = (source: string) => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '');
 
@@ -66,7 +66,7 @@ test('en táctil, abrir un paper monta el visor de la app, sin pestaña nueva', 
 // que tardó, con la curva espejo; el velo, igual. El escritorio no cambia.
 test('en táctil, el visor sale por donde entró', async () => {
   const css = stripComments(await readFile(new URL('./PDFViewer.css', import.meta.url), 'utf8'));
-  const keyframes = name => css.match(new RegExp(`@keyframes ${name}\\s*\\{([\\s\\S]*?)\\n\\}`))?.[1] || '';
+  const keyframes = (name: string) => css.match(new RegExp(`@keyframes ${name}\\s*\\{([\\s\\S]*?)\\n\\}`))?.[1] || '';
   assert.match(css, /\.pdf-overlay\[data-open\] \.pdf-viewer\s*\{\s*animation: pdfViewerIn 0\.3s ease-out;/);
   assert.match(css, /\.pdf-overlay\[data-open\]\s*\{\s*animation: pdfOverlayIn 0\.3s ease-out;/);
   const coarse = css.match(/@media \(pointer: coarse\)\s*\{([\s\S]*?)\n\}/)?.[1] || '';

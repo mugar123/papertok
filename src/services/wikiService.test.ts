@@ -12,7 +12,7 @@ import {
 // Shapes copied from real answers (2026-09-24): wbgetentities keys entities by
 // QID ("-1" when a title is unknown), and the query API keys pages by pageid
 // ("-1" when missing) and carries `pageprops.wikibase_item` after a redirect.
-function wikidataEntity(qid, sitelinks) {
+function wikidataEntity(qid: string, sitelinks: ArrayLike<unknown>|{ [s: string]: unknown; }) {
   return {
     entities: {
       [qid]: {
@@ -26,7 +26,7 @@ function wikidataEntity(qid, sitelinks) {
   };
 }
 
-function wikipediaPage({ title, extract, qid, lang = 'en', thumbnail = null, pageid = 101 }) {
+function wikipediaPage({ title, extract, qid, lang = 'en', thumbnail = null, pageid = 101 }: { title: string; extract?: string; qid?: string; lang?: string; thumbnail?: string | null; pageid?: number }) {
   return {
     batchcomplete: '',
     query: {
@@ -49,25 +49,25 @@ function wikipediaPage({ title, extract, qid, lang = 'en', thumbnail = null, pag
 
 // Answers by host + the parameter that identifies the question, and records
 // every URL asked, so a test can prove which requests never happened.
-function stubWikiFetch(t, routes) {
+function stubWikiFetch(t: import('node:test').TestContext, routes: { match: (url: URL) => boolean; body?: unknown; ok?: boolean }[]) {
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
-  const requested = [];
+  const requested: string[] = [];
   globalThis.fetch = async (url) => {
-    const requestUrl = new URL(url);
+    const requestUrl = new URL(url as string | URL);
     requested.push(requestUrl.toString());
     const route = routes.find(candidate => candidate.match(requestUrl));
-    if (!route) return { ok: false, status: 404, async json() { return {}; } };
-    return { ok: route.ok ?? true, status: route.ok === false ? 500 : 200, async json() { return route.body; } };
+    if (!route) return { ok: false, status: 404, async json() { return {}; } } as Response;
+    return { ok: route.ok ?? true, status: route.ok === false ? 500 : 200, async json() { return route.body; } } as Response;
   };
   return requested;
 }
 
-const isWikidata = (params) => (url) => url.host === 'www.wikidata.org'
+const isWikidata = (params: ArrayLike<unknown>|{ [s: string]: unknown; }) => (url: { host: string; searchParams: { get: (arg0: string) => unknown; }; }) => url.host === 'www.wikidata.org'
   && Object.entries(params).every(([key, value]) => url.searchParams.get(key) === value);
-const isWikipediaTitle = (lang, title) => (url) => url.host === `${lang}.wikipedia.org`
+const isWikipediaTitle = (lang: string, title: string) => (url: URL) => url.host === `${lang}.wikipedia.org`
   && url.searchParams.get('titles') === title;
-const isWikipediaSearch = (lang) => (url) => url.host === `${lang}.wikipedia.org`
+const isWikipediaSearch = (lang: string) => (url: URL) => url.host === `${lang}.wikipedia.org`
   && url.searchParams.get('generator') === 'search';
 
 test('reads the Wikidata id OpenAlex gives in any of its three spellings', () => {
@@ -310,12 +310,12 @@ test('keeps an exact Wikipedia result for a free-text topic', () => {
 test('uses a canonical title for a major plural topic', async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
-  const requestedSearches = [];
+  const requestedSearches: unknown[] = [];
   globalThis.fetch = async (url) => {
-    const requestUrl = new URL(url);
+    const requestUrl = new URL(url as string | URL);
     requestedSearches.push(requestUrl.searchParams.get('gsrsearch'));
     const search = requestUrl.searchParams.get('gsrsearch');
-    return {
+    return ({
       ok: true,
       async json() {
         return search === 'Black hole'
@@ -334,7 +334,7 @@ test('uses a canonical title for a major plural topic', async (t) => {
             }
           : { query: { pages: {} } };
       },
-    };
+    } as Response);
   };
 
   const result = await getEntityWikiInfo({

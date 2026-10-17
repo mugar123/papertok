@@ -6,10 +6,10 @@ import { readFileSync } from 'node:fs';
 // the card (or the Explorer) → the guest page → App → AuthPrompt. Each hop
 // used to drop it (audit 2026-09-23). None of these components mounts under
 // Node, so the hops are pinned in their source, comments stripped.
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-const read = (path) => stripComments(readFileSync(new URL(path, import.meta.url), 'utf8'));
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const read = (path: string|URL) => stripComments(readFileSync(new URL(path, import.meta.url), 'utf8'));
 
-function bounded(code, from, to, label, maxLines) {
+function bounded(code: string, from: string, to: string, label: string, maxLines: number) {
   const start = code.indexOf(from);
   const end = code.indexOf(to, start + 1);
   assert.ok(start >= 0 && end > start, `expected to have found ${label}`);

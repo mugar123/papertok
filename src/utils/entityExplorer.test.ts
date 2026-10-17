@@ -152,14 +152,14 @@ test('a project keeps the same papers key when its details land on the optimisti
     ...authorRequest,
     type: 'project',
     id: '101017733',
-    entity: { display_name: 'CLIMATE-X', type: 'project', funder: 'EC' },
+    entity: { display_name: 'CLIMATE-X', type: 'project', funder: 'EC' } as NonNullable<NonNullable<Parameters<typeof entityPapersRequestKey>[0]>["entity"]> & Record<string, unknown>,
     entityDisplayName: 'CLIMATE-X',
   });
   const detailed = entityPapersRequestKey({
     ...authorRequest,
     type: 'project',
     id: '101017733',
-    entity: { id: '101017733', display_name: 'CLIMATE-X: Climate extremes', type: 'project', summary: '…' },
+    entity: { id: '101017733', display_name: 'CLIMATE-X: Climate extremes', type: 'project', summary: '…' } as NonNullable<NonNullable<Parameters<typeof entityPapersRequestKey>[0]>["entity"]> & Record<string, unknown>,
     entityDisplayName: 'CLIMATE-X: Climate extremes',
   });
   assert.equal(optimistic, detailed);
@@ -268,5 +268,5 @@ test('el número que promete la puerta sale de la entidad, y solo si es creíble
   assert.equal(guestGateTotal({ works_count: 0 }, 2), null);
   assert.equal(guestGateTotal({}, 2), null);
   assert.equal(guestGateTotal(null, 2), null);
-  assert.equal(guestGateTotal({ works_count: '1234' }, 2), null, 'un total que no es un número no se enseña');
+  assert.equal(guestGateTotal({ works_count: '1234' as never }, 2), null, 'un total que no es un número no se enseña');
 });

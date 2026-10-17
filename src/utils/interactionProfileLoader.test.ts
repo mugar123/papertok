@@ -1,3 +1,5 @@
+import type { InteractionDocument, StoredInteractionProfile } from './interactionProfile.ts';
+import type { RebuildOptions } from './interactionProfileLoader.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -23,7 +25,7 @@ const NOW = Date.parse('2026-08-19T12:00:00.000Z');
 const DAY_MS = 24 * 60 * 60 * 1000;
 const LIKED_EVERY = 20;
 
-function makeInteractions(count) {
+function makeInteractions(count: number): InteractionDocument[] {
   const categories = ['cs.AI', 'cs.LG', 'quant-ph'];
   return Array.from({ length: count }, (_unused, index) => ({
     id: `arxiv:24${String(index).padStart(5, '0')}`,
@@ -40,15 +42,15 @@ function makeInteractions(count) {
  * document handed back is one billed read, which is the whole point of the
  * assertions below.
  */
-function createFirestoreStub({ aggregate = null, interactions = [], failWrite = false } = {}) {
-  const stub = {
+function createFirestoreStub({ aggregate = null, interactions = [], failWrite = false }: { aggregate?: Partial<StoredInteractionProfile> | null; interactions?: InteractionDocument[]; failWrite?: boolean } = {}) {
+  const stub: { countReads?: number } & { aggregate: Partial<StoredInteractionProfile> | null; interactions: InteractionDocument[]; aggregateReads: number; interactionReads: number; pageCalls: number; writes: number; written: StoredInteractionProfile | null; readonly totalReads: number; readAggregate: NonNullable<Parameters<typeof loadInteractionProfile>[0]>['readAggregate']; listInteractionPage: RebuildOptions['listInteractionPage']; writeAggregate: (document: StoredInteractionProfile) => Promise<void>; countCalls: number; countInteractions: () => Promise<{ count: number; reads: number }> } = {
     aggregate,
     interactions,
     aggregateReads: 0,
     interactionReads: 0,
     pageCalls: 0,
     writes: 0,
-    written: null,
+    written: null as StoredInteractionProfile | null,
     get totalReads() {
       return this.aggregateReads + this.interactionReads;
     },
@@ -56,7 +58,7 @@ function createFirestoreStub({ aggregate = null, interactions = [], failWrite = 
       stub.aggregateReads += 1;
       return { exists: Boolean(stub.aggregate), data: stub.aggregate };
     },
-    async listInteractionPage({ pageSize, startAfterId }) {
+    async listInteractionPage({ pageSize, startAfterId }: Parameters<RebuildOptions['listInteractionPage']>[0]) {
       stub.pageCalls += 1;
       const ordered = [...stub.interactions].sort((a, b) => (a.id < b.id ? -1 : 1));
       const start = startAfterId ? ordered.findIndex(item => item.id === startAfterId) + 1 : 0;
@@ -64,7 +66,7 @@ function createFirestoreStub({ aggregate = null, interactions = [], failWrite = 
       stub.interactionReads += documents.length;
       return { documents, hasMore: start + documents.length < ordered.length };
     },
-    async writeAggregate(document) {
+    async writeAggregate(document: StoredInteractionProfile) {
       if (failWrite) throw new Error('permission-denied');
       stub.writes += 1;
       stub.written = document;
@@ -86,12 +88,12 @@ function createFirestoreStub({ aggregate = null, interactions = [], failWrite = 
  * documents, which is what a session that could not write the aggregate leaves
  * behind: the interaction documents exist, the aggregate has never seen them.
  */
-function staleAggregate(interactions, missing) {
+function staleAggregate(interactions: InteractionDocument[], missing: number) {
   const seen = interactions.slice(0, interactions.length - missing);
   const profile = createEmptyInteractionProfile();
   seen.forEach(({ id, data }) => {
-    if (data.liked) profile.curated.get('liked').members.add(id);
-    if (data.liked) profile.curated.get('liked').order.push(id);
+    if (data.liked) profile.curated.get('liked')!.members.add(id);
+    if (data.liked) profile.curated.get('liked')!.order.push(id);
   });
   profile.sourceDocCount = seen.length;
   profile.counters.interactions = seen.length;
@@ -100,7 +102,7 @@ function staleAggregate(interactions, missing) {
 }
 
 function freshCache() {
-  return new Map();
+  return new Map<string, Promise<Awaited<ReturnType<typeof rebuildInteractionProfile>>>>();
 }
 
 test('COST: a feed load for a 3000 interaction account is ONE Firestore read', async () => {
@@ -127,7 +129,7 @@ test('COST: a feed load for a 3000 interaction account is ONE Firestore read', a
   assert.equal(warm.interactionReads, 0);
   assert.equal(warm.pageCalls, 0, 'the interactions subcollection must not be touched');
   assert.equal(result.reads, 1);
-  assert.equal(result.rebuilt, false);
+  assert.equal((result as Extract<Awaited<ReturnType<typeof loadInteractionProfile>>, { status: 'loaded' | 'empty' }>).rebuilt, false);
 
   // And it is the same profile, not an empty one bought cheaply.
   assert.equal(result.status, INTERACTION_PROFILE_STATUS.LOADED);
@@ -143,7 +145,7 @@ test('the cold rebuild reads each interaction once and no more', async () => {
 
   assert.equal(result.reads, 3001, 'one aggregate read plus one per interaction');
   assert.equal(stub.interactionReads, 3000);
-  assert.equal(result.truncated, false);
+  assert.equal((result as Extract<Awaited<ReturnType<typeof loadInteractionProfile>>, { status: 'loaded' | 'empty' }>).truncated, false);
 });
 
 test('the rebuild stops at the hard document ceiling', async () => {
@@ -154,8 +156,8 @@ test('the rebuild stops at the hard document ceiling', async () => {
 
   assert.equal(stub.interactionReads, REBUILD_MAX_DOCUMENTS);
   assert.equal(result.reads, REBUILD_MAX_DOCUMENTS + 1);
-  assert.equal(result.truncated, true);
-  assert.equal(stub.written.truncated, true);
+  assert.equal((result as Extract<Awaited<ReturnType<typeof loadInteractionProfile>>, { status: 'loaded' | 'empty' }>).truncated, true);
+  assert.equal(stub.written!.truncated, true);
   // Truncated or not, the result is persisted, so the ceiling is paid once.
   assert.equal(stub.writes, 1);
 });
@@ -181,7 +183,7 @@ test('a failed write keeps the cost bounded AND still returns the real profile',
   // Cost: no second scan.
   assert.equal(stub.interactionReads, 3000, 'the scan must not run a second time this session');
   assert.equal(second.reads, 1);
-  assert.equal(second.reusedRebuild, true);
+  assert.equal((second as Extract<Awaited<ReturnType<typeof loadInteractionProfile>>, { status: 'loaded' | 'empty' }>).reusedRebuild, true);
 
   // Payload: the real profile, not a plausible looking empty one.
   assert.ok(hasInteractionProfile(second), 'a reused rebuild still carries a profile');
@@ -224,7 +226,7 @@ test('concurrent loads of one account share a single rebuild and both get it', a
       `load ${index} came back empty instead of with the real profile`,
     );
   });
-  assert.equal(a.rebuilt !== b.rebuilt, true, 'exactly one of them owns the rebuild');
+  assert.equal((a as Extract<Awaited<ReturnType<typeof loadInteractionProfile>>, { status: 'loaded' | 'empty' }>).rebuilt !== (b as Extract<Awaited<ReturnType<typeof loadInteractionProfile>>, { status: 'loaded' | 'empty' }>).rebuilt, true, 'exactly one of them owns the rebuild');
 });
 
 test('an unavailable result carries no profile at all', async () => {
@@ -239,7 +241,7 @@ test('an unavailable result carries no profile at all', async () => {
   assert.equal(hasInteractionProfile(result), false);
   // Structural, not conventional: there is nothing to read by mistake.
   assert.equal('profile' in result, false);
-  assert.equal(result.profile, undefined);
+  assert.equal((result as { profile?: undefined }).profile, undefined);
   assert.match(result.reason, /rebuild-failed/);
 });
 
@@ -301,14 +303,14 @@ test('an aggregate from an older schema version is rebuilt once, then reused', a
   const rebuilt = await loadInteractionProfile({
     ...stub, userId: 'u10', now: NOW, rebuildCache: freshCache(),
   });
-  assert.equal(rebuilt.rebuilt, true);
-  assert.equal(stub.written.schemaVersion, 1);
+  assert.equal((rebuilt as Extract<Awaited<ReturnType<typeof loadInteractionProfile>>, { status: 'loaded' | 'empty' }>).rebuilt, true);
+  assert.equal(stub.written!.schemaVersion, 1);
 
   const warm = createFirestoreStub({ aggregate: stub.written, interactions });
   const reused = await loadInteractionProfile({
     ...warm, userId: 'u10', now: NOW, rebuildCache: freshCache(),
   });
-  assert.equal(reused.rebuilt, false);
+  assert.equal((reused as Extract<Awaited<ReturnType<typeof loadInteractionProfile>>, { status: 'loaded' | 'empty' }>).rebuilt, false);
   assert.equal(warm.totalReads, 1);
 });
 
@@ -352,8 +354,8 @@ test('a rebuilt profile keeps every interacted paper out of the feed', async () 
 
   interactions
     .filter(({ data }) => data.liked)
-    .forEach(({ id }) => assert.equal(isPaperKnown(result.profile, id), true, `${id} would repeat`));
-  assert.equal(isPaperKnown(result.profile, 'arxiv:2499999'), false);
+    .forEach(({ id }) => assert.equal(isPaperKnown((result as Extract<Awaited<ReturnType<typeof loadInteractionProfile>>, { status: 'loaded' | 'empty' }>).profile, id), true, `${id} would repeat`));
+  assert.equal(isPaperKnown((result as Extract<Awaited<ReturnType<typeof loadInteractionProfile>>, { status: 'loaded' | 'empty' }>).profile, 'arxiv:2499999'), false);
 });
 
 
@@ -370,13 +372,13 @@ test('an aggregate that has fallen behind its subcollection is rebuilt', async (
   });
 
   assert.equal(stub.countCalls, 1);
-  assert.equal(result.repairedDrift, true);
-  assert.equal(result.rebuilt, true);
-  assert.equal(result.drift.missing, missing);
-  assert.equal(result.drift.actual, 1000);
+  assert.equal((result as Extract<Awaited<ReturnType<typeof loadInteractionProfile>>, { status: 'loaded' | 'empty' }>).repairedDrift, true);
+  assert.equal((result as Extract<Awaited<ReturnType<typeof loadInteractionProfile>>, { status: 'loaded' | 'empty' }>).rebuilt, true);
+  assert.equal((result as Extract<Awaited<ReturnType<typeof loadInteractionProfile>>, { status: 'loaded' | 'empty' }>).drift!.missing, missing);
+  assert.equal((result as Extract<Awaited<ReturnType<typeof loadInteractionProfile>>, { status: 'loaded' | 'empty' }>).drift!.actual, 1000);
   // The whole point: the likes the stale aggregate never saw are back.
-  assert.equal(curatedIds(result.profile, 'liked').length, 1000 / LIKED_EVERY);
-  assert.equal(stub.written.sourceDocCount, 1000);
+  assert.equal(curatedIds((result as Extract<Awaited<ReturnType<typeof loadInteractionProfile>>, { status: 'loaded' | 'empty' }>).profile, 'liked').length, 1000 / LIKED_EVERY);
+  assert.equal(stub.written!.sourceDocCount, 1000);
 });
 
 test('a small lag does not buy an expensive rebuild', async () => {
@@ -392,10 +394,10 @@ test('a small lag does not buy an expensive rebuild', async () => {
   });
 
   assert.equal(stub.countCalls, 1);
-  assert.equal(result.rebuilt, false);
-  assert.equal(result.repairedDrift, undefined);
+  assert.equal((result as Extract<Awaited<ReturnType<typeof loadInteractionProfile>>, { status: 'loaded' | 'empty' }>).rebuilt, false);
+  assert.equal((result as Extract<Awaited<ReturnType<typeof loadInteractionProfile>>, { status: 'loaded' | 'empty' }>).repairedDrift, undefined);
   assert.equal(stub.interactionReads, 0, 'a lag under the threshold must not trigger a scan');
-  assert.equal(result.drift.missing, missing);
+  assert.equal((result as Extract<Awaited<ReturnType<typeof loadInteractionProfile>>, { status: 'loaded' | 'empty' }>).drift!.missing, missing);
 });
 
 test('the drift threshold scales with the size of the profile', () => {
@@ -418,7 +420,7 @@ test('the drift check is off unless the caller asks for it', async () => {
 
   assert.equal(stub.countCalls, 0, 'the ordinary feed load must not pay for a count');
   assert.equal(result.reads, 1, 'and still costs exactly one read');
-  assert.equal(result.rebuilt, false);
+  assert.equal((result as Extract<Awaited<ReturnType<typeof loadInteractionProfile>>, { status: 'loaded' | 'empty' }>).rebuilt, false);
 });
 
 test('a failed count leaves the stored profile alone', async () => {
@@ -455,9 +457,9 @@ test('an aggregate ahead of its subcollection is never rebuilt', async () => {
     ...stub, userId: 'd5', now: NOW, checkDrift: true, rebuildCache: freshCache(),
   });
 
-  assert.equal(result.rebuilt, false);
+  assert.equal((result as Extract<Awaited<ReturnType<typeof loadInteractionProfile>>, { status: 'loaded' | 'empty' }>).rebuilt, false);
   assert.equal(stub.interactionReads, 0);
-  assert.ok(result.drift.missing < 0);
+  assert.ok((result as Extract<Awaited<ReturnType<typeof loadInteractionProfile>>, { status: 'loaded' | 'empty' }>).drift!.missing < 0);
 });
 
 test('recording a new paper raises the profile own document count', async () => {

@@ -8,8 +8,8 @@ import { readFile } from 'node:fs/promises';
  * frequency to choose: the digest is weekly for everyone.
  */
 
-const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-const read = name => readFile(new URL(name, import.meta.url), 'utf8').then(stripComments);
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+const read = (name: string|URL) => readFile(new URL(name, import.meta.url), 'utf8').then(stripComments);
 
 test('the email modal is a modal Dialog whose only way out is the parent\'s onClose', async () => {
   const jsx = await read('./EmailNotificationModal.tsx');

@@ -18,7 +18,7 @@ test('a work typed as an article can still be an unpublished preprint', () => {
   // work typed `article` whose only copy is a preprint server reads as one
   // here; the card, testing `publicationType` alone, called it Verified.
   assert.equal(
-    reviewStatusForPaper({ type: 'article', publicationType: 'article', publicationStatus: 'preprint' }),
+    reviewStatusForPaper({ type: 'article', publicationType: 'article', publicationStatus: 'preprint' } as Parameters<typeof reviewStatusForPaper>[0] & { type: string }),
     'preprint',
   );
 });
@@ -75,26 +75,26 @@ test('a located free copy opens a paper the record called closed', () => {
 test('a copy found in a repository is a weaker claim than open access, and says so', () => {
   const found = accessTagForPaper({ openAccess: false }, { openCopy: REPOSITORY_COPY });
   const native = accessTagForPaper({ openAccess: true });
-  assert.equal(found.label, 'Open version');
-  assert.equal(native.label, 'Open access');
-  assert.notEqual(found.key, native.key);
-  assert.equal(found.tone, native.tone);
+  assert.equal(found!.label, 'Open version');
+  assert.equal(native!.label, 'Open access');
+  assert.notEqual(found!.key, native!.key);
+  assert.equal(found!.tone, native!.tone);
 });
 
 test('the published version free at the publisher is open access, not a copy of it', () => {
   // A gold paper PubMed had no PMC for yet: Unpaywall found it at the
   // publisher, and "Open version" told the reader the published one was paid.
   const tag = accessTagForPaper({ openAccess: false }, { openCopy: PUBLISHER_COPY });
-  assert.equal(tag.key, 'open');
-  assert.equal(tag.label, 'Open access');
+  assert.equal(tag!.key, 'open');
+  assert.equal(tag!.label, 'Open access');
   // Bronze copies come without a version; the publisher's page is still the article.
   const bronze = { ...PUBLISHER_COPY, version: undefined, license: undefined };
-  assert.equal(accessTagForPaper({}, { openCopy: bronze }).key, 'open');
+  assert.equal(accessTagForPaper({}, { openCopy: bronze })!.key, 'open');
 });
 
 test('an accepted manuscript at the publisher is still only a version of the paper', () => {
   const manuscript = { ...PUBLISHER_COPY, version: 'acceptedVersion' };
-  assert.equal(accessTagForPaper({ openAccess: false }, { openCopy: manuscript }).key, 'openCopy');
+  assert.equal(accessTagForPaper({ openAccess: false }, { openCopy: manuscript })!.key, 'openCopy');
 });
 
 test('a library that gives access names itself on a paywalled paper', () => {
@@ -107,20 +107,20 @@ test('a library that gives access names itself on a paywalled paper', () => {
     hint: 'Your library gives you access to the published version.',
   });
   // A record that says nothing about access is not open either.
-  assert.equal(accessTagForPaper({}, { institutionAccess: entitled, institutionLabel: 'Universidad de Salamanca' }).label,
+  assert.equal(accessTagForPaper({}, { institutionAccess: entitled, institutionLabel: 'Universidad de Salamanca' })!.label,
     'Via Universidad de Salamanca');
   // Open access is said first: anyone can read it.
-  assert.equal(accessTagForPaper({ openAccess: true }, { institutionAccess: entitled, institutionLabel: 'USAL' }).label, 'Open access');
+  assert.equal(accessTagForPaper({ openAccess: true }, { institutionAccess: entitled, institutionLabel: 'USAL' })!.label, 'Open access');
   // A free copy elsewhere does not outrank the library: the button opens the
   // version of record through the library first, and the chip says so.
-  assert.equal(accessTagForPaper({ openAccess: false }, { openCopy: REPOSITORY_COPY, institutionAccess: entitled, institutionLabel: 'USAL' }).label,
+  assert.equal(accessTagForPaper({ openAccess: false }, { openCopy: REPOSITORY_COPY, institutionAccess: entitled, institutionLabel: 'USAL' })!.label,
     'Via USAL');
 });
 
 test('a library that could not answer, or said no, leaves the record\'s word', () => {
   for (const status of ['unknown', 'not-entitled']) {
     const institutionAccess = { status, collection: null, url: null };
-    assert.equal(accessTagForPaper({ openAccess: false }, { institutionAccess, institutionLabel: 'USAL' }).label, 'Subscription');
+    assert.equal(accessTagForPaper({ openAccess: false }, { institutionAccess, institutionLabel: 'USAL' })!.label, 'Subscription');
     assert.equal(accessTagForPaper({}, { institutionAccess, institutionLabel: 'USAL' }), null);
   }
 });
@@ -141,15 +141,15 @@ test('every chip carries a tone, a word and an explanation', () => {
     // distintivo para el preprint, la salvedad. Lo revisado por pares es la
     // norma y no se señala.
     for (const tag of [reviewTagForPaper(paper), accessTagForPaper(paper)].filter(Boolean)) {
-      assert.match(tag.tone, /^(amber|blue|green|neutral)$/);
-      assert.ok(tag.label.length > 0 && tag.hint.length > 0);
+      assert.match(tag!.tone, /^(amber|blue|green|neutral)$/);
+      assert.ok(tag!.label.length > 0 && tag!.hint.length > 0);
     }
   }
 });
 
 test('the chips use the English terms', () => {
-  assert.equal(reviewTagForPaper({ publicationType: 'preprint' }).label, 'Preprint');
-  assert.equal(accessTagForPaper({ openAccess: false }).label, 'Subscription');
+  assert.equal(reviewTagForPaper({ publicationType: 'preprint' })!.label, 'Preprint');
+  assert.equal(accessTagForPaper({ openAccess: false })!.label, 'Subscription');
   assert.equal(reviewTagForPaper({ journal: 'Nature' }), null,
     'lo revisado por pares no lleva distintivo: era la norma, no la excepción');
 });
@@ -171,8 +171,8 @@ test('sólo el preprint lleva distintivo; lo revisado por pares no', () => {
 
 test('SOURCE: no queda ningún glifo de verificado en las superficies', async () => {
   const { readFile } = await import('node:fs/promises');
-  const leer = (ruta) => readFile(new URL(ruta, import.meta.url), 'utf8');
-  const sinComentarios = (x) => x.replace(/\/\*[\s\S]*?\*\/|\{\/\*[\s\S]*?\*\/\}|\/\/.*$/gm, '');
+  const leer = (ruta: string|URL) => readFile(new URL(ruta, import.meta.url), 'utf8');
+  const sinComentarios = (x: string) => x.replace(/\/\*[\s\S]*?\*\/|\{\/\*[\s\S]*?\*\/\}|\/\/.*$/gm, '');
 
   for (const ruta of ['../components/Feed/PaperCard.tsx']) {
     const src = sinComentarios(await leer(ruta));

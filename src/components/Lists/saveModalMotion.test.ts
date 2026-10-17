@@ -21,7 +21,7 @@ const CSS = new URL('./SaveToListModal.css', import.meta.url);
 const CARD_CSS = new URL('../Feed/PaperCard.css', import.meta.url);
 
 /** Comments are prose, not code: a decoy comment must never satisfy a test. */
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 test('the save modal holds a matching enter and exit pair on the primitive\'s own attributes', async () => {
   const css = await readFile(CSS, 'utf8');

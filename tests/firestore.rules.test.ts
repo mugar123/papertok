@@ -41,7 +41,9 @@ import {
   where,
   writeBatch,
   serverTimestamp,
+  type FieldPath,
 } from 'firebase/firestore';
+import type { FirebaseFirestore } from '@firebase/firestore-types';
 
 const ALICE = 'alice-uid';
 const BOB = 'bob-uid';
@@ -96,7 +98,7 @@ const asAlice = () => testEnv.authenticatedContext(ALICE).firestore();
 const asBob = () => testEnv.authenticatedContext(BOB).firestore();
 const asGuest = () => testEnv.unauthenticatedContext().firestore();
 
-function pin(shareId, title = 'A list', paperCount = 1) {
+function pin(shareId: string, title = 'A list', paperCount = 1) {
   return { shareId, title, paperCount };
 }
 
@@ -205,7 +207,7 @@ test('a handle cannot be taken over once it is occupied', async () => {
 
 test('two accounts racing for one handle: the second one loses', async () => {
   await reset({ aliceProfile: false });
-  const claim = (db, uid) => {
+  const claim = (db: FirebaseFirestore, uid: string) => {
     const batch = writeBatch(db);
     batch.set(doc(db, 'userProfiles', uid), {
       handle: 'contested', displayName: 'Someone', pinnedLists: [], visibility: 'public',
@@ -221,7 +223,7 @@ test('two accounts racing for one handle: the second one loses', async () => {
   await testEnv.withSecurityRulesDisabled(async (context) => {
     stored = (await getDoc(doc(context.firestore(), 'handles', 'contested'))).data();
   });
-  assert.equal(stored.uid, ALICE, 'the winner keeps the reservation');
+  assert.equal(stored!.uid, ALICE, 'the winner keeps the reservation');
 });
 
 test('a reserved handle cannot be claimed at all', async () => {
@@ -260,7 +262,7 @@ test('a profile cannot be born on top of somebody else\'s reservation', async ()
   await testEnv.withSecurityRulesDisabled(async (context) => {
     stored = (await getDoc(doc(context.firestore(), 'handles', 'alice'))).data();
   });
-  assert.equal(stored.uid, ALICE, 'the reservation never changed hands');
+  assert.equal(stored!.uid, ALICE, 'the reservation never changed hands');
 });
 
 test('an account cannot hold two reservations by renaming', async () => {
@@ -376,7 +378,7 @@ test('FIX A: a pin cannot be smuggled in at creation time', async () => {
 });
 
 /** Gives ALICE `count` published lists to pin. */
-async function seedOwnedLists(count) {
+async function seedOwnedLists(count: number) {
   await testEnv.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
     for (let index = 0; index < count; index += 1) {
@@ -387,7 +389,7 @@ async function seedOwnedLists(count) {
   });
 }
 
-const ownedPins = count => Array.from({ length: count }, (_, index) => (
+const ownedPins = (count: number) => Array.from({ length: count }, (_, index) => (
   pin(index.toString(16).padStart(32, '0'), `List ${index}`)
 ));
 
@@ -416,14 +418,14 @@ test('FIX A: the cap sits below the expression budget, not on it', async () => {
   // budget is spent walking the oversized array before the size check decides.
   await reset();
   await seedOwnedLists(8);
-  const attempt = async (count) => {
+  const attempt = async (count: number) => {
     try {
       await updateDoc(doc(asAlice(), 'userProfiles', ALICE), {
         pinnedLists: ownedPins(count), updatedAt: serverTimestamp(),
       });
       return 'allowed';
     } catch (error) {
-      return /1000 expressions/.test(error.message) ? 'expression-limit' : 'denied';
+      return /1000 expressions/.test((error as Error).message) ? 'expression-limit' : 'denied';
     }
   };
   assert.equal(await attempt(6), 'allowed', 'a write at the cap must succeed cleanly');
@@ -543,10 +545,10 @@ test('publicLists and publicListOwners are untouched by any of this', async () =
 // =========================================================================
 
 const CAROL = 'carol-uid';
-const EDGE = (follower, target) => `${follower}_${target}`;
+const EDGE = (follower: string, target: string) => `${follower}_${target}`;
 
 /** Both accounts published, so each is followable, plus a clean graph. */
-async function resetFollows({ edges = [] } = {}) {
+async function resetFollows({ edges = [] }: { edges?: [string, string][] } = {}) {
   await testEnv.clearFirestore();
   await testEnv.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
@@ -565,12 +567,12 @@ async function resetFollows({ edges = [] } = {}) {
   });
 }
 
-function edgeBody(follower, target) {
+function edgeBody(follower: string, target: string) {
   return { followerUid: follower, targetUid: target, createdAt: serverTimestamp() };
 }
 
 /** What the profile page spends on a follower counter: one capped aggregation. */
-async function followerCount(database, uid) {
+async function followerCount(database: FirebaseFirestore, uid: unknown) {
   const snapshot = await getCountFromServer(query(
     collection(database, 'follows'),
     where('targetUid', '==', uid),
@@ -579,7 +581,7 @@ async function followerCount(database, uid) {
   return snapshot.data().count;
 }
 
-async function followedCount(database, uid) {
+async function followedCount(database: FirebaseFirestore, uid: unknown) {
   const snapshot = await getCountFromServer(query(
     collection(database, 'follows'),
     where('followerUid', '==', uid),
@@ -742,7 +744,7 @@ test('COST: a feed load is still ONE document read, follows or no follows', asyn
   documentsRead += aggregate.exists() ? 1 : 0;
 
   assert.equal(documentsRead, 1, 'the feed load must cost exactly one document');
-  assert.equal(aggregate.data().sourceDocCount, 3, 'and that document must be the usable one');
+  assert.equal(aggregate.data()!.sourceDocCount, 3, 'and that document must be the usable one');
 
   // The follows block grants nothing under users/, so it cannot have widened
   // or narrowed what a feed load touches.
@@ -783,7 +785,7 @@ test('a signed-out visitor can read the graph but never write it', async () => {
 // =========================================================================
 
 /** Seeds three profiles whose visibility is set per uid. `null` = legacy. */
-async function resetVisibility({ visibility = {}, edges = [] } = {}) {
+async function resetVisibility({ visibility = {}, edges = [] }: { visibility?: Record<string, string | null>; edges?: [string, string][] } = {}) {
   await testEnv.clearFirestore();
   await testEnv.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
@@ -979,7 +981,7 @@ test('F8 (second deploy): a profile cannot be created without a choice', async (
   // a profile whose visibility nobody picked.
   await reset({ aliceProfile: false });
   const db = asAlice();
-  const attempt = (extra) => {
+  const attempt = (extra: { visibility?: string; }) => {
     const batch = writeBatch(db);
     batch.set(doc(db, 'userProfiles', ALICE), {
       handle: 'alice', displayName: 'Alice', pinnedLists: [],
@@ -1008,7 +1010,7 @@ test('the photo choice is a state the profile can carry', async () => {
   // Privacy, and shown again by mirroring an upload.
   await reset({ aliceProfile: false });
   const db = asAlice();
-  const create = (showPhoto) => {
+  const create = (showPhoto: string|boolean) => {
     const batch = writeBatch(db);
     batch.set(doc(db, 'userProfiles', ALICE), {
       handle: 'alice', displayName: 'Alice', pinnedLists: [], visibility: 'public',
@@ -1199,7 +1201,7 @@ test('a preference list is capped at 100, and the cap is where the client says i
   await reset();
   await seedLegacyUserDoc();
   const ref = doc(asAlice(), 'users', ALICE);
-  const list = (n) => Array.from({ length: n }, (_, i) => `cat.${i}`);
+  const list = (n: number) => Array.from({ length: n }, (_, i) => `cat.${i}`);
   await assertSucceeds(setDoc(ref, { onboardingComplete: true, preferences: list(USER_PREFERENCES_MAX) }, { merge: true }));
   await assertFails(setDoc(ref, { onboardingComplete: true, preferences: list(USER_PREFERENCES_MAX + 1) }, { merge: true }));
   await assertFails(setDoc(ref, { preferences: list(USER_PREFERENCES_MAX + 1) }, { merge: true }));
@@ -1362,7 +1364,7 @@ test('a client cannot award itself an institution', async () => {
 // =========================================================================
 
 /** Seeds profiles plus, for the uids listed in `indexed`, their search entry. */
-async function resetSearch({ visibility = {}, indexed = [], names = {} } = {}) {
+async function resetSearch({ visibility = {}, indexed = [], names = {} }: { visibility?: Record<string, string | null>; indexed?: string[]; names?: Record<string, string> } = {}) {
   await testEnv.clearFirestore();
   await testEnv.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
@@ -1387,10 +1389,10 @@ async function resetSearch({ visibility = {}, indexed = [], names = {} } = {}) {
   });
 }
 
-function searchEntry(handle, nameLower) { return { handle, nameLower }; }
+function searchEntry(handle: string, nameLower: string) { return { handle, nameLower }; }
 
 /** The two prefix queries the client issues, as the rules see them. */
-function prefixQuery(database, field, term, rows = 10) {
+function prefixQuery(database: FirebaseFirestore, field: string|FieldPath, term: unknown, rows = 10) {
   return query(
     collection(database, 'userSearch'),
     where(field, '>=', term),
@@ -1609,7 +1611,7 @@ test('F9: a profile cannot be created private while an entry survives', async ()
     });
   });
   const db = asDave();
-  const create = (extra = {}) => {
+  const create = (extra: { delist?: boolean } = {}) => {
     const batch = writeBatch(db);
     batch.set(doc(db, 'userProfiles', DAVE), {
       handle: 'dave', displayName: 'Dave', pinnedLists: [], visibility: 'private',
@@ -1626,7 +1628,7 @@ test('F9: a profile cannot be created private while an entry survives', async ()
 test('F9: deleting a profile without leaving the index is refused', async () => {
   await resetSearch({ visibility: { [ALICE]: 'public' }, indexed: [ALICE] });
   const db = asAlice();
-  const unpublish = ({ delist }) => {
+  const unpublish = ({ delist }: { delist: boolean }) => {
     const batch = writeBatch(db);
     batch.delete(doc(db, 'userProfiles', ALICE));
     batch.delete(doc(db, 'handles', 'alice'));
@@ -1640,7 +1642,7 @@ test('F9: deleting a profile without leaving the index is refused', async () => 
 test('F9: renaming a handle must carry the index along', async () => {
   await resetSearch({ visibility: { [ALICE]: 'public' }, indexed: [ALICE] });
   const db = asAlice();
-  const rename = ({ reindex }) => {
+  const rename = ({ reindex }: { reindex: boolean }) => {
     const batch = writeBatch(db);
     batch.delete(doc(db, 'handles', 'alice'));
     batch.set(doc(db, 'handles', 'ada'), { uid: ALICE, createdAt: serverTimestamp() });
@@ -1802,7 +1804,7 @@ test('F9: the slack above the cap is GONE, and that is the measured number', asy
     await setDoc(doc(db, 'userProfiles', ALICE), { visibility: 'public' }, { merge: true });
     await setDoc(doc(db, 'userSearch', ALICE), { handle: 'alice', nameLower: 'alice' });
   });
-  const attempt = async (count) => {
+  const attempt = async (count: number) => {
     const db = asAlice();
     const batch = writeBatch(db);
     batch.update(doc(db, 'userProfiles', ALICE), {
@@ -1832,7 +1834,7 @@ test('finding 1: the heaviest legitimate CREATE at the cap still lands with the 
   // at the cap the write lands, one above it never does.
   await reset({ aliceProfile: false });
   await seedOwnedLists(7);
-  const attempt = async (count) => {
+  const attempt = async (count: number) => {
     await testEnv.withSecurityRulesDisabled(async (context) => {
       const db = context.firestore();
       await deleteDoc(doc(db, 'userProfiles', ALICE));
@@ -1897,7 +1899,7 @@ test('F9: a feed load is STILL one document read', async () => {
   const aggregate = await getDoc(doc(asAlice(), 'users', ALICE, 'aggregates', 'interactions'));
   documentsRead += aggregate.exists() ? 1 : 0;
   assert.equal(documentsRead, 1, 'the search index must not enter the feed path');
-  assert.equal(aggregate.data().sourceDocCount, 3);
+  assert.equal(aggregate.data()!.sourceDocCount, 3);
 });
 
 // =========================================================================
@@ -1909,7 +1911,7 @@ test('F9: a feed load is STILL one document read', async () => {
 // =========================================================================
 
 /** Papers as sanitizePublicPaper() leaves them — the payload that broke. */
-const publicPapers = count => Array.from({ length: count }, (_, i) => ({
+const publicPapers = (count: number) => Array.from({ length: count }, (_, i) => ({
   id: `arxiv:2608.${18000 + i}`,
   title: `Paper ${i}`,
   authors: Array.from({ length: 20 }, (_, a) => `Author ${a}`),
@@ -1923,7 +1925,7 @@ const publicPapers = count => Array.from({ length: count }, (_, i) => ({
   openUrl: `https://arxiv.org/abs/2608.${18000 + i}`,
 }));
 
-const publicListBody = papers => ({
+const publicListBody = (papers: ReturnType<typeof publicPapers>) => ({
   title: 'Mi bibliografía',
   language: 'es',
   paperCount: papers.length,
@@ -1953,7 +1955,7 @@ test('anyone, signed in or not, can still read a share link in one document', as
   await seedPublished();
   for (const db of [asGuest(), asAlice(), asBob()]) {
     const snapshot = await assertSucceeds(getDoc(doc(db, 'publicLists', ALICE_SHARE)));
-    assert.equal(snapshot.data().papers.length, 3);
+    assert.equal(snapshot.data()!.papers.length, 3);
   }
 });
 
@@ -2167,7 +2169,7 @@ test('pinning a share still works: the rules read the owner table themselves', a
 // =========================================================================
 
 /** Seeds a showcase document for `uid`, as only the Worker can. */
-async function seedShowcase(uid, cards = [{ shareId: ALICE_SHARE, title: 'Mi lista', paperCount: 3, publishedAt: new Date() }]) {
+async function seedShowcase(uid: string, cards = [{ shareId: ALICE_SHARE, title: 'Mi lista', paperCount: 3, publishedAt: new Date() }]) {
   await testEnv.withSecurityRulesDisabled(async (context) => {
     await setDoc(doc(context.firestore(), 'profileLists', uid), {
       lists: cards, updatedAt: new Date(),
@@ -2323,18 +2325,18 @@ function highlightBody(extra = {}) {
   };
 }
 
-function highlightWithout(field) {
+function highlightWithout(field: string) {
   const body = highlightBody();
-  delete body[field];
+  delete (body as Partial<typeof body>)[field as keyof typeof body];
   return body;
 }
 
-const highlightRef = (database, id = 'h1', uid = ALICE) => (
+const highlightRef = (database: FirebaseFirestore, id = 'h1', uid = ALICE) => (
   doc(database, 'users', uid, 'highlights', id)
 );
 
 /** The query `listUserHighlights` actually emits, ceiling and all. */
-const highlightsQuery = (database, uid = ALICE, paperId = 'arxiv:2401.00001', rows = 200) => query(
+const highlightsQuery = (database: FirebaseFirestore, uid = ALICE, paperId = 'arxiv:2401.00001', rows = 200) => query(
   collection(database, 'users', uid, 'highlights'),
   where('paperId', '==', paperId),
   limit(rows),
@@ -2574,7 +2576,7 @@ test('savedPapers accepts what buildSavedPaperPayload sends, for a paper missing
   const db = asAlice();
   const savedAt = new Date().toISOString();
 
-  const papers = [
+  const papers: [string, NonNullable<Parameters<typeof buildSavedPaperPayload>[0]> & { id: string }][] = [
     ['the full article', {
       id: '2608.20113', title: 'A metallicity sweet spot for disc fragmentation',
       authors: ['Ethan J. Carter'], primaryCategory: 'astro-ph.EP',
@@ -2588,7 +2590,7 @@ test('savedPapers accepts what buildSavedPaperPayload sends, for a paper missing
   ];
 
   for (const [label, paper] of papers) {
-    await assertSucceeds(
+    await (assertSucceeds as (promise: Promise<void>, label: string) => Promise<void>)(
       setDoc(
         doc(db, 'users', ALICE, 'savedPapers', paper.id),
         buildSavedPaperPayload(paper, savedAt),

@@ -16,7 +16,7 @@ import {
 } from './feedPullToRefresh.ts';
 
 const plain = { closest: () => null };
-const insideAbstract = { closest: (sel) => (sel === PULL_BLOCKING_SCROLLERS ? {} : null) };
+const insideAbstract = { closest: (sel: string) => (sel === PULL_BLOCKING_SCROLLERS ? {} : null) };
 // The scroller sits under the navbar, so its own top is the band's origin,
 // and it is as tall as the phone minus the bar.
 const TOP = 52;
@@ -29,7 +29,7 @@ test('on the first card the whole card is the gesture: there is nothing above to
 });
 
 test('on any other card only the band under the navbar arms a pull', () => {
-  const at = (y) => pullStartFrom({ target: plain, scrollTop: 812, clientY: y, containerTop: TOP, containerHeight: H });
+  const at = (y: number) => pullStartFrom({ target: plain, scrollTop: 812, clientY: y, containerTop: TOP, containerHeight: H });
   assert.equal(at(TOP + 10), TOP + 10, 'inside the band');
   assert.equal(at(TOP + BAND), TOP + BAND, 'the band includes its own edge');
   assert.equal(at(TOP + BAND + 1), null, 'one pixel past it is the feed\'s gesture');
@@ -49,7 +49,7 @@ test('a drag that begins inside the open abstract is refused, wherever the feed 
 });
 
 test('the first move decides: down is the pull, up is the feed, sideways is neither', () => {
-  const move = (dy, dx = 0) => pullTakesOver({ startY: 300, startX: 180, currentY: 300 + dy, currentX: 180 + dx });
+  const move = (dy: number, dx = 0) => pullTakesOver({ startY: 300, startX: 180, currentY: 300 + dy, currentX: 180 + dx });
   assert.equal(move(6), true, 'a few pixels down is enough to decide, before the browser scrolls');
   assert.equal(move(-6), false, 'up is the swipe to the next paper');
   assert.equal(move(0), false);
@@ -76,7 +76,7 @@ test('the feed follows the finger with resistance, and never runs out of it', ()
   assert.equal(pullTravelPx({ startY: 100, currentY: 100 }), 0, 'quieto no viaja');
   assert.equal(pullTravelPx({ startY: 100, currentY: 40 }), 0, 'hacia arriba tampoco');
   assert.equal(pullTravelPx({ startY: undefined, currentY: 300 }), 0);
-  const at = (dy) => pullTravelPx({ startY: 0, currentY: dy });
+  const at = (dy: number) => pullTravelPx({ startY: 0, currentY: dy });
   // Resistencia: siempre menos que el dedo, y proporcionalmente menos cuanto
   // más se tira. Un tirón lineal no es un tirón.
   for (const dy of [10, 50, 110, 240, 600]) assert.ok(at(dy) < dy, `${dy}px de dedo mueven menos de ${dy}px`);
@@ -93,13 +93,13 @@ test('the feed follows the finger with resistance, and never runs out of it', ()
 });
 
 test('a slow drag refreshes only past the threshold', () => {
-  const slow = (dy) => pullOutcome({ startY: 100, endY: 100 + dy, elapsedMs: 2000 });
+  const slow = (dy: number) => pullOutcome({ startY: 100, endY: 100 + dy, elapsedMs: 2000 });
   assert.equal(slow(PULL_REFRESH_THRESHOLD_PX - 1), 'none');
   assert.equal(slow(PULL_REFRESH_THRESHOLD_PX + 1), 'refresh');
 });
 
 test('a fast fling refreshes before the threshold, but never a tremor', () => {
-  const fast = (dy, ms) => pullOutcome({ startY: 100, endY: 100 + dy, elapsedMs: ms });
+  const fast = (dy: number, ms: number) => pullOutcome({ startY: 100, endY: 100 + dy, elapsedMs: ms });
   assert.equal(fast(60, 30), 'refresh', '60px in 30ms is 2px/ms: a fling');
   assert.equal(fast(PULL_FLING_MIN_PX - 5, 10), 'none', 'too short to be a decision');
   assert.equal(fast(60, 200), 'none', '60px in 200ms is a slow drag short of the threshold');

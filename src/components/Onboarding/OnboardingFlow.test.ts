@@ -78,7 +78,7 @@ test('SOURCE: the greeting writes its title glyph by glyph once, and draws it wh
 test('the greeting settles inside three seconds under the baked glyph data', async () => {
   const code = (await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-  const constant = name => Number(code.match(new RegExp(`const ${name} = ([\\d.]+);`))[1]);
+  const constant = (name: string) => Number(code.match(new RegExp(`const ${name} = ([\\d.]+);`))![1]);
   const { default: data } = await import('./welcomeTitlePaths.ts');
   assert.equal(data.glyphs.length, 17);
   assert.equal(data.slant, 22, 'the lean the sweeps were measured across travels with them');
@@ -243,7 +243,7 @@ test('SOURCE: on the university screen a typed address makes the primary the lin
   assert.ok(primary, 'the primary no longer depends on the typed address');
   // Bound to the form: no click handler of its own, so the press is the
   // form's submit and Google's window opens from it.
-  const bound = primary[0].match(/\? \{([\s\S]*?)\}\s*:/)[1];
+  const bound = primary[0].match(/\? \{([\s\S]*?)\}\s*:/)![1];
   assert.match(bound, /form: UNIVERSITY_FORM_ID,/);
   assert.match(bound, /label: linkBusy \? COPY\.university\.verifying : COPY\.university\.link,/);
   assert.match(bound, /busy: linkBusy,/, 'busy keeps it focusable while Google is open');
@@ -259,7 +259,7 @@ test('SOURCE: on the university screen a typed address makes the primary the lin
   assert.match(shell, /type=\{primary\.form \? 'submit' : 'button'\}\s*form=\{primary\.form\}\s*onClick=\{primary\.form \? undefined : primary\.onClick\}/);
 });
 
-const screenBlock = (code, screen) => code.match(new RegExp(`\\{step === '${screen}' && \\([\\s\\S]*?\\n {6}\\)\\}`))?.[0];
+const screenBlock = (code: string, screen: string) => code.match(new RegExp(`\\{step === '${screen}' && \\([\\s\\S]*?\\n {6}\\)\\}`))?.[0];
 
 test('SOURCE: the onboarding CSS draws on white ground, with no tint behind its content', async () => {
   const css = (await readFile(new URL('./OnboardingFlow.css', import.meta.url), 'utf8'))

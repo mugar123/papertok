@@ -60,14 +60,14 @@ test('on a phone the avatar opens the same entries as a bottom sheet', async () 
   assert.match(jsx, /if \(isPhone\) \{\s*return \(\s*<AccountSheet/);
   assert.match(jsx, /from '\.\.\/ui\/drawer\.tsx'/);
   assert.match(jsx, /<DrawerTrigger className="navbar-avatar-btn"/);
-  const sheet = jsx.match(/function AccountSheet[\s\S]*?\n\}/)[0];
+  const sheet = jsx.match(/function AccountSheet[\s\S]*?\n\}/)![0];
   assert.match(sheet, /LINKS\.map\([\s\S]*?<Link key=\{to\}[^>]*\bto=\{to\} className="account-sheet-row" onClick=\{close\}>/);
   assert.match(sheet, /<RadioGroup[\s\S]*?value=\{preference\}[\s\S]*?onValueChange=\{setPreference\}/);
   assert.match(sheet, /onClick=\{onSignOut\}/);
   assert.doesNotMatch(sheet, /role="menu/, 'a sheet is a dialog, not a menu');
 
   const css = await accountCss;
-  const px = (rule, prop) => Number(css.match(new RegExp(`\\.${rule} \\{[^}]*${prop}:\\s*(\\d+)px`))?.[1]);
+  const px = (rule: string, prop: string) => Number(css.match(new RegExp(`\\.${rule} \\{[^}]*${prop}:\\s*(\\d+)px`))?.[1]);
   assert.ok(px('account-sheet-row', 'min-height') >= 44, 'sheet rows are thumb-sized');
   assert.ok(px('account-sheet-theme-option', 'min-height') >= 44, 'theme choices are thumb-sized');
 });

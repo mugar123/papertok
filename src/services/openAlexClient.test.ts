@@ -9,10 +9,10 @@ import {
 } from './openAlexClient.ts';
 
 function createStorage() {
-  const values = new Map();
+  const values = new Map<string, string>();
   return {
-    getItem: key => values.get(key) ?? null,
-    setItem: (key, value) => values.set(key, value),
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value),
   };
 }
 
@@ -25,16 +25,16 @@ test('adds the PaperTok identity once to OpenAlex URLs', () => {
 
 test('keeps the native fetch receiver bound to the global object', async () => {
   const originalFetch = globalThis.fetch;
-  let receiver = null;
+  const receivers: unknown[] = [];
   globalThis.fetch = function nativeFetchStub() {
-    receiver = this;
+    receivers.push(this);
     return Promise.resolve(new Response('{}', { status: 200 }));
   };
 
   try {
     const client = new OpenAlexClient();
     await client.json('https://api.openalex.org/institutions/I1');
-    assert.equal(receiver, globalThis);
+    assert.equal(receivers.at(-1), globalThis);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -116,7 +116,7 @@ test('reopens OpenAlex once an epoch-shaped reset has passed', async () => {
 
 test('retries a short 429 using Retry-After', async () => {
   let calls = 0;
-  const delays = [];
+  const delays: unknown[] = [];
   const client = new OpenAlexClient({
     now: () => 1000,
     random: () => 0.5,
@@ -129,7 +129,7 @@ test('retries a short 429 using Retry-After', async () => {
     },
   });
 
-  const data = await client.json('https://api.openalex.org/works/W1', { retries: 1 });
+  const data = await client.json<{ id: string }>('https://api.openalex.org/works/W1', { retries: 1 });
 
   assert.equal(data.id, 'W1');
   assert.equal(calls, 2);
@@ -164,7 +164,7 @@ test('opens a circuit after a long 429 without issuing another request', async (
       return new Response('{}', { status: 429, headers: { 'Retry-After': '120' } });
     },
     retries: 0,
-  });
+  } as NonNullable<ConstructorParameters<typeof OpenAlexClient>[0]> & Record<string, unknown>);
 
   await assert.rejects(
     () => client.json('https://api.openalex.org/institutions?search=Leiden'),
@@ -217,7 +217,7 @@ test('returns stale persistent data while OpenAlex is unavailable', async () => 
     now: () => now,
     fetchImpl: async () => new Response('{}', { status: 429, headers: { 'Retry-After': '120' } }),
   });
-  const result = await limitedClient.json('https://api.openalex.org/institutions/I1', {
+  const result = await limitedClient.json<{ id: string }>('https://api.openalex.org/institutions/I1', {
     persistentKey: 'institution:I1',
     persistentTtlMs: 1000,
     staleIfError: true,
@@ -231,7 +231,7 @@ test('returns stale persistent data while OpenAlex is unavailable', async () => 
 test('limits concurrent OpenAlex requests', async () => {
   let active = 0;
   let maxActive = 0;
-  const resolvers = [];
+  const resolvers: (() => void)[] = [];
   const client = new OpenAlexClient({
     maxConcurrent: 2,
     fetchImpl: () => new Promise(resolve => {
@@ -254,13 +254,13 @@ test('limits concurrent OpenAlex requests', async () => {
 });
 
 test('a priority request jumps the queue instead of waiting behind it', async () => {
-  const started = [];
-  const resolvers = [];
+  const started: unknown[] = [];
+  const resolvers: (() => void)[] = [];
   const tick = () => new Promise(resolve => setTimeout(resolve, 0));
   const client = new OpenAlexClient({
     maxConcurrent: 1,
     fetchImpl: (url) => new Promise(resolve => {
-      started.push(new URL(url).pathname);
+      started.push(new URL(url as string | URL).pathname);
       resolvers.push(() => resolve(new Response('{}', { status: 200 })));
     }),
   });
@@ -281,13 +281,13 @@ test('a priority request jumps the queue instead of waiting behind it', async ()
 });
 
 test('a priority request does not wait for a slot the optional lookups are holding', async () => {
-  const started = [];
-  const resolvers = [];
+  const started: unknown[] = [];
+  const resolvers: (() => void)[] = [];
   const tick = () => new Promise(resolve => setTimeout(resolve, 0));
   const client = new OpenAlexClient({
     maxConcurrent: 1,
     fetchImpl: (url) => new Promise(resolve => {
-      started.push(new URL(url).pathname);
+      started.push(new URL(url as string | URL).pathname);
       resolvers.push(() => resolve(new Response('{}', { status: 200 })));
     }),
   });
@@ -318,7 +318,7 @@ test('cancels an obsolete search request without retrying it', async () => {
     fetchImpl: async (_url, options) => {
       calls += 1;
       return new Promise((_resolve, reject) => {
-        options.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+        options!.signal!.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
       });
     },
   });
@@ -329,7 +329,7 @@ test('cancels an obsolete search request without retrying it', async () => {
   await new Promise(resolve => setTimeout(resolve, 0));
   controller.abort();
 
-  await assert.rejects(request, error => error.code === 'aborted');
+  await assert.rejects(request, error => (error as Error & { code?: string; status?: number; retryAfterMs?: number }).code === 'aborted');
   assert.equal(calls, 1);
 });
 
@@ -386,9 +386,9 @@ test('cuts a response whose headers arrive and whose body never finishes', async
     fetchImpl: async (_url, options) => new Response(new ReadableStream({
       start(controller) {
         controller.enqueue(new TextEncoder().encode('{"results":'));
-        options.signal.addEventListener(
+        options!.signal!.addEventListener(
           'abort',
-          () => controller.error(options.signal.reason ?? new Error('aborted')),
+          () => controller.error(options!.signal!.reason ?? new Error('aborted')),
           { once: true },
         );
       },
@@ -407,11 +407,11 @@ test('cuts a response whose headers arrive and whose body never finishes', async
 });
 
 test('the persistent store is read from storage once, and reads hand out copies', () => {
-  const values = new Map();
+  const values = new Map<string, string>();
   let reads = 0;
   const storage = {
-    getItem: (key) => { reads += 1; return values.has(key) ? values.get(key) : null; },
-    setItem: (key, value) => values.set(key, value),
+    getItem: (key: string) => { reads += 1; return values.has(key) ? values.get(key)! : null; },
+    setItem: (key: string, value: string) => values.set(key, value),
   };
   let parses = 0;
   const originalParse = JSON.parse;
@@ -426,19 +426,19 @@ test('the persistent store is read from storage once, and reads hand out copies'
     for (let i = 0; i < 13; i++) client.readPersistent('enrichment:a');
     assert.equal(reads, readsAfterWrites, 'reads do not copy the blob out of storage again');
     assert.equal(parses, parsesAfterWrites, 'nor parse it');
-    assert.deepEqual(client.readPersistent('enrichment:b').data, { citations: 5 });
+    assert.deepEqual(client.readPersistent('enrichment:b')!.data, { citations: 5 });
 
     // A caller that edits what it got does not edit the cache.
-    const read = client.readPersistent('enrichment:a');
-    read.data.concepts.push('y');
-    read.data.citations = 99;
-    assert.deepEqual(client.readPersistent('enrichment:a').data, { citations: 3, concepts: ['x'] });
+    const read = client.readPersistent<{ concepts: string[]; citations: number }>('enrichment:a');
+    read!.data.concepts.push('y');
+    read!.data.citations = 99;
+    assert.deepEqual(client.readPersistent('enrichment:a')!.data, { citations: 3, concepts: ['x'] });
 
     // Another tab writes (the `storage` event, in the browser): the store is
     // let go of, and the next read finds what that tab wrote.
     values.set('papertok_openalex_cache_v1', JSON.stringify({ 'enrichment:a': { data: { citations: 7 }, savedAt: 900 } }));
     client.forgetPersistentStore();
-    assert.deepEqual(client.readPersistent('enrichment:a').data, { citations: 7 });
+    assert.deepEqual(client.readPersistent('enrichment:a')!.data, { citations: 7 });
     assert.equal(client.readPersistent('enrichment:b'), null, 'and what that tab dropped is gone');
     assert.equal(reads, readsAfterWrites + 1);
   } finally {
@@ -454,11 +454,11 @@ test('SOURCE: a write from another tab lets go of the remembered store', async (
 });
 
 test('a burst of writes reaches storage once, on the next microtask', async () => {
-  const values = new Map();
+  const values = new Map<string, string>();
   let writes = 0;
   const storage = {
-    getItem: (key) => (values.has(key) ? values.get(key) : null),
-    setItem: (key, value) => { writes += 1; values.set(key, value); },
+    getItem: (key: string) => (values.has(key) ? values.get(key)! : null),
+    setItem: (key: string, value: string) => { writes += 1; values.set(key, value); },
   };
   const client = new OpenAlexClient({ storage, now: () => 1000 });
   // The enrichment batch: two keys per work, thirty works.
@@ -467,10 +467,10 @@ test('a burst of writes reaches storage once, on the next microtask', async () =
     client.writePersistent(`enrichment:openalex:W${i}`, { citations: i });
   }
   assert.equal(writes, 0, 'nothing serialised yet');
-  assert.deepEqual(client.readPersistent('enrichment:7').data, { citations: 7 }, 'but every write is already readable');
+  assert.deepEqual(client.readPersistent('enrichment:7')!.data, { citations: 7 }, 'but every write is already readable');
   await Promise.resolve();
   assert.equal(writes, 1, 'one serialisation for the sixty writes');
-  assert.equal(Object.keys(JSON.parse(values.get('papertok_openalex_cache_v1'))).length, 60);
+  assert.equal(Object.keys(JSON.parse(values.get('papertok_openalex_cache_v1')!)).length, 60);
   client.writePersistent('enrichment:late', { citations: 1 });
   client.flushPersistent();
   assert.equal(writes, 2, 'flushing on demand writes at once');
@@ -479,8 +479,8 @@ test('a burst of writes reaches storage once, on the next microtask', async () =
 });
 
 test('the store keeps to its caps: no entry over 150k characters, and the blob under 1.2M', () => {
-  const values = new Map();
-  const storage = { getItem: (key) => (values.has(key) ? values.get(key) : null), setItem: (key, value) => values.set(key, value) };
+  const values = new Map<string, string>();
+  const storage = { getItem: (key: string) => (values.has(key) ? values.get(key)! : null), setItem: (key: string, value: string) => values.set(key, value) };
   let now = 1000;
   const client = new OpenAlexClient({ storage, now: () => now });
   client.writePersistent('entity-works-v2:huge', { blob: 'x'.repeat(200_000) });
@@ -494,7 +494,7 @@ test('the store keeps to its caps: no entry over 150k characters, and the blob u
   assert.equal(client.readPersistent('entity-works-v2:0'), null, 'the oldest works page was evicted');
   assert.ok(client.readPersistent('entity-works-v2:11'), 'the newest stays');
   client.flushPersistent();
-  assert.ok(values.get('papertok_openalex_cache_v1').length <= 1_200_000);
+  assert.ok(values.get('papertok_openalex_cache_v1')!.length <= 1_200_000);
 });
 
 test('a persistentSlim response is what is kept, and what a cache hit returns', async () => {
@@ -505,11 +505,11 @@ test('a persistentSlim response is what is kept, and what a cache hit returns', 
     now: () => 1000,
     fetchImpl: async () => { fetches += 1; return new Response(JSON.stringify({ results: [{ id: 'W1', big: 'x'.repeat(1000) }], meta: { count: 1 } }), { status: 200 }); },
   });
-  const slim = (data) => ({ ids: data.results.map((w) => w.id), total: data.meta.count });
+  const slim = (data: { results: { id: string }[]; meta: { count: number } }) => ({ ids: data.results.map((w) => w.id), total: data.meta.count });
   const first = await client.json('https://api.openalex.org/works?filter=a', { persistentKey: 'entity-works-v2:a', persistentSlim: slim });
   assert.deepEqual(first, { ids: ['W1'], total: 1 });
   const again = await client.json('https://api.openalex.org/works?filter=a', { persistentKey: 'entity-works-v2:a', persistentSlim: slim });
   assert.deepEqual(again, { ids: ['W1'], total: 1 });
   assert.equal(fetches, 1);
-  assert.doesNotMatch(storage.getItem('papertok_openalex_cache_v1'), /xxxx/, 'the raw work never reached storage');
+  assert.doesNotMatch(storage.getItem('papertok_openalex_cache_v1')!, /xxxx/, 'the raw work never reached storage');
 });

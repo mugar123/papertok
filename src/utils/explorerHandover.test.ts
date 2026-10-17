@@ -9,7 +9,7 @@ import { handedEntityFor, handoverFromSearchRow } from './explorerHandover.ts';
  * the page was still sliding in).
  */
 test('an author row hands over what the hero paints', () => {
-  const row = { id: 'https://openalex.org/A5068353058', display_name: 'David Moher', works_count: 1554, cited_by_count: 893080, h_index: 218, orcid: 'https://orcid.org/0000-0003-2434-4206', institution: "St. Michael's Hospital", concepts: [{ display_name: 'Medicine' }] };
+  const row = { id: 'https://openalex.org/A5068353058', display_name: 'David Moher', works_count: 1554, cited_by_count: 893080, h_index: 218, orcid: 'https://orcid.org/0000-0003-2434-4206', institution: "St. Michael's Hospital", concepts: [({ display_name: 'Medicine' } as import('../models/Paper.ts').PaperSubject & Record<string, unknown>)] };
   assert.deepEqual(handoverFromSearchRow('author', row), {
     id: 'https://openalex.org/A5068353058',
     display_name: 'David Moher',
@@ -80,7 +80,7 @@ test('a route accepts the handed entity only when it names it', () => {
   assert.equal(handedEntityFor('author', 'A999', state), null, 'another author is not this one');
   assert.equal(handedEntityFor('institution', 'A5068353058', state), null, 'another type is not this one');
   assert.equal(handedEntityFor('author', 'A5068353058', null), null);
-  assert.equal(handedEntityFor('author', 'A5068353058', { entity: null, entityType: 'author' }), null);
+  assert.equal(handedEntityFor('author', 'A5068353058', { entity: null!, entityType: 'author' }), null);
 });
 
 test('institutions and topics match on the last path segment', () => {

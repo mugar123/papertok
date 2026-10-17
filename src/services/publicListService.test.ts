@@ -1,3 +1,4 @@
+import type { PublicListPaper } from './publicListPayload.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -40,8 +41,9 @@ const privatePaper = {
  * Reading still goes to Firestore; writing goes to the Worker. The double
  * covers both so a test can assert on whichever half it cares about.
  */
-function fakeApi(overrides = {}) {
-  const requests = [];
+type ListApi = NonNullable<Parameters<typeof publishPublicList>[1]>;
+function fakeApi(overrides: { responses?: Response[]; api?: ListApi } = {}) {
+  const requests: { url: string | URL; init: RequestInit | undefined; body: { papers: PublicListPaper[]; paperIds: string[]; [key: string]: unknown } }[] = [];
   const responses = overrides.responses || [];
   return {
     requests,
@@ -49,14 +51,14 @@ function fakeApi(overrides = {}) {
       isDemo: false,
       apiBase: 'https://worker.test',
       rest: {
-        getDocument: async () => ({
-          exists: true,
+        getDocument: async <T>(): Promise<{ exists: false; id: string; data: null } | { exists: true; id: string; data: T }> => ({
+          exists: true as const,
           id: '07070707070707070707070707070707',
-          data: { title: 'Shared', papers: [] },
+          data: { title: 'Shared', papers: [] } as T,
         }),
       },
-      request: async (url, init) => {
-        requests.push({ url, init, body: JSON.parse(init.body) });
+      request: async (url: string | URL, init?: RequestInit) => {
+        requests.push({ url, init, body: JSON.parse(init!.body as string) });
         const next = responses.shift();
         if (next) return next;
         return new Response(JSON.stringify({
@@ -64,7 +66,7 @@ function fakeApi(overrides = {}) {
         }), { status: 200 });
       },
       ...overrides.api,
-    },
+    } satisfies ListApi,
   };
 }
 
@@ -78,7 +80,7 @@ test('sanitizes public lists to the bounded public contract', () => {
     publicShareId: 'private-share-id',
     email: 'owner@example.test',
     notes: ['private'],
-  });
+  } as NonNullable<Parameters<typeof sanitizePublicList>[0]> & Record<string, unknown>);
 
   assert.deepEqual(Object.keys(result), [
     'title', 'description', 'language', 'paperCount', 'papers',
@@ -128,7 +130,7 @@ test('publishing posts the sanitized list to the Worker, never to Firestore', as
 
   assert.equal(requests.length, 1);
   assert.equal(requests[0].url, 'https://worker.test/lists/publish');
-  assert.equal(requests[0].init.method, 'POST');
+  assert.equal(requests[0].init!.method, 'POST');
   assert.equal(requests[0].body.listId, 'list-1');
   assert.equal(requests[0].body.title, 'Shared');
   // The share id is the Worker's to mint: the browser must not choose it, or a
@@ -210,8 +212,8 @@ test('THE INVARIANT: sanitizing a paper twice is a fixed point', async () => {
   const first = sanitizePublicPaper({ ...privatePaper, listPaperId: 'legacy-2401.00001' });
   const second = sanitizePublicPaper(first);
   assert.deepEqual(second, first, 'a second pass must change nothing');
-  assert.equal(second.sourceId, 'legacy-2401.00001');
-  assert.equal(second.doi, '10.1000/Example');
+  assert.equal(second!.sourceId, 'legacy-2401.00001');
+  assert.equal(second!.doi, '10.1000/Example');
 });
 
 test('P25: papers record the id the private list files them under', async () => {
@@ -301,7 +303,7 @@ test('an unconfigured Worker origin is reported, not silently swallowed', async 
   const { api } = fakeApi({ api: { apiBase: '' } });
   await assert.rejects(
     () => publishPublicList({ listId: 'list-1', title: 'T', papers: [] }, api),
-    error => error.code === 'PUBLISHING_NOT_CONFIGURED' && error.status === 503,
+    error => (error as Error & { code?: string; status?: number; retryAfterMs?: number }).code === 'PUBLISHING_NOT_CONFIGURED' && (error as Error & { code?: string; status?: number; retryAfterMs?: number }).status === 503,
   );
 });
 
@@ -325,7 +327,7 @@ test('a malformed share id or list id never reaches the network', async () => {
 
 test('returns a clear unsupported error in demo mode, on every path', async () => {
   const shareId = '07070707070707070707070707070707';
-  const isUnsupported = error => error instanceof PublicListUnsupportedError
+  const isUnsupported = (error: { code: string; }) => error instanceof PublicListUnsupportedError
     && error.code === 'PUBLIC_LISTS_UNSUPPORTED_IN_DEMO';
   const { api, requests } = fakeApi({ api: { isDemo: true } });
 
@@ -375,8 +377,8 @@ test('Firestore rules keep public lists readable and shut to every client', asyn
  * (src/utils/firestoreRest.ts): a 404 is the only absence, and a request that
  * never arrives is a retryable rejection.
  */
-function restReader(fetchImpl) {
-  const requests = [];
+function restReader(fetchImpl: typeof fetch) {
+  const requests: { url: URL|RequestInfo; init: RequestInit|undefined; }[] = [];
   const rest = createFirestoreRest({
     projectId: 'papertok-test',
     fetchImpl: async (url, init) => {
@@ -403,13 +405,13 @@ test('a share link is one anonymous REST read of its document, with the caller\'
   const result = await readPublicList(SHARE_ID, { signal: controller.signal }, api);
 
   assert.equal(requests.length, 1);
-  assert.match(requests[0].url, new RegExp(`/documents/publicLists/${SHARE_ID}$`));
-  assert.equal(requests[0].init.signal, controller.signal);
-  assert.equal(requests[0].init.headers.Authorization, undefined, 'no token: no CORS preflight');
-  assert.equal(result.shareId, SHARE_ID);
-  assert.equal(result.title, 'Shared');
-  assert.equal(result.paperCount, 2);
-  assert.equal(result.updatedAt.toISOString(), '2026-08-21T10:00:00.000Z');
+  assert.match(requests[0].url as string, new RegExp(`/documents/publicLists/${SHARE_ID}$`));
+  assert.equal(requests[0].init!.signal, controller.signal);
+  assert.equal((requests[0].init!.headers as Record<string, string>).Authorization, undefined, 'no token: no CORS preflight');
+  assert.equal(result!.shareId, SHARE_ID);
+  assert.equal(result!.title, 'Shared');
+  assert.equal(result!.paperCount, 2);
+  assert.equal((result!.updatedAt as Date).toISOString(), '2026-08-21T10:00:00.000Z');
 });
 
 test('a public list the server confirmed is missing really is not found', async () => {
@@ -422,7 +424,7 @@ test('THE BUG: an unreachable backend is not a missing list', async () => {
   await assert.rejects(
     () => readPublicList(SHARE_ID, {}, api),
     (error) => {
-      assert.equal(error.code, 'unavailable');
+      assert.equal((error as Error & { code?: string; status?: number; retryAfterMs?: number }).code, 'unavailable');
       assert.equal(isTransientReadError(error), true, 'patientRead must keep asking');
       return true;
     },

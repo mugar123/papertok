@@ -10,7 +10,7 @@ import {
 } from '../../worker/ai-explanation.ts';
 
 test('gives the daily use back only when the provider did no work', () => {
-  const refunds = code => shouldRefundAIQuota(new AIExplanationError(code, 502));
+  const refunds = (code: string) => shouldRefundAIQuota(new AIExplanationError(code, 502));
 
   assert.equal(refunds('AI_BUSY'), true);
   assert.equal(refunds('AI_UNAVAILABLE'), true);
@@ -21,7 +21,7 @@ test('gives the daily use back only when the provider did no work', () => {
   // A crash of ours is not the reader's fault either.
   assert.equal(shouldRefundAIQuota(new TypeError('boom')), true);
 
-  const quotaError = scope => new AIExplanationError('AI_QUOTA_EXHAUSTED', 429, 'AI_QUOTA_EXHAUSTED', { scope });
+  const quotaError = (scope: 'provider' | 'user') => new AIExplanationError('AI_QUOTA_EXHAUSTED', 429, 'AI_QUOTA_EXHAUSTED', { scope } as NonNullable<ConstructorParameters<typeof AIExplanationError>[3]>);
   assert.equal(shouldRefundAIQuota(quotaError('provider')), true);
   assert.equal(shouldRefundAIQuota(quotaError('user')), false);
 });

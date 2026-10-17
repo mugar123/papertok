@@ -20,7 +20,7 @@ const bytes = readFileSync(fontFile);
 const font = opentype.parse(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
 
 const baseline = Math.round((font.ascender / font.unitsPerEm) * FONT_SIZE);
-const round = value => Math.round(value * 10) / 10;
+const round = (value: number) => Math.round(value * 10) / 10;
 // The script's slant, for the reveal that follows the pen along it. Baked
 // into the data as `slant` so the component leans its bands the same way.
 const SLANT_DEGREES = 22;
@@ -29,10 +29,13 @@ const CURVE_SEGMENTS = 16;
 
 // The outline as points, curves cut into straight segments: enough for the
 // outline's length and for the glyph's extent across the slant.
-function flatten(commands) {
-  const points = [];
-  let start = null;
-  let last = null;
+type Point = [number, number];
+type OutlinePoint = { point: Point; move?: boolean };
+
+function flatten(commands: opentype.PathCommand[]) {
+  const points: OutlinePoint[] = [];
+  let start: Point | null = null;
+  let last: Point | null = null;
   for (const c of commands) {
     if (c.type === 'M') {
       last = start = [c.x, c.y];
@@ -41,11 +44,11 @@ function flatten(commands) {
       last = [c.x, c.y];
       points.push({ point: last });
     } else if (c.type === 'Q' || c.type === 'C') {
-      const [x0, y0] = last;
+      const [x0, y0] = last!;
       for (let step = 1; step <= CURVE_SEGMENTS; step += 1) {
         const t = step / CURVE_SEGMENTS;
         const u = 1 - t;
-        const point = c.type === 'Q'
+        const point: Point = c.type === 'Q'
           ? [u * u * x0 + 2 * u * t * c.x1 + t * t * c.x, u * u * y0 + 2 * u * t * c.y1 + t * t * c.y]
           : [
             u ** 3 * x0 + 3 * u * u * t * c.x1 + 3 * u * t * t * c.x2 + t ** 3 * c.x,
@@ -62,7 +65,7 @@ function flatten(commands) {
   return points;
 }
 
-function outlineLength(points) {
+function outlineLength(points: OutlinePoint[]) {
   let length = 0;
   for (let index = 1; index < points.length; index += 1) {
     if (points[index].move) continue;
@@ -73,7 +76,7 @@ function outlineLength(points) {
   return length;
 }
 
-const glyphs = [];
+const glyphs: { char: string; d: string; x: number; box: number[]; sweep: number[]; length: number; afterSpace?: boolean }[] = [];
 let afterSpace = false;
 let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
 const chars = [...TEXT];

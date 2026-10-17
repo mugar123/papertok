@@ -19,14 +19,14 @@ test('maps an accepted OpenReview submission as a reviewed conference paper', ()
     },
   }, ['cs.LG']);
 
-  assert.equal(paper.sources.primary, 'openreview');
-  assert.equal(paper.id, 'openreview:forum-1');
-  assert.equal(paper.primaryCategory, 'cs.LG');
-  assert.equal(paper.publicationStatus, 'published');
-  assert.equal(paper.publicationType, 'conference');
-  assert.equal(paper.peerReviewed, true);
-  assert.match(paper.pdfUrl, /openreview\.net\/pdf/);
-  assert.match(paper.landingPageUrl, /forum\?id=forum-1/);
+  assert.equal(paper!.sources.primary, 'openreview');
+  assert.equal(paper!.id, 'openreview:forum-1');
+  assert.equal(paper!.primaryCategory, 'cs.LG');
+  assert.equal(paper!.publicationStatus, 'published');
+  assert.equal(paper!.publicationType, 'conference');
+  assert.equal(paper!.peerReviewed, true);
+  assert.match(paper!.pdfUrl!, /openreview\.net\/pdf/);
+  assert.match(paper!.landingPageUrl!, /forum\?id=forum-1/);
 });
 
 test('does not present a submitted OpenReview manuscript as peer reviewed', () => {
@@ -42,7 +42,7 @@ test('does not present a submitted OpenReview manuscript as peer reviewed', () =
     },
   }, ['cs.AI']);
 
-  assert.equal(paper.publicationStatus, 'preprint');
-  assert.equal(paper.publicationType, 'preprint');
-  assert.equal(paper.peerReviewed, false);
+  assert.equal(paper!.publicationStatus, 'preprint');
+  assert.equal(paper!.publicationType, 'preprint');
+  assert.equal(paper!.peerReviewed, false);
 });

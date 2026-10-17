@@ -15,7 +15,7 @@ test('nothing loads until the feed is enabled, and the first load after it is no
   assert.equal(guestFeedLoadDecision({ enabled: true, previousKey: 'cs+med', planKey: 'cs+med' }), null);
 });
 
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 test('the guest page enables its feed once the visitor has answered', () => {
   const page = stripComments(readFileSync(new URL('../components/Public/GuestFeedPage.tsx', import.meta.url), 'utf8'));

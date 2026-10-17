@@ -9,7 +9,7 @@ import { readFile } from 'node:fs/promises';
  * the guest chrome, because the bars are not something a harness mounts here.
  */
 
-const read = async path => (await readFile(new URL(path, import.meta.url), 'utf8'))
+const read = async (path: string|URL) => (await readFile(new URL(path, import.meta.url), 'utf8'))
   .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '');

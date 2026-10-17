@@ -8,14 +8,14 @@ import {
 
 const NOW = Date.parse('2026-07-28T12:00:00Z');
 
-function followedPaper(id, followId, overrides = {}) {
+function followedPaper(id: string, followId: string, overrides = {}) {
   return {
     id,
     title: `Paper ${id}`,
     published: '2026-07-20',
     citationCount: 2,
     _followedEntityMatches: [{
-      type: 'institution',
+      type: 'institution' as const,
       canonicalId: followId,
       displayName: followId,
     }],
@@ -25,26 +25,26 @@ function followedPaper(id, followId, overrides = {}) {
 
 test('names the followed entity behind a paper', () => {
   assert.equal(
-    buildFollowReasonLabel([{ type: 'author', displayName: 'Haim Goldberg' }]),
+    buildFollowReasonLabel([{ type: 'author' as const, displayName: 'Haim Goldberg' }]),
     'Because you follow Haim Goldberg',
   );
   assert.equal(
-    buildFollowReasonLabel([{ type: 'topic', displayName: 'Cosmology' }]),
+    buildFollowReasonLabel([{ type: 'topic' as const, displayName: 'Cosmology' }]),
     'Because you follow Cosmology',
   );
   assert.equal(
-    buildFollowReasonLabel([{ type: 'institution', displayName: 'Leiden University' }]),
+    buildFollowReasonLabel([{ type: 'institution' as const, displayName: 'Leiden University' }]),
     'Because you follow Leiden University',
   );
   assert.equal(
-    buildFollowReasonLabel([{ type: 'project', displayName: 'NuBSM' }]),
+    buildFollowReasonLabel([{ type: 'project' as const, displayName: 'NuBSM' }]),
     'Because you follow the project NuBSM',
   );
 });
 
 test('localizes followed taxonomy topics without changing stored follow data', () => {
   const galacticAstrophysics = {
-    type: 'topic',
+    type: 'topic' as const,
     canonicalId: 'astro-ph.GA',
     displayName: 'Astrofísica Galáctica',
   };
@@ -58,7 +58,7 @@ test('localizes followed taxonomy topics without changing stored follow data', (
 
 test('localizes followed institutions without changing their official identity', () => {
   const university = {
-    type: 'institution',
+    type: 'institution' as const,
     canonicalId: '02f40zc51',
     displayName: 'Universidad de Salamanca',
     metadata: {
@@ -79,21 +79,21 @@ test('localizes followed institutions without changing their official identity',
 test('joins two reasons and collapses three or more', () => {
   assert.equal(
     buildFollowReasonLabel([
-      { type: 'author', displayName: 'Ada Lovelace' },
-      { type: 'topic', displayName: 'Computing' },
+      { type: 'author' as const, displayName: 'Ada Lovelace' },
+      { type: 'topic' as const, displayName: 'Computing' },
     ]),
     'Because you follow Ada Lovelace and Computing',
   );
   assert.equal(
     buildFollowReasonLabel([
-      { type: 'author', displayName: 'A' },
-      { type: 'topic', displayName: 'B' },
-      { type: 'project', displayName: 'C' },
+      { type: 'author' as const, displayName: 'A' },
+      { type: 'topic' as const, displayName: 'B' },
+      { type: 'project' as const, displayName: 'C' },
     ]),
     'Matches several things you follow',
   );
   assert.equal(buildFollowReasonLabel([]), '');
-  assert.equal(buildFollowReasonLabel([{ type: 'author' }]), '');
+  assert.equal(buildFollowReasonLabel([{ type: 'author' as const }]), '');
 });
 
 test('uses seen state as a novelty signal without hiding a much stronger paper', () => {
@@ -113,7 +113,7 @@ test('rewards papers that match several followed entities', () => {
     ...followedPaper('multiple', 'MIT'),
     _followedEntityMatches: [
       ...singleMatch._followedEntityMatches,
-      { type: 'topic', canonicalId: 'T1', displayName: 'Quantum Physics' },
+      { type: 'topic' as const, canonicalId: 'T1', displayName: 'Quantum Physics' },
     ],
   };
 
@@ -129,7 +129,7 @@ test('mixes similarly relevant follows instead of preserving five-paper source b
     ...Array.from({ length: 5 }, (_, index) => followedPaper(`leiden-${index}`, 'Leiden')),
   ];
   const ordered = orderFollowingFeedPapers(items, new Set(), { now: NOW });
-  const followIds = ordered.map(paper => paper._followedEntityMatches[0].canonicalId);
+  const followIds = ordered.map(paper => paper._followedEntityMatches![0].canonicalId);
   let longestRun = 1;
   let currentRun = 1;
   for (let index = 1; index < followIds.length; index += 1) {
@@ -155,7 +155,7 @@ test('breaks otherwise equal relevance with citations and tolerates empty input'
 import { readFile } from 'node:fs/promises';
 import { followingFirstLoadPending, mergeOrderedPapers } from './followingFeed.ts';
 
-const readSource = (path) => readFile(new URL(path, import.meta.url), 'utf8');
+const readSource = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
 
 /**
  * A silent refresh landing while the Following feed is on screen used to
@@ -257,7 +257,7 @@ test('after a reload the order the reader left is rebuilt from its keys over the
 
   assert.deepEqual(orderFromKeys(items, keys).map(paper => paper.id), ['c', 'a'], 'the stored keys pick the items, in the stored order, and skip what is gone');
   assert.deepEqual(orderFromKeys(items, []), []);
-  assert.deepEqual(orderFromKeys(items, null), []);
+  assert.deepEqual(orderFromKeys(items, null!), []);
 
   const resumed = resumeFromKeys({ items: null, ordered: [], orderKeys: keys }, items, new Set());
   assert.deepEqual(resumed.slice(0, 2).map(paper => paper.id), ['c', 'a'], 'the feed resumes in the order it left');
@@ -289,9 +289,9 @@ test('the Following feed drops what the reader skipped, and keeps the array when
   assert.equal(withoutNotInterested(papers, new Set()), papers);
   assert.equal(withoutNotInterested(papers, null), papers,
     'a profile that has not loaded yet hides nothing');
-  assert.deepEqual(withoutNotInterested(null, new Set(['a'])), []);
+  assert.deepEqual(withoutNotInterested(null!, new Set(['a'])), []);
   assert.deepEqual(
-    withoutNotInterested([null, { id: 'a' }], new Set(['a'])).map(Boolean),
+    withoutNotInterested([null!, { id: 'a' }], new Set(['a'])).map(Boolean),
     [false],
     'a hole in the list is not an id, and is not what the skip removed',
   );

@@ -17,12 +17,12 @@ import { readFile } from 'node:fs/promises';
  */
 
 const read = () => readFile(new URL('./PaperReader.tsx', import.meta.url), 'utf8');
-const stripComments = source => source
+const stripComments = (source: string) => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '');
 
 /** The `en` block of `ERROR_COPY`. */
-function errorCopyBlock(source) {
+function errorCopyBlock(source: string) {
   const table = source.match(/const ERROR_COPY = \{([\s\S]*?)\n\};/);
   assert.ok(table, 'expected an ERROR_COPY table');
   const english = table[1].match(/\n {2}en: \{([\s\S]*?)\n {2}\},/);

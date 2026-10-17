@@ -37,5 +37,5 @@ test('deduplicates graph papers by DOI before applying the display limit', () =>
     { id: 'two', doi: 'https://doi.org/10.1000/a' },
     { id: 'three', doi: '10.1000/B' },
   ];
-  assert.deepEqual(deduplicateCitationGraphPapers(papers, 2).map(item => item.id), ['one', 'three']);
+  assert.deepEqual(deduplicateCitationGraphPapers((papers as import('../models/Paper.ts').Paper[]), 2).map(item => item.id), ['one', 'three']);
 });

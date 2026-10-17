@@ -1,17 +1,30 @@
+interface UpdateRegistration { installing?: object | null; update(): Promise<unknown>; }
+interface UpdateWindow extends Pick<EventTarget, 'addEventListener' | 'removeEventListener'> {
+  setInterval(callback: () => void, delay: number): number;
+  clearInterval(id: number): void;
+}
+type UpdateDocument = Pick<Document, 'visibilityState' | 'addEventListener' | 'removeEventListener'>;
+interface UpdateOptions {
+  windowTarget?: UpdateWindow | null;
+  documentTarget?: UpdateDocument | null;
+  navigatorTarget?: Pick<Navigator, 'onLine'> | null;
+  now?: () => number;
+}
+
 // Registration checks at page load are not enough for a tab or installed PWA
 // that survives several deploys. Check again on resume and while in use.
-export function watchServiceWorkerUpdates(registration: ServiceWorkerRegistration | null | undefined, {
+export function watchServiceWorkerUpdates(registration: UpdateRegistration | null | undefined, {
   windowTarget = window,
   documentTarget = document,
   navigatorTarget = navigator,
   now = Date.now,
-} = {}) {
+}: UpdateOptions = {}) {
   if (!registration) return () => {}
 
   let checking = false
   let lastChecked = -Infinity
   const check = async () => {
-    if (documentTarget.visibilityState !== 'visible' || navigatorTarget.onLine === false
+    if (documentTarget!.visibilityState !== 'visible' || navigatorTarget!.onLine === false
       || registration.installing || checking || now() - lastChecked < 60_000) return
     checking = true
     try {
@@ -24,15 +37,15 @@ export function watchServiceWorkerUpdates(registration: ServiceWorkerRegistratio
     }
   }
 
-  documentTarget.addEventListener('visibilitychange', check)
-  windowTarget.addEventListener('pageshow', check)
-  windowTarget.addEventListener('online', check)
-  const timer = windowTarget.setInterval(check, 5 * 60_000)
+  documentTarget!.addEventListener('visibilitychange', check)
+  windowTarget!.addEventListener('pageshow', check)
+  windowTarget!.addEventListener('online', check)
+  const timer = windowTarget!.setInterval(check, 5 * 60_000)
 
   return () => {
-    documentTarget.removeEventListener('visibilitychange', check)
-    windowTarget.removeEventListener('pageshow', check)
-    windowTarget.removeEventListener('online', check)
-    windowTarget.clearInterval(timer)
+    documentTarget!.removeEventListener('visibilitychange', check)
+    windowTarget!.removeEventListener('pageshow', check)
+    windowTarget!.removeEventListener('online', check)
+    windowTarget!.clearInterval(timer)
   }
 }

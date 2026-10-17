@@ -17,7 +17,7 @@ import {
  * This is a Node harness concern, not a product one: in a browser and in a
  * Worker there is always a loop, and a pending fetch keeps it running.
  */
-async function holdingTheEventLoop(work) {
+async function holdingTheEventLoop<T>(work: () => T): Promise<Awaited<T>> {
   const keepAlive = setInterval(() => {}, 5);
   try {
     return await work();
@@ -59,7 +59,7 @@ test('the deadline still covers a body that arrives after the headers', async ()
   }));
 
   await holdingTheEventLoop(
-    () => assert.rejects(() => response.text(), error => error.name === 'TimeoutError'),
+    () => assert.rejects(() => response.text(), error => (error as Error & { code?: string; status?: number; retryAfterMs?: number }).name === 'TimeoutError'),
   );
 });
 

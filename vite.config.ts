@@ -1,3 +1,9 @@
+import type { ManifestTransform } from 'workbox-build'
+
+// Workbox serializes this callback into the service worker; these names are not read by Node.
+declare const caches: { open(name: string): Promise<{ match(url: string): Promise<Response | undefined> }> }
+declare const self: { registration: { scope: string } }
+
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -23,7 +29,7 @@ const DIST_DIR = join(fileURLToPath(new URL('.', import.meta.url)), 'dist')
 // deploy looks wrong. Since the arXiv proxy cascade was removed there is not even
 // a fallback left to mask it. A production build without a Worker is a broken
 // build, so it stops here instead of shipping.
-function requireWorkerBaseUrl(env) {
+function requireWorkerBaseUrl(env: Record<string, string>) {
   if (env.VITE_PAPER_API_BASE_URL) return
   throw new Error(
     'VITE_PAPER_API_BASE_URL is not set, so this build would ship a bundle that reaches no '
@@ -42,7 +48,7 @@ function requireWorkerBaseUrl(env) {
 // `VITE_SCOPUS_ENABLED` has drifted that way twice, in both directions. This
 // stops the build instead, before the bundle exists, because a warning is
 // precisely what already proved too quiet to notice.
-function requireDeclaredDeployFlags(env) {
+function requireDeclaredDeployFlags(env: Record<string, string>) {
   const drift = findDeployFlagDrift(env)
   if (drift.length === 0) return
   throw new Error(
@@ -55,7 +61,7 @@ function requireDeclaredDeployFlags(env) {
   )
 }
 
-function verifyProductionEnv(mode) {
+function verifyProductionEnv(mode: string) {
   const env = loadEnv(mode, globalThis.process?.cwd?.() || '.', 'VITE_')
   requireWorkerBaseUrl(env)
   requireDeclaredDeployFlags(env)
@@ -118,7 +124,7 @@ const PRECACHE_GLOB_PATTERNS = [
 // didn't already catch (the ~24 further boot-set chunks -- see the comment
 // above), and leaves everything else (katex, every lazy
 // route chunk: none of them referenced from index.html) alone.
-function bootSetManifestTransform(distDir) {
+function bootSetManifestTransform(distDir: string): ManifestTransform {
   // The one <script type="module"> is the entry chunk; used below only to
   // assert it survived into the final manifest, independent of whatever
   // name a future build gives it.

@@ -4,17 +4,17 @@ import { createArxivRequestQueue, DEFAULT_COOLDOWN_MS } from './arxivRequestQueu
 
 // A clock the tests move by hand, and a sleep that moves it instead of waiting.
 function fakeClock(start = 0) {
-  const clock = { value: start };
+  const clock = { value: start } as { value: number; now: () => number; sleep: (ms: number) => Promise<void> };
   clock.now = () => clock.value;
-  clock.sleep = async ms => { clock.value += ms; };
+  clock.sleep = async (ms: number) => { clock.value += ms; };
   return clock;
 }
 
 test('runs tasks one after another with the gap between them', async () => {
   const clock = fakeClock(1_000);
   const queue = createArxivRequestQueue({ gapMs: 350, maxQueueWaitMs: 6_000, now: clock.now, sleep: clock.sleep });
-  const startedAt = [];
-  const task = (label) => async () => { startedAt.push([label, clock.value]); clock.value += 100; return label; };
+  const startedAt: unknown[] = [];
+  const task = (label: string) => async () => { startedAt.push([label, clock.value]); clock.value += 100; return label; };
 
   const results = await Promise.all([queue.run('a', task('a')), queue.run('b', task('b'))]);
 
@@ -45,7 +45,7 @@ test('drops a request that has waited longer than the queue allows, without runn
   const late = queue.run('late', async () => { lateRan = true; return 'late'; });
 
   assert.equal(await slow, 'slow');
-  await assert.rejects(late, error => error.code === 'QUEUE_EXPIRED');
+  await assert.rejects(late, error => (error as Error & { code?: string; status?: number; retryAfterMs?: number }).code === 'QUEUE_EXPIRED');
   assert.equal(lateRan, false);
 });
 
@@ -54,9 +54,9 @@ test('after a 429 it refuses at once for the retry-after it was given, then resu
   const queue = createArxivRequestQueue({ gapMs: 0, maxQueueWaitMs: 6_000, now: clock.now, sleep: clock.sleep });
   const refused = Object.assign(new Error('PaperTok arXiv API error: 429'), { status: 429, retryAfterMs: 4_000 });
 
-  await assert.rejects(queue.run('a', async () => { throw refused; }), error => error.status === 429);
+  await assert.rejects(queue.run('a', async () => { throw refused; }), error => (error as Error & { code?: string; status?: number; retryAfterMs?: number }).status === 429);
   let ran = false;
-  await assert.rejects(queue.run('b', async () => { ran = true; }), error => error.code === 'RATE_LIMITED');
+  await assert.rejects(queue.run('b', async () => { ran = true; }), error => (error as Error & { code?: string; status?: number; retryAfterMs?: number }).code === 'RATE_LIMITED');
   assert.equal(ran, false);
 
   clock.value += 4_000;
@@ -68,7 +68,7 @@ test('a 429 without retry-after cools down for the default', async () => {
   const queue = createArxivRequestQueue({ gapMs: 0, maxQueueWaitMs: 6_000, now: clock.now, sleep: clock.sleep });
   await assert.rejects(queue.run('a', async () => { throw Object.assign(new Error('429'), { status: 429 }); }));
   clock.value += DEFAULT_COOLDOWN_MS - 1;
-  await assert.rejects(queue.run('b', async () => 'b'), error => error.code === 'RATE_LIMITED');
+  await assert.rejects(queue.run('b', async () => 'b'), error => (error as Error & { code?: string; status?: number; retryAfterMs?: number }).code === 'RATE_LIMITED');
   clock.value += 1;
   assert.equal(await queue.run('c', async () => 'c'), 'c');
 });

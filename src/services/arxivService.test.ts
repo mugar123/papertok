@@ -17,9 +17,9 @@ import {
 test('fails without reaching for a third-party proxy when no arXiv route exists', async () => {
   const originalFetch = globalThis.fetch;
   const originalError = console.error;
-  const requested = [];
+  const requested: unknown[] = [];
   globalThis.fetch = (input) => {
-    requested.push(String(input?.url || input));
+    requested.push(String((input as Request)?.url || input));
     return Promise.resolve(new Response('', { status: 200 }));
   };
   console.error = () => {};
@@ -60,7 +60,7 @@ test('maps keyword-search papers back to the most relevant requested subcategory
   }], ['mech.fluid', 'mech.dyn']);
 
   assert.equal(paper.primaryCategory, 'mech.dyn');
-  assert.ok(paper.allCategories.includes('cs.RO'));
+  assert.ok(paper.allCategories!.includes('cs.RO'));
 });
 
 // A quote inside the phrase used to close arXiv's quoted term early, which is

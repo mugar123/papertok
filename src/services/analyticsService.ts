@@ -2,7 +2,7 @@ import type { CaptureResult, PostHog, PostHogConfig } from 'posthog-js';
 type Consent = typeof ANALYTICS_CONSENT[keyof typeof ANALYTICS_CONSENT];
 type AnalyticsStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 interface AcquisitionLocation { referrer?: string; location?: Pick<Location, 'origin' | 'search'> }
-interface TrackingOptions { storage?: AnalyticsStorage | null; now?: number | (() => number); track?: typeof trackProductEvent }
+interface TrackingOptions { storage?: AnalyticsStorage | null; now?: number | (() => number); track?: (eventName: string, params?: Record<string, unknown>) => Promise<unknown> }
 
 // Two transports with different jobs. Vercel Web Analytics counts visits,
 // pages and countries; AnalyticsProvider renders its <Analytics /> and sends the
@@ -450,7 +450,7 @@ const POSTHOG_PROPERTIES = new Set([
  * drops it when it is neither a page view nor a registered event, or when the
  * reader has turned analytics off.
  */
-export function sanitizeAnalyticsCapture(capture: CaptureResult | null, consent = readAnalyticsConsent()) {
+export function sanitizeAnalyticsCapture(capture: CaptureResult | null, consent = readAnalyticsConsent()): CaptureResult | null {
   if (!capture || consent !== ANALYTICS_CONSENT.GRANTED) return null;
   const { event, properties = {} } = capture;
   if (event !== '$pageview' && !Object.hasOwn(EVENT_PARAMETER_SCHEMAS, event)) return null;

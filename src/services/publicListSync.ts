@@ -4,14 +4,14 @@ interface SyncResult { paperCount: number | null; listCount: number | null; skip
 interface SyncJob extends Omit<Partial<SyncRequest>, 'papers' | 'key'> {
   key: string; papers: Map<unknown, PublicPaperInput>; status: 'idle' | 'syncing' | 'pending' | 'synced' | 'error';
   code: string | null; attempts: number; running: boolean; dirty: boolean; cancelled?: boolean;
-  timer: ReturnType<typeof setTimeout> | null; result: SyncResult | null;
+  timer: (ReturnType<typeof setTimeout> | number) | null; result: SyncResult | null;
 }
 export type SyncState = Pick<SyncJob, 'status' | 'code' | 'listId' | 'result'> | null;
 type SyncListener = (key: string, state: SyncState) => void;
 interface SyncOptions {
-  sync?: typeof syncPublicList; debounceMs?: number; retryMs?: number; noticeMs?: number; attempts?: number;
-  setTimer?: (callback: () => void, delay: number) => ReturnType<typeof setTimeout>;
-  clearTimer?: (handle: ReturnType<typeof setTimeout>) => void; onError?: (error: unknown) => void;
+  sync?: (shareId: string, input: PublicListInput) => Promise<Partial<SyncResult>>; debounceMs?: number; retryMs?: number; noticeMs?: number; attempts?: number;
+  setTimer?: (callback: () => void, delay: number) => (ReturnType<typeof setTimeout> | number);
+  clearTimer?: (handle: (ReturnType<typeof setTimeout> | number)) => void; onError?: (error: unknown) => void;
 }
 
 /**
@@ -60,7 +60,7 @@ export function createPublicListSyncEngine(options: SyncOptions = {}) {
     noticeMs = PUBLIC_LIST_SYNC_NOTICE_MS,
     attempts: maxAttempts = PUBLIC_LIST_SYNC_ATTEMPTS,
     setTimer = (callback: () => void, delay: number) => setTimeout(callback, delay),
-    clearTimer = (handle: ReturnType<typeof setTimeout>) => clearTimeout(handle),
+    clearTimer = (handle: (ReturnType<typeof setTimeout> | number)) => clearTimeout(handle),
     onError = (error: unknown) => console.error('A public list could not be synced:', error),
   } = options;
 
@@ -178,7 +178,7 @@ export function createPublicListSyncEngine(options: SyncOptions = {}) {
    * Ask for a sync. Safe to call on every edit: the debounce and the job merge
    * turn a burst into one request.
    */
-  function queue(request: SyncRequest) {
+  function queue(request: Partial<SyncRequest>) {
     const { key, shareId, listId } = request || {};
     if (!key || !shareId || !listId) return;
 

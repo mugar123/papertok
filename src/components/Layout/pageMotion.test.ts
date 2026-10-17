@@ -33,7 +33,7 @@ for (const [present, lateral, direction, expected] of table) {
 }
 
 test('every answer is a declared motion, and every declared motion is reachable', () => {
-  const seen = new Set(table.map(([present, lateral, direction]) => pageMotionFor({ present, lateral, direction })));
+  const seen = new Set<string>(table.map(([present, lateral, direction]) => pageMotionFor({ present, lateral, direction })));
   for (const motion of seen) assert.ok(PAGE_MOTIONS.includes(motion), `${motion} is declared`);
   for (const motion of PAGE_MOTIONS) assert.ok(seen.has(motion), `${motion} is reachable`);
   assert.equal(PAGE_MOTIONS.length, 8);

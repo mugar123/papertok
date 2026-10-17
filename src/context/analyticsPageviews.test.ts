@@ -70,7 +70,7 @@ test('SOURCE: the app document never puts a path in a Referer header', async () 
   // `strict-origin-when-cross-origin` both send the full URL same-origin, which
   // is exactly the case that leaked, so neither is acceptable here.
   assert.ok(
-    ['strict-origin', 'origin', 'no-referrer'].includes(policy),
+    ['strict-origin', 'origin', 'no-referrer'].includes(policy!),
     `referrer policy ${JSON.stringify(policy)} still sends the full path to our own origin`,
   );
 });

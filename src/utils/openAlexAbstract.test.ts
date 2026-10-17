@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import { reconstructOpenAlexAbstract, usableOpenAlexAbstract } from './openAlexAbstract.ts';
 
 // Builds an inverted index from plain text, the way OpenAlex stores it.
-function invertedIndexOf(text) {
-  const index = {};
+function invertedIndexOf(text: string) {
+  const index: Record<string, number[]> = {};
   text.split(' ').forEach((word, position) => {
     (index[word] ||= []).push(position);
   });

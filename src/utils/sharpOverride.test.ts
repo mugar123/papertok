@@ -6,8 +6,8 @@ const PACKAGE = new URL('../../package.json', import.meta.url);
 const LOCK = new URL('../../package-lock.json', import.meta.url);
 
 // "0.35.4" -> [0, 35, 4]; enough for the two exact versions compared here.
-const triple = (version) => version.replace(/^[^\d]*/, '').split('.').map(Number);
-const compare = (a, b) => {
+const triple = (version: string) => version.replace(/^[^\d]*/, '').split('.').map(Number);
+const compare = (a: number[], b: number[]) => {
   for (let i = 0; i < 3; i += 1) {
     if (a[i] !== b[i]) return a[i] - b[i];
   }

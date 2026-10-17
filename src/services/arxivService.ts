@@ -47,7 +47,7 @@ function categoryMatchScore(paper: Partial<Paper>, categoryId: string) {
   return terms.reduce((score: number, term: string) => score + (text.includes(term) ? 1 : 0), 0);
 }
 
-export function assignRequestedCategories<T extends Partial<Paper>>(papers: T[], requestedCategories?: string[]): T[] {
+export function assignRequestedCategories<T extends Partial<Paper>>(papers: T[], requestedCategories?: string[]): (T & Pick<Partial<Paper>, 'primaryCategory' | 'allCategories'>)[] {
   if (!Array.isArray(requestedCategories) || requestedCategories.length === 0) return papers;
 
   return papers.map(paper => {

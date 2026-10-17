@@ -89,8 +89,8 @@ test('a licence on the accepted manuscript alone does not open the published ver
 
 test('a record without licences, or without a record, says nothing', () => {
   assert.equal(openLicenseFromCrossref(null), null);
-  assert.equal(openLicenseFromCrossref({ DOI: '10.1/x' }), null);
-  assert.equal(openLicenseFromCrossref({ license: [{ 'content-version': 'vor' }] }, { now: SEPT_23 }), null);
+  assert.equal(openLicenseFromCrossref({ DOI: '10.1/x' } as NonNullable<Parameters<typeof openLicenseFromCrossref>[0]> & Record<string, unknown>), null);
+  assert.equal(openLicenseFromCrossref({ license: [{ 'content-version': 'vor' } as import('./crossrefLicense.ts').CrossrefLicense] }, { now: SEPT_23 }), null);
 });
 
 test('names each Creative Commons licence the way Unpaywall does', () => {
@@ -107,5 +107,5 @@ test('names each Creative Commons licence the way Unpaywall does', () => {
     ['https://creativecommons.org/about/', null],
     ['not a url', null],
   ];
-  for (const [url, slug] of cases) assert.equal(licenseSlugFromUrl(url), slug, url);
+  for (const [url, slug] of cases) assert.equal(licenseSlugFromUrl(url), slug, url!);
 });

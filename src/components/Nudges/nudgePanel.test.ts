@@ -15,23 +15,23 @@ import { readFile } from 'node:fs/promises';
  * que pedir); la forma se queda, y la esquina es ya solo de este aviso.
  */
 
-const stripComments = source => source
+const stripComments = (source: string) => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
   .replace(/^\s*\/\/.*$/gm, '');
 
-const read = path => readFile(new URL(path, import.meta.url), 'utf8').then(stripComments);
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8').then(stripComments);
 const panelJsx = read('./NudgePanel.tsx');
 const panelCss = read('./NudgePanel.css');
 const hostJsx = read('./NudgeHost.tsx');
 const appJsx = read('../../App.tsx');
 
-const motionClock = (block, property) => {
+const motionClock = (block: string, property: string) => {
   const match = block.match(new RegExp(`(?<![A-Za-z-])${property}: \\{ duration: ([\\d.]+), ease: ([^}]+?) \\}`));
   return match && { duration: Number(match[1]), ease: match[2].trim() };
 };
 
-for (const [name, anchor] of [['la llegada', 'const ARRIVAL'], ['la marcha', 'const LEAVE']]) {
+for (const [name, anchor] of [['la llegada', 'const ARRIVAL'], ['la marcha', 'const LEAVE']] as const) {
   test(`${name} del panel funde en recta y más corto que su recorrido`, async () => {
     const jsx = await panelJsx;
     const start = jsx.indexOf(anchor);

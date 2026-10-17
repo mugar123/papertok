@@ -19,7 +19,7 @@
  * question can be asked without a DOM; in a browser nothing but an Element
  * has it.
  */
-export function shouldOpenSearchOnSlash(event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'target'> | null, doc: Pick<Document, 'querySelector'> | null) {
+export function shouldOpenSearchOnSlash(event: Pick<KeyboardEvent, 'key'> & Partial<Pick<KeyboardEvent, 'metaKey' | 'ctrlKey' | 'altKey'>> & { target?: { closest?: (selector: string) => unknown } | EventTarget | null } | null, doc: Pick<Document, 'querySelector'> | null) {
   if (!event || event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return false;
   const target = event.target as Element | null;
   if (target && typeof target.closest === 'function'

@@ -21,10 +21,10 @@ import { mapWithConcurrency } from './mapWithConcurrency.ts';
  */
 
 function tracker() {
-  const state = { inFlight: 0, peak: 0, order: [] };
+  const state = { inFlight: 0, peak: 0, order: [] as number[] };
   return {
     state,
-    task: async (item) => {
+    task: async (item: number) => {
       state.inFlight += 1;
       state.peak = Math.max(state.peak, state.inFlight);
       state.order.push(item);
@@ -57,7 +57,7 @@ test('every item runs, and results keep input order', async () => {
 
   assert.equal(results.length, items.length);
   assert.deepEqual(state.order.slice().sort((a, b) => a - b), items);
-  assert.deepEqual(results.map(r => r.value), [2, 4, 6, 8, 10, 12, 14]);
+  assert.deepEqual(results.map(r => (r as PromiseFulfilledResult<number>).value), [2, 4, 6, 8, 10, 12, 14]);
 });
 
 test('one failure cannot abandon the workers still running', async () => {
@@ -80,7 +80,7 @@ test('one failure cannot abandon the workers still running', async () => {
 test('an empty list spawns no workers and a ceiling below one still runs', async () => {
   assert.deepEqual(await mapWithConcurrency([], 6, async () => 'never'), []);
   const results = await mapWithConcurrency([1, 2], 0, async (item) => item);
-  assert.deepEqual(results.map(r => r.value), [1, 2], 'a zero ceiling must not deadlock');
+  assert.deepEqual(results.map(r => (r as PromiseFulfilledResult<number>).value), [1, 2], 'a zero ceiling must not deadlock');
 });
 
 test('STRUCTURAL: the library read fans out through the bounded pool', async () => {

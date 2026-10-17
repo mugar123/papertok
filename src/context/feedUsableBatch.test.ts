@@ -1,4 +1,5 @@
 import { stripTypeScriptTypes } from 'node:module';
+import type { Paper } from '../models/Paper.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -17,9 +18,10 @@ const start = source.indexOf('async (reset = false, mode?: string | null, random
 const end = source.indexOf('\n  }, [\n    userPreferences, page, papers, loading, feedMode,', start);
 assert.ok(start >= 0 && end > start, 'the feed loader callback must exist');
 const callback = stripTypeScriptTypes(source.slice(start, end) + '\n  }');
-const ref = (current) => ({ current });
+const ref = <T>(current: T) => ({ current });
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
-const records = (prefix, count = 15) => Array.from({ length: count }, (_, index) => ({
+type FeedRecord = Pick<Paper, 'id' | 'title' | 'authors' | 'primaryCategory'>;
+const records = (prefix: string, count = 15): FeedRecord[] => Array.from({ length: count }, (_, index) => ({
   id: `${prefix}-${index}`,
   title: `${prefix} scientific research finding number ${index}`,
   authors: [{ name: `${prefix} Researcher ${index}` }],
@@ -27,36 +29,36 @@ const records = (prefix, count = 15) => Array.from({ length: count }, (_, index)
 }));
 
 function deferred() {
-  let resolve;
-  const promise = new Promise(done => { resolve = done; });
+  let resolve!: (papers: FeedRecord[]) => void;
+  const promise = new Promise<FeedRecord[]>(done => { resolve = done; });
   return { promise, resolve };
 }
 
-function feed({ fast = records('fast'), slow = [], known = [], seen = [], page = 0, papers = [] } = {}) {
-  const state = { papers, page, loading: false, hasMore: true, error: null, continuations: [] };
+function feed({ fast = records('fast'), slow = [], known = [], seen = [], page = 0, papers = [] }: { fast?: FeedRecord[]; slow?: FeedRecord[] | Promise<FeedRecord[]>; known?: string[]; seen?: string[]; page?: number; papers?: FeedRecord[] } = {}) {
+  const state = { papers, page, loading: false, hasMore: true, error: null as string | null, continuations: [] as unknown[][] };
   const env = {
     userPreferences: ['cs.AI'], recommendationProfileReady: true, feedMode: 'top', PAGE_SIZE: 15,
     feedRequestId: ref(0), feedSessionId: ref(0),
     openAlexEnrichmentAttempts: ref(new Set()), openAlexEnrichmentRequests: ref(new Map()),
     lateSourceCandidatesRef: ref([]), latePoolGenerationRef: ref(0),
-    setLoading: value => { state.loading = value; }, setError: value => { state.error = value; },
-    setPapers: value => { state.papers = typeof value === 'function' ? value(state.papers) : value; },
-    setPage: value => { state.page = value; }, setHasMore: value => { state.hasMore = value; },
+    setLoading: (value: boolean) => { state.loading = value; }, setError: (value: string | null) => { state.error = value; },
+    setPapers: (value: FeedRecord[] | ((previous: FeedRecord[]) => FeedRecord[])) => { state.papers = typeof value === 'function' ? value(state.papers) : value; },
+    setPage: (value: number) => { state.page = value; }, setHasMore: (value: boolean) => { state.hasMore = value; },
     getAllLeafCategories: () => [{ id: 'cs.AI', label: 'Artificial Intelligence', area: 'cs' }],
     followedEntities: [], categoryAffinities: ref({}), temporalPreference: ref(0),
-    rankPreferences: values => values, CATEGORIES: { cs: { subcategories: { 'cs.AI': 'Artificial Intelligence' } } },
-    ARXIV_FEED_AREAS, fetchPapers: () => Promise.resolve(fast), PubmedAdapter: class {},
+    rankPreferences: <T>(values: T) => values, CATEGORIES: { cs: { subcategories: { 'cs.AI': 'Artificial Intelligence' } } } as Record<string, { subcategories: Record<string, string | { label: string }> }>,
+    ARXIV_FEED_AREAS, fetchPapers: (() => Promise.resolve(fast)) as (categories: string[]) => Promise<FeedRecord[]>, PubmedAdapter: class {},
     OpenAlexAdapter: class { search() { return Promise.resolve(slow).then(papers => ({ papers })); } },
     fetchDomainPapers: () => Promise.resolve([]), relatedCandidates: ref([]),
     FEED_SOURCE_RENDER_BUDGET_MS: 5, OPTIONAL_SOURCE_RENDER_BUDGET_MS: 5,
-    settleSourcesForFirstPaint: (promises, ms, ready) => settleSourcesForFirstPaint(promises, ms, ready, { allTimeoutMs: 200 }),
+    settleSourcesForFirstPaint: (promises: Iterable<unknown[]|PromiseLike<unknown[]>>, ms: number, ready: ((papers: unknown[]) => boolean)|undefined) => settleSourcesForFirstPaint(promises, ms, ready, { allTimeoutMs: 200 }),
     resolveWithin, fulfilledPaperLists, PaperBuilder, lateSourceCandidates, shouldAbortFeedLoad,
     boredomLevel: ref(0), getBoredomThreshold: () => 5,
     likedPaperIdsRef: ref(new Set(known)), savedPaperIdsRef: ref(new Set()),
     readPaperIdsRef: ref(new Set()), notInterestedIdsRef: ref(new Set()),
-    sessionSeenPapers: ref(new Set(seen)), isKnownPaper: id => known.includes(id),
-    mergeFollowEntityMatches: (...groups) => groups.flat(),
-    diversifiedWeightedShuffle: values => values, calculateAndAttachScore: () => 0,
+    sessionSeenPapers: ref(new Set(seen)), isKnownPaper: (id: string) => known.includes(id),
+    mergeFollowEntityMatches: (...groups: unknown[][]) => groups.flat(),
+    diversifiedWeightedShuffle: <T>(values: T) => values, calculateAndAttachScore: () => 0,
     recommendationWeights: ref({}), takeFeedPage,
     needsOpenAlexEnrichment: () => false, getOpenAlexEnrichmentId: () => '',
     enrichPapersBatch: () => Promise.resolve({}), OPENALEX_FEED_REQUEST_TIMEOUT_MS: 5,
@@ -64,11 +66,11 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     awaitWithinGate: () => Promise.resolve([null, null, null]),
     logRankingBatch: () => {}, saveSeenPaperIds: () => {}, activeUserId: ref('test-user'),
     autoRetryUsedRef: ref(false), feedCache: ref({}),
-    feedPreferenceSignature: values => values.join('|'), pendingSnapshotWritesRef: ref(new Map()),
+    feedPreferenceSignature: (values: string[]) => values.join('|'), pendingSnapshotWritesRef: ref(new Map()),
     writeFeedSnapshot: () => {},
-    loadPapersRef: ref((...args) => { state.continuations.push(args); }),
+    loadPapersRef: ref((...args: unknown[]) => { state.continuations.push(args); }),
   };
-  const run = (...args) => {
+  const run = (...args: unknown[]) => {
     Object.assign(env, { papers: state.papers, page: state.page, loading: state.loading });
     return new Function(...Object.keys(env), `return (${callback});`)(...Object.values(env))(...args);
   };
@@ -137,7 +139,7 @@ test('a short screen schedules its next page and preserves papers when it fills'
   assert.deepEqual(state.continuations, [[false, 'top', false, 1]]);
   const firstIds = state.papers.map(paper => paper.id);
   env.fetchPapers = () => Promise.resolve(records('next', 13));
-  await run(...state.continuations.shift());
+  await run(...state.continuations.shift()!);
   await tick();
   assert.equal(state.error, null);
   assert.equal(state.papers.length, 15);
@@ -155,7 +157,7 @@ test('genuinely empty providers end the feed without scheduling another page', a
 });
 
 for (const knownCount of [0, 2]) {
-  for (const guard of ['feedRequestId', 'feedSessionId']) {
+  for (const guard of ['feedRequestId', 'feedSessionId'] as const) {
     test(`changing ${guard} cancels a scheduled continuation with ${knownCount} excluded papers`, async () => {
       const { state, env, run } = feed({ fast: records('fast', 2), known: records('fast', knownCount).map(paper => paper.id) });
       await run(true);
@@ -181,7 +183,7 @@ for (const category of ['econ.EM', 'q-fin.RM', 'q-fin.GN']) {
     const { state, env, run } = feed({ fast: [] });
     env.userPreferences = [category];
     env.CATEGORIES = CATEGORIES;
-    env.fetchPapers = async (categories) => categories.map(id => ({
+    env.fetchPapers = async (categories) => categories.map((id: string) => ({
       ...records(id, 1)[0], primaryCategory: id,
     }));
 
@@ -194,7 +196,7 @@ for (const category of ['econ.EM', 'q-fin.RM', 'q-fin.GN']) {
 for (const [name, preference, boredom] of [
   ['nearby', 'q-fin.RM', 0],
   ['random', 'econ.EM', 8],
-]) {
+] as const) {
   test(`the ${name} exploration branch can add a General Finance paper`, async () => {
     const { state, env, run } = feed({ fast: [], page: 1 });
     env.userPreferences = [preference];
@@ -204,7 +206,7 @@ for (const [name, preference, boredom] of [
       { id: preference, label: 'Selected topic', area: preference.split('.')[0] },
       { id: 'q-fin.GN', label: 'General Finance', area: 'q-fin' },
     ];
-    env.fetchPapers = async (categories) => categories.map(id => ({
+    env.fetchPapers = async (categories) => categories.map((id: string) => ({
       ...records(id, 1)[0], primaryCategory: id,
     }));
 

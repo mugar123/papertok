@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 // Comments are stripped first (convention of ce139ce): the guard is explained
 // in a comment right above itself, and a matcher that reads comments would be
 // satisfied by the explanation alone.
-const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+const stripComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 test('optimistic rollbacks only run for the session that started the write', async () => {
   const src = stripComments(await readFile(new URL('./AuthContext.tsx', import.meta.url), 'utf8'));

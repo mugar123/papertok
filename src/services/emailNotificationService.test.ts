@@ -12,7 +12,7 @@ test('a preview names its paper\'s field the way the card does, or not at all', 
   assert.equal(serializeUpdateForNotifications({
     id: 'b',
     title: 'B',
-    primaryTopic: { field: { id: 'https://openalex.org/fields/26' } },
+    primaryTopic: { field: { id: 'https://openalex.org/fields/26' } as import('../models/Paper.ts').PaperSubjectReference } as import('../models/Paper.ts').PaperSubject,
   }).area, 'math');
   assert.equal('area' in serializeUpdateForNotifications({ id: 'c', title: 'C' }), false);
 });
@@ -31,7 +31,7 @@ test('serializes only the follow metadata required by notification digests', () 
     canonicalId: 'I1',
     displayName: 'University',
     externalIds: { ror: '01', ignored: 'secret' },
-    metadata: { categoryIds: ['physics'], ignored: 'value' },
+    metadata: { categoryIds: ['physics'], ignored: 'value' } as NonNullable<NonNullable<Parameters<typeof serializeFollowForNotifications>[0]>["metadata"]> & Record<string, unknown>,
   }), {
     type: 'institution',
     canonicalId: 'I1',
@@ -51,7 +51,7 @@ test('round-trips bounded query-topic metadata without unrelated fields', () => 
       source: 'pubmed',
       categoryIds: ['bio.gen'],
       ignored: 'not part of the contract',
-    },
+    } as NonNullable<NonNullable<Parameters<typeof serializeFollowForNotifications>[0]>["metadata"]> & Record<string, unknown>,
   });
 
   assert.deepEqual(serialized.metadata, {
@@ -81,7 +81,7 @@ test('serializes a compact paper preview with follow reasons', () => {
     authors: [{ name: 'Ada' }],
     _followedEntityMatches: [{ type: 'topic', canonicalId: 'T1', displayName: 'Physics' }],
   });
-  assert.equal(preview.abstract, undefined);
+  assert.equal((preview as typeof preview & { abstract?: never }).abstract, undefined);
   assert.equal(preview.matches[0].displayName, 'Physics');
 });
 

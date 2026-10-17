@@ -6,9 +6,9 @@ const FIREBASE = new URL('../services/firebase.ts', import.meta.url);
 const VERCEL = new URL('../../vercel.json', import.meta.url);
 const ENV_EXAMPLE = new URL('../../.env.example', import.meta.url);
 
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
-function bounded(code, from, to, label, maxLines) {
+function bounded(code: string, from: string, to: string, label: string, maxLines: number) {
   const start = code.indexOf(from);
   const end = code.indexOf(to, start + 1);
   assert.ok(start >= 0 && end > start, `expected to have found ${label}`);
@@ -37,7 +37,7 @@ test('SOURCE: the Firebase web config is a literal that agrees with the auth rew
     'nothing reads VITE_FIREBASE_*; if that ever changes, the block goes back into .env.example');
 
   const vercel = JSON.parse(await readFile(VERCEL, 'utf8'));
-  const auth = vercel.rewrites.find(rule => rule.source === '/__/auth/:path*');
+  const auth = vercel.rewrites.find((rule: { source: string; }) => rule.source === '/__/auth/:path*');
   assert.ok(auth, 'the auth handler rewrite is gone from vercel.json');
   assert.equal(auth.destination, `https://${projectId}.firebaseapp.com/__/auth/:path*`,
     'the rewrite must point at the same Firebase project the code initialises');

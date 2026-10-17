@@ -7,7 +7,7 @@ import {
   isMappableCitationPaper,
 } from './citationMap.ts';
 
-function paper(overrides = {}) {
+function paper(overrides: Partial<import('../models/Paper.ts').Paper> = {}) {
   return {
     id: overrides.id || `paper-${overrides.year || 2000}-${overrides.citationCount ?? 0}`,
     title: 'A paper',
@@ -18,13 +18,13 @@ function paper(overrides = {}) {
   };
 }
 
-function series(count, build) {
+function series<T>(count: number, build: (index: number) => T) {
   return Array.from({ length: count }, (_, index) => build(index));
 }
 
 const BOX = { width: 682, height: 396 };
 
-function layout(overrides = {}) {
+function layout(overrides: Partial<Parameters<typeof buildCitationMapLayout>[0]> = {}) {
   return buildCitationMapLayout({
     ...BOX,
     center: paper({ id: 'center', year: 2017, citationCount: 131204 }),
@@ -34,7 +34,7 @@ function layout(overrides = {}) {
   });
 }
 
-function band(result, relation) {
+function band(result: ReturnType<typeof buildCitationMapLayout>, relation: string) {
   return result.nodes.filter(node => node.relation === relation);
 }
 
@@ -63,7 +63,7 @@ test('before the box is measured, nothing is trimmed for space yet', () => {
   const pending = layout({
     width: 0,
     height: 0,
-    references: series(10, index => paper({ id: `r${index}`, year: 2000 + index })),
+    references: series(10, (index: number) => paper({ id: `r${index}`, year: 2000 + index })),
   });
   assert.equal(pending.ready, false);
   assert.equal(pending.shown.references, 10);
@@ -72,8 +72,8 @@ test('before the box is measured, nothing is trimmed for space yet', () => {
 
 test('every node stays inside the band it belongs to', () => {
   const result = layout({
-    references: series(8, index => paper({ id: `r${index}`, year: 1997 + index * 2, citationCount: 500 * (index + 1) })),
-    citations: series(8, index => paper({ id: `c${index}`, year: 2018 + index, citationCount: 800 * (index + 1) })),
+    references: series(8, (index: number) => paper({ id: `r${index}`, year: 1997 + index * 2, citationCount: 500 * (index + 1) })),
+    citations: series(8, (index: number) => paper({ id: `c${index}`, year: 2018 + index, citationCount: 800 * (index + 1) })),
   });
 
   const referenceBand = result.bands.references;
@@ -94,10 +94,10 @@ test('every node stays inside the band it belongs to', () => {
 test('hit rows tile without ever sharing a pixel', () => {
   const result = layout({
     // Six of these share a year, so the whole band leans on the spreading pass.
-    references: series(8, index => paper({ id: `r${index}`, year: index < 6 ? 2014 : 1997 + index, citationCount: 400 + index })),
+    references: series(8, (index: number) => paper({ id: `r${index}`, year: index < 6 ? 2014 : 1997 + index, citationCount: 400 + index })),
   });
 
-  const rows = band(result, 'reference').slice().sort((a, b) => a.y - b.y);
+  const rows = band(result, 'reference').slice().sort((a: { y: number; }, b: { y: number; }) => a.y - b.y);
   for (let index = 1; index < rows.length; index += 1) {
     const previousBottom = rows[index - 1].y + rows[index - 1].rowHeight / 2;
     const currentTop = rows[index].y - rows[index].rowHeight / 2;
@@ -116,10 +116,10 @@ test('a realistic short mobile plot never overlaps two nodes, and counts what it
   const result = layout({
     width: 345,
     height: 198.58,
-    references: series(8, index => paper({ id: `r${index}`, year: 2010 + index, citationCount: 50 * (index + 1) })),
+    references: series(8, (index: number) => paper({ id: `r${index}`, year: 2010 + index, citationCount: 50 * (index + 1) })),
   });
 
-  const rows = band(result, 'reference').slice().sort((a, b) => a.y - b.y);
+  const rows = band(result, 'reference').slice().sort((a: { y: number; }, b: { y: number; }) => a.y - b.y);
   assert.equal(rows.length, 2);
   assert.equal(result.shown.references, 2);
   assert.equal(result.omitted.references, 6);
@@ -136,7 +136,7 @@ test('omitted counts both unmappable papers and mappable ones a full band has no
     height: 120, // one 24px slot in the reference band
     references: [
       paper({ id: 'no-year', year: undefined, citationCount: 10 }),
-      ...series(3, index => paper({ id: `r${index}`, year: 2000 + index })),
+      ...series(3, (index: number) => paper({ id: `r${index}`, year: 2000 + index })),
     ],
   });
 
@@ -147,8 +147,8 @@ test('omitted counts both unmappable papers and mappable ones a full band has no
 });
 
 test('crowding drops nodes now, not their row height', () => {
-  const roomy = layout({ references: series(4, index => paper({ id: `r${index}`, year: 2000 + index * 4 })) });
-  const crowded = layout({ references: series(10, index => paper({ id: `r${index}`, year: 2000 + index })) });
+  const roomy = layout({ references: series(4, (index: number) => paper({ id: `r${index}`, year: 2000 + index * 4 })) });
+  const crowded = layout({ references: series(10, (index: number) => paper({ id: `r${index}`, year: 2000 + index })) });
 
   assert.equal(roomy.nodes[0].rowHeight, CITATION_MAP_GEOMETRY.minGap);
   assert.equal(roomy.nodes.length, 4);
@@ -164,12 +164,12 @@ test('crowding drops nodes now, not their row height', () => {
 
 test('spreading crowded nodes never reorders them in time', () => {
   const result = layout({
-    references: series(8, index => paper({ id: `r${index}`, year: index < 5 ? 2014 : 2015 + index })),
+    references: series(8, (index: number) => paper({ id: `r${index}`, year: index < 5 ? 2014 : 2015 + index })),
   });
 
   const rows = band(result, 'reference');
-  const byYear = rows.slice().sort((a, b) => a.paper.year - b.paper.year || a.paper.id.localeCompare(b.paper.id));
-  const byPosition = rows.slice().sort((a, b) => a.y - b.y);
+  const byYear = rows.slice().sort((a, b) => a.paper.year! - b.paper.year! || a.paper.id!.localeCompare(b.paper.id!));
+  const byPosition = rows.slice().sort((a: { y: number; }, b: { y: number; }) => a.y - b.y);
   assert.deepEqual(byPosition.map(node => node.paper.id), byYear.map(node => node.paper.id));
 });
 
@@ -194,7 +194,7 @@ test('the horizontal axis is monotonic in citations and stays inside the plot', 
 test('a neighbourhood with one citation count does not collapse onto a single column', () => {
   const result = layout({
     center: paper({ id: 'center', year: 2017, citationCount: 900 }),
-    references: series(3, index => paper({ id: `r${index}`, year: 2000 + index, citationCount: 900 })),
+    references: series(3, (index: number) => paper({ id: `r${index}`, year: 2000 + index, citationCount: 900 })),
   });
 
   for (const node of result.nodes) assert.ok(Number.isFinite(node.x));
@@ -286,12 +286,12 @@ test('a centre with an unknown citation count still gets a marker', () => {
 
 test('the stagger restarts on each band so sixteen nodes do not queue up', () => {
   const result = layout({
-    references: series(3, index => paper({ id: `r${index}`, year: 2000 + index })),
-    citations: series(3, index => paper({ id: `c${index}`, year: 2020 + index })),
+    references: series(3, (index: number) => paper({ id: `r${index}`, year: 2000 + index })),
+    citations: series(3, (index: number) => paper({ id: `c${index}`, year: 2020 + index })),
   });
 
-  const references = band(result, 'reference').slice().sort((a, b) => a.delay - b.delay);
-  const citations = band(result, 'citation').slice().sort((a, b) => a.delay - b.delay);
+  const references = band(result, 'reference').slice().sort((a: { delay: number; }, b: { delay: number; }) => a.delay - b.delay);
+  const citations = band(result, 'citation').slice().sort((a: { delay: number; }, b: { delay: number; }) => a.delay - b.delay);
   const { nodeDelayBase, nodeDelayStep, edgeDelayBase, edgeDelayStep } = CITATION_MAP_GEOMETRY;
 
   assert.deepEqual(references.map(node => node.delay), [0, 1, 2].map(i => nodeDelayBase + i * nodeDelayStep));
@@ -302,8 +302,8 @@ test('the stagger restarts on each band so sixteen nodes do not queue up', () =>
 test('a band too short for every node omits the rest instead of shrinking below the floor', () => {
   const cramped = layout({
     height: 120,
-    references: series(4, index => paper({ id: `r${index}`, year: 2000 + index })),
-    citations: series(4, index => paper({ id: `c${index}`, year: 2020 + index })),
+    references: series(4, (index: number) => paper({ id: `r${index}`, year: 2000 + index })),
+    citations: series(4, (index: number) => paper({ id: `c${index}`, year: 2020 + index })),
   });
 
   // Each band is exactly 24px tall at this height -- room for one node, not
@@ -321,7 +321,7 @@ test('a band too short for every node omits the rest instead of shrinking below 
 test('a band with no room at all omits every node rather than drawing one that overlaps its neighbour', () => {
   const nothing = layout({
     height: 40, // half-height 20, minus ruleGap alone already clears the band's top past its bottom
-    references: series(3, index => paper({ id: `r${index}`, year: 2000 + index })),
+    references: series(3, (index: number) => paper({ id: `r${index}`, year: 2000 + index })),
   });
 
   assert.equal(nothing.nodes.length, 0);

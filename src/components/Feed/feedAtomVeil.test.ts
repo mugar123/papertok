@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
 
 /**
  * SOURCE tests for the handover from the atom to the papers. The atom screen

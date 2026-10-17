@@ -15,6 +15,7 @@ import {
   parsePaperKey,
   encodePaperKey,
 } from './publicNavigation.ts';
+import type { PathLike } from 'fs';
 
 const URL_OPTIONS = { origin: 'https://example.test', base: '/papertok/' };
 
@@ -46,11 +47,11 @@ test('encodes DOI and arXiv identities into reversible URL-safe paper keys', () 
   const doiKey = encodePaperKey({ doi: 'https://doi.org/10.1000/ABC.123' });
   const arxivKey = encodePaperKey({ arxivId: 'https://arxiv.org/abs/2401.12345v2' });
 
-  assert.match(doiKey, /^[A-Za-z0-9_-]+$/);
-  assert.match(arxivKey, /^[A-Za-z0-9_-]+$/);
-  assert.equal(decodePaperKey(doiKey), 'doi:10.1000/abc.123');
-  assert.equal(decodePaperKey(arxivKey), 'arxiv:2401.12345v2');
-  assert.deepEqual(parsePaperKey(arxivKey), { type: 'arxiv', value: '2401.12345v2' });
+  assert.match(doiKey!, /^[A-Za-z0-9_-]+$/);
+  assert.match(arxivKey!, /^[A-Za-z0-9_-]+$/);
+  assert.equal(decodePaperKey(doiKey!), 'doi:10.1000/abc.123');
+  assert.equal(decodePaperKey(arxivKey!), 'arxiv:2401.12345v2');
+  assert.deepEqual(parsePaperKey(arxivKey!), { type: 'arxiv', value: '2401.12345v2' });
   assert.equal(decodePaperKey(`${doiKey}!`), null);
 });
 
@@ -62,7 +63,7 @@ test('prefers DOI identity and places paper keys in public router paths', () => 
 
   const key = encodePaperKey({ doi: '10.5555/Some.DOI' });
   assert.equal(path, `/public/paper/${key}`);
-  assert.equal(getPublicPaperPath({ title: 'No stable identifier' }), null);
+  assert.equal(getPublicPaperPath({ title: 'No stable identifier' } as NonNullable<Parameters<typeof getPublicPaperPath>[0]> & Record<string, unknown>), null);
 });
 
 /**
@@ -73,8 +74,8 @@ test('prefers DOI identity and places paper keys in public router paths', () => 
  */
 test('keys OpenAlex work ids and PubMed ids so provider-keyed likes can link', () => {
   const openAlexKey = encodePaperKey('openalex:w2741809807');
-  assert.equal(decodePaperKey(openAlexKey), 'openalex:W2741809807');
-  assert.deepEqual(parsePaperKey(openAlexKey), { type: 'openalex', value: 'W2741809807' });
+  assert.equal(decodePaperKey(openAlexKey!), 'openalex:W2741809807');
+  assert.deepEqual(parsePaperKey(openAlexKey!), { type: 'openalex', value: 'W2741809807' });
   assert.equal(encodePaperKey('W2741809807'), openAlexKey, 'the bare id OpenAlex-built papers carry');
   assert.equal(encodePaperKey('https://openalex.org/W2741809807'), openAlexKey, 'the URL form the API returns');
   assert.equal(encodePaperKey({ id: 'openalex:W2741809807', doi: '', arxivId: '' }), openAlexKey,
@@ -83,8 +84,8 @@ test('keys OpenAlex work ids and PubMed ids so provider-keyed likes can link', (
   assert.equal(getPublicPaperPath('openalex', 'W2741809807'), `/public/paper/${openAlexKey}`);
 
   const pmidKey = encodePaperKey('pmid:31234567');
-  assert.equal(decodePaperKey(pmidKey), 'pmid:31234567');
-  assert.deepEqual(parsePaperKey(pmidKey), { type: 'pmid', value: '31234567' });
+  assert.equal(decodePaperKey(pmidKey!), 'pmid:31234567');
+  assert.deepEqual(parsePaperKey(pmidKey!), { type: 'pmid', value: '31234567' });
   assert.equal(encodePaperKey('https://pubmed.ncbi.nlm.nih.gov/31234567/'), pmidKey);
   assert.equal(encodePaperKey({ id: 'pmid:31234567' }), pmidKey);
   assert.equal(encodePaperKey({ pmid: '31234567' }), pmidKey, 'a PubMed paper names its pmid as a field too');
@@ -199,8 +200,8 @@ test('SOURCE: nothing in this codebase mints a public URL with the fragment in i
   const { readdir, readFile } = await import('node:fs/promises');
   const { fileURLToPath } = await import('node:url');
   const roots = ['src', 'worker'];
-  const offenders = [];
-  const walk = async (dir) => {
+  const offenders: unknown[] = [];
+  const walk = async (dir: PathLike) => {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       const full = `${dir}/${entry.name}`;
       if (entry.isDirectory()) { await walk(full); continue; }

@@ -28,7 +28,7 @@ export function resetAccountWarmup(uid?: string) {
  * Synchronous: copy last-known lists into the session cache.
  * Call this before the first screen that needs them renders.
  */
-export function hydrateAccountCaches(uid: string, { storage }: { storage?: Storage | null } = {}) {
+export function hydrateAccountCaches(uid: string, { storage }: { storage?: Parameters<typeof readStoredLists>[1] } = {}) {
   if (!uid || ownListsCache.get(uid)) return;
   const lists = readStoredLists(uid, storage);
   if (lists) reviseOwnLists(uid, lists);
@@ -45,7 +45,7 @@ export async function warmAccountCaches(uid: string, {
   storage,
   readLists = defaultReadLists,
   currentUid = () => auth.currentUser?.uid,
-}: { storage?: Storage | null; readLists?: (uid: string) => Promise<ListSnapshot>; currentUid?: () => string | undefined } = {}) {
+}: { storage?: Parameters<typeof readStoredLists>[1]; readLists?: (uid: string) => Promise<ListSnapshot>; currentUid?: () => string | null | undefined } = {}) {
   if (!uid || IS_DEMO || warmed.has(uid)) return;
   warmed.add(uid);
   hydrateAccountCaches(uid, { storage });

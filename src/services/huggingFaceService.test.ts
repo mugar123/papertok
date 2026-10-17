@@ -16,13 +16,13 @@ test('maps a Hugging Face paper without claiming peer review or citations', () =
     },
   }, ['cs.CL']);
 
-  assert.equal(paper.id, 'arxiv:2607.12345');
-  assert.equal(paper.sources.primary, 'huggingface');
-  assert.equal(paper.primaryCategory, 'cs.CL');
-  assert.equal(paper.peerReviewed, false);
-  assert.equal(paper.citationCountKnown, false);
-  assert.equal(paper.huggingFaceUpvotes, 42);
-  assert.equal(paper.researchResources[0].kind, 'software');
+  assert.equal(paper!.id, 'arxiv:2607.12345');
+  assert.equal(paper!.sources.primary, 'huggingface');
+  assert.equal(paper!.primaryCategory, 'cs.CL');
+  assert.equal(paper!.peerReviewed, false);
+  assert.equal(paper!.citationCountKnown, false);
+  assert.equal(paper!.huggingFaceUpvotes, 42);
+  assert.equal(paper!.researchResources![0].kind, 'software');
 });
 
 test('maps linked Hugging Face models and datasets as research resources', () => {

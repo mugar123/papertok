@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
+const read = (rel: string|URL) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, '');
 
 test('static-page.css owns the faces, the tokens and the shared chrome', () => {

@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 // Full-line comments only: a `//` inside a string would otherwise cut the line.
-const stripComments = (source) => source
+const stripComments = (source: string) => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^[ \t]*\/\/.*$/gm, '');
-const read = async (path) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
+const read = async (path: string|URL) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
 
 /**
  * SOURCE tests for the route transition (spec:

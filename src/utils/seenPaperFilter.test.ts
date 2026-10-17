@@ -14,12 +14,13 @@ import {
   isSeenFilterEmpty,
   serializeSeenFilter,
 } from './seenPaperFilter.ts';
+import type { BloomFilter } from 'bloomfilter';
 
-function paperId(index) {
+function paperId(index: number) {
   return `arxiv:24${String(index).padStart(6, '0')}`;
 }
 
-function fill(filter, count, offset = 0) {
+function fill(filter: BloomFilter|null|undefined, count: number, offset = 0) {
   for (let index = 0; index < count; index += 1) {
     addSeenPaper(filter, paperId(offset + index));
   }
@@ -47,8 +48,8 @@ test('survives a round trip through base64 with no false negatives', () => {
   const filter = fill(createSeenFilter(), 5000);
   const restored = deserializeSeenFilter(serializeSeenFilter(filter));
 
-  assert.equal(restored.m, filter.m);
-  assert.equal(restored.k, filter.k);
+  assert.equal(restored!.m, filter!.m);
+  assert.equal(restored!.k, filter!.k);
   for (let index = 0; index < 5000; index += 1) {
     assert.equal(hasSeenPaper(restored, paperId(index)), true);
   }
@@ -73,11 +74,11 @@ test('serialises inside the document size budget when full', () => {
   const filter = fill(createSeenFilter(), SEEN_FILTER_CAPACITY);
   const encoded = serializeSeenFilter(filter);
 
-  assert.equal(encoded.length, 79880);
-  assert.ok(encoded.length <= MAX_SEEN_FILTER_CHARS);
+  assert.equal(encoded!.length, 79880);
+  assert.ok(encoded!.length <= MAX_SEEN_FILTER_CHARS);
   // A Firestore document is capped at 1 MiB; the filter has to be a small part
   // of that, not most of it.
-  assert.ok(encoded.length < 0.1 * 1048576);
+  assert.ok(encoded!.length < 0.1 * 1048576);
 });
 
 test('an empty filter serialises to nothing', () => {

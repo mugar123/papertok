@@ -128,7 +128,7 @@ test('SOURCE: firestore writes live only in handleCreateList and handleSave', as
   const saveAt = body.indexOf('const handleSave');
   assert.ok(createAt > 0 && saveAt > createAt, 'expected handleCreateList, then handleSave');
 
-  const indexesOf = (needle) => {
+  const indexesOf = (needle: string) => {
     const found = [];
     let at = body.indexOf(needle);
     while (at !== -1) {

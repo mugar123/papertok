@@ -9,8 +9,8 @@ import { documentIsAuthoritative, queryIsAuthoritative } from './cacheAuthority.
  * screens believed it. This is the rule that stops them.
  */
 
-const query = (size, fromCache) => ({ empty: size === 0, size, metadata: { fromCache } });
-const document = (exists, fromCache) => ({ exists: () => exists, metadata: { fromCache } });
+const query = (size: number, fromCache: boolean) => ({ empty: size === 0, size, metadata: { fromCache } });
+const document = (exists: boolean, fromCache: boolean) => ({ exists: () => exists, metadata: { fromCache } });
 
 test('an empty query answered only by the cache is not an absence', () => {
   assert.equal(queryIsAuthoritative(query(0, true)), false);

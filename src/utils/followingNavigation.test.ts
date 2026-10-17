@@ -34,5 +34,5 @@ test('keeps project navigation metadata and rejects unsupported entities', () =>
     }),
     '/explorer/project/10101?name=Project+Atlas&funder=ERC',
   );
-  assert.equal(getFollowedEntityPath({ type: 'source' }), '/settings/following');
+  assert.equal(getFollowedEntityPath({ type: 'source' as never }), '/settings/following');
 });

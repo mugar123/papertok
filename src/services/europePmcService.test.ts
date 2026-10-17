@@ -22,15 +22,15 @@ test('maps Europe PMC open full text and biomedical metadata', () => {
     license: 'cc by',
   });
 
-  assert.equal(mapped.abstract, 'A useful abstract & result.');
-  assert.deepEqual(mapped.biomedicalTerms, ['Heart Diseases', 'Cardiology']);
-  assert.equal(mapped.openAccess, true);
-  assert.equal(mapped.citationCount, 17);
-  assert.equal(mapped.hasReferences, true);
-  assert.equal(mapped.hasData, true);
-  assert.equal(mapped.hasSupplement, false);
-  assert.equal(mapped.accessSource, 'europepmc');
-  assert.match(mapped.openAccessPdfUrl, /pdf=render/);
+  assert.equal(mapped!.abstract, 'A useful abstract & result.');
+  assert.deepEqual(mapped!.biomedicalTerms, ['Heart Diseases', 'Cardiology']);
+  assert.equal(mapped!.openAccess, true);
+  assert.equal(mapped!.citationCount, 17);
+  assert.equal(mapped!.hasReferences, true);
+  assert.equal(mapped!.hasData, true);
+  assert.equal(mapped!.hasSupplement, false);
+  assert.equal(mapped!.accessSource, 'europepmc');
+  assert.match(mapped!.openAccessPdfUrl!, /pdf=render/);
 });
 
 test('ignores unsafe Europe PMC URLs', () => {
@@ -41,8 +41,8 @@ test('ignores unsafe Europe PMC URLs', () => {
     ] },
   });
 
-  assert.equal(mapped.landingPageUrl, undefined);
-  assert.equal(mapped.openAccess, true);
+  assert.equal(mapped!.landingPageUrl, undefined);
+  assert.equal(mapped!.openAccess, true);
 });
 
 /* --- Late merge into an already painted page ----------------------------- */
@@ -50,7 +50,7 @@ test('ignores unsafe Europe PMC URLs', () => {
 // Built the way every adapter builds one. A hand-rolled literal misses the
 // fields PaperBuilder.create fills in (hasData, peerReviewed...), and then a
 // no-op merge looks like a change that isn't one.
-const pubmedPaper = (pmid, extra = {}) => PaperBuilder.create({
+const pubmedPaper = (pmid: string, extra = {}) => PaperBuilder.create({
   id: `pmid:${pmid}`,
   pmid,
   title: `Paper ${pmid}`,

@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
 
 /**
  * SOURCE tests for how an author, an institution or a project page waits, and
@@ -27,8 +27,8 @@ test('the sweep keeps its phase down the page, now on the pseudo-element', async
   // the numbers are tuned against how long the skeleton actually stands
   // (explorerMotion.test.ts caps them against that measurement), and three
   // magic values here broke every time they were.
-  const phasesOf = (pattern) => [...css.matchAll(pattern)].map(([, seconds]) => Number(seconds));
-  const rising = (values, what) => {
+  const phasesOf = (pattern: RegExp) => [...css.matchAll(pattern)].map(([, seconds]) => Number(seconds));
+  const rising = (values: number[], what: string) => {
     assert.ok(values.length >= 3, `${what}: expected a ladder, got ${values.length} step(s)`);
     for (let i = 1; i < values.length; i += 1) {
       assert.ok(values[i] > values[i - 1], `${what}: step ${i} (${values[i]}s) must come after ${values[i - 1]}s`);

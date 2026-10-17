@@ -5,7 +5,8 @@ import type { OpenAlexJsonOptions } from './openAlexClient.ts';
 type Enrichment = Partial<Paper> & { related_works?: string[] };
 type Entity = OpenAlexAuthor | OpenAlexInstitution | OpenAlexTopic;
 type RequestOptions = { language?: string; signal?: AbortSignal | null; throwOnError?: boolean; timeoutMs?: number; limit?: number };
-type InstitutionOptions = RequestOptions & { openAlexJson?: (url: string, options: OpenAlexJsonOptions<OpenAlexPage<OpenAlexInstitution>>) => Promise<OpenAlexPage<OpenAlexInstitution>> };
+type InstitutionProminence = Pick<OpenAlexInstitution, 'ror' | 'works_count' | 'cited_by_count' | 'summary_stats'>;
+type InstitutionOptions = RequestOptions & { openAlexJson?: (url: string, options: OpenAlexJsonOptions<OpenAlexPage<InstitutionProminence>>) => Promise<OpenAlexPage<InstitutionProminence>> };
 type WorksFilters = { peerReviewed?: boolean; category?: string; dateRange?: string };
 type ImpactPeriod = ReturnType<typeof getRecentImpactPeriod>;
 export type RecentImpact = Partial<ReturnType<typeof calculateEntityRecentImpact>> & {
@@ -823,7 +824,7 @@ export function buildRorIdFilter(rorIds: unknown) {
  */
 export async function fetchInstitutionProminence(rorIds: unknown, options: InstitutionOptions = {}) {
   const filter = buildRorIdFilter(rorIds);
-  if (!filter) return new Map<string, OpenAlexInstitution>();
+  if (!filter) return new Map<string, InstitutionProminence>();
 
   // Injectable for the test, the way `OpenAlexClient` already takes `fetchImpl`
   // and `storage`. The shared client binds `globalThis.fetch` when the module
@@ -841,7 +842,7 @@ export async function fetchInstitutionProminence(rorIds: unknown, options: Insti
     signal: options.signal,
   });
 
-  const prominenceByRorId = new Map<string, OpenAlexInstitution>();
+  const prominenceByRorId = new Map<string, InstitutionProminence>();
   (data?.results || []).forEach((result) => {
     const rorId = normalizeRorId(result?.ror);
     if (rorId) prominenceByRorId.set(rorId, result);
@@ -859,7 +860,7 @@ export async function fetchInstitutionProminence(rorIds: unknown, options: Insti
  * (SearchPage.jsx, SearchCommand.jsx), so swapping in an OpenAlex id would
  * hand the explorer an `I…` where it wants an `0…` on every institution result.
  */
-export function applyInstitutionProminence(institutions: OpenAlexInstitution[], prominenceByRorId: Map<string, OpenAlexInstitution> | null) {
+export function applyInstitutionProminence(institutions: OpenAlexInstitution[], prominenceByRorId: Map<string, InstitutionProminence> | null) {
   if (!prominenceByRorId?.size) return institutions;
   return institutions.map((institution) => {
     const prominence = prominenceByRorId.get(institution._rorId!);
@@ -1343,7 +1344,7 @@ async function resolveRecentImpactEntityId(type: string, entityOrId: string | (P
   return normalizeRecentImpactEntityId(type, data?.results?.[0]?.id);
 }
 
-export function buildRecentImpactUrl(type: string, openAlexId: string, period: ImpactPeriod, attempt = 0) {
+export function buildRecentImpactUrl(type: string, openAlexId: string, period: Pick<ImpactPeriod, 'from' | 'to'>, attempt = 0) {
   const config = getRecentImpactConfig(type);
   const normalizedId = normalizeRecentImpactEntityId(type, openAlexId);
   if (!config || !normalizedId || !period?.from || !period?.to) return '';
@@ -1363,7 +1364,7 @@ export function buildRecentImpactUrl(type: string, openAlexId: string, period: I
   return `https://api.openalex.org/works?${params}`;
 }
 
-export async function fetchRecentImpactWorks(type: string, openAlexId: string, period: ImpactPeriod, fetchJson: (url: string, options: OpenAlexJsonOptions<OpenAlexPage<OpenAlexWork>>) => Promise<OpenAlexPage<OpenAlexWork>> = openAlexJson) {
+export async function fetchRecentImpactWorks(type: string, openAlexId: string, period: Pick<ImpactPeriod, 'from' | 'to'>, fetchJson: (url: string, options: OpenAlexJsonOptions<OpenAlexPage<OpenAlexWork>>) => Promise<OpenAlexPage<OpenAlexWork>> = openAlexJson) {
   const config = getRecentImpactConfig(type);
   if (!config) return { works: [], attempts: 0 };
   const uniqueWorks = new Map<string, OpenAlexWork>();
@@ -1703,7 +1704,7 @@ export async function fetchPapersByDois(dois: string[], options: { throwOnProvid
  * abstracts, authorships, locations); the papers made from it are a tenth of
  * that, and are all the page ever reads.
  */
-export function slimWorksPage(data: OpenAlexPage<OpenAlexWork>) {
+export function slimWorksPage(data: OpenAlexPage<OpenAlexWork> | null) {
   const papers = Array.isArray(data?.results) ? data.results.map(formatOpenAlexWorkAsPaper).filter(Boolean) : [];
   return { papers, total: data?.meta?.count || 0 };
 }

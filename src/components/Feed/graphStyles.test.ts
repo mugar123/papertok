@@ -66,10 +66,10 @@ test('the lineage strip the map replaced left nothing behind', async () => {
 });
 
 /** Comments name selectors and offsets in prose; matching them would invent both sides. */
-const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, '');
 
 /** The declarations of one rule, by exact selector — bounded so a match can't drift into a neighbour. */
-function ruleBody(css, selector) {
+function ruleBody(css: string, selector: string) {
   const pattern = new RegExp(`(?:^|[};])\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`);
   const match = css.match(pattern);
   assert.ok(match, `expected a \`${selector}\` rule in the stylesheet`);

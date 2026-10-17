@@ -14,11 +14,11 @@ import { readFile } from 'node:fs/promises';
  * no programmatic way to learn it was in error.
  */
 
-const stripComments = source => source
+const stripComments = (source: string) => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^[ \t]*\/\/.*$/gm, '');
 
-const read = async (path) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
+const read = async (path: string|URL) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
 
 test('a failed create/save is tied to the name field, not only announced', async () => {
   const jsx = await read('./CreateListDialog.tsx');

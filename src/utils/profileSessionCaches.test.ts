@@ -21,7 +21,7 @@ test('a lists read just taken is fresh, and an unknown account never is', () => 
   rememberOwnLists('uid-a', [{ id: 'l1', paperIds: [] }]);
   assert.equal(ownListsAreFresh('uid-a', now + 1), true);
   assert.equal(ownListsAreFresh('uid-b', now), false, 'nothing cached, nothing to trust');
-  assert.equal(ownListsAreFresh(null, now), false);
+  assert.equal(ownListsAreFresh(null!, now), false);
   forgetOwnLists('uid-a');
 });
 
@@ -55,8 +55,8 @@ test('forgetting an account leaves nothing behind for the next one', () => {
 });
 
 test('rubbish is refused rather than cached', () => {
-  rememberOwnLists('uid-f', null);
-  rememberOwnLists(null, [{ id: 'l1' }]);
+  rememberOwnLists('uid-f', null!);
+  rememberOwnLists(null!, [{ id: 'l1' }]);
   assert.equal(ownListsCache.get('uid-f'), undefined);
   assert.equal(ownListsAreFresh('uid-f', Date.now()), false);
 });

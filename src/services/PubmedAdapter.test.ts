@@ -37,7 +37,7 @@ test('a PMC copy makes a PubMed paper open, through the canonical openAccess fie
   });
 
   assert.equal(pmcPaper.openAccess, true);
-  assert.equal(pmcPaper.isOpenAccess, undefined);
+  assert.equal((pmcPaper as typeof pmcPaper & { isOpenAccess?: never }).isOpenAccess, undefined);
 });
 
 test('a PubMed record with no PMC copy yet says nothing about access', () => {
@@ -53,10 +53,10 @@ test('a PubMed record with no PMC copy yet says nothing about access', () => {
     title: 'An Annals of Medicine article',
     pubtype: ['Journal Article'],
     articleids: [
-      { idtype: 'pubmed', idtypen: 1, value: '42773801' },
-      { idtype: 'doi', idtypen: 3, value: '10.1080/07853890.2026.2726635' },
+      { idtype: 'pubmed', idtypen: 1, value: '42773801' } as { idtype: string; idtypen: number; value: string },
+      { idtype: 'doi', idtypen: 3, value: '10.1080/07853890.2026.2726635' } as { idtype: string; idtypen: number; value: string },
     ],
-  });
+  } as Parameters<PubmedAdapter['mapToStandard']>[0] & { epubdate: string });
 
   assert.equal(paper.openAccess, undefined);
   assert.equal(accessTagForPaper(paper), null);
@@ -68,12 +68,12 @@ test('a PubMed record with no PMC copy yet says nothing about access', () => {
 // asserts the mapping -- that is unchanged on purpose -- only where the bytes
 // come from.
 
-function recordingGlobalFetch(recorded) {
+function recordingGlobalFetch(recorded: unknown[]) {
   const originalFetch = globalThis.fetch;
   const originalWarn = console.warn;
   const originalError = console.error;
   globalThis.fetch = async input => {
-    recorded.push(String(input?.url || input));
+    recorded.push(String((input as Request)?.url || input));
     return new Response('{}', { status: 500 });
   };
   console.warn = () => {};
@@ -86,8 +86,8 @@ function recordingGlobalFetch(recorded) {
 }
 
 test('reads PubMed through the Worker route instead of calling NCBI from the browser', async () => {
-  const escaped = [];
-  const workerCalls = [];
+  const escaped: string[] = [];
+  const workerCalls: (string|URL)[] = [];
   const restore = recordingGlobalFetch(escaped);
   try {
     const adapter = new PubmedAdapter({
@@ -125,7 +125,7 @@ test('reads PubMed through the Worker route instead of calling NCBI from the bro
 });
 
 test('carries a deadline on the PubMed request', async () => {
-  const escaped = [];
+  const escaped: string[] = [];
   const restore = recordingGlobalFetch(escaped);
   let seenSignal;
   try {
@@ -144,5 +144,5 @@ test('carries a deadline on the PubMed request', async () => {
   }
 
   assert.ok(seenSignal, 'the PubMed request reaches the Worker with no AbortSignal');
-  assert.equal(seenSignal.aborted, false);
+  assert.equal((seenSignal as AbortSignal).aborted, false);
 });

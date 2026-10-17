@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const srcDir = dirname(dirname(fileURLToPath(import.meta.url)));
 
-function* sourceFiles(dir) {
+function* sourceFiles(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) yield* sourceFiles(full);
@@ -38,7 +38,7 @@ test('createContext lives only in modules that define no components', () => {
     const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
     let createsContext = false;
     let containsJsx = false;
-    function visit(node) {
+    function visit(node: ts.Node) {
       if (ts.isCallExpression(node) && node.expression.getText(parsed) === 'createContext') createsContext = true;
       if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node)) containsJsx = true;
       ts.forEachChild(node, visit);
@@ -101,7 +101,7 @@ test('createContext lives only in modules that define no components', () => {
 // inside dozens of `useCallback`s.
 const STABLE_MODULE_CONSTANTS = new Set(['IS_DEMO']);
 
-function extractMemoizedValueBlock(source, providerName) {
+function extractMemoizedValueBlock(source: string, providerName: string) {
   const providerStart = source.indexOf(`function ${providerName}(`);
   assert.ok(providerStart > 0, `could not find ${providerName}`);
   const OBJECT_OPEN = 'const value = useMemo(() => ({';
@@ -119,7 +119,7 @@ function extractMemoizedValueBlock(source, providerName) {
   };
 }
 
-function parseObjectKeys(block) {
+function parseObjectKeys(block: string) {
   const CLOSE = '}), [';
   const objectSource = block.slice(
     block.indexOf('const value = useMemo(() => ({') + 'const value = useMemo(() => ({'.length,
@@ -127,25 +127,25 @@ function parseObjectKeys(block) {
   );
   return objectSource
     .split(',')
-    .map(entry => entry.replace(/\/\/.*$/m, '').trim())
+    .map((entry: string) => entry.replace(/\/\/.*$/m, '').trim())
     .filter(Boolean)
     // `key: identifier` exposes `identifier` under an alias (e.g.
     // `setFeedMode: handleSetFeedMode`, `isDemo: IS_DEMO`) — the thing whose
     // stability matters is the identifier on the right, not the public name.
-    .map(entry => (entry.includes(':') ? entry.split(':')[1].trim() : entry));
+    .map((entry: string) => (entry.includes(':') ? entry.split(':')[1].trim() : entry));
 }
 
-function parseDepsArray(block) {
+function parseDepsArray(block: string) {
   const CLOSE = '}), [';
   const depsSource = block.slice(
     block.indexOf(CLOSE) + CLOSE.length,
     block.lastIndexOf(']);'),
   );
-  return new Set(depsSource.split(',').map(entry => entry.trim()).filter(Boolean));
+  return new Set(depsSource.split(',').map((entry: string) => entry.trim()).filter(Boolean));
 }
 
-function isSourcedFromStableHook(providerSource, identifier) {
-  if (STABLE_MODULE_CONSTANTS.has(identifier)) return true;
+function isSourcedFromStableHook(providerSource: string, identifier: string) {
+  if (STABLE_MODULE_CONSTANTS.has(identifier!)) return true;
   return (
     new RegExp(`const \\[[^\\]]*\\b${identifier}\\b[^\\]]*\\]\\s*=\\s*useState(?:<[^\\n]+>)?\\(`).test(providerSource)
     || new RegExp(`const ${identifier} = useCallback\\(`).test(providerSource)
@@ -156,7 +156,7 @@ function isSourcedFromStableHook(providerSource, identifier) {
 for (const [file, providerName] of [
   ['FeedContext.tsx', 'FeedProvider'],
   ['AuthContext.tsx', 'AuthProvider'],
-]) {
+] as const) {
   test(`${providerName}'s context value is actually stable, not merely wrapped`, () => {
     const source = readFileSync(join(srcDir, 'context', file), 'utf8');
     const { providerSource, block } = extractMemoizedValueBlock(source, providerName);

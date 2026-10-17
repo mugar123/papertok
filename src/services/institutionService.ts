@@ -1,11 +1,16 @@
 type InstitutionInput = Partial<Record<'domain' | 'rorId' | 'name' | 'acronym' | 'entityId' | 'verifiedAt', unknown>>;
 export type LinkedInstitution = NonNullable<ReturnType<typeof normalizeInstitution>>;
+type UniversityUser = Pick<import('firebase/auth').User, 'email' | 'getIdToken'>;
 interface InstitutionOperations {
   isDemo?: boolean; request?: typeof authenticatedWorkerFetch; apiBase?: string;
-  currentUser?: () => typeof auth.currentUser; secondaryAuth?: typeof secondaryAuth;
-  setPersistence?: typeof setPersistence; provider?: () => GoogleAuthProvider;
-  popupSignIn?: typeof signInWithPopup; additionalUserInfo?: typeof getAdditionalUserInfo;
-  deleteUser?: typeof deleteUser; signOut?: typeof signOut;
+  currentUser?: () => Partial<Pick<import('firebase/auth').User, 'uid' | 'email' | 'emailVerified'>> | null;
+  secondaryAuth?(): object;
+  setPersistence?(instance: object, persistence: import('firebase/auth').Persistence): Promise<void>;
+  provider?(): { setCustomParameters(params: import('firebase/auth').CustomParameters): void };
+  popupSignIn?(instance: object, provider: unknown): Promise<{ user: UniversityUser }>;
+  additionalUserInfo?(result: { user: UniversityUser }): { isNewUser: boolean } | null;
+  deleteUser?(user: UniversityUser): Promise<void>;
+  signOut?(instance: object): Promise<void>;
 }
 
 /**
@@ -60,7 +65,7 @@ function cleanString(value: unknown) {
  * The stored shape, or null. The Worker writes every field; this only
  * protects the screens from a document edited by hand or by an older build.
  */
-export function normalizeInstitution(value: InstitutionInput | null | undefined) {
+export function normalizeInstitution(value: InstitutionInput | string | null | undefined) {
   if (!value || typeof value !== 'object') return null;
   const domain = institutionDomainOf(`proof@${String(value.domain || '').trim().toLowerCase()}`);
   if (!domain) return null;
@@ -84,7 +89,7 @@ function secondaryAuth() {
   return getAuth(existing || initializeApp(app.options, SECONDARY_APP_NAME));
 }
 
-function operations(overrides: InstitutionOperations = {}) {
+function operations(overrides: InstitutionOperations = {}): Required<Omit<InstitutionOperations, 'apiBase'>> & { apiBase: string | undefined } {
   return {
     isDemo: overrides.isDemo === undefined ? IS_DEMO : overrides.isDemo,
     request: overrides.request || authenticatedWorkerFetch,

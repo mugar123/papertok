@@ -20,12 +20,12 @@ import {
   trackDay7Return,
 } from './analyticsService.ts';
 
-function memoryStorage(initial = {}) {
+function memoryStorage(initial: Record<string, string> = {}) {
   const values = new Map(Object.entries(initial));
   return {
-    getItem: key => values.get(key) ?? null,
-    setItem: (key, value) => values.set(key, value),
-    removeItem: key => values.delete(key),
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value),
+    removeItem: (key: string) => values.delete(key),
   };
 }
 
@@ -59,9 +59,9 @@ test('with neither storage nor cookie, consent is granted by default', t => {
 
   t.after(() => {
     if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
-    else delete globalThis.localStorage;
+    else delete (globalThis as Partial<typeof globalThis>).localStorage;
     if (previousDocument) Object.defineProperty(globalThis, 'document', previousDocument);
-    else delete globalThis.document;
+    else delete (globalThis as Partial<typeof globalThis>).document;
   });
 
   assert.equal(readAnalyticsConsent(), ANALYTICS_CONSENT.GRANTED);
@@ -97,11 +97,11 @@ test('falls back to a consent cookie when browser storage is unavailable', t => 
 
   t.after(() => {
     if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
-    else delete globalThis.localStorage;
+    else delete (globalThis as Partial<typeof globalThis>).localStorage;
     if (previousDocument) Object.defineProperty(globalThis, 'document', previousDocument);
-    else delete globalThis.document;
+    else delete (globalThis as Partial<typeof globalThis>).document;
     if (previousLocation) Object.defineProperty(globalThis, 'location', previousLocation);
-    else delete globalThis.location;
+    else delete (globalThis as Partial<typeof globalThis>).location;
   });
 
   assert.equal(persistAnalyticsConsent(ANALYTICS_CONSENT.GRANTED), true);
@@ -130,9 +130,9 @@ test('a choice neither browser storage nor a cookie will keep is reported as not
 
   t.after(() => {
     if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
-    else delete globalThis.localStorage;
+    else delete (globalThis as Partial<typeof globalThis>).localStorage;
     if (previousDocument) Object.defineProperty(globalThis, 'document', previousDocument);
-    else delete globalThis.document;
+    else delete (globalThis as Partial<typeof globalThis>).document;
   });
 
   assert.equal(await setAnalyticsConsent(ANALYTICS_CONSENT.DENIED), false);
@@ -154,9 +154,9 @@ test('restores a previous consent decision from its cookie after a reload', t =>
 
   t.after(() => {
     if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
-    else delete globalThis.localStorage;
+    else delete (globalThis as Partial<typeof globalThis>).localStorage;
     if (previousDocument) Object.defineProperty(globalThis, 'document', previousDocument);
-    else delete globalThis.document;
+    else delete (globalThis as Partial<typeof globalThis>).document;
   });
 
   assert.equal(readAnalyticsConsent(), ANALYTICS_CONSENT.DENIED);
@@ -208,11 +208,11 @@ test('tracks acquisition once per browser session after consent', async t => {
   const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
   const consentStorage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.GRANTED });
   const sessionStorage = memoryStorage();
-  const events = [];
+  const events: unknown[] = [];
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: consentStorage });
   t.after(() => {
     if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
-    else delete globalThis.localStorage;
+    else delete (globalThis as Partial<typeof globalThis>).localStorage;
   });
 
   const options = {
@@ -220,7 +220,7 @@ test('tracks acquisition once per browser session after consent', async t => {
     storage: sessionStorage,
     referrer: 'https://www.google.com/search?q=private',
     location: { search: '', origin: 'https://papertok.test' },
-    track: async (eventName, params) => {
+    track: async (eventName: string, params?: Record<string, unknown>) => {
       events.push([eventName, params]);
       return true;
     },
@@ -245,7 +245,7 @@ test('tracks acquisition once even when session storage is unavailable', async t
   t.after(async () => {
     await setAnalyticsConsent(ANALYTICS_CONSENT.DENIED);
     if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
-    else delete globalThis.localStorage;
+    else delete (globalThis as Partial<typeof globalThis>).localStorage;
   });
 
   let events = 0;
@@ -383,7 +383,7 @@ test('falls back to the real path when there is no hash route, and never returns
  * campaign ids appear only with other options, and are here so the allowlist is
  * tested against them too.
  */
-function postHogCapture(event, properties) {
+function postHogCapture(event: string, properties: { search_type?: string; result_count?: number; has_results?: boolean; query?: string; $current_url?: string; $pathname?: string; }) {
   return {
     uuid: '0199c5a1-7f3e-7c4a-9d2b-1f6e8a4b3c2d',
     event,
@@ -427,19 +427,19 @@ test('an event leaves with the normalized address and nothing that names a paper
     ANALYTICS_CONSENT.GRANTED,
   );
 
-  assert.equal(sent.properties.$current_url, 'https://papertok.app/search');
-  assert.equal(sent.properties.$pathname, '/search');
+  assert.equal(sent!.properties.$current_url, 'https://papertok.app/search');
+  assert.equal(sent!.properties.$pathname, '/search');
   // The event's own schema still decides its parameters: `query` is not one.
-  assert.equal(sent.properties.search_type, 'papers');
-  assert.equal(sent.properties.result_count, 12);
-  assert.equal(sent.properties.has_results, true);
+  assert.equal(sent!.properties.search_type, 'papers');
+  assert.equal(sent!.properties.result_count, 12);
+  assert.equal(sent!.properties.has_results, true);
 
   const payload = JSON.stringify(sent);
   // The time zone is in the list too: it says roughly where the reader is.
   for (const secret of ['crispr', 'CRISPR', 'W999', 'private words', 'abc123', 'newsletter', 'google', 'Europe/Madrid']) {
     assert.ok(!payload.includes(secret), `"${secret}" left with the event`);
   }
-  assert.equal(sent.$set_once, undefined, 'no person properties travel');
+  assert.equal(sent!.$set_once, undefined, 'no person properties travel');
 });
 
 test('an event keeps what PostHog needs to accept and count it without cookies', () => {
@@ -447,12 +447,12 @@ test('an event keeps what PostHog needs to accept and count it without cookies',
   // The server drops a cookieless event without the user agent or the host,
   // and the client drops one without its token. Without the cookieless
   // marker, every visitor would become one person.
-  assert.equal(sent.properties.token, 'phc_test');
-  assert.equal(sent.properties.distinct_id, '$posthog_cookieless');
-  assert.equal(sent.properties.$cookieless_mode, true);
-  assert.equal(sent.properties.$raw_user_agent, postHogCapture('$pageview', {}).properties.$raw_user_agent);
-  assert.equal(sent.properties.$host, 'papertok.app');
-  assert.equal(sent.uuid, '0199c5a1-7f3e-7c4a-9d2b-1f6e8a4b3c2d');
+  assert.equal(sent!.properties.token, 'phc_test');
+  assert.equal(sent!.properties.distinct_id, '$posthog_cookieless');
+  assert.equal(sent!.properties.$cookieless_mode, true);
+  assert.equal(sent!.properties.$raw_user_agent, postHogCapture('$pageview', {}).properties.$raw_user_agent);
+  assert.equal(sent!.properties.$host, 'papertok.app');
+  assert.equal(sent!.uuid, '0199c5a1-7f3e-7c4a-9d2b-1f6e8a4b3c2d');
 });
 
 test('a page view on a paper is filed under the pattern, without the paper\'s title', () => {
@@ -460,9 +460,9 @@ test('a page view on a paper is filed under the pattern, without the paper\'s ti
     postHogCapture('$pageview', { $current_url: 'https://papertok.app/public/paper/W2741809807', $pathname: '/public/paper/W2741809807' }),
     ANALYTICS_CONSENT.GRANTED,
   );
-  assert.equal(sent.properties.$current_url, 'https://papertok.app/public/paper/:id');
-  assert.equal(sent.properties.$pathname, '/public/paper/:id');
-  assert.equal(sent.properties.title, undefined);
+  assert.equal(sent!.properties.$current_url, 'https://papertok.app/public/paper/:id');
+  assert.equal(sent!.properties.$pathname, '/public/paper/:id');
+  assert.equal(sent!.properties.title, undefined);
   assert.ok(!JSON.stringify(sent).includes('W2741809807'));
 });
 
@@ -492,7 +492,7 @@ test('a Vercel event is dropped once another tab has turned analytics off', t =>
   });
   t.after(() => {
     if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
-    else delete globalThis.localStorage;
+    else delete (globalThis as Partial<typeof globalThis>).localStorage;
   });
 
   assert.equal(sanitizeVercelEvent({ type: 'pageview', url: 'https://papertok.app/feed' }), null);
@@ -569,8 +569,8 @@ test('drops unapproved events, parameter values, and arbitrary identity fields',
 test('marks activation only after consent and only once', async () => {
   const deniedStorage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.DENIED });
   const grantedStorage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.GRANTED });
-  const events = [];
-  const track = async eventName => {
+  const events: unknown[] = [];
+  const track = async (eventName: string) => {
     events.push(eventName);
     return true;
   };
@@ -583,8 +583,8 @@ test('marks activation only after consent and only once', async () => {
 
 test('tracks a day-7 return at the boundary and only once', async () => {
   const storage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.GRANTED });
-  const events = [];
-  const track = async eventName => {
+  const events: unknown[] = [];
+  const track = async (eventName: string) => {
     events.push(eventName);
     return true;
   };
@@ -605,10 +605,10 @@ test('tracks a day-7 return at the boundary and only once', async () => {
  */
 test('a mark asked for twice while the first send is still waiting leaves once', async () => {
   const storage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.GRANTED });
-  const events = [];
-  let release;
-  const loaded = new Promise(resolve => { release = resolve; });
-  const track = async eventName => {
+  const events: unknown[] = [];
+  let release!: () => void;
+  const loaded = new Promise<void>(resolve => { release = resolve; });
+  const track = async (eventName: string) => {
     events.push(eventName);
     await loaded;
     return true;
@@ -636,7 +636,7 @@ test('a mark whose send has not finished is not stored as sent', async () => {
   // and whatever storage says at that moment is what the next visit reads.
   // Nothing may say the mark left, or that visit would never send it.
   const storage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.GRANTED });
-  let settle;
+  let settle!: (sent: boolean) => void;
   const pending = markActivation({ storage, now: 1000, track: () => new Promise(resolve => { settle = resolve; }) });
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(storage.getItem('papertok_analytics_activation_sent'), null);
@@ -671,11 +671,11 @@ test('clears consent-scoped activation state when consent is denied', async t =>
 
   t.after(() => {
     if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
-    else delete globalThis.localStorage;
+    else delete (globalThis as Partial<typeof globalThis>).localStorage;
     if (previousDocument) Object.defineProperty(globalThis, 'document', previousDocument);
-    else delete globalThis.document;
+    else delete (globalThis as Partial<typeof globalThis>).document;
     if (previousLocation) Object.defineProperty(globalThis, 'location', previousLocation);
-    else delete globalThis.location;
+    else delete (globalThis as Partial<typeof globalThis>).location;
   });
 
   assert.equal(await setAnalyticsConsent(ANALYTICS_CONSENT.DENIED), true);
@@ -708,7 +708,7 @@ test('every event the app emits is registered, with a surface that survives', as
   const sources = [];
   while (roots.length) {
     const dir = roots.pop();
-    for (const entry of await readdir(dir, { withFileTypes: true })) {
+    for (const entry of await readdir(dir!, { withFileTypes: true })) {
       const child = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, dir);
       if (entry.isDirectory()) roots.push(child);
       // `analyticsService.js` is the vocabulary, not a caller: its schema
@@ -775,7 +775,7 @@ test('every route the app declares is a named analytics path', async () => {
 
   // Fill the parameters with values that must never survive into the report,
   // so a route that leaks one fails here rather than in production.
-  const sample = path => path.replace(/:[A-Za-z]\w*/g, 'private-value');
+  const sample = (path: string) => path.replace(/:[A-Za-z]\w*/g, 'private-value');
 
   const unnamed = declared.filter(path => normalizeAnalyticsPath(sample(path)) === '/unknown');
   assert.deepEqual(unnamed, [], `routes filed under /unknown: ${unnamed.join(', ')}`);

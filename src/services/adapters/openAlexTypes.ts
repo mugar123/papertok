@@ -9,7 +9,7 @@ export interface OpenAlexWork {
   doi?: string | null;
   ids?: { doi?: string | null; pmid?: string | null; [key: string]: string | null | undefined };
   abstract_inverted_index?: Record<string, number[]> | null;
-  authorships?: Array<{ raw_author_name?: string; author?: { id?: string; display_name?: string }; institutions?: Array<{ id?: string; display_name?: string; ror?: string | null }> }>;
+  authorships?: Array<{ raw_author_name?: string; author?: { id?: string | null; display_name?: string }; institutions?: Array<{ id?: string; display_name?: string; ror?: string | null }> }>;
   publication_year?: number | null;
   publication_date?: string;
   type?: string;

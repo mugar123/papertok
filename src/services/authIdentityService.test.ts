@@ -12,22 +12,24 @@ import {
   signInWithProvider,
 } from './authIdentityService.ts';
 
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 const GITHUB = SIGN_IN_PROVIDERS.github;
 const GOOGLE = SIGN_IN_PROVIDERS.google;
 
-function authError(code, email) {
-  const error = new Error(code);
+function authError(code?: string, email?: string) {
+  const error = new Error(code) as Error & { code?: string; customData?: { email: string }; email?: string };
   error.code = code;
   if (email) error.customData = { email };
   return error;
 }
 
-const PROVIDER_IDS_BY_STUB = { 'google-provider': GOOGLE, 'github-provider': GITHUB };
+const PROVIDER_IDS_BY_STUB: Record<string, string> = { 'google-provider': GOOGLE, 'github-provider': GITHUB };
 
-function fakeApi(overrides = {}) {
-  const calls = [];
+type IdentityApi = NonNullable<Parameters<typeof signInWithProvider>[1]>;
+
+function fakeApi(overrides: IdentityApi = {}) {
+  const calls: unknown[][] = [];
   return {
     calls,
     api: {
@@ -40,14 +42,14 @@ function fakeApi(overrides = {}) {
       },
       popupLink: async (user, provider) => {
         calls.push(['link', user.uid, provider]);
-        const providerId = Object.keys(PROVIDER_IDS_BY_STUB).includes(provider)
-          ? PROVIDER_IDS_BY_STUB[provider]
-          : provider;
+        const providerId = Object.keys(PROVIDER_IDS_BY_STUB).includes(provider as string)
+          ? PROVIDER_IDS_BY_STUB[provider as string]
+          : provider as string;
         return { user: { ...user, providerData: [...user.providerData, { providerId }] } };
       },
       additionalUserInfo: () => ({ isNewUser: false }),
       ...overrides,
-    },
+    } satisfies IdentityApi,
   };
 }
 

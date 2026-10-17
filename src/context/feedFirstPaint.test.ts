@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
 
 /**
  * SOURCE tests: FeedContext is a React context this repo cannot mount under
@@ -12,9 +12,9 @@ const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
  * way analyticsPageviews.test.ts does, so a comment quoting the fix can never
  * stand in for the fix — these very files carry comments that name the bug.
  */
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
-function bounded(code, from, to, label, maxLines) {
+function bounded(code: string, from: string, to: string, label: string, maxLines: number) {
   const start = code.indexOf(from);
   const end = code.indexOf(to, start + 1);
   assert.ok(start >= 0 && end > start, `expected to have found ${label}`);

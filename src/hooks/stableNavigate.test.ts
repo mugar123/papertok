@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const read = (p) => readFile(new URL(p, import.meta.url), 'utf8');
-const strip = (s) => s.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const read = (p: string|URL) => readFile(new URL(p, import.meta.url), 'utf8');
+const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 /**
  * `useNavigate` reads the location, so a card calling it re-renders on every

@@ -13,7 +13,7 @@ test('resolves exact ids and categories before stored query and legacy display n
     canonicalId: 'T123',
     displayName: 'Legacy label',
     metadata: { query: 'Stored query', categoryIds: [] },
-  }, { allowLegacyDisplayName: true }), {
+  } as NonNullable<Parameters<typeof resolveTopicRetrievalPlan>[0]> & Record<string, unknown>, { allowLegacyDisplayName: true }), {
     canonicalId: 'T123',
     openAlexId: 'T123',
     categoryIds: [],
@@ -25,7 +25,7 @@ test('resolves exact ids and categories before stored query and legacy display n
 
   const queryTopic = resolvePaperTopic('Spatial transcriptomics');
   const stored = resolveTopicRetrievalPlan({
-    canonicalId: queryTopic.id,
+    canonicalId: queryTopic!.id,
     displayName: 'Wrong legacy label',
     metadata: { query: 'Spatial transcriptomics', source: 'pubmed', categoryIds: [] },
   }, { allowLegacyDisplayName: true });
@@ -50,8 +50,8 @@ test('never turns malformed or opaque query ids into retrieval text', () => {
 
   const valid = resolvePaperTopic('Quantum sensing');
   const tampered = resolveTopicRetrievalPlan({
-    canonicalId: valid.id,
-    displayName: valid.label,
+    canonicalId: valid!.id,
+    displayName: valid!.label,
     metadata: { query: 'Different topic', categoryIds: [] },
   }, { allowLegacyDisplayName: true });
   assert.equal(tampered.valid, false);
@@ -61,7 +61,7 @@ test('never turns malformed or opaque query ids into retrieval text', () => {
 test('returns only scientific category ids for feed preferences', () => {
   const queryTopic = resolvePaperTopic('Spatial transcriptomics');
   assert.deepEqual(getFollowedTopicCategoryIds([
-    { type: 'topic', canonicalId: queryTopic.id, displayName: queryTopic.label, metadata: queryTopic.metadata },
+    { type: 'topic', canonicalId: queryTopic!.id, displayName: queryTopic!.label, metadata: queryTopic!.metadata },
     { type: 'topic', canonicalId: 'physics.optics', displayName: 'Optics' },
     { type: 'author', canonicalId: 'A1', displayName: 'Ada' },
   ]), ['physics.optics']);
@@ -75,32 +75,32 @@ test('returns relevant partial successes and deduplicates provider records', asy
     title: 'Spatial transcriptomics maps the heart',
     authors: [{ name: 'Ada Lovelace' }],
   };
-  const duplicate = {
+  const duplicate: Partial<import('../models/Paper.ts').Paper> = {
     id: 'openalex:W1',
     doi: 'https://doi.org/10.1000/shared',
     title: 'A tissue atlas',
     authors: [{ name: 'Ada Lovelace' }],
-    concepts: [{ displayName: 'Spatial transcriptomics' }],
+    concepts: [({ displayName: 'Spatial transcriptomics' } as import('../models/Paper.ts').PaperSubject & { displayName: string })],
     citationCount: 8,
   };
   const unrelated = { id: 'unrelated', title: 'Urban spatial statistics', authors: [{ name: 'Grace Hopper' }] };
-  const calls = [];
+  const calls: [string, string][] = [];
   const providers = {
-    searchArxiv: async (query) => {
+    searchArxiv: async (query: string) => {
       calls.push(['arxiv', query]);
-      return [relevant, unrelated];
+      return [relevant, unrelated] as import('../models/Paper.ts').Paper[];
     },
-    searchOpenAlex: async (query) => {
+    searchOpenAlex: async (query: string) => {
       calls.push(['openalex', query]);
       throw new Error('OpenAlex unavailable');
     },
-    searchPubmed: async (query) => {
+    searchPubmed: async (query: string) => {
       calls.push(['pubmed', query]);
-      return { papers: [duplicate] };
+      return { papers: [duplicate] as import('../models/Paper.ts').Paper[] };
     },
   };
 
-  const result = await fetchTopicPapers(queryTopic, { providers, pageSize: 10 });
+  const result = await fetchTopicPapers(queryTopic!, { providers, pageSize: 10 });
 
   assert.equal(result.partial, true);
   assert.deepEqual(result.failedProviders, ['openalex-query']);
@@ -113,10 +113,10 @@ test('returns relevant partial successes and deduplicates provider records', asy
 
 test('settles synchronous provider failures independently', async () => {
   const topic = resolvePaperTopic('Quantum sensing');
-  const result = await fetchTopicPapers(topic, {
+  const result = await fetchTopicPapers(topic!, {
     providers: {
       searchArxiv: () => { throw new Error('arXiv unavailable'); },
-      searchOpenAlex: () => ({ papers: [{ id: 'openalex-1', title: 'Quantum sensing methods' }] }),
+      searchOpenAlex: () => ({ papers: [{ id: 'openalex-1', title: 'Quantum sensing methods' }] as import('../models/Paper.ts').Paper[] }),
       searchPubmed: () => { throw new Error('PubMed unavailable'); },
     },
   });
@@ -135,32 +135,32 @@ test('keeps exact category results ahead of metadata-query supplements', async (
     source: 'provider',
   });
   const providers = {
-    fetchArxivCategories: async categories => [{
+    fetchArxivCategories: async (categories: string[]) => [{
       id: 'exact',
       title: 'An exact category paper',
       categories,
       authors: [{ name: 'Exact Author' }],
-    }],
+    }] as import('../models/Paper.ts').Paper[],
     fetchDomainCategories: async () => [],
     searchArxiv: async () => [{
       id: 'generic',
       title: 'Chaotic dynamics in coupled systems',
       authors: [{ name: 'Query Author' }],
-    }],
+    }] as import('../models/Paper.ts').Paper[],
     searchOpenAlex: async () => ({ papers: [] }),
     searchPubmed: async () => ({ papers: [] }),
   };
 
-  const result = await fetchTopicPapers(topic, { providers, pageSize: 10 });
+  const result = await fetchTopicPapers(topic!, { providers, pageSize: 10 });
   assert.equal(result.plan.query, 'chaotic dynamics');
   assert.deepEqual(result.papers.map(paper => paper.id), ['exact', 'generic']);
 });
 
 test('excluded providers are not asked, and the exact category request still is', async () => {
   const topic = { canonicalId: 'cs.NI', displayName: 'Networking and Internet Architecture', metadata: { categoryIds: ['cs.NI'] } };
-  const calls = [];
+  const calls: string[] = [];
   const providers = {
-    fetchArxivCategories: async () => { calls.push('cat'); return [{ id: 'exact', title: 'An exact category paper', authors: [{ name: 'Exact Author' }] }]; },
+    fetchArxivCategories: async () => { calls.push('cat'); return [{ id: 'exact', title: 'An exact category paper', authors: [{ name: 'Exact Author' }] }] as import('../models/Paper.ts').Paper[]; },
     fetchDomainCategories: async () => { calls.push('domain'); return []; },
     searchArxiv: async () => { calls.push('arxiv-query'); return []; },
     searchOpenAlex: async () => { calls.push('openalex-query'); return { papers: [] }; },

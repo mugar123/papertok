@@ -1,7 +1,7 @@
 import type { Paper } from '../models/Paper.ts';
 
 import type { mapUnpaywallResult } from '../services/unpaywallService.ts';
-type OpenCopy = ReturnType<typeof mapUnpaywallResult>;
+type OpenCopy = Partial<NonNullable<ReturnType<typeof mapUnpaywallResult>>> | null;
 
 /**
  * What a card may honestly say about a paper: whether it has been through peer

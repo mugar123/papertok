@@ -28,7 +28,7 @@ test('ranks exact semantic and title evidence above looser matches', () => {
     {
       id: 'exact-concept',
       title: 'A tissue atlas',
-      concepts: [{ display_name: 'Spatial transcriptomics' }],
+      concepts: [({ display_name: 'Spatial transcriptomics' } as import('../models/Paper.ts').PaperSubject & Record<string, unknown>)],
     },
     {
       id: 'unrelated',

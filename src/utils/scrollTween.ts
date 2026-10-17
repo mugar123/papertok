@@ -80,7 +80,7 @@ export function cubicBezier(x1: number, y1: number, x2: number, y2: number) {
  * `now` and `raf` are injectable so the tween can be tested without a browser
  * and without waiting real seconds for it.
  */
-export function tweenScrollTop(node: Pick<Element, 'scrollTop'> | null | undefined, to: number, options: { durationMs?: number; easing?: (progress: number) => number; immediate?: boolean; now?: () => number; raf?: (callback: FrameRequestCallback) => number | undefined; cancelRaf?: (handle: number) => void } = {}) {
+export function tweenScrollTop(node: Pick<Element, 'scrollTop'> | null | undefined, to: number, options: { durationMs?: number; easing?: (progress: number) => number; immediate?: boolean; now?: () => number; raf?: (callback: () => void) => number | undefined; cancelRaf?: (handle: number) => void } = {}) {
   const {
     durationMs = CARD_DURATION_MS,
     easing = cubicBezier(...CARD_EASE),

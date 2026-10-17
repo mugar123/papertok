@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { PANEL_HIDE_DELAY_MS } from '../../utils/panelReveal.ts';
+import type { FileHandle } from 'fs/promises';
 
 /**
  * How the reader's three controls answer a pointer.
@@ -26,11 +27,11 @@ const EXPORT_CSS = new URL('./Export.css', import.meta.url);
 const POPOVER_JSX = new URL('../ui/popover.tsx', import.meta.url);
 
 /** Comments name properties and durations in prose; matching them would invent both sides. */
-const stripComments = source => source
+const stripComments = (source: string) => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '');
 
-const read = async url => stripComments(await readFile(url, 'utf8'));
+const read = async (url: string|URL|Buffer<ArrayBufferLike>|FileHandle) => stripComments(await readFile(url, 'utf8'));
 
 /**
  * A brace-matched block, so an assertion cannot pass against the wrong one.
@@ -39,7 +40,7 @@ const read = async url => stripComments(await readFile(url, 'utf8'));
  * of `shown`'s own transition — and every duration asserted from it would be
  * read out of a fragment that excludes the half this file cares about most.
  */
-function block(source, header) {
+function block(source: string, header: string) {
   const start = source.indexOf(header);
   assert.notEqual(start, -1, `expected to find \`${header}\``);
   const open = source.indexOf('{', start);
@@ -56,7 +57,7 @@ function block(source, header) {
 }
 
 /** Every `duration: 0.18` in a chunk of source, as milliseconds. */
-const durationsMs = source => [...source.matchAll(/duration:\s*([\d.]+)/g)]
+const durationsMs = (source: string) => [...source.matchAll(/duration:\s*([\d.]+)/g)]
   .map(match => Math.round(Number(match[1]) * 1000));
 
 test('the palette does not keep waiting after the pointer has gone', () => {

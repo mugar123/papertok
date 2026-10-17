@@ -7,13 +7,13 @@ import { readFile } from 'node:fs/promises';
 // What it must send is covered by `paperShareData` in shareLink.test.ts;
 // this pins that the button sends it.
 
-const stripComments = source => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
-function handlerSlice(code, start, maxLines) {
+function handlerSlice(code: string, start: string, maxLines: number) {
   const from = code.indexOf(start);
   assert.ok(from >= 0, `${start} is gone`);
   const lines = code.slice(from).split('\n');
-  const end = lines.findIndex((line, index) => index > 0 && /^ {2}\};$/.test(line));
+  const end = lines.findIndex((line: string, index: number) => index > 0 && /^ {2}\};$/.test(line));
   assert.ok(end > 0 && end <= maxLines, `${start} runs past ${maxLines} lines`);
   return lines.slice(0, end + 1).join('\n');
 }

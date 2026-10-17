@@ -27,7 +27,7 @@ const READER_BAR_CSS = new URL('./ReaderBar.css', import.meta.url);
 const READER_BAR_JSX = new URL('./ReaderBar.tsx', import.meta.url);
 
 /** Comments name selectors and properties in prose; matching them would invent both sides. */
-const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, '');
 
 /**
  * The body of an at-rule, brace-matched.
@@ -50,7 +50,7 @@ const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '');
  * block's body) to pick the right one regardless of order; omitted, this
  * keeps the old first-occurrence behaviour for headers that are still unique.
  */
-function atRuleBody(css, header, { contains } = {}) {
+function atRuleBody(css: string, header: string, { contains }: { contains?: string } = {}) {
   let searchFrom = 0;
   while (searchFrom <= css.length) {
     const start = css.indexOf(header, searchFrom);
@@ -82,7 +82,7 @@ function atRuleBody(css, header, { contains } = {}) {
 }
 
 /** The declarations of one rule inside a block, by exact selector. */
-function ruleBody(block, selector) {
+function ruleBody(block: string, selector: string) {
   const pattern = new RegExp(`(?:^|[};])\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`);
   const match = block.match(pattern);
   assert.ok(match, `expected a \`${selector}\` rule in this block`);

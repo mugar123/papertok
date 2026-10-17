@@ -4,6 +4,6 @@
     "lib": ["ES2023", "WebWorker", "WebWorker.Iterable"],
     "types": ["deno"]
   },
-  "include": ["**/*.js", "**/*.ts"],
-  "exclude": ["**/*.test.js", "**/*.test.ts"]
+  "include": ["**/*.ts"],
+  "exclude": ["**/*.test.ts"]
 }

@@ -48,8 +48,8 @@ test('a paper hydrated under another id resolves to the id its marks live under'
 });
 
 import { readFile } from 'node:fs/promises';
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 /**
  * SOURCE: the table is built from the library the context already loads,
@@ -83,7 +83,7 @@ test('SOURCE: every card surface looks a mark up under the resolved id', async (
     ['../components/Search/SearchPage.tsx', 'shownPaper'],
     ['../components/Explorer/EntityExplorer.tsx', 'shownPaper'],
     ['../components/Lists/ListsPage.tsx', 'shownPaper'],
-  ]) {
+  ] as const) {
     const code = stripComments(await read(path));
     assert.doesNotMatch(code, new RegExp(`PaperIds\\??\\.has\\(${subject}\\.id\\)`), `${path} still reads a mark by the raw id`);
     assert.match(code, new RegExp(`readPaperIds\\??\\.has\\(interactionIdFor\\(${subject}\\)!\\)`), path);

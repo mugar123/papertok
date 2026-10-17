@@ -16,12 +16,12 @@ import {
   saveGuestInterests,
 } from './guestInterests.ts';
 
-function fakeStorage(initial = {}) {
+function fakeStorage(initial: Record<string, string> = {}) {
   const map = new Map(Object.entries(initial));
   return {
-    getItem: key => (map.has(key) ? map.get(key) : null),
-    setItem: (key, value) => map.set(key, String(value)),
-    removeItem: key => map.delete(key),
+    getItem: (key: string) => (map.has(key) ? map.get(key)! : null),
+    setItem: (key: string, value: string) => map.set(key, String(value)),
+    removeItem: (key: string) => map.delete(key),
     get size() { return map.size; },
   };
 }
@@ -91,7 +91,7 @@ test('a storage that throws never reaches the caller', () => {
 });
 
 test('the seed takes the first five of each area, interleaved across areas', () => {
-  const firstN = (area, n) => Object.keys(CATEGORIES[area].subcategories).slice(0, n);
+  const firstN = (area: string, n: number|undefined) => Object.keys(CATEGORIES[area].subcategories).slice(0, n);
   const seed = guestSeedCategoriesForAreas(['mech', 'physics', 'eess']);
   assert.equal(GUEST_SEED_PER_AREA, 5);
   assert.equal(seed.length, 15);
@@ -108,7 +108,7 @@ test('a small area contributes what it has, and the seed never reaches the rules
   const everything = guestSeedCategoriesForAreas(Object.keys(CATEGORIES));
   assert.ok(everything.length <= 100, `${everything.length} preferences would be refused by firestore.rules`);
   assert.deepEqual(guestSeedCategoriesForAreas(['nope']), []);
-  assert.deepEqual(guestSeedCategoriesForAreas(null), []);
+  assert.deepEqual(guestSeedCategoriesForAreas(null!), []);
   assert.deepEqual(guestSeedCategoriesForAreas(['cs'], 2), Object.keys(CATEGORIES.cs.subcategories).slice(0, 2));
 });
 
@@ -133,7 +133,7 @@ test('a pick with topics round-trips, and dropping an area drops its topics', ()
 
   // The header chip's sheet saves areas alone: that answer has no topics.
   saveGuestInterests({ areas: ['cs'], topics: ['cs.LG', 'quant-ph'] }, storage);
-  assert.deepEqual(readGuestInterests(storage).topics, ['cs.LG']);
+  assert.deepEqual(readGuestInterests(storage)!.topics, ['cs.LG']);
 });
 
 test('an answer stored before topics existed reads as whole areas', () => {
@@ -172,7 +172,7 @@ test('the guest reading choice survives the bridge and is removed with it', () =
 test('invalid guest reading levels normalize safely and old answers stay compatible', () => {
   const storage = fakeStorage();
   saveGuestInterests({ areas: ['cs'], readingLevel: 'invalid' }, storage);
-  assert.equal(readGuestInterests(storage).readingLevel, 'university');
+  assert.equal(readGuestInterests(storage)!.readingLevel, 'university');
   saveGuestInterests({ areas: ['cs'] }, storage);
   assert.deepEqual(readGuestInterests(storage), { areas: ['cs'], topics: [], dismissed: false });
 });
@@ -180,19 +180,19 @@ test('invalid guest reading levels normalize safely and old answers stay compati
 test('the email digest travels only as an explicit yes', () => {
   const storage = fakeStorage();
   saveGuestInterests({ areas: ['cs'], emailDigest: true }, storage);
-  assert.equal(readGuestInterests(storage).emailDigest, true);
+  assert.equal(readGuestInterests(storage)!.emailDigest, true);
   saveGuestInterests({ areas: ['cs'], emailDigest: false }, storage);
-  assert.equal('emailDigest' in readGuestInterests(storage), false);
+  assert.equal('emailDigest' in readGuestInterests(storage)!, false);
   storage.setItem('papertok_guestInterests', JSON.stringify({ areas: ['cs'], emailDigest: 'yes' }));
-  assert.equal('emailDigest' in readGuestInterests(storage), false);
+  assert.equal('emailDigest' in readGuestInterests(storage)!, false);
   clearGuestInterests(storage);
   assert.equal(readGuestInterests(storage), null);
 });
 
 test('a university address is neither stored nor read back: the account onboarding asks for it', () => {
   const storage = fakeStorage();
-  saveGuestInterests({ areas: ['cs'], institutionEmail: 'alice@usal.es' }, storage);
-  assert.equal('institutionEmail' in JSON.parse(storage.getItem('papertok_guestInterests')), false);
+  saveGuestInterests({ areas: ['cs'], institutionEmail: 'alice@usal.es' } as NonNullable<Parameters<typeof saveGuestInterests>[0]> & Record<string, unknown>, storage);
+  assert.equal('institutionEmail' in JSON.parse(storage.getItem('papertok_guestInterests')!), false);
   // An answer stored before the welcome stopped asking still reads.
   storage.setItem('papertok_guestInterests', JSON.stringify({ areas: ['cs'], institutionEmail: 'alice@usal.es' }));
   assert.deepEqual(readGuestInterests(storage), { areas: ['cs'], topics: [], dismissed: false });

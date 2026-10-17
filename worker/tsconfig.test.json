@@ -8,5 +8,9 @@
     "../src/utils/aiExplanation.test.ts",
     "../src/types/**/*.d.ts"
   ],
-  "exclude": []
+  "exclude": [],
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler"
+  }
 }

@@ -16,9 +16,9 @@ import {
  */
 
 /** Replays a sequence of auth states and returns the key after each one. */
-function keysThrough(states) {
-  let scope = INITIAL_ACCOUNT_SCOPE;
-  return states.map((auth) => {
+function keysThrough(states: ({ uid?: string|null; authLoading?: boolean; }|undefined)[]) {
+  let scope: ReturnType<typeof nextAccountScope> = INITIAL_ACCOUNT_SCOPE;
+  return states.map((auth: { uid?: string|null; authLoading?: boolean; }|undefined) => {
     scope = nextAccountScope(scope, auth);
     return accountScopeKey(scope);
   });

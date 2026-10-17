@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 // utils/entityExplorer.js (`authorIdentityVerified`, `sourceArxivIdFrom`) and
 // openAlexService (`getAuthorProfileExact`); the Explorer cannot mount under
 // Node, so this pins that it goes through them.
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 const jsx = stripComments(readFileSync(new URL('./EntityExplorer.tsx', import.meta.url), 'utf8'));
 
 test('a name-only author is resolved with the paper the link carries', () => {

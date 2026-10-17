@@ -52,8 +52,8 @@ test('a trailing slash is the same tab', () => {
 });
 
 test('a missing or empty pathname is not a tab', () => {
-  assert.equal(lateralTabDirection(undefined, fresh()), null);
-  assert.equal(lateralTabDirection(null, fresh()), null);
+  assert.equal(lateralTabDirection(undefined!, fresh()), null);
+  assert.equal(lateralTabDirection(null!, fresh()), null);
   assert.equal(lateralTabDirection('', fresh()), null);
 });
 

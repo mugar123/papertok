@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const SRC = fileURLToPath(new URL('../', import.meta.url));
 
-async function sourceFiles(dir) {
+async function sourceFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
   const files = await Promise.all(entries.map(async (entry) => {
     const full = path.join(dir, entry.name);
@@ -36,8 +36,8 @@ test('no component imports icons from lucide-react', async () => {
  */
 test('every stored list icon name still resolves to its own icon', async () => {
   const source = await readFile(new URL('./icons.ts', import.meta.url), 'utf8');
-  const offered = JSON.parse(source.match(/export const AVAILABLE_ICONS = (\[[^\]]*\]);/)[1].replace(/'/g, '"'));
-  const icons = source.match(/export const ICONS: Record<string, Icon> = \{([\s\S]*?)\};/)[1];
+  const offered = JSON.parse(source.match(/export const AVAILABLE_ICONS = (\[[^\]]*\]);/)![1].replace(/'/g, '"'));
+  const icons = source.match(/export const ICONS: Record<string, Icon> = \{([\s\S]*?)\};/)![1];
   const keys = icons.split(',').map(part => part.trim().split(':')[0].trim()).filter(Boolean);
   for (const name of offered) {
     assert.ok(keys.includes(name), `"${name}" is offered for new lists but has no entry in ICONS`);

@@ -4,8 +4,8 @@ import { readFile } from 'node:fs/promises';
 
 // Comments are stripped first (convention of ce139ce): a matcher that reads
 // comments would be satisfied by the explanation alone.
-const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
+const stripComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
 
 test('SOURCE: the onboarding refuses to leave the topics screen, or to finish, over the cap', async () => {
   const code = stripComments(await read('./OnboardingFlow.tsx'));

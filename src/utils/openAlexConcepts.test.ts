@@ -27,5 +27,5 @@ test('the feed enrichment carries only those concepts', () => {
     concepts: [MEDLINE, CARDIOLOGY, WEAK],
   });
 
-  assert.deepEqual(mapped.enrichment.concepts, [CARDIOLOGY]);
+  assert.deepEqual(mapped!.enrichment.concepts, [CARDIOLOGY]);
 });

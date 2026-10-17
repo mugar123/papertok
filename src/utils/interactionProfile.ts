@@ -16,7 +16,7 @@ export interface StoredInteractionProfile {
 }
 export interface InteractionDocumentData {
   liked?: boolean; saved?: boolean; read?: boolean; notInterested?: boolean; readLater?: boolean;
-  openedPdf?: boolean; viewTime?: number; skip?: boolean; pdfBounce?: boolean; paperCategory?: string;
+  openedPdf?: boolean; viewTime?: number; skip?: boolean | number; pdfBounce?: boolean; paperCategory?: string;
   timestamp?: number | string; libraryUpdatedAt?: string;
   paper?: Partial<Paper>; paperTitle?: string; paperAuthors?: Paper['authors'];
   paperAbstract?: string; note?: string; tags?: string[]; readAt?: string | number | null;

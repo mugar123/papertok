@@ -17,7 +17,7 @@ import { readFile } from 'node:fs/promises';
  */
 
 const JSX = new URL('./PublicPaperPage.tsx', import.meta.url);
-const stripComments = source => source
+const stripComments = (source: string) => source
   .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
   .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 

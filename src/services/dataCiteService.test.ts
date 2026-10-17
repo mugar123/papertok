@@ -20,9 +20,9 @@ test('maps a reverse DataCite dataset relationship to a paper DOI', () => {
     },
   }, 'https://doi.org/10.1000/paper');
 
-  assert.equal(resource.kind, 'dataset');
-  assert.equal(resource.title, 'Reusable measurements');
-  assert.equal(resource.downloadCount, 42);
+  assert.equal(resource!.kind, 'dataset');
+  assert.equal(resource!.title, 'Reusable measurements');
+  assert.equal(resource!.downloadCount, 42);
 });
 
 test('does not map an unrelated DataCite record', () => {
@@ -70,7 +70,7 @@ test('keeps a reverse relation with a meaningful title match', () => {
     },
   }, '10.1000/paper', 'Room-temperature superconductivity in a carbonaceous sulfur hydride');
 
-  assert.equal(resource.kind, 'dataset');
+  assert.equal(resource!.kind, 'dataset');
 });
 
 test('maps direct version and software relations with safe links', () => {
@@ -103,7 +103,7 @@ test('sube a HTTPS los recursos que DataCite entrega en claro', () => {
     },
   }, '10.1000/paper');
 
-  assert.equal(resource.url, 'https://repositorio.example/records/124');
+  assert.equal(resource!.url, 'https://repositorio.example/records/124');
 
   const [related] = mapDataCiteDirectRelations({ attributes: { relatedIdentifiers: [
     { relatedIdentifier: 'http://repositorio.example/software/1', relatedIdentifierType: 'URL', relationType: 'IsDocumentedBy', resourceTypeGeneral: 'Software' },

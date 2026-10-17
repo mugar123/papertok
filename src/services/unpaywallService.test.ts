@@ -3,18 +3,18 @@ import assert from 'node:assert/strict';
 import { findOpenAccessCopy, mapUnpaywallResult, normalizeDoi } from './unpaywallService.ts';
 
 // The module caches by DOI for the whole process, so each test uses its own.
-async function withUpstream(respond, callback) {
+async function withUpstream<T>(respond: () => Response | Promise<Response>, callback: (state: { calls: string[]; store: Map<string, string> }) => T): Promise<Awaited<T>> {
   const originalFetch = globalThis.fetch;
   const originalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-  const store = new Map();
-  const calls = [];
+  const store = new Map<string, string>();
+  const calls: string[] = [];
   globalThis.fetch = async (url) => { calls.push(String(url)); return respond(); };
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
     value: {
-      getItem: key => (store.has(key) ? store.get(key) : null),
-      setItem: (key, value) => { store.set(key, String(value)); },
-      removeItem: key => { store.delete(key); },
+      getItem: (key: string) => (store.has(key) ? store.get(key) : null),
+      setItem: (key: string, value: string) => { store.set(key, String(value)); },
+      removeItem: (key: string) => { store.delete(key); },
     },
   });
   try {
@@ -22,11 +22,11 @@ async function withUpstream(respond, callback) {
   } finally {
     globalThis.fetch = originalFetch;
     if (originalStorage) Object.defineProperty(globalThis, 'localStorage', originalStorage);
-    else delete globalThis.localStorage;
+    else delete (globalThis as Partial<typeof globalThis>).localStorage;
   }
 }
 
-const jsonResponse = (payload, status = 200) => new Response(JSON.stringify(payload), {
+const jsonResponse = (payload: { error?: string; doi?: string; is_oa?: boolean|null; best_oa_location?: null; source?: string; }, status = 200) => new Response(JSON.stringify(payload), {
   status,
   headers: { 'content-type': 'application/json' },
 });
@@ -84,11 +84,11 @@ test('a copy the Worker read from a Crossref licence says it came from Crossref'
       license: 'cc-by',
       url: `https://doi.org/${doi}`,
       url_for_landing_page: `https://doi.org/${doi}`,
-      url_for_pdf: null,
+      url_for_pdf: null!,
       evidence: 'crossref license',
       is_best: true,
-    },
-  }), {
+    } as NonNullable<NonNullable<Parameters<typeof mapUnpaywallResult>[0]>['best_oa_location']> & Record<string, unknown>,
+  } as Parameters<typeof mapUnpaywallResult>[0] & { doi: string }), {
     pdfUrl: undefined,
     landingPageUrl: `https://doi.org/${doi}`,
     license: 'cc-by',

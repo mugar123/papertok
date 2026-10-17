@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createFeedResumeMemory, FEED_RESUME_STORAGE_PREFIX } from './feedResumeMemory.ts';
 
-function fakeStorage(initial = {}) {
+function fakeStorage(initial: Record<string, string> = {}) {
   const data = { ...initial };
   return {
     data,
-    getItem: (key) => (key in data ? data[key] : null),
-    setItem: (key, value) => { data[key] = String(value); },
-    removeItem: (key) => { delete data[key]; },
+    getItem: (key: string) => (key in data ? data[key] : null),
+    setItem: (key: string, value: string) => { data[key] = String(value); },
+    removeItem: (key: string|number) => { delete data[key]; },
   };
 }
 
@@ -27,7 +27,7 @@ test('persists only when asked, and a fresh module seeds from what was persisted
   memory.remember('forYou', { scrollTop: 1992, index: 3, paperId: 'p3' });
   assert.equal(storage.getItem(`${FEED_RESUME_STORAGE_PREFIX}forYou`), null, 'a scroll event costs no storage write');
   memory.persist('forYou');
-  assert.deepEqual(JSON.parse(storage.getItem(`${FEED_RESUME_STORAGE_PREFIX}forYou`)), { index: 3, paperId: 'p3' });
+  assert.deepEqual(JSON.parse(storage.getItem(`${FEED_RESUME_STORAGE_PREFIX}forYou`)!), { index: 3, paperId: 'p3' });
 
   // The reload: a new memory over the same storage.
   const reloaded = createFeedResumeMemory({ storage });

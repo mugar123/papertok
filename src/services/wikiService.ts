@@ -2,7 +2,7 @@ interface WikiPage { index?: number; title?: string; extract?: string; thumbnail
 interface WikipediaPayload { query?: { pages?: Record<string, WikiPage> } }
 interface WikidataPayload { entities?: Record<string, { id?: string; sitelinks?: Record<string, { title?: string }> }> }
 interface WikiIds { wikidata?: unknown; wikipedia?: unknown }
-interface WikiEntity { ids?: WikiIds; _queryTopic?: boolean; _localTopic?: boolean }
+interface WikiEntity { id?: string; display_name?: string; ids?: WikiIds; _queryTopic?: boolean; _localTopic?: boolean }
 interface WikiIdentity { qid?: string; enwikiTitle?: string; signal?: AbortSignal }
 interface WikiOptions { expectedTitle?: string; entity?: WikiEntity | null; title?: string; alternateTitle?: string; signal?: AbortSignal; strictTitleMatch?: boolean }
 export interface WikiInfo { title: string; extract: string; thumbnail: string | null; url: string; language: string }

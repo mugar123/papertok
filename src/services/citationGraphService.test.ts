@@ -45,15 +45,15 @@ test('hydrates a graph paper before display while retaining its stable identity'
       openAccess: false,
     }],
   }).references[0];
-  const hydrated = await hydrateCitationGraphPaper(paper, {
-    fetchPapersByDois: async () => [{
+  const hydrated = await hydrateCitationGraphPaper(paper as import('../models/Paper.ts').Paper, {
+    fetchPapersByDois: async () => ([{
       id: 'W123',
       doi: 'https://doi.org/10.1000/ref',
       abstract: 'A sourced OpenAlex abstract.',
       journal: 'Journal of Tests',
       openAccess: false,
-      sources: { primary: 'openalex', enrichedBy: [] },
-    }],
+      sources: { primary: 'openalex', enrichedBy: [] as string[] },
+    }] as import('../models/Paper.ts').Paper[]),
     findOpenAccessCopy: async () => null,
   });
 
@@ -72,19 +72,19 @@ test('merges only confirmed open-access metadata and never invents an abstract',
     title: 'Reference',
     abstract: 'No abstract available.',
     openAccess: false,
-    sources: { primary: 'opencitations', enrichedBy: [] },
+    sources: { primary: 'opencitations', enrichedBy: [] as string[] },
   };
-  const hydrated = await hydrateCitationGraphPaper(paper, {
-    fetchPapersByDois: async () => [{
+  const hydrated = await hydrateCitationGraphPaper(paper as import('../models/Paper.ts').Paper, {
+    fetchPapersByDois: async () => ([{
       doi: '10.1000/ref',
       abstract: 'Resumen no disponible.',
       openAccess: false,
-    }],
+    }] as import('../models/Paper.ts').Paper[]),
     findOpenAccessCopy: async () => ({
       pdfUrl: 'https://repository.example/ref.pdf',
       accessSource: 'unpaywall',
       license: 'cc-by',
-    }),
+    } as NonNullable<Awaited<ReturnType<NonNullable<NonNullable<Parameters<typeof hydrateCitationGraphPaper>[1]>['findOpenAccessCopy']>>>>),
   });
 
   assert.equal(hydrated.abstract, 'No abstract available.');
@@ -103,7 +103,7 @@ test('merges only confirmed open-access metadata and never invents an abstract',
  * pair upstream twice is not free, and the second view must still be handed the
  * answer: the run that started the request is the one StrictMode tears down.
  */
-function jsonResponse(payload) {
+function jsonResponse(payload: { references: { id: string; doi: string; title: string; year: number; }[]; citations: never[]; counts: { references: number; citations: number; }; source: string; }) {
   return new Response(JSON.stringify(payload), { status: 200, headers: { 'content-type': 'application/json' } });
 }
 
@@ -131,7 +131,7 @@ test('two views asking for the same neighbourhood share one request', async () =
 
   assert.equal(calls, 1, 'the neighbourhood was fetched twice');
   assert.equal(first, second, 'the second view got a different object');
-  assert.equal(first.counts.references, 12);
+  assert.equal(first!.counts.references, 12);
 });
 
 test('a neighbourhood that failed is asked for again', async () => {
@@ -148,5 +148,5 @@ test('a neighbourhood that failed is asked for again', async () => {
   const recovered = await getCitationGraph(paper, 8, dependencies);
 
   assert.equal(calls, 2, 'the failure was remembered instead of retried');
-  assert.equal(recovered.counts.references, 12);
+  assert.equal(recovered!.counts.references, 12);
 });

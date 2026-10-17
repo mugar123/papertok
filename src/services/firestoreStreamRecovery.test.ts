@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-const read = async (path) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const read = async (path: string|URL) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
 
 test('SOURCE: the app registers one stream recovery, built on the SDK network toggle', async () => {
   const code = await read('./firebase.ts');
@@ -18,7 +18,7 @@ test('SOURCE: the interaction profile aggregate is read with patience, and a cac
   const code = await read('./interactionProfileStore.ts');
   const readAggregate = code.match(/async readAggregate\(\) \{[\s\S]*?\n {4}\},/);
   assert.ok(readAggregate, 'readAggregate is gone');
-  assert.ok(readAggregate[0].split('\n').filter((line) => line.trim()).length <= 12, 'the capture ran past readAggregate');
+  assert.ok(readAggregate[0].split('\n').filter((line: string) => line.trim()).length <= 12, 'the capture ran past readAggregate');
   assert.match(readAggregate[0], /patientRead\(\(\) => getDoc\(interactionProfileRef\(userId\)\), \{[\s\S]*isAnswer: documentIsAuthoritative/);
   // The bare read is gone: it never answered on a dead stream, and the feed
   // gave up on the account's likes for the session.

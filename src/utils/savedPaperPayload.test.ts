@@ -29,7 +29,7 @@ test('a field we do not have is left out, never nulled', () => {
   const payload = buildSavedPaperPayload({ id, title: bare.title }, SAVED_AT);
 
   for (const key of Object.keys(payload)) {
-    assert.notEqual(payload[key], null, `${key} is null, which the rules refuse`);
+    assert.notEqual(payload[key as keyof typeof payload], null, `${key} is null, which the rules refuse`);
   }
   for (const absent of ['authors', 'summary', 'doi', 'landingPageUrl', 'primaryCategory', 'published', 'arxivId']) {
     assert.equal(absent in payload, false, `${absent} must be absent, not null`);
@@ -59,11 +59,11 @@ test('everything present is carried, within the caps the rules set', () => {
     { ...full, authors: Array.from({ length: 40 }, (_, i) => `Author ${i}`) },
     SAVED_AT,
   );
-  assert.equal(many.authors.length, 5);
+  assert.equal(many.authors!.length, 5);
 
   // 1000 in the rules, 500 by convention here.
   const long = buildSavedPaperPayload({ ...full, summary: 'x'.repeat(4000) }, SAVED_AT);
-  assert.equal(long.summary.length, 500);
+  assert.equal(long.summary!.length, 500);
 });
 
 test('the abstract stands in for a missing summary', () => {
@@ -102,7 +102,7 @@ test('SOURCE: the builder emits exactly the fields the rules allow', async () =>
   const block = rules.slice(rules.indexOf('match /savedPapers/{paperId} {'));
   const allowed = block
     .slice(block.indexOf('hasOnly(['), block.indexOf('])'))
-    .match(/'([a-zA-Z]+)'/g)
+    .match(/'([a-zA-Z]+)'/g)!
     .map(entry => entry.replaceAll("'", ''));
 
   assert.ok(allowed.length > 5, 'expected to have parsed the rules allowlist');

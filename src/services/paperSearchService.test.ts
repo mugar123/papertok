@@ -7,6 +7,7 @@
  * `scripts/diagnostics/search-coverage-check.mjs`; this file pins the merge.
  */
 
+import type { Paper } from '../models/Paper.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -16,7 +17,7 @@ import {
 } from './paperSearchService.ts';
 import { OPENALEX_SEARCH_TYPES } from './adapters/OpenAlexAdapter.ts';
 
-const openAlexPaper = (id, title, extra = {}) => ({
+const openAlexPaper = (id: string, title: string, extra: Partial<Paper> & { citations?: number } = {}): Paper => ({
   id: `openalex:${id}`,
   title,
   abstract: extra.abstract || 'No abstract available.',
@@ -29,7 +30,7 @@ const openAlexPaper = (id, title, extra = {}) => ({
   sources: { primary: 'openalex', enrichedBy: [] },
 });
 
-const arxivPaper = (arxivId, title, extra = {}) => ({
+const arxivPaper = (arxivId: string, title: string, extra: Partial<Paper> & { citations?: number } = {}): Paper => ({
   id: arxivId,
   arxivId,
   title,
@@ -40,7 +41,7 @@ const arxivPaper = (arxivId, title, extra = {}) => ({
   sources: { primary: 'arxiv', enrichedBy: [] },
 });
 
-const providersWith = ({ openAlex = [], arxiv = [] } = {}) => ({
+const providersWith = ({ openAlex = [], arxiv = [] }: { openAlex?: Paper[]; arxiv?: Paper[] } = {}) => ({
   searchOpenAlex: async () => ({ papers: openAlex, total: openAlex.length }),
   searchArxiv: async () => arxiv,
 });
@@ -51,9 +52,9 @@ test('"llama 2": the paper OpenAlex cannot name arrives from arXiv and ranks fir
       openAlex: [
         // Starts with "Llama 2" too, and OpenAlex ranks it above everything
         // arXiv adds: only the covered share of the title separates the two.
-        openAlexPaper('W4385495736', "Llama 2: Early Adopters' Utilization of Meta's New Open-Source Pretrained Model", { citations: 31 }),
-        openAlexPaper('W4392504747', 'Systematic analysis of ChatGPT, Google search and Llama 2 for clinical decision support', { citations: 211 }),
-        openAlexPaper('W3166262177', 'Nanobodies from camelid mice and llamas neutralize SARS-CoV-2 variants', { citations: 253 }),
+        openAlexPaper('W4385495736', "Llama 2: Early Adopters' Utilization of Meta's New Open-Source Pretrained Model", { citations: 31 } as NonNullable<Parameters<typeof openAlexPaper>[2]> & Record<string, unknown>),
+        openAlexPaper('W4392504747', 'Systematic analysis of ChatGPT, Google search and Llama 2 for clinical decision support', { citations: 211 } as NonNullable<Parameters<typeof openAlexPaper>[2]> & Record<string, unknown>),
+        openAlexPaper('W3166262177', 'Nanobodies from camelid mice and llamas neutralize SARS-CoV-2 variants', { citations: 253 } as NonNullable<Parameters<typeof openAlexPaper>[2]> & Record<string, unknown>),
         openAlexPaper('W4392164233', 'Comparing the performance of ChatGPT GPT-4, Bard, and Llama-2 in the Taiwan Psychiatric Licensing Examination'),
       ],
       arxiv: [
@@ -76,8 +77,8 @@ test('"segment anything": the original from OpenAlex leads once conference paper
       openAlex: [
         openAlexPaper('W4390874575', 'Segment Anything', {
           doi: '10.1109/iccv51070.2023.00371', citations: 10567, authors: [{ name: 'Alexander Kirillov' }],
-        }),
-        openAlexPaper('W4391109864', 'Segment anything in medical images', { doi: '10.1038/s41467-024-44824-z', citations: 2823 }),
+        } as NonNullable<Parameters<typeof openAlexPaper>[2]> & Record<string, unknown>),
+        openAlexPaper('W4391109864', 'Segment anything in medical images', { doi: '10.1038/s41467-024-44824-z', citations: 2823 } as NonNullable<Parameters<typeof openAlexPaper>[2]> & Record<string, unknown>),
         openAlexPaper('W4385481295', 'Segment anything model for medical image analysis: An experimental study'),
       ],
       arxiv: [
@@ -100,8 +101,8 @@ test('"FC-CLIP": found through its abstract from either side and kept as one pap
   const papers = await searchPapersAcrossSources('FC-CLIP', {
     providers: providersWith({
       openAlex: [
-        openAlexPaper('W2126518215', 'Respiratory sinus arrhythmia in humans: how breathing pattern modulates heart rate', { citations: 1107 }),
-        openAlexPaper('W2894280539', 'Multilevel Language and Vision Integration for Text-to-Clip Retrieval', { citations: 339 }),
+        openAlexPaper('W2126518215', 'Respiratory sinus arrhythmia in humans: how breathing pattern modulates heart rate', { citations: 1107 } as NonNullable<Parameters<typeof openAlexPaper>[2]> & Record<string, unknown>),
+        openAlexPaper('W2894280539', 'Multilevel Language and Vision Integration for Text-to-Clip Retrieval', { citations: 339 } as NonNullable<Parameters<typeof openAlexPaper>[2]> & Record<string, unknown>),
         openAlexPaper('W4385645314', title, { doi: '10.48550/arxiv.2308.02487', abstract, authors: [{ name: 'Qihang Yu' }] }),
       ],
       arxiv: [
@@ -122,7 +123,7 @@ test('the near-exact title ranks first wherever the provider put it', async () =
     {
       providers: providersWith({
         openAlex: [
-          openAlexPaper('W4391547487', 'Towards Open Vocabulary Learning: A Survey', { citations: 159 }),
+          openAlexPaper('W4391547487', 'Towards Open Vocabulary Learning: A Survey', { citations: 159 } as NonNullable<Parameters<typeof openAlexPaper>[2]> & Record<string, unknown>),
           openAlexPaper('W4385645314', title, { doi: '10.48550/arxiv.2308.02487' }),
         ],
         arxiv: [],

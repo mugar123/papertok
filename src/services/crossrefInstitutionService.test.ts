@@ -8,7 +8,7 @@ import {
 
 test('builds a searchable institution author fallback from Crossref works', async () => {
   let requestedUrl = '';
-  const request = async (url) => {
+  const request = async (url: string) => {
     requestedUrl = url;
     return new Response(JSON.stringify({
       message: {
@@ -94,11 +94,11 @@ test('the peer-review filter keeps a refereed Crossref work that is not a journa
 });
 
 test('derives the canonical peerReviewed field from the Crossref work type', () => {
-  const peerReviewedFor = (type) => mapCrossrefInstitutionWork({
+  const peerReviewedFor = (type: string) => mapCrossrefInstitutionWork({
     DOI: '10.1000/example',
     title: ['A work of some type'],
     type,
-  }).peerReviewed;
+  })!.peerReviewed;
 
   assert.equal(peerReviewedFor('journal-article'), true);
   assert.equal(peerReviewedFor('proceedings-article'), true);
@@ -125,8 +125,8 @@ test('a subscription article is not open access because its text-mining licence 
   });
 
   // Unknown, not closed: Crossref has no open licence, which is not a paywall.
-  assert.equal(paper.openAccess, undefined);
-  assert.equal(paper.license, undefined);
+  assert.equal(paper!.openAccess, undefined);
+  assert.equal(paper!.license, undefined);
 });
 
 test('an open version of record keeps its Creative Commons licence, not the one listed first', () => {
@@ -137,8 +137,8 @@ test('an open version of record keeps its Creative Commons licence, not the one 
     license: OPEN_AFTER_TDM_LICENCES,
   });
 
-  assert.equal(paper.openAccess, true);
-  assert.equal(paper.license, 'http://creativecommons.org/licenses/by/4.0/');
+  assert.equal(paper!.openAccess, true);
+  assert.equal(paper!.license, 'http://creativecommons.org/licenses/by/4.0/');
 });
 
 test('does not record a Crossref preprint as published', () => {
@@ -148,6 +148,6 @@ test('does not record a Crossref preprint as published', () => {
     type: 'posted-content',
   });
 
-  assert.equal(preprint.publicationType, 'preprint');
-  assert.equal(preprint.publicationStatus, 'preprint');
+  assert.equal(preprint!.publicationType, 'preprint');
+  assert.equal(preprint!.publicationStatus, 'preprint');
 });

@@ -7,7 +7,7 @@ import {
   CREATE_LIST_FORM_INITIAL,
 } from './createListFormModel.ts';
 
-const typed = name => createListFormReducer(CREATE_LIST_FORM_INITIAL, { type: 'name', value: name });
+const typed = (name: string) => createListFormReducer(CREATE_LIST_FORM_INITIAL, { type: 'name', value: name });
 
 test('a blank name cannot be submitted, spaces included', () => {
   for (const name of ['', ' ', '\t  \n']) {
@@ -93,7 +93,7 @@ test('the colour survives everything except reopening', () => {
 
 test('an action nobody defined leaves the state exactly as it was', () => {
   const state = typed('T');
-  assert.equal(createListFormReducer(state, { type: 'nonsense' }), state);
+  assert.equal(createListFormReducer(state, { type: 'nonsense' as never }), state);
 });
 
 /* --- The two sites that create a list share one window ---------------------

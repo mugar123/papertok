@@ -66,7 +66,7 @@ test('an entry cannot be built without the two fields it exists to hold', () => 
 
 test('the entry lives under the uid, matching its profile', () => {
   assert.equal(
-    userSearchReference('db', 'user-1', (...parts) => parts.join('/')),
+    userSearchReference('db' as string & Parameters<typeof userSearchReference>[0], 'user-1', (...parts: unknown[]) => parts.join('/') as string & ReturnType<NonNullable<Parameters<typeof userSearchReference>[2]>>),
     `db/${USER_SEARCH_COLLECTION}/user-1`,
   );
 });

@@ -1,5 +1,5 @@
 import type { Paper } from '../models/Paper.ts';
-import type { PaperSearchFilters, PaperSearchResult } from './adapters/index.ts';
+import type { PaperSearchFilters } from './adapters/index.ts';
 
 import { OPENALEX_SEARCH_TYPES, OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
 import { searchPapers as searchArxivPapers } from './arxivService.ts';
@@ -42,7 +42,12 @@ export const DEFAULT_PAPER_SEARCH_PROVIDERS = Object.freeze({
   searchArxiv: (query: string, limit: number) => searchArxivPapers(query, 0, limit),
 });
 
-function papersFrom(value: Paper[] | PaperSearchResult) {
+interface PaperSearchProviders {
+  searchOpenAlex(query: string, options: PaperSearchFilters): Promise<Paper[] | { papers: Paper[] } | void>;
+  searchArxiv(query: string, limit: number): Promise<Paper[] | { papers: Paper[] } | void>;
+}
+
+function papersFrom(value: Paper[] | { papers: Paper[] } | void) {
   if (Array.isArray(value)) return value;
   return Array.isArray(value?.papers) ? value.papers : [];
 }
@@ -59,7 +64,7 @@ export async function searchPapersAcrossSources(query: unknown, {
   arxivTimeoutMs = ARXIV_SEARCH_TIMEOUT_MS,
   arxivLimit = ARXIV_SEARCH_LIMIT,
   limit = PAPER_SEARCH_LIMIT,
-}: { signal?: AbortSignal; providers?: typeof DEFAULT_PAPER_SEARCH_PROVIDERS; arxivTimeoutMs?: number; arxivLimit?: number; limit?: number } = {}) {
+}: { signal?: AbortSignal; providers?: PaperSearchProviders; arxivTimeoutMs?: number; arxivLimit?: number; limit?: number } = {}) {
   const term = String(query || '').trim();
   if (!term) return [];
 

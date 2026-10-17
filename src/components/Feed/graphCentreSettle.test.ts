@@ -27,8 +27,8 @@ import { readFile } from 'node:fs/promises';
  * after the first frame -- and this is the one place it was broken.
  */
 
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-const read = async (path) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const read = async (path: string|URL) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
 
 test('the provenance row holds its 30px from the first frame, so the plot never resizes under the centre', async () => {
   const jsx = await read('./RelatedPapersSheet.tsx');

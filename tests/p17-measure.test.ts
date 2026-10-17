@@ -29,11 +29,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+import { initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import {
   collection, doc, getDoc, getDocs, getCountFromServer, limit, query,
   setDoc, updateDoc, where, writeBatch, serverTimestamp,
 } from 'firebase/firestore';
+import type { FirebaseFirestore } from '@firebase/firestore-types';
 
 const ALICE = 'alice-uid';
 const BOB = 'bob-uid';
@@ -44,7 +45,7 @@ const SHIPPING = await readFile(new URL('../firestore.rules', import.meta.url), 
 // Candidate construction: string surgery with asserted anchors.
 // ---------------------------------------------------------------------------
 
-function splice(rules, anchor, replacement, label) {
+function splice(rules: string, anchor: string, replacement: string, label: string) {
   assert.ok(rules.includes(anchor), `anchor not found verbatim: ${label}`);
   assert.equal(rules.split(anchor).length, 2, `anchor not unique: ${label}`);
   return rules.replace(anchor, replacement);
@@ -186,7 +187,7 @@ CANDIDATE = splice(
 // ---------------------------------------------------------------------------
 
 /** Rewrites validPinnedLists so it really validates `size` entries. */
-function withPinCap(rules, size) {
+function withPinCap(rules: string, size: number) {
   const body = [
     '    function validPinnedLists(entries) {',
     '      return entries is list',
@@ -202,7 +203,7 @@ function withPinCap(rules, size) {
 }
 
 /** Rewrites validShowcaseShelf so it really validates `size` cards. */
-function withShelfCap(rules, size) {
+function withShelfCap(rules: string, size: number) {
   const body = [
     '    function validShowcaseShelf(entries) {',
     '      return entries is list',
@@ -217,10 +218,10 @@ function withShelfCap(rules, size) {
   return rules.replace(pattern, body);
 }
 
-const HOST = process.env.FIRESTORE_EMULATOR_HOST.split(':')[0];
-const PORT = Number(process.env.FIRESTORE_EMULATOR_HOST.split(':')[1]);
-const created = [];
-async function envFor(rules, key, attempt = 0) {
+const HOST = process.env.FIRESTORE_EMULATOR_HOST!.split(':')[0];
+const PORT = Number(process.env.FIRESTORE_EMULATOR_HOST!.split(':')[1]);
+const created: RulesTestEnvironment[] = [];
+async function envFor(rules: string, key: string, attempt = 0) {
   try {
     const env = await initializeTestEnvironment({
       projectId: `papertok-p17-${key}`,
@@ -232,7 +233,7 @@ async function envFor(rules, key, attempt = 0) {
     // The emulator intermittently answers 500 to loadRules under repeated
     // project creation; a retry with a fresh project id gets through.
     if (attempt < 3) return envFor(rules, `${key}r${attempt}`, attempt + 1);
-    console.log(`  [${key}] rules failed to load: ${String(error.message).slice(0, 300)}`);
+    console.log(`  [${key}] rules failed to load: ${String((error as Error).message).slice(0, 300)}`);
     throw error;
   }
 }
@@ -240,31 +241,31 @@ test.after(async () => {
   for (const env of created) await env.cleanup();
 });
 
-const shareId = n => n.toString(16).padStart(32, '0');
-const pins = count => Array.from({ length: count }, (_, i) => ({
+const shareId = (n: number) => n.toString(16).padStart(32, '0');
+const pins = (count: number) => Array.from({ length: count }, (_, i) => ({
   shareId: shareId(i), title: `List ${i}`, paperCount: 3,
 }));
-const cards = count => Array.from({ length: count }, (_, i) => ({
+const cards = (count: number) => Array.from({ length: count }, (_, i) => ({
   id: `arxiv:2608.${String(18000 + i)}`, title: `Paper ${i}`,
   authorsLine: 'A. Ada, B. Byron', year: 2026,
 }));
 
-async function allowed(run) {
+async function allowed(run: () => Promise<unknown>) {
   try { await run(); return true; } catch { return false; }
 }
 
-const likesShelf = db => doc(db, 'profileShowcase', ALICE, 'shelves', 'likes');
-const savedShelf = db => doc(db, 'profileShowcase', ALICE, 'shelves', 'saved');
+const likesShelf = (db: FirebaseFirestore) => doc(db, 'profileShowcase', ALICE, 'shelves', 'likes');
+const savedShelf = (db: FirebaseFirestore) => doc(db, 'profileShowcase', ALICE, 'shelves', 'saved');
 
 /**
  * Seeds Alice with `count` pins and the given profile extras; optionally a
  * search entry, live shelves, and a follows edge BOB -> ALICE.
  */
-async function seed(env, count, {
+async function seed(env: RulesTestEnvironment, count: number, {
   extras = {}, indexed = true, shelves = false, edge = false,
 } = {}) {
   await env.clearFirestore();
-  let createdAt = null;
+  let createdAt: unknown = null;
   await env.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
     for (let i = 0; i < Math.max(count, 1); i += 1) {
@@ -296,17 +297,17 @@ async function seed(env, count, {
         visibility: 'public', createdAt: new Date(), updatedAt: new Date(),
       });
     }
-    createdAt = (await getDoc(doc(db, 'userProfiles', ALICE))).data().createdAt;
+    createdAt = (await getDoc(doc(db, 'userProfiles', ALICE))).data()!.createdAt;
   });
   return createdAt;
 }
 
-const profileBody = (count, createdAt, extras = {}) => ({
+const profileBody = (count: number, createdAt: unknown, extras = {}) => ({
   handle: 'alice', displayName: 'Alice Ada', pinnedLists: pins(count),
   visibility: 'public', createdAt, updatedAt: serverTimestamp(), ...extras,
 });
 
-const ordinarySave = (db, count, createdAt, extras = {}) => {
+const ordinarySave = (db: FirebaseFirestore, count: number, createdAt: unknown, extras = {}) => {
   const batch = writeBatch(db);
   batch.set(doc(db, 'userProfiles', ALICE), profileBody(count, createdAt, extras));
   batch.set(doc(db, 'userSearch', ALICE), {
@@ -315,7 +316,7 @@ const ordinarySave = (db, count, createdAt, extras = {}) => {
   return batch.commit();
 };
 
-const renameAtCap = (db, count, createdAt, extras = {}) => {
+const renameAtCap = (db: FirebaseFirestore, count: number, createdAt: unknown, extras = {}) => {
   const batch = writeBatch(db);
   batch.delete(doc(db, 'handles', 'alice'));
   batch.set(doc(db, 'handles', 'ada'), { uid: ALICE, createdAt: serverTimestamp() });
@@ -329,7 +330,7 @@ const renameAtCap = (db, count, createdAt, extras = {}) => {
 };
 
 /** The new worst case: leave, delist and take both shelves down, one batch. */
-const privateExit = (db, count, createdAt, extras = {}) => {
+const privateExit = (db: FirebaseFirestore, count: number, createdAt: unknown, extras = {}) => {
   const batch = writeBatch(db);
   batch.set(doc(db, 'userProfiles', ALICE), {
     ...profileBody(count, createdAt, extras), visibility: 'private',
@@ -346,7 +347,7 @@ const privateExit = (db, count, createdAt, extras = {}) => {
 
 test('M1: at six pins, every legitimate write passes under the candidate', async () => {
   const env = await envFor(CANDIDATE, 'm1');
-  const runs = [
+  const runs: [string, Parameters<typeof seed>[2], (db: FirebaseFirestore, at: unknown) => Promise<void>][] = [
     ['ordinary save, no toggles touched', {}, (db, at) => ordinarySave(db, 6, at)],
     ['ordinary save, both shelves live', { shelves: true },
       (db, at) => ordinarySave(db, 6, at)],
@@ -373,9 +374,10 @@ test('M1: at six pins, every legitimate write passes under the candidate', async
 // ---------------------------------------------------------------------------
 
 test('M2: pin ceiling, shipping vs candidate', async () => {
-  const table = [];
+  type Row = { size: number; shipping: { save: boolean; rename: boolean }; candidate: { save: boolean; rename: boolean; exit: boolean } };
+  const table: Row[] = [];
   for (let size = 5; size <= 8; size += 1) {
-    const row = { size };
+    const row = { size } as Row;
     {
       const env = await envFor(withPinCap(SHIPPING, size), `m2s-${size}`);
       let createdAt = await seed(env, size);
@@ -407,7 +409,7 @@ test('M2: pin ceiling, shipping vs candidate', async () => {
     console.log(`  ${String(row.size).padStart(2)} pins   shipping: ${s.save ? 'ok' : 'NO'}/${s.rename ? 'ok' : 'NO'}`
       + `   candidate: ${c.save ? 'ok' : 'NO'}/${c.rename ? 'ok' : 'NO'}/${c.exit ? 'ok' : 'NO'}`);
   }
-  const ceiling = (pick) => table.filter(pick).map(r => r.size).pop() ?? 0;
+  const ceiling = (pick: (row: Row) => boolean) => table.filter(pick).map(r => r.size).pop() ?? 0;
   console.log(`  ceiling  shipping save/rename: ${ceiling(r => r.shipping.save)}/${ceiling(r => r.shipping.rename)}`
     + `   candidate save/rename/exit: ${ceiling(r => r.candidate.save)}`
     + `/${ceiling(r => r.candidate.rename)}/${ceiling(r => r.candidate.exit)}`);
@@ -444,26 +446,26 @@ test('M3: shelf ceiling, one shelf at N cards', async () => {
 test('M4: follows matrix under the candidate', async () => {
   const env = await envFor(CANDIDATE, 'm4');
 
-  const matrix = async (label, extras) => {
+  const matrix = async (label: string, extras: { showFollowers?: boolean; }) => {
     await seed(env, 0, { extras, edge: true });
     const cara = env.authenticatedContext(CARA).firestore();
     const aliceDb = env.authenticatedContext(ALICE).firestore();
     const bobDb = env.authenticatedContext(BOB).firestore();
     const anon = env.unauthenticatedContext().firestore();
 
-    const followersOf = db => getDocs(query(
+    const followersOf = (db: FirebaseFirestore) => getDocs(query(
       collection(db, 'follows'), where('targetUid', '==', ALICE), limit(30),
     ));
-    const followingOf = db => getDocs(query(
+    const followingOf = (db: FirebaseFirestore) => getDocs(query(
       collection(db, 'follows'), where('followerUid', '==', BOB), limit(30),
     ));
-    const followerCount = db => getCountFromServer(query(
+    const followerCount = (db: FirebaseFirestore) => getCountFromServer(query(
       collection(db, 'follows'), where('targetUid', '==', ALICE), limit(1000),
     ));
-    const followingCount = db => getCountFromServer(query(
+    const followingCount = (db: FirebaseFirestore) => getCountFromServer(query(
       collection(db, 'follows'), where('followerUid', '==', BOB), limit(1000),
     ));
-    const edgeGet = db => getDoc(doc(db, 'follows', `${BOB}_${ALICE}`)).then((snap) => {
+    const edgeGet = (db: FirebaseFirestore) => getDoc(doc(db, 'follows', `${BOB}_${ALICE}`)).then((snap) => {
       if (!snap.exists()) throw new Error('missing');
     });
 
@@ -532,7 +534,7 @@ test('M5: shelf lifecycle under the candidate', async () => {
 
   // Turning it off is deleting the shelf.
   const turnOff = await allowed(() => deleteShelf(db));
-  function deleteShelf(database) {
+  function deleteShelf(database: FirebaseFirestore) {
     const batch = writeBatch(database);
     batch.delete(likesShelf(database));
     return batch.commit();

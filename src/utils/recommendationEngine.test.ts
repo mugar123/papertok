@@ -88,7 +88,7 @@ test('semantic and citation signals contribute to score', () => {
 });
 
 test('category signals preserve personalization without OpenAlex enrichment', () => {
-  const categoryAffinities = {};
+  const categoryAffinities: Record<string, number> = {};
   const paper = {
     id: 'paper-local',
     primaryCategory: 'physics.optics',
@@ -164,7 +164,7 @@ test('stable followed entities boost papers and cap the combined signal', () => 
     now: NOW,
     followedEntities: [
       { type: 'author', canonicalId: 'A1', displayName: 'Ada' },
-      { type: 'topic', canonicalId: 'physics.optics', displayName: 'Optics' },
+      { type: 'topic' as const, canonicalId: 'physics.optics', displayName: 'Optics' },
       { type: 'institution', canonicalId: 'I2', displayName: 'Institute' },
       { type: 'project', canonicalId: 'project-3', displayName: 'Project' },
     ],
@@ -176,7 +176,7 @@ test('stable followed entities boost papers and cap the combined signal', () => 
 
 test('matches followed topics directly across categories, concepts, topics, and keywords', () => {
   const queryFollow = {
-    type: 'topic',
+    type: 'topic' as const,
     canonicalId: 'query-1234abcd',
     displayName: 'Transcriptómica espacial',
     metadata: {
@@ -186,16 +186,16 @@ test('matches followed topics directly across categories, concepts, topics, and 
     },
   };
   const categoryFollow = {
-    type: 'topic',
+    type: 'topic' as const,
     canonicalId: 'query-8765abcd',
     displayName: 'Optics',
     metadata: { query: 'Photonics', categoryIds: ['physics.optics'] },
   };
   const semanticPapers = [
     { categories: ['physics.optics'], follow: categoryFollow },
-    { concepts: [{ displayName: 'Spatial transcriptomics' }], follow: queryFollow },
-    { topics: [{ label: 'Spatial transcriptomics' }], follow: queryFollow },
-    { keywords: ['Spatial transcriptomics'], follow: queryFollow },
+    { concepts: [({ displayName: 'Spatial transcriptomics' } as import('../models/Paper.ts').PaperSubject & { displayName: string })], follow: queryFollow },
+    { topics: [({ label: 'Spatial transcriptomics' } as import('../models/Paper.ts').PaperSubject & { label: string })], follow: queryFollow },
+    { keywords: [('Spatial transcriptomics' as string & import('../models/Paper.ts').PaperSubject)], follow: queryFollow },
   ];
 
   semanticPapers.forEach((paper, index) => {
@@ -231,15 +231,15 @@ test('diversified shuffle limits consecutive papers from the same category', () 
 });
 
 test('diversified shuffle recalculates scores from the evolving recent queue', () => {
-  const observedCounts = [];
+  const observedCounts: Record<string, number>[] = [];
   const initialPapers = Array.from({ length: 4 }, (_, index) => ({
     id: `published-${index}`,
     primaryCategory: 'med.gen',
-    publicationStatus: 'published',
+    publicationStatus: 'published' as const,
   }));
   const papers = [
-    { id: 'preprint', primaryCategory: 'med.onco', publicationStatus: 'preprint' },
-    { id: 'published', primaryCategory: 'med.cardio', publicationStatus: 'published' },
+    { id: 'preprint', primaryCategory: 'med.onco', publicationStatus: 'preprint' as const },
+    { id: 'published', primaryCategory: 'med.cardio', publicationStatus: 'published' as const },
   ];
 
   diversifiedWeightedShuffle(papers, {
@@ -247,8 +247,8 @@ test('diversified shuffle recalculates scores from the evolving recent queue', (
     random: () => 0,
     scorePaper: (paper, recentPropsCount) => {
       observedCounts.push({ ...recentPropsCount });
-      paper._dynamicScore = 1;
-      paper._debugScore = {};
+      (paper as Partial<import('../models/Paper.ts').Paper>)._dynamicScore = 1;
+      (paper as Partial<import('../models/Paper.ts').Paper>)._debugScore = {};
     },
   });
 
@@ -281,7 +281,7 @@ test('the diversified shuffle does not re-score the whole pool on every iteratio
   const papers = Array.from({ length: 60 }, (_, index) => ({
     id: `budget-${index}`,
     primaryCategory: `cat.${index % 5}`,
-    publicationStatus: index % 3 === 0 ? 'preprint' : 'published',
+    publicationStatus: index % 3 === 0 ? 'preprint' as const : 'published' as const,
     openAccess: index % 2 === 0,
     sourceType: index % 4 === 0 ? 'conference' : 'journal',
     published: '2026-06-01T00:00:00Z',
@@ -294,7 +294,7 @@ test('the diversified shuffle does not re-score the whole pool on every iteratio
   // The production seam: FeedContext injects `applyRecommendationScore` bound to
   // a context it rebuilds on every call, with only `recentPropsCount` changing.
   const context = {
-    followedEntities: [{ type: 'topic', canonicalId: 'T-quantum', displayName: 'Quantum optics' }],
+    followedEntities: [{ type: 'topic' as const, canonicalId: 'T-quantum', displayName: 'Quantum optics' }],
     now: NOW,
   };
   const shuffled = diversifiedWeightedShuffle(papers, {

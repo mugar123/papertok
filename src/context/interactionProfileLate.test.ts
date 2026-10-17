@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 test('SOURCE: a profile that lands after the feed budget still applies, the same way as one in time', async () => {
   const code = stripComments(await readFile(new URL('./FeedContext.tsx', import.meta.url), 'utf8'));

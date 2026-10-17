@@ -7,20 +7,20 @@ const HOUR = 60 * 60 * 1000;
 
 // The cache is module state that outlives each test, so every test asks about
 // its own DOI or domain.
-function institution(domain, extra = {}) {
+function institution(domain: string, extra = {}) {
   return { domain, rorId: null, name: domain, acronym: null, entityId: null, verifiedAt: null, ...extra };
 }
 
 /** A Worker that answers the given responses in turn, recording each URL. */
-function worker(...responses) {
-  const urls = [];
+function worker(...responses: (Error | { status: number; body: unknown })[]) {
+  const urls: (string | URL)[] = [];
   return {
     urls,
-    request: async (url) => {
+    request: async (url: string | URL) => {
       urls.push(url);
       const next = responses.length > 1 ? responses.shift() : responses[0];
       if (next instanceof Error) throw next;
-      return new Response(JSON.stringify(next.body), { status: next.status });
+      return new Response(JSON.stringify(next!.body), { status: next!.status });
     },
   };
 }
@@ -94,7 +94,7 @@ test('the same paper asked twice at once costs one request', async () => {
     findInstitutionAccess('10.1000/SHARED', institution('shared.es'), { ...api, apiBase: API }),
   ]);
   assert.equal(api.urls.length, 1);
-  assert.equal(first.status, 'entitled');
+  assert.equal(first!.status, 'entitled');
   assert.equal(second, first);
 });
 
@@ -117,7 +117,7 @@ test('failures are answered with null and asked again next time', async () => {
     const doi = `10.1000/flaky-${index}`;
     const api = worker(failure, ENTITLED);
     assert.equal(await findInstitutionAccess(doi, domain, { ...api, apiBase: API }), null);
-    assert.equal((await findInstitutionAccess(doi, domain, { ...api, apiBase: API })).status, 'entitled');
+    assert.equal((await findInstitutionAccess(doi, domain, { ...api, apiBase: API }))!.status, 'entitled');
     assert.equal(api.urls.length, 2);
   }
 });
@@ -147,14 +147,14 @@ const SERVICES = {
   },
 };
 
-function servicesAnswer(partial, unchecked) {
+function servicesAnswer(partial: boolean, unchecked?: string|number) {
   return { status: 200, body: { services: [{ id: 'jstor', name: 'JSTOR', publisher: 'ITHAKA', url: null, monogram: 'JS', color: '#990000', collection: null }], partial, unchecked } };
 }
 
 test('an unchecked count is a non-negative integer, zero when missing or malformed', async () => {
   for (const [index, [raw, expected]] of [[undefined, 0], [-2, 0], [1.5, 0], ['4', 0], [0, 0], [5, 5]].entries()) {
     const api = worker(servicesAnswer(false, raw));
-    assert.equal((await findInstitutionServices(institution(`count-${index}.es`), { ...api, apiBase: API })).unchecked, expected);
+    assert.equal((await findInstitutionServices(institution(`count-${index}.es`), { ...api, apiBase: API }))!.unchecked, expected);
   }
 });
 
@@ -184,7 +184,7 @@ test('keeps a complete platform list for a week and a partial one for an hour', 
   const partial = worker(servicesAnswer(true));
 
   await findInstitutionServices(institution('complete.es'), { ...complete, apiBase: API });
-  assert.equal((await findInstitutionServices(institution('partial.es'), { ...partial, apiBase: API })).partial, true);
+  assert.equal((await findInstitutionServices(institution('partial.es'), { ...partial, apiBase: API }))!.partial, true);
 
   t.mock.timers.tick(HOUR - 1);
   await findInstitutionServices(institution('complete.es'), { ...complete, apiBase: API });
@@ -207,12 +207,12 @@ test('keeps a complete platform list for a week and a partial one for an hour', 
 test('a partial list is served from memory within its hour; only a failure is asked again at once', async () => {
   const partial = worker(servicesAnswer(true), servicesAnswer(false));
   await findInstitutionServices(institution('retry.es'), { ...partial, apiBase: API });
-  assert.equal((await findInstitutionServices(institution('retry.es'), { ...partial, apiBase: API })).partial, true);
+  assert.equal((await findInstitutionServices(institution('retry.es'), { ...partial, apiBase: API }))!.partial, true);
   assert.equal(partial.urls.length, 1);
 
   const failing = worker({ status: 502, body: { code: 'ACCESS_LOOKUP_UNAVAILABLE' } }, servicesAnswer(false));
   assert.equal(await findInstitutionServices(institution('retry-fail.es'), { ...failing, apiBase: API }), null);
-  assert.equal((await findInstitutionServices(institution('retry-fail.es'), { ...failing, apiBase: API })).partial, false);
+  assert.equal((await findInstitutionServices(institution('retry-fail.es'), { ...failing, apiBase: API }))!.partial, false);
   assert.equal(failing.urls.length, 2);
 });
 
@@ -240,7 +240,7 @@ test('an answer already in hand is there without waiting; one still to ask, a fa
   await findInstitutionServices(institution('known-unsupported.es'), {
     ...worker({ status: 404, body: { code: 'INSTITUTION_NOT_SUPPORTED' } }), apiBase: API,
   });
-  assert.equal(knownInstitutionServices(institution('known-unsupported.es')).unsupported, true);
+  assert.equal(knownInstitutionServices(institution('known-unsupported.es'))!.unsupported, true);
 });
 
 test('a library the Worker cannot check is said so, not asked again, and not reported as empty-handed', async () => {
@@ -263,7 +263,7 @@ test('a failed platform check is null and asked again next time', async () => {
     const domain = institution(`down-${index}.es`);
     const api = worker(failure, servicesAnswer(false));
     assert.equal(await findInstitutionServices(domain, { ...api, apiBase: API }), null);
-    assert.equal((await findInstitutionServices(domain, { ...api, apiBase: API })).services.length, 1);
+    assert.equal((await findInstitutionServices(domain, { ...api, apiBase: API }))!.services.length, 1);
     assert.equal(api.urls.length, 2);
   }
 });

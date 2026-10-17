@@ -14,25 +14,25 @@ test('maps confirmed NIH iCite zero citations separately from unknown metadata',
     provisional: true,
   });
 
-  assert.equal(metrics.pmid, '123456');
-  assert.equal(metrics.doi, '10.1000/example');
-  assert.equal(metrics.citationCount, 0);
-  assert.equal(metrics.citationCountKnown, true);
-  assert.equal(metrics.iciteMetrics.relativeCitationRatio, null);
-  assert.equal(metrics.iciteMetrics.nihPercentile, 17.5);
+  assert.equal(metrics!.pmid, '123456');
+  assert.equal(metrics!.doi, '10.1000/example');
+  assert.equal(metrics!.citationCount, 0);
+  assert.equal(metrics!.citationCountKnown, true);
+  assert.equal(metrics!.iciteMetrics!.relativeCitationRatio, null);
+  assert.equal(metrics!.iciteMetrics!.nihPercentile, 17.5);
 });
 
 test('merges iCite metrics only into the matching PubMed paper', () => {
   const papers = [
-    { id: 'pmid:1', pmid: '1', title: 'Matched', sources: { primary: 'pubmed', enrichedBy: [] } },
-    { id: 'arxiv:1', title: 'Unmatched', sources: { primary: 'arxiv', enrichedBy: [] } },
+    { id: 'pmid:1', pmid: '1', title: 'Matched', sources: { primary: 'pubmed', enrichedBy: [] as string[] } },
+    { id: 'arxiv:1', title: 'Unmatched', sources: { primary: 'arxiv', enrichedBy: [] as string[] } },
   ];
-  const merged = mergeICiteEnrichment(papers, {
+  const merged = mergeICiteEnrichment((papers as import('../models/Paper.ts').Paper[]), {
     1: { pmid: '1', citationCount: 9, citationCountKnown: true, iciteMetrics: { nihPercentile: 80 } },
   });
 
   assert.equal(merged[0].citationCount, 9);
-  assert.equal(merged[0].iciteMetrics.nihPercentile, 80);
+  assert.equal(merged[0].iciteMetrics!.nihPercentile, 80);
   assert.ok(merged[0].sources.enrichedBy.includes('icite'));
   assert.equal(merged[1], papers[1]);
 });
@@ -43,11 +43,11 @@ test('paper identity survives a late iCite merge that adds nothing new', () => {
   // object, or memo(PaperCard) and its IntersectionObserver (keyed on `paper`)
   // get torn down for a card whose content never actually moved.
   const untouched = {
-    id: 'arxiv:1', pmid: '', title: 'No pmid', sources: { primary: 'arxiv', enrichedBy: [] },
+    id: 'arxiv:1', pmid: '', title: 'No pmid', sources: { primary: 'arxiv', enrichedBy: [] as string[] },
   };
   const realChange = {
     id: 'pmid:2', pmid: '2', title: 'Real change', citationCount: 0, citationCountKnown: false,
-    sources: { primary: 'pubmed', enrichedBy: [] },
+    sources: { primary: 'pubmed', enrichedBy: [] as string[] },
   };
   const noopChange = {
     id: 'pmid:3',
@@ -65,7 +65,7 @@ test('paper identity survives a late iCite merge that adds nothing new', () => {
     peerReviewed: false,
   };
 
-  const result = mergeICiteEnrichment([untouched, realChange, noopChange], {
+  const result = mergeICiteEnrichment(([untouched, realChange, noopChange] as import('../models/Paper.ts').Paper[]), {
     2: { citationCount: 9, citationCountKnown: true },
     3: { citationCount: 9, citationCountKnown: true, iciteMetrics: { nihPercentile: 80 } },
   });

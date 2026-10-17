@@ -1,7 +1,7 @@
 declare const navigator: { onLine?: boolean };
 declare const window: { addEventListener(type: string, listener: () => void): void; removeEventListener(type: string, listener: () => void): void };
 
-type StallRecovery = (attempt: number) => void | Promise<unknown>;
+type StallRecovery = (attempt: number) => unknown;
 export interface PatientReadOptions<T> {
   attempts?: number;
   ms?: number;
@@ -16,8 +16,8 @@ export interface PatientReadOptions<T> {
   onStall?: StallRecovery | null;
   checkOffline?: () => boolean;
   subscribeOnline?: (listener: () => void) => () => void;
-  setTimer?: typeof setTimeout;
-  clearTimer?: typeof clearTimeout;
+  setTimer?: (callback: () => void, delay: number) => ReturnType<typeof setTimeout> | number;
+  clearTimer?: (timer: ReturnType<typeof setTimeout> | number) => void;
 }
 
 /**
@@ -254,9 +254,9 @@ export function patientRead<T>(makeAttempt: () => T | PromiseLike<T>, options: P
     let timedOut = false;
     let lateDelivered = false;
     let stopped = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    let stallTimer: ReturnType<typeof setTimeout> | null = null;
+    let timer: ReturnType<typeof setTimeout> | number | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | number | null = null;
+    let stallTimer: ReturnType<typeof setTimeout> | number | null = null;
     let releaseOnline: (() => void) | null = null;
     let retries = 0;
     let lastTransient: unknown = null;
@@ -390,7 +390,7 @@ export function patientRead<T>(makeAttempt: () => T | PromiseLike<T>, options: P
           stallTimer = null;
           if (stopped || checkOffline()) return;
           try {
-            const outcome = onStall(attemptNumber);
+            const outcome = onStall(attemptNumber) as { catch?: (reject: () => void) => unknown } | null | undefined;
             if (outcome && typeof outcome.catch === 'function') outcome.catch(() => {});
           } catch {
             // A recovery that throws has nothing to add to a read that is

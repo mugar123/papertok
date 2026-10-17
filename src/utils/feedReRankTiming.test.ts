@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { RERANK_MAX_WAIT_MS, RERANK_SCROLL_QUIET_MS, reRankHoldMs } from './feedReRankTiming.ts';
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 test('a feed that has not moved for the quiet window is re-ranked at once', () => {
   assert.equal(reRankHoldMs({ now: 10_000, scrolledAt: 10_000 - RERANK_SCROLL_QUIET_MS, requestedAt: 9_900 }), 0);

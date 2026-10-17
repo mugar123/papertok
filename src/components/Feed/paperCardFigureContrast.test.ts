@@ -31,10 +31,10 @@ const VARIABLES_CSS = new URL('../../styles/variables.css', import.meta.url);
 const FEED_CSS = new URL('./PaperCard.css', import.meta.url);
 
 /** Comments name selectors, properties and colours in prose; matching them would invent both sides. */
-const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, '');
 
 /** The declarations of one rule, by exact selector. */
-function ruleBody(css, selector) {
+function ruleBody(css: string, selector: string) {
   const pattern = new RegExp(`(?:^|[};])\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`);
   const match = css.match(pattern);
   assert.ok(match, `expected a \`${selector}\` rule in the stylesheet`);
@@ -46,7 +46,7 @@ function ruleBody(css, selector) {
  * `:root[data-theme='dark']` only overrides, so a token declared once in
  * `:root` and never again is deliberately shared by the two.
  */
-function themeBlock(css, selector) {
+function themeBlock(css: string, selector: string) {
   const start = css.indexOf(selector);
   assert.ok(start >= 0, `expected a \`${selector}\` block in variables.css`);
   const open = css.indexOf('{', start);
@@ -55,13 +55,13 @@ function themeBlock(css, selector) {
   return css.slice(open + 1, end);
 }
 
-function declaration(body, property) {
+function declaration(body: string, property: string) {
   const match = body.match(new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`));
   return match ? match[1].trim() : null;
 }
 
 /** `#rgb` / `#rrggbb` to sRGB bytes. The palette is hex throughout. */
-function parseHex(value) {
+function parseHex(value: string) {
   const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(value).trim());
   assert.ok(hex, `expected a hex colour, got \`${value}\``);
   const digits = hex[1].length === 3 ? [...hex[1]].map(d => d + d).join('') : hex[1];
@@ -72,16 +72,16 @@ function parseHex(value) {
  * Resolve a token to its value on one side, falling back to the light block —
  * which is what the cascade does for anything the dark block leaves alone.
  */
-function token(name, side, light) {
+function token(name: string, side: string, light: string) {
   const value = declaration(side, name) ?? declaration(light, name);
   assert.ok(value, `expected \`${name}\` to be defined`);
   return value;
 }
 
 /** `opacity` composites in sRGB space, over whatever is behind. */
-const over = (top, bottom, alpha) => top.map((c, i) => alpha * c + (1 - alpha) * bottom[i]);
+const over = (top: number[], bottom: number[], alpha: number) => top.map((c: number, i: number) => alpha * c + (1 - alpha) * bottom[i]);
 
-function relativeLuminance([r, g, b]) {
+function relativeLuminance([r, g, b]: number[]) {
   const [R, G, B] = [r, g, b].map(c => {
     const v = c / 255;
     return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
@@ -89,7 +89,7 @@ function relativeLuminance([r, g, b]) {
   return 0.2126 * R + 0.7152 * G + 0.0722 * B;
 }
 
-function contrast(a, b) {
+function contrast(a: number[], b: number[]) {
   const [hi, lo] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
   return (hi + 0.05) / (lo + 0.05);
 }
@@ -100,7 +100,7 @@ const sources = Promise.all([
 ]);
 
 /** What the reader actually sees: the plate and the ink, each composited over the page. */
-async function inkOnPlate(themeSelector) {
+async function inkOnPlate(themeSelector: string) {
   const [variables, feed] = await sources;
   const light = themeBlock(variables, ':root');
   const side = themeSelector === ':root' ? light : themeBlock(variables, themeSelector);
@@ -128,7 +128,7 @@ async function inkOnPlate(themeSelector) {
   return { ratio: contrast(plate, ink), plate, ink, page, alpha };
 }
 
-for (const [label, selector] of [['light', ':root'], ['dark', ":root[data-theme='dark']"]]) {
+for (const [label, selector] of [['light', ':root'], ['dark', ":root[data-theme='dark']"]] as const) {
   test(`black ink on a feed clipping stays legible in ${label}`, async () => {
     const { ratio } = await inkOnPlate(selector);
     assert.ok(

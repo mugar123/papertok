@@ -90,7 +90,7 @@ export function buildPdfModel({
     language: 'en',
     labels: { mine: copy.mine, ai: copy.ai },
     sections: sections.map(section => {
-      const label = section?.heading || kindLabels[section?.kind] || fallback;
+      const label = section?.heading || kindLabels[section?.kind as string] || fallback;
       return {
         label,
         // Solo para el titulillo (`buildBlocks`, abajo): el mismo tope que

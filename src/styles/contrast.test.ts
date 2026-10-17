@@ -10,8 +10,8 @@ const darkStart = css.indexOf(":root[data-theme='dark']")
 assert.ok(darkStart > 0, 'dark theme block not found in variables.css')
 const blocks = { light: css.slice(0, darkStart), dark: css.slice(darkStart) }
 
-function token(theme, name) {
-  const own = blocks[theme].match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6})`))
+function token(theme: string, name: string) {
+  const own = blocks[theme as keyof typeof blocks].match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6})`))
   if (own) return own[1]
   // Dark redefines only what changes; anything else falls through to light.
   const base = blocks.light.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6})`))
@@ -19,13 +19,13 @@ function token(theme, name) {
   return base[1]
 }
 
-function luminance(hex) {
+function luminance(hex: string) {
   const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
     .map(c => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
   return 0.2126 * r + 0.7152 * g + 0.0722 * b
 }
 
-function ratio(a, b) {
+function ratio(a: string, b: string) {
   const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
   return (hi + 0.05) / (lo + 0.05)
 }

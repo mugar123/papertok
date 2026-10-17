@@ -37,7 +37,7 @@ const RECOMMENDATION_LIMIT = 20;
  * @param {object} paper
  * @returns {Promise<string[]>} Array of recommended arXiv IDs
  */
-export async function getPaperRecommendations(paper: Partial<Paper>, { fetchRelated = getRelatedPapers } = {}): Promise<string[]> {
+export async function getPaperRecommendations(paper: Partial<Paper>, { fetchRelated = getRelatedPapers }: { fetchRelated?: (paper: Partial<Paper>, limit: number) => Promise<{ arxivId?: string | null }[]> } = {}): Promise<string[]> {
   const paperId = getSemanticScholarPaperId(paper);
   if (!paperId) return [];
   const cacheKey = `rec_${paperId}`;

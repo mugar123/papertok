@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 // Comments are stripped first (convention of ce139ce).
-const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const stripComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 test('SOURCE: a new account that signed in from a public page is sent to the onboarding, with the page as the way back', async () => {
   // The public routes are not behind ProtectedRoute, and their doors (like,
@@ -35,7 +35,7 @@ test('SOURCE: a new account that signed in from a public page is sent to the onb
   // the link to /feed, which runs the onboarding itself.
   const NO_DOOR = ['*'];
   const declared = code.split(/<Route\b/).slice(1)
-    .map(chunk => ({
+    .map((chunk: string) => ({
       path: (chunk.match(/path="([^"]*)"/) || [])[1],
       guarded: chunk.split(/<\/Route>|\/>/)[0].includes('ProtectedRoute'),
     }))

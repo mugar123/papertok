@@ -1,3 +1,4 @@
+import type { InteractionDocument, InteractionDocumentData } from './interactionProfile.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -27,9 +28,9 @@ const NOW = Date.parse('2026-08-19T12:00:00.000Z');
  * interactions subcollection. The incremental aggregate has to reproduce this,
  * because reproducing it is what "the ranking does not change" means.
  */
-function legacyFullScan(documents, now) {
-  const affinities = {};
-  const cooldowns = {};
+function legacyFullScan(documents: InteractionDocument[], now: number) {
+  const affinities: Record<string, number> = {};
+  const cooldowns: Record<string, number> = {};
 
   documents.forEach(({ data }) => {
     const category = data.paperCategory;
@@ -77,7 +78,7 @@ function legacyFullScan(documents, now) {
   return { affinities, cooldowns };
 }
 
-function makeDocuments(count, { spanDays = 30, seed = 1 } = {}) {
+function makeDocuments(count: number, { spanDays = 30, seed = 1 } = {}) {
   const categories = ['cs.AI', 'cs.LG', 'quant-ph', 'math.NT', 'q-bio.NC'];
   let state = seed;
   const random = () => {
@@ -87,7 +88,7 @@ function makeDocuments(count, { spanDays = 30, seed = 1 } = {}) {
 
   return Array.from({ length: count }, (_unused, index) => {
     const ageDays = random() * spanDays;
-    const data = {
+    const data: InteractionDocumentData = {
       paperCategory: categories[index % categories.length],
       timestamp: new Date(NOW - ageDays * DAY_MS).toISOString(),
     };
@@ -103,7 +104,7 @@ function makeDocuments(count, { spanDays = 30, seed = 1 } = {}) {
   });
 }
 
-function assertMapsClose(actual, expected, tolerance, label) {
+function assertMapsClose(actual: Record<string,number>, expected: Record<string,number>, tolerance: number, label: string) {
   assert.deepEqual(
     Object.keys(actual).sort(),
     Object.keys(expected).sort(),
@@ -306,7 +307,7 @@ test('stays well inside the 1 MiB document limit at every cap', () => {
     for (let index = 0; index < cap; index += 1) {
       recordInteractionEvent(
         profile,
-        { paperId: `10.1000/journal.${name}.${index}`, kind, category: 'cs.AI' },
+        { paperId: `10.1000/journal.${name}.${index}`, kind: kind!, category: 'cs.AI' },
         NOW,
       );
     }

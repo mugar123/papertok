@@ -5,7 +5,7 @@ import { createStreamRecovery, MIN_STREAM_RECOVERY_INTERVAL_MS } from './streamR
 
 /** Records the order the SDK's two calls arrive in, and can make either fail. */
 function fakeSdk() {
-  const calls = [];
+  const calls: string[] = [];
   return {
     calls,
     disable: async () => { calls.push('disable'); },
@@ -44,7 +44,7 @@ test('with no network there is nothing to rebuild, and the interval is not spent
 });
 
 test('the SDK refusing the toggle is logged, never thrown into a screen', async () => {
-  const warnings = [];
+  const warnings: string[] = [];
   const recover = createStreamRecovery({
     disable: async () => { throw new Error('terminated'); },
     enable: async () => {},

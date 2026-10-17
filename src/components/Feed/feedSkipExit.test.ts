@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { skipExitSlot, SKIP_EXIT_MS } from '../../utils/feedSkipExit.ts';
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
-function bounded(code, from, to, label, maxLines) {
+function bounded(code: string, from: string, to: string, label: string, maxLines: number) {
   const start = code.indexOf(from);
   const end = code.indexOf(to, start + 1);
   assert.ok(start >= 0 && end > start, `expected to have found ${label}`);
@@ -39,7 +39,7 @@ test('a slot that cannot be worked out is null, not a guess', () => {
   assert.equal(skipExitSlot({ papers, paperId: null, cardHeight: 700 }), null);
   assert.equal(skipExitSlot({ papers, paperId: 'a', cardHeight: 0 }), null, 'a container that has not been measured');
   assert.equal(skipExitSlot({ papers, paperId: 'a', cardHeight: NaN }), null);
-  assert.equal(skipExitSlot({ papers: null, paperId: 'a', cardHeight: 700 }), null);
+  assert.equal(skipExitSlot({ papers: null!, paperId: 'a', cardHeight: 700 }), null);
 });
 
 test('the exit is short enough to stay out of the way', () => {

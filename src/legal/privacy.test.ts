@@ -13,9 +13,9 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = new URL('../../', import.meta.url);
-const read = (rel) => readFileSync(fileURLToPath(new URL(rel, ROOT)), 'utf8');
-const stripHtmlComments = (s) => s.replace(/<!--[\s\S]*?-->/g, '');
-const stripCssComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '');
+const read = (rel: string|URL) => readFileSync(fileURLToPath(new URL(rel, ROOT)), 'utf8');
+const stripHtmlComments = (s: string) => s.replace(/<!--[\s\S]*?-->/g, '');
+const stripCssComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '');
 
 test('the page lives at the repo root as a Vite entry, not in public/', () => {
   assert.ok(existsSync(fileURLToPath(new URL('privacy.html', ROOT))), 'privacy.html at the root');

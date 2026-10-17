@@ -12,17 +12,17 @@ const PROJECT = 'demo-project';
 const ROOT = 'projects/demo-project/databases/(default)/documents';
 
 /** Records every request and answers with whatever the test decided. */
-function fakeFetch(responder) {
-  const calls = [];
-  const fetchImpl = async (url, init = {}) => {
-    calls.push({ url, init, body: init.body ? JSON.parse(init.body) : null });
-    return responder(url, init, calls.length);
+function fakeFetch(responder: (url: string, init: RequestInit, count: number) => Response | Promise<Response>) {
+  const calls: { url: Parameters<typeof fetch>[0]; init: RequestInit; body: Record<string, unknown> }[] = [];
+  const fetchImpl: typeof fetch = async (url, init = {}) => {
+    calls.push({ url, init, body: init.body ? JSON.parse(init.body as string) : null });
+    return responder(url as string, init, calls.length);
   };
   return { calls, fetchImpl };
 }
 
-function jsonResponse(status, body) {
-  return { ok: status >= 200 && status < 300, status, json: async () => body };
+function jsonResponse(status: number, body: unknown) {
+  return { ok: status >= 200 && status < 300, status, json: async () => body } as Response;
 }
 
 test('getDocument fetches one document by path and reports a 404 as a confirmed absence', async () => {
@@ -30,7 +30,7 @@ test('getDocument fetches one document by path and reports a 404 as a confirmed 
     name: `${ROOT}/userProfiles/u1`,
     fields: { handle: { stringValue: 'mugar' }, displayName: { stringValue: 'Mugar' } },
   };
-  const { calls, fetchImpl } = fakeFetch((url) => (url.endsWith('/userProfiles/u1')
+  const { calls, fetchImpl } = fakeFetch((url: string) => (url.endsWith('/userProfiles/u1')
     ? jsonResponse(200, profile)
     : jsonResponse(404, { error: { code: 404, message: 'Document not found', status: 'NOT_FOUND' } })));
   const rest = createFirestoreRest({ projectId: PROJECT, fetchImpl });
@@ -45,7 +45,7 @@ test('getDocument fetches one document by path and reports a 404 as a confirmed 
 });
 
 test('an HTTP failure becomes a FirestoreRestError carrying the SDK code for that status', async () => {
-  const cases = [
+  const cases: [number, string][] = [
     [400, 'invalid-argument'],
     [401, 'unauthenticated'],
     [403, 'permission-denied'],
@@ -72,7 +72,7 @@ test('a request the network drops is "unavailable" — the one code patientRead 
   const rest = createFirestoreRest({ projectId: PROJECT, fetchImpl });
 
   await assert.rejects(() => rest.getDocument('publicLists/s1'), (error) => {
-    assert.equal(error.code, 'unavailable');
+    assert.equal((error as Error & { code?: string; status?: number; retryAfterMs?: number }).code, 'unavailable');
     assert.ok(isTransientReadError(error));
     return true;
   });
@@ -87,7 +87,7 @@ test('an aborted request is "cancelled", not a network failure to retry', async 
   const rest = createFirestoreRest({ projectId: PROJECT, fetchImpl });
 
   await assert.rejects(() => rest.getDocument('userProfiles/u1'), (error) => {
-    assert.equal(error.code, 'cancelled');
+    assert.equal((error as Error & { code?: string; status?: number; retryAfterMs?: number }).code, 'cancelled');
     return true;
   });
 });
@@ -107,14 +107,14 @@ test('a session token travels as a bearer header; without one the request stays 
 
   await createFirestoreRest({ projectId: PROJECT, fetchImpl, getToken: async () => 'id-token' })
     .getDocument('publicLists/s1');
-  assert.equal(calls[0].init.headers.Authorization, 'Bearer id-token');
+  assert.equal((calls[0].init.headers as Record<string, string>).Authorization, 'Bearer id-token');
 
   await createFirestoreRest({ projectId: PROJECT, fetchImpl }).getDocument('publicLists/s1');
-  assert.equal(calls[1].init.headers.Authorization, undefined);
+  assert.equal((calls[1].init.headers as Record<string, string>).Authorization, undefined);
 
   await createFirestoreRest({ projectId: PROJECT, fetchImpl, getToken: async () => null })
     .getDocument('publicLists/s1');
-  assert.equal(calls[2].init.headers.Authorization, undefined);
+  assert.equal((calls[2].init.headers as Record<string, string>).Authorization, undefined);
 });
 
 test('a token provider that fails does not fail the read: public data still goes anonymously', async () => {
@@ -128,7 +128,7 @@ test('a token provider that fails does not fail the read: public data still goes
   const document = await rest.getDocument('publicLists/s1');
 
   assert.deepEqual(document, { exists: true, id: 's1', data: {} });
-  assert.equal(calls[0].init.headers.Authorization, undefined);
+  assert.equal((calls[0].init.headers as Record<string, string>).Authorization, undefined);
 });
 
 test('decodeFields turns every REST value the app stores back into a plain value', () => {

@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
-const stripJsComments = (source) => source.replace(/\{\/\*[\s\S]*?\*\/\}|\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
-const stripCssComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
+const stripJsComments = (source: string) => source.replace(/\{\/\*[\s\S]*?\*\/\}|\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
+const stripCssComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, '');
 
 /**
  * SOURCE tests: the bar is JSX, which node cannot mount.
@@ -24,7 +24,7 @@ const stripCssComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '');
  * the document and the app boots cold. Still the feed, still better than a tap
  * that does nothing, and still only the belt to the pointerup navigation.
  */
-function linksRow(jsx) {
+function linksRow(jsx: string) {
   const start = jsx.indexOf('className="navbar-links"');
   const end = jsx.indexOf('className="navbar-right"');
   assert.ok(start > 0 && end > start, 'the links row and the right-hand actions must both be in Navbar.tsx');
@@ -100,7 +100,7 @@ test('SOURCE: on a touch screen each tab is hit across the whole bar, not only i
   // The anchor is the containing block: it was already `position: relative`
   // for the rule, and the hit area needs the same.
   const base = css.match(/^\.navbar-link \{([\s\S]*?)\n\}/m);
-  assert.match(base[1], /position: relative;/);
+  assert.match(base![1], /position: relative;/);
 });
 
 /**
@@ -149,7 +149,7 @@ test('SOURCE: the mark is measured once per tab change, from the tab the router 
 test('SOURCE: a finger that lifts on the tab it pressed navigates without waiting for the click', async () => {
   const jsx = stripJsComments(await read('./Navbar.tsx'));
   const row = linksRow(jsx);
-  for (const [tab, to] of [['home', '/feed'], ['following', '/following']]) {
+  for (const [tab, to] of [['home', '/feed'], ['following', '/following']] as const) {
     assert.match(row, new RegExp(`onPointerUp=\\{\\(event\\) => liftTab\\(event, '${tab}', '${to}'\\)\\}`), `${tab} navigates on pointerup`);
   }
   assert.equal((row.match(/swallowSynthesisedClick/g) || []).length, 2, 'both swallow the click that may follow');

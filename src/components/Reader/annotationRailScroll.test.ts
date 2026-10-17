@@ -25,10 +25,10 @@ import { readFile } from 'node:fs/promises';
 const ANNOTATIONS_CSS = new URL('./Annotations.css', import.meta.url);
 
 /** Comments name selectors and properties in prose; matching them would invent both sides. */
-const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, '');
 
 /** The declarations of the first flat rule with exactly this selector. */
-function ruleBody(css, selector) {
+function ruleBody(css: string, selector: string) {
   const pattern = new RegExp(`(?:^|[};])\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`);
   const match = css.match(pattern);
   assert.ok(match, `expected a \`${selector}\` rule in Annotations.css`);
@@ -56,7 +56,7 @@ test('a note keeps its height in a capped column, so the list scrolls instead of
  * then is the wheel kept.
  */
 const RAIL_JSX = new URL('./AnnotationRail.tsx', import.meta.url);
-const stripScript = source => source
+const stripScript = (source: string) => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '');
 

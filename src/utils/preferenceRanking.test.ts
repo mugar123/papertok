@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { CATEGORIES } from '../data/categories.ts';
 import { rankPreferences } from './preferenceRanking.ts';
 
-const firstN = (area, n) => Object.keys(CATEGORIES[area].subcategories).slice(0, n);
+const firstN = (area: string, n: number|undefined) => Object.keys(CATEGORIES[area].subcategories).slice(0, n);
 
 test('with no affinities, the window is spread across the areas picked', () => {
   const seeded = [...firstN('physics', 5), ...firstN('eess', 5), ...firstN('mech', 5)];
@@ -28,8 +28,8 @@ test('affinity outranks area, and ties are still interleaved below it', () => {
 });
 
 test('duplicates fold, unknown ids keep their order in a group of their own, and garbage is dropped', () => {
-  const ranked = rankPreferences(['cs.AI', 'topic:x', 'cs.AI', 'topic:y', null, 42, ''], {});
+  const ranked = rankPreferences(['cs.AI', 'topic:x', 'cs.AI', 'topic:y', null!, 42 as never, ''], {});
   assert.deepEqual(ranked, ['cs.AI', 'topic:x', 'topic:y']);
-  assert.deepEqual(rankPreferences(null), []);
-  assert.deepEqual(rankPreferences(['cs.AI'], { 'cs.AI': 'nope' }), ['cs.AI']);
+  assert.deepEqual(rankPreferences(null!), []);
+  assert.deepEqual(rankPreferences(['cs.AI'], { 'cs.AI': 'nope' as never }), ['cs.AI']);
 });

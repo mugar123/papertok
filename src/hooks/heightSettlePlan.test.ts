@@ -129,7 +129,7 @@ test('SOURCE: the hook asks whether it is suspended, and hands the answer to the
 test('there is no resync: the first change after a suspended commit animates from the memory it kept', () => {
   const suspended = planHeightSettle({ remembered: 114, depsChanged: true, running: null, current: null, natural: 316.8, suspended: true });
   assert.deepEqual(
-    planHeightSettle({ remembered: suspended.remember, depsChanged: true, running: null, current: null, natural: 380, suspended: false, resync: true }),
+    planHeightSettle({ remembered: suspended.remember, depsChanged: true, running: null, current: null, natural: 380, suspended: false, resync: true } as NonNullable<Parameters<typeof planHeightSettle>[0]> & Record<string, unknown>),
     { action: 'animate', from: 316.8, to: 380, remember: 380 },
     'a stray `resync: true` must change nothing — the option is gone',
   );

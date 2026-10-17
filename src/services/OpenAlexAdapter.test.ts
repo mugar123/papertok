@@ -1,7 +1,10 @@
+import type { PaperAuthor } from '../models/Paper.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { OPENALEX_SEARCH_TYPES, OPENALEX_WORK_SEARCH_FIELDS, OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
 import { openAlexClient } from './openAlexClient.ts';
+import type { Paper } from '../models/Paper.ts';
+import type { PaperSearchFilters } from './adapters/index.ts';
 
 test('keeps OpenAlex citations and semantic concepts on discovered papers', () => {
   const paper = new OpenAlexAdapter().mapToStandard({
@@ -20,12 +23,12 @@ test('keeps OpenAlex citations and semantic concepts on discovered papers', () =
     primary_location: { is_published: true, source: { type: 'journal' } },
   });
 
-  assert.deepEqual(paper.sources, { primary: 'openalex', enrichedBy: [] });
-  assert.equal(paper.citationsCount, 42);
-  assert.equal(paper.citationCountKnown, true);
-  assert.deepEqual(paper.concepts.map(concept => concept.display_name), ['Cosmology']);
-  assert.equal(paper.primaryTopic.display_name, 'Galaxy formation');
-  assert.equal(paper.publicationStatus, 'published');
+  assert.deepEqual(paper!.sources, { primary: 'openalex', enrichedBy: [] });
+  assert.equal(paper!.citationsCount, 42);
+  assert.equal(paper!.citationCountKnown, true);
+  assert.deepEqual(paper!.concepts!.map(concept => concept.display_name), ['Cosmology']);
+  assert.equal(paper!.primaryTopic!.display_name, 'Galaxy formation');
+  assert.equal(paper!.publicationStatus, 'published');
 });
 
 test('a search result hosted on arXiv carries its arXiv id', () => {
@@ -44,7 +47,7 @@ test('a search result hosted on arXiv carries its arXiv id', () => {
     }],
   });
 
-  assert.equal(paper.arxivId, '1706.03762');
+  assert.equal(paper!.arxivId, '1706.03762');
 });
 
 test('a search result with no arXiv copy has no arXiv id to give', () => {
@@ -58,7 +61,7 @@ test('a search result with no arXiv copy has no arXiv id to give', () => {
     locations: [{ landing_page_url: 'https://example.com/journal/article', is_published: true }],
   });
 
-  assert.equal(paper.arxivId, undefined);
+  assert.equal(paper!.arxivId, undefined);
 });
 
 test('does not mark repository preprints as published', () => {
@@ -71,8 +74,8 @@ test('does not mark repository preprints as published', () => {
     primary_location: { is_published: false, source: { type: 'repository' } },
   });
 
-  assert.equal(paper.citationCountKnown, true);
-  assert.equal(paper.publicationStatus, 'preprint');
+  assert.equal(paper!.citationCountKnown, true);
+  assert.equal(paper!.publicationStatus, 'preprint');
 });
 
 test('uses current OpenAlex topics when legacy concepts are missing', () => {
@@ -87,8 +90,8 @@ test('uses current OpenAlex topics when legacy concepts are missing', () => {
     primary_location: { is_published: true, source: { type: 'journal' } },
   });
 
-  assert.deepEqual(paper.categories, ['Particle Cosmology']);
-  assert.equal(paper.concepts[0].id, 'https://openalex.org/T123');
+  assert.deepEqual(paper!.categories, ['Particle Cosmology']);
+  assert.equal(paper!.concepts![0].id, 'https://openalex.org/T123');
 });
 
 // A works page came back at 455 KB uncompressed, 65–82 KB on the wire, and the
@@ -101,7 +104,7 @@ test('the search asks OpenAlex for the fields the mapper reads, and nothing else
   assert.equal(url.searchParams.get('select'), OPENALEX_WORK_SEARCH_FIELDS.join(','));
   assert.equal(url.searchParams.get('page'), '3');
   assert.equal(url.searchParams.get('per-page'), '25');
-  assert.match(url.searchParams.get('filter'), /^default\.search:"Quantum Physics" OR "Cosmology",type:article\|conference-paper$/);
+  assert.match(url.searchParams.get('filter')!, /^default\.search:"Quantum Physics" OR "Cosmology",type:article\|conference-paper$/);
 });
 
 // OpenAlex renamed the type: `proceedings-article` matches nothing there any
@@ -128,8 +131,8 @@ test('a conference paper maps to the conference source type', () => {
     cited_by_count: 10567,
     authorships: [],
   });
-  assert.equal(paper.sourceType, 'conference');
-  assert.equal(paper.publicationStatus, 'published');
+  assert.equal(paper!.sourceType, 'conference');
+  assert.equal(paper!.publicationStatus, 'published');
 });
 
 // The guard against drift: a work stripped to the selected fields must map to
@@ -169,20 +172,20 @@ test('dropping every unselected field changes nothing the mapper produces', () =
     grants: [{ funder: 'https://openalex.org/F1', award_id: '123' }],
     is_retracted: false,
   };
-  const selected = Object.fromEntries(OPENALEX_WORK_SEARCH_FIELDS.filter(field => field in full).map(field => [field, full[field]]));
+  const selected = Object.fromEntries(OPENALEX_WORK_SEARCH_FIELDS.filter(field => field in full).map(field => [field, full[field as keyof typeof full]]));
   const adapter = new OpenAlexAdapter();
-  const withoutRaw = (paper) => { const copy = { ...paper }; delete copy.raw; return copy; };
+  const withoutRaw = (paper: Paper|null) => { const copy = { ...paper }; delete copy.raw; return copy; };
   const fromFull = withoutRaw(adapter.mapToStandard(full));
   const fromSelected = withoutRaw(adapter.mapToStandard(selected));
   assert.deepEqual(fromSelected, fromFull);
   assert.equal(fromSelected.arxivId, '1706.03762');
-  assert.equal(fromSelected.authors[0].affiliation, 'Google (United States)');
+  assert.equal((fromSelected.authors![0] as PaperAuthor).affiliation, 'Google (United States)');
   assert.equal(fromSelected.abstract, 'The dominant sequence transduction models are based on recurrent networks');
 });
 
 test('economics and finance discovery includes preprints without changing other fields or explicit type filters', () => {
   const adapter = new OpenAlexAdapter();
-  const filterFor = (options) => new URL(adapter.buildSearchUrl('risk management', 1, options))
+  const filterFor = (options: PaperSearchFilters|undefined) => new URL(adapter.buildSearchUrl('risk management', 1, options))
     .searchParams.get('filter');
 
   for (const internalCategories of [['econ.EM'], ['q-fin.RM'], ['cs.LG', 'q-fin.PM']]) {
@@ -216,10 +219,10 @@ test('category discovery returns working papers and preserves their preprint sta
     },
   ];
   let requests = 0;
-  t.mock.method(openAlexClient, 'fetch', async (url) => {
+  t.mock.method(openAlexClient, 'fetch', async (url: string|URL) => {
     requests += 1;
     const filter = new URL(url).searchParams.get('filter');
-    const types = filter.match(/(?:^|,)type:([^,]+)/)[1].split('|');
+    const types = filter!.match(/(?:^|,)type:([^,]+)/)![1].split('|');
     const results = records.filter(record => types.includes(record.type));
     return Response.json({ meta: { count: results.length }, results });
   });

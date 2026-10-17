@@ -17,9 +17,9 @@ test('normalizes provider URLs into stable ids', () => {
 });
 
 test('matches by id and falls back to normalized display name', () => {
-  const followed = [{ type: 'author', canonicalId: 'A1', displayName: 'José García' }];
-  assert.equal(followsEntity(followed, { type: 'author', id: 'https://openalex.org/A1', name: 'Other' }), true);
-  assert.equal(followsEntity(followed, { type: 'author', id: 'legacy:jose', name: 'Jose Garcia' }), true);
+  const followed = [{ type: 'author' as const, canonicalId: 'A1', displayName: 'José García' }];
+  assert.equal(followsEntity(followed, { type: 'author' as const, id: 'https://openalex.org/A1', name: 'Other' }), true);
+  assert.equal(followsEntity(followed, { type: 'author' as const, id: 'legacy:jose', name: 'Jose Garcia' }), true);
 });
 
 test('creates isolated storage keys and migrates unique legacy authors', () => {
@@ -31,14 +31,14 @@ test('creates isolated storage keys and migrates unique legacy authors', () => {
 
 test('removes undefined provider fields before persisting a follow', () => {
   const follow = createFollowEntity({
-    type: 'author',
+    type: 'author' as const,
     id: 'A1',
     displayName: 'Ada',
     externalIds: { orcid: undefined, semanticScholar: 'S1' },
-    metadata: { categoryIds: [undefined, 'cs.AI'] },
+    metadata: { categoryIds: [undefined!, 'cs.AI'] },
   });
-  assert.deepEqual(follow.externalIds, { semanticScholar: 'S1' });
-  assert.deepEqual(follow.metadata.categoryIds, ['cs.AI']);
+  assert.deepEqual(follow!.externalIds, { semanticScholar: 'S1' });
+  assert.deepEqual(follow!.metadata!.categoryIds, ['cs.AI']);
 });
 
 /**
@@ -68,13 +68,13 @@ test('a project followed under its old grant-code id is recognised under either 
   };
   const bareName = row.acronym;
   const fullName = getProjectDisplayName(row);
-  const storedUnder = (displayName) => [{
-    type: 'project',
+  const storedUnder = (displayName: string) => [{
+    type: 'project' as const,
     canonicalId: '100010',
     displayName,
     source: 'openaire',
   }];
-  const probeWith = (displayName) => ({ type: 'project', id: row.id, displayName });
+  const probeWith = (displayName: string) => ({ type: 'project' as const, id: row.id, displayName });
 
   assert.equal(
     followsEntity(storedUnder(bareName), probeWith(bareName)),
@@ -105,33 +105,33 @@ test('a project followed under its old grant-code id is recognised under either 
  * two institutions whose names share a prefix are still two entities.
  */
 test('one spelling of a project name never pulls a different entity in with it', () => {
-  const project = [{ type: 'project', canonicalId: '100010', displayName: 'LEAP: Quantum leap in photonics' }];
+  const project = [{ type: 'project' as const, canonicalId: '100010', displayName: 'LEAP: Quantum leap in photonics' }];
   assert.equal(
-    followsEntity(project, { type: 'project', id: 'corda____h2020::abc', displayName: 'LEAP: Leadership in Europe' }),
+    followsEntity(project, { type: 'project' as const, id: 'corda____h2020::abc', displayName: 'LEAP: Leadership in Europe' }),
     false,
     'two projects sharing an acronym but not a title are two projects',
   );
   assert.equal(
-    followsEntity(project, { type: 'project', id: 'corda____h2020::abc', displayName: 'LEAP Quantum' }),
+    followsEntity(project, { type: 'project' as const, id: 'corda____h2020::abc', displayName: 'LEAP Quantum' }),
     false,
     'a shared opening is not a shared name without the separator',
   );
-  const acronymOnly = [{ type: 'project', canonicalId: '100010', displayName: 'LEAP' }];
+  const acronymOnly = [{ type: 'project' as const, canonicalId: '100010', displayName: 'LEAP' }];
   assert.equal(
-    followsEntity(acronymOnly, { type: 'project', id: 'corda____h2020::abc', displayName: 'LEAPFROG: Fast leaps' }),
+    followsEntity(acronymOnly, { type: 'project' as const, id: 'corda____h2020::abc', displayName: 'LEAPFROG: Fast leaps' }),
     false,
     'an acronym that merely opens another acronym is a different project',
   );
 
-  const author = [{ type: 'author', canonicalId: 'A1', displayName: 'Ada Lovelace' }];
+  const author = [{ type: 'author' as const, canonicalId: 'A1', displayName: 'Ada Lovelace' }];
   assert.equal(
-    followsEntity(author, { type: 'author', id: 'A2', displayName: 'Ada Lovelace: a life' }),
+    followsEntity(author, { type: 'author' as const, id: 'A2', displayName: 'Ada Lovelace: a life' }),
     false,
     'no type but project reads a colon as a separator',
   );
-  const institution = [{ type: 'institution', canonicalId: 'I1', displayName: 'Sorbonne' }];
+  const institution = [{ type: 'institution' as const, canonicalId: 'I1', displayName: 'Sorbonne' }];
   assert.equal(
-    followsEntity(institution, { type: 'institution', id: 'I2', displayName: 'Sorbonne: Faculty of Law' }),
+    followsEntity(institution, { type: 'institution' as const, id: 'I2', displayName: 'Sorbonne: Faculty of Law' }),
     false,
     'nor does an institution and one of its faculties collapse into one follow',
   );
@@ -147,24 +147,24 @@ test('one spelling of a project name never pulls a different entity in with it',
  */
 test('a nameless entity is no follow, and a shared placeholder name would have been one', () => {
   const followedProject = [{
-    type: 'project',
+    type: 'project' as const,
     canonicalId: 'snsf________::aaa',
     displayName: 'QUANTUMLEAP: Quantum leap in photonics',
   }];
 
   assert.equal(
-    createFollowEntity({ type: 'project', id: 'snsf________::bbb', displayName: '' }),
+    createFollowEntity({ type: 'project' as const, id: 'snsf________::bbb', displayName: '' }),
     null,
     'no name, no follow to write',
   );
   assert.equal(
-    followsEntity(followedProject, { type: 'project', id: 'snsf________::bbb', displayName: '' }),
+    followsEntity(followedProject, { type: 'project' as const, id: 'snsf________::bbb', displayName: '' }),
     false,
     'and an empty name matches nothing, rather than everything',
   );
   assert.equal(
-    followsEntity([{ type: 'project', canonicalId: 'snsf________::aaa', displayName: '' }],
-      { type: 'project', id: 'snsf________::bbb', displayName: 'LEAP' }),
+    followsEntity([{ type: 'project' as const, canonicalId: 'snsf________::aaa', displayName: '' }],
+      { type: 'project' as const, id: 'snsf________::bbb', displayName: 'LEAP' }),
     false,
     'from either side of the comparison',
   );
@@ -174,8 +174,8 @@ test('a nameless entity is no follow, and a shared placeholder name would have b
   // them apart — so the stand-in has to stop at the page that renders it.
   const placeholder = 'Research project';
   assert.equal(
-    followsEntity([{ type: 'project', canonicalId: 'snsf________::aaa', displayName: placeholder }],
-      { type: 'project', id: 'snsf________::bbb', displayName: placeholder }),
+    followsEntity([{ type: 'project' as const, canonicalId: 'snsf________::aaa', displayName: placeholder }],
+      { type: 'project' as const, id: 'snsf________::bbb', displayName: placeholder }),
     true,
     'two different projects under one placeholder name are indistinguishable',
   );

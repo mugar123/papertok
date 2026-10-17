@@ -18,11 +18,11 @@ test('normalizes arXiv versions for OpenAlex enrichment', () => {
 test('does not request duplicate enrichment for native OpenAlex papers', () => {
   assert.equal(needsOpenAlexEnrichment({
     id: 'openalex:W123',
-    sources: { primary: 'openalex', enrichedBy: [] },
+    sources: { primary: 'openalex', enrichedBy: [] as string[] },
   }), false);
   assert.equal(needsOpenAlexEnrichment({
     id: '2607.12345',
-    sources: { primary: 'arxiv', enrichedBy: [] },
+    sources: { primary: 'arxiv', enrichedBy: [] as string[] },
   }), true);
   assert.equal(needsOpenAlexEnrichment({
     id: '2607.12345',
@@ -45,10 +45,10 @@ test('merges OpenAlex metadata before a feed batch is displayed', () => {
     title: 'Paper',
     citationCount: 0,
     citationCountKnown: false,
-    concepts: [],
-    sources: { primary: 'arxiv', enrichedBy: [] },
+    concepts: [] as import('../models/Paper.ts').PaperSubject[],
+    sources: { primary: 'arxiv', enrichedBy: [] as string[] },
   }];
-  const merged = mergeOpenAlexEnrichment(papers, {
+  const merged = mergeOpenAlexEnrichment((papers as import('../models/Paper.ts').Paper[]), {
     '2607.12345': {
       citationCount: 0,
       citationCountKnown: true,
@@ -57,7 +57,7 @@ test('merges OpenAlex metadata before a feed batch is displayed', () => {
   });
 
   assert.equal(merged[0].citationCountKnown, true);
-  assert.equal(merged[0].concepts[0].display_name, 'Cosmology');
+  assert.equal(merged[0].concepts![0].display_name, 'Cosmology');
   assert.deepEqual(merged[0].sources.enrichedBy, ['openalex']);
 });
 
@@ -71,14 +71,14 @@ test('paper identity survives a late OpenAlex merge that adds nothing new', () =
     title: 'Untouched',
     citationCount: 0,
     citationCountKnown: false,
-    sources: { primary: 'arxiv', enrichedBy: [] },
+    sources: { primary: 'arxiv', enrichedBy: [] as string[] },
   };
   const realChange = {
     id: 'arxiv:2607.22222',
     title: 'Real change',
     citationCount: 0,
     citationCountKnown: false,
-    sources: { primary: 'arxiv', enrichedBy: [] },
+    sources: { primary: 'arxiv', enrichedBy: [] as string[] },
   };
   const noopChange = {
     id: 'arxiv:2607.33333',
@@ -97,7 +97,7 @@ test('paper identity survives a late OpenAlex merge that adds nothing new', () =
     openAlex: { citationCount: 12, citationCountKnown: true },
   };
 
-  const result = mergeOpenAlexEnrichment([untouched, realChange, noopChange], {
+  const result = mergeOpenAlexEnrichment(([untouched, realChange, noopChange] as import('../models/Paper.ts').Paper[]), {
     '2607.22222': { citationCount: 9, citationCountKnown: true },
     '2607.33333': { citationCount: 12, citationCountKnown: true },
   });
@@ -131,7 +131,7 @@ test('a paper reachable only by its DOI is worth enriching', () => {
   assert.equal(needsOpenAlexEnrichment({
     id: 'ads:2023ASPC',
     doi: '10.1142/S0218271826500495',
-    sources: { primary: 'nasa-ads', enrichedBy: [] },
+    sources: { primary: 'nasa-ads', enrichedBy: [] as string[] },
   }), true);
   assert.equal(needsOpenAlexEnrichment({
     id: 'ads:2023ASPC',

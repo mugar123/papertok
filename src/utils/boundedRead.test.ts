@@ -16,16 +16,16 @@ import {
 /** A hand-cranked clock, so the tests never wait in real time. */
 function fakeTimers() {
   let nextId = 1;
-  const pending = new Map();
+  const pending = new Map<number, { callback: () => void; ms: number }>();
   return {
-    setTimer(callback, ms) {
+    setTimer(callback: () => void, ms: number) {
       const id = nextId; nextId += 1;
       pending.set(id, { callback, ms });
       return id;
     },
-    clearTimer(id) { pending.delete(id); },
+    clearTimer(id: number | ReturnType<typeof setTimeout> | undefined) { pending.delete(id as number); },
     /** Fires every armed timer, or only the ones set for `matchMs`. */
-    fire(matchMs) {
+    fire(matchMs?: number) {
       const entries = [...pending.entries()]
         .filter(([, entry]) => matchMs === undefined || entry.ms === matchMs);
       entries.forEach(([id]) => pending.delete(id));
@@ -63,7 +63,7 @@ test('isReadTimeout ignores anything that is not a timeout', () => {
 
 /** Attempts whose answers the test releases by hand. */
 function scriptedAttempts() {
-  const launched = [];
+  const launched: { resolve: (value: unknown) => void; reject: (reason?: unknown) => void }[] = [];
   const makeAttempt = () => new Promise((resolve, reject) => {
     launched.push({ resolve, reject });
   });
@@ -73,7 +73,7 @@ function scriptedAttempts() {
 test('a slow first read does not end in failure: the retry answers instead', async () => {
   const timers = fakeTimers();
   const { makeAttempt, launched } = scriptedAttempts();
-  const slowNotices = [];
+  const slowNotices: unknown[] = [];
   const read = patientRead(makeAttempt, {
     ...timers, attempts: 2, onSlow: n => slowNotices.push(n),
   });
@@ -136,7 +136,7 @@ test('a real failure is immediate — deterministic errors do not deserve patien
 test('a success before the first timeout resolves without ever signalling slow', async () => {
   const timers = fakeTimers();
   const { makeAttempt, launched } = scriptedAttempts();
-  const slowNotices = [];
+  const slowNotices: unknown[] = [];
   const read = patientRead(makeAttempt, { ...timers, attempts: 2, onSlow: n => slowNotices.push(n) });
   launched[0].resolve('fast');
   assert.equal(await read, 'fast');
@@ -165,7 +165,7 @@ test('isTransientReadError tells "not now" apart from "not ever"', () => {
 test('a stalled connection is not a verdict: the read waits and the retry answers', async () => {
   const timers = fakeTimers();
   const { makeAttempt, launched } = scriptedAttempts();
-  const notices = [];
+  const notices: unknown[] = [];
   const read = patientRead(makeAttempt, {
     ...timers, ...noAmbient, attempts: 2,
     onSlow: (attempt, info) => notices.push({ attempt, ...info }),
@@ -226,7 +226,7 @@ test('the backoff is capped, so a long outage costs one cheap read per pause', a
 test('with no network the notice says so, and the online event skips the wait', async () => {
   const timers = fakeTimers();
   const { makeAttempt, launched } = scriptedAttempts();
-  const notices = [];
+  const notices: unknown[] = [];
   let wake = null;
   const read = patientRead(makeAttempt, {
     ...timers, attempts: 2,
@@ -240,7 +240,7 @@ test('with no network the notice says so, and the online event skips the wait', 
   assert.deepEqual(notices, [{ offline: true }], '"no connection" is a different truth');
   assert.ok(timers.delays.includes(8000), 'offline goes straight to the longest pause');
 
-  wake();
+  wake!();
   assert.equal(launched.length, 2, 'coming back online re-reads at once');
   launched[1].resolve('thread');
   assert.equal(await read, 'thread');
@@ -421,7 +421,7 @@ test('the threshold is below the read budget, so a real timeout still speaks at 
 test('an attempt that has not answered by stallMs asks for the stream to be recovered, once', async () => {
   const timers = fakeTimers();
   const { makeAttempt, launched } = scriptedAttempts();
-  const stalls = [];
+  const stalls: unknown[] = [];
   const read = patientRead(makeAttempt, {
     ...timers, ...noAmbient, attempts: 2, stallMs: 3000,
     onStall: (attempt) => stalls.push(attempt),
@@ -445,7 +445,7 @@ test('an attempt that has not answered by stallMs asks for the stream to be reco
 test('a read that answers before stallMs never touches the stream', async () => {
   const timers = fakeTimers();
   const { makeAttempt, launched } = scriptedAttempts();
-  const stalls = [];
+  const stalls: unknown[] = [];
   const read = patientRead(makeAttempt, {
     ...timers, ...noAmbient, stallMs: 3000, onStall: (attempt) => stalls.push(attempt),
   });
@@ -459,7 +459,7 @@ test('a read that answers before stallMs never touches the stream', async () => 
 test('with no network there is no stream to recover, so the stall watch stays quiet', () => {
   const timers = fakeTimers();
   const { makeAttempt } = scriptedAttempts();
-  const stalls = [];
+  const stalls: unknown[] = [];
   patientRead(makeAttempt, {
     ...timers, checkOffline: () => true, subscribeOnline: () => () => {},
     stallMs: 3000, onStall: (attempt) => stalls.push(attempt),
@@ -476,7 +476,7 @@ test('the stall threshold sits below the read budget, so the kick lands before t
 test('with no onStall of its own, a read uses the recovery registered for the app', async () => {
   const timers = fakeTimers();
   const { makeAttempt } = scriptedAttempts();
-  const calls = [];
+  const calls: unknown[] = [];
   const restore = registerStallRecovery(() => calls.push('kick'));
   try {
     patientRead(makeAttempt, { ...timers, ...noAmbient, stallMs: 3000 }).catch(() => {});
@@ -494,11 +494,11 @@ test('with no onStall of its own, a read uses the recovery registered for the ap
 test('an answer the caller cannot act on is a "not now", not a result', async () => {
   const timers = fakeTimers();
   const { makeAttempt, launched } = scriptedAttempts();
-  const notices = [];
+  const notices: unknown[] = [];
   const read = patientRead(makeAttempt, {
     ...timers, ...noAmbient, attempts: 2,
     // A query flushed from the cache by the kick: empty, and not the server's word.
-    isAnswer: (snapshot) => snapshot.authoritative,
+    isAnswer: (snapshot) => (snapshot as { authoritative: boolean }).authoritative,
     onSlow: (attempt, info) => notices.push({ attempt, ...info }),
   });
 
@@ -519,7 +519,7 @@ test('a late answer the caller cannot act on is not delivered as the healing res
   let late = null;
   const read = patientRead(makeAttempt, {
     ...timers, ...noAmbient, attempts: 1,
-    isAnswer: (snapshot) => snapshot.authoritative,
+    isAnswer: (snapshot) => (snapshot as { authoritative: boolean }).authoritative,
     onLateResult: (value) => { late = value; },
   });
   read.catch(() => {});

@@ -772,7 +772,7 @@ export function buildLatexDocument({
 
   for (const section of sections) {
     const label = section?.heading
-      || kindLabels[section?.kind]
+      || kindLabels[section?.kind as string]
       || SECTION_FALLBACK['en'];
     // `\section[corto]{label}` solo cuando `label` pasa el tope de
     // `sectionMarkText`: por debajo, el argumento corto sería idéntico al

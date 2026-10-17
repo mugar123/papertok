@@ -23,8 +23,9 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+import { initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { doc, setDoc, writeBatch, serverTimestamp, setLogLevel } from 'firebase/firestore';
+import type { FirebaseFirestore } from '@firebase/firestore-types';
 
 setLogLevel('silent');
 
@@ -135,12 +136,12 @@ ${Array.from({ length: 12 }, (_, i) => (
 // Harness.
 // ---------------------------------------------------------------------------
 
-const HOST = process.env.FIRESTORE_EMULATOR_HOST.split(':')[0];
-const PORT = Number(process.env.FIRESTORE_EMULATOR_HOST.split(':')[1]);
-const created = [];
+const HOST = process.env.FIRESTORE_EMULATOR_HOST!.split(':')[0];
+const PORT = Number(process.env.FIRESTORE_EMULATOR_HOST!.split(':')[1]);
+const created: RulesTestEnvironment[] = [];
 let sequence = 0;
 
-async function envFor(rules, attempt = 0) {
+async function envFor(rules: string, attempt = 0) {
   sequence += 1;
   try {
     const env = await initializeTestEnvironment({
@@ -160,12 +161,12 @@ test.after(async () => {
   for (const env of created) await env.cleanup();
 });
 
-async function allowed(run) {
+async function allowed(run: () => Promise<unknown>) {
   try { await run(); return true; } catch { return false; }
 }
 
 const PAPER_FN = /\s{4}function validPublicPaper\(paper\) \{[\s\S]*?\n {4}\}/;
-function withPaperBody(rules, lines) {
+function withPaperBody(rules: string, lines: string|string[]) {
   assert.match(rules, PAPER_FN, 'validPublicPaper must have been found');
   const body = [
     '    function validPublicPaper(paper) {',
@@ -178,7 +179,7 @@ function withPaperBody(rules, lines) {
   return rules.replace(PAPER_FN, () => body);
 }
 
-function splice(rules, anchor, replacement, label) {
+function splice(rules: string, anchor: string, replacement: string, label: string) {
   assert.ok(rules.includes(anchor), `anchor not found verbatim: ${label}`);
   assert.equal(rules.split(anchor).length, 2, `anchor not unique: ${label}`);
   return rules.replace(anchor, () => replacement);
@@ -188,7 +189,7 @@ function splice(rules, anchor, replacement, label) {
 // Payloads, shaped as sanitizePublicPaper() leaves them.
 // ---------------------------------------------------------------------------
 
-const paper = (i, authors, concepts, abstractLength = 1200) => ({
+const paper = (i: number, authors: number, concepts: number, abstractLength = 1200) => ({
   id: `arxiv:2608.${String(18000 + i)}`,
   title: `A perfectly ordinary paper number ${i}`,
   authors: Array.from({ length: authors }, (_, a) => `Author ${a} of paper ${i}`),
@@ -203,9 +204,9 @@ const paper = (i, authors, concepts, abstractLength = 1200) => ({
   openUrl: `https://arxiv.org/abs/2608.${String(18000 + i)}`,
 });
 /** The cheapest paper those rules accepted: the three required keys. */
-const minimalPaper = i => ({ id: `p${i}`, title: `T${i}`, authors: ['A'] });
+const minimalPaper = (i: number) => ({ id: `p${i}`, title: `T${i}`, authors: ['A'] });
 
-const listBody = papers => ({
+const listBody = (papers: ReturnType<typeof minimalPaper>[]) => ({
   title: 'My public list',
   language: 'es',
   paperCount: papers.length,
@@ -215,9 +216,9 @@ const listBody = papers => ({
 });
 
 /** The write the app made: the three-document batch publishPublicList() commits. */
-async function realPublish(env, papers) {
+async function realPublish(env: Awaited<ReturnType<typeof initializeTestEnvironment>>, papers: ReturnType<typeof minimalPaper>[]) {
   await env.clearFirestore();
-  await env.withSecurityRulesDisabled(async (context) => {
+  await env.withSecurityRulesDisabled(async (context: { firestore: () => FirebaseFirestore; }) => {
     await setDoc(doc(context.firestore(), 'users', ALICE, 'lists', LIST_ID), {
       id: LIST_ID, name: 'My list', paperIds: [], createdAt: new Date(),
     });
@@ -235,7 +236,7 @@ async function realPublish(env, papers) {
 }
 
 /** Highest N in 1..12 whose whole publish batch is allowed. */
-async function ceiling(rules, build) {
+async function ceiling(rules: string, build: (index: number) => ReturnType<typeof minimalPaper>) {
   const env = await envFor(rules);
   let best = 0;
   for (let n = 1; n <= 12; n += 1) {
@@ -250,7 +251,7 @@ async function ceiling(rules, build) {
 // ---------------------------------------------------------------------------
 
 test('A: those rules could not publish one realistic paper', async () => {
-  const cases = [
+  const cases: [string, (index: number) => ReturnType<typeof minimalPaper>][] = [
     ['20 authors, 12 concepts, every field (what the app writes)', i => paper(i, 20, 12)],
     ['20 authors, 12 concepts, 10-char abstract', i => paper(i, 20, 12, 10)],
     ['5 authors, 3 concepts, every field', i => paper(i, 5, 3)],
@@ -285,12 +286,12 @@ const CLAUSE = {
         && (!('date' in paper) || validString(paper.date, 40))
         && (!('category' in paper) || validString(paper.category, 120))\n`,
 };
-const without = (rules, ...names) => names.reduce(
-  (acc, name) => splice(acc, CLAUSE[name], '', name), rules,
+const without = (rules: string, ...names: string[]) => names.reduce(
+  (acc, name) => splice(acc, CLAUSE[name as keyof typeof CLAUSE], '', name), rules,
 );
 
 test('B: the two list unrolls were the sink, even at one element', async () => {
-  const rich = i => paper(i, 20, 12);
+  const rich = (i: number) => paper(i, 20, 12);
   const rows = [
     ['as shipped', HISTORICAL_RULES],
     ['minus the authors element check', without(HISTORICAL_RULES, 'authors')],
@@ -300,7 +301,7 @@ test('B: the two list unrolls were the sink, even at one element', async () => {
     ['minus abstract/year/date/category', without(HISTORICAL_RULES, 'scalars')],
   ];
   console.log('\n  [rich payload; one clause removed at a time]');
-  const scores = {};
+  const scores: Record<string, number> = {};
   for (const [label, rules] of rows) {
     scores[label] = await ceiling(rules, rich);
     console.log(`  ${label.padEnd(40)} -> ${scores[label]} of 12`);
@@ -312,7 +313,7 @@ test('B: the two list unrolls were the sink, even at one element', async () => {
 
   // The same check, with a ONE-element list, still cost the earth:
   // `values.size()` is re-evaluated on all 20 unrolled lines.
-  const oneAuthor = i => paper(i, 1, 0);
+  const oneAuthor = (i: number) => paper(i, 1, 0);
   const withCheck = await ceiling(HISTORICAL_RULES, oneAuthor);
   const noCheck = await ceiling(without(HISTORICAL_RULES, 'authors'), oneAuthor);
   console.log(`  one-author paper, authors checked  -> ${withCheck} of 12`);
@@ -340,8 +341,8 @@ const URL_REGEX = `        && (!('openUrl' in paper)
           || paper.openUrl.matches('^https://[^[:space:]]+$'))`;
 
 test('C: at the 12-paper cap only the allowlist fitted', async () => {
-  const rich = i => paper(i, 20, 12);
-  const rungs = [
+  const rich = (i: number) => paper(i, 20, 12);
+  const rungs: [string, string[]][] = [
     ['allowlist + hasAll', [KEYS]],
     ['+ type checks', [KEYS, TYPES]],
     ['+ id/title length caps', [KEYS, TYPES, LENGTHS]],
@@ -357,9 +358,9 @@ test('C: at the 12-paper cap only the allowlist fitted', async () => {
     console.log(`  ${label.padEnd(40)} -> ${n} of 12`);
   }
   assert.equal(scores[0], 12, 'the 12-key allowlist itself was affordable');
-  assert.ok(scores.at(-1) < 12, 'anything past types and the allowlist cost papers');
+  assert.ok(scores.at(-1)! < 12, 'anything past types and the allowlist cost papers');
   assert.ok(
-    scores.at(-1) <= 8,
+    scores.at(-1)! <= 8,
     'no rule that bounds the bulk fields reached the product cap — which is why F11 '
     + 'moved the write to the Worker instead of trimming validPublicPaper',
   );

@@ -23,8 +23,8 @@ function twentyRecommendations() {
 
 test('asks the Worker once per paper and trims locally whatever limit each caller wants', async () => {
   clearRelatedPapersCache();
-  const asked = [];
-  const fetchWorker = async url => { asked.push(new URL(url)); return twentyRecommendations(); };
+  const asked: URL[]|{ searchParams: { has: (arg0: string) => unknown; }; }[] = [];
+  const fetchWorker = async (url: string|URL) => { asked.push(new URL(url)); return twentyRecommendations(); };
   const paper = { id: 'arxiv:2607.12345', arxivId: '2607.12345' };
 
   const forFeed = await getRelatedPapers(paper, 20, { fetchWorker, apiBase: WORKER });
@@ -105,8 +105,8 @@ test('gives the Worker eleven seconds before giving up, not eight', async t => {
   clearRelatedPapersCache();
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const paper = { id: 'arxiv:2607.12345', arxivId: '2607.12345' };
-  const fetchWorker = (_url, { signal }) => new Promise((_resolve, reject) => {
-    signal.addEventListener('abort', () => reject(new Error('aborted')));
+  const fetchWorker = (_url: string | URL, { signal }: RequestInit) => new Promise<Response>((_resolve, reject) => {
+    signal!.addEventListener('abort', () => reject(new Error('aborted')));
   });
 
   // `getRelatedPapers` chains several `.then`/`.finally` hops onto the abort
@@ -133,5 +133,5 @@ test('gives the Worker eleven seconds before giving up, not eight', async t => {
   t.mock.timers.tick(1);
   await flush();
   assert.ok(outcome, 'must have settled once eleven seconds are up -- a longer budget would leave this null');
-  assert.match(String(outcome.error), /aborted/, 'must abort, not resolve');
+  assert.match(String((outcome as { error: Error }).error), /aborted/, 'must abort, not resolve');
 });

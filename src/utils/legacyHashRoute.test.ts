@@ -56,7 +56,7 @@ test('a fragment can never send the visitor off-site', () => {
   for (const hash of ['#/\\\\evil.com', '#/\\\\/evil.com', '#//\\\\evil.com', '#/\\\\\\\\evil.com/x']) {
     const route = routeFromLegacyHash({ hash });
     assert.equal(
-      new URL(route, 'https://papertok.app').origin,
+      new URL(route!, 'https://papertok.app').origin,
       'https://papertok.app',
       `${hash} translated to ${route}, which leaves the origin`,
     );
@@ -66,10 +66,10 @@ test('a fragment can never send the visitor off-site', () => {
 });
 
 test('applying it rewrites the entry in place, once, before anything reads the location', () => {
-  const calls = [];
+  const calls: unknown[][] = [];
   const history = {
     state: { idx: 3, usr: null, key: 'abc' },
-    replaceState: (state, unused, url) => calls.push([state, url]),
+    replaceState: (state: unknown, unused: string, url?: string | URL | null) => calls.push([state, url]),
   };
   const location = { pathname: '/feed', search: '', hash: '#/public/paper/abc' };
 
@@ -82,11 +82,11 @@ test('applying it rewrites the entry in place, once, before anything reads the l
 });
 
 test('applying it to a location that carries no route does nothing at all', () => {
-  const calls = [];
-  const history = { state: null, replaceState: (...args) => calls.push(args) };
+  const calls: unknown[][] = [];
+  const history = { state: null, replaceState: (...args: unknown[]) => calls.push(args) };
   assert.equal(applyLegacyHashRoute({
     history,
-    location: { pathname: '/feed', search: '', hash: '#main-content' },
+    location: { pathname: '/feed', search: '', hash: '#main-content' } as NonNullable<NonNullable<Parameters<typeof applyLegacyHashRoute>[0]>["location"]> & Record<string, unknown>,
   }), null);
   assert.equal(calls.length, 0);
 });
@@ -98,6 +98,6 @@ test('a history that refuses the rewrite is not a boot failure', () => {
   const history = { state: null, replaceState: () => { throw new Error('SecurityError'); } };
   assert.equal(applyLegacyHashRoute({
     history,
-    location: { pathname: '/feed', search: '', hash: '#/research' },
+    location: { pathname: '/feed', search: '', hash: '#/research' } as NonNullable<NonNullable<Parameters<typeof applyLegacyHashRoute>[0]>["location"]> & Record<string, unknown>,
   }), null);
 });

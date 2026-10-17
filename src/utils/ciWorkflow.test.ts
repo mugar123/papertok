@@ -9,11 +9,11 @@ const WRANGLER = new URL('../../wrangler.toml', import.meta.url);
 // A YAML comment runs from an unquoted `#` to the end of the line. The SHA
 // pins carry their tag in one (`# v4`), which is exactly the kind of text a
 // regex over the raw file would be satisfied by.
-const stripYamlComments = (source) => source.replace(/(^|\s)#.*$/gm, '');
+const stripYamlComments = (source: string) => source.replace(/(^|\s)#.*$/gm, '');
 
 // The block of one job: from `  <name>:` to the next line indented by two
 // spaces or none (the next job, or a top-level key).
-function job(yaml, name) {
+function job(yaml: string, name: string) {
   const header = `\n  ${name}:\n`;
   const start = yaml.indexOf(header);
   assert.ok(start >= 0, `job "${name}" is missing`);

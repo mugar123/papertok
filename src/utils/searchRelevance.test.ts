@@ -218,7 +218,7 @@ test('the organisation words cover the languages PaperTok searches in', () => {
   // Read through resolvePreferredSearchSection, which is the only consumer that
   // matters: with nothing matching exactly anywhere, an organisation query is
   // the only thing that can reach the institutions section.
-  const probe = query => resolvePreferredSearchSection({
+  const probe = (query: string) => resolvePreferredSearchSection({
     query,
     hint: null,
     sectionValues: { papers: ['An unrelated paper'], institutions: ['Somewhere'] },
@@ -350,7 +350,7 @@ test('an institution nobody enriched weighs nothing instead of throwing', () => 
   // off an un-enriched record has to come out 0, so the text order survives
   // untouched rather than the sort blowing up or going NaN.
   assert.equal(institutionProminenceWeight({ works_count: null, cited_by_count: null }), 0);
-  assert.equal(institutionProminenceWeight(undefined), 0);
+  assert.equal(institutionProminenceWeight(undefined!), 0);
   assert.ok(
     institutionProminenceWeight({ cited_by_count: 1, works_count: 0 })
       > institutionProminenceWeight({ cited_by_count: 0, works_count: 999999 }),
@@ -498,8 +498,8 @@ test('phrase matches are whole words: "sam" is not inside "samples"', () => {
 });
 
 test('the paper ranking drops nothing and survives holes', () => {
-  const papers = [{ title: null }, {}, { title: 'Segment Anything', abstract: undefined }];
+  const papers = [{ title: null! }, {}, { title: 'Segment Anything', abstract: undefined }];
   assert.equal(rankPaperSearchResults('segment anything', papers).length, 3);
   assert.deepEqual(rankPaperSearchResults('', papers), papers);
-  assert.equal(scorePaperSearchMatch('anything', null), 0);
+  assert.equal(scorePaperSearchMatch('anything', null!), 0);
 });

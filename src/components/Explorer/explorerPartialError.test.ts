@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
-const strip = (source) => source.replace(/\/\*[\s\S]*?\*\/|\{\/\*[\s\S]*?\*\/\}|\/\/.*$/gm, '');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
+const strip = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\{\/\*[\s\S]*?\*\/\}|\/\/.*$/gm, '');
 
 /**
  * The strip that says a list came back incomplete. Measured on papertok.app
@@ -18,7 +18,7 @@ test('SOURCE: el aviso parcial va antes del centinela, en las dos pestañas', as
   for (const [tab, banner, sentinel] of [
     ['publicaciones', "getUiErrorMessage('PARTIAL_PUBLICATIONS_LOAD_FAILED'", 'ref={observerRef}'],
     ['autores', "getUiErrorMessage('PARTIAL_AUTHORS_LOAD_FAILED'", 'ref={observerAuthorsRef}'],
-  ]) {
+  ] as const) {
     const atBanner = jsx.indexOf(banner);
     const atSentinel = jsx.indexOf(sentinel);
     assert.ok(atBanner > -1, `${tab}: sigue existiendo el aviso`);

@@ -175,7 +175,7 @@ test('an \\ifmmode without an \\else branch still yields its maths spelling', ()
 // exported PDF, with no error anywhere. `katexSource` is the single place that
 // translates such a chunk into an environment the renderer does implement.
 
-function renders(source, display) {
+function renders(source: string, display: boolean) {
   try {
     katex.renderToString(source, {
       displayMode: display, throwOnError: true, strict: 'ignore', trust: false,
@@ -186,7 +186,7 @@ function renders(source, display) {
   }
 }
 
-const mathChunk = text => splitLatexText(text).find(chunk => chunk.type === 'math');
+const mathChunk = (text: unknown) => splitLatexText(text).find(chunk => chunk.type === 'math');
 
 test('KaTeX renders every delimiter the splitter recognizes, one row per row', () => {
   // One line per LATEX_DELIMITERS entry, bodies as each is idiomatically
@@ -205,7 +205,7 @@ test('KaTeX renders every delimiter the splitter recognizes, one row per row', (
   ];
   for (const [label, text] of cases) {
     const chunk = mathChunk(text);
-    assert.ok(renders(katexSource(chunk), chunk.display), label);
+    assert.ok(renders(katexSource(chunk), chunk!.display), label);
   }
 });
 
@@ -215,14 +215,14 @@ test('an eqnarray is numbered by the row, the way the .tex numbers it', () => {
   // none and every formula after it drifted one number short per extra row.
   const chunk = mathChunk('\\begin{eqnarray}E & = & mc^2 \\\\ p & = & mv \\\\ F & = & ma\\end{eqnarray}');
   const html = katex.renderToString(katexSource(chunk), {
-    displayMode: chunk.display, throwOnError: true, strict: 'ignore', trust: false,
+    displayMode: chunk!.display, throwOnError: true, strict: 'ignore', trust: false,
   });
   assert.equal((html.match(/class="eqn-num"/g) || []).length, 3);
 
   // `\nonumber` still takes a row out of the count, exactly as LaTeX does.
   const skipped = mathChunk('\\begin{eqnarray}E & = & mc^2 \\nonumber \\\\ p & = & mv\\end{eqnarray}');
   const skippedHtml = katex.renderToString(katexSource(skipped), {
-    displayMode: skipped.display, throwOnError: true, strict: 'ignore', trust: false,
+    displayMode: skipped!.display, throwOnError: true, strict: 'ignore', trust: false,
   });
   assert.equal((skippedHtml.match(/class="eqn-num"/g) || []).length, 1);
 });
@@ -322,7 +322,7 @@ test('keeps one spelling of a formula that arrives twice', () => {
   // both printed it twice — once flattened to `T c 0`, once rendered.
   const normalized = normalizeScientificMarkup(JATS_ALTERNATIVES);
 
-  assert.equal(normalized.match(/\\\(/g).length, 1, 'exactly one formula survives');
+  assert.equal(normalized.match(/\\\(/g)!.length, 1, 'exactly one formula survives');
   assert.doesNotMatch(normalized, /T\s+c\s+0/, 'the flattened MathML twin is gone');
 });
 

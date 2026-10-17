@@ -20,14 +20,14 @@ import { readFile } from 'node:fs/promises';
 
 const RAIL_JSX = new URL('./AnnotationRail.tsx', import.meta.url);
 
-const stripScript = source => source
+const stripScript = (source: string) => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '');
 
 const rail = readFile(RAIL_JSX, 'utf8').then(stripScript);
 
 /** The one element with this class, whole: opening tag and children. */
-function element(jsx, className) {
+function element(jsx: string, className: string) {
   const matches = [...jsx.matchAll(new RegExp(`<p\\s+className="${className}"([^>]*)>([\\s\\S]*?)</p>`, 'g'))];
   assert.equal(matches.length, 1, `expected exactly one .${className} paragraph`);
   const [, attributes, children] = matches[0];

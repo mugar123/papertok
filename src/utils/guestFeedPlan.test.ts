@@ -7,7 +7,7 @@ import { GUEST_CATEGORIES, buildGuestDiscoveryQuery, buildGuestFeedPlan, guestCa
 // not know slips past all of them as a literal string: no label, no domain
 // source, and a billed OpenAlex call spent on the id itself.
 test('every guest category exists in the internal schema', () => {
-  const missing = [];
+  const missing: unknown[] = [];
   GUEST_CATEGORIES.forEach(categoryId => guestCategoryLabel(categoryId, id => missing.push(id)));
   assert.deepEqual(missing, []);
 });
@@ -22,7 +22,7 @@ test('the discovery query carries labels, never raw ids', () => {
 });
 
 test('an id outside the schema falls back to itself and says so', () => {
-  const seen = [];
+  const seen: unknown[] = [];
 
   assert.equal(guestCategoryLabel('q-bio.NC', id => seen.push(id)), 'q-bio.NC');
   assert.deepEqual(seen, ['q-bio.NC']);
@@ -43,7 +43,7 @@ test('with no areas the plan is the fixed sample, unchanged', () => {
 
 test('every category a chosen plan asks for exists in the internal schema', () => {
   const plan = buildGuestFeedPlan(['physics', 'cs', 'bio', 'med', 'econ']);
-  const missing = [];
+  const missing: unknown[] = [];
   [...plan.categories, ...plan.arxivCategories, ...plan.pubmedCategories]
     .forEach(id => guestCategoryLabel(id, missed => missing.push(missed)));
   assert.deepEqual(missing, []);
@@ -56,7 +56,7 @@ test('the chosen areas are all represented, and each source is capped', () => {
   assert.ok(plan.categories.length > 40, 'the full union routes the domain plan');
   assert.equal(plan.arxivCategories.length, 6);
   // Round-robin: the first category of every area before any area's second.
-  const firstOf = area => Object.keys(CATEGORIES[area].subcategories)[0];
+  const firstOf = (area: string) => Object.keys(CATEGORIES[area].subcategories)[0];
   assert.deepEqual(plan.arxivCategories.slice(0, 4), ['physics', 'cs', 'math', 'econ'].map(firstOf));
   assert.equal((plan.discoveryQuery.match(/"/g) || []).length, 5 * 2);
   assert.ok(plan.discoveryQuery.includes('"Artificial Intelligence"'));

@@ -10,7 +10,7 @@ import {
 const SHARE_ID = '07070707070707070707070707070707';
 
 /** What a Firestore `Timestamp` looks like to code that only reads it. */
-function timestamp(millis) {
+function timestamp(millis: number) {
   return {
     seconds: Math.floor(millis / 1000),
     nanoseconds: (millis % 1000) * 1e6,

@@ -19,17 +19,17 @@ import { FOLLOWING_ORDER_STORAGE_KEY } from './followingOrderStorage.ts';
  * rather than a plain object with methods on it — otherwise the sweep would
  * see `getItem` and `setItem` as stored keys.
  */
-function storageLike(seed = {}) {
+function storageLike(seed: Record<string, string> = {}) {
   const store = { ...seed };
   return new Proxy({
-    getItem: (k) => (k in store ? store[k] : null),
-    setItem: (k, v) => { store[k] = String(v); },
-    removeItem: (k) => { delete store[k]; },
+    getItem: (k: string) => (k in store ? store[k] : null),
+    setItem: (k: string, v: string) => { store[k] = String(v); },
+    removeItem: (k: string|number) => { delete store[k]; },
     _all: () => ({ ...store }),
   }, {
     ownKeys: () => Reflect.ownKeys(store),
     getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }),
-    get: (methods, prop) => (prop in methods ? methods[prop] : store[prop]),
+    get: (methods, prop) => (prop in methods ? methods[prop as keyof typeof methods] : store[prop as string]),
   });
 }
 

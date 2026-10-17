@@ -7,7 +7,7 @@ export type PublicPaperInput = Partial<Record<keyof Paper | 'category' | 'date' 
   concepts?: Array<string | { display_name?: unknown; name?: unknown; title?: unknown }>;
   categories?: unknown[];
 };
-export interface PublicListInput { title?: unknown; name?: unknown; description?: unknown; papers?: PublicPaperInput[]; listId?: string; paperIds?: string[]; language?: string }
+export interface PublicListInput { title?: unknown; name?: unknown; description?: unknown; papers?: PublicPaperInput[]; listId?: string; paperIds?: unknown[]; language?: string }
 export type PublicListPayload = ReturnType<typeof sanitizePublicList>;
 
 /**

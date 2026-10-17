@@ -8,7 +8,12 @@
  * each area's icon to these same records.
  */
 
-export const CATEGORIES = {
+export interface CategoryArea {
+  label: string; gradient: string; description: string;
+  subcategories: Record<string, { label: string }>;
+}
+
+export const CATEGORIES: Record<string, CategoryArea> = {
   physics: {
     label: 'Physics',
     gradient: 'var(--gradient-physics)',
@@ -243,7 +248,7 @@ function getFallbackAreaKey(categoryId = '') {
   if (categoryId.startsWith('q-bio')) return 'bio';
 
   const prefix = categoryId.split('.')[0].split('-')[0];
-  return {
+  return ({
     quant: 'physics',
     cond: 'physics',
     hep: 'physics',
@@ -257,7 +262,7 @@ function getFallbackAreaKey(categoryId = '') {
     stat: 'stat',
     econ: 'econ',
     eess: 'eess',
-  }[prefix] || null;
+  } as Record<string, string>)[prefix] || null;
 }
 
 /**
@@ -336,7 +341,7 @@ const AREA_TOPIC_KEYWORDS = {
  * computer science. Matches start on a word boundary, so "General" is not read
  * as a gene.
  */
-export function getAreaKeyFromTopicName(value) {
+export function getAreaKeyFromTopicName(value: unknown) {
   const text = String(value || '').toLowerCase().trim();
   if (!text) return '';
 
@@ -357,7 +362,7 @@ export function getAreaKeyFromTopicName(value) {
 /**
  * Get the human-readable label for a given arXiv category.
  */
-export function getCategoryLabel(arxivCategory) {
+export function getCategoryLabel(arxivCategory: string) {
   if (CATEGORIES[arxivCategory]) {
     const area = CATEGORIES[arxivCategory];
     return area.label || area.label;
@@ -368,7 +373,7 @@ export function getCategoryLabel(arxivCategory) {
       return category.label || category.label;
     }
   }
-  const fallbackArea = CATEGORIES[getFallbackAreaKey(arxivCategory)];
+  const fallbackArea = CATEGORIES[getFallbackAreaKey(arxivCategory) as string];
   if (fallbackArea) {
     return fallbackArea.label || fallbackArea.label;
   }
@@ -378,7 +383,7 @@ export function getCategoryLabel(arxivCategory) {
 /**
  * Get the area key for a given arXiv category.
  */
-export function getCategoryArea(arxivCategory) {
+export function getCategoryArea(arxivCategory: string) {
   for (const [areaKey, area] of Object.entries(CATEGORIES)) {
     if (arxivCategory in area.subcategories) {
       return areaKey;
@@ -410,7 +415,7 @@ export function getAllLeafCategories() {
 /**
  * Calculates conceptual similarity between two categories [0, 1].
  */
-export function getCategorySimilarity(catA, catB) {
+export function getCategorySimilarity(catA: string | null | undefined, catB: string | null | undefined) {
   if (!catA || !catB) return 0.0;
   if (catA === catB) return 1.0;
   

@@ -8,10 +8,10 @@
  * app can import it.
  */
 
-const NAMED_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+const NAMED_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
 
-function decodeEntities(text) {
-  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, entity) => {
+function decodeEntities(text: string) {
+  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match: string, entity: string) => {
     if (entity[0] === '#') {
       const code = entity[1].toLowerCase() === 'x'
         ? parseInt(entity.slice(2), 16)
@@ -23,7 +23,11 @@ function decodeEntities(text) {
 }
 
 class XmlElement {
-  constructor(tagName, attributes = {}, parent = null) {
+  declare tagName: string;
+  declare attributes: Record<string, string>;
+  declare parentNode: XmlElement | null;
+  declare childNodes: (string | XmlElement)[];
+  constructor(tagName: string, attributes: Record<string, string> = {}, parent: XmlElement | null = null) {
     this.tagName = tagName;
     this.attributes = attributes;
     this.parentNode = parent;
@@ -34,30 +38,30 @@ class XmlElement {
     return this.childNodes.filter((node) => node instanceof XmlElement);
   }
 
-  get textContent() {
+  get textContent(): string {
     return this.childNodes.map((node) => (typeof node === 'string' ? node : node.textContent)).join('');
   }
 
-  getAttribute(name) {
+  getAttribute(name: string) {
     return Object.hasOwn(this.attributes, name) ? this.attributes[name] : null;
   }
 
-  getElementsByTagName(name) {
+  getElementsByTagName(name: string) {
     return descendants(this).filter((element) => name === '*' || element.tagName === name);
   }
 
-  querySelectorAll(selector) {
+  querySelectorAll(selector: string) {
     return queryAll(this, selector);
   }
 
-  querySelector(selector) {
+  querySelector(selector: string) {
     return queryAll(this, selector)[0] || null;
   }
 }
 
-function descendants(root) {
-  const found = [];
-  const walk = (element) => {
+function descendants(root: XmlElement) {
+  const found: XmlElement[] = [];
+  const walk = (element: XmlElement) => {
     for (const child of element.children) {
       found.push(child);
       walk(child);
@@ -68,7 +72,7 @@ function descendants(root) {
 }
 
 // "A > B C" → [{ tag: 'A' }, { tag: 'B', combinator: '>' }, { tag: 'C', combinator: ' ' }]
-function parseSelector(selector) {
+function parseSelector(selector: string) {
   const tokens = selector.trim().replace(/\s*>\s*/g, ' > ').split(/\s+/);
   const steps = [];
   let combinator = ' ';
@@ -86,12 +90,12 @@ function parseSelector(selector) {
   return steps;
 }
 
-function matchesTag(element, tag) {
+function matchesTag(element: XmlElement, tag: string) {
   return tag === '*' || element.tagName === tag;
 }
 
 // Walks the steps right to left from a candidate, the way browsers do.
-function matchesSteps(element, steps, index, scope) {
+function matchesSteps(element: XmlElement, steps: ReturnType<typeof parseSelector>, index: number, scope: XmlElement): boolean {
   if (!matchesTag(element, steps[index].tag)) return false;
   if (index === 0) return true;
   const { combinator } = steps[index];
@@ -104,7 +108,7 @@ function matchesSteps(element, steps, index, scope) {
   return false;
 }
 
-function queryAll(scope, selector) {
+function queryAll(scope: XmlElement, selector: string) {
   return selector.split(',').flatMap((part) => {
     const steps = parseSelector(part);
     return descendants(scope).filter((element) => matchesSteps(element, steps, steps.length - 1, scope));
@@ -114,7 +118,7 @@ function queryAll(scope, selector) {
 const TOKEN = /<!--[\s\S]*?-->|<!\[CDATA\[([\s\S]*?)\]\]>|<![^>]*>|<\?[\s\S]*?\?>|<\/([^\s>]+)\s*>|<([^\s/>!?]+)((?:\s+[^\s=/>]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>|([^<]+)/g;
 const ATTRIBUTE = /([^\s=/>]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 
-export function parseXmlDocument(xmlText) {
+export function parseXmlDocument(xmlText: string) {
   const documentNode = new XmlElement('#document');
   let current = documentNode;
   for (const match of String(xmlText).matchAll(TOKEN)) {
@@ -123,9 +127,9 @@ export function parseXmlDocument(xmlText) {
       current.childNodes.push(cdata);
     } else if (closing) {
       if (current.tagName !== closing) throw new Error(`xmlDomShim: </${closing}> closes <${current.tagName}>`);
-      current = current.parentNode;
+      current = current.parentNode!;
     } else if (opening) {
-      const attributes = {};
+      const attributes: Record<string, string> = {};
       for (const [, name, doubleQuoted, singleQuoted] of (rawAttributes || '').matchAll(ATTRIBUTE)) {
         attributes[name] = decodeEntities(doubleQuoted ?? singleQuoted ?? '');
       }

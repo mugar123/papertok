@@ -7,11 +7,11 @@ import { SemanticScholarAdapter } from './adapters/SemanticScholarAdapter.ts';
 // ran independently against a limit Semantic Scholar counts per provider. The
 // author pages that use it are public, so guests ran it too.
 
-function silencedGlobalFetch(recorded) {
+function silencedGlobalFetch(recorded: string[]) {
   const originalFetch = globalThis.fetch;
   const originalError = console.error;
   globalThis.fetch = async input => {
-    recorded.push(String(input?.url || input));
+    recorded.push(String((input as Request)?.url || input));
     return new Response('{}', { status: 500 });
   };
   console.error = () => {};
@@ -22,8 +22,8 @@ function silencedGlobalFetch(recorded) {
 }
 
 test('searches Semantic Scholar through the Worker route', async () => {
-  const escaped = [];
-  const workerCalls = [];
+  const escaped: string[] = [];
+  const workerCalls: (string|URL)[] = [];
   const restore = silencedGlobalFetch(escaped);
   try {
     const adapter = new SemanticScholarAdapter({
@@ -57,7 +57,7 @@ test('searches Semantic Scholar through the Worker route', async () => {
 });
 
 test('gives up on an unavailable Semantic Scholar instead of retrying locally', async () => {
-  const escaped = [];
+  const escaped: never[] = [];
   const restore = silencedGlobalFetch(escaped);
   let workerCalls = 0;
   try {
@@ -94,13 +94,13 @@ test('keeps the DOI and the arXiv id Semantic Scholar reports, and nothing inven
   const addressed = adapter.mapToStandard({
     paperId: '649def34f8be52c8b66281af98ae884c09aef38b',
     title: 'Attention Is All You Need',
-    externalIds: { DOI: '10.48550/arXiv.1706.03762', ArXiv: '1706.03762', CorpusId: 13756489 },
+    externalIds: { DOI: '10.48550/arXiv.1706.03762', ArXiv: '1706.03762', CorpusId: 13756489 } as NonNullable<NonNullable<Parameters<typeof adapter.mapToStandard>[0]>["externalIds"]> & Record<string, unknown>,
   });
   assert.equal(addressed.id, '649def34f8be52c8b66281af98ae884c09aef38b', 'the S2 hash stays the id');
   assert.equal(addressed.doi, '10.48550/arXiv.1706.03762');
   assert.equal(addressed.arxivId, '1706.03762');
 
-  const bare = adapter.mapToStandard({ paperId: 'abc', title: 'One', externalIds: { CorpusId: 1 } });
+  const bare = adapter.mapToStandard({ paperId: 'abc', title: 'One', externalIds: { CorpusId: 1 } as NonNullable<NonNullable<Parameters<typeof adapter.mapToStandard>[0]>["externalIds"]> & Record<string, unknown> });
   assert.equal(bare.doi, null);
   assert.equal(bare.arxivId, undefined);
   const absent = adapter.mapToStandard({ paperId: 'abc', title: 'One' });
@@ -108,9 +108,9 @@ test('keeps the DOI and the arXiv id Semantic Scholar reports, and nothing inven
 });
 
 test('strips boolean operators as words, not as letters inside words', async () => {
-  const escaped = [];
+  const escaped: never[] = [];
   const restore = silencedGlobalFetch(escaped);
-  let asked = '';
+  let asked: string | null = '';
   try {
     const adapter = new SemanticScholarAdapter({
       apiBase: 'https://papertok-report-api.example',

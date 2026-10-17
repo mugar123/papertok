@@ -4,9 +4,10 @@ import type { UserHighlight } from '../services/userHighlightService.ts';
 export type ExportAnnotation = Partial<UserHighlight> & { source?: string };
 export type NumberedAnnotation = ExportAnnotation & { number?: number };
 interface ExportCounts { marks: number; mine: number; ai: number }
+export type ExportSection = Pick<RewriteSection, 'id' | 'paragraphs'> & Partial<Omit<RewriteSection, 'id' | 'paragraphs'>>;
 export interface ExportOptions {
   paper?: Partial<Paper> | null;
-  sections?: RewriteSection[];
+  sections?: ExportSection[];
   annotations?: readonly ExportAnnotation[];
   language?: string;
   level?: string;
@@ -255,7 +256,7 @@ export function documentMeta({
  * back a lookup by paragraph. A bare highlight has nothing to say in a footnote
  * and is not given a number — it is just colour on the page.
  */
-export function numberAnnotations<T extends ExportAnnotation>(sections: RewriteSection[], annotations: T[]) {
+export function numberAnnotations<T extends ExportAnnotation>(sections: Pick<ExportSection, 'id'>[], annotations: T[]) {
   const order = new Map<string, number>();
   sections.forEach((section, index) => order.set(String(section?.id), index));
   const placed = annotations

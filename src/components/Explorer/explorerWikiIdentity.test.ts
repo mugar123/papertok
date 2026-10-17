@@ -7,9 +7,9 @@ import { readFileSync } from 'node:fs';
 // a cancer researcher's portrait and "Medicine" a Shakira single (audit of
 // 2026-09-23). The lookup rules live in `loadEntityWikiInfo` and are tested
 // in `wikiService.test.ts`; this file pins that the Explorer goes through it.
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
-function bounded(code, from, to, label, maxLines) {
+function bounded(code: string, from: string, to: string, label: string, maxLines: number) {
   const start = code.indexOf(from);
   const end = code.indexOf(to, start + 1);
   assert.ok(start >= 0 && end > start, `expected to have found ${label}`);

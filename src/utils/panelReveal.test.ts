@@ -39,7 +39,7 @@ test('the strip reaches exactly as far up as it says', () => {
 });
 
 test('a height it cannot measure never wakes the panel', () => {
-  assert.equal(pointerWakesPanel(undefined, 800), false);
-  assert.equal(pointerWakesPanel(700, undefined), false);
+  assert.equal(pointerWakesPanel(undefined!, 800), false);
+  assert.equal(pointerWakesPanel(700, undefined!), false);
   assert.equal(pointerWakesPanel(Number.NaN, 800), false);
 });

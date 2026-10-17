@@ -57,8 +57,8 @@ export function readDismissedNudges(storage?: NudgeStorage | null) {
  * the panel out of the way for the rest of the visit, which is the part the
  * person asked for.
  */
-export function rememberNudgeDismissal(id: string, storage?: NudgeStorage | null) {
-  const next = readDismissedNudges(storage);
+export function rememberNudgeDismissal<T>(id: T, storage?: NudgeStorage | null) {
+  const next: (string | T)[] = readDismissedNudges(storage);
   if (!next.includes(id)) next.push(id);
   try {
     resolveStorage(storage)?.setItem(NUDGE_DISMISSED_KEY, JSON.stringify(next));
@@ -86,7 +86,7 @@ export function pickNudge({ eligible = [], dismissed = [], random = Math.random 
  * lands. And a service that says it is available is believed, whatever else it
  * reports.
  */
-export function emailNudgeProblem({ loading = false, health = {} }: { loading?: boolean; health?: { code?: string | null; available?: boolean } | null } = {}) {
+export function emailNudgeProblem({ loading = false, health = {} }: { loading?: boolean; health?: { code?: string | null; available?: boolean; configured?: boolean } | null } = {}) {
   if (loading || !health?.code || health.available === true) return null;
   return health.code === 'EMAIL_NOT_CONFIGURED' ? 'not-configured' : 'unavailable';
 }
@@ -97,7 +97,7 @@ export function readCachedStarCount(storage?: NudgeStorage | null, now = Date.no
     const raw = resolveStorage(storage)?.getItem(STAR_COUNT_KEY);
     if (!raw) return null;
     const { count, at } = (JSON.parse(raw) || {}) as { count?: number; at?: number };
-    if (!Number.isInteger(count) || count! < 0 || !Number.isFinite(at)) return null;
+    if (!Number.isInteger(count) || (count as number) < 0 || !Number.isFinite(at)) return null;
     const age = now - at!;
     return age >= 0 && age < STAR_COUNT_TTL_MS ? count! : null;
   } catch {
@@ -106,8 +106,8 @@ export function readCachedStarCount(storage?: NudgeStorage | null, now = Date.no
 }
 
 /** Keeps a count for a day. Anything that is not a count is not kept. */
-export function cacheStarCount(count: number, storage?: NudgeStorage | null, now = Date.now()) {
-  if (!Number.isInteger(count) || count! < 0) return false;
+export function cacheStarCount(count: unknown, storage?: NudgeStorage | null, now = Date.now()) {
+  if (!Number.isInteger(count) || (count as number) < 0) return false;
   try {
     resolveStorage(storage)?.setItem(STAR_COUNT_KEY, JSON.stringify({ count, at: now }));
     return true;

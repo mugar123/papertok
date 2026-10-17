@@ -12,7 +12,7 @@ import { readFile } from 'node:fs/promises';
  * after the leave has played.
  */
 
-const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 const authJsx = readFile(new URL('./AuthPrompt.tsx', import.meta.url), 'utf8').then(stripComments);
 const authCss = readFile(new URL('./AuthPrompt.css', import.meta.url), 'utf8').then(stripComments);

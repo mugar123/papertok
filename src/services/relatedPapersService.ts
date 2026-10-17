@@ -1,6 +1,6 @@
 import type { Paper } from '../models/Paper.ts';
 import type { SemanticScholarRecord } from './adapters/SemanticScholarAdapter.ts';
-interface RelatedOptions { fetchWorker?: typeof authenticatedWorkerFetch; apiBase?: string; }
+interface RelatedOptions { fetchWorker?: (input: string | URL, options: RequestInit) => Promise<Response>; apiBase?: string; }
 
 import { PaperBuilder } from './PaperBuilder.ts';
 import { authenticatedWorkerFetch, workerSourceUrl } from './workerApiClient.ts';
@@ -44,7 +44,7 @@ function mapRelatedPaper(item: SemanticScholarRecord): Paper {
   });
 }
 
-async function fetchRelatedFromWorker(paperId: string, paper: Partial<Paper>, { fetchWorker, apiBase }: RelatedOptions & { fetchWorker: typeof authenticatedWorkerFetch }) {
+async function fetchRelatedFromWorker(paperId: string, paper: Partial<Paper>, { fetchWorker, apiBase }: RelatedOptions & { fetchWorker: NonNullable<RelatedOptions['fetchWorker']> }) {
   // There used to be a direct `api.semanticscholar.org` branch here for when no
   // Worker origin was configured. It could not ship — `vite build` refuses a
   // bundle without `VITE_PAPER_API_BASE_URL` — and it was a keyless browser call

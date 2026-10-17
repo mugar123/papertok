@@ -12,11 +12,11 @@ import { readFile } from 'node:fs/promises';
  * the span into a real `<label>` wired to the textarea by id.
  */
 
-const stripComments = source => source
+const stripComments = (source: string) => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^[ \t]*\/\/.*$/gm, '');
 
-const read = async (path) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
+const read = async (path: string|URL) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
 
 test('the note textarea is named by a real <label>, not a floating span', async () => {
   const jsx = await read('./SelectionMenu.tsx');

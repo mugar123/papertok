@@ -55,7 +55,7 @@ const BROWSERS = [
 
 async function shareRewrite() {
   const config = JSON.parse(await readFile(VERCEL, 'utf8'));
-  const index = config.rewrites.findIndex(rule => String(rule.destination).startsWith('https://api.papertok.app/share/'));
+  const index = config.rewrites.findIndex((rule: { destination: string }) => String(rule.destination).startsWith('https://api.papertok.app/share/'));
   return { config, index, rule: config.rewrites[index] };
 }
 
@@ -69,7 +69,7 @@ test('public pages reach the Worker share route, one path for all four kinds', a
 test('the crawler rewrite comes before the SPA catch-all, which would otherwise take it', async () => {
   const { config, index } = await shareRewrite();
   assert.ok(index >= 0, 'the crawler rewrite is gone');
-  const spa = config.rewrites.findIndex(rule => rule.source.startsWith('/:path('));
+  const spa = config.rewrites.findIndex((rule: { source: string; }) => rule.source.startsWith('/:path('));
   assert.ok(spa >= 0, 'the SPA rewrite is gone');
   assert.ok(index < spa, 'Vercel takes the first rewrite that matches');
 });
@@ -81,7 +81,7 @@ test('only a crawler user agent is rewritten; a person gets the static app', asy
   assert.equal(conditions[0].type, 'header');
   assert.equal(conditions[0].key, 'user-agent');
   assert.equal(
-    config.rewrites.filter(candidate => String(candidate.destination).includes('api.papertok.app')).length,
+    config.rewrites.filter((candidate: { destination: string }) => String(candidate.destination).includes('api.papertok.app')).length,
     1,
     'no second, unconditional way to the Worker',
   );

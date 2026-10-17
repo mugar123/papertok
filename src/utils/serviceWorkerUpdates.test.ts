@@ -4,25 +4,25 @@ import { readFileSync } from 'node:fs'
 import { watchServiceWorkerUpdates } from './serviceWorkerUpdates.ts'
 
 function setup(update = async () => {}) {
-  const windowTarget = new EventTarget()
-  const documentTarget = new EventTarget()
+  const windowTarget = new EventTarget() as EventTarget & { setInterval(callback: () => void, delay: number): number; clearInterval(id: number): void }
+  const documentTarget = new EventTarget() as EventTarget & { visibilityState: DocumentVisibilityState }
   documentTarget.visibilityState = 'visible'
   const navigatorTarget = { onLine: true }
-  let tick
-  let interval
+  let tick!: () => void
+  let interval: number
   let cleared = false
   let time = 0
   let calls = 0
   windowTarget.setInterval = (callback, ms) => { tick = callback; interval = ms; return 1 }
-  windowTarget.clearInterval = (id) => { assert.equal(id, 1); cleared = true }
-  const registration = { installing: null, update: () => { calls++; return update() } }
+  windowTarget.clearInterval = (id: unknown) => { assert.equal(id, 1); cleared = true }
+  const registration = { installing: null as object | null, update: () => { calls++; return update() } }
   const stop = watchServiceWorkerUpdates(registration, {
     windowTarget, documentTarget, navigatorTarget, now: () => time,
   })
   return {
     windowTarget, documentTarget, navigatorTarget, registration, stop,
     tick: () => tick(),
-    advance: (ms) => { time += ms },
+    advance: (ms: number) => { time += ms },
     calls: () => calls,
     interval: () => interval,
     cleared: () => cleared,
@@ -64,8 +64,8 @@ test('periodic checks run every five minutes only while visible and online', asy
 })
 
 test('an ongoing install or update check is not duplicated', async () => {
-  let resolveUpdate
-  const env = setup(() => new Promise(resolve => { resolveUpdate = resolve }))
+  let resolveUpdate!: () => void
+  const env = setup(() => new Promise<void>(resolve => { resolveUpdate = resolve }))
   env.registration.installing = {}
   await env.tick()
   assert.equal(env.calls(), 0)

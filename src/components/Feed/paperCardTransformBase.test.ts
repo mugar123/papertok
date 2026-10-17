@@ -35,7 +35,7 @@ import { readFile } from 'node:fs/promises';
 const CSS = new URL('./PaperCard.css', import.meta.url);
 
 /** The first function of a transform value: the placement, not the flourish. */
-const firstFunction = (value) => value.trim().match(/^[\w-]+\([^)]*\)/)?.[0] ?? '';
+const firstFunction = (value: string) => value.trim().match(/^[\w-]+\([^)]*\)/)?.[0] ?? '';
 
 test('no rule keeps a base transform that its own animation would drop', async () => {
   const css = await readFile(CSS, 'utf8');
@@ -63,7 +63,7 @@ test('no rule keeps a base transform that its own animation would drop', async (
     if (!frames || !/transform/.test(frames)) continue;
 
     // The selector's own line: a rule inside `@media` carries the prelude.
-    const selector = rule[1].trim().split('\n').pop().trim();
+    const selector = rule[1].trim().split('\n').pop()!.trim();
     const placement = firstFunction(base);
     checked.push(selector);
 

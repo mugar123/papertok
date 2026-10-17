@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { CITATION_GATE_MAX_WAIT_MS, awaitWithinGate } from './feedCitationGate.ts';
 
 const never = () => new Promise(() => {});
-const after = (ms, value) => new Promise((resolve) => { setTimeout(() => resolve(value), ms); });
+const after = (ms: number|undefined, value?: unknown) => new Promise((resolve) => { setTimeout(() => resolve(value), ms); });
 
 test('the cap is a ceiling on the veil, not the enrichment budget', () => {
   // OpenAlex itself is allowed 6500ms (OPENALEX_FEED_REQUEST_TIMEOUT_MS). The

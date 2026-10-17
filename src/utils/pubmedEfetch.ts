@@ -1,5 +1,12 @@
 import type { Paper, PaperAuthor } from '../models/Paper.ts';
 
+interface XmlNode {
+  textContent: string | null;
+  getAttribute(name: string): string | null;
+  querySelector(selector: string): XmlNode | null;
+  querySelectorAll(selector: string): Iterable<XmlNode>;
+}
+
 /**
  * Readers for the efetch XML the Worker relays with every PubMed search
  * (`pubmedData.efetch`). They take a parsed XML document, the browser's
@@ -20,7 +27,7 @@ function collapseWhitespace(value: unknown) {
  * AbstractText in the article appended it to the English text (PMID 42775314
  * ended in Serbian; audit 2026-09-23). No sections, no abstract.
  */
-export function pubmedAbstractText(article: Element | null | undefined) {
+export function pubmedAbstractText(article: XmlNode | null | undefined) {
   const sections = Array.from(article?.querySelectorAll?.('Abstract > AbstractText') || []);
   return sections
     .map((section) => {
@@ -38,7 +45,7 @@ export function pubmedAbstractText(article: Element | null | undefined) {
  * is major when its descriptor or any of its qualifiers says MajorTopicYN="Y"),
  * without the check tags every record carries.
  */
-export function pubmedSubjects(article: Element | null | undefined) {
+export function pubmedSubjects(article: XmlNode | null | undefined) {
   const headings = Array.from(article?.querySelectorAll?.('MeshHeadingList > MeshHeading') || []);
   return orderMeshDescriptors(headings.map((heading) => {
     const descriptor = heading.querySelector('DescriptorName');
@@ -60,7 +67,7 @@ const ORCID = /(\d{4}-\d{4}-\d{4}-\d{3}[\dX])\s*$/i;
  * esummary's "Li WN" and nothing else, which left the explorer only a name to
  * guess the person from (audit 2026-09-23, issue 4).
  */
-export function pubmedAuthors(article: Element | null | undefined) {
+export function pubmedAuthors(article: XmlNode | null | undefined) {
   const authors = Array.from(article?.querySelectorAll?.('Article > AuthorList > Author') || []);
   return authors.flatMap((author) => {
     const collective = collapseWhitespace(author.querySelector('CollectiveName')?.textContent);
@@ -114,7 +121,7 @@ export function mergePubmedAuthors(cardAuthors: Paper['authors'] | null | undefi
  * papers (`pmid:<id>`). The first PMID in an article is its own; the ones in
  * CommentsCorrections come after it.
  */
-export function readPubmedEfetch(xmlDoc: Document | null | undefined) {
+export function readPubmedEfetch(xmlDoc: Pick<XmlNode, 'querySelectorAll'> | null | undefined) {
   const records: Record<string, Pick<Paper, 'abstract' | 'authors'> & { authors: PaperAuthor[]; categories: string[] }> = {};
   for (const article of Array.from(xmlDoc?.querySelectorAll?.('PubmedArticle') || [])) {
     const pmid = collapseWhitespace(article.querySelector('PMID')?.textContent);

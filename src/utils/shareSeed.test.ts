@@ -33,7 +33,7 @@ test('a malformed or empty seed is no seed', () => {
 });
 
 test('the seed is read from the element the Worker writes it into', () => {
-  const documentWith = element => ({ getElementById: id => (id === SHARE_SEED_ELEMENT_ID ? element : null) });
+  const documentWith = (element: { textContent: string; }|null) => ({ getElementById: (id: string) => (id === SHARE_SEED_ELEMENT_ID ? element : null) });
   assert.equal(SHARE_SEED_ELEMENT_ID, 'papertok-share-seed');
   assert.deepEqual(readShareSeed(KEY, documentWith({ textContent: SEED })), PAPER);
   assert.equal(readShareSeed(KEY, documentWith(null)), null);

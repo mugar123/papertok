@@ -12,8 +12,8 @@ import { readFile } from 'node:fs/promises';
  * string instead of the array Base UI expects would all still lint and build.
  */
 
-const read = name => readFile(new URL(name, import.meta.url), 'utf8');
-const stripComments = source => source
+const read = (name: string|URL) => readFile(new URL(name, import.meta.url), 'utf8');
+const stripComments = (source: string) => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '');
 

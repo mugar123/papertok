@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { shouldOpenSearchOnSlash } from './searchShortcut.ts';
 
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
-const slash = (overrides = {}) => ({ key: '/', target: { closest: () => null }, ...overrides });
-const docWith = (modal) => ({
-  querySelector: (selector) => (modal && selector === '[aria-modal="true"]' ? { tagName: 'DIV' } : null),
+const slash = (overrides = {}) => ({ key: '/', target: { closest: () => null }, ...overrides } as Parameters<typeof shouldOpenSearchOnSlash>[0]);
+const docWith = (modal: boolean) => ({
+  querySelector: (selector: string) => (modal && selector === '[aria-modal="true"]' ? { tagName: 'DIV' } as Element : null),
 });
 
 test('la barra abre el buscador cuando no hay nada modal delante', () => {
@@ -22,7 +22,7 @@ test('la barra NO abre el buscador con un diálogo modal abierto', () => {
 });
 
 test('escribir en un campo se sigue respetando', () => {
-  const typing = slash({ target: { closest: (selector) => (selector.includes('input') ? { tagName: 'INPUT' } : null) } });
+  const typing = slash({ target: { closest: (selector: string) => (selector.includes('input') ? { tagName: 'INPUT' } : null) } });
   assert.equal(shouldOpenSearchOnSlash(typing, docWith(false)), false);
 });
 

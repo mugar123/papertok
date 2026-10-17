@@ -6,9 +6,9 @@ import { readFileSync } from 'node:fs';
 // tested there against the audit's five arrival orders. The hook cannot be
 // mounted under Node, so this pins that its load goes through them: readiness,
 // the early page and the late pool.
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
-function bounded(code, from, to, label, maxLines) {
+function bounded(code: string, from: string, to: string, label: string, maxLines: number) {
   const start = code.indexOf(from);
   const end = code.indexOf(to, start + 1);
   assert.ok(start >= 0 && end > start, `expected to have found ${label}`);

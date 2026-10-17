@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 /** A file minus its comments, so a comment mentioning a name is not evidence. */
-async function readCode(relativePath) {
+async function readCode(relativePath: string|URL) {
   const source = await readFile(new URL(relativePath, import.meta.url), 'utf8');
   return source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 }
@@ -145,12 +145,12 @@ test('both surfaces drop the institutions OpenAlex files as authors', () => {
  * you owe the same selector an `opacity: 1` under
  * `@media (prefers-reduced-motion: reduce)`.
  */
-function withoutComments(css) {
+function withoutComments(css: string) {
   return css.replace(/\/\*[\s\S]*?\*\//g, '');
 }
 
 /** Innermost `selector { body }` pairs; at-rule wrappers fall out on their own. */
-function innermostRules(css) {
+function innermostRules(css: string) {
   const rules = [];
   const pattern = /([^{}]+)\{([^{}]*)\}/g;
   let match;
@@ -161,7 +161,7 @@ function innermostRules(css) {
 }
 
 /** The body of every `prefers-reduced-motion: reduce` block, brace-balanced. */
-function reducedMotionBlocks(css) {
+function reducedMotionBlocks(css: string) {
   const blocks = [];
   const opener = /@media \(prefers-reduced-motion: reduce\)\s*\{/g;
   let match;
@@ -258,7 +258,7 @@ test('visibleResultCount agrees with hasVisibleResults about a direct ORCID hit,
   assert.ok(countBlock, 'could not find the visibleResultCount ternary to check -- update this test alongside it');
 
   /** The single-line value of one `? ...` branch, found by the filter name that guards it. */
-  function branch(block, filterName) {
+  function branch(block: string, filterName: string) {
     const match = block.match(new RegExp(`activeSearchFilter === '${filterName}'\\s*\\n\\s*\\?\\s*([^\\n]+)`));
     return match ? match[1].trim() : null;
   }
@@ -338,18 +338,18 @@ const ROUTES = [...app.matchAll(/path="([^"]+)"/g)]
   .filter(path => path !== '*');
 
 /** Path templates a surface navigates to, as segment lists. */
-function navigationPaths(code) {
+function navigationPaths(code: string) {
   return [...code.matchAll(/`(\/[^`]*)`/g)]
     .map(match => match[1].split('?')[0])
     .filter(path => !path.includes('://'))
     .map(path => path.replace(/\$\{[^}]*\}/g, '*'));
 }
 
-function routeAccepts(route, path) {
+function routeAccepts(route: string, path: string) {
   const routeSegments = route.split('/').filter(Boolean);
   const pathSegments = path.split('/').filter(Boolean);
   if (routeSegments.length !== pathSegments.length) return false;
-  return routeSegments.every((segment, index) => (
+  return routeSegments.every((segment: string, index: number) => (
     // `:param` takes anything, including the literal `author` in
     // `/explorer/author/*`; a literal route segment has to be matched exactly.
     segment.startsWith(':') || segment === pathSegments[index]

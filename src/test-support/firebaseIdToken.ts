@@ -12,7 +12,7 @@
  * execute it as a suite.
  */
 
-function base64Url(value) {
+function base64Url(value: string) {
   const bytes = new TextEncoder().encode(value);
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -24,7 +24,7 @@ function base64Url(value) {
  * test configures `FIREBASE_PROJECT_ID`, and `{ exp }` to build an expired one.
  * The default expiry is relative to now, so the fixture cannot rot.
  */
-export function fakeIdToken(claims = {}) {
+export function fakeIdToken(claims: Record<string, unknown> = {}) {
   const header = base64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT', kid: 'test-key' }));
   const payload = base64Url(JSON.stringify({
     exp: Math.floor(Date.now() / 1000) + 3600,

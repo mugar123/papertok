@@ -17,13 +17,13 @@ import {
 } from './userScopedStorage.ts';
 
 function createStorage() {
-  const values = new Map();
+  const values = new Map<string, string>();
   return {
     get length() { return values.size; },
-    key: (index) => [...values.keys()][index] ?? null,
-    getItem: (key) => values.get(key) ?? null,
-    setItem: (key, value) => values.set(key, value),
-    removeItem: (key) => values.delete(key),
+    key: (index: number) => [...values.keys()][index] ?? null,
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value),
+    removeItem: (key: string) => values.delete(key),
   };
 }
 
@@ -119,18 +119,18 @@ test('signing out takes the legacy stored profile with everything else', () => {
 /* --- The owner's lists, remembered across reloads ------------------------- */
 
 const listStore = () => {
-  const map = new Map();
+  const map = new Map<string, string>();
   return {
     map,
-    getItem: key => (map.has(key) ? map.get(key) : null),
-    setItem: (key, value) => map.set(key, String(value)),
-    removeItem: key => map.delete(key),
+    getItem: (key: string) => (map.has(key) ? map.get(key)! : null),
+    setItem: (key: string, value: string) => map.set(key, String(value)),
+    removeItem: (key: string) => map.delete(key),
     get length() { return map.size; },
-    key: index => [...map.keys()][index] ?? null,
+    key: (index: number) => [...map.keys()][index] ?? null,
   };
 };
 
-const aList = (id, papers = 2) => ({
+const aList = (id: string, papers = 2) => ({
   id, name: `List ${id}`, emoji: 'Folder', color: 'teal',
   paperIds: Array.from({ length: papers }, (_, i) => `${id}_p${i}`),
   publicShareId: null,
@@ -143,32 +143,32 @@ test('a stored list comes back whole, and nothing else comes back at all', () =>
   saveStoredLists('uid-l1', [aList('a'), aList('b')], storage);
 
   const read = readStoredLists('uid-l1', storage);
-  assert.equal(read.length, 2);
-  assert.deepEqual(read[0].paperIds, ['a_p0', 'a_p1'], 'opening a seeded card must not find it empty');
-  assert.equal(read[0].name, 'List a');
-  assert.equal(read[0].color, 'teal');
+  assert.equal(read!.length, 2);
+  assert.deepEqual(read![0].paperIds, ['a_p0', 'a_p1'], 'opening a seeded card must not find it empty');
+  assert.equal(read![0].name, 'List a');
+  assert.equal(read![0].color, 'teal');
 
   // The sync clocks are deliberately not stored: read back from a previous
   // session they would tell the freshness check something nobody confirmed.
-  assert.equal('updatedAt' in read[0], false);
-  assert.equal('publicSyncedAt' in read[0], false);
+  assert.equal('updatedAt' in read![0], false);
+  assert.equal('publicSyncedAt' in read![0], false);
 });
 
 test('nothing stored, or nonsense stored, reads as "no answer" rather than "no lists"', () => {
   const storage = listStore();
   assert.equal(readStoredLists('uid-l2', storage), null);
 
-  storage.setItem(getOwnListsStorageKey('uid-l2'), 'not json at all');
+  storage.setItem(getOwnListsStorageKey('uid-l2')!, 'not json at all');
   assert.equal(readStoredLists('uid-l2', storage), null);
 
-  storage.setItem(getOwnListsStorageKey('uid-l2'), '{"not":"an array"}');
+  storage.setItem(getOwnListsStorageKey('uid-l2')!, '{"not":"an array"}');
   assert.equal(readStoredLists('uid-l2', storage), null);
 
   // An entry with no paper ids cannot be opened, so it is not an entry.
-  storage.setItem(getOwnListsStorageKey('uid-l2'), '[{"id":"x","name":"X"}]');
+  storage.setItem(getOwnListsStorageKey('uid-l2')!, '[{"id":"x","name":"X"}]');
   assert.equal(readStoredLists('uid-l2', storage), null);
 
-  assert.equal(readStoredLists(null, storage), null);
+  assert.equal(readStoredLists(null!, storage), null);
   assert.equal(readStoredLists('uid-l2', null), null);
 });
 
@@ -184,9 +184,9 @@ test('the budget drops whole lists, never half of one', () => {
   saveStoredLists('uid-l3', lists, storage, oneFits * 2 + 4);
 
   const read = readStoredLists('uid-l3', storage);
-  assert.ok(read.length < 3, 'the budget must actually bite');
-  for (const entry of read) {
-    assert.equal(entry.paperIds.length, 40, 'every stored list keeps all of its ids');
+  assert.ok(read!.length < 3, 'the budget must actually bite');
+  for (const entry of read!) {
+    assert.equal(entry.paperIds!.length, 40, 'every stored list keeps all of its ids');
   }
 });
 
@@ -230,7 +230,7 @@ test('onboarding completion survives a reload, per account', () => {
     preferences: ['astro'],
   });
   assert.equal(readStoredOnboarding('uid-o2', storage), null);
-  assert.ok(getOnboardingStorageKey('uid-o1').includes('onboarding'));
+  assert.ok(getOnboardingStorageKey('uid-o1')!.includes('onboarding'));
 
   clearUserScopedStorage('uid-o1', storage);
   assert.equal(readStoredOnboarding('uid-o1', storage), null);
@@ -244,16 +244,16 @@ test('onboarding completion survives a reload, per account', () => {
 
 test('clearUserScopedStorage drops the hidden-comments list', () => {
   const storage = createStorage();
-  storage.setItem(getLocalHiddenStorageKey('alice'), '["c1"]');
-  storage.setItem(getLocalHiddenStorageKey('bob'), '["c2"]');
+  storage.setItem(getLocalHiddenStorageKey('alice')!, '["c1"]');
+  storage.setItem(getLocalHiddenStorageKey('bob')!, '["c2"]');
   storage.setItem('papertok:locallyHiddenComments', '["legacy"]');
 
   clearUserScopedStorage('alice', storage);
 
-  assert.equal(storage.getItem(getLocalHiddenStorageKey('alice')), null);
+  assert.equal(storage.getItem(getLocalHiddenStorageKey('alice')!), null);
   assert.equal(storage.getItem('papertok:locallyHiddenComments'), null,
     'the orphaned global key is never migrated, only swept away');
-  assert.equal(storage.getItem(getLocalHiddenStorageKey('bob')), '["c2"]',
+  assert.equal(storage.getItem(getLocalHiddenStorageKey('bob')!), '["c2"]',
     'and the other account on this browser keeps its own');
 });
 

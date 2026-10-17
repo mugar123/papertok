@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RERANK_LOOKAHEAD, mergeFreshFeedPage, splitFeedForReRank } from './feedReRankSplit.ts';
 
-const papers = (n) => Array.from({ length: n }, (_, i) => ({ id: `p${i}` }));
-const ids = (list) => list.map(paper => paper.id);
+const papers = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `p${i}` }));
+const ids = (list: { id: string }[]) => list.map(paper => paper.id);
 
 test('without an anchor the split is at the top, three cards deep, as before', () => {
   const { anchorIndex, locked, queue } = splitFeedForReRank(papers(10));
@@ -38,7 +38,7 @@ test('anchors that are not in the list, null or undefined are ignored', () => {
 test('anchorPaperIds itself can be an explicit null, not just contain one', () => {
   // The destructuring default (`= []`) only covers undefined; a caller that
   // passes null explicitly must not throw either.
-  const { anchorIndex } = splitFeedForReRank(papers(10), { anchorPaperIds: null });
+  const { anchorIndex } = splitFeedForReRank(papers(10), { anchorPaperIds: null! });
   assert.equal(anchorIndex, 0);
 });
 
@@ -61,7 +61,7 @@ test('the lookahead is configurable', () => {
   assert.deepEqual(ids(locked), ['p0', 'p1', 'p2']);
 });
 
-const fresh = (n) => Array.from({ length: n }, (_, i) => ({ id: `q${i}` }));
+const fresh = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `q${i}` }));
 
 test('mergeFreshFeedPage: with nothing on screen the fresh page stands alone', () => {
   const page = fresh(4);

@@ -36,10 +36,10 @@ import { readFile } from 'node:fs/promises';
 const CSS = new URL('./PaperCard.css', import.meta.url);
 
 /** Comments name selectors and properties in prose; matching them would invent both sides. */
-const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, '');
 
 /** The declarations of one rule, by exact selector. */
-function ruleBody(css, selector) {
+function ruleBody(css: string, selector: string) {
   const pattern = new RegExp(`(?:^|[};])\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`);
   const match = css.match(pattern);
   assert.ok(match, `expected a \`${selector}\` rule in the stylesheet`);
@@ -47,7 +47,7 @@ function ruleBody(css, selector) {
 }
 
 /** Every rule whose selector mentions `.pc-watermark`, as `[selector, body]`. */
-function watermarkRules(css) {
+function watermarkRules(css: string) {
   return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
     .map(([, selector, body]) => [selector.trim(), body])
     .filter(([selector]) => selector.includes('.pc-watermark'));
@@ -110,7 +110,7 @@ test('the glyph settles into its receded weight instead of stepping', async () =
   // are one event, and a literal here is how they come apart. Retuned together
   // with the image fade, including its linear progression.
   const jsx = await readFile(new URL('./PaperCard.tsx', import.meta.url), 'utf8');
-  const entranceMs = Number(/const FIGURE_ENTRANCE_MS = (\d+);/.exec(jsx)[1]);
+  const entranceMs = Number(/const FIGURE_ENTRANCE_MS = (\d+);/.exec(jsx)![1]);
   assert.match(
     body,
     new RegExp(`transition:\\s*opacity\\s+${entranceMs}ms`),
@@ -130,7 +130,7 @@ test('with movement refused the glyph gives way in the same frame as the clippin
   // so a clipping appears at once under the preference. A 620ms cross-fade
   // beside an instant arrival would be the two coming apart again.
   const reduced = css.match(/@media\s*\(\s*prefers-reduced-motion:\s*reduce\s*\)\s*\{((?:[^{}]|\{[^{}]*\})*)\}/g) || [];
-  const holding = reduced.find(block => /\.pc-figure\s*,/.test(block) && /transition:\s*none/.test(block));
+  const holding = reduced.find((block: string) => /\.pc-figure\s*,/.test(block) && /transition:\s*none/.test(block));
   assert.ok(holding, 'expected the reduced-motion block that stills the clippings');
   assert.match(holding, /\.pc-watermark\s*,/, 'the glyph belongs in it too');
 });
@@ -157,7 +157,7 @@ test('with movement refused the glyph gives way in the same frame as the clippin
  * blocks of this stylesheet, so a bare substring would name whichever one the
  * file happens to list first.
  */
-function mediaConditionOf(css, pattern) {
+function mediaConditionOf(css: string, pattern: RegExp) {
   for (const [, condition, block] of css.matchAll(/@media([^{]+)\{((?:[^{}]|\{[^{}]*\})*)\}/g)) {
     if (pattern.test(block)) return condition.trim();
   }

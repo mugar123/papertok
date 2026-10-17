@@ -12,7 +12,7 @@ import {
 import { WorkerApiAuthError } from './workerApiClient.ts';
 
 test('assembles events only once their line closes', () => {
-  const parser = createNdjsonParser();
+  const parser = createNdjsonParser<Record<string, unknown>>();
   assert.deepEqual(parser.push('{"type":"meta","level":"unive'), []);
   const events = parser.push('rsity"}\n');
   assert.equal(events.length, 1);
@@ -21,7 +21,7 @@ test('assembles events only once their line closes', () => {
 });
 
 test('emits several events arriving in one chunk', () => {
-  const parser = createNdjsonParser();
+  const parser = createNdjsonParser<Record<string, unknown>>();
   const events = parser.push([
     '{"type":"meta"}',
     '{"type":"section","index":0}',
@@ -32,13 +32,13 @@ test('emits several events arriving in one chunk', () => {
 });
 
 test('skips a corrupt line rather than losing the stream', () => {
-  const parser = createNdjsonParser();
+  const parser = createNdjsonParser<Record<string, unknown>>();
   const events = parser.push('{"type":"section"}\nnot json\n{"type":"done"}\n');
   assert.deepEqual(events.map(event => event.type), ['section', 'done']);
 });
 
 test('flush recovers a final line with no trailing newline', () => {
-  const parser = createNdjsonParser();
+  const parser = createNdjsonParser<Record<string, unknown>>();
   assert.deepEqual(parser.push('{"type":"done","sectionCount":3}'), []);
   const flushed = parser.flush();
   assert.equal(flushed.length, 1);
@@ -46,13 +46,13 @@ test('flush recovers a final line with no trailing newline', () => {
 });
 
 test('flush on an empty buffer yields nothing', () => {
-  const parser = createNdjsonParser();
+  const parser = createNdjsonParser<Record<string, unknown>>();
   parser.push('{"type":"done"}\n');
   assert.deepEqual(parser.flush(), []);
 });
 
 test('a byte split inside a multi-line chunk keeps order', () => {
-  const parser = createNdjsonParser();
+  const parser = createNdjsonParser<Record<string, unknown>>();
   const first = parser.push('{"type":"section","index":0}\n{"type":"sec');
   assert.equal(first.length, 1);
   const second = parser.push('tion","index":1}\n');
@@ -89,7 +89,7 @@ test('a signal that already aborted cancels before anything is requested', async
 test('the abort check runs ahead of the full-text gate, so the reason stays cancellation', async () => {
   await assert.rejects(
     () => rewritePaper(UNREADABLE_PAPER, 'university', { signal: abortedSignal() }),
-    (error) => error.code === 'AI_CANCELLED',
+    (error) => (error as Error & { code?: string; status?: number; retryAfterMs?: number }).code === 'AI_CANCELLED',
   );
 });
 
@@ -97,18 +97,18 @@ test('a live signal is not mistaken for an aborted one', async () => {
   const controller = new AbortController();
   await assert.rejects(
     () => rewritePaper(UNREADABLE_PAPER, 'university', { signal: controller.signal }),
-    (error) => error.code === 'AI_REWRITE_NEEDS_FULL_TEXT',
+    (error) => (error as Error & { code?: string; status?: number; retryAfterMs?: number }).code === 'AI_REWRITE_NEEDS_FULL_TEXT',
   );
   await assert.rejects(
     () => rewritePaper(UNREADABLE_PAPER, 'university', {}),
-    (error) => error.code === 'AI_REWRITE_NEEDS_FULL_TEXT',
+    (error) => (error as Error & { code?: string; status?: number; retryAfterMs?: number }).code === 'AI_REWRITE_NEEDS_FULL_TEXT',
   );
 });
 
 test('an invalid level is still reported as such, aborted or not', async () => {
   await assert.rejects(
     () => rewritePaper(READABLE_PAPER, 'expert', { signal: abortedSignal() }),
-    (error) => error.code === 'AI_INVALID_LEVEL',
+    (error) => (error as Error & { code?: string; status?: number; retryAfterMs?: number }).code === 'AI_INVALID_LEVEL',
   );
 });
 
@@ -207,11 +207,11 @@ test('an expired Firebase session maps to AI_AUTH_REQUIRED', () => {
 });
 
 test('a rewrite error the stream already named is never renamed', () => {
-  const named = new PaperRewriteError('AI_QUOTA_EXHAUSTED', { scope: 'provider' });
+  const named = new PaperRewriteError('AI_QUOTA_EXHAUSTED', { scope: 'provider' } as NonNullable<ConstructorParameters<typeof PaperRewriteError>[1]>);
   assert.equal(toRewriteError(named), named);
   // The scope is what tells the reader's own ceiling from the provider's, and it
   // only survives if the error object does.
-  assert.equal(toRewriteError(named).quota.scope, 'provider');
+  assert.equal(toRewriteError(named).quota!.scope, 'provider');
 });
 
 test('an abort is a timeout unless the caller asked for it', () => {

@@ -21,8 +21,8 @@ test('annotations are grouped by paragraph in document order', () => {
     { id: 'b', sectionId: 's1', paragraphIndex: 1, quote: 'bbb', note: 'segunda' },
   ]);
   assert.deepEqual(numbered.map(item => item.id), ['a', 'b', 'c']);
-  assert.equal(byParagraph.get('s1:0')[0].id, 'a');
-  assert.equal(byParagraph.get('s2:0')[0].id, 'c');
+  assert.equal(byParagraph.get('s1:0')![0].id, 'a');
+  assert.equal(byParagraph.get('s2:0')![0].id, 'c');
 });
 
 test('a bare highlight is grouped but not numbered', () => {
@@ -30,7 +30,7 @@ test('a bare highlight is grouped but not numbered', () => {
     { id: 'mark', sectionId: 's1', paragraphIndex: 0, quote: 'aaa' },
   ]);
   assert.equal(numbered.length, 0);
-  assert.equal(byParagraph.get('s1:0').length, 1);
+  assert.equal(byParagraph.get('s1:0')!.length, 1);
 });
 
 test('the file is named after the paper, safely', () => {
@@ -54,10 +54,10 @@ test('the file name can carry another extension for the other formats', () => {
 
 test('the card can count what it is about to export without building it', () => {
   assert.deepEqual(summarizeExport([
-    { quote: 'a', kind: 'user' },
-    { quote: 'b', kind: 'user', note: 'x' },
-    { quote: 'c', kind: 'ai', note: 'y' },
-    { quote: '', kind: 'user' },
+    { quote: 'a', kind: 'user' as const },
+    { quote: 'b', kind: 'user' as const, note: 'x' },
+    { quote: 'c', kind: 'ai' as const, note: 'y' },
+    { quote: '', kind: 'user' as const },
   ]), { marks: 1, mine: 1, ai: 1 });
 });
 
@@ -108,7 +108,7 @@ test('los metadatos salen montados', () => {
   assert.deepEqual(meta.colophon.rows.map(row => row.key), [
     'Original article', 'Authors', 'Source', 'This version', 'Annotated with',
   ]);
-  assert.equal(meta.colophon.rows.at(-1).value, '2 highlights and 4 notes: 3 yours, 1 from the AI');
+  assert.equal(meta.colophon.rows.at(-1)!.value, '2 highlights and 4 notes: 3 yours, 1 from the AI');
 });
 
 test('la mitad que vale cero no se imprime', () => {
@@ -131,7 +131,7 @@ test('sin enlace al original la línea de fuente no queda coja', () => {
   assert.equal(meta.source, '4 September 2026');
   assert.equal(meta.byline, '');
   assert.equal(meta.colophon.rows.find(row => row.key === 'Source'), undefined);
-  assert.equal(meta.colophon.rows.at(-1).value, 'No highlights or notes');
+  assert.equal(meta.colophon.rows.at(-1)!.value, 'No highlights or notes');
 });
 
 test('el nivel y el recuento cambian con los datos, no solo el título', () => {
@@ -145,7 +145,7 @@ test('el nivel y el recuento cambian con los datos, no solo el título', () => {
   assert.equal(meta.level, 'Researcher level');
   assert.equal(meta.noticeLabel, 'Notice');
   assert.equal(meta.colophon.heading, 'Provenance');
-  assert.equal(meta.colophon.rows.at(-1).value, '1 highlight and 2 notes: 0 yours, 2 from the AI');
+  assert.equal(meta.colophon.rows.at(-1)!.value, '1 highlight and 2 notes: 0 yours, 2 from the AI');
 });
 
 // ---------------------------------------------------------------------------
@@ -199,7 +199,7 @@ test('el título del colofón y el de la cabecera se recortan cada uno a su prop
   assert.equal(meta.title, long);
   assert.equal(meta.runningTitle, `${'Y'.repeat(45)}…`);
   const titleRow = meta.colophon.rows.find(row => row.key === 'Original article');
-  assert.equal(titleRow.value, `${long.slice(0, 500)}…`);
+  assert.equal(titleRow!.value, `${long.slice(0, 500)}…`);
 });
 
 // ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
 
 /**
  * SOURCE tests for how an entity page opens and how the feed comes back.
@@ -153,7 +153,7 @@ test('the blocks a project fills in rise in sequence instead of landing in one f
   // Staggered down the page. The claim is the ORDER, not the numbers: each
   // block waits longer than the one above it, so the group reads as one pass
   // rather than as four things appearing together.
-  const delayOf = (selector) => {
+  const delayOf = (selector: string) => {
     const rule = css.match(new RegExp(`\\.${selector} \\{ animation-delay: ([0-9.]+)s; \\}`));
     return rule ? Number(rule[1]) : 0;
   };

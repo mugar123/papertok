@@ -18,9 +18,9 @@ test('isLegacyArxivId names the pre-2007 shapes and nothing else', async () => {
 });
 
 test('hydrateLegacyArxivPapers names the legacy ids from arXiv and reports a failure', async () => {
-  const asked = [];
+  const asked: unknown[] = [];
   const ok = await hydrateLegacyArxivPapers(['hep-th/0603001', 'openalex:W1'], {
-    fetchArxivPapers: async (ids) => { asked.push(ids); return [{ id: 'hep-th/0603001', arxivId: 'hep-th/0603001', title: 'Named' }]; },
+    fetchArxivPapers: async (ids) => { asked.push(ids); return ([{ id: 'hep-th/0603001', arxivId: 'hep-th/0603001', title: 'Named' }] as import('../models/Paper.ts').Paper[]); },
   });
   assert.deepEqual(asked, [['hep-th/0603001']], 'only the legacy shapes go to arXiv');
   assert.equal(ok.failed, false);
@@ -41,10 +41,10 @@ test('hydrateLegacyArxivPapers names the legacy ids from arXiv and reports a fai
 
 test('hydrateLegacyArxivPapers matches an arXiv answer back to the requested id, version suffix and prefix included', async () => {
   const { records } = await hydrateLegacyArxivPapers(['hep-th/0603001v2', 'arxiv:cond-mat/0101001'], {
-    fetchArxivPapers: async () => [
+    fetchArxivPapers: async () => ([
       { id: 'hep-th/0603001', arxivId: 'hep-th/0603001', title: 'Versioned', authors: [{ name: 'A. Author' }] },
       { id: 'cond-mat/0101001', arxivId: 'cond-mat/0101001', title: 'Prefixed' },
-    ],
+    ] as import('../models/Paper.ts').Paper[]),
   });
   assert.deepEqual(records.map(record => record.id), ['hep-th/0603001v2', 'arxiv:cond-mat/0101001'],
     'each record keeps the id the list holds, not the one arXiv answered with');

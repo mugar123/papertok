@@ -133,7 +133,7 @@ import { useEffect, useRef } from 'react';
  * before the ref is assigned in `EntityExplorer.jsx` and `SearchPage.jsx`,
  * which import `PDFViewer` plainly).
  */
-export function createOverlayHistory({ history, listen, unlisten }: { history: OverlayHistory; listen: (callback: () => void) => void; unlisten: (callback: () => void) => void }) {
+export function createOverlayHistory({ history, listen, unlisten }: { history: Omit<OverlayHistory, 'replaceState'>; listen: (callback: () => void) => void; unlisten: (callback: () => void) => void }) {
   let armed: { tag: string; onClose: () => void } | null = null;
   const onPop = () => {
     if (!armed) return;
@@ -217,13 +217,13 @@ export function createOverlayHistory({ history, listen, unlisten }: { history: O
  * like it did nothing: on `/explorer/*` and `/public/paper/*` the in-page back
  * arrow inherits that, once, after a reload taken with an overlay open.
  */
-export function clearStaleOverlayMarker({ history, location }: { history: OverlayHistory; location?: Pick<Location, 'href'> }) {
+export function clearStaleOverlayMarker({ history, location }: { history: Pick<OverlayHistory, 'state'> & Partial<Pick<OverlayHistory, 'replaceState'>>; location?: Pick<Location, 'href'> | null }) {
   const state = history?.state;
   if (!state || typeof state !== 'object' || state.overlay === undefined) return false;
   const cleaned = { ...state };
   delete cleaned.overlay;
   try {
-    history.replaceState(cleaned, '', location?.href);
+    history.replaceState!(cleaned, '', location?.href);
   } catch {
     return false;
   }

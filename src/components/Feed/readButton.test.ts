@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 /**
  * Marking a paper read used to fade the card out and pull it from the feed
@@ -40,7 +40,7 @@ test('SOURCE: every card mount can take a read mark back', async () => {
     ['../Explorer/EntityExplorer.tsx', /onUnmarkAsRead=\{unmarkAsRead\}/],
     ['../Public/PublicPaperPage.tsx', /onUnmarkAsRead=\{unmarkAsRead\}/],
     ['../Lists/ListsPage.tsx', /onUnmarkAsRead=\{forgetRead\}/],
-  ];
+  ] as const;
   for (const [path, pattern] of mounts) {
     assert.match(await read(path), pattern, `${path} hands the card the way back`);
   }
@@ -53,7 +53,7 @@ test('SOURCE: the way back is the same gesture played the other way', async () =
   const css = stripComments(await read('./PaperCard.css'));
   // The rule that opens with this selector alone — not the one where it is
   // the last of a comma-separated list.
-  const rule = (selector) => {
+  const rule = (selector: string) => {
     const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const match = css.match(new RegExp(`(?<=^|[^,]\\n)${escaped} \\{[^}]*`));
     assert.ok(match, `expected a rule for ${selector}`);

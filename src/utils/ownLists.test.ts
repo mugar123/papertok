@@ -1,3 +1,4 @@
+import type { OwnList, ListSnapshot } from './ownLists.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -19,7 +20,7 @@ import {
  * absence is only real when the server is the one reporting it.
  */
 
-function snapshot(documents, { fromCache = false } = {}) {
+function snapshot(documents: OwnList[], { fromCache = false } = {}): ListSnapshot {
   return {
     empty: documents.length === 0,
     size: documents.length,
@@ -79,7 +80,7 @@ test('membership is computed per paper, not carried over', () => {
   const other = readOwnLists(snapshot(LISTS), 'not-in-any-list');
   assert.deepEqual([...other.inLists], []);
 
-  const none = readOwnLists(snapshot(LISTS), undefined);
+  const none = readOwnLists(snapshot(LISTS), undefined!);
   assert.deepEqual([...none.inLists], [], 'no paper means no membership to compute');
   assert.equal(none.lists.length, 2, 'but the lists are still returned');
 });
@@ -109,7 +110,7 @@ test('membership can be asked of lists that never came from a snapshot', () => {
   ];
   assert.deepEqual([...listsHolding(lists, 'p1')], ['a']);
   assert.deepEqual([...listsHolding(lists, 'p9')], []);
-  assert.deepEqual([...listsHolding(lists, null)], [], 'no paper, no membership');
+  assert.deepEqual([...listsHolding(lists, null!)], [], 'no paper, no membership');
   assert.deepEqual([...listsHolding(null, 'p1')], []);
 });
 
@@ -151,7 +152,7 @@ test('a save that changed nothing returns the very same array', () => {
   const lists = [{ id: 'a', paperIds: [] }];
   assert.equal(withPaperMembership(lists, 'p1', {}), lists);
   assert.equal(withPaperMembership(lists, 'p1', { added: [], removed: [] }), lists);
-  assert.equal(withPaperMembership(lists, null, { added: ['a'] }), lists);
+  assert.equal(withPaperMembership(lists, null!, { added: ['a'] }), lists);
 });
 
 test('a list the cache does not know about is left alone', () => {
@@ -194,5 +195,5 @@ test('a snapshot that has caught up does not duplicate the created list', () => 
 test('merging nothing returns the fetched lists untouched', () => {
   const fetched = [{ id: 'list_1', paperIds: [] }];
   assert.equal(mergeCreatedLists(fetched, []), fetched);
-  assert.equal(mergeCreatedLists(fetched, null), fetched);
+  assert.equal(mergeCreatedLists(fetched, null!), fetched);
 });

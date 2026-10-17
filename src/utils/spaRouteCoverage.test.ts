@@ -16,13 +16,13 @@ const NOT_FOUND = new URL('../../public/404.html', import.meta.url);
 
 async function spaMatcher() {
   const config = JSON.parse(await readFile(VERCEL, 'utf8'));
-  const spa = config.rewrites.find(rule => rule.source.startsWith('/:path('));
+  const spa = config.rewrites.find((rule: { source: string; }) => rule.source.startsWith('/:path('));
   assert.ok(spa, 'the SPA rewrite is gone');
   assert.equal(spa.destination, '/index.html');
   const pattern = spa.source.match(/^\/:path\((.+)\)$/)?.[1];
   assert.ok(pattern, `unexpected rewrite source ${spa.source}`);
   const regex = new RegExp(`^${pattern}$`);
-  return path => regex.test(path.replace(/^\//, ''));
+  return (path: string) => regex.test(path.replace(/^\//, ''));
 }
 
 async function declaredRoutes() {
@@ -34,7 +34,7 @@ async function declaredRoutes() {
 }
 
 // A route with its parameters filled the way real links fill them.
-function sample(path) {
+function sample(path: string) {
   return path
     .replace(':paperKey', 'ZG9pOjEwLjExNDUvMzU1NTE3NA')
     .replace(':shareId', '0123456789abcdef0123456789abcdef')

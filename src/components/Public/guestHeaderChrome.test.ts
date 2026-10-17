@@ -16,7 +16,7 @@ import { readFile } from 'node:fs/promises';
  * sin que ningún test se quejara.
  */
 
-const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, '');
 
 const guestJsx = readFile(new URL('./GuestFeedPage.tsx', import.meta.url), 'utf8');
 const guestCss = readFile(new URL('./GuestFeedPage.css', import.meta.url), 'utf8').then(stripComments);
@@ -50,7 +50,7 @@ test('el feed de invitado conserva su propio refresh, el que usa FeedContainer',
  * estar, así que se va; la puerta a la cuenta sigue siendo el botón de entrar.
  */
 
-const stripAllComments = source => source
+const stripAllComments = (source: string) => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '');
 

@@ -15,13 +15,13 @@ import { readFile } from 'node:fs/promises';
  * once its composer is.
  */
 
-const stripComments = source => source
+const stripComments = (source: string) => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^[ \t]*\/\/.*$/gm, '');
 
-const read = async (path) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
+const read = async (path: string|URL) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
 
-const matchParagraphElement = (jsx) => jsx.match(/<p\s+key=\{paragraphIndex\}[\s\S]*?<\/p>\s*\);\s*\}\)\}/);
+const matchParagraphElement = (jsx: string) => jsx.match(/<p\s+key=\{paragraphIndex\}[\s\S]*?<\/p>\s*\);\s*\}\)\}/);
 
 test('paragraphs are keyboard-focusable on the desktop selection route', async () => {
   const jsx = await read('./PaperReader.tsx');

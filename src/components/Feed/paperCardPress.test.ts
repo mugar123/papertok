@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, '');
 
 /**
  * SOURCE tests for the press on the three triggers that open an entity from a
@@ -42,6 +42,6 @@ test('the squeeze is appended to the lists the chip and the badge already had', 
 test('reduced motion keeps the dip and drops the squeeze', async () => {
   const css = stripComments(await read('./PaperCard.css'));
   const blocks = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/g) || [];
-  assert.ok(blocks.some((b) => /\.pc-topic-link:active,\s*\.pc-project-badge:active \{\s*transform: none;\s*\}/.test(b)), 'the squeeze is switched off');
-  assert.ok(!blocks.some((b) => /\.pc-author-link:active/.test(b)), 'the opacity dip is not movement and stays');
+  assert.ok(blocks.some((b: string) => /\.pc-topic-link:active,\s*\.pc-project-badge:active \{\s*transform: none;\s*\}/.test(b)), 'the squeeze is switched off');
+  assert.ok(!blocks.some((b: string) => /\.pc-author-link:active/.test(b)), 'the opacity dip is not movement and stays');
 });

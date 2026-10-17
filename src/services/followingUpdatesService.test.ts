@@ -3,16 +3,18 @@ import test from 'node:test';
 import { withStubbedFetch } from '../test-support/deadlineHarness.ts';
 import { CACHE } from './openAireService.ts';
 import { fetchFollowingUpdates } from './followingUpdatesService.ts';
+import type { Paper } from '../models/Paper.ts';
+import type { FollowEntity } from '../utils/following.ts';
 
-const emptyOpenAire = { ok: true, json: async () => ({ response: { header: { total: { $: '0' } }, results: {} } }) };
+const emptyOpenAire = { ok: true, json: async () => ({ response: { header: { total: { $: '0' } }, results: {} } }) } as Response;
 
 /** Runs one project follow through the real chain and returns the URLs it asked for. */
-async function urlsForProjectFollow(follow) {
-  const urls = [];
+async function urlsForProjectFollow(follow: Partial<FollowEntity> & Pick<FollowEntity, 'canonicalId'>) {
+  const urls: string[] = [];
   CACHE.clear();
   try {
     await withStubbedFetch(async (url) => { urls.push(String(url)); return emptyOpenAire; }, () => (
-      fetchFollowingUpdates([{ type: 'project', displayName: 'Quantum leap', source: 'openaire', ...follow }])
+      fetchFollowingUpdates([{ type: 'project' as const, displayName: 'Quantum leap', source: 'openaire', ...follow }])
     ));
   } finally {
     CACHE.clear();
@@ -22,7 +24,7 @@ async function urlsForProjectFollow(follow) {
 
 test('retrieves query-topic updates with stored metadata and preserves the full follow match', async () => {
   const follow = {
-    type: 'topic',
+    type: 'topic' as const,
     canonicalId: 'query-3f419c36',
     displayName: 'Spatial transcriptomics',
     source: 'papertok',
@@ -40,18 +42,18 @@ test('retrieves query-topic updates with stored metadata and preserves the full 
       receivedFollow = topic;
       receivedOptions = options;
       return {
-        papers: [{ id: 'paper-1', title: 'Spatial transcriptomics maps tissue' }],
+        papers: [{ id: 'paper-1', title: 'Spatial transcriptomics maps tissue' }] as Paper[],
         allFailed: false,
       };
     },
   });
 
   assert.equal(receivedFollow, follow);
-  assert.equal(receivedOptions.allowLegacyDisplayName, true);
+  assert.equal(receivedOptions!.allowLegacyDisplayName, true);
   assert.equal(result.failedEntities, 0);
   assert.equal(result.papers.length, 1);
   assert.deepEqual(result.papers[0]._followedEntityMatches, [{
-    type: 'topic',
+    type: 'topic' as const,
     canonicalId: follow.canonicalId,
     displayName: follow.displayName,
     source: 'papertok',
@@ -62,13 +64,13 @@ test('retrieves query-topic updates with stored metadata and preserves the full 
 
 test('counts a failed topic independently and returns successful topic updates', async () => {
   const follows = [
-    { type: 'topic', canonicalId: 'query-deadbeef', displayName: 'First', metadata: { query: 'First topic' } },
-    { type: 'topic', canonicalId: 'query-feedface', displayName: 'Second', metadata: { query: 'Second topic' } },
+    { type: 'topic' as const, canonicalId: 'query-deadbeef', displayName: 'First', metadata: { query: 'First topic' } },
+    { type: 'topic' as const, canonicalId: 'query-feedface', displayName: 'Second', metadata: { query: 'Second topic' } },
   ];
   const result = await fetchFollowingUpdates(follows, {
     topicRetriever: async follow => {
       if (follow.canonicalId === 'query-deadbeef') throw new Error('provider unavailable');
-      return { papers: [{ id: 'paper-2', title: 'Second topic result' }], allFailed: false };
+      return { papers: [{ id: 'paper-2', title: 'Second topic result' }] as Paper[], allFailed: false };
     },
   });
 
@@ -79,18 +81,18 @@ test('counts a failed topic independently and returns successful topic updates',
 
 test('answers as each follow answers: the OpenAlex-backed ones first, everything merged as it lands', async () => {
   const follows = [
-    { type: 'author', canonicalId: 'ada lovelace', displayName: 'Ada Lovelace' },
-    { type: 'author', canonicalId: 'A1', displayName: 'Alan Turing', externalIds: { openalex: 'https://openalex.org/A1' } },
-    { type: 'topic', canonicalId: 'cs.NI', displayName: 'Networking', metadata: { categoryIds: ['cs.NI'] } },
-    { type: 'institution', canonicalId: '042nb2s44', displayName: 'MIT', externalIds: { ror: 'https://ror.org/042nb2s44' } },
+    { type: 'author' as const, canonicalId: 'ada lovelace', displayName: 'Ada Lovelace' },
+    { type: 'author' as const, canonicalId: 'A1', displayName: 'Alan Turing', externalIds: { openalex: 'https://openalex.org/A1' } },
+    { type: 'topic' as const, canonicalId: 'cs.NI', displayName: 'Networking', metadata: { categoryIds: ['cs.NI'] } },
+    { type: 'institution' as const, canonicalId: '042nb2s44', displayName: 'MIT', externalIds: { ror: 'https://ror.org/042nb2s44' } },
   ];
-  const started = [];
-  const progress = [];
+  const started: unknown[] = [];
+  const progress: { papers: string[]; checked: number; failed: number; total: number }[] = [];
   const result = await fetchFollowingUpdates(follows, {
     fetchUpdatesForFollow: async (follow) => {
       started.push(follow.displayName);
       await new Promise(resolve => setTimeout(resolve, follow.type === 'institution' ? 30 : 5));
-      return [{ id: `paper-${follow.canonicalId}`, title: follow.displayName, published: '2026-08-01' }];
+      return [{ id: `paper-${follow.canonicalId}`, title: follow.displayName, published: '2026-08-01' }] as Paper[];
     },
     onProgress: (partial) => progress.push({
       papers: partial.papers.map(paper => paper.id),
@@ -108,20 +110,20 @@ test('answers as each follow answers: the OpenAlex-backed ones first, everything
   for (let index = 1; index < progress.length; index += 1) {
     assert.ok(progress[index - 1].papers.every(id => progress[index].papers.includes(id)), 'each delivery carries everything delivered before it');
   }
-  assert.deepEqual([...progress.at(-1).papers].sort(), result.papers.map(paper => paper.id).sort(), 'the last delivery is the answer');
+  assert.deepEqual([...progress.at(-1)!.papers].sort(), result.papers.map(paper => paper.id).sort(), 'the last delivery is the answer');
   assert.equal(result.checkedEntities, 4);
 });
 
 test('a follow that never answers is counted as failed at the deadline, and the rest still arrive', async () => {
   const follows = [
-    { type: 'author', canonicalId: 'A1', displayName: 'Alan Turing' },
-    { type: 'author', canonicalId: 'A2', displayName: 'Stalled' },
+    { type: 'author' as const, canonicalId: 'A1', displayName: 'Alan Turing' },
+    { type: 'author' as const, canonicalId: 'A2', displayName: 'Stalled' },
   ];
   const result = await fetchFollowingUpdates(follows, {
     entityTimeoutMs: 20,
     fetchUpdatesForFollow: (follow) => (follow.canonicalId === 'A2'
       ? new Promise(() => {})
-      : Promise.resolve([{ id: 'p1', title: 'On computable numbers', published: '2026-08-01' }])),
+      : Promise.resolve([{ id: 'p1', title: 'On computable numbers', published: '2026-08-01' }] as Paper[])),
   });
   assert.equal(result.checkedEntities, 2);
   assert.equal(result.failedEntities, 1);
@@ -130,16 +132,16 @@ test('a follow that never answers is counted as failed at the deadline, and the 
 
 test('a category topic in the inbox asks for what is new in the category, not for what matches its name', async () => {
   let received;
-  const retriever = async (topic, options) => { received = options; return { papers: [], allFailed: false }; };
+  const retriever: NonNullable<NonNullable<Parameters<typeof fetchFollowingUpdates>[1]>['topicRetriever']> = async (topic, options) => { received = options; return { papers: [], allFailed: false }; };
   await fetchFollowingUpdates([
-    { type: 'topic', canonicalId: 'cs.NI', displayName: 'Networking', metadata: { categoryIds: ['cs.NI'] } },
+    { type: 'topic' as const, canonicalId: 'cs.NI', displayName: 'Networking', metadata: { categoryIds: ['cs.NI'] } },
   ], { topicRetriever: retriever });
-  assert.deepEqual(received.excludeProviders, ['searchArxiv', 'searchPubmed']);
+  assert.deepEqual(received!.excludeProviders, ['searchArxiv', 'searchPubmed']);
 
   await fetchFollowingUpdates([
-    { type: 'topic', canonicalId: 'query-3f419c36', displayName: 'Spatial transcriptomics', metadata: { query: 'Spatial transcriptomics', categoryIds: [] } },
+    { type: 'topic' as const, canonicalId: 'query-3f419c36', displayName: 'Spatial transcriptomics', metadata: { query: 'Spatial transcriptomics', categoryIds: [] } },
   ], { topicRetriever: retriever });
-  assert.equal(received.excludeProviders, undefined, 'a query topic has only the searches to answer with');
+  assert.equal(received!.excludeProviders, undefined, 'a query topic has only the searches to answer with');
 });
 
 /**

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import { clearStaleOverlayMarker, createOverlayHistory } from './useOverlayHistory.ts';
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 /**
  * A history whose `back()` pops and notifies synchronously — good enough for
@@ -19,15 +19,15 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '
  * after a close — which is the invariant these tests are about.
  */
 function fakeHistory(initial = { idx: 3, key: 'k' }) {
-  const stack = [initial]; const listeners = new Set();
+  const stack = [initial]; const listeners = new Set<() => void>();
   return {
     history: {
       get state() { return stack[stack.length - 1]; },
-      pushState(state) { stack.push(state); },
-      replaceState(state) { stack[stack.length - 1] = state; },
+      pushState(state: { idx: number; key: string; }) { stack.push(state); },
+      replaceState(state: { idx: number; key: string; }) { stack[stack.length - 1] = state; },
       back() { stack.pop(); listeners.forEach(fn => fn()); },
     },
-    listen: (fn) => listeners.add(fn), unlisten: (fn) => listeners.delete(fn),
+    listen: (fn: () => void) => listeners.add(fn), unlisten: (fn: () => void) => listeners.delete(fn),
     stack,
   };
 }
@@ -43,15 +43,15 @@ function fakeHistory(initial = { idx: 3, key: 'k' }) {
  * mount does to this hook's effect (see useOverlayHistory.js).
  */
 function fakeAsyncHistory(initial = { idx: 3, key: 'k' }) {
-  const stack = [initial]; const listeners = new Set();
+  const stack = [initial]; const listeners = new Set<() => void>();
   let pendingBacks = 0;
   return {
     history: {
       get state() { return stack[stack.length - 1]; },
-      pushState(state) { stack.push(state); },
+      pushState(state: { idx: number; key: string; }) { stack.push(state); },
       back() { pendingBacks += 1; },
     },
-    listen: (fn) => listeners.add(fn), unlisten: (fn) => listeners.delete(fn),
+    listen: (fn: () => void) => listeners.add(fn), unlisten: (fn: () => void) => listeners.delete(fn),
     stack,
     get pendingBacks() { return pendingBacks; },
     flushOneBack() {
@@ -68,7 +68,7 @@ function fakeAsyncHistory(initial = { idx: 3, key: 'k' }) {
  * pinning its text: `useOverlayHistory(open, <name>, tag)` → the body of
  * `const <name> = useCallback(() => { … }, [])`.
  */
-function armedWith(code, callPattern) {
+function armedWith(code: string, callPattern: RegExp) {
   const call = code.match(callPattern);
   assert.ok(call, `no useOverlayHistory call matching ${callPattern}`);
   const name = call[1];
@@ -193,7 +193,7 @@ test('un pushState que revienta no arma nada (SecurityError de Safari)', () => {
 });
 
 test('el marcador que sobrevive a una recarga se limpia al arrancar', () => {
-  const f = fakeHistory({ idx: 3, key: 'k', overlay: 'reader' });
+  const f = fakeHistory({ idx: 3, key: 'k', overlay: 'reader' } as NonNullable<Parameters<typeof fakeHistory>[0]> & Record<string, unknown>);
   const cleared = clearStaleOverlayMarker({ history: f.history, location: { href: 'https://papertok.app/feed' } });
 
   assert.equal(cleared, true);
@@ -375,8 +375,8 @@ test('SOURCE: todo archivo bajo src/ que monta <PDFViewer o <PaperReader usa use
  * `useOverlayHistory` with — compared against the name its own
  * `onOpenChange(false)` calls, the one the X and Escape travel through.
  */
-const publishedClose = (code) => code.match(/useImperativeHandle\(closeRef, \(\) => (\w+),/)?.[1];
-const dialogClose = (code) => code.match(/onOpenChange=\{\((\w+)\) => \{ if \(!\1\) (\w+)\(\); \}\}/)?.[2];
+const publishedClose = (code: string) => code.match(/useImperativeHandle\(closeRef, \(\) => (\w+),/)?.[1];
+const dialogClose = (code: string) => code.match(/onOpenChange=\{\((\w+)\) => \{ if \(!\1\) (\w+)\(\); \}\}/)?.[2];
 
 test('SOURCE: en el lector, Atrás y la X terminan en la misma función', async () => {
   const code = stripComments(await read('../components/Reader/PaperReader.tsx'));

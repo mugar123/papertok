@@ -13,10 +13,10 @@ import { readFile } from 'node:fs/promises';
  * slices, pieces bound in one contiguous pattern.
  */
 
-const stripComments = source => source
+const stripComments = (source: string) => source
   .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
   .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-const read = path => readFile(new URL(path, import.meta.url), 'utf8');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
 
 test('SOURCE: the not-found page is one main with one h1 and a link to the feed', async () => {
   const code = stripComments(await read('./NotFoundPage.tsx'));

@@ -34,7 +34,7 @@ const PASSTHROUGH_HEADERS = [
   'X-ELS-Status',
 ];
 
-function json(data, status = 200, headers = {}) {
+function json(data: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
@@ -47,7 +47,7 @@ function json(data, status = 200, headers = {}) {
   });
 }
 
-async function sha256Bytes(value) {
+async function sha256Bytes(value: string) {
   return new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)));
 }
 
@@ -56,7 +56,7 @@ async function sha256Bytes(value) {
 // -- which is what the previous `if (candidate.length !== expected.length)`
 // broke: it returned early, and the time that saved told a caller when it had
 // guessed the length of the secret. The comment above it claimed otherwise.
-async function secretsMatch(candidate, expected) {
+async function secretsMatch(candidate: string, expected: string) {
   const [candidateDigest, expectedDigest] = await Promise.all([
     sha256Bytes(candidate),
     sha256Bytes(expected),
@@ -68,12 +68,12 @@ async function secretsMatch(candidate, expected) {
   return difference === 0;
 }
 
-function presentedSecret(request) {
+function presentedSecret(request: Request) {
   const header = request.headers.get('authorization') || '';
   return header.startsWith('Bearer ') ? header.slice(7) : '';
 }
 
-function safeQuery(value) {
+function safeQuery(value: unknown) {
   const query = [...String(value || '')]
     .map(character => {
       const code = character.charCodeAt(0);
@@ -85,17 +85,17 @@ function safeQuery(value) {
   return query && query.length <= MAX_QUERY_LENGTH ? query : '';
 }
 
-function boundedInteger(value, fallback, minimum, maximum) {
-  const parsed = Number.parseInt(value, 10);
+function boundedInteger(value: string | null, fallback: number, minimum: number, maximum: number) {
+  const parsed = Number.parseInt(value as string, 10);
   return Number.isInteger(parsed) ? Math.max(minimum, Math.min(maximum, parsed)) : fallback;
 }
 
-export function createScopusProxy(env) {
+export function createScopusProxy(env: { PROXY_SHARED_SECRET?: string; ELSEVIER_API_KEY?: string; ELSEVIER_INST_TOKEN?: string }) {
   const sharedSecret = String(env.PROXY_SHARED_SECRET || '');
   const apiKey = String(env.ELSEVIER_API_KEY || '');
   const instToken = String(env.ELSEVIER_INST_TOKEN || '');
 
-  return async function handleRequest(request) {
+  return async function handleRequest(request: Request) {
     const requestUrl = new URL(request.url);
 
     if (requestUrl.pathname === '/health') {
@@ -126,7 +126,7 @@ export function createScopusProxy(env) {
     const view = String(requestUrl.searchParams.get('view') || '').toUpperCase();
     if (ALLOWED_VIEWS.has(view)) target.searchParams.set('view', view);
 
-    const upstreamHeaders = {
+    const upstreamHeaders: Record<string, string> = {
       accept: 'application/json',
       'X-ELS-APIKey': apiKey,
       'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
@@ -146,7 +146,7 @@ export function createScopusProxy(env) {
       // A deadline without this would only trade a hang for an uncaught throw,
       // which Deno answers with a bare 500 the Worker cannot tell apart from an
       // Elsevier outage.
-      const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+      const timedOut = (error as Error | null)?.name === 'TimeoutError' || (error as Error | null)?.name === 'AbortError';
       return json({ code: timedOut ? 'SCOPUS_UPSTREAM_TIMEOUT' : 'SCOPUS_UPSTREAM_UNREACHABLE' }, 504);
     }
 

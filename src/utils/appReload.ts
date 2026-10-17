@@ -45,6 +45,11 @@ export const FEED_SNAPSHOT_STORAGE_PREFIX = 'papertok_feed_snapshot_';
  */
 const MARK_WINDOW_MS = 60_000;
 
+type ReloadStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+interface NavigationPerformance {
+  getEntriesByType?: (type: string) => (PerformanceEntry | { type: string })[];
+}
+
 function safeSession() {
   try {
     return typeof window !== 'undefined' ? window.sessionStorage : null;
@@ -62,7 +67,7 @@ function safeLocal() {
 }
 
 /** Called immediately before the app reloads itself. */
-export function markAppForcedReload({ storage = safeSession(), now = Date.now() } = {}) {
+export function markAppForcedReload({ storage = safeSession(), now = Date.now() }: { storage?: ReloadStorage | null; now?: number } = {}) {
   if (!storage) return;
   try {
     storage.setItem(APP_RELOAD_KEY, String(now));
@@ -76,7 +81,7 @@ export function markAppForcedReload({ storage = safeSession(), now = Date.now() 
  * Whether the reload that produced this boot was the app's own. Consumes the
  * mark, so it answers true at most once per mark.
  */
-export function consumeAppForcedReload({ storage = safeSession(), now = Date.now() } = {}) {
+export function consumeAppForcedReload({ storage = safeSession(), now = Date.now() }: { storage?: ReloadStorage | null; now?: number } = {}) {
   if (!storage) return false;
   let raw;
   try {
@@ -97,7 +102,7 @@ export function consumeAppForcedReload({ storage = safeSession(), now = Date.now
  * reload, `back_forward` on a history step. It cannot tell WHICH kind of
  * reload, which is what the mark is for.
  */
-export function isReloadNavigation({ perf = typeof performance !== 'undefined' ? performance : null } = {}) {
+export function isReloadNavigation({ perf = typeof performance !== 'undefined' ? performance : null }: { perf?: NavigationPerformance | null } = {}) {
   try {
     const entry = perf?.getEntriesByType?.('navigation')?.[0] as PerformanceNavigationTiming | undefined;
     return entry?.type === 'reload';
@@ -120,9 +125,9 @@ export function shouldStartFeedFresh({ isReload, wasAppForced }: { isReload?: bo
  * snapshot of the papers themselves. What remains — the reader's interactions,
  * their profile, their seen-set — is not continuity, it is their data.
  */
-export function clearFeedContinuity({ session = safeSession(), local = safeLocal() } = {}) {
+export function clearFeedContinuity({ session = safeSession(), local = safeLocal() }: { session?: ReloadStorage | null; local?: ReloadStorage | null } = {}) {
   const removed: string[] = [];
-  const sweep = (storage: Storage | null, matches: (key: string) => boolean) => {
+  const sweep = (storage: ReloadStorage | null, matches: (key: string) => boolean) => {
     if (!storage) return;
     let keys;
     try {
@@ -150,7 +155,7 @@ export function clearFeedContinuity({ session = safeSession(), local = safeLocal
  * feed reads both stores on its first render, so this has to have happened by
  * then.
  */
-export function applyReloadPolicy({ session, local, perf, now }: { session?: Storage | null; local?: Storage | null; perf?: Performance | null; now?: number } = {}) {
+export function applyReloadPolicy({ session, local, perf, now }: { session?: ReloadStorage | null; local?: ReloadStorage | null; perf?: NavigationPerformance | null; now?: number } = {}) {
   const isReload = isReloadNavigation({ perf });
   const wasAppForced = consumeAppForcedReload({ storage: session, now });
   if (!shouldStartFeedFresh({ isReload, wasAppForced })) return { fresh: false, removed: [] };

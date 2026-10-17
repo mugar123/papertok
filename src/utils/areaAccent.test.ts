@@ -68,5 +68,5 @@ test('the ink and the label come from the same resolution', () => {
   const paper = { categories: ['Wastewater Treatment and Reuse'] };
   assert.equal(areaKeyForPaper(paper), 'civil');
   assert.equal(areaAccentForPaper(paper), 'var(--gradient-civil)');
-  assert.equal(areaLabelForPaper(paper, { english: true }), 'Civil & Environmental Engineering');
+  assert.equal((areaLabelForPaper as (paper: Parameters<typeof areaLabelForPaper>[0], legacyOptions: { english: boolean }) => string)(paper, { english: true }), 'Civil & Environmental Engineering');
 });

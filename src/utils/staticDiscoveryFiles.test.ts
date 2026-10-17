@@ -47,7 +47,7 @@ test('robots.txt keeps crawlers out of every page that needs an account', async 
   const robots = await readFile(ROBOTS, 'utf8');
   const disallowed = [...robots.matchAll(/^Disallow:\s*(\S+)\s*$/gm)].map(match => match[1]);
   for (const route of await protectedPaths()) {
-    const root = `/${route.split('/')[1]}`;
+    const root = `/${route!.split('/')[1]}`;
     assert.ok(disallowed.includes(root), `${route} is not disallowed`);
   }
   assert.ok(!disallowed.some(path => '/public/paper/x'.startsWith(path) || '/feed'.startsWith(path)), 'the public pages stay open');

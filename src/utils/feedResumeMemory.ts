@@ -23,6 +23,8 @@ export const FEED_RESUME_STORAGE_PREFIX = 'papertok_feed_resume:';
 
 const NOWHERE = Object.freeze({ scrollTop: 0, index: 0, paperId: null });
 
+type ResumeStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+
 function defaultStorage() {
   try {
     return typeof window !== 'undefined' ? window.sessionStorage : null;
@@ -31,7 +33,7 @@ function defaultStorage() {
   }
 }
 
-function readStored(storage: Storage | null, key: string) {
+function readStored(storage: ResumeStorage | null, key: string) {
   if (!storage) return null;
   try {
     const raw = storage.getItem(`${FEED_RESUME_STORAGE_PREFIX}${key}`);
@@ -46,7 +48,7 @@ function readStored(storage: Storage | null, key: string) {
   }
 }
 
-export function createFeedResumeMemory({ storage = defaultStorage() } = {}) {
+export function createFeedResumeMemory({ storage = defaultStorage() }: { storage?: ResumeStorage | null } = {}) {
   const entries = new Map<string, FeedResume>();
   const seeded = new Set<string>();
 

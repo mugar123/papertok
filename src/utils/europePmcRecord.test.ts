@@ -75,7 +75,7 @@ test('MeSH terms come without check tags, major topics first, before the keyword
         { majorTopic_YN: 'N', descriptorName: 'Neurons' },
         { majorTopic_YN: 'Y', descriptorName: 'Hippocampus' },
         { majorTopic_YN: 'N', descriptorName: 'Mice' },
-        { majorTopic_YN: 'N', descriptorName: 'Memory', meshQualifierList: { meshQualifier: [{ qualifierName: 'physiology', majorTopic_YN: 'Y' }] } },
+        { majorTopic_YN: 'N', descriptorName: 'Memory', meshQualifierList: { meshQualifier: [{ qualifierName: 'physiology', majorTopic_YN: 'Y' } as NonNullable<NonNullable<NonNullable<NonNullable<NonNullable<NonNullable<NonNullable<Parameters<typeof mapEuropePmcRecord>[0]>["meshHeadingList"]>["meshHeading"]>[number]>["meshQualifierList"]>["meshQualifier"]>[number]> & Record<string, unknown>] } },
       ],
     },
     keywordList: { keyword: ['place cells'] },
@@ -131,12 +131,12 @@ test('gives the enrichment patch and the feed paper the same verdict', () => {
   const patch = mapEuropePmcResult(raw);
   const paper = mapEuropePmcSearchResult(raw, ['bio.physio']);
 
-  assert.equal(patch.openAccess, paper.openAccess);
-  assert.equal(patch.abstract, paper.abstract);
-  assert.equal(patch.openAccessPdfUrl, paper.openAccessPdfUrl);
-  assert.equal(patch.citationCount, paper.citationCount);
-  assert.deepEqual(patch.biomedicalTerms, paper.biomedicalTerms);
-  assert.deepEqual(patch.biomedicalTerms, ['Cardiology']);
+  assert.equal(patch!.openAccess, paper!.openAccess);
+  assert.equal(patch!.abstract, paper!.abstract);
+  assert.equal(patch!.openAccessPdfUrl, paper!.openAccessPdfUrl);
+  assert.equal(patch!.citationCount, paper!.citationCount);
+  assert.deepEqual(patch!.biomedicalTerms, paper!.biomedicalTerms);
+  assert.deepEqual(patch!.biomedicalTerms, ['Cardiology']);
 });
 
 test('the record keeps each author\'s ORCID and first affiliation', () => {
@@ -144,7 +144,7 @@ test('the record keeps each author\'s ORCID and first affiliation', () => {
     id: '1',
     authorList: {
       author: [
-        { fullName: 'Li WN', firstName: 'Wan-Ning', lastName: 'Li', initials: 'WN', authorId: { type: 'ORCID', value: '0000-0002-1825-0097' }, authorAffiliationDetailsList: { authorAffiliation: [{ affiliation: 'National Cancer Institute.' }, { affiliation: 'Elsewhere.' }] } },
+        { fullName: 'Li WN', firstName: 'Wan-Ning', lastName: 'Li', initials: 'WN', authorId: { type: 'ORCID', value: '0000-0002-1825-0097' }, authorAffiliationDetailsList: { authorAffiliation: [{ affiliation: 'National Cancer Institute.' }, { affiliation: 'Elsewhere.' }] } } as NonNullable<NonNullable<NonNullable<NonNullable<Parameters<typeof mapEuropePmcRecord>[0]>["authorList"]>["author"]>[number]> & Record<string, unknown>,
         { fullName: 'Huang HC', firstName: 'Hsiang-Ching', lastName: 'Huang' },
         { collectiveName: 'The Endocrine Consortium' },
       ],

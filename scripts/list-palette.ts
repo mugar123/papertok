@@ -33,7 +33,7 @@ const MIN_CONTRAST = 4.5;
 const NAMES = ['ochre', 'olive', 'green', 'teal', 'blue', 'indigo', 'violet', 'crimson'];
 
 /** oklch → linear sRGB, via oklab. Coefficients are Björn Ottosson's. */
-function oklchToLinearSrgb(lightness, chroma, hueDeg) {
+function oklchToLinearSrgb(lightness: number, chroma: number, hueDeg: number) {
   const hue = (hueDeg * Math.PI) / 180;
   const a = chroma * Math.cos(hue);
   const b = chroma * Math.sin(hue);
@@ -49,21 +49,21 @@ function oklchToLinearSrgb(lightness, chroma, hueDeg) {
   ];
 }
 
-const inGamut = (rgb) => rgb.every((c) => c >= -1e-4 && c <= 1 + 1e-4);
+const inGamut = (rgb: number[]) => rgb.every((c) => c >= -1e-4 && c <= 1 + 1e-4);
 
-const encode = (c) => (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055);
+const encode = (c: number) => (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055);
 
-const toHex = (rgb) =>
+const toHex = (rgb: number[]) =>
   `#${rgb.map((c) => Math.round(Math.min(1, Math.max(0, encode(c))) * 255).toString(16).padStart(2, '0')).join('')}`;
 
 /** WCAG relative luminance takes the *linear* channels, so no decoding here. */
-const contrastVsWhite = (rgb) => {
+const contrastVsWhite = (rgb: number[]) => {
   const [r, g, b] = rgb.map((c) => Math.min(1, Math.max(0, c)));
   return 1.05 / (0.2126 * r + 0.7152 * g + 0.0722 * b + 0.05);
 };
 
 /** The gamut boundary has no closed form worth writing; bisection finds it. */
-function maxChroma(lightness, hueDeg) {
+function maxChroma(lightness: number, hueDeg: number) {
   let lo = 0;
   let hi = 0.4;
   for (let i = 0; i < 60; i += 1) {

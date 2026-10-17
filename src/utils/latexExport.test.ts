@@ -20,7 +20,7 @@ import {
 const LABELS = { mine: 'Tuya', ai: 'IA' };
 
 const MARK = {
-  id: 'a1', sectionId: 's1', paragraphIndex: 0, kind: 'user',
+  id: 'a1', sectionId: 's1', paragraphIndex: 0, kind: 'user' as const,
   quote: 'Los autores calculan', note: 'Una nota.',
 };
 
@@ -123,7 +123,7 @@ test('a highlight that spans a formula comes out as ONE swatch', () => {
   // compiling. Emitting two adjacent \hl would leave a seam down the formula.
   const text = 'La varianza $\\langle \\tau^2 \\rangle$ deja de anularse hoy.';
   const out = renderParagraph(text, [
-    { id: 'a1', kind: 'user', quote: 'La varianza $\\langle \\tau^2 \\rangle$ deja de anularse' },
+    { id: 'a1', kind: 'user' as const, quote: 'La varianza $\\langle \\tau^2 \\rangle$ deja de anularse' },
   ], LABELS);
   assert.equal((out.match(/\\hl\{/g) || []).length, 1);
   assert.match(out, /\\hl\{La varianza \$\\langle \\tau\^2 \\rangle\$ deja de anularse\}/);
@@ -132,17 +132,17 @@ test('a highlight that spans a formula comes out as ONE swatch', () => {
 test('a note becomes a footnote right after the swatch, not inside it', () => {
   // Inside, the marker escapes the colour and leaves a gap — compiled and seen.
   const out = renderParagraph('Una frase larga que se subraya entera.', [
-    { id: 'a1', kind: 'user', quote: 'Una frase larga que se subraya entera', note: 'Mi nota.' },
+    { id: 'a1', kind: 'user' as const, quote: 'Una frase larga que se subraya entera', note: 'Mi nota.' },
   ], LABELS);
   assert.match(out, /\\hl\{[^}]*\}\\footnote\{\\ptkind\{Tuya\}\\quad Mi nota\.\}/);
 });
 
 test('the note says who wrote it', () => {
   const mine = renderParagraph('Una frase larga que se subraya entera.', [
-    { id: 'a1', kind: 'user', quote: 'Una frase larga que se subraya entera', note: 'x' },
+    { id: 'a1', kind: 'user' as const, quote: 'Una frase larga que se subraya entera', note: 'x' },
   ], LABELS);
   const theirs = renderParagraph('Una frase larga que se subraya entera.', [
-    { id: 'a1', kind: 'ai', quote: 'Una frase larga que se subraya entera', note: 'x' },
+    { id: 'a1', kind: 'ai' as const, quote: 'Una frase larga que se subraya entera', note: 'x' },
   ], LABELS);
   assert.match(mine, /\\ptkind\{Tuya\}/);
   assert.match(theirs, /\\ptkind\{IA\}/);
@@ -150,7 +150,7 @@ test('the note says who wrote it', () => {
 
 test('a bare highlight gets colour and no footnote', () => {
   const out = renderParagraph('Una frase larga que se subraya entera.', [
-    { id: 'a1', kind: 'user', quote: 'Una frase larga que se subraya entera' },
+    { id: 'a1', kind: 'user' as const, quote: 'Una frase larga que se subraya entera' },
   ], LABELS);
   assert.match(out, /\\hl\{/);
   assert.doesNotMatch(out, /\\footnote/);
@@ -158,7 +158,7 @@ test('a bare highlight gets colour and no footnote', () => {
 
 test('a note is escaped like any other prose', () => {
   const out = renderParagraph('Una frase larga que se subraya entera.', [
-    { id: 'a1', kind: 'user', quote: 'Una frase larga que se subraya entera', note: '100% & _esto_' },
+    { id: 'a1', kind: 'user' as const, quote: 'Una frase larga que se subraya entera', note: '100% & _esto_' },
   ], LABELS);
   assert.match(out, /100\\% \\& \\_esto\\_/);
 });
@@ -172,8 +172,8 @@ test('a paragraph with nothing marked is just escaped prose', () => {
 
 test('la marca del lector es lavado y la de la IA, punteado', () => {
   const text = 'Los autores calculan el tiempo propio de la particula.';
-  const mine = { id: 'm', kind: 'user', quote: 'Los autores calculan' };
-  const ai = { id: 'a', kind: 'ai', quote: 'el tiempo propio' };
+  const mine = { id: 'm', kind: 'user' as const, quote: 'Los autores calculan' };
+  const ai = { id: 'a', kind: 'ai' as const, quote: 'el tiempo propio' };
   const out = renderParagraph(text, [mine, ai], LABELS);
   assert.match(out, /\\hl\{Los autores calculan\}/);
   assert.match(out, /\\dotuline\{el tiempo propio\}/);
@@ -184,14 +184,14 @@ test('una marca de la IA que cruza una fórmula sigue siendo un solo comando', (
   // visible a mitad de la marca. \dotuline admite matemáticas dentro y parte
   // entre líneas — compilado y mirado.
   const text = 'La anchura $\\tau$ crece con la energia.';
-  const ai = { id: 'a', kind: 'ai', quote: 'La anchura $\\tau$ crece' };
+  const ai = { id: 'a', kind: 'ai' as const, quote: 'La anchura $\\tau$ crece' };
   const out = renderParagraph(text, [ai], LABELS);
-  assert.equal(out.match(/\\dotuline\{/g).length, 1);
+  assert.equal(out.match(/\\dotuline\{/g)!.length, 1);
 });
 
 test('la nota va detrás de la marca, sea del tipo que sea', () => {
   const text = 'Los autores calculan el tiempo propio.';
-  const ai = { id: 'a', kind: 'ai', quote: 'Los autores calculan', note: 'Ojo.' };
+  const ai = { id: 'a', kind: 'ai' as const, quote: 'Los autores calculan', note: 'Ojo.' };
   const out = renderParagraph(text, [ai], LABELS);
   assert.match(out, /\\dotuline\{Los autores calculan\}\\footnote\{\\ptkind\{IA\}/);
 });
@@ -269,9 +269,9 @@ test('a paper with no link still gets a footer', () => {
 
 test('what the reader chose not to include is not in the file', () => {
   const annotations = [
-    { id: 'm', sectionId: 's1', paragraphIndex: 0, kind: 'user', quote: 'Los autores calculan' },
-    { id: 'n', sectionId: 's1', paragraphIndex: 0, kind: 'user', quote: 'una distribucion nueva', note: 'mia' },
-    { id: 'i', sectionId: 's1', paragraphIndex: 0, kind: 'ai', quote: 'y encuentran una', note: 'del modelo' },
+    { id: 'm', sectionId: 's1', paragraphIndex: 0, kind: 'user' as const, quote: 'Los autores calculan' },
+    { id: 'n', sectionId: 's1', paragraphIndex: 0, kind: 'user' as const, quote: 'una distribucion nueva', note: 'mia' },
+    { id: 'i', sectionId: 's1', paragraphIndex: 0, kind: 'ai' as const, quote: 'y encuentran una', note: 'del modelo' },
   ];
   assert.match(build({ annotations }).source, /mia/);
   assert.doesNotMatch(build({ annotations, include: { mine: false } }).source, /mia/);
@@ -284,7 +284,7 @@ test('what the reader chose not to include is not in the file', () => {
 test('soul is only pulled in when something is actually highlighted', () => {
   assert.doesNotMatch(build().source, /\\usepackage\{soul\}/);
   const withMark = build({
-    annotations: [{ id: 'm', sectionId: 's1', paragraphIndex: 0, kind: 'user', quote: 'Los autores calculan' }],
+    annotations: [{ id: 'm', sectionId: 's1', paragraphIndex: 0, kind: 'user' as const, quote: 'Los autores calculan' }],
   });
   assert.match(withMark.source, /\\usepackage\{soul\}/);
 });
@@ -295,7 +295,7 @@ test('un documento con marcas de la IA nada más no carga soul', () => {
   // `\sethlcolor` sin `soul` cargado no compila, así que esto es lo único que
   // `hasHighlights` tenía que afinar.
   const { source } = build({
-    annotations: [{ id: 'a', sectionId: 's1', paragraphIndex: 0, kind: 'ai', quote: 'Los autores calculan' }],
+    annotations: [{ id: 'a', sectionId: 's1', paragraphIndex: 0, kind: 'ai' as const, quote: 'Los autores calculan' }],
   });
   assert.doesNotMatch(source, /\\usepackage\{soul\}/);
   assert.doesNotMatch(source, /\\sethlcolor/);
@@ -479,8 +479,8 @@ test('escapeLatexText leaves no codepoint above U+00FF outside a known-safe set'
     0x21a6, 0x2192, 0x2032, 0x2033, 0x200b,
   ];
 
-  const offenders = [];
-  const check = cp => {
+  const offenders: unknown[] = [];
+  const check = (cp: number) => {
     if (DOCUMENTED_GAPS.has(cp)) return;
     const char = String.fromCodePoint(cp);
     if (SAFE_LATIN1_LETTERS.has(char)) return;
@@ -522,9 +522,9 @@ test('an annotation made at another level is not exported into this one', () => 
   // in the text are filtered. Exporting the rail's list put notes written on
   // other words into a document that no longer contains them.
   const annotations = [
-    { id: 'here', sectionId: 's1', paragraphIndex: 0, kind: 'user', level: 'university', language: 'en', quote: 'Los autores calculan', note: 'de este nivel' },
-    { id: 'other', sectionId: 's1', paragraphIndex: 0, kind: 'user', level: 'beginner', language: 'en', quote: 'Los autores calculan', note: 'de otro nivel' },
-    { id: 'spanish', sectionId: 's1', paragraphIndex: 0, kind: 'user', level: 'university', language: 'es', quote: 'Los autores calculan', note: 'de otro idioma' },
+    { id: 'here', sectionId: 's1', paragraphIndex: 0, kind: 'user' as const, level: 'university', language: 'en', quote: 'Los autores calculan', note: 'de este nivel' },
+    { id: 'other', sectionId: 's1', paragraphIndex: 0, kind: 'user' as const, level: 'beginner', language: 'en', quote: 'Los autores calculan', note: 'de otro nivel' },
+    { id: 'spanish', sectionId: 's1', paragraphIndex: 0, kind: 'user' as const, level: 'university', language: 'es', quote: 'Los autores calculan', note: 'de otro idioma' },
   ];
   const { source } = build({ annotations });
   assert.match(source, /de este nivel/);
@@ -535,7 +535,7 @@ test('an annotation made at another level is not exported into this one', () => 
 test('an annotation whose section this rewrite does not have is dropped', () => {
   const { source } = build({
     annotations: [
-      { id: 'orphan', sectionId: 'gone', paragraphIndex: 0, kind: 'user', quote: 'algo', note: 'huerfana' },
+      { id: 'orphan', sectionId: 'gone', paragraphIndex: 0, kind: 'user' as const, quote: 'algo', note: 'huerfana' },
     ],
   });
   assert.doesNotMatch(source, /huerfana/);
@@ -545,7 +545,7 @@ test('an annotation with no level recorded is kept, not guessed at', () => {
   // Older highlights predate the field. Dropping them would delete history.
   const { source } = build({
     annotations: [
-      { id: 'legacy', sectionId: 's1', paragraphIndex: 0, kind: 'user', quote: 'Los autores calculan', note: 'antigua' },
+      { id: 'legacy', sectionId: 's1', paragraphIndex: 0, kind: 'user' as const, quote: 'Los autores calculan', note: 'antigua' },
     ],
   });
   assert.match(source, /antigua/);
@@ -888,7 +888,7 @@ test('un encabezado de sección corriente sigue usando \\section{...}, sin el ar
 // ---------------------------------------------------------------------------
 
 test('una fórmula en bloque sale numerada y una en línea no', () => {
-  const display = paragraphChunks('Queda $$a = b$$ demostrado.').find(item => item.display);
+  const display = paragraphChunks('Queda $$a = b$$ demostrado.').find(item => (item as { display?: boolean }).display);
   assert.ok(display, 'el fixture tiene que traer una fórmula en bloque');
   const { source } = buildLatexDocument({
     paper: PAPER, annotations: [],
@@ -967,7 +967,7 @@ test('una fórmula en bloque cubierta por un subrayado del lector no se envuelve
   // cabe en una caja así. Una fórmula marcada se queda sin número, tal cual
   // estaba antes de esta tarea, en vez de romper el documento entero.
   const out = renderParagraph('Antes. $$a = b$$ Despues.', [
-    { id: 'm1', kind: 'user', quote: '$$a = b$$' },
+    { id: 'm1', kind: 'user' as const, quote: '$$a = b$$' },
   ], LABELS);
   assert.doesNotMatch(out, /\\begin\{equation\}/);
   assert.match(out, /\\hl\{\$\$a = b\$\$\}/);
@@ -979,7 +979,7 @@ test('una fórmula en bloque cubierta por una marca de IA tampoco se envuelve', 
   // inserted" — también fatal, con un mensaje distinto al de `\hl` pero el
   // mismo resultado: el documento no compila.
   const out = renderParagraph('Antes. $$a = b$$ Despues.', [
-    { id: 'm1', kind: 'ai', quote: '$$a = b$$' },
+    { id: 'm1', kind: 'ai' as const, quote: '$$a = b$$' },
   ], LABELS);
   assert.doesNotMatch(out, /\\begin\{equation\}/);
   assert.match(out, /\\dotuline\{\$\$a = b\$\$\}/);
@@ -999,7 +999,7 @@ test('isNumberedFormula da la misma respuesta en cada forma de fórmula, tabla p
   // (`emitMath` aquí, `numberedEquation` en pdfExport.js): si algún día
   // vuelven a deletrearlo distinto, esta prueba dejará de tener sentido
   // antes de dejar de pasar, que es la señal de que el invariante se rompió.
-  const cases = [
+  const cases: [string, string, boolean][] = [
     ['$...$ en línea (no es de bloque)', 'vale $x=1$ hoy', false],
     ['$$...$$ de bloque', 'vale $$x=1$$ hoy', true],
     ['\\[...\\] de bloque', 'vale \\[x=1\\] hoy', true],

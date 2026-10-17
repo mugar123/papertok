@@ -20,21 +20,21 @@
 
 const CAP = 260;
 const NAV_EVENTS = ['touchstart', 'touchmove', 'touchend', 'touchcancel', 'pointerdown', 'pointerup', 'pointercancel', 'mousedown', 'mouseup', 'click', 'contextmenu'];
-const log = [];
+const log: string[] = [];
 let started = false;
-let panel = null;
-let body = null;
-let count = null;
+let panel: HTMLDivElement | null = null;
+let body: HTMLPreElement | null = null;
+let count: HTMLSpanElement | null = null;
 let collapsed = false;
 let lastFeedScrollAt = -1;
-let lastScrollLogAt = new Map();
+const lastScrollLogAt = new Map<string, number>();
 let touchMoves = 0;
-let touchStart = null;
+let touchStart: { x: number; y: number } | null = null;
 
 const now = () => Math.round(performance.now());
-const num = (v, d = 2) => (typeof v === 'number' && Number.isFinite(v) ? Number(v.toFixed(d)) : v);
+const num = (v: unknown, d = 2) => (typeof v === 'number' && Number.isFinite(v) ? Number(v.toFixed(d)) : v);
 
-function desc(el) {
+function desc(el: (EventTarget & Partial<Pick<Element, 'tagName' | 'nodeName' | 'className' | 'id'>> & { textContent?: string | null }) | null) {
   if (!el) return 'null';
   if (el === document) return 'document';
   if (el === window) return 'window';
@@ -51,7 +51,7 @@ function render() {
   if (!collapsed) body.scrollTop = body.scrollHeight;
 }
 
-function push(line) {
+function push(line: string) {
   log.push(`+${now()} ${line}`);
   if (log.length > CAP) log.shift();
   render();
@@ -86,13 +86,15 @@ function snapshot() {
   ].join(' ');
 }
 
-function point(event) {
+type NavEvent = Event & Partial<Pick<TouchEvent, 'changedTouches' | 'touches'> & Pick<MouseEvent, 'clientX' | 'clientY' | 'button'> & Pick<PointerEvent, 'pointerType' | 'isPrimary'>>;
+
+function point(event: NavEvent) {
   const p = event.changedTouches ? event.changedTouches[0] : event;
   if (!p || typeof p.clientX !== 'number') return null;
-  return { x: Math.round(p.clientX), y: Math.round(p.clientY) };
+  return { x: Math.round(p.clientX), y: Math.round(p.clientY!) };
 }
 
-function underFinger(pt) {
+function underFinger(pt: ReturnType<typeof point>) {
   if (!pt) return '-';
   try {
     return desc(document.elementFromPoint(pt.x, pt.y));
@@ -101,7 +103,7 @@ function underFinger(pt) {
   }
 }
 
-function onNavEvent(event) {
+function onNavEvent(event: NavEvent) {
   const target = event.target;
   if (!(target instanceof Element)) return;
   if (target.closest('#tapdiag')) return;
@@ -133,7 +135,7 @@ function onNavEvent(event) {
 }
 
 function wrapHistory() {
-  const wrap = (name) => {
+  const wrap = (name: 'pushState' | 'replaceState') => {
     const original = history[name].bind(history);
     history[name] = (state, title, url) => {
       push(`history.${name} → ${url}`);
@@ -144,7 +146,7 @@ function wrapHistory() {
   wrap('replaceState');
 }
 
-function onScroll(event) {
+function onScroll(event: Event) {
   const target = event.target === document ? document : event.target;
   const isFeed = target instanceof Element && target.classList.contains('feed-container');
   if (isFeed) lastFeedScrollAt = now();
@@ -152,14 +154,14 @@ function onScroll(event) {
   const last = lastScrollLogAt.get(key) || -1000;
   if (now() - last < 150) return;
   lastScrollLogAt.set(key, now());
-  const top = target === document ? window.scrollY : target.scrollTop;
+  const top = target === document ? window.scrollY : (target as Element).scrollTop;
   push(`scroll ${key} top=${num(top, 1)}`);
 }
 
 function header() {
   const script = document.querySelector('script[src*="/assets/index-"]');
-  const build = script ? script.getAttribute('src').replace(/.*\/assets\//, '') : 'dev';
-  const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+  const build = script ? script.getAttribute('src')!.replace(/.*\/assets\//, '') : 'dev';
+  const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || (navigator as Navigator & { standalone?: boolean }).standalone === true;
   return [
     `PaperTok tap diag ${new Date().toISOString()}`,
     `ua=${navigator.userAgent}`,
@@ -200,11 +202,11 @@ async function share() {
     await navigator.share({ title: 'PaperTok tap diag', text });
     push('shared');
   } catch (error) {
-    push(`share cancelled: ${error && error.name}`);
+    push(`share cancelled: ${error && (error as Error).name}`);
   }
 }
 
-function button(label, onClick) {
+function button(label: string, onClick: (event: MouseEvent) => void) {
   const b = document.createElement('button');
   b.type = 'button';
   b.textContent = label;
@@ -228,7 +230,7 @@ function mountPanel() {
   body.style.cssText = 'margin:0;padding:6px 8px;overflow:auto;white-space:pre-wrap;word-break:break-word;flex:1 1 auto;-webkit-user-select:text;user-select:text';
   const hide = button('Hide', () => {
     collapsed = !collapsed;
-    body.style.display = collapsed ? 'none' : '';
+    body!.style.display = collapsed ? 'none' : '';
     hide.textContent = collapsed ? 'Show' : 'Hide';
   });
   bar.append(title, count, button('Copy', copy), button('Share', share), button('Clear', () => { log.length = 0; render(); }), hide);
@@ -265,7 +267,7 @@ export function start() {
       const key = `${num(vv.scale, 3)}/${num(vv.offsetTop, 1)}/${num(vv.height, 1)}`;
       if (key === last) return;
       last = key;
-      push(`viewport scale=${num(vv.scale, 3)} off=${num(vv.offsetTop, 1)} h=${num(vv.height, 1)} inset-top=${navbar() ? getComputedStyle(navbar()).paddingTop : '?'}`);
+      push(`viewport scale=${num(vv.scale, 3)} off=${num(vv.offsetTop, 1)} h=${num(vv.height, 1)} inset-top=${navbar() ? getComputedStyle(navbar()!).paddingTop : '?'}`);
     };
     vv.addEventListener('resize', onViewport);
     vv.addEventListener('scroll', onViewport);

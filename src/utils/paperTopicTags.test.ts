@@ -68,10 +68,10 @@ test('uses readable area labels for valid arXiv codes outside the preference tax
   ]);
 
   const fallbackTopic = resolvePaperTopic(tags[0].value);
-  const fallbackUrl = new URL(topicExplorerPath(fallbackTopic), 'https://papertok.test');
-  assert.equal(fallbackTopic.display_name, 'Physics');
-  assert.equal(fallbackTopic.query, 'nlin.CD');
-  assert.deepEqual(fallbackTopic.categoryIds, ['nlin.CD']);
+  const fallbackUrl = new URL(topicExplorerPath(fallbackTopic)!, 'https://papertok.test');
+  assert.equal(fallbackTopic!.display_name, 'Physics');
+  assert.equal(fallbackTopic!.query, 'nlin.CD');
+  assert.deepEqual(fallbackTopic!.categoryIds, ['nlin.CD']);
   assert.equal(fallbackUrl.searchParams.get('name'), 'Physics');
   assert.equal(fallbackUrl.searchParams.get('q'), 'nlin.CD');
 });
@@ -81,8 +81,8 @@ test('only emits semantic tags that resolve to navigable topics', () => {
     primaryCategory: 'astro-ph.CO',
     categories: ['astro-ph.CO', 'gr-qc'],
     concepts: [
-      { id: 'mesh:D000077216', display_name: 'Spatial transcriptomics', source: 'pubmed' },
-      'Quantum sensing',
+      { id: 'mesh:D000077216', display_name: 'Spatial transcriptomics', source: 'pubmed' } as NonNullable<NonNullable<NonNullable<Parameters<typeof buildPaperTopicTags>[0]>["concepts"]>[number]> & Record<string, unknown>,
+      'Quantum sensing' as string & import('../models/Paper.ts').PaperSubject,
       { id: 'provider:generic', display_name: 'Research Paper' },
       { id: 'provider:url', display_name: 'https://example.com/topic' },
       { id: 'provider:pacs', display_name: '04.70.Dy' },
@@ -102,8 +102,8 @@ test('recognizes every supported semantic label field', () => {
     concepts: [
       { id: 'provider:one', display_name: 'Spatial transcriptomics' },
       { id: 'provider:two', displayName: 'Single-cell proteomics' },
-      { id: 'provider:three', name: 'Quantum sensing' },
-      { id: 'provider:four', label: 'Gene regulation' },
+      { id: 'provider:three', name: 'Quantum sensing' } as NonNullable<NonNullable<NonNullable<Parameters<typeof buildPaperTopicTags>[0]>["concepts"]>[number]> & Record<string, unknown>,
+      { id: 'provider:four', label: 'Gene regulation' } as NonNullable<NonNullable<NonNullable<Parameters<typeof buildPaperTopicTags>[0]>["concepts"]>[number]> & Record<string, unknown>,
     ],
   }, 10);
 

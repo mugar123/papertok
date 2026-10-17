@@ -18,12 +18,12 @@ const INSTITUTION = {
   verifiedAt: '2026-10-13T10:00:00.000Z',
 };
 
-function workerAnswering(status, body) {
-  const calls = [];
+function workerAnswering(status: number, body: { institution?: { domain: string; rorId: string; name: string; acronym: string; entityId: string; verifiedAt: string; }|null; code?: string; }) {
+  const calls: { url: string | URL; body: unknown }[] = [];
   return {
     calls,
-    request: async (url, init) => {
-      calls.push({ url, body: JSON.parse(init.body) });
+    request: async (url: string | URL, init?: RequestInit) => {
+      calls.push({ url, body: JSON.parse(init!.body as string) });
       return new Response(JSON.stringify(body), { status });
     },
   };
@@ -31,7 +31,7 @@ function workerAnswering(status, body) {
 
 /** A second Auth instance and a Google window, recorded rather than opened. */
 function popupStub({ email = 'alice@usal.es', isNewUser = true } = {}) {
-  const log = [];
+  const log: unknown[][] = [];
   const holder = { email, getIdToken: async () => 'university-token' };
   const secondary = { name: 'secondary' };
   return {
@@ -40,11 +40,11 @@ function popupStub({ email = 'alice@usal.es', isNewUser = true } = {}) {
       secondaryAuth: () => secondary,
       setPersistence: async (instance, persistence) => { log.push(['persistence', instance === secondary, persistence?.type]); },
       provider: () => ({ setCustomParameters(params) { log.push(['params', params]); } }),
-      popupSignIn: async (instance) => { log.push(['popup', instance === secondary]); return { user: holder }; },
+      popupSignIn: async (instance: { name: string; }) => { log.push(['popup', instance === secondary]); return { user: holder }; },
       additionalUserInfo: () => ({ isNewUser }),
-      deleteUser: async (user) => { log.push(['delete', user === holder]); },
-      signOut: async (instance) => { log.push(['signOut', instance === secondary]); },
-    },
+      deleteUser: async (user: { email: string; getIdToken: () => Promise<string>; }) => { log.push(['delete', user === holder]); },
+      signOut: async (instance: { name: string; }) => { log.push(['signOut', instance === secondary]); },
+    } as NonNullable<Parameters<typeof linkInstitution>[1]>,
   };
 }
 
@@ -151,7 +151,7 @@ test('the second sign-in is released even when the Worker refuses', async () => 
       request: worker.request,
       currentUser: () => ({ uid: 'alice', email: 'alice@gmail.com', emailVerified: true }),
     }),
-    (error) => error.code === 'INSTITUTION_NOT_FOUND' && error.status === 404,
+    (error) => (error as InstitutionLinkError).code === 'INSTITUTION_NOT_FOUND' && (error as InstitutionLinkError).status === 404,
   );
   assert.deepEqual(popup.log.slice(-1), [['delete', true]]);
 });
@@ -159,7 +159,7 @@ test('the second sign-in is released even when the Worker refuses', async () => 
 test('refuses before any window opens: a bad address, no session, demo mode, no Worker', async () => {
   const popup = popupStub();
   const signedIn = () => ({ uid: 'alice', email: 'alice@gmail.com', emailVerified: true });
-  const code = async (promise) => promise.then(() => null, error => error.code);
+  const code = async (promise: Promise<unknown>) => promise.then(() => null, (error: InstitutionLinkError) => error.code);
   assert.equal(await code(linkInstitution('alice', { ...BASE, ...popup.overrides, currentUser: signedIn })), 'INSTITUTION_EMAIL_INVALID');
   assert.equal(await code(linkInstitution('alice@usal.es', { ...BASE, ...popup.overrides, currentUser: () => null })), 'AUTH_REQUIRED');
   assert.equal(await code(linkInstitution('alice@usal.es', { ...BASE, ...popup.overrides, isDemo: true, currentUser: signedIn })), 'INSTITUTION_UNSUPPORTED_IN_DEMO');
@@ -175,11 +175,11 @@ test('refuses before any window opens: a bad address, no session, demo mode, no 
 test('a Worker that cannot be reached, or a dead session, keep their own codes', async () => {
   const signedIn = () => ({ uid: 'alice', email: 'alice@usal.es', emailVerified: true });
   const unreachable = async () => { throw new TypeError('Failed to fetch'); };
-  const expired = async () => { const error = new Error('expired'); error.code = 'WORKER_AUTH_REQUIRED'; throw error; };
+  const expired = async () => { const error = new Error('expired') as Error & { code: string }; error.code = 'WORKER_AUTH_REQUIRED'; throw error; };
   await assert.rejects(linkInstitution('alice@usal.es', { ...BASE, request: unreachable, currentUser: signedIn }),
-    error => error.code === 'INSTITUTION_LINK_UNREACHABLE' && error.status === 0);
+    error => (error as InstitutionLinkError).code === 'INSTITUTION_LINK_UNREACHABLE' && (error as InstitutionLinkError).status === 0);
   await assert.rejects(linkInstitution('alice@usal.es', { ...BASE, request: expired, currentUser: signedIn }),
-    error => error.code === 'AUTH_REQUIRED' && error.status === 401);
+    error => (error as InstitutionLinkError).code === 'AUTH_REQUIRED' && (error as InstitutionLinkError).status === 401);
 });
 
 test('unlinking posts to the Worker and resolves to null', async () => {

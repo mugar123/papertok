@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
+import type { FileHandle } from 'fs/promises';
 
 /**
  * The landmark skeleton, and the two ways it has already been broken.
@@ -35,11 +36,11 @@ const SRC_DIR = new URL('./', import.meta.url);
  * the thing its comment still promises, and every assertion here would keep
  * passing against prose.
  */
-const stripComments = source => source
+const stripComments = (source: string) => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^[ \t]*\/\/.*$/gm, '');
 
-const readSource = async url => stripComments(await readFile(url, 'utf8'));
+const readSource = async (url: string|URL|Buffer<ArrayBufferLike>|FileHandle) => stripComments(await readFile(url, 'utf8'));
 
 /** Every stylesheet under src/, path-relative for readable failures. */
 async function stylesheets() {
@@ -534,7 +535,7 @@ test('the palette marks its selected row with the enter mark, not only a tint', 
 const GLOBAL_CSS = new URL('./styles/global.css', import.meta.url);
 
 /** The block selectors and at-rule preludes open at `index`, outermost first. */
-function enclosingBlocks(css, index) {
+function enclosingBlocks(css: string, index: number) {
   const stack = [];
   for (let i = 0; i < index; i += 1) {
     if (css[i] === '{') {

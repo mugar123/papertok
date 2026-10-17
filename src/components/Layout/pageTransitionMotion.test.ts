@@ -3,18 +3,18 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { EXIT_SAFETY_MS, PAGE_MOTIONS, isArrivalMotion, pageMotionFor } from './pageMotion.ts';
 
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '');
-const read = async (path) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, '');
+const read = async (path: string|URL) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
 
 /** Every `--page-<name>-ms: <n>ms` declared in the file, by name. */
-function durations(css) {
-  const out = {};
+function durations(css: string) {
+  const out: Record<string, number> = {};
   for (const [, name, ms] of css.matchAll(/--page-([a-z-]+)-ms: (\d+)ms;/g)) out[name] = Number(ms);
   return out;
 }
 
 /** The body of one `@keyframes <name> { … }` block. */
-function keyframes(css, name) {
+function keyframes(css: string, name: string) {
   const match = css.match(new RegExp(`@keyframes ${name} \\{([\\s\\S]*?)\\n\\}`));
   assert.ok(match, `@keyframes ${name} is declared`);
   return match[1];
@@ -32,12 +32,12 @@ const FADES = ['pageCover', 'pageFadeOut', 'pageDim', 'pageUncover', 'pageYield'
  * an animation. A rule may run TWO: the travel, which owns the clock, and a
  * shorter fade that covers or uncovers early.
  */
-function animationsBySelector(css) {
-  const map = {};
+function animationsBySelector(css: string) {
+  const map: Record<string, string> = {};
   for (const [, selectors, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
     const declaration = body.match(/animation:([\s\S]*?);/)?.[1];
     if (!declaration) continue;
-    const names = declaration.split(',').map((part) => part.trim().split(/\s+/)[0]).filter(Boolean);
+    const names = declaration.split(',').map((part: string) => part.trim().split(/\s+/)[0]).filter(Boolean);
     for (const selector of selectors.split(',')) map[selector.trim()] = names.join(' + ');
   }
   return map;
@@ -77,7 +77,7 @@ test('six durations, every one inside the 300ms UI band, and a held page rides t
   // Declared once, on the root, and nowhere else as a literal.
   const root = css.match(/\.page-transition \{([\s\S]*?)\n\}/);
   assert.ok(root, 'the root rule');
-  assert.equal(root[1].match(/--page-[a-z-]+-ms:/g).length, 6);
+  assert.equal(root[1].match(/--page-[a-z-]+-ms:/g)!.length, 6);
   assert.equal(css.replace(root[1], '').match(/\b\d+ms\b/g), null, 'durations are named, never repeated as literals');
 });
 
@@ -124,7 +124,7 @@ test('every motion has a rule, and everything rides a curve that can be seen tra
     if (FADES.includes(name)) assert.equal(easing, 'linear', `${name} is a fade and must not be curved`);
     else assert.equal(easing, 'var(--ease-out-cubic)', `${name} travels, so it rides the one curve this file has — got ${easing}`);
   }
-  assert.equal(css.match(/animation:/g).length, 15, 'fifteen rules, no animation escaping the form above');
+  assert.equal(css.match(/animation:/g)!.length, 15, 'fifteen rules, no animation escaping the form above');
 });
 
 test('each motion runs the keyframes named for it, and reduced motion swaps only the movement', async () => {
@@ -234,7 +234,7 @@ test('the leaving page is out of flow and under the bar; an arriving page covers
   assert.match(entering[1], /z-index: 2;/);
   // A revealed page stays UNDER the page leaving on top of it.
   assert.doesNotMatch(css, /data-page-motion="reveal"\]\s*\{\s*position/);
-  const root = css.match(/\.page-transition \{([\s\S]*?)\n\}/)[1];
+  const root = css.match(/\.page-transition \{([\s\S]*?)\n\}/)![1];
   assert.match(root, /width: 100%;\s*height: 100%;\s*display: flex;\s*flex-direction: column;/, 'the route root keeps the box the motion.div had');
 });
 
@@ -250,11 +250,11 @@ test('reduced motion keeps the fades and drops the movement, for all seven anima
   assert.deepEqual([...new Set(names)].sort(), ['pageCover', 'pageDim', 'pageFadeOut', 'pageUncover', 'pageYield']);
   for (const name of names) assert.ok(FADES.includes(name), `${name} is one of the fades the full-motion rules already run`);
   assert.doesNotMatch(reduced, /translate|scale/);
-  assert.equal(reduced.match(/animation:/g).length, names.length, 'every reduced animation rides the reduced clock');
+  assert.equal(reduced.match(/animation:/g)!.length, names.length, 'every reduced animation rides the reduced clock');
 });
 
 /** Comments too: these assert on code, and prose must not be able to satisfy them. */
-const stripAll = (source) => source.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
+const stripAll = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
 
 /**
  * A height settle inside a page carries a datum that lands LATE on a page the

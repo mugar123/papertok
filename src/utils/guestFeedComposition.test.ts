@@ -14,7 +14,7 @@ const DEFAULT_PLAN = { key: 'default', areas: [] };
 // Papers as the four guest branches deliver them: arXiv tags the requested
 // category, OpenReview and Hugging Face the first category of the plan
 // (`cs.AI` on page 1), PubMed the medicine subcategory it matched.
-function papers(source, categories, count, prefix = source) {
+function papers(source: string, categories: string[], count: number, prefix = source) {
   return Array.from({ length: count }, (_, index) => ({
     id: `${prefix}-${index}`,
     title: `${prefix} paper ${index}`,
@@ -27,8 +27,8 @@ function papers(source, categories, count, prefix = source) {
 const arxiv = papers('arxiv', ['cs.AI', 'cs.LG', 'cs.CV'], 12);
 const domain = [...papers('openreview', ['cs.AI'], 10), ...papers('huggingface', ['cs.AI'], 10)];
 const pubmed = papers('pubmed', ['med.cardio', 'med.onco', 'med.gen'], 25);
-const areasOf = (page) => page.map(areaOfPaper);
-const count = (page, area) => areasOf(page).filter(value => value === area).length;
+const areasOf = (page: Parameters<typeof areaOfPaper>[0][]) => page.map(areaOfPaper);
+const count = (page: Parameters<typeof guestPageReady>[0], area: string) => areasOf(page).filter(value => value === area).length;
 
 test('a paper belongs to the area of its category', () => {
   assert.equal(areaOfPaper({ primaryCategory: 'cs.AI' }), 'cs');
@@ -50,7 +50,7 @@ test('two areas share the page, alternating, as soon as both have answered', () 
 
 test('inside an area the sources take turns, so one fast source cannot fill it', () => {
   const page = composeGuestPage([...arxiv, ...domain, ...pubmed], CS_MED, PAGE);
-  const csSources = page.filter(paper => areaOfPaper(paper) === 'cs').map(paper => paper.sources.primary);
+  const csSources = page.filter(paper => areaOfPaper(paper) === 'cs').map(paper => paper.sources!.primary);
 
   assert.deepEqual(csSources, ['arxiv', 'openreview', 'huggingface', 'arxiv', 'openreview', 'huggingface']);
 });

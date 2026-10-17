@@ -11,7 +11,7 @@ test('the measured cap is the one the code was verified against', () => {
 
 const SRC = new URL('../', import.meta.url);
 
-async function sourceFiles(dir = SRC) {
+async function sourceFiles(dir = SRC): Promise<URL[]> {
   const out = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const child = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, dir);

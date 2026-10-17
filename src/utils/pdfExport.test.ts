@@ -78,7 +78,7 @@ test('el modelo del PDF y el del .tex cuentan lo mismo', () => {
     generatedAt: new Date(Date.UTC(2026, 8, 4)) };
   const model = buildPdfModel(args);
   const { source } = buildLatexDocument(args);
-  assert.ok(source.includes(model.meta.colophon.rows.at(-1).value));
+  assert.ok(source.includes(model.meta.colophon.rows.at(-1)!.value));
 });
 
 // ---------------------------------------------------------------------------
@@ -136,9 +136,9 @@ test('an ordinary section heading is not cut short in either field', () => {
 // ---------------------------------------------------------------------------
 
 const ANNOTATIONS = [
-  { id: 'm1', sectionId: 's1', paragraphIndex: 0, kind: 'user', quote: 'Los autores calculan' },
-  { id: 'n1', sectionId: 's1', paragraphIndex: 0, kind: 'user', quote: 'una distribucion nueva', note: 'ojo aquí' },
-  { id: 'a1', sectionId: 's2', paragraphIndex: 0, kind: 'ai', quote: 'ruido medido', note: 'la IA explica' },
+  { id: 'm1', sectionId: 's1', paragraphIndex: 0, kind: 'user' as const, quote: 'Los autores calculan' },
+  { id: 'n1', sectionId: 's1', paragraphIndex: 0, kind: 'user' as const, quote: 'una distribucion nueva', note: 'ojo aquí' },
+  { id: 'a1', sectionId: 's2', paragraphIndex: 0, kind: 'ai' as const, quote: 'ruido medido', note: 'la IA explica' },
 ];
 
 test('the include switches drop exactly what they say', () => {
@@ -166,17 +166,17 @@ test('notes are numbered in document order across sections; bare marks are not',
   const model = build({ annotations: ANNOTATIONS });
   const first = model.sections[0].paragraphs[0].annotations;
   const second = model.sections[1].paragraphs[0].annotations;
-  assert.equal(first.find(item => item.id === 'n1').number, 1);
-  assert.equal(second.find(item => item.id === 'a1').number, 2);
-  assert.equal(first.find(item => item.id === 'm1').number, undefined);
+  assert.equal(first.find(item => item.id === 'n1')!.number, 1);
+  assert.equal(second.find(item => item.id === 'a1')!.number, 2);
+  assert.equal(first.find(item => item.id === 'm1')!.number, undefined);
   assert.equal(model.noteCount, 2);
 });
 
 test('an annotation from a level or language this rewrite is not is left out', () => {
   const model = build({
     annotations: [
-      { id: 'other', sectionId: 's1', paragraphIndex: 0, kind: 'user', quote: 'x', note: 'de otro nivel', level: 'beginner' },
-      { id: 'es', sectionId: 's1', paragraphIndex: 0, kind: 'user', quote: 'x', note: 'en español', language: 'es' },
+      { id: 'other', sectionId: 's1', paragraphIndex: 0, kind: 'user' as const, quote: 'x', note: 'de otro nivel', level: 'beginner' },
+      { id: 'es', sectionId: 's1', paragraphIndex: 0, kind: 'user' as const, quote: 'x', note: 'en español', language: 'es' },
     ],
   });
   assert.equal(model.sections[0].paragraphs[0].annotations.length, 0);

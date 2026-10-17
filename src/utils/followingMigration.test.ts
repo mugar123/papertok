@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { finishLegacyAuthorsMigration } from './followingMigration.ts';
 
 const transforms = {
-  remove: (...names) => ({ op: 'remove', names }),
-  timestamp: () => 'SERVER_TIMESTAMP',
+  remove: (...names: unknown[]) => ({ op: 'remove', names } as import('firebase/firestore').FieldValue & { op: string; names: unknown[] }),
+  timestamp: () => 'SERVER_TIMESTAMP' as ReturnType<NonNullable<NonNullable<Parameters<typeof finishLegacyAuthorsMigration>[1]>['timestamp']>> & string,
 };
 
 test('clears exactly the names read, as a field transform, never the whole array', () => {
@@ -42,7 +42,7 @@ test('defaults to the real firebase arrayRemove/serverTimestamp, not a plain arr
   const patch = finishLegacyAuthorsMigration(['Ada Lovelace']);
   assert.equal(Array.isArray(patch.followedAuthors), false, 'must be a field-transform sentinel, not the array itself');
   assert.notDeepEqual(patch.followedAuthors, []);
-  assert.equal(patch.followedAuthors?._methodName, 'arrayRemove');
-  assert.deepEqual(patch.followedAuthors?._elements, ['Ada Lovelace']);
+  assert.equal((patch.followedAuthors as typeof patch.followedAuthors & { _methodName: string })?._methodName, 'arrayRemove');
+  assert.deepEqual((patch.followedAuthors as typeof patch.followedAuthors & { _elements: string[] })?._elements, ['Ada Lovelace']);
   assert.ok(patch.followingMigratedAt, 'followingMigratedAt must still be stamped in the same patch');
 });

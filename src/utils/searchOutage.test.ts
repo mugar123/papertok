@@ -23,22 +23,22 @@ test('each section is attributed to the provider that actually serves it', () =>
 
 test('a failure outside OpenAlex never names OpenAlex', () => {
   const outage = describeSearchOutage({ sections: ['projects'] });
-  assert.deepEqual(outage.sources, ['openaire']);
-  assert.equal(outage.involvesOpenAlex, false);
-  assert.deepEqual(outage.sectionsBySource.openaire, ['projects']);
+  assert.deepEqual(outage!.sources, ['openaire']);
+  assert.equal(outage!.involvesOpenAlex, false);
+  assert.deepEqual(outage!.sectionsBySource.openaire, ['projects']);
 });
 
 test('ROR going down is reported as ROR', () => {
   const outage = describeSearchOutage({ sections: ['institutions'] });
-  assert.deepEqual(outage.sources, ['ror']);
-  assert.equal(outage.involvesOpenAlex, false);
+  assert.deepEqual(outage!.sources, ['ror']);
+  assert.equal(outage!.involvesOpenAlex, false);
 });
 
 test('several providers are listed in a stable order', () => {
   const first = describeSearchOutage({ sections: ['projects', 'institutions', 'papers'] });
   const second = describeSearchOutage({ sections: ['institutions', 'papers', 'projects'] });
-  assert.deepEqual(first.sources, ['openalex', 'ror', 'openaire']);
-  assert.deepEqual(first.sources, second.sources, 'input order must not reshuffle the banner');
+  assert.deepEqual(first!.sources, ['openalex', 'ror', 'openaire']);
+  assert.deepEqual(first!.sources, second!.sources, 'input order must not reshuffle the banner');
 });
 
 test('nothing wrong reports nothing', () => {
@@ -56,9 +56,9 @@ test('unknown section names are ignored rather than inventing a provider', () =>
 
 test('a timeout on an OpenAlex section involves it without claiming a rate limit', () => {
   const outage = describeSearchOutage({ sections: ['papers'] });
-  assert.equal(outage.involvesOpenAlex, true);
-  assert.equal(outage.rateLimited, false);
-  assert.equal(outage.retryAtMs, null, 'no rate limit, no promise of a time');
+  assert.equal(outage!.involvesOpenAlex, true);
+  assert.equal(outage!.rateLimited, false);
+  assert.equal(outage!.retryAtMs, null, 'no rate limit, no promise of a time');
 });
 
 test('a rate limit is reported even when no section registered a failure', () => {
@@ -66,9 +66,9 @@ test('a rate limit is reported even when no section registered a failure', () =>
   // live client health is the authority — this is the regression the whole
   // module exists for.
   const outage = describeSearchOutage({ sections: [], rateLimited: true });
-  assert.deepEqual(outage.sources, ['openalex']);
-  assert.equal(outage.rateLimited, true);
-  assert.equal(outage.involvesOpenAlex, true);
+  assert.deepEqual(outage!.sources, ['openalex']);
+  assert.equal(outage!.rateLimited, true);
+  assert.equal(outage!.involvesOpenAlex, true);
 });
 
 /* --- The wait is an instant, not a frozen duration --------------------------- */
@@ -80,13 +80,13 @@ test('the wait is returned as an absolute instant so a countdown can tick', () =
     retryAfterMs: 8 * 3_600_000,
     now: 1_000,
   });
-  assert.equal(outage.retryAtMs, 1_000 + 8 * 3_600_000);
+  assert.equal(outage!.retryAtMs, 1_000 + 8 * 3_600_000);
 });
 
 test('a rate limit with no figure promises no time', () => {
   const outage = describeSearchOutage({ sections: ['papers'], rateLimited: true, retryAfterMs: 0 });
-  assert.equal(outage.rateLimited, true);
-  assert.equal(outage.retryAtMs, null);
+  assert.equal(outage!.rateLimited, true);
+  assert.equal(outage!.retryAtMs, null);
 });
 
 /* --- Which views the outage is actually true for ----------------------------- */
@@ -122,7 +122,7 @@ test('the boundaries do not produce absurd figures', () => {
 test('a missing or spent figure yields no sentence at all', () => {
   assert.equal(formatRetryDelay(0), null);
   assert.equal(formatRetryDelay(-1), null);
-  assert.equal(formatRetryDelay(undefined), null);
+  assert.equal(formatRetryDelay(undefined!), null);
   assert.equal(formatRetryDelay(Number.NaN), null);
   assert.equal(formatRetryDelay(Number.POSITIVE_INFINITY), null);
 });

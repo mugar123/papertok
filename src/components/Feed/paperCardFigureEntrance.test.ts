@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
 /** Comments quote the very code these tests pin, so they are stripped first. */
-const strip = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 /**
  * SOURCE tests for WHEN a feed clipping plays its entrance.
@@ -83,7 +83,7 @@ test('the clippings stagger by delay and all travel at the same speed', async ()
   assert.match(scatter, /'--fig-in-duration': `\$\{FIGURE_ENTRANCE_MS\}ms`/);
   assert.doesNotMatch(scatter, /'--fig-in-duration': [^,]*index/,
     'duration must not carry the stagger again: it made every later clipping slower');
-  const stagger = Number(/const FIGURE_ENTRANCE_STAGGER_MS = (\d+);/.exec(jsx)[1]);
+  const stagger = Number(/const FIGURE_ENTRANCE_STAGGER_MS = (\d+);/.exec(jsx)![1]);
   assert.ok(stagger >= 30 && stagger <= 120, `un escalonado que se lee (${stagger}ms)`);
 });
 
@@ -105,8 +105,8 @@ test('the entrance spends its run moving, and holds only its first frame', async
   assert.match(figure, /figureClipFade var\(--fig-in-duration, 480ms\) linear\s*var\(--fig-in-delay, 0ms\) backwards/,
     'the fade uses the same duration and delay, but progresses evenly');
   assert.match(css, /@keyframes figureClipFade \{\s*from \{ opacity: 0; \}/);
-  const reduced = css.split('@media (prefers-reduced-motion: reduce)').find((block, index) => index > 0 && block.includes('.pc-figure,'));
-  assert.match(reduced, /\.pc-figure,\s*\.pc-figure\.is-loaded\.is-resumed,[^{]*\{\s*animation: none;/,
+  const reduced = css.split('@media (prefers-reduced-motion: reduce)').find((block: string, index: number) => index > 0 && block.includes('.pc-figure,'));
+  assert.match(reduced!, /\.pc-figure,\s*\.pc-figure\.is-loaded\.is-resumed,[^{]*\{\s*animation: none;/,
     'reduced motion also overrides the more specific resumed-figure rule and stops its drift');
 });
 

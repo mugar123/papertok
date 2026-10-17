@@ -8,8 +8,8 @@ import { readFile } from 'node:fs/promises';
  * page's switch and its two choices are the shared Switch and RadioGroup.
  */
 
-const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-const read = name => readFile(new URL(name, import.meta.url), 'utf8').then(stripComments);
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+const read = (name: string|URL) => readFile(new URL(name, import.meta.url), 'utf8').then(stripComments);
 
 test('deleting an account is confirmed in an AlertDialog that nothing dismisses while it works', async () => {
   const jsx = await read('./DeleteAccountDialog.tsx');
@@ -77,8 +77,8 @@ test('the settings pages carry their own field and switch styles, with no public
   assert.doesNotMatch(jsx, /from '\.\.\/Profile\/|userProfileService|savePublicProfilePhoto/);
   const css = await read('./SettingsPage.css');
   const rendered = new Set((jsx.match(/className="[^"]*"/g) ?? [])
-    .flatMap(attribute => attribute.slice('className="'.length, -1).split(/\s+/))
-    .filter(name => name.startsWith('profile-')));
+    .flatMap((attribute: string) => attribute.slice('className="'.length, -1).split(/\s+/))
+    .filter((name: string) => name.startsWith('profile-')));
   assert.ok(rendered.has('profile-switch'), 'expected to find the analytics switch class');
   for (const name of rendered) {
     assert.match(css, new RegExp(`\\.${name}\\s*[{,]`), `.${name} is rendered but SettingsPage.css has no rule for it`);

@@ -20,7 +20,7 @@ test('replaces misleading zero institution metrics with a verified works count',
   assert.equal(institution.works_count, 334442);
   assert.equal(institution.cited_by_count, null);
   assert.equal(institution.summary_stats.h_index, null);
-  assert.equal(institution.metrics_are_partial, true);
+  assert.equal((institution as typeof institution & { metrics_are_partial?: boolean }).metrics_are_partial, true);
 });
 
 test('does not overwrite institution metrics when OpenAlex provides them', () => {

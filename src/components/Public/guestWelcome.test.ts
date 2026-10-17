@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
-const stripComments = (source) => source
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
+const stripComments = (source: string) => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/(^|[^:])\/\/.*$/gm, '$1');
 
@@ -83,7 +83,7 @@ test('back and skip are named icon buttons either side of the way forward', asyn
 test('the three gestures sit in a row and arrive one after another', async () => {
   const jsx = await jsxPromise;
   assert.match(jsx, /const BEAT_STAGGER_MS = (\d+);/);
-  const stagger = Number(/const BEAT_STAGGER_MS = (\d+);/.exec(jsx)[1]);
+  const stagger = Number(/const BEAT_STAGGER_MS = (\d+);/.exec(jsx)![1]);
   assert.ok(stagger * 2 + 2500 <= 5000, 'the third gesture still finishes inside five seconds');
   assert.match(jsx, /\{landed \? <Demo still=\{still\} \/> : <div className="gw-demo" aria-hidden="true" \/>\}/);
   assert.match(jsx, /const \[landed, setLanded\] = useState(?:<[^;\n]+>)?\(still\);/, 'refused motion shows all three at once');
@@ -120,7 +120,7 @@ test('the steps presence does not switch off the illustrations’ entrance', asy
   const shell = await shellPromise;
   // The screens' presence (mode="wait"); the progress dots have their own,
   // which skips the first paint on purpose so the dots are simply there.
-  const presence = (shell.match(/<AnimatePresence[^>]*>/g) ?? []).filter(tag => tag.includes('mode="wait"'));
+  const presence = (shell.match(/<AnimatePresence[^>]*>/g) ?? []).filter((tag: string) => tag.includes('mode="wait"'));
   assert.ok(presence.length > 0, 'the steps still cross-fade through AnimatePresence');
   for (const tag of presence) {
     assert.doesNotMatch(tag, /initial=\{false\}/, `${tag} would freeze every illustration on its last frame`);
@@ -207,7 +207,7 @@ test('the welcome is one centred column with the button centred at the foot', as
  */
 test('long topic groups fold behind show more without hiding a pick', async () => {
   const shell = await shellPromise;
-  const shownCount = Number(/const SUBTOPICS_SHOWN = (\d+);/.exec(shell)[1]);
+  const shownCount = Number(/const SUBTOPICS_SHOWN = (\d+);/.exec(shell)![1]);
   assert.ok(shownCount >= 3 && shownCount <= 9, 'a few, not a wall');
   assert.match(shell, /const SUBTOPICS_FOLD_MIN = SUBTOPICS_SHOWN \+ \d+;/, 'no "show 1 more"');
   assert.match(shell, /entries\.filter\(\(\[id\], index\) => index < SUBTOPICS_SHOWN \|\| selectedTopics\.has\(id\)\)/);

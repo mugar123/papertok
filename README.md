@@ -132,6 +132,9 @@ This keeps the main application lightweight while allowing integrations that req
 
 ## Running PaperTok locally
 
+Use Node 22.18 or later (CI uses Node 22; local checks also cover Node 24).
+Application code uses strict TypeScript; Vite and Wrangler produce the builds.
+
 Clone the repository:
 
 ```bash
@@ -164,6 +167,10 @@ and run the test suite with:
 ```bash
 npm test
 ```
+
+`npm run check` runs the secret scan, lint, type checks, application tests,
+production build and Worker dry-run. Run `npm run test:rules` separately with
+Java 21 or later and firebase-tools; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Some integrations require additional environment variables or API credentials. The frontend can still be developed independently, while server-side integrations are handled through the Worker.
 

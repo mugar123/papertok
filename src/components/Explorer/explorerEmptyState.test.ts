@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { pickEmptyVariant } from './explorerEmptyVariant.ts';
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
 
 test('the empty state distinguishes an error, active filters and an unindexed project', () => {
   assert.equal(pickEmptyVariant({ papersError: 'X', hasActiveFilters: true, type: 'project' }), 'error');
@@ -55,7 +55,7 @@ test('the authors tab blames the search only when there is one', async () => {
   );
 });
 
-const strip = (source) => source.replace(/\/\*[\s\S]*?\*\/|\{\/\*[\s\S]*?\*\/\}|\/\/.*$/gm, '');
+const strip = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\{\/\*[\s\S]*?\*\/\}|\/\/.*$/gm, '');
 
 /**
  * «No hay publicaciones» y «Cargando más artículos…» no pueden convivir.
@@ -71,7 +71,7 @@ test('SOURCE: el vacío espera a que no quede ninguna página en vuelo', async (
   for (const [tab, condicion] of [
     ['publicaciones', /\{!isLoadingPapers && !isFetchingMore && filteredPapers\.length === 0 && \(/],
     ['autores', /\{!isLoadingAuthors && !isFetchingMoreAuthors && entityAuthors\.length === 0 && \(/],
-  ]) {
+  ] as const) {
     assert.match(jsx, condicion,
       `${tab}: el vacío tiene que descartar TAMBIÉN la carga de las páginas siguientes, no sólo la primera`);
   }
@@ -99,9 +99,9 @@ test('SOURCE: el pie de la lista no invita a bajar por una lista vacía', async 
  * ciertos a la vez.
  */
 test('vacío y «cargando más» se excluyen para toda combinación de banderas', () => {
-  const vacio = ({ isLoadingPapers, isFetchingMore, filas }) =>
+  const vacio = ({ isLoadingPapers, isFetchingMore, filas }: { isLoadingPapers: boolean; isFetchingMore: boolean; filas: number }) =>
     !isLoadingPapers && !isFetchingMore && filas === 0;
-  const cargandoMas = ({ hasMore, rowsSettled, isFetchingMore, filas }) =>
+  const cargandoMas = ({ hasMore, rowsSettled, isFetchingMore, filas }: { hasMore: boolean; rowsSettled: boolean; isFetchingMore: boolean; filas: number }) =>
     hasMore && rowsSettled && (filas > 0 || isFetchingMore) && isFetchingMore;
 
   const b = [false, true];

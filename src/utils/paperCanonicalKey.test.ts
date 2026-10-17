@@ -32,7 +32,7 @@ test('the arXiv version is stripped: v1 and v17 are the same paper', () => {
 test('old-style arXiv ids keep their category and lose their version', () => {
   for (const form of ['hep-th/9901001', 'hep-th/9901001v2', 'arXiv:hep-th/9901001v2',
     'https://arxiv.org/abs/hep-th/9901001v2', 'math.GT/0309136v1']) {
-    assert.match(canonicalArxivIdOf(form), /^(hep-th\/9901001|math\.gt\/0309136)$/, form);
+    assert.match(canonicalArxivIdOf(form)!, /^(hep-th\/9901001|math\.gt\/0309136)$/, form);
   }
 });
 

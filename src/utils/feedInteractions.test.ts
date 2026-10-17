@@ -37,13 +37,13 @@ test('deduplicates queued paper interactions while preserving their order', () =
 
 test('ignores interactions without a stable paper id', () => {
   assert.deepEqual(
-    dedupeInteractionPapers([null, {}, { id: '  ' }, { id: 'paper-1' }]),
+    dedupeInteractionPapers([null!, {}, { id: '  ' }, { id: 'paper-1' }]),
     [{ id: 'paper-1' }],
   );
 });
 
 test('drops fields with no value so an incomplete paper cannot reject the write', () => {
-  const storedCopyWithoutCategory = { id: 'arxiv:1309.4761', title: 'Stored copy' };
+  const storedCopyWithoutCategory: Partial<import('../models/Paper.ts').Paper> = { id: 'arxiv:1309.4761', title: 'Stored copy' };
 
   assert.deepEqual(
     definedFields({

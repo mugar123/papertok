@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import type { FileHandle } from 'fs/promises';
 
 /**
  * The three things that happen when you select a passage, and the one that
@@ -25,14 +26,14 @@ const RAIL_JSX = new URL('./AnnotationRail.tsx', import.meta.url);
 const POPOVER_JSX = new URL('../ui/popover.tsx', import.meta.url);
 const HOOK = new URL('../../hooks/usePassageAnnotations.ts', import.meta.url);
 
-const stripComments = source => source
+const stripComments = (source: string) => source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '');
 
-const read = async url => stripComments(await readFile(url, 'utf8'));
+const read = async (url: string|URL|Buffer<ArrayBufferLike>|FileHandle) => stripComments(await readFile(url, 'utf8'));
 
 /** The body of `selector { … }`, matched on the rule rather than on its formatting. */
-function rule(css, selector) {
+function rule(css: string, selector: string) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const match = css.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
   assert.ok(match, `expected a \`${selector}\` rule`);
@@ -86,7 +87,7 @@ test('the rail no longer decides when the pen stroke is over', async () => {
 });
 
 /** How deep in `{ … }` a selector sits: 0 is the top level. */
-function nestingDepth(css, needle) {
+function nestingDepth(css: string, needle: string) {
   const at = css.indexOf(needle);
   assert.notEqual(at, -1, `expected to find \`${needle}\``);
   const before = css.slice(0, at);
@@ -131,7 +132,7 @@ test('the rail slides on valid transitions, and no stylesheet gives a duration t
   const { join } = await import('node:path');
   const { fileURLToPath } = await import('node:url');
   const root = fileURLToPath(new URL('../../', import.meta.url));
-  const walk = (dir) => readdirSync(dir).flatMap((name) => { const full = join(dir, name); return statSync(full).isDirectory() ? walk(full) : full.endsWith('.css') ? [full] : []; });
+  const walk = (dir: string): string[] => readdirSync(dir).flatMap((name) => { const full = join(dir, name); return statSync(full).isDirectory() ? walk(full) : full.endsWith('.css') ? [full] : []; });
   for (const file of walk(root)) {
     const source = stripComments(await readFile(file, 'utf8'));
     assert.doesNotMatch(source, /var\(--transition-(?:fast|base|slow|spring)\)\s+(?:cubic-bezier|ease|linear|steps)/, `${file}: a transition token already carries its curve`);

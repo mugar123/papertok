@@ -7,8 +7,8 @@ import katex from 'katex';
 import ScientificText from './ScientificText.ts';
 import { loadKatex } from '../utils/katexLoader.ts';
 
-const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
-const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 /**
  * A card re-renders many times while it arrives on screen and again whenever

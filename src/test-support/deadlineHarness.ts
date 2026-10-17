@@ -16,7 +16,7 @@
  * stream only errors if the signal handed to `fetch` is *still armed* while the
  * body is being read. A cleared timer leaves it pending for ever.
  */
-export function dribblingFetch({ status = 200, headers } = {}) {
+export function dribblingFetch({ status = 200, headers }: { status?: number; headers?: HeadersInit } = {}): typeof fetch {
   return async (_url, options = {}) => {
     const { signal } = options;
     return new Response(new ReadableStream({
@@ -40,8 +40,8 @@ export function dribblingFetch({ status = 200, headers } = {}) {
  * timer, which under Node 22 lets a test that only awaits an abort get reported
  * as `cancelled` rather than passed.
  */
-export async function settleWithin(watchdogMs, work) {
-  let watchdog;
+export async function settleWithin(watchdogMs: number, work: () => unknown) {
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
   const tooSlow = new Promise(resolve => {
     watchdog = setTimeout(() => resolve('still waiting'), watchdogMs);
   });
@@ -59,7 +59,7 @@ export async function settleWithin(watchdogMs, work) {
  * Swaps in a stubbed `fetch` for the duration of `work` and restores it after,
  * even if the assertion throws.
  */
-export async function withStubbedFetch(stub, work) {
+export async function withStubbedFetch<T>(stub: typeof fetch, work: () => T): Promise<Awaited<T>> {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = stub;
   try {

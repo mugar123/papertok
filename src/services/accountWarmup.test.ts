@@ -1,3 +1,4 @@
+import type { OwnList, ListSnapshot } from '../utils/ownLists.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -9,10 +10,10 @@ test('hydrateAccountCaches copies this device\'s lists into the session', () => 
   resetAccountWarmup();
   ownListsCache.clear();
   const storage = {
-    map: new Map(),
-    getItem(key) { return this.map.has(key) ? this.map.get(key) : null; },
-    setItem(key, value) { this.map.set(key, String(value)); },
-    removeItem(key) { this.map.delete(key); },
+    map: new Map<string, string>(),
+    getItem(key: string) { return this.map.has(key) ? this.map.get(key)! : null; },
+    setItem(key: string, value: string) { this.map.set(key, String(value)); },
+    removeItem(key: string) { this.map.delete(key); },
     get length() { return this.map.size; },
   };
   saveStoredLists('uid-w1', [{ id: 'l1', name: 'Notes', paperIds: ['p1'] }], storage);
@@ -41,16 +42,16 @@ test('SOURCE: the save modal seeds from this device, not only the session', asyn
 
 function deviceStorage() {
   return {
-    map: new Map(),
-    getItem(key) { return this.map.has(key) ? this.map.get(key) : null; },
-    setItem(key, value) { this.map.set(key, String(value)); },
-    removeItem(key) { this.map.delete(key); },
+    map: new Map<string, string>(),
+    getItem(key: string) { return this.map.has(key) ? this.map.get(key)! : null; },
+    setItem(key: string, value: string) { this.map.set(key, String(value)); },
+    removeItem(key: string) { this.map.delete(key); },
     get length() { return this.map.size; },
   };
 }
 
 /** A lists query snapshot the server answered. */
-function listsSnapshot(lists) {
+function listsSnapshot(lists: OwnList[]): ListSnapshot {
   return {
     empty: lists.length === 0,
     size: lists.length,
@@ -86,9 +87,9 @@ test('a warm-up whose read lands after a sign-out writes nothing', async () => {
   resetAccountWarmup();
   ownListsCache.clear();
   const storage = deviceStorage();
-  let signedIn = 'uid-w6';
-  let release;
-  const gate = new Promise(resolve => { release = resolve; });
+  let signedIn: string | null = 'uid-w6';
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
 
   const pending = warmAccountCaches('uid-w6', {
     storage,
@@ -111,8 +112,8 @@ test('a warm-up the sign-out already reset writes nothing either', async () => {
   resetAccountWarmup();
   ownListsCache.clear();
   const storage = deviceStorage();
-  let release;
-  const gate = new Promise(resolve => { release = resolve; });
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
 
   const pending = warmAccountCaches('uid-w7', {
     storage,

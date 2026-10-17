@@ -134,11 +134,11 @@ test('getProjectDetails does not cache a miss', async () => {
   }
 });
 
-const emptyOpenAire = { ok: true, json: async () => ({ response: { header: { total: { $: '0' } }, results: {} } }) };
-function capturingFetch(urls) { return async (url) => { urls.push(String(url)); return emptyOpenAire; }; }
+const emptyOpenAire = { ok: true, json: async () => ({ response: { header: { total: { $: '0' } }, results: {} } }) } as Response;
+function capturingFetch(urls: string[]): typeof fetch { return async (url) => { urls.push(String(url)); return emptyOpenAire; }; }
 
 test('un id de OpenAIRE consulta los detalles por openaireProjectID', async () => {
-  const urls = [];
+  const urls: string[] = [];
   CACHE.clear();
   await withStubbedFetch(capturingFetch(urls), () => getProjectDetails('snsf________::abc'));
   assert.match(urls[0], /openaireProjectID=snsf________%3A%3Aabc/);
@@ -146,7 +146,7 @@ test('un id de OpenAIRE consulta los detalles por openaireProjectID', async () =
 });
 
 test('un código a secas lleva el funder a detalles y a publicaciones', async () => {
-  const urls = [];
+  const urls: string[] = [];
   CACHE.clear();
   await withStubbedFetch(capturingFetch(urls), async () => {
     await getProjectDetails('100010', { funder: 'SNSF' });
@@ -157,7 +157,7 @@ test('un código a secas lleva el funder a detalles y a publicaciones', async ()
 });
 
 test('sin funder las URLs quedan como antes', async () => {
-  const urls = [];
+  const urls: string[] = [];
   CACHE.clear();
   await withStubbedFetch(capturingFetch(urls), () => getPapersByProject('100010', 1));
   assert.doesNotMatch(urls[0], /funder=/);
@@ -172,7 +172,7 @@ test('sin funder las URLs quedan como antes', async () => {
  * orphaned every project follow written before it — the field had no test at
  * all.
  */
-function projectSearchResponse(header, project) {
+function projectSearchResponse(header: { "dri:objIdentifier"?: { $: string; }; }, project: { code: { $: string; }|{ $: string; }; acronym?: { $: string; }; title: { $: string; }|{ $: string; }; fundingtree?: { funder: { shortname: { $: string; }; }; }; }) {
   return async () => ({
     ok: true,
     json: async () => ({
@@ -181,7 +181,7 @@ function projectSearchResponse(header, project) {
         results: { result: [{ header, metadata: { 'oaf:entity': { 'oaf:project': project } } }] },
       },
     }),
-  });
+  } as Response);
 }
 
 test('searchProjects keeps the OpenAIRE id and the grant code in separate fields', async () => {
@@ -234,7 +234,7 @@ const TAILOR_RELATION = {
   },
 };
 
-function publicationAnswer(rels) {
+function publicationAnswer(rels: { to: { '@class': string; '@scheme': string; '@type': string; $: string; }; code: { $: string; }; acronym: { $: string; }; title: { $: string; }; funding: { funder: { '@id': string; '@shortname': string; '@name': string; '@jurisdiction': string; }; funding_level_0: { '@name': string; $: string; }; }; }[]) {
   return new Response(JSON.stringify({
     response: {
       header: { total: { $: 1 } },
@@ -251,7 +251,7 @@ function emptyPublicationAnswer() {
   });
 }
 
-function recordingFetch(urls, answer) {
+function recordingFetch(urls: string[], answer: (url: string) => Response): typeof fetch {
   return async (url) => {
     urls.push(String(url));
     return answer(String(url));
@@ -259,7 +259,7 @@ function recordingFetch(urls, answer) {
 }
 
 test('an arXiv-only paper is looked up by its OAI identifier, without the version', async () => {
-  const urls = [];
+  const urls: string[] = [];
   CACHE.clear();
   try {
     const project = await withStubbedFetch(
@@ -277,11 +277,11 @@ test('an arXiv-only paper is looked up by its OAI identifier, without the versio
 });
 
 test('a paper with a DOI is looked up by the DOI first, and falls back to the OAI identifier', async () => {
-  const urls = [];
+  const urls: string[] = [];
   CACHE.clear();
   try {
     const project = await withStubbedFetch(
-      recordingFetch(urls, (url) => (url.includes('doi=') ? emptyPublicationAnswer() : publicationAnswer([TAILOR_RELATION]))),
+      recordingFetch(urls, (url: string) => (url.includes('doi=') ? emptyPublicationAnswer() : publicationAnswer([TAILOR_RELATION]))),
       () => getProjectForPaper('2203.10143', '10.1145/3555174'),
     );
     assert.equal(urls.length, 2);
@@ -298,7 +298,7 @@ test('a DOI record with no project is the answer: its arXiv copy is not asked fo
   // OpenAIRE deduplicates the two into one record (10.1145/3555174 and
   // 2203.10143 answer the same doi_dedup___ id), so a second lookup would
   // return the same projectless publication.
-  const urls = [];
+  const urls: string[] = [];
   CACHE.clear();
   try {
     const project = await withStubbedFetch(
@@ -314,7 +314,7 @@ test('a DOI record with no project is the answer: its arXiv copy is not asked fo
 });
 
 test('an old-style arXiv id keeps its archive prefix in the OAI identifier', async () => {
-  const urls = [];
+  const urls: string[] = [];
   CACHE.clear();
   try {
     await withStubbedFetch(
@@ -328,7 +328,7 @@ test('an old-style arXiv id keeps its archive prefix in the OAI identifier', asy
 });
 
 test('a card does not ask OpenAIRE twice after a refusal', async () => {
-  const urls = [];
+  const urls: string[] = [];
   CACHE.clear();
   try {
     await withStubbedFetch(
@@ -345,7 +345,7 @@ test('a card does not ask OpenAIRE twice after a refusal', async () => {
 });
 
 test('a card does not ask OpenAIRE twice after an empty answer', async () => {
-  const urls = [];
+  const urls: string[] = [];
   CACHE.clear();
   try {
     await withStubbedFetch(
@@ -368,8 +368,8 @@ test('a card does not ask OpenAIRE twice after a network failure', async () => {
     await withStubbedFetch(
       async () => { calls++; throw new TypeError('Failed to fetch'); },
       async () => {
-        assert.equal(await getProjectForPaper(null, '10.1145/3555174'), null);
-        assert.equal(await getProjectForPaper(null, '10.1145/3555174'), null);
+        assert.equal(await getProjectForPaper(null!, '10.1145/3555174'), null);
+        assert.equal(await getProjectForPaper(null!, '10.1145/3555174'), null);
       },
     );
     assert.equal(calls, 1);

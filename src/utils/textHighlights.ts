@@ -1,6 +1,6 @@
 export interface HighlightInput { quote?: unknown; kind?: string; source?: string; id?: string | null; fresh?: boolean; pending?: boolean; proposed?: boolean }
 export interface HighlightRange { start: number; end: number; kind: string; source: string; id: string | null; fresh: boolean; pending: boolean; proposed: boolean }
-type TextSegment = { type: 'text'; value: string; start: number; end: number; kind?: never; id?: never }
+type TextSegment = { type: 'text'; value: string; start: number; end: number; kind?: never; id?: never; source?: never; under?: never }
   | ({ type: 'mark'; value: string; under: string[] } & HighlightRange);
 export type HighlightMath = Omit<HighlightRange, 'kind' | 'source'> & { type: 'math'; value: string; raw: string; display: boolean; kind: string | null; source: string | null; under: string[] };
 export type HighlightChunk = TextSegment | HighlightMath;

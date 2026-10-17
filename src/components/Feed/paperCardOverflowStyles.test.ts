@@ -28,10 +28,10 @@ import { readFile } from 'node:fs/promises';
 const FEED_CSS = new URL('./PaperCard.css', import.meta.url);
 
 /** Comments name selectors and properties in prose; matching them would invent both sides. */
-const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '');
+const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, '');
 
 /** The declarations of one rule, by exact selector. */
-function ruleBody(css, selector) {
+function ruleBody(css: string, selector: string) {
   const pattern = new RegExp(`(?:^|[};])\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`);
   const match = css.match(pattern);
   assert.ok(match, `expected a \`${selector}\` rule in the stylesheet`);

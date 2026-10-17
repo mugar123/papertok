@@ -1,9 +1,10 @@
 import type { Paper } from '../models/Paper.ts';
 import type { FollowEntity } from '../utils/following.ts';
 import type { fetchTopicPapers } from './topicRetrievalService.ts';
+type TopicRetriever = (...args: Parameters<typeof fetchTopicPapers>) => Promise<Pick<Awaited<ReturnType<typeof fetchTopicPapers>>, 'papers' | 'allFailed'>>;
 interface FollowingResult { papers: Paper[]; checkedEntities: number; totalEntities: number; failedEntities: number; }
 interface FollowingOptions {
-  topicRetriever?: typeof fetchTopicPapers; fetchUpdatesForFollow?: (follow: FollowEntity, options: FollowingOptions) => Promise<Paper[]>;
+  topicRetriever?: TopicRetriever; fetchUpdatesForFollow?: (follow: FollowEntity, options: FollowingOptions) => Promise<Paper[]>;
   entityTimeoutMs?: number; limit?: number; maxAgeDays?: number; now?: number; onProgress?: (result: FollowingResult) => void;
 }
 
@@ -68,7 +69,7 @@ function topicUpdatesOptions(follow: FollowEntity) {
   return byCategory ? { excludeProviders: [...CATEGORY_TOPIC_EXCLUDED_PROVIDERS] } : {};
 }
 
-async function fetchTopicUpdates(follow: FollowEntity, topicRetriever?: typeof fetchTopicPapers) {
+async function fetchTopicUpdates(follow: FollowEntity, topicRetriever?: TopicRetriever) {
   // The topic table is ~32 KB gzip and this runs on a background refresh, so
   // the module loads on first use instead of in the boot graph. Tests still
   // inject their own retriever through the parameter.

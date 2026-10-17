@@ -16,8 +16,8 @@ test('resolves a PaperTok category id as a reliable topic', () => {
 
 test('maps an OpenAlex concept name to the local taxonomy when possible', () => {
   const topic = resolvePaperTopic({ id: 'https://openalex.org/C123', display_name: 'Cosmology' });
-  assert.equal(topic.id, 'astro-ph.CO');
-  assert.equal(topic.reliable, true);
+  assert.equal(topic!.id, 'astro-ph.CO');
+  assert.equal(topic!.reliable, true);
 });
 
 test('keeps a stable external OpenAlex concept navigable', () => {
@@ -39,10 +39,10 @@ test('creates a deterministic provider-neutral query topic for meaningful text',
   });
   const sameTopic = resolvePaperTopic('spatial transcriptomics');
 
-  assert.match(topic.id, /^query-[a-f0-9]{8}$/);
-  assert.equal(topic.id, sameTopic.id);
+  assert.match(topic!.id, /^query-[a-f0-9]{8}$/);
+  assert.equal(topic!.id, sameTopic!.id);
   assert.deepEqual(topic, {
-    id: topic.id,
+    id: topic!.id,
     display_name: 'Spatial transcriptomics',
     label: 'Spatial transcriptomics',
     query: 'Spatial transcriptomics',
@@ -67,10 +67,10 @@ test('query-topic paths restore exact display and query values after reload', ()
     source: 'arxiv',
   });
   const path = topicExplorerPath(topic);
-  const url = new URL(path, 'https://papertok.test');
-  const restored = resolveQueryTopicRoute(topic.id, url.searchParams);
+  const url = new URL(path!, 'https://papertok.test');
+  const restored = resolveQueryTopicRoute(topic!.id, url.searchParams);
 
-  assert.equal(url.pathname, `/explorer/topic/${topic.id}`);
+  assert.equal(url.pathname, `/explorer/topic/${topic!.id}`);
   assert.equal(url.searchParams.get('q'), 'nlin.CD');
   assert.equal(url.searchParams.get('name'), 'Physics');
   assert.equal(url.searchParams.get('source'), 'arxiv');
@@ -93,15 +93,15 @@ test('rejects generic, technical, malformed, and tampered query topics', () => {
   assert.ok(resolvePaperTopic('AI'));
 
   const valid = resolvePaperTopic('Quantum sensing');
-  assert.equal(resolveQueryTopicRoute(valid.id, new URLSearchParams('q=Different+topic')), null);
+  assert.equal(resolveQueryTopicRoute(valid!.id, new URLSearchParams('q=Different+topic')), null);
   assert.equal(resolveQueryTopicRoute('T123', new URLSearchParams('q=Quantum+sensing')), null);
 });
 
 test('recognizes every supported provider label field without exposing opaque ids', () => {
   for (const field of ['display_name', 'displayName', 'name', 'label']) {
     const topic = resolvePaperTopic({ id: 'mesh:D012345', [field]: 'Single-cell proteomics' });
-    assert.equal(topic.label, 'Single-cell proteomics');
-    assert.equal(topic.metadata.query, 'Single-cell proteomics');
+    assert.equal(topic!.label, 'Single-cell proteomics');
+    assert.equal(topic!.metadata!.query, 'Single-cell proteomics');
   }
 
   assert.equal(resolvePaperTopic({ id: 'mesh:D012345', label: 'query-not-a-label' }), null);
@@ -115,7 +115,7 @@ test('keeps query-topic metadata bounded to query, source, and scientific catego
       source: 'PubMed Provider With A Needlessly Long Internal Name That Must Be Bounded',
       categoryIds: [...Array.from({ length: 14 }, () => 'nlin.CD'), 'not a category'],
       ignored: 'never persisted',
-    },
+    } as NonNullable<Exclude<Parameters<typeof getQueryTopicMetadata>[0], string | null | undefined>["metadata"]> & Record<string, unknown>,
   });
 
   assert.deepEqual(Object.keys(metadata), ['query', 'source', 'categoryIds']);
@@ -139,7 +139,7 @@ test('keeps query-topic metadata bounded to query, source, and scientific catego
  * old loop and compares the two over every id and every label the taxonomy has,
  * plus the shapes that used to fall through it.
  */
-function findLocalTopicTheOldWay(value) {
+function findLocalTopicTheOldWay(value: string|null|undefined) {
   const normalizeLabel = (input = '') => String(input || '')
     .normalize('NFKD')
     .replace(/\p{M}/gu, '')

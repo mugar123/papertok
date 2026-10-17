@@ -1,12 +1,17 @@
-import type { AuthProvider, User } from 'firebase/auth';
+import type { User } from 'firebase/auth';
+interface IdentityUser {
+  uid: string;
+  providerData: Array<Pick<User['providerData'][number], 'providerId'>>;
+}
+interface IdentityAuth { currentUser: IdentityUser | null; }
 interface IdentityOperations {
-  authentication?: typeof auth;
-  providers?: Record<string, AuthProvider>;
-  popupSignIn?: typeof signInWithPopup;
-  popupLink?: typeof linkWithPopup;
-  additionalUserInfo?: typeof getAdditionalUserInfo;
+  authentication?: IdentityAuth;
+  providers?: Record<string, unknown>;
+  popupSignIn?(authentication: IdentityAuth, provider: unknown): Promise<{ user: IdentityUser }>;
+  popupLink?(user: IdentityUser, provider: unknown): Promise<{ user: IdentityUser }>;
+  additionalUserInfo?(result: { user: IdentityUser }): { isNewUser: boolean } | null;
   isDemo?: boolean;
-  currentUser?: User | null;
+  currentUser?: IdentityUser | null;
 }
 
 /**
@@ -93,7 +98,7 @@ export class IdentityAlreadyLinkedError extends Error {
   }
 }
 
-function operations(overrides: IdentityOperations = {}) {
+function operations(overrides: IdentityOperations = {}): Required<Omit<IdentityOperations, 'currentUser'>> {
   return {
     authentication: overrides.authentication || auth,
     providers: overrides.providers || {
@@ -122,14 +127,14 @@ function emailFromError(error: unknown) {
 }
 
 /** Every door this account already has, as Firebase provider ids. */
-export function providerIdsOf(user: { providerData: Array<Pick<User['providerData'][number], 'providerId'>> } | null | undefined) {
+export function providerIdsOf(user: { providerData?: Array<Pick<User['providerData'][number], 'providerId'> | null> | null } | null | undefined) {
   const entries = Array.isArray(user?.providerData) ? user.providerData : [];
   return entries
     .map(entry => entry?.providerId)
-    .filter(providerId => typeof providerId === 'string' && providerId);
+    .filter(providerId => typeof providerId === 'string' && providerId) as string[];
 }
 
-export function hasSignInProvider(user: { providerData: Array<Pick<User['providerData'][number], 'providerId'>> } | null | undefined, providerId: string) {
+export function hasSignInProvider(user: { providerData?: Array<Pick<User['providerData'][number], 'providerId'> | null> | null } | null | undefined, providerId: string) {
   return providerIdsOf(user).includes(providerId);
 }
 

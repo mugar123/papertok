@@ -14,7 +14,7 @@ import { readFile } from 'node:fs/promises';
 
 const SOURCE = new URL('./FollowingContext.tsx', import.meta.url);
 
-function subscriptionEffect(source) {
+function subscriptionEffect(source: string) {
   // The effect that opens the snapshot listener, up to its dependency array.
   const start = source.indexOf('const followsCollection = collection(db');
   assert.ok(start > 0, 'could not find the follows subscription');
@@ -26,7 +26,7 @@ function subscriptionEffect(source) {
 test('the follows listener is keyed on the account and nothing else', async () => {
   const source = await readFile(SOURCE, 'utf8');
   const effect = subscriptionEffect(source);
-  const deps = effect.slice(effect.lastIndexOf('}, [')).match(/\}, \[([^\]]*)\]/)[1];
+  const deps = effect.slice(effect.lastIndexOf('}, [')).match(/\}, \[([^\]]*)\]/)![1];
 
   assert.equal(
     deps.trim(),

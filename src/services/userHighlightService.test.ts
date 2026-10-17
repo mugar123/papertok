@@ -1,3 +1,8 @@
+import type { Firestore, CollectionReference, Query, QueryConstraint, QueryFieldFilterConstraint, QueryLimitConstraint, FieldPath, WhereFilterOp } from 'firebase/firestore';
+type MockCollection = CollectionReference & { kind: string; segments: string[] };
+type MockQuery = Query & { kind: string; source: Query; constraints: (QueryConstraint & { kind: string })[] };
+type MockFilter = QueryFieldFilterConstraint & { kind: string; field: string | FieldPath; operator: WhereFilterOp; value: unknown };
+type MockLimit = QueryLimitConstraint & { kind: string; count: number };
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -11,38 +16,38 @@ import {
  * which is the whole point of these tests: the bug was not in the result, it was
  * in how many documents had to be billed to produce it.
  */
-function fakeFirestore(docs = []) {
-  const calls = { collections: [], filters: [], caps: [], reads: [] };
+function fakeFirestore(docs: ReturnType<typeof fakeDoc>[] = []) {
+  const calls: { collections: { database: unknown; segments: string[] }[]; filters: { field: string | FieldPath; operator: WhereFilterOp; value: unknown }[]; caps: number[]; reads: unknown[] } = { collections: [], filters: [], caps: [], reads: [] };
   const overrides = {
-    database: { tag: 'database' },
-    collectionRef: (database, ...segments) => {
+    database: { tag: 'database' } as Firestore & { tag: string },
+    collectionRef: (database: unknown, ...segments: string[]) => {
       calls.collections.push({ database, segments });
-      return { kind: 'collection', segments };
+      return { kind: 'collection', segments } as MockCollection;
     },
-    matching: (field, operator, value) => {
+    matching: (field: string | FieldPath, operator: WhereFilterOp, value: unknown) => {
       calls.filters.push({ field, operator, value });
-      return { kind: 'where', field, operator, value };
+      return { kind: 'where', field, operator, value } as MockFilter;
     },
-    cap: (count) => {
+    cap: (count: number) => {
       calls.caps.push(count);
-      return { kind: 'limit', count };
+      return { kind: 'limit', count } as MockLimit;
     },
-    composeQuery: (source, ...constraints) => ({ kind: 'query', source, constraints }),
-    readDocuments: async (target) => {
+    composeQuery: (source: Query, ...constraints: (QueryConstraint | import('firebase/firestore').QueryCompositeFilterConstraint)[]) => ({ kind: 'query', source, constraints }) as MockQuery,
+    readDocuments: async <T, D extends import('firebase/firestore').DocumentData>(target: Query<T, D>) => {
       calls.reads.push(target);
-      return { docs };
+      return { docs } as import('firebase/firestore').QuerySnapshot<T, D>;
     },
   };
   return { overrides, calls };
 }
 
-function fakeDoc(id, data) {
+function fakeDoc(id: string, data: { paperId: string; quote?: string; }) {
   return { id, data: () => data };
 }
 
 test('the highlights query filters by paper and caps server-side', () => {
   const { overrides, calls } = fakeFirestore();
-  const built = buildHighlightsQuery('uid-1', 'paper-7', overrides);
+  const built = buildHighlightsQuery('uid-1', 'paper-7', overrides) as MockQuery;
 
   assert.deepEqual(calls.collections[0].segments, ['users', 'uid-1', 'highlights']);
   assert.deepEqual(calls.filters, [{ field: 'paperId', operator: '==', value: 'paper-7' }]);
@@ -61,7 +66,7 @@ test('reading highlights goes through the query, never the bare collection', asy
   assert.equal(calls.reads.length, 1);
   // A collection reference reaching `getDocs` is the original bug: every
   // highlight the account owns, billed to show the ones on screen.
-  assert.equal(calls.reads[0].kind, 'query');
+  assert.equal((calls.reads[0] as MockQuery).kind, 'query');
   assert.deepEqual(rows, [{ id: 'h1', paperId: 'paper-7', quote: 'first' }]);
 });
 

@@ -14,13 +14,13 @@ import {
   rememberNudgeDismissal,
 } from './nudges.ts';
 
-const fakeStorage = (seed = {}) => {
+const fakeStorage = (seed: Record<string, string> = {}) => {
   const map = new Map(Object.entries(seed));
   return {
     map,
-    getItem: key => (map.has(key) ? map.get(key) : null),
-    setItem: (key, value) => map.set(key, String(value)),
-    removeItem: key => map.delete(key),
+    getItem: (key: string) => (map.has(key) ? map.get(key)! : null),
+    setItem: (key: string, value: string) => map.set(key, String(value)),
+    removeItem: (key: string) => map.delete(key),
   };
 };
 
@@ -44,7 +44,7 @@ test('descartar añade el id una sola vez y devuelve la lista que vale de ahora 
   assert.deepEqual(rememberNudgeDismissal('open-source', storage), ['open-source']);
   assert.deepEqual(rememberNudgeDismissal('open-source', storage), ['open-source'], 'sin duplicados');
   assert.deepEqual(rememberNudgeDismissal('email-down', storage), ['open-source', 'email-down']);
-  assert.deepEqual(JSON.parse(storage.getItem(NUDGE_DISMISSED_KEY)), ['open-source', 'email-down']);
+  assert.deepEqual(JSON.parse(storage.getItem(NUDGE_DISMISSED_KEY)!), ['open-source', 'email-down']);
 });
 
 test('si el navegador no deja escribir, el aviso se apaga igual en esta visita', () => {
@@ -116,7 +116,7 @@ test('lo que no es un recuento no se guarda ni se lee', () => {
   const storage = fakeStorage();
   const now = 1_700_000_000_000;
   for (const bad of [-1, Number.NaN, Infinity, '12', null, undefined, 1.5]) {
-    assert.equal(cacheStarCount(bad, storage, now), false, `${String(bad)} no es un recuento`);
+    assert.equal(cacheStarCount(bad!, storage, now), false, `${String(bad)} no es un recuento`);
   }
   assert.equal(readCachedStarCount(fakeStorage({ papertok_github_stars: 'no soy json' }), now), null);
   assert.equal(readCachedStarCount(fakeStorage({ papertok_github_stars: '{"count":"muchas","at":1}' }), now), null);

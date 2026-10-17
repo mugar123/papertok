@@ -14,7 +14,7 @@ import { lazyWithPreload } from './lazyPreload.ts';
  */
 const Screen = ({ label = 'screen' }) => createElement('p', null, label);
 
-function paint(Route, props) {
+function paint(Route: import('react').ComponentType<{ label?: string }>, props?: { label?: string }) {
   return renderToStaticMarkup(
     createElement(Suspense, { fallback: createElement('i', null, 'fallback') }, createElement(Route, props)),
   );
