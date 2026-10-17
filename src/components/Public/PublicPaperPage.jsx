@@ -26,6 +26,8 @@ import { publicPaperMetadata, readShareSeed } from '../../utils/shareSeed.js';
 import PaperCard from '../Feed/PaperCard.jsx';
 import SkeletonCard from '../Feed/SkeletonCard.jsx';
 import { Button } from '../ui/button.jsx';
+import { EmptyState } from '../ui/empty-state.jsx';
+import Petri from '../Onboarding/Petri.jsx';
 import './PublicPaperPage.css';
 
 const COPY = {
@@ -309,7 +311,7 @@ export default function PublicPaperPage({
         // it mounted on this route), so the page adds only a way back. The
         // standalone chrome below is for shared links opened without session.
         <Button
-          variant="outline"
+          variant="ghost"
           size="icon"
           className="public-paper-back-floating"
           onClick={goBack}
@@ -386,21 +388,28 @@ export default function PublicPaperPage({
           />
         </motion.section>
       ) : status === 'loading' ? null : (
-        <section className="public-paper-state" aria-live="polite">
-          <h1>{text(status === 'not-found' ? COPY.notFoundTitle : COPY.errorTitle)}</h1>
-          <p>{text(status === 'not-found' ? COPY.notFoundDescription : COPY.errorDescription)}</p>
-          <div className="public-paper-state-actions">
-            <button type="button" className="public-paper-primary-action" onClick={retry}>
-              <ArrowClockwise size={17} /> {text(COPY.retry)}
-            </button>
-            <button type="button" className="public-paper-secondary-action" onClick={goBack}>
-              <ArrowLeft size={17} /> {text(COPY.back)}
-            </button>
-            <button type="button" className="public-paper-secondary-action" onClick={() => navigate('/feed')}>
-              <House size={17} /> {text(COPY.home)}
-            </button>
-          </div>
-        </section>
+        <EmptyState
+          as="h1"
+          className="public-paper-state"
+          aria-live="polite"
+          art={<Petri pose={status === 'not-found' ? 'blankPage' : 'upset'} />}
+          title={text(status === 'not-found' ? COPY.notFoundTitle : COPY.errorTitle)}
+          actions={(
+            <>
+              <Button onClick={retry}>
+                <ArrowClockwise size={16} aria-hidden="true" /> {text(COPY.retry)}
+              </Button>
+              <Button variant="outline" onClick={goBack}>
+                <ArrowLeft size={16} aria-hidden="true" /> {text(COPY.back)}
+              </Button>
+              <Button variant="outline" onClick={() => navigate('/feed')}>
+                <House size={16} aria-hidden="true" /> {text(COPY.home)}
+              </Button>
+            </>
+          )}
+        >
+          {text(status === 'not-found' ? COPY.notFoundDescription : COPY.errorDescription)}
+        </EmptyState>
       )}
     </main>
   );

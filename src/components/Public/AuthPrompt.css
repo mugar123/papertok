@@ -64,7 +64,7 @@
 
 .auth-modal-lede {
   margin: 0 auto var(--space-6);
-  max-width: 30ch;
+  max-width: 40ch;
   color: var(--text-secondary);
   font-size: var(--fs-sm);
   line-height: 1.6;

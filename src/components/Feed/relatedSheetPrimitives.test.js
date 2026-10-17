@@ -15,9 +15,13 @@ const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '
  * primitive holds the node until the exit has played now, and the parent
  * hears of the close from `onOpenChangeComplete(false)` and nowhere else.
  */
-test('the connections sheet is a modal Base UI Drawer that owns its open state and reports the close once', async () => {
+test('the connections sheet is a modal Base UI Drawer on phones and a Dialog elsewhere, owns its open state and reports the close once', async () => {
   const jsx = stripComments(await read('./RelatedPapersSheet.jsx'));
   assert.match(jsx, /import \{ Drawer, DrawerClose, DrawerContent, DrawerTitle \} from '\.\.\/ui\/drawer\.jsx';/);
+  assert.match(jsx, /import \{ Dialog, DialogClose, DialogContent, DialogTitle \} from '\.\.\/ui\/dialog\.jsx';/);
+  assert.match(jsx, /const Root = inline \? InlineRoot : isPhone \? Drawer : Dialog;/);
+  assert.match(jsx, /const Content = inline \? 'section' : isPhone \? DrawerContent : DialogContent;/);
+  assert.match(jsx, /const Close = isPhone \? DrawerClose : DialogClose;/);
   assert.doesNotMatch(jsx, /useDialogFocus|is-closing|setIsClosing|transitionTimerRef|onAnimationEnd|setTimeout\(\s*finish/);
   assert.doesNotMatch(jsx, /modal=\{false\}/, 'FeedContainer probes [aria-modal="true"]; the sheet must stay modal');
 
@@ -36,43 +40,80 @@ test('the connections sheet is a modal Base UI Drawer that owns its open state a
     /const \[open, setOpen\] = useState\(true\);/,
     'a sheet that mounts open never arrives',
   );
-  assert.match(jsx, /<Drawer\s+open=\{open\}\s+onOpenChange=\{\(nextOpen\) => \{ if \(!nextOpen\) requestClose\(\); \}\}\s+onOpenChangeComplete=\{handleOpenChangeComplete\}/);
-  assert.match(jsx, /<DrawerContent\s[\s\S]*?className=\{`related-sheet related-sheet--graph related-sheet--\$\{sheetStatus\} [\s\S]*?overlayClassName="related-overlay"[\s\S]*?aria-modal="true"/);
+  assert.match(jsx, /<Root\s+open=\{open\}\s+onOpenChange=\{\(nextOpen\) => \{ if \(!nextOpen\) requestClose\(\); \}\}\s+onOpenChangeComplete=\{handleOpenChangeComplete\}/);
+  assert.match(jsx, /<Content\s[\s\S]*?className=\{`related-sheet related-sheet--graph related-sheet--\$\{sheetStatus\} [\s\S]*?overlayClassName: 'related-overlay',\s*'aria-modal': 'true',/);
 
   // Every way out takes `open` down and waits: a dismissal and a chosen
   // paper are told apart when the exit has finished, not before.
   const close = jsx.match(/const requestClose = useCallback\(\(\) => \{([\s\S]*?)\}, \[setOpen\]\);/);
   assert.ok(close, 'requestClose is gone');
   assert.match(close[1], /setOpen\(false\);/);
-  const pick = jsx.match(/const requestPaper = useCallback\(\(relatedPaper, paperKey\) => \{([\s\S]*?)\}, \[setOpen\]\);/);
+  const pick = jsx.match(/const requestPaper = useCallback\(\(relatedPaper, paperKey\) => \{([\s\S]*?)\}, \[setOpen, inline, finishSelection\]\);/);
   assert.ok(pick, 'requestPaper is gone');
   assert.match(pick[1], /pendingSelectionRef\.current = \{ paper: relatedPaper, key: paperKey \};/);
-  assert.match(pick[1], /setOpen\(false\);/);
+  assert.match(pick[1], /setOpen\(false\);\s*if \(inline\) finishSelection\(\);/);
   assert.match(
     jsx,
     /const handleOpenChangeComplete = useCallback\(\(nextOpen\) => \{\s*if \(nextOpen\) return;\s*if \(pendingSelectionRef\.current\) finishSelection\(\);\s*else finishClose\(\);\s*\}, \[finishClose, finishSelection\]\);/,
   );
   const parentTold = jsx.match(/onCloseRef\.current\(\)/g) ?? [];
   assert.equal(parentTold.length, 1, 'onClose reaches the parent from finishClose and nowhere else');
-  // The X is a DrawerClose and the first thing focused, as it always was.
-  assert.match(jsx, /<DrawerClose\s+ref=\{closeButtonRef\}/);
-  assert.match(jsx, /initialFocus=\{closeButtonRef\}/);
+  // The X is the primitive's Close and the first thing focused, as it always was.
+  assert.match(jsx, /<Close\s+ref=\{closeButtonRef\}/);
+  assert.match(jsx, /initialFocus: closeButtonRef,/);
 });
 
-test('the sheet\'s mode switch is a Tabs and its map/list switch a ToggleGroup, drawn by the sheet\'s own rules', async () => {
+test('wider than a phone the rail\'s Connections tile swaps the abstract for the panel; a phone keeps the sheet', async () => {
+  const card = stripComments(await read('./PaperCard.jsx'));
+  assert.match(card, /const relatedInline = showRelated && !isPhone;/);
+  // The rail's Connections tile is the panel's state, at every width.
+  assert.match(card, /className="pc-side-btn pc-side-btn--connections"\s+pressed=\{showRelated\}\s+onPressedChange=\{toggleRelated\}/);
+  // The swap grows the card downward: pinned on the press, held while open.
+  assert.match(card, /const toggleRelated = \(next\) => \{\s*if \(!isPhone && !publicMode\) \{\s*pinSheet\(\);[\s\S]*?if \(next\) openRelated\(\);\s*else setShowRelated\(false\);\s*\};/);
+  assert.match(card, /const sheetGrown = expanded \|\| authorsExpanded \|\| relatedInline;/);
+  assert.doesNotMatch(card, /id: 'related'/, 'Related papers left the More menu for the rail');
+  // Two quick presses on the map are not a double tap on the card.
+  assert.match(card, /event\.target\.closest\('\.related-sheet'\)\) return;/);
+  // The two faces slide past each other: the map from the right, the
+  // abstract back from the left, the leaving one lifted out of the flow.
+  assert.match(card, /<AnimatePresence mode="popLayout" initial=\{false\} custom=\{relatedInline \? 1 : -1\}>\s*\{relatedInline \? \(\s*<motion\.div\s+key="connections"[\s\S]*?custom=\{1\}[\s\S]*?<Suspense fallback=\{null\}>\s*<RelatedPapersSheet\s+inline\s/);
+  assert.match(card, /<motion\.div\s+key="abstract"\s+className="pc-slot-face"\s+variants=\{slotSlide\}\s+custom=\{-1\}/);
+  assert.match(card, /\{showRelated && !relatedInline && \(\s*<Suspense fallback=\{null\}>\s*<RelatedPapersSheet\s/);
+
   const jsx = stripComments(await read('./RelatedPapersSheet.jsx'));
-  assert.match(jsx, /<Tabs value=\{mode\} onValueChange=\{\(next\) => setMode\(next\)\}>/);
-  assert.match(jsx, /<TabsList variant="pill" className="related-mode-tabs" aria-label=/);
+  // Part of the page, not a popup: nothing modal for FeedContainer to find.
+  assert.match(jsx, /\{\.\.\.\(inline \? \{ 'aria-label': 'Paper connections' \} : \{\s*render: <section \/>/);
+  // The tile is its name and its way back: no title, no X.
+  assert.match(jsx, /\{inline \? modeTabs : \(/);
+  assert.match(jsx, /\{!inline && \(\s*<Close/);
+});
+
+test('the sheet\'s mode switch is a Tabs and its map/list switch one Toggle, drawn by the sheet\'s own rules', async () => {
+  const jsx = stripComments(await read('./RelatedPapersSheet.jsx'));
+  assert.match(jsx, /<Tabs\s+value=\{mode\}\s+onValueChange=\{\(next\) => \{[\s\S]*?setMode\(next\);\s*\}\}\s*>/);
+  assert.match(jsx, /<TabsList\s+variant="pill"\s+className="related-mode-tabs"\s+aria-label=/);
+  // The chosen mode's chip slides between the two, keyed off `mode` itself.
+  assert.match(jsx, /style=\{\{ '--mode-index': mode === 'graph' \? 0 : 1 \}\}\s*>\s*<span className="related-mode-pill" aria-hidden="true" \/>/);
   assert.match(jsx, /<TabsTrigger value="graph" disabled=\{!hasGraphIdentifier \|\| Boolean\(selectedPaperKey\)\}>/);
   assert.match(jsx, /<TabsTrigger value="similar" disabled=\{Boolean\(selectedPaperKey\)\}>/);
   assert.doesNotMatch(jsx, /role="tablist"|role="tab"|aria-selected/, 'the primitives write the roles and states');
   const header = jsx.slice(jsx.indexOf('<header className="related-header">'), jsx.indexOf('</header>'));
   assert.doesNotMatch(header, /aria-pressed|is-active/, 'the toggle writes its own pressed state');
-  // Base UI's group value is an array; a press on the pressed item reports
-  // [] and the view must never go to "neither".
-  assert.match(jsx, /<ToggleGroup\s[\s\S]*?value=\{\[view\]\}\s+onValueChange=\{\(\[next\]\) => \{ if \(next\) setView\(next\); \}\}/);
-  assert.match(jsx, /<ToggleGroupItem\s+value="map"[\s\S]*?className="graph-view-button"/);
-  assert.match(jsx, /<ToggleGroupItem\s+value="list"[\s\S]*?className="graph-view-button"/);
+  // One button whose pressed state is the list, so the view is always one
+  // of the two and the name never flips.
+  assert.match(jsx, /<Toggle\s+size="icon"\s+className="graph-view-button"\s+pressed=\{view === 'list'\}\s+onPressedChange=\{\(next\) => \{[\s\S]*?setView\(next \? 'list' : 'map'\);\s*\}\}\s+aria-label=\{'List view'\}/);
+  // Back on a map already drawn, it stands instead of arriving again; a new
+  // centre (a walk forward or back) arrives as before.
+  assert.match(jsx, /if \(!next\) setIsMapReturning\(true\);/);
+  assert.match(jsx, /if \(next === 'graph' && graphStatus === 'ready'\) setIsMapReturning\(true\);/);
+  assert.equal((jsx.match(/setIsMapReturning\(false\);/g) || []).length, 3, 'appendToTrail, goBackTo and requestCentre clear it');
+  // A list reached by a switch stands; only the panel's own arrival fades one in.
+  assert.equal((jsx.match(/setHasSwitched\(true\);/g) || []).length, 2, 'both switches mark it');
+  assert.equal((jsx.match(/className=\{`related-list \$\{hasSwitched \? 'is-switched' : ''\}`\}/g) || []).length, 2, 'both lists read it');
+  const returning = await read('./PaperCard.css');
+  assert.match(returning, /\.related-list\.is-switched \{\s*animation: none;/);
+  assert.match(returning, /\.graph-map\.is-returning :is\(\.graph-node, \.graph-edge, \.graph-mark, \.graph-chip, \.graph-now\) \{\s*animation: none;/);
+  assert.doesNotMatch(jsx, /ToggleGroup/);
 
   const css = await read('./PaperCard.css');
   assert.match(css, /\.related-mode-tabs button\[data-active\] \{/, 'the active tab is styled on the primitive\'s attribute');
@@ -124,7 +165,7 @@ test('the related paper opens as a full-screen modal Dialog whose exit plays bef
   assert.match(jsx, /const handleDoubleTap = useCallback\(\(event\) => \{\s*if \(event\?\.target instanceof Node && !cardRef\.current\?\.contains\(event\.target\)\) return;/);
 
   const css = await read('./PaperCard.css');
-  assert.match(css, /\.related-card-overlay\[data-open\] \{\s*animation: relatedCardIn 0\.32s/);
-  assert.match(css, /\.related-card-overlay\[data-closed\] \{\s*animation: relatedCardOut 0\.22s[^}]*pointer-events: none;/);
+  assert.match(css, /\.related-card-overlay\[data-open\] \{\s*animation: relatedCardIn 280ms var\(--ease-out\)/);
+  assert.match(css, /\.related-card-overlay\[data-closed\] \{\s*animation: relatedCardOut 180ms var\(--ease-out\)[^}]*pointer-events: none;/);
   assert.match(css, /\.related-card-scrim \{\s*background: transparent;/, 'the card is opaque; the scrim draws nothing');
 });

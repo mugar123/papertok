@@ -1,57 +1,35 @@
-/* Skeleton Card — mirrors the PaperCard sheet so the swap doesn't jump */
-.sk {
-  position: relative;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: clamp(16px, 3vh, 40px);
-  padding: clamp(16px, 3dvh, 40px);
-  padding-right: clamp(96px, 10vw, 148px);
-  overflow: hidden;
-  background: var(--bg-secondary);
+/* The card while its paper loads. The frame is the card's own (PaperCard.css:
+   `.pc`, `.pc-sheet`, `.pc-body`, `.pc-side-actions`), so width, centring,
+   rail and breakpoints are the real card's; these rules only draw the rows,
+   at the real rows' sizes (measured on the feed at 1440×900, 2026-10-17). */
+
+/* A placeholder arrives at rest: the frame's entrances are for content. */
+.sk .pc-sheet,
+.sk .pc-side-actions {
+  animation: none;
 }
 
-.sk-bg {
-  display: none;
-}
-
-.sk-body {
-  position: relative;
-  width: min(880px, 100%);
-  padding: clamp(22px, 3.2vw, 40px);
-  background: var(--bg-card);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-2xl);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
+/* The accent rule over the kicker belongs to the field, which is not known
+   yet. */
+.sk .pc-body::before {
+  background: var(--border-default);
 }
 
 /* Shimmer base.
    A solid block plus a translating gradient on `::after`, not an animated
-   `background-position`: the old version repainted the whole block every
-   frame (`background-position` is a paint property, not a compositor one).
-   `transform` on a pseudo-element is the same sweep for free — the block
-   itself never repaints, only the highlight layer moves.
-   None of these seven selectors already own a `::before`/`::after` or a
-   `position`/`overflow`, so `::after` is free for all of them; the circular
-   `.sk-avatar` still clips correctly because `overflow: hidden` clips to
-   its own `border-radius: 50%`. */
-.sk-pill, .sk-small, .sk-title, .sk-name, .sk-text, .sk-btn, .sk-avatar {
+   `background-position`, which would repaint the block every frame. Blocks
+   sit straight on the page's --bg-secondary, as the paper does, so they take
+   a rule-weight grey that holds in both themes. */
+.sk-block {
   position: relative;
+  display: block;
+  flex: 0 0 auto;
   overflow: hidden;
   border-radius: var(--radius-sm);
-  background: var(--bg-secondary);
+  background: var(--border-subtle);
 }
 
-.sk-pill::after,
-.sk-small::after,
-.sk-title::after,
-.sk-name::after,
-.sk-text::after,
-.sk-btn::after,
-.sk-avatar::after {
+.sk-block::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -64,113 +42,117 @@
   to { transform: translateX(100%); }
 }
 
-.sk-meta {
+.sk-row {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  margin-bottom: var(--space-4);
 }
 
-.sk-pill {
-  width: 110px;
-  height: 12px;
+/* Kicker: mono, 11px. */
+.sk-meta .sk-block {
+  height: 11px;
 }
 
-.sk-small {
-  width: 48px;
-  height: 12px;
+/* Status chips. */
+.sk-chips .sk-block {
+  height: 22px;
 }
 
+/* Two lines of the 33.6px serif title on its 39px line. */
 .sk-title {
-  height: 28px;
-  width: 88%;
-}
-
-.sk-title--short {
-  width: 56%;
-}
-
-.sk-authors {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
+  flex-direction: column;
+  gap: 11px;
+  margin-bottom: var(--space-4);
 }
 
-.sk-avatar {
+.sk-title .sk-block {
+  height: 28px;
+}
+
+/* The byline: overlapping dots over its rule. */
+.sk-authors {
+  gap: 0;
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sk-authors .sk-block {
   width: 24px;
   height: 24px;
-  border-radius: 50%;
-  flex-shrink: 0;
+  margin-left: calc(var(--i) * -6px);
+  border: 2px solid var(--bg-secondary);
+  border-radius: var(--radius-full);
 }
 
-.sk-name {
-  width: 140px;
+/* The abstract's well: 16px serif lines every 25.6px,
+   clipped and faded at the same ceiling as the real one. */
+.sk-abstract {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: min(30em, 46vh);
+  max-height: min(30em, 46dvh);
+  overflow: hidden;
+  margin-bottom: var(--space-4);
+  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+}
+
+.sk-line {
+  height: 11px;
+  margin: 7.3px 0;
+}
+
+
+.sk-toggle {
+  width: 7.5rem;
   height: 12px;
+  margin-bottom: var(--space-4);
 }
 
-.sk-text {
-  height: 13px;
-  width: 100%;
-}
-
-.sk-text--short {
-  width: 70%;
-}
-
-.sk-bar {
-  display: flex;
-  gap: var(--space-2);
-  margin-top: var(--space-4);
-}
-
-.sk-btn {
-  width: 140px;
+.sk-button {
   height: 40px;
   border-radius: var(--radius-md);
 }
 
-.sk-btn--small {
-  width: 100px;
+.sk-button--read { width: 7rem; }
+.sk-button--plain { width: 11rem; }
+
+/* The rail's tiles, at the rail's own 40px. */
+.sk-tile {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
 }
 
 @media (max-width: 900px) {
-  .sk {
-    padding: var(--space-5);
-    padding-right: 74px;
-  }
-
-  .sk-body {
-    width: 100%;
-    padding: 0;
-    border: none;
-    border-radius: 0;
-    background: transparent;
-  }
-
-  /* With the sheet gone the blocks sit straight on the slot's own
-     --bg-secondary, and in that colour they were invisible: the skeleton was
-     an empty screen on a phone (measured 2026-10-06). A rule-weight grey
-     keeps them on the ground in both themes. */
-  .sk-pill, .sk-small, .sk-title, .sk-name, .sk-text, .sk-btn, .sk-avatar {
-    background: var(--border-subtle);
+  /* As the real well: it fills what the rows above leave. */
+  .sk-abstract {
+    flex: 1 1 auto;
+    max-height: none;
   }
 }
 
+@media (max-width: 640px) {
+  /* The title drops to 1.3rem there. */
+  .sk-title {
+    gap: 8px;
+  }
+
+  .sk-title .sk-block {
+    height: 20px;
+  }
+
+  /* The buttons show their short words there. */
+  .sk-button--read { width: 4.5rem; }
+  .sk-button--plain { width: 5.5rem; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .sk-pill::after,
-  .sk-small::after,
-  .sk-title::after,
-  .sk-name::after,
-  .sk-text::after,
-  .sk-btn::after,
-  .sk-avatar::after {
+  .sk-block::after {
     animation: none;
-    /* `animation: none` alone still leaves the base rule's own transform in
-       place: translateX(-100%), the sweep's start position, parked
-       off-canvas to the left. `overflow: hidden` on the block clips it
-       there completely, so every block renders flat --bg-secondary with no
-       visible highlight at all. Reset the transform so the gradient layer
-       sits over the block instead of beside it. */
+    /* Without this the highlight stays parked off the block's left edge. */
     transform: none;
   }
 }

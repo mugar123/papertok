@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { IS_DEMO, db } from '../../services/firebase';
 import { savedPaperDocRef } from '../../services/savedPaperStore.js';
 import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, serverTimestamp, setDoc, limit, query } from 'firebase/firestore';
@@ -7,6 +8,7 @@ import {
   OWN_LISTS_PAGE_SIZE, listsHolding, mergeCreatedLists, readOwnLists, withPaperMembership,
 } from '../../utils/ownLists';
 import { queuePublicListSync } from '../../services/publicListSync.js';
+import { publishPublicList } from '../../services/publicListService.js';
 import { publicListSyncKey } from '../../utils/publicListFreshness.js';
 import {
   commitTagInput,
@@ -25,14 +27,18 @@ import { useAnalyticsConsent } from '../../context/AnalyticsContext';
 import { getIcon } from '../../utils/icons';
 import CreateListDialog from './CreateListDialog.jsx';
 import ScientificText from '../ScientificText.js';
-import { BookOpen, Check, DownloadSimple, Note, Plus, Tag, X } from '@phosphor-icons/react';
+import { ArrowLeft, BookOpen, Check, ListPlus, LockSimple, Note, Plus, Tag, X } from '@phosphor-icons/react';
+import { libraryTags, suggestTags } from '../../utils/tagSuggestions.js';
+import { areaLabelForPaper } from '../../utils/areaAccent.js';
 import { Button } from '../ui/button.jsx';
+import { toastError } from '../ui/toast.js';
 import { Checkbox } from '../ui/checkbox.jsx';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '../ui/dialog.jsx';
+import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.jsx';
+import useIsPhone from '../../hooks/useIsPhone.js';
 import { Input } from '../ui/input.jsx';
 import { Label } from '../ui/label.jsx';
 import { Textarea } from '../ui/textarea.jsx';
-import { downloadCitationFile } from '../../utils/readingLibrary';
 import { buildSavedPaperPayload } from '../../utils/savedPaperPayload.js';
 import {
   ownListsAreFresh,
@@ -43,6 +49,8 @@ import {
 import { readStoredLists, saveStoredLists } from '../../utils/userScopedStorage.js';
 import './SaveToListModal.css';
 import { Toggle } from '../ui/toggle.jsx';
+import { viewMorph } from '../../utils/viewMorph.js';
+import { EASE_IN_OUT, animateSize } from '../../utils/motionCurves.js';
 
 /**
  * States where the lists are still on their way. 'slow' and 'offline' keep the
@@ -85,6 +93,7 @@ function demoSet(key, value) {
  * creates an EMPTY list — the paper joins it on Save) and `handleSave`, and
  * they are defined last, after every write-free handler.
  */
+
 export default function SaveToListModal({ paper, onClose }) {
   const { user } = useAuth();
   const { language } = useLanguage();
@@ -167,7 +176,11 @@ export default function SaveToListModal({ paper, onClose }) {
   // only told once Base UI has finished playing the exit (see the Root's
   // `onOpenChangeComplete` below). Telling it any earlier would unmount the
   // window in the same frame and cut the exit short.
+  // Mounted open: the dialog plays its entrance on mount, and ui/drawer holds
+  // a drawer's first frame back itself so it arrives too.
   const [open, setOpen] = useState(true);
+  const isPhone = useIsPhone();
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // What the library says today: the dirty check and the save diff compare
   // against this, and untouched fields render it directly.
@@ -349,6 +362,11 @@ export default function SaveToListModal({ paper, onClose }) {
     setTagInput('');
   };
 
+  const addSuggestedTag = (tag) => {
+    beginEdit();
+    setTagsDraft(commitTagInput(tags, tag));
+  };
+
   const removePendingTag = (tag) => {
     beginEdit();
     setTagsDraft(removeTag(tags, tag));
@@ -362,6 +380,14 @@ export default function SaveToListModal({ paper, onClose }) {
       removePendingTag(tags[tags.length - 1]);
     }
   };
+
+  // Tags to offer from the paper's own terms and the reader's other tags
+  // (utils/tagSuggestions.js); one taken leaves the row.
+  const suggestedTags = useMemo(() => suggestTags(paper, {
+    current: tags,
+    userTags: libraryTags(personalLibrary),
+    area: areaLabelForPaper(paper),
+  }), [paper, tags, personalLibrary]);
 
   // A tag typed but not yet committed with Enter still counts: it joins the
   // save, and it counts as a change worth warning about.
@@ -390,7 +416,7 @@ export default function SaveToListModal({ paper, onClose }) {
   /**
    * Every close path lands here once the discard guard has already decided
    * the window can go. Flipping `open` is all it takes: Base UI marks the
-   * popup `data-closed`, waits for `saveModalOut` to finish (or for nothing,
+   * popup `data-closed`, waits for `dialogOut` to finish (or for nothing,
    * under `prefers-reduced-motion`, where the stylesheet sets the animation
    * to `none`), hands focus back to the button that opened the window, and
    * only then reports `onOpenChangeComplete(false)` — the one place the
@@ -432,7 +458,7 @@ export default function SaveToListModal({ paper, onClose }) {
   // The write, and only the write: CreateListDialog owns the form, the busy
   // state and the error. Letting this throw is what gives the owner a message —
   // it used to end at console.error, leaving an unchanged screen behind.
-  const handleCreateList = async (name, icon, color) => {
+  const handleCreateList = async (name, icon, color, { isPublic = false } = {}) => {
     const listId = `list_${Date.now()}`;
     // Created EMPTY: creating the list is this button's explicit act; the
     // paper joins it when Save commits the (auto-checked) selection.
@@ -448,6 +474,18 @@ export default function SaveToListModal({ paper, onClose }) {
     } else {
       const listRef = doc(db, 'users', user.uid, 'lists', listId);
       await setDoc(listRef, newList);
+      // Public from the start: published empty, the Worker writes the share id
+      // onto the list; Save's sync then fills it with this paper.
+      // A failed publish leaves the list private, and says so.
+      if (isPublic) {
+        try {
+          const { shareId } = await publishPublicList({ listId, title: name, language: 'en', papers: [] });
+          Object.assign(newList, { publicShareId: shareId, publicSyncedAt: new Date() });
+        } catch (publishError) {
+          console.error('The new list could not be published', publishError);
+          toastError('List created, but still private', { description: 'It could not be published. Make it public from My lists.' });
+        }
+      }
     }
 
     createdLists.current = [...createdLists.current, newList];
@@ -630,11 +668,9 @@ export default function SaveToListModal({ paper, onClose }) {
   };
 
   const copy = {
-    kicker: 'This paper',
     title: 'Save and organize',
     close: 'Close',
     saveTo: 'Save to',
-    saveToHint: 'Applied when you press Save.',
     readLaterOn: 'Read later',
     readLaterOff: 'Read later',
     loadingLists: 'Loading lists...',
@@ -646,13 +682,16 @@ export default function SaveToListModal({ paper, onClose }) {
     noLists: 'No lists yet — create the first one right below.',
     newListCta: 'Create a new list',
     noteAndTags: 'Note and tags',
-    noteAndTagsHint: 'Private to you.',
-    privateNote: 'Private note',
+    private: 'Private',
+    privateNote: 'Note',
     notePlaceholder: 'Ideas, questions, or conclusions...',
     tags: 'Tags',
     tagPlaceholder: 'Type a tag and press Enter',
     removeTagLabel: tag => `Remove ${tag}`,
-    exportCitation: 'Export citation',
+    back: 'Back',
+    newList: 'New list',
+    addTagLabel: tag => `Add tag ${tag}`,
+    suggestedTags: 'Suggested tags',
     save: 'Save',
     saving: 'Saving...',
     saveFailed: 'Not everything could be saved. Save again to retry what is missing.',
@@ -661,230 +700,325 @@ export default function SaveToListModal({ paper, onClose }) {
     keepEditing: 'Keep editing',
   };
 
+  const pendingCount = (list, selected) => {
+    const ids = list.paperIds || [];
+    return ids.length - (ids.includes(paper.id) ? 1 : 0) + (selected ? 1 : 0);
+  };
+
+  // Read later is a destination like any other: the first row of the same
+  // ruled group as the lists, at the same size.
+  const readLaterRow = (
+    <Toggle
+      className={`save-modal-row${pendingReadLater ? ' is-selected' : ''}`}
+      pressed={pendingReadLater}
+      onPressedChange={toggleReadLaterSelection}
+    >
+      <span className="save-modal-tick" aria-hidden="true">
+        <Check size={13} weight="bold" />
+      </span>
+      <BookOpen className="save-modal-row-icon" size={18} aria-hidden="true" />
+      <span className="save-modal-row-text">
+        <span className="save-modal-row-name">
+          {pendingReadLater ? copy.readLaterOn : copy.readLaterOff}
+        </span>
+      </span>
+    </Toggle>
+  );
+
+  // On a phone the window is a bottom drawer. At every size, creating a list
+  // is a second view of the same window (with a way back), not a window over
+  // it.
+  const Root = isPhone ? Drawer : Dialog;
+  // Which way "forward" (into the new-list form) travels: from the right in
+  // the dialog, from above in the phone's sheet (see the morph below).
+  const viewForward = isPhone ? -1 : 1;
+  const Close = isPhone ? DrawerClose : DialogClose;
+  const Title = isPhone ? DrawerTitle : DialogTitle;
+
+  // The two views are not the same height, and the sheet used to jump to the
+  // new one in a frame while the views slid. FLIP on the sheet: its height is
+  // read just before the switch and animated to the one after, on the views'
+  // curve and 240ms, so the two move as one.
+  // `height` because a sheet resize has no transform equivalent.
+  // The arriving section's node. Only ever set, never cleared: the leaving
+  // section unmounts after the new one has mounted, and must not null it.
+  const viewRef = useRef(null);
+  const setViewRef = (node) => { if (node) viewRef.current = node; };
+  const sheetFrom = useRef(null);
+  const sheetOf = () => viewRef.current?.closest('[data-slot="drawer-content"], [data-slot="dialog-content"]');
+  const switchView = (toCreate) => {
+    sheetFrom.current = sheetOf()?.offsetHeight ?? null;
+    setCreatingList(toCreate);
+  };
+  const leaveCreateView = () => switchView(false);
+  useLayoutEffect(() => {
+    const from = sheetFrom.current;
+    sheetFrom.current = null;
+    const sheet = sheetOf();
+    if (from == null || !sheet || reduceMotion) return;
+    animateSize(sheet, 'height', from, 240, EASE_IN_OUT);
+  }, [creatingList, reduceMotion]);
+  const frame = (children) => (isPhone ? (
+    <DrawerContent className="save-modal--sheet">
+      {children}
+    </DrawerContent>
+  ) : (
+    <DialogContent
+      className="save-modal"
+      overlayClassName="save-modal-scrim"
+      showClose={false}
+      closeLabel={copy.close}
+    >
+      {children}
+    </DialogContent>
+  ));
+
   return (
-    <Dialog
+    <Root
       open={open}
       onOpenChange={(nextOpen, eventDetails) => { if (!nextOpen) onCancel(eventDetails); }}
       onOpenChangeComplete={handleOpenChangeComplete}
     >
-      {/* The X is the DialogClose below, in the header where the window has
-          always had it; the primitive's own corner button is switched off. */}
-      <DialogContent
-        className="save-modal"
-        overlayClassName="save-modal-scrim"
-        showClose={false}
-        closeLabel={copy.close}
-      >
-        <header className="save-modal-header">
-          <div>
-            <p className="save-modal-kicker">{copy.kicker}</p>
-            <DialogTitle>{copy.title}</DialogTitle>
-          </div>
-          <DialogClose
-            render={<Button variant="ghost" size="icon-sm" aria-label={copy.close} />}
-          >
-            <X size={16} aria-hidden="true" />
-          </DialogClose>
-        </header>
-
-        {/* The same KaTeX pass the feed uses: a title like "$p$-adic
-            $\text{GL}_n$" must not render as raw dollar signs here. */}
-        <p className="save-modal-paper-title"><ScientificText>{paper.title}</ScientificText></p>
-
-        <div className="save-modal-body">
-          <section className="save-modal-destinations" aria-label={copy.saveTo}>
-            <div className="save-modal-section-head">
-              <p className="save-modal-section-title">{copy.saveTo}</p>
-              <p className="save-modal-section-hint">{copy.saveToHint}</p>
-            </div>
-
-            {/* Read later is a destination like any other, so it is the first
-                row of the same ruled list rather than a card of its own. */}
-            <div className="save-modal-rows">
-              <Toggle
-                className={`save-modal-row${pendingReadLater ? ' is-selected' : ''}`}
-                pressed={pendingReadLater}
-                onPressedChange={toggleReadLaterSelection}
-              >
-                <span className="save-modal-tick" aria-hidden="true">
-                  <Check size={13} weight="bold" />
-                </span>
-                <BookOpen className="save-modal-row-icon" size={18} aria-hidden="true" />
-                <span className="save-modal-row-text">
-                  <span className="save-modal-row-name">
-                    {pendingReadLater ? copy.readLaterOn : copy.readLaterOff}
-                  </span>
-                </span>
-              </Toggle>
-            </div>
-
-            {LISTS_WAITING.includes(listsStatus) ? (
-              <div className="save-modal-rows" aria-busy="true" aria-label={copy.loadingLists}>
-                <div className="save-modal-skeleton" />
-                <div className="save-modal-skeleton" />
-                {listsStatus !== 'loading' && (
-                  <p className="save-modal-notice" role="status">
-                    {listsStatus === 'offline' ? copy.listsOffline : copy.listsSlow}
-                  </p>
-                )}
-              </div>
-            ) : LISTS_STOPPED.includes(listsStatus) ? (
-              // 'stalled' keeps `aria-busy`: the read behind it is still going
-              // and can still paint the lists without anybody pressing anything.
-              // 'unavailable' is the verdict, and there the button is the only
-              // way forward.
-              <div className="save-modal-notice" role="status" aria-busy={listsStatus === 'stalled'}>
-                <span>{listsStatus === 'stalled' ? copy.listsStalled : copy.listsUnavailable}</span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => { setListsStatus('loading'); setListsAttempt((n) => n + 1); }}
-                >
-                  {copy.retry}
-                </Button>
-              </div>
-            ) : (
-              <div className="save-modal-rows">
-                {lists.map((list) => {
-                  const selected = pendingListIds.has(list.id);
-                  const Icon = getIcon(list.emoji);
-                  return (
-                    <label key={list.id} className={`save-modal-row${selected ? ' is-selected' : ''}`}>
-                      {/* The row is the label of its checkbox: the whole row
-                          toggles it, its name is the list's name, and the
-                          focus ring is drawn on the row (see the stylesheet). */}
-                      <Checkbox
-                        className="save-modal-tick"
-                        checked={selected}
-                        onCheckedChange={() => toggleListSelection(list.id)}
-                      />
-                      <Icon className="save-modal-row-icon" size={18} aria-hidden="true" />
-                      <span className="save-modal-row-text">
-                        <span className="save-modal-row-name">{list.name}</span>
-                      </span>
-                      <span className="save-modal-count">{list.paperIds?.length || 0}</span>
-                    </label>
-                  );
-                })}
-                {lists.length === 0 && (
-                  <p className="save-modal-empty">{copy.noLists}</p>
-                )}
-              </div>
-            )}
-
-            <Button
-              variant="outline"
-              className="w-full save-modal-create-toggle"
-              onClick={() => setCreatingList(true)}
+      {frame(
+        <>
+          {isPhone && <DrawerHandle />}
+          {/* No header: the X alone, in the corner. The title still names the
+              window for assistive tech. */}
+          <Title className="visually-hidden">{copy.title}</Title>
+          {/* The sections morph: the one leaving blurs out over the one
+              arriving (`popLayout` lifts it out of the flow, so the window's
+              height already reads the new one), in the direction of travel —
+              sideways in the dialog, up and down in a phone's bottom sheet —
+              on the height's curve and clock. */}
+          {/* On a phone the new-list form is shorter than the lists, so the
+              sheet's top edge drops as it arrives: the sections travel with
+              that edge, the form coming down from above and the lists rising
+              back from below. */}
+          <AnimatePresence initial={false} mode="popLayout" custom={creatingList ? viewForward : -viewForward}>
+          {creatingList ? (
+            <motion.div
+              key="create"
+              ref={setViewRef}
+              className="save-modal-view save-modal-view--forward"
+              custom={viewForward}
+              variants={viewMorph(reduceMotion, isPhone ? 'y' : 'x')}
+              initial="enter"
+              animate="center"
+              exit="exit"
             >
-              <Plus size={15} aria-hidden="true" /> {copy.newListCta}
-            </Button>
-
-            {/* Its own window over the save modal, not a box crammed inside it,
-                and the same window the lists page opens. */}
-            <CreateListDialog
-              open={creatingList}
-             
-              onClose={() => setCreatingList(false)}
-              onCreate={handleCreateList}
-            />
-          </section>
-
-          <section className="save-modal-personal" aria-label={copy.noteAndTags}>
-            <div className="save-modal-section-head">
-              <p className="save-modal-section-title">{copy.noteAndTags}</p>
-              <p className="save-modal-section-hint">{copy.noteAndTagsHint}</p>
-            </div>
-            <div className="save-modal-field">
-              <Label className="save-modal-field-label" htmlFor="save-modal-note">
-                <Note size={14} aria-hidden="true" /> {copy.privateNote}
-              </Label>
-              <Textarea
-                id="save-modal-note"
-                value={note}
-                onChange={(event) => editNote(event.target.value)}
-                placeholder={copy.notePlaceholder}
-                maxLength={3000}
+              <div className="save-modal-view-head">
+                <Button variant="ghost" size="icon-sm" aria-label={copy.back} onClick={leaveCreateView}>
+                  <ArrowLeft size={16} aria-hidden="true" />
+                </Button>
+                <p className="save-modal-view-title">{copy.newList}</p>
+              </div>
+              <CreateListDialog
+                plain
+                open
+                onClose={leaveCreateView}
+                onCreate={handleCreateList}
               />
-            </div>
-            <div className="save-modal-field">
-              <span id="save-modal-tags-label" className="save-modal-field-label">
-                <Tag size={14} aria-hidden="true" /> {copy.tags}
-              </span>
-              <div className="save-modal-tag-editor">
-                {tags.map((tag) => (
-                  <span key={tag} className="save-modal-tag-chip">
-                    {tag}
+            </motion.div>
+          ) : (
+            <motion.div
+              key="main"
+              ref={setViewRef}
+              className="save-modal-view"
+              custom={-viewForward}
+              variants={viewMorph(reduceMotion, isPhone ? 'y' : 'x')}
+              initial="enter"
+              animate="center"
+              exit="exit"
+            >
+              <div className="save-modal-header">
+                <Close
+                  render={<Button variant="ghost" size="icon-sm" aria-label={copy.close} />}
+                >
+                  <X size={16} aria-hidden="true" />
+                </Close>
+              </div>
+
+          {/* The same KaTeX pass the feed uses: a title like "$p$-adic
+              $\text{GL}_n$" must not render as raw dollar signs here. */}
+          <p className="save-modal-paper-title"><span className="save-modal-paper-title-text"><ScientificText>{paper.title}</ScientificText></span></p>
+
+          <div className="save-modal-body">
+            <section className="save-modal-destinations" aria-label={copy.saveTo}>
+              <div className="save-modal-section-head">
+                <p className="save-modal-section-title">{copy.saveTo}</p>
+              </div>
+
+              {/* While the lists are not there yet, Read later still stands on its own. */}
+              {[...LISTS_WAITING, ...LISTS_STOPPED].includes(listsStatus) && (
+                <div className="save-modal-rows">{readLaterRow}</div>
+              )}
+              {LISTS_WAITING.includes(listsStatus) ? (
+                <div className="save-modal-rows" aria-busy="true" aria-label={copy.loadingLists}>
+                  <div className="save-modal-skeleton" />
+                  <div className="save-modal-skeleton" />
+                  {listsStatus !== 'loading' && (
+                    <p className="save-modal-notice" role="status">
+                      {listsStatus === 'offline' ? copy.listsOffline : copy.listsSlow}
+                    </p>
+                  )}
+                </div>
+              ) : LISTS_STOPPED.includes(listsStatus) ? (
+                // 'stalled' keeps `aria-busy`: the read behind it is still going
+                // and can still paint the lists without anybody pressing anything.
+                // 'unavailable' is the verdict, and there the button is the only
+                // way forward.
+                <div className="save-modal-notice" role="status" aria-busy={listsStatus === 'stalled'}>
+                  <span>{listsStatus === 'stalled' ? copy.listsStalled : copy.listsUnavailable}</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { setListsStatus('loading'); setListsAttempt((n) => n + 1); }}
+                  >
+                    {copy.retry}
+                  </Button>
+                </div>
+              ) : (
+                <div className="save-modal-rows">
+                  {readLaterRow}
+                  {lists.map((list) => {
+                    const selected = pendingListIds.has(list.id);
+                    const Icon = getIcon(list.emoji);
+                    return (
+                      <label key={list.id} className={`save-modal-row${selected ? ' is-selected' : ''}`}>
+                        {/* The row is the label of its checkbox: the whole row
+                            toggles it, its name is the list's name, and the
+                            focus ring is drawn on the row (see the stylesheet). */}
+                        <Checkbox
+                          className="save-modal-tick"
+                          checked={selected}
+                          onCheckedChange={() => toggleListSelection(list.id)}
+                        />
+                        <Icon className="save-modal-row-icon" size={18} aria-hidden="true" />
+                        <span className="save-modal-row-text">
+                          <span className="save-modal-row-name">{list.name}</span>
+                        </span>
+                        {/* What the list will hold once Save commits: ticking adds
+                            this paper, unticking takes it away. */}
+                        <span className="save-modal-count">{pendingCount(list, selected)}</span>
+                      </label>
+                    );
+                  })}
+                  {lists.length === 0 && (
+                    <p className="save-modal-empty">{copy.noLists}</p>
+                  )}
+                </div>
+              )}
+              {/* The door to the create view: a list row in a box of its own. */}
+              <div className="save-modal-rows">
+                <button type="button" className="save-modal-row save-modal-create-row" onClick={() => switchView(true)}>
+                  <ListPlus className="save-modal-row-icon" size={18} aria-hidden="true" />
+                  <span className="save-modal-row-text">
+                    <span className="save-modal-row-name">{copy.newListCta}</span>
+                  </span>
+                </button>
+              </div>
+
+            </section>
+
+            <section className="save-modal-personal" aria-label={copy.noteAndTags}>
+              <div className="save-modal-field">
+                {/* No section heading: the Note label leads, and the chip says
+                    the note and tags are the reader's own. */}
+                <div className="save-modal-field-head">
+                  <Label className="save-modal-field-label" htmlFor="save-modal-note">
+                    <Note size={14} aria-hidden="true" /> {copy.privateNote}
+                  </Label>
+                  <span className="save-modal-private">
+                    <LockSimple size={12} aria-hidden="true" /> {copy.private}
+                  </span>
+                </div>
+                <Textarea
+                  id="save-modal-note"
+                  value={note}
+                  onChange={(event) => editNote(event.target.value)}
+                  placeholder={copy.notePlaceholder}
+                  maxLength={3000}
+                />
+              </div>
+              <div className="save-modal-field">
+                <span id="save-modal-tags-label" className="save-modal-field-label">
+                  <Tag size={14} aria-hidden="true" /> {copy.tags}
+                </span>
+                <div className="save-modal-tag-editor">
+                  {tags.map((tag) => (
+                    // The whole chip removes the tag, not only its X.
                     <button
+                      key={tag}
                       type="button"
-                      className="save-modal-tag-remove"
+                      className="save-modal-tag-chip"
                       onClick={() => removePendingTag(tag)}
                       aria-label={copy.removeTagLabel(tag)}
                     >
-                      <X size={11} weight="bold" aria-hidden="true" />
+                      {tag}
+                      <span className="save-modal-tag-remove" aria-hidden="true">
+                        <X size={11} weight="bold" />
+                      </span>
                     </button>
-                  </span>
-                ))}
-                <Input
-                  className="save-modal-tag-input"
-                  aria-labelledby="save-modal-tags-label"
-                  value={tagInput}
-                  placeholder={tags.length === 0 ? copy.tagPlaceholder : ''}
-                  onChange={(event) => { beginEdit(); setTagInput(event.target.value); }}
-                  onKeyDown={onTagInputKeyDown}
-                  onBlur={commitPendingTag}
-                />
+                  ))}
+                  <Input
+                    className="save-modal-tag-input"
+                    aria-labelledby="save-modal-tags-label"
+                    value={tagInput}
+                    placeholder={tags.length === 0 ? copy.tagPlaceholder : ''}
+                    onChange={(event) => { beginEdit(); setTagInput(event.target.value); }}
+                    onKeyDown={onTagInputKeyDown}
+                    onBlur={commitPendingTag}
+                  />
+                </div>
+                {suggestedTags.length > 0 && (
+                  <div className="save-modal-tag-suggestions" role="group" aria-label={copy.suggestedTags}>
+                    {suggestedTags.map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        className="save-modal-tag-suggestion"
+                        onClick={() => addSuggestedTag(tag)}
+                        aria-label={copy.addTagLabel(tag)}
+                      >
+                        <Plus size={11} weight="bold" aria-hidden="true" /> {tag}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          </section>
+            </section>
 
-          {/* Rule 6: the utility group sits right, behind its own rule. */}
-          <div className="save-modal-footer">
-            <span className="save-modal-footer-label">{copy.exportCitation}</span>
-            <div className="save-modal-export">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => downloadCitationFile([paper], 'bibtex', 'papertok-paper')}
-              >
-                <DownloadSimple size={14} aria-hidden="true" /> BibTeX
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => downloadCitationFile([paper], 'ris', 'papertok-paper')}
-              >
-                <DownloadSimple size={14} aria-hidden="true" /> RIS
-              </Button>
-            </div>
           </div>
-        </div>
 
-        <div className="save-modal-savebar">
-          {saveError && <p className="save-modal-save-error" role="alert">{copy.saveFailed}</p>}
-          {confirmingDiscard && dirty ? (
-            <div className="save-modal-discard" role="alert">
-              <p>{copy.discardTitle}</p>
-              <div className="save-modal-discard-actions">
-                <Button variant="outline" size="sm" onClick={closeDialog}>
-                  {copy.discard}
-                </Button>
-                <Button size="sm" onClick={() => setConfirmingDiscard(false)}>
-                  {copy.keepEditing}
-                </Button>
+          <div className="save-modal-savebar">
+            {saveError && <p className="save-modal-save-error" role="alert">{copy.saveFailed}</p>}
+            {confirmingDiscard && dirty ? (
+              <div className="save-modal-discard" role="alert">
+                <p>{copy.discardTitle}</p>
+                <div className="save-modal-discard-actions">
+                  <Button variant="outline" size="sm" onClick={closeDialog}>
+                    {copy.discard}
+                  </Button>
+                  <Button size="sm" onClick={() => setConfirmingDiscard(false)}>
+                    {copy.keepEditing}
+                  </Button>
+                </div>
               </div>
-            </div>
-          ) : (
-            <Button
-              className="w-full"
-              onClick={handleSave}
-              disabled={!hasWrites || saving}
-            >
-              {saving ? copy.saving : copy.save}
-            </Button>
+            ) : (
+              <Button
+                className="save-modal-save"
+                onClick={handleSave}
+                disabled={!hasWrites || saving}
+              >
+                {saving ? copy.saving : copy.save}
+              </Button>
+            )}
+          </div>
+            </motion.div>
           )}
-        </div>
-      </DialogContent>
-    </Dialog>
+          </AnimatePresence>
+        </>,
+      )}
+    </Root>
   );
 }

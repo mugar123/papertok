@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises';
  *
  * The caller owns `open` and clears the list in the same turn --
  * `onClose={() => setEditing(null)}` -- but Base UI holds the popup in the
- * document until `createListOut` has played. Reading the `list` prop straight
+ * document until `dialogOut` has played. Reading the `list` prop straight
  * through therefore made the window change its mind on the way out: the
  * title, the colour hint, the submit button and the privacy note all key off
  * `editing`, so the editor turned into the "new list" window for the length
@@ -66,6 +66,6 @@ test('the title, the note and the submit button still hang off `editing`, so hol
   const jsx = await read('./CreateListDialog.jsx');
 
   assert.match(jsx, /\{editing \? copy\.editTitle : copy\.title\}/);
-  assert.match(jsx, /\{editing \? copy\.colorHintEdit : copy\.colorHint\}/);
-  assert.match(jsx, /\{!editing && <p className="create-list-note">\{copy\.privacyNote\}<\/p>\}/);
+  // Visibility is asked only when creating (2026-10-15).
+  assert.match(jsx, /\{!editing && \(\s*<div className="create-list-field">\s*<span id="create-list-visibility-label"/);
 });

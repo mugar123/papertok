@@ -50,8 +50,11 @@ test('a guest pressing Connections gets the dialog with its reason, not a sheet 
   const card = read('../Feed/PaperCard.jsx');
   assert.match(
     card,
-    /onClick=\{\(event\) => \{\s*event\.stopPropagation\(\);\s*if \(publicMode\) \{\s*requireAuthentication\('related'\);\s*return;\s*\}\s*setShowRelated\(true\);\s*\}\}\s*aria-label=\{'View related papers'\}/,
+    /const openRelated = \(\) => \{\s*if \(publicMode\) \{\s*requireAuthentication\('related'\);\s*return;\s*\}\s*setShowRelated\(true\);\s*\};/,
   );
+  // The rail's Connections tile goes through it.
+  assert.match(card, /onPressedChange=\{toggleRelated\}/);
+  assert.match(card, /if \(next\) openRelated\(\);/);
 });
 
 test('the sheet says "sign in" when the session is what is missing, and says it to assistive tech', () => {
@@ -60,5 +63,5 @@ test('the sheet says "sign in" when the session is what is missing, and says it 
   assert.match(sheet, /\{ status: isSignInRequiredError\(error\) \? 'signin' : 'error' \}/);
   assert.equal((sheet.match(/setRelatedStatus\(isSignInRequiredError\(error\) \? 'signin' : 'error'\);/g) || []).length, 2);
   assert.match(sheet, /\{visibleStatus === 'signin' && \(\s*<div className="related-state" role="status">/);
-  assert.match(sheet, /\{visibleStatus === 'error' && \(\s*<div className="related-state" role="status">/);
+  assert.match(sheet, /\{visibleStatus === 'error' && \(\s*<EmptyState\s+as="p"\s+role="status"/);
 });

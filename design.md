@@ -445,11 +445,14 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   in at the top, clear of the thumb.
 
 ### The Action Rail (signature)
-The card's right-hand column of 40px tiles: Like, Save, Share, each a
-faint tint of its own colour (`--rail`) that fills on hover and gives under the
-press. Icons only, with the count under them in mono; the names stay in the DOM
-for assistive tech and in a native `title`. Mark as read, Skip and Related fold
-into a group opened from the action bar, one choice for the whole feed.
+The card's right-hand column of 40px tiles: Like, Save, Share, Connections,
+each a faint tint of its own colour (`--rail`) that fills on hover and gives
+under the press. Icons only, without counts until per-paper totals exist; the
+names stay in the DOM for assistive tech and in a native `title`. Connections
+is a toggle: wider than a phone it swaps the abstract for the citation map
+until it is pressed again; on a phone it opens the map as a sheet. A last tile, More (⋯), opens Mark as read, Skip and
+the BibTeX/RIS citation exports the way Share opens: a menu off the tile, or a
+drawer on a phone (`Feed/MoreActions.jsx`).
 
 ### Status Screens (signature)
 An error, a not-found or an empty result is a glyph on a `56px` tinted square
@@ -597,6 +600,8 @@ bug this pattern exists to prevent.
   actions at the foot (the price of keeping the actions where the thumb is; on
   a desktop the sheet centres instead).
 - Figures are not licence-checked; arXiv licences vary.
+- The rail shows no like or save counts: likes and saves are stored per user,
+  and no per-paper totals exist yet.
 
 ---
 

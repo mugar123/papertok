@@ -62,16 +62,16 @@ test('en táctil, abrir un paper monta el visor de la app, sin pestaña nueva', 
   assert.doesNotMatch(app, /window\.open\(/);
 });
 
-// En táctil la salida es la entrada al revés: baja lo que subió, en lo mismo
-// que tardó, con la curva espejo; el velo, igual. El escritorio no cambia.
+// En táctil la salida es la entrada al revés: baja lo que subió, con la misma
+// ease-out fuerte de toda salida; el velo, igual.
 test('en táctil, el visor sale por donde entró', async () => {
   const css = stripComments(await readFile(new URL('./PDFViewer.css', import.meta.url), 'utf8'));
   const keyframes = name => css.match(new RegExp(`@keyframes ${name}\\s*\\{([\\s\\S]*?)\\n\\}`))?.[1] || '';
-  assert.match(css, /\.pdf-overlay\[data-open\] \.pdf-viewer\s*\{\s*animation: pdfViewerIn 0\.3s ease-out;/);
-  assert.match(css, /\.pdf-overlay\[data-open\]\s*\{\s*animation: pdfOverlayIn 0\.3s ease-out;/);
+  assert.match(css, /\.pdf-overlay\[data-open\] \.pdf-viewer\s*\{\s*animation: pdfViewerIn 280ms var\(--ease-out\);/);
+  assert.match(css, /\.pdf-overlay\[data-open\]\s*\{\s*animation: pdfOverlayIn 280ms var\(--ease-out\);/);
   const coarse = css.match(/@media \(pointer: coarse\)\s*\{([\s\S]*?)\n\}/)?.[1] || '';
-  assert.match(coarse, /\.pdf-overlay\[data-closed\]\s*\{\s*animation: pdfOverlayOut 0\.3s ease-in forwards;/);
-  assert.match(coarse, /\.pdf-overlay\[data-closed\] \.pdf-viewer\s*\{\s*animation: pdfViewerSlideOut 0\.3s ease-in forwards;/);
+  assert.match(coarse, /\.pdf-overlay\[data-closed\]\s*\{\s*animation: pdfOverlayOut 220ms var\(--ease-out\) forwards;/);
+  assert.match(coarse, /\.pdf-overlay\[data-closed\] \.pdf-viewer\s*\{\s*animation: pdfViewerSlideOut 220ms var\(--ease-out\) forwards;/);
   assert.match(keyframes('pdfViewerIn'), /from\s*\{\s*transform: translateY\(100%\);[\s\S]*to\s*\{\s*transform: translateY\(0\);/);
   assert.match(keyframes('pdfViewerSlideOut'), /from\s*\{\s*transform: translateY\(0\);[\s\S]*to\s*\{\s*transform: translateY\(100%\);/);
   // Con movimiento reducido no hay salida que esperar: esa regla va después y gana.

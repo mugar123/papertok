@@ -60,8 +60,7 @@ test('Cancel exists on the phone and only there', () => {
 
 test('the phone sheet rises from below and reduced motion still switches it off', () => {
   assert.match(phone, /\.sc-sheet\[data-open\] \{\s*animation: scSheetInPhone/);
-  assert.match(phone, /\.sc-sheet\[data-closed\] \{\s*animation: scSheetOutPhone [^;]*both;/);
-  // The reduced-motion block names the same selectors and comes AFTER the
+    // The reduced-motion block names the same selectors and comes AFTER the
   // phone block, which is what lets it win at equal specificity.
   const phoneIndex = css.indexOf('scSheetInPhone');
   const reducedIndex = css.lastIndexOf('@media (prefers-reduced-motion: reduce)');

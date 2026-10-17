@@ -21,42 +21,30 @@ import { readFile } from 'node:fs/promises';
  * up on the next. Long after everything looked settled, which is why it read
  * as the label moving on its own.
  *
- * The row is reserved now: it is rendered for as long as the sheet stands at
- * its graph height, and only its text waits for the data. The rule below is
- * the general one -- nothing may enter or leave the column around the plot
- * after the first frame -- and this is the one place it was broken.
+ * The row is gone now, and the band captions above the plot
+ * with it. The rule below is the general one -- nothing may enter or leave
+ * the column around the plot after the first frame.
  */
 
 const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 const read = async (path) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
 
-test('the provenance row holds its 30px from the first frame, so the plot never resizes under the centre', async () => {
+test('no row comes and goes around the plot once the sheet stands', async () => {
   const jsx = await read('./RelatedPapersSheet.jsx');
-
-  // Rendered with the sheet's graph height, not with the data.
-  assert.match(
-    jsx,
-    /\{mode === 'graph' && sheetStatus === 'ready' && \(\s*<div className="knowledge-source">/,
-    'the row is back to appearing with the data, which takes 30px off the plot mid-flight',
-  );
-  // The exact shape that caused it. `graphStatus === 'ready'` may still gate
-  // the TEXT -- what it must not gate any more is the box.
-  assert.doesNotMatch(
-    jsx,
-    /graphStatus === 'ready' && \(\s*<div className="knowledge-source">/,
-    'the box must not wait for the graph; only its text may',
-  );
+  // The provenance row and the band captions are gone, not just hidden.
+  assert.doesNotMatch(jsx, /knowledge-source|graph-band-head/);
+  // The trail depends on the walk, never on the data landing.
+  assert.match(jsx, /\{mode === 'graph' && isWalking && \(\s*<div className="graph-trail"/);
 });
 
 test('the centre is placed at half the plot, which is what makes a late sibling move it', async () => {
   const layout = await read('../../utils/citationMap.js');
-  assert.match(layout, /const ruleY = height \/ 2;/);
+  assert.match(layout, /const midY = height \/ 2;/);
+  assert.match(layout, /const centerY = ready && centerImpactKnown \? yForImpact\(impactOf\(center\)\) : midY;/);
 
   const css = await read('./PaperCard.css');
-  // The three facts that turn 30px of sibling into 15px of jump.
+  // Why a late sibling would move it: the plot takes what the column leaves.
   assert.match(css, /\.graph-plot\s*\{[^}]*flex:\s*1 1 auto/, 'the plot takes what the column leaves');
-  assert.match(css, /\.knowledge-source\s*\{[^}]*height:\s*var\(--graph-source-height\)/);
-  assert.match(css, /--graph-source-height:\s*30px/);
 });
 
 /**
@@ -74,7 +62,10 @@ test('the centre carries its column on `translate`, never on `left`, so the move
   // The x is handed over as a variable; the stylesheet decides what property
   // it lands on. `left` would lay the plot out again every frame, and
   // `transform` is taken -- `relatedItemIn` animates it.
-  assert.match(jsx, /'--mark-x': `\$\{\(isArriving && !hasSlid \? previousCenterX : layout\.centerX\) - 8\}px`/);
+  assert.match(jsx, /'--mark-x': `\$\{\(isArriving && !hasSlid \? previousCenter\.x : layout\.centerX\) - 8\}px`/);
+  // On the timeline the centre moves up and down too: its height is its count.
+  assert.match(jsx, /'--mark-y': `\$\{\(isArriving && !hasSlid \? previousCenter\.y : layout\.centerY\) - 8\}px`/);
+  assert.match(jsx, /'--chip-y': `\$\{layout\.centerY\}px`/);
   assert.match(jsx, /'--chip-x': chipOnLeft\s*\? `calc\(\$\{layout\.centerX - 16\}px - 100%\)`\s*: `\$\{layout\.centerX \+ 16\}px`/);
 
   // Both sides measured from the same edge: a crossing is one value changing,
@@ -103,7 +94,7 @@ test('the move is a transition on translate, with the curve declared for a dista
 
   // Movement goes under reduced motion; the centre arrives where it belongs.
   const reduced = css.slice(css.indexOf('prefers-reduced-motion'));
-  const block = reduced.match(/\.graph-rule,[\s\S]*?\}/)?.[0] || '';
+  const block = reduced.match(/\.graph-now,[\s\S]*?\}/)?.[0] || '';
   assert.match(block, /\.graph-mark,/);
   assert.match(block, /\.graph-chip,/);
   assert.match(block, /transition: none;/);

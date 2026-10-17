@@ -1,6 +1,7 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import { X } from '@phosphor-icons/react';
 import { Button } from '../ui/button.jsx';
+import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motionCurves.js';
 import './NudgePanel.css';
 
 // The panel a nudge is shown in. It is deliberately the same object as the
@@ -18,17 +19,18 @@ import './NudgePanel.css';
 // the travel still going.
 const ARRIVAL = {
   opacity: { duration: 0.26, ease: 'linear' },
-  y: { duration: 0.38, ease: [0.16, 1, 0.3, 1] },
-  scale: { duration: 0.38, ease: [0.16, 1, 0.3, 1] },
+  y: { duration: 0.38, ease: EASE_OUT_EXPO },
+  scale: { duration: 0.38, ease: EASE_OUT_EXPO },
 };
 
 // Leaving, the fade leads and is done at 180ms: the panel stops asking for the
 // eye at once, and the sink finishes under something nobody is looking at.
-// It sinks because it rose — the same path, backwards.
+// It sinks because it rose — the same path, backwards, on the strong
+// ease-out every exit uses (2026-10-15), not an ease-in.
 const LEAVE = {
   opacity: { duration: 0.18, ease: 'linear' },
-  y: { duration: 0.26, ease: [0.4, 0, 1, 1] },
-  scale: { duration: 0.26, ease: [0.4, 0, 1, 1] },
+  y: { duration: 0.22, ease: EASE_OUT },
+  scale: { duration: 0.22, ease: EASE_OUT },
 };
 
 export default function NudgePanel({

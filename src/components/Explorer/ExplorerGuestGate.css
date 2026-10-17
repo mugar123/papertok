@@ -9,7 +9,7 @@
   padding: var(--space-6) var(--space-5) var(--space-6) var(--space-6);
   background: var(--bg-card);
   border-bottom: 1px solid var(--border-default);
-  animation: explorerGateIn 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: explorerGateIn 0.42s var(--ease-out-expo) both;
 }
 
 .explorer-guest-gate::before {

@@ -34,3 +34,24 @@ test('the sheet is centred in a card taller than it, and bottom-justified within
   const rail = css.match(/\n\.pc-side-actions \{\s*position: relative;([^}]*)\}/)?.[1] || '';
   assert.match(rail, /align-self: center;/);
 });
+
+/**
+ * SOURCE test for a short window with the connections open. The inline panel
+ * only gets what the rows above it leave: at 1280×600 that was 89px, the
+ * Graph/Similar header and a sliver of map. While the panel is open the
+ * paper above it steps back on a short window, and the action row never
+ * does. The flag rides on the same state that mounts the panel.
+ */
+test('on a short window the paper above the connections yields, the actions stay', async () => {
+  const jsx = await read('./PaperCard.jsx');
+  assert.match(jsx, /className="pc-sheet" data-connections=\{relatedInline \|\| undefined\}/);
+
+  const css = stripComments(await read('./PaperCard.css'));
+  const start = css.indexOf('@media (max-height: 760px) {\n  .pc-sheet[data-connections]');
+  assert.ok(start >= 0, 'a short-window block keyed to the open connections');
+  const block = css.slice(start, css.indexOf('\n}\n', start));
+  assert.match(block, /:is\(\.pc-topics, \.pc-project-badge-slot\),\s*\.pc-sheet\[data-connections\] \.pc-body::before \{\s*display: none;/);
+  assert.match(block, /\.pc-title \{\s*-webkit-line-clamp: 2;/);
+  assert.doesNotMatch(block, /\.pc-action-bar \{[^}]*display: none/, 'the actions are never what yields');
+  assert.doesNotMatch(block, /\.pc-(meta|authors|chips) \{[^}]*display: none/, 'the kicker, the authors and the status chips stay');
+});

@@ -520,13 +520,11 @@ export default function SettingsPage({ page = 'profile' }) {
   const Page = PAGE_COMPONENTS[active.slug];
   // Below 900px the rail is a sideways strip, and every page remounts it
   // scrolled to the start, which hid a later page's own tab past the edge.
-  // Brought in just clear of the strip's fading edge (28px, SettingsPage.css).
+  // Brought in just clear of the strip's fading edge (`scroll-padding-inline`,
+  // SettingsPage.css).
   const indexListRef = useRef(null);
   useLayoutEffect(() => {
-    const list = indexListRef.current;
-    const link = list?.querySelector('a.is-active');
-    if (!link) return;
-    list.scrollLeft = Math.max(0, link.offsetLeft + link.offsetWidth - list.clientWidth + 28);
+    indexListRef.current?.querySelector('a.is-active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [activeIndex]);
 
   // The tab keeps saying which page this is; restored on the way out so the

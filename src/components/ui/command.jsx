@@ -169,13 +169,14 @@ function CommandGroup({ className, ...props }) {
  * with the search field's own focus box directly above it, two boxes read as
  * noise (user feedback, 2026-08-29); the 3px inset bar down the left edge
  * that replaced it went because a reader asked for no edge at all on the
- * selected row (2026-10-10). What marks it now is an "↵" at the row's end —
- * the palette's own "Enter opens this" — in `var(--focus-ring)`, the token
- * whose job is "you are here" and whose value stays above 3:1 on every
- * surface in both themes (contrast.test.js measures it). A stronger tint and
- * semibold text make the row read as one object; neither is the indicator.
- * The "↵" carries empty alt text (`content: '↵' / ''`), so it is seen but
- * never read into the option's name.
+ * selected row (2026-10-10), and so did an "↵" at the row's end
+ * (2026-10-16): the palette's footer lists the keys now; an underline under
+ * the title followed and went too (2026-10-17). What marks the row is its own
+ * icon, heavier and in `var(--focus-ring)`, the token whose job is "you are
+ * here" and whose value stays above 3:1 on every surface in both themes; the
+ * palette draws it (Search/SearchCommand.css), because the icon is its own
+ * `.sc-icon`. A stronger tint makes the row read
+ * as one object; it is not the indicator.
  * Rows are square: nothing on them is rounded any more. cmdk keeps DOM focus
  * on the field and moves rows via `aria-activedescendant`, so no real focus
  * ring is being hidden.
@@ -185,8 +186,7 @@ function CommandItem({ className, ...props }) {
     <CommandPrimitive.Item
       className={cn(
         'relative flex cursor-pointer select-none items-center gap-3 px-2 py-2 text-sm',
-        'data-[selected=true]:bg-[color-mix(in_srgb,var(--text-primary)_10%,var(--bg-card))] data-[selected=true]:font-semibold',
-        "data-[selected=true]:after:ms-auto data-[selected=true]:after:shrink-0 data-[selected=true]:after:ps-2 data-[selected=true]:after:text-[0.8125rem] data-[selected=true]:after:text-[var(--focus-ring)] data-[selected=true]:after:content-['↵'_/_'']",
+        'data-[selected=true]:bg-[color-mix(in_srgb,var(--text-primary)_10%,var(--bg-card))]',
         'data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50',
         className,
       )}

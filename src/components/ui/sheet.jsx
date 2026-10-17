@@ -42,23 +42,23 @@ function SheetOverlay({ className, ...props }) {
 const SIDE_CLASSES = {
   right: [
     'inset-y-0 right-0 h-full w-[min(420px,calc(100vw-40px))] border-l',
-    'motion-safe:data-open:[animation:slideInFromRight_260ms_cubic-bezier(0.16,1,0.3,1)]',
-    'motion-safe:data-closed:[animation:slideOutToRight_200ms_ease_both]',
+    'motion-safe:data-open:[animation:slideInFromRight_260ms_var(--ease-out-expo)]',
+    'motion-safe:data-closed:[animation:slideOutToRight_200ms_var(--ease-out)_both]',
   ],
   left: [
     'inset-y-0 left-0 h-full w-[min(420px,calc(100vw-40px))] border-r',
-    'motion-safe:data-open:[animation:slideInFromLeft_260ms_cubic-bezier(0.16,1,0.3,1)]',
-    'motion-safe:data-closed:[animation:slideOutToLeft_200ms_ease_both]',
+    'motion-safe:data-open:[animation:slideInFromLeft_260ms_var(--ease-out-expo)]',
+    'motion-safe:data-closed:[animation:slideOutToLeft_200ms_var(--ease-out)_both]',
   ],
   top: [
     'inset-x-0 top-0 max-h-[85dvh] border-b',
-    'motion-safe:data-open:[animation:slideInFromTop_260ms_cubic-bezier(0.16,1,0.3,1)]',
-    'motion-safe:data-closed:[animation:slideOutToTop_200ms_ease_both]',
+    'motion-safe:data-open:[animation:slideInFromTop_260ms_var(--ease-out-expo)]',
+    'motion-safe:data-closed:[animation:slideOutToTop_200ms_var(--ease-out)_both]',
   ],
   bottom: [
     'inset-x-0 bottom-0 max-h-[85dvh] rounded-t-2xl border-t pb-[var(--inset-bottom)]',
-    'motion-safe:data-open:[animation:slideInFromBottom_260ms_cubic-bezier(0.16,1,0.3,1)]',
-    'motion-safe:data-closed:[animation:slideOutToBottom_200ms_ease_both]',
+    'motion-safe:data-open:[animation:slideInFromBottom_260ms_var(--ease-out-expo)]',
+    'motion-safe:data-closed:[animation:slideOutToBottom_200ms_var(--ease-out)_both]',
   ],
 };
 

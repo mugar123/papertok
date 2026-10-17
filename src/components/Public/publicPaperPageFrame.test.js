@@ -76,3 +76,9 @@ test('the skeleton covers the frame the card will take, not the bar', async () =
   assert.match(skeleton, /top:\s*var\(--public-paper-bar\)/, 'a skeleton centred on the whole viewport sits higher than the card that replaces it');
   assert.doesNotMatch(skeleton, /inset:\s*0\b/, '`inset: 0` would put the skeleton back under the bar');
 });
+
+test('the card stacks as one layer under the skeleton that covers its arrival', async () => {
+  const css = await readFile(new URL('./PublicPaperPage.css', import.meta.url), 'utf8');
+  assert.match(css, /\.public-paper-card \{[^}]*isolation: isolate;/);
+  assert.match(css, /\.public-paper-skeleton \{[^}]*z-index: 3;/);
+});

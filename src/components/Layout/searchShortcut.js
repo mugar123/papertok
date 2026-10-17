@@ -1,5 +1,8 @@
 /**
- * Whether a keydown is the bare `/` that opens the command palette.
+ * Whether a keydown opens the command palette: the bare `/`, or ⌘K on a Mac
+ * and Ctrl+K elsewhere (either modifier is taken on any platform). The chord
+ * works from inside a field too, as it does in every app that has one; the
+ * bare `/` does not, because there it is a character being typed.
  *
  * Pulled out of `Navbar.jsx` so it can be asked the question directly. The
  * listener behind it is bound on `window`, and that is the whole reason the
@@ -20,9 +23,13 @@
  * has it.
  */
 export function shouldOpenSearchOnSlash(event, doc) {
-  if (!event || event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return false;
+  if (!event) return false;
+  const chord = String(event.key).toLowerCase() === 'k'
+    && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey;
+  const slash = event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey;
+  if (!chord && !slash) return false;
   const target = event.target;
-  if (target && typeof target.closest === 'function'
+  if (slash && target && typeof target.closest === 'function'
     && target.closest('input, textarea, select, [contenteditable="true"]')) return false;
   if (typeof doc?.querySelector === 'function' && doc.querySelector('[aria-modal="true"]')) return false;
   return true;

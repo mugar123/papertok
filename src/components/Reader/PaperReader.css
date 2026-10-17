@@ -145,7 +145,7 @@
   /* The allowance is fetched, so it lands a moment after the reader has already
      opened — into chrome that has finished arriving. Without this it punched a
      hole in the header of a screen that had settled. */
-  animation: rdUsesIn 280ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: rdUsesIn 280ms var(--ease-out-expo);
   transition: color var(--transition-base), border-color var(--transition-base);
 }
 
@@ -604,7 +604,7 @@
   /* Replayed on every change of stage: the element is keyed by `stage` in the
      JSX, so React remounts it and the animation starts again. Downloading does
      not jump into reading. */
-  animation: rdStageIn 280ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: rdStageIn 280ms var(--ease-out-expo);
 }
 
 .rd-ghost-head small {
@@ -703,17 +703,17 @@
 }
 
 .rd[data-open] {
-  animation: rdShellIn 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: rdShellIn 280ms var(--ease-out) both;
 }
 
 .rd[data-closed] {
-  animation: rdShellOut 220ms cubic-bezier(0.4, 0, 1, 1) both;
+  animation: rdShellOut 180ms var(--ease-out) both;
 }
 
 .rd[data-open] .rd-float-close,
 .rd[data-open] .rd-status,
 .rd[data-open] .rd-panel-dock {
-  animation: rdChromeIn 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: rdChromeIn 280ms var(--ease-out-expo) both;
 }
 
 .rd[data-open] .rd-status { animation-delay: 30ms; }
@@ -722,7 +722,7 @@
 .rd[data-closed] .rd-float-close,
 .rd[data-closed] .rd-status,
 .rd[data-closed] .rd-panel-dock {
-  animation: rdChromeOut 120ms cubic-bezier(0.4, 0, 1, 1) both;
+  animation: rdChromeOut 120ms var(--ease-out) both;
 }
 
 @keyframes rdShellIn {
@@ -773,7 +773,7 @@
 
 .rd-section[data-reveal] .rd-section-head,
 .rd-section[data-reveal] .rd-section-title {
-  animation: rdRevealHead 320ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: rdRevealHead 320ms var(--ease-out-expo);
 }
 
 .rd-section[data-reveal] .rd-p {
@@ -788,7 +788,7 @@
   /* `backwards`, not `both`: the fill has to cover the stagger delay, and the
      resting state after the sweep is the base rule above — an unmasked
      paragraph — which is exactly where the animation ends anyway. */
-  animation: rdWriteIn 620ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation: rdWriteIn 620ms var(--ease-out-expo) backwards;
   animation-delay: calc((var(--i, 0) + 1) * 70ms);
 }
 
@@ -816,7 +816,7 @@
   font-size: var(--fs-sm);
   /* It arrives at the end of a stream that stopped early, under text the reader
      is already reading. Appearing outright reads as a layout error. */
-  animation: rdErrorIn 320ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: rdErrorIn 320ms var(--ease-out-expo);
 }
 
 /* ── When it fails ──
@@ -837,7 +837,7 @@
   border-left: 3px solid var(--rd-tone-fg);
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
   background: var(--rd-tone-bg);
-  animation: rdErrorIn 360ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: rdErrorIn 360ms var(--ease-out-expo);
 }
 
 /* Amber: come back and it will work. Red: this attempt broke. Neutral: nothing

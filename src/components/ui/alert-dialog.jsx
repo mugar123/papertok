@@ -21,8 +21,8 @@ function AlertDialogOverlay({ className, ...props }) {
       data-slot="alert-dialog-overlay"
       className={cn(
         'fixed inset-0 z-[12050] bg-[var(--scrim)]',
-        'motion-safe:data-open:[animation:fadeIn_150ms_ease]',
-        'motion-safe:data-closed:[animation:fadeOut_150ms_ease_both]',
+        'data-open:[animation:fadeIn_150ms_ease]',
+        'data-closed:[animation:fadeOut_150ms_ease_both]',
         className,
       )}
       {...props}
@@ -40,8 +40,10 @@ function AlertDialogContent({ className, overlayClassName, ...props }) {
         className={cn(
           'fixed left-1/2 top-1/2 z-[12051] w-full max-w-md -translate-x-1/2 -translate-y-1/2',
           'border border-border bg-card shadow-[var(--shadow-xl)] rounded-xl outline-none',
-          'motion-safe:data-open:[animation:dialogIn_180ms_cubic-bezier(0.16,1,0.3,1)]',
-          'motion-safe:data-closed:[animation:dialogOut_140ms_cubic-bezier(0.23,1,0.32,1)_both]',
+          'motion-safe:data-open:[animation:dialogIn_180ms_var(--ease-out-expo)]',
+          'motion-safe:data-closed:[animation:dialogOut_140ms_var(--ease-out)_both]',
+          'motion-reduce:data-open:[animation:fadeIn_150ms_var(--ease-out)]',
+          'motion-reduce:data-closed:[animation:fadeOut_140ms_var(--ease-out)_both]',
           className,
         )}
         {...props}

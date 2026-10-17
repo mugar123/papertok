@@ -42,7 +42,7 @@ function TabsList({ className, variant = 'line', children, ...props }) {
           data-slot="tabs-indicator"
           className={cn(
             'absolute bottom-[-1px] left-0 h-[3px] w-(--active-tab-width) translate-x-(--active-tab-left) bg-brand',
-            'motion-safe:transition-[translate,width] motion-safe:duration-200 motion-safe:ease-[cubic-bezier(0.16,1,0.3,1)]',
+            'motion-safe:transition-[translate,width] motion-safe:duration-200 motion-safe:ease-[var(--ease-out-expo)]',
           )}
         />
       )}

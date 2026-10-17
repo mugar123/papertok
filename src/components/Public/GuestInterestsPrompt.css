@@ -79,17 +79,20 @@
 }
 
 /* ── Copy ── */
-.gip-kicker {
-  margin: 0 0 var(--space-2);
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-tertiary);
+.petri.gip-petri {
+  width: 5.75rem;
+  height: 5.6rem;
+  margin-bottom: var(--space-1);
+}
+
+.petri.gip-petri .onboarding-petri-body {
+  animation: none;
 }
 
 .gip-title {
   margin: 0 0 var(--space-2);
-  padding-right: var(--space-8);
+  padding-inline: var(--space-8);
+  text-align: center;
   font-family: var(--font-serif);
   font-size: 1.6rem;
   font-weight: 600;
@@ -106,8 +109,9 @@
 }
 
 .gip-lede {
-  margin: 0 0 var(--space-5);
+  margin: 0 auto var(--space-5);
   max-width: 48ch;
+  text-align: center;
   color: var(--text-secondary);
   font-size: var(--fs-sm);
   line-height: 1.6;
@@ -123,16 +127,17 @@
 
 /* The area is the shared Toggle (`ui/toggle.jsx`) wearing this class; its
    utilities sit in the `utilities` layer, so these unlayered rules win.
-   `height: auto` and `white-space: normal` undo the toggle's fixed row
-   height and nowrap: a long area name wraps inside its 150px column. */
+   The height and `white-space: normal` replace the toggle's fixed row height
+   and nowrap: a long area name wraps to a second line inside its column. */
 .gip-area {
   display: flex;
   align-items: center;
-  gap: 9px;
-  height: auto;
-  min-height: 44px;
+  gap: var(--space-2);
+  /* Every tile the same: two lines of name, the padding and the border.
+     Longer names are clamped (below) and shown whole in a tooltip. */
+  height: calc(2 * 1.2em + 2 * var(--space-2) + 2px);
   white-space: normal;
-  padding: 0 10px 0 9px;
+  padding: var(--space-2) 10px var(--space-2) 9px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--bg-card);
@@ -148,8 +153,8 @@
 .gip-area-icon {
   display: grid;
   flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
+  width: 20px;
+  height: 20px;
   place-items: center;
   /* The glyph alone, in its field's ink: no tile behind it. */
   color: var(--area-accent, var(--text-secondary));
@@ -159,6 +164,11 @@
 .gip-area-name {
   flex: 1 1 auto;
   min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
 }
 
 /* The tick is a box that fills, like the onboarding's area cards. */
@@ -175,19 +185,16 @@
 }
 
 .gip-area[data-pressed] {
-  border-color: var(--accent-primary);
-  background: var(--accent-primary);
-  color: var(--text-inverse);
-}
-
-.gip-area[data-pressed] .gip-area-icon {
-  color: var(--text-inverse);
+  border-color: var(--area-accent);
+  background: color-mix(in srgb, var(--area-accent) 7%, var(--bg-card));
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--area-accent);
 }
 
 .gip-area[data-pressed] .gip-area-check {
-  border-color: var(--brand-yellow);
-  background: var(--brand-yellow);
-  color: var(--text-on-brand);
+  border-color: var(--area-accent);
+  background: var(--area-accent);
+  color: var(--text-inverse);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -207,18 +214,6 @@
   gap: var(--space-3);
   padding-top: var(--space-4);
   border-top: 1px solid var(--border-subtle);
-}
-
-.gip-tally {
-  margin: 0;
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-
-.gip-tally.is-on {
-  color: var(--text-primary);
 }
 
 .gip-actions {
@@ -243,6 +238,11 @@
     padding: var(--space-8) var(--space-7) var(--space-5);
     border-bottom: 1px solid var(--border-default);
     border-radius: var(--radius-2xl);
+  }
+
+  .gip-areas {
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: var(--space-2);
   }
 
   .gip-title {

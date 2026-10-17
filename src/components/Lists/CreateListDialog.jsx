@@ -27,7 +27,7 @@
  * leaves the document.
  */
 import { useEffect, useId, useReducer, useRef, useState } from 'react';
-import { Check, X } from '@phosphor-icons/react';
+import { Check, GlobeSimple, LockSimple, X } from '@phosphor-icons/react';
 import { AVAILABLE_ICONS, getIcon } from '../../utils/icons.js';
 import { Button } from '../ui/button.jsx';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '../ui/dialog.jsx';
@@ -51,9 +51,9 @@ const COPY = {
     namePlaceholder: 'e.g. Thesis reading',
     iconLabel: 'Icon',
     colorLabel: 'Colour',
-    colorHint: 'One is picked at random when the list is created. Change it here or later.',
-    colorHintEdit: 'Choose one of the eight in the palette.',
-    privacyNote: 'It starts private. Publish it from My lists once it has content.',
+    visibilityLabel: 'Visibility',
+    private: 'Private',
+    public: 'Public',
     create: 'Create',
     creating: 'Creating...',
     save: 'Save',
@@ -75,7 +75,7 @@ const COPY = {
 };
 
 /**
- * `onCreate(name, icon, color)` and `onSave(listId, { name, icon, color })`
+ * `onCreate(name, icon, color, { isPublic })` and `onSave(listId, { name, icon, color })`
  * belong to the caller and are expected to throw when the write did not land.
  * Resolving closes the window; throwing keeps it open and shows the error —
  * which is the whole of what the save modal needed to stop failing in silence.
@@ -88,8 +88,17 @@ export default function CreateListDialog({
   onClose,
   onCreate,
   onSave,
+  plain = false,
 }) {
   const [state, dispatch] = useReducer(createListFormReducer, CREATE_LIST_FORM_INITIAL);
+  // Only asked when creating: a list's visibility afterwards is My lists'.
+  const [visibility, setVisibility] = useState('private');
+  // Back to private on every open, adjusted while rendering like `openedWith`.
+  const [openSeen, setOpenSeen] = useState(open);
+  if (open !== openSeen) {
+    setOpenSeen(open);
+    if (open) setVisibility('private');
+  }
   // Ties the name field to its error message (aria-describedby).
   const nameErrorId = useId();
   const inputRef = useRef(null);
@@ -101,7 +110,7 @@ export default function CreateListDialog({
    * The list the window is showing, which is not always the list it is being
    * handed. The caller clears its own state in the same turn it closes the
    * window -- `onClose={() => setEditing(null)}` -- but Base UI keeps the
-   * popup in the document until `createListOut` has played, so a `list` read
+   * popup in the document until `dialogOut` has played, so a `list` read
    * straight through would make the window change its mind on the way out.
    * Everything that tells the two windows apart hangs off `editing`: the
    * title, the colour hint, the privacy note and the submit button. Measured
@@ -145,7 +154,7 @@ export default function CreateListDialog({
   /**
    * Every close path lands here, so none of them can abandon a write midway.
    * The caller owns `open`; clearing it starts the exit, and Base UI keeps the
-   * popup in the document until `createListOut` has played (or, under
+   * popup in the document until `dialogOut` has played (or, under
    * `prefers-reduced-motion`, not at all) and then hands focus back to the
    * button that opened the window.
    */
@@ -160,7 +169,7 @@ export default function CreateListDialog({
     try {
       const fields = { name: state.name.trim(), icon: state.icon, color: state.color };
       if (editing) await onSave(listId, fields);
-      else await onCreate(fields.name, fields.icon, fields.color);
+      else await onCreate(fields.name, fields.icon, fields.color, { isPublic: visibility === 'public' });
       inFlight.current = false;
       onClose();
     } catch (err) {
@@ -172,29 +181,8 @@ export default function CreateListDialog({
     }
   };
 
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => { if (!nextOpen) requestClose(); }}
-    >
-      <DialogContent
-        className="create-list-card"
-        overlayClassName="create-list-scrim"
-        showClose={false}
-        closeLabel={copy.close}
-        // The name field, and not the first tabbable thing (the X): a keyboard
-        // user opens this window to type a name.
-        initialFocus={inputRef}
-      >
-        <div className="create-list-header">
-          <DialogTitle render={<h3 />}>{editing ? copy.editTitle : copy.title}</DialogTitle>
-          <DialogClose
-            render={<Button variant="ghost" size="icon-sm" aria-label={copy.close} />}
-          >
-            <X size={16} aria-hidden="true" />
-          </DialogClose>
-        </div>
-
+  const body = (
+    <>
         <div className="create-list-field">
           <Label className="create-list-field-label" htmlFor="create-list-name">{copy.nameLabel}</Label>
           <Input
@@ -266,10 +254,30 @@ export default function CreateListDialog({
               </RadioGroupItem>
             ))}
           </RadioGroup>
-          <p className="create-list-color-hint">{editing ? copy.colorHintEdit : copy.colorHint}</p>
         </div>
 
-        {!editing && <p className="create-list-note">{copy.privacyNote}</p>}
+        {!editing && (
+          <div className="create-list-field">
+            <span id="create-list-visibility-label" className="create-list-field-label">{copy.visibilityLabel}</span>
+            <RadioGroup
+              className="create-list-visibility"
+              aria-labelledby="create-list-visibility-label"
+              value={visibility}
+              onValueChange={setVisibility}
+            >
+              {[['private', LockSimple], ['public', GlobeSimple]].map(([value, Icon]) => (
+                <RadioGroupItem
+                  key={value}
+                  value={value}
+                  nativeButton
+                  render={<button type="button" className="create-list-visibility-btn" />}
+                >
+                  <Icon size={15} aria-hidden="true" /> {copy[value]}
+                </RadioGroupItem>
+              ))}
+            </RadioGroup>
+          </div>
+        )}
 
         {state.error && (
           <p id={nameErrorId} className="create-list-error" role="alert">
@@ -287,6 +295,40 @@ export default function CreateListDialog({
               : (state.busy ? copy.creating : copy.create)}
           </Button>
         </div>
+    </>
+  );
+
+  // `plain`: just the form, for a view that is already its own (the save
+  // window's create view).
+  useEffect(() => {
+    if (plain && open) inputRef.current?.focus({ preventScroll: true });
+  }, [plain, open]);
+  if (plain) return <div className="create-list-plain">{body}</div>;
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => { if (!nextOpen) requestClose(); }}
+    >
+      <DialogContent
+        className="create-list-card"
+        overlayClassName="create-list-scrim"
+        showClose={false}
+        closeLabel={copy.close}
+        // The name field, and not the first tabbable thing (the X): a keyboard
+        // user opens this window to type a name.
+        initialFocus={inputRef}
+      >
+        <div className="create-list-header">
+          <DialogTitle render={<h3 />}>{editing ? copy.editTitle : copy.title}</DialogTitle>
+          <DialogClose
+            render={<Button variant="ghost" size="icon-sm" aria-label={copy.close} />}
+          >
+            <X size={16} aria-hidden="true" />
+          </DialogClose>
+        </div>
+
+        {body}
       </DialogContent>
     </Dialog>
   );

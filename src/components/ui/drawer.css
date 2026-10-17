@@ -164,8 +164,17 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ui-drawer-backdrop,
+  .ui-drawer-backdrop {
+    transition-duration: 150ms;
+  }
+
   .ui-drawer-popup {
-    transition-duration: 0ms;
+    transition: opacity 150ms var(--ease-out);
+  }
+
+  .ui-drawer-popup[data-starting-style],
+  .ui-drawer-popup[data-ending-style] {
+    transform: translateY(var(--drawer-swipe-movement-y));
+    opacity: 0;
   }
 }
