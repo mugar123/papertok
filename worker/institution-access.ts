@@ -11,7 +11,18 @@ interface GetFtrEntry {
 }
 type CrossrefWork = Partial<Record<'issued' | 'published-online' | 'published-print', { 'date-parts'?: number[][] }>> & {
   'issn-type'?: Array<{ type?: string; value?: unknown }>; ISSN?: unknown[];
+  volume?: unknown; issue?: unknown; page?: unknown;
 };
+
+/** What the resolver is asked about: a journal and year, or one article in it. */
+export interface ResolverCitation {
+  issn: string;
+  year: number | null | undefined;
+  doi?: string;
+  volume?: string;
+  issue?: string;
+  spage?: string;
+}
 
 
 /**
@@ -35,6 +46,10 @@ import { cacheResponse } from './provider-runtime.ts';
 // no resolver behind it) may be an outage, so it is asked again sooner.
 export const ACCESS_CACHE_SECONDS = 7 * 24 * 60 * 60;
 const ACCESS_UNKNOWN_CACHE_SECONDS = 6 * 60 * 60;
+// What the resolver is asked about, in the cache key: until 2026-10-17 it was
+// asked about the journal and year alone, and its link went to the journal's
+// home page. Those answers would otherwise be served for a week more.
+const RESOLVER_CITATION = 'article';
 
 export async function handleInstitutionAccess(request: Request, env: WorkerEnv) {
   const url = new URL(request.url);
@@ -42,7 +57,7 @@ export async function handleInstitutionAccess(request: Request, env: WorkerEnv) 
   const query = readAccessQuery(url.searchParams);
   const ttl = (payload: { status: string }) => (payload.status === 'unknown' ? ACCESS_UNKNOWN_CACHE_SECONDS : ACCESS_CACHE_SECONDS);
   return cacheResponse(request, origin, env, ttl, () => lookupInstitutionAccess(query, { env }), {
-    canonicalParams: upstreamParams(query, env),
+    canonicalParams: { ...upstreamParams(query, env), citation: RESOLVER_CITATION },
   });
 }
 
@@ -220,10 +235,30 @@ function crossrefIssns(work: CrossrefWork | null) {
   return [...new Set(ordered)].slice(0, MAX_ISSNS);
 }
 
-export async function askResolver(resolver: InstitutionResolver, issn: string, year: number | null | undefined, fetchImpl: typeof fetch, signal: AbortSignal) {
+/**
+ * The article's own locators, for the resolver: Alma's link to a publisher is
+ * built from the OpenURL, and each publisher's parser reads a different field
+ * (APS the DOI, ScienceDirect volume and first page). Asked about the journal
+ * alone, the resolver answers with a link to the journal's home page.
+ */
+function crossrefArticle(work: CrossrefWork | null): Pick<ResolverCitation, 'volume' | 'issue' | 'spage'> {
+  const text = (value: unknown) => (typeof value === 'string' && value.trim()) || (Number.isInteger(value) ? String(value) : '');
+  const [spage] = text(work?.page).split(/[-\u2013]/);
+  return { volume: text(work?.volume), issue: text(work?.issue), spage: spage.trim() };
+}
+
+/**
+ * The resolver's answer about `citation`: `{ issn, year }` for the journal,
+ * plus `doi`, `volume`, `issue` and `spage` when the question is one article.
+ */
+export async function askResolver(resolver: InstitutionResolver, { issn, year, doi, volume, issue, spage }: ResolverCitation, fetchImpl: typeof fetch, signal: AbortSignal) {
   const params = new URLSearchParams({ svc_dat: 'CTO', 'rft.genre': 'article', 'rft.issn': issn });
   if (year) params.set('rft.date', String(year));
   else params.set('u.ignore_date_coverage', 'true');
+  if (doi) params.set('rft_id', `info:doi/${doi}`);
+  for (const [key, value] of [['rft.volume', volume], ['rft.issue', issue], ['rft.spage', spage]] as const) {
+    if (value) params.set(key, value);
+  }
   const url = `https://${resolver.host}/view/uresolver/${resolver.institution}/openurl?${params}`;
   return parseResolverAnswer(await fetchText(url, { headers: { accept: 'text/xml' } }, fetchImpl, signal));
 }
@@ -278,12 +313,13 @@ export async function lookupInstitutionAccess(
   }
 
   const year = crossrefYear(work);
+  const article = crossrefArticle(work);
   let refusals = 0;
   const issns = crossrefIssns(work);
   for (const issn of issns) {
     let answer;
     try {
-      answer = await askResolver(resolver!, issn, year, fetchImpl, signal);
+      answer = await askResolver(resolver!, { issn, year, doi, ...article }, fetchImpl, signal);
     } catch {
       throw new InstitutionAccessError('ACCESS_LOOKUP_UNAVAILABLE', 502);
     }

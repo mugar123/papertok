@@ -181,7 +181,7 @@ function namesPlatform(packageName: unknown, entry: ServiceEntry) {
  * list as partial.
  */
 async function probeResolver(entry: ServiceEntry, resolver: InstitutionResolver, fetchImpl: typeof fetch, signal: AbortSignal) {
-  const answer = await askResolver(resolver, entry.issn, entry.year, fetchImpl, signal);
+  const answer = await askResolver(resolver, { issn: entry.issn, year: entry.year }, fetchImpl, signal);
   if (!answer) throw new Error('unreadable resolver answer');
   // A free service is open access, which says nothing about the library. Among
   // the paid ones, the publisher's own package outranks an aggregator's: the

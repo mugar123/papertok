@@ -164,6 +164,9 @@ const CELL_WORK = {
   ISSN: ['0092-8674', '1097-4172'],
   'issn-type': [{ value: '0092-8674', type: 'print' }, { value: '1097-4172', type: 'electronic' }],
   issued: { 'date-parts': [[2020, 1, 23]] },
+  volume: '180',
+  issue: '1',
+  page: '1-3',
 };
 const DOI = '10.1016/j.cell.2020.01.001';
 const ELSEVIER_URL = 'https://buc-usal.alma.exlibrisgroup.com/view/action/uresolver.do?operation=resolveService&package_service_id=8714574410005773&institutionId=5773&customerId=5770';
@@ -247,6 +250,28 @@ test('reports the subscription service rather than the free archive for an entit
   assert.equal(call.url.searchParams.get('rft.issn')!, '1097-4172');
   assert.equal(call.url.searchParams.get('rft.date'), '2020');
   assert.equal(call.url.searchParams.has('u.ignore_date_coverage'), false);
+});
+
+// Without the article's locators Alma links to the journal's home page: the
+// USAL resolver sent a Physical Review B reader to journals.aps.org/prb.
+test('names the article to the resolver, so its link lands on the article', async () => {
+  const stub = upstreams();
+  await lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
+  const [call] = stub.resolverCalls();
+  assert.equal(call.url.searchParams.get('rft_id'), `info:doi/${DOI}`);
+  assert.equal(call.url.searchParams.get('rft.volume'), '180');
+  assert.equal(call.url.searchParams.get('rft.issue'), '1');
+  assert.equal(call.url.searchParams.get('rft.spage'), '1');
+});
+
+test('sends only the locators Crossref has', async () => {
+  const stub = upstreams({ crossref: () => jsonResponse({ message: { ISSN: ['0092-8674'], volume: 180 } }) });
+  await lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
+  const [call] = stub.resolverCalls();
+  assert.equal(call.url.searchParams.get('rft_id'), `info:doi/${DOI}`);
+  assert.equal(call.url.searchParams.get('rft.volume'), '180');
+  assert.equal(call.url.searchParams.has('rft.issue'), false);
+  assert.equal(call.url.searchParams.has('rft.spage'), false);
 });
 
 test('asks the electronic ISSN first and the print one when the first has no full text', async () => {
@@ -491,7 +516,7 @@ test('the route answers a signed-in reader and caches under the normalized DOI a
   assert.deepEqual(body, { status: 'entitled', collection: 'Elsevier ScienceDirect Journals Complete', url: ELSEVIER_URL });
   assert.equal(accessPuts.length, 1);
   const key = new URL(accessPuts[0].key);
-  assert.deepEqual([...key.searchParams], [['doi', DOI], ['domain', 'usal.es']]);
+  assert.deepEqual([...key.searchParams], [['doi', DOI], ['domain', 'usal.es'], ['citation', 'article']]);
   assert.match(accessPuts[0].response.headers.get('cache-control')!, /s-maxage=604800/);
 });
 
