@@ -169,9 +169,15 @@ export async function getEmailNotificationHealth() {
  * The body of a preferences save. The digest is weekly for everyone; the
  * frequency is still sent, always as weekly, because this frontend can be live
  * before the Worker that ignores it, and that Worker's default is daily.
+ *
+ * `sync` marks the background refresh of follows and previews. The Worker
+ * never lets it create or re-enable a subscription or change its settings.
+ * The other fields are still sent because a Worker deployed before `sync`
+ * ignores the flag and saves them.
  */
-export function buildNotificationPreferencesPayload(preferences: NotificationPreferences, follows: Partial<FollowEntity>[] = [], previewItems: NotificationPaper[] = []) {
+export function buildNotificationPreferencesPayload(preferences: NotificationPreferences, follows: Partial<FollowEntity>[] = [], previewItems: NotificationPaper[] = [], { sync = false }: { sync?: boolean } = {}) {
   return {
+    ...(sync ? { sync: true } : {}),
     enabled: Boolean(preferences.enabled),
     frequency: 'weekly',
     maxPapers: [3, 5, 10].includes(Number(preferences.maxPapers)) ? Number(preferences.maxPapers) : 5,
@@ -183,10 +189,10 @@ export function buildNotificationPreferencesPayload(preferences: NotificationPre
   };
 }
 
-export async function saveEmailNotificationPreferences(preferences: NotificationPreferences, follows: Partial<FollowEntity>[] = [], previewItems: NotificationPaper[] = []) {
+export async function saveEmailNotificationPreferences(preferences: NotificationPreferences, follows: Partial<FollowEntity>[] = [], previewItems: NotificationPaper[] = [], options: { sync?: boolean } = {}) {
   const payload = await authenticatedRequest<{ preferences: Required<NotificationPreferences> }>('/notifications/preferences', {
     method: 'PUT',
-    body: JSON.stringify(buildNotificationPreferencesPayload(preferences, follows, previewItems)),
+    body: JSON.stringify(buildNotificationPreferencesPayload(preferences, follows, previewItems, options)),
   });
   return payload.preferences;
 }
