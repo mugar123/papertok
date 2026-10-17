@@ -81,8 +81,8 @@ export default function PDFViewer({ paper, onClose, closeRef = null }) {
     || (/^[A-Z]\d+$/i.test(String(paper.id || '')) ? `https://openalex.org/${paper.id}` : '');
   const shouldShowFallback = !pdfUrl || showFallback;
 
-  // The machine voice under the title: the same honest identity the cards and
-  // the comments ledger print. Nothing is invented — a paper with neither an
+  // The machine voice under the title: the same honest identity the cards
+  // print. Nothing is invented — a paper with neither an
   // arXiv id nor a DOI simply has no identity line.
   const paperIdentity = paper.arxivId
     ? `arxiv:${paper.arxivId}`

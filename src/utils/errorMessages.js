@@ -24,8 +24,6 @@ const ERROR_MESSAGES = {
     PUBLIC_LIST_SYNC_FAILED: 'Your changes are saved, but the public link does not have them yet. It will retry when you open the list.',
     PUBLISH_UNREACHABLE: 'Your changes are saved. The public link will catch up when the connection is back.',
     PUBLISH_QUOTA_EXCEEDED: 'You have reached the daily limit for public link changes. The link will catch up tomorrow.',
-    PROFILE_PHOTO_SAVE_FAILED: 'The profile photo could not be saved.',
-    PROFILE_PHOTO_WRITE_TIMEOUT: 'The photo was not saved in time. Check your connection and try again.',
     ACCOUNT_DELETION_FAILED: 'The account could not be deleted. Try again.',
     ACCOUNT_DELETION_UNREACHABLE: 'The account could not be deleted because the server could not be reached.',
     ACCOUNT_DELETION_NOT_CONFIGURED: 'Account deletion is not available right now.',

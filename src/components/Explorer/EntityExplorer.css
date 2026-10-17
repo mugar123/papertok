@@ -3,7 +3,7 @@
 
    A white document page. Metadata is set in mono so the profile reads like a
    machine-generated record; the entity's name and every paper title are set in
-   the same serif the edition front uses. Colour comes from the entity's own
+   the serif (--font-serif). Colour comes from the entity's own
    research field (var(--area-accent)), so a physics author and a biology one
    are told apart by their rule, not by chrome.
    ============================================ */
@@ -380,7 +380,7 @@
   gap: var(--space-2);
   flex: 1;
   min-width: 0;
-  /* A short field rule above the name, the way the edition front sets a story. */
+  /* A short field rule above the name. */
   padding-top: 2px;
 }
 
@@ -1109,7 +1109,7 @@
 }
 
 /* Ruled rows rather than floating cards; the field reads as a rule down the
-   inner edge and the paper title is set in the edition serif. */
+   inner edge and the paper title is set in the serif. */
 .explorer-list-item {
   position: relative;
   padding: var(--space-5) var(--space-5) var(--space-5) var(--space-6);
@@ -2753,7 +2753,7 @@
    row, a tab, a filter chip or a participant card produced nothing at all
    until the next screen arrived. These are the most-touched targets on the
    page and they were the only surface in the app with no acknowledgement —
-   `ProfilePage.css`, `ListsPage.css` and `PaperCard.css` all already do this.
+   `ListsPage.css` and `PaperCard.css` both already do this.
 
    Two groups, because they are not the same kind of surface. Compact controls
    take the scale: 0.97 is the catalog's value and it is cheap on a 26-40px

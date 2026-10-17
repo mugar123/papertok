@@ -299,17 +299,18 @@ async function seedLegacyUserDoc(extra = {}) {
 
 test('an old account can make every write the app makes to its user document', async () => {
   // One case per call site that was broken: completeOnboarding,
-  // updatePreferences, updateReadingPreferences, updateProfilePhoto and the
-  // followedAuthors migration in FollowingContext.
+  // updatePreferences, updateReadingPreferences and the followedAuthors
+  // migration in FollowingContext. The document carries a photo uploaded
+  // before uploads were removed: the allowlist must keep accepting merges
+  // into it, which is why `profilePhoto` stays in the rules.
   await reset();
-  await seedLegacyUserDoc();
+  await seedLegacyUserDoc({ profilePhoto: 'data:image/webp;base64,AAAA' });
   const db = asAlice();
   const ref = doc(db, 'users', ALICE);
   const writes = [
     { onboardingComplete: true, preferences: ['cs.LG'] },
     { preferences: ['math.AP', 'cs.CL'] },
     { readingPreferences: { aiExplanationLevel: 'researcher', language: 'en', languagePreferenceSet: true } },
-    { profilePhoto: 'data:image/webp;base64,AAAA' },
     { followedAuthors: [], followingMigratedAt: serverTimestamp() },
   ];
   for (const write of writes) {

@@ -9,8 +9,7 @@ import './SettingsSubheader.css';
  * under one section. This is that header, once: the square back control, the
  * breadcrumb that names the hub section the page belongs to, and the title.
  *
- * `children` is the slot for a page-specific line under the subtitle — the
- * public profile's link to its own page is the only one so far.
+ * `children` is an optional slot for a page-specific line under the subtitle.
  */
 export default function SettingsSubheader({
   eyebrow,

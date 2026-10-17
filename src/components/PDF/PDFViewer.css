@@ -135,7 +135,7 @@
 }
 
 /* The machine voice under the title: which paper this is, said the way the
-   cards and the comments ledger say it. */
+   cards say it. */
 .pdf-identity {
   overflow: hidden;
   color: var(--text-secondary);

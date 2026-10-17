@@ -22,7 +22,6 @@ import {
 import { settleWithin } from '../utils/asyncTiming';
 import { isReadTimeout, patientRead } from '../utils/boundedRead.js';
 import { documentIsAuthoritative } from '../utils/cacheAuthority.js';
-import { normalizeProfilePhoto } from '../utils/profileImage';
 import { clearUserScopedStorage, readStoredOnboarding, saveStoredOnboarding } from '../utils/userScopedStorage';
 import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from '../services/accountWarmup.js';
 import { forgetOwnLists } from '../utils/profileSessionCaches.js';
@@ -52,7 +51,6 @@ export function AuthProvider({ children }) {
   const [userPreferences, setUserPreferences] = useState(null);
   const [followedAuthors, setFollowedAuthors] = useState([]);
   const [readingPreferences, setReadingPreferences] = useState(DEFAULT_READING_PREFERENCES);
-  const [profilePhoto, setProfilePhoto] = useState(null);
   // A yes to the email digest given in the guest welcome, saved on the
   // account at onboarding and waiting for the first follow: the digest is
   // built from follows, so EmailNotificationsContext turns the subscription
@@ -80,7 +78,6 @@ export function AuthProvider({ children }) {
           setUserPreferences(demoGet('selectedCategories', null));
           setFollowedAuthors(demoGet('followedAuthors', []));
           setReadingPreferences(normalizeReadingPreferences(demoGet('readingPreferences', {})));
-          setProfilePhoto(normalizeProfilePhoto(demoGet('profilePhoto', null)));
           setSignInProviders(providerIdsOf(demoUser));
         }
         setLoading(false);
@@ -97,7 +94,6 @@ export function AuthProvider({ children }) {
       setUser(currentUser);
       setFollowedAuthors([]);
       setReadingPreferences(DEFAULT_READING_PREFERENCES);
-      setProfilePhoto(null);
       setEmailDigestPending(false);
       setSignInProviders(providerIdsOf(currentUser));
       setInstitution(null);
@@ -126,7 +122,6 @@ export function AuthProvider({ children }) {
           setUserPreferences(preferences);
           setFollowedAuthors(data.followedAuthors || []);
           setReadingPreferences(normalizeReadingPreferences(data.readingPreferences));
-          setProfilePhoto(normalizeProfilePhoto(data.profilePhoto));
           setEmailDigestPending(data.emailDigestOptIn === true);
           setInstitution(normalizeInstitution(data.institution));
           if (onboarded) {
@@ -297,7 +292,6 @@ export function AuthProvider({ children }) {
       setUserPreferences(null);
       setFollowedAuthors([]);
       setReadingPreferences(DEFAULT_READING_PREFERENCES);
-      setProfilePhoto(null);
       setEmailDigestPending(false);
       setSignInProviders([]);
       setInstitution(null);
@@ -478,47 +472,6 @@ export function AuthProvider({ children }) {
     if (auth.currentUser?.uid === userId) setEmailDigestPending(false);
   }, [user?.uid]);
 
-  const updateProfilePhoto = useCallback(async (value) => {
-    const userId = user?.uid;
-    const previous = profilePhoto;
-    const next = normalizeProfilePhoto(value);
-    if (value && !next) throw new Error('The processed image is not valid.');
-    setProfilePhoto(next);
-
-    try {
-      if (IS_DEMO) {
-        demoSet('profilePhoto', next);
-        return next;
-      }
-
-      if (userId) {
-        // Bounded like completeOnboarding: against a stalled connection this
-        // promise never settles on its own, and the settings screen holds its
-        // photo spinner until it does. `settleWithin` never throws, so the
-        // timeout becomes an error with a stable code here, and the catch
-        // below rolls the optimistic photo back as for any other failure.
-        const settled = await settleWithin(
-          setDoc(doc(db, 'users', userId), {
-            profilePhoto: next || deleteField(),
-          }, { merge: true }),
-          PROFILE_NETWORK_TIMEOUT_MS,
-        );
-        if (settled.status === 'timed_out') {
-          const timeoutError = new Error('updateProfilePhoto: the write did not settle in time');
-          timeoutError.code = 'PROFILE_PHOTO_WRITE_TIMEOUT';
-          throw timeoutError;
-        }
-        if (settled.status === 'rejected') throw settled.reason;
-      }
-      return next;
-    } catch (updateError) {
-      // A late failure after a session switch must not paint the previous
-      // account's state over the new one.
-      if (auth.currentUser?.uid === userId) setProfilePhoto(previous);
-      throw updateError;
-    }
-  }, [profilePhoto, user?.uid]);
-
   // Every key here is either a primitive/state value (already stable — React
   // only replaces it when its own setter is called) or one of the callbacks
   // above, each wrapped in `useCallback` with the narrowest deps its body
@@ -534,7 +487,6 @@ export function AuthProvider({ children }) {
     userPreferences,
     followedAuthors,
     readingPreferences,
-    profilePhoto,
     emailDigestPending,
     profileLoadError,
     signInProviders,
@@ -551,15 +503,14 @@ export function AuthProvider({ children }) {
     setUserPreferences,
     toggleFollowAuthor,
     updateReadingPreferences,
-    updateProfilePhoto,
     retryProfileLoad,
     isDemo: IS_DEMO,
   }), [
     completeOnboarding, emailDigestPending, error, followedAuthors, institution, linkInstitution,
-    linkSignInMethod, loading, onboardingComplete, profileLoadError, profilePhoto, readingPreferences,
+    linkSignInMethod, loading, onboardingComplete, profileLoadError, readingPreferences,
     retryProfileLoad, setUserPreferences, settleEmailDigestOptIn, signInProviders, signInWithGitHub,
     signInWithGoogle, signOut, toggleFollowAuthor, unlinkInstitution, updatePreferences,
-    updateProfilePhoto, updateReadingPreferences, user, userPreferences,
+    updateReadingPreferences, user, userPreferences,
   ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

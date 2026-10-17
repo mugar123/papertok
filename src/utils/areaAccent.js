@@ -127,11 +127,11 @@ export function areaKeyForPaper(paper) {
   const fieldKey = areaKeyForOpenAlexField(paper?.primaryTopic?.field);
   if (fieldKey) return fieldKey;
 
-  /* Last, the topic's own name. Research's papers arrive with neither an arXiv
-     category nor a field — `categories[0]` is a display name like "Wastewater
-     Treatment and Reuse" — so without this every one of them resolved to
-     nothing, which is how they all came to wear the same accent and the same
-     watermark. */
+  /* Last, the topic's own name. A paper can arrive with neither an arXiv
+     category nor a field, `categories[0]` being a display name like
+     "Wastewater Treatment and Reuse" (the removed Research page's papers all
+     did). Without this every such paper resolved to nothing, which is how they
+     all came to wear the same accent and the same watermark. */
   for (const candidate of candidates) {
     const key = getAreaKeyFromTopicName(candidate);
     if (key) return key;
