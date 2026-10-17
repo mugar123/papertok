@@ -52,13 +52,24 @@ githubProvider.addScope('user:email');
 // separately, so database persistence is unnecessary here.
 const db = getFirestore(app);
 
+// The Auth emulator accepts an unsigned JSON claim set as a Google credential.
+// Emulator sign-in below and re-authentication (authIdentityService.ts) both
+// build it here, so the same name always reaches the same emulator account.
+export function emulatorGoogleCredential(name: string) {
+  return GoogleAuthProvider.credential(JSON.stringify({
+    sub: name,
+    email: `${name}@example.com`,
+    email_verified: true,
+    name,
+  }));
+}
+
 // `npm run dev:emulators` starts the Firebase emulators and runs Vite in
 // `emulators` mode, which points both SDKs at them, so every account and every
 // Firestore read and write stays on this machine. Ports match firebase.json.
 //
 // A page load with nobody signed in signs in as `tester@example.com`, and
-// `?as=<name>` switches to `<name>@example.com`. The Auth emulator accepts an
-// unsigned JSON claim set as a Google credential, so the same name always
+// `?as=<name>` switches to `<name>@example.com`. The same name always
 // reopens the same account, and a new one goes through onboarding like any
 // first sign-in. The production build drops this whole block.
 if ((import.meta as ImportMeta & { env?: { MODE?: string } }).env?.MODE === 'emulators') {
@@ -77,12 +88,7 @@ if ((import.meta as ImportMeta & { env?: { MODE?: string } }).env?.MODE === 'emu
     auth.authStateReady().then(() => {
       const name = requested || (auth.currentUser ? '' : 'tester');
       if (!name || auth.currentUser?.email === `${name}@example.com`) return undefined;
-      return signInWithCredential(auth, GoogleAuthProvider.credential(JSON.stringify({
-        sub: name,
-        email: `${name}@example.com`,
-        email_verified: true,
-        name,
-      })));
+      return signInWithCredential(auth, emulatorGoogleCredential(name));
     }).catch(error => console.error('Emulator sign-in failed', error));
   }
 }
