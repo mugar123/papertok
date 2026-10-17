@@ -151,7 +151,7 @@ function headersFor(config: { headers: HeaderRule[] }, path: string) {
   return applied;
 }
 
-test('every page refuses framing by other sites, MIME sniffing and full cross-origin referrers', async () => {
+test('every page refuses framing by other sites, MIME sniffing and referrers that reveal a path', async () => {
   const config = JSON.parse(await readFile(VERCEL, 'utf8'));
   const paths = ['/', '/feed', '/privacy.html', '/assets/pdf.worker.min-Bx1c2d3e.mjs', '/no-such-page'];
   for (const path of paths) {
@@ -164,7 +164,13 @@ test('every page refuses framing by other sites, MIME sniffing and full cross-or
     // For browsers that predate frame-ancestors.
     assert.equal(headers['x-frame-options'], 'SAMEORIGIN', path);
     assert.equal(headers['x-content-type-options'], 'nosniff', path);
-    assert.equal(headers['referrer-policy'], 'strict-origin-when-cross-origin', path);
+    // The same rule as the referrer meta in index.html (see
+    // analyticsPageviews.test.ts): `strict-origin-when-cross-origin` sends the
+    // full URL to our own origin, which put /public/paper/<key> in a header.
+    assert.ok(
+      ['strict-origin', 'origin', 'no-referrer'].includes(headers['referrer-policy']),
+      `${path} gets referrer policy ${JSON.stringify(headers['referrer-policy'])}, which can send its path`,
+    );
   }
 });
 
