@@ -141,6 +141,7 @@ import { buildFollowReasonLabel } from '../../utils/followingFeed.ts';
 import { isTechnicalClassification } from '../../utils/scientificClassification.ts';
 import { getRelatedPaperIdentity } from '../../utils/relatedPaperTransition.ts';
 import { hydrateCitationGraphPaper } from '../../services/citationGraphService.ts';
+import { getSemanticScholarPaperId } from '../../services/relatedPapersService.ts';
 import { resolveWithin } from '../../utils/asyncTiming.ts';
 import {
   isTrustedInlinePdfUrl,
@@ -1319,7 +1320,7 @@ const PaperCard = memo(function PaperCard({
   // The graph and the similar list are session-only in the Worker: a guest
   // used to get a sheet that could only say «No se pudieron cargar» (audit
   // 2026-09-23, issue 2).
-  const hasRelated = Boolean(paper.doi || paper.arxivId || paper.semanticScholarId);
+  const hasRelated = Boolean(getSemanticScholarPaperId(paper));
   const openRelated = () => {
     if (publicMode) {
       requireAuthentication('related');
