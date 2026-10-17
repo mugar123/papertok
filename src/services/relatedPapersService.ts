@@ -19,6 +19,10 @@ export function getSemanticScholarPaperId(paper: Partial<Paper>) {
   if (paper?.doi) return `DOI:${paper.doi.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '')}`;
   if (paper?.arxivId) return `ARXIV:${paper.arxivId.replace(/v\d+$/, '')}`;
   if (paper?.semanticScholarId) return paper.semanticScholarId;
+  const source = paper?.sources?.primary;
+  if ((source === 'semanticscholar' || source === 'semantic-scholar') && /^[a-f0-9]{40}$/i.test(paper.id || '')) {
+    return paper.id;
+  }
   return null;
 }
 

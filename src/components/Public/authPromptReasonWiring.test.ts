@@ -61,7 +61,7 @@ test('the sheet says "sign in" when the session is what is missing, and says it 
   const sheet = read('../Feed/RelatedPapersSheet.tsx');
   assert.match(sheet, /const SETTLED = new Set\(\['ready', 'empty', 'error', 'signin'\]\);/);
   assert.match(sheet, /\{ status: isSignInRequiredError\(error\) \? 'signin' : 'error' \}/);
-  assert.equal((sheet.match(/setRelatedStatus\(isSignInRequiredError\(error\) \? 'signin' : 'error'\);/g) || []).length, 2);
+  assert.equal((sheet.match(/setRelatedStatus\(isSignInRequiredError\(error\) \? 'signin' : 'error'\);/g) || []).length, 1);
   assert.match(sheet, /\{visibleStatus === 'signin' && \(\s*<div className="related-state" role="status">/);
   assert.match(sheet, /\{visibleStatus === 'error' && \(\s*<EmptyState\s+as="p"\s+role="status"/);
 });

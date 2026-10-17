@@ -164,7 +164,7 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
   const [trail, setTrail] = useState<Partial<Paper>[]>([paper]);
   const [graphs, setGraphs] = useState<Record<string, { status: string; data?: CitationGraph }>>({});
   const [papers, setPapers] = useState<Paper[]>([]);
-  const [relatedStatus, setRelatedStatus] = useState(hasGraphIdentifier ? 'idle' : 'loading');
+  const [relatedStatus, setRelatedStatus] = useState('loading');
   const [isSelectionReady, setIsSelectionReady] = useState(false);
   const [selectedPaperKey, setSelectedPaperKey] = useState<string | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
@@ -199,7 +199,6 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
   const onCloseRef = useRef(onClose);
   const onPreparePaperRef = useRef(onPreparePaper);
   const onSelectPaperRef = useRef(onSelectPaper);
-  const relatedRequestedRef = useRef(!hasGraphIdentifier);
   const prefersReducedMotion = useReducedMotion();
 
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
@@ -330,36 +329,21 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
   });
 
   useEffect(() => {
-    if (mode !== 'similar' || relatedRequestedRef.current) return undefined;
-    relatedRequestedRef.current = true;
+    if (mode !== 'similar') return undefined;
+    // A tab switch cancels this subscription, not the shared service request.
+    // Returning to Similar must subscribe again, even before that request settles.
     let cancelled = false;
-    setRelatedStatus('loading');
     getRelatedPapers(paper).then(results => {
       if (cancelled) return;
       setPapers(results);
       setRelatedStatus(results.length ? 'ready' : 'empty');
     }).catch(error => {
       if (cancelled) return;
-      console.error('No se pudieron cargar papers relacionados', error);
+      console.error('Could not load related papers', error);
       setRelatedStatus(isSignInRequiredError(error) ? 'signin' : 'error');
     });
     return () => { cancelled = true; };
   }, [mode, paper]);
-
-  useEffect(() => {
-    if (hasGraphIdentifier) return undefined;
-    let cancelled = false;
-    getRelatedPapers(paper).then(results => {
-      if (cancelled) return;
-      setPapers(results);
-      setRelatedStatus(results.length ? 'ready' : 'empty');
-    }).catch(error => {
-      if (cancelled) return;
-      console.error('No se pudieron cargar papers relacionados', error);
-      setRelatedStatus(isSignInRequiredError(error) ? 'signin' : 'error');
-    });
-    return () => { cancelled = true; };
-  }, [hasGraphIdentifier, paper]);
 
   const measurePlot = useCallback((node: HTMLDivElement | null) => {
     resizeRef.current?.disconnect();
@@ -775,6 +759,7 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
       value={mode}
       onValueChange={(next) => {
         if (next === 'graph' && graphStatus === 'ready') setIsMapReturning(true);
+        if (next === 'similar') setRelatedStatus('loading');
         setHasSwitched(true);
         setMode(next);
       }}

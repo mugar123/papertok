@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { clearRelatedPapersCache, getRelatedPapers, getSemanticScholarPaperId } from './relatedPapersService.ts';
+import { SemanticScholarAdapter } from './adapters/SemanticScholarAdapter.ts';
+import { PaperBuilder } from './PaperBuilder.ts';
 
 test('prefers DOI and normalizes provider prefixes for related papers', () => {
   assert.equal(getSemanticScholarPaperId({ doi: 'https://doi.org/10.1000/TEST', arxivId: '1234.5' }), 'DOI:10.1000/TEST');
@@ -9,6 +11,40 @@ test('prefers DOI and normalizes provider prefixes for related papers', () => {
 });
 
 const WORKER = 'https://papertok-report-api.example';
+
+test('loads recommendations for a normalized Semantic Scholar paper without external identifiers', async () => {
+  clearRelatedPapersCache();
+  // Synthetic provider records: neither paper has a DOI or arXiv identifier.
+  const seedId = '0123456789abcdef0123456789abcdef01234567';
+  const nextId = 'abcdef0123456789abcdef0123456789abcdef01';
+  const seed = PaperBuilder.create(new SemanticScholarAdapter().mapToStandard({
+    paperId: seedId, title: 'Seed paper', externalIds: {},
+  }));
+  const asked: string[] = [];
+  const fetchWorker = async (url: string | URL) => {
+    asked.push(new URL(url).searchParams.get('paper_id')!);
+    return new Response(JSON.stringify({ recommendedPapers: [
+      { paperId: seedId, title: 'Seed paper', externalIds: {} },
+      { paperId: nextId, title: 'Related paper', externalIds: {} },
+    ] }));
+  };
+
+  const related = await getRelatedPapers(seed, 8, { fetchWorker, apiBase: WORKER });
+
+  assert.deepEqual(asked, [seedId]);
+  assert.deepEqual(related.map(paper => paper.title), ['Related paper']);
+  assert.equal(getSemanticScholarPaperId(related[0]), nextId);
+});
+
+test('does not interpret another provider id or a malformed hash as a Semantic Scholar id', () => {
+  assert.equal(getSemanticScholarPaperId({
+    id: '0123456789abcdef0123456789abcdef01234567',
+    sources: { primary: 'openalex', enrichedBy: [] },
+  }), null);
+  assert.equal(getSemanticScholarPaperId({
+    id: 'not-a-paper-hash', sources: { primary: 'semanticscholar', enrichedBy: [] },
+  }), null);
+});
 
 function twentyRecommendations() {
   return new Response(JSON.stringify({
