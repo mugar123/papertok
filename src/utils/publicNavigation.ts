@@ -199,7 +199,7 @@ function normalizeOpenAlexWorkId(value: unknown) {
  * mints or a pubmed.ncbi.nlm.nih.gov URL. A bare run of digits is not taken
  * for one — too many things are a run of digits.
  */
-function normalizePmid(value: unknown) {
+export function normalizePmid(value: unknown) {
   const text = cleanText(value);
   const match = text.match(/^pmid:\s*(\d+)$/i)
     || text.match(/^(?:https?:\/\/)?(?:www\.)?(?:pubmed\.ncbi\.nlm\.nih\.gov|ncbi\.nlm\.nih\.gov\/pubmed)\/(\d+)\/?$/i);

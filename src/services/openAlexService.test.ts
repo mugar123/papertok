@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { mapCrossrefInstitutionWork } from './crossrefInstitutionService.ts';
+import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europePmcService.ts';
 import { openAlexClient, writeOpenAlexPersistent } from './openAlexClient.ts';
 import {
   dribblingFetch,
@@ -30,6 +31,7 @@ import {
   peekEntity,
   searchInstitutions,
   searchLocalTopics,
+  slimWorksPage,
 } from './openAlexService.ts';
 
 test('names local topic entities without changing their canonical category identity', () => {
@@ -598,6 +600,66 @@ test('the enrichment carries the authors with their OpenAlex ids', () => {
 test('a work with no authorships enriches without an authors key', () => {
   const mapped = mapOpenAlexEnrichmentWork({ id: 'https://openalex.org/W123' });
   assert.equal('authors' in mapped!.enrichment, false, 'nothing to graft is not the same as an empty list');
+});
+
+// PAP-31. OpenAlex writes a work's PubMed id as a URL in `ids.pmid`; the feed
+// asks Europe PMC by the bare number in `paper.pmid`. Shaped after the live
+// record of W2107277218 (fetched 2026-10-17): closed, no OpenAlex abstract.
+const PUBMED_LINKED_WORK = {
+  id: 'https://openalex.org/W2107277218',
+  doi: 'https://doi.org/10.1006/meth.2001.1262',
+  ids: {
+    openalex: 'https://openalex.org/W2107277218',
+    doi: 'https://doi.org/10.1006/meth.2001.1262',
+    pmid: 'https://pubmed.ncbi.nlm.nih.gov/11846609',
+  },
+  title: 'Analysis of Relative Gene Expression Data Using Real-Time Quantitative PCR and the 2−ΔΔCT Method',
+  type: 'article',
+  publication_date: '2001-12-01',
+  abstract_inverted_index: null,
+  open_access: { is_oa: false, oa_url: null },
+  primary_location: {
+    landing_page_url: 'https://doi.org/10.1006/meth.2001.1262',
+    is_published: true,
+    source: { display_name: 'Methods', type: 'journal' },
+  },
+  cited_by_count: 180397,
+};
+const UNLINKED_WORK = { ...PUBMED_LINKED_WORK, ids: { openalex: PUBMED_LINKED_WORK.ids.openalex, doi: PUBMED_LINKED_WORK.ids.doi } };
+
+test('a works page keeps the PubMed id OpenAlex writes as a URL, as the bare number', () => {
+  const { papers } = slimWorksPage({ results: [PUBMED_LINKED_WORK, UNLINKED_WORK] });
+  assert.equal(papers[0].pmid, '11846609');
+  assert.equal(papers[1].pmid, undefined);
+});
+
+test('the enrichment carries the PubMed id as the bare number', () => {
+  assert.equal(mapOpenAlexEnrichmentWork(PUBMED_LINKED_WORK)!.enrichment.pmid, '11846609');
+  assert.equal(mapOpenAlexEnrichmentWork(UNLINKED_WORK)!.enrichment.pmid, undefined);
+});
+
+test('a closed paper from a works page takes its abstract from Europe PMC and stays closed', () => {
+  const [paper] = slimWorksPage({ results: [PUBMED_LINKED_WORK] }).papers;
+  // Europe PMC's core record for PMID 11846609, trimmed. The abstract text is
+  // a synthetic stand-in for the 867-character original.
+  const abstract = 'Synthetic stand-in: relative gene expression computed from real-time PCR threshold cycles.';
+  const record = mapEuropePmcResult({
+    id: '11846609',
+    pmid: '11846609',
+    abstractText: abstract,
+    isOpenAccess: 'N',
+    fullTextUrlList: { fullTextUrl: [{
+      availability: 'Subscription required',
+      availabilityCode: 'S',
+      documentStyle: 'doi',
+      url: 'https://doi.org/10.1006/meth.2001.1262',
+    }] },
+  })!;
+
+  const [merged] = mergeEuropePmcEnrichment([paper], new Map([[record.pmid, record]]));
+  assert.equal(merged.abstract, abstract);
+  assert.equal(merged.openAccess, false, 'an abstract is not access to the full text');
+  assert.equal(merged.openAccessPdfUrl, undefined);
 });
 
 /**

@@ -2,6 +2,7 @@ import type { PaperAuthor } from '../models/Paper.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { OPENALEX_SEARCH_TYPES, OPENALEX_WORK_SEARCH_FIELDS, OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
+import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europePmcService.ts';
 import { openAlexClient } from './openAlexClient.ts';
 import type { Paper } from '../models/Paper.ts';
 import type { PaperSearchFilters } from './adapters/index.ts';
@@ -238,4 +239,96 @@ test('category discovery returns working papers and preserves their preprint sta
     assert.equal(result.papers[1].publicationStatus, 'published');
   }
   assert.equal(requests, 2, 'each category search still makes one upstream request');
+});
+
+// PAP-31. OpenAlex writes a work's PubMed id as a URL in `ids.pmid`, and the
+// feed asks Europe PMC by the bare number in `paper.pmid`. The mapper dropped
+// it, so a closed paper whose abstract Europe PMC holds kept showing "No
+// abstract available.". Both works are shaped after the live records (fetched
+// 2026-10-17), trimmed to the fields the mapper reads.
+const PCR_METHOD_WORK = {
+  id: 'https://openalex.org/W2107277218',
+  doi: 'https://doi.org/10.1006/meth.2001.1262',
+  ids: {
+    openalex: 'https://openalex.org/W2107277218',
+    doi: 'https://doi.org/10.1006/meth.2001.1262',
+    mag: '2107277218',
+    pmid: 'https://pubmed.ncbi.nlm.nih.gov/11846609',
+  },
+  title: 'Analysis of Relative Gene Expression Data Using Real-Time Quantitative PCR and the 2−ΔΔCT Method',
+  type: 'article',
+  publication_date: '2001-12-01',
+  publication_year: 2001,
+  authorships: [],
+  abstract_inverted_index: null,
+  open_access: { is_oa: false, oa_url: null },
+  primary_location: {
+    landing_page_url: 'https://doi.org/10.1006/meth.2001.1262',
+    is_published: true,
+    source: { display_name: 'Methods', type: 'journal' },
+  },
+  cited_by_count: 180397,
+};
+
+// Huber 1958: no PubMed record, and no abstract in OpenAlex, Crossref or at
+// the publisher. Its missing abstract has to stay missing.
+const HUBER_WORK = {
+  id: 'https://openalex.org/W2036144354',
+  doi: 'https://doi.org/10.1007/bf02564570',
+  ids: {
+    openalex: 'https://openalex.org/W2036144354',
+    doi: 'https://doi.org/10.1007/bf02564570',
+    mag: '2036144354',
+  },
+  title: 'On subharmonic functions and differential geometry in the large',
+  type: 'article',
+  publication_date: '1958-12-01',
+  publication_year: 1958,
+  authorships: [],
+  abstract_inverted_index: null,
+  open_access: { is_oa: false, oa_url: null },
+  primary_location: {
+    landing_page_url: 'https://doi.org/10.1007/bf02564570',
+    is_published: true,
+    source: { display_name: 'Commentarii Mathematici Helvetici', type: 'journal' },
+  },
+  cited_by_count: 470,
+};
+
+test('a search result keeps the PubMed id OpenAlex writes as a URL, as the bare number', () => {
+  const adapter = new OpenAlexAdapter();
+  assert.equal(adapter.mapToStandard(PCR_METHOD_WORK)!.pmid, '11846609');
+  assert.equal(adapter.mapToStandard(HUBER_WORK)!.pmid, undefined);
+});
+
+test('a closed search result takes its abstract from Europe PMC by that id and stays closed', () => {
+  const adapter = new OpenAlexAdapter();
+  const pcrMethod = adapter.mapToStandard(PCR_METHOD_WORK)!;
+  const huber = adapter.mapToStandard(HUBER_WORK)!;
+  assert.equal(pcrMethod.abstract, 'No abstract available.');
+
+  // Europe PMC's core record for PMID 11846609, trimmed. The abstract text is
+  // a synthetic stand-in for the 867-character original.
+  const abstract = 'Synthetic stand-in: relative gene expression computed from real-time PCR threshold cycles.';
+  const record = mapEuropePmcResult({
+    id: '11846609',
+    pmid: '11846609',
+    abstractText: abstract,
+    isOpenAccess: 'N',
+    fullTextUrlList: { fullTextUrl: [{
+      availability: 'Subscription required',
+      availabilityCode: 'S',
+      documentStyle: 'doi',
+      url: 'https://doi.org/10.1006/meth.2001.1262',
+    }] },
+  })!;
+
+  const [merged, untouched] = mergeEuropePmcEnrichment([pcrMethod, huber], new Map([[record.pmid, record]]));
+  assert.equal(merged.abstract, abstract);
+  assert.equal(merged.openAccess, false, 'an abstract is not access to the full text');
+  assert.equal(merged.pdfUrl, null);
+  assert.equal(merged.openAccessPdfUrl, undefined);
+  assert.equal(merged.landingPageUrl, 'https://doi.org/10.1006/meth.2001.1262');
+  assert.ok(Object.is(untouched, huber), 'a paper with no PubMed id is left as it was');
+  assert.equal(untouched.abstract, 'No abstract available.');
 });

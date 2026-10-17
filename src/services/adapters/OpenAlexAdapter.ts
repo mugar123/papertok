@@ -9,6 +9,7 @@ import { openAlexFetch } from '../openAlexClient.ts';
 import { getArxivIdFromWork } from '../openAlexService.ts';
 import { usableOpenAlexAbstract } from '../../utils/openAlexAbstract.ts';
 import { usableOpenAlexConcepts } from '../../utils/openAlexConcepts.ts';
+import { normalizePmid } from '../../utils/publicNavigation.ts';
 import { openAlexPublicationStatus } from '../../utils/publicationStatus.ts';
 
 // The top-level fields `mapToStandard` and `getArxivIdFromWork` read, and
@@ -154,6 +155,7 @@ export class OpenAlexAdapter {
       sources: { primary: 'openalex', enrichedBy: [] },
       doi,
       arxivId: getArxivIdFromWork(work) || undefined,
+      pmid: normalizePmid(work.ids?.pmid) || undefined,
       title: work.title || 'Untitled',
       abstract,
       authors,

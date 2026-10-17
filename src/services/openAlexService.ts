@@ -27,6 +27,7 @@ import { openAlexPublicationStatus } from '../utils/publicationStatus.ts';
 import { usableOpenAlexConcepts } from '../utils/openAlexConcepts.ts';
 import { matchesAuthorName } from '../utils/authorNameMatch.ts';
 import { paperReferenceFor } from '../utils/explorerPaths.ts';
+import { normalizePmid } from '../utils/publicNavigation.ts';
 import { withRequestDeadline } from '../utils/requestDeadline.ts';
 import {
   applyInstitutionWorksFallback,
@@ -184,6 +185,7 @@ export function mapOpenAlexEnrichmentWork(work: OpenAlexWork | null): { openAlex
       doi: arxivId
         ? getReliableEnrichmentDoi(work, arxivId)
         : (normalizeDoi(work.doi || work.ids?.doi) || undefined),
+      pmid: normalizePmid(work.ids?.pmid) || undefined,
       journal: work.primary_location?.source?.display_name,
       publisher: work.primary_location?.source?.host_organization_name,
       openAccess: work.open_access?.is_oa,
@@ -1740,6 +1742,7 @@ function formatOpenAlexWorkAsPaper(work: OpenAlexWork): Paper {
     landingPageUrl: work.primary_location?.landing_page_url || work.id,
     doi: work.doi,
     arxivId: getArxivIdFromWork(work) || undefined,
+    pmid: normalizePmid(work.ids?.pmid) || undefined,
     journal: work.primary_location?.source?.display_name,
     publisher: work.primary_location?.source?.host_organization_name,
     citationCount: work.cited_by_count || 0,
