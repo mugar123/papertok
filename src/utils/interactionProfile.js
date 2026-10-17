@@ -403,15 +403,22 @@ export function interactionDocumentImpact(data) {
 export function buildProfileFromInteractionDocuments(documents, { now = Date.now() } = {}) {
   const profile = createEmptyInteractionProfile();
 
-  documents.forEach(({ id, data }) => {
-    if (typeof id !== 'string' || !id || !data) return;
-    profile.sourceDocCount += 1;
-
+  // addCurated puts each id in front, which is newest first when events arrive
+  // one by one. The documents come newest first, so they are replayed oldest
+  // first: the newest ids end up in front and a cap evicts the oldest.
+  for (let index = documents.length - 1; index >= 0; index -= 1) {
+    const { id, data } = documents[index];
+    if (typeof id !== 'string' || !id || !data) continue;
     if (data.liked) addCurated(profile, 'liked', id);
     if (data.saved) addCurated(profile, 'saved', id);
     if (data.read) addCurated(profile, 'read', id);
     if (data.notInterested) addCurated(profile, 'notInterested', id);
     if (data.readLater) addCurated(profile, 'readLater', id);
+  }
+
+  documents.forEach(({ id, data }) => {
+    if (typeof id !== 'string' || !id || !data) return;
+    profile.sourceDocCount += 1;
 
     const category = typeof data.paperCategory === 'string' ? data.paperCategory : '';
     if (!category) return;
