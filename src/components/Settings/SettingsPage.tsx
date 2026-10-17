@@ -1,4 +1,4 @@
-import type { ChangeEvent, ComponentProps } from 'react';
+import type { ComponentProps } from 'react';
 import type { Icon } from '@phosphor-icons/react';
 import type { ReadingLevel } from '../../utils/userSettings.ts';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -17,7 +17,6 @@ import {
   ShieldCheck,
   Sparkle,
   Trash,
-  UploadSimple,
   UserCircle,
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
@@ -30,7 +29,6 @@ import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import { ANALYTICS_CONSENT } from '../../services/analyticsService.ts';
 import { PAPER_REWRITE_LEVELS } from '../../services/paperRewriteService.ts';
 import { CATEGORIES } from '../../data/categories.ts';
-import { prepareProfileImage } from '../../utils/profileImage.ts';
 import { SIGN_IN_PROVIDERS } from '../../services/authIdentityService.ts';
 import GoogleMark from '../Public/GoogleMark.tsx';
 import InstitutionDialog from '../Institution/InstitutionDialog.tsx';
@@ -51,7 +49,7 @@ import './SettingsPage.css';
  * no scroll position to track and nothing to spy on. Order is the rail's.
  */
 const SETTINGS_PAGES = [
-  { slug: 'profile', label: 'Profile & account', Icon: UserCircle },
+  { slug: 'profile', label: 'Account', Icon: UserCircle },
   { slug: 'discovery', label: 'Discovery', Icon: Compass },
   { slug: 'reading', label: 'Reading & AI', Icon: Sparkle },
   { slug: 'notifications', label: 'Notifications', Icon: Bell },
@@ -80,20 +78,6 @@ const SETTINGS_COPY = {
   title: 'Settings',
   subtitle: 'Your account, discovery preferences, and reading tools.',
   pagesLabel: 'Settings pages',
-  accountPhoto: 'Account photo',
-  accountPhotoDescription: 'Shown on your account button in the navigation bar.',
-  photo: 'Photo',
-  photoHint: 'PNG, JPEG or WebP. Saved as soon as you choose it.',
-  uploadPhoto: 'Upload photo',
-  changePhoto: 'Change photo',
-  removePhoto: 'Remove',
-  removeToSignInPhoto: 'Remove and go back to your sign-in photo',
-  removeToInitial: 'Remove and go back to your initial',
-  photoUpdated: { title: 'Photo updated', description: 'It shows across PaperTok.' },
-  signInPhotoRestored: { title: 'Photo removed', description: 'Your sign-in photo is back in its place.' },
-  photoRemoved: { title: 'Photo removed', description: 'Your initial shows in its place.' },
-  photoSaveError: 'Photo not saved',
-  photoRestoreError: { title: 'Photo not removed', description: 'The profile photo could not be removed. Try again.' },
   discovery: 'Discovery',
   discoveryDescription: 'Signals PaperTok uses to build your feeds.',
   followedContent: 'Following',
@@ -216,10 +200,8 @@ function emailStatus(preferences: ReturnType<typeof useEmailNotifications>['pref
 
 function ProfileAccountPage() {
   const navigate = useNavigate();
-  const profileInputRef = useRef<HTMLInputElement | null>(null);
   const { language } = useLanguage();
-  const { user, profilePhoto, updateProfilePhoto, signInProviders, linkSignInMethod, signOut, institution } = useAuth();
-  const [savingPhoto, setSavingPhoto] = useState(false);
+  const { user, signInProviders, linkSignInMethod, signOut, institution } = useAuth();
   // The method being connected, while its popup is open.
   const [linking, setLinking] = useState<string | null>(null);
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
@@ -230,37 +212,6 @@ function ProfileAccountPage() {
   // AuthContext has no unlink, so a connected method offers no Disconnect;
   // the only way in says why it never could.
   const onlyMethod = [gitHubLinked, googleLinked].filter(Boolean).length === 1;
-  const visibleProfilePhoto = profilePhoto || user?.photoURL;
-
-  const handlePhotoSelect = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file || savingPhoto) return;
-
-    setSavingPhoto(true);
-    try {
-      const preparedPhoto = await prepareProfileImage(file);
-      await updateProfilePhoto(preparedPhoto);
-      notify('success', copy.photoUpdated);
-    } catch (error) {
-      toastError(copy.photoSaveError, { description: getUiErrorMessage(error, 'PROFILE_PHOTO_SAVE_FAILED') });
-    } finally {
-      setSavingPhoto(false);
-    }
-  };
-
-  const handleRestorePhoto = async () => {
-    if (!profilePhoto || savingPhoto) return;
-    setSavingPhoto(true);
-    try {
-      await updateProfilePhoto(null);
-      notify('success', user?.photoURL ? copy.signInPhotoRestored : copy.photoRemoved);
-    } catch {
-      notify('error', copy.photoRestoreError);
-    } finally {
-      setSavingPhoto(false);
-    }
-  };
 
   const handleLink = async (method: { id: string; providerId: string; label: string }) => {
     setLinking(method.id);
@@ -303,65 +254,8 @@ function ProfileAccountPage() {
     { id: 'github', providerId: SIGN_IN_PROVIDERS.github, label: 'GitHub', Icon: GithubMark, linked: gitHubLinked },
   ];
 
-
-  const photoField = (
-    <div className="settings-photo-field">
-      <div className="settings-profile-avatar">
-        {visibleProfilePhoto ? (
-          <img src={visibleProfilePhoto} alt="" referrerPolicy="no-referrer" decoding="async" width="56" height="56" />
-        ) : (
-          <div className="settings-profile-fallback" aria-hidden="true">
-            {user?.email?.charAt(0).toUpperCase() || 'U'}
-          </div>
-        )}
-        {savingPhoto && (
-          <span className="settings-profile-loading" aria-hidden="true"><CircleNotch size={18} aria-hidden="true" /></span>
-        )}
-      </div>
-      <div className="settings-photo-copy">
-        <span className="settings-photo-label">{copy.photo}</span>
-        <span className="profile-hint">{copy.photoHint}</span>
-      </div>
-      <div className="settings-profile-actions">
-        <input
-          ref={profileInputRef}
-          type="file"
-          accept="image/png,image/jpeg,image/webp"
-          onChange={handlePhotoSelect}
-          tabIndex={-1}
-          aria-hidden="true"
-        />
-        <Button type="button" variant="outline" size="sm" disabled={savingPhoto} onClick={() => profileInputRef.current?.click()}>
-          <UploadSimple size={15} aria-hidden="true" />
-          {profilePhoto ? copy.changePhoto : copy.uploadPhoto}
-        </Button>
-        {/* Only an uploaded photo can be removed; removing it falls back to
-            the default (the sign-in photo, or the initial). */}
-        {profilePhoto && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="settings-photo-remove"
-            disabled={savingPhoto}
-            onClick={handleRestorePhoto}
-            title={user?.photoURL ? copy.removeToSignInPhoto : copy.removeToInitial}
-          >
-            <Trash size={15} aria-hidden="true" />
-            {copy.removePhoto}
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-
   return (
     <>
-      <section className="settings-section" aria-labelledby="settings-photo-heading">
-        <SectionHeading id="settings-photo-heading" title={copy.accountPhoto} description={copy.accountPhotoDescription} />
-        <div className="profile-fields">{photoField}</div>
-      </section>
-
       <section className="settings-section" aria-labelledby="settings-access-heading">
         <SectionHeading id="settings-access-heading" title={copy.access} description={copy.accessDescription} />
         <div className="settings-list">

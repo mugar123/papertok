@@ -88,7 +88,7 @@ export function areaAccentForCategory(categoryId: unknown) {
  */
 const OPENALEX_FIELD_AREAS: Readonly<Record<string, keyof typeof CATEGORIES>> = Object.freeze({
   11: 'bio', 13: 'bio',
-  15: 'chemeng',
+  15: 'chemeng', 25: 'chemeng',
   17: 'cs',
   18: 'stat',
   20: 'econ',
@@ -98,12 +98,53 @@ const OPENALEX_FIELD_AREAS: Readonly<Record<string, keyof typeof CATEGORIES>> = 
   31: 'physics',
 });
 
-/** The area an OpenAlex field belongs to, given its id or its `/fields/17` URL. */
-export function areaKeyForOpenAlexField(field: string | number | { id?: string } | null | undefined): keyof typeof CATEGORIES | null {
-  const raw = typeof field === 'object' ? field?.id : field;
+/*
+ * The subfields that belong to a different area than their field. OpenAlex
+ * files mechanical, aerospace and civil work under Engineering (22) and
+ * finance under Economics, Econometrics and Finance (20), so by field alone
+ * they read as Electrical & Electronic Engineering and Economics, and the
+ * Explorer's filter for their own area could never find them.
+ */
+const OPENALEX_SUBFIELD_AREAS: Readonly<Record<string, keyof typeof CATEGORIES>> = Object.freeze({
+  2202: 'mech', 2203: 'mech', 2206: 'mech', 2210: 'mech', 2211: 'mech',
+  2205: 'civil', 2212: 'civil', 2215: 'civil',
+  2003: 'q-fin',
+});
+
+function openAlexId(value: string | number | { id?: string } | null | undefined) {
+  const raw = typeof value === 'object' ? value?.id : value;
   if (raw === undefined || raw === null) return null;
-  const area = OPENALEX_FIELD_AREAS[String(raw).split('/').pop()!];
+  return String(raw).split('/').pop()!;
+}
+
+/** The area an OpenAlex field belongs to, given its id or its `/fields/17` URL. */
+export function areaKeyForOpenAlexField(field: string | number | { id?: string } | null | undefined) {
+  const id = openAlexId(field);
+  const area = id === null ? null : OPENALEX_FIELD_AREAS[id];
   return (area && CATEGORIES[area]) ? area : null;
+}
+
+function areaKeyForOpenAlexTopic(topic: Partial<Paper>['primaryTopic']) {
+  const id = openAlexId(topic?.subfield);
+  const area = id === null ? null : OPENALEX_SUBFIELD_AREAS[id];
+  if (area && CATEGORIES[area]) return area;
+  return areaKeyForOpenAlexField(topic?.field);
+}
+
+/**
+ * The OpenAlex works filter for one area, read from the same tables that name
+ * a paper's area, so what the Explorer asks OpenAlex for is what its rows will
+ * be labelled. A field filter is a superset when some of its subfields belong
+ * elsewhere (Engineering includes mechanical work); the list trims those rows
+ * by their label. Null for an area OpenAlex has no field or subfield for.
+ */
+export function openAlexFilterForArea(areaKey: string | null) {
+  const ids = (table: Readonly<Record<string, keyof typeof CATEGORIES>>) => Object.keys(table).filter(id => table[id] === areaKey);
+  const fields = ids(OPENALEX_FIELD_AREAS);
+  if (fields.length) return `primary_topic.field.id:${fields.join('|')}`;
+  const subfields = ids(OPENALEX_SUBFIELD_AREAS);
+  if (subfields.length) return `primary_topic.subfield.id:${subfields.join('|')}`;
+  return null;
 }
 
 /**
@@ -124,16 +165,17 @@ export function areaKeyForPaper(paper: Partial<Paper> | null | undefined) {
     if (key) return key as keyof typeof CATEGORIES;
   }
 
-  // Then the OpenAlex field. A paper from the works endpoint has no arXiv
-  // category at all, and this is the only thing it says about its branch.
-  const fieldKey = areaKeyForOpenAlexField(paper?.primaryTopic?.field);
+  // Then the OpenAlex subfield or field. A paper from the works endpoint has
+  // no arXiv category at all, and this is the only thing it says about its
+  // branch.
+  const fieldKey = areaKeyForOpenAlexTopic(paper?.primaryTopic);
   if (fieldKey) return fieldKey;
 
-  /* Last, the topic's own name. Research's papers arrive with neither an arXiv
-     category nor a field — `categories[0]` is a display name like "Wastewater
-     Treatment and Reuse" — so without this every one of them resolved to
-     nothing, which is how they all came to wear the same accent and the same
-     watermark. */
+  /* Last, the topic's own name. A paper can arrive with neither an arXiv
+     category nor a field, `categories[0]` being a display name like
+     "Wastewater Treatment and Reuse" (the removed Research page's papers all
+     did). Without this every such paper resolved to nothing, which is how they
+     all came to wear the same accent and the same watermark. */
   for (const candidate of candidates) {
     const key = getAreaKeyFromTopicName(candidate);
     if (key) return key as keyof typeof CATEGORIES;

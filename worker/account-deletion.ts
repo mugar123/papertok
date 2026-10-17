@@ -15,8 +15,8 @@ interface DeletionOptions { admin?: DeletionAdmin; fetchImpl?: typeof fetch; idT
  * stage per request, and is safe to retry: every write is a delete or a
  * dissociation of rows that still name this uid.
  *
- * Auth is last. Comments are dissociated, not deleted, matching the
- * privacy policy default.
+ * Auth is last. Comments and content reports from before comments were
+ * removed are deleted: nothing shows them any more.
  */
 
 import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.ts';
@@ -26,20 +26,10 @@ import {
   deleteWrite,
   FirestoreAdminError,
   isServiceAccountConfigured,
-  mergeWrite,
 } from './firestore-admin.ts';
 import { purgeEmailSubscription } from './email-notifications.ts';
 
 export const ACCOUNT_DELETE_PATH = '/account/delete';
-
-// How a comment written before comments were removed names its author once the
-// account is gone: the text stays, the author does not. `dissociated: true` is
-// the durable signal; an empty handle on its own could be a half-written row.
-const DISSOCIATED_COMMENT_FIELDS = Object.freeze({
-  authorUid: '',
-  authorHandle: '',
-  dissociated: true,
-});
 
 const USER_SUBCOLLECTIONS = Object.freeze([
   'lists',
@@ -114,7 +104,7 @@ async function commitBestEffort(admin: DeletionAdmin, writes: FirestoreWrite[]) 
   }
 }
 
-async function dissociateComments(admin: DeletionAdmin, uid: string) {
+async function deleteComments(admin: DeletionAdmin, uid: string) {
   const rows = await admin.runQuery({
     collectionId: 'comments',
     allDescendants: true,
@@ -124,9 +114,22 @@ async function dissociateComments(admin: DeletionAdmin, uid: string) {
   const writes = [];
   for (const row of rows) {
     if (!Array.isArray(row.path) || row.path.length < 4) continue;
-    writes.push(mergeWrite(admin.name(row.path), { ...DISSOCIATED_COMMENT_FIELDS }));
+    writes.push(deleteWrite(admin.name(row.path)));
     if (writes.length >= MAX_WRITES) break;
   }
+  await commitBestEffort(admin, writes);
+  return rows.length >= PAGE_SIZE;
+}
+
+// A report names its author and the author of what it reported; both are this
+// account's to remove now that no moderation reads them.
+async function deleteReports(admin: DeletionAdmin, uid: string, field: string) {
+  const rows = await admin.runQuery({
+    collectionId: 'reports',
+    where: { field, op: 'EQUAL', value: uid },
+    limit: PAGE_SIZE,
+  });
+  const writes = rows.map(row => deleteWrite(admin.name(['reports', row.id])));
   await commitBestEffort(admin, writes);
   return rows.length >= PAGE_SIZE;
 }
@@ -169,10 +172,6 @@ async function deleteFollows(admin: DeletionAdmin, uid: string, field: string) {
 /**
  * The paper stub itself stays: it is a shared document every other reader's
  * saves, comments and lists point at. Only the attribution goes.
- *
- * `reports.reporterUid` and `reports.targetAuthorUid` are deliberately kept:
- * they are the moderation record of a decision that outlives the account.
- * Nothing in the app reads them since the moderation console was removed.
  */
 async function dissociatePapers(admin: DeletionAdmin, uid: string) {
   const rows = await admin.runQuery({
@@ -278,8 +277,14 @@ export async function runAccountDeletionSlice(admin: DeletionAdmin, uid: string,
   idToken,
   fetchImpl = fetch,
 }: DeletionOptions = {}) {
-  if (await dissociateComments(admin, uid)) {
+  if (await deleteComments(admin, uid)) {
     return { complete: false, stage: 'comments' };
+  }
+  if (await deleteReports(admin, uid, 'reporterUid')) {
+    return { complete: false, stage: 'reportsFiled' };
+  }
+  if (await deleteReports(admin, uid, 'targetAuthorUid')) {
+    return { complete: false, stage: 'reportsReceived' };
   }
   if (await deleteOwnedPublicLists(admin, uid)) {
     return { complete: false, stage: 'publicLists' };

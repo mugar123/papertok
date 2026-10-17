@@ -632,6 +632,28 @@ test('SOURCE: the enrichment request asks OpenAlex for the authorships', async (
   assert.ok(/'authorships'/.test(select[1]), 'authorships is in the select list');
 });
 
+// The Explorer's category filter used to send OpenAlex legacy concepts for
+// eight areas and nothing for the other four, while its rows are labelled by
+// their topic's field. Asked for Medicine, an entity page now asks OpenAlex for
+// the fields that label a row as Medicine.
+test('an entity page filtered by area asks OpenAlex for the fields that label that area', async () => {
+  const realFetch = openAlexClient.fetchImpl;
+  const urls: string[] = [];
+  openAlexClient.fetchImpl = async (url) => {
+    urls.push(decodeURIComponent(String(url)));
+    return new Response(JSON.stringify({ meta: { count: 0 }, results: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  try {
+    await getWorksByEntity('author', 'A123', 'cited_by_count:desc', 1, '', { category: 'med' }, 'Ada Lovelace');
+    const works = urls.find(url => url.includes('/works?'));
+    assert.ok(works, `asked for works, got ${urls.join(' ')}`);
+    assert.match(works, /filter=author\.id:A123,primary_topic\.field\.id:24\|27\|28\|29\|30\|35\|36(&|$)/);
+    assert.doesNotMatch(works, /concepts\.id/);
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+  }
+});
+
 test('a DOI-keyed id is fetched by DOI and comes back under that key', async () => {
   // Overriding the singleton's fetchImpl rather than globalThis.fetch: the
   // client binds its own at construction, so a global stub never reaches it

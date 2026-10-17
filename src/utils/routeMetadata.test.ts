@@ -29,7 +29,7 @@ test('labels announce even self-titled routes', () => {
   // Each settings page titles itself "<page> · Settings", so the
   // announcement must match that rather than a different word.
   assert.equal(routeLabel('/settings'), 'Settings')
-  assert.equal(routeLabel('/settings/profile'), 'Profile & account · Settings')
+  assert.equal(routeLabel('/settings/profile'), 'Account · Settings')
   assert.equal(routeLabel('/settings/privacy'), 'Privacy · Settings')
   assert.equal(routeLabel('/nonsense'), null)
 })

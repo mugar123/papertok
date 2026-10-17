@@ -187,24 +187,6 @@ function userDocument(admin: Pick<FirestoreAdmin, 'name'>, uid: string) {
   return admin.name(['users', uid]);
 }
 
-function profileDocument(admin: Pick<FirestoreAdmin, 'name'>, uid: string) {
-  return admin.name(['userProfiles', uid]);
-}
-
-/**
- * The public page shows the institution too, from a copy on the profile
- * document. The profile may not exist yet (it is created at the end of
- * onboarding, and `createUserProfile` copies the field then), so its write is
- * a separate commit whose "no such document" is not a failure.
- */
-async function writeProfileCopy(admin: { commit(writes: FirestoreWrite[]): Promise<unknown> }, uid: string, write: FirestoreWrite) {
-  try {
-    await admin.commit([write]);
-  } catch (error) {
-    if (!(error instanceof FirestoreAdminError && error.status === 409)) throw error;
-  }
-}
-
 export async function handleInstitutionLinkRequest(request: Request, env: WorkerEnv, options: InstitutionLinkOptions = {}) {
   if (request.method !== 'POST') throw new InstitutionLinkError('METHOD_NOT_ALLOWED', 405);
   if (!isServiceAccountConfigured(env)) {
@@ -218,7 +200,9 @@ export async function handleInstitutionLinkRequest(request: Request, env: Worker
   try {
     if (pathname === INSTITUTION_UNLINK_PATH) {
       await admin.commit([clearFieldsWrite(userDocument(admin, identity.uid), ['institution'])]);
-      await writeProfileCopy(admin, identity.uid, clearFieldsWrite(profileDocument(admin, identity.uid), ['institution']));
+      // A legacy public profile may still hold the copy made while profiles
+      // existed; unlinking erases it there too.
+      await admin.commit([clearFieldsWrite(admin.name(['userProfiles', identity.uid]), ['institution'])]);
       return { institution: null };
     }
 
@@ -232,13 +216,13 @@ export async function handleInstitutionLinkRequest(request: Request, env: Worker
     // No existence precondition: during onboarding the user document may not
     // have been written yet, and the link must not have to wait for it.
     await admin.commit([mergeWrite(userDocument(admin, identity.uid), { institution }, { mustExist: false })]);
-    await writeProfileCopy(admin, identity.uid, mergeWrite(profileDocument(admin, identity.uid), { institution }));
     return { institution };
   } catch (error) {
     if (error instanceof InstitutionLinkError || error instanceof WorkerAuthError) throw error;
     if (error instanceof FirestoreAdminError) {
-      // Unlinking an account whose user document never existed has nothing to
-      // clear; the precondition failure is that, not a fault.
+      // Unlinking has nothing to clear in a document that never existed: the
+      // user document of an account that never onboarded, or the profile most
+      // accounts never had. The precondition failure is that, not a fault.
       if (pathname === INSTITUTION_UNLINK_PATH && error.status === 409) return { institution: null };
       throw new InstitutionLinkError('INSTITUTION_LINK_FAILED', 502);
     }

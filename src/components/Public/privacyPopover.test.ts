@@ -23,7 +23,7 @@ test('a visitor reaches the analytics switch and the policy from both guest bars
   // onboarding shares the shell and has Settings.
   const welcome = await read('./GuestWelcome.tsx');
   const barAction = welcome.slice(welcome.indexOf('barAction={('), welcome.indexOf(')}', welcome.indexOf('barAction={(')));
-  assert.match(barAction, /<PrivacyPopover className="gw-bar-button" \/>/);
+  assert.match(barAction, /<PrivacyPopover className=\{`gw-bar-button\$\{onLanding \? ' btn-halftone' : ''\}`\} \/>/);
   assert.doesNotMatch(await read('./WelcomeShell.tsx'), /PrivacyPopover/);
 
   // The policy is a page of its own, opened beside the app so the welcome keeps

@@ -94,7 +94,7 @@ import { useEffect, useRef } from 'react';
  * What keeps this from happening today is two facts about the app that live
  * entirely OUTSIDE this file — this hook enforces neither, so a change to
  * either would reopen the invariant without anything here noticing. First,
- * `/`, `/lists`, `/research`, `/following`, `/search` and `/explorer/:type/:id`
+ * `/`, `/lists`, `/following`, `/search` and `/explorer/:type/:id`
  * are sibling `<Route>`s inside the one `<Routes>` in App.jsx, so
  * EntityExplorer's and SearchPage's own `pdf` owners are never both mounted,
  * nor mounted alongside a fresh trigger for App's (`openPdf` is only ever

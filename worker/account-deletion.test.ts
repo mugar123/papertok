@@ -155,7 +155,7 @@ test('refuses a body that does not confirm', async () => {
   }
 });
 
-test('dissociates comments instead of deleting them, then finishes the tree', async () => {
+test('deletes its comments and the reports naming it, then finishes the tree', async () => {
   const restore = stubIdentityLookup();
   const admin = memoryAdmin({
     [`papers/${PAPER_KEY}/comments/c1`]: {
@@ -170,6 +170,9 @@ test('dissociates comments instead of deleting them, then finishes the tree', as
       text: 'Someone else',
       status: 'visible',
     },
+    'reports/r1': { reporterUid: UID, targetAuthorUid: 'other', reason: 'spam', note: 'mine' },
+    'reports/r2': { reporterUid: 'other', targetAuthorUid: UID, reason: 'abuse' },
+    'reports/r3': { reporterUid: 'other', targetAuthorUid: 'carol', reason: 'other' },
     [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'list-1' },
     [`publicLists/${SHARE}`]: { title: 'Reading' },
     [`users/${UID}/lists/list-1`]: { name: 'Reading', publicShareId: SHARE },
@@ -214,14 +217,11 @@ test('dissociates comments instead of deleting them, then finishes the tree', as
     }
     assert.equal(result!.complete, true);
     assert.equal(result!.stage, 'auth');
-    assert.deepEqual(admin.documents[`papers/${PAPER_KEY}/comments/c1`], {
-      authorUid: '',
-      authorHandle: '',
-      dissociated: true,
-      text: 'Keep the thread',
-      status: 'visible',
-    });
+    assert.equal(admin.documents[`papers/${PAPER_KEY}/comments/c1`], undefined);
     assert.equal(admin.documents[`papers/${PAPER_KEY}/comments/c2`].authorUid, 'other');
+    assert.equal(admin.documents['reports/r1'], undefined);
+    assert.equal(admin.documents['reports/r2'], undefined);
+    assert.equal(admin.documents['reports/r3'].reporterUid, 'other');
     assert.equal(admin.documents[`publicLists/${SHARE}`], undefined);
     assert.equal(admin.documents[`publicListOwners/${SHARE}`], undefined);
     assert.equal(admin.documents[`handles/${HANDLE}`], undefined);
@@ -255,8 +255,8 @@ test('a full comment page stops the slice so the next POST can continue', async 
   assert.equal(first.complete, false);
   assert.equal(first.stage, 'comments');
   assert.equal(
-    Object.values(admin.documents).filter(row => row?.dissociated === true).length,
-    80,
+    Object.keys(admin.documents).filter(key => key.startsWith(`papers/${PAPER_KEY}/comments/`)).length,
+    0,
   );
 });
 
@@ -273,7 +273,7 @@ test('a profile pointing at somebody else\'s handle does not free that handle', 
     fetchImpl: async () => new Response('{}', { status: 200 }),
   });
 
-  assert.equal(result.complete, true);
+  assert.equal(result!.complete, true);
   assert.deepEqual(admin.documents[`handles/${HANDLE}`], { uid: 'victim' });
   assert.equal(admin.documents[`userProfiles/${UID}`], undefined);
 });
@@ -335,7 +335,7 @@ test('USER_NOT_FOUND on Auth delete still completes, so a retry after Auth is go
       { status: 400 },
     ),
   });
-  assert.equal(result.complete, true);
+  assert.equal(result!.complete, true);
 });
 
 test('a stale session asks the user to sign in again instead of deleting Auth later', async () => {

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import type { Paper } from '../models/Paper.ts';
 
 import {
   EXPLORER_ROW_CHUNK,
@@ -74,6 +75,37 @@ test('filters project papers by text and top-level category', () => {
     filterAndSortEntityPapers(papers, { searchQuery: 'Ada', filters: { category: 'physics' } }).map(p => p.id),
     ['older-physics']
   );
+});
+
+// An OpenAlex work carries no arXiv category, only its topic's subfield and
+// field. Matching categories alone dropped every such row, so an author's or a
+// topic's list emptied as soon as a category was chosen, even for rows already
+// labelled with it.
+test('the category filter keeps a row by the area it is labelled with', () => {
+  const openAlexWork = (id: string, subfield: number, field: number) => ({
+    id,
+    title: id,
+    authors: [],
+    categories: ['Data imputation'],
+    primaryTopic: { subfield: { id: `https://openalex.org/subfields/${subfield}` }, field: { id: `https://openalex.org/fields/${field}` } } as Paper['primaryTopic'],
+  });
+  const rows = [
+    openAlexWork('decision-sciences', 1803, 18),
+    openAlexWork('mechanical', 2210, 22),
+    openAlexWork('electrical', 2208, 22),
+    ...papers,
+  ];
+
+  assert.deepEqual(filterAndSortEntityPapers(rows, { filters: { category: 'stat' } }).map(p => p.id), ['decision-sciences']);
+  assert.deepEqual(filterAndSortEntityPapers(rows, { filters: { category: 'mech' } }).map(p => p.id), ['mechanical']);
+  assert.deepEqual(filterAndSortEntityPapers(rows, { filters: { category: 'eess' } }).map(p => p.id), ['electrical']);
+  assert.deepEqual(filterAndSortEntityPapers(rows, { filters: { category: 'cs' } }).map(p => p.id), ['recent-cs']);
+});
+
+test('a cross-listed arXiv paper matches the area of any of its categories', () => {
+  const crossListed = { id: 'cross', title: 'x', authors: [], primaryCategory: 'cs.LG', categories: ['cs.LG', 'stat.ML'] };
+  assert.deepEqual(filterAndSortEntityPapers([crossListed], { filters: { category: 'stat' } }).map(p => p.id), ['cross']);
+  assert.deepEqual(filterAndSortEntityPapers([crossListed], { filters: { category: 'math' } }).map(p => p.id), []);
 });
 
 test('applies peer-review and date filters to project papers', () => {

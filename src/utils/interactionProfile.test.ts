@@ -234,6 +234,40 @@ test('the incremental path agrees with a rebuild from the same interactions', ()
   );
 });
 
+test('a rebuild keeps the newest like first, as the incremental path does', () => {
+  // Newest first, the order the loader and the backfill script pass.
+  const documents = ['c', 'b', 'a'].map((id, index) => ({
+    id,
+    data: { liked: true, paperCategory: 'cs.AI', timestamp: new Date(NOW - index * DAY_MS).toISOString() },
+  }));
+  const rebuilt = buildProfileFromInteractionDocuments(documents, { now: NOW });
+
+  const incremental = createEmptyInteractionProfile();
+  [...documents].reverse().forEach(({ id, data }) => {
+    recordInteractionEvent(
+      incremental,
+      { paperId: id, kind: 'like', category: data.paperCategory, timestamp: data.timestamp },
+      NOW,
+    );
+  });
+
+  assert.deepEqual(curatedIds(rebuilt, 'liked'), ['c', 'b', 'a']);
+  assert.deepEqual(curatedIds(rebuilt, 'liked'), curatedIds(incremental, 'liked'));
+});
+
+test('a rebuild over the cap keeps the newest likes', () => {
+  const overflow = 5;
+  const total = CURATED_ID_CAPS.liked + overflow;
+  // Newest first: p0 is the latest like.
+  const documents = Array.from({ length: total }, (_, index) => ({ id: `p${index}`, data: { liked: true } }));
+  const liked = curatedIds(buildProfileFromInteractionDocuments(documents, { now: NOW }), 'liked');
+
+  assert.equal(liked.length, CURATED_ID_CAPS.liked);
+  assert.equal(liked[0], 'p0');
+  assert.equal(liked.includes(`p${CURATED_ID_CAPS.liked - 1}`), true);
+  assert.equal(liked.includes(`p${CURATED_ID_CAPS.liked}`), false);
+});
+
 test('affinities stay inside the clamp however lopsided the history', () => {
   const profile = createEmptyInteractionProfile();
   for (let index = 0; index < 500; index += 1) {

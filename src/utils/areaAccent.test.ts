@@ -6,7 +6,9 @@ import {
   areaKeyForPaper,
   areaAccentForPaper,
   areaLabelForPaper,
+  openAlexFilterForArea,
 } from './areaAccent.ts';
+import { CATEGORIES } from '../data/categoryTaxonomy.ts';
 
 /* One resolution, used by the accent ink, the field label and the watermark
    alike. Computing any of them a second way is how a paper ends up inked as
@@ -32,6 +34,36 @@ test('an OpenAlex field id resolves, by number or by URL', () => {
   assert.equal(areaKeyForOpenAlexField({ id: 'https://openalex.org/fields/31' }), 'physics');
   assert.equal(areaKeyForOpenAlexField(9999), null);
   assert.equal(areaKeyForOpenAlexField(null), null);
+});
+
+// OpenAlex files mechanical, aerospace and civil work under Engineering and
+// finance under Economics, so by field alone they read as Electrical &
+// Electronic Engineering and Economics, and the Explorer's filter for their
+// own area never found them.
+test('an OpenAlex subfield that belongs elsewhere outranks its field', () => {
+  const work = (subfield: number, field: number) => ({
+    primaryTopic: { subfield: { id: `https://openalex.org/subfields/${subfield}` }, field: { id: `https://openalex.org/fields/${field}` } },
+  } as Parameters<typeof areaKeyForPaper>[0]);
+  assert.equal(areaKeyForPaper(work(2210, 22)), 'mech');
+  assert.equal(areaKeyForPaper(work(2202, 22)), 'mech');
+  assert.equal(areaKeyForPaper(work(2205, 22)), 'civil');
+  assert.equal(areaKeyForPaper(work(2208, 22)), 'eess');
+  assert.equal(areaKeyForPaper(work(2003, 20)), 'q-fin');
+  assert.equal(areaKeyForPaper(work(2002, 20)), 'econ');
+  assert.equal(areaKeyForPaper(work(2506, 25)), 'chemeng');
+});
+
+// What the Explorer asks OpenAlex for is what its rows are labelled with, and
+// no area of the filter sheet goes to OpenAlex unfiltered.
+test('every area has an OpenAlex filter built from the tables that label its rows', () => {
+  for (const area of Object.keys(CATEGORIES)) {
+    assert.ok(openAlexFilterForArea(area), `${area} has no OpenAlex filter`);
+  }
+  assert.equal(openAlexFilterForArea('cs'), 'primary_topic.field.id:17');
+  assert.equal(openAlexFilterForArea('chemeng'), 'primary_topic.field.id:15|25');
+  assert.equal(openAlexFilterForArea('mech'), 'primary_topic.subfield.id:2202|2203|2206|2210|2211');
+  assert.equal(openAlexFilterForArea('q-fin'), 'primary_topic.subfield.id:2003');
+  assert.equal(openAlexFilterForArea('nonsense'), null);
 });
 
 /* The bug this file exists to keep fixed: Research's papers carry neither an

@@ -7,9 +7,8 @@ import { LEGACY_STORED_SUMMARY_CAP, STORED_AUTHOR_CAP, STORED_SUMMARY_CAP } from
  * Whether the copy of a paper a link handed over is worth painting as the
  * page, or only worth keeping as the fallback.
  *
- * The screens that hand the paper page a stored copy — a list, a profile tab —
- * carry a title, authors and sometimes a truncated summary, and often no
- * abstract at all. Painting such a copy on arrival showed "Abstract
+ * A list hands the paper page a stored copy: a title, authors and sometimes
+ * a truncated summary, and often no abstract at all. Painting such a copy on arrival showed "Abstract
  * unavailable." for a beat and then, when arXiv and OpenAlex answered, the
  * real text popped in under it. A copy with no abstract is not the paper yet:
  * the page shows its skeleton until the providers answer, exactly as it does

@@ -5,8 +5,8 @@
  * read, with a signal that ends it — what the SDK's listen stream cannot give.
  *
  * Deliberately anonymous. Everything read through it is open to
- * `request.auth == null` under the rules (public lists, public profiles), and
- * a token would cost a CORS preflight per URL — one extra round trip per read.
+ * `request.auth == null` under the rules (public lists), and a token would
+ * cost a CORS preflight per URL — one extra round trip per read.
  */
 import app from './firebase.ts';
 import { createFirestoreRest } from '../utils/firestoreRest.ts';

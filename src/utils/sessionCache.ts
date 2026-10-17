@@ -1,6 +1,6 @@
 /**
  * A small keep-while-the-tab-lives cache for screens that unmount and remount
- * constantly (profile ⇄ settings, the comments sheet opening and closing).
+ * constantly (the lists page, and the save-to-list modal opening and closing).
  *
  * Every one of those remounts used to start from nothing and re-read
  * everything it had shown two seconds earlier — each pass a fresh set of

@@ -10,7 +10,7 @@ const LABELS: Record<string, string> = {
   // Each settings page titles itself "<page> · Settings" (SettingsPage.jsx),
   // so the announcement calls the page what the page calls itself.
   '/settings': 'Settings',
-  '/settings/profile': 'Profile & account · Settings',
+  '/settings/profile': 'Account · Settings',
   '/settings/discovery': 'Discovery · Settings',
   '/settings/reading': 'Reading & AI · Settings',
   '/settings/notifications': 'Notifications · Settings',

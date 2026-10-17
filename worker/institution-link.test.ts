@@ -140,8 +140,6 @@ test('links the institution of the session\'s own verified address and stores it
       verifiedAt: '2026-10-13T10:00:00.000Z',
     });
     assert.deepEqual(admin.documents[`users/${UID}`], { institution: payload.institution });
-    // No public profile yet: nothing to copy to, and no failure either.
-    assert.equal(admin.documents[`userProfiles/${UID}`], undefined);
     // One field, no existence precondition: onboarding links before the
     // document exists.
     const [write] = admin.commits[0];
@@ -170,8 +168,8 @@ test('a second account\'s token proves the institution for a session on another 
     assert.equal((admin.documents[`users/${UID}`] as { onboardingComplete: boolean; institution: { domain: string } }).institution.domain, 'usal.es');
     assert.equal(admin.documents[`users/${UID}`].onboardingComplete, true);
     assert.equal(admin.documents['users/other-uid'], undefined);
-    // And copied to the public profile, which the page shows to everyone.
-    assert.deepEqual(admin.documents[`userProfiles/${UID}`], { handle: 'alice', displayName: 'Alice', institution: payload.institution });
+    // A legacy public profile is not written: nothing shows it any more.
+    assert.deepEqual(admin.documents[`userProfiles/${UID}`], { handle: 'alice', displayName: 'Alice' });
   } finally {
     upstream.restore();
   }
@@ -261,7 +259,16 @@ test('unlinking clears the field and tolerates a document that never existed', a
     const payload = await handleInstitutionLinkRequest(linkRequest({}, { path: INSTITUTION_UNLINK_PATH }), SERVICE, { admin });
     assert.deepEqual(payload, { institution: null });
     assert.deepEqual(admin.documents[`users/${UID}`], { onboardingComplete: true });
+    // A legacy public profile loses its old copy too: unlinking erases the
+    // university wherever this account stored it.
     assert.deepEqual(admin.documents[`userProfiles/${UID}`], { handle: 'alice' });
+
+    // Most accounts never had a profile: the missing one is not a failure.
+    const noProfile = memoryAdmin({ [`users/${UID}`]: { institution: { domain: 'usal.es' } } });
+    const cleared = await handleInstitutionLinkRequest(linkRequest({}, { path: INSTITUTION_UNLINK_PATH }), SERVICE, { admin: noProfile });
+    assert.deepEqual(cleared, { institution: null });
+    assert.deepEqual(noProfile.documents[`users/${UID}`], {});
+    assert.equal(noProfile.documents[`userProfiles/${UID}`], undefined);
 
     const empty = memoryAdmin();
     const again = await handleInstitutionLinkRequest(linkRequest({}, { path: INSTITUTION_UNLINK_PATH }), SERVICE, { admin: empty });

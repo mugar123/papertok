@@ -1,6 +1,6 @@
 import type { Paper, PaperAuthor } from '../models/Paper.ts';
 
-import { CATEGORIES } from '../data/categories.ts';
+import { areaKeyForCategory, areaKeyForPaper } from './areaAccent.ts';
 
 function getPaperTimestamp(paper: Partial<Paper>) {
   const timestamp = new Date(paper.published || paper.publicationDate || '').getTime();
@@ -9,15 +9,15 @@ function getPaperTimestamp(paper: Partial<Paper>) {
   return Number.isFinite(year) ? new Date(`${year}-01-01T00:00:00Z`).getTime() : 0;
 }
 
+// The area a row is labelled with (areaKeyForPaper) is the one the filter
+// keeps: an OpenAlex work has no arXiv category, only its topic's subfield and
+// field, and matching categories alone dropped every such row. A cross-listed
+// arXiv paper also matches the areas of its other categories.
 function matchesCategory(paper: Partial<Paper>, areaId: string | undefined) {
   if (!areaId) return true;
-  const categories = [
-    paper.primaryCategory,
-    ...(paper.categories || []),
-    ...(paper.allCategories || []),
-  ].filter(Boolean);
-  const areaCategories = Object.keys(CATEGORIES[areaId as keyof typeof CATEGORIES]?.subcategories || {});
-  return categories.includes(areaId) || categories.some(category => areaCategories.includes(category!));
+  if (areaKeyForPaper(paper) === areaId) return true;
+  return [paper.primaryCategory, ...(paper.categories || []), ...(paper.allCategories || [])]
+    .some(category => areaKeyForCategory(category) === areaId);
 }
 
 export function getPaperCitationCount(paper: Partial<Paper> | null | undefined) {

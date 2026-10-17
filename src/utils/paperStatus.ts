@@ -15,10 +15,10 @@ type OpenCopy = Partial<NonNullable<ReturnType<typeof mapUnpaywallResult>>> | nu
  * chips had no JSX left anywhere; `.pc-chip--preprint` and `.pc-chip--open`
  * survived in the stylesheet as rules nothing rendered.
  *
- * The Research hero still answered both, from its own copy of the tests, and
- * the two copies had already drifted: the card asked `publicationStatus`, the
- * hero asked `publicationStatus || publicationType`. Same paper, two answers.
- * One place, so the word on a card and the word on the report cannot disagree.
+ * The Research hero, since removed, answered both from its own copy of the
+ * tests, and the two copies had already drifted: the card asked
+ * `publicationStatus`, the hero asked `publicationStatus || publicationType`.
+ * Same paper, two answers. One place, so no two screens can disagree.
  */
 
 /**

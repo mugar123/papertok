@@ -721,8 +721,8 @@ const PaperCard = memo(function PaperCard({
   /**
    * What the panel is showing, and a key that changes only when the words do.
    *
-   * The screens that hand this card a stored copy of a paper — a list, a
-   * profile tab — carry no abstract at all: `serializeLibraryPaper` keeps a
+   * A list hands this card a stored copy of a paper, which carries no
+   * abstract at all: `serializeLibraryPaper` keeps a
    * title, authors and a truncated summary, not the text. So a paper opened
    * from Favourites paints "Abstract unavailable." and then, a beat later,
    * arXiv and OpenAlex answer with the real thing.

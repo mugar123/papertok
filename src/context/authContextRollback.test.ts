@@ -10,7 +10,7 @@ const stripComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(
 test('optimistic rollbacks only run for the session that started the write', async () => {
   const src = stripComments(await readFile(new URL('./AuthContext.tsx', import.meta.url), 'utf8'));
   const rollbacks = src.match(/catch \(updateError\) \{[^}]*\}/g) || [];
-  assert.equal(rollbacks.length, 2);
+  assert.equal(rollbacks.length, 1);
   const setters = [];
   for (const block of rollbacks) {
     assert.match(block, /auth\.currentUser\?\.uid === userId/);
@@ -20,7 +20,7 @@ test('optimistic rollbacks only run for the session that started the write', asy
     setters.push(guarded[1]);
     assert.match(block, /throw updateError/);
   }
-  assert.deepEqual(setters.sort(), ['setProfilePhoto', 'setReadingPreferences']);
+  assert.deepEqual(setters, ['setReadingPreferences']);
 });
 
 test('completeOnboarding flips the flag only after the document write has landed', async () => {
@@ -96,16 +96,4 @@ test('completeOnboarding gives a write timeout a stable code, and leaves a rejec
     'a timeout must carry a stable code the caller can branch on, not a message to match against',
   );
   assert.match(fn[0], /throw settled\.reason;/, 'a real rejection (a rules refusal, say) is rethrown as itself, not relabelled');
-});
-
-test('updateProfilePhoto bounds its write and names the timeout', async () => {
-  // The settings screen holds its photo spinner until this settles, and a
-  // Firestore write against a stalled connection never settles on its own.
-  const src = stripComments(await readFile(new URL('./AuthContext.tsx', import.meta.url), 'utf8'));
-  const fn = src.match(/const updateProfilePhoto = useCallback(?:<[^;\n]+>)?\(async \(value: unknown\) => \{[\s\S]*?\n {2}\}, \[profilePhoto, user\?\.uid\]\);/);
-  assert.ok(fn, 'updateProfilePhoto is gone or reshaped');
-  assert.match(fn[0], /await settleWithin\(\s*setDoc\(doc\(db, 'users', userId\)/);
-  assert.doesNotMatch(fn[0], /await setDoc\(/, 'no unbounded write left behind');
-  assert.match(fn[0], /if \(settled\.status === 'timed_out'\) \{[\s\S]*?\.code = 'PROFILE_PHOTO_WRITE_TIMEOUT';[\s\S]*?throw /);
-  assert.match(fn[0], /throw settled\.reason;/);
 });

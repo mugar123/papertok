@@ -225,15 +225,15 @@ export function paperLegacyAdapter(legacyPaper: StoredPaperInput): Paper | Store
   // paper page.
   const arxivId = readArxivId(legacyPaper.arxivId) || readArxivId(legacyPaper.id);
   const year = legacyPaper.published
-    ? new Date(legacyPaper.published).getFullYear() 
+    ? new Date(legacyPaper.published).getFullYear()
     : (legacyPaper.year || new Date().getFullYear());
 
-  const authors = Array.isArray(legacyPaper.authors) 
+  const authors = Array.isArray(legacyPaper.authors)
     ? legacyPaper.authors.map(a => typeof a === 'string' ? { name: a } : a)
     : [];
 
   const openAlexData = legacyPaper.openAlex || {};
-  
+
   let doi = legacyPaper.doi || openAlexData.doi || '';
   if (doi && doi.startsWith('https://doi.org/')) {
     doi = doi.replace('https://doi.org/', '');

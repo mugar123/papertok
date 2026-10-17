@@ -737,10 +737,10 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     if (!supportsRewrite) return undefined;
     const requestKey = rewriteCacheKey(paper, level, 'en');
     if (requestedRewriteRef.current === requestKey) return undefined;
-    // Deferred so the request starts after this render commits, matching how
-    // the report page kicks off its own fetches. The key is claimed inside the
-    // timer rather than before it: an effect torn down before its timer fires
-    // has requested nothing, and must leave the rewrite pending, not swallowed.
+    // Deferred so the request starts after this render commits. The key is
+    // claimed inside the timer rather than before it: an effect torn down
+    // before its timer fires has requested nothing, and must leave the rewrite
+    // pending, not swallowed.
     const timerId = setTimeout(() => {
       requestedRewriteRef.current = requestKey;
       load(level);
