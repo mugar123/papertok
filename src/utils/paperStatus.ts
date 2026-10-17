@@ -152,26 +152,12 @@ export function isPublishedVersionCopy(copy: OpenCopy) {
 /**
  * The availability chip for a paper, or null when the record cannot say.
  *
- * `institutionAccess` is the reader's library's answer
- * (`findInstitutionAccess`), and `institutionLabel` the short name it is shown
- * under. Only `entitled` changes the chip, and never over a paper whose own
- * record is open: what anyone can read is still said first. A free copy found
- * elsewhere does not outrank it, because the button opens the library's
- * version of record first on such a paper (`paperOpenTargets.js`), and the
- * chip has to say what the button does. `unknown` and `not-entitled` leave
- * whatever the record said, because a library that could not answer has not
- * said the paper is paywalled.
+ * The reader's library is not in here on purpose: what anyone can read is
+ * what the chip says, and the way in through a library is the button's to
+ * name (`PaperCard`), since the button is what goes through it.
  */
-export function accessTagForPaper(paper: Partial<Paper> | null | undefined, { openCopy = null, institutionAccess = null, institutionLabel = '' }: { openCopy?: OpenCopy; institutionAccess?: { status?: string } | null; institutionLabel?: string } = {}) {
+export function accessTagForPaper(paper: Partial<Paper> | null | undefined, { openCopy = null }: { openCopy?: OpenCopy } = {}) {
   const status = accessStatusForPaper(paper, { openCopy });
-  if (accessStatusForPaper(paper) !== 'open' && institutionAccess?.status === 'entitled' && institutionLabel) {
-    return {
-      key: 'institution',
-      tone: 'blue',
-      label: `Via ${institutionLabel}`,
-      hint: 'Your library gives you access to the published version.',
-    };
-  }
   if (!status) return null;
   // "Open version" says the published one is paid, which is false for a copy
   // that IS the published one.

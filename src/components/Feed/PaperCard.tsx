@@ -135,7 +135,6 @@ const STATUS_CHIP_ICONS = {
   preprint: FileText,
   open: LockOpen,
   openCopy: LockOpen,
-  institution: GraduationCap,
   subscription: Lock,
 };
 import { buildFollowReasonLabel } from '../../utils/followingFeed.ts';
@@ -1375,7 +1374,7 @@ const PaperCard = memo(function PaperCard({
     : null;
   // Judged by the record alone, like the chip (`accessTagForPaper`): a free
   // copy found elsewhere must not decide whether the library is asked, or the
-  // chip and the button would depend on which lookup answered first.
+  // button's label would depend on which lookup answered first.
   const isOpenByRecord = accessStatusForPaper(paper) === 'open';
 
   // Whether the reader's library has the published version. Asked only for a
@@ -1448,11 +1447,7 @@ const PaperCard = memo(function PaperCard({
   // free at the publisher is open access, anything else is a weaker "open
   // version" (`paperStatus.js`).
   const reviewTag = reviewTagForPaper(paper);
-  const accessTag = accessTagForPaper(paper, {
-    openCopy: resolvedOpenCopy,
-    institutionAccess: currentInstitutionAccess,
-    institutionLabel: institutionLabel(institution),
-  });
+  const accessTag = accessTagForPaper(paper, { openCopy: resolvedOpenCopy });
   const researchResources = linkedResources.paperId === paper.id ? linkedResources.items : [];
   const readablePaper = useMemo(() => resolvedOpenCopy ? {
     ...paper,
@@ -1478,23 +1473,31 @@ const PaperCard = memo(function PaperCard({
     const reported = method === 'clipboard' || method === 'instagram' ? 'clipboard' : 'other';
     trackEvent('share', { method: reported, content_type: 'paper', surface: analyticsSurface });
   };
-  const restingActionLabel = resolvedOpenCopy
-    ? ('Read open version')
-    : paper.openAccessPdfUrl
-      ? ('Read full text')
-      : (!paper.pdfUrl && !paper.arxivId)
-        ? ('Source')
-        : ('Read article');
+  // The library's short name when the button goes through it: an entitled
+  // answer puts the library's version of record first among the open targets
+  // (`paperOpenTargets.ts`), so the button says so instead of "Source", and
+  // the chip above it keeps saying what the record says for everyone.
+  const libraryLabel = currentInstitutionAccess?.status === 'entitled' ? institutionLabel(institution) : '';
+  const restingActionLabel = libraryLabel
+    ? `Via ${libraryLabel}`
+    : resolvedOpenCopy
+      ? ('Read open version')
+      : paper.openAccessPdfUrl
+        ? ('Read full text')
+        : (!paper.pdfUrl && !paper.arxivId)
+          ? ('Source')
+          : ('Read article');
   const primaryActionLabel = isResolvingAccess
     ? ('Finding access...')
     : restingActionLabel;
   // What the phone shows, where the full label does not fit: its first word
-  // ("Leer", "Fuente"). Derived rather than written twice, so it cannot drift
-  // from the full label, which is the accessible name and so always contains
-  // the word on screen (WCAG 2.5.3). While access is being looked up the word
-  // is hidden under the spinner (PaperCard.css), so the resting one keeps the
-  // button's width: "Buscando" would not fit the row at 360px.
-  const primaryActionShortLabel = restingActionLabel.split(' ')[0];
+  // ("Read", "Source"), or the library's name alone, since "Via" says nothing
+  // by itself. Derived rather than written twice, so it cannot drift from the
+  // full label, which is the accessible name and so always contains the word
+  // on screen (WCAG 2.5.3). While access is being looked up the word is hidden
+  // under the spinner (PaperCard.css), so the resting one keeps the button's
+  // width: "Finding" would not fit the row at 360px.
+  const primaryActionShortLabel = libraryLabel || restingActionLabel.split(' ')[0];
   /* El `aria-label` repite EL MISMO rótulo, no uno mejor. En móvil
    `.pc-action-label` es `display: none` (PaperCard.css), y eso no
    esconde el texto: lo saca del árbol de accesibilidad, así que el
@@ -1516,7 +1519,9 @@ const PaperCard = memo(function PaperCard({
       disabled={isResolvingAccess}
       aria-label={primaryActionLabel}
     >
-      {isResolvingAccess ? <CircleNotch className="spinning" size={16} /> : <FileText size={16} />}
+      {isResolvingAccess
+        ? <CircleNotch className="spinning" size={16} />
+        : libraryLabel ? <GraduationCap size={16} /> : <FileText size={16} />}
       <span className="pc-action-label">{primaryActionLabel}</span>
       <span className="pc-action-label--short">{primaryActionShortLabel}</span>
     </Button>

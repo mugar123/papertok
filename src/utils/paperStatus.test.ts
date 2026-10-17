@@ -97,32 +97,10 @@ test('an accepted manuscript at the publisher is still only a version of the pap
   assert.equal(accessTagForPaper({ openAccess: false }, { openCopy: manuscript })!.key, 'openCopy');
 });
 
-test('a library that gives access names itself on a paywalled paper', () => {
-  const entitled = { status: 'entitled', collection: 'Elsevier ScienceDirect', url: 'https://resolver.example/x' };
-  const tag = accessTagForPaper({ openAccess: false }, { institutionAccess: entitled, institutionLabel: 'USAL' });
-  assert.deepEqual(tag, {
-    key: 'institution',
-    tone: 'blue',
-    label: 'Via USAL',
-    hint: 'Your library gives you access to the published version.',
-  });
-  // A record that says nothing about access is not open either.
-  assert.equal(accessTagForPaper({}, { institutionAccess: entitled, institutionLabel: 'Universidad de Salamanca' })!.label,
-    'Via Universidad de Salamanca');
-  // Open access is said first: anyone can read it.
-  assert.equal(accessTagForPaper({ openAccess: true }, { institutionAccess: entitled, institutionLabel: 'USAL' })!.label, 'Open access');
-  // A free copy elsewhere does not outrank the library: the button opens the
-  // version of record through the library first, and the chip says so.
-  assert.equal(accessTagForPaper({ openAccess: false }, { openCopy: REPOSITORY_COPY, institutionAccess: entitled, institutionLabel: 'USAL' })!.label,
-    'Via USAL');
-});
-
-test('a library that could not answer, or said no, leaves the record\'s word', () => {
-  for (const status of ['unknown', 'not-entitled']) {
-    const institutionAccess = { status, collection: null, url: null };
-    assert.equal(accessTagForPaper({ openAccess: false }, { institutionAccess, institutionLabel: 'USAL' })!.label, 'Subscription');
-    assert.equal(accessTagForPaper({}, { institutionAccess, institutionLabel: 'USAL' }), null);
-  }
+test('the chip takes no word from the library: a paywalled paper reads Subscription for everyone', () => {
+  // The library's way in is the button's to name (`PaperCard`).
+  assert.equal(accessTagForPaper({ openAccess: false })!.label, 'Subscription');
+  assert.equal(accessTagForPaper({}), null);
 });
 
 test('a downloadable pdf counts as open', () => {
