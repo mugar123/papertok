@@ -48,19 +48,20 @@
 
     <main class="lp-doc">
       <h1>Privacy policy</h1>
-      <p class="lp-updated">Last updated 16 October 2026.</p>
+      <p class="lp-updated">Last updated 17 October 2026.</p>
 
       <p class="lp-lede">
-        PaperTok is an application for discovering and reading scientific research. This
-        page describes what data is collected, why, where it is kept and who it is shared
-        with. It is written from what the code actually does, not from a template.
+        PaperTok is an application for discovering and reading scientific research. It is
+        not meant for people under 16. This page describes what data is collected, why,
+        where it is kept and who it is shared with. It is written from what the code
+        actually does, not from a template.
       </p>
 
       <section class="lp-short" aria-labelledby="in-short">
         <h2 id="in-short">In short</h2>
         <ul>
           <li>You can use PaperTok without an account. The feed, search and the public pages work signed out, and nothing that identifies you is stored.</li>
-          <li>Analytics uses no cookies and never records which paper you read or what you searched for. You can turn it off in Settings or, without an account, with the Privacy button at the top of the screen.</li>
+          <li>Analytics sets no tracking cookies and never records which paper you read or what you searched for. You can turn it off in Settings or, without an account, with the Privacy button at the top of the screen.</li>
           <li>Nothing is sold and nothing is shared for advertising. Only the providers that make the app work handle your data.</li>
           <li>You can delete your account, and everything in it, from Settings → Account → Delete account.</li>
           <li>For anything else, write to <a href="mailto:nicomg60@gmail.com">nicomg60@gmail.com</a>.</li>
@@ -104,12 +105,12 @@
               <td>Kept, but no longer shown to anyone</td>
             </tr>
             <tr>
-              <td>Lists, saved papers and highlights</td>
+              <td>Lists, saved papers (with any notes and tags you add) and highlights</td>
               <td>Your use of the app</td>
               <td>So your library is still there next time</td>
             </tr>
             <tr>
-              <td>Authors, institutions and topics you follow</td>
+              <td>Authors, institutions, topics and research projects you follow</td>
               <td>Your use of the app</td>
               <td>Building your feed and, if you turn them on, your email updates</td>
             </tr>
@@ -119,14 +120,19 @@
               <td>Kept, but no longer shown to anyone</td>
             </tr>
             <tr>
-              <td>Interactions with papers (likes, skips, reads)</td>
+              <td>Interactions with papers (likes, skips, reads, how long you read and the type of device)</td>
               <td>Your use of the app</td>
               <td>Not showing you the same paper twice, and ordering the feed</td>
             </tr>
             <tr>
-              <td>Language, theme and notification preferences</td>
+              <td>Your scientific interests and your AI explanation level</td>
               <td>You choose them</td>
-              <td>So the app behaves the same on every device</td>
+              <td>Building your feed, and keeping your choices the same on every device</td>
+            </tr>
+            <tr>
+              <td>Your university, if you verify it: its name, web domain and registry identifiers, and the date</td>
+              <td>Signing in with your university's Google account; the email address itself is not kept</td>
+              <td>Showing which papers your university gives you access to</td>
             </tr>
           </tbody>
         </table>
@@ -155,20 +161,23 @@
       <h2>Email updates</h2>
       <p>
         If you turn them on, PaperTok emails you what is new from what you follow. For that
-        it stores your email address, your sending preferences and an unsubscribe
-        identifier, in <strong>Cloudflare Workers KV</strong>. <strong>Brevo</strong> sends
-        the emails.
+        it stores, in <strong>Cloudflare Workers KV</strong>, your email address and name, a
+        copy of what you follow with a few recent papers from it, your sending preferences,
+        an unsubscribe identifier, the papers already sent to you (so none is sent twice) and
+        whether the last email went out. <strong>Brevo</strong> sends the emails and receives
+        your address and name to do so. If you ask for them on the welcome screens, your
+        account keeps that answer until you follow something, and then the emails start.
       </p>
       <p>
         The legal basis is your consent, and you can withdraw it whenever you like: every
         email carries a one-click unsubscribe link, and you can also turn updates off in
-        Settings. Unsubscribing deletes the subscription.
+        Settings. Unsubscribing deletes all of it.
       </p>
 
       <h2>Analytics</h2>
       <p>
         PaperTok measures how the application is used with two services, and
-        <strong>neither uses cookies</strong>. <strong>Vercel Web Analytics</strong> counts page
+        <strong>neither sets cookies</strong>. <strong>Vercel Web Analytics</strong> counts page
         views and the country a visit comes from: to tell visits apart, Vercel derives an
         identifier from the browser itself that expires every day and cannot follow you from
         one day to the next or across sites. <strong>PostHog</strong>, on its servers in the
@@ -184,8 +193,11 @@
         permission before measuring. You can <strong>object whenever you like</strong> by
         turning it off in Settings → Privacy or, without an account, with the Privacy
         button at the top of the welcome screens and the feed. The choice is kept in this
-        browser and turns off both services: from then on nothing new is recorded from it,
-        and from your next visit neither library is even loaded.
+        browser, in its storage and in a preference cookie,
+        <code>papertok_analytics_decision</code>, which holds only that choice and lasts a
+        year. Turning analytics off stops both services: from then on nothing new is
+        recorded from this browser, and from your next visit neither library is even
+        loaded.
       </p>
       <p>
         What is sent is the page you are on, with the path stripped of identifiers, to both
@@ -209,16 +221,34 @@
         Face, Unpaywall and OpenCitations, among others.
       </p>
       <p>
-        Those queries <strong>do not leave from your browser</strong>: they go through an
-        intermediate server on Cloudflare, so those repositories never receive your IP
-        address. That server logs the volume of requests, to respect each source's limits,
-        not who makes them.
+        Most requests go through an intermediate server on Cloudflare, so the repositories
+        behind them do not receive your IP address. That includes searches for papers,
+        authors and topics, and the papers in your feed. <strong>Some lookups go straight
+        from your browser</strong> to the service that answers them, and that service
+        receives your IP address and what was asked, as any website you visit does:
+      </p>
+      <ul>
+        <li>figure images of arXiv papers, from arXiv;</li>
+        <li>datasets and software linked to a paper, from DataCite;</li>
+        <li>details of PubMed papers, from Europe PMC;</li>
+        <li>research projects, from OpenAIRE: the project behind a paper, project pages and their papers, and project searches, which send what you typed;</li>
+        <li>institutions and authors, from ROR, ORCID, Wikidata, Wikipedia and Crossref, including institution searches, which send what you typed;</li>
+        <li>a PDF you open on a computer, from the site that hosts it.</li>
+      </ul>
+      <p>
+        The Cloudflare server counts requests to stay within each source's limits. Some
+        features need an account, such as AI rewrites, publishing a list, related papers
+        and a few sources; for those it counts requests per account and deletes the counts
+        within three days.
       </p>
       <p>
-        Paper explanations and rewrites are generated by an open language model, DeepSeek
-        V4 Flash, run by NaN Builders on servers in the European Union. That model receives
-        the paper's text and the language and level you choose, never your identity or your
-        email.
+        Plain-language rewrites of a paper, and explanations of a passage you select in a
+        rewrite, are generated by an open language model, DeepSeek V4 Flash, run by NaN
+        Builders on servers in the European Union. For a rewrite, Cloudflare Workers AI first turns the
+        paper's PDF into text; the model receives that text (or the PDF itself, when no text
+        can be extracted), the paper's title, year and DOI, and the level you choose. For a
+        passage, it receives the passage, its paragraph, the paper's title and the level. It
+        never receives your identity, your email or your IP address.
       </p>
 
       <h2>Who it is shared with</h2>
@@ -230,18 +260,21 @@
         <li><strong>Google</strong> (Firebase Authentication, Firestore) — accounts and app data.</li>
         <li><strong>Vercel</strong> — hosting, page-view analytics, and relaying analytics requests to PostHog.</li>
         <li><strong>PostHog</strong> — analytics of what is done in the application, on servers in the European Union.</li>
-        <li><strong>Cloudflare</strong> (Workers, KV) — the intermediate server and email-update storage.</li>
+        <li><strong>Cloudflare</strong> (Workers, KV, Workers AI) — the intermediate server, email-update storage, and turning a paper's PDF into text for a rewrite.</li>
+        <li><strong>NaN Builders</strong> — generating rewrites and passage explanations, on servers in the European Union. It receives paper text and the passages you select, never who asked.</li>
         <li><strong>Brevo</strong> — sending the emails.</li>
       </ul>
 
       <h2>How long it is kept</h2>
       <p>
         Your account data is kept for as long as the account exists. You can delete it from
-        <strong>Settings → Account → Delete account</strong>. That deletes your lists, your
-        highlights, what you follow, your preferences, the email subscription and the
-        sign-in account, along with what earlier versions of PaperTok kept for you: your
-        public profile, the photo you uploaded, the people you followed, your comments, the
-        content reports you filed and those filed about your comments.
+        <strong>Settings → Account → Delete account</strong>. That deletes your lists and the
+        public copies of any you published, your saved papers, your highlights, your likes,
+        skips and reading history, what you follow, your preferences, your verified
+        university, the email subscription and the sign-in account, along with what earlier
+        versions of PaperTok kept for you: your public profile, the photo you uploaded, the
+        people you followed, your comments, the content reports you filed and those filed
+        about your comments.
       </p>
 
       <h2>Your rights</h2>
@@ -259,11 +292,12 @@
 
       <h2>Storage in your browser</h2>
       <p>
-        PaperTok keeps a few things in your own browser, and no server reads them: the light
-        or dark theme, the language, your choice about analytics, a session cache so the
-        application does not reload from scratch when you come back, and the marks analytics
-        uses to count a first visit per session, a first real use and a return a week later
-        once each, without knowing who you are. They are cleared when you clear the site's
+        PaperTok keeps a few things in your own browser, and nothing on the server uses them:
+        the light or dark theme, your answers to the welcome screens, your choice about
+        analytics (also kept in the preference cookie described under Analytics), a session
+        cache so the application does not reload from scratch when you come back, and the
+        marks analytics uses to count a first visit per session, a first real use and a
+        return a week later once each, without knowing who you are. They are cleared when you clear the site's
         data, and the analytics marks also when you turn analytics off.
       </p>
 
