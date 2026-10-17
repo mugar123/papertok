@@ -50,5 +50,7 @@ test('provider chips and the abstract are marked as English', () => {
     card,
     /className=\{`pc-semantic-tag pc-topic-link [^`]*`\}\s*lang=\{tag\.lang\}\s*onClick=\{\(event\) => openTopic\(event, topic\)\}/,
   );
-  assert.match(card, /<motion\.p\s+key=\{abstractKey\}\s+ref=\{attachAbstractBody\}\s+lang=\{abstractText \? 'en' : undefined\}/);
+  // Only the paragraph that carries words is marked; the no-abstract state is
+  // the app's own copy.
+  assert.match(card, /<motion\.p\s+key=\{abstractKey\}\s+ref=\{attachAbstractBody\}\s+lang="en"/);
 });

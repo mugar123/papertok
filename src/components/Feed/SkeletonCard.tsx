@@ -1,28 +1,53 @@
+import './PaperCard.css';
 import './SkeletonCard.css';
 
+// Enough lines to fill a tall phone's well; the well clips the rest, as the
+// real one clips a long abstract.
+const ABSTRACT_LINES = [100, 97, 100, 94, 100, 98, 100, 91, 100, 96, 100, 88, 100, 95, 100, 93, 100, 97, 100, 90, 100, 96, 100, 89];
+
+/**
+ * The card while its paper loads. Built on the card's own frame (`.pc`,
+ * `.pc-sheet`, `.pc-body`, the rail), so it takes the real card's width,
+ * centring and rail at every breakpoint and the swap lands where the paper
+ * will be. Only the rows are its own: a kicker, chips, a two-line title, the
+ * byline over its rule, the abstract's lines, the actions, the rail's tiles.
+ * Decoration for assistive tech; the page announces the loading itself.
+ */
 export default function SkeletonCard() {
   return (
-    <div className="sk">
-      <div className="sk-bg" />
-      <div className="sk-body">
-        <div className="sk-meta">
-          <div className="sk-pill" />
-          <div className="sk-small" />
-          <div className="sk-small" />
+    <div className="pc sk" aria-hidden="true">
+      <div className="pc-sheet">
+        <div className="pc-body">
+          <div className="sk-row sk-meta">
+            <span className="sk-block" style={{ width: '7.5rem' }} />
+            <span className="sk-block" style={{ width: '2.5rem' }} />
+            <span className="sk-block" style={{ width: '5rem' }} />
+          </div>
+          <div className="sk-row sk-chips">
+            <span className="sk-block" style={{ width: '6.5rem' }} />
+            <span className="sk-block" style={{ width: '3.5rem' }} />
+          </div>
+          <div className="sk-title">
+            <span className="sk-block" style={{ width: '94%' }} />
+            <span className="sk-block" style={{ width: '58%' }} />
+          </div>
+          <div className="sk-row sk-authors">
+            {[0, 1, 2].map((i) => <span key={i} className="sk-block" style={{ '--i': i }} />)}
+          </div>
+          <div className="sk-abstract">
+            {ABSTRACT_LINES.map((width, i) => (
+              <span key={i} className="sk-block sk-line" style={{ width: `${width}%` }} />
+            ))}
+          </div>
+          <span className="sk-block sk-toggle" />
+          <div className="pc-action-bar">
+            <span className="sk-block sk-button sk-button--read" />
+            <span className="sk-block sk-button sk-button--plain" />
+          </div>
         </div>
-        <div className="sk-title" />
-        <div className="sk-title sk-title--short" />
-        <div className="sk-authors">
-          <div className="sk-avatar" />
-          <div className="sk-avatar" />
-          <div className="sk-name" />
-        </div>
-        <div className="sk-text" />
-        <div className="sk-text sk-text--short" />
-        <div className="sk-bar">
-          <div className="sk-btn" />
-          <div className="sk-btn sk-btn--small" />
-        </div>
+      </div>
+      <div className="pc-side-actions sk-rail">
+        {[0, 1, 2, 3, 4].map((i) => <span key={i} className="sk-block sk-tile" />)}
       </div>
     </div>
   );

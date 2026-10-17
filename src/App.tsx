@@ -12,6 +12,7 @@ import { clearAuthReturn, isInAppPath, offerAuthReturn, takeAuthReturn } from '.
 import RouteFallback from './components/Layout/RouteFallback.tsx'
 import RouteAnnouncer from './components/Layout/RouteAnnouncer.tsx'
 import { Toaster } from './components/ui/sonner.tsx'
+import { TooltipProvider } from './components/ui/tooltip.tsx'
 import NotFoundPage from './components/Layout/NotFoundPage.tsx'
 import { AuthProvider, useAuth } from './context/AuthContext.tsx'
 import { LanguageProvider } from './context/LanguageContext.tsx'
@@ -125,7 +126,8 @@ function AppContent() {
     searchOpenerRef.current = document.activeElement instanceof HTMLElement
       && document.activeElement !== document.body
       ? document.activeElement
-      : null
+      : [...document.querySelectorAll<HTMLElement>('.navbar-search, .navbar-icon-btn--search-compact')]
+        .find((el) => el.getClientRects().length > 0) ?? null
     setSearchMounted(true)
     setSearchOpen(true)
   }, [])
@@ -304,7 +306,7 @@ function AppContent() {
           `initial` on the app's first render. */}
       <PageTransitionCustomProvider value={pageTransitionCustom}>
       <AnimatePresence mode="sync" initial={false} custom={pageTransitionCustom}>
-        <Routes location={location} key={location.pathname}>
+        <Routes location={location} key={location.pathname.startsWith('/settings/') ? '/settings' : location.pathname}>
           {/* The sign-in page is gone; the address still works for old links
               and bookmarks: the feed, with the sign-in dialog open. */}
           {/* The root is the feed by its own route now, not by the wildcard:
@@ -588,7 +590,9 @@ function App() {
       <AuthProvider>
         <LanguageProvider>
           <AnalyticsProvider>
-            <UserScopedAppContent />
+            <TooltipProvider>
+              <UserScopedAppContent />
+            </TooltipProvider>
           </AnalyticsProvider>
         </LanguageProvider>
       </AuthProvider>

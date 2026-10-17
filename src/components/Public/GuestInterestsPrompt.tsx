@@ -5,6 +5,9 @@ import { normalizeGuestAreas } from '../../utils/guestInterests.ts';
 import { Button } from '../ui/button.tsx';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.tsx';
 import { Toggle } from '../ui/toggle.tsx';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
+import useClipTooltip from '../../hooks/useClipTooltip.ts';
+import Petri from '../Onboarding/Petri.tsx';
 import './GuestInterestsPrompt.css';
 
 // The guest's areas, edited from the header chip once the feed is up. The
@@ -22,11 +25,9 @@ const AREA_ENTRIES = Object.entries(CATEGORIES);
 
 const COPY = {
   en: {
-    kicker: 'Your interests',
     title: 'What are you into?',
     lede: 'Change the areas and the feed is rebuilt from them.',
     areasLabel: 'Areas of interest',
-    picked: (n: number) => `${n} ${n === 1 ? 'area picked' : 'areas picked'}`,
     primary: 'Update feed',
     secondary: 'Cancel',
     close: 'Close',
@@ -38,6 +39,34 @@ const COPY = {
 // Escape, the scrim — flips it; Base UI plays the leave, and only then
 // `onOpenChangeComplete(false)` hands the outcome to the parent: the answer
 // through `onSubmit`, anything else through `onDismiss`. One call, once.
+function AreaTile({ area, pressed, onPressedChange }: { area: typeof CATEGORIES[keyof typeof CATEGORIES]; pressed: boolean; onPressedChange: () => void }) {
+  const { ref: nameRef, ...tooltip } = useClipTooltip();
+  return (
+    <Tooltip {...tooltip}>
+      <TooltipTrigger
+        render={(
+          <Toggle
+            variant="outline"
+            className="gip-area"
+            pressed={pressed}
+            onPressedChange={onPressedChange}
+            style={{ '--area-accent': area.gradient }}
+          />
+        )}
+      >
+        <span className="gip-area-icon" aria-hidden="true">
+          <area.icon size={17} weight={pressed ? 'fill' : 'regular'} />
+        </span>
+        <span className="gip-area-name" ref={nameRef}>{area.label}</span>
+        <span className="gip-area-check" aria-hidden="true">
+          <Check size={11} weight="bold" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{area.label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 export default function GuestInterestsPrompt({ initialAreas = [], onSubmit, onDismiss }: { initialAreas?: readonly string[]; onSubmit?: (areas: string[]) => void; onDismiss?: () => void }) {
   const [open, setOpen] = useState(true);
   const answerRef = useRef<string[] | null>(null);
@@ -82,40 +111,22 @@ export default function GuestInterestsPrompt({ initialAreas = [], onSubmit, onDi
         closeLabel={copy.close}
         initialFocus={titleRef}
       >
-        <p className="gip-kicker">{copy.kicker}</p>
+        <Petri pose="flask" className="gip-petri" />
         <DialogTitle className="gip-title" ref={titleRef} tabIndex={-1}>{copy.title}</DialogTitle>
         <DialogDescription className="gip-lede">{copy.lede}</DialogDescription>
 
         <div className="gip-areas" role="group" aria-label={copy.areasLabel}>
-          {AREA_ENTRIES.map(([key, area]) => {
-            const isSelected = selected.has(key);
-            return (
-              // A shared Toggle: a native button carrying `aria-pressed` and
-              // `data-pressed`, which the area's CSS styles.
-              <Toggle
-                key={key}
-                variant="outline"
-                className="gip-area"
-                pressed={isSelected}
-                onPressedChange={() => toggle(key)}
-                style={{ '--area-accent': area.gradient }}
-              >
-                <span className="gip-area-icon" aria-hidden="true">
-                  <area.icon size={17} />
-                </span>
-                <span className="gip-area-name">{area.label}</span>
-                <span className="gip-area-check" aria-hidden="true">
-                  <Check size={11} weight="bold" />
-                </span>
-              </Toggle>
-            );
-          })}
+          {AREA_ENTRIES.map(([key, area]) => (
+            <AreaTile
+              key={key}
+              area={area}
+              pressed={selected.has(key)}
+              onPressedChange={() => toggle(key)}
+            />
+          ))}
         </div>
 
         <footer className="gip-foot">
-          <p className={`gip-tally ${selected.size > 0 ? 'is-on' : ''}`} aria-live="polite">
-            {selected.size > 0 ? copy.picked(selected.size) : ''}
-          </p>
           <div className="gip-actions">
             <Button variant="ghost" onClick={dismiss}>
               {copy.secondary}

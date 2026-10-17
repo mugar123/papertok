@@ -21,7 +21,7 @@ test('the mobile side rail is centred with `translate`, so the arrival animation
   const rule = mobile.match(/\.pc-side-actions \{[^}]*\}/)?.[0] || '';
   assert.ok(rule, 'the mobile rail rule exists');
   assert.match(rule, /top: 50%;/);
-  assert.match(rule, /translate: 0 -50%;/);
+  assert.match(rule, /translate: 0 calc\(-50% \+ var\(--rail-shift, 0px\)\);/, 'centred by translate, plus the no-abstract shift');
   assert.doesNotMatch(rule, /transform:/);
   // The arrival still animates `transform`, which is why the two must not share it.
   assert.match(css, /@keyframes pcArrive \{\s*0% \{ opacity: 0; transform: translateY\(8px\); \}/);
@@ -84,6 +84,6 @@ test('the project badge opens its space gently over 320ms, and arrives once the 
   const inner = slot[0].slice(slot[0].indexOf('className="pc-project-badge-motion"'));
   assert.match(inner, /initial=\{prefersReducedMotion\s*\?\s*false\s*:\s*\{ opacity: 0, transform: 'translateY\(6px\)' \}\}/);
   assert.match(inner, /animate=\{\{ opacity: 1, transform: 'translateY\(0px\)' \}\}/);
-  assert.match(inner, /: \{ delay: 0\.12, duration: 0\.2, ease: \[0\.23, 1, 0\.32, 1\] \}\}/, 'the badge waits for the space and then arrives in 200ms');
+  assert.match(inner, /: \{ delay: 0\.12, duration: 0\.2, ease: EASE_OUT \}\}/, 'the badge waits for the space and then arrives in 200ms');
   assert.doesNotMatch(inner, /\by: \d|scale:/);
 });

@@ -2,7 +2,9 @@ import type { ComponentProps } from 'react';
 import type { Paper } from '../../models/Paper.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BellRinging, Checks, MagnifyingGlass } from '@phosphor-icons/react';
+import { Checks, MagnifyingGlass } from '@phosphor-icons/react';
+import Petri from '../Onboarding/Petri.tsx';
+import { EmptyState } from '../ui/empty-state.tsx';
 import FeedContainer from '../Feed/FeedContainer.tsx';
 import { useFeed } from '../../context/FeedContext.tsx';
 import { useFollowing } from '../../context/FollowingContext.tsx';
@@ -104,28 +106,37 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<Comp
   const hasFollows = followedEntities.length > 0;
 
   const emptyState = useMemo(() => hasFollows ? (
-    <div className="ff-empty" role="status">
-      <Checks size={30} aria-hidden="true" />
-      <h2>{'No new publications from what you follow'}</h2>
-      <p>{'This feed collects recent work from what you follow and will update when new papers appear.'}</p>
-      <button className="feed-retry-btn" onClick={() => refresh()}>
-        {'Check for updates'}
-      </button>
-    </div>
+    <EmptyState
+      role="status"
+      icon
+      art={<Checks />}
+      title={'No new publications from what you follow'}
+      actions={(
+        <button className="feed-retry-btn" onClick={() => refresh()}>
+          {'Check for updates'}
+        </button>
+      )}
+    >
+      {'This feed collects recent work from what you follow and will update when new papers appear.'}
+    </EmptyState>
   ) : (
-    <div className="ff-empty" role="status">
-      <BellRinging size={30} aria-hidden="true" />
-      <h2>{'You are not following any authors, topics, institutions, or projects yet'}</h2>
-      <p>{'Follow anything from a paper or its page and its publications will appear here.'}</p>
-      <div className="ff-empty-actions">
-        <button className="feed-retry-btn" onClick={() => navigate('/feed')}>
-          {'Discover papers'}
-        </button>
-        <button className="feed-retry-btn ff-empty-secondary" onClick={() => navigate('/search')}>
-          <MagnifyingGlass size={15} aria-hidden="true" /> {'Search entities'}
-        </button>
-      </div>
-    </div>
+    <EmptyState
+      role="status"
+      art={<Petri pose="bell" className="following-petri" />}
+      title={"You're not following anything yet"}
+      actions={(
+        <>
+          <button className="feed-retry-btn" onClick={() => navigate('/feed')}>
+            {'Discover papers'}
+          </button>
+          <button className="feed-retry-btn ff-empty-secondary" onClick={() => navigate('/search')}>
+            <MagnifyingGlass size={15} aria-hidden="true" /> {'Search entities'}
+          </button>
+        </>
+      )}
+    >
+      {'Follow anything from a paper or its page and its publications will appear here.'}
+    </EmptyState>
   ), [hasFollows, navigate, refresh]);
 
   const source = useMemo(() => ({

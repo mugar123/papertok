@@ -222,11 +222,13 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
             <span>{'Every Monday morning, only when there are updates.'}</span>
           </div>
 
+          <AnimatePresence initial={false}>
           {feedback && (
-            <motion.p className={`email-notification-feedback is-${feedback.type}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>
+            <motion.p className={`email-notification-feedback is-${feedback.type}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, transition: { duration: 0.14 } }}>
               {feedback.type === 'success' && <Check size={15} />} {feedback.text}
             </motion.p>
           )}
+          </AnimatePresence>
         </div>
 
         <footer>

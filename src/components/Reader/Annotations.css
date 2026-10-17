@@ -37,8 +37,8 @@
      Base UI could not carry over when this menu stopped being a framer
      element (2026-09-05). */
   transition: opacity 200ms linear,
-    scale 200ms cubic-bezier(0.16, 1, 0.3, 1),
-    translate 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    scale 200ms var(--ease-out-expo),
+    translate 200ms var(--ease-out-expo),
     width 220ms var(--ease-out-quad);
 }
 
@@ -481,7 +481,7 @@
   mask-repeat: no-repeat;
   -webkit-mask-position: 0 0;
   mask-position: 0 0;
-  animation: rdWriteIn 620ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation: rdWriteIn 620ms var(--ease-out-expo) backwards;
 }
 
 .rd-note--thinking {
@@ -533,7 +533,7 @@
   background-color: transparent;
   background-image: linear-gradient(var(--brand-yellow), var(--brand-yellow));
   background-repeat: no-repeat;
-  animation: rdPenDown 420ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation: rdPenDown 420ms var(--ease-out-expo) backwards;
 }
 
 .rd-mark--ai[data-fresh] {
@@ -597,7 +597,7 @@
      the old inline arithmetic so behaviour there is unchanged. Zero inset:
      identical to the plain --rd-sheet-peek reveal from before either way. */
   transform: translateY(calc(100% - var(--rd-sheet-peek-total, calc(62px + var(--inset-bottom)))));
-  transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 260ms var(--ease-out-expo);
 }
 
 .rd-rail[data-surface='sheet'][data-expanded] {
@@ -650,7 +650,7 @@
 .rd-rail-chevron {
   margin-left: auto;
   color: var(--text-tertiary);
-  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 220ms var(--ease-out-expo);
 }
 
 .rd-rail[data-expanded] .rd-rail-chevron {

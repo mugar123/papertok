@@ -36,6 +36,16 @@ test('cualquier otra tecla no es el atajo', () => {
   assert.equal(shouldOpenSearchOnSlash(slash({ key: 'k' }), docWith(false)), false);
 });
 
+test('⌘K y Ctrl+K abren el buscador, también desde un campo', () => {
+  const field = { closest: (selector: string) => (selector.includes('input') ? { tagName: 'INPUT' } : null) };
+  for (const mod of ['metaKey', 'ctrlKey']) {
+    assert.equal(shouldOpenSearchOnSlash(slash({ key: 'k', [mod]: true }), docWith(false)), true, mod);
+    assert.equal(shouldOpenSearchOnSlash(slash({ key: 'K', [mod]: true, target: field }), docWith(false)), true, mod);
+    assert.equal(shouldOpenSearchOnSlash(slash({ key: 'k', [mod]: true }), docWith(true)), false, `${mod} con modal`);
+    assert.equal(shouldOpenSearchOnSlash(slash({ key: 'k', [mod]: true, shiftKey: true }), docWith(false)), false, `${mod}+shift`);
+  }
+});
+
 test('SOURCE: la navbar delega en la puerta en vez de llevar la suya', async () => {
   const jsx = stripComments(await readFile(new URL('./Navbar.tsx', import.meta.url), 'utf8'));
   assert.match(jsx, /import \{ shouldOpenSearchOnSlash \} from '\.\/searchShortcut\.ts';/);

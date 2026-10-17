@@ -1,6 +1,5 @@
 import type { ComponentProps, MouseEvent, SyntheticEvent, TransitionEvent } from 'react';
 import type { Paper, PaperAuthor, PaperResearchResource } from '../../models/Paper.ts';
-
 type OpenCopy = Awaited<ReturnType<typeof findOpenAccessCopy>>;
 export interface PaperCardProps {
   paper: Paper;
@@ -25,7 +24,8 @@ export interface PaperCardProps {
   analyticsSurface?: string;
   position?: number;
 }
-import { Fragment, useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useId, memo, lazy, Suspense } from 'react';
+
+import { useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useId, memo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories.ts';
 import {
@@ -37,9 +37,10 @@ import {
   Building,
   CaretDown,
   ChartBar,
-  Check,
   CheckCircle,
   CircleNotch,
+  DotsThree,
+  DownloadSimple,
   ClockCounterClockwise,
   Code,
   Cpu,
@@ -71,6 +72,8 @@ import { useOverlayHistory } from '../../hooks/useOverlayHistory.ts';
 import { useIsPageArriving } from '../../hooks/usePageArrival.ts';
 import ScientificText from '../ScientificText.ts';
 import { Button } from '../ui/button.tsx';
+import { EmptyState } from '../ui/empty-state.tsx';
+import Petri from '../Onboarding/Petri.tsx';
 import { Toggle } from '../ui/toggle.tsx';
 import { useFollowing } from '../../context/FollowingContext.tsx';
 import { useLanguage } from '../../context/LanguageContext.tsx';
@@ -85,8 +88,18 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import AbstractSheet from './AbstractSheet.tsx';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
+import SharePanel from './SharePanel.tsx';
+import MoreActions from './MoreActions.tsx';
+import { downloadCitationFile } from '../../utils/readingLibrary.ts';
 import './PaperCard.css';
-const RelatedPapersSheet = lazy(() => import('./RelatedPapersSheet.tsx'));
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
+import useClipTooltip from '../../hooks/useClipTooltip.ts';
+import { lazyWithPreload } from '../../utils/lazyPreload.ts';
+
+// Preloaded once the card settles on a wider screen, so the map can stand in
+// the slot on the very frame it is asked for (see the slot's height morph).
+const RelatedPapersSheet = lazyWithPreload(() => import('./RelatedPapersSheet.tsx'));
+import useIsPhone from '../../hooks/useIsPhone.ts';
 import { findOpenAccessCopy } from '../../services/unpaywallService.ts';
 import { findInstitutionAccess } from '../../services/institutionAccessService.ts';
 import { institutionLabel } from '../../services/institutionService.ts';
@@ -96,7 +109,7 @@ import { getHuggingFaceResearchResources } from '../../services/huggingFaceServi
 import { isOpaqueQueryTopicText, resolvePaperTopic, topicExplorerPath } from '../../utils/topicNavigation.ts';
 import { canRewritePaper } from '../../services/paperRewriteService.ts';
 import { getPaperFigures, peekPaperFigures } from '../../services/paperFigureService.ts';
-import { CARD_DURATION_MS, tweenScrollTop } from '../../utils/scrollTween.ts';
+import { CARD_DURATION_MS } from '../../utils/scrollTween.ts';
 import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper } from '../../utils/areaAccent.ts';
 import { accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paperStatus.ts';
 import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.ts';
@@ -108,6 +121,9 @@ import { buildPaperTopicTags } from '../../utils/paperTopicTags.ts';
  * A 420ms collapse keeps resetting this, so the reading lands once — after it.
  */
 const ABSTRACT_SETTLE_MS = 180;
+// The abstract ⇄ map swap: the slide and the slot's height (`.pc-slot--morphing`
+// in PaperCard.css) on one clock.
+const SLOT_MORPH_MS = 240;
 
 /**
  * A glyph per status, keyed the same way the tags are.
@@ -136,7 +152,19 @@ import {
 import { openFirstTarget, openTargetsForPaper } from '../../utils/paperOpenTargets.ts';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import { getPublicEntityPath, getPublicPaperUrl } from '../../utils/publicNavigation.ts';
-import { paperShareData } from '../../utils/shareLink.ts';
+import { EASE_IN_OUT, EASE_OUT, EASE_OUT_EXPO, animateSize } from '../../utils/motionCurves.ts';
+
+/** An author's name in its grid cell: ellipsed when it does not fit, and only
+    then does resting on it show the whole name. */
+function ClippedName({ name }: { name: string }) {
+  const { ref, ...tooltip } = useClipTooltip();
+  return (
+    <Tooltip {...tooltip}>
+      <TooltipTrigger render={<span ref={ref} className="pc-authors-list-name" />}>{name}</TooltipTrigger>
+      <TooltipContent>{name}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 // The reader drags in the annotations layer, LaTeX export and their CSS
 // (PaperReader.css, Annotations.css, Export.css — ~53 KB raw source, ~28 KB
@@ -147,7 +175,7 @@ import { paperShareData } from '../../utils/shareLink.ts';
 // lazy routes.
 const PaperReader = lazy(() => import('../Reader/PaperReader.tsx'));
 
-// One quiet watermark per research area, drawn as a hairline in the corner of
+// One quiet watermark per research area, engraved in the corner of
 // the sheet. It replaces the old animated icon constellation: the same visual
 // cue about the field, without the haze competing with the type.
 const AREA_WATERMARK_ICONS = {
@@ -305,10 +333,6 @@ function RelatedPaperCardSkeleton({ label }: { label: string }) {
   );
 }
 
-// How long the slot keeps its release class after a read mark is taken back:
-// the eye's delayed spring (0.06 s + 0.36 s) plus a frame of slack.
-const READ_RELEASE_MS = 450;
-
 /**
  * The rail toggles sit on the card, which has its own pointer handlers; a
  * press on like, save or read is theirs alone. Base UI runs this before its
@@ -359,9 +383,9 @@ const PaperCard = memo(function PaperCard({
   // `true` as "nothing hidden", exactly as it did.
   const [abstractClipped, setAbstractClipped] = useState<boolean | null>(null);
   // On a phone a clipped abstract is read in a sheet rather than unfolded in
-  // place (AbstractSheet). Gated by pointer type, never by width, like the
-  // reader's selection route: shrinking a laptop window must not send a mouse
-  // user to the sheet.
+  // place (AbstractSheet): on a touch screen, or at phone width (useIsPhone,
+  // 600px) whatever the pointer, where the unfolded panel is a few lines tall
+  // and scrolls inside the card (2026-10-17). Wider windows unfold in place.
   const [showAbstractSheet, setShowAbstractSheet] = useState(false);
   const closeAbstractSheet = useCallback(() => setShowAbstractSheet(false), []);
   const coarsePointer = useMemo(() => {
@@ -373,13 +397,13 @@ const PaperCard = memo(function PaperCard({
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
   const [showHeart, setShowHeart] = useState(false);
-  // True for the moment after a read mark is taken back, so the slot can
-  // play its release (PaperCard.css) — a class the resting state cannot carry.
-  const [releasingRead, setReleasingRead] = useState(false);
-  const releaseTimerRef = useRef<number | null>(null);
-  useEffect(() => () => clearTimeout(releaseTimerRef.current!), []);
-  const [copied, setCopied] = useState(false);
+  const heartTimer = useRef<number | null>(null);
+  useEffect(() => () => clearTimeout(heartTimer.current!), []);
   const [showAuthorsModal, setShowAuthorsModal] = useState(false);
+  // On a desktop the dots unfold every author under them; a phone
+  // keeps the sheet (a tap on the row).
+  const [authorsExpanded, setAuthorsExpanded] = useState(false);
+  const authorsListId = useId();
   // The sheet is leaving with the page: an author was picked from it. It
   // closes in its leaving pose (`is-leaving`, PaperCard.css) — a short drop
   // and a fade on the page's own leaving curve, 0.18 s against the page's
@@ -387,6 +411,13 @@ const PaperCard = memo(function PaperCard({
   // which the page's unmount cut off part-way when the card went.
   const [authorsSheetLeaving, setAuthorsSheetLeaving] = useState(false);
   const [showRelated, setShowRelated] = useState(false);
+  // On a wider screen the connections take the abstract's place in the card;
+  // a phone has no room for them there and keeps the bottom sheet.
+  const isPhone = useIsPhone();
+  const relatedInline = showRelated && !isPhone;
+  // Once the connections have stood in the slot, the abstract coming back is
+  // a swap, not the card's arrival: it slides in and does not replay that.
+  const [slotSwapped, setSlotSwapped] = useState(false);
   const [showReader, setShowReader] = useState(false);
   // Back closes the reader instead of leaving PaperTok: see useOverlayHistory.js.
   // It must ASK the reader to close (its own `requestClose`, which the X and
@@ -452,12 +483,6 @@ const PaperCard = memo(function PaperCard({
 
   const lastTap = useRef(0);
   const abstractRef = useRef<HTMLDivElement | null>(null);
-  // Cancels the in-flight return to the first line, if there is one.
-  const stopAbstractScroll = useRef<(() => void) | null>(null);
-
-  // A card swiped away mid-collapse would otherwise leave its frame loop
-  // running against a node nobody can see any more.
-  useEffect(() => () => stopAbstractScroll.current?.(), []);
   const cardRef = useRef<HTMLDivElement | null>(null);
   const viewStartTime = useRef<number | null>(null);
   const totalViewTime = useRef(0);
@@ -690,6 +715,112 @@ const PaperCard = memo(function PaperCard({
     return () => { isMounted = false; };
   }, [isCardIdle, paper]);
 
+  /* Opening the abstract or the author list must only grow the card
+     downward. Two things anchored it elsewhere: the sheet is centred in the
+     card (on a tall screen it grew both ways), and its content is bottom-
+     anchored inside it (once at full height, growing pushed the title up).
+     While either is open, both are pinned where they stand: the sheet's top
+     in the card, the body's top in the sheet. Measured on the press, before
+     the state flips: the open abstract changes its flex and its ceiling in
+     the very commit that opens it, so by the layout effect the centred sheet
+     had already grown and re-centred, and the pin froze the shifted position
+     (the kicker sat 55px higher while open, measured 2026-10-16). Closing
+     shrinks back from the bottom; once that has finished everything is where
+     it started, and the pins are let go. */
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+  const sheetGrown = expanded || authorsExpanded || relatedInline;
+  const pinSheet = () => {
+    const sheet = sheetRef.current;
+    const frame = sheet?.parentElement;
+    const body = sheet?.querySelector<HTMLElement>(':scope > .pc-body');
+    if (!sheet || !frame || !body || sheet.dataset.pinned) return;
+    const sheetTop = sheet.getBoundingClientRect().top - frame.getBoundingClientRect().top
+      - parseFloat(getComputedStyle(frame).paddingTop);
+    const bodyTop = body.getBoundingClientRect().top - sheet.getBoundingClientRect().top
+      - parseFloat(getComputedStyle(sheet).paddingTop);
+    sheet.dataset.pinned = 'true';
+    sheet.style.alignSelf = 'flex-start';
+    sheet.style.marginTop = `${sheetTop}px`;
+    sheet.style.maxHeight = `calc(100% - ${sheetTop}px)`;
+    sheet.style.justifyContent = 'flex-start';
+    body.style.marginTop = `${bodyTop}px`;
+  };
+  useLayoutEffect(() => {
+    const sheet = sheetRef.current;
+    const body = sheet?.querySelector<HTMLElement>(':scope > .pc-body');
+    if (!sheet || !body) return undefined;
+    if (sheetGrown) {
+      // Opened some other way than a press: pin late rather than not at all.
+      pinSheet();
+      return undefined;
+    }
+    if (!sheet.dataset.pinned) return undefined;
+    // The longest of the closing transitions: the abstract's 0.42s.
+    const release = setTimeout(() => {
+      delete sheet.dataset.pinned;
+      sheet.style.alignSelf = '';
+      sheet.style.marginTop = '';
+      sheet.style.maxHeight = '';
+      sheet.style.justifyContent = '';
+      body.style.marginTop = '';
+    }, 460);
+    return () => clearTimeout(release);
+  }, [sheetGrown]);
+
+  /* The panel's height, opening and closing. Its ceiling goes from a length
+     to `100%` of a body with no definite height, which no transition can
+     interpolate, so it used to jump open in one frame. The height it had on
+     the press and the one it lands on are both measurable; the panel travels
+     between them on the card's clock. Reduced motion keeps the jump. */
+  const abstractFromHeight = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const panel = abstractRef.current;
+    const from = abstractFromHeight.current;
+    abstractFromHeight.current = null;
+    if (!panel || from == null || prefersReducedMotion) return;
+    // `overflowY: hidden` for the length of the travel: the open panel
+    // scrolls (`overflow-y: auto`), and with its content taller than the box
+    // mid-way a scrollbar would come and go and re-wrap the text.
+    animateSize(panel, 'maxHeight', from, CARD_DURATION_MS, EASE_OUT_EXPO, { overflowY: 'hidden' });
+  }, [expanded, prefersReducedMotion]);
+
+  /* And the slot's height morphs from the face it had to the one it gets, on
+     a CSS transition (PaperCard.css, CARD_DURATION_MS) that a second press
+     retargets from wherever it is. The target is read before the first
+     frame: the arriving face as the column will finally hold it, squeezed on
+     a short card. The face is laid out at that size from the start and the
+     slot opens over it, so the map measures its plot once. Read later, the
+     face first stood at its full height and then shrank when the slot let
+     go, and the map laid its papers out twice. A face that cannot render yet
+     (its chunk still loading) has no height to go to, and simply arrives. */
+  const slotRef = useRef<HTMLDivElement | null>(null);
+  const slotTrackRef = useRef<HTMLDivElement | null>(null);
+  const slotFromHeight = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const slot = slotRef.current;
+    const track = slotTrackRef.current;
+    const from = slotFromHeight.current;
+    slotFromHeight.current = null;
+    if (!slot || !track || from == null || prefersReducedMotion) return undefined;
+    slot.classList.remove('pc-slot--morphing');
+    slot.style.height = '';
+    track.style.height = '';
+    const to = slot.offsetHeight;
+    if (to === 0 || Math.abs(to - from) < 2) return undefined;
+    track.style.height = `${to}px`;
+    slot.style.height = `${from}px`;
+    slot.classList.add('pc-slot--morphing');
+    // Commit the starting height, so the next one is a transition to it.
+    slot.getBoundingClientRect();
+    slot.style.height = `${to}px`;
+    const land = setTimeout(() => {
+      slot.classList.remove('pc-slot--morphing');
+      slot.style.height = '';
+      track.style.height = '';
+    }, SLOT_MORPH_MS + 60);
+    return () => clearTimeout(land);
+  }, [relatedInline, prefersReducedMotion]);
+
   const toggleExpanded = (e: SyntheticEvent, newState: boolean) => {
     e.stopPropagation();
     // A panel that hides nothing has nothing to open. Without this, tapping an
@@ -697,25 +828,12 @@ const PaperCard = memo(function PaperCard({
     // beneath it, invisible — came up saying "Show less" for a panel that had
     // never been anything but open (measured 2026-09-18, guest feed, desktop).
     if (newState && abstractClipped !== true) return;
+    if (newState) pinSheet();
+    // Only opening travels. Closing is done reading, and the panel is simply
+    // back at its first line (2026-10-17): no height travel, no scroll back.
+    abstractFromHeight.current = newState ? abstractRef.current?.offsetHeight ?? null : null;
     setExpanded(newState);
-
-    // Whichever way this goes, the previous run stops first. Tapping twice
-    // quickly used to leave a scroll still travelling into a panel that had
-    // already reopened, so the text crawled while the reader was trying to
-    // read it.
-    stopAbstractScroll.current?.();
-
-    // Closing puts the reader back at the first line, on the same clock as the
-    // panel's height: `scrollTo({ behavior: 'smooth' })` animates on a duration
-    // and a curve the browser chooses, so the text and the panel finished at
-    // different moments and the motion read as two things, one dragging behind
-    // the other. Same easing, same 420ms, and they land together.
-    if (!newState && abstractRef.current) {
-      stopAbstractScroll.current = tweenScrollTop(abstractRef.current, 0, {
-        durationMs: CARD_DURATION_MS,
-        immediate: prefersReducedMotion!,
-      });
-    }
+    if (!newState && abstractRef.current) abstractRef.current.scrollTop = 0;
   };
 
   /**
@@ -732,6 +850,41 @@ const PaperCard = memo(function PaperCard({
    * are the same words as before.
    */
   const abstractText = hasUsableAIAbstract(paper.abstract) ? paper.abstract : null;
+  // The words, or the state that says there are none, cross on these.
+  const abstractSwap = {
+    initial: { opacity: 0 },
+    animate: {
+      opacity: 1,
+      transition: { duration: prefersReducedMotion ? 0.1 : 0.34, ease: EASE_OUT_EXPO },
+    },
+    exit: {
+      opacity: 0,
+      transition: { duration: prefersReducedMotion ? 0.08 : 0.18, ease: EASE_OUT },
+    },
+  };
+  /* The map slides in from the right as the abstract leaves to the left;
+     `popLayout` lifts the leaving face out of the flow, so the slot measures
+     only the arriving one. Going back is a return, not an arrival: the
+     abstract is simply there again and the map goes at once, and only the
+     slot's height eases. Reduced motion keeps the fade and drops the travel. */
+  const slotSlide = {
+    enter: (direction: number) => ({
+      opacity: 0,
+      transform: `translateX(${prefersReducedMotion ? 0 : direction * 40}px)`,
+    }),
+    center: {
+      opacity: 1,
+      transform: 'translateX(0px)',
+      transition: { duration: prefersReducedMotion ? 0.12 : SLOT_MORPH_MS / 1000, ease: EASE_IN_OUT },
+    },
+    exit: (direction: number) => (direction < 0
+      ? { opacity: 0, transition: { duration: 0 } }
+      : {
+        opacity: 0,
+        transform: `translateX(${prefersReducedMotion ? 0 : -40}px)`,
+        transition: { duration: prefersReducedMotion ? 0.08 : 0.2, ease: EASE_OUT },
+      }),
+  };
   const abstractKey = abstractText
     ? `abstract:${abstractText.length}:${abstractText.slice(0, 24)}`
     : 'abstract:none';
@@ -764,7 +917,8 @@ const PaperCard = memo(function PaperCard({
       observer.disconnect();
       settleAbstractResize.current?.();
     };
-  }, []);
+    // The panel is a new node each time the connections give its place back.
+  }, [relatedInline]);
 
   /**
    * Whether the collapsed panel is hiding words, which is the only thing that
@@ -791,12 +945,31 @@ const PaperCard = memo(function PaperCard({
       setAbstractClipped(false);
       return undefined;
     }
+    // With the connections up the abstract is only leaving: the verdict it
+    // had stays, or its button blinks on the face sliding out.
+    if (relatedInline) return undefined;
     let alive = true;
     let settleTimer: number | null = null;
     const read = () => {
       const node = abstractRef.current;
       if (!alive || !node || expandedRef.current) return;
-      setAbstractClipped(node.scrollHeight - node.clientHeight > 1);
+      // While the slot holds a passing height the box is not the abstract's
+      // own, and an answer read from it blinks the button: ask again later.
+      if (slotRef.current?.classList.contains('pc-slot--morphing')) {
+        if (settleTimer) clearTimeout(settleTimer);
+        settleTimer = setTimeout(read, ABSTRACT_SETTLE_MS);
+        return;
+      }
+      const clipped = node.scrollHeight - node.clientHeight > 1;
+      setAbstractClipped(clipped);
+      // The panel's height is whatever the flex room leaves, so its edge
+      // fell mid-line and the fade ended on half a row of letters. The mask
+      // stops at the last whole line instead (`--pc-abstract-cut`, PaperCard.css).
+      const words = node.querySelector<HTMLElement>(':scope > p');
+      const line = words ? parseFloat(getComputedStyle(words).lineHeight) : 0;
+      const shown = node.clientHeight - (words?.offsetTop ?? 0);
+      const cut = clipped && line > 0 ? shown % line : 0;
+      node.style.setProperty('--pc-abstract-cut', `${cut}px`);
     };
     const settle = () => {
       if (settleTimer) clearTimeout(settleTimer);
@@ -816,7 +989,42 @@ const PaperCard = memo(function PaperCard({
       observer?.disconnect();
       window.removeEventListener('resize', settle);
     };
-  }, [abstractKey, abstractText]);
+  }, [abstractKey, abstractText, relatedInline]);
+
+  /* A card with no abstract shows the empty state in the middle of the room
+     the abstract would take, which is lower than the card's centre, where the
+     rail sits. The rail follows the state instead (`--rail-shift`, applied as
+     a `translate` in PaperCard.css), kept inside the card. Every other card
+     keeps its rail at the centre. */
+  useLayoutEffect(() => {
+    const card = cardRef.current;
+    if (!card) return undefined;
+    if (abstractText || relatedInline) {
+      card.style.removeProperty('--rail-shift');
+      return undefined;
+    }
+    const measure = () => {
+      const state = card.querySelector<HTMLElement>('.pc-abstract-empty .empty-state');
+      const rail = card.querySelector<HTMLElement>('.pc-side-actions');
+      if (!state || !rail) {
+        card.style.removeProperty('--rail-shift');
+        return;
+      }
+      const box = card.getBoundingClientRect();
+      const words = state.getBoundingClientRect();
+      const room = Math.max(0, (box.height - rail.offsetHeight) / 2 - 8);
+      const shift = (words.top + words.height / 2) - (box.top + box.height / 2);
+      card.style.setProperty('--rail-shift', `${Math.round(Math.max(-room, Math.min(room, shift)))}px`);
+    };
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(card);
+    // The state keeps its size while the rows above it settle (chips, a
+    // late badge) and move it; the box around it is what resizes then.
+    const room = card.querySelector<HTMLElement>('.pc-abstract');
+    if (room) observer?.observe(room);
+    return () => observer?.disconnect();
+  }, [abstractText, relatedInline]);
 
   /**
    * The other half of the swap: the panel eases between the height it had and
@@ -881,7 +1089,7 @@ const PaperCard = memo(function PaperCard({
 
   // The clipped abstract's door on a phone: the sheet, not the fold. Once the
   // panel is open (a fine pointer got it there) the toggle closes it as ever.
-  const readsInSheet = coarsePointer && abstractClipped === true && !expanded;
+  const readsInSheet = (coarsePointer || isPhone) && abstractClipped === true && !expanded;
   const openAbstract = (e: SyntheticEvent) => {
     if (readsInSheet) {
       e.stopPropagation();
@@ -1004,9 +1212,6 @@ const PaperCard = memo(function PaperCard({
     }
     if (isRead) {
       onUnmarkAsRead(paper.id);
-      setReleasingRead(true);
-      clearTimeout(releaseTimerRef.current!);
-      releaseTimerRef.current = setTimeout(() => setReleasingRead(false), READ_RELEASE_MS);
       return;
     }
     onMarkAsRead(paper);
@@ -1078,9 +1283,11 @@ const PaperCard = memo(function PaperCard({
   // Only a tap on the card itself. The sheets, the related card and the
   // reader are portaled to the body, and React still bubbles their clicks
   // up this tree — the old overlays stopped propagation by hand; the DOM
-  // check covers every surface at once.
+  // check covers every surface at once. The connections panel in the slot is
+  // a control in the card: two quick presses on the map are not a like.
   const handleDoubleTap = useCallback((event: MouseEvent) => {
     if (event?.target instanceof Node && !cardRef.current?.contains(event.target)) return;
+    if (event?.target instanceof Element && event.target.closest('.related-sheet')) return;
     const now = Date.now();
     if (now - lastTap.current < 300) {
       if (!isLiked) {
@@ -1090,8 +1297,11 @@ const PaperCard = memo(function PaperCard({
           return;
         }
         onLike(paper);
+        // One timer per card: a second double tap restarts it instead of
+        // letting the first one cut the new heart short.
+        clearTimeout(heartTimer.current!);
         setShowHeart(true);
-        setTimeout(() => setShowHeart(false), 1200);
+        heartTimer.current = setTimeout(() => setShowHeart(false), 1200);
       }
     }
     lastTap.current = now;
@@ -1102,11 +1312,37 @@ const PaperCard = memo(function PaperCard({
       requireAuthentication('like');
       return;
     }
+    // The button is its own feedback (the icon fills); the big heart is the
+    // double tap's, not a second celebration on every like (2026-10-15).
     onLike(paper);
-    if (!isLiked) {
-      setShowHeart(true);
-      setTimeout(() => setShowHeart(false), 1200);
+  };
+
+  // The graph and the similar list are session-only in the Worker: a guest
+  // used to get a sheet that could only say «No se pudieron cargar» (audit
+  // 2026-09-23, issue 2).
+  const hasRelated = Boolean(paper.doi || paper.arxivId || paper.semanticScholarId);
+  const openRelated = () => {
+    if (publicMode) {
+      requireAuthentication('related');
+      return;
     }
+    setShowRelated(true);
+  };
+
+  // The slot swap only grows the card downward: pinned on the press, before
+  // the panel changes the column's height (see pinSheet).
+  useEffect(() => {
+    if (isCardIdle && hasRelated && !isPhone && !publicMode) RelatedPapersSheet.preload();
+  }, [isCardIdle, hasRelated, isPhone, publicMode]);
+
+  const toggleRelated = (next: boolean) => {
+    if (!isPhone && !publicMode) {
+      pinSheet();
+      setSlotSwapped(true);
+      slotFromHeight.current = slotRef.current?.offsetHeight ?? null;
+    }
+    if (next) openRelated();
+    else setShowRelated(false);
   };
 
   const handleNotInterested = (e: MouseEvent) => {
@@ -1235,28 +1471,12 @@ const PaperCard = memo(function PaperCard({
     || bestAvailableUrl
     || (paper.arxivId ? `https://arxiv.org/abs/${encodeURIComponent(paper.arxivId)}` : '');
 
-  const handleShare = async (event: MouseEvent) => {
-    event.stopPropagation();
-    if (!shareUrl) return;
-
-    if (navigator.share) {
-      try {
-        await navigator.share(paperShareData({ title: paper.title, url: shareUrl }));
-        trackEvent('share', { method: 'native', content_type: 'paper', surface: analyticsSurface });
-      } catch (error) {
-        if ((error as Error | null)?.name !== 'AbortError') console.error('Paper share failed', error);
-      }
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      trackEvent('share', { method: 'clipboard', content_type: 'paper', surface: analyticsSurface });
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
-      console.error('Could not copy paper link', error);
-    }
+  // Every way the link leaves the share panel (SharePanel): `clipboard`,
+  // `instagram` (which copies) or a network's id, reported in the analytics
+  // `method` vocabulary, which has no network names.
+  const handleShared = (method: string) => {
+    const reported = method === 'clipboard' || method === 'instagram' ? 'clipboard' : 'other';
+    trackEvent('share', { method: reported, content_type: 'paper', surface: analyticsSurface });
   };
   const restingActionLabel = resolvedOpenCopy
     ? ('Read open version')
@@ -1275,6 +1495,32 @@ const PaperCard = memo(function PaperCard({
   // is hidden under the spinner (PaperCard.css), so the resting one keeps the
   // button's width: "Buscando" would not fit the row at 360px.
   const primaryActionShortLabel = restingActionLabel.split(' ')[0];
+  /* El `aria-label` repite EL MISMO rótulo, no uno mejor. En móvil
+   `.pc-action-label` es `display: none` (PaperCard.css), y eso no
+   esconde el texto: lo saca del árbol de accesibilidad, así que el
+   botón se quedaba sin nombre — quince por pantalla. Repetirlo
+   literalmente es también lo que pide el criterio 2.5.3 en
+   escritorio, donde el rótulo sí se lee: el nombre accesible tiene
+   que CONTENER lo que se ve, o quien maneja la interfaz por voz no
+   puede pulsarlo diciendo lo que lee. En móvil se ve la primera
+   palabra (`--short`), que el nombre contiene por construcción: la
+   acción principal era la única de la barra sin rótulo, y el mismo
+   icono servía para leer aquí y para salir a la fuente. */
+  // With no abstract to read, the way to the paper sits under the empty state
+  // that says so, a size down, instead of in the bar below it.
+  const readAction = (
+    <Button
+      className={`pc-action-read${isResolvingAccess ? ' is-resolving' : ''}`}
+      size={abstractText ? 'default' : 'sm'}
+      onClick={handleOpenPaper}
+      disabled={isResolvingAccess}
+      aria-label={primaryActionLabel}
+    >
+      {isResolvingAccess ? <CircleNotch className="spinning" size={16} /> : <FileText size={16} />}
+      <span className="pc-action-label">{primaryActionLabel}</span>
+      <span className="pc-action-label--short">{primaryActionShortLabel}</span>
+    </Button>
+  );
   return (
     <div ref={cardRef} className={`pc ${isCardVisible ? 'pc--visible' : ''}`} onClick={handleDoubleTap}>
       {/* DEBUG PANEL */}
@@ -1338,10 +1584,10 @@ const PaperCard = memo(function PaperCard({
         </div>
       )}
 
-      <article className="pc-sheet" style={{ '--area-accent': areaAccentForPaper(paper) }}>
+      <article ref={sheetRef} className="pc-sheet" data-connections={relatedInline || undefined} style={{ '--area-accent': areaAccentForPaper(paper) }}>
         {WatermarkIcon && (
           <span className="pc-watermark" aria-hidden="true">
-            <WatermarkIcon size={220} weight="thin" />
+            <WatermarkIcon size={220} weight="fill" />
           </span>
         )}
 
@@ -1412,65 +1658,8 @@ const PaperCard = memo(function PaperCard({
           )}
         </div>
 
-        {/* Two facts and a link: what this paper is, whether it opens, and where
-            the record of it lives. The row used to hang off `!isPreprint`, so a
-            preprint — the one case where the caveat is the whole point — showed
-            no chips at all, and the availability chips had no JSX left anywhere.
-            Each chip carries the sentence behind its word in `title`, because
-            "Preprint" is not a word a reader outside academia arrives knowing. */}
-        <div className="pc-chips">
-          {reviewTag && (() => {
-            const Glyph = STATUS_CHIP_ICONS[reviewTag.key as keyof typeof STATUS_CHIP_ICONS];
-            return (
-              <span className="pc-chip" data-tone={reviewTag.tone} title={reviewTag.hint}>
-                <Glyph size={12} /> {reviewTag.label}
-              </span>
-            );
-          })()}
-
-          {/* The availability chip resolves late: a paper with no readable copy
-              of its own goes to Unpaywall after the card settles, and the answer
-              can turn Suscripción into Versión abierta a second in. Swapping the
-              word outright reads as a glitch, so the slot cross-fades. */}
-          <AnimatePresence mode="wait" initial={false}>
-            {accessTag && (() => {
-              const Glyph = STATUS_CHIP_ICONS[accessTag.key as keyof typeof STATUS_CHIP_ICONS];
-              return (
-                <motion.span
-                  key={accessTag.key}
-                  className="pc-chip"
-                  data-tone={accessTag.tone}
-                  title={accessTag.hint}
-                  initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.92 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.92 }}
-                  transition={{
-                    duration: prefersReducedMotion ? 0.1 : 0.24,
-                    ease: [0.16, 1, 0.3, 1],
-                  }}
-                >
-                  <Glyph size={12} /> {accessTag.label}
-                </motion.span>
-              );
-            })()}
-          </AnimatePresence>
-
-          {paper.doi && (
-            <a
-              className="pc-chip pc-chip--link"
-              href={safeDoiUrl(paper.doi)}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              title={'Open the DOI record'}
-            >
-              <ArrowSquareOut size={12} /> DOI
-            </a>
-          )}
-        </div>
-
         {/* What the paper is filed under. Machine data, so it belongs with the
-            meta line and the status chips above the headline — not in the
+            meta line above the headline — not in the
             action row, where a paper with many concepts used to push the
             reading buttons past the sheet and out of sight. */}
         {paperTopicTags.length > 0 && (
@@ -1497,6 +1686,63 @@ const PaperCard = memo(function PaperCard({
             })}
           </div>
         )}
+
+        {/* Their own line under the topic tags: what this paper is, whether it
+            opens, and where the record of it lives. Each chip carries the
+            sentence behind its word in `title`, because "Preprint" is not a
+            word a reader outside academia arrives knowing. */}
+        <div className="pc-chips">
+          {reviewTag && (() => {
+            const Glyph = STATUS_CHIP_ICONS[reviewTag.key as keyof typeof STATUS_CHIP_ICONS];
+            return (
+              <span className="pc-chip" data-tone={reviewTag.tone} title={reviewTag.hint}>
+                <Glyph size={12} /> {reviewTag.label}
+              </span>
+            );
+          })()}
+
+          {/* The availability chip resolves late: a paper with no readable copy
+              of its own goes to Unpaywall after the card settles, and the answer
+              can turn Suscripción into Versión abierta a second in. Swapping the
+              word outright reads as a glitch, so the slot cross-fades. */}
+          <AnimatePresence mode="wait" initial={false}>
+            {accessTag && (() => {
+              const Glyph = STATUS_CHIP_ICONS[accessTag.key as keyof typeof STATUS_CHIP_ICONS];
+              return (
+                <motion.span
+                  key={accessTag.key}
+                  className="pc-chip"
+                  data-tone={accessTag.tone}
+                  title={accessTag.hint}
+                  // Full transform strings, not the `scale` shorthand: this lands
+                  // mid-scroll and has to stay on the compositor.
+                  initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'scale(0.92)' }}
+                  animate={{ opacity: 1, transform: 'scale(1)' }}
+                  exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'scale(0.92)' }}
+                  transition={{
+                    duration: prefersReducedMotion ? 0.1 : 0.24,
+                    ease: EASE_OUT_EXPO,
+                  }}
+                >
+                  <Glyph size={12} /> {accessTag.label}
+                </motion.span>
+              );
+            })()}
+          </AnimatePresence>
+
+          {paper.doi && (
+            <a
+              className="pc-chip pc-chip--link"
+              href={safeDoiUrl(paper.doi)}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              title={'Open the DOI record'}
+            >
+              <ArrowSquareOut size={12} /> DOI
+            </a>
+          )}
+        </div>
 
         <AnimatePresence initial={false}>
           {project && (
@@ -1548,7 +1794,7 @@ const PaperCard = memo(function PaperCard({
                   exit={{ opacity: 0, transition: { duration: 0.15 } }}
                   transition={prefersReducedMotion
                     ? { duration: 0.12 }
-                    : { delay: 0.12, duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+                    : { delay: 0.12, duration: 0.2, ease: EASE_OUT }}
                 >
                   <button
                     type="button"
@@ -1602,85 +1848,115 @@ const PaperCard = memo(function PaperCard({
             }
           }}
         >
-          {/* Initials of the names printed right beside them: decoration. Read
-              aloud they were three loose letters before every author list. */}
-          <div className="pc-author-avatars" aria-hidden="true">
-            {(paper.authors || []).slice(0, 3).map((author, i) => (
-              <div key={i} className="pc-author-avatar" style={{ '--i': i }}>
-                {((author as PaperAuthor).name || author as string).charAt(0).toUpperCase()}
-              </div>
-            ))}
-          </div>
-          <div className="pc-author-names">
-            {/* The comma and the space live outside the button, not inside it.
-                These buttons are inline-block, and a trailing space inside an
-                inline-block box is trimmed away, so "Kramer, Alexander" used to
-                render as "Kramer,Alexander". Keeping the separator out also
-                keeps it out of each button's accessible name. */}
-            {(paper.authors || []).slice(0, 3).map((author, index) => {
-               const authorName = (author as PaperAuthor).name || author as string;
-               // `path` now doubles as the <Link to> destination, so it has to
-               // be known at render time — a <Link> can't compute where it
-               // goes lazily inside its own onClick the way the old <button>
-               // did.
-               // By OpenAlex id when the author carries one (one request on the
-               // other side), by name with the arXiv id otherwise.
-               const path = authorExplorerPath(author, paper, { publicMode });
-               return (
-                 <Fragment key={index}>
-                   {path ? (
-                     <Link
-                       to={path}
-                       className="pc-author-link pc-author-btn"
-                       onClick={(e) => {
-                         e.stopPropagation();
-                         trackEvent('select_content', {
-                           content_type: 'author',
-                           surface: analyticsSurface,
-                           position,
-                         });
-                       }}
-                     >
-                       {authorName}
-                     </Link>
-                   ) : (
-                     // getPublicEntityPath found neither a usable id nor a
-                     // name (publicMode only): there is nowhere to send a
-                     // click, so render inert text instead of a link to
-                     // nowhere.
-                     <span className="pc-author-btn pc-author-btn--static">
-                       {authorName}
-                     </span>
-                   )}
-                   {index < Math.min((paper.authors || []).length, 3) - 1 ? ', ' : ''}
-                 </Fragment>
-               );
-            })}
-            {(paper.authors || []).length > 3 && (
-              <>
-                {' '}
-                <button
-                  type="button"
-                  className="pc-authors-more"
-                  aria-haspopup="dialog"
-                  onClick={(e) => { e.stopPropagation(); setShowAuthorsModal(true); }}
-                  // El nombre arranca por lo que se lee en el botón. «Ver todos
-                  // los autores» a secas dice mejor lo que hace, pero no
-                  // contiene «et al.», que es lo único escrito ahí: quien
-                  // navega por voz dice lo que ve y no acciona nada.
-                  aria-label={'et al., show all authors'}
-                >
-                  et al.
-                </button>
-              </>
-            )}
-          </div>
+          {/* The authors as dots, their initials (past three, a last dot
+              counts the rest): one button that unfolds every author under
+              them. */}
+          {(paper.authors || []).length > 0 && (
+            <button
+              type="button"
+              className="pc-author-avatars pc-authors-more"
+              aria-expanded={authorsExpanded}
+              aria-controls={authorsListId}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!authorsExpanded) pinSheet();
+                setAuthorsExpanded((open) => !open);
+              }}
+              aria-label={paper.authors.length > 3
+                ? `+${paper.authors.length - 3} authors, show all ${paper.authors.length} authors`
+                : `Show the ${paper.authors.length === 1 ? 'author' : `${paper.authors.length} authors`}`}
+            >
+              {paper.authors.slice(0, 3).map((author, i) => (
+                <span key={i} className="pc-author-avatar" style={{ '--i': i }} aria-hidden="true">
+                  {((author as PaperAuthor).name || author as string).charAt(0).toUpperCase()}
+                </span>
+              ))}
+              {paper.authors.length > 3 && (
+                <span className="pc-author-avatar" style={{ '--i': 3 }} aria-hidden="true">
+                  {`+${paper.authors.length - 3}`}
+                </span>
+              )}
+            </button>
+          )}
+          {(paper.authors || []).length > 0 && (
+            <div id={authorsListId} className="pc-authors-list" data-open={authorsExpanded || undefined} inert={!authorsExpanded}>
+              <ul>
+                {paper.authors.map((author, idx) => {
+                  const authorName = (author as PaperAuthor).name || author as string;
+                  const path = authorExplorerPath(author, paper, { publicMode });
+                  const inner = (
+                    <>
+                      <span className="pc-author-avatar" style={{ '--i': 0 }} aria-hidden="true">
+                        {authorName.charAt(0).toUpperCase()}
+                      </span>
+                      <ClippedName name={authorName} />
+                    </>
+                  );
+                  return (
+                    <li key={idx} style={{ '--i': idx }}>
+                      {path ? (
+                        <Link
+                          to={path}
+                          className="pc-authors-list-item pc-author-link"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            trackEvent('select_content', {
+                              content_type: 'author',
+                              surface: analyticsSurface,
+                              position,
+                            });
+                          }}
+                        >
+                          {inner}
+                        </Link>
+                      ) : (
+                        <span className="pc-authors-list-item">{inner}</span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
         </div>
 
+        <div ref={slotRef} className="pc-slot">
+        <div ref={slotTrackRef} className="pc-slot-track">
+        <AnimatePresence mode="popLayout" initial={false} custom={relatedInline ? 1 : -1}>
+        {relatedInline ? (
+          <motion.div
+            key="connections"
+            className="pc-slot-face"
+            variants={slotSlide}
+            custom={1}
+            initial="enter"
+            animate="center"
+            exit="exit"
+          >
+            <Suspense fallback={null}>
+              <RelatedPapersSheet
+                inline
+                paper={paper}
+                onClose={closeRelatedSheet}
+                onPreparePaper={prepareRelatedPaper}
+                onSelectPaper={selectRelatedPaper}
+              />
+            </Suspense>
+          </motion.div>
+        ) : (
+        <motion.div
+          key="abstract"
+          className="pc-slot-face"
+          variants={slotSlide}
+          custom={-1}
+          initial={false}
+          animate="center"
+          exit="exit"
+        >
         <div
           ref={abstractRef}
           id={abstractId}
-          className={`pc-abstract ${expanded ? 'pc-abstract--open' : ''} ${abstractClipped === false ? 'pc-abstract--whole' : ''}`}
+          className={`pc-abstract ${expanded ? 'pc-abstract--open' : ''} ${abstractClipped === false ? 'pc-abstract--whole' : ''} ${slotSwapped ? 'pc-abstract--swapped' : ''}`}
           onClick={openAbstract}
           onTransitionEnd={handleAbstractTransitionEnd}
         >
@@ -1695,27 +1971,35 @@ const PaperCard = memo(function PaperCard({
               smudge. The old text leaves, the new one arrives as the panel
               makes room for it — the ref below is what starts that. */}
           <AnimatePresence mode="wait" initial={false}>
-            <motion.p
-              key={abstractKey}
-              ref={attachAbstractBody}
-              lang={abstractText ? 'en' : undefined}
-              initial={{ opacity: 0 }}
-              animate={{
-                opacity: 1,
-                transition: {
-                  duration: prefersReducedMotion ? 0.1 : 0.34,
-                  ease: [0.16, 1, 0.3, 1],
-                },
-              }}
-              exit={{
-                opacity: 0,
-                transition: { duration: prefersReducedMotion ? 0.08 : 0.18, ease: 'easeIn' },
-              }}
-            >
-              {abstractText
-                ? <ScientificText>{abstractText}</ScientificText>
-                : ('Abstract unavailable.')}
-            </motion.p>
+            {abstractText ? (
+              <motion.p
+                key={abstractKey}
+                ref={attachAbstractBody}
+                lang="en"
+                {...abstractSwap}
+              >
+                <ScientificText>{abstractText}</ScientificText>
+              </motion.p>
+            ) : (
+              // No abstract in the record: the shared empty state, centred in
+              // the abstract's place like every other one, not set as the first
+              // line of an article (drop cap and all).
+              <motion.div
+                key={abstractKey}
+                ref={attachAbstractBody}
+                className="pc-abstract-empty"
+                {...abstractSwap}
+              >
+                <EmptyState
+                  as="p"
+                  art={<Petri pose="blankPage" className="pc-abstract-empty-petri" />}
+                  title={'No abstract'}
+                  actions={readAction}
+                >
+                  {"This paper's record has no abstract."}
+                </EmptyState>
+              </motion.div>
+            )}
           </AnimatePresence>
         </div>
 
@@ -1742,6 +2026,11 @@ const PaperCard = memo(function PaperCard({
             : ('Read full abstract')}
         </button>
         )}
+        </motion.div>
+        )}
+        </AnimatePresence>
+        </div>
+        </div>
 
         <AnimatePresence initial={false}>
           {researchResources.length > 0 && (
@@ -1783,8 +2072,8 @@ const PaperCard = memo(function PaperCard({
                   className="pc-linked-resources-motion"
                   initial={prefersReducedMotion
                     ? false
-                    : { opacity: 0, y: 10, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                    : { opacity: 0, transform: 'translateY(10px) scale(0.98)' }}
+                  animate={{ opacity: 1, transform: 'translateY(0px) scale(1)' }}
                   exit={{ opacity: 0, transition: { duration: 0.15 } }}
                   transition={prefersReducedMotion
                     ? { duration: 0.12 }
@@ -1811,15 +2100,15 @@ const PaperCard = memo(function PaperCard({
                             onClick={(event) => event.stopPropagation()}
                             title={resource.title}
                             aria-label={`${resourceLabel}: ${resource.title}`}
-                            initial={prefersReducedMotion ? false : { opacity: 0, y: 3 }}
-                            animate={{ opacity: 1, y: 0 }}
+                            initial={prefersReducedMotion ? false : { opacity: 0, transform: 'translateY(3px)' }}
+                            animate={{ opacity: 1, transform: 'translateY(0px)' }}
                             transition={prefersReducedMotion
                               ? { duration: 0.12 }
                               // Base delay sits just after the block starts
                               // fading in (0.3s) -- earlier and the chips
                               // would animate under a still-transparent
                               // parent, wasting the cascade.
-                              : { duration: 0.3, delay: 0.42 + Math.min(index, 4) * 0.05, ease: [0.16, 1, 0.3, 1] }}
+                              : { duration: 0.3, delay: 0.42 + Math.min(index, 4) * 0.05, ease: EASE_OUT_EXPO }}
                           >
                             <ResourceIcon size={13} />
                             <span>{resourceLabel}</span>
@@ -1839,27 +2128,7 @@ const PaperCard = memo(function PaperCard({
             read is the decision, sharing and related work are afterthoughts. */}
         <div className="pc-action-bar">
           <div className="pc-action-primary">
-            {/* El `aria-label` repite EL MISMO rótulo, no uno mejor. En móvil
-                `.pc-action-label` es `display: none` (PaperCard.css), y eso no
-                esconde el texto: lo saca del árbol de accesibilidad, así que el
-                botón se quedaba sin nombre — quince por pantalla. Repetirlo
-                literalmente es también lo que pide el criterio 2.5.3 en
-                escritorio, donde el rótulo sí se lee: el nombre accesible tiene
-                que CONTENER lo que se ve, o quien maneja la interfaz por voz no
-                puede pulsarlo diciendo lo que lee. En móvil se ve la primera
-                palabra (`--short`), que el nombre contiene por construcción: la
-                acción principal era la única de la barra sin rótulo, y el mismo
-                icono servía para leer aquí y para salir a la fuente. */}
-            <Button
-              className={`pc-action-read${isResolvingAccess ? ' is-resolving' : ''}`}
-              onClick={handleOpenPaper}
-              disabled={isResolvingAccess}
-              aria-label={primaryActionLabel}
-            >
-              {isResolvingAccess ? <CircleNotch className="spinning" size={16} /> : <FileText size={16} />}
-              <span className="pc-action-label">{primaryActionLabel}</span>
-              <span className="pc-action-label--short">{primaryActionShortLabel}</span>
-            </Button>
+            {abstractText && readAction}
 
             {canRequestRewrite && (
               <Button
@@ -1901,41 +2170,6 @@ const PaperCard = memo(function PaperCard({
             )}
           </div>
 
-          <div className="pc-action-utilities">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={handleShare}
-              aria-label={'Share'}
-              title={copied
-                ? ('Copied')
-                : ('Share')}
-            >
-              {copied ? <Check size={16} /> : <ShareNetwork size={16} />}
-            </Button>
-
-            {(paper.doi || paper.arxivId || paper.semanticScholarId) && (
-              <Button
-                variant="sky"
-                size="icon"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  // The graph and the similar list are session-only in the
-                  // Worker: a guest used to get a sheet that could only say
-                  // «No se pudieron cargar» (audit 2026-09-23, issue 2).
-                  if (publicMode) {
-                    requireAuthentication('related');
-                    return;
-                  }
-                  setShowRelated(true);
-                }}
-                aria-label={'View related papers'}
-                title={'Related papers'}
-              >
-                <Graph size={17} />
-              </Button>
-            )}
-          </div>
         </div>
         </div>
       </article>
@@ -1953,6 +2187,7 @@ const PaperCard = memo(function PaperCard({
           pressed={isLiked}
           onPressedChange={handleLike}
           onClick={swallowClick}
+          title={'Like'}
         >
           <span className="pc-side-icon">
             <Heart size={20} weight={isLiked ? 'fill' : 'regular'} aria-hidden="true" />
@@ -1965,6 +2200,7 @@ const PaperCard = memo(function PaperCard({
           pressed={isSaved}
           onPressedChange={handleSave}
           onClick={swallowClick}
+          title={'Save'}
         >
           <span className="pc-side-icon">
             <BookmarkSimple size={20} weight={isSaved ? 'fill' : 'regular'} aria-hidden="true" />
@@ -1972,35 +2208,74 @@ const PaperCard = memo(function PaperCard({
           <span className="pc-side-label">{'Save'}</span>
         </Toggle>
 
-        <Toggle
-          className={`pc-side-btn pc-side-btn--seen ${isReadActive ? 'pc-side-btn--read' : ''} ${releasingRead && !isReadActive ? 'pc-side-btn--unreading' : ''}`}
-          pressed={isReadActive}
-          onPressedChange={handleMarkAsRead}
-          onClick={swallowClick}
-          title={isReadActive
-            ? ('Mark as unread')
-            : ('Mark as read')}
-        >
-          {/* Both glyphs are always in the slot, one over the other, so the
-              eye can shrink away while the tick springs in (PaperCard.css)
-              instead of one icon being swapped for the other between frames. */}
-          <span className="pc-side-icon pc-side-icon--morph">
-            <Eye size={20} className="pc-icon-eye" aria-hidden="true" />
-            <CheckCircle size={20} className="pc-icon-check" aria-hidden="true" />
-          </span>
-          <span className="pc-side-label">
-            {isReadActive
-              ? ('Read')
-              : ('Mark as read')}
-          </span>
-        </Toggle>
+        {shareUrl && (
+          <SharePanel
+            title={paper.title}
+            url={shareUrl}
+            onShared={handleShared}
+            trigger={(
+              <button
+                type="button"
+                className="pc-side-btn pc-side-btn--share"
+                onClick={(event) => event.stopPropagation()}
+                aria-label="Share"
+                title="Share"
+              >
+                <span className="pc-side-icon">
+                  <ShareNetwork size={20} aria-hidden="true" />
+                </span>
+              </button>
+            )}
+          />
+        )}
 
-        <button className="pc-side-btn pc-side-btn--skip" onClick={handleNotInterested}>
-          <span className="pc-side-icon">
-            <Prohibit size={20} aria-hidden="true" />
-          </span>
-          <span className="pc-side-label">{'Skip'}</span>
-        </button>
+        {/* The paper's connections: on a wider screen the map takes the
+            abstract's place until the tile is pressed again; on a phone it
+            opens as a sheet. */}
+        {hasRelated && (
+          <Toggle
+            className="pc-side-btn pc-side-btn--connections"
+            pressed={showRelated}
+            onPressedChange={toggleRelated}
+            onClick={swallowClick}
+            title={'Connections'}
+          >
+            <span className="pc-side-icon">
+              <Graph size={20} weight={showRelated ? 'fill' : 'regular'} aria-hidden="true" />
+            </span>
+            <span className="pc-side-label">{'Connections'}</span>
+          </Toggle>
+        )}
+
+        {/* The card's secondary actions, behind one more tile: the rail leads
+            with like, save and share, and the rest opens the way
+            share does — a menu off the tile, or a drawer on a phone. */}
+        <MoreActions
+          items={[
+            {
+              id: 'read',
+              label: isReadActive ? 'Mark as unread' : 'Mark as read',
+              Icon: isReadActive ? CheckCircle : Eye,
+              onSelect: handleMarkAsRead,
+            },
+            { id: 'skip', label: 'Skip', Icon: Prohibit, onSelect: handleNotInterested },
+            { id: 'bibtex', label: 'Export BibTeX', Icon: DownloadSimple, onSelect: () => downloadCitationFile([paper], 'bibtex', 'papertok-paper') },
+            { id: 'ris', label: 'Export RIS', Icon: DownloadSimple, onSelect: () => downloadCitationFile([paper], 'ris', 'papertok-paper') },
+          ]}
+          trigger={(
+            <button
+              type="button"
+              className="pc-side-btn pc-side-btn--more"
+              onClick={swallowClick}
+              aria-label="More actions"
+              title="More actions"
+            >
+              <span className="pc-side-icon">
+                <DotsThree size={20} weight="bold" aria-hidden="true" />
+              </span>
+            </button>
+          )}
+        />
       </div>
 
       {/* Double-tap heart */}
@@ -2043,8 +2318,8 @@ const PaperCard = memo(function PaperCard({
           <DrawerHandle />
           <div className="pc-authors-modal-header">
             <DrawerTitle render={<h3 id="pc-authors-dialog-title" />}>{'Authors'}</DrawerTitle>
-            <DrawerClose aria-label={'Close authors'}>
-              <X size={22} aria-hidden="true" />
+            <DrawerClose render={<Button variant="ghost" size="icon-sm" aria-label={'Close authors'} />}>
+              <X size={16} aria-hidden="true" />
             </DrawerClose>
           </div>
           <div className="pc-authors-modal-list">
@@ -2084,7 +2359,7 @@ const PaperCard = memo(function PaperCard({
         <AbstractSheet paper={paper} onClose={closeAbstractSheet} />
       )}
 
-      {showRelated && (
+      {showRelated && !relatedInline && (
         <Suspense fallback={null}>
           <RelatedPapersSheet
             key={`papertok-related-sheet:${getRelatedPaperIdentity(paper) || 'current'}`}

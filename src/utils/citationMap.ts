@@ -1,59 +1,65 @@
 import type { Paper } from '../models/Paper.ts';
 type Geometry = typeof CITATION_MAP_GEOMETRY;
-interface BandBounds { top: number; bottom: number }
+interface Box { left: number; right: number; top: number; bottom: number }
 /**
- * Geometry for the citation map: where every neighbour of a paper sits on the
- * two axes the map draws.
+ * Geometry for the citation map: where every neighbour of a paper sits.
  *
- * Vertical is time, in two bands with their own scale — what the paper cites
- * above the rule, what cites it below. A single continuous scale would squash
- * one half against the rule whenever the two ranges differ in size, which is
- * most of the time.
+ * Horizontal is time: each paper stands at its year, so what the paper cites
+ * gathers to the left of it and what cites it to the right, with the centre
+ * paper's own year between them.
  *
- * Horizontal is citations, logarithmic. Citation counts follow a power law: on
- * a linear axis one heavily cited neighbour pins every other node against the
- * left margin and the axis stops saying anything.
+ * Vertical is citations, logarithmic, with a labelled scale. Citation counts
+ * follow a power law: on a linear axis one heavily cited neighbour pins every
+ * other node to the floor and the axis stops saying anything.
  *
- * A node is placed only when both coordinates are known, and only while its
- * band still has a 24px slot for it. WCAG 2.2 SC 2.5.8 (Target Size Minimum)
- * needs every node to be a real pointer target, so a row never gets shorter
- * than that to fit one more in — a band that runs out of slots omits the
- * surplus instead. A paper resolved from OpenCitations metadata rather than
- * OpenAlex arrives with `citationCountKnown: false` and sometimes without a
- * year, and an unknown count is not a count of zero — placing it would be an
- * invention. Both kinds of leftover — unmappable and unfit — are counted in
- * `omitted` and belong to the list view, which shows everything the map
- * fetched, whether or not it could draw it.
+ * Both coordinates are data, so a node is never moved up or down to make
+ * room. Two papers that want the same spot (same year, similar count) are
+ * spread sideways within their own year; one that finds no free spot there is
+ * left out. Every node is a 24px pointer target (WCAG 2.2 SC 2.5.8, Target
+ * Size Minimum), and two targets never overlap.
+ *
+ * A node is placed only when both coordinates are known. A paper resolved
+ * from OpenCitations metadata rather than OpenAlex arrives with
+ * `citationCountKnown: false` and sometimes without a year, and an unknown
+ * count is not a count of zero: placing it would be an invention. Both kinds
+ * of leftover, unmappable and unfit, stay in the list view, which shows
+ * everything the map fetched.
  */
 
 export const CITATION_MAP_GEOMETRY = {
+  /** Room on the left for the citation scale's labels. */
+  scalePadding: 44,
   sidePadding: 26,
-  bandPadding: 10,
-  ruleGap: 26,
+  topPadding: 14,
+  bottomPadding: 14,
   /**
-   * WCAG 2.2 SC 2.5.8 (Target Size Minimum) floor: every node is a real
-   * pointer target, so this is both the row's own height and the minimum
-   * centre-to-centre pitch between rows — one fixed number keeps two 24px
-   * hit boxes from ever touching. It no longer shrinks under crowding; a
-   * band that cannot fit every neighbour at this pitch omits the surplus
-   * instead (`bandCapacity`, `omitted`).
+   * WCAG 2.2 SC 2.5.8 (Target Size Minimum) floor: every node is a 24px
+   * square target, and no two targets share a pixel. A node that cannot get
+   * a free square in its own year is omitted, never shrunk.
    */
   minGap: 24,
   labelWidth: 104,
+  labelHeight: 14,
   flipMargin: 60,
+  /** The centre's chip ("This paper · 2016"), its gap from the mark, and
+      how near the right edge it moves to the mark's left. */
+  chipWidth: 136,
+  chipHeight: 14,
+  chipGap: 16,
+  chipFlipAt: 180,
   nodeDelayBase: 220,
   nodeDelayStep: 24,
   edgeDelayBase: 160,
   edgeDelayStep: 16,
-  /** Decades of slack on each side of the real range, so nothing touches the margin. */
+  /** Decades of slack above and below the real range, so nothing touches the edge. */
   domainPadding: 0.2,
-  /** A neighbourhood that spans less than this reads as a single column without it. */
+  /** A neighbourhood that spans less than this reads as a single row without it. */
   minDomainSpan: 0.6,
-};
-
-const EMPTY_BANDS = {
-  references: { top: 0, bottom: 0 },
-  citations: { top: 0, bottom: 0 },
+  /** Half a year of slack on each side, so the first and last year are not on the edge. */
+  yearPadding: 0.5,
+  minYearSpan: 4,
+  /** Year labels stand at least this far apart. */
+  minYearTickGap: 44,
 };
 
 export function isMappableCitationPaper(paper: Partial<Paper> | null | undefined) {
@@ -72,8 +78,9 @@ function impactOf(paper: Partial<Paper> | null | undefined) {
   return Math.max(1, Number(paper?.citationCount) || 0);
 }
 
-function sortKey(paper: Partial<Paper>, index: number) {
-  return String(paper?.id || paper?.doi || paper?.title || index);
+function yearOf(paper: Partial<Paper> | null | undefined) {
+  const year = Number(paper?.year);
+  return Number.isFinite(year) && year > 0 ? year : null;
 }
 
 function logDomain(papers: Partial<Paper>[], geometry: Geometry) {
@@ -90,81 +97,34 @@ function logDomain(papers: Partial<Paper>[], geometry: Geometry) {
   return { low: low - geometry.domainPadding, high: high + geometry.domainPadding };
 }
 
-/**
- * Time decides where a node wants to be; the spreading pass decides where it
- * fits. Two passes in each direction settle it: pushing apart from the top can
- * overflow the band, compressing from the bottom can push the first node out
- * of it, and running both again resolves the pair. The order is never touched,
- * so a node that is older than another is always drawn above it.
- */
-function spreadWithinBand(positions: number[], spacing: number, minY: number, maxY: number) {
-  const ys = positions.slice();
-  if (!ys.length) return ys;
-
-  for (let pass = 0; pass < 3; pass += 1) {
-    ys[0] = Math.max(ys[0], minY);
-    for (let index = 1; index < ys.length; index += 1) {
-      ys[index] = Math.max(ys[index], ys[index - 1] + spacing);
-    }
-    ys[ys.length - 1] = Math.min(ys[ys.length - 1], maxY);
-    for (let index = ys.length - 2; index >= 0; index -= 1) {
-      ys[index] = Math.min(ys[index], ys[index + 1] - spacing);
-    }
+function yearDomain(years: number[], geometry: Geometry) {
+  if (!years.length) return { first: 0, last: geometry.minYearSpan };
+  let first = Math.min(...years);
+  let last = Math.max(...years);
+  if (last - first < geometry.minYearSpan) {
+    const missing = (geometry.minYearSpan - (last - first)) / 2;
+    first -= missing;
+    last += missing;
   }
-  return ys.map(y => Math.min(Math.max(y, minY), maxY));
+  return { first: first - geometry.yearPadding, last: last + geometry.yearPadding };
 }
 
 /**
- * How many 24px slots a band has room for. The caller trims its papers to
- * this before `placeBand` ever sees them, so `placeBand` itself never has to
- * choose between shrinking a row and overlapping one — it always gets a
- * list that already fits at the fixed pitch.
+ * Alternates the two neighbourhoods in the order the Worker ranked them (most
+ * cited first for references, most recent first for citations), so a map
+ * that runs out of room keeps the leading papers of both rather than all of
+ * one and none of the other.
  */
-function bandCapacity(bounds: BandBounds, geometry: Geometry) {
-  const bandHeight = Math.max(0, bounds.bottom - bounds.top);
-  return Math.max(0, Math.floor(bandHeight / geometry.minGap));
+function interleave<T>(references: T[], citations: T[]) {
+  const order: Array<{ paper: T; relation: 'reference' | 'citation'; rank: number }> = [];
+  for (let index = 0; index < Math.max(references.length, citations.length); index += 1) {
+    if (index < references.length) order.push({ paper: references[index], relation: 'reference', rank: index });
+    if (index < citations.length) order.push({ paper: citations[index], relation: 'citation', rank: index });
+  }
+  return order;
 }
 
-function placeBand<T extends Partial<Paper>>(papers: T[], relation: string, bounds: BandBounds, geometry: Geometry, xOf: (paper: T) => number, width: number) {
-  if (!papers.length) return [];
-
-  const ordered = papers
-    .map((paper, index) => ({ paper, index }))
-    .sort((a, b) => (Number(a.paper.year) - Number(b.paper.year))
-      || sortKey(a.paper, a.index).localeCompare(sortKey(b.paper, b.index)));
-
-  // Fixed, not fitted: the caller (`buildCitationMapLayout`) already trimmed
-  // `papers` to `bandCapacity`, so this pitch always has room to spare.
-  const spacing = geometry.minGap;
-  const rowHeight = geometry.minGap;
-  const minY = bounds.top + rowHeight / 2;
-  // A sheet short enough to leave the band thinner than one row would put the
-  // bottom of the band above its top, and every node off the plot entirely.
-  const maxY = Math.max(minY, bounds.bottom - rowHeight / 2);
-
-  const years = ordered.map(entry => Number(entry.paper.year));
-  const oldest = Math.min(...years);
-  const span = Math.max(1, Math.max(...years) - oldest);
-  const travel = Math.max(0, maxY - minY);
-  const wanted = ordered.map(entry => minY + ((Number(entry.paper.year) - oldest) / span) * travel);
-  const ys = spreadWithinBand(wanted, spacing, minY, maxY);
-
-  const flipAt = width - geometry.labelWidth - geometry.flipMargin;
-  return ordered.map((entry, index) => {
-    const x = xOf(entry.paper);
-    return {
-      key: `${relation}:${entry.paper.doi || entry.paper.id || entry.index}`,
-      paper: entry.paper,
-      relation,
-      x,
-      y: ys[index],
-      rowHeight,
-      side: x > flipAt ? 'left' : 'right',
-      delay: geometry.nodeDelayBase + index * geometry.nodeDelayStep,
-      edgeDelay: geometry.edgeDelayBase + index * geometry.edgeDelayStep,
-    };
-  });
-}
+const overlaps = (a: Box, b: Box) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 
 export function buildCitationMapLayout<T extends Partial<Paper>>({
   width = 0,
@@ -175,66 +135,148 @@ export function buildCitationMapLayout<T extends Partial<Paper>>({
   geometry = CITATION_MAP_GEOMETRY,
 }: { width?: number; height?: number; center?: T | null; references?: T[]; citations?: T[]; geometry?: Geometry } = {}) {
   const ready = width > 0 && height > 0;
-  const ruleY = height / 2;
-  const bands = height > 0
-    ? {
-      references: { top: geometry.bandPadding, bottom: ruleY - geometry.ruleGap },
-      citations: { top: ruleY + geometry.ruleGap, bottom: height - geometry.bandPadding },
-    }
-    : EMPTY_BANDS;
+  // Until the neighbourhood lands there is no scale, so the centre stands at
+  // the middle of the plot; it then moves to where its own year and count put it.
+  const midX = width / 2;
+  const midY = height / 2;
+  const plot = {
+    left: geometry.scalePadding,
+    right: Math.max(geometry.scalePadding, width - geometry.sidePadding),
+    top: geometry.topPadding,
+    bottom: Math.max(geometry.topPadding, height - geometry.bottomPadding),
+  };
 
   const mappableReferences = references.filter(isMappableCitationPaper);
   const mappableCitations = citations.filter(isMappableCitationPaper);
 
-  // A band only turns away mappable neighbours for lack of room once its
-  // real height is known — before that (`ready` false) there is nothing to
-  // measure a slot count against, so nothing is trimmed for space yet and
-  // `omitted` reflects only what could never be mapped, same as always.
-  // The slice keeps array order, which is the order the two neighbourhoods
-  // already arrive in (most cited first for references, most recent first
-  // for citations, per the Worker route) — so a band that cannot fit
-  // everything keeps the papers its caller already ranked highest.
-  const referenceCapacity = ready ? bandCapacity(bands.references, geometry) : mappableReferences.length;
-  const citationCapacity = ready ? bandCapacity(bands.citations, geometry) : mappableCitations.length;
-  const drawnReferences = mappableReferences.slice(0, referenceCapacity);
-  const drawnCitations = mappableCitations.slice(0, citationCapacity);
-
-  const shown = { references: drawnReferences.length, citations: drawnCitations.length };
-  const omitted = {
-    references: references.length - drawnReferences.length,
-    citations: citations.length - drawnCitations.length,
-  };
-
   const centerImpactKnown = Boolean(center?.citationCountKnown);
+  const centerYear = yearOf(center);
   const scaled = [...mappableReferences, ...mappableCitations];
   if (centerImpactKnown) scaled.push(center!);
   const { low, high } = logDomain(scaled, geometry);
+  const years = scaled.map(yearOf).filter(Boolean) as number[];
+  if (centerYear && !centerImpactKnown) years.push(centerYear);
+  const { first, last } = yearDomain(years, geometry);
 
-  const plotWidth = Math.max(0, width - geometry.sidePadding * 2);
-  const xForImpact = (impact: number) => {
-    const fraction = (Math.log10(impact) - low) / (high - low);
-    return geometry.sidePadding + Math.min(1, Math.max(0, fraction)) * plotWidth;
+  // Each node is a 24px square. The scale starts half of one in from the
+  // left and the top, where its labels are, so a star at the first year or
+  // the top count stands inside the plot rather than on them. The right and
+  // bottom keep their room: that is where recent papers crowd the centre.
+  const half = geometry.minGap / 2;
+  const plotWidth = Math.max(0, plot.right - plot.left - half);
+  const plotHeight = Math.max(0, plot.bottom - plot.top - half);
+  const xForYear = (year: number) => plot.left + half + ((year - first) / (last - first)) * plotWidth;
+  const yForImpact = (impact: number) => {
+    const fraction = Math.min(1, Math.max(0, (Math.log10(impact) - low) / (high - low)));
+    return plot.bottom - fraction * plotHeight;
   };
-  const xOf = (paper: Partial<Paper> | null) => xForImpact(impactOf(paper));
+  const pxPerYear = plotWidth / (last - first);
 
-  const centerX = centerImpactKnown && ready
-    ? xOf(center)
-    : geometry.sidePadding + plotWidth / 2;
+  const centerX = ready && centerYear ? xForYear(centerYear) : midX;
+  const centerY = ready && centerImpactKnown ? yForImpact(impactOf(center)) : midY;
 
   const ticks = [];
+  const yearTicks = [];
   if (ready) {
-    for (let exponent = Math.ceil(low); exponent <= Math.floor(high); exponent += 1) {
-      const value = 10 ** exponent;
-      ticks.push({ value, x: xForImpact(value), label: formatCitationTick(value) });
+    // Powers of ten; a neighbourhood narrower than two of them gets the 2
+    // and 5 steps between as well, so the scale always has more than one mark.
+    const powers = [];
+    for (let exponent = Math.ceil(low); exponent <= Math.floor(high); exponent += 1) powers.push(10 ** exponent);
+    const values = powers.length >= 2 ? powers : [];
+    if (!values.length) {
+      for (let exponent = Math.floor(low); exponent <= Math.ceil(high); exponent += 1) {
+        for (const step of [1, 2, 5]) {
+          const value = step * 10 ** exponent;
+          if (value >= 1 && Math.log10(value) >= low && Math.log10(value) <= high) values.push(value);
+        }
+      }
+    }
+    for (const value of values) ticks.push({ value, y: yForImpact(value), label: formatCitationTick(value) });
+    const step = [1, 2, 5, 10, 20, 50].find(candidate => candidate * pxPerYear >= geometry.minYearTickGap) || 100;
+    for (let year = Math.ceil(first / step) * step; year <= last; year += step) {
+      yearTicks.push({ year, x: xForYear(year) });
     }
   }
 
-  const nodes = ready
-    ? [
-      ...placeBand(drawnReferences, 'reference', bands.references, geometry, xOf, width),
-      ...placeBand(drawnCitations, 'citation', bands.citations, geometry, xOf, width),
-    ]
-    : [];
+  // The centre mark claims a square too.
+  const square = (x: number, y: number) => ({ left: x - half, right: x + half, top: y - half, bottom: y + half });
+  const taken = [square(centerX, centerY)];
+  // Sideways only, and never past the middle of the gap to the next year.
+  const maxShift = Math.max(0, pxPerYear / 2 - 1);
+  const offsets = [0];
+  for (let step = geometry.minGap; step <= maxShift; step += geometry.minGap) offsets.push(step, -step);
 
-  return { ready, centerX, centerImpactKnown, ruleY, bands, ticks, nodes, shown, omitted };
+  const placed = [];
+  if (ready) {
+    for (const entry of interleave(mappableReferences, mappableCitations)) {
+      const wantedX = xForYear(yearOf(entry.paper)!);
+      const y = yForImpact(impactOf(entry.paper));
+      const x = offsets
+        .map(offset => wantedX + offset)
+        .find(candidate => candidate - half >= 0 && candidate + half <= width
+          && !taken.some(box => overlaps(box, square(candidate, y))));
+      if (x === undefined) continue;
+      taken.push(square(x, y));
+      placed.push({ ...entry, x, y });
+    }
+  }
+
+  // Labels go where they fit: on the preferred side (away from the right
+  // edge), else the other, else none until the node is hovered or focused.
+  // A label never covers another node's target or another label.
+  const flipAt = width - geometry.labelWidth - geometry.flipMargin;
+  // The centre's chip is placed first, so no star's label lands on it.
+  const chipSide = centerX > width - geometry.chipFlipAt ? 'left' : 'right';
+  const chipLeft = chipSide === 'right'
+    ? centerX + geometry.chipGap
+    : centerX - geometry.chipGap - geometry.chipWidth;
+  const labels = [{
+    left: chipLeft,
+    right: chipLeft + geometry.chipWidth,
+    top: centerY - geometry.chipHeight / 2,
+    bottom: centerY + geometry.chipHeight / 2,
+  }];
+  const labelBox = (node: { x: number; y: number }, side: string) => {
+    const top = node.y - geometry.labelHeight / 2;
+    const bottom = node.y + geometry.labelHeight / 2;
+    return side === 'right'
+      ? { left: node.x + half, right: node.x + half + geometry.labelWidth, top, bottom }
+      : { left: node.x - half - geometry.labelWidth, right: node.x - half, top, bottom };
+  };
+  const labelFits = (box: Box) => box.left >= 0 && box.right <= width
+    && !taken.some(other => overlaps(other, box)) && !labels.some(other => overlaps(other, box));
+
+  const counters = { reference: 0, citation: 0 };
+  const nodes = placed.map((node) => {
+    const preferred = node.x > flipAt ? 'left' : 'right';
+    const other = preferred === 'right' ? 'left' : 'right';
+    const side = [preferred, other].find(s => labelFits(labelBox(node, s)));
+    if (side) labels.push(labelBox(node, side));
+    // The stagger restarts for each relation, so a full map does not queue
+    // twenty nodes behind each other.
+    const index = counters[node.relation];
+    counters[node.relation] += 1;
+    return {
+      key: `${node.relation}:${node.paper.doi || node.paper.id || node.rank}`,
+      paper: node.paper,
+      relation: node.relation,
+      x: node.x,
+      y: node.y,
+      side: side ?? preferred,
+      labelHidden: !side,
+      delay: geometry.nodeDelayBase + index * geometry.nodeDelayStep,
+      edgeDelay: geometry.edgeDelayBase + index * geometry.edgeDelayStep,
+    };
+  });
+
+  return {
+    ready,
+    centerX,
+    centerY,
+    chipSide,
+    plot,
+    ticks,
+    yearTicks,
+    nodes,
+  };
 }

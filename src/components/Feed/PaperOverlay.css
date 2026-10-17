@@ -43,11 +43,11 @@
    same trip back, shorter. The primitive waits for the popup's own animation
    (the fade) before unmounting, so the surface's leave is timed inside it. */
 .paper-overlay[data-open] {
-  animation: fadeIn 0.2s ease-out;
+  animation: fadeIn 280ms var(--ease-out);
 }
 
 .paper-overlay[data-closed] {
-  animation: fadeOut 0.2s ease-out forwards;
+  animation: fadeOut 180ms var(--ease-out) forwards;
   pointer-events: none;
 }
 
@@ -60,11 +60,11 @@
 }
 
 .paper-overlay[data-open] .paper-overlay-surface {
-  animation: paperOverlaySurfaceIn 0.36s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: paperOverlaySurfaceIn 280ms var(--ease-out);
 }
 
 .paper-overlay[data-closed] .paper-overlay-surface {
-  animation: paperOverlaySurfaceOut 0.18s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: paperOverlaySurfaceOut 180ms var(--ease-out) forwards;
 }
 
 @keyframes paperOverlaySurfaceIn {
@@ -97,9 +97,9 @@
   display: none !important;
 }
 
+/* Reduced motion keeps the frame's fade (opacity only) and drops the surface's
+   travel. */
 @media (prefers-reduced-motion: reduce) {
-  .paper-overlay[data-open],
-  .paper-overlay[data-closed],
   .paper-overlay[data-open] .paper-overlay-surface,
   .paper-overlay[data-closed] .paper-overlay-surface {
     animation: none;

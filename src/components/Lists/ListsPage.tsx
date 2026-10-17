@@ -32,6 +32,7 @@ import { getCategoryLabel } from '../../data/categories.ts';
 import { getIcon } from '../../utils/icons.ts';
 import CreateListDialog from './CreateListDialog.tsx';
 import { Button } from '../ui/button.tsx';
+import { toastError } from '../ui/toast.ts';
 import { resolveListColor } from '../../utils/listColors.ts';
 import { areaAccentForPaper } from '../../utils/areaAccent.ts';
 import ScientificText from '../ScientificText.ts';
@@ -91,6 +92,7 @@ import {
   planRetryRequests,
 } from '../../utils/listPaperMetadataPlan.ts';
 import './ListsPage.css';
+import { EASE_OUT_EXPO } from '../../utils/motionCurves.ts';
 
 /**
  * How long a read may take before it is allowed to draw a placeholder.
@@ -945,7 +947,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   // The dialog owns the form and its busy/error states; this owns the write.
   // Letting the failure through is the contract: CreateListDialog keeps itself
   // open and says so, instead of the caller guessing what to render.
-  const handleCreateList = async (name: string, icon: string, color: string) => {
+  const handleCreateList = async (name: string, icon: string, color: string, { isPublic = false } = {}) => {
     const listId = `list_${Date.now()}`;
     const newList = { id: listId, name, emoji: icon, color, paperIds: [], createdAt: new Date().toISOString() };
     if (IS_DEMO) {
@@ -954,6 +956,17 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       demoSet('lists', allLists);
     } else {
       await setDoc(doc(db, 'users', user!.uid, 'lists', listId), newList);
+      // Public from the start: published empty; the Worker writes the share id
+      // onto the list. A failed publish leaves it private, and says so.
+      if (isPublic) {
+        try {
+          const { shareId } = await publishPublicList({ listId, title: name, language: 'en', papers: [] });
+          Object.assign(newList, { publicShareId: shareId, publicSyncedAt: new Date() });
+        } catch (publishError) {
+          console.error('The new list could not be published', publishError);
+          toastError('List created, but still private', { description: 'It could not be published. Make it public from My lists.' });
+        }
+      }
     }
     setLists((prev) => [...prev, newList]);
   };
@@ -1323,7 +1336,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     initial: prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 10 },
     animate: { opacity: 1, y: 0 },
     exit: prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -8 },
-    transition: { duration: prefersReducedMotion ? 0.1 : 0.2, ease: [0.16, 1, 0.3, 1] },
+    transition: { duration: prefersReducedMotion ? 0.1 : 0.2, ease: EASE_OUT_EXPO },
   };
 
   // Returning from a paper with { openListId }: until the effect above opens

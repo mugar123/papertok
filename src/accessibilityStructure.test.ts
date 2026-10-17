@@ -457,7 +457,7 @@ test('the focus ring is never painted in the brand orange again', async () => {
  * as a single object rather than as a barred gap.
  */
 
-test('the palette marks its selected row with the enter mark, not only a tint', async () => {
+test('the palette marks its selected row with a heavier icon in the focus ink, not only a tint', async () => {
   const command = await readSource(COMMAND_JSX);
 
   const item = command.match(/function CommandItem\(\{[\s\S]*?\n\}/);
@@ -472,9 +472,10 @@ test('the palette marks its selected row with the enter mark, not only a tint', 
   // quoted arguments to `cn(...)`.
   const utilities = (item[0].match(/data-\[selected=true\]:[^\s'"\x60,]+/g) ?? []).join(' ');
 
+  const palette = await readFile(new URL('./components/Search/SearchCommand.css', import.meta.url), 'utf8');
   assert.match(
-    utilities,
-    /data-\[selected=true\]:after:text-\[var\(--focus-ring\)\]/,
+    palette,
+    /\.sc-sheet \[cmdk-item\]\[data-selected='true'\] > \.sc-icon \{\s*color: var\(--focus-ring\);\s*stroke: currentColor;\s*stroke-width: 10px;/,
     'the selected row no longer draws its mark in `var(--focus-ring)`. Whatever is '
     + 'left is a background change, and a tint on its own is far below the 3:1 WCAG '
     + '1.4.11 asks of the visual information that identifies a state: the row the '
@@ -482,8 +483,7 @@ test('the palette marks its selected row with the enter mark, not only a tint', 
     + '--focus-ring is the token whose job is "you are here" and whose value clears '
     + '3:1 on both themes.',
   );
-  // Empty alt text: the mark is seen, never read into the option's name.
-  assert.match(item[0], /data-\[selected=true\]:after:content-\['↵'_\/_''\]/, 'the mark is the "↵" at the row\'s end, with empty alt text');
+  assert.match(palette, /\.sc-sheet \[cmdk-item\]\[data-selected='true'\] \{\s*box-shadow: inset 3px 0 0 var\(--focus-ring\);/);
   assert.match(
     utilities,
     /data-\[selected=true\]:bg-\[/,

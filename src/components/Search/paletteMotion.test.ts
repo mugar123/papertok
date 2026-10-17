@@ -5,20 +5,23 @@ import { readFile } from 'node:fs/promises';
 const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
 
 /**
- * Asked for on 2026-09-03: the palette arrived and left too quickly. Half as
- * long again on both, and the scrim on the same two clocks — the shared
- * overlay fades in 150ms, which a 220ms exit would outlive.
+ * 2026-10-15: the palette is opened from the keyboard many times a day, so it
+ * arrives and leaves in 150ms on an ease-out, the exit opacity only — no
+ * ease-in. The scrim keeps the same clocks.
  */
-test('the palette arrives in 380ms and leaves in 220ms', async () => {
+test('the palette arrives and leaves in 150ms on an ease-out', async () => {
   const css = await read('./SearchCommand.css');
-  assert.match(css, /\.sc-sheet\[data-open\] \{\s*animation: scSheetIn 380ms cubic-bezier\(0\.16, 1, 0\.3, 1\);/);
-  assert.match(css, /\.sc-sheet\[data-closed\] \{\s*animation: scSheetOut 220ms cubic-bezier\(0\.4, 0, 1, 1\) both;/);
+  assert.match(css, /\.sc-sheet\[data-open\] \{\s*animation: scSheetIn 150ms var\(--ease-out\);/);
+  assert.match(css, /\.sc-sheet\[data-closed\] \{\s*animation: scSheetGone 150ms var\(--ease-out\) both;/);
+  assert.doesNotMatch(css, /cubic-bezier\(0\.4, 0, 1, 1\)/);
+  const palette = await read('./SearchCommand.tsx');
+  assert.doesNotMatch(palette, /wrapperClassName="sc-enter"/, 'the field does not move on open');
 });
 
 test('the scrim is the palette\'s own, timed with the sheet', async () => {
   const css = await read('./SearchCommand.css');
-  assert.match(css, /\.sc-scrim\.sc-scrim\[data-open\] \{\s*animation: fadeIn 380ms ease;/);
-  assert.match(css, /\.sc-scrim\.sc-scrim\[data-closed\] \{\s*animation: fadeOut 220ms ease both;/);
+  assert.match(css, /\.sc-scrim\.sc-scrim\[data-open\] \{\s*animation: fadeIn 150ms var\(--ease-out\);/);
+  assert.match(css, /\.sc-scrim\.sc-scrim\[data-closed\] \{\s*animation: fadeOut 150ms var\(--ease-out\) both;/);
   // Anchored on the delimiter that must follow the selector inside the shared
   // rule — a comma when another selector follows (its case here), tightly
   // bound whitespace then `{animation: none;` when it is last in the list —
@@ -51,12 +54,12 @@ test('a picked result closes the palette in 100ms of opacity, with no travel', a
   const palette = await read('./SearchCommand.tsx');
   assert.match(palette, /const \[leavingBySelect, setLeavingBySelect\] = useState(?:<[^;\n]+>)?\(false\);/);
   assert.match(palette, /setLeavingBySelect\(true\);\s*onOpenChange\(false\);/);
-  assert.match(palette, /if \(open\) \{\s*reset\(\);\s*setLeavingBySelect\(false\);\s*\}/);
+  assert.match(palette, /if \(open\) \{\s*reset\(\);\s*setLeavingBySelect\(false\);\s*setCascadeDone\(false\);\s*\}/);
   assert.match(palette, /className=\{`sc-sheet\$\{leavingBySelect \? ' sc-sheet--select' : ''\}`\}/);
   const css = await read('./SearchCommand.css');
   assert.match(css, /@keyframes scSheetGone \{\s*from \{\s*opacity: 1;\s*\}\s*to \{\s*opacity: 0;\s*\}\s*\}/);
-  assert.match(css, /\.sc-sheet\.sc-sheet--select\[data-closed\] \{\s*animation: scSheetGone 100ms cubic-bezier\(0\.23, 1, 0\.32, 1\) both;\s*\}/);
-  assert.match(css, /\.sc-scrim\.sc-scrim\.sc-scrim--select\[data-closed\] \{\s*animation: fadeOut 100ms cubic-bezier\(0\.23, 1, 0\.32, 1\) both;\s*\}/);
+  assert.match(css, /\.sc-sheet\.sc-sheet--select\[data-closed\] \{\s*animation: scSheetGone 100ms var\(--ease-out\) both;\s*\}/);
+  assert.match(css, /\.sc-scrim\.sc-scrim\.sc-scrim--select\[data-closed\] \{\s*animation: fadeOut 100ms var\(--ease-out\) both;\s*\}/);
   // Reduced motion switches the picked exit off with the others.
   const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.sc-sheet\.sc-sheet--select\[data-closed\],[\s\S]*?animation: none;/);
   assert.ok(reduced, 'the picked exit is inside the reduced-motion list');
@@ -68,4 +71,19 @@ test('a picked result closes the palette in 100ms of opacity, with no travel', a
   // unconstrained scan would match through that rule too and prove nothing.
   const reducedScrim = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.sc-scrim\.sc-scrim\.sc-scrim--select\[data-closed\](?:,[\s\S]*?|\s*\{\s*)animation: none;/);
   assert.ok(reducedScrim, 'the picked exit\'s scrim is inside the reduced-motion list');
+});
+
+/**
+ * 2026-10-17: the rows cascade in for the first answer after opening only.
+ * Typing is a keyboard action repeated all day; rows that arrive behind it are
+ * simply there. The cascade is switched off only after it has finished, and
+ * re-armed on the way in.
+ */
+test('the results cascade once per opening, not on every keystroke', async () => {
+  const palette = await read('./SearchCommand.tsx');
+  assert.match(palette, /setTimeout\(\(\) => setCascadeDone\(true\), ENTER_STAGGER_CAP \* ENTER_STEP_MS \+ ENTER_RISE_MS\)/);
+  assert.match(palette, /const rows = cascadeDone \? sectionContent\[section\]\(\) : Children\.map/);
+  assert.match(palette, /className=\{cascadeDone \? 'sc-heading' : 'sc-heading sc-enter'\}/);
+  const css = await read('./SearchCommand.css');
+  assert.match(css, /animation: scEnterRise 260ms var\(--ease-out-expo\) forwards;\s*animation-delay: calc\(var\(--sc-enter-index, 0\) \* 24ms\);/, 'the clock the timer mirrors');
 });

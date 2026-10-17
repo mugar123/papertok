@@ -1,3 +1,5 @@
+import { EASE_OUT_EXPO } from './motionCurves.ts';
+
 /**
  * Scrolling an element on the same clock as a CSS transition.
  *
@@ -13,10 +15,8 @@
  * duration, and the two land together.
  */
 
-/** The card's easing, as used across `PaperCard.css`. */
-export const CARD_EASE = Object.freeze([0.16, 1, 0.3, 1] as const);
-
-/** And its duration, in milliseconds. Kept in step with the CSS by hand. */
+/** The card's duration, in milliseconds, on `EASE_OUT_EXPO`. Kept in step
+    with the CSS by hand. */
 export const CARD_DURATION_MS = 420;
 
 /**
@@ -83,7 +83,7 @@ export function cubicBezier(x1: number, y1: number, x2: number, y2: number) {
 export function tweenScrollTop(node: Pick<Element, 'scrollTop'> | null | undefined, to: number, options: { durationMs?: number; easing?: (progress: number) => number; immediate?: boolean; now?: () => number; raf?: (callback: () => void) => number | undefined; cancelRaf?: (handle: number) => void } = {}) {
   const {
     durationMs = CARD_DURATION_MS,
-    easing = cubicBezier(...CARD_EASE),
+    easing = cubicBezier(...EASE_OUT_EXPO),
     immediate = false,
     now = () => Date.now(),
     raf = (callback) => globalThis.requestAnimationFrame?.(callback),

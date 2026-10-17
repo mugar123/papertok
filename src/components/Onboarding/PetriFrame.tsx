@@ -1,7 +1,7 @@
 import type { Key, PropsWithChildren, ReactNode, SVGProps } from 'react';
 export interface PetriProps { label?: string; className?: string }
 interface PetriFrameProps extends PropsWithChildren<PetriProps> {
-  defs?: ReactNode; behind?: ReactNode; bodyKey?: Key;
+  defs?: ReactNode; behind?: ReactNode; outside?: ReactNode; viewBox?: string; bodyKey?: Key;
   bodyProps?: SVGProps<SVGGElement>;
   svgProps?: SVGProps<SVGSVGElement> & { 'data-private'?: boolean };
 }
@@ -29,9 +29,13 @@ export function Hatch({ id, fill }: { id: string; fill: string }) {
  *
  * - `behind`: drawn before the body — an arm reaching up behind her.
  * - `children`: drawn on the body — face, hands, whatever she holds.
+ * - `outside`: drawn after the body group, so it does not move with her idle
+ *   animation — a speech bubble beside her.
  * - `defs`: extra patterns its parts fill with.
  * - `bodyKey` / `bodyProps`: on the body group, for a pose that remounts or
  *   animates it (a new key replays the swap).
+ * - `viewBox`: the crop. The default is cut to the figure, card included, so
+ *   centring the box centres Petri; a square one leaves room beside her.
  *
  * With a `label` the drawing is an image with that name (it stands in for a
  * screen's kicker); without one it is decoration, hidden from assistive tech.
@@ -39,9 +43,11 @@ export function Hatch({ id, fill }: { id: string; fill: string }) {
 export default function PetriFrame({
   label,
   className,
+  viewBox = '14 22 128 124',
   defs,
   behind,
   children,
+  outside,
   bodyKey,
   bodyProps,
   svgProps,
@@ -49,7 +55,7 @@ export default function PetriFrame({
   const hatch = useId();
   const a11y: SVGProps<SVGSVGElement> = label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true, focusable: 'false' };
   return (
-    <svg viewBox="14 22 128 124" className={className ? `petri ${className}` : 'petri'} {...a11y} {...svgProps}>
+    <svg viewBox={viewBox} className={className ? `petri ${className}` : 'petri'} {...a11y} {...svgProps}>
       <defs>
         <Hatch id={hatch} fill="currentColor" />
         {defs}
@@ -62,6 +68,7 @@ export default function PetriFrame({
           <path d={BODY} fill="var(--brand-yellow)" stroke="var(--brand-yellow)" />
           {children}
         </g>
+        {outside}
       </g>
     </svg>
   );

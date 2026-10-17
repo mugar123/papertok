@@ -1,5 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import { MotionConfig } from 'framer-motion'
 import { BrowserRouter } from 'react-router-dom'
 import { registerSW } from 'virtual:pwa-register'
 import { watchServiceWorkerUpdates } from './utils/serviceWorkerUpdates.ts'
@@ -188,10 +189,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         starts 3 ms / 11 ms after the tap. Lazy routes are unaffected:
         AnimatePresence mode="wait" mounts the incoming page after the exit,
         outside the router's update either way (utils/lazyPreload.js). */}
-    <BrowserRouter useTransitions={false}>
-      <GlobalErrorBoundary>
-        <App />
-      </GlobalErrorBoundary>
-    </BrowserRouter>
+    <MotionConfig reducedMotion="user">
+      <BrowserRouter useTransitions={false}>
+        <GlobalErrorBoundary>
+          <App />
+        </GlobalErrorBoundary>
+      </BrowserRouter>
+    </MotionConfig>
   </React.StrictMode>,
 )

@@ -35,11 +35,11 @@
    document until the closing animation has finished, and only then tells
    App.jsx to unmount the viewer. */
 .pdf-overlay[data-open] {
-  animation: pdfOverlayIn 0.3s ease-out;
+  animation: pdfOverlayIn 280ms var(--ease-out);
 }
 
 .pdf-overlay[data-closed] {
-  animation: pdfOverlayOut 0.3s forwards;
+  animation: pdfOverlayOut 180ms var(--ease-out) forwards;
   pointer-events: none;
 }
 
@@ -51,26 +51,25 @@
 }
 
 .pdf-overlay[data-open] .pdf-viewer {
-  animation: pdfViewerIn 0.3s ease-out;
+  animation: pdfViewerIn 280ms var(--ease-out);
 }
 
 .pdf-overlay[data-closed] .pdf-viewer {
-  animation: pdfViewerOut 0.2s forwards;
+  animation: pdfViewerOut 180ms var(--ease-out) forwards;
 }
 
-/* On a touch screen the viewer leaves the way it came: back down the screen,
-   the arrival played in reverse. Same distance, same 0.3s, and the mirror of
-   its ease-out (ease-in); the veil, which arrives on ease-out too, fades out
-   on ease-in with it. A desktop keeps the quick fade. Both last as long as
-   each other, so the primitive, which waits for the popup's own animation,
-   never unmounts the sheet mid-slide. */
+/* On a touch screen the viewer leaves the way it came: back down the screen.
+   On the same strong ease-out as every exit (it used to mirror the
+   arrival on an ease-in, slow to start at the one moment the reader wants it
+   gone). Veil and sheet share one length, so the primitive, which waits for the
+   popup's own animation, never unmounts the sheet mid-slide. */
 @media (pointer: coarse) {
   .pdf-overlay[data-closed] {
-    animation: pdfOverlayOut 0.3s ease-in forwards;
+    animation: pdfOverlayOut 220ms var(--ease-out) forwards;
   }
 
   .pdf-overlay[data-closed] .pdf-viewer {
-    animation: pdfViewerSlideOut 0.3s ease-in forwards;
+    animation: pdfViewerSlideOut 220ms var(--ease-out) forwards;
   }
 }
 

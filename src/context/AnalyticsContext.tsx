@@ -1,4 +1,4 @@
-import type { ComponentProps, PropsWithChildren } from 'react';
+import type { PropsWithChildren } from 'react';
 export interface AnalyticsContextValue {
   consent: ReturnType<typeof readAnalyticsConsent>;
   updateConsent: (value: string) => Promise<boolean>;
@@ -27,11 +27,6 @@ import {
   trackProductEvent,
 } from '../services/analyticsService.ts';
 
-// Declared once, outside the component: `<Analytics />` re-registers its
-// `beforeSend` on every change of identity, so an inline arrow would re-register
-// it on every render of the whole app. It takes only the event, so the stored
-// choice is read at send time (`sanitizeVercelEvent`).
-const sanitizeOutgoingEvent = (event: Parameters<NonNullable<ComponentProps<typeof Analytics>['beforeSend']>>[0]) => sanitizeVercelEvent(event);
 
 export function AnalyticsProvider({ children }: PropsWithChildren) {
   const location = useLocation();
@@ -106,7 +101,7 @@ export function AnalyticsProvider({ children }: PropsWithChildren) {
         <Analytics
           mode={import.meta.env.DEV ? 'development' : 'production'}
           route={analyticsPath}
-          beforeSend={sanitizeOutgoingEvent}
+          beforeSend={sanitizeVercelEvent}
         />
       ) : null}
     </AnalyticsContext.Provider>

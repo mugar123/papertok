@@ -1,6 +1,7 @@
 import type { StyledProps } from './props.ts';
 import type { ComponentProps } from 'react';
 
+import { useEffect, useState } from 'react';
 import { Drawer as DrawerPrimitive } from '@base-ui/react/drawer';
 import { cn } from '../../lib/utils.ts';
 import './drawer.css';
@@ -20,11 +21,17 @@ import './drawer.css';
  * `DrawerContent` stays selectable with a mouse; add
  * `data-base-ui-swipe-ignore` to a scrolling region that must not dismiss.
  */
-function Drawer({ side = 'bottom', swipeDirection, ...props }: ComponentProps<typeof DrawerPrimitive.Root> & { side?: 'bottom' | 'top' | 'left' | 'right' }) {
+function Drawer({ side = 'bottom', swipeDirection, open, ...props }: ComponentProps<typeof DrawerPrimitive.Root> & { side?: 'bottom' | 'top' | 'left' | 'right' }) {
+  const [firstFrameDone, setFirstFrameDone] = useState(false);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setFirstFrameDone(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
   return (
     <DrawerPrimitive.Root
       data-slot="drawer"
       swipeDirection={swipeDirection ?? ({ bottom: 'down', top: 'up', left: 'left', right: 'right' } as const)[side]}
+      open={open === undefined ? undefined : open && firstFrameDone}
       {...props}
     />
   );

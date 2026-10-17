@@ -4,7 +4,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { peekAuthReturn } from '../../utils/authReturn.ts';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
-import AnimatedAtom from '../Feed/AnimatedAtom.tsx';
+import Petri from '../Onboarding/Petri.tsx';
 
 export default function ProtectedRoute({ children, requireOnboarding = true }: PropsWithChildren<{ requireOnboarding?: boolean }>) {
   const location = useLocation();
@@ -49,7 +49,7 @@ export default function ProtectedRoute({ children, requireOnboarding = true }: P
 
     return (
       <div className="loading-screen">
-        <AnimatedAtom size={80} strokeWidth={1} className="loading-atom" />
+        <Petri pose="flask" className="petri-loader loading-atom" />
         <p className="loading-text" aria-hidden="true">PaperTok</p>
         <style>{`
           .loading-screen {
@@ -62,28 +62,14 @@ export default function ProtectedRoute({ children, requireOnboarding = true }: P
             background: var(--bg-primary);
             gap: var(--space-4);
           }
-          .loading-atom {
-            color: var(--accent-primary);
-            /* Fixed now, not animated: a filter is not a compositor property, so
-               sweeping its blur radius every frame repainted the auth-loading
-               screen for as long as the guard was up. The pulse below reaches
-               for the same breathing glow with transform/opacity instead, which
-               the compositor can animate without ever repainting this element. */
-            filter: drop-shadow(0 0 15px var(--accent-primary));
-            animation: pulseAtom 2s infinite alternate ease-in-out;
-          }
-          @keyframes pulseAtom {
-            0% { transform: scale(0.95); opacity: 0.6; }
-            100% { transform: scale(1.05); opacity: 1; }
+          .petri.loading-atom {
+            width: 80px;
+            height: 80px;
+            margin: 0;
           }
           .loading-text {
             color: var(--text-secondary);
             font-size: var(--fs-sm);
-          }
-          @media (prefers-reduced-motion: reduce) {
-            .loading-atom {
-              animation: none;
-            }
           }
         `}</style>
       </div>
@@ -101,7 +87,7 @@ export default function ProtectedRoute({ children, requireOnboarding = true }: P
   if (profileLoadError) {
     return (
       <div className="loading-screen">
-        <AnimatedAtom size={64} strokeWidth={1} className="loading-atom" />
+        <Petri pose="flask" className="petri-loader loading-atom" />
         <h2 className="loading-error-title">{'Your profile could not be loaded'}</h2>
         <p className="loading-text">
           {getUiErrorMessage(profileLoadError, 'PROFILE_LOAD_FAILED')}

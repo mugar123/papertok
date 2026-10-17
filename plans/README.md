@@ -181,3 +181,57 @@ opposite: **the global `button { transition: all }` no longer exists.**
 rationale at `src/components/Profile/ProfilePage.css:64` and the comment in
 `src/components/Profile/profileStyles.test.js:255-257` are stale, though the
 assertion they wrap is still worth keeping.
+
+---
+
+# Second pass, 2026-10-17
+
+Written by the `improve-animations` advisor pass against commit `20c4fcb0`,
+covering the animations added or changed on `asier/local-ui-polish`. All ten
+were applied the same day in the recommended order; 012 later also gained
+`--ease-in-out` as a CSS token and `animateSize()`, and 014 stayed a comment.
+
+| # | Title | Severity | Category | Files | Status |
+| --- | --- | --- | --- | --- | --- |
+| [006](006-palette-cascade-once.md) | Cascade the palette's results once per opening | MEDIUM | Purpose & frequency | 1 source | **DONE** |
+| [007](007-slot-morph-timing.md) | Shorten the abstract ⇄ map morph to 240ms, ease-in-out | MEDIUM | Easing & duration | 2 source | **DONE** |
+| [008](008-shared-tooltip-provider.md) | One tooltip provider for the app | MEDIUM | Delay, cohesion | 2 source | **DONE** |
+| [009](009-explorer-fold-duration.md) | Explorer read-more fold 380ms → 280ms | LOW | Duration | 1 source | **DONE** |
+| [010](010-framer-full-transform-strings.md) | Full transform strings instead of framer shorthands | LOW | Performance | 3 source | **DONE** |
+| [011](011-graph-travel-translate.md) | Graph travel dot moves with `translate` | LOW | Performance | 2 source | **DONE** |
+| [012](012-shared-motion-curves.md) | One JS module for the motion curves | LOW | Tokens | 1 new + ~7 source | **DONE** |
+| [013](013-graph-edge-easing.md) | Graph edges use `var(--ease-out)` | LOW | Easing | 1 source | **DONE** |
+| [014](014-tabs-indicator-width.md) | Keep the tab indicator's width transition; document why | LOW | Performance (accepted) | 1 source | **DONE** |
+| [015](015-public-list-glyph-scale.md) | Share glyph enters from 0.95, not 0.8 | LOW | Physicality | 1 source | **DONE** |
+
+## Recommended order
+
+**006 → 007 → 008 → 010 → 011 → 013 → 009 → 015 → 014 → 012**
+
+- **006 first.** It is the one finding on a keyboard, 100+/day surface.
+- **007 next.** The card's Connections toggle is flipped several times per
+  paper; it is the most-felt duration in the PR.
+- **008** changes every tooltip's grouping at once; easy to verify on the map.
+- **010, 011, 013, 009, 015, 014** are small and independent.
+- **012 last.** It is mechanical and rewrites the same `ease:` lines 007 and
+  010 edit; done earlier, it would make both plans' excerpts stale.
+
+## Dependencies and collisions
+
+- **012 depends on 007 and 010.** All three edit `ease:` values in
+  `PaperCard.jsx`, `FeedContainer.jsx`, `AnnotationRail.jsx` and
+  `PaperReader.jsx`. Re-read line numbers before starting 012.
+- **007, 011 and 013 all edit `PaperCard.css`**, in different rules
+  (`.pc-slot--morphing` at 1563, `.graph-travel` at 2035, `.graph-edge` /
+  `.graph-now` at 1737 / 1780). No overlap if each stays in its rule.
+- **007 must not change `CARD_DURATION_MS` or `CARD_EASE`**; the feed scroll
+  tween uses them.
+- Several plans may meet a source test that pins the old literal
+  (`graphStyles.test.js`, `explorerMotion.test.js`, `feedAtomVeil.test.js`).
+  Update the pattern, keep the assertion.
+
+## Not reported, by design
+
+- The palette sheet's own 150ms open (`scSheetIn`) is documented as deliberate
+  in `SearchCommand.css`; a keyboard-opened sheet would normally get none.
+  Left alone per the "don't re-litigate" rule.

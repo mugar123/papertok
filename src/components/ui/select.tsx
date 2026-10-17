@@ -63,7 +63,7 @@ function SelectContent({
           className={cn(
             'relative max-h-(--available-height) min-w-(--anchor-width) origin-(--transform-origin) overflow-y-auto overflow-x-hidden',
             'rounded-md border border-border bg-card text-[0.8125rem] text-foreground shadow-[var(--shadow-lg)] outline-none',
-            'motion-safe:transition-[opacity,scale] motion-safe:duration-150 motion-safe:ease-[cubic-bezier(0.16,1,0.3,1)]',
+            'motion-safe:transition-[opacity,scale] motion-safe:duration-150 motion-safe:ease-[var(--ease-out-expo)]',
             'data-starting-style:opacity-0 data-starting-style:scale-[0.98] data-ending-style:opacity-0',
             className,
           )}

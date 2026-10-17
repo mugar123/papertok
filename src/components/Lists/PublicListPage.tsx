@@ -296,7 +296,10 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired }:
               onClick={handleShare}
               data-state={shareState || 'idle'}
             >
-              {shareState === 'copied' ? <Check size={16} /> : <ShareNetwork size={16} />}
+              {/* Keyed, so the swap plays the glyph's short arrival. */}
+              <span key={shareState === 'copied' ? 'copied' : 'share'} className="public-list-share-glyph" aria-hidden="true">
+                {shareState === 'copied' ? <Check size={16} /> : <ShareNetwork size={16} />}
+              </span>
               {copy.share}
             </button>
             {/* The confirmation is a sibling, not the button's own label: a

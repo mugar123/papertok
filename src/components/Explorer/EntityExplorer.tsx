@@ -118,6 +118,7 @@ import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import { getPublicEntityPath, getPublicEntityUrl } from '../../utils/publicNavigation.ts';
 import 'katex/dist/katex.min.css';
 import './EntityExplorer.css';
+import { EASE_OUT_EXPO } from '../../utils/motionCurves.ts';
 
 const ENTITY_PRIMARY_RENDER_BUDGET_MS = 7000;
 const ENTITY_SUPPLEMENT_RENDER_BUDGET_MS = 3500;
@@ -1886,7 +1887,7 @@ export default function EntityExplorer({
               exit={{ opacity: 0 }}
               transition={prefersReducedMotion
                 ? { duration: 0 }
-                : { duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                : { duration: 0.28, ease: EASE_OUT_EXPO }}
               className="ehc-bg-blur"
               style={{ '--ehc-wash-image': `url(${visibleWikiInfo!.thumbnail})` }}
             ></motion.div>
@@ -1921,7 +1922,7 @@ export default function EntityExplorer({
                 className="ehc-icon"
                 initial={false}
                 animate={{ opacity: hasLoadedWikiImage ? 0 : 1, scale: hasLoadedWikiImage ? 0.96 : 1 }}
-                transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.28, ease: EASE_OUT_EXPO }}
                 aria-hidden={hasLoadedWikiImage}
               >
                 {renderIcon()}
@@ -1933,7 +1934,7 @@ export default function EntityExplorer({
                     initial={{ opacity: 0, scale: 0.96 }}
                     animate={{ opacity: hasLoadedWikiImage ? 1 : 0, scale: hasLoadedWikiImage ? 1 : 0.96 }}
                     exit={{ opacity: 0, scale: 0.97 }}
-                    transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                    transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.28, ease: EASE_OUT_EXPO }}
                     className="ehc-wiki-image"
                   >
                     <img

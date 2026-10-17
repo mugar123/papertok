@@ -336,8 +336,20 @@
   .public-list-paper h2 { font-size: var(--fs-lg); }
 }
 
+/* The share glyph turns into a tick (and back) with a short arrival rather
+   than a cut. */
+@keyframes public-list-glyph-in {
+  from { opacity: 0; transform: scale(0.95); }
+}
+
+.public-list-share-glyph {
+  display: inline-flex;
+  animation: public-list-glyph-in 160ms var(--ease-out);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .public-list-spinner { animation-duration: 1400ms; }
+  .public-list-share-glyph { animation-name: fadeIn; }
 }
 
 @keyframes public-list-spin {

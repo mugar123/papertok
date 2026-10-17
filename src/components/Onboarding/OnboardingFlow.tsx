@@ -1,4 +1,3 @@
-import type { ComponentProps } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { SignOut } from '@phosphor-icons/react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -17,14 +16,6 @@ import WELCOME_TITLE from './welcomeTitlePaths.ts';
 import Petri from './Petri.tsx';
 import PetriStamp from './PetriStamp.tsx';
 import './OnboardingFlow.css';
-
-// Petri in place of the kicker: holding up a card with the reader's name on
-// the greeting, looking into a flask over the areas. The university screen
-// opens on a prop over the title instead, with Petri stamped on its paper
-// (PetriStamp).
-const STEP_PETRI: Partial<Record<string, ComponentProps<typeof Petri>['pose']>> = {
-  topics: 'flask',
-};
 
 // The account's first screens, drawn in the welcome's layout (WelcomeShell),
 // one per screen: a greeting, the areas and the topics within them, and the
@@ -314,7 +305,7 @@ export default function OnboardingFlow() {
 
   const isLast = stepIndex === steps.length - 1;
   const stepCopy = COPY[step as 'topics' | 'subtopics' | 'university'];
-  const petriPose = STEP_PETRI[step];
+  const petriPose = step === 'topics' ? 'flask' : undefined;
   // On the university screen an address typed and nothing linked yet makes
   // the primary the link's submit: Google's window has to open from a press.
   const linksOnPress = step === 'university' && !institution && institutionEmail.trim() !== '';

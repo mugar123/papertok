@@ -74,6 +74,7 @@ import './PaperReader.css';
 import './Annotations.css';
 import './Export.css';
 import './ReaderBar.css';
+import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motionCurves.ts';
 
 const COPY = {
   en: {
@@ -310,7 +311,6 @@ const GHOST_LINES = Object.freeze([
   '100%', '96%', '98%', '91%', '58%',
 ]);
 
-const EASE_OUT: [number, number, number, number] = [0.16, 1, 0.3, 1];
 /**
  * For something travelling from one place on screen to another, where the
  * journey is the message — `--ease-out-quad` in variables.css, as JS.
@@ -373,7 +373,7 @@ const PANEL_STATES: Record<string, TargetAndTransition> = {
     pointerEvents: 'auto',
     transition: {
       duration: 0.16,
-      ease: EASE_OUT,
+      ease: EASE_OUT_EXPO,
       opacity: { duration: 0.16, ease: 'linear' },
     },
   },
@@ -384,7 +384,7 @@ const PANEL_STATES: Record<string, TargetAndTransition> = {
     pointerEvents: 'none',
     transition: {
       duration: 0.13,
-      ease: EASE_OUT,
+      ease: EASE_OUT_EXPO,
       opacity: { duration: 0.13, ease: 'linear' },
     },
   },
@@ -1598,7 +1598,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                        frame after growing a fresh skeleton nobody would fill. */
                     exit={prefersReducedMotion
                       ? { opacity: 0, transition: { duration: 0.12 } }
-                      : { opacity: 0, y: -6, transition: { duration: 0.2, ease: 'easeIn' } }}
+                      : { opacity: 0, transform: 'translateY(-6px)', transition: { duration: 0.2, ease: EASE_OUT } }}
                   >
                     <p className="rd-ghost-head" role="status" aria-live="polite">
                       <ThinkingDots />
@@ -1613,12 +1613,12 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                         key={sections.length}
                         className="rd-ghost-body"
                         aria-hidden="true"
-                        initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scaleY: 0.7, y: -4 }}
-                        animate={{ opacity: 1, scaleY: 1, y: 0 }}
+                        initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'translateY(-4px) scaleY(0.7)' }}
+                        animate={{ opacity: 1, transform: 'translateY(0px) scaleY(1)' }}
                         exit={prefersReducedMotion
                           ? { opacity: 0, transition: { duration: 0.12 } }
-                          : { opacity: 0, scaleY: 0.4, y: -8, transition: { duration: 0.18, ease: 'easeIn' } }}
-                        transition={{ duration: prefersReducedMotion ? 0.12 : 0.26, ease: EASE_OUT }}
+                          : { opacity: 0, transform: 'translateY(-8px) scaleY(0.4)', transition: { duration: 0.18, ease: EASE_OUT } }}
+                        transition={{ duration: prefersReducedMotion ? 0.12 : 0.26, ease: EASE_OUT_EXPO }}
                       >
                         <div className="rd-ghost-title" />
                         <div className="rd-ghost-lines">

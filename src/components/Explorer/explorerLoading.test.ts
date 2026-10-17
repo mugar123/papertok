@@ -85,7 +85,7 @@ test('an author card resolves from part-way visible, like a paper row', async ()
   const css = await read('./EntityExplorer.css');
   const rule = css.match(/\.ee-author-card\.staggerFadeUp \{[^}]*\}/)?.[0] || '';
   assert.doesNotMatch(rule, /opacity: 0;/);
-  assert.match(rule, /animation: staggerFadeUp 0\.42s cubic-bezier\(0\.16, 1, 0\.3, 1\) both;/);
+  assert.match(rule, /animation: staggerFadeUp 0\.42s var\(--ease-out-expo\) both;/);
 });
 
 test('the ORCID card lands at the page\'s tempo, not over four seconds from nothing', async () => {

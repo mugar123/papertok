@@ -1,9 +1,10 @@
-import type { Paper, PaperAuthor } from '../../models/Paper.ts';
+import type { Paper } from '../../models/Paper.ts';
 import { useRef } from 'react';
 import { X } from '@phosphor-icons/react';
 import ScientificText from '../ScientificText.ts';
 import { usePopupOpenOnMount } from '../../hooks/usePopupOpenOnMount.ts';
-import { areaLabelForPaper } from '../../utils/areaAccent.ts';
+import { areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.ts';
+import { Button } from '../ui/button.tsx';
 import { Drawer, DrawerBody, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import './AbstractSheet.css';
 
@@ -22,26 +23,22 @@ import './AbstractSheet.css';
 export default function AbstractSheet({ paper, onClose }: { paper: Paper; onClose: () => void }) {
   const { open, requestClose } = usePopupOpenOnMount();
   const closeRef = useRef<HTMLButtonElement | null>(null);
-  const authors = (paper?.authors || []).map((author) => (author as PaperAuthor)?.name || author).filter(Boolean);
-  const authorsLine = authors.slice(0, 3).join(', ') + (authors.length > 3 ? ' et al.' : '');
   return (
     <Drawer
       open={open}
       onOpenChange={(next) => { if (!next) requestClose(); }}
       onOpenChangeComplete={(next) => { if (!next) onClose(); }}
     >
-      <DrawerContent render={<section />} className="abstract-sheet" overlayClassName="abstract-sheet-backdrop" initialFocus={closeRef}>
+      <DrawerContent render={<section />} className="abstract-sheet" overlayClassName="abstract-sheet-backdrop" initialFocus={closeRef} style={{ '--area-accent': areaAccentForPaper(paper) }}>
         <DrawerHandle />
         <header className="abstract-sheet-head">
           <div className="abstract-sheet-heading">
             <span className="abstract-sheet-kicker">{areaLabelForPaper(paper)}</span>
             <DrawerTitle render={<h3 />} className="abstract-sheet-title"><ScientificText>{paper?.title}</ScientificText></DrawerTitle>
-            {authorsLine && <p className="abstract-sheet-authors">{authorsLine}</p>}
           </div>
           <DrawerClose
             ref={closeRef}
-            className="abstract-sheet-close"
-            aria-label={'Close'}
+            render={<Button variant="ghost" size="icon-sm" aria-label={'Close'} />}
           >
             <X size={18} />
           </DrawerClose>

@@ -1,11 +1,11 @@
 import type { RefObject } from 'react';
 import { useEffect, useRef } from 'react';
+import { STAR_PATH } from '../../utils/starPath.ts';
 
 // The welcome's stars: one four-point glint at a time fades up, turns and fades
 // out somewhere on the page, never over the hero. None starts after
 // STARS_LAST_MS, so the sky is still within seconds (WCAG 2.2.2).
 const STARS_LAST_MS = 2800;
-const STAR_PATH = 'M12 0C12.8 7 17 11.2 24 12C17 12.8 12.8 17 12 24C11.2 17 7 12.8 0 12C7 11.2 11.2 7 12 0Z';
 
 export default function Stars({ avoid }: { avoid: RefObject<HTMLElement | null> }) {
   const sky = useRef<HTMLDivElement | null>(null);

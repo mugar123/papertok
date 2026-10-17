@@ -5,7 +5,7 @@ import { isSignInRequiredError } from '../../utils/signInRequired.ts';
 import { WorkerApiAuthError } from '../../services/workerApiClient.ts';
 
 test('only a known reason is a reason; an event, a paper or nothing is the general door', () => {
-  assert.equal(normalizeAuthReason('paper_rewrite'), 'paper_rewrite');
+  assert.equal(normalizeAuthReason('paper_rewrite'), 'default');
   assert.equal(normalizeAuthReason('related'), 'related');
   assert.equal(normalizeAuthReason('explorer_search'), 'explorer_search');
   // `onClick={requestAuthentication}` hands over a click event, and
@@ -18,13 +18,13 @@ test('only a known reason is a reason; an event, a paper or nothing is the gener
 });
 
 test('each door says why it opened', () => {
-  assert.equal(authPromptCopy('default').title, 'Make PaperTok yours');
-  assert.match(authPromptCopy('paper_rewrite').title, /plain words/i);
-  assert.match(authPromptCopy('related').lede, /citation graph/);
+  assert.equal(authPromptCopy('default').title, 'Join PaperTok');
+  assert.equal(authPromptCopy('paper_rewrite').title, 'Join PaperTok');
+  assert.match(authPromptCopy('related').title, /Connections/);
   assert.match(authPromptCopy('explorer_search').title, /Search/);
   // A reason the table does not know falls back to the general copy, not to
   // an empty dialog.
-  assert.equal(authPromptCopy({ type: 'click' }).title, 'Make PaperTok yours');
+  assert.equal(authPromptCopy({ type: 'click' }).title, 'Join PaperTok');
 });
 
 test('a missing session is told apart from a failure', () => {

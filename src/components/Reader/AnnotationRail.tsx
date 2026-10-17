@@ -19,6 +19,7 @@ import { SHEET_DRAG_SLOP, sheetDragOffset, shouldSettleOpen } from '../../utils/
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.tsx';
 import ScientificText from '../ScientificText.ts';
 import ThinkingDots from './ThinkingDots.tsx';
+import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motionCurves.ts';
 
 /**
  * The margin, kept as a margin.
@@ -245,12 +246,12 @@ export default function AnnotationRail({
       className="rd-note"
       data-kind={annotation.kind === 'ai' ? 'ai' : 'user'}
       data-reveal={annotation.fresh && annotation.kind === 'ai' ? annotation.id : undefined}
-      initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
+      initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'translate(0px, 10px)' }}
+      animate={{ opacity: 1, transform: 'translate(0px, 0px)' }}
       exit={prefersReducedMotion
         ? { opacity: 0, transition: { duration: 0.12 } }
-        : { opacity: 0, x: -8, height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, transition: { duration: 0.18, ease: 'easeIn' } }}
-      transition={{ duration: prefersReducedMotion ? 0.12 : 0.22, ease: [0.16, 1, 0.3, 1] }}
+        : { opacity: 0, transform: 'translate(-8px, 0px)', height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, transition: { duration: 0.18, ease: EASE_OUT } }}
+      transition={{ duration: prefersReducedMotion ? 0.12 : 0.22, ease: EASE_OUT_EXPO }}
     >
       <div className="rd-note-head">
         <span className="rd-note-origin">
@@ -308,15 +309,15 @@ export default function AnnotationRail({
         key="thinking"
         className="rd-note rd-note--ai rd-note--thinking"
         data-reveal="thinking"
-        initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'translateY(8px)' }}
+        animate={{ opacity: 1, transform: 'translateY(0px)' }}
         /* It hands its room back as it goes, like a removed card: the answer
            arrives right beside it, and a card that only faded would leave the
            answer to jump by its height the moment it unmounted. */
         exit={prefersReducedMotion
           ? { opacity: 0, transition: { duration: 0.12 } }
-          : { opacity: 0, y: -4, height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, transition: { duration: 0.18, ease: 'easeIn' } }}
-        transition={{ duration: prefersReducedMotion ? 0.12 : 0.22, ease: [0.16, 1, 0.3, 1] }}
+          : { opacity: 0, transform: 'translateY(-4px)', height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, transition: { duration: 0.18, ease: EASE_OUT } }}
+        transition={{ duration: prefersReducedMotion ? 0.12 : 0.22, ease: EASE_OUT_EXPO }}
       >
         <span className="rd-note-origin">
           <ThinkingDots />
@@ -332,10 +333,10 @@ export default function AnnotationRail({
         className="rd-note rd-note--failed"
         data-reveal="error"
         role="alert"
-        initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'translateY(8px)' }}
+        animate={{ opacity: 1, transform: 'translateY(0px)' }}
         exit={{ opacity: 0, transition: { duration: 0.12 } }}
-        transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+        transition={{ duration: 0.22, ease: EASE_OUT_EXPO }}
       >
         <WarningCircle size={13} />
         {errorText}

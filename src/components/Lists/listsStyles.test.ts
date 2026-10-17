@@ -39,6 +39,7 @@ const NOT_CLASS_NAMES = new Set([
   // <label> with `htmlFor`. The fields themselves are ui/textarea.tsx and
   // ui/input.tsx and carry no class of their own.
   'save-modal-note',
+  'create-list-visibility-label',
   'create-list-name',
 ]);
 

@@ -9,18 +9,21 @@ import { readFile } from 'node:fs/promises';
 
 const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
-function handlerSlice(code: string, start: string, maxLines: number) {
-  const from = code.indexOf(start);
-  assert.ok(from >= 0, `${start} is gone`);
-  const lines = code.slice(from).split('\n');
-  const end = lines.findIndex((line: string, index: number) => index > 0 && /^ {2}\};$/.test(line));
-  assert.ok(end > 0 && end <= maxLines, `${start} runs past ${maxLines} lines`);
-  return lines.slice(0, end + 1).join('\n');
-}
+test('SOURCE: the card shares its paper with the title as text, through its own panel', async () => {
+  const card = stripComments(await readFile(new URL('./PaperCard.tsx', import.meta.url), 'utf8'));
+  assert.doesNotMatch(card, /navigator\.share\(/, 'the system share sheet no longer opens from the card');
+  assert.match(card, /<SharePanel\s+title=\{paper\.title\}\s+url=\{shareUrl\}\s+onShared=\{handleShared\}/);
+  const panel = stripComments(await readFile(new URL('./SharePanel.tsx', import.meta.url), 'utf8'));
+  assert.match(panel, /const \{ text = '' \} = paperShareData\(\{ title, url \}\);/);
+});
 
-test('SOURCE: the card shares its paper with the title as text', async () => {
-  const code = stripComments(await readFile(new URL('./PaperCard.tsx', import.meta.url), 'utf8'));
-  const handler = handlerSlice(code, 'const handleShare = async (event: MouseEvent) => {', 30);
-  assert.match(handler, /await navigator\.share\(paperShareData\(\{ title: paper\.title, url: shareUrl \}\)\);/);
-  assert.doesNotMatch(handler, /navigator\.share\(\{/, 'no hand-built payload beside it');
+test('every share the panel reports is a method the analytics allowlist keeps', async () => {
+  const card = await readFile(new URL('./PaperCard.tsx', import.meta.url), 'utf8');
+  const service = await readFile(new URL('../../services/analyticsService.ts', import.meta.url), 'utf8');
+  const allowed = new Set(service.match(/method: new Set\(\[([^\]]+)\]\)/)![1].match(/'([^']+)'/g)!.map((v) => v.slice(1, -1)));
+  const reported = card.match(/const reported = [^;]+;/)?.[0] || '';
+  const values = (reported.match(/\? '([^']+)' : '([^']+)'/) || []).slice(1);
+  assert.equal(values.length, 2, 'the card maps every panel method onto one of two values');
+  for (const value of values) assert.ok(allowed.has(value), `${value} is in the method allowlist`);
+  assert.match(card, /trackEvent\('share', \{ method: reported,/);
 });

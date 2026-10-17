@@ -1,9 +1,14 @@
 import type { ComponentProps } from 'react';
+
+import PetriBell from './PetriBell.tsx';
+import PetriBlankPage from './PetriBlankPage.tsx';
 import PetriFlask from './PetriFlask.tsx';
 import PetriKey from './PetriKey.tsx';
 import PetriProfile from './PetriProfile.tsx';
 import PetriReading from './PetriReading.tsx';
+import PetriStar from './PetriStar.tsx';
 import PetriThinking from './PetriThinking.tsx';
+import PetriUpset from './PetriUpset.tsx';
 import PetriWelcome from './PetriWelcome.tsx';
 
 // Every pose Petri has, by name. Each is drawn on the same frame
@@ -17,6 +22,10 @@ const POSES = {
   reading: PetriReading,
   profile: PetriProfile,
   thinking: PetriThinking,
+  bell: PetriBell,
+  blankPage: PetriBlankPage,
+  upset: PetriUpset,
+  star: PetriStar,
 };
 
 /**

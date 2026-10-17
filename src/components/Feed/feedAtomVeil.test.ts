@@ -23,9 +23,9 @@ test('the atom screen is a veil over the feed, inside the same landmark as the c
 
 test('the veil recedes: the ground fades, the atom shrinks and rises, the copy settles', async () => {
   const jsx = await read('./FeedContainer.tsx');
-  assert.match(jsx, /const ATOM_VEIL_VARIANTS: Variants = \{[\s\S]*?gone: \{ opacity: 0, transition: \{ duration: 0\.42, ease: \[0\.16, 1, 0\.3, 1\] \} \}/);
-  assert.match(jsx, /const ATOM_VARIANTS: Variants = \{[\s\S]*?gone: \{ opacity: 0, scale: 0\.62, y: -16, transition: \{ duration: 0\.36, ease: \[0\.16, 1, 0\.3, 1\] \} \}/);
-  assert.match(jsx, /const ATOM_COPY_VARIANTS: Variants = \{[\s\S]*?gone: \{ opacity: 0, y: 6, transition: \{ duration: 0\.24, ease: \[0\.4, 0, 1, 1\] \} \}/);
+  assert.match(jsx, /const ATOM_VEIL_VARIANTS: Variants = \{[\s\S]*?gone: \{ opacity: 0, transition: \{ duration: 0\.42, ease: EASE_OUT_EXPO \} \}/);
+  assert.match(jsx, /const ATOM_VARIANTS = \{[\s\S]*?gone: \{ opacity: 0, transform: 'translateY\(-16px\) scale\(0\.62\)', transition: \{ duration: 0\.36, ease: EASE_OUT_EXPO \} \}/);
+  assert.match(jsx, /const ATOM_COPY_VARIANTS = \{[\s\S]*?gone: \{ opacity: 0, transform: 'translateY\(6px\)', transition: \{ duration: 0\.24, ease: EASE_OUT \} \}/);
   assert.match(jsx, /const ATOM_VEIL_REDUCED_VARIANTS = \{[\s\S]*?gone: \{ opacity: 0, transition: \{ duration: 0\.12 \} \}/);
   // Labels, not objects: the atom and the copy are children of the veil's
   // variant tree, and their `gone` plays when the veil's does.
