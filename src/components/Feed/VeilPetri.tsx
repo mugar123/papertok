@@ -81,10 +81,13 @@ export default function VeilPetri({ feedRef }: { feedRef: RefObject<HTMLElement 
       );
       // The svg now covers the veil; the viewBox keeps Petri where she was.
       // Clipped to that box, since Petri's svg draws past its edges and the
-      // zoomed mouth would paint outside the veil.
+      // zoomed mouth would paint outside the veil. Out of the global
+      // `svg { max-width: 100% }` too, which would hold it to the 96-pixel
+      // loader it is positioned against and squash her sideways.
       Object.assign(svg.style, {
         position: 'absolute',
         overflow: 'hidden',
+        maxWidth: 'none',
         left: `${veilBox.left - loaderBox.left}px`,
         top: `${veilBox.top - loaderBox.top}px`,
         width: `${veilBox.width}px`,
@@ -117,7 +120,9 @@ export default function VeilPetri({ feedRef }: { feedRef: RefObject<HTMLElement 
         }
         frame = requestAnimationFrame(draw);
       };
-      frame = requestAnimationFrame(draw);
+      // The first frame now, with the resize: drawn on the next animation
+      // frame, the resized svg would be painted once with her resting crop.
+      draw(start);
     }
 
     // Back before the exit ran (the veil came back: the feed emptied again),

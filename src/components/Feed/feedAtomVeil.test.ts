@@ -38,6 +38,10 @@ test('the veil leaves through Petri\'s smile, and fades only with reduced motion
   // Run once per exit: the feed re-renders while it plays, handing out a new
   // `safeToRemove` each time, and an effect keyed on it restarted the exit.
   assert.match(petri, /\}, \[isPresent, reduceMotion, feedRef\]\);/);
+  // The svg is resized to the veil against its 96-pixel loader, and the global
+  // `svg { max-width: 100% }` held it to the loader's width.
+  assert.match(await read('../../styles/global.css'), /img, svg \{[^}]*max-width: 100%/);
+  assert.match(petri, /maxWidth: 'none'/);
 });
 
 test('the veil sits over the container and lets framer own its opacity', async () => {
