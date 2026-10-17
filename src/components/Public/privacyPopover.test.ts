@@ -53,7 +53,13 @@ function policyLinkAfter(block: string, providers: string[]) {
 test('whoever is about to sign in can open the policy under the providers', async () => {
   const prompt = await read('./AuthPrompt.tsx');
   const dialog = prompt.slice(prompt.indexOf('<DialogContent'), prompt.indexOf('</DialogContent>'));
-  policyLinkAfter(dialog, ['id="google-sign-in-btn"', 'id="github-sign-in-btn"']);
+  // The providers are SignInMethods, the dialog's one sign-in block.
+  policyLinkAfter(dialog, ['<SignInMethods />']);
+  const methods = await read('./SignInMethods.tsx');
+  assert.ok(
+    methods.includes('id="google-sign-in-btn"') && methods.includes('id="github-sign-in-btn"'),
+    'SignInMethods no longer holds both providers',
+  );
 
   // On the landing it belongs to the stack that is inert while closed, so the
   // keyboard reaches it only once the providers show.
