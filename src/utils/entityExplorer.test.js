@@ -76,6 +76,37 @@ test('filters project papers by text and top-level category', () => {
   );
 });
 
+// An OpenAlex work carries no arXiv category, only its topic's subfield and
+// field. Matching categories alone dropped every such row, so an author's or a
+// topic's list emptied as soon as a category was chosen, even for rows already
+// labelled with it.
+test('the category filter keeps a row by the area it is labelled with', () => {
+  const openAlexWork = (id, subfield, field) => ({
+    id,
+    title: id,
+    authors: [],
+    categories: ['Data imputation'],
+    primaryTopic: { subfield: { id: `https://openalex.org/subfields/${subfield}` }, field: { id: `https://openalex.org/fields/${field}` } },
+  });
+  const rows = [
+    openAlexWork('decision-sciences', 1803, 18),
+    openAlexWork('mechanical', 2210, 22),
+    openAlexWork('electrical', 2208, 22),
+    ...papers,
+  ];
+
+  assert.deepEqual(filterAndSortEntityPapers(rows, { filters: { category: 'stat' } }).map(p => p.id), ['decision-sciences']);
+  assert.deepEqual(filterAndSortEntityPapers(rows, { filters: { category: 'mech' } }).map(p => p.id), ['mechanical']);
+  assert.deepEqual(filterAndSortEntityPapers(rows, { filters: { category: 'eess' } }).map(p => p.id), ['electrical']);
+  assert.deepEqual(filterAndSortEntityPapers(rows, { filters: { category: 'cs' } }).map(p => p.id), ['recent-cs']);
+});
+
+test('a cross-listed arXiv paper matches the area of any of its categories', () => {
+  const crossListed = { id: 'cross', title: 'x', authors: [], primaryCategory: 'cs.LG', categories: ['cs.LG', 'stat.ML'] };
+  assert.deepEqual(filterAndSortEntityPapers([crossListed], { filters: { category: 'stat' } }).map(p => p.id), ['cross']);
+  assert.deepEqual(filterAndSortEntityPapers([crossListed], { filters: { category: 'math' } }).map(p => p.id), []);
+});
+
 test('applies peer-review and date filters to project papers', () => {
   // The filter asked for a differently spelled flag that no adapter writes and
   // `PaperBuilder` does not build: with it, every paper failed the test and the
