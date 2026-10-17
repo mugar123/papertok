@@ -4,7 +4,7 @@ This Cloudflare Worker protects provider keys and serves scientific queries, AI,
 
 ## Source structure
 
-Wrangler loads `worker/index.ts`. It delegates HTTP requests to `handleRequest(request, env)` in `router.ts`, runs the email schedule, and exports the three Durable Object classes.
+Wrangler loads `worker/index.ts`. It delegates HTTP requests to `handleRequest(request, env)` in `router.ts`, logs one line for every 429 and 5xx answer (see [Logs](#logs)), runs the email schedule, and exports the three Durable Object classes.
 
 - `router.ts` owns dispatch order, the Origin checks for the feature and health routes (`/health` and `/notifications/unsubscribe` have none), Firebase identity for `PROTECTED_PROVIDER_PATHS`, institution access and `/ai/quota`, a GET-only check for every route after the AI POST routes, and error responses. Most feature handlers check their own methods.
 - Provider handlers refuse a disallowed Origin themselves. A request without an Origin passes, except on `/pdf`, which requires one. The `/sources/*` handlers check through `sourceRequestContext` in `provider-runtime.ts`. `/share/*` has no Origin check because it serves crawlers.
@@ -52,7 +52,7 @@ npx wrangler secret put RESEND_API_KEY
 npx wrangler secret put RESEND_FROM_EMAIL # optional after verifying a custom domain
 npx wrangler secret put GETFTR_API_KEY # optional; /access asks GetFTR first once set (GETFTR_API_URL overrides the endpoint)
 npm run worker:deploy:dry-run
-npm run worker:deploy
+npm run worker:deploy -- --tag "$(git rev-parse --short HEAD)" # GET /health then names this commit
 ```
 
 Brevo is the primary notification provider when `EMAIL_PROVIDER = "brevo"`.
@@ -70,7 +70,24 @@ The native `https://papertok-report-api.<account>.workers.dev` route still answe
 still accepted by `src/services/workerApiClient.ts`, so a bundle built before the variable
 was flipped keeps working.
 
+### Logs
+
+Workers Logs stores the Worker's `console.*` lines. The per-request invocation logs are off
+(`invocation_logs = false` in `wrangler.toml`), because each one would store the request's URL
+with its search text or unsubscribe token. The stored lines are the route handlers' error details,
+the AI rewrite and annotation outcomes, the email schedule summary, and one `{ route, status }`
+line from `worker/index.ts` for every 429 or 5xx answer, including an uncaught throw (logged as
+500). Its `route` is the fixed part of the path, such as `/openalex/works`, `/share` or
+`/notifications/unsubscribe`, never an id, a query string or an address. On the Workers Free plan
+Cloudflare keeps the lines for 3 days and stores up to 200,000 a day, then a 1% sample for the
+rest of that day. Read them in the Cloudflare dashboard under Workers & Pages →
+`papertok-report-api` → Observability, or live with `npx wrangler tail`. Nothing alerts on them.
+Keep the `[observability]` block in `wrangler.toml`: without it, every `wrangler deploy` switches
+Workers Logs off, whatever the dashboard says.
+
 Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity/:type/:id`, `/account/delete`, `/institution/link`, `/institution/unlink`, `/institution/services`, `/access`, `/related`, `/recommendations`, `/citation-graph`, `/oa`, `/arxiv`, `/pdf`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/ai/rewrite`, `/ai/annotate`, `/ai/quota`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. `/oa` asks Unpaywall first; when Unpaywall has not indexed a DOI yet (a 404, which is every paper a day old), it reads the Crossref licence instead and answers in Unpaywall's shape with `source: 'crossref'` — only a Creative Commons licence on the version of record (`vor` or `unspecified`) whose `start` has passed counts, so a publisher's text-mining licence or a licence on the accepted manuscript alone does not. A DOI neither can answer for comes back as `source: 'unresolved'` and is cached for six hours; an upstream outage is a 502 and is not cached. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback. `/pdf?url=` relays a paper's PDF to the touch-screen viewer, which draws the pages itself with pdf.js because framed PDFs do not work on phones: only the hosts the AI routes already read (arXiv, Europe PMC, PMC) are accepted, redirects are checked against the same list, the body must be a PDF of at most 8 MB, the request must carry an allowed `Origin`, a hit is served from the edge cache for a day, and misses share a per-minute ceiling (`PDF_GLOBAL_MINUTE_LIMIT`, 120 by default) that closes when the ledger is missing.
+
+`GET /health` needs no `Origin` and reports configuration, not whether providers answer: `ok`, booleans such as `aiConfigured` and `semanticScholarKeyConfigured` (described below), and `version: { id, tag }` from the `[version_metadata]` binding (`CF_VERSION_METADATA`). `id` is the Cloudflare version id and `tag` is what the deploy passed to `--tag`, or `null` when it passed none. `version` is `null` where the binding does not exist, as in the Node tests.
 
 `POST /account/delete` deletes the signed-in Firebase account. It is authenticated with a Firebase ID token (no identity cache), uses the Firestore service account, and is safe to retry: each request does one bounded stage (delete the comments and content reports from before comments were removed, drop public lists, follows, clear `createdBy` on paper stubs, profile and handle, the private user tree, newsletter KV, then Auth last). Replies other accounts wrote under a deleted comment stay. This is a **new** route: deploy the Worker before the frontend.
 

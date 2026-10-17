@@ -108,3 +108,19 @@ new_sqlite_classes = ["RequestQuotaLedger"]
 
 [triggers]
 crons = ["*/20 7-13 * * *"]
+
+# Workers Logs: keeps the Worker's console lines, 3 days on the Free plan
+# (worker/README.md, "Logs"). This block has to stay: without it every
+# `wrangler deploy` switches Workers Logs off, whatever the dashboard says.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+# Invocation logs would add one record per request with its full URL, and the
+# URL carries search text and unsubscribe tokens. Off: only console lines.
+[observability.logs]
+invocation_logs = false
+
+# Gives GET /health the id and tag of the version that is answering.
+[version_metadata]
+binding = "CF_VERSION_METADATA"
