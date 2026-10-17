@@ -1193,6 +1193,37 @@ a.pc-citations {
   display: none;
 }
 
+/* The library's answer lands on a button the reader is already looking at:
+   "Source" and its document glyph become "Via USAL" and a cap. The new glyph
+   and word fade in and settle 3px rather than teleporting (`PaperCard.tsx`
+   keys them on the answer). Only the library's variant carries the class,
+   so a card's first paint never animates and `content-visibility` has
+   nothing to pin. The button's width still changes at once: it is layout,
+   not transform. */
+.pc-action-swap {
+  transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out);
+}
+
+@starting-style {
+  .pc-action-swap {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The fade stays, so the change is still seen to happen; the settle goes. */
+  .pc-action-swap {
+    transition: opacity 180ms var(--ease-out);
+  }
+
+  @starting-style {
+    .pc-action-swap {
+      transform: none;
+    }
+  }
+}
+
 /* A guest's «Leer en simple» needs an account; the lock says so before the
    press (the button also carries an aria-describedby hint). Decorative for
    assistive tech, which hears the hint instead. */
