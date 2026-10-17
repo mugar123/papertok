@@ -383,7 +383,7 @@ test('falls back to the real path when there is no hash route, and never returns
  * campaign ids appear only with other options, and are here so the allowlist is
  * tested against them too.
  */
-function postHogCapture(event: string, properties: { search_type?: string; result_count?: number; has_results?: boolean; query?: string; $current_url?: string; $pathname?: string; }) {
+function postHogCapture(event: string, properties: { search_type?: string; result_count?: number; has_results?: boolean; query?: string; $current_url?: string; $pathname?: string; kind?: string; message?: string; }) {
   return {
     uuid: '0199c5a1-7f3e-7c4a-9d2b-1f6e8a4b3c2d',
     event,
@@ -564,6 +564,84 @@ test('drops unapproved events, parameter values, and arbitrary identity fields',
     name: 'Reader Name',
   }), {});
   assert.deepEqual(sanitizeProductEventParams('custom_event', { surface: 'feed' }), {});
+});
+
+test('an app error leaves with its kind and nothing from the error, and not at all once analytics is off', () => {
+  for (const kind of ['render_crash', 'chunk_load_failed', 'feed_load_failed']) {
+    assert.deepEqual(sanitizeProductEventParams('app_error', {
+      kind,
+      message: 'Cannot read properties of undefined',
+      stack: 'TypeError at PaperCard (https://papertok.app/assets/index-abc.js:1:2)',
+      url: 'https://papertok.app/public/paper/W999',
+      surface: 'feed',
+    }), { kind });
+  }
+  assert.deepEqual(sanitizeProductEventParams('app_error', { kind: 'TypeError: x is undefined' }), {});
+
+  const capture = postHogCapture('app_error', { kind: 'render_crash', message: 'private words' });
+  const sent = sanitizeAnalyticsCapture(capture, ANALYTICS_CONSENT.GRANTED);
+  assert.equal(sent?.event, 'app_error');
+  assert.equal(sent?.properties.kind, 'render_crash');
+  assert.equal(sent?.properties.$current_url, 'https://papertok.app/search');
+  assert.ok(!JSON.stringify(sent).includes('private words'));
+  assert.equal(sanitizeAnalyticsCapture(capture, ANALYTICS_CONSENT.DENIED), null);
+});
+
+// Each import with its own query is a separate copy of the module, which is
+// what the error boundary gets on a new page load.
+const crashReporterOfPage = async (page: string): Promise<typeof import('./analyticsService.ts').trackAppCrash> =>
+  (await import(`./analyticsService.ts?page=${page}`)).trackAppCrash;
+
+// The key main.tsx's `vite:preloadError` handler writes, read from main.tsx so
+// a rename there fails here instead of turning every chunk failure into a crash.
+async function preloadReloadKey() {
+  const { readFile } = await import('node:fs/promises');
+  const main = (await readFile(new URL('../main.tsx', import.meta.url), 'utf8'))
+    .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+  const key = main.match(/const PRELOAD_RELOAD_KEY = '([^']+)'/)?.[1];
+  assert.ok(key, 'main.tsx no longer declares its reload mark');
+  return key;
+}
+
+function recordingTrack() {
+  const events: [string, Record<string, unknown> | undefined][] = [];
+  const track = async (eventName: string, params?: Record<string, unknown>) => {
+    events.push([eventName, params]);
+    return true;
+  };
+  return { events, track };
+}
+
+test('a page load reports one crash, however often the error boundary catches', async () => {
+  const trackAppCrash = await crashReporterOfPage('crashed');
+  const { events, track } = recordingTrack();
+  const storage = memoryStorage();
+  const pageLoadedAt = 1_000_000;
+
+  assert.equal(await trackAppCrash({ storage, now: pageLoadedAt + 5_000, pageLoadedAt, track }), true);
+  assert.equal(await trackAppCrash({ storage, now: pageLoadedAt + 6_000, pageLoadedAt, track }), false);
+  assert.deepEqual(events, [['app_error', { kind: 'render_crash' }]]);
+});
+
+test('after a reload for a missing chunk, the reloaded page reports a chunk failure and the page it replaced reports nothing', async () => {
+  const { events, track } = recordingTrack();
+  const storage = memoryStorage();
+  const firstLoad = 1_000_000;
+  const reloadedAt = firstLoad + 30_000;
+  storage.setItem(await preloadReloadKey(), String(reloadedAt));
+
+  // The page main.tsx is reloading can crash on the chunk it could not load
+  // before it unloads. The reload is the answer to that, not a failure yet.
+  const leavingPage = await crashReporterOfPage('leaving');
+  assert.equal(await leavingPage({ storage, now: reloadedAt + 50, pageLoadedAt: firstLoad, track }), false);
+
+  const reloadedPage = await crashReporterOfPage('reloaded');
+  await reloadedPage({ storage, now: reloadedAt + 2_000, pageLoadedAt: reloadedAt + 500, track });
+
+  const laterPage = await crashReporterOfPage('later');
+  await laterPage({ storage, now: reloadedAt + 10 * 60_000, pageLoadedAt: reloadedAt + 9 * 60_000, track });
+
+  assert.deepEqual(events.map(([, params]) => params?.kind), ['chunk_load_failed', 'render_crash']);
 });
 
 test('marks activation only after consent and only once', async () => {
