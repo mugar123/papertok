@@ -1224,6 +1224,92 @@ a.pc-citations {
   }
 }
 
+/* A library lookup that takes a while says so: "Checking" pushes the
+   record's label out to the left, and the answer pushes "Checking" out the
+   same way (to the library) or back to the right (to the record's label,
+   where it came from). The leaving face is drawn again over the button
+   (`.pc-action-out`) while the arriving one slides in; `PaperCard.tsx` sets
+   `data-push` for the length of it and travels the width on the same clock. */
+.pc-action-read[data-push] {
+  position: relative;
+  overflow: hidden;
+  --pc-push: 56px;
+}
+
+.pc-action-read[data-push="back"] {
+  --pc-push: -56px;
+}
+
+.pc-action-read[data-push] > :not(.pc-action-out, .spinning) {
+  animation: pc-push-in 280ms var(--ease-in-out);
+}
+
+.pc-action-out {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: inherit;
+  pointer-events: none;
+  animation: pc-push-out 280ms var(--ease-in-out) forwards;
+}
+
+@keyframes pc-push-in {
+  from {
+    opacity: 0;
+    transform: translateX(var(--pc-push));
+  }
+}
+
+@keyframes pc-push-out {
+  to {
+    opacity: 0;
+    transform: translateX(calc(-1 * var(--pc-push)));
+  }
+}
+
+/* While the library is asked, a lighter band sweeps across the word. A mask,
+   not a clipped background, so the word keeps the button's own colour in
+   either theme. The push above takes the animation over while it runs, so
+   the band starts once the word has arrived. */
+.pc-action-checking {
+  -webkit-mask-image: linear-gradient(100deg, #000 38%, rgb(0 0 0 / 0.35) 50%, #000 62%);
+  mask-image: linear-gradient(100deg, #000 38%, rgb(0 0 0 / 0.35) 50%, #000 62%);
+  -webkit-mask-size: 300% 100%;
+  mask-size: 300% 100%;
+  animation: pc-checking 1400ms linear infinite;
+}
+
+@keyframes pc-checking {
+  from {
+    -webkit-mask-position: 100% 0;
+    mask-position: 100% 0;
+  }
+  to {
+    -webkit-mask-position: 0 0;
+    mask-position: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The faces cross-fade in place; "Checking" stays dimmed instead of sweeping. */
+  .pc-action-read[data-push] > :not(.pc-action-out, .spinning) {
+    animation: fadeIn 180ms var(--ease-out);
+  }
+
+  .pc-action-out {
+    animation: fadeOut 180ms var(--ease-out) forwards;
+  }
+
+  .pc-action-checking {
+    animation: none;
+    -webkit-mask-image: none;
+    mask-image: none;
+    opacity: 0.62;
+  }
+}
+
 /* A guest's «Leer en simple» needs an account; the lock says so before the
    press (the button also carries an aria-describedby hint). Decorative for
    assistive tech, which hears the hint instead. */
@@ -3119,17 +3205,7 @@ a.pc-citations {
   /* On a phone the word is the Read button, and the document glyph goes: it
      said the same thing twice, it was the part that could not tell reading
      here from leaving for the source, and the row cannot fit both at 360px. */
-  .pc-action-read > svg:not(.spinning) {
-    display: none;
-  }
-
-  /* Under the no-abstract state there is room for the whole button. */
-  .pc-abstract-empty .pc-action-read > svg:not(.spinning),
-  .pc-abstract-empty .pc-action-label {
-    display: inline;
-  }
-
-  .pc-abstract-empty .pc-action-label--short {
+  .pc-action-read svg:not(.spinning) {
     display: none;
   }
 
