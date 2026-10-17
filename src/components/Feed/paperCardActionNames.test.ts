@@ -246,10 +246,9 @@ test('el rótulo largo se esconde en móvil y el corto lo releva, que es de dond
   );
 });
 
-test('SOURCE: with no abstract, the read button sits in the no-abstract empty state, a size down, and leaves the bar', async () => {
+test('SOURCE: the read button stays in the action bar whether or not the paper has an abstract', async () => {
   const card = stripComments(await read('./PaperCard.tsx'));
-  assert.match(card, /size=\{abstractText \? 'default' : 'sm'\}/);
-  assert.match(card, /title=\{'No abstract'\}\s*actions=\{readAction\}/);
-  assert.match(card, /<div className="pc-action-primary">\s*\{abstractText && readAction\}/);
-  assert.equal((card.match(/className=\{`pc-action-read/g) || []).length, 1, 'one button, placed in one of two spots');
+  assert.match(card, /<div className="pc-action-primary">\s*\{readAction\}/);
+  assert.doesNotMatch(card, /actions=\{readAction\}/, 'not moved into the no-abstract empty state');
+  assert.equal((card.match(/className=\{`pc-action-read/g) || []).length, 1, 'one button');
 });

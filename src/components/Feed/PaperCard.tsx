@@ -1596,13 +1596,10 @@ const PaperCard = memo(function PaperCard({
    palabra (`--short`), que el nombre contiene por construcción: la
    acción principal era la única de la barra sin rótulo, y el mismo
    icono servía para leer aquí y para salir a la fuente. */
-  // With no abstract to read, the way to the paper sits under the empty state
-  // that says so, a size down, instead of in the bar below it.
   const readAction = (
     <Button
       ref={readButtonRef}
       className={`pc-action-read${isResolvingAccess ? ' is-resolving' : ''}`}
-      size={abstractText ? 'default' : 'sm'}
       onClick={handleOpenPaper}
       disabled={isResolvingAccess}
       aria-label={primaryActionLabel}
@@ -2112,7 +2109,6 @@ const PaperCard = memo(function PaperCard({
                   as="p"
                   art={<Petri pose="blankPage" className="pc-abstract-empty-petri" />}
                   title={'No abstract'}
-                  actions={readAction}
                 >
                   {"This paper's record has no abstract."}
                 </EmptyState>
@@ -2246,7 +2242,7 @@ const PaperCard = memo(function PaperCard({
             read is the decision, sharing and related work are afterthoughts. */}
         <div className="pc-action-bar">
           <div className="pc-action-primary">
-            {abstractText && readAction}
+            {readAction}
 
             {canRequestRewrite && (
               <Button

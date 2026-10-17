@@ -147,7 +147,7 @@ test('la marca se llama por su propio texto, no por un aria-label que lo contrad
     + 'el nombre tiene que CONTENER lo que se lee en pantalla (WCAG 2.5.3)');
   assert.match(boton, /<span className="navbar-brand-word">Paper<span>Tok<\/span><\/span>/,
     'el rótulo de la marca dejó de ser texto, que es de donde sale ahora el nombre del botón');
-  assert.match(boton, /<span className="navbar-brand-mark" aria-hidden="true">PT<\/span>/,
+  assert.match(boton, /<span className="navbar-brand-mark" aria-hidden="true">/,
     'la marca PT dejó de estar oculta al lector de pantalla; sin `aria-hidden` el botón '
     + 'pasa a anunciarse «PT PaperTok»');
 });

@@ -3178,16 +3178,6 @@ a.pc-citations {
     display: none;
   }
 
-  /* Under the no-abstract state there is room for the whole button. */
-  .pc-abstract-empty .pc-action-read svg:not(.spinning),
-  .pc-abstract-empty .pc-action-label {
-    display: inline;
-  }
-
-  .pc-abstract-empty .pc-action-label--short {
-    display: none;
-  }
-
   .pc-action-primary > button {
     padding-inline: 12px;
   }

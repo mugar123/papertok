@@ -79,9 +79,15 @@
   border-radius: var(--radius-sm);
   background: var(--brand-yellow);
   color: var(--text-on-brand);
-  font: 600 0.6875rem/1 var(--font-mono);
-  letter-spacing: 0.02em;
   box-shadow: 2px 2px 0 var(--text-primary);
+}
+
+/* "PT" set in Fredoka Bold and outlined, as in favicon.svg, so
+   two letters do not load a whole typeface. */
+.navbar-brand-mark svg {
+  display: block;
+  height: 8px;
+  fill: currentColor;
 }
 
 .navbar-brand-word {
