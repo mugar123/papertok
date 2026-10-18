@@ -43,6 +43,7 @@ export const buttonVariants = cva(
         // Takes its colour from --accent on the element, so a control can adopt
         // the research field of whatever it belongs to.
         field: 'bg-[color-mix(in_srgb,var(--accent,var(--accent-primary))_9%,var(--bg-card))] text-[var(--accent,var(--accent-primary))] border border-[color-mix(in_srgb,var(--accent,var(--accent-primary))_26%,var(--bg-card))] hover:bg-[var(--accent,var(--accent-primary))] hover:text-[var(--text-inverse)]',
+        similar: 'btn-similar bg-[var(--tint-violet-bg)] text-[var(--tint-violet-fg)] border border-[var(--tint-violet-line)] hover:border-[var(--tint-violet-fg)] aria-expanded:border-[var(--tint-violet-fg)] aria-expanded:bg-[color-mix(in_srgb,var(--tint-violet-fg)_14%,var(--tint-violet-bg))]',
         destructive: 'bg-destructive text-destructive-foreground hover:opacity-90',
       },
       size: {

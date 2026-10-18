@@ -48,7 +48,7 @@ test('the welcome no longer promises every paper in plain words', () => {
 test('provider chips and the abstract are marked as English', () => {
   assert.match(
     card,
-    /className=\{`pc-semantic-tag pc-topic-link [^`]*`\}\s*lang=\{tag\.lang\}\s*onClick=\{\(event\) => openTopic\(event, topic\)\}/,
+    /className=\{`pc-semantic-tag pc-topic-link [^`]*`\}\s*lang=\{item\.lang\}\s*onClick=\{\(event\) => openTopic\(event, item\.topic!\)\}/,
   );
   // Only the paragraph that carries words is marked; the no-abstract state is
   // the app's own copy.

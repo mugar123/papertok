@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { House } from '@phosphor-icons/react';
 import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.ts';
+import Petri from '../Onboarding/Petri.tsx';
 import './NotFoundPage.css';
 
 // An address the app does not declare. It used to land on /feed without a
@@ -32,6 +33,7 @@ export default function NotFoundPage() {
   return (
     <main className="not-found-page">
       <div className="not-found-card">
+        <Petri pose="lost" code="404" className="not-found-petri" />
         <h1>{copy.title}</h1>
         <p>{copy.body}</p>
         <Link to="/feed" className="not-found-action">

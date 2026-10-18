@@ -1,4 +1,4 @@
-import type { ComponentProps, KeyboardEvent, ReactNode } from 'react';
+import type { ComponentProps, KeyboardEvent, MutableRefObject, ReactNode } from 'react';
 import type { Paper } from '../../models/Paper.ts';
 import type { OwnList } from '../../utils/ownLists.ts';
 
@@ -98,7 +98,17 @@ function demoSet(key: string, value: unknown) {
  * they are defined last, after every write-free handler.
  */
 
-export default function SaveToListModal({ paper, onClose }: { paper: Paper; onClose: () => void }) {
+export default function SaveToListModal({
+  paper,
+  onClose,
+  embedded = false,
+  closeGuardRef,
+}: {
+  paper: Paper;
+  onClose: () => void;
+  embedded?: boolean;
+  closeGuardRef?: MutableRefObject<((eventDetails: Parameters<NonNullable<ComponentProps<typeof Drawer>['onOpenChange']>>[1]) => void) | null>;
+}) {
   const { user } = useAuth();
   const { language } = useLanguage();
   const { trackEvent, markActivation } = useAnalyticsConsent();
@@ -426,7 +436,7 @@ export default function SaveToListModal({ paper, onClose }: { paper: Paper; onCl
    * only then reports `onOpenChangeComplete(false)` — the one place the
    * parent is told.
    */
-  const closeDialog = () => setOpen(false);
+  const closeDialog = () => (embedded ? onClose() : setOpen(false));
 
   // `explicit` is the X. Once the discard prompt is on screen, pressing it
   // again is the answer to that prompt, not a second question: it closes and
@@ -449,6 +459,11 @@ export default function SaveToListModal({ paper, onClose }: { paper: Paper; onCl
     eventDetails.cancel();
     requestClose({ explicit: eventDetails.reason === 'close-press' });
   };
+  useLayoutEffect(() => {
+    if (!closeGuardRef) return undefined;
+    closeGuardRef.current = onCancel;
+    return () => { closeGuardRef.current = null; };
+  });
 
   // Once the exit has played. `onClose` unmounts this component (App.jsx), so
   // this is the single point from which the parent hears of a close, whatever
@@ -777,15 +792,9 @@ export default function SaveToListModal({ paper, onClose }: { paper: Paper; onCl
     </DialogContent>
   ));
 
-  return (
-    <Root
-      open={open}
-      onOpenChange={(nextOpen, eventDetails) => { if (!nextOpen) onCancel(eventDetails); }}
-      onOpenChangeComplete={handleOpenChangeComplete}
-    >
-      {frame(
+  const body = (
         <>
-          {isPhone && <DrawerHandle />}
+          {isPhone && !embedded && <DrawerHandle />}
           {/* No header: the X alone, in the corner. The title still names the
               window for assistive tech. */}
           <Title className="visually-hidden">{copy.title}</Title>
@@ -1021,8 +1030,17 @@ export default function SaveToListModal({ paper, onClose }: { paper: Paper; onCl
             </motion.div>
           )}
           </AnimatePresence>
-        </>,
-      )}
+        </>
+  );
+
+  if (embedded) return body;
+  return (
+    <Root
+      open={open}
+      onOpenChange={(nextOpen, eventDetails) => { if (!nextOpen) onCancel(eventDetails); }}
+      onOpenChangeComplete={handleOpenChangeComplete}
+    >
+      {frame(body)}
     </Root>
   );
 }

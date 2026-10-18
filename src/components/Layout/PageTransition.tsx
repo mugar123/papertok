@@ -66,7 +66,7 @@ export default function PageTransition({ children }: PropsWithChildren) {
   // asking there answered for the wrong one (see usePageTransitionCustom.js).
   const presenceCustom = usePresenceData() as ReturnType<typeof usePageTransitionCustomValue> | undefined;
   const providerCustom = usePageTransitionCustomValue();
-  const { direction, lateral } = presenceCustom ?? providerCustom;
+  const { direction, lateral, still } = presenceCustom ?? providerCustom;
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   // The history entry this page belongs to, frozen at mount: a replace can
@@ -177,6 +177,14 @@ export default function PageTransition({ children }: PropsWithChildren) {
   useLayoutEffect(() => {
     safeToRemoveRef.current = safeToRemove;
   });
+
+  // A navigation marked still has no handover: the page leaving goes the
+  // frame the router leaves it.
+  useLayoutEffect(() => {
+    if (present || !still) return;
+    if (rootRef.current) rootRef.current.style.visibility = 'hidden';
+    if (safeToRemoveRef.current) safeToRemoveRef.current();
+  }, [present, still]);
 
   // The safety clock: a background tab or a cancelled animation never fires
   // `animationend`, and a page that never hands itself back is a page

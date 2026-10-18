@@ -213,10 +213,12 @@ test('SOURCE: el nombre del botón de autores empieza por lo que el botón ense�
   // Lo único escrito en los puntos es el «+N»; las iniciales son decoración.
   // El nombre accesible arranca por esa misma plantilla (criterio 2.5.3:
   // quien navega por voz dice lo que ve).
-  const dibujado = boton.match(/aria-hidden="true">\s*\{`(\+[^`]+)`\}/)?.[1];
-  assert.ok(dibujado, 'el botón de autores dejó de dibujar el «+N»');
+  const dots = stripComments(await read('./AuthorDots.tsx'));
+  assert.match(dots, /max = 3/, 'los puntos dejaron de cortar en tres');
+  assert.match(dots, /aria-hidden="true">\s*\{`\+\$\{authors\.length - max\}`\}/, 'el botón de autores dejó de dibujar el «+N»');
+  assert.match(boton, /<AuthorDots authors=\{paper\.authors\} \/>/, 'el botón dejó de dibujar los puntos con el corte por defecto');
   const nombre = boton.match(/\? `(\+[^`]+)`/)?.[1];
-  assert.ok(nombre?.startsWith(dibujado), `el nombre accesible no empieza por «${dibujado}»`);
+  assert.ok(nombre?.startsWith('+${paper.authors.length - 3}'), 'el nombre accesible no empieza por el «+N» que se ve');
   assert.match(boton, /aria-expanded=\{authorsExpanded\}/);
 });
 

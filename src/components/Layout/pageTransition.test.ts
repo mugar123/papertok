@@ -45,7 +45,7 @@ test('the leaving page reads the navigation that ejects it, and never computes o
   assert.match(jsx, /const \[present, safeToRemove\] = usePresence\(\);/);
   assert.match(jsx, /const presenceCustom = usePresenceData\(\) as ReturnType<typeof usePageTransitionCustomValue> \| undefined;/);
   assert.match(jsx, /const providerCustom = usePageTransitionCustomValue\(\);/);
-  assert.match(jsx, /const \{ direction, lateral \} = presenceCustom \?\? providerCustom;/);
+  assert.match(jsx, /const \{ direction, lateral, still \} = presenceCustom \?\? providerCustom;/);
   assert.doesNotMatch(jsx, /usePageTransitionCustom\(\)/, 'the component never computes the direction itself');
   // A component file that also exports a function breaks Fast Refresh.
   assert.doesNotMatch(jsx, /export function/, 'PageTransition.tsx exports only its component');
@@ -57,6 +57,13 @@ test('a move between navbar tabs takes its direction from the bar, not from hist
   // The lateral answer wins; history is the fallback, not the other way round.
   assert.match(hook, /const lateral = lateralTabDirection\(useLocation\(\)\.pathname\);/);
   assert.match(hook, /return \{ direction: lateral \?\? historyDirection, lateral: lateral !== null \};/);
+});
+
+test('a navigation marked still has no transition', async () => {
+  const hook = await read('../../hooks/usePageTransitionCustom.ts');
+  assert.match(hook, /if \(useLocation\(\)\.state\?\.pageMotion === 'still'\) return \{ direction: 0, lateral: false, still: true \};/);
+  const jsx = await read('./PageTransition.tsx');
+  assert.match(jsx, /if \(present \|\| !still\) return;[\s\S]*?safeToRemoveRef\.current\(\);\s*\}, \[present, still\]\);/, 'and the page it replaces goes at once');
 });
 
 test('the leaving page hands itself back when its own animation ends, or when the clock runs out', async () => {

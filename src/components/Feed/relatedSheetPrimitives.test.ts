@@ -69,34 +69,28 @@ test('wider than a phone the rail\'s Connections tile swaps the abstract for the
   // The rail's Connections tile is the panel's state, at every width.
   assert.match(card, /className="pc-side-btn pc-side-btn--connections"\s+pressed=\{showRelated\}\s+onPressedChange=\{toggleRelated\}/);
   // The swap grows the card downward: pinned on the press, held while open.
-  assert.match(card, /const toggleRelated = \(next: boolean\) => \{\s*if \(!isPhone && !publicMode\) \{\s*pinSheet\(\);[\s\S]*?if \(next\) openRelated\(\);\s*else setShowRelated\(false\);\s*\};/);
-  assert.match(card, /const sheetGrown = expanded \|\| authorsExpanded \|\| relatedInline;/);
+  assert.match(card, /const toggleRelated = \(next: boolean\) => \{\s*if \(!isPhone && !publicMode\) \{\s*pinSheet\(\);[\s\S]*?if \(next\) \{\s*setSimilarOpen\(false\);\s*openRelated\(\);\s*\} else setShowRelated\(false\);\s*\};/);
+  assert.match(card, /const sheetGrown = expanded \|\| authorsExpanded \|\| slotAway;/);
   assert.doesNotMatch(card, /id: 'related'/, 'Related papers left the More menu for the rail');
   // Two quick presses on the map are not a double tap on the card.
   assert.match(card, /event\.target\.closest\('\.related-sheet'\)\) return;/);
   // The two faces slide past each other: the map from the right, the
   // abstract back from the left, the leaving one lifted out of the flow.
-  assert.match(card, /<AnimatePresence mode="popLayout" initial=\{false\} custom=\{relatedInline \? 1 : -1\}>\s*\{relatedInline \? \(\s*<motion\.div\s+key="connections"[\s\S]*?custom=\{1\}[\s\S]*?<Suspense fallback=\{null\}>\s*<RelatedPapersSheet\s+inline\s/);
+  assert.match(card, /<AnimatePresence mode="popLayout" initial=\{false\} custom=\{slotAway \? 1 : -1\}>\s*\{relatedInline \? \(\s*<motion\.div\s+key="connections"[\s\S]*?custom=\{1\}[\s\S]*?<Suspense fallback=\{null\}>\s*<RelatedPapersSheet\s+inline\s/);
   assert.match(card, /<motion\.div\s+key="abstract"\s+className="pc-slot-face"\s+variants=\{slotSlide\}\s+custom=\{-1\}/);
   assert.match(card, /\{showRelated && !relatedInline && \(\s*<Suspense fallback=\{null\}>\s*<RelatedPapersSheet\s/);
 
   const jsx = stripComments(await read('./RelatedPapersSheet.tsx'));
   // Part of the page, not a popup: nothing modal for FeedContainer to find.
   assert.match(jsx, /\{\.\.\.\(inline \? \{ 'aria-label': 'Paper connections' \} : \{\s*render: <section \/>/);
-  // The tile is its name and its way back: no title, no X.
-  assert.match(jsx, /\{inline \? modeTabs : \(/);
+  // The tile is its way back: the panel names the graph, with no X.
+  assert.match(jsx, /\{inline \? \(\s*<div>\s*<GitBranch size=\{18\} \/>\s*<h3>\{'Citation graph'\}<\/h3>/);
   assert.match(jsx, /\{!inline && \(\s*<Close/);
 });
 
-test('the sheet\'s mode switch is a Tabs and its map/list switch one Toggle, drawn by the sheet\'s own rules', async () => {
+test('the sheet\'s map/list switch is one Toggle, drawn by the sheet\'s own rules', async () => {
   const jsx = stripComments(await read('./RelatedPapersSheet.tsx'));
-  assert.match(jsx, /<Tabs\s+value=\{mode\}\s+onValueChange=\{\(next\) => \{[\s\S]*?setMode\(next\);\s*\}\}\s*>/);
-  assert.match(jsx, /<TabsList\s+variant="pill"\s+className="related-mode-tabs"\s+aria-label=/);
-  // The chosen mode's chip slides between the two, keyed off `mode` itself.
-  assert.match(jsx, /style=\{\{ '--mode-index': mode === 'graph' \? 0 : 1 \}\}\s*>\s*<span className="related-mode-pill" aria-hidden="true" \/>/);
-  assert.match(jsx, /<TabsTrigger value="graph" disabled=\{!hasGraphIdentifier \|\| Boolean\(selectedPaperKey\)\}>/);
-  assert.match(jsx, /<TabsTrigger value="similar" disabled=\{Boolean\(selectedPaperKey\)\}>/);
-  assert.doesNotMatch(jsx, /role="tablist"|role="tab"|aria-selected/, 'the primitives write the roles and states');
+  assert.doesNotMatch(jsx, /<Tabs|TabsTrigger|value="similar"/, 'Similar lives in its own slot face now');
   const header = jsx.slice(jsx.indexOf('<header className="related-header">'), jsx.indexOf('</header>'));
   assert.doesNotMatch(header, /aria-pressed|is-active/, 'the toggle writes its own pressed state');
   // One button whose pressed state is the list, so the view is always one
@@ -105,20 +99,18 @@ test('the sheet\'s mode switch is a Tabs and its map/list switch one Toggle, dra
   // Back on a map already drawn, it stands instead of arriving again; a new
   // centre (a walk forward or back) arrives as before.
   assert.match(jsx, /if \(!next\) setIsMapReturning\(true\);/);
-  assert.match(jsx, /if \(next === 'graph' && graphStatus === 'ready'\) setIsMapReturning\(true\);/);
   assert.equal((jsx.match(/setIsMapReturning\(false\);/g) || []).length, 3, 'appendToTrail, goBackTo and requestCentre clear it');
   // A list reached by a switch stands; only the panel's own arrival fades one in.
-  assert.equal((jsx.match(/setHasSwitched\(true\);/g) || []).length, 2, 'both switches mark it');
-  assert.equal((jsx.match(/className=\{`related-list \$\{hasSwitched \? 'is-switched' : ''\}`\}/g) || []).length, 2, 'both lists read it');
+  assert.equal((jsx.match(/setHasSwitched\(true\);/g) || []).length, 1, 'the view switch marks it');
+  assert.equal((jsx.match(/className=\{`related-list \$\{hasSwitched \? 'is-switched' : ''\}`\}/g) || []).length, 1, 'the list reads it');
   const returning = await read('./PaperCard.css');
   assert.match(returning, /\.related-list\.is-switched \{\s*animation: none;/);
   assert.match(returning, /\.graph-map\.is-returning :is\(\.graph-node, \.graph-edge, \.graph-mark, \.graph-chip, \.graph-now\) \{\s*animation: none;/);
   assert.doesNotMatch(jsx, /ToggleGroup/);
 
   const css = await read('./PaperCard.css');
-  assert.match(css, /\.related-mode-tabs button\[data-active\] \{/, 'the active tab is styled on the primitive\'s attribute');
   assert.match(css, /\.related-header \.graph-view-button\[data-pressed\] \{/, 'the pressed view is styled on the primitive\'s attribute');
-  assert.doesNotMatch(css, /\.related-mode-tabs button\.is-active|\.graph-view-button\.is-active/);
+  assert.doesNotMatch(css, /\.related-mode-tabs|\.graph-view-button\.is-active/);
 });
 
 test('the sheet\'s box carries the drawer\'s bleed, and a chosen paper settles the sheet in place instead of sliding it away', async () => {

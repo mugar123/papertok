@@ -1,13 +1,13 @@
-import type { MouseEvent } from 'react';
-import type { MotionProps } from 'framer-motion';
-import type { QuerySnapshot } from 'firebase/firestore';
+import type { DocumentData, QuerySnapshot } from 'firebase/firestore';
 import type { Paper } from '../../models/Paper.ts';
 import type { OwnList } from '../../utils/ownLists.ts';
 import type { MetadataRequest } from '../../utils/listPaperMetadataPlan.ts';
 import type { SyncState } from '../../services/publicListSync.ts';
 import type { PublicPaperInput } from '../../services/publicListPayload.ts';
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import type { ReactElement } from 'react';
+import type { Icon } from '@phosphor-icons/react';
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { IS_DEMO, db } from '../../services/firebase.ts';
 import {
   collection,
@@ -31,14 +31,34 @@ import { useLanguage } from '../../context/LanguageContext.tsx';
 import { getCategoryLabel } from '../../data/categories.ts';
 import { getIcon } from '../../utils/icons.ts';
 import CreateListDialog from './CreateListDialog.tsx';
+import SaveToListModal from './SaveToListModal.tsx';
+import ListNote from './ListNote.tsx';
 import { Button } from '../ui/button.tsx';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu.tsx';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogTitle,
+} from '../ui/alert-dialog.tsx';
+import AuthorDots from '../Feed/AuthorDots.tsx';
+import RailMenu from '../Feed/RailMenu.tsx';
+import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
+import { EASE_DRAWER, EASE_OUT, animateSize } from '../../utils/motionCurves.ts';
+import useIsPhone from '../../hooks/useIsPhone.ts';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
+import Petri from '../Onboarding/Petri.tsx';
+import { EmptyState } from '../ui/empty-state.tsx';
 import { toastError } from '../ui/toast.ts';
 import { resolveListColor } from '../../utils/listColors.ts';
 import { areaAccentForPaper } from '../../utils/areaAccent.ts';
 import ScientificText from '../ScientificText.ts';
 import { paperLegacyAdapter } from '../../models/Paper.ts';
 import {
-  Books,
+  ArrowLeft,
+  DotsThree,
+  CaretDown,
   Check,
   DownloadSimple,
   GlobeHemisphereWest,
@@ -47,10 +67,12 @@ import {
   PencilSimple,
   Plus,
   ShareNetwork,
+  Trash,
   Warning,
-  X,
 } from '@phosphor-icons/react';
 import { shareOrCopyLink } from '../../utils/shareLink.ts';
+import { authorExplorerPath } from '../../utils/explorerPaths.ts';
+import { timeAgo } from '../../utils/timeAgo.ts';
 import { downloadCitationFile } from '../../utils/readingLibrary.ts';
 import { decodeFirestoreDocId, encodeFirestoreDocId } from '../../utils/firestoreDocId.ts';
 import { hydrateLegacyArxivPapers } from '../../services/likedPaperRecords.ts';
@@ -92,7 +114,6 @@ import {
   planRetryRequests,
 } from '../../utils/listPaperMetadataPlan.ts';
 import './ListsPage.css';
-import { EASE_OUT_EXPO } from '../../utils/motionCurves.ts';
 
 /**
  * How long a read may take before it is allowed to draw a placeholder.
@@ -124,6 +145,44 @@ const PAPER_METADATA_LOAD_DEADLINE_MS = 4_000;
  */
 const PAPER_METADATA_TOTAL_BUDGET_MS = 20_000;
 const PRIVATE_LIST_IDS = new Set(['__favorites__', '__read__', '__read_later__']);
+const FOLDER_BACK = 'M0 3 Q0 0 3 0 H30 Q33 0 34 3 L36 7 Q37 9 40 9 H97 Q100 9 100 12 V97 Q100 100 97 100 H3 Q0 100 0 97 Z';
+const FOLDER_POCKET = 'M0 3 Q0 0 3 0 H33 Q36 0 38 3 L42 10 Q44 13 47 13 H97 Q100 13 100 16 V97 Q100 100 97 100 H3 Q0 100 0 97 Z';
+
+type ListMenuAction = { id: string; label: string; Icon: Icon; disabled?: boolean; onSelect: () => void };
+
+/** A list's overflow actions: a dropdown on desktop, a drawer of rows on a phone. */
+function ListMenu({ title, trigger, actions }: { title: string; trigger: ReactElement; actions: ListMenuAction[] }) {
+  const isPhone = useIsPhone();
+  if (isPhone) {
+    return (
+      <RailMenu
+        title={title}
+        trigger={trigger}
+        sheet={actions.map(({ id, label, Icon, disabled, onSelect }) => (
+          <li key={id}>
+            <DrawerClose className="pc-share-row" disabled={disabled} onClick={onSelect}>
+              <Icon size={20} aria-hidden="true" />
+              {label}
+            </DrawerClose>
+          </li>
+        ))}
+      />
+    );
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={trigger} />
+      <DropdownMenuContent align="end" aria-label={title}>
+        {actions.map(({ id, label, Icon, disabled, onSelect }) => (
+          <DropdownMenuItem key={id} disabled={disabled} onClick={onSelect}>
+            <Icon size={15} aria-hidden="true" />
+            {label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 function demoGet<T>(key: string, fallback: T): T {
   try { const v = localStorage.getItem(`papertok_${key}`); return v ? JSON.parse(v) : fallback; }
@@ -154,6 +213,22 @@ async function copyText(value: string) {
 }
 
 
+/** A list paper from its `savedPapers` document or its lighter interaction record. */
+function paperFromMetadataDoc(source: MetadataRequest['source'], paperId: string, data: DocumentData) {
+  return paperLegacyAdapter(source === 'saved'
+    ? { id: paperId, ...data }
+    : data.paper
+      ? { id: paperId, ...data.paper }
+      : {
+          id: paperId,
+          title: data.paperTitle || '',
+          authors: data.paperAuthors || [],
+          primaryCategory: data.paperCategory || '',
+          published: data.timestamp,
+          arxivId: paperId,
+        });
+}
+
 /**
  * The Public badge doubles as the sync indicator, and that is the whole
  * replacement for the Update button.
@@ -171,12 +246,15 @@ function publicBadgeState(status: string | undefined) {
 }
 
 
+/** A paper in one list: what the row's remove dialog and phone sheet act on. */
+type RowTarget = { listId: string; listName?: string; paperId: string; paper: Partial<Paper> };
+
 export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (paper: Paper) => void; onEditPaper: (paper: Paper) => void }) {
   const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const { trackEvent } = useAnalyticsConsent();
-  const { language } = useLanguage();
+  const { language, locale } = useLanguage();
   const {
     unmarkAsRead,
     interactionIdFor,
@@ -299,6 +377,22 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   // The list the edit window is open on, or null. Holding the list rather than
   // its id keeps the window's preset off a lookup that can miss mid-refresh.
   const [editing, setEditing] = useState<OwnList | null>(null);
+  const [removing, setRemoving] = useState<RowTarget | null>(null);
+  const [createdListId, setCreatedListId] = useState<string | null>(null);
+  const [removalOpen, setRemovalOpen] = useState(false);
+  const [deletingList, setDeletingList] = useState<OwnList | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const isPhone = useIsPhone();
+  const [rowSheet, setRowSheet] = useState<RowTarget | null>(null);
+  const [rowSheetOpen, setRowSheetOpen] = useState(false);
+  const [authorsSheet, setAuthorsSheet] = useState<Partial<Paper> | null>(null);
+  const [authorsOpen, setAuthorsOpen] = useState(false);
+  const [rowSheetStep, setRowSheetStep] = useState<'menu' | 'remove' | 'edit'>('menu');
+  const rowSheetFrom = useRef<number | null>(null);
+  const rowSheetStepRef = useRef<HTMLElement | null>(null);
+  const setRowSheetStepRef = (node: HTMLElement | null) => { if (node) rowSheetStepRef.current = node; };
+  const rowSheetCancelRef = useRef<HTMLButtonElement | null>(null);
+  const editGuardRef = useRef<((eventDetails?: unknown) => void) | null>(null);
   // Whether this session has had one authoritative answer about which lists
   // exist. Until it has, `lists` is a seed or a guess, and persisting it could
   // overwrite what this device knew with an emptiness nobody confirmed.
@@ -649,19 +743,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
           // Decoded: the document is named by the encoded id, the row by the
           // paper id the list holds.
           const paperId = decodeFirestoreDocId(item.id);
-          const rawPaper = source === 'saved'
-            ? { id: paperId, ...data }
-            : data.paper
-              ? { id: paperId, ...data.paper }
-              : {
-                  id: paperId,
-                  title: data.paperTitle || '',
-                  authors: data.paperAuthors || [],
-                  primaryCategory: data.paperCategory || '',
-                  published: data.timestamp,
-                  arxivId: paperId,
-                };
-          const paper = paperLegacyAdapter(rawPaper);
+          const paper = paperFromMetadataDoc(source, paperId, data);
           loadedPapers[paperId] = paper;
           if (paper.title && paper.title !== paperId) {
             resolvedIds.add(paperId);
@@ -858,6 +940,64 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     }
   }, [libraryPapers, personalLibrary, savedPapers, user]);
 
+  // The cards show each list's first two papers, and only `openList` used to
+  // fetch a list's papers: ask the same two collections for the previews
+  // nothing has answered yet, once each, so a fresh load paints no blank sheet.
+  const previewAsked = useRef(new Set<string>());
+  const previewAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    const asked = previewAsked.current;
+    previewAbortRef.current = controller;
+    return () => {
+      controller.abort();
+      asked.clear();
+    };
+  }, []);
+  useEffect(() => {
+    if (IS_DEMO || !user?.uid) return;
+    const userId = user.uid;
+    const missingIds = [...new Set(displayLists.flatMap((list) => (list.paperIds || []).slice(0, 2)))]
+      .filter((paperId) => paperId && !getPaper(paperId)?.title && !previewAsked.current.has(`${userId}:${paperId}`));
+    const signal = previewAbortRef.current?.signal;
+    if (missingIds.length === 0 || !signal) return;
+    missingIds.forEach((paperId) => previewAsked.current.add(`${userId}:${paperId}`));
+    planMetadataRequests({ missingIds, batchSize: PAPER_METADATA_BATCH_SIZE }).requests
+      .forEach((request) => {
+        const previewQuery = query(
+          collection(db, 'users', userId, request.source === 'saved' ? 'savedPapers' : 'interactions'),
+          where(documentId(), 'in', request.paperIds.map(encodeFirestoreDocId)),
+        );
+        patientRead(() => getDocs(previewQuery), {
+          attempts: 1,
+          ms: PAPER_METADATA_LOAD_DEADLINE_MS,
+          label: 'list card previews',
+          isAnswer: queryIsAuthoritative,
+          signal,
+        }).then((snapshot) => {
+          const loaded: Record<string, Partial<Paper>> = {};
+          snapshot.forEach((item) => {
+            const paperId = decodeFirestoreDocId(item.id);
+            const paper = paperFromMetadataDoc(request.source, paperId, item.data());
+            if (paper.title && paper.title !== paperId) loaded[paperId] = paper;
+          });
+          if (signal.aborted || Object.keys(loaded).length === 0) return;
+          rememberListPapers(userId, loaded);
+          setSavedPapers((current) => {
+            const next = { ...current };
+            Object.entries(loaded).forEach(([paperId, paper]) => {
+              if (request.source === 'saved' || !next[paperId]) next[paperId] = paper;
+            });
+            return next;
+          });
+        }, (error) => {
+          if (signal.aborted) return;
+          request.paperIds.forEach((paperId) => previewAsked.current.delete(`${userId}:${paperId}`));
+          console.error('List card previews did not load', error);
+        });
+      });
+  }, [displayLists, getPaper, user?.uid]);
+
   // Coming back from a paper restores the list that was open. Once per id: the
   // state survives in the history entry, so coming back after closing the list
   // must not snap it open again.
@@ -906,13 +1046,13 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     if (expandedList) {
       navigate(location.pathname, {
         replace: true,
-        state: { openListId: expandedList },
+        state: { openListId: expandedList, pageMotion: 'still' },
       });
     }
     // `stored`: this copy is what the list saved, not the paper — the page
     // shows its skeleton until the providers answer and keeps the copy only
     // as the fallback (PublicPaperPage).
-    navigate(path, { state: { paper, stored: true } });
+    navigate(path, { state: { paper, stored: true, pageMotion: 'still' } });
   };
 
   useEffect(() => () => clearTimeout(metadataBudgetTimer.current!), []);
@@ -969,6 +1109,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       }
     }
     setLists((prev) => [...prev, newList]);
+    setCreatedListId(listId);
   };
 
   /**
@@ -1010,12 +1151,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   const handleDeleteList = async (listId: string) => {
     if (PRIVATE_LIST_IDS.has(listId)) return;
     const list = lists.find(candidate => candidate.id === listId);
-    // Deleting is irreversible and, for a published list, takes the public
-    // link down with it; a hover-revealed ✕ is too easy to hit for that.
-    const confirmed = globalThis.confirm?.(
-      `Delete "${list?.name ?? 'this list'}"? This cannot be undone.`,
-    );
-    if (confirmed === false) return;
     if (IS_DEMO) {
       const allLists = demoGet<OwnList[]>('lists', []).filter((l) => l.id !== listId);
       localStorage.setItem('papertok_lists', JSON.stringify(allLists));
@@ -1042,13 +1177,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     }));
   };
 
-  const handleUnmarkAsRead = (e: MouseEvent, paperId: string) => {
-    e.stopPropagation();
+  const handleUnmarkAsRead = (paperId: string) => {
     forgetRead(paperId);
   };
 
-  const handleUnlike = async (e: MouseEvent, paperId: string, paper: Partial<Paper>) => {
-    e.stopPropagation();
+  const handleUnlike = async (paperId: string, paper: Partial<Paper>) => {
     await toggleLike(paper as Paper);
     setLists((prev) => prev.map((list) => {
       if (list.id === '__favorites__') {
@@ -1058,8 +1191,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     }));
   };
 
-  const handleRemoveFromCustomList = async (e: MouseEvent, listId: string, paperId: string) => {
-    e.stopPropagation();
+  const handleRemoveFromCustomList = async (listId: string, paperId: string) => {
     // Only a write the server accepted may claim an edit time. Stamping the
     // local copy after a failed write would tell the freshness check that a
     // removal happened, and the sync would publish a list the account never
@@ -1094,6 +1226,29 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
         ...(editedAt ? { updatedAt: editedAt } : {}),
       };
     }));
+  };
+
+  const switchRowSheetStep = (step: 'menu' | 'remove' | 'edit') => {
+    rowSheetFrom.current = rowSheetStepRef.current?.closest<HTMLElement>('[data-slot="drawer-content"]')?.offsetHeight ?? null;
+    setRowSheetStep(step);
+  };
+
+  useLayoutEffect(() => {
+    const from = rowSheetFrom.current;
+    rowSheetFrom.current = null;
+    if (from == null) return;
+    if (rowSheetStep === 'remove') rowSheetCancelRef.current?.focus();
+    else rowSheetStepRef.current?.querySelector<HTMLElement>('input, textarea, button')?.focus();
+    const sheet = rowSheetStepRef.current?.closest<HTMLElement>('[data-slot="drawer-content"]');
+    if (!sheet || prefersReducedMotion) return;
+    animateSize(sheet, 'height', from, 240, EASE_DRAWER, { overflow: 'hidden' });
+  }, [rowSheetStep, prefersReducedMotion]);
+
+  const removePaper = ({ listId, paperId, paper }: RowTarget) => {
+    if (listId === '__read__') handleUnmarkAsRead(paperId);
+    else if (listId === '__favorites__') handleUnlike(paperId, paper);
+    else if (listId === '__read_later__') toggleReadLater(paper as Paper);
+    else handleRemoveFromCustomList(listId, paperId);
   };
 
   const setListShareId = (listId: string, publicShareId: string | null | undefined) => {
@@ -1169,7 +1324,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       }
     } catch (publishError) {
       console.error('Error publishing public list:', publishError);
-      setShareFeedback({ listId: list.id, state: 'error' });
+      setShareFeedback(null);
+      toastError('The public link could not be changed', { description: 'Try again.' });
     }
   };
 
@@ -1204,7 +1360,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       setShareFeedback({ listId: list.id, state: 'unpublished' });
     } catch (unpublishError) {
       console.error('Error unpublishing public list:', unpublishError);
-      setShareFeedback({ listId: list.id, state: 'error' });
+      setShareFeedback(null);
+      toastError('The public link could not be changed', { description: 'Try again.' });
     }
   };
 
@@ -1332,12 +1489,17 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   // One motion vocabulary for the two views of this page: the index and an
   // open list cross-fade with a small vertical step instead of swapping DOM in
   // a single frame.
-  const viewMotion: MotionProps = {
-    initial: prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 10 },
-    animate: { opacity: 1, y: 0 },
-    exit: prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -8 },
-    transition: { duration: prefersReducedMotion ? 0.1 : 0.2, ease: EASE_OUT_EXPO },
+  const rowMotion = {
+    layout: true,
+    exit: { opacity: 0, transform: 'translateX(18px)' },
+    transition: { duration: 0.2, ease: EASE_OUT },
   };
+  const cardMotion = {
+    layout: true,
+    exit: { opacity: 0, transform: 'scale(0.97)' },
+    transition: { duration: 0.2, ease: EASE_OUT },
+  };
+
 
   // Returning from a paper with { openListId }: until the effect above opens
   // it, hold a skeleton instead of flashing the index. Falls through to the
@@ -1354,6 +1516,12 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     && !expandedList
     && (loading || displayLists.some((entry) => entry.id === targetOpenId)),
   );
+
+  const deleteListTitle = deletingList ? `Delete "${deletingList.name}"?` : 'Delete this list?';
+  const deleteListDescription = `Only the list goes: its papers stay saved with their notes and tags. ${deletingList?.publicShareId
+    ? 'Its public link will stop working. '
+    : ''}This cannot be undone.`;
+  const confirmDeleteList = () => { handleDeleteList(deletingList!.id); setDeleteOpen(false); };
 
   return (
     <div className="lists-page">
@@ -1385,18 +1553,23 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
         </div>
       )}
 
-      <AnimatePresence mode="wait" initial={false}>
       {expandedList ? (
-        <motion.div className="lists-expanded" key="expanded" {...viewMotion}>
-          <button
-            className="lists-back-btn"
-            onClick={closeExpandedList}
-          >
-            {'← My lists'}
-          </button>
+        <div className="lists-expanded">
           {(() => {
             const list = displayLists.find((l) => l.id === expandedList);
-            if (!list) return null;
+            const backButton = (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="lists-back-btn"
+                onClick={closeExpandedList}
+                aria-label={'Back to My lists'}
+                title={'My lists'}
+              >
+                <ArrowLeft size={18} />
+              </Button>
+            );
+            if (!list) return <div className="lists-expanded-bar">{backButton}</div>;
             const exportPapers = (list.paperIds || []).map(getPaper).filter(Boolean);
             // `listPaperId` from the first publish onwards: it becomes
             // `sourceId` on the public paper, and it is what lets every later
@@ -1429,6 +1602,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
             }[badgeState];
             return (
               <>
+                <div className="lists-expanded-bar">{backButton}</div>
                 <header
                   className={`lists-expanded-header${resolveListColor(list) ? '' : ' lists-expanded-header--uncoloured'}`}
                   style={resolveListColor(list) ? { '--list-accent': resolveListColor(list)! } : undefined}
@@ -1441,55 +1615,45 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                       })()}
                     </span>
                     <div className="lists-expanded-copy">
-                      <h1 className="lists-expanded-title">{list.name}</h1>
-                      <p className="lists-expanded-meta">
-                        <span>{papersCount((list.paperIds || []).length)}</span>
-                        {isCustomList && !IS_DEMO && (list.publicShareId ? (
-                          <span
-                            className={`lists-badge lists-badge--public is-${badgeState}`}
-                            aria-live="polite"
-                          >
-                            {badgeState === 'syncing'
-                              ? <span className="lists-badge-spinner" aria-hidden="true" />
-                              : badgeState === 'synced'
-                                ? <Check size={11} aria-hidden="true" />
-                                : badgeState === 'stale'
-                                  ? <Warning size={11} aria-hidden="true" />
-                                  : <GlobeHemisphereWest size={11} aria-hidden="true" />}
-                            {' '}{badgeLabel}
-                          </span>
-                        ) : (
-                          <span className="lists-badge">
-                            <Lock size={11} aria-hidden="true" /> {'Private'}
-                          </span>
-                        ))}
-                      </p>
+                      <h1 className="lists-expanded-title">{list.name} <span className="lists-expanded-count">({list.paperIds?.length ?? 0})</span></h1>
                     </div>
                   </div>
-                  {isCustomList && !IS_DEMO && (
-                    <div className="lists-share-actions">
-                      {list.publicShareId ? (
-                        // Share, and nothing else. There is no Update button
-                        // because there is nothing left for it to do: the
-                        // public copy follows the list on its own (P25).
-                        <button
-                          type="button"
-                          className="is-primary"
-                          onClick={() => handleShareList(list)}
-                          disabled={shareBusy}
-                        >
-                          <ShareNetwork size={16} /> {'Share'}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="is-primary"
-                          onClick={() => handlePublishList(list, publicPapers)}
-                          disabled={shareBusy || pendingPaperIds.size > 0}
-                        >
-                          <GlobeHemisphereWest size={16} /> {'Publish & share'}
-                        </button>
+                  {(exportPapers.length > 0 || isCustomList) && (
+                    <div className="lists-export-actions">
+                      {exportPapers.length > 0 && (
+                        <ListMenu
+                          title={'Export citations'}
+                          trigger={(
+                            <Button variant="outline">
+                              <DownloadSimple size={15} aria-hidden="true" />
+                              {'Export'}
+                              <CaretDown size={13} aria-hidden="true" />
+                            </Button>
+                          )}
+                          actions={[
+                            { id: 'bibtex', label: 'BibTeX (.bib)' },
+                            { id: 'ris', label: 'RIS (.ris)' },
+                          ].map(({ id, label }) => ({ id, label, Icon: DownloadSimple, onSelect: () => downloadCitationFile(exportPapers, id, `papertok-${list.name}`) }))}
+                        />
                       )}
+                      {isCustomList && (() => {
+                        const listActions = [
+                          ...(IS_DEMO ? [] : [list.publicShareId
+                            ? { id: 'share', label: 'Share', Icon: ShareNetwork, disabled: shareBusy, onSelect: () => handleShareList(list) }
+                            : { id: 'publish', label: 'Publish & share', Icon: GlobeHemisphereWest, disabled: shareBusy || pendingPaperIds.size > 0, onSelect: () => handlePublishList(list, publicPapers) }]),
+                          { id: 'edit', label: 'Edit list', Icon: PencilSimple, onSelect: () => setEditing(list) },
+                          ...(!IS_DEMO && list.publicShareId && !shareBusy
+                            ? [{ id: 'unpublish', label: 'Stop sharing', Icon: LinkBreak, onSelect: () => handleUnpublishList(list) }]
+                            : []),
+                          { id: 'delete', label: 'Delete list', Icon: Trash, onSelect: () => { setDeletingList(list); setDeleteOpen(true); } },
+                        ];
+                        const trigger = (
+                          <Button variant="outline" size="icon" aria-label={'List actions'}>
+                            <DotsThree size={18} weight="bold" aria-hidden="true" />
+                          </Button>
+                        );
+                        return <ListMenu title={'List actions'} trigger={trigger} actions={listActions} />;
+                      })()}
                     </div>
                   )}
                   {isCustomList && IS_DEMO && (
@@ -1498,10 +1662,33 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                     </span>
                   )}
                 </header>
+                {isCustomList && !IS_DEMO && (
+                <p className="lists-expanded-meta">
+                  {list.publicShareId ? (
+                    <span
+                      className={`lists-badge lists-badge--public is-${badgeState}`}
+                      aria-live="polite"
+                    >
+                      {badgeState === 'syncing'
+                        ? <span className="lists-badge-spinner" aria-hidden="true" />
+                        : badgeState === 'synced'
+                          ? <Check size={11} aria-hidden="true" />
+                          : badgeState === 'stale'
+                            ? <Warning size={11} aria-hidden="true" />
+                            : <GlobeHemisphereWest size={11} aria-hidden="true" />}
+                      {' '}{badgeLabel}
+                    </span>
+                  ) : (
+                    <span className="lists-badge">
+                      <Lock size={11} aria-hidden="true" /> {'Private'}
+                    </span>
+                  )}
+                </p>
+                )}
                 {listShareFeedback && (
                   <div
-                    className={`lists-share-status ${['error', 'copy-error'].includes(listShareFeedback.state) ? 'is-error' : ''}`}
-                    role={['error', 'copy-error'].includes(listShareFeedback.state) ? 'alert' : 'status'}
+                    className={`lists-share-status ${listShareFeedback.state === 'copy-error' ? 'is-error' : ''}`}
+                    role={listShareFeedback.state === 'copy-error' ? 'alert' : 'status'}
                     aria-live="polite"
                   >
                     {listShareFeedback.state === 'loading' && (
@@ -1526,9 +1713,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                     )}
                     {listShareFeedback.state === 'unpublished' && (
                       <span>{'The list is private again.'}</span>
-                    )}
-                    {listShareFeedback.state === 'error' && (
-                      <span>{'The public link could not be changed. Try again.'}</span>
                     )}
                   </div>
                 )}
@@ -1559,36 +1743,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                       {`Publishing would include ${publicPapers.length} of ${listTotal} papers: the rest have no details saved yet.`}
                     </p>
                   ))}
-                {(exportPapers.length > 0 || isCustomList) && (
-                  <div className="lists-expanded-tools">
-                    {exportPapers.length > 0 && (
-                      <div className="lists-export-actions">
-                        <span className="lists-tools-label">{'Export citation'}</span>
-                        <button type="button" onClick={() => downloadCitationFile(exportPapers, 'bibtex', `papertok-${list.name}`)}><DownloadSimple size={14} /> BibTeX</button>
-                        <button type="button" onClick={() => downloadCitationFile(exportPapers, 'ris', `papertok-${list.name}`)}><DownloadSimple size={14} /> RIS</button>
-                      </div>
-                    )}
-                    {isCustomList && (
-                      <button
-                        type="button"
-                        className="lists-edit-btn"
-                        onClick={() => setEditing(list)}
-                      >
-                        <PencilSimple size={14} aria-hidden="true" /> {'Edit list'}
-                      </button>
-                    )}
-                    {isCustomList && !IS_DEMO && list.publicShareId && (
-                      <button
-                        type="button"
-                        className="lists-unpublish-btn"
-                        onClick={() => handleUnpublishList(list)}
-                        disabled={shareBusy}
-                      >
-                        <LinkBreak size={14} aria-hidden="true" /> {'Stop sharing'}
-                      </button>
-                    )}
-                  </div>
-                )}
                 {/* No spinner here. The skeleton rows below ARE the loading
                     state — they say the same thing in the shape of the content
                     that is coming, and they do not move the layout when it
@@ -1609,20 +1763,18 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                     ? ('Loading papers in this list...')
                     : undefined}
                 >
-                  {(list.paperIds || []).map((paperId, idx) => {
-                    // Capped: past the eighth row the stagger is delaying
-                    // content nobody has scrolled to yet.
-                    const stagger = Math.min(idx, 8);
+                  <AnimatePresence initial={false} mode="popLayout">
+                  {(list.paperIds || []).map((paperId) => {
                     const paper = getPaper(paperId);
                     const record = personalLibrary[paperId];
                     if (!paper) return (
                       // While metadata is in flight the row is a shimmer with
                       // the finished row's silhouette; the status line above
                       // carries the accessible announcement.
-                      <div
+                      <motion.div
+                        {...rowMotion}
                         key={paperId}
                         className="lists-paper-item lists-paper-item--skeleton"
-                        style={{ '--stagger-index': stagger }}
                         aria-hidden={pendingPaperIds.has(paperId) ? 'true' : undefined}
                       >
                         {/* This paper's own id, not the list's loading flag.
@@ -1646,17 +1798,18 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                             {'The title could not be loaded'}
                           </p>
                         )}
-                      </div>
+                      </motion.div>
                     );
                     return (
-                      <div key={paperId} className="lists-paper-item"
-                        style={{ '--area-accent': areaAccentForPaper(paper), '--stagger-index': stagger }}
+                      <motion.div {...rowMotion} key={paperId} className="lists-paper-item"
+                        style={{ '--area-accent': areaAccentForPaper(paper) }}
                         onClick={() => openPaperCard(paper)}>
                         <div className="lists-paper-item-content">
                           <div className="lists-paper-head">
-                            {paper.categories && paper.categories.length > 0 && (
-                              <span className="lists-paper-cat">{getCategoryLabel(paper.categories[0])}</span>
+                            {(paper.categories?.length ?? 0) > 0 && (
+                              <span className="lists-paper-cat">{getCategoryLabel(paper.categories![0])}</span>
                             )}
+                            {(paper.categories?.length ?? 0) > 0 && paper.year && <span className="lists-paper-dot" aria-hidden="true">·</span>}
                             {paper.year && <span className="lists-paper-date">{paper.year}</span>}
                           </div>
                           <p className="lists-paper-title" lang="en">
@@ -1668,17 +1821,38 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                               <ScientificText>{paper.title}</ScientificText>
                             </button>
                           </p>
-                          {paper.authors && (
-                            <p className="lists-paper-authors">
-                              {paper.authors.slice(0, 3).map(a => typeof a === 'string' ? a : a.name).filter(Boolean).join(', ')}{paper.authors.length > 3 && ' et al.'}
-                            </p>
-                          )}
+                          {(paper.authors?.length ?? 0) > 0 && (() => {
+                            const names = paper.authors!.map(a => (typeof a === 'string' ? a : a.name)).filter(Boolean).join(', ');
+                            if (isPhone) return (
+                              <button
+                                type="button"
+                                className="pc-author-avatars lists-paper-authors lists-paper-authors-btn"
+                                aria-label={`Authors: ${names}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setAuthorsSheet(paper);
+                                  setAuthorsOpen(true);
+                                }}
+                              >
+                                <AuthorDots authors={paper.authors!} />
+                              </button>
+                            );
+                            return (
+                              <Tooltip>
+                                <TooltipTrigger render={<p className="pc-author-avatars lists-paper-authors" />}>
+                                  <AuthorDots authors={paper.authors!} />
+                                  <span className="visually-hidden">{names}</span>
+                                </TooltipTrigger>
+                                <TooltipContent align="start" className="lists-authors-tooltip" aria-hidden="true">{names}</TooltipContent>
+                              </Tooltip>
+                            );
+                          })()}
                           {(record?.tags?.length as number) > 0 && (
                             <div className="lists-paper-tags">
                               {record.tags!.map((tag) => <span key={tag}>{tag}</span>)}
                             </div>
                           )}
-                          {record?.note && <p className="lists-paper-note">{record.note}</p>}
+                          {record?.note && <ListNote note={record.note} />}
                         </div>
                         <div className="lists-paper-actions">
                           {/* The stored id, not the merged paper's: the list
@@ -1686,187 +1860,194 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                               the modal's membership check and note record
                               must look under the same key (R8: ids differ by
                               entry route). */}
-                          <button className="lists-paper-edit-btn" onClick={(e) => { e.stopPropagation(); onEditPaper?.({ ...paper, id: paperId } as Paper); }} title={'Edit note and tags'}>
-                            <PencilSimple size={17} />
-                          </button>
-                          <button
-                            className="lists-paper-unmark-btn"
-                            onClick={(e) => {
-                              if (list.id === '__read__') {
-                                handleUnmarkAsRead(e, paperId);
-                              } else if (list.id === '__favorites__') {
-                                handleUnlike(e, paperId, paper);
-                              } else if (list.id === '__read_later__') {
+                          {isPhone ? (
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-haspopup="dialog"
+                              aria-label={`Actions for ${paper.title}`}
+                              onClick={(e) => {
                                 e.stopPropagation();
-                                toggleReadLater(paper as Paper);
-                              } else {
-                                handleRemoveFromCustomList(e, list.id, paperId);
-                              }
-                            }}
-                            title={'Remove from list'}
-                          >
-                            <X size={18} />
-                          </button>
+                                setRowSheet({ listId: list.id, listName: list.name, paperId, paper });
+                                setRowSheetStep('menu');
+                                setRowSheetOpen(true);
+                              }}
+                            >
+                              <DotsThree size={20} weight="bold" aria-hidden="true" />
+                            </Button>
+                          ) : (
+                            <>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={(e) => { e.stopPropagation(); onEditPaper?.({ ...paper, id: paperId } as Paper); }}
+                              aria-label={'Edit note and tags'}
+                              title={'Edit note and tags'}
+                            >
+                              <PencilSimple size={16} aria-hidden="true" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setRemoving({ listId: list.id, listName: list.name, paperId, paper });
+                                setRemovalOpen(true);
+                              }}
+                              aria-label={'Remove from list'}
+                              title={'Remove from list'}
+                            >
+                              <Trash size={16} aria-hidden="true" />
+                            </Button>
+                            </>
+                          )}
                         </div>
-                      </div>
+                      </motion.div>
                     );
                   })}
+                  </AnimatePresence>
                   {(!list.paperIds || list.paperIds!.length === 0) && (
-                    <div className="lists-empty-state lists-empty-state--inline">
-                      <span className="lists-empty-icon" aria-hidden="true"><Books size={20} /></span>
-                      <h3>{'This list is empty'}</h3>
-                      <p>
-                        {'Add papers to it from the feed with "Save and organize".'}
-                      </p>
-                    </div>
+                    <EmptyState
+                      as="h3"
+                      art={<Petri pose="blankPage" className="lists-empty-petri" />}
+                      title={'This list is empty'}
+                    >
+                      {'Add papers to it from the feed with "Save and organize".'}
+                    </EmptyState>
                   )}
                 </div>
               </>
             );
           })()}
-        </motion.div>
+        </div>
       ) : pendingOpen ? (
-        <motion.div
+        <div
           className="lists-opening"
-          key="opening"
-          {...viewMotion}
           aria-busy="true"
           aria-label={'Opening list...'}
         >
           {/* The same three-bar rhythm the finished rows have, so opening a
               list settles into its content instead of swapping silhouettes. */}
           {[0, 1, 2, 3].map((slot) => (
-            <div key={slot} className="lists-skeleton-row" style={{ '--stagger-index': slot }}>
+            <div key={slot} className="lists-skeleton-row">
               <span className="lists-skeleton-bar lists-skeleton-bar--cat" />
               <span className="lists-skeleton-bar lists-skeleton-bar--title" />
               <span className="lists-skeleton-bar lists-skeleton-bar--meta" />
             </div>
           ))}
-        </motion.div>
+        </div>
       ) : (
-        <motion.div key="index" {...viewMotion}>
-          {/* A nameplate: mono kicker, serif masthead, standfirst. The `h1`
-              used to be Inter with a clipped gradient over it, and the kicker
-              and standfirst below rendered with no rule behind them at all.
-              There used to be a double rule under the row as well; without it
-              the standfirst carries the whole hierarchy, so it sits tight to
-              the title. */}
+        <div>
           <header className="lists-header">
-            <div className="lists-masthead-row">
-              <div className="lists-masthead-block">
-                <p className="lists-eyebrow">{'Personal library'}</p>
-                <h1>{'My lists'}</h1>
-              </div>
-              {/* The primary action rides the nameplate rather than trailing the
-                  grid as a ghost tile, so it stays reachable however long the
-                  grid gets. */}
+            <div className="lists-header-row">
+              <h1>{'My lists'}</h1>
               <Button className="lists-create-btn" onClick={() => setCreating(true)}>
                 <Plus size={16} aria-hidden="true" />
                 {'New list'}
               </Button>
             </div>
-            <p className="lists-subtitle">
-              {'Organize, annotate and share the papers you keep.'}
-            </p>
+            <p>{'Organize, annotate and share the papers you keep.'}</p>
           </header>
           <div className="lists-grid">
-            {displayLists.map((list, idx) => {
-              const Icon = getIcon(list.emoji!);
+            <AnimatePresence initial={false} mode="popLayout">
+            {displayLists.map((list) => {
               const isCustomList = !PRIVATE_LIST_IDS.has(list.id);
               const accent = resolveListColor(list);
+              const behindIds = (list.paperIds || []).slice(0, 2).reverse();
+              const isNew = list.id === createdListId;
               return (
-              <div
+              <motion.div
+                {...cardMotion}
+                initial={isNew ? { opacity: 0, transform: 'scale(0.97)' } : false}
+                animate={{ opacity: 1, transform: 'scale(1)' }}
+                transition={isNew ? { ...cardMotion.transition, delay: 0.14 } : cardMotion.transition}
                 key={list.id}
                 className={`list-card${accent ? '' : ' list-card--uncoloured'}`}
                 onClick={() => openList(list)}
-                style={{ '--stagger-index': idx, ...(accent ? { '--list-accent': accent } : {}) }}
+                style={accent ? { '--list-accent': accent } : undefined}
               >
-                <div className="list-card-top">
-                  <span className="list-card-icon" aria-hidden="true">
-                    <Icon size={19} />
-                  </span>
-                  {isCustomList && (
-                    <div className="list-card-tools">
-                      <button
-                        className="list-card-tool"
-                        onClick={(e) => { e.stopPropagation(); setEditing(list); }}
-                        aria-label={`Edit ${list.name}`}
-                        title={'Edit list'}
-                      >
-                        <PencilSimple size={13} aria-hidden="true" />
-                      </button>
-                      <button
-                        className="list-card-tool list-card-tool--danger"
-                        onClick={(e) => { e.stopPropagation(); handleDeleteList(list.id); }}
-                        aria-label={`Delete ${list.name}`}
-                        title={'Delete list'}
-                      >
-                        <X size={13} aria-hidden="true" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <h3 className="list-card-name">
-                  <button
-                    type="button"
-                    className="list-card-name-btn"
-                    onClick={(e) => { e.stopPropagation(); openList(list); }}
-                  >
-                    {list.name}
-                  </button>
-                </h3>
-                <div className="list-card-footer">
-                  {/* A count is machine data, so it is set in mono with tabular
-                      figures. It used to say nothing but its own size in Inter. */}
-                  <span className="list-card-count">{papersCount(list.paperIds?.length || 0)}</span>
-                  {/* A published list says so on its card. */}
-                  {list.publicShareId && (
-                    <span className="lists-badge lists-badge--public">
-                      <GlobeHemisphereWest size={11} aria-hidden="true" /> {'Public'}
-                    </span>
-                  )}
-                </div>
-                {/* "Nothing saved yet" is about the LIST, never about what we
-                    have managed to fetch. It used to key off whether any title
-                    had resolved, so on a cold index every card said it — a list
-                    of forty-six papers announcing itself as empty until the
-                    metadata landed. A list with papers whose titles are not
-                    here yet simply shows no preview. */}
                 <div className="list-card-preview">
-                  {(list.paperIds?.length ?? 0) === 0 ? (
-                    <p className="list-card-preview-empty">
-                      {'Nothing saved yet.'}
-                    </p>
-                  ) : (
-                    list.paperIds!
-                      .map((paperId) => getPaper(paperId))
-                      .filter(Boolean)
-                      .slice(0, 2)
-                      .map((paper) => <p key={paper.id} className="list-card-preview-title"><ScientificText>{paper.title}</ScientificText></p>)
-                  )}
+                  <svg className="list-card-folder" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d={FOLDER_BACK} /></svg>
+                  {behindIds.map((paperId, index) => {
+                    const paper = getPaper(paperId);
+                    const category = paper?.categories?.[0];
+                    return (
+                      <div key={paperId} className="list-card-sheet" data-pos={index + 2 - behindIds.length} aria-hidden="true">
+                        {category && <span className="list-card-sheet-cat">{getCategoryLabel(category)}</span>}
+                        {paper?.title && <span className="list-card-sheet-title"><ScientificText>{paper.title}</ScientificText></span>}
+                      </div>
+                    );
+                  })}
+                  <div className="list-card-cover">
+                    <svg className="list-card-pocket" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d={FOLDER_POCKET} vectorEffect="non-scaling-stroke" /></svg>
+                    <h3 className="list-card-name">
+                      <button
+                        type="button"
+                        className="list-card-name-btn"
+                        onClick={(e) => { e.stopPropagation(); openList(list); }}
+                      >
+                        {list.name}
+                      </button>
+                    </h3>
+                    {(list.paperIds?.length ?? 0) === 0 && (
+                      <p className="list-card-preview-empty">{'Nothing saved yet.'}</p>
+                    )}
+                    <div className="list-card-footer">
+                      <span className="list-card-count">
+                        {papersCount(list.paperIds?.length || 0)}
+                        {(list.paperIds?.length ?? 0) > 0 && timeAgo(list.updatedAt as Parameters<typeof timeAgo>[0], locale) && ` · Updated ${timeAgo(list.updatedAt as Parameters<typeof timeAgo>[0], locale)}`}
+                      </span>
+                      {list.publicShareId && (
+                        <span className="lists-badge lists-badge--public">
+                          <GlobeHemisphereWest size={11} aria-hidden="true" /> {'Public'}
+                        </span>
+                      )}
+                    </div>
+                    {isCustomList && (
+                      <div className="list-card-tools">
+                        <button
+                          className="list-card-tool"
+                          onClick={(e) => { e.stopPropagation(); setEditing(list); }}
+                          aria-label={`Edit ${list.name}`}
+                          title={'Edit list'}
+                        >
+                          <PencilSimple size={13} aria-hidden="true" />
+                        </button>
+                        <button
+                          className="list-card-tool list-card-tool--danger"
+                          onClick={(e) => { e.stopPropagation(); setDeletingList(list); setDeleteOpen(true); }}
+                          aria-label={`Delete ${list.name}`}
+                          title={'Delete list'}
+                        >
+                          <Trash size={13} aria-hidden="true" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              </motion.div>
               );
             })}
+            </AnimatePresence>
             {showListPlaceholders && [0, 1].map((slot) => (
               <div
                 key={`list-placeholder-${slot}`}
                 className="list-card list-card--placeholder"
                 aria-hidden="true"
-                style={{ '--stagger-index': displayLists.length + slot }}
               >
-                <div className="list-card-top"><span className="list-card-icon" /></div>
-                <span className="lists-skeleton-bar lists-skeleton-bar--title" />
-                <span className="lists-skeleton-bar lists-skeleton-bar--meta" />
                 <div className="list-card-preview">
-                  <span className="lists-skeleton-bar" />
+                  <svg className="list-card-folder" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d={FOLDER_BACK} /></svg>
+                  <div className="list-card-cover">
+                    <svg className="list-card-pocket" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d={FOLDER_POCKET} vectorEffect="non-scaling-stroke" /></svg>
+                    <span className="lists-skeleton-bar lists-skeleton-bar--title" />
+                    <span className="lists-skeleton-bar lists-skeleton-bar--meta" />
+                  </div>
                 </div>
               </div>
             ))}
           </div>
-        </motion.div>
+        </div>
       )}
-      </AnimatePresence>
 
       {/* The card for a saved paper that has no public paper page — see
           `openPaperCard`. Same takeover the search and the explorer use,
@@ -1898,9 +2079,190 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
         )}
       </PaperOverlay>
 
+      {isPhone && (
+        <Drawer
+          open={authorsOpen}
+          onOpenChange={setAuthorsOpen}
+          onOpenChangeComplete={(isOpen) => { if (!isOpen) setAuthorsSheet(null); }}
+        >
+          <DrawerContent className="pc-share-sheet">
+            <DrawerHandle />
+            <DrawerTitle render={<h3 />} className="pc-share-sheet-title">{'Authors'}</DrawerTitle>
+            <ul className="pc-share-list lists-authors-sheet">
+              {(authorsSheet?.authors || []).map((author, i) => {
+                const name = typeof author === 'string' ? author : author.name;
+                if (!name) return null;
+                const path = authorExplorerPath(author, authorsSheet);
+                const inner = (
+                  <>
+                    <span className="pc-author-avatar" aria-hidden="true">{name.charAt(0).toUpperCase()}</span>
+                    {name}
+                  </>
+                );
+                return (
+                  <li key={i}>
+                    {path
+                      ? (
+                        <Link
+                          to={path}
+                          className="pc-share-row lists-authors-sheet-row"
+                          onClick={() => {
+                            if (expandedList) navigate(location.pathname, { replace: true, state: { openListId: expandedList } });
+                          }}
+                        >
+                          {inner}
+                        </Link>
+                      )
+                      : <span className="lists-authors-sheet-row">{inner}</span>}
+                  </li>
+                );
+              })}
+            </ul>
+          </DrawerContent>
+        </Drawer>
+      )}
+
       {/* Outside the AnimatePresence on purpose: Edit is reachable from a card
           in the grid AND from inside an open list, and a window that lived in
           one branch would unmount the moment the other took over. */}
+      {isPhone && (
+        <Drawer
+          open={rowSheetOpen}
+          onOpenChange={(nextOpen, eventDetails) => {
+            if (!nextOpen && rowSheetStep === 'edit' && editGuardRef.current) {
+              editGuardRef.current(eventDetails);
+              return;
+            }
+            setRowSheetOpen(nextOpen);
+          }}
+          onOpenChangeComplete={(isOpen) => {
+            if (!isOpen) { setRowSheet(null); setRowSheetStep('menu'); editGuardRef.current = null; }
+          }}
+        >
+          <DrawerContent className={`pc-share-sheet lists-row-sheet${rowSheetStep === 'edit' ? ' save-modal--sheet' : ''}`}>
+            <DrawerHandle />
+            <AnimatePresence initial={false} mode="popLayout">
+            <motion.div
+              key={rowSheetStep}
+              ref={setRowSheetStepRef}
+              initial={{
+                opacity: 0,
+                filter: prefersReducedMotion ? 'none' : 'blur(4px)',
+                transform: prefersReducedMotion ? 'translateY(0px)' : 'translateY(16px)',
+              }}
+              animate={{
+                opacity: 1,
+                filter: prefersReducedMotion ? 'none' : 'blur(0px)',
+                transform: 'translateY(0px)',
+                transition: { duration: 0.24, ease: EASE_DRAWER },
+              }}
+              exit={{
+                opacity: 0,
+                filter: prefersReducedMotion ? 'none' : 'blur(4px)',
+                transition: { duration: 0.16, ease: EASE_OUT },
+              }}
+            >
+              {rowSheetStep === 'menu' ? (
+                <>
+                  <DrawerTitle render={<h3 />} className="pc-share-sheet-title">{'More actions'}</DrawerTitle>
+                  <ul className="pc-share-list">
+                    <li>
+                      <button type="button" className="pc-share-row" onClick={() => switchRowSheetStep('edit')}>
+                        <PencilSimple size={20} aria-hidden="true" />
+                        {'Edit note and tags'}
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className="pc-share-row" onClick={() => switchRowSheetStep('remove')}>
+                        <Trash size={20} aria-hidden="true" />
+                        {'Remove from list'}
+                      </button>
+                    </li>
+                  </ul>
+                </>
+              ) : rowSheetStep === 'edit' ? (
+                <SaveToListModal
+                  embedded
+                  paper={{ ...rowSheet!.paper, id: rowSheet!.paperId } as Paper}
+                  closeGuardRef={editGuardRef}
+                  onClose={() => setRowSheetOpen(false)}
+                />
+              ) : (
+                <div className="lists-remove-sheet">
+                  <Petri pose="letGo" className="lists-remove-petri" />
+                  <DrawerTitle render={<h3 />} className="lists-remove-title">
+                    {`Remove from ${rowSheet?.listName || 'this list'}?`}
+                  </DrawerTitle>
+                  <p className="lists-remove-paper"><ScientificText>{rowSheet?.paper?.title || ''}</ScientificText></p>
+                  <div className="lists-remove-actions">
+                    <DrawerClose ref={rowSheetCancelRef} render={<Button variant="outline" />}>{'Cancel'}</DrawerClose>
+                    <Button onClick={() => { removePaper(rowSheet!); setRowSheetOpen(false); }}>{'Remove'}</Button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+            </AnimatePresence>
+          </DrawerContent>
+        </Drawer>
+      )}
+
+      <AlertDialog
+        open={removalOpen}
+        onOpenChange={setRemovalOpen}
+        onOpenChangeComplete={(isOpen) => { if (!isOpen) setRemoving(null); }}
+      >
+        <AlertDialogContent className="lists-remove-dialog">
+          <Petri pose="letGo" className="lists-remove-petri" />
+          <AlertDialogTitle>{`Remove from ${removing?.listName || 'this list'}?`}</AlertDialogTitle>
+          <AlertDialogDescription>
+            <ScientificText>{removing?.paper?.title || ''}</ScientificText>
+          </AlertDialogDescription>
+          <div className="lists-remove-actions">
+            <AlertDialogCancel>{'Cancel'}</AlertDialogCancel>
+            <Button onClick={() => { removePaper(removing!); setRemovalOpen(false); }}>
+              {'Remove'}
+            </Button>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {isPhone ? (
+        <Drawer
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          onOpenChangeComplete={(isOpen) => { if (!isOpen) setDeletingList(null); }}
+        >
+          <DrawerContent className="pc-share-sheet">
+            <DrawerHandle />
+            <div className="lists-remove-sheet lists-delete-sheet">
+              <Petri pose="letGo" className="lists-remove-petri" />
+              <DrawerTitle render={<h3 />} className="lists-remove-title">{deleteListTitle}</DrawerTitle>
+              <p className="lists-remove-paper">{deleteListDescription}</p>
+              <div className="lists-remove-actions">
+                <DrawerClose render={<Button variant="outline" />}>{'Cancel'}</DrawerClose>
+                <Button onClick={confirmDeleteList}>{'Delete'}</Button>
+              </div>
+            </div>
+          </DrawerContent>
+        </Drawer>
+      ) : (
+        <AlertDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          onOpenChangeComplete={(isOpen) => { if (!isOpen) setDeletingList(null); }}
+        >
+          <AlertDialogContent className="lists-remove-dialog lists-delete-dialog">
+            <Petri pose="letGo" className="lists-remove-petri" />
+            <AlertDialogTitle>{deleteListTitle}</AlertDialogTitle>
+            <AlertDialogDescription>{deleteListDescription}</AlertDialogDescription>
+            <div className="lists-remove-actions">
+              <AlertDialogCancel>{'Cancel'}</AlertDialogCancel>
+              <Button onClick={confirmDeleteList}>{'Delete'}</Button>
+            </div>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
       <CreateListDialog
         open={creating}
        

@@ -165,6 +165,9 @@ the provider's one-second window and stays as it is.
 A refusal Semantic Scholar does send is relayed with the same short wait from both routes;
 `/related` used to flatten every failure into a bare 502. Raising the ceiling does not help at
 1 RPS — asking Semantic Scholar for a higher limit is what does.
+A paper Semantic Scholar has not indexed (its recommendations endpoint answers 404) is not a
+failure: `/related` answers 200 `{ recommendedPapers: [], code: 'PAPER_NOT_INDEXED' }` and caches
+it for one hour instead of a day, so a newly indexed paper gets its recommendations soon.
 
 `/openalex/*` exists because OpenAlex changed underneath the app. Since February 2026 it requires
 an API key and bills each call against a daily budget — $0.10/day anonymous, $1/day on a free key —

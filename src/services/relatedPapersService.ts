@@ -13,11 +13,18 @@ const CACHE_TTL = 24 * 60 * 60 * 1000;
 const IN_FLIGHT = new Map<string, Promise<Paper[]>>();
 // The Worker always answers twenty (`RELATED_UPSTREAM_LIMIT` there); every
 // caller trims from that one list rather than asking for its own size.
-const RELATED_UPSTREAM_LIMIT = 20;
+export const RELATED_UPSTREAM_LIMIT = 20;
+
+// Semantic Scholar does not resolve arXiv's own DataCite DOIs
+// (`10.48550/arxiv.2005.14165` is a 404 there); it knows those papers by
+// their arXiv id.
+const ARXIV_DOI = /^10\.48550\/arxiv\.(.+)$/i;
 
 export function getSemanticScholarPaperId(paper: Partial<Paper>) {
-  if (paper?.doi) return `DOI:${paper.doi.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '')}`;
-  if (paper?.arxivId) return `ARXIV:${paper.arxivId.replace(/v\d+$/, '')}`;
+  const doi = paper?.doi?.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '');
+  const arxivId = paper?.arxivId || doi?.match(ARXIV_DOI)?.[1];
+  if (doi && !ARXIV_DOI.test(doi)) return `DOI:${doi}`;
+  if (arxivId) return `ARXIV:${arxivId.replace(/v\d+$/, '')}`;
   if (paper?.semanticScholarId) return paper.semanticScholarId;
   const source = paper?.sources?.primary;
   if ((source === 'semanticscholar' || source === 'semantic-scholar') && /^[a-f0-9]{40}$/i.test(paper.id || '')) {
@@ -32,7 +39,7 @@ function mapRelatedPaper(item: SemanticScholarRecord): Paper {
     id: externalIds.ArXiv ? `arxiv:${externalIds.ArXiv}` : item.paperId,
     sources: { primary: 'semantic-scholar', enrichedBy: [] },
     title: item.title,
-    abstract: item.abstract || 'Resumen no disponible.',
+    abstract: item.abstract ?? undefined,
     authors: (item.authors || []).map(author => ({ name: author.name, id: author.authorId })),
     arxivId: externalIds.ArXiv,
     doi: externalIds.DOI,
@@ -44,7 +51,7 @@ function mapRelatedPaper(item: SemanticScholarRecord): Paper {
     openAccess: Boolean(item.isOpenAccess || item.openAccessPdf?.url),
     pdfUrl: item.openAccessPdf?.url,
     landingPageUrl: item.url,
-    citationCount: item.citationCount || 0,
+    citationCount: item.citationCount ?? undefined,
   });
 }
 

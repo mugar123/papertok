@@ -35,6 +35,7 @@ test('SOURCE: the two tabs are NavLinks, For you included, so a lost click still
   const row = linksRow(stripJsComments(await read('./Navbar.tsx')));
   const navLinks = row.match(/<NavLink\b/g) || [];
   assert.equal(navLinks.length, 2, 'exactly two NavLinks in the links row');
+  assert.doesNotMatch(row, /\/similar/, 'no Similar tab');
   assert.match(row, /<NavLink\s+to="\/feed"\s+end\b/, 'For you must be a NavLink to "/feed" with `end`');
   assert.match(row, /<NavLink\s+to="\/following"/, 'Following stays a NavLink');
   assert.doesNotMatch(row, /\/research/, 'Research is hidden from the bar');
@@ -122,7 +123,7 @@ test('SOURCE: the mark is measured once per tab change, from the tab the router 
     assert.match(row, new RegExp(`data-tab="${tab}"`), `${tab} carries its data-tab`);
     assert.match(row, new RegExp(`onPointerDown=\\{\\(event\\) => pressTab\\(event, '${tab}'\\)\\}`), `${tab} records the press`);
   }
-  assert.equal((row.match(/onPointerCancel=\{releasePress\}/g) || []).length, 2, 'a cancelled press is released on both');
+  assert.equal((row.match(/onPointerCancel=\{releasePress\}/g) || []).length, 2, 'a cancelled press is released on every tab');
   // The hook measures the tab it is told, by data-tab.
   assert.match(jsx, /row\.querySelector\(`\.navbar-link\[data-tab="\$\{tab\}"\]`\)/);
   assert.doesNotMatch(jsx, /querySelector\('\.navbar-link\.active'\)/);
@@ -152,7 +153,7 @@ test('SOURCE: a finger that lifts on the tab it pressed navigates without waitin
   for (const [tab, to] of [['home', '/feed'], ['following', '/following']] as const) {
     assert.match(row, new RegExp(`onPointerUp=\\{\\(event\\) => liftTab\\(event, '${tab}', '${to}'\\)\\}`), `${tab} navigates on pointerup`);
   }
-  assert.equal((row.match(/swallowSynthesisedClick/g) || []).length, 2, 'both swallow the click that may follow');
+  assert.equal((row.match(/swallowSynthesisedClick/g) || []).length, 2, 'every tab swallows the click that may follow');
   // Touch only: a mouse keeps the anchor's click, so desktop is untouched.
   assert.match(jsx, /if \(event\.pointerType !== 'touch' \|\| !start \|\| start\.tab !== tab\) return;/);
   // A drag that starts on the bar is not a navigation.

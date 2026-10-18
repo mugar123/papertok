@@ -67,5 +67,8 @@ export function usePageTransitionCustom() {
   // `lateralTabDirection` returns null for anything that is not a tab-to-tab
   // move, and history keeps the question.
   const lateral = lateralTabDirection(useLocation().pathname);
+  // A navigation can ask for no transition at all: between a list and a
+  // paper opened from it, one page simply replaces the other.
+  if (useLocation().state?.pageMotion === 'still') return { direction: 0, lateral: false, still: true };
   return { direction: lateral ?? historyDirection, lateral: lateral !== null };
 }

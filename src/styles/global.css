@@ -229,24 +229,6 @@
   }
 }
 
-@layer components {
-  /* Paper grain: two blue-noise tiles in the ink, offset so no grid shows, fixed
-     under everything. A route paints its own opaque ground (.page-transition, so
-     two pages crossing never show through each other), so the grain is drawn on
-     that ground too, isolated so it stays under the page's content. */
-  .page-transition {
-    isolation: isolate;
-  }
-
-  body::before,
-  .page-transition::before {
-    content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
-    background: var(--text-primary); opacity: var(--grain);
-    mask: var(--grain-mask);
-    mask-composite: add;
-  }
-}
-
 /* Utility Animations */
 .spinning {
   animation: spin 1s linear infinite;

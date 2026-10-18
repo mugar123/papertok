@@ -19,6 +19,11 @@ import {
 
 const RELATED_CACHE_SECONDS = 24 * 60 * 60;
 const RELATED_UPSTREAM_LIMIT = 20;
+const PAPER_NOT_INDEXED = 'PAPER_NOT_INDEXED';
+// A paper Semantic Scholar has not indexed yet (a 404 from the recommendations
+// endpoint) has no recommendations, which is an answer, not an outage. It is
+// kept for an hour rather than a day: the paper may be indexed tomorrow.
+const NOT_INDEXED_CACHE_SECONDS = 60 * 60;
 
 export async function handleRelated(request: Request, env: WorkerEnv, identity?: Pick<VerifiedIdentity, 'uid'> | null) {
   const requestUrl = new URL(request.url);
@@ -37,7 +42,8 @@ export async function handleRelated(request: Request, env: WorkerEnv, identity?:
   // calls for one list of which the second is a prefix of the first. The client
   // trims what it shows. `limit` is still accepted so an older bundle keeps
   // working; it just no longer changes the question.
-  return cacheResponse(request, origin, env, RELATED_CACHE_SECONDS, async () => {
+  const ttl = (payload: unknown) => ((payload as { code?: string } | null)?.code === PAPER_NOT_INDEXED ? NOT_INDEXED_CACHE_SECONDS : RELATED_CACHE_SECONDS);
+  return cacheResponse(request, origin, env, ttl, async () => {
     const fields = 'paperId,title,abstract,authors,year,externalIds,url,venue,publicationDate,citationCount,isOpenAccess,openAccessPdf,publicationTypes';
     const url = `https://api.semanticscholar.org/recommendations/v1/papers/forpaper/${encodeURIComponent(paperId)}?fields=${encodeURIComponent(fields)}&limit=${RELATED_UPSTREAM_LIMIT}`;
     // Through the source helper, not a bare `fetchWithDeadline`: this used to
@@ -52,7 +58,12 @@ export async function handleRelated(request: Request, env: WorkerEnv, identity?:
     // hand a contended request -- one that hit the beat's wait precisely
     // because Semantic Scholar is already under pressure -- less time to talk
     // to a provider that is by hypothesis already slow.
-    return fetchJsonUpstream(url, env.SEMANTIC_SCHOLAR_API_KEY ? { 'x-api-key': env.SEMANTIC_SCHOLAR_API_KEY } : {});
+    try {
+      return await fetchJsonUpstream(url, env.SEMANTIC_SCHOLAR_API_KEY ? { 'x-api-key': env.SEMANTIC_SCHOLAR_API_KEY } : {});
+    } catch (error) {
+      if ((error as UpstreamError)?.status === 404) return { recommendedPapers: [], code: PAPER_NOT_INDEXED };
+      throw error;
+    }
   }, { identity, canonicalParams: { paper_id: paperId } });
 }
 
