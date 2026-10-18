@@ -54,6 +54,22 @@
   left: var(--space-5);
 }
 
+@media (max-width: 900px) {
+  .public-paper-back-floating {
+    left: calc(var(--space-5) - 10px);
+  }
+
+  .public-paper-page--app :is(.public-paper-card, .public-paper-skeleton) .pc-sheet {
+    padding-top: calc(var(--space-3) * 2 + 40px);
+  }
+}
+
+@media (max-width: 420px) {
+  .public-paper-back-floating {
+    left: calc(var(--space-4) - 10px);
+  }
+}
+
 /* The cover, which has to actually cover.
    This class had no rules either, so the skeleton painted as a plain block in
    normal flow: 294px of placeholder stacked *above* the paper, pushing the card

@@ -31,64 +31,36 @@
   /* /lists is a ProtectedRoute in App.jsx's navbarRoutes: always under the
      app navbar, no standalone mode. Only the top offset uses the nav token —
      the trailing --space-16 is plain end-of-page breathing room. */
-  padding: calc(var(--nav-total) + var(--space-8)) var(--space-6) var(--space-16);
+  padding: calc(var(--nav-total) + var(--space-10)) var(--space-6) var(--space-16);
 }
 
 /* ─── Nameplate ─── */
 
 .lists-header {
-  margin-bottom: var(--space-8);
+  margin-bottom: var(--space-10);
 }
 
-/* No rule under the nameplate. `3px double` draws two hairlines with a gap
-   between them, and those two lines are what the masthead was being read as —
-   a divider rather than a heading. Without it the standfirst has to sit close
-   enough to the title to be read as belonging to it, which is what the
-   `--space-3` below does; the rule used to hold them apart. */
-.lists-masthead-row {
+.lists-header-row {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
   flex-wrap: wrap;
-  gap: var(--space-6);
-}
-
-.lists-masthead-block {
-  display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--space-4);
-  min-width: 0;
-}
-
-.lists-eyebrow {
-  margin: 0;
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-tertiary);
 }
 
 .lists-header h1 {
   margin: 0;
   font-family: var(--font-serif);
-  font-size: var(--fs-4xl);
+  font-size: clamp(1.9rem, 4.2vw, 2.6rem);
   font-weight: var(--fw-semibold);
-  line-height: 1.05;
+  line-height: 1.08;
   letter-spacing: -0.025em;
-  color: var(--text-primary);
-  /* The serif's ascenders ride above a line box this tight, eating into the
-     kicker above; half the leading deficit is reclaimed so the optical gap
-     matches the flex gap. */
-  padding-top: 0.025em;
+  text-wrap: balance;
 }
 
-.lists-create-btn {
-  flex: 0 0 auto;
-}
-
-.lists-subtitle {
-  max-width: 64ch;
-  margin: var(--space-3) 0 0;
+.lists-header p {
+  max-width: 40rem;
+  margin: var(--space-2) 0 0;
   color: var(--text-secondary);
   font-size: var(--fs-sm);
   line-height: var(--lh-normal);
@@ -165,107 +137,135 @@
 /* ─── The grid of lists ─── */
 
 .lists-grid {
+  position: relative;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-8);
 }
 
-/* A tile, not a floating card. The colour is the owner's, and it runs down the
-   inner edge as a 3px rule — the same gesture the Explorer's rows and the
-   entity standfirst make with the research field. */
 .list-card {
   display: flex;
   flex-direction: column;
-  min-height: 204px;
-  /* 18px, not 20: the 3px rule replaces the 1px border on that edge, so the
-     content would otherwise sit 2px further in on the left than on the right. */
-  padding: var(--space-5) var(--space-5) var(--space-5) 18px;
-  border: 1px solid var(--border-subtle);
-  border-left: 3px solid var(--list-accent, var(--border-default));
-  border-radius: var(--radius-lg);
-  background: var(--bg-card);
+  min-width: 0;
   cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
-  opacity: 0;
-  animation: staggerFadeUp 0.42s var(--ease-out-expo) forwards;
-  animation-delay: calc(var(--stagger-index, 0) * 0.035s);
 }
 
-/* Read later has no colour: it is a queue, not a shelf, and a neutral rule
-   reads correctly as "nothing assigned here". */
-.list-card--uncoloured {
-  border-left-color: var(--border-default);
-}
-
-/* Only ever seen on a first visit — a session-cached or IndexedDB-cached read
-   paints the real cards before the 320ms threshold. Its job is to stop three
-   system cards from looking like the whole answer while the owner's own lists
-   are still on their way. */
 .list-card--placeholder {
   cursor: default;
   pointer-events: none;
-  border-left-color: var(--border-default);
 }
 
-.list-card--placeholder .list-card-icon {
-  border-color: var(--border-subtle);
-  background: var(--bg-secondary);
+.list-card-preview {
+  position: relative;
+  height: 244px;
 }
 
-.list-card--placeholder .lists-skeleton-bar--title {
-  margin-top: var(--space-3);
+.list-card-folder {
+  position: absolute;
+  inset: 0 0 auto;
+  width: 100%;
+  height: 212px;
+  fill: var(--list-accent, var(--border-strong));
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .list-card:hover {
-    background: var(--bg-secondary);
-    border-color: var(--border-strong);
-    border-left-color: var(--list-accent, var(--border-strong));
-  }
+.list-card--placeholder .list-card-folder {
+  fill: var(--border-subtle);
 }
 
-.list-card:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
-.list-card-top {
+.list-card-sheet {
+  position: absolute;
+  top: 26px;
+  right: 9%;
+  left: 9%;
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  flex-direction: column;
   gap: var(--space-2);
-  min-height: 36px;
+  height: 150px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  transform-origin: 50% 100%;
+  transition: transform 240ms var(--ease-out);
 }
 
-.list-card-icon {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-md);
-  border: 1px solid color-mix(in srgb, var(--list-accent, var(--border-default)) 24%, var(--bg-card));
-  background: color-mix(in srgb, var(--list-accent, var(--border-default)) 8%, var(--bg-card));
-  color: var(--list-accent, var(--text-tertiary));
-  transition: background var(--transition-base), border-color var(--transition-base);
+.list-card-sheet[data-pos="0"] { transform: translate(-3%, -4px) rotate(-2.5deg); }
+.list-card-sheet[data-pos="1"] { transform: translate(2%, 6px) rotate(1.2deg); }
+
+.list-card-sheet[data-pos="0"] > * {
+  visibility: hidden;
 }
 
-/* The tile's own colour deepens a step under the pointer. It is the one place
-   the list's colour can answer a hover without the card moving, which is what
-   the light system took away when it removed the lift. */
 @media (hover: hover) and (pointer: fine) {
-  .list-card:hover .list-card-icon {
-    border-color: color-mix(in srgb, var(--list-accent, var(--border-default)) 42%, var(--bg-card));
-    background: color-mix(in srgb, var(--list-accent, var(--border-default)) 15%, var(--bg-card));
-  }
+  .list-card:hover .list-card-sheet[data-pos="0"] { transform: translate(-5%, -16px) rotate(-3.5deg); }
+  .list-card:hover .list-card-sheet[data-pos="1"] { transform: translate(2%, -6px) rotate(1.2deg); }
 }
 
-.list-card--uncoloured .list-card-icon {
-  border-color: var(--border-subtle);
-  background: var(--bg-secondary);
+.list-card-sheet-cat {
+  overflow: hidden;
+  font: var(--fw-medium) var(--fs-xs)/1.4 var(--font-body);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--list-accent, var(--text-tertiary));
+}
+
+.list-card-sheet-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-family: var(--font-serif);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  line-height: 1.3;
+  color: var(--text-secondary);
+}
+
+.list-card-cover {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  height: 140px;
+  padding: 30px var(--space-4) var(--space-4);
+}
+
+.list-card-pocket {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  fill: var(--bg-card);
+  stroke: var(--border-default);
+  stroke-width: 1px;
+}
+
+.list-card:has(.list-card-preview-empty) .list-card-pocket {
+  stroke-dasharray: 4 3;
+}
+
+.list-card-preview-empty {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--fs-sm);
+  font-style: italic;
   color: var(--text-tertiary);
 }
 
+.list-card-cover:has(.list-card-tools) .list-card-name {
+  padding-right: var(--space-16);
+}
+
 .list-card-tools {
+  position: absolute;
+  top: 28px;
+  right: var(--space-2);
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -321,11 +321,11 @@
 }
 
 .list-card-name {
-  margin: var(--space-3) 0 0;
+  margin: 0;
   font-family: var(--font-serif);
-  font-size: var(--fs-lg);
+  font-size: 1.375rem;
   font-weight: var(--fw-semibold);
-  line-height: 1.3;
+  line-height: 1.2;
   letter-spacing: -0.01em;
   color: var(--text-primary);
   overflow-wrap: anywhere;
@@ -336,46 +336,13 @@
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-2);
-  margin-top: var(--space-2);
 }
 
-/* A count is machine data. */
 .list-card-count {
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
+  font: var(--fw-medium) var(--fs-xs)/1.4 var(--font-body);
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
 }
-
-.list-card-preview {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  margin-top: auto;
-  padding-top: var(--space-3);
-}
-
-.list-card-preview-title {
-  margin: 0;
-  font-family: var(--font-serif);
-  font-size: 0.8125rem;
-  line-height: 1.45;
-  color: var(--text-secondary);
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.list-card-preview-empty {
-  margin: 0;
-  color: var(--text-tertiary);
-  font-size: 0.8125rem;
-  line-height: 1.45;
-}
-
-/* ─── Badges ─── */
 
 .lists-badge {
   display: inline-flex;
@@ -386,9 +353,7 @@
   border-radius: var(--radius-sm);
   background: var(--tint-neutral-bg);
   color: var(--tint-neutral-fg);
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
+  font: var(--fw-medium) var(--fs-xs)/1.4 var(--font-body);
   white-space: nowrap;
   /* The badge changes meaning under the reader — public, updating, up to date —
      and a hard cut between three tints reads as a flicker rather than as
@@ -428,49 +393,31 @@
 
 /* ─── The open list ─── */
 
-.lists-expanded {
-  animation: fadeIn 0.3s ease-out;
+.lists-expanded-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
 }
 
 .lists-back-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-5);
-  padding: var(--space-2) 0;
-  border: none;
-  background: none;
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: color var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .lists-back-btn:hover {
-    color: var(--text-primary);
-  }
+  margin-left: -11px;
 }
 
 .lists-expanded-header {
   display: flex;
-  align-items: flex-start;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-4);
-  /* The twin of `.lists-masthead-row`, and it loses its rule for the same
-     reason. What the rule was also doing was spacing: it is now the only gap
-     between the nameplate and whatever follows, so the tools row below gives
-     up the padding it carried to clear the line. */
-  padding-bottom: var(--space-5);
+  padding-bottom: var(--space-8);
 }
 
 .lists-expanded-titleblock {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-4);
-  flex: 1 1 320px;
+  flex: 1 1 0;
   min-width: 0;
 }
 
@@ -478,17 +425,11 @@
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-md);
-  border: 1px solid color-mix(in srgb, var(--list-accent, var(--border-default)) 24%, var(--bg-card));
-  background: color-mix(in srgb, var(--list-accent, var(--border-default)) 8%, var(--bg-card));
   color: var(--list-accent, var(--text-tertiary));
 }
 
-.lists-expanded-header--uncoloured .lists-expanded-icon {
-  border-color: var(--border-subtle);
-  background: var(--bg-secondary);
+.lists-expanded-count {
+  font-weight: var(--fw-regular);
   color: var(--text-tertiary);
 }
 
@@ -510,147 +451,114 @@
   overflow-wrap: anywhere;
 }
 
+.lists-expanded-header:has(+ .lists-expanded-meta) {
+  padding-bottom: var(--space-4);
+}
+
 .lists-expanded-meta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-2);
-  margin: 0;
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
+  margin: 0 0 var(--space-8);
+  font: var(--fw-medium) var(--fs-xs)/1.4 var(--font-body);
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
-}
-
-/* ─── The action row: intent left, utilities right ─── */
-
-.lists-share-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  flex: 0 0 auto;
-}
-
-.lists-share-actions button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  min-height: 40px;
-  padding: 0 var(--space-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
-  color: var(--text-primary);
-  font-family: var(--font-body);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
-}
-
-.lists-share-actions button.is-primary {
-  border-color: var(--border-ink);
-  background: var(--accent-primary);
-  color: var(--text-inverse);
-}
-
-.lists-share-actions button:disabled {
-  cursor: wait;
-  opacity: 0.55;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .lists-share-actions button:not(:disabled):hover {
-    background: var(--bg-secondary);
-    border-color: var(--border-strong);
-  }
-
-  .lists-share-actions button.is-primary:not(:disabled):hover {
-    background: var(--accent-primary-hover);
-    border-color: var(--accent-primary-hover);
-  }
-}
-
-.lists-expanded-tools {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  /* No top margin and no top padding: the gap above this row is the
-     nameplate's own `padding-bottom` (or the share note's margin when there is
-     one), so the row sits the same distance from the header whether or not the
-     note is there. */
-  margin: 0 0 var(--space-6);
 }
 
 .lists-export-actions {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: var(--space-2);
-  /* Pushes the utilities to the far edge whether or not the export group
-     renders, so the row does not reflow when a list has no saved metadata. */
-  margin-right: auto;
 }
 
-.lists-tools-label {
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-tertiary);
+.petri.lists-empty-petri .onboarding-petri-body {
+  animation: none;
 }
 
-.lists-export-actions button,
-.lists-edit-btn,
-.lists-unpublish-btn {
-  display: inline-flex;
+.lists-remove-dialog {
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  font-family: var(--font-body);
-  font-size: var(--fs-xs);
+  gap: var(--space-2);
+  padding: var(--space-6);
+  text-align: center;
+}
+
+.petri.lists-remove-petri {
+  width: 6rem;
+  height: auto;
+  margin: 0 0 var(--space-2);
+}
+
+.petri.lists-remove-petri .onboarding-petri-body {
+  animation: none;
+}
+
+.lists-remove-dialog [data-slot='alert-dialog-description'] {
+  display: -webkit-box;
+  max-width: 32ch;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.lists-delete-dialog [data-slot='alert-dialog-description'] {
+  display: block;
+  max-width: 40ch;
+}
+
+.lists-remove-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.lists-row-sheet {
+  position: relative;
+}
+
+.lists-remove-sheet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) 0;
+  text-align: center;
+}
+
+.lists-remove-title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 1.35rem;
   font-weight: var(--fw-semibold);
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+  line-height: 1.2;
 }
 
-/* Unpublishing takes a public page down, so it wears the danger tint rather
-   than hiding among the neutral utilities. */
-.lists-unpublish-btn {
-  border-color: var(--tint-red-line);
-  background: var(--tint-red-bg);
-  color: var(--tint-red-fg);
+.lists-remove-paper {
+  display: -webkit-box;
+  max-width: 32ch;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
-.lists-unpublish-btn:disabled {
-  cursor: wait;
-  opacity: 0.55;
+.lists-delete-sheet .lists-remove-paper {
+  display: block;
+  max-width: 40ch;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .lists-export-actions button:hover,
-  .lists-edit-btn:hover {
-    background: var(--bg-secondary);
-    border-color: var(--border-strong);
-    color: var(--text-primary);
-  }
+.lists-remove-sheet .lists-remove-actions {
+  align-self: stretch;
+}
 
-  .lists-unpublish-btn:not(:disabled):hover {
-    background: var(--accent-danger);
-    border-color: var(--accent-danger);
-    color: var(--text-inverse);
-  }
+.lists-remove-sheet .lists-remove-actions > * {
+  flex: 1;
+  height: 44px;
 }
 
 /* ─── The public link ─── */
@@ -707,38 +615,24 @@
 .lists-expanded-papers {
   display: flex;
   flex-direction: column;
-  gap: 0;
-  border-top: 1px solid var(--border-default);
+  gap: 2px;
 }
 
-/* `.explorer-list-item`, to the pixel: the same padding, the same hairline, the
-   same 3px field rule at the same offset. Two screens listing papers should not
-   list them differently. */
 .lists-paper-item {
   position: relative;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-4);
-  padding: var(--space-5) var(--space-5) var(--space-5) var(--space-6);
-  border-bottom: 1px solid var(--border-default);
-  background: var(--bg-card);
+  margin-inline: calc(var(--space-2) * -1);
+  padding: var(--space-3) var(--space-2);
+  border-radius: var(--radius-lg);
   cursor: pointer;
   transition: background var(--transition-fast);
 }
 
-.lists-paper-item::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: var(--space-5);
-  width: 3px;
-  height: 28px;
-  background: var(--area-accent, var(--accent-primary));
-}
-
 @media (hover: hover) and (pointer: fine) {
   .lists-paper-item:hover {
-    background: var(--bg-secondary);
+    background: var(--bg-sunken);
   }
 }
 
@@ -751,19 +645,6 @@
   cursor: default;
 }
 
-.lists-paper-item--skeleton::before {
-  background: var(--border-default);
-}
-
-/* The rows arrive with the same rhythm the Explorer's do. The skeleton and the
-   finished row share a key, so React swaps the contents in place and this runs
-   once, on the row's first appearance — not again when the metadata lands. */
-.lists-paper-item {
-  opacity: 0;
-  animation: staggerFadeUp 0.42s var(--ease-out-expo) forwards;
-  animation-delay: calc(var(--stagger-index, 0) * 0.035s);
-}
-
 .lists-paper-item-content {
   flex: 1;
   min-width: 0;
@@ -772,15 +653,19 @@
 .lists-paper-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-bottom: 10px;
+  gap: 6px;
+  min-width: 0;
+  margin-bottom: 6px;
+}
+
+.lists-paper-dot {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  font: var(--fw-medium) var(--fs-xs)/1.4 var(--font-body);
 }
 
 .lists-paper-cat {
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
+  font: var(--fw-medium) var(--fs-xs)/1.4 var(--font-body);
   color: var(--area-accent, var(--text-secondary));
   overflow: hidden;
   text-overflow: ellipsis;
@@ -789,15 +674,15 @@
 
 .lists-paper-date {
   flex: 0 0 auto;
-  font: 400 0.6875rem/1.4 var(--font-mono);
+  font: var(--fw-medium) var(--fs-xs)/1.4 var(--font-body);
   color: var(--text-tertiary);
 }
 
 .lists-paper-title {
   max-width: 776px;
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   font-family: var(--font-serif);
-  font-size: 1.2rem;
+  font-size: 1.125rem;
   font-weight: var(--fw-semibold);
   line-height: 1.28;
   letter-spacing: -0.01em;
@@ -815,34 +700,117 @@
 }
 
 .lists-paper-authors {
-  max-width: 776px;
+  width: fit-content;
   margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+}
+
+.lists-paper-authors-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.lists-authors-sheet {
+  max-height: 60dvh;
+  overflow-y: auto;
+}
+
+.lists-authors-sheet-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 48px;
+  padding: 0 var(--space-3);
+  color: var(--text-primary);
+  font: 500 1rem/1.3 var(--font-body);
+}
+
+.lists-authors-sheet-row .pc-author-avatar {
+  margin: 0;
+}
+
+.lists-authors-tooltip {
+  max-width: 22rem;
 }
 
 /* The owner's own note, as a standfirst carrying the field rule down its edge
    — the same shape the Explorer gives a Wikipedia excerpt. */
 .lists-paper-note {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   max-width: 776px;
   margin: var(--space-3) 0 0;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-left: 3px solid var(--area-accent, var(--border-strong));
-  border-radius: var(--radius-sm);
-  background: var(--bg-sunken);
+}
+
+.lists-paper-note-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: var(--fw-medium) var(--fs-xs)/1.4 var(--font-body);
+  color: var(--text-tertiary);
+}
+
+.lists-paper-note-text {
+  display: -webkit-box;
+  overflow: hidden;
   font-family: var(--font-serif);
   font-size: 0.9375rem;
+  font-style: italic;
   line-height: 1.55;
   color: var(--text-secondary);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
-  overflow: hidden;
+  -webkit-line-clamp: 1;
+}
+
+.lists-paper-note[data-open] .lists-paper-note-text {
+  display: block;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.lists-paper-note-more {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+}
+
+.lists-paper-note-more::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .lists-paper-note.is-expandable:hover .lists-paper-note-more {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
+.lists-paper-note-more svg {
+  transition: rotate 200ms var(--ease-out);
+}
+
+.lists-paper-note[data-open] .lists-paper-note-more svg {
+  rotate: 180deg;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lists-paper-note-more svg {
+    transition: none;
+  }
 }
 
 .lists-paper-tags {
@@ -858,9 +826,7 @@
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--area-accent, var(--text-secondary)) 6%, var(--bg-card));
   color: var(--area-accent, var(--text-secondary));
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
+  font: var(--fw-medium) var(--fs-xs)/1.4 var(--font-body);
 }
 
 .lists-paper-actions {
@@ -870,32 +836,22 @@
   gap: var(--space-1);
 }
 
-.lists-paper-edit-btn,
-.lists-paper-unmark-btn {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  background: none;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast);
-}
-
 @media (hover: hover) and (pointer: fine) {
-  .lists-paper-edit-btn:hover {
-    border-color: var(--border-default);
-    background: var(--bg-card);
-    color: var(--text-primary);
+  .lists-paper-actions {
+    opacity: 0;
+    transition: opacity var(--transition-fast);
   }
 
-  .lists-paper-unmark-btn:hover {
-    border-color: var(--tint-red-line);
-    background: var(--tint-red-bg);
-    color: var(--tint-red-fg);
+  .lists-paper-item:hover .lists-paper-actions,
+  .lists-paper-item:focus-within .lists-paper-actions {
+    opacity: 1;
+  }
+}
+
+@media (pointer: coarse) {
+  .lists-paper-actions [data-slot='button'] {
+    width: 44px;
+    height: 44px;
   }
 }
 
@@ -967,9 +923,6 @@
   padding: var(--space-5) var(--space-5) var(--space-5) var(--space-6);
   border-bottom: 1px solid var(--border-default);
   background: var(--bg-card);
-  opacity: 0;
-  animation: staggerFadeUp 0.42s var(--ease-out-expo) forwards;
-  animation-delay: calc(var(--stagger-index, 0) * 0.045s);
 }
 
 .lists-skeleton-row::before {
@@ -982,70 +935,7 @@
   background: var(--border-default);
 }
 
-/* ─── Empty states ─── */
-
-/* No dashed frame, no 48px glyph at half opacity. A sunken panel with a rule
-   down its edge, which is what every other "nothing here yet" surface in the
-   app looks like. */
-.lists-empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-3);
-  margin-top: var(--space-8);
-  padding: var(--space-8) var(--space-8) var(--space-8) calc(var(--space-8) - 3px);
-  border: 1px solid var(--border-subtle);
-  border-left: 3px solid var(--border-strong);
-  border-radius: var(--radius-lg);
-  background: var(--bg-sunken);
-  animation: fadeIn 0.4s ease-out;
-}
-
-.lists-empty-state--inline {
-  margin-top: 0;
-  padding: var(--space-6) var(--space-6) var(--space-6) calc(var(--space-6) - 3px);
-}
-
-.lists-empty-icon {
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
-  color: var(--text-tertiary);
-}
-
-.lists-empty-state h3 {
-  margin: 0;
-  font-family: var(--font-serif);
-  font-size: var(--fs-xl);
-  font-weight: var(--fw-semibold);
-  line-height: 1.25;
-  letter-spacing: -0.015em;
-  color: var(--text-primary);
-}
-
-.lists-empty-state p {
-  max-width: 56ch;
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-normal);
-}
-
 /* ─── Animations ─── */
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes staggerFadeUp {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: none; }
-}
 
 @keyframes spin {
   to { transform: rotate(360deg); }
@@ -1055,22 +945,14 @@
    but a control that acknowledges nothing on the way down feels slower than it
    is — the delay the owner perceives is the one before anything happens, not
    the one before the work finishes. 1px, on the press only. */
-.lists-share-actions button:not(:disabled):active,
-.lists-export-actions button:active,
-.lists-edit-btn:active,
-.lists-unpublish-btn:not(:disabled):active,
 .lists-retry-btn:active,
 .list-card-tool:active {
   transform: translateY(1px);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .list-card,
-  .lists-paper-item,
-  .lists-skeleton-row,
-  .lists-expanded {
-    animation: none;
-    opacity: 1;
+  .list-card-sheet {
+    transition: none;
   }
 
   /* The bars keep their ground colour and stop sweeping: the shimmer is the
@@ -1082,10 +964,6 @@
     background-color: color-mix(in srgb, var(--border-subtle) 55%, var(--bg-secondary));
   }
 
-  .lists-share-actions button:active,
-  .lists-export-actions button:active,
-  .lists-edit-btn:active,
-  .lists-unpublish-btn:active,
   .lists-retry-btn:active,
   .list-card-tool:active {
     transform: none;
@@ -1106,10 +984,6 @@
       calc(var(--nav-height-mobile) + var(--space-8));
   }
 
-  .lists-header h1 {
-    font-size: var(--fs-3xl);
-  }
-
   .lists-expanded-title {
     font-size: var(--fs-2xl);
   }
@@ -1124,33 +998,30 @@
    lines. */
 @media (max-width: 600px) {
   .lists-grid {
-    grid-template-columns: 1fr;
-    gap: var(--space-3);
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-6);
   }
 
-  .list-card {
-    min-height: 0;
+  .list-card-preview {
+    height: 222px;
   }
 
-  .lists-masthead-row {
-    align-items: flex-start;
+  .list-card-folder {
+    height: 190px;
   }
 
-  .lists-create-btn {
-    width: 100%;
+  .list-card-cover {
+    height: 120px;
+  }
+
+  .list-card-sheet-title {
+    -webkit-line-clamp: 1;
   }
 
   .lists-paper-item {
     padding-right: var(--space-3);
   }
 
-  .lists-share-actions {
-    width: 100%;
-  }
-
-  .lists-share-actions button {
-    flex: 1 1 auto;
-  }
 }
 
 /* The card titles are the real (keyboard-reachable) openers; the card's own

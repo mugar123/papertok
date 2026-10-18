@@ -21,7 +21,8 @@ test('the mobile side rail is centred with `translate`, so the arrival animation
   const rule = mobile.match(/\.pc-side-actions \{[^}]*\}/)?.[0] || '';
   assert.ok(rule, 'the mobile rail rule exists');
   assert.match(rule, /top: 50%;/);
-  assert.match(rule, /translate: 0 calc\(-50% \+ var\(--rail-shift, 0px\)\);/, 'centred by translate, plus the no-abstract shift');
+  assert.match(rule, /translate: 0 -50%;/, 'centred by translate');
+  assert.doesNotMatch(css, /--rail-shift/, 'the rail keeps one position whatever the slot shows');
   assert.doesNotMatch(rule, /transform:/);
   // The arrival still animates `transform`, which is why the two must not share it.
   assert.match(css, /@keyframes pcArrive \{\s*0% \{ opacity: 0; transform: translateY\(8px\); \}/);

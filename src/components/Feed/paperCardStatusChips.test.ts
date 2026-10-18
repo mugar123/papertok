@@ -5,15 +5,16 @@ import { readFile } from 'node:fs/promises';
 const read = (path: string | URL) => readFile(new URL(path, import.meta.url), 'utf8');
 const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
-test('SOURCE: the status chips have their own line under the topic tags, and none leaves no gap', async () => {
+test('SOURCE: the subjects and the status chips sit between the masthead and the title, and none leaves no gap', async () => {
   const jsx = stripComments(await read('./PaperCard.tsx'));
+  const meta = jsx.indexOf('<div className="pc-meta">');
+  const filed = jsx.indexOf('<div className="pc-filed">');
   const topics = jsx.indexOf('className="pc-topics"');
   const chips = jsx.indexOf('<div className="pc-chips">');
   const title = jsx.indexOf('className="pc-title"');
-  const authors = jsx.indexOf('className="pc-authors pc-authors--mobile-clickable"');
-  assert.ok(topics > 0 && chips > topics && chips < title && chips < authors, 'the chips sit after the tags, above the headline and the byline');
+  assert.ok(meta > 0 && filed > meta && topics > filed && chips > topics && title > chips, 'masthead, then the subjects and the chips, then the title');
   assert.equal((jsx.match(/<div className="pc-chips">/g) || []).length, 1, 'one row of chips');
-  assert.doesNotMatch(jsx, /closest\('\.pc-chips'\)/, 'the byline no longer carries the chips, so it needs no guard for them');
+  assert.match(jsx.slice(jsx.indexOf('<div className="pc-meta">'), title), /className="pc-masthead-field pc-topic-link"/, 'the field leads the masthead');
 
   const css = await read('./PaperCard.css');
   assert.doesNotMatch(css, /\.pc-authors \.pc-chips/);
@@ -33,26 +34,27 @@ test('SOURCE: the connections empty state uses a smaller Petri and steps down wi
     .map(([, height, body]) => ({ height: Number(height), body }));
   const shortest = steps.reduce((low, step) => (step.height < low.height ? step : low), steps[0]);
   assert.ok(steps.length >= 2, 'it steps down more than once');
-  assert.match(shortest.body, /\.empty-state-art \{\s*display: none;/, 'on the shortest panel Petri steps aside');
+  assert.match(shortest.body, /\.empty-state-art > svg \{\s*width: 2\.5rem;\s*height: 2\.5rem;/, 'on the shortest panel Petri shrinks rather than leaving');
+  assert.doesNotMatch(shortest.body, /display: none/, 'Petri is never hidden');
   assert.match(css, /\.graph-empty \{[^}]*overflow-y: auto;/, 'as a last resort it scrolls, it is never cut off');
 });
 
-test('SOURCE: a missing abstract is the stacked empty state, centred in the room the abstract would take', async () => {
+test('SOURCE: the abstract, the similar papers and the graph are one size: the slot takes the room and each face fills it', async () => {
   const jsx = await read('./PaperCard.tsx');
-  assert.doesNotMatch(jsx, /layout="row"/, 'stacked, like every other empty state');
-  const css = await read('./PaperCard.css');
-  assert.match(css, /\.pc-slot:has\(\.pc-abstract-empty\),\s*\.pc-slot:has\(\.pc-abstract-empty\) > \.pc-slot-track,\s*\.pc-slot-track > \.pc-slot-face:has\(\.pc-abstract-empty\) \{\s*flex-grow: 1;\s*\}/);
-  assert.match(css, /\.pc-abstract:has\(> \.pc-abstract-empty\) \{\s*flex-grow: 1;\s*display: flex;\s*flex-direction: column;\s*justify-content: center;\s*\}/);
-});
-
-test('SOURCE: on a no-abstract card the rail follows the empty state, kept inside the card, and no other card moves its rail', async () => {
-  const jsx = await read('./PaperCard.tsx');
-  const effect = jsx.slice(jsx.indexOf("card.style.removeProperty('--rail-shift')") - 120, jsx.indexOf('}, [abstractText, relatedInline]);'));
-  assert.match(effect, /if \(abstractText \|\| relatedInline\) \{\s*card\.style\.removeProperty\('--rail-shift'\);/, 'only the no-abstract state shifts it');
-  assert.match(effect, /Math\.max\(-room, Math\.min\(room, /, 'clamped so the rail stays on the card');
-  assert.match(effect, /observe\(room\)/, 're-measured when the rows above move the state');
-  const css = await read('./PaperCard.css');
-  const shifts = css.match(/translate: [^;]*var\(--rail-shift, 0px\)/g) || [];
-  assert.equal(shifts.length, 2, 'applied by translate on desktop and on the overlaid rail alike');
-  assert.doesNotMatch(css, /anchor-name: --pc-state/, 'no anchor positioning, which the desktop rail in flow cannot use');
+  assert.doesNotMatch(jsx, /layout="row"/, 'a missing abstract is the stacked empty state, like every other');
+  assert.match(jsx, /className=\{`pc-slot\$\{abstractText \? '' : ' pc-slot--no-abstract'\}`\}/, 'the slot knows the record has no abstract');
+  const css = stripComments(await read('./PaperCard.css'));
+  const similar = stripComments(await read('./SimilarPapers.css'));
+  const rule = (source: string, selector: RegExp) => source.match(new RegExp(`\\n${selector.source} \\{([^}]*)\\}`))?.[1] || '';
+  assert.match(rule(css, /\.pc-slot,\n\.pc-slot-track,\n\.pc-slot-face/), /flex: 1 1 auto;/, 'the slot and its face take the room');
+  const abstract = css.match(/\n\.pc-abstract \{([^}]*overflow: hidden[^}]*)\}/)?.[1] || '';
+  assert.match(abstract, /flex: 1 1 auto;/, 'the abstract fills it');
+  assert.doesNotMatch(abstract, /max-height/, 'with no cap of its own');
+  const graph = rule(css, /\.related-sheet\.related-sheet--inline/);
+  assert.match(graph, /flex: 1 1 auto;/, 'the graph fills it');
+  assert.match(graph, /height: auto;\s*max-height: none;/, 'with no height of its own');
+  const panel = rule(similar, /\.similar-panel/);
+  assert.match(panel, /flex: 1 1 auto;/, 'the similar papers fill it');
+  assert.match(panel, /container: related-panel \/ size;/, 'and their states step down like the graph\'s');
+  assert.match(css, /\.pc-abstract:has\(> \.pc-abstract-empty\) \{\s*display: flex;\s*flex-direction: column;\s*justify-content: center;\s*\}/, 'a missing abstract is centred in its panel');
 });

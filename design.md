@@ -163,7 +163,7 @@ The seven numbered rules below are cited from code comments as
 **Creative North Star: "The PaperTok Index"**
 
 A document-first product printed like a single-ink page — one navy ink on warm paper,
-a spot yellow and a faint paper grain — that reads like a machine-generated
+a spot yellow and, on the welcome page, a faint paper grain — that reads like a machine-generated
 index over editorial content. The tone is sober, editorial and curious: serious
 with the science, with a spark of play (Petri the mascot, the engravings, the
 twinkling stars) kept for first-run moments only.
@@ -179,7 +179,7 @@ turns to ink (`night-paper`), the ink to paper (`night-ink`), and the spot
 yellow does not flip — a mark that changes value stops being a mark.
 
 **Key Characteristics:**
-- One ink (Navy) on Warm Proof Paper, with a paper grain over the page.
+- One ink (Navy) on Warm Proof Paper; the welcome page adds a paper grain.
 - Three voices: serif prose, mono machine data, Inter controls.
 - Colour only from the data (the twelve field inks) or from an action's meaning.
 - Spot Yellow as a thread, never a highlight reel.
@@ -332,8 +332,9 @@ Nothing leaves the DOM; keyboard focus scrolls a chip into view (`.pc-topics`,
 Nothing floats. The system is flat: every elevation `--shadow-*` token
 (`sm` to `xl`) resolves to `none`; the two `--shadow-glow-*` tokens are the
 3px focus ring on fields, not elevation, and stay. Depth is conveyed by
-hairline rules, by the step between paper and Ink Wash, and by a faint paper grain printed over the page (`--grain`, two
-offset blue-noise tiles in the ink, 0.22 light / 0.18 dark). An overlay is set
+hairline rules and by the step between paper and Ink Wash. The welcome page alone
+prints a faint paper grain (`--grain`, two offset blue-noise tiles in the ink,
+0.22 light / 0.18 dark); the app's pages are plain paper. An overlay is set
 apart by its `rule-default` hairline over a flat scrim (`--scrim`, no blur): the ink
 at 30% on light paper, black at 50% in dark, where the cream ink would lift the
 page instead of dimming it.

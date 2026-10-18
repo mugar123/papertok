@@ -282,6 +282,7 @@
   /* Its pair for movement on screen: something already there travelling or
      resizing (the card's abstract ⇄ map swap, the save window's views). */
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   --press-scale: 0.97;
   /* Unfolding in place (rows 0fr → 1fr): the card's author list opens and
      closes on these, so every fold in the app moves alike. ease-in-out because what sits below is already on screen

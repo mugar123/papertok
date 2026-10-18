@@ -21,6 +21,13 @@
   text-align: center;
 }
 
+.not-found-petri {
+  width: 7.5rem;
+  height: 7.5rem;
+  margin-bottom: var(--space-2);
+  color: var(--text-primary);
+}
+
 .not-found-card h1 {
   margin: 0;
   font-family: var(--font-heading);

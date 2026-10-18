@@ -7,17 +7,7 @@ import { ArrowClockwise, ArrowLeft, House } from '@phosphor-icons/react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useFeed } from '../../context/FeedContext.tsx';
 import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.ts';
-import { fetchPapersByIds } from '../../services/arxivService.ts';
-import {
-  enrichPapersBatch,
-  fetchPaperByArxivIdViaOpenAlex,
-  fetchPaperByWorkId,
-  fetchPapersByDois,
-} from '../../services/openAlexService.ts';
-import {
-  getOpenAlexEnrichmentId,
-  mergeOpenAlexEnrichment,
-} from '../../utils/feedEnrichment.ts';
+import { loadPaperByIdentity } from '../../services/paperLookup.ts';
 import {
   encodePaperKey,
   getPublicPaperPath,
@@ -59,51 +49,6 @@ const COPY = {
     en: 'Home',
   },
 };
-
-async function loadPaper(identity: NonNullable<ReturnType<typeof parsePaperKey>>) {
-  if (identity.type === 'doi') {
-    const papers = await fetchPapersByDois([identity.value], { throwOnProviderError: true });
-    return papers[0] || null;
-  }
-
-  // Papers the feed keys by provider id — an OpenAlex work, a PubMed record —
-  // and remembered that way in Liked and Saved. OpenAlex resolves both ids
-  // directly, abstract included; a failure here rejects so the page can
-  // offer a retry rather than declare the paper missing.
-  if (identity.type === 'openalex' || identity.type === 'pmid') {
-    return fetchPaperByWorkId(identity.type, identity.value);
-  }
-
-  let paper = null;
-  try {
-    const papers = await fetchPapersByIds([identity.value]);
-    paper = papers[0] || null;
-  } catch (error) {
-    console.warn('arXiv refused the paper, falling back to OpenAlex', error);
-  }
-
-  if (!paper) {
-    // arXiv rate-limits by IP in bursts (a 429 ban that lasts minutes), and it
-    // must not decide whether this page works: OpenAlex indexes the same
-    // preprints, abstract included. The PDF link is derived from the arXiv id
-    // we were asked for, since OpenAlex only sometimes carries one.
-    const fallback = await fetchPaperByArxivIdViaOpenAlex(identity.value);
-    if (!fallback) return null;
-    return {
-      ...fallback,
-      pdfUrl: fallback.pdfUrl || `https://arxiv.org/pdf/${identity.value.replace(/v\d+$/i, '')}`,
-    };
-  }
-
-  try {
-    const enrichmentId = getOpenAlexEnrichmentId(paper) || identity.value.replace(/v\d+$/i, '');
-    const enrichment = await enrichPapersBatch([enrichmentId], { timeoutMs: 6_500 });
-    return mergeOpenAlexEnrichment([paper], enrichment)[0];
-  } catch (error) {
-    console.warn('Public paper OpenAlex enrichment failed', error);
-    return paper;
-  }
-}
 
 export default function PublicPaperPage({
   onAuthRequired,
@@ -265,7 +210,7 @@ export default function PublicPaperPage({
     // hiccup, not as proof the paper stopped existing.
     const fallback = seededPaper || shareSeed;
 
-    loadPaper(identity)
+    loadPaperByIdentity(identity)
       .then((loadedPaper) => {
         if (requestId !== requestIdRef.current) return;
         if (!loadedPaper) {

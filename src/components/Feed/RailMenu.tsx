@@ -13,7 +13,7 @@ import './SharePanel.css';
  * outside press, Escape or (the drawer) a swipe down, and gives focus back to
  * the button.
  */
-export default function RailMenu({ title, trigger, menu, sheet }: { title: string; trigger: ComponentProps<typeof Menu.Trigger>['render']; menu: ReactNode; sheet: ReactNode }) {
+export default function RailMenu({ title, trigger, menu, sheet }: { title: string; trigger: ComponentProps<typeof Menu.Trigger>['render']; menu?: ReactNode; sheet: ReactNode }) {
   // Either surface portals to the body, but React still bubbles its clicks
   // up to the card, whose double tap is a like.
   const stop = (event: SyntheticEvent) => event.stopPropagation();
@@ -22,7 +22,7 @@ export default function RailMenu({ title, trigger, menu, sheet }: { title: strin
     return (
       <Drawer>
         <DrawerTrigger render={trigger} />
-        <DrawerContent className="pc-share-sheet" onClick={stop}>
+        <DrawerContent className="pc-share-sheet" viewportProps={{ onClick: stop }}>
           <DrawerHandle />
           <DrawerTitle render={<h3 />} className="pc-share-sheet-title">{title}</DrawerTitle>
           <ul className="pc-share-list">{sheet}</ul>

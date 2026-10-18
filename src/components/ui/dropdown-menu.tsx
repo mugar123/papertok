@@ -43,8 +43,23 @@ function DropdownMenuContent({ align = 'start', alignOffset = 0, side = 'bottom'
   );
 }
 
+function DropdownMenuItem({ className, ...props }: StyledProps<typeof MenuPrimitive.Item>) {
+  return (
+    <MenuPrimitive.Item
+      data-slot="dropdown-menu-item"
+      className={cn(
+        'flex min-h-9 cursor-pointer select-none items-center gap-2 rounded-md px-2.5 text-[0.8125rem] font-medium text-foreground outline-none',
+        'data-highlighted:bg-secondary [&_svg]:shrink-0 [&_svg]:text-muted-foreground',
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
 export {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuTrigger,
 };

@@ -39,8 +39,8 @@ test('the interests editor is a modal Dialog with a named close and pressed chip
   assert.match(jsx, /import \{ Toggle \} from '\.\.\/ui\/toggle\.tsx'/);
   assert.match(jsx, /<Toggle\s[\s\S]*?className="eim-pill"\s+pressed=\{isSelected\}\s+onPressedChange=\{\(\) => toggleSubcategory\(subKey\)\}/);
   assert.doesNotMatch(jsx, /aria-pressed=|eim-pill--selected/);
-  // "Select all" per area is an action, not a state: it stays a plain button.
-  assert.match(jsx, /<button\s+type="button"\s+className="eim-area-toggle-btn"/);
+  // "Select all" per area is an action, not a state: the shared Button, not a Toggle.
+  assert.match(jsx, /<Button variant="outline" size="sm" onClick=\{\(\) => toggleArea\(areaKey\)\}>/);
   const css = await read('./EditInterestsModal.css');
   assert.doesNotMatch(css, /eim-overlay--closing|eim-fade-in|eim-slide-up|eim-close-btn/);
   assert.match(css, /\.eim-pill\[data-pressed\]\s*\{/);

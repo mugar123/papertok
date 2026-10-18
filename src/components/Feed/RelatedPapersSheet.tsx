@@ -4,24 +4,21 @@ import type { CitationGraph } from '../../services/citationGraphService.ts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
-  ArrowsClockwise,
+  ArrowRight,
   CaretRight,
   Crosshair,
   GitBranch,
   Graph,
-  LockOpen,
-  Sparkle,
   Stack,
   Warning,
   X,
 } from '@phosphor-icons/react';
 import { useReducedMotion } from 'framer-motion';
 import { getCitationGraph, getCitationGraphDoi } from '../../services/citationGraphService.ts';
-import { getRelatedPapers } from '../../services/relatedPapersService.ts';
 import { isSignInRequiredError } from '../../utils/signInRequired.ts';
 import { CITATION_MAP_GEOMETRY, buildCitationMapLayout } from '../../utils/citationMap.ts';
 import { STAR_PATH } from '../../utils/starPath.ts';
-import { areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.ts';
+import { areaAccentForPaper } from '../../utils/areaAccent.ts';
 import {
   buildRelatedPaperEntries,
   getRelatedPaperIdentity,
@@ -38,7 +35,6 @@ import { usePopupOpenOnMount } from '../../hooks/usePopupOpenOnMount.ts';
 import { Drawer, DrawerClose, DrawerContent, DrawerTitle } from '../ui/drawer.tsx';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '../ui/dialog.tsx';
 import useIsPhone from '../../hooks/useIsPhone.ts';
-import { Tabs, TabsList, TabsTrigger } from '../ui/tabs.tsx';
 
 const INITIAL_GRAPH: CitationGraph = {
   references: [],
@@ -114,17 +110,6 @@ function PathCrumb({ title, max, current, onSelect }: { title: string | undefine
   );
 }
 
-function LoadingState({ label }: { label: string }) {
-  return (
-    <div className="related-state related-loading" role="status" aria-live="polite">
-      <span className="visually-hidden">{label}</span>
-      <div className="related-skeletons" aria-hidden="true">
-        {[0, 1].map(index => <span className="related-skeleton" key={index} style={{ '--skeleton-index': index }} />)}
-      </div>
-    </div>
-  );
-}
-
 /**
  * A centred Base UI Dialog (ui/dialog.jsx) on a wider screen, and a Drawer
  * (ui/drawer.jsx) on a phone: a bottom sheet a thumb can swipe away, the same
@@ -158,13 +143,9 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
   const Content = inline ? 'section' : isPhone ? DrawerContent : DialogContent;
   const Title = isPhone ? DrawerTitle : DialogTitle;
   const Close = isPhone ? DrawerClose : DialogClose;
-  const hasGraphIdentifier = Boolean(getCitationGraphDoi(paper));
-  const [mode, setMode] = useState(hasGraphIdentifier ? 'graph' : 'similar');
   const [view, setView] = useState('map');
   const [trail, setTrail] = useState<Partial<Paper>[]>([paper]);
   const [graphs, setGraphs] = useState<Record<string, { status: string; data?: CitationGraph }>>({});
-  const [papers, setPapers] = useState<Paper[]>([]);
-  const [relatedStatus, setRelatedStatus] = useState('loading');
   const [isSelectionReady, setIsSelectionReady] = useState(false);
   const [selectedPaperKey, setSelectedPaperKey] = useState<string | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
@@ -195,7 +176,7 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const walkTimersRef = useRef<number[]>([]);
   const walkingRef = useRef(false);
-  const resizeRef = useRef<ResizeObserver | null>(null);
+  const resizeRef = useRef<{ disconnect: () => void } | null>(null);
   const onCloseRef = useRef(onClose);
   const onPreparePaperRef = useRef(onPreparePaper);
   const onSelectPaperRef = useRef(onSelectPaper);
@@ -308,11 +289,8 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
     return () => { cancelled = true; };
   }, [center, centerDoi, graphs]);
 
-  /**
-   * A placeholder that appears before the answer has had a chance to arrive
-   * reads as slowness the app invented. Nothing is drawn for the first
-   * `PLACEHOLDER` milliseconds; a cached neighbourhood beats the timer.
-   */
+  // The first map shows its placeholder at once; a hop waits `PLACEHOLDER`
+  // milliseconds, so the travelling node is not drawn over it.
   useEffect(() => {
     if (graphStatus !== 'loading') return undefined;
     const timer = setTimeout(() => {
@@ -320,42 +298,22 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
     }, WALK.PLACEHOLDER);
     return () => clearTimeout(timer);
   }, [graphStatus, centerDoi]);
-  const showPlaceholder = graphStatus === 'loading' && placeholderFor === centerDoi;
-  // A failed neighbourhood is forgotten, so the fetch above asks again.
-  const retryGraph = () => setGraphs((previous) => {
-    const next = { ...previous };
-    delete next[centerDoi];
-    return next;
-  });
-
-  useEffect(() => {
-    if (mode !== 'similar') return undefined;
-    // A tab switch cancels this subscription, not the shared service request.
-    // Returning to Similar must subscribe again, even before that request settles.
-    let cancelled = false;
-    getRelatedPapers(paper).then(results => {
-      if (cancelled) return;
-      setPapers(results);
-      setRelatedStatus(results.length ? 'ready' : 'empty');
-    }).catch(error => {
-      if (cancelled) return;
-      console.error('Could not load related papers', error);
-      setRelatedStatus(isSignInRequiredError(error) ? 'signin' : 'error');
-    });
-    return () => { cancelled = true; };
-  }, [mode, paper]);
-
+  const showPlaceholder = graphStatus === 'loading' && (trail.length === 1 || placeholderFor === centerDoi);
   const measurePlot = useCallback((node: HTMLDivElement | null) => {
     resizeRef.current?.disconnect();
     resizeRef.current = null;
     if (!node || typeof ResizeObserver === 'undefined') return;
+    let settle: ReturnType<typeof setTimeout> | undefined;
     const observer = new ResizeObserver(entries => {
       const rect = entries[0]?.contentRect;
       if (!rect || !mountedRef.current) return;
+      node.setAttribute('data-resizing', '');
+      clearTimeout(settle);
+      settle = setTimeout(() => node.removeAttribute('data-resizing'), 200);
       setBox({ width: Math.round(rect.width), height: Math.round(rect.height) });
     });
     observer.observe(node);
-    resizeRef.current = observer;
+    resizeRef.current = { disconnect: () => { clearTimeout(settle); observer.disconnect(); } };
   }, []);
 
   const layout = useMemo(() => buildCitationMapLayout({
@@ -449,17 +407,16 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
     ? ('OpenCitations has no links for this work. That happens with very recent papers, and with anything published where nobody deposits their citations.')
     : ('No linked references or later works were found for this paper.');
 
-  const visibleStatus = mode === 'graph' ? graphStatus : relatedStatus;
-  const similarEntries = useMemo(() => buildRelatedPaperEntries(papers), [papers]);
+  const visibleStatus = graphStatus;
   const isSelectingPaper = Boolean(selectedPaperKey) && isSelectionReady;
   // Which side of the dot the label sits on. Decided from the settled column,
   // so it commits once and the slide below carries the crossing.
   const chipOnLeft = layout.chipSide === 'left';
-  const isMap = mode === 'graph' && view === 'map';
-  const isList = mode === 'graph' && view === 'list';
+  const isMap = view === 'map';
+  const isList = view === 'list';
   // Only the short states shrink the sheet: a map that is still loading keeps
   // its frame, because the frame is what the loading state is made of.
-  const sheetStatus = visibleStatus === 'loading' && mode === 'graph' ? 'ready' : visibleStatus;
+  const sheetStatus = visibleStatus === 'loading' ? 'ready' : visibleStatus;
 
   const renderNode = (node: ReturnType<typeof buildCitationMapLayout>['nodes'][number]) => {
     const isFocused = focusedKey === node.key;
@@ -522,74 +479,54 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
   const renderPeek = () => {
     const peekPaper = focusedListPaper;
     if (!peekPaper) return null;
-    const accent = areaAccentForPaper(peekPaper);
-    const fieldLabel = areaLabelForPaper(peekPaper);
     const canCentre = Boolean(getCitationGraphDoi(peekPaper));
-    const focusedEntry = focusedNode
-      || [...listEntries.references, ...listEntries.citations].find(entry => `list:${entry.key}` === focusedKey);
     const openKey = focusedNode ? focusedNode.key : focusedKey;
 
+    const byline = [
+      peekPaper.authors!.length > 0
+        ? `${nodeAuthorLabel(peekPaper)}${peekPaper.authors!.length > 1 ? ' et al.' : ''}`
+        : null,
+      peekPaper.year,
+      peekPaper.citationCountKnown
+        ? `${formatCount(peekPaper.citationCount, locale)} ${'citations'}`
+        : ('citations unknown'),
+    ].filter(Boolean).join(' · ');
+
+    // One slim strip over the foot of the plot, so the graph stays in view:
+    // the title, who and when, and the two things to do with this paper.
     return (
       <div className={`graph-peek ${isLeaving ? 'is-leaving' : ''}`}>
-        <div className="graph-peek-head">
+        <div className="graph-peek-copy">
           <strong className="graph-peek-title"><ScientificText>{peekPaper.title}</ScientificText></strong>
-          <button
-            type="button"
-            className="graph-peek-close"
-            onClick={() => setFocusedKey(null)}
-            aria-label={'Close details'}
-          >
-            <X size={15} />
-          </button>
+          <small className="graph-peek-byline">{byline}</small>
         </div>
-        {/* Under the title, the card's chips (PaperCard.css `.pc-chip`): the
-            field in its own ink, the year and count neutral, open access in
-            green. */}
-        <div className="graph-peek-meta">
-          {fieldLabel && (
-            <span className="pc-chip graph-peek-field" style={{ '--chip-accent': accent }}>{fieldLabel}</span>
-          )}
-          {peekPaper.year && <span className="pc-chip">{peekPaper.year}</span>}
-          <span className="pc-chip">
-            {peekPaper.citationCountKnown
-              ? `${formatCount(peekPaper.citationCount, locale)} ${'citations'}`
-              : ('citations unknown')}
-          </span>
-          {peekPaper.openAccess && (
-            <span className="pc-chip" data-tone="green">
-              <LockOpen size={12} aria-hidden="true" />
-              {'Open access'}
-            </span>
-          )}
-        </div>
-        <small className="graph-peek-authors">
-          {peekPaper.authors!.slice(0, 4).map(author => (author as PaperAuthor).name || author).join(', ')}
-        </small>
-        <div className="graph-peek-actions">
-          <button
-            type="button"
-            className="graph-peek-open-action"
-            onClick={() => requestPaper(peekPaper, openKey || getRelatedPaperIdentity(peekPaper))}
-            disabled={Boolean(selectedPaperKey)}
-          >
-            {'Open'}
-          </button>
-          <button
-            type="button"
-            className="graph-peek-centre"
-            onClick={() => requestCentre(peekPaper, focusedNode, { x: layout.centerX, y: layout.centerY })}
-            disabled={!canCentre || Boolean(selectedPaperKey) || phase !== 'idle'}
-            title={canCentre
-              ? undefined
-              : ('This work has no DOI to follow')}
-          >
-            <Crosshair size={15} aria-hidden="true" />
-            {'Centre here'}
-          </button>
-          {focusedEntry?.paper?.doi && (
-            <span className="graph-peek-doi">{`doi:${focusedEntry.paper.doi}`}</span>
-          )}
-        </div>
+        <Button
+          variant="outline"
+          size="icon-sm"
+          onClick={() => requestCentre(peekPaper, focusedNode, { x: layout.centerX, y: layout.centerY })}
+          disabled={!canCentre || Boolean(selectedPaperKey) || phase !== 'idle'}
+          aria-label={canCentre ? 'Centre the graph here' : 'Centre the graph here (this work has no DOI to follow)'}
+          title={canCentre ? 'Centre here' : ('This work has no DOI to follow')}
+        >
+          <Crosshair size={16} aria-hidden="true" />
+        </Button>
+        <Button
+          size="icon-sm"
+          onClick={() => requestPaper(peekPaper, openKey || getRelatedPaperIdentity(peekPaper))}
+          disabled={Boolean(selectedPaperKey)}
+          aria-label={'Open paper'}
+          title={'Open'}
+        >
+          <ArrowRight size={16} aria-hidden="true" />
+        </Button>
+        <button
+          type="button"
+          className="graph-peek-close"
+          onClick={() => setFocusedKey(null)}
+          aria-label={'Close details'}
+        >
+          <X size={15} />
+        </button>
       </div>
     );
   };
@@ -751,36 +688,6 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
     </div>
   );
 
-  // ui/tabs.jsx, in the pill shape the sheet has always drawn: the content
-  // below is switched by `mode` rather than held in panels, because most of
-  // it is shared between the two. Inline, with no title, it heads the panel.
-  const modeTabs = (
-    <Tabs
-      value={mode}
-      onValueChange={(next) => {
-        if (next === 'graph' && graphStatus === 'ready') setIsMapReturning(true);
-        if (next === 'similar') setRelatedStatus('loading');
-        setHasSwitched(true);
-        setMode(next);
-      }}
-    >
-      <TabsList
-        variant="pill"
-        className="related-mode-tabs"
-        aria-label={'Connection type'}
-        style={{ '--mode-index': mode === 'graph' ? 0 : 1 }}
-      >
-        <span className="related-mode-pill" aria-hidden="true" />
-        <TabsTrigger value="graph" disabled={!hasGraphIdentifier || Boolean(selectedPaperKey)}>
-          <GitBranch size={16} />{'Graph'}
-        </TabsTrigger>
-        <TabsTrigger value="similar" disabled={Boolean(selectedPaperKey)}>
-          <Sparkle size={16} />{'Similar'}
-        </TabsTrigger>
-      </TabsList>
-    </Tabs>
-  );
-
   return (
     <Root
       open={open}
@@ -801,36 +708,38 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
         })}
       >
         {isPhone && !inline && <div className="related-grabber" aria-hidden="true" />}
+        {(!inline || sheetStatus === 'ready') && (
         <header className="related-header">
-          {inline ? modeTabs : (
+          {inline ? (
+            <div>
+              <GitBranch size={18} />
+              <h3>{'Citation graph'}</h3>
+            </div>
+          ) : (
             <div>
               <Graph size={18} />
               <Title render={<h3 />}>{'Paper connections'}</Title>
             </div>
           )}
           <div className="related-header-actions">
-            {mode === 'graph' && (
-              <>
-                {/* One button: pressed, the graph reads as a list; released,
-                    as the map. The name stays and the pressed state carries
-                    the change (the theme toggle's reasoning). */}
-                <Toggle
-                  size="icon"
-                  className="graph-view-button"
-                  pressed={view === 'list'}
-                  onPressedChange={(next) => {
-                    if (!next) setIsMapReturning(true);
-                    setHasSwitched(true);
-                    setView(next ? 'list' : 'map');
-                  }}
-                  aria-label={'List view'}
-                  title={'List view'}
-                >
-                  <Stack size={17} />
-                </Toggle>
-                {!inline && <span className="related-header-divider" aria-hidden="true" />}
-              </>
-            )}
+            {/* One button: pressed, the graph reads as a list; released,
+                as the map. The name stays and the pressed state carries
+                the change (the theme toggle's reasoning). */}
+            <Toggle
+              size="icon"
+              className="graph-view-button"
+              pressed={view === 'list'}
+              onPressedChange={(next) => {
+                if (!next) setIsMapReturning(true);
+                setHasSwitched(true);
+                setView(next ? 'list' : 'map');
+              }}
+              aria-label={'List view'}
+              title={'List view'}
+            >
+              <Stack size={17} />
+            </Toggle>
+            {!inline && <span className="related-header-divider" aria-hidden="true" />}
             {!inline && (
               <Close
                 ref={closeButtonRef}
@@ -842,13 +751,12 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
             )}
           </div>
         </header>
-
-        {!inline && modeTabs}
+        )}
 
         {/* The trail shows once there is a path to go back along; before
             that it would only repeat the paper the panel was opened from. */}
-        {mode === 'graph' && isWalking && (
-          <div className="graph-trail" aria-label={'Path through the graph'}>
+        {isWalking && (
+          <div className="graph-trail" role="group" aria-label={'Path through the graph'}>
             {/* Tooltips name what the shortened path hides: where Back goes,
                 and each step's whole title. */}
             {isWalking && (
@@ -868,9 +776,6 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
                 <TooltipContent>{`Back to ${previousCentre?.title || 'the previous paper'}`}</TooltipContent>
               </Tooltip>
             )}
-            <span className="graph-trail-label">
-              {isWalking ? ('Path') : ('This paper')}
-            </span>
             <div className="graph-trail-steps">
               {trail.map((step, index) => {
                 const last = index === trail.length - 1;
@@ -890,7 +795,7 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
           </div>
         )}
 
-        {mode === 'graph' && graph.degraded && graphStatus === 'ready' && (
+        {graph.degraded && graphStatus === 'ready' && (
           <p className="graph-degraded" role="status">
             <Warning size={14} aria-hidden="true" />
             {'Incomplete neighbourhood — one source did not answer, and this is what the other could give.'}
@@ -900,30 +805,30 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
         {isMap && (graphStatus === 'ready' || graphStatus === 'loading') && renderMap()}
         {isList && graphStatus === 'ready' && renderList()}
 
-        {mode === 'similar' && visibleStatus === 'loading' && (
-          <LoadingState label={'Finding connections...'} />
-        )}
         {visibleStatus === 'unavailable' && (
-          <div className="related-state">
-            {'The bibliographic graph needs a valid DOI.'}
-          </div>
+          <EmptyState
+            as="p"
+            className="graph-empty"
+            art={<Petri pose="blankPage" className="graph-empty-petri" />}
+            title={'No citation graph'}
+          >
+            {'The graph needs a DOI, and this paper does not have one.'}
+          </EmptyState>
         )}
         {visibleStatus === 'empty' && (
           <EmptyState
             as="p"
             className="graph-empty"
             art={<Petri pose="star" className="graph-empty-petri" />}
-            title={mode === 'graph' ? 'No connections found' : 'No similar papers'}
-            actions={mode === 'graph' && isWalking ? (
+            title={'No connections found'}
+            actions={isWalking ? (
               <button type="button" className="graph-back-button" onClick={() => goBackTo(trail.length - 2)}>
                 <ArrowLeft size={15} aria-hidden="true" />
                 {'Back to'} {shortTitle(previousCentre?.title, 24)}
               </button>
             ) : null}
           >
-            {mode === 'graph'
-              ? graphEmptyLabel
-              : ('No recommendations are available for this paper.')}
+            {graphEmptyLabel}
           </EmptyState>
         )}
         {visibleStatus === 'error' && (
@@ -933,47 +838,17 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
             className="graph-empty"
             art={<Petri pose="upset" className="graph-empty-petri" />}
             title={'Connections did not load'}
-            actions={mode === 'graph' ? (
-              <Button size="sm" onClick={retryGraph}>
-                <ArrowsClockwise size={16} aria-hidden="true" />
-                {'Try again'}
-              </Button>
-            ) : null}
           >
             {'The rest of PaperTok keeps working.'}
           </EmptyState>
         )}
         {visibleStatus === 'signin' && (
           <div className="related-state" role="status">
-            {'A paper’s connections need an account. Sign in to see its citation graph and similar papers.'}
+            {'A paper’s connections need an account. Sign in to see its citation graph.'}
           </div>
         )}
 
-        {mode === 'similar' && visibleStatus === 'ready' && (
-          <div className={`related-list ${hasSwitched ? 'is-switched' : ''}`} key="similar">
-            {similarEntries.map(({ paper: related, key }) => (
-              <button
-                key={key}
-                type="button"
-                className={`related-item ${selectedPaperKey === key ? 'is-selected' : ''}`}
-                onClick={() => requestPaper(related, key)}
-                disabled={Boolean(selectedPaperKey)}
-              >
-                <span className="related-item-copy">
-                  <strong><ScientificText>{related.title}</ScientificText></strong>
-                  <small>
-                    {related.authors.slice(0, 2).map(author => (author as PaperAuthor).name || author).join(', ')}
-                    {related.year ? ` · ${related.year}` : ''}
-                    {related.citationCountKnown ? ` · ${related.citationCount} ${'citations'}` : ''}
-                  </small>
-                </span>
-                <CaretRight size={18} />
-              </button>
-            ))}
-          </div>
-        )}
-
-        {mode === 'graph' && renderPeek()}
+        {renderPeek()}
 
       </Content>
     </Root>

@@ -34,7 +34,7 @@ test('no row comes and goes around the plot once the sheet stands', async () => 
   // The provenance row and the band captions are gone, not just hidden.
   assert.doesNotMatch(jsx, /knowledge-source|graph-band-head/);
   // The trail depends on the walk, never on the data landing.
-  assert.match(jsx, /\{mode === 'graph' && isWalking && \(\s*<div className="graph-trail"/);
+  assert.match(jsx, /\{isWalking && \(\s*<div className="graph-trail"/);
 });
 
 test('the centre is placed at half the plot, which is what makes a late sibling move it', async () => {

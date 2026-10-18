@@ -10,6 +10,11 @@ test('prefers DOI and normalizes provider prefixes for related papers', () => {
   assert.equal(getSemanticScholarPaperId({}), null);
 });
 
+test('asks for an arXiv paper by its arXiv id, not by the arXiv DOI Semantic Scholar cannot resolve', () => {
+  assert.equal(getSemanticScholarPaperId({ doi: '10.48550/arxiv.2005.14165', arxivId: '2005.14165v4' }), 'ARXIV:2005.14165');
+  assert.equal(getSemanticScholarPaperId({ doi: 'https://doi.org/10.48550/arXiv.2005.14165' }), 'ARXIV:2005.14165');
+});
+
 const WORKER = 'https://papertok-report-api.example';
 
 test('loads recommendations for a normalized Semantic Scholar paper without external identifiers', async () => {
