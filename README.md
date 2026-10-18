@@ -46,7 +46,11 @@ The current look comes from an editorial redesign — serif headlines, ruled sec
 
 **A citation map on every paper.** Papers with an identifier get a *Paper connections* view: the paper on a timeline rule, what it cites above, what cites it below, citations on a logarithmic axis. Walk the graph node by node with a breadcrumb trail back. Works with unknown data are counted honestly instead of being invented into a position.
 
-**Search that always lands.** Press `/` anywhere: papers, authors, institutions, topics and projects, and every result leads to a real destination — a paper opens its public page instantly, entities open their explorer profiles.
+**Search papers and entities.** Press `/` anywhere to search papers, authors, institutions, topics and projects. Results open paper pages or explorer profiles.
+
+The feed palette uses one OpenAlex request per existing search branch: title search for papers, work bylines for author suggestions, and the existing free autocomplete endpoint for topics. Paper and author queries include bounded spelling variants and an unfinished final word in the same request; it does not issue a second autocomplete request or build a local index. Titles already loaded in the feed are matched immediately. Exact names rank ahead of prefixes and one-edit matches; unrelated candidates are discarded. Topic spelling recovery reuses the existing taxonomy before its single autocomplete request; unknown topic misspellings remain limited by provider matching. Author suggestions retain canonical author IDs from bylines; author-level work and citation totals remain unknown until profile loading. Candidate limits and provider coverage still apply, so very short or ambiguous fragments cannot guarantee a particular result.
+
+Sections publish independently with bounded deadlines and section-specific errors. Projects use the OpenAIRE Graph projects endpoint with bounded acronym/title recovery within a five-second budget. This recovery does not query OpenAlex. The All view and type filters share the same results; switching tabs makes no provider requests.
 
 **A personal library, in color.** Lists carry one of eight colors generated under three constraints (shared lightness, capped chroma, minimum contrast), visible from the library to the lists you share.
 

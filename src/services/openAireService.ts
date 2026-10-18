@@ -26,6 +26,8 @@ interface ProjectPapers { arxivIds: string[]; dois: string[]; total: number; }
 
 import { deduplicateProjectParticipants } from '../utils/entityMetadata.ts';
 import { withEnforcedDeadline } from '../utils/requestDeadline.ts';
+import { readSourceCache, writeSourceCache } from '../utils/sourceCache.ts';
+import { normalizeSearchText, scoreSearchMatch, withinOneEdit } from '../utils/searchRelevance.ts';
 
 export const CACHE = new Map<string, { data: Project | ProjectPapers | null; timestamp: number }>();
 const CACHE_TTL = 1000 * 60 * 60 * 24; // 24 hours
@@ -363,67 +365,129 @@ export async function getPapersByProject(projectCode: string, page = 1, { funder
   }
 }
 
-/**
- * Search for projects by keywords
- */
+interface GraphProject {
+  id?: unknown; code?: unknown; title?: unknown; acronym?: unknown;
+  fundings?: { shortName?: unknown; name?: unknown; fundingStream?: { description?: unknown } }[];
+  granted?: { totalCost?: unknown; fundedAmount?: unknown; currency?: unknown };
+}
+
+function projectText(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+async function projectCandidates(url: string, signal: AbortSignal) {
+  signal.throwIfAborted();
+  const cached = readSourceCache<{ projects: Project[]; total: number }>(url, CACHE_TTL);
+  if (cached) return cached;
+  const response = await fetch(url, { signal });
+  if (!response.ok) throw new Error(`OpenAIRE search error: ${response.status}`);
+
+  const data = await response.json() as { header?: { numFound?: unknown }; results?: GraphProject[] };
+  if (!Array.isArray(data?.results) || typeof data.header?.numFound !== 'number'
+    || !Number.isFinite(data.header.numFound) || data.header.numFound < 0) {
+    throw new Error('Invalid OpenAIRE project search response');
+  }
+  const projects: Project[] = data.results.flatMap(p => {
+    const id = projectText(p?.id);
+    const title = projectText(p?.title);
+    if (!id || !title) return [];
+    const funding = Array.isArray(p.fundings) ? p.fundings[0] : undefined;
+    const totalCost = p.granted?.totalCost;
+    const fundedAmount = p.granted?.fundedAmount;
+    const budget = typeof totalCost === 'number' && Number.isFinite(totalCost) && totalCost > 0 ? totalCost
+      : typeof fundedAmount === 'number' && Number.isFinite(fundedAmount) && fundedAmount >= 0 ? fundedAmount : undefined;
+    const currency = projectText(p.granted?.currency);
+    return [{
+      id,
+      code: projectText(p.code),
+      title,
+      acronym: projectText(p.acronym),
+      funder: projectText(funding?.shortName) || projectText(funding?.name) || '',
+      fundingStream: projectText(funding?.fundingStream?.description),
+      budget,
+      currency: currency && /^[A-Z]{3}$/.test(currency) ? currency : undefined,
+    }];
+  });
+  if (data.results.length && !projects.length) throw new Error('OpenAIRE projects are missing identities or titles');
+  if (projects.length < data.results.length) console.warn(`Skipped ${data.results.length - projects.length} incomplete OpenAIRE projects`);
+  const result = { projects, total: data.header.numFound };
+  if (projects.length) writeSourceCache(url, result);
+  return result;
+}
+
+function projectMatchScore(query: string, project: Project) {
+  let exact = scoreSearchMatch(query, [project.acronym, project.title]);
+  const normalized = normalizeSearchText(query);
+  const acronym = normalizeSearchText(project.acronym);
+  if (normalized.replace(/[^0-9]/g, '') === acronym.replace(/[^0-9]/g, '')
+    && withinOneEdit(normalized, acronym, 5, true)) exact = Math.max(exact, 87);
+  const words = normalized.split(' ');
+  const title = normalizeSearchText(project.title).split(' ');
+  if (words.length < 2 || words.some(word => !/^[a-z]+$/.test(word))) return exact;
+  const similar = title.some((_, start) => {
+    const candidate = title.slice(start, start + words.length);
+    return candidate.length === words.length
+      && words.every((word, index) => withinOneEdit(word, candidate[index], 3))
+      && words.filter((word, index) => word !== candidate[index]).length <= 1;
+  });
+  return similar ? Math.max(exact, 82 + 5 * words.length / title.length) : exact;
+}
+
+/** Recover only after successful misses, within one shared provider deadline. */
 export async function searchProjects(query: string, page = 1, options: { signal?: AbortSignal | null; throwOnError?: boolean } = {}) {
-  if (!query) return { projects: [], total: 0 };
-  const url = `https://api.openaire.eu/search/projects?format=json&size=5&page=${page}&keywords=${encodeURIComponent(query)}`;
-  
+  const compact = query.trim().replace(/\s+/g, ' ');
+  const term = /^(?:[A-Za-z] ){1,7}[A-Za-z]$/.test(compact) ? compact.replace(/ /g, '').toLowerCase() : compact.toLowerCase();
+  if (!term) return { projects: [], total: 0 };
+  const singleWord = /^[\p{L}\p{N}._+-]+$/u.test(term);
+  const field = singleWord ? 'acronym' : 'search';
+  const literal = JSON.stringify(term);
+  const words = term.split(' ');
+  let recovery: string | undefined;
+  if (singleWord) recovery = literal;
+  else if (words.length >= 2 && words.every(word => /^[a-z]+$/.test(word)) && words.some(word => word.length >= 3)) {
+    // A phrase prefix retains relevance when the last word has a typo. Other
+    // clauses keep an intact part of the name; Graph allows four operators.
+    const last = words.at(-1)!;
+    const prefix = [...words.slice(0, -1), last.slice(0, Math.max(2, Math.floor(last.length / 2)))].join(' ');
+    const fragments = [JSON.stringify(prefix)];
+    if (words.length === 3) {
+      fragments.push(JSON.stringify(words.slice(0, 2).join(' ')), JSON.stringify(words.slice(1).join(' ')));
+      fragments.push(`(${JSON.stringify(words[0])} AND ${JSON.stringify(words[2])})`);
+    } else {
+      const middle = Math.ceil(words.length / 2);
+      fragments.push(JSON.stringify(words.slice(0, middle).join(' ')), JSON.stringify(words.slice(middle).join(' ')));
+    }
+    recovery = [...new Set(fragments)].join(' OR ');
+  }
+  const urlFor = (key: string, value: string) => `https://api.openaire.eu/graph/v3/projects?${new URLSearchParams({ pageSize: '50', page: String(page), [key]: value })}`;
+  const rank = (projects: Project[], minimum = 55) => projects
+    .map(project => ({ project, score: projectMatchScore(term, project) }))
+    .filter(match => match.score >= minimum)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5)
+    .map(match => match.project);
   try {
-    const response = await fetchWithTimeout(url, 10000, options);
-    if (!response.ok) {
-      if (options.throwOnError) {
-        throw new Error(`OpenAIRE search error: ${response.status}`);
-      }
-      return { projects: [], total: 0 };
-    }
-    
-    const data = await response.json() as OpenAireResponse;
-    if (!data?.response?.results?.result) return { projects: [], total: 0 };
-    
-    let results = data.response.results.result;
-    if (!Array.isArray(results)) results = [results];
-    
-    const mappedProjects = results.map(res => {
-      const p = res?.metadata?.["oaf:entity"]?.["oaf:project"];
-      if (!p) return null;
-      
-      const { funderName, fundingStream } = extractFunder(p);
-      
-      const totalCost = parseFloat(p.totalcost?.["$"] as string) || 0;
-      const fundedAmount = parseFloat(p.fundedamount?.["$"] as string) || 0;
-      const budget = totalCost > 0 ? totalCost : fundedAmount;
-
-      return {
-        id: res.header?.["dri:objIdentifier"]?.["$"] || p.code?.["$"],
-        code: p.code?.["$"],
-        title: p.title?.["$"] || "Unknown Project",
-        acronym: p.acronym?.["$"] || null,
-        funder: funderName,
-        fundingStream,
-        budget,
-        currency: validCurrency(p.currency?.["$"]),
-      };
-    }).filter(project => project?.id && project.title) as Project[];
-
-    const seenProjects = new Set<string>();
-    const projects = mappedProjects.filter(project => {
-      const key = [project.code || '', project.title, project.funder, project.budget]
-        .filter(Boolean)
-        .map(value => String(value).trim().toLowerCase())
-        .join('|');
-      if (!key || seenProjects.has(key)) return false;
-      seenProjects.add(key);
-      return true;
-    });
-
-    const total = data.response.header?.total?.["$"] ? parseInt(data.response.header.total["$"]) : 0;
-    return { projects, total };
+    // All requests, including their bodies, share one five-second budget.
+    const { signal } = withEnforcedDeadline({ signal: options.signal }, 5000);
+    const first = await projectCandidates(urlFor(field, literal), signal);
+    const projects = rank(first.projects);
+    if (projects.length || !recovery) return { ...first, projects };
+    const second = await projectCandidates(urlFor('title', recovery), signal);
+    const recovered = rank(second.projects, singleWord ? 55 : 80);
+    if (recovered.length || !singleWord || !/^[a-z0-9]{5,}$/.test(term)) return { ...second, projects: recovered };
+    const middle = Math.ceil(term.length / 2);
+    // Short acronyms may not match provider fragments at all. Enumerating their
+    // adjacent letter swaps fits Graph's five-clause limit without changing digits.
+    const fragments = term.length <= 6
+      ? Array.from({ length: term.length - 1 }, (_, index) => /^[a-z]{2}$/.test(term.slice(index, index + 2))
+        ? term.slice(0, index) + term[index + 1] + term[index] + term.slice(index + 2) : '')
+      : [term.slice(0, middle), term.slice(middle)];
+    const candidates = [...new Set(fragments.filter(part => part.length >= 3 && part !== term))];
+    if (!candidates.length) return { ...second, projects: recovered };
+    const third = await projectCandidates(urlFor('acronym', candidates.map(part => JSON.stringify(part)).join(' OR ')), signal);
+    return { ...third, projects: rank(third.projects, 80) };
   } catch (e) {
-    if (!options.signal?.aborted) {
-      console.error("Error searching OpenAIRE projects:", e);
-    }
+    if (!options.signal?.aborted) console.error('Error searching OpenAIRE projects:', e);
     if (options.throwOnError) throw e;
     return { projects: [], total: 0 };
   }

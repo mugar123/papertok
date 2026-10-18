@@ -467,8 +467,9 @@ test('a paper known by an acronym its title never uses is found through the abst
   const textToClip = { title: 'Multilevel Language and Vision Integration for Text-to-Clip Retrieval', abstract: 'Text-to-clip retrieval.' };
   const unrelated = { title: 'Respiratory sinus arrhythmia in humans', abstract: 'Breathing modulates heart rate.' };
 
-  assert.equal(scorePaperSearchMatch('FC-CLIP', fcClip), 60);
-  assert.equal(scorePaperSearchMatch('fc clip', fcClip), 60);
+  const scattered = { title: 'Clip Formation in the Complementarity Determining Region with Fc proteins' };
+  assert.ok(scorePaperSearchMatch('FC-CLIP', fcClip) > scorePaperSearchMatch('FC-CLIP', scattered));
+  assert.equal(rankPaperSearchResults('fc clip', [scattered, fcClip])[0], fcClip);
   // One of two query words in the title, no phrase anywhere.
   assert.equal(scorePaperSearchMatch('FC-CLIP', textToClip), 35);
   assert.equal(scorePaperSearchMatch('FC-CLIP', unrelated), 0);
@@ -502,4 +503,59 @@ test('the paper ranking drops nothing and survives holes', () => {
   assert.equal(rankPaperSearchResults('segment anything', papers).length, 3);
   assert.deepEqual(rankPaperSearchResults('', papers), papers);
   assert.equal(scorePaperSearchMatch('anything', null!), 0);
+});
+
+test('small spelling errors find the closest title before derivatives', () => {
+  const original = { title: 'Segment Anything' };
+  for (const query of ['Segment Anythign', 'Segmnt Anythng']) {
+    assert.equal(rankPaperSearchResults(query, [
+      { title: 'Fast Segment Anything' }, { title: 'Segment anything in medical images' }, original,
+    ])[0], original);
+  }
+});
+
+test('a partial title prefers its completion and leaves version numbers exact', () => {
+  const original = { title: 'Attention Is All You Need' };
+  assert.equal(rankPaperSearchResults('attention is all you ne', [
+    { title: 'Attention Is All You Have' }, { title: 'Attention Is All You Need In Speech Separation' }, original,
+  ])[0], original);
+  assert.ok(scorePaperSearchMatch('Llama 2', { title: 'Llama 2: Open Foundation Models' })
+    > scorePaperSearchMatch('Llama 2', { title: 'Llama 20' }));
+  assert.equal(scorePaperSearchMatch('Llama 2', { title: 'Llama 20' }), 35);
+});
+
+
+test('partial names and title phrases tolerate an earlier typo without accepting unrelated words', () => {
+  for (const [query, title] of [
+    ['from acelerating rotating bla', 'From Accelerating Rotating Black Holes to a Swirling Universe'],
+    ['Superconducting circuits host two-lev', 'Superconducting circuits host two-level systems with lifetimes exceeding one second'],
+    ['attentio', 'Attention Is All You Need'],
+    ['Geofrey Hin', 'Geoffrey Hinton'],
+    ['Andrej Karp', 'Andrej Karpathy'],
+    ['Graphene Flag', 'Graphene Flagship'],
+    ['Machien lear', 'Machine Learning'],
+  ]) {
+    assert.ok(scoreSearchMatch(query, [title]) >= 82, query);
+    assert.ok(scorePaperSearchMatch(query, { title }) >= 82, query);
+    assert.ok(scoreSearchMatch(query, ['Unrelated experiments']) < 55, query);
+  }
+  assert.ok(scorePaperSearchMatch('Llama 2', { title: 'Llama 20' }) < 80);
+  assert.ok(scorePaperSearchMatch('sam', { title: 'Samples from biology' }) < 80);
+});
+
+
+test('All puts a close author-name completion before titles mentioning that person', () => {
+  assert.equal(resolvePreferredSearchSection({ query: 'Geofrey Hin', sectionValues: {
+    authors: ['Geoffrey E. Hinton', 'Geoffrey Hinton'],
+    papers: ['Neural network pioneer Geoffrey Hinton'],
+  } }), 'authors');
+});
+
+
+test('an unfinished project name ranks its shortest completion above derivative titles', () => {
+  assert.ok(scoreSearchMatch('Human Brain Pro', ['Human Brain Project'])
+    > scoreSearchMatch('Human Brain Pro', ['NEUROPORTAL Gateway to the Human Brain Project']));
+  assert.equal(resolvePreferredSearchSection({ query: 'Geoffrey Hin', sectionValues: {
+    authors: ['Geoffrey Hinton'], papers: ['Neural network pioneer Geoffrey Hinton'],
+  } }), 'authors');
 });

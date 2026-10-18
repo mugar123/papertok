@@ -28,6 +28,7 @@ import {
 import { DialogClose } from '../ui/dialog.tsx';
 import { Button } from '../ui/button.tsx';
 import { useEntitySearch } from '../../hooks/useEntitySearch.ts';
+import { useFeed } from '../../context/FeedContext.tsx';
 import { useFollowing } from '../../context/FollowingContext.tsx';
 import { searchPaperDestination } from '../../utils/searchDestinations.ts';
 import { handoverFromSearchRow } from '../../utils/explorerHandover.ts';
@@ -114,11 +115,13 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   const navigate = useNavigate();
   const { user } = useAuth();
   const uid = user?.uid;
+  const { papers: knownPapers } = useFeed();
   const isPhone = useIsPhone();
   const inputRef = useRef<HTMLInputElement>(null);
   const typedQuery = useRef(false);
   const selectionAllowed = useRef(true);
   const [selectedValue, setSelectedValue] = useState('');
+  const [manualSelection, setManualSelection] = useState(false);
   const [activeSection, setActiveSection] = useState<'all' | typeof SECTIONS[number]>('all');
   const [recentOwner, setRecentOwner] = useState<{ uid?: string; queries: string[] }>({ queries: [] });
   const recents = recentOwner.uid === uid ? recentOwner.queries : [];
@@ -134,8 +137,8 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
   const {
     query, setQuery, results, totalResults,
-    isPending, hasSearched, searchIssue, pendingSections, resultsTerm, reset,
-  } = useEntitySearch();
+    isPending, hasSearched, searchIssues, pendingSections, resultsTerm, reset, retry,
+  } = useEntitySearch(open, knownPapers);
   const [pendingEntity, setPendingEntity] = useState<string | null | undefined>(null);
   const [cascadeDone, setCascadeDone] = useState(false);
 
@@ -164,6 +167,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
       setCascadeDone(false);
       setActiveSection('all');
       setSelectedValue('');
+      setManualSelection(false);
       selectionAllowed.current = !window.matchMedia('(pointer: coarse)').matches;
       typedQuery.current = false;
       setRecentOwner({ uid, queries: readRecentSearches(uid) });
@@ -234,6 +238,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
     typedQuery.current = typed;
     setActiveSection('all');
     setSelectedValue('');
+    setManualSelection(false);
     selectionAllowed.current = !window.matchMedia('(pointer: coarse)').matches;
     setQuery(value);
   };
@@ -377,6 +382,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
    * the fact.
    */
   let enterIndex = 0;
+  let firstResultValue = '';
   const renderedSections = rankedSections.map((section) => {
     if (results[section].length === 0 || (activeSection !== 'all' && activeSection !== section)) return null;
     const SectionIcon = SECTION_ICONS[section];
@@ -384,6 +390,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
     enterIndex += 1;
     const sectionRows = sectionContent[section]();
     const visibleRows = activeSection === 'all' ? sectionRows.slice(0, 4) : sectionRows;
+    if (!firstResultValue) firstResultValue = visibleRows[0]?.props.value || '';
     const rows = cascadeDone ? visibleRows : Children.map(visibleRows, (child, offset) => cloneElement(child, {
       className: [child.props.className, 'sc-enter'].filter(Boolean).join(' '),
       style: {
@@ -419,11 +426,17 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
     <CommandDialog open={open} onOpenChange={onOpenChange} finalFocus={finalFocus} title={copy.placeholder} className={`sc-sheet${leavingBySelect ? ' sc-sheet--select' : ''}`} overlayClassName={`sc-scrim${leavingBySelect ? ' sc-scrim--select' : ''}`}
       commandProps={{
         label: copy.placeholder,
-        value: selectedValue,
+        // Late sections may rank above the first reply. Enter follows the
+        // visible first row until the user explicitly chooses another one.
+        value: hasQuery && !manualSelection && selectedValue ? firstResultValue : selectedValue,
         onValueChange: setSelectedValue,
-        onPointerDownCapture: () => { selectionAllowed.current = true; },
+        onPointerDownCapture: () => { selectionAllowed.current = true; setManualSelection(true); },
+        onPointerMoveCapture: event => { if (event.pointerType === 'mouse') setManualSelection(true); },
         onKeyDownCapture: event => {
-          if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) selectionAllowed.current = true;
+          if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+            selectionAllowed.current = true;
+            setManualSelection(true);
+          }
         },
       }}
     >
@@ -495,12 +508,13 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
                 </div>)}
               </div>
             )}
-            {searchIssue && hasQuery && <div className="sc-status sc-status--warn"><WarningCircle size={14} />
-              {searchIssue.unavailableSections.map(section => copy[section]).join(', ')} unavailable. {totalResults > 0 ? 'Showing available results.' : 'Try again.'}
+            {searchIssues.length > 0 && hasQuery && <div className="sc-status sc-status--warn"><WarningCircle size={14} />
+              {searchIssues.map(issue => `${copy[issue.section]} ${issue.reason === 'timeout' ? 'timed out' : 'could not be loaded'}`).join('. ')}.
+              <Button variant="ghost" size="sm" onClick={retry}>Try again</Button>
             </div>}
             {hasQuery && hasSearched && !waitingForView && !isPending && visibleCount === 0 && <CommandEmpty>{copy.empty}</CommandEmpty>}
             {!isPending && hasQuery && renderedSections}
-            <span className="visually-hidden" role="status">{hasQuery ? (isPending ? copy.searching : `${visibleCount} results available.${waitingForView ? ' Other sections are still searching.' : ''}${searchIssue ? ` ${searchIssue.unavailableSections.map(section => copy[section]).join(', ')} unavailable.` : ''}`) : ''}</span>
+            <span className="visually-hidden" role="status">{hasQuery ? (isPending ? copy.searching : `${visibleCount} results available.${waitingForView ? ' Other sections are still searching.' : ''}${searchIssues.length ? ` ${searchIssues.map(issue => copy[issue.section]).join(', ')} unavailable.` : ''}`) : ''}</span>
           </CommandList>
         </TabsContent>
         <div className="sc-footer" aria-hidden="true">

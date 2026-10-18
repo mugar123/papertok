@@ -331,3 +331,29 @@ test('a closed search result takes its abstract from Europe PMC by that id and s
   assert.ok(Object.is(untouched, huber), 'a paper with no PubMed id is left as it was');
   assert.equal(untouched.abstract, 'No abstract available.');
 });
+
+test('title suggestions combine exact, fuzzy and prefix retrieval in one request', async t => {
+  const requests: string[] = [];
+  t.mock.method(openAlexClient, 'fetch', async (url: string | URL, options: { retries?: number }) => {
+    requests.push(String(url));
+    assert.equal(options.retries, 0, 'no automatic retry can multiply a suggestion request');
+    return Response.json({ meta: { count: 0 }, results: [] });
+  });
+  await new OpenAlexAdapter().search('Segment Anythign', 1, { typeahead: true });
+  assert.equal(requests.length, 1);
+  assert.equal(new URL(requests[0]).searchParams.get('filter'),
+    'title.search.exact:"segment anythign" OR (segment~1 AND anythign~1) OR (segment~1 AND anythign*),type:article|conference-paper|review');
+});
+
+test('suggestion expansion preserves acronym phrases, numbers and default feed queries', () => {
+  const adapter = new OpenAlexAdapter();
+  const filter = (query: string, typeahead = true) => new URL(adapter.buildSearchUrl(query, 1, { typeahead })).searchParams.get('filter')!;
+  assert.equal(filter('FC-CLIP'), 'default.search.exact:"fc clip",type:article|conference-paper|review');
+  assert.equal(filter('risk management', false), 'default.search:risk management,type:article|conference-paper|review');
+  assert.doesNotMatch(filter('Llama 2'), /2[~*]/);
+  assert.match(filter('attention is all you ne'), /OR \(attention~1 AND is AND all AND you\)/);
+  assert.match(filter('Convolutions Die Hard: Open-Vocabulary Segmentation'), /^title.search.exact:/);
+  assert.match(filter('10.48550/arXiv.1706.03762'), /^default.search:10.48550\/arXiv.1706.03762,/);
+  assert.doesNotMatch(filter('C++'), /[~*]/);
+  assert.match(filter('atte'), /atte\*/);
+});
