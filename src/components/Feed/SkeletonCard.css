@@ -9,6 +9,10 @@
   animation: none;
 }
 
+.sk :is(.pc-meta, .pc-topics, .pc-chips, .pc-authors, .pc-action-bar) {
+  animation: none;
+}
+
 /* The accent rule over the kicker belongs to the field, which is not known
    yet. */
 .sk .pc-body::before {
@@ -42,19 +46,18 @@
   to { transform: translateX(100%); }
 }
 
-.sk-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-4);
+.sk-meta {
+  min-height: 1.4em;
 }
 
-/* Kicker: mono, 11px. */
 .sk-meta .sk-block {
   height: 11px;
 }
 
-/* Status chips. */
+.sk-topics .sk-block {
+  height: 24px;
+}
+
 .sk-chips .sk-block {
   height: 22px;
 }
@@ -69,13 +72,6 @@
 
 .sk-title .sk-block {
   height: 28px;
-}
-
-/* The byline: overlapping dots over its rule. */
-.sk-authors {
-  gap: 0;
-  padding-bottom: var(--space-4);
-  border-bottom: 1px solid var(--border-subtle);
 }
 
 .sk-authors .sk-block {
@@ -104,6 +100,11 @@
   margin: 7.3px 0;
 }
 
+
+.sk-similar {
+  width: 8.5rem;
+  height: 32px;
+}
 
 .sk-toggle {
   width: 7.5rem;
@@ -137,11 +138,17 @@
 @media (max-width: 640px) {
   /* The title drops to 1.3rem there. */
   .sk-title {
-    gap: 8px;
+    gap: 4px;
+    margin-bottom: var(--space-3);
   }
 
   .sk-title .sk-block {
     height: 20px;
+  }
+
+  .sk-tile {
+    width: 36px;
+    height: 36px;
   }
 
   /* The buttons show their short words there. */

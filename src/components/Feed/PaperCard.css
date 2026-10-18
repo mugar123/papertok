@@ -744,8 +744,10 @@ a.pc-citations {
 /* One line whatever the subjects are called: they give way with an
    ellipsis, "+N" keeps its width. */
 .pc-topics > .pc-semantic-tag:not(.pc-topics-more) {
+  display: block;
   flex: 0 1 auto;
   min-width: 0;
+  line-height: 18px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -1615,7 +1617,7 @@ button.pc-topics-pop-item:focus-visible {
 
 /* On a short window the panel only has what the rows above it leave, and at
    1280×600 that was 89px: the Graph/Similar header and a 15px sliver of map.
-   While the connections are open the paper above them steps back instead:
+   While the graph is open the paper above it steps back instead:
    the topic row, the project badge and the accent rule go (the kicker still
    names the field), the title keeps two lines, and the steps between rows
    halve. The panel gets 220px or more there, a funded paper with a two-line

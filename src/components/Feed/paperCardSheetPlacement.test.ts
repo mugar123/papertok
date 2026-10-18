@@ -36,15 +36,15 @@ test('the sheet is centred in a card taller than it, and bottom-justified within
 });
 
 /**
- * SOURCE test for a short window with the connections open. The inline panel
- * only gets what the rows above it leave: at 1280×600 that was 89px, the
- * Graph/Similar header and a sliver of map. While the panel is open the
- * paper above it steps back on a short window, and the action row never
- * does. The flag rides on the same state that mounts the panel.
+ * SOURCE test for a short window with the graph open. The inline graph only
+ * gets what the rows above it leave: at 1280×600 that was 89px, its header
+ * and a sliver of map. While it is open the paper above it steps back on a
+ * short window, and the action row never does. Similar papers scroll inside
+ * the slot and leave the paper as it is.
  */
-test('on a short window the paper above the connections yields, the actions stay', async () => {
+test('on a short window the paper above the graph yields, the actions stay', async () => {
   const jsx = await read('./PaperCard.tsx');
-  assert.match(jsx, /className="pc-sheet" data-connections=\{slotAway \|\| undefined\}/);
+  assert.match(jsx, /className="pc-sheet" data-connections=\{relatedInline \|\| undefined\}/);
 
   const css = stripComments(await read('./PaperCard.css'));
   const start = css.indexOf('@media (max-height: 760px) {\n  .pc-sheet[data-connections]');
