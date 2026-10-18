@@ -315,66 +315,6 @@
   }
 }
 
-/* ─── The answer arriving ───
-   Each source answers on its own clock, and its section is inserted when it
-   does. Each heading and its rows rise into place on a cascade that starts
-   at that section's heading — see `ENTER_STAGGER_CAP` in
-   `SearchCommand.tsx`, which is where the index comes from.
-
-   6px and 260ms: far enough that the eye reads it as arriving, short enough
-   that the first row is legible before the last one has landed. */
-
-@keyframes scEnterRise {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.sc-enter {
-  opacity: 0;
-  animation: scEnterRise 260ms var(--ease-out-expo) forwards;
-  animation-delay: calc(var(--sc-enter-index, 0) * 24ms);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  /* The row starts at `opacity: 0` and only reaches 1 through the animation
-     being cancelled here. Turning the motion off must not turn the answer off
-     with it — the same trap `SearchPage.css` documents for `.search-item-enter`. */
-  .sc-enter {
-    opacity: 1;
-    animation: none;
-  }
-}
-
-/* The sheet follows its answer down instead of jumping to it. Measured
-   before: 196px of skeleton, 147px when the first section landed, 540px a
-   frame later, footer and bottom edge teleporting with each. cmdk measures
-   the list's content into `--cmdk-list-height` on every resize; until it has,
-   the variable is unset, the declaration is invalid and the height stays
-   `auto`, so the opening never animates from zero. `content-box` because the
-   variable is the content alone and the list has the `p-1` of its utility
-   class around it. `max-h-[60svh]` still clamps a long answer into a scroll.
-   Not on a phone: there the sheet is the screen and the list fills it. */
-@media (min-width: 641px) {
-  .sc-sheet [cmdk-list] {
-    box-sizing: content-box;
-    height: var(--cmdk-list-height);
-    transition: height 220ms var(--ease-out-cubic);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sc-sheet [cmdk-list] {
-    transition: none;
-  }
-}
-
 @keyframes scSheetIn {
   from {
     opacity: 0;
@@ -565,10 +505,6 @@
 }
 .sc-types::-webkit-scrollbar, .sc-list::-webkit-scrollbar { display: none; }
 .sc-types [role='tab'] { flex-shrink: 0; }
-.sc-types [role='tab'][aria-disabled='true'] {
-  opacity: 1;
-  color: var(--text-tertiary);
-}
 .sc-types [role='tab']:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: -3px;
@@ -614,3 +550,12 @@
   .sc-paper-numbers--desktop { display: none; }
   .sc-paper-numbers--mobile { display: inline; }
 }
+
+.sc-scope-hint {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+.sc-loading .sc-status { padding-bottom: 0; }

@@ -1,7 +1,7 @@
 import type { ComponentProps, MouseEvent } from 'react';
 import type { FollowInput } from '../../utils/following.ts';
 
-import { Children, cloneElement, useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
@@ -56,7 +56,6 @@ const COPY = {
     topics: 'Topics',
     projects: 'Projects',
     empty: 'No results',
-    searching: 'Searching...',
     suggested: 'Suggestions',
     follow: 'Follow',
     following: 'Following',
@@ -66,11 +65,11 @@ const COPY = {
 };
 
 const SUGGESTIONS = [
-  { label: 'Cosmology', query: 'Cosmology', type: 'Topic', Icon: Lightbulb },
-  { label: 'MIT', query: 'Massachusetts Institute of Technology', type: 'Institution', Icon: Buildings },
-  { label: 'CRISPR Cas9', query: 'CRISPR Cas9', type: 'Papers', Icon: FileText },
-  { label: 'Geoffrey Hinton', query: 'Geoffrey Hinton', type: 'Author', Icon: Users },
-  { label: 'Human Brain Project', query: 'Human Brain Project', type: 'Project', Icon: Briefcase },
+  { label: 'Cosmology', query: 'Cosmology', type: 'Topic', section: 'topics', Icon: Lightbulb },
+  { label: 'MIT', query: 'Massachusetts Institute of Technology', type: 'Institution', section: 'institutions', Icon: Buildings },
+  { label: 'CRISPR Cas9', query: 'CRISPR Cas9', type: 'Papers', section: 'papers', Icon: FileText },
+  { label: 'Geoffrey Hinton', query: 'Geoffrey Hinton', type: 'Author', section: 'authors', Icon: Users },
+  { label: 'Human Brain Project', query: 'Human Brain Project', type: 'Project', section: 'projects', Icon: Briefcase },
 ];
 
 // Every section the palette can paint. Each one also has to be in
@@ -78,25 +77,6 @@ const SUGGESTIONS = [
 // the ordering module has never heard of scores 99 and sinks to the bottom of
 // every search, silently.
 const SECTIONS = ['papers', 'authors', 'topics', 'institutions', 'projects'] as const;
-
-/**
- * How far down a section the entrance cascade runs before every remaining row
- * shares the last delay.
- *
- * A forty-row answer staggered end to end takes a second to finish arriving,
- * and a second of things still moving is a wait, not an animation — the reader
- * has already started on row one and the rest is movement in the corner of
- * their eye. Ten steps of 24 ms puts the last row in at 240 ms.
- *
- * The index counts from each section's own heading, not from the top of the
- * list: sections arrive one by one, and a CSS animation's delay runs from the
- * moment its row is inserted. Counted down the whole list, a section landing
- * above one already arriving renumbered its rows and moved their delays mid
- * animation (measured: topics at 611 ms, papers above them at 636 ms).
- */
-const ENTER_STAGGER_CAP = 10;
-const ENTER_STEP_MS = 24;
-const ENTER_RISE_MS = 260;
 
 const SECTION_ICONS = {
   papers: FileText,
@@ -144,13 +124,14 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   const {
     query, setQuery, results, totalResults,
     isPending, hasSearched, searchIssues, pendingSections, resultsTerm, reset, retry,
-  } = useEntitySearch(open, knownPapers);
+  } = useEntitySearch(open, knownPapers, activeSection);
+  const visibleIssues = searchIssues.filter(issue => activeSection === 'all' || issue.section === activeSection);
   const [pendingEntity, setPendingEntity] = useState<string | null | undefined>(null);
-  const [cascadeDone, setCascadeDone] = useState(false);
 
   const rememberQuery = useEffectEvent(() => {
     if (!uid || recentOwner.uid !== uid || !typedQuery.current || !hasSearched
-      || resultsTerm !== query.trim() || totalResults === 0 || isPending) return;
+      || resultsTerm !== query.trim() || totalResults === 0 || isPending
+      || (activeSection !== 'all' && results[activeSection].length === 0)) return;
     setRecentOwner({ uid, queries: updateRecentSearches(uid, query) });
   });
 
@@ -170,7 +151,6 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
     if (open) {
       reset();
       setLeavingBySelect(false);
-      setCascadeDone(false);
       setActiveSection('all');
       setSelectedValue('');
       setManualSelection(false);
@@ -189,13 +169,6 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
     if (!selectionAllowed.current && selectedValue) setSelectedValue('');
   }, [selectedValue]);
   /* eslint-enable react-hooks/set-state-in-effect */
-
-  const hasResults = totalResults > 0;
-  useEffect(() => {
-    if (!open || cascadeDone || !hasResults) return undefined;
-    const done = setTimeout(() => setCascadeDone(true), ENTER_STAGGER_CAP * ENTER_STEP_MS + ENTER_RISE_MS);
-    return () => clearTimeout(done);
-  }, [open, cascadeDone, hasResults]);
 
   const go = useCallback((path: string, state: object | null = null) => {
     setLeavingBySelect(true);
@@ -219,19 +192,6 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
     }
   }, [toggleFollow]);
 
-  // The sections on screen when this view of the answer was first painted. One
-  // that turns up after them answers no keystroke — it is news, often seconds
-  // later and often above what is being read — so it enters even once the
-  // cascade is off. Keyed by the type tab too: switching tabs repaints the view
-  // and must not replay a late section's entrance. Recorded during render,
-  // React's pattern for a value from a previous render, so the late section's
-  // first paint already knows it is late.
-  const shownSections = SECTIONS.filter(section => results[section].length > 0
-    && (activeSection === 'all' || activeSection === section));
-  const paintedView = query.trim() && !isPending && shownSections.length > 0 ? `${activeSection}:${resultsTerm}` : '';
-  const [firstPaint, setFirstPaint] = useState({ view: '', sections: shownSections });
-  if (firstPaint.view !== paintedView) setFirstPaint({ view: paintedView, sections: shownSections });
-
   // Type positions stay fixed while the result groups retain relevance ordering.
   const orderedSections = SECTIONS;
   const rankedSections = useMemo(() => {
@@ -254,9 +214,14 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
       .sort((left, right) => getSearchSectionOrder(left, preferred) - getSearchSectionOrder(right, preferred));
   }, [query, results]);
 
+  const changeSection = (section: typeof activeSection) => {
+    setActiveSection(section);
+    setSelectedValue('');
+    setManualSelection(false);
+  };
+
   const changeQuery = (value: string, typed = false) => {
     typedQuery.current = typed;
-    setActiveSection('all');
     setSelectedValue('');
     setManualSelection(false);
     selectionAllowed.current = !window.matchMedia('(pointer: coarse)').matches;
@@ -383,34 +348,25 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
     )),
   };
 
-  // Keep each section's animation clock independent of later arrivals.
   let firstResultValue = '';
   const renderedSections = rankedSections.map((section) => {
     if (results[section].length === 0 || (activeSection !== 'all' && activeSection !== section)) return null;
     const SectionIcon = SECTION_ICONS[section];
-    const still = cascadeDone && firstPaint.sections.includes(section);
     const sectionRows = sectionContent[section]();
     const visibleRows = activeSection === 'all' ? sectionRows.slice(0, 4) : sectionRows;
     if (!firstResultValue) firstResultValue = visibleRows[0]?.props.value || '';
-    const rows = still ? visibleRows : Children.map(visibleRows, (child, offset) => cloneElement(child, {
-      className: [child.props.className, 'sc-enter'].filter(Boolean).join(' '),
-      style: {
-        ...child.props.style,
-        '--sc-enter-index': Math.min(offset + 1, ENTER_STAGGER_CAP),
-      },
-    }));
     return (
       <CommandGroup
         key={section}
         heading={
-          <span className={still ? 'sc-heading' : 'sc-heading sc-enter'}>
+          <span className="sc-heading">
             <SectionIcon size={11} /> {copy[section]} · {results[section].length}
           </span>
         }
       >
-        {rows}
+        {visibleRows}
         {activeSection === 'all' && sectionRows.length > 4 && (
-          <CommandItem value={`show-all-${section}`} onSelect={() => setActiveSection(section)} className="sc-show-all">
+          <CommandItem value={`show-all-${section}`} onSelect={() => changeSection(section)} className="sc-show-all">
             <span>Show all {sectionRows.length} {copy[section].toLowerCase()} <ArrowRight size={14} /></span>
           </CommandItem>
         )}
@@ -420,14 +376,17 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
 
   const hasQuery = Boolean(query.trim());
   const visibleCount = activeSection === 'all' ? totalResults : results[activeSection].length;
-  const waitingForView = activeSection === 'all' ? pendingSections.length > 0 : pendingSections.includes(activeSection);
+  const resultLabel = `${visibleCount} ${visibleCount === 1 ? 'result' : 'results'}`;
+  const loadingMessage = activeSection === 'all' ? 'Searching all categories…' : `Searching ${copy[activeSection].toLowerCase()}…`;
+  const scopeHint = activeSection === 'all'
+    ? 'Choose a type to wait only for that category.'
+    : `Search ${copy[activeSection].toLowerCase()} by ${activeSection === 'papers' ? 'title' : 'name'}. Switch to All to include every category.`;
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} finalFocus={finalFocus} title={copy.placeholder} className={`sc-sheet${leavingBySelect ? ' sc-sheet--select' : ''}`} overlayClassName={`sc-scrim${leavingBySelect ? ' sc-scrim--select' : ''}`}
       commandProps={{
         label: copy.placeholder,
-        // Late sections may rank above the first reply. Enter follows the
-        // visible first row until the user explicitly chooses another one.
+        // Enter follows the first row until the user chooses another one.
         value: hasQuery && !manualSelection && selectedValue ? firstResultValue : selectedValue,
         onValueChange: setSelectedValue,
         onPointerDownCapture: () => { selectionAllowed.current = true; setManualSelection(true); },
@@ -440,38 +399,32 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
         },
       }}
     >
-      <Tabs value={activeSection} onValueChange={value => setActiveSection(value)} className="sc-index">
+      <Tabs value={activeSection} onValueChange={changeSection} className="sc-index">
         <CommandInput
           ref={inputRef}
           value={query}
           onValueChange={value => changeQuery(value, true)}
-          placeholder={isPhone ? 'Search PaperTok' : copy.placeholder}
+          placeholder={activeSection === 'all' ? (isPhone ? 'Search PaperTok' : copy.placeholder) : `Search ${copy[activeSection].toLowerCase()}…`}
           className="sc-input"
           wrapperClassName="sc-input-row"
           autoFocus
         >
-          {hasQuery && !isPending && <span className="sc-result-count">{totalResults} results</span>}
+          {hasQuery && !isPending && <span className="sc-result-count">{resultLabel}</span>}
         </CommandInput>
 
-        {hasQuery && (
-          <TabsList activateOnFocus variant="line" className="sc-types" aria-label="Result types"
-            onKeyDown={event => { if (event.key !== 'Escape') event.stopPropagation(); }}>
-            <TabsTrigger value="all" aria-label={`All${isPending ? ', searching' : `, ${totalResults} results`}`}>
-              All {isPending ? <CircleNotch size={10} className="spinning" aria-busy="true" aria-label="Searching" /> : <span className="sc-count">{totalResults}</span>}
-            </TabsTrigger>
-            {orderedSections.map(section => {
-              const pending = pendingSections.includes(section);
-              const count = results[section].length;
-              return <TabsTrigger key={section} value={section} disabled={!pending && count === 0}
-                aria-disabled={!pending && count === 0}
-                aria-label={`${copy[section]}, ${pending ? 'searching' : `${count} results`}`}>
-                {copy[section]} {pending
-                  ? <CircleNotch size={10} className="spinning" aria-busy="true" aria-label="Searching" />
-                  : <span className="sc-count">{count}</span>}
-              </TabsTrigger>;
-            })}
-          </TabsList>
-        )}
+        <TabsList activateOnFocus variant="line" className="sc-types" aria-label="Search type"
+          onKeyDown={event => { if (event.key !== 'Escape') event.stopPropagation(); }}>
+          {(['all', ...orderedSections] as const).map(section => {
+            const label = section === 'all' ? 'All' : copy[section];
+            const pending = !hasSearched || (section === 'all' ? pendingSections.length > 0 : pendingSections.includes(section));
+            const count = section === 'all' ? totalResults : results[section].length;
+            const unavailable = section !== 'all' && searchIssues.some(issue => issue.section === section);
+            return <TabsTrigger key={section} value={section}
+              aria-label={`${label}${unavailable ? ', unavailable' : hasQuery && !pending ? `, ${count} ${count === 1 ? 'result' : 'results'}` : ''}`}>
+              {label}{hasQuery && <span className="sc-count" aria-hidden="true">{unavailable ? '!' : pending ? '—' : count}</span>}
+            </TabsTrigger>;
+          })}
+        </TabsList>
 
         <div className="sc-clear-slot">
           {query && <Button variant="ghost" size="icon-sm" aria-label="Clear search" className="sc-clear"
@@ -485,8 +438,9 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
 
         <TabsContent value={activeSection} className="sc-panel">
           <CommandList className="sc-list">
+            {(!hasQuery || isPending) && <p className="sc-scope-hint">{scopeHint}</p>}
             {!hasQuery && <>
-              {recents.length > 0 && <CommandGroup heading={<span className="sc-heading">Recent</span>}>
+              {activeSection === 'all' && recents.length > 0 && <CommandGroup heading={<span className="sc-heading">Recent</span>}>
                 {recents.map(term => <CommandItem key={term} value={`recent-${term}`} onSelect={() => changeQuery(term)}>
                   <ClockCounterClockwise size={14} className="sc-icon" /><span className="sc-label">{term}</span>
                   <Button variant="ghost" size="icon-sm" aria-label={`Remove from recent: ${term}`} className="sc-remove"
@@ -495,26 +449,30 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
                 </CommandItem>)}
               </CommandGroup>}
               <CommandGroup heading={<span className="sc-heading">{copy.suggested}</span>}>
-                {SUGGESTIONS.map(item => <CommandItem key={item.label} value={`suggestion-${item.label}`} onSelect={() => changeQuery(item.query)}>
+                {SUGGESTIONS.filter(item => activeSection === 'all' || item.section === activeSection).map(item => <CommandItem key={item.label} value={`suggestion-${item.label}`} onSelect={() => changeQuery(item.query)}>
                   <item.Icon size={14} className="sc-icon" /><span className="sc-label">{item.label}</span><span className="sc-suggestion-type">{item.type}</span>
                 </CommandItem>)}
               </CommandGroup>
             </>}
 
             {isPending && (
-              <div className="sc-skeleton" aria-hidden="true">
-                {[0, 1, 2, 3, 4].map(index => <div className="sc-skeleton-row" key={index}>
-                  <span className="sc-skeleton-icon" /><span className="sc-skeleton-line" /><span className="sc-skeleton-meta" />
-                </div>)}
+              <div className="sc-loading">
+                <p className="sc-status" aria-hidden="true"><CircleNotch size={14} className="spinning" aria-hidden="true" />{loadingMessage}</p>
+                <div className="sc-skeleton" aria-hidden="true">
+                  {[0, 1, 2, 3, 4].map(index => <div className="sc-skeleton-row" key={index}>
+                    <span className="sc-skeleton-icon" /><span className="sc-skeleton-line" /><span className="sc-skeleton-meta" />
+                  </div>)}
+                </div>
               </div>
             )}
-            {searchIssues.length > 0 && hasQuery && <div className="sc-status sc-status--warn"><WarningCircle size={14} />
-              {searchIssues.map(issue => `${copy[issue.section]} ${issue.reason === 'timeout' ? 'timed out' : 'could not be loaded'}`).join('. ')}.
-              <Button variant="ghost" size="sm" onClick={retry}>Try again</Button>
+            {visibleIssues.length > 0 && hasQuery && <div className="sc-status sc-status--warn"><WarningCircle size={14} />
+              {visibleIssues.map(issue => `${copy[issue.section]} ${issue.reason === 'timeout' ? 'timed out' : 'could not be loaded'}`).join('. ')}.
+              <Button variant="ghost" size="sm" onClick={() => { retry(); inputRef.current?.focus(); }}
+                onKeyDown={event => { if (event.key !== 'Escape') event.stopPropagation(); }}>Try again</Button>
             </div>}
-            {hasQuery && hasSearched && !waitingForView && !isPending && visibleCount === 0 && <CommandEmpty>{copy.empty}</CommandEmpty>}
+            {hasQuery && hasSearched && visibleCount === 0 && visibleIssues.length === 0 && <CommandEmpty>{copy.empty}</CommandEmpty>}
             {!isPending && hasQuery && renderedSections}
-            <span className="visually-hidden" role="status">{hasQuery ? (isPending ? copy.searching : `${visibleCount} results available.${waitingForView ? ' Other sections are still searching.' : ''}${searchIssues.length ? ` ${searchIssues.map(issue => copy[issue.section]).join(', ')} unavailable.` : ''}`) : ''}</span>
+            <span className="visually-hidden" role="status">{hasQuery ? (isPending ? loadingMessage : `${resultLabel} available.${visibleIssues.length ? ` ${visibleIssues.map(issue => copy[issue.section]).join(', ')} unavailable.` : ''}`) : ''}</span>
           </CommandList>
         </TabsContent>
         <div className="sc-footer" aria-hidden="true">

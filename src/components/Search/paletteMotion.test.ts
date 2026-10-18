@@ -54,7 +54,7 @@ test('a picked result closes the palette in 100ms of opacity, with no travel', a
   const palette = await read('./SearchCommand.tsx');
   assert.match(palette, /const \[leavingBySelect, setLeavingBySelect\] = useState(?:<[^;\n]+>)?\(false\);/);
   assert.match(palette, /setLeavingBySelect\(true\);\s*onOpenChange\(false\);/);
-  assert.match(palette, /if \(open\) \{\s*reset\(\);\s*setLeavingBySelect\(false\);\s*setCascadeDone\(false\);/);
+  assert.match(palette, /if \(open\) \{\s*reset\(\);\s*setLeavingBySelect\(false\);/);
   assert.match(palette, /className=\{`sc-sheet\$\{leavingBySelect \? ' sc-sheet--select' : ''\}`\}/);
   const css = await read('./SearchCommand.css');
   assert.match(css, /@keyframes scSheetGone \{\s*from \{\s*opacity: 1;\s*\}\s*to \{\s*opacity: 0;\s*\}\s*\}/);
@@ -73,30 +73,9 @@ test('a picked result closes the palette in 100ms of opacity, with no travel', a
   assert.ok(reducedScrim, 'the picked exit\'s scrim is inside the reduced-motion list');
 });
 
-/**
- * 2026-10-17: the rows cascade in for the first answer after opening only.
- * Typing is a keyboard action repeated all day; rows that arrive behind it are
- * simply there. The cascade is switched off only after it has finished, and
- * re-armed on the way in.
- */
-test('the results cascade once per opening, not on every keystroke', async () => {
+test('settled results appear together without row cascades or list height transitions', async () => {
   const palette = await read('./SearchCommand.tsx');
-  assert.match(palette, /setTimeout\(\(\) => setCascadeDone\(true\), ENTER_STAGGER_CAP \* ENTER_STEP_MS \+ ENTER_RISE_MS\)/);
-  assert.match(palette, /const rows = still \? visibleRows : Children\.map/);
-  assert.match(palette, /className=\{still \? 'sc-heading' : 'sc-heading sc-enter'\}/);
   const css = await read('./SearchCommand.css');
-  assert.match(css, /animation: scEnterRise 260ms var\(--ease-out-expo\) forwards;\s*animation-delay: calc\(var\(--sc-enter-index, 0\) \* 24ms\);/, 'the clock the timer mirrors');
-});
-
-/**
- * 2026-10-18: sources answer one by one. A section that lands after the
- * answer's first paint answers no keystroke, so it enters even once the
- * cascade is off; and each section counts its cascade from its own heading,
- * so one inserted above another cannot renumber rows already arriving.
- */
-test('a late section enters on its own cascade', async () => {
-  const palette = await read('./SearchCommand.tsx');
-  assert.match(palette, /const still = cascadeDone && firstPaint\.sections\.includes\(section\);/);
-  assert.match(palette, /'--sc-enter-index': Math\.min\(offset \+ 1, ENTER_STAGGER_CAP\)/);
-  assert.doesNotMatch(palette, /enterIndex/, 'no index counted down the whole list');
+  assert.doesNotMatch(palette, /sc-enter|ENTER_STAGGER|firstPaint|cascadeDone/);
+  assert.doesNotMatch(css, /scEnterRise|transition:\s*height/);
 });
