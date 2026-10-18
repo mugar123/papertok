@@ -79,13 +79,19 @@ const SUGGESTIONS = [
 const SECTIONS = ['papers', 'authors', 'topics', 'institutions', 'projects'] as const;
 
 /**
- * How far down the list the entrance cascade runs before every remaining row
+ * How far down a section the entrance cascade runs before every remaining row
  * shares the last delay.
  *
  * A forty-row answer staggered end to end takes a second to finish arriving,
  * and a second of things still moving is a wait, not an animation — the reader
  * has already started on row one and the rest is movement in the corner of
  * their eye. Ten steps of 24 ms puts the last row in at 240 ms.
+ *
+ * The index counts from each section's own heading, not from the top of the
+ * list: sections arrive one by one, and a CSS animation's delay runs from the
+ * moment its row is inserted. Counted down the whole list, a section landing
+ * above one already arriving renumbered its rows and moved their delays mid
+ * animation (measured: topics at 611 ms, papers above them at 636 ms).
  */
 const ENTER_STAGGER_CAP = 10;
 const ENTER_STEP_MS = 24;
@@ -207,6 +213,19 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
       setPendingEntity(null);
     }
   }, [toggleFollow]);
+
+  // The sections on screen when this view of the answer was first painted. One
+  // that turns up after them answers no keystroke — it is news, often seconds
+  // later and often above what is being read — so it enters even once the
+  // cascade is off. Keyed by the type tab too: switching tabs repaints the view
+  // and must not replay a late section's entrance. Recorded during render,
+  // React's pattern for a value from a previous render, so the late section's
+  // first paint already knows it is late.
+  const shownSections = SECTIONS.filter(section => results[section].length > 0
+    && (activeSection === 'all' || activeSection === section));
+  const paintedView = query.trim() && !isPending && shownSections.length > 0 ? `${activeSection}:${resultsTerm}` : '';
+  const [firstPaint, setFirstPaint] = useState({ view: '', sections: shownSections });
+  if (firstPaint.view !== paintedView) setFirstPaint({ view: paintedView, sections: shownSections });
 
   // Type positions stay fixed while the result groups retain relevance ordering.
   const orderedSections = SECTIONS;
@@ -358,45 +377,26 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
     )),
   };
 
-  /**
-   * The answer arriving, as one movement.
-   *
-   * Everything lands in a single commit now, so without this the skeleton
-   * vanishes and a finished page is simply there — the least fluid thing an
-   * interface can do with half a second of work behind it. Each heading and row
-   * rises 6px into place, one after the next.
-   *
-   * The counter runs across the WHOLE list rather than restarting per group, so
-   * what the eye follows is one cascade down the sheet instead of four that
-   * start at once. Headings take a step of their own, which is what makes a
-   * group read as a group rather than as a label bolted to its first row.
-   *
-   * The index is injected here rather than written into each of the five row
-   * renderers: they build plain `CommandItem`s and know nothing about where
-   * they sit in the final order, which is decided by `orderedSections` after
-   * the fact.
-   */
-  let enterIndex = 0;
+  // The index is injected here rather than written into each of the five row
+  // renderers: they build plain `CommandItem`s and know nothing of the cascade.
   const renderedSections = rankedSections.map((section) => {
     if (results[section].length === 0 || (activeSection !== 'all' && activeSection !== section)) return null;
     const SectionIcon = SECTION_ICONS[section];
-    const headingIndex = Math.min(enterIndex, ENTER_STAGGER_CAP);
-    enterIndex += 1;
+    const still = cascadeDone && firstPaint.sections.includes(section);
     const sectionRows = sectionContent[section]();
     const visibleRows = activeSection === 'all' ? sectionRows.slice(0, 4) : sectionRows;
-    const rows = cascadeDone ? visibleRows : Children.map(visibleRows, (child, offset) => cloneElement(child, {
+    const rows = still ? visibleRows : Children.map(visibleRows, (child, offset) => cloneElement(child, {
       className: [child.props.className, 'sc-enter'].filter(Boolean).join(' '),
       style: {
         ...child.props.style,
-        '--sc-enter-index': Math.min(enterIndex + offset, ENTER_STAGGER_CAP),
+        '--sc-enter-index': Math.min(offset + 1, ENTER_STAGGER_CAP),
       },
     }));
-    enterIndex += visibleRows.length;
     return (
       <CommandGroup
         key={section}
         heading={
-          <span className={cascadeDone ? 'sc-heading' : 'sc-heading sc-enter'} style={cascadeDone ? undefined : { '--sc-enter-index': headingIndex }}>
+          <span className={still ? 'sc-heading' : 'sc-heading sc-enter'}>
             <SectionIcon size={11} /> {copy[section]} · {results[section].length}
           </span>
         }

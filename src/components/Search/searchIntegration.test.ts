@@ -464,7 +464,7 @@ import ts from 'typescript';
 import vm from 'node:vm';
 
 const componentSource = await readFile(new URL('./SearchCommand.tsx', import.meta.url), 'utf8');
-const groupingSource = componentSource.slice(componentSource.indexOf('  let enterIndex = 0;'), componentSource.indexOf('  const hasQuery ='));
+const groupingSource = componentSource.slice(componentSource.indexOf('  const renderedSections = rankedSections.map('), componentSource.indexOf('  const hasQuery ='));
 const compileGrouping = ts.transpileModule(`(function () { ${groupingSource}; return renderedSections; })()`, {
   compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 },
 }).outputText;
@@ -474,7 +474,7 @@ function groupedRows(activeSection = 'all') {
   const data = { papers: Array.from({ length: 10 }, (_, id) => ({ id })), authors: Array.from({ length: 6 }, (_, id) => ({ id })), topics: [], institutions: [], projects: [] };
   const elements = vm.runInNewContext(compileGrouping, {
     React, Children: React.Children, cloneElement: React.cloneElement, results: data,
-    rankedSections: Object.keys(data), activeSection, cascadeDone: true, ENTER_STAGGER_CAP: 10,
+    rankedSections: Object.keys(data), activeSection, cascadeDone: true, firstPaint: { sections: Object.keys(data) }, ENTER_STAGGER_CAP: 10,
     SECTION_ICONS: Object.fromEntries(Object.keys(data).map(key => [key, 'svg'])),
     copy: { papers: 'Papers', authors: 'Authors', topics: 'Topics', institutions: 'Institutions', projects: 'Projects' },
     sectionContent: Object.fromEntries(Object.entries(data).map(([section, items]) => [section, () => items.map(item => React.createElement('row', { key: item.id, value: `${section}-${item.id}` }))])),
