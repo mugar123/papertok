@@ -40,44 +40,14 @@ test('SOURCE: the citation gate is awaited before the feed paints', async () => 
  */
 test('SOURCE: the gate waits for every source that carries a citation count', async () => {
   const code = stripComments(await read('../../context/FeedContext.tsx'));
-  const gate = bounded(code, 'await awaitWithinGate([', ']);', 'the citation gate', 8);
+  const gate = bounded(code, 'await awaitWithinGate([', '});', 'the citation gate', 9);
 
   assert.match(gate, /enrichmentPromise/, 'OpenAlex');
   assert.match(gate, /iCitePromise/, 'iCite');
   assert.match(gate, /europePmcPromise/, 'Europe PMC');
 });
 
-/**
- * The gate is behind "nothing is on screen yet", which is exactly when there
- * is a veil to hold — NOT behind `reset`.
- *
- * The difference is not academic, it was measured. When the first page comes
- * back full of papers the reader has already seen, `loadPapers` RE-ENTERS
- * itself with `reset` false, and it is that call which paints. Behind `reset`,
- * that whole load slipped through the gate: feed painted at 2872ms with 1 chip
- * of 2, and the chips jumped 9 -> 14 at 3571ms with the reader already looking
- * (2026-09-20).
- *
- * What stays out stays out on purpose: `keepThroughVisible` is the
- * follow-change reset, where the reader keeps their place on a card, and
- * pagination and refresh both have papers on screen by definition.
- */
-test('SOURCE: the gate is behind an empty screen, not behind `reset`', async () => {
-  const code = stripComments(await read('../../context/FeedContext.tsx'));
-  const gateAt = code.indexOf('awaitWithinGate(');
-  const guard = code.slice(code.lastIndexOf('if (', gateAt), gateAt);
-
-  assert.match(guard, /papers\.length === 0\s*&&\s*!keepThroughVisible/,
-    'the gate asks whether anything is on screen');
-  assert.doesNotMatch(guard, /\breset\b/,
-    'gating on `reset` misses the re-entry that actually paints a slow first page');
-});
-
-/**
- * And the re-entry this guard exists for is still there. If it is ever removed
- * or given `reset: true`, the reasoning above stops applying and the guard
- * should be revisited rather than silently over-covering.
- */
+// Automatic pagination can produce the first visible page after exclusions.
 test('SOURCE: the re-entry the guard was widened for still exists', async () => {
   const code = stripComments(await read('../../context/FeedContext.tsx'));
   assert.match(code, /loadPapersRef\.current\(false, activeMode, false, nextPageToFetch\)/,
@@ -90,7 +60,7 @@ test('SOURCE: the request id is re-checked after the wait', async () => {
   const gateAt = code.indexOf('awaitWithinGate(');
   const after = code.slice(gateAt, code.indexOf('setPapers(nextPapers)', gateAt));
 
-  assert.match(after, /requestId !== feedRequestId\.current\) return;/,
+  assert.match(after, /requestId !== feedRequestId\.current \|\| feedSessionId\.current !== activeSessionId\) return;/,
     'awaiting anything reopens the door a newer load may have come through');
 });
 

@@ -11,12 +11,15 @@ import { buildGuestFeedPlan } from '../utils/guestFeedPlan.ts';
 import { composeGuestPage, extendGuestPage, guestPageReady } from '../utils/guestFeedComposition.ts';
 import { enrichPapersBatch } from '../services/openAlexService.ts';
 import { enrichPubmedIds, mergeEuropePmcEnrichment } from '../services/europePmcService.ts';
-import { useFeedAbstractRecovery } from './useFeedAbstractRecovery.ts';
+import { recoverFeedAbstracts } from '../services/feedAbstractService.ts';
+import { awaitWithinGate } from '../utils/feedCitationGate.ts';
+import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.ts';
 import { classifyFeedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
 import {
   getOpenAlexEnrichmentId,
   mergeOpenAlexEnrichment,
-  mergeFeedAbstracts,
+  preserveFeedAbstracts,
+  needsOpenAlexEnrichment,
 } from '../utils/feedEnrichment.ts';
 
 const GUEST_PAGE_SIZE = 12;
@@ -103,11 +106,6 @@ export function useGuestFeed({ areas = [], topics = [], enabled = true }: { area
   const requestIdRef = useRef(0);
   const plan = useMemo(() => buildGuestFeedPlan(areas, topics), [areas, topics]);
   const planKey = plan.key;
-  const applyRecoveredAbstracts = useCallback((records: Partial<Paper>[]) => {
-    setPapers(current => mergeFeedAbstracts(current, records));
-  }, []);
-  useFeedAbstractRecovery(enabled ? papers : [], applyRecoveredAbstracts, `${planKey}:${isRefreshing}`);
-
   // `refresh` is the reader's pull-to-refresh: the shown papers stay until
   // the new ones land, and arXiv is asked past its cache. `forceRefresh` is
   // what that second part is called at the source.
@@ -127,42 +125,41 @@ export function useGuestFeed({ areas = [], topics = [], enabled = true }: { area
         (papers) => guestPageReady(PaperBuilder.deduplicate(papers), requestedPlan, GUEST_PAGE_SIZE),
       );
 
-      // Europe PMC has no in-flight map, and the early and late batches
-      // overlap: each pmid is asked for once per load.
-      const askedPmids = new Set<string>();
-      const enrichVisible = (batch: Paper[]) => {
-        const ids = batch.map(getOpenAlexEnrichmentId).filter(Boolean);
-        if (ids.length > 0) {
-          enrichPapersBatch(ids, { timeoutMs: 6_500 }).catch(() => ({})).then((lateEnrichment) => {
-            if (requestId !== requestIdRef.current || !lateEnrichment || !Object.keys(lateEnrichment).length) return;
-            setPapers((current) => mergeOpenAlexEnrichment(current, lateEnrichment));
-          });
-        }
-        // The guest feed shows PubMed cards too, and they carry the same debt
-        // ade641a left behind: no open access, no PMC PDF, no citations until
-        // Europe PMC answers. Asked for after the batch is on screen.
-        const pmids = [...new Set(batch.map(paper => paper?.pmid).filter(pmid => pmid && !askedPmids.has(pmid)))] as string[];
-        if (pmids.length > 0) {
-          pmids.forEach(pmid => askedPmids.add(pmid));
-          enrichPubmedIds(pmids).catch(() => new Map<string, Partial<Paper> & { pmid: string }>()).then((lateRecords) => {
-            if (requestId !== requestIdRef.current || !lateRecords || lateRecords.size === 0) return;
-            setPapers((current) => mergeEuropePmcEnrichment(current, lateRecords));
-          });
-        }
+      const preparePage = async (batch: Paper[]) => {
+        const ids = batch.filter(needsOpenAlexEnrichment).map(getOpenAlexEnrichmentId).filter(Boolean);
+        const pmids = [...new Set(batch.map(paper => paper.pmid).filter(Boolean))] as string[];
+        const openAlex = enrichPapersBatch(ids, { timeoutMs: 6_500 }).catch(() => ({}));
+        const europePmc = enrichPubmedIds(pmids).catch(() => new Map<string, Partial<Paper> & { pmid: string }>());
+        const [gatedOpenAlex, gatedEuropePmc, recovered] = await awaitWithinGate([
+          openAlex, europePmc, recoverFeedAbstracts(batch),
+        ], { maxWaitMs: batch.some(paper => !hasUsableAIAbstract(paper.abstract)) ? 6_000 : 0 });
+        let ready = recovered || batch;
+        if (gatedOpenAlex) ready = mergeOpenAlexEnrichment(ready, gatedOpenAlex);
+        if (gatedEuropePmc) ready = mergeEuropePmcEnrichment(ready, gatedEuropePmc);
+        // Late citations and access metadata may still improve, but cannot
+        // replace an already displayed missing-abstract state with prose.
+        void openAlex.then(records => {
+          if (requestId !== requestIdRef.current) return;
+          setPapers(current => preserveFeedAbstracts(current, mergeOpenAlexEnrichment(current, records)));
+        });
+        void europePmc.then(records => {
+          if (requestId !== requestIdRef.current) return;
+          setPapers(current => preserveFeedAbstracts(current, mergeEuropePmcEnrichment(current, records)));
+        });
+        return ready;
       };
 
-      const early = composeGuestPage(
+      const early = await preparePage(composeGuestPage(
         dedupePapers(PaperBuilder.deduplicate(fulfilledPaperLists(await first))),
         requestedPlan,
         GUEST_PAGE_SIZE,
-      );
+      ));
       if (requestId !== requestIdRef.current) return;
 
       if (early.length > 0) {
         setPapers(early);
         setLoading(false);
         setIsRefreshing(false);
-        enrichVisible(early);
       }
 
       const late = dedupePapers(
@@ -172,13 +169,13 @@ export function useGuestFeed({ areas = [], topics = [], enabled = true }: { area
       if (early.length === 0 && late.length === 0) {
         throw new Error('Guest discovery returned no papers.');
       }
-      if (early.length === 0) {
-        setPapers(extendGuestPage([], late, requestedPlan, GUEST_PAGE_SIZE));
-        enrichVisible(late);
-      } else {
-        setPapers((current) => extendGuestPage(current, late, requestedPlan, GUEST_PAGE_SIZE));
-        enrichVisible(late);
-      }
+      const earlyIds = new Set(early.map(paper => paper.id));
+      const additions = extendGuestPage(early, late, requestedPlan, GUEST_PAGE_SIZE)
+        .filter(paper => !earlyIds.has(paper.id));
+      const ready = await preparePage(additions);
+      if (requestId !== requestIdRef.current) return;
+      setPapers(current => extendGuestPage(current, ready, requestedPlan, GUEST_PAGE_SIZE));
+
     } catch (loadError) {
       if (requestId === requestIdRef.current) {
         console.error('Guest feed could not be loaded', loadError);

@@ -24,6 +24,10 @@ test('old unchecked snapshots are refreshed, while current snapshots preserve sc
     publicationPolicy: 1, savedAt: Date.now(), papers: [{ id: 'openalex:W1503277431', publicationType: 'article' }], page: 1,
   }));
   assert.equal(readFeedSnapshot('test-user', 'math.AG'), null);
+  stored.set(feedSnapshotKey('test-user', 'math.AG'), JSON.stringify({
+    publicationPolicy: 2, savedAt: Date.now(), papers: [{ id: 'W2020715063', abstract: '' }], page: 1,
+  }));
+  assert.equal(readFeedSnapshot('test-user', 'math.AG'), null, 'pre-admission recovery must run for old snapshots');
   const papers = [{ id: 'scientific-review', publicationType: 'review' }];
   writeFeedSnapshot('test-user', 'math.AG', { papers, page: 2, hasMore: true });
   assert.deepEqual(readFeedSnapshot('test-user', 'math.AG').papers, papers);
