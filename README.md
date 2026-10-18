@@ -144,6 +144,11 @@ A **Cloudflare Worker** is used for server-side functionality such as caching sc
 
 This keeps the main application lightweight while allowing integrations that require server-side secrets.
 
+The command palette stores up to five successful typed queries locally per signed-in
+user under `papertok_recentSearches_<uid>`. Queries are saved when a result opens or the
+palette closes, can be removed in the palette, and are never sent as analytics. Guests
+have no recent-search history; switching accounts clears the in-memory list.
+
 ## Running PaperTok locally
 
 Use Node 22.18 or later (CI uses Node 22; local checks also cover Node 24).

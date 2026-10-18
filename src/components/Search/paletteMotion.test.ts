@@ -35,7 +35,7 @@ test('the scrim is the palette\'s own, timed with the sheet', async () => {
   const palette = await read('./SearchCommand.tsx');
   assert.match(palette, /<CommandDialog [^>]*overlayClassName=\{`sc-scrim\$\{leavingBySelect \? ' sc-scrim--select' : ''\}`\}/);
   const command = await read('../ui/command.tsx');
-  assert.match(command, /function CommandDialog\(\{ children, className, overlayClassName, finalFocus, title = 'Search', \.\.\.props \}: Omit<ComponentProps<typeof Dialog>, 'children'> & \{ children\?: ReactNode \} & Pick<ComponentProps<typeof DialogContent>, 'className' \| 'overlayClassName' \| 'finalFocus'> & \{ title\?: string \}\)/);
+  assert.match(command, /function CommandDialog\(\{ children, className, overlayClassName, finalFocus, commandProps, title = 'Search', \.\.\.props \}: Omit<ComponentProps<typeof Dialog>, 'children'> & \{ children\?: ReactNode \} & Pick<ComponentProps<typeof DialogContent>, 'className' \| 'overlayClassName' \| 'finalFocus'> & \{ title\?: string; commandProps\?: ComponentProps<typeof Command> \}\)/);
   assert.match(command, /overlayClassName=\{overlayClassName\}/);
   const dialog = await read('../ui/dialog.tsx');
   assert.match(dialog, /<DialogOverlay className=\{overlayClassName\} \/>/);
@@ -54,7 +54,7 @@ test('a picked result closes the palette in 100ms of opacity, with no travel', a
   const palette = await read('./SearchCommand.tsx');
   assert.match(palette, /const \[leavingBySelect, setLeavingBySelect\] = useState(?:<[^;\n]+>)?\(false\);/);
   assert.match(palette, /setLeavingBySelect\(true\);\s*onOpenChange\(false\);/);
-  assert.match(palette, /if \(open\) \{\s*reset\(\);\s*setLeavingBySelect\(false\);\s*setCascadeDone\(false\);\s*\}/);
+  assert.match(palette, /if \(open\) \{\s*reset\(\);\s*setLeavingBySelect\(false\);\s*setCascadeDone\(false\);/);
   assert.match(palette, /className=\{`sc-sheet\$\{leavingBySelect \? ' sc-sheet--select' : ''\}`\}/);
   const css = await read('./SearchCommand.css');
   assert.match(css, /@keyframes scSheetGone \{\s*from \{\s*opacity: 1;\s*\}\s*to \{\s*opacity: 0;\s*\}\s*\}/);
@@ -82,7 +82,7 @@ test('a picked result closes the palette in 100ms of opacity, with no travel', a
 test('the results cascade once per opening, not on every keystroke', async () => {
   const palette = await read('./SearchCommand.tsx');
   assert.match(palette, /setTimeout\(\(\) => setCascadeDone\(true\), ENTER_STAGGER_CAP \* ENTER_STEP_MS \+ ENTER_RISE_MS\)/);
-  assert.match(palette, /const rows = cascadeDone \? sectionContent\[section\]\(\) : Children\.map/);
+  assert.match(palette, /const rows = cascadeDone \? visibleRows : Children\.map/);
   assert.match(palette, /className=\{cascadeDone \? 'sc-heading' : 'sc-heading sc-enter'\}/);
   const css = await read('./SearchCommand.css');
   assert.match(css, /animation: scEnterRise 260ms var\(--ease-out-expo\) forwards;\s*animation-delay: calc\(var\(--sc-enter-index, 0\) \* 24ms\);/, 'the clock the timer mirrors');
