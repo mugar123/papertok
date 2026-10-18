@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fetchInspireAbstracts } from './inspireAbstractService.ts';
-import { dribblingFetch } from '../test-support/deadlineHarness.ts';
+import { dribblingFetch, settleWithin } from '../test-support/deadlineHarness.ts';
 
 const hit = (doi: string, value: string) => ({ metadata: { dois: [{ value: doi }], abstracts: [{ value }] } });
 const response = (hits: ReturnType<typeof hit>[]) => Response.json({ hits: { total: hits.length, hits } });
@@ -92,5 +92,5 @@ test('errors and rate limits preserve absence, honor Retry-After, and recover la
 test('the lookup deadline covers a response whose body stalls', { timeout: 8_000 }, async t => {
   t.mock.method(Date, 'now', () => 2_000_001_000_000);
   t.mock.method(globalThis, 'fetch', dribblingFetch());
-  await assert.rejects(fetchInspireAbstracts(['10.5555/stalled']), { name: 'TimeoutError' });
+  assert.equal(await settleWithin(7_000, () => fetchInspireAbstracts(['10.5555/stalled'])), 'TimeoutError');
 });
