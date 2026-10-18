@@ -68,7 +68,8 @@ test('"llama 2": the paper OpenAlex cannot name arrives from arXiv and ranks fir
   assert.equal(papers[0].arxivId, '2307.09288');
   assert.equal(papers[0].title, 'Llama 2: Open Foundation and Fine-Tuned Chat Models');
   assert.equal(papers[1].title, "Llama 2: Early Adopters' Utilization of Meta's New Open-Source Pretrained Model");
-  assert.equal(papers.length, 7);
+  assert.equal(papers.length, 6);
+  assert.ok(!papers.some(paper => paper.title.includes('Nanobodies')), 'unrelated llama token overlap is excluded');
 });
 
 test('"segment anything": the original from OpenAlex leads once conference papers are allowed', async () => {
@@ -203,4 +204,27 @@ test('the default OpenAlex provider searches with the wider type list', async ()
   assert.equal(typeof DEFAULT_PAPER_SEARCH_PROVIDERS.searchArxiv, 'function');
   assert.deepEqual([...OPENALEX_SEARCH_TYPES], ['article', 'conference-paper', 'review', 'preprint']);
   assert.ok(ARXIV_SEARCH_TIMEOUT_MS < 6_000, 'inside the deadline the callers give the papers section');
+});
+
+test('a slow OpenAlex cannot discard an available arXiv paper and is cancelled', async () => {
+  let upstreamSignal: AbortSignal | undefined;
+  const papers = await searchPapersAcrossSources('llama 2', {
+    openAlexTimeoutMs: 10,
+    providers: {
+      searchOpenAlex: (_query, options) => { upstreamSignal = options.signal; return new Promise(() => {}); },
+      searchArxiv: async () => [arxivPaper('2307.09288', 'Llama 2: Open Foundation and Fine-Tuned Chat Models')],
+    },
+  });
+  assert.equal(papers[0].arxivId, '2307.09288');
+  assert.equal(upstreamSignal?.aborted, true);
+});
+
+
+test('title filtering preserves provider matches for identifiers and non-Latin queries', async () => {
+  for (const query of ['hep-th/9901001', 'doi:10.1000/example', 'W12345', '神经网络']) {
+    const papers = await searchPapersAcrossSources(query, {
+      providers: providersWith({ openAlex: [openAlexPaper('W12345', 'A provider-identified work')], arxiv: [] }),
+    });
+    assert.equal(papers.length, 1, query);
+  }
 });

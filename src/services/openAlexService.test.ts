@@ -29,6 +29,8 @@ import {
   mapOpenAlexEnrichmentWork,
   normalizeRecentImpactEntityId,
   peekEntity,
+  searchAuthors,
+  searchConcepts,
   searchInstitutions,
   searchLocalTopics,
   slimWorksPage,
@@ -1074,4 +1076,41 @@ test('an institution page gets Crossref before the screen budget runs out', asyn
     openAlexClient.fetchImpl = realOpenAlexFetch;
     globalThis.fetch = realFetch;
   }
+});
+
+
+test('author suggestions recover a typo plus surname prefix in one byline request without inventing metrics', async t => {
+  const requests: string[] = [];
+  t.mock.method(openAlexClient, 'fetch', async (url: string | URL, options: { retries?: number }) => {
+    requests.push(String(url));
+    assert.equal(options.retries, 0);
+    return Response.json({ results: [{ id: 'https://openalex.org/W123', authorships: [
+      { author: { id: 'https://openalex.org/A1', display_name: 'Geoffrey E. Hinton' }, institutions: [{ display_name: 'University of Toronto' }] },
+      { author: { id: 'https://openalex.org/A2', display_name: 'Unrelated Coauthor' } },
+    ] }] });
+  });
+  const results = await searchAuthors('Geofrey Hin', { typeahead: true, throwOnError: true });
+  assert.equal(requests.length, 1);
+  assert.equal(new URL(requests[0]).searchParams.get('sort'), 'cited_by_count:desc');
+  assert.match(new URL(requests[0]).searchParams.get('filter')!, /raw_author_name.search:.*geofrey~1 AND hin\*/);
+  assert.deepEqual(results.map(author => author.id), ['https://openalex.org/A1']);
+  assert.equal(results[0].display_name, 'Geoffrey E. Hinton');
+  assert.equal(results[0].works_count, null);
+  assert.equal(results[0].cited_by_count, null);
+  assert.equal(results[0].institution, 'University of Toronto');
+});
+
+test('local and remote topic suggestions tolerate typos with one provider request', async t => {
+  let calls = 0;
+  t.mock.method(openAlexClient, 'fetch', async (url: string | URL, options: { retries?: number }) => {
+    calls += 1;
+    assert.equal(options.retries, 0);
+    assert.equal(new URL(url).pathname, '/autocomplete/topics');
+    assert.equal(new URL(url).searchParams.get('q'), 'Machine Learning');
+    return Response.json({ results: [{ id: 'https://openalex.org/T123', display_name: 'Machine Learning and Algorithms', works_count: 120 }] });
+  });
+  const results = await searchConcepts('Machien lear', { throwOnError: true });
+  assert.equal(calls, 1);
+  assert.ok(results.some(topic => topic.display_name === 'Machine Learning'));
+  assert.ok(results.some(topic => topic.id === 'T123'));
 });

@@ -9,6 +9,7 @@ export interface PaperSearchFilters {
   terms?: string[];
   limit?: number;
   sort?: string;
+  typeahead?: boolean;
 }
 export interface PaperSearchResult {
   papers: Paper[];

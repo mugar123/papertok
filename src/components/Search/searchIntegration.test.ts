@@ -21,13 +21,14 @@ async function readCode(relativePath: string|URL) {
 const page = await readCode('./SearchPage.tsx');
 const palette = await readCode('./SearchCommand.tsx');
 const paletteSearch = await readCode('../../hooks/useEntitySearch.ts');
+const paletteSources = await readCode('../../services/entitySearchService.ts');
 
 // The palette is checked as one body of code: the component owns what is
 // painted and the hook owns what is queried, and every rule here is about the
 // pair.
 const SURFACES = [
   { name: 'the search page', code: page },
-  { name: 'the command palette', code: `${palette}\n${paletteSearch}` },
+  { name: 'the command palette', code: `${palette}\n${paletteSearch}\n${paletteSources}` },
 ];
 
 test('the search never announces itself as unavailable', () => {
@@ -40,22 +41,19 @@ test('the search never announces itself as unavailable', () => {
   }
 });
 
-test('both surfaces wait for the complete fan-out before reporting analytics', () => {
-  // Analytics describe the whole search; the palette can render each section sooner.
-  for (const [name, code] of [['the page', page], ['the palette', paletteSearch]]) {
-    assert.doesNotMatch(code, /SEARCH_INITIAL_REVEAL_MS/, name);
-    assert.doesNotMatch(code, /Promise\.race/, `${name}: no partial reveal race`);
-    assert.match(code, /await Promise\.all\(tasks\)/, `${name}: one settle for the whole fan-out`);
-  }
+test('both surfaces report analytics only after their search settles', () => {
+  assert.match(page, /await Promise\.all\(tasks\)/);
+  assert.match(paletteSources, /await Promise\.all\(SEARCH_SECTIONS\.map/);
+  assert.ok(paletteSearch.indexOf('await searchEntities(') < paletteSearch.indexOf("trackEvent('search_performed'"));
+  assert.match(paletteSearch, /if \(controller\.signal\.aborted\) return;/);
 });
 
 test('the palette hides stale queries while publishing independent section counts', () => {
-  assert.match(page, /hasVisibleResults && !searchPending/, 'the separate page keeps its batch behavior');
-  assert.match(paletteSearch, /results: isStale \? EMPTY_RESULTS : results/);
-  assert.match(paletteSearch, /totalResults: isStale \? 0 : totalResults/);
-  assert.match(paletteSearch, /if \(isCurrentSearch\(\)\) \{\s*setResults/);
-  assert.match(paletteSearch, /setPendingSections\(previous => previous\.filter/);
-  assert.match(paletteSearch, /setResults\(EMPTY_RESULTS\);\s*setResultsTerm\(searchTerm\)/);
+  assert.match(page, /hasVisibleResults && !searchPending/);
+  assert.match(paletteSearch, /answer\.term === query\.trim\(\)/);
+  assert.match(paletteSearch, /const snapshot = current \? answer\.snapshot : EMPTY_SEARCH/);
+  assert.match(paletteSources, /if \(!signal\.aborted\) onUpdate\(snapshot\)/);
+  assert.match(paletteSources, /pending: snapshot\.pending\.filter/);
 });
 
 test('both surfaces build their section values in one place', () => {
@@ -464,7 +462,7 @@ import ts from 'typescript';
 import vm from 'node:vm';
 
 const componentSource = await readFile(new URL('./SearchCommand.tsx', import.meta.url), 'utf8');
-const groupingSource = componentSource.slice(componentSource.indexOf('  const renderedSections = rankedSections.map('), componentSource.indexOf('  const hasQuery ='));
+const groupingSource = componentSource.slice(componentSource.indexOf("  let firstResultValue = '';"), componentSource.indexOf('  const hasQuery ='));
 const compileGrouping = ts.transpileModule(`(function () { ${groupingSource}; return renderedSections; })()`, {
   compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 },
 }).outputText;
@@ -534,4 +532,44 @@ test('changing account clears recent queries before a closed palette can save th
     assert.equal(memory.queries.length, 0);
     assert.deepEqual(writes, []);
   }
+});
+
+
+test('the default keyboard target follows a later first result, but preserves manual choices and touch deselection', () => {
+  const expression = componentSource.match(/value: (hasQuery && !manualSelection[^,]+),/)?.[1];
+  assert.ok(expression);
+  const state = { hasQuery: true, firstResultValue: 'author-karpathy', selectedValue: 'paper-earlier' };
+  assert.equal(vm.runInNewContext(expression, { ...state, manualSelection: false }), 'author-karpathy');
+  assert.equal(vm.runInNewContext(expression, { ...state, manualSelection: true }), 'paper-earlier');
+  assert.equal(vm.runInNewContext(expression, { ...state, selectedValue: '', manualSelection: false }), '');
+});
+
+
+test('a later source does not extend the initial entrance animation', t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const start = componentSource.indexOf('  const hasResults =');
+  const end = componentSource.indexOf('  const go =', start);
+  const effect = ts.transpileModule(componentSource.slice(start, end), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  let previous: unknown[] = [];
+  let cleanup: (() => void) | undefined;
+  let cascadeDone = false;
+  const render = (totalResults: number) => vm.runInNewContext(effect, {
+    totalResults, cascadeDone, open: true, ENTER_STAGGER_CAP: 10, ENTER_STEP_MS: 24, ENTER_RISE_MS: 260,
+    setTimeout, clearTimeout, setCascadeDone: (done: boolean) => { cascadeDone = done; },
+    useEffect: (run: () => (() => void) | undefined, dependencies: unknown[]) => {
+      if (dependencies.length === previous.length && dependencies.every((value, i) => Object.is(value, previous[i]))) return;
+      cleanup?.();
+      previous = [...dependencies];
+      cleanup = run();
+    },
+  });
+  render(0);
+  render(2);
+  t.mock.timers.tick(300);
+  render(4);
+  t.mock.timers.tick(199);
+  assert.equal(cascadeDone, false);
+  t.mock.timers.tick(1);
+  assert.equal(cascadeDone, true, 'the initial cascade ends on its original clock despite additional results');
+  cleanup?.();
 });
