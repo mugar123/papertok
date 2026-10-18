@@ -1,0 +1,41 @@
+name: Delete PR branch
+
+# The repository setting "Automatically delete head branches" only covers
+# merged pull requests; this also removes the branch when a PR is closed.
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  delete-branch:
+    name: delete-branch
+    # Fork branches are outside this repository. Dependabot removes its own
+    # branches, and its runs only receive a read-only token.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref != github.event.repository.default_branch &&
+      github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Delete head branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          # Deleting the base of an open stacked PR would close that PR.
+          if [ "$(gh pr list --repo "$REPO" --base "$BRANCH" --state open --json number --jq length)" != 0 ]; then
+            echo "::notice::Kept $BRANCH because an open pull request targets it."
+            exit 0
+          fi
+          if ! gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH"; then
+            # Someone may have deleted it already; fail only if it still exists.
+            if gh api "repos/$REPO/git/ref/heads/$BRANCH" > /dev/null 2>&1; then
+              exit 1
+            fi
+          fi

@@ -95,7 +95,7 @@ test('SOURCE: there is no second publish workflow, and nothing publishes to GitH
   const { readdir } = await import('node:fs/promises');
   const dir = new URL('../../.github/workflows/', import.meta.url);
   const files = await readdir(dir);
-  assert.deepEqual(files.sort(), ['ci.yml'], `unexpected workflow(s): ${files.join(', ')}`);
+  assert.deepEqual(files.sort(), ['ci.yml', 'delete-pr-branch.yml'], `unexpected workflow(s): ${files.join(', ')}`);
 
   // And the Pages site itself stays up on purpose: it is what redirects the
   // old origin to the new one, so an old link still lands somewhere. What was
