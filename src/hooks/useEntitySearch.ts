@@ -23,20 +23,12 @@ import {
   isOrganisationAuthorRecord,
 } from '../utils/searchRelevance.ts';
 
-/**
- * The search behind the command palette: five external sources.
- *
- * Papers, authors, institutions, topics and projects are OpenAlex and
- * OpenAIRE over HTTP. Each has its own timeout, and the palette waits for all
- * of them before painting anything: the whole answer lands in one commit, so
- * no section can appear late or reshuffle the ranking under a reader who has
- * already started reading. A stale search can never overwrite a newer one nor
- * survive underneath it (see the commit in `performSearch`).
- */
+/** Each section exposes its own result count without waiting for the other providers. */
 
 const SEARCH_DEBOUNCE_MS = 320;
 const SEARCH_TIMEOUT_MS = 6_000;
 const SEARCH_MIN_LOADING_MS = 180;
+const SECTIONS = ['papers', 'authors', 'topics', 'institutions', 'projects'] as const;
 
 const EMPTY_RESULTS: Readonly<SearchResults> = Object.freeze({
   papers: [],
@@ -72,11 +64,8 @@ export function useEntitySearch() {
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState(EMPTY_RESULTS);
-  // The term `results` answers. Painted rows outlive the query that asked for
-  // them on purpose (see the commit below), so the palette needs to be able to
-  // say which question they are the answer to.
   const [resultsTerm, setResultsTerm] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
+  const [pendingSections, setPendingSections] = useState<Array<keyof SearchResults>>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [searchIssue, setSearchIssue] = useState<{ unavailableSections: Array<keyof SearchResults> } | null>(null);
 
@@ -92,18 +81,27 @@ export function useEntitySearch() {
     requestAbortRef.current = requestController;
     const localTopics = searchLocalTopics(searchTerm, 8);
 
-    setIsSearching(true);
+    setResults(EMPTY_RESULTS);
+    setResultsTerm(searchTerm);
+    setPendingSections([...SECTIONS]);
     setHasSearched(true);
     setSearchIssue(null);
 
     const isCurrentSearch = () => (
       searchId === searchIdRef.current && !requestController.signal.aborted
     );
-    // Only tags the outcome with its section. Painting used to happen here as
-    // well, one straggler at a time, which is what assembled the palette on
-    // screen over several seconds; the whole search now lands in a single
-    // commit below, exactly as the page already did it.
-    const track = <K extends keyof SearchResults>(section: K, promise: Promise<SearchOutcome<SearchResults[K]>>) => promise.then(outcome => ({ ...outcome, section }));
+    const track = <K extends keyof SearchResults>(section: K, promise: Promise<SearchOutcome<SearchResults[K]>>) => promise.then(async outcome => {
+      const remaining = Math.max(0, SEARCH_MIN_LOADING_MS - (Date.now() - searchStartedAt));
+      if (remaining) await wait(remaining);
+      if (isCurrentSearch()) {
+        setResults(previous => ({ ...previous, [section]: outcome.value }));
+        setPendingSections(previous => previous.filter(item => item !== section));
+        if (outcome.status !== 'fulfilled') setSearchIssue(previous => ({
+          unavailableSections: [...(previous?.unavailableSections || []), section],
+        }));
+      }
+      return { ...outcome, section };
+    });
 
     const tasks = [
       // OpenAlex and arXiv, merged and ranked by title match
@@ -161,40 +159,8 @@ export function useEntitySearch() {
       )),
     ];
 
-    // One settle. Every source is bounded by its own deadline above, so this
-    // waits at most as long as the slowest deadline and then commits the whole
-    // palette at once.
-    //
-    // It used to reveal twice — whatever had arrived by 520 ms, then every
-    // straggler painting on its own. Institutions can land 4.5 s in and authors
-    // 5 s in, so sections appeared minutes apart in interface time and the
-    // ranking was recomputed on each one, moving groups that were already being
-    // read. Waiting costs the slowest source; the skeleton covers the wait.
     const outcomes = await Promise.all(tasks);
-    const remainingMinimumDelay = Math.max(
-      0,
-      SEARCH_MIN_LOADING_MS - (Date.now() - searchStartedAt),
-    );
-    if (remainingMinimumDelay > 0) await wait(remainingMinimumDelay);
     if (!isCurrentSearch()) return;
-
-    // The commit REPLACES the whole object; it does not merge into whatever the
-    // last search left behind. Merging is what used to leave the previous
-    // query's authors and institutions sitting under the new query's papers: a
-    // source that ran out its timeout never wrote its section, so its old rows
-    // survived the entire search with nothing on screen to say they answered a
-    // different question.
-    //
-    // The trade, deliberately: `results` is NOT emptied when a search starts.
-    // Emptying it there is the obvious fix and the wrong one — it would turn
-    // every keystroke into a blink to nothing and back. So the previous answers
-    // stay in state until this single commit, whole and never interleaved with
-    // the new ones, and `isPending` below keeps them off screen meanwhile.
-    const revealedResults = { ...EMPTY_RESULTS };
-    outcomes.forEach(<K extends keyof SearchResults>(outcome: SearchOutcome<SearchResults[K]> & { section: K }) => { revealedResults[outcome.section] = outcome.value; });
-    setResults(revealedResults);
-    setResultsTerm(searchTerm);
-
     const resultCount = outcomes.reduce(
       (total, outcome) => total + (Array.isArray(outcome.value) ? outcome.value.length : 0),
       0,
@@ -204,11 +170,6 @@ export function useEntitySearch() {
       result_count: resultCount,
       has_results: resultCount > 0,
     });
-    const unavailableSections = outcomes
-      .filter(outcome => outcome.status !== 'fulfilled')
-      .map(outcome => outcome.section);
-    setSearchIssue(unavailableSections.length > 0 ? { unavailableSections } : null);
-    setIsSearching(false);
     if (requestAbortRef.current === requestController) requestAbortRef.current = null;
   }, [language, trackEvent]);
 
@@ -219,7 +180,7 @@ export function useEntitySearch() {
       const resetTimeout = setTimeout(() => {
         setResults(EMPTY_RESULTS);
         setResultsTerm('');
-        setIsSearching(false);
+        setPendingSections([]);
         setHasSearched(false);
         setSearchIssue(null);
       }, 0);
@@ -243,7 +204,7 @@ export function useEntitySearch() {
     setQuery('');
     setResults(EMPTY_RESULTS);
     setResultsTerm('');
-    setIsSearching(false);
+    setPendingSections([]);
     setHasSearched(false);
     setSearchIssue(null);
   }, []);
@@ -253,21 +214,20 @@ export function useEntitySearch() {
   const totalResults = Object.values(results)
     .reduce((total, list) => total + list.length, 0);
 
-  // An answer is owed from the first keystroke, not from the end of the
-  // debounce. Until it lands the palette shows its skeleton, not the previous
-  // answer: rows left from an older query would still take Enter and be read
-  // out as results for the one being typed.
-  const isPending = isSearching
-    || (Boolean(typedTerm) && resultsTerm !== typedTerm);
+  // Old-query rows and counts stay hidden throughout the debounce.
+  const isStale = Boolean(typedTerm) && resultsTerm !== typedTerm;
+  const isPending = Boolean(typedTerm) && (isStale || pendingSections.length === SECTIONS.length);
 
   return {
     query,
     setQuery,
-    results,
-    totalResults,
+    results: isStale ? EMPTY_RESULTS : results,
+    totalResults: isStale ? 0 : totalResults,
+    pendingSections: isStale ? [...SECTIONS] : pendingSections,
+    resultsTerm,
     isPending,
     hasSearched,
-    searchIssue,
+    searchIssue: isStale ? null : searchIssue,
     reset,
   };
 }

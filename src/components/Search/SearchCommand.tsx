@@ -1,9 +1,12 @@
 import type { ComponentProps, MouseEvent } from 'react';
 import type { FollowInput } from '../../utils/following.ts';
 
-import { Children, cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { Children, cloneElement, useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  ArrowRight,
+  ClockCounterClockwise,
+  X,
   Briefcase,
   Buildings,
   Check,
@@ -35,11 +38,17 @@ import {
   resolvePreferredSearchSection,
 } from '../../utils/searchRelevance.ts';
 import './SearchCommand.css';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.tsx';
+import useIsPhone from '../../hooks/useIsPhone.ts';
+import { useAuth } from '../../context/AuthContext.tsx';
+import { authorDisplayName } from '../../utils/explorerPaths.ts';
+import { SOURCE_LABELS } from '../../utils/searchOutage.ts';
+import { readRecentSearches, updateRecentSearches } from './recentSearches.ts';
 import { Toggle } from '../ui/toggle.tsx';
 
 const COPY = {
   en: {
-    placeholder: 'Search papers, authors, topics, institutions...',
+    placeholder: 'Search papers, authors, topics…',
     papers: 'Papers',
     authors: 'Authors',
     institutions: 'Institutions',
@@ -48,28 +57,26 @@ const COPY = {
     empty: 'No results',
     searching: 'Searching...',
     suggested: 'Suggestions',
-    partial: 'Some sources did not answer; showing what is available.',
     follow: 'Follow',
     following: 'Following',
-    citations: 'citations',
     works: 'works',
     cancel: 'Cancel',
   },
 };
 
 const SUGGESTIONS = [
-  { label: 'Cosmology', query: 'Cosmology', Icon: Lightbulb },
-  { label: 'MIT', query: 'Massachusetts Institute of Technology', Icon: Buildings },
-  { label: 'CRISPR Cas9', query: 'CRISPR Cas9', Icon: FileText },
-  { label: 'Geoffrey Hinton', query: 'Geoffrey Hinton', Icon: Users },
-  { label: 'Human Brain Project', query: 'Human Brain Project', Icon: Briefcase },
+  { label: 'Cosmology', query: 'Cosmology', type: 'Topic', Icon: Lightbulb },
+  { label: 'MIT', query: 'Massachusetts Institute of Technology', type: 'Institution', Icon: Buildings },
+  { label: 'CRISPR Cas9', query: 'CRISPR Cas9', type: 'Papers', Icon: FileText },
+  { label: 'Geoffrey Hinton', query: 'Geoffrey Hinton', type: 'Author', Icon: Users },
+  { label: 'Human Brain Project', query: 'Human Brain Project', type: 'Project', Icon: Briefcase },
 ];
 
 // Every section the palette can paint. Each one also has to be in
 // searchRelevance's DEFAULT_SECTION_ORDER: a section the palette renders but
 // the ordering module has never heard of scores 99 and sinks to the bottom of
 // every search, silently.
-const SECTIONS = ['papers', 'authors', 'institutions', 'topics', 'projects'] as const;
+const SECTIONS = ['papers', 'authors', 'topics', 'institutions', 'projects'] as const;
 
 /**
  * How far down the list the entrance cascade runs before every remaining row
@@ -105,6 +112,17 @@ function lastPathSegment(value: unknown) {
  */
 export default function SearchCommand({ open, onOpenChange, finalFocus }: { open: boolean; onOpenChange: (open: boolean) => void; finalFocus?: ComponentProps<typeof CommandDialog>['finalFocus'] }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const uid = user?.uid;
+  const isPhone = useIsPhone();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const typedQuery = useRef(false);
+  const selectionAllowed = useRef(true);
+  const [selectedValue, setSelectedValue] = useState('');
+  const [activeSection, setActiveSection] = useState<'all' | typeof SECTIONS[number]>('all');
+  const [recentOwner, setRecentOwner] = useState<{ uid?: string; queries: string[] }>({ queries: [] });
+  const recents = recentOwner.uid === uid ? recentOwner.queries : [];
+
   // Whether the palette is closing because a row was picked. Picking is not
   // dismissing: the reader is being answered, not getting out of the way, so
   // the sheet and its scrim go in 100ms of opacity (`.sc-sheet--select`) and
@@ -116,10 +134,16 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
   const {
     query, setQuery, results, totalResults,
-    isPending, hasSearched, searchIssue, reset,
+    isPending, hasSearched, searchIssue, pendingSections, resultsTerm, reset,
   } = useEntitySearch();
   const [pendingEntity, setPendingEntity] = useState<string | null | undefined>(null);
   const [cascadeDone, setCascadeDone] = useState(false);
+
+  const rememberQuery = useEffectEvent(() => {
+    if (!uid || recentOwner.uid !== uid || !typedQuery.current || !hasSearched
+      || resultsTerm !== query.trim() || totalResults === 0 || isPending) return;
+    setRecentOwner({ uid, queries: updateRecentSearches(uid, query) });
+  });
 
   // Cleared on the way in, never on the way out. The palette stays mounted
   // between opens (App.jsx), so `open` turning false is the START of the exit,
@@ -138,8 +162,22 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
       reset();
       setLeavingBySelect(false);
       setCascadeDone(false);
+      setActiveSection('all');
+      setSelectedValue('');
+      selectionAllowed.current = !window.matchMedia('(pointer: coarse)').matches;
+      typedQuery.current = false;
+      setRecentOwner({ uid, queries: readRecentSearches(uid) });
+    } else {
+      rememberQuery();
+      if (recentOwner.uid !== uid) setRecentOwner({ uid, queries: [] });
     }
-  }, [open, reset]);
+  }, [open, reset, uid, recentOwner.uid]);
+
+  // cmdk selects the first registered row, even with a controlled empty value.
+  // Clear that automatic choice before paint until a coarse-pointer interaction.
+  useLayoutEffect(() => {
+    if (!selectionAllowed.current && selectedValue) setSelectedValue('');
+  }, [selectedValue]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
@@ -170,8 +208,9 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
     }
   }, [toggleFollow]);
 
-  // The section matching the query best is shown first, as on the old page.
-  const orderedSections = useMemo(() => {
+  // Type positions stay fixed while the result groups retain relevance ordering.
+  const orderedSections = SECTIONS;
+  const rankedSections = useMemo(() => {
     const preferred = resolvePreferredSearchSection({
       query,
       // Shared with the page. This block used to be written out here as well
@@ -191,6 +230,14 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
       .sort((left, right) => getSearchSectionOrder(left, preferred) - getSearchSectionOrder(right, preferred));
   }, [query, results]);
 
+  const changeQuery = (value: string, typed = false) => {
+    typedQuery.current = typed;
+    setActiveSection('all');
+    setSelectedValue('');
+    selectionAllowed.current = !window.matchMedia('(pointer: coarse)').matches;
+    setQuery(value);
+  };
+
   const renderFollow = (entity: FollowInput) => {
     const following = isFollowing(entity);
     const pending = isFollowPending(entity) || pendingEntity === entity.id;
@@ -201,6 +248,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
         disabled={pending}
         pressed={following}
         aria-label={following ? copy.following : copy.follow}
+        onKeyDown={event => { if (event.key !== 'Escape') event.stopPropagation(); }}
       >
         {pending
           ? <CircleNotch size={12} className="spinning" />
@@ -224,10 +272,18 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
         }}
       >
         <FileText size={14} className="sc-icon" />
-        <span className="sc-label">{paper.title}</span>
-        <span className="sc-meta">
-          {paper.year || ''}
-          {paper.citationCount! > 0 ? ` · ${paper.citationCount} ${copy.citations}` : ''}
+        <span className="sc-paper-text">
+          <span className="sc-label">{paper.title}</span>
+          <span className="sc-paper-detail">
+            <span className="sc-author">{authorDisplayName(paper.authors?.[0])}</span>
+            <span className="sc-paper-numbers sc-paper-numbers--mobile">
+              {paper.authors?.length && (paper.year != null || paper.citationCount != null) ? '· ' : ''}
+              {[paper.year, paper.citationCount != null ? `${paper.citationCount.toLocaleString('en-US')} cit.` : null].filter(value => value != null).join(' · ')}
+            </span>
+          </span>
+        </span>
+        <span className="sc-paper-numbers sc-paper-numbers--desktop">
+          {[paper.year, paper.citationCount != null ? `${paper.citationCount.toLocaleString('en-US')} cit.` : null].filter(value => value != null).join(' · ')}
         </span>
       </CommandItem>
     )),
@@ -321,130 +377,140 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
    * the fact.
    */
   let enterIndex = 0;
-  const renderedSections = orderedSections.map((section) => {
-    if (results[section].length === 0) return null;
+  const renderedSections = rankedSections.map((section) => {
+    if (results[section].length === 0 || (activeSection !== 'all' && activeSection !== section)) return null;
     const SectionIcon = SECTION_ICONS[section];
     const headingIndex = Math.min(enterIndex, ENTER_STAGGER_CAP);
     enterIndex += 1;
-    const rows = cascadeDone ? sectionContent[section]() : Children.map(sectionContent[section](), (child, offset) => cloneElement(child, {
+    const sectionRows = sectionContent[section]();
+    const visibleRows = activeSection === 'all' ? sectionRows.slice(0, 4) : sectionRows;
+    const rows = cascadeDone ? visibleRows : Children.map(visibleRows, (child, offset) => cloneElement(child, {
       className: [child.props.className, 'sc-enter'].filter(Boolean).join(' '),
       style: {
         ...child.props.style,
         '--sc-enter-index': Math.min(enterIndex + offset, ENTER_STAGGER_CAP),
       },
     }));
-    enterIndex += results[section].length;
+    enterIndex += visibleRows.length;
     return (
       <CommandGroup
         key={section}
         heading={
           <span className={cascadeDone ? 'sc-heading' : 'sc-heading sc-enter'} style={cascadeDone ? undefined : { '--sc-enter-index': headingIndex }}>
-            <SectionIcon size={11} /> {copy[section]}
+            <SectionIcon size={11} /> {copy[section]} · {results[section].length}
           </span>
         }
       >
         {rows}
+        {activeSection === 'all' && sectionRows.length > 4 && (
+          <CommandItem value={`show-all-${section}`} onSelect={() => setActiveSection(section)} className="sc-show-all">
+            <span>Show all {sectionRows.length} {copy[section].toLowerCase()} <ArrowRight size={14} /></span>
+          </CommandItem>
+        )}
       </CommandGroup>
     );
   });
 
+  const hasQuery = Boolean(query.trim());
+  const visibleCount = activeSection === 'all' ? totalResults : results[activeSection].length;
+  const waitingForView = activeSection === 'all' ? pendingSections.length > 0 : pendingSections.includes(activeSection);
+
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange} finalFocus={finalFocus} title={copy.placeholder} className={`sc-sheet${leavingBySelect ? ' sc-sheet--select' : ''}`} overlayClassName={`sc-scrim${leavingBySelect ? ' sc-scrim--select' : ''}`}>
-      {/* The field is still from the first frame: it is opened from the
-          keyboard and typed into at once, so the sheet's own entrance is the
-          only movement. */}
-      <CommandInput
-        value={query}
-        onValueChange={setQuery}
-        placeholder={copy.placeholder}
-        autoFocus
-      >
-        {/* The way out on a phone. There the sheet is the whole screen
-            (SearchCommand.css): no scrim to tap and no Escape key, so without
-            this the only exit is Back. A `DialogClose`, so Base UI closes and
-            restores focus exactly as it does for the other two. Hidden on
-            wider viewports, where the scrim and Escape already do the job
-            and the row belongs to the field alone. */}
-        <DialogClose
-          render={<Button variant="ghost" size="sm" className="sc-cancel" />}
-          // cmdk listens for Enter on the whole palette and answers it by
-          // picking the highlighted row, so Enter on this button — Tab from
-          // the field, then Enter — used to select "Cosmology" instead of
-          // cancelling. The button still gets its native activation; only the
-          // palette stops hearing the key.
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') event.stopPropagation();
-          }}
+    <CommandDialog open={open} onOpenChange={onOpenChange} finalFocus={finalFocus} title={copy.placeholder} className={`sc-sheet${leavingBySelect ? ' sc-sheet--select' : ''}`} overlayClassName={`sc-scrim${leavingBySelect ? ' sc-scrim--select' : ''}`}
+      commandProps={{
+        label: copy.placeholder,
+        value: selectedValue,
+        onValueChange: setSelectedValue,
+        onPointerDownCapture: () => { selectionAllowed.current = true; },
+        onKeyDownCapture: event => {
+          if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) selectionAllowed.current = true;
+        },
+      }}
+    >
+      <Tabs value={activeSection} onValueChange={value => setActiveSection(value)} className="sc-index">
+        <CommandInput
+          ref={inputRef}
+          value={query}
+          onValueChange={value => changeQuery(value, true)}
+          placeholder={isPhone ? 'Search PaperTok' : copy.placeholder}
+          className="sc-input"
+          wrapperClassName="sc-input-row"
+          autoFocus
         >
-          {copy.cancel}
-        </DialogClose>
-      </CommandInput>
+          {hasQuery && !isPending && <span className="sc-result-count">{totalResults} results</span>}
+        </CommandInput>
 
-      <CommandList>
-        {/* The suggestions are simply there when the palette opens: the sheet's
-            own entrance is the only movement (2026-10-15). */}
-        {!query.trim() && (
-          <CommandGroup
-            heading={<span className="sc-heading">{copy.suggested}</span>}
-          >
-            {SUGGESTIONS.map((item) => (
-              <CommandItem
-                key={item.label}
-                value={`suggestion-${item.label}`}
-                onSelect={() => setQuery(item.query)}
-              >
-                <item.Icon size={14} className="sc-icon" />
-                <span className="sc-label">{item.label}</span>
-              </CommandItem>
-            ))}
-          </CommandGroup>
+        {hasQuery && (
+          <TabsList activateOnFocus variant="line" className="sc-types" aria-label="Result types"
+            onKeyDown={event => { if (event.key !== 'Escape') event.stopPropagation(); }}>
+            <TabsTrigger value="all" aria-label={`All${isPending ? ', searching' : `, ${totalResults} results`}`}>
+              All {isPending ? <CircleNotch size={10} className="spinning" aria-busy="true" aria-label="Searching" /> : <span className="sc-count">{totalResults}</span>}
+            </TabsTrigger>
+            {orderedSections.map(section => {
+              const pending = pendingSections.includes(section);
+              const count = results[section].length;
+              return <TabsTrigger key={section} value={section} disabled={!pending && count === 0}
+                aria-disabled={!pending && count === 0}
+                aria-label={`${copy[section]}, ${pending ? 'searching' : `${count} results`}`}>
+                {copy[section]} {pending
+                  ? <CircleNotch size={10} className="spinning" aria-busy="true" aria-label="Searching" />
+                  : <span className="sc-count">{count}</span>}
+              </TabsTrigger>;
+            })}
+          </TabsList>
         )}
 
-        {/* Rows of the real height rather than a lone spinner. The palette now
-            waits for every source before painting anything, so the wait needs a
-            shape: a spinner over an empty sheet reads as nothing happening, and
-            a sheet that fills from nothing shifts everything under the cursor
-            when it does. */}
-        {isPending && (
-          <div className="sc-skeleton" role="status">
-            {[0, 1, 2, 3, 4].map(index => (
-              <div className="sc-skeleton-row" key={index}>
-                <span className="sc-skeleton-icon" />
-                <span className="sc-skeleton-line" />
-                <span className="sc-skeleton-meta" />
+        <div className="sc-clear-slot">
+          {query && <Button variant="ghost" size="icon-sm" aria-label="Clear search" className="sc-clear"
+            onClick={() => { changeQuery(''); inputRef.current?.focus(); }}
+            onKeyDown={event => { if (event.key !== 'Escape') event.stopPropagation(); }}><X size={16} /></Button>}
+        </div>
+        <div className="sc-cancel-slot">
+          <DialogClose render={<Button variant="ghost" size="sm" className="sc-cancel" />}
+            onKeyDown={event => { if (event.key !== 'Escape') event.stopPropagation(); }}>{copy.cancel}</DialogClose>
+        </div>
+
+        <TabsContent value={activeSection} className="sc-panel">
+          <CommandList className="sc-list">
+            {!hasQuery && <>
+              {recents.length > 0 && <CommandGroup heading={<span className="sc-heading">Recent</span>}>
+                {recents.map(term => <CommandItem key={term} value={`recent-${term}`} onSelect={() => changeQuery(term)}>
+                  <ClockCounterClockwise size={14} className="sc-icon" /><span className="sc-label">{term}</span>
+                  <Button variant="ghost" size="icon-sm" aria-label={`Remove from recent: ${term}`} className="sc-remove"
+                    onClick={event => { event.preventDefault(); event.stopPropagation(); setRecentOwner({ uid, queries: updateRecentSearches(uid, term, true) }); }}
+                    onKeyDown={event => { if (event.key !== 'Escape') event.stopPropagation(); }}><X size={14} /></Button>
+                </CommandItem>)}
+              </CommandGroup>}
+              <CommandGroup heading={<span className="sc-heading">{copy.suggested}</span>}>
+                {SUGGESTIONS.map(item => <CommandItem key={item.label} value={`suggestion-${item.label}`} onSelect={() => changeQuery(item.query)}>
+                  <item.Icon size={14} className="sc-icon" /><span className="sc-label">{item.label}</span><span className="sc-suggestion-type">{item.type}</span>
+                </CommandItem>)}
+              </CommandGroup>
+            </>}
+
+            {isPending && (
+              <div className="sc-skeleton" aria-hidden="true">
+                {[0, 1, 2, 3, 4].map(index => <div className="sc-skeleton-row" key={index}>
+                  <span className="sc-skeleton-icon" /><span className="sc-skeleton-line" /><span className="sc-skeleton-meta" />
+                </div>)}
               </div>
-            ))}
-            {/* Real text, not just an aria-label: the skeleton rows above are
-                plain decorative placeholders, so an aria-label alone here
-                would never be announced as a status change. Kept AFTER the
-                rows on purpose -- the stagger below is keyed off
-                `.sc-skeleton-row:nth-child(2..5)`, and a leading sibling
-                would shift every row's position by one and break it. */}
-            <span className="visually-hidden">{copy.searching}</span>
-          </div>
-        )}
-
-        {searchIssue && !isPending && totalResults > 0 && (
-          <div className="sc-status sc-status--warn" role="status">
-            <WarningCircle size={14} /> {copy.partial}
-          </div>
-        )}
-
-        {hasSearched && !isPending && totalResults === 0 && (
-          <CommandEmpty>{copy.empty}</CommandEmpty>
-        )}
-
-        {/* No new section paints until the five sources land in one commit.
-            Until then the skeleton above stands in, or, while the next search
-            waits out its debounce, the previous rows stay up dimmed. */}
-        {!isPending && renderedSections}
-
-      </CommandList>
-      <div className="sc-footer" aria-hidden="true">
-        <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
-        <span><kbd>↵</kbd> Open</span>
-        <span><kbd>Esc</kbd> Close</span>
-      </div>
+            )}
+            {searchIssue && hasQuery && <div className="sc-status sc-status--warn"><WarningCircle size={14} />
+              {searchIssue.unavailableSections.map(section => copy[section]).join(', ')} unavailable. {totalResults > 0 ? 'Showing available results.' : 'Try again.'}
+            </div>}
+            {hasQuery && hasSearched && !waitingForView && !isPending && visibleCount === 0 && <CommandEmpty>{copy.empty}</CommandEmpty>}
+            {!isPending && hasQuery && renderedSections}
+            <span className="visually-hidden" role="status">{hasQuery ? (isPending ? copy.searching : `${visibleCount} results available.${waitingForView ? ' Other sections are still searching.' : ''}${searchIssue ? ` ${searchIssue.unavailableSections.map(section => copy[section]).join(', ')} unavailable.` : ''}`) : ''}</span>
+          </CommandList>
+        </TabsContent>
+        <div className="sc-footer" aria-hidden="true">
+          <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
+          <span><kbd>↵</kbd> Open</span>
+          <span><kbd>Tab</kbd> Types</span>
+          <span><kbd>Esc</kbd> Close</span>
+          <span className="sc-sources">{['openalex', 'arxiv', 'openaire'].map(source => SOURCE_LABELS[source]).join(' · ')}</span>
+        </div>
+      </Tabs>
     </CommandDialog>
   );
 }

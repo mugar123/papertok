@@ -26,6 +26,7 @@ export const SECTION_SOURCES: Readonly<Record<string, string>> = Object.freeze({
 
 export const SOURCE_LABELS: Readonly<Record<string, string>> = Object.freeze({
   openalex: 'OpenAlex',
+  arxiv: 'arXiv',
   ror: 'ROR',
   openaire: 'OpenAIRE',
 });

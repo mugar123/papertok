@@ -39,7 +39,7 @@ function Command({ className, ...props }: StyledProps<typeof CommandPrimitive>) 
  * elsewhere in this codebase (the sheet's `max-height` in `drawer.css`) and
  * has near-universal support, so going bare here matches that precedent.
  */
-function CommandDialog({ children, className, overlayClassName, finalFocus, title = 'Search', ...props }: Omit<ComponentProps<typeof Dialog>, 'children'> & { children?: ReactNode } & Pick<ComponentProps<typeof DialogContent>, 'className' | 'overlayClassName' | 'finalFocus'> & { title?: string }) {
+function CommandDialog({ children, className, overlayClassName, finalFocus, commandProps, title = 'Search', ...props }: Omit<ComponentProps<typeof Dialog>, 'children'> & { children?: ReactNode } & Pick<ComponentProps<typeof DialogContent>, 'className' | 'overlayClassName' | 'finalFocus'> & { title?: string; commandProps?: ComponentProps<typeof Command> }) {
   return (
     <Dialog {...props}>
       <DialogContent
@@ -49,7 +49,7 @@ function CommandDialog({ children, className, overlayClassName, finalFocus, titl
         className={cn('top-[8dvh] max-w-2xl translate-y-0 overflow-hidden p-0', className)}
       >
         <DialogTitle className="sr-only">{title}</DialogTitle>
-        <Command shouldFilter={false} loop>
+        <Command shouldFilter={false} loop {...commandProps}>
           {children}
         </Command>
       </DialogContent>
