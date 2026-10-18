@@ -105,23 +105,22 @@ test('the search asks OpenAlex for the fields the mapper reads, and nothing else
   assert.equal(url.searchParams.get('select'), OPENALEX_WORK_SEARCH_FIELDS.join(','));
   assert.equal(url.searchParams.get('page'), '3');
   assert.equal(url.searchParams.get('per-page'), '25');
-  assert.match(url.searchParams.get('filter')!, /^default\.search:"Quantum Physics" OR "Cosmology",type:article\|conference-paper$/);
+  assert.match(url.searchParams.get('filter')!, /^default\.search:"Quantum Physics" OR "Cosmology",type:article\|conference-paper\|review$/);
 });
 
 // OpenAlex renamed the type: `proceedings-article` matches nothing there any
 // more, so a filter carrying it dropped every conference paper without an
-// error. The feed's default asks for articles and conference papers; the paper
-// search widens to preprints and reviews, which is where an arXiv-only paper
-// or a survey lives.
+// error. Discovery also accepts scientific reviews; paper search widens this
+// list to include preprints.
 test('the type filter speaks OpenAlex\'s current vocabulary and never the retired one', () => {
   const adapter = new OpenAlexAdapter();
   const feedFilter = new URL(adapter.buildSearchUrl('segment anything')).searchParams.get('filter');
-  assert.equal(feedFilter, 'default.search:segment anything,type:article|conference-paper');
+  assert.equal(feedFilter, 'default.search:segment anything,type:article|conference-paper|review');
   assert.doesNotMatch(feedFilter, /proceedings-article/);
 
   const searchFilter = new URL(adapter.buildSearchUrl('segment anything', 1, { types: OPENALEX_SEARCH_TYPES }))
     .searchParams.get('filter');
-  assert.equal(searchFilter, 'default.search:segment anything,type:article|conference-paper|preprint|review');
+  assert.equal(searchFilter, 'default.search:segment anything,type:article|conference-paper|review|preprint');
 });
 
 test('a conference paper maps to the conference source type', () => {
@@ -191,14 +190,14 @@ test('economics and finance discovery includes preprints without changing other 
 
   for (const internalCategories of [['econ.EM'], ['q-fin.RM'], ['cs.LG', 'q-fin.PM']]) {
     assert.equal(filterFor({ internalCategories }),
-      'default.search:risk management,type:article|conference-paper|preprint');
+      'default.search:risk management,type:article|conference-paper|review|preprint');
   }
   assert.equal(filterFor({ internalCategories: ['cs.LG'] }),
-    'default.search:risk management,type:article|conference-paper');
+    'default.search:risk management,type:article|conference-paper|review');
   assert.equal(filterFor({ internalCategories: ['econ.GN'], types: ['article'] }),
     'default.search:risk management,type:article');
   assert.equal(filterFor({ internalCategories: ['q-fin.RM'], types: OPENALEX_SEARCH_TYPES }),
-    'default.search:risk management,type:article|conference-paper|preprint|review');
+    'default.search:risk management,type:article|conference-paper|review|preprint');
 });
 
 test('category discovery returns working papers and preserves their preprint status', async (t) => {

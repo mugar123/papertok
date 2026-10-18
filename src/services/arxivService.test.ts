@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { stripTypeScriptTypes } from 'node:module';
 import {
   ARXIV_ROUTE_TIMEOUT_MS,
   arxivUnreachableError,
@@ -10,6 +11,22 @@ import {
   clearCache,
   fetchPapers,
 } from './arxivService.ts';
+
+test('an ID lookup requests every result in an abstract-recovery batch instead of the default ten', async () => {
+  const source = await readFile(new URL('./arxivService.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('export async function fetchPapersByIds(');
+  const end = source.indexOf('\n/**', start);
+  const callback = stripTypeScriptTypes(source.slice(start, end).replace('export ', ''));
+  const requests: string[] = [];
+  const fetchByIds = new Function('isDev', 'ARXIV_DEV', 'ARXIV_PROD', 'cache', 'CACHE_TTL', 'fetchArxivData',
+    `${callback}\nreturn fetchPapersByIds;`)(false, '/api/arxiv', 'https://export.arxiv.org/api/query', new Map(), 300000,
+    async (url: string) => { requests.push(url); return []; });
+  const ids = Array.from({ length: 15 }, (_, i) => `2101.${10000 + i}`);
+  await fetchByIds(ids);
+  const params = new URL(requests[0]).searchParams;
+  assert.equal(params.get('id_list'), ids.join(','));
+  assert.equal(params.get('max_results'), '15');
+});
 
 // Under node the module sees no import.meta.env, so neither the Worker route nor
 // the dev proxy is configured -- exactly the state in which the dead corsproxy.io

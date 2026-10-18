@@ -201,6 +201,6 @@ test('the default OpenAlex provider searches with the wider type list', async ()
   // adapter test verifies ends up in the filter.
   assert.equal(typeof DEFAULT_PAPER_SEARCH_PROVIDERS.searchOpenAlex, 'function');
   assert.equal(typeof DEFAULT_PAPER_SEARCH_PROVIDERS.searchArxiv, 'function');
-  assert.deepEqual([...OPENALEX_SEARCH_TYPES], ['article', 'conference-paper', 'preprint', 'review']);
+  assert.deepEqual([...OPENALEX_SEARCH_TYPES], ['article', 'conference-paper', 'review', 'preprint']);
   assert.ok(ARXIV_SEARCH_TIMEOUT_MS < 6_000, 'inside the deadline the callers give the papers section');
 });

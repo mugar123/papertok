@@ -11,9 +11,12 @@ import { buildGuestFeedPlan } from '../utils/guestFeedPlan.ts';
 import { composeGuestPage, extendGuestPage, guestPageReady } from '../utils/guestFeedComposition.ts';
 import { enrichPapersBatch } from '../services/openAlexService.ts';
 import { enrichPubmedIds, mergeEuropePmcEnrichment } from '../services/europePmcService.ts';
+import { useFeedAbstractRecovery } from './useFeedAbstractRecovery.ts';
+import { classifyFeedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
 import {
   getOpenAlexEnrichmentId,
   mergeOpenAlexEnrichment,
+  mergeFeedAbstracts,
 } from '../utils/feedEnrichment.ts';
 
 const GUEST_PAGE_SIZE = 12;
@@ -48,7 +51,7 @@ function startGuestCandidateRequests(plan: GuestFeedPlan, { refresh = false } = 
       internalCategories: plan.pubmedCategories,
     }).then(result => result.papers));
   }
-  return requests;
+  return requests.map(request => request.then(classifyFeedPublications).then(papers => papers.filter(isFeedPublication)));
 }
 
 function dedupePapers<T extends Partial<Paper>>(papers: T[]) {
@@ -100,6 +103,10 @@ export function useGuestFeed({ areas = [], topics = [], enabled = true }: { area
   const requestIdRef = useRef(0);
   const plan = useMemo(() => buildGuestFeedPlan(areas, topics), [areas, topics]);
   const planKey = plan.key;
+  const applyRecoveredAbstracts = useCallback((records: Partial<Paper>[]) => {
+    setPapers(current => mergeFeedAbstracts(current, records));
+  }, []);
+  useFeedAbstractRecovery(enabled ? papers : [], applyRecoveredAbstracts, `${planKey}:${isRefreshing}`);
 
   // `refresh` is the reader's pull-to-refresh: the shown papers stay until
   // the new ones land, and arXiv is asked past its cache. `forceRefresh` is

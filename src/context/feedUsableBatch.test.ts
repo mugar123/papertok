@@ -12,6 +12,7 @@ import { takeFeedPage } from '../utils/feedEnrichment.ts';
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.ts';
 import { readProfileSignals } from '../utils/interactionProfile.ts';
 import { pickExplorationCategories } from '../utils/recommendationEngine.ts';
+import { classifyFeedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
 
 // Execute the actual loader callback with provider and React-state boundaries
 // injected. Source-pattern tests cannot catch an excluded page ending the feed.
@@ -57,6 +58,7 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     FEED_SOURCE_RENDER_BUDGET_MS: 5, OPTIONAL_SOURCE_RENDER_BUDGET_MS: 5,
     settleSourcesForFirstPaint: (promises: Iterable<unknown[]|PromiseLike<unknown[]>>, ms: number, ready: ((papers: unknown[]) => boolean)|undefined) => settleSourcesForFirstPaint(promises, ms, ready, { allTimeoutMs: 200 }),
     resolveWithin, fulfilledPaperLists, PaperBuilder, lateSourceCandidates, shouldAbortFeedLoad,
+    classifyFeedPublications, isFeedPublication,
     boredomLevel: ref(0), getBoredomThreshold: () => 5,
     likedPaperIdsRef: ref(new Set(known)), savedPaperIdsRef: ref(new Set()),
     readPaperIdsRef: ref(new Set()), notInterestedIdsRef: ref(new Set()),
@@ -80,6 +82,35 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
   };
   return { state, env, run };
 }
+
+test('the signed-in loader excludes the video books and book review before display, including pagination', async t => {
+  const video: Paper[] = [
+    { id: 'W568341909', doi: '10.1007/978-3-540-76956-9', title: 'Mathematical Theory of Feynman Path Integrals' },
+    { id: 'W93572185', doi: '10.1007/978-3-319-04870-3', title: 'Combinatorial algebraic geometry : Levico Terme, Italy 2013' },
+    { id: 'W1998067413', doi: '10.2307/2309205', title: 'Introduction to Algebraic Geometry.' },
+    { id: 'W3029239115', doi: '10.1016/j.indag.2021.09.002', title: 'Applications of Algebraic Combinatorics to Algebraic Geometry' },
+    { id: 'scientific-review', doi: '10.5555/review-feed', title: 'Synthetic scientific review', publicationType: 'review' },
+  ].map(work => ({ publicationType: 'article', abstract: '', authors: [], sources: { primary: 'openalex', enrichedBy: [] }, ...work }));
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    const dois = new URL(String(input)).searchParams.get('filter')!.split(',').map(value => value.slice(4));
+    return Response.json({ message: { 'total-results': dois.length, items: dois.map(DOI => ({ DOI, type: DOI.startsWith('10.1007/') ? 'book' : 'journal-article' })) } });
+  });
+  for (const page of [0, 1]) {
+    const { state, run } = feed({ fast: [], slow: video, page });
+    await run(page === 0);
+    assert.equal(state.error, null);
+    assert.deepEqual(state.papers.map(paper => paper.id), ['W3029239115', 'scientific-review']);
+  }
+});
+
+test('an entirely excluded page advances pagination without restoring books through the seen bypass', async () => {
+  const books = [{ ...records('book', 1)[0], publicationType: 'book' }];
+  const { state, run } = feed({ fast: books });
+  await run(true);
+  await tick();
+  assert.deepEqual(state.papers, []);
+  assert.equal(state.continuations.length, 1);
+});
 
 test('a complete unseen page paints without waiting for a slower source', async () => {
   const slow = deferred();

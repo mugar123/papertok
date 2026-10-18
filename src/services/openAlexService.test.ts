@@ -43,6 +43,14 @@ test('names local topic entities without changing their canonical category ident
   assert.equal(topic!._localTopic, true);
 });
 
+test('entity and followed-work normalization preserves book and scientific review types over venue types', () => {
+  const { papers } = slimWorksPage({ results: ['book', 'review'].map((type, index) => ({
+    id: `https://openalex.org/W${index}`, type, title: `Synthetic ${type}`,
+    primary_location: { source: { type: 'journal' } },
+  })) });
+  assert.deepEqual(papers.map(paper => paper.publicationType), ['book', 'review']);
+});
+
 /**
  * A subcategory used to be born with its area's tagline as its own
  * description, so every astro-ph.* page whose label has no exact Wikipedia

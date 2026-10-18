@@ -108,16 +108,19 @@ import {
   getOpenAlexEnrichmentId,
   mergeOpenAlexEnrichment,
   needsOpenAlexEnrichment,
+  mergeFeedAbstracts,
   takeFeedPage,
 } from '../utils/feedEnrichment.ts';
 import { resolveWithin, settleWithin, settleSourcesForFirstPaint, fulfilledPaperLists } from '../utils/asyncTiming.ts';
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.ts';
 import { lateSourceCandidates } from '../utils/feedLateCandidates.ts';
+import { classifyFeedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feedInteractions.ts';
 import { rankPreferences } from '../utils/preferenceRanking.ts';
 import { fetchICiteMetrics, mergeICiteEnrichment } from '../services/iCiteService.ts';
 import { awaitWithinGate } from '../utils/feedCitationGate.ts';
 import { enrichPubmedIds, mergeEuropePmcEnrichment } from '../services/europePmcService.ts';
+import { useFeedAbstractRecovery } from '../hooks/useFeedAbstractRecovery.ts';
 // topicRetrievalService carries a ~32 KB gzip topic table and only matters
 // once a feed load actually ranks followed topics, so it loads on first use
 // instead of riding in the boot graph of every route.
@@ -164,7 +167,7 @@ function readFeedSnapshot(userId: string | null | undefined, signature: string):
   if (!userId || !signature) return null;
   try {
     const snapshot = JSON.parse(localStorage.getItem(feedSnapshotKey(userId, signature)) || 'null');
-    if (!snapshot || Date.now() - snapshot.savedAt > FEED_SNAPSHOT_TTL_MS || !Array.isArray(snapshot.papers)) {
+    if (!snapshot || snapshot.publicationPolicy !== 2 || Date.now() - snapshot.savedAt > FEED_SNAPSHOT_TTL_MS || !Array.isArray(snapshot.papers)) {
       return null;
     }
     return snapshot;
@@ -184,6 +187,7 @@ function writeFeedSnapshot(userId: string | null | undefined, signature: string,
     localStorage.setItem(feedSnapshotKey(userId, signature), JSON.stringify({
       ...snapshot,
       papers,
+      publicationPolicy: 2,
       savedAt: Date.now(),
     }));
   } catch {
@@ -444,6 +448,25 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     };
     pendingSnapshotWritesRef.current.set(writeKey, { timer: setTimeout(flush, 500), flush });
   }, []);
+
+  const abstractRecoverySignature = feedPreferenceSignature(userPreferences);
+  const applyRecoveredAbstracts = useCallback((records: Partial<Paper>[]) => {
+    setPapers(current => {
+      const enriched = mergeFeedAbstracts(current, records);
+      if (enriched === current) return current;
+      const cachedMode = feedCache.current[feedMode];
+      if (cachedMode) {
+        feedCache.current[feedMode] = { ...cachedMode, papers: enriched };
+        scheduleFeedSnapshotWrite(user?.uid || null, abstractRecoverySignature, feedCache.current[feedMode]);
+      }
+      return enriched;
+    });
+  }, [feedMode, user?.uid, abstractRecoverySignature, scheduleFeedSnapshotWrite]);
+  useFeedAbstractRecovery(
+    feedRouteActive && recommendationProfileReady ? papers : [],
+    applyRecoveredAbstracts,
+    `${user?.uid}:${feedMode}:${abstractRecoverySignature}:${isRefreshing}`,
+  );
 
   useEffect(() => {
     const flush = () => {
@@ -1144,7 +1167,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
 
     const isAvailablePaper = (paper: Paper) => (
-      !notInterestedIdsRef.current.has(paper.id)
+      isFeedPublication(paper)
+      && !notInterestedIdsRef.current.has(paper.id)
       && !readPaperIdsRef.current.has(paper.id)
       && !likedPaperIdsRef.current.has(paper.id)
       && !savedPaperIdsRef.current.has(paper.id)
@@ -1518,6 +1542,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       }
       if (requestId !== feedRequestId.current) return;
 
+      newPapers = await classifyFeedPublications(newPapers);
+      if (requestId !== feedRequestId.current || feedSessionId.current !== activeSessionId) return;
+
       // Keep the raw candidates until here: an entirely excluded page still
       // proves that the provider has results and pagination should continue.
       let filtered = newPapers.filter(isAvailablePaper);
@@ -1527,6 +1554,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       if (filtered.length === 0 && newPapers.length > 0) {
         // First try bypassing sessionSeenPapers to avoid empty feed
         const bypassSeen = newPapers.filter((p) => 
+          isFeedPublication(p) &&
           !notInterestedIdsRef.current.has(p.id) && 
           !readPaperIdsRef.current.has(p.id) &&
           !likedPaperIdsRef.current.has(p.id) &&
