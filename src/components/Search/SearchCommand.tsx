@@ -349,15 +349,23 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   };
 
   let firstResultValue = '';
+  // One arrival sequence runs down the whole answer (SearchCommand.css, "The
+  // answer arriving"): a section starts on the step after the last row above it.
+  let arrivalStep = 0;
   const renderedSections = rankedSections.map((section) => {
     if (results[section].length === 0 || (activeSection !== 'all' && activeSection !== section)) return null;
     const SectionIcon = SECTION_ICONS[section];
     const sectionRows = sectionContent[section]();
     const visibleRows = activeSection === 'all' ? sectionRows.slice(0, 4) : sectionRows;
+    const showAll = activeSection === 'all' && sectionRows.length > 4;
     if (!firstResultValue) firstResultValue = visibleRows[0]?.props.value || '';
+    const arrivesAt = arrivalStep;
+    arrivalStep += 1 + visibleRows.length + (showAll ? 1 : 0);
     return (
       <CommandGroup
         key={section}
+        className="sc-group"
+        style={{ '--sc-arrive': arrivesAt }}
         heading={
           <span className="sc-heading">
             <SectionIcon size={11} /> {copy[section]} · {results[section].length}
@@ -365,7 +373,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
         }
       >
         {visibleRows}
-        {activeSection === 'all' && sectionRows.length > 4 && (
+        {showAll && (
           <CommandItem value={`show-all-${section}`} onSelect={() => changeSection(section)} className="sc-show-all">
             <span>Show all {sectionRows.length} {copy[section].toLowerCase()} <ArrowRight size={14} /></span>
           </CommandItem>
@@ -378,9 +386,6 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   const visibleCount = activeSection === 'all' ? totalResults : results[activeSection].length;
   const resultLabel = `${visibleCount} ${visibleCount === 1 ? 'result' : 'results'}`;
   const loadingMessage = activeSection === 'all' ? 'Searching all categories…' : `Searching ${copy[activeSection].toLowerCase()}…`;
-  const scopeHint = activeSection === 'all'
-    ? 'Choose a type to wait only for that category.'
-    : `Search ${copy[activeSection].toLowerCase()} by ${activeSection === 'papers' ? 'title' : 'name'}. Switch to All to include every category.`;
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} finalFocus={finalFocus} title={copy.placeholder} className={`sc-sheet${leavingBySelect ? ' sc-sheet--select' : ''}`} overlayClassName={`sc-scrim${leavingBySelect ? ' sc-scrim--select' : ''}`}
@@ -421,7 +426,8 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
             const unavailable = section !== 'all' && searchIssues.some(issue => issue.section === section);
             return <TabsTrigger key={section} value={section}
               aria-label={`${label}${unavailable ? ', unavailable' : hasQuery && !pending ? `, ${count} ${count === 1 ? 'result' : 'results'}` : ''}`}>
-              {label}{hasQuery && <span className="sc-count" aria-hidden="true">{unavailable ? '!' : pending ? '—' : count}</span>}
+              {/* Keyed so a count mounts afresh, and arrives, when it stops being a dash. */}
+              {label}{hasQuery && <span key={pending ? 'pending' : 'settled'} className={pending ? 'sc-count' : 'sc-count sc-count--arrived'} aria-hidden="true">{unavailable ? '!' : pending ? '—' : count}</span>}
             </TabsTrigger>;
           })}
         </TabsList>
@@ -438,7 +444,6 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
 
         <TabsContent value={activeSection} className="sc-panel">
           <CommandList className="sc-list">
-            {(!hasQuery || isPending) && <p className="sc-scope-hint">{scopeHint}</p>}
             {!hasQuery && <>
               {activeSection === 'all' && recents.length > 0 && <CommandGroup heading={<span className="sc-heading">Recent</span>}>
                 {recents.map(term => <CommandItem key={term} value={`recent-${term}`} onSelect={() => changeQuery(term)}>
@@ -456,13 +461,13 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
             </>}
 
             {isPending && (
-              <div className="sc-loading">
-                <p className="sc-status" aria-hidden="true"><CircleNotch size={14} className="spinning" aria-hidden="true" />{loadingMessage}</p>
-                <div className="sc-skeleton" aria-hidden="true">
-                  {[0, 1, 2, 3, 4].map(index => <div className="sc-skeleton-row" key={index}>
-                    <span className="sc-skeleton-icon" /><span className="sc-skeleton-line" /><span className="sc-skeleton-meta" />
-                  </div>)}
-                </div>
+              <div className="sc-loading" aria-hidden="true">
+                <p className="sc-loading-heading"><span className="sc-heading"><CircleNotch size={11} className="spinning" />{loadingMessage}</span></p>
+                {[0, 1, 2, 3, 4].map(index => <div className="sc-skeleton-row" key={index}>
+                  <span className="sc-skeleton-icon" />
+                  <span className="sc-skeleton-text"><span className="sc-skeleton-title" /><span className="sc-skeleton-byline" /></span>
+                  <span className="sc-skeleton-meta" />
+                </div>)}
               </div>
             )}
             {visibleIssues.length > 0 && hasQuery && <div className="sc-status sc-status--warn"><WarningCircle size={14} />

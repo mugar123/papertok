@@ -42,7 +42,26 @@ test('rows are two lines at a finger\'s height, with the meta shown rather than 
   assert.match(phone, /\.sc-sheet \[cmdk-item\] > \.sc-meta \{[^}]*grid-row: 2;/);
   // The old phone rule hid the year and the citations; nothing may bring it back.
   assert.doesNotMatch(phone, /\.sc-meta \{\s*display: none;/);
-  assert.match(phone, /\.sc-skeleton-row \{[^}]*min-height: 52px;/);
+});
+
+test('the wait stands in for a phone row at a phone row\'s size', () => {
+  // The 52px this file used to give the wait on a phone sat in the phone block
+  // near the top and lost to the base rule declared after it: the wait stayed
+  // 36px tall over rows of 53. The override now follows the rule it overrides.
+  const base = css.search(/^\.sc-skeleton-row \{/m);
+  const override = css.search(/@media \(max-width: 640px\) \{\s*\.sc-skeleton-row \{/);
+  assert.ok(base > 0 && override > base, 'the phone override comes after the base rule');
+  // The inset a phone row has.
+  assert.match(phone, /\.sc-sheet \[cmdk-item\] \{[^}]*padding: var\(--space-2\) var\(--space-3\);/);
+  assert.match(phone, /\.sc-skeleton-row \{\s*padding: var\(--space-2\) var\(--space-3\);/);
+});
+
+test('the type strip scrolls sideways and only sideways', () => {
+  // At the shared `bottom: -1px` the active type's rule overhung the strip's
+  // scroll box by a pixel, so the strip scrolled vertically too and a vertical
+  // drag on a phone moved the types up and down.
+  assert.match(css, /\.sc-types \{[^}]*overflow-x: auto;/);
+  assert.match(css, /\.sc-types \[data-slot='tabs-indicator'\] \{ bottom: 0; \}/);
 });
 
 test('Cancel exists on the phone and only there', () => {
