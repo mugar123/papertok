@@ -48,10 +48,9 @@ test('both surfaces report analytics only after their search settles', () => {
   assert.match(paletteSearch, /if \(controller\.signal\.aborted\) return;/);
 });
 
-test('the palette hides stale queries while publishing independent section counts', () => {
+test('the palette hides stale queries while providers collect independent sections', () => {
   assert.match(page, /hasVisibleResults && !searchPending/);
-  assert.match(paletteSearch, /answer\.term === query\.trim\(\)/);
-  assert.match(paletteSearch, /const snapshot = current \? answer\.snapshot : EMPTY_SEARCH/);
+  assert.match(paletteSearch, /answer\?\.term === query\.trim\(\)/);
   assert.match(paletteSources, /if \(!signal\.aborted\) onUpdate\(snapshot\)/);
   assert.match(paletteSources, /pending: snapshot\.pending\.filter/);
 });
@@ -471,12 +470,12 @@ function groupedRows(activeSection = 'all') {
   let chosen = activeSection;
   const data = { papers: Array.from({ length: 10 }, (_, id) => ({ id })), authors: Array.from({ length: 6 }, (_, id) => ({ id })), topics: [], institutions: [], projects: [] };
   const elements = vm.runInNewContext(compileGrouping, {
-    React, Children: React.Children, cloneElement: React.cloneElement, results: data,
-    rankedSections: Object.keys(data), activeSection, cascadeDone: true, firstPaint: { sections: Object.keys(data) }, ENTER_STAGGER_CAP: 10,
+    React, results: data,
+    rankedSections: Object.keys(data), activeSection,
     SECTION_ICONS: Object.fromEntries(Object.keys(data).map(key => [key, 'svg'])),
     copy: { papers: 'Papers', authors: 'Authors', topics: 'Topics', institutions: 'Institutions', projects: 'Projects' },
     sectionContent: Object.fromEntries(Object.entries(data).map(([section, items]) => [section, () => items.map(item => React.createElement('row', { key: item.id, value: `${section}-${item.id}` }))])),
-    CommandGroup: 'group', CommandItem: 'row', ArrowRight: 'svg', setActiveSection: (value: string) => { chosen = value; },
+    CommandGroup: 'group', CommandItem: 'row', ArrowRight: 'svg', changeSection: (value: string) => { chosen = value; },
   }) as React.ReactElement<{ children: React.ReactNode }>[];
   return { groups: elements.filter(Boolean), chosen: () => chosen };
 }
@@ -497,10 +496,10 @@ test('All caps each section at four rows and Show all opens that type without na
 
 test('the type strip retains all sections when a settled count is zero', () => {
   const strip = palette.slice(palette.indexOf('<TabsList'), palette.indexOf('</TabsList>'));
-  assert.match(strip, /orderedSections\.map\(section =>/);
+  assert.match(strip, /\['all', \.\.\.orderedSections\]/);
   assert.doesNotMatch(strip, /\.filter\(/);
-  assert.match(strip, /disabled=\{!pending && count === 0\}/);
-  assert.match(strip, /aria-busy="true"/);
+  assert.doesNotMatch(strip, /disabled=/, 'empty types remain available for the next query');
+  assert.match(strip, /pending \? '—' : count/);
   assert.match(strip, /aria-label=/);
 });
 
@@ -535,7 +534,7 @@ test('changing account clears recent queries before a closed palette can save th
 });
 
 
-test('the default keyboard target follows a later first result, but preserves manual choices and touch deselection', () => {
+test('the default keyboard target follows the selected view, preserving manual choices and touch deselection', () => {
   const expression = componentSource.match(/value: (hasQuery && !manualSelection[^,]+),/)?.[1];
   assert.ok(expression);
   const state = { hasQuery: true, firstResultValue: 'author-karpathy', selectedValue: 'paper-earlier' };
@@ -545,31 +544,9 @@ test('the default keyboard target follows a later first result, but preserves ma
 });
 
 
-test('a later source does not extend the initial entrance animation', t => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
-  const start = componentSource.indexOf('  const hasResults =');
-  const end = componentSource.indexOf('  const go =', start);
-  const effect = ts.transpileModule(componentSource.slice(start, end), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-  let previous: unknown[] = [];
-  let cleanup: (() => void) | undefined;
-  let cascadeDone = false;
-  const render = (totalResults: number) => vm.runInNewContext(effect, {
-    totalResults, cascadeDone, open: true, ENTER_STAGGER_CAP: 10, ENTER_STEP_MS: 24, ENTER_RISE_MS: 260,
-    setTimeout, clearTimeout, setCascadeDone: (done: boolean) => { cascadeDone = done; },
-    useEffect: (run: () => (() => void) | undefined, dependencies: unknown[]) => {
-      if (dependencies.length === previous.length && dependencies.every((value, i) => Object.is(value, previous[i]))) return;
-      cleanup?.();
-      previous = [...dependencies];
-      cleanup = run();
-    },
-  });
-  render(0);
-  render(2);
-  t.mock.timers.tick(300);
-  render(4);
-  t.mock.timers.tick(199);
-  assert.equal(cascadeDone, false);
-  t.mock.timers.tick(1);
-  assert.equal(cascadeDone, true, 'the initial cascade ends on its original clock despite additional results');
-  cleanup?.();
+test('typing preserves the selected type and the type strip is available before a query', () => {
+  const changeQuery = componentSource.slice(componentSource.indexOf('  const changeQuery ='), componentSource.indexOf('  const renderFollow ='));
+  assert.doesNotMatch(changeQuery, /setActiveSection/);
+  const aboveStrip = componentSource.slice(componentSource.indexOf('</CommandInput>'), componentSource.indexOf('<TabsList'));
+  assert.doesNotMatch(aboveStrip, /hasQuery/);
 });
