@@ -5,6 +5,7 @@ import type { SearchSnapshot } from '../services/entitySearchService.ts';
 import { useAnalyticsConsent } from '../context/AnalyticsContext.tsx';
 
 const SEARCH_DEBOUNCE_MS = 320;
+const INITIAL_RESULT_WINDOW_MS = 250;
 
 export function useEntitySearch(enabled: boolean, knownPapers: Paper[]) {
   const { trackEvent } = useAnalyticsConsent();
@@ -16,10 +17,35 @@ export function useEntitySearch(enabled: boolean, knownPapers: Paper[]) {
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
+    let buffered: SearchSnapshot;
+    let revealTimer: ReturnType<typeof setTimeout> | undefined;
+    let revealed = false;
+    const cancelReveal = () => clearTimeout(revealTimer);
+    controller.signal.addEventListener('abort', cancelReveal, { once: true });
+    const publish = (snapshot: SearchSnapshot) => {
+      if (controller.signal.aborted) return;
+      buffered = snapshot;
+      if (revealed) {
+        setAnswer({ term, snapshot });
+      } else if (revealTimer === undefined) {
+        if (!Object.values(snapshot.results).some(items => items.length > 0)) {
+          setAnswer({ term, snapshot });
+          return;
+        }
+        // One window from the first usable answer; later sources cannot extend it.
+        revealTimer = setTimeout(() => {
+          controller.signal.removeEventListener('abort', cancelReveal);
+          if (controller.signal.aborted) return;
+          revealed = true;
+          setAnswer({ term, snapshot: buffered });
+        }, INITIAL_RESULT_WINDOW_MS);
+      }
+    };
     const snapshot = await searchEntities(term, {
       signal: controller.signal, knownPapers: papers,
-      onUpdate: snapshot => setAnswer({ term, snapshot }),
+      onUpdate: publish,
     });
+    if (revealTimer === undefined) controller.signal.removeEventListener('abort', cancelReveal);
     if (controller.signal.aborted) return;
     const count = Object.values(snapshot.results).reduce((total, list) => total + list.length, 0);
     trackEvent('search_performed', { search_type: 'all', result_count: count, has_results: count > 0 });
