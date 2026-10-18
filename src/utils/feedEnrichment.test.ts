@@ -5,6 +5,7 @@ import {
   mergeOpenAlexEnrichment,
   needsOpenAlexEnrichment,
   takeFeedPage,
+  preserveFeedAbstracts,
 } from './feedEnrichment.ts';
 
 test('normalizes arXiv versions for OpenAlex enrichment', () => {
@@ -138,4 +139,14 @@ test('a paper reachable only by its DOI is worth enriching', () => {
     doi: '10.1142/S0218271826500495',
     sources: { primary: 'nasa-ads', enrichedBy: ['openalex'] },
   }), false);
+});
+
+test('late metadata keeps displayed abstract and summary stable without losing citation updates', () => {
+  const current = [{ id: 'W2020715063', title: 'Effective action for strongly correlated electron systems', authors: [], abstract: '', summary: '', sources: { primary: 'openalex', enrichedBy: [] } }] as import('../models/Paper.ts').Paper[];
+  const enriched = [{ ...current[0], abstract: 'Late text', summary: 'Late text', citationCount: 16 }];
+  const result = preserveFeedAbstracts(current, enriched);
+  assert.equal(result[0].abstract, '');
+  assert.equal(result[0].summary, '');
+  assert.equal(result[0].citationCount, 16);
+  assert.equal(preserveFeedAbstracts(current, [{ ...current[0], abstract: 'Late text' }])[0], current[0]);
 });

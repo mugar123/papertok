@@ -131,3 +131,14 @@ export function mergeOpenAlexEnrichment(papers: Paper[], enrichmentById: Record<
     return paperFieldsEqual(merged, paper) ? paper : merged;
   });
 }
+
+// Metadata can arrive after admission; the text the reader saw must stay stable.
+export function preserveFeedAbstracts(current: Paper[], enriched: Paper[]) {
+  if (current === enriched) return current;
+  return enriched.map((paper, index) => {
+    const previous = current[index];
+    if (paper.abstract === previous.abstract && paper.summary === previous.summary) return paper;
+    const stable = { ...paper, abstract: previous.abstract, summary: previous.summary };
+    return paperFieldsEqual(stable, previous) ? previous : stable;
+  });
+}
