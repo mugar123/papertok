@@ -48,7 +48,7 @@ export const OPENALEX_WORK_SEARCH_FIELDS = Object.freeze([
 // silently returning journal articles alone -- "Segment Anything" (ICCV 2023)
 // and every other NeurIPS/CVPR/ICCV paper was invisible to the feed and to the
 // search. `scripts/diagnostics/search-coverage-check.mjs` re-runs the probe.
-export const OPENALEX_PUBLISHED_TYPES = Object.freeze(['article', 'conference-paper']);
+export const OPENALEX_PUBLISHED_TYPES = Object.freeze(['article', 'conference-paper', 'review']);
 
 // What a paper SEARCH accepts. A reader looking up a specific paper expects the
 // arXiv preprint when that is the record OpenAlex carries -- FC-CLIP's most
@@ -56,7 +56,7 @@ export const OPENALEX_PUBLISHED_TYPES = Object.freeze(['article', 'conference-pa
 // a survey. Category discovery also includes economics and finance preprints,
 // whose working papers may have no arXiv copy. Queries without those categories
 // keep the narrower list; datasets, theses, and paratext are still left out here.
-export const OPENALEX_SEARCH_TYPES = Object.freeze([...OPENALEX_PUBLISHED_TYPES, 'preprint', 'review']);
+export const OPENALEX_SEARCH_TYPES = Object.freeze([...OPENALEX_PUBLISHED_TYPES, 'preprint']);
 
 export class OpenAlexAdapter {
   declare name: string;

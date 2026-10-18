@@ -162,7 +162,7 @@ export function getPublicEntityUrl(typeOrEntity: EntityInput | string | undefine
   return path ? getAbsoluteShareUrl(path, input.options || options) : null;
 }
 
-function normalizeDoi(value: unknown) {
+export function normalizeDoi(value: unknown) {
   const doi = cleanText(value)
     .replace(/^doi:\s*/i, '')
     .replace(/^(?:https?:\/\/)?(?:dx\.)?doi\.org\//i, '');
@@ -170,7 +170,7 @@ function normalizeDoi(value: unknown) {
   return doi.toLowerCase();
 }
 
-function normalizeArxivId(value: unknown) {
+export function normalizeArxivId(value: unknown) {
   const arxivId = cleanText(value)
     .replace(/^arxiv:\s*/i, '')
     .replace(/^(?:https?:\/\/)?(?:export\.)?arxiv\.org\/(?:abs|pdf)\//i, '')

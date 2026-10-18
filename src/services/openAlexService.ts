@@ -1735,7 +1735,7 @@ function formatOpenAlexWorkAsPaper(work: OpenAlexWork): Paper {
     authors,
     institutions,
     year: work.publication_date ? new Date(work.publication_date).getFullYear() : new Date().getFullYear(),
-    publicationType: work.primary_location?.source?.type || 'journal',
+    publicationType: work.type || work.primary_location?.source?.type || 'journal',
     publicationStatus: openAlexPublicationStatus(work),
     openAccess: work.open_access?.is_oa,
     pdfUrl: work.open_access?.oa_url,
