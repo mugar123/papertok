@@ -258,16 +258,19 @@
   min-height: 36px;
   padding: var(--space-2);
   opacity: 0;
-  animation: fadeIn 200ms ease-out forwards;
+  animation: fadeIn 150ms var(--ease-out) forwards;
 }
 
 /* The stagger lives in the stylesheet rather than in an inline custom property,
    because the count is fixed here and a `style={{ '--index': n }}` would owe
-   `src/styles/designTokens.test.js` an entry in INJECTED_PROPERTIES. */
-.sc-skeleton-row:nth-child(2) { animation-delay: 45ms; }
-.sc-skeleton-row:nth-child(3) { animation-delay: 90ms; }
-.sc-skeleton-row:nth-child(4) { animation-delay: 135ms; }
-.sc-skeleton-row:nth-child(5) { animation-delay: 180ms; }
+   `src/styles/designTokens.test.js` an entry in INJECTED_PROPERTIES.
+   The whole shape is in by 270ms. At 200ms and 45ms steps it took 440ms,
+   which the 320ms debounce plus a fast source can come close to: the answer
+   was landing on a wait that had barely finished drawing itself. */
+.sc-skeleton-row:nth-child(2) { animation-delay: 30ms; }
+.sc-skeleton-row:nth-child(3) { animation-delay: 60ms; }
+.sc-skeleton-row:nth-child(4) { animation-delay: 90ms; }
+.sc-skeleton-row:nth-child(5) { animation-delay: 120ms; }
 
 .sc-skeleton-row > span {
   height: 9px;
@@ -313,27 +316,13 @@
 }
 
 /* ─── The answer arriving ───
-   Everything lands in one commit, so without this the skeleton vanishes and a
-   finished sheet is simply there. Each heading and row rises into place on a
-   single cascade that runs down the whole list — see `renderedSections` in
-   `SearchCommand.jsx`, which is where the index comes from.
+   Each source answers on its own clock, and its section is inserted when it
+   does. Each heading and its rows rise into place on a cascade that starts
+   at that section's heading — see `ENTER_STAGGER_CAP` in
+   `SearchCommand.tsx`, which is where the index comes from.
 
    6px and 260ms: far enough that the eye reads it as arriving, short enough
-   that the first row is legible before the last one has landed.
-
-   The same cascade also carries the sheet's own opening, top to bottom: the
-   field at index 0, the `Sugerencias` heading at 1, the four suggestions at
-   2–5, the hint at 6. Two of those were added late. Before, the opening ran in
-   three tiers at once — the sheet travelling, the suggestion rows rising, and
-   the field and the hint frozen at full opacity between them — which is why it
-   read as a box being switched on with some of its contents animated, rather
-   than as one thing arriving.
-
-   The 6px is a lag, not a counter-motion, and it is worth being explicit about
-   which: the sheet comes down from -24px, so a row that starts 6px BELOW its
-   resting place is at -18px absolute and therefore travels less far than the
-   sheet it sits in. Flip the sign to "start above" and the rows would overtake
-   the sheet on the way down, which is what parallax is not. */
+   that the first row is legible before the last one has landed. */
 
 @keyframes scEnterRise {
   from {
@@ -360,6 +349,29 @@
   .sc-enter {
     opacity: 1;
     animation: none;
+  }
+}
+
+/* The sheet follows its answer down instead of jumping to it. Measured
+   before: 196px of skeleton, 147px when the first section landed, 540px a
+   frame later, footer and bottom edge teleporting with each. cmdk measures
+   the list's content into `--cmdk-list-height` on every resize; until it has,
+   the variable is unset, the declaration is invalid and the height stays
+   `auto`, so the opening never animates from zero. `content-box` because the
+   variable is the content alone and the list has the `p-1` of its utility
+   class around it. `max-h-[60svh]` still clamps a long answer into a scroll.
+   Not on a phone: there the sheet is the screen and the list fills it. */
+@media (min-width: 641px) {
+  .sc-sheet [cmdk-list] {
+    box-sizing: content-box;
+    height: var(--cmdk-list-height);
+    transition: height 220ms var(--ease-out-cubic);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sc-sheet [cmdk-list] {
+    transition: none;
   }
 }
 
