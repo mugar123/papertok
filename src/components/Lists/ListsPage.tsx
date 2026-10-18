@@ -1071,6 +1071,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     saveStoredLists(user.uid, lists);
   }, [user?.uid, lists]);
 
+  const enterList = (list: OwnList) => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    openList(list);
+  };
+
   const closeExpandedList = () => {
     metadataRequestId.current += 1;
     setExpandedList(null);
@@ -1963,7 +1968,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                 transition={isNew ? { ...cardMotion.transition, delay: 0.14 } : cardMotion.transition}
                 key={list.id}
                 className={`list-card${accent ? '' : ' list-card--uncoloured'}`}
-                onClick={() => openList(list)}
+                onClick={() => enterList(list)}
                 style={accent ? { '--list-accent': accent } : undefined}
               >
                 <div className="list-card-preview">
@@ -1984,7 +1989,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                       <button
                         type="button"
                         className="list-card-name-btn"
-                        onClick={(e) => { e.stopPropagation(); openList(list); }}
+                        onClick={(e) => { e.stopPropagation(); enterList(list); }}
                       >
                         {list.name}
                       </button>

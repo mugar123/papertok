@@ -1698,7 +1698,7 @@ const PaperCard = memo(function PaperCard({
         </div>
       )}
 
-      <article ref={sheetRef} className="pc-sheet" data-connections={slotAway || undefined} style={{ '--area-accent': areaAccentForPaper(paper) }}>
+      <article ref={sheetRef} className="pc-sheet" data-connections={relatedInline || undefined} style={{ '--area-accent': areaAccentForPaper(paper) }}>
         {WatermarkIcon && (
           <span className="pc-watermark" aria-hidden="true">
             <WatermarkIcon size={220} weight="fill" />
