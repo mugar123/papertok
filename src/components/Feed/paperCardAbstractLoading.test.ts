@@ -18,13 +18,13 @@ test('SOURCE: a card whose abstract is on its way says so, then crosses to the t
 
 // A live region that is removed, or inserted already holding its words, is
 // not reliably spoken, so the faces above cannot carry the status themselves.
-test('SOURCE: one region mounted with the card speaks the wait and how it ended, for the card on screen', async () => {
+// What the region says is tested with its rules in utils/feedAbstractWait.test.ts.
+test('SOURCE: one region mounted with the card speaks the wait and how it ended', async () => {
   const jsx = stripComments(await read('./PaperCard.tsx'));
   const slotStart = jsx.indexOf('<div ref={slotRef}');
   const actions = jsx.indexOf('<div className="pc-action-bar">', slotStart);
   const faces = jsx.slice(slotStart, jsx.lastIndexOf('</AnimatePresence>', actions));
   assert.doesNotMatch(faces, /role=/, 'the faces that come and go have no live role');
   assert.match(jsx.slice(slotStart, actions), /<\/AnimatePresence>\s*<\/div>\s*<\/div>\s*(?:\{\}\s*)?<span className="visually-hidden" role="status">\{abstractStatus\}<\/span>/);
-  assert.match(jsx, /const abstractStatus = !isCardVisible \? '' : awaitingAbstract \? 'Loading abstract' : abstractWait\.ended;/);
-  assert.match(jsx, /ended: !awaitingAbstract && isCardVisible \? \(abstractText \? 'Abstract loaded' : 'No abstract available'\) : ''/);
+  assert.match(jsx, /const abstractStatus = abstractStatusText\(/);
 });

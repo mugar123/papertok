@@ -13,6 +13,32 @@ export function abstractWaitIds(waits: AbstractWaits) {
   return new Set(waits.flatMap(ids => [...ids]));
 }
 
+/** What a card's status region can say about its abstract wait. */
+export type AbstractAnnouncement = { readonly awaiting: boolean; readonly ended: string };
+
+/**
+ * A card's announcement after a render; `previous` is undefined on the first.
+ * How a wait ended is said only on the card on screen, and is cleared when the
+ * card leaves it, so returning does not repeat it: the abstract area shows the
+ * result when the reader gets there. Returns `previous` itself when nothing
+ * changed, so a component can update it during render.
+ */
+export function nextAbstractAnnouncement(
+  previous: AbstractAnnouncement | undefined,
+  { awaiting, hasText, visible }: { awaiting: boolean; hasText: boolean; visible: boolean },
+): AbstractAnnouncement {
+  if (!previous) return { awaiting, ended: '' };
+  if (previous.awaiting !== awaiting) {
+    return { awaiting, ended: !awaiting && visible ? (hasText ? 'Abstract loaded' : 'No abstract available') : '' };
+  }
+  return previous.ended && !visible ? { awaiting, ended: '' } : previous;
+}
+
+/** The region's words: only the card on screen speaks. */
+export function abstractStatusText(announcement: AbstractAnnouncement, visible: boolean) {
+  return !visible ? '' : announcement.awaiting ? 'Loading abstract' : announcement.ended;
+}
+
 /**
  * Opens a wait for shown cards that a running request can still fill. It
  * closes when `sources` settle or after ABSTRACT_WAIT_MS. The returned function

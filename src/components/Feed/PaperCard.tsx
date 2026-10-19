@@ -120,6 +120,7 @@ import { CARD_DURATION_MS } from '../../utils/scrollTween.ts';
 import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper } from '../../utils/areaAccent.ts';
 import { accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paperStatus.ts';
 import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.ts';
+import { abstractStatusText, nextAbstractAnnouncement } from '../../utils/feedAbstractWait.ts';
 import { buildPaperTopicTags } from '../../utils/paperTopicTags.ts';
 
 /**
@@ -917,22 +918,15 @@ const PaperCard = memo(function PaperCard({
     ? `abstract:${abstractText.length}:${abstractText.slice(0, 24)}`
     : abstractLoading ? 'abstract:loading' : 'abstract:none';
 
-  // What the abstract's live region says, on the card the reader is on only:
-  // "Loading abstract" while a feed request may still supply it, then how the
-  // wait ended. A wait that ends off screen is not spoken; the abstract area
-  // shows the result when the reader gets there. Adjusted during render, like
-  // `figuresPaperKey` above, so the words change in the frame the face does.
-  const awaitingAbstract = abstractLoading && !abstractText;
-  const [abstractWait, setAbstractWait] = useState({ awaiting: awaitingAbstract, ended: '' });
-  if (abstractWait.awaiting !== awaitingAbstract) {
-    setAbstractWait({
-      awaiting: awaitingAbstract,
-      ended: !awaitingAbstract && isCardVisible ? (abstractText ? 'Abstract loaded' : 'No abstract available') : '',
-    });
-  } else if (abstractWait.ended && !isCardVisible) {
-    setAbstractWait({ awaiting: awaitingAbstract, ended: '' });
-  }
-  const abstractStatus = !isCardVisible ? '' : awaitingAbstract ? 'Loading abstract' : abstractWait.ended;
+  // The abstract's live region says "Loading abstract" while a feed request
+  // may still supply it, then how the wait ended (nextAbstractAnnouncement).
+  // Adjusted during render, like `figuresPaperKey` above, so the words change
+  // in the frame the face does.
+  const abstractRender = { awaiting: abstractLoading && !abstractText, hasText: Boolean(abstractText), visible: isCardVisible };
+  const [abstractAnnouncement, setAbstractAnnouncement] = useState(() => nextAbstractAnnouncement(undefined, abstractRender));
+  const nextAnnouncement = nextAbstractAnnouncement(abstractAnnouncement, abstractRender);
+  if (nextAnnouncement !== abstractAnnouncement) setAbstractAnnouncement(nextAnnouncement);
+  const abstractStatus = abstractStatusText(nextAnnouncement, isCardVisible);
 
   // The paragraph the panel is showing, the height it stands at, and the way to
   // end a resize that is still running.
