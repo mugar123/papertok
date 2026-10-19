@@ -917,6 +917,23 @@ const PaperCard = memo(function PaperCard({
     ? `abstract:${abstractText.length}:${abstractText.slice(0, 24)}`
     : abstractLoading ? 'abstract:loading' : 'abstract:none';
 
+  // What the abstract's live region says, on the card the reader is on only:
+  // "Loading abstract" while a feed request may still supply it, then how the
+  // wait ended. A wait that ends off screen is not spoken; the abstract area
+  // shows the result when the reader gets there. Adjusted during render, like
+  // `figuresPaperKey` above, so the words change in the frame the face does.
+  const awaitingAbstract = abstractLoading && !abstractText;
+  const [abstractWait, setAbstractWait] = useState({ awaiting: awaitingAbstract, ended: '' });
+  if (abstractWait.awaiting !== awaitingAbstract) {
+    setAbstractWait({
+      awaiting: awaitingAbstract,
+      ended: !awaitingAbstract && isCardVisible ? (abstractText ? 'Abstract loaded' : 'No abstract available') : '',
+    });
+  } else if (abstractWait.ended && !isCardVisible) {
+    setAbstractWait({ awaiting: awaitingAbstract, ended: '' });
+  }
+  const abstractStatus = !isCardVisible ? '' : awaitingAbstract ? 'Loading abstract' : abstractWait.ended;
+
   // The paragraph the panel is showing, the height it stands at, and the way to
   // end a resize that is still running.
   const lastAbstractParagraph = useRef<HTMLParagraphElement | null>(null);
@@ -2135,7 +2152,6 @@ const PaperCard = memo(function PaperCard({
               >
                 <EmptyState
                   as="p"
-                  role="status"
                   art={<Petri pose="flask" className="pc-abstract-empty-petri" />}
                   title={'Loading abstract'}
                 >
@@ -2193,6 +2209,10 @@ const PaperCard = memo(function PaperCard({
         </div>
         </div>
 
+        {/* Mounted with the card, outside the faces: they leave and arrive
+            with the cross-fade and the map, and a region that is removed, or
+            inserted already holding its words, is not reliably spoken. */}
+        <span className="visually-hidden" role="status">{abstractStatus}</span>
 
         {/* Two reading actions first, then the utilities behind a rule: what to
             read is the decision, sharing and related work are afterthoughts. */}
