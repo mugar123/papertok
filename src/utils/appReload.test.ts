@@ -166,7 +166,7 @@ test('SOURCE: the app marks every reload it gives itself, and applies the policy
   // The plugin's own reload on `activated` is off; each worker that takes
   // control is checked against the page's entry chunk instead.
   assert.match(main, /registerSW\(\{[\s\S]*?onNeedReload\(\) \{\}/);
-  assert.match(main, /const entryUrl = import\.meta\.url\s*\n\s*watchWorkerActivations\(navigator\.serviceWorker, \(\) => \{\s*void noteDeployActivated\(entryUrl\)/);
+  assert.match(main, /const entryUrl = import\.meta\.url\s*\n\s*try \{\s*watchWorkerActivations\(navigator\.serviceWorker, \(\) => \{\s*void noteDeployActivated\(entryUrl\)/);
   // And the policy runs before React mounts, because the feed reads storage on
   // its first render.
   const policyAt = main.indexOf('applyReloadPolicy()');

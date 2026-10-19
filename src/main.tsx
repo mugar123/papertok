@@ -146,9 +146,15 @@ registerSW({
 // Read here, in the entry module: this is the entry chunk's URL, which names
 // the build. In any other module it could name a shared chunk.
 const entryUrl = import.meta.url
-watchWorkerActivations(navigator.serviceWorker, () => {
-  void noteDeployActivated(entryUrl)
-})
+try {
+  watchWorkerActivations(navigator.serviceWorker, () => {
+    void noteDeployActivated(entryUrl)
+  })
+} catch {
+  // A browser that blocks service workers may throw when
+  // `navigator.serviceWorker` is read. That must not stop the boot, and there
+  // is no deploy to watch.
+}
 
 // The phone-side record of the tab bar's taps (diagnostics/tapDiagnostics.ts):
 // behind `?tapdiag=1`, remembered for the tab's session so the app's own
