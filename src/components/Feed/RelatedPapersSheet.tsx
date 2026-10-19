@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode, PointerEvent as ReactPointerEvent } from 'react';
+import type { CSSProperties, ReactNode, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import type { Paper, PaperAuthor } from '../../models/Paper.ts';
 import type { CitationGraph } from '../../services/citationGraphService.ts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -7,6 +7,7 @@ import {
   ArrowRight,
   CaretRight,
   Crosshair,
+  DownloadSimple,
   GitBranch,
   Graph,
   Stack,
@@ -14,9 +15,10 @@ import {
   X,
 } from '@phosphor-icons/react';
 import { useReducedMotion } from 'framer-motion';
-import { getCitationGraph, getCitationGraphDoi } from '../../services/citationGraphService.ts';
+import { citationGraphExportPapers, getCitationGraph, getCitationGraphDoi } from '../../services/citationGraphService.ts';
+import { downloadCitationFile } from '../../utils/readingLibrary.ts';
 import { isSignInRequiredError } from '../../utils/signInRequired.ts';
-import { CITATION_MAP_GEOMETRY, buildCitationMapLayout } from '../../utils/citationMap.ts';
+import { CITATION_MAP_GEOMETRY, buildCitationMapLayout, nearestCitationLink } from '../../utils/citationMap.ts';
 import { STAR_PATH } from '../../utils/starPath.ts';
 import { areaAccentForPaper } from '../../utils/areaAccent.ts';
 import {
@@ -174,6 +176,7 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
   const mountedRef = useRef(false);
   const pendingSelectionRef = useRef<{ paper: Paper; key: string } | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const viewToggleRef = useRef<HTMLButtonElement | null>(null);
   const walkTimersRef = useRef<number[]>([]);
   const walkingRef = useRef(false);
   const resizeRef = useRef<{ disconnect: () => void } | null>(null);
@@ -203,7 +206,7 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
     if (!focusedKey) return undefined;
     const dismiss = (event: PointerEvent) => {
       if (event.target instanceof Element
-        && event.target.closest('.graph-peek, .graph-node, .graph-edge-hit, .related-item')) return;
+        && event.target.closest('.graph-peek, .graph-plot, .related-item')) return;
       setFocusedKey(null);
     };
     document.addEventListener('pointerdown', dismiss);
@@ -332,6 +335,7 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
     references: buildRelatedPaperEntries(graph.references),
     citations: buildRelatedPaperEntries(graph.citations),
   }), [graph]);
+  const offMapCount = listEntries.references.length + listEntries.citations.length - layout.nodes.length;
   const focusedListPaper = useMemo(() => {
     if (focusedNode) return focusedNode.paper;
     const all = [...listEntries.references, ...listEntries.citations];
@@ -531,9 +535,52 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
     );
   };
 
+  // A press on the map picks the link nearest it; the stars' own buttons are
+  // the way in for the keyboard and assistive tech.
+  const linkAt = (event: ReactMouseEvent<HTMLDivElement>, reach: number) => {
+    const plot = event.currentTarget.getBoundingClientRect();
+    return nearestCitationLink(
+      layout.nodes,
+      { x: layout.centerX, y: layout.centerY },
+      { x: event.clientX - plot.left, y: event.clientY - plot.top },
+      reach,
+    );
+  };
+  const pickLink = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (graphStatus !== 'ready' || selectedPaperKey || isLeaving) return;
+    if (event.target instanceof Element && event.target.closest('.graph-node')) return;
+    const key = linkAt(event, 20);
+    setFocusedKey(key && key !== focusedKey ? key : null);
+  };
+  const hoverLink = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== 'mouse' || graphStatus !== 'ready') return;
+    if (event.target instanceof Element && event.target.closest('.graph-node')) return;
+    setHoveredKey(linkAt(event, 8));
+  };
+  const linkHovered = Boolean(hoveredKey) && graphStatus === 'ready';
+
+  // The link goes with the map, so focus lands on the switch it pressed.
+  const showList = () => {
+    setHasSwitched(true);
+    setView('list');
+    viewToggleRef.current?.focus();
+  };
+
   const renderMap = () => (
     <div className={`graph-map ${isMapReturning ? 'is-returning' : ''}`}>
-      <div className="graph-plot" ref={measurePlot} data-lit={hoveredKey || focusedKey ? '' : undefined}>
+      <div
+        className="graph-plot"
+        ref={measurePlot}
+        data-lit={hoveredKey || focusedKey ? '' : undefined}
+        data-link-hovered={linkHovered ? '' : undefined}
+        // The drawer's swipe takes the pointer on any press that is not a
+        // button, and the click would never reach the map. It still swipes
+        // from the grabber and the header.
+        onPointerDown={event => event.stopPropagation()}
+        onClick={pickLink}
+        onPointerMove={hoverLink}
+        onPointerLeave={() => setHoveredKey(null)}
+      >
         {layout.ready && (
           <>
             <svg className="graph-lines" width={box.width} height={box.height} aria-hidden="true">
@@ -550,22 +597,12 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
                 // Straight from the centre to the star.
                 const curve = `M${layout.centerX},${layout.centerY} L${node.x},${node.y}`;
                 return (
-                  <g key={`edge-${node.key}`} {...hoverProps(node.key)}>
-                    <path
-                      className={`graph-edge ${focusedKey === node.key ? 'is-focused' : ''} ${hoveredKey === node.key ? 'is-hovered' : ''} ${lit && lit !== node.key ? 'is-dimmed' : ''} ${isLeaving ? 'is-gone' : ''}`}
-                      d={curve}
-                      style={{ '--edge-delay': `${node.edgeDelay}ms`, '--edge-accent': areaAccentForPaper(node.paper) }}
-                    />
-                    {/* A 1px line is too thin to aim at: this wider, unpainted
-                        twin is what the pointer finds, and a press anywhere
-                        on it picks its star. The star's own button is the
-                        way in for the keyboard and assistive tech. */}
-                    <path
-                      className="graph-edge-hit"
-                      d={curve}
-                      onClick={() => setFocusedKey(focusedKey === node.key ? null : node.key)}
-                    />
-                  </g>
+                  <path
+                    key={`edge-${node.key}`}
+                    className={`graph-edge ${focusedKey === node.key ? 'is-focused' : ''} ${hoveredKey === node.key ? 'is-hovered' : ''} ${lit && lit !== node.key ? 'is-dimmed' : ''} ${isLeaving ? 'is-gone' : ''}`}
+                    d={curve}
+                    style={{ '--edge-delay': `${node.edgeDelay}ms`, '--edge-accent': areaAccentForPaper(node.paper) }}
+                  />
                 );
               })}
             </svg>
@@ -736,9 +773,21 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
               }}
               aria-label={'List view'}
               title={'List view'}
+              ref={viewToggleRef}
             >
               <Stack size={17} />
             </Toggle>
+            {graphStatus === 'ready' && (
+              <button
+                type="button"
+                className="graph-view-button"
+                onClick={() => downloadCitationFile(citationGraphExportPapers(graph), 'bibtex', 'papertok-citations')}
+                aria-label={'Download these papers as BibTeX'}
+                title={'Download BibTeX'}
+              >
+                <DownloadSimple size={17} />
+              </button>
+            )}
             {!inline && <span className="related-header-divider" aria-hidden="true" />}
             {!inline && (
               <Close
@@ -802,6 +851,12 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
           </p>
         )}
 
+        {isMap && graphStatus === 'ready' && layout.ready && offMapCount > 0 && (
+          <button type="button" className="graph-off-map" onClick={showList}>
+            {offMapCount === 1 ? '1 more paper in the list' : `${offMapCount} more papers in the list`}
+            <ArrowRight size={13} aria-hidden="true" />
+          </button>
+        )}
         {isMap && (graphStatus === 'ready' || graphStatus === 'loading') && renderMap()}
         {isList && graphStatus === 'ready' && renderList()}
 

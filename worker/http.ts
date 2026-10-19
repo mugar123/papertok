@@ -36,8 +36,12 @@ export function allowedOrigins(env: Pick<WorkerEnv, 'ALLOWED_ORIGINS'>) {
   ]);
 }
 
+// `retry-after` is how a refusal says when to ask again (the 429s in
+// provider-runtime.ts and router.ts), but it is not a CORS-safelisted header:
+// unexposed, a browser hands the page `null` for it, and the client could not
+// tell a one-second rate limit from a failure (PAP-49).
 export function corsHeaders(origin: string, env: Pick<WorkerEnv, 'ALLOWED_ORIGINS'>): Record<string, string> {
   return allowedOrigins(env).has(origin)
-    ? { 'access-control-allow-origin': origin, vary: 'Origin' }
+    ? { 'access-control-allow-origin': origin, 'access-control-expose-headers': 'retry-after', vary: 'Origin' }
     : {};
 }

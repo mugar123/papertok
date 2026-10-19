@@ -7,9 +7,9 @@ import { useEffect, useRef } from 'react';
  * Back while one is open therefore does not close it; it leaves PaperTok
  * entirely, straight to whatever the visitor had open before (the tester's
  * report). The router cannot help on its own, whichever router it is: it reads
- * the URL, and none of these four overlays (PaperCard's reader, and App's,
- * EntityExplorer's and SearchPage's independently-mounted PDF viewers) change
- * it. Nothing below reads a URL either — the entry is cloned from
+ * the URL, and none of these five overlays (PaperCard's reader, the Similar
+ * layer, and App's, EntityExplorer's and SearchPage's independently-mounted
+ * PDF viewers) change it. Nothing below reads a URL either — the entry is cloned from
  * `history.state` and pushed at `location.href`, whatever that happens to be —
  * which is why the move off HashRouter (2026-09-18) went through this file
  * without a line changing.
@@ -50,18 +50,27 @@ import { useEffect, useRef } from 'react';
  * sequence `directionForHistoryIndex` sees stays unbroken — idx=k (real),
  * idx=k+1 (real) — with the overlay's own idx=k entry invisible in between.
  *
- * `onPop` does not check that the entry it landed on still names `tag`. No
- * two owners of the SAME tag can be open at once through the UI to begin
- * with: PaperReader (`reader`) and the three independent `<PDFViewer>` mounts
- * that all share `pdf` — App's own, EntityExplorer's, SearchPage's — are each
- * a modal Base UI Dialog, and a modal dialog makes the rest of the page —
- * including whatever would open a second one — inert while it is open
- * (confirmed by reading each: PaperReader has no PDF affordance and no
- * `navigate()` of its own). So the only real question left is "did Back just
- * undo my own push", and treating any pop while armed as "close me" resolves
- * toward the overlay closing rather than staying open over a URL that no
- * longer backs it — the failure direction this hook has to prefer, per
- * "never trap the user".
+ * Overlays of DIFFERENT tags do stack: the Similar layer (`similar`) is a feed
+ * of cards, and each card opens its reader (`reader`) or App's PDF viewer
+ * (`pdf`) on top of it. Every armed owner hears every `popstate`, so `onPop`
+ * ignores a pop that leaves its own tagged entry on top: that Back belonged
+ * to an overlay above it. Without that check one Back press closed the reader
+ * and the layer under it, and closing the reader with its X — a `history.back()`
+ * of its own — closed the layer too.
+ *
+ * Beyond that, `onPop` does not ask whose entry was popped. No two owners of
+ * the SAME tag can be open at once through the UI to begin with: PaperReader
+ * (`reader`), the Similar layer (`similar`) and the three independent
+ * `<PDFViewer>` mounts that all share `pdf` — App's own, EntityExplorer's,
+ * SearchPage's — are each a modal Base UI Dialog, and a modal dialog makes the
+ * rest of the page — including whatever would open a second one — inert while
+ * it is open (confirmed by reading each: PaperReader has no PDF affordance and
+ * no `navigate()` of its own; the layer re-anchors itself rather than opening
+ * a second one). So the only real question left is "did Back just undo my own
+ * push", and treating any other pop while armed as "close me" resolves toward
+ * the overlay closing rather than staying open over a URL that no longer
+ * backs it — the failure direction this hook has to prefer, per "never trap
+ * the user".
  *
  * SHARED-TAG INVARIANT. "No two owners of the same tag can be open at once"
  * is worth being precise about, because it is an invariant this hook DEPENDS
@@ -103,7 +112,11 @@ import { useEffect, useRef } from 'react';
  * unmount just because the route underneath it changed. Second, a modal
  * makes the rest of the page inert while open, which blocks the ordinary,
  * click-driven way to reach another route; the one navigation left, the Back
- * button, is exactly what this hook already intercepts. The gap that `inert`
+ * button, is exactly what this hook already intercepts. The exception is a
+ * modal whose own content links elsewhere — the Similar layer is a feed of
+ * cards with topic and author links — and it closes itself the moment the
+ * route changes under it, so its disarm finds the new route's entry on top
+ * and steps back over nothing. The gap that `inert`
  * does NOT cover is a keydown bound on `window` — focus is trapped inside
  * the dialog, but the event still bubbles to `window` — which is precisely
  * why `searchShortcut.js` refuses the bare `/` shortcut whenever any
@@ -126,7 +139,8 @@ import { useEffect, useRef } from 'react';
  * `aria-hidden` on everything behind it. A visitor would be left looking at a
  * live page they cannot scroll or click, trapped by a different mechanism than
  * the one this hook exists to unblock. Back and the X have to end up in the
- * same function; the four owners hand this hook exactly that (a `closeRef`
+ * same function; the Similar layer arms the hook with its own `requestClose`,
+ * and the four others hand this hook exactly that (a `closeRef`
  * the overlay publishes into, with the unmount switch kept only as the
  * fallback for the window before the overlay has published its close — a
  * lazy chunk still loading in `App.jsx` and `PaperCard.jsx`, and the render
@@ -136,7 +150,7 @@ import { useEffect, useRef } from 'react';
 export function createOverlayHistory({ history, listen, unlisten }: { history: Omit<OverlayHistory, 'replaceState'>; listen: (callback: () => void) => void; unlisten: (callback: () => void) => void }) {
   let armed: { tag: string; onClose: () => void } | null = null;
   const onPop = () => {
-    if (!armed) return;
+    if (!armed || history.state?.overlay === armed.tag) return;
     const { onClose } = armed; armed = null; unlisten(onPop);
     onClose();
   };

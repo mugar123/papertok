@@ -19,6 +19,7 @@ import { LanguageProvider } from './context/LanguageContext.tsx'
 import { ThemeProvider } from './context/ThemeContext.tsx'
 import { AnalyticsProvider } from './context/AnalyticsContext.tsx'
 import { FeedProvider } from './context/FeedContext.tsx'
+import { SimilarFeedProvider } from './context/SimilarFeedContext.tsx'
 import { FollowingProvider } from './context/FollowingContext.tsx'
 import { FollowingUpdatesProvider } from './context/FollowingUpdatesContext.tsx'
 import { EmailNotificationsProvider } from './context/EmailNotificationsContext.tsx'
@@ -286,6 +287,7 @@ function AppContent() {
 
   return (
     <FeedProvider feedRouteActive={normalizedPathname === '/feed'}>
+    <SimilarFeedProvider onOpenPdf={openPdf} onSaveToList={setSaveModalPaper}>
       <a className="skip-link" href="#main-content" onClick={handleSkipLinkClick}>
         {'Skip to content'}
       </a>
@@ -554,6 +556,7 @@ function AppContent() {
           />
         )}
       </Suspense>
+    </SimilarFeedProvider>
     </FeedProvider>
   )
 }

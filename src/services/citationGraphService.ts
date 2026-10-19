@@ -137,6 +137,11 @@ export function mapCitationGraphPayload(payload: GraphPayload | null) {
   };
 }
 
+export function citationGraphExportPapers(graph: CitationGraph): Partial<Paper>[] {
+  return [...graph.references, ...graph.citations]
+    .map(paper => (paper.published ? paper : { ...paper, year: undefined }));
+}
+
 async function requestCitationGraph(doi: string, safeLimit: number, cacheKey: string, dependencies: GraphDependencies) {
   const workerFetch = dependencies.authenticatedWorkerFetch || authenticatedWorkerFetch;
   const configured = dependencies.apiBase ?? import.meta.env?.VITE_PAPER_API_BASE_URL;

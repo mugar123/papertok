@@ -55,6 +55,21 @@ function mapRelatedPaper(item: SemanticScholarRecord): Paper {
   });
 }
 
+// Semantic Scholar admits one request a second for the whole app, so a first
+// Similar press often lands in a second something else already spent and the
+// Worker answers `429` with `retry-after: 2` (PAP-49: it failed, and pressing
+// again a moment later worked). That answer is waited out here, twice at most
+// and inside the same eleven seconds. A longer wait (the minute ledger says 60)
+// or a stall is a real failure, and retrying it would only add load.
+const RATE_LIMIT_RETRIES = 2;
+const MAX_RETRY_WAIT_MS = 3000;
+
+function shortRetryAfterMs(response: Response) {
+  if (response.status !== 429) return null;
+  const seconds = Number(response.headers.get('retry-after'));
+  return seconds > 0 && seconds * 1000 <= MAX_RETRY_WAIT_MS ? seconds * 1000 : null;
+}
+
 async function fetchRelatedFromWorker(paperId: string, paper: Partial<Paper>, { fetchWorker, apiBase }: RelatedOptions & { fetchWorker: NonNullable<RelatedOptions['fetchWorker']> }) {
   // There used to be a direct `api.semanticscholar.org` branch here for when no
   // Worker origin was configured. It could not ship — `vite build` refuses a
@@ -74,7 +89,13 @@ async function fetchRelatedFromWorker(paperId: string, paper: Partial<Paper>, { 
   // provider call, once it lands) for nobody.
   const timeout = setTimeout(() => controller.abort(), 11000);
   try {
-    const response = await fetchWorker(url, { signal: controller.signal });
+    let response = await fetchWorker(url, { signal: controller.signal });
+    for (let retry = 0; !response.ok && retry < RATE_LIMIT_RETRIES; retry += 1) {
+      const waitMs = shortRetryAfterMs(response);
+      if (waitMs === null) break;
+      await new Promise(resolve => setTimeout(resolve, waitMs));
+      response = await fetchWorker(url, { signal: controller.signal });
+    }
     if (!response.ok) throw new Error(`Semantic Scholar API error: ${response.status}`);
     const payload = await response.json() as { recommendedPapers?: SemanticScholarRecord[]; papers?: SemanticScholarRecord[] };
     const items = payload.recommendedPapers || payload.papers || [];
