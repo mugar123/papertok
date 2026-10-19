@@ -226,17 +226,24 @@ test('a Crossref answer that lands during the first guest wait keeps its books o
 test('a refreshed guest page drops the books the guest has not reached, though the ref still names a card of the old list', async t => {
   const article = (id: string, doi = `10.5555/${id}`) => PaperBuilder.create({ id, title: `Synthetic article ${id}`, doi, categories: ['math.AG'], abstract: 'Publisher text.', sources: { primary: 'openalex', enrichedBy: [] } });
   const page = [article('first'), article('second'), article('third'), article('book', '10.1007/978-3-540-76956-9')];
+  let answer!: () => void;
   t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    await new Promise<void>(resolve => { answer = resolve; });
     const dois = new URL(String(input)).searchParams.get('filter')!.split(',').map(value => value.slice(4));
     return Response.json({ message: { 'total-results': dois.length, items: dois.map(DOI => ({ DOI, type: DOI.startsWith('10.1007/') ? 'book' : 'journal-article' })) } });
   });
-  const publications = await import(new URL('../services/feedPublicationService.ts?guest-refreshed', import.meta.url).href) as typeof import('../services/feedPublicationService.ts');
-  const { state, env, run } = guestLoader(page);
-  Object.assign(env, publications);
-  env.visiblePaperIdRef.current = 'card-of-the-previous-plan';
-  await run();
-  await new Promise(resolve => setTimeout(resolve, 20));
-  assert.deepEqual(state.papers.map(paper => paper.id), ['first', 'second', 'third']);
+  // The new cards come in the first wave, or only in the late batch when no source answered within its budget.
+  for (const firstWave of [true, false]) {
+    const publications = await import(new URL(`../services/feedPublicationService.ts?guest-refreshed-${firstWave}`, import.meta.url).href) as typeof import('../services/feedPublicationService.ts');
+    const { state, env, run } = firstWave ? guestLoader(page) : guestLoader([], Promise.resolve(page));
+    Object.assign(env, publications);
+    env.visiblePaperIdRef.current = 'card-of-the-previous-plan';
+    await run();
+    assert.deepEqual(state.papers.map(paper => paper.id), ['first', 'second', 'third', 'book']);
+    answer();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.deepEqual(state.papers.map(paper => paper.id), ['first', 'second', 'third'], firstWave ? 'first wave' : 'late batch');
+  }
 });
 
 const dismissStart = source.indexOf('const dismissPaper = useCallback(');

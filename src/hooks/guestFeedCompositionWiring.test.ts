@@ -22,7 +22,7 @@ const load = bounded(
   'const load = useCallback(',
   '}, []);',
   'the guest load',
-  105,
+  110,
 );
 
 test('the first paint waits for every chosen area', () => {

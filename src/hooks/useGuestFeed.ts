@@ -210,6 +210,9 @@ export function useGuestFeed({ areas = [], topics = [], enabled = true }: { area
         .filter(paper => !earlyIds.has(paper.id));
       const ready = await preparePage(additions, { firstPaint: early.papers.length === 0 });
       if (requestId !== requestIdRef.current) return;
+      // Without a first wave the reader is at the top, not on an old card:
+      // a changed plan emptied the list, and a refresh jumps there.
+      if (early.papers.length === 0) visiblePaperIdRef.current = null;
       setPapers(current => extendGuestPage(current, ready.papers, requestedPlan, GUEST_PAGE_SIZE));
       ready.follow();
 
