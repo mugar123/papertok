@@ -558,6 +558,12 @@
   translate: 0 0;
 }
 
+/* A provider waiting for its window keeps the Button's disabled opacity
+   (button-variants.ts), which sits in a cascade layer below this sheet. */
+.gw-providers[data-open] > div > [data-disabled] {
+  opacity: revert-layer;
+}
+
 .gw-providers[data-open] > div > :nth-child(2) {
   transition-delay: 40ms;
 }

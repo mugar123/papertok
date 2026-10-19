@@ -104,7 +104,10 @@ test('Connect stays disabled but focusable until its window can open inside the 
   const connect = jsx.match(/<Button\b(?:(?!<Button\b)[\s\S])*?onClick=\{\(\) => handleLink\(method\)\}[\s\S]*?\n\s*>/)?.[0] ?? '';
   assert.match(connect, /disabled=\{Boolean\(linking\) \|\| preparing\}/);
   assert.match(connect, /focusableWhenDisabled=\{preparing\}/);
-  assert.match(connect, /aria-describedby=\{preparing \? preparingId : undefined\}/);
-  assert.match(jsx, /\{preparing && <PreparingNote id=\{preparingId\} \/>\}/);
+  assert.match(connect, /aria-describedby=\{preparing \? `\$\{preparingId\}-\$\{method\.id\}` : undefined\}/);
   assert.match(jsx, /\{linking === method\.id \|\| preparing\s*\? <CircleNotch\b/);
+  // "Preparing sign-in…" shows in the row it holds, under its description,
+  // rather than between the ruled rows.
+  const content = jsx.match(/<div className="settings-row-content">\s*<h3 className="settings-method-name">[\s\S]*?\n\s*<\/div>/)?.[0] ?? '';
+  assert.match(content, /\{!method\.linked && <PreparingNote id=\{`\$\{preparingId\}-\$\{method\.id\}`\} preparing=\{preparing\} \/>\}/);
 });

@@ -173,10 +173,15 @@ export default function InstitutionLink({
           aria-describedby={feedback?.tone === 'error' ? `${hintId} ${feedbackId}` : hintId}
         />
         {showSubmit && (
+          // Disabled, and still focusable, while it waits for Google's window.
+          // While Google is open it is disabled for assistive tech only. The
+          // aria-disabled here replaces the one Base UI sets, so it covers both.
           <Button
             type="submit"
             variant="outline"
             className="institution-link-submit"
+            disabled={preparing}
+            focusableWhenDisabled
             aria-disabled={busy || preparing || undefined}
             aria-describedby={preparing ? preparingId : undefined}
           >
@@ -184,8 +189,8 @@ export default function InstitutionLink({
             {busy ? COPY.submitting : COPY.submit}
           </Button>
         )}
-        {showSubmit && preparing && <PreparingNote id={preparingId} />}
       </div>
+      {showSubmit && <PreparingNote id={preparingId} preparing={preparing} />}
       <p id={hintId} className="institution-link-hint">{COPY.hint}</p>
       {feedbackNode}
     </form>

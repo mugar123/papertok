@@ -44,8 +44,12 @@ test('SOURCE: the link form ignores a submit until its window can open inside th
   // Enter in the field and the onboarding's primary submit the form too.
   assert.match(code, /const handleSubmit = async \(event: FormEvent<HTMLFormElement>\) => \{\s*event\.preventDefault\(\);\s*if \(busy \|\| preparing\) return;/);
   const submit = code.match(/<Button\s+type="submit"[\s\S]*?\n\s*>/)?.[0] ?? '';
-  assert.match(submit, /aria-disabled=\{busy \|\| preparing \|\| undefined\}/, 'disabled for assistive tech, still focusable');
+  // Base UI's disabled state, so it looks disabled too, and still focusable.
+  assert.match(submit, /\bdisabled=\{preparing\}\s+focusableWhenDisabled\s/);
+  // Replaces Base UI's own aria-disabled, so it has to cover the wait as well.
+  assert.match(submit, /aria-disabled=\{busy \|\| preparing \|\| undefined\}/);
   assert.match(submit, /aria-describedby=\{preparing \? preparingId : undefined\}/);
-  assert.match(code, /\{showSubmit && preparing && <PreparingNote id=\{preparingId\} \/>\}/);
   assert.match(code, /\{busy \|\| preparing \? <span className="institution-link-spinner" aria-hidden="true" \/> : <GoogleMark size=\{16\} \/>\}/);
+  // Shown under the field and its button, out of their wrapping row.
+  assert.match(code, /<\/div>\s*\{showSubmit && <PreparingNote id=\{preparingId\} preparing=\{preparing\} \/>\}\s*<p id=\{hintId\}/);
 });

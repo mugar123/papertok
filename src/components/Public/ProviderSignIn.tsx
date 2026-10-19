@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import './ProviderSignIn.css';
 
 // The parts both places with the Google and GitHub buttons draw (the sign-in
@@ -14,9 +15,19 @@ export function ProviderSpinner() {
   return <span className="auth-spinner" aria-hidden="true" />;
 }
 
-// Why a Google or GitHub button is disabled until its window can open inside
-// the press (usePopupReady). Hidden, so it is read as the button's
-// description and not as page text. Settings and the institution link use it too.
-export function PreparingNote({ id }: { id: string }) {
-  return <span id={id} hidden>Preparing sign-in…</span>;
+// Under buttons that are disabled until their window can open inside the
+// press (usePopupReady): "Preparing sign-in…", in a polite status that also
+// describes them. When the wait ends a screen reader hears "Sign-in ready."
+// and the line stays, empty, so the buttons do not move as they turn usable.
+// Mounted with nothing to wait for, it takes no room and says nothing.
+// Settings and the institution link use it too.
+export function PreparingNote({ id, preparing }: { id: string; preparing: boolean }) {
+  // A readiness only ever turns ready (PopupReadiness), so only a note that
+  // mounted preparing has a wait to report the end of.
+  const [waited] = useState(preparing);
+  return (
+    <p id={id} role="status" className={waited ? 'provider-preparing' : 'sr-only'}>
+      {preparing ? 'Preparing sign-in…' : waited && <span className="sr-only">Sign-in ready.</span>}
+    </p>
+  );
 }

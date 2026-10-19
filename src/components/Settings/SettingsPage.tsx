@@ -283,6 +283,7 @@ function ProfileAccountPage() {
                     ? (onlyMethod ? copy.onlyMethod : copy.methodLinked)
                     : copy.methodUnlinked}
                 </p>
+                {!method.linked && <PreparingNote id={`${preparingId}-${method.id}`} preparing={preparing} />}
               </div>
               {method.linked ? (
                 <span className="settings-method-actions">
@@ -301,7 +302,7 @@ function ProfileAccountPage() {
                   disabled={Boolean(linking) || preparing}
                   focusableWhenDisabled={preparing}
                   aria-label={linking === method.id ? copy.connecting(method.label) : copy.connect(method.label)}
-                  aria-describedby={preparing ? preparingId : undefined}
+                  aria-describedby={preparing ? `${preparingId}-${method.id}` : undefined}
                 >
                   {linking === method.id || preparing
                     ? <CircleNotch size={15} className="settings-spin" aria-hidden="true" />
@@ -311,7 +312,6 @@ function ProfileAccountPage() {
               )}
             </div>
           ))}
-          {preparing && <PreparingNote id={preparingId} />}
           <div className="settings-row">
             <div className="settings-row-content">
               <div className="settings-row-title-line">

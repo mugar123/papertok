@@ -55,7 +55,7 @@ export default function SignInMethods() {
           )}
           <span>{'Continue with GitHub'}</span>
         </Button>
-        {preparing && <PreparingNote id={preparingId} />}
+        <PreparingNote id={preparingId} preparing={preparing} />
       </div>
 
       {collision ? (
