@@ -1500,7 +1500,8 @@
     "host": "eu01.alma.exlibrisgroup.com",
     "url": "https://eu01.alma.exlibrisgroup.com/view/uresolver/45KBDK_KGL/openurl",
     "evidence": "https://www.kb.dk/",
-    "notes": "KU's library service is the Royal Danish Library (KB); kb.dk links soeg.kb.dk Primo VE with vid=45KBDK_KGL:KGL and eu01 answered with the indicator key (value false for Nature 2020) and 10 services. The KB code covers KU, but KU's own library pages were not checked for a separate code."
+    "notes": "KU's library service is the Royal Danish Library (KB); kb.dk links soeg.kb.dk Primo VE with vid=45KBDK_KGL:KGL and eu01 answered with the indicator key (value false for Nature 2020) and 10 services. The KB code covers KU, but KU's own library pages were not checked for a separate code.",
+    "exclude": "one Alma institution, the Royal Danish Library (45KBDK_KGL), serves both Copenhagen and Aarhus; its answer is institution-wide and does not show which university each licence covers"
   },
   {
     "rorId": "https://ror.org/0524sp257",
@@ -1714,6 +1715,30 @@
     "exclude": "library consortium, not a university; its network code answers for the whole consortium"
   },
   {
+    "rorId": "https://ror.org/00vkhbp60",
+    "name": "Universitat Abat Oliba CEU",
+    "source": "census review 2026-10-19",
+    "exclude": "the code found on its library page is the CSUC consortium network code (34CSUC_NETWORK), which answers for the whole network, not for this university"
+  },
+  {
+    "rorId": "https://ror.org/053d21744",
+    "name": "Escola Superior de Música de Catalunya",
+    "source": "census review 2026-10-19",
+    "exclude": "the code found on its library page is the CSUC consortium network code (34CSUC_NETWORK), which answers for the whole network, not for this school"
+  },
+  {
+    "rorId": "https://ror.org/058nh3n50",
+    "name": "International University of Andalucía",
+    "source": "census review 2026-10-19",
+    "exclude": "the code found on its library page is the CBUA consortium network code (34CBUA_DNZ), which answers for the whole network, not for this university"
+  },
+  {
+    "rorId": "https://ror.org/01aj84f44",
+    "name": "Aarhus University",
+    "source": "census review 2026-10-19",
+    "exclude": "one Alma institution, the Royal Danish Library (45KBDK_KGL), serves both Copenhagen and Aarhus; its answer is institution-wide and does not show which university each licence covers"
+  },
+  {
     "rorId": "https://ror.org/02p0gd045",
     "name": "Universidad Complutense de Madrid",
     "country": "ES",
@@ -1921,5 +1946,11 @@
     "product": "ebsco",
     "evidence": "https://biblioteca.ulpgc.es/",
     "notes": "The library home page links Faro (faro.ulpgc.es), which redirects to EBSCO (logon.ebsco.zone), and an EDS link with custid=s8390106; the OPAC (opac.ulpgc.es) answered 403. The EBSCO resolver probe redirected to resolver.ebsco.com/result and then to an EBSCO OAuth login with a customer login_hint, so the custid is recognised but no result is visible without authentication. A guessed 34ULPGC_INST returned empty bodies on eu00 to eu06."
+  },
+  {
+    "rorId": "https://ror.org/014axpa37",
+    "name": "Roskilde University",
+    "source": "census review 2026-10-19",
+    "exclude": "one Alma institution, the Royal Danish Library (45KBDK_KGL), serves Copenhagen, Aarhus and Roskilde; its answer is institution-wide and does not show which university each licence covers"
   }
 ]

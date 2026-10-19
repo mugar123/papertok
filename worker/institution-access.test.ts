@@ -321,6 +321,10 @@ test('the resolver is found by ROR id first, then by mail domain', async () => {
   assert.deepEqual(findResolver({ domain: 'alumni.usal.es', rorId: ROR_ID }), usal);
   assert.equal(findResolver({ domain: 'nowhere.example', rorId: OTHER_ROR_ID }), null);
   assert.equal(findResolver({ domain: 'nowhere.example' }), null);
+  // A ROR id the table lacks still reaches the library its mail domain names:
+  // ROR registers a domain under one record, so the domain is the affiliation
+  // the link flow verified, and a dependent institute reads through its university.
+  assert.deepEqual(findResolver({ domain: 'usal.es', rorId: OTHER_ROR_ID }), usal);
 });
 
 test('ignores date coverage when Crossref gives no year', async () => {
