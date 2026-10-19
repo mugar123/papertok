@@ -160,8 +160,10 @@ export async function classifyFeedPublications(papers: Paper[]): Promise<Paper[]
     .filter(doi => doi && !doi.includes(',') && doi.length <= 240))];
   if (candidates.some(doi => !cache.has(doi) || cache.get(doi)!.expiresAt <= Date.now())) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), LOOKUP_DEADLINE_MS);
     const lookup = requests.then(async () => {
+      // The deadline starts here, not at the call: time spent behind an earlier
+      // page's lookup says nothing about Crossref, and must not set the pause.
+      const timer = setTimeout(() => controller.abort(), LOOKUP_DEADLINE_MS);
       // Recheck the per-DOI cache after earlier loads finish. One serial lane keeps
       // overlapping loads within Crossref's query concurrency limit.
       const missing = candidates.filter(doi => !cache.has(doi) || cache.get(doi)!.expiresAt <= Date.now()).slice(0, 80);
@@ -171,6 +173,7 @@ export async function classifyFeedPublications(papers: Paper[]): Promise<Paper[]
           await crossrefTypes(missing.slice(i, i + 20), controller.signal);
         }
       } finally {
+        clearTimeout(timer);
         persist();
       }
     });
@@ -180,8 +183,6 @@ export async function classifyFeedPublications(papers: Paper[]): Promise<Paper[]
     } catch (error) {
       if (controller.signal.aborted) retryAt = Math.max(retryAt, Date.now() + TIMEOUT_PAUSE_MS);
       else console.warn('Feed publication classification unavailable', error);
-    } finally {
-      clearTimeout(timer);
     }
   }
   return applyKnownPublicationTypes(papers);

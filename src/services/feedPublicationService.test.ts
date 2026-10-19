@@ -229,6 +229,35 @@ test('a stalled lookup ends at its deadline and pauses Crossref for the next pag
   assert.equal(fetch.mock.callCount(), 2);
 });
 
+test('a lookup queued behind another gets its own deadline, so Crossref answering in time is asked for the next page', { timeout: 5_000 }, async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() });
+  const { classifyFeedPublications: classify } = await freshSession('queued');
+  // 3.5 s per request, the slowest Crossref answer in the PAP-51 measurements.
+  const fetch = t.mock.method(globalThis, 'fetch', async (input: string | URL | Request, init?: RequestInit) => {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, 3_500);
+      init?.signal?.addEventListener('abort', () => { clearTimeout(timer); reject(init.signal!.reason); }, { once: true });
+    });
+    return typesResponse(input, 'journal-article');
+  });
+  const advance = async (ms: number) => {
+    for (let elapsed = 0; elapsed < ms; elapsed += 100) {
+      t.mock.timers.tick(100);
+      for (let turn = 0; turn < 5; turn += 1) await flush();
+    }
+  };
+  const first = classify([paper('10.5555/first-page')]);
+  await advance(500);
+  const second = classify([paper('10.5555/top-up')]);
+  await advance(8_000);
+  await Promise.all([first, second]);
+  assert.equal(fetch.mock.callCount(), 2);
+  const third = classify([paper('10.5555/next-page')]);
+  await advance(4_000);
+  await third;
+  assert.equal(fetch.mock.callCount(), 3);
+});
+
 test('types found before a reload exclude a book without asking Crossref again', async t => {
   withStorage(t);
   const fetch = t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => typesResponse(input, 'book'));
