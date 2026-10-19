@@ -57,7 +57,9 @@ import {
   Heartbeat,
   Lightning,
   Lock,
-  LockOpen,
+  LockKey,
+  LockKeyOpen,
+  NotePencil,
   Package,
   Planet,
   Prohibit,
@@ -132,10 +134,10 @@ const SLOT_MORPH_MS = 240;
  * React and can be read straight by `node --test`.
  */
 const STATUS_CHIP_ICONS = {
-  preprint: FileText,
-  open: LockOpen,
-  openCopy: LockOpen,
-  subscription: Lock,
+  preprint: NotePencil,
+  open: LockKeyOpen,
+  openCopy: LockKeyOpen,
+  subscription: LockKey,
 };
 import { buildFollowReasonLabel } from '../../utils/followingFeed.ts';
 import { isTechnicalClassification } from '../../utils/scientificClassification.ts';
@@ -1811,14 +1813,14 @@ const PaperCard = memo(function PaperCard({
             const Glyph = STATUS_CHIP_ICONS[reviewTag.key as keyof typeof STATUS_CHIP_ICONS];
             return (
               <span className="pc-chip" data-tone={reviewTag.tone} title={reviewTag.hint}>
-                <Glyph size={12} /> {reviewTag.label}
+                <Glyph size={12} weight="bold" /> {reviewTag.label}
               </span>
             );
           })()}
 
           {/* The availability chip resolves late: a paper with no readable copy
               of its own goes to Unpaywall after the card settles, and the answer
-              can turn Suscripción into Versión abierta a second in. Swapping the
+              can turn Closed access into Open version a second in. Swapping the
               word outright reads as a glitch, so the slot cross-fades. */}
           <AnimatePresence mode="wait" initial={false}>
             {accessTag && (() => {
@@ -1839,7 +1841,7 @@ const PaperCard = memo(function PaperCard({
                     ease: EASE_OUT_EXPO,
                   }}
                 >
-                  <Glyph size={12} /> {accessTag.label}
+                  <Glyph size={12} weight="bold" /> {accessTag.label}
                 </motion.span>
               );
             })()}
