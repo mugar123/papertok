@@ -16,6 +16,8 @@ interface FeedSource {
   onAuthRequired?: (reason: string) => void;
   onNotInterested?: (paperId: string) => void;
   onPaperViewed?: (paper: Paper) => void;
+  reportVisiblePaper?: (paperId: string | null) => void;
+  loadingAbstractIds?: ReadonlySet<string>;
   surface?: string;
   showFollowReason?: boolean;
   endCard?: ReactNode;
@@ -254,8 +256,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const isRefreshing = source ? Boolean(source.isRefreshing) : feed.isRefreshing;
   // Only the For You feed owns the context's list; Following and the guest
   // feed render a `source` of their own and must not anchor For You's
-  // re-rank on a card it does not have.
-  const reportVisiblePaper = source ? null : feed.reportVisiblePaper;
+  // re-rank on a card it does not have. A source may take the report itself.
+  const reportVisiblePaper = source ? (source.reportVisiblePaper ?? null) : feed.reportVisiblePaper;
+  const loadingAbstractIds = source ? source.loadingAbstractIds : feed.loadingAbstractIds;
   // Only once nothing more is coming: a page still loading or still pending
   // would put the ending in front of papers the guest has not seen yet.
   const endCard = source?.endCard ?? null;
@@ -1024,6 +1027,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
               onAuthRequired={onAuthRequired}
               analyticsSurface={analyticsSurface}
               position={index + 1}
+              abstractLoading={Boolean(loadingAbstractIds?.has(paper.id))}
               // The scroll hint belongs to the first card only, and this prop is
               // the only thing that decides it now: a
               // `.feed-snap-item:not(:first-child) .pc-scroll-hint { display:

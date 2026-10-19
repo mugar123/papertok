@@ -23,6 +23,8 @@ export interface PaperCardProps {
   onAuthRequired?: (reason: string) => void;
   analyticsSurface?: string;
   position?: number;
+  /** A feed request may still supply this paper's missing abstract. */
+  abstractLoading?: boolean;
 }
 
 import { useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useId, memo, lazy, Suspense } from 'react';
@@ -384,6 +386,7 @@ const PaperCard = memo(function PaperCard({
   onAuthRequired,
   analyticsSurface = 'feed',
   position,
+  abstractLoading = false,
 }: PaperCardProps) {
   // `position` is optional and PaperCard renders on five different surfaces,
   // so it cannot anchor a stable, collision-free id for aria-controls.
@@ -912,7 +915,7 @@ const PaperCard = memo(function PaperCard({
   };
   const abstractKey = abstractText
     ? `abstract:${abstractText.length}:${abstractText.slice(0, 24)}`
-    : 'abstract:none';
+    : abstractLoading ? 'abstract:loading' : 'abstract:none';
 
   // The paragraph the panel is showing, the height it stands at, and the way to
   // end a resize that is still running.
@@ -2120,6 +2123,25 @@ const PaperCard = memo(function PaperCard({
               >
                 <ScientificText>{abstractText}</ScientificText>
               </motion.p>
+            ) : abstractLoading ? (
+              // The feed is still asking a source for the missing abstract.
+              // Saying so means the words that arrive replace a stated wait,
+              // not a "No abstract" the reader has already read.
+              <motion.div
+                key={abstractKey}
+                ref={attachAbstractBody}
+                className="pc-abstract-empty"
+                {...abstractSwap}
+              >
+                <EmptyState
+                  as="p"
+                  role="status"
+                  art={<Petri pose="flask" className="pc-abstract-empty-petri" />}
+                  title={'Loading abstract'}
+                >
+                  {"Checking other sources for this paper's abstract."}
+                </EmptyState>
+              </motion.div>
             ) : (
               // No abstract in the record: the shared empty state, centred in
               // the abstract's place like every other one, not set as the first

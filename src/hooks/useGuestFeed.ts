@@ -12,15 +12,22 @@ import { composeGuestPage, extendGuestPage, guestPageReady } from '../utils/gues
 import { enrichPapersBatch } from '../services/openAlexService.ts';
 import { enrichPubmedIds, mergeEuropePmcEnrichment } from '../services/europePmcService.ts';
 import { recoverFeedAbstracts } from '../services/feedAbstractService.ts';
-import { awaitWithinGate } from '../utils/feedCitationGate.ts';
-import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.ts';
-import { classifyFeedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
+import { awaitWithinGate, CITATION_GATE_MAX_WAIT_MS } from '../utils/feedCitationGate.ts';
 import {
+  applyKnownPublicationTypes,
+  classifyFeedPublications,
+  dropUnreachedPublications,
+  isFeedPublication,
+} from '../services/feedPublicationService.ts';
+import {
+  abstractsInFlight,
   getOpenAlexEnrichmentId,
+  mergeFeedAbstracts,
   mergeOpenAlexEnrichment,
   preserveFeedAbstracts,
   needsOpenAlexEnrichment,
 } from '../utils/feedEnrichment.ts';
+import { abstractWaitIds, openAbstractWait, type AbstractWaits } from '../utils/feedAbstractWait.ts';
 
 const GUEST_PAGE_SIZE = 12;
 // Per-source cap. The slowest healthy source measured 2.4 s (OpenAlex, cold
@@ -54,7 +61,9 @@ function startGuestCandidateRequests(plan: GuestFeedPlan, { refresh = false } = 
       internalCategories: plan.pubmedCategories,
     }).then(result => result.papers));
   }
-  return requests.map(request => request.then(classifyFeedPublications).then(papers => papers.filter(isFeedPublication)));
+  // Types this browser already knows exclude a paper before display; the
+  // Crossref lookup for the shown batch runs after it is on screen.
+  return requests.map(request => request.then(papers => applyKnownPublicationTypes(papers).filter(isFeedPublication)));
 }
 
 function dedupePapers<T extends Partial<Paper>>(papers: T[]) {
@@ -104,6 +113,9 @@ export function useGuestFeed({ areas = [], topics = [], enabled = true }: { area
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const requestIdRef = useRef(0);
+  const visiblePaperIdRef = useRef<string | null>(null);
+  const [abstractWaits, setAbstractWaits] = useState<AbstractWaits>([]);
+  const loadingAbstractIds = useMemo(() => abstractWaitIds(abstractWaits), [abstractWaits]);
   const plan = useMemo(() => buildGuestFeedPlan(areas, topics), [areas, topics]);
   const planKey = plan.key;
   // `refresh` is the reader's pull-to-refresh: the shown papers stay until
@@ -125,39 +137,58 @@ export function useGuestFeed({ areas = [], topics = [], enabled = true }: { area
         (papers) => guestPageReady(PaperBuilder.deduplicate(papers), requestedPlan, GUEST_PAGE_SIZE),
       );
 
-      const preparePage = async (batch: Paper[]) => {
+      // The first batch may wait briefly for an abstract on its way; later
+      // additions are shown at once. `follow` runs once the batch is on
+      // screen: later responses update it, and fill only the cards that say
+      // their abstract is loading.
+      const preparePage = async (batch: Paper[], { firstPaint }: { firstPaint: boolean }) => {
         const ids = batch.filter(needsOpenAlexEnrichment).map(getOpenAlexEnrichmentId).filter(Boolean);
         const pmids = [...new Set(batch.map(paper => paper.pmid).filter(Boolean))] as string[];
         const openAlex = enrichPapersBatch(ids, { timeoutMs: 6_500 }).catch(() => ({}));
         const europePmc = enrichPubmedIds(pmids).catch(() => new Map<string, Partial<Paper> & { pmid: string }>());
-        const [gatedOpenAlex, gatedEuropePmc, recovered] = await awaitWithinGate([
-          openAlex, europePmc, recoverFeedAbstracts(batch),
-        ], { maxWaitMs: batch.some(paper => !hasUsableAIAbstract(paper.abstract)) ? 6_000 : 0 });
-        let ready = recovered || batch;
-        if (gatedOpenAlex) ready = mergeOpenAlexEnrichment(ready, gatedOpenAlex);
-        if (gatedEuropePmc) ready = mergeEuropePmcEnrichment(ready, gatedEuropePmc);
-        // Late citations and access metadata may still improve, but cannot
-        // replace an already displayed missing-abstract state with prose.
-        void openAlex.then(records => {
-          if (requestId !== requestIdRef.current) return;
-          setPapers(current => preserveFeedAbstracts(current, mergeOpenAlexEnrichment(current, records)));
-        });
-        void europePmc.then(records => {
-          if (requestId !== requestIdRef.current) return;
-          setPapers(current => preserveFeedAbstracts(current, mergeEuropePmcEnrichment(current, records)));
-        });
-        return ready;
+        const recovery = recoverFeedAbstracts(batch);
+        const publications = classifyFeedPublications(batch);
+        const waitMs = firstPaint && abstractsInFlight(batch, { openAlex: true, europePmc: true, recovery: true }).size > 0
+          ? CITATION_GATE_MAX_WAIT_MS : 0;
+        const [gatedOpenAlex, gatedEuropePmc, recovered] = await awaitWithinGate([openAlex, europePmc, recovery], { maxWaitMs: waitMs });
+        let papers = recovered ? mergeFeedAbstracts(batch, recovered) : batch;
+        if (gatedOpenAlex) papers = mergeOpenAlexEnrichment(papers, gatedOpenAlex);
+        if (gatedEuropePmc) papers = mergeEuropePmcEnrichment(papers, gatedEuropePmc);
+        const abstractsComing = abstractsInFlight(papers, { openAlex: !gatedOpenAlex, europePmc: !gatedEuropePmc, recovery: !recovered });
+        const follow = () => {
+          const loadingAbstracts = openAbstractWait(setAbstractWaits, abstractsComing, [openAlex, europePmc, recovery]);
+          const update = (change: (current: Paper[]) => Paper[]) => {
+            if (requestId === requestIdRef.current) setPapers(change);
+          };
+          void openAlex.then(records => {
+            const loading = loadingAbstracts();
+            update(current => preserveFeedAbstracts(current, mergeOpenAlexEnrichment(current, records), loading));
+          });
+          void europePmc.then(records => {
+            const loading = loadingAbstracts();
+            update(current => preserveFeedAbstracts(current, mergeEuropePmcEnrichment(current, records), loading));
+          });
+          if (!recovered) void recovery.then(records => {
+            const loading = loadingAbstracts();
+            update(current => preserveFeedAbstracts(current, mergeFeedAbstracts(current, records), loading));
+          });
+          void publications.then(classified => {
+            update(current => dropUnreachedPublications(current, classified, visiblePaperIdRef.current));
+          });
+        };
+        return { papers, follow };
       };
 
       const early = await preparePage(composeGuestPage(
         dedupePapers(PaperBuilder.deduplicate(fulfilledPaperLists(await first))),
         requestedPlan,
         GUEST_PAGE_SIZE,
-      ));
+      ), { firstPaint: true });
       if (requestId !== requestIdRef.current) return;
 
-      if (early.length > 0) {
-        setPapers(early);
+      if (early.papers.length > 0) {
+        setPapers(early.papers);
+        early.follow();
         setLoading(false);
         setIsRefreshing(false);
       }
@@ -166,15 +197,16 @@ export function useGuestFeed({ areas = [], topics = [], enabled = true }: { area
         PaperBuilder.deduplicate(fulfilledPaperLists(await all)),
       );
       if (requestId !== requestIdRef.current) return;
-      if (early.length === 0 && late.length === 0) {
+      if (early.papers.length === 0 && late.length === 0) {
         throw new Error('Guest discovery returned no papers.');
       }
-      const earlyIds = new Set(early.map(paper => paper.id));
-      const additions = extendGuestPage(early, late, requestedPlan, GUEST_PAGE_SIZE)
+      const earlyIds = new Set(early.papers.map(paper => paper.id));
+      const additions = extendGuestPage(early.papers, late, requestedPlan, GUEST_PAGE_SIZE)
         .filter(paper => !earlyIds.has(paper.id));
-      const ready = await preparePage(additions);
+      const ready = await preparePage(additions, { firstPaint: early.papers.length === 0 });
       if (requestId !== requestIdRef.current) return;
-      setPapers(current => extendGuestPage(current, ready, requestedPlan, GUEST_PAGE_SIZE));
+      setPapers(current => extendGuestPage(current, ready.papers, requestedPlan, GUEST_PAGE_SIZE));
+      ready.follow();
 
     } catch (loadError) {
       if (requestId === requestIdRef.current) {
@@ -243,6 +275,12 @@ export function useGuestFeed({ areas = [], topics = [], enabled = true }: { area
     setPapers((current) => dropPaperById(current, paperId));
   }, []);
 
+  // FeedContainer reports the card on screen, so a confirmed book is removed
+  // only from the part of the page the reader has not reached.
+  const reportVisiblePaper = useCallback((paperId: string | null) => {
+    visiblePaperIdRef.current = paperId;
+  }, []);
+
   // Anything still in flight when the page unmounts is dropped, not applied.
   useEffect(() => () => {
     requestIdRef.current += 1;
@@ -257,5 +295,7 @@ export function useGuestFeed({ areas = [], topics = [], enabled = true }: { area
     areas: plan.areas,
     refresh: () => load(plan, { refresh: true }),
     dismissPaper,
+    reportVisiblePaper,
+    loadingAbstractIds,
   };
 }

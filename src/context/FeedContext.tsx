@@ -17,6 +17,8 @@ export interface RecommendationProfileSnapshot extends RecommendationContext {
 }
 export interface FeedContextValue {
   papers: Paper[]; loading: boolean; error: string | null; hasMore: boolean; isRefreshing: boolean;
+  /** Shown cards whose abstract a running request may still supply. */
+  loadingAbstractIds: ReadonlySet<string>;
   likedPaperIds: Set<string>; notInterestedIds: Set<string>; savedPaperIds: Set<string>; readPaperIds: Set<string>;
   personalLibrary: Record<string, LibraryEntry>; libraryPapers: Record<string, Partial<Paper>>;
   ensurePersonalLibrary: () => Promise<void>;
@@ -105,7 +107,9 @@ import {
 } from '../services/interactionProfileStore.ts';
 import { fetchDomainPapers } from '../services/domainSourceService.ts';
 import {
+  abstractsInFlight,
   getOpenAlexEnrichmentId,
+  mergeFeedAbstracts,
   mergeOpenAlexEnrichment,
   needsOpenAlexEnrichment,
   preserveFeedAbstracts,
@@ -114,14 +118,14 @@ import {
 import { resolveWithin, settleWithin, settleSourcesForFirstPaint, fulfilledPaperLists } from '../utils/asyncTiming.ts';
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.ts';
 import { lateSourceCandidates } from '../utils/feedLateCandidates.ts';
-import { classifyFeedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
+import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feedInteractions.ts';
 import { rankPreferences } from '../utils/preferenceRanking.ts';
 import { fetchICiteMetrics, mergeICiteEnrichment } from '../services/iCiteService.ts';
 import { awaitWithinGate, CITATION_GATE_MAX_WAIT_MS } from '../utils/feedCitationGate.ts';
-import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.ts';
 import { enrichPubmedIds, mergeEuropePmcEnrichment } from '../services/europePmcService.ts';
 import { recoverFeedAbstracts } from '../services/feedAbstractService.ts';
+import { abstractWaitIds, openAbstractWait, type AbstractWaits } from '../utils/feedAbstractWait.ts';
 // topicRetrievalService carries a ~32 KB gzip topic table and only matters
 // once a feed load actually ranks followed topics, so it loads on first use
 // instead of riding in the boot graph of every route.
@@ -297,6 +301,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const { user, userPreferences, followedAuthors } = useAuth();
   const { followedEntities, loading: followingLoading } = useFollowing();
   const [papers, setPapers] = useState<Paper[]>([]);
+  const [abstractWaits, setAbstractWaits] = useState<AbstractWaits>([]);
+  const loadingAbstractIds = useMemo(() => abstractWaitIds(abstractWaits), [abstractWaits]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -1524,8 +1530,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       }
       if (requestId !== feedRequestId.current) return;
 
-      newPapers = await classifyFeedPublications(newPapers);
-      if (requestId !== feedRequestId.current || feedSessionId.current !== activeSessionId) return;
+      // Only types this browser already knows exclude a paper here. The
+      // chosen page is checked against Crossref once it is on screen.
+      newPapers = applyKnownPublicationTypes(newPapers);
 
       // Keep the raw candidates until here: an entirely excluded page still
       // proves that the provider has results and pagination should continue.
@@ -1608,27 +1615,34 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       const iCitePmids = [...new Set(filtered.map(paper => paper?.pmid).filter(Boolean))] as string[];
       const iCitePromise = fetchICiteMetrics(iCitePmids);
       // Enrich only the selected page. An unavailable source leaves its papers
-      // usable; the admission gate below limits how long text can hold them.
+      // usable, without what it would have added.
       const europePmcPromise = enrichPubmedIds(iCitePmids).catch((err) => {
         console.warn('Europe PMC feed enrichment failed', err);
         return new Map();
       });
+      const recoveryPromise = recoverFeedAbstracts(filtered);
+      const publicationsPromise = classifyFeedPublications(filtered);
       if (requestId !== feedRequestId.current) return;
 
-      // Resolve the page's abstract before admission, including pagination and
-      // refresh. Existing cards stay readable while the next page is prepared.
+      // Only the first screen waits, and only as long as a loading screen is
+      // worth holding, so its citations and abstracts are usually in place.
+      // `papers` is still empty when an excluded first page re-enters with
+      // `reset` false. Later pages and a follow change are shown at once: the
+      // reader is on a card, and the rest arrives while they read.
       const [gatedOpenAlex, gatedICite, gatedEuropePmc, recovered] = await awaitWithinGate([
         enrichmentIds.length > 0 ? enrichmentPromise : null,
         iCitePmids.length > 0 ? iCitePromise : null,
         iCitePmids.length > 0 ? europePmcPromise : null,
-        recoverFeedAbstracts(filtered),
-      ], { maxWaitMs: filtered.some(paper => !hasUsableAIAbstract(paper.abstract))
-        ? 6_000 : papers.length === 0 && !keepThroughVisible ? CITATION_GATE_MAX_WAIT_MS : 0 });
+        recoveryPromise,
+      ], { maxWaitMs: papers.length === 0 && !keepThroughVisible ? CITATION_GATE_MAX_WAIT_MS : 0 });
       if (requestId !== feedRequestId.current || feedSessionId.current !== activeSessionId) return;
-      if (recovered) filtered = recovered;
+      if (recovered) filtered = mergeFeedAbstracts(filtered, recovered);
       if (gatedOpenAlex) filtered = mergeOpenAlexEnrichment(filtered, gatedOpenAlex);
       if (gatedICite) filtered = mergeICiteEnrichment(filtered, gatedICite);
       if (gatedEuropePmc) filtered = mergeEuropePmcEnrichment(filtered, gatedEuropePmc);
+      const abstractsComing = abstractsInFlight(filtered, {
+        openAlex: !gatedOpenAlex, europePmc: !gatedEuropePmc, recovery: !recovered,
+      });
 
       // Paint now. A second shuffle after enrichment used to reorder the
       // cards the reader had just started looking at; late merge keeps order
@@ -1661,6 +1675,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       const nextHasMore = newPapers.length > 0;
 
       setPapers(nextPapers);
+      const loadingAbstracts = openAbstractWait(setAbstractWaits, abstractsComing, [enrichmentPromise, europePmcPromise, recoveryPromise]);
       setPage(nextPage);
       setHasMore(nextHasMore);
       autoRetryUsedRef.current = false; // successful load re-arms the safety retry
@@ -1687,18 +1702,27 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       }
       writeFeedSnapshot(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
 
+      // Responses after the paint update the shown cards in place, and the
+      // feed cache and snapshot with them.
+      const updateShownPapers = (update: (current: Paper[]) => Paper[]) => {
+        if (feedSessionId.current !== activeSessionId) return;
+        setPapers(current => {
+          const next = update(current);
+          if (next === current) return current;
+          const cachedMode = feedCache.current[activeMode];
+          if (cachedMode) {
+            feedCache.current[activeMode] = { ...cachedMode, papers: next };
+            scheduleFeedSnapshotWrite(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
+          }
+          return next;
+        });
+      };
+
       if (enrichmentIds.length > 0) {
         enrichmentPromise.then((lateEnrichment) => {
-          if (feedSessionId.current !== activeSessionId || !lateEnrichment || Object.keys(lateEnrichment).length === 0) return;
-          setPapers(current => {
-            const enriched = preserveFeedAbstracts(current, mergeOpenAlexEnrichment(current, lateEnrichment));
-            const cachedMode = feedCache.current[activeMode];
-            if (cachedMode) {
-              feedCache.current[activeMode] = { ...cachedMode, papers: enriched };
-              scheduleFeedSnapshotWrite(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
-            }
-            return enriched;
-          });
+          if (!lateEnrichment || Object.keys(lateEnrichment).length === 0) return;
+          const loading = loadingAbstracts();
+          updateShownPapers(current => preserveFeedAbstracts(current, mergeOpenAlexEnrichment(current, lateEnrichment), loading));
         });
       }
 
@@ -1715,31 +1739,30 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
       if (iCitePmids.length > 0) {
         iCitePromise.then((lateMetrics) => {
-          if (feedSessionId.current !== activeSessionId || !lateMetrics || Object.keys(lateMetrics).length === 0) return;
-          setPapers(current => {
-            const enriched = mergeICiteEnrichment(current, lateMetrics);
-            const cachedMode = feedCache.current[activeMode];
-            if (cachedMode) {
-              feedCache.current[activeMode] = { ...cachedMode, papers: enriched };
-              scheduleFeedSnapshotWrite(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
-            }
-            return enriched;
-          });
+          if (!lateMetrics || Object.keys(lateMetrics).length === 0) return;
+          updateShownPapers(current => mergeICiteEnrichment(current, lateMetrics));
         });
 
         europePmcPromise.then((lateRecords) => {
-          if (feedSessionId.current !== activeSessionId || !lateRecords || lateRecords.size === 0) return;
-          setPapers(current => {
-            const enriched = preserveFeedAbstracts(current, mergeEuropePmcEnrichment(current, lateRecords));
-            const cachedMode = feedCache.current[activeMode];
-            if (cachedMode) {
-              feedCache.current[activeMode] = { ...cachedMode, papers: enriched };
-              scheduleFeedSnapshotWrite(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
-            }
-            return enriched;
-          });
+          if (!lateRecords || lateRecords.size === 0) return;
+          const loading = loadingAbstracts();
+          updateShownPapers(current => preserveFeedAbstracts(current, mergeEuropePmcEnrichment(current, lateRecords), loading));
         });
       }
+
+      if (!recovered) {
+        recoveryPromise.then((records) => {
+          if (records.length === 0) return;
+          const loading = loadingAbstracts();
+          updateShownPapers(current => preserveFeedAbstracts(current, mergeFeedAbstracts(current, records), loading));
+        });
+      }
+
+      // A confirmed book or book review leaves only if the reader has not
+      // reached it; a card already on screen stays.
+      publicationsPromise.then((classified) => {
+        updateShownPapers(current => dropUnreachedPublications(current, classified, visiblePaperIdRef.current));
+      });
 
     } catch {
       if (requestId === feedRequestId.current) {
@@ -2528,7 +2551,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // depend on `user?.uid`, not `user` — unless it genuinely needs a field of
   // `user` beyond the id, which none of the current ones do.
   const value = useMemo(() => ({
-    papers, loading, error, hasMore, isRefreshing,
+    papers, loading, error, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers,
     ensurePersonalLibrary,
@@ -2541,7 +2564,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     toggleReadLater, saveReadingMetadata,
     trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce
   }), [
-    papers, loading, error, hasMore, isRefreshing,
+    papers, loading, error, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers,
     ensurePersonalLibrary,
