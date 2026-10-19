@@ -1080,9 +1080,8 @@ button.pc-topics-pop-item:focus-visible {
   margin-bottom: var(--space-4);
   /* The one part of the card that yields. Everything else — kicker, badges,
      title, authors, actions — keeps its natural height; the abstract fills
-     whatever is left, and the similar papers and the graph fill the same
-     room when they take its place (`.pc-slot`), so switching never resizes
-     the block. */
+     whatever is left, and the graph fills the same room when it takes its
+     place (`.pc-slot`), so switching never resizes the block. */
   flex: 1 1 auto;
   min-height: 0;
   cursor: pointer;
@@ -1128,8 +1127,8 @@ button.pc-topics-pop-item:focus-visible {
   mask-size: 100% 400%;
 }
 
-/* A record with no abstract: the empty state is framed like the similar
-   papers' and the graph's panels, which take its place at its size. */
+/* A record with no abstract: the empty state is framed like the graph's
+   panel, which takes its place at its size. */
 .pc-slot--no-abstract .pc-abstract:has(> .pc-abstract-empty) {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);

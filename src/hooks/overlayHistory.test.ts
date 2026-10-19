@@ -406,3 +406,25 @@ test('SOURCE: en el visor de PDF, Atrás y la X terminan en la misma función', 
     'y el padre se entera solo cuando la salida ha terminado',
   );
 });
+
+test('un overlay encima de otro: cada Atrás cierra solo el de arriba, y la X del de arriba no cierra el de abajo', () => {
+  const f = fakeHistory(); let layerClosed = 0; let readerClosed = 0;
+  const layer = createOverlayHistory(f);
+  const reader = createOverlayHistory(f);
+  layer.arm('similar', () => { layerClosed += 1; });
+  reader.arm('reader', () => { readerClosed += 1; });
+
+  f.history.back();
+  assert.equal(readerClosed, 1, 'el primer Atrás cierra el lector');
+  assert.equal(layerClosed, 0, 'y la capa de debajo sigue abierta');
+
+  f.history.back();
+  assert.equal(layerClosed, 1, 'el segundo Atrás cierra la capa');
+  assert.equal(f.stack.length, 1);
+
+  layer.arm('similar', () => { layerClosed += 1; });
+  reader.arm('reader', () => { readerClosed += 1; });
+  reader.disarm();
+  assert.equal(layerClosed, 1, 'cerrar el lector con la X no cierra la capa');
+  assert.deepEqual(f.stack.at(-1), { idx: 3, key: 'k', overlay: 'similar' });
+});

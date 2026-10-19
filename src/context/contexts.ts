@@ -6,6 +6,7 @@ import type { LanguageContextValue } from './LanguageContext.tsx';
 import type { ThemeContextValue } from './ThemeContext.tsx';
 import type { AnalyticsContextValue } from './AnalyticsContext.tsx';
 import type { AuthContextValue } from './AuthContext.tsx';
+import type { SimilarFeedContextValue } from './SimilarFeedContext.tsx';
 
 import { createContext } from 'react';
 
@@ -36,4 +37,5 @@ export const FeedContext = createContext<FeedContextValue | null>(null);
 export const FollowingContext = createContext<FollowingContextValue | null>(null);
 export const FollowingUpdatesContext = createContext<FollowingUpdatesContextValue | null>(null);
 export const LanguageContext = createContext<LanguageContextValue | null>(null);
+export const SimilarFeedContext = createContext<SimilarFeedContextValue | null>(null);
 export const ThemeContext = createContext<ThemeContextValue | null>(null);
