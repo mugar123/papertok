@@ -62,7 +62,7 @@
       "country": "ES",
       "worksCount": 178156,
       "homepage": "https://www.ucm.es",
-      "probedAt": "2026-10-19T17:35:14.604Z",
+      "probedAt": "2026-10-19T17:48:55.371Z",
       "domains": [
         "ucm.es"
       ],
@@ -196,7 +196,7 @@
       "country": "US",
       "worksCount": 1070696,
       "homepage": "https://www.harvard.edu",
-      "probedAt": "2026-10-19T17:35:14.605Z",
+      "probedAt": "2026-10-19T17:48:55.371Z",
       "domains": [
         "harvard.edu"
       ],
@@ -207,7 +207,7 @@
       "code": "01HVD_INST",
       "route": "homepage>link>primo",
       "host": "na03.alma.exlibrisgroup.com",
-      "status": "answers-without-indicator",
+      "status": "verified",
       "source": "zotero",
       "resolverUrl": "https://libkey.io/libraries/215/openurl",
       "product": "libkey",
@@ -225,7 +225,7 @@
       "country": "US",
       "worksCount": 558086,
       "homepage": "https://www.stanford.edu",
-      "probedAt": "2026-10-19T17:35:14.605Z",
+      "probedAt": "2026-10-19T17:48:55.372Z",
       "domains": [
         "stanford.edu"
       ],
@@ -304,7 +304,7 @@
       "country": "US",
       "worksCount": 429571,
       "homepage": "https://www.columbia.edu",
-      "probedAt": "2026-10-19T17:35:14.605Z",
+      "probedAt": "2026-10-19T17:48:55.372Z",
       "domains": [
         "columbia.edu"
       ],
@@ -523,7 +523,7 @@
       "country": "US",
       "worksCount": 369893,
       "homepage": "https://msu.edu/",
-      "probedAt": "2026-10-19T17:35:14.605Z",
+      "probedAt": "2026-10-19T17:48:55.372Z",
       "domains": [
         "msu.edu"
       ],
@@ -599,7 +599,7 @@
       "country": "US",
       "worksCount": 365550,
       "homepage": "https://www.cornell.edu",
-      "probedAt": "2026-10-19T17:35:14.605Z",
+      "probedAt": "2026-10-19T17:48:55.372Z",
       "domains": [
         "cornell.edu"
       ],
@@ -620,7 +620,7 @@
       "country": "US",
       "worksCount": 357174,
       "homepage": "https://www.psu.edu",
-      "probedAt": "2026-10-19T17:35:14.605Z",
+      "probedAt": "2026-10-19T17:48:55.372Z",
       "domains": [
         "psu.edu"
       ],
@@ -754,7 +754,7 @@
       "country": "US",
       "worksCount": 350993,
       "homepage": "https://www.unc.edu",
-      "probedAt": "2026-10-19T17:35:14.627Z",
+      "probedAt": "2026-10-19T17:48:55.397Z",
       "domains": [
         "unc.edu"
       ],
@@ -913,7 +913,7 @@
       "country": "US",
       "worksCount": 282611,
       "homepage": "https://www.caltech.edu",
-      "probedAt": "2026-10-19T17:35:14.627Z",
+      "probedAt": "2026-10-19T17:48:55.397Z",
       "domains": [
         "caltech.edu"
       ],
@@ -934,7 +934,7 @@
       "country": "US",
       "worksCount": 301103,
       "homepage": "https://www.uchicago.edu",
-      "probedAt": "2026-10-19T17:35:14.627Z",
+      "probedAt": "2026-10-19T17:48:55.397Z",
       "domains": [
         "uchicago.edu"
       ],
@@ -955,7 +955,7 @@
       "country": "US",
       "worksCount": 287952,
       "homepage": "http://wustl.edu/",
-      "probedAt": "2026-10-19T17:35:14.628Z",
+      "probedAt": "2026-10-19T17:48:55.398Z",
       "domains": [
         "wustl.edu"
       ],
@@ -1057,7 +1057,7 @@
       "country": "US",
       "worksCount": 241981,
       "homepage": "https://umd.edu",
-      "probedAt": "2026-10-19T17:35:14.628Z",
+      "probedAt": "2026-10-19T17:48:55.398Z",
       "domains": [
         "umd.edu"
       ],
@@ -1067,11 +1067,11 @@
       "evidence": "https://na04.alma.exlibrisgroup.com/view/uresolver/01USMAI_UMCP/openurl",
       "code": "01USMAI_UMCP",
       "host": "na04.alma.exlibrisgroup.com",
-      "status": "answers-without-indicator",
+      "status": "verified",
       "source": "manual (Opus subagent, 2026-10-19)",
       "resolverUrl": "https://na04.alma.exlibrisgroup.com/view/uresolver/01USMAI_UMCP/openurl",
       "product": "alma",
-      "route": "manual (Opus subagent, 2026-10-19)-url",
+      "route": "seed",
       "services": 2,
       "packages": [
         "Springer Nature - Complete Springer Journals",
@@ -1115,7 +1115,7 @@
       "country": "US",
       "worksCount": 276876,
       "homepage": "https://www.tamu.edu/",
-      "probedAt": "2026-10-19T17:35:14.628Z",
+      "probedAt": "2026-10-19T17:48:55.398Z",
       "domains": [
         "tamu.edu"
       ],
@@ -1136,7 +1136,7 @@
       "country": "US",
       "worksCount": 213903,
       "homepage": "https://virginia.edu",
-      "probedAt": "2026-10-19T17:35:14.628Z",
+      "probedAt": "2026-10-19T17:48:55.398Z",
       "domains": [
         "virginia.edu"
       ],
@@ -1385,7 +1385,7 @@
       "country": "US",
       "worksCount": 187549,
       "homepage": "https://www.ncsu.edu/",
-      "probedAt": "2026-10-19T17:35:14.628Z",
+      "probedAt": "2026-10-19T17:48:55.398Z",
       "domains": [
         "ncsu.edu"
       ],
@@ -1396,7 +1396,7 @@
       "code": "01UNCSL_NCSU",
       "route": "subdomain",
       "host": "na07.alma.exlibrisgroup.com",
-      "status": "answers-without-indicator",
+      "status": "verified",
       "source": "zotero",
       "resolverUrl": "http://findtext.lib.ncsu.edu/",
       "product": "other",
@@ -1414,7 +1414,7 @@
       "country": "US",
       "worksCount": 197436,
       "homepage": "https://www.iastate.edu",
-      "probedAt": "2026-10-19T17:35:14.628Z",
+      "probedAt": "2026-10-19T17:48:55.398Z",
       "domains": [
         "iastate.edu"
       ],
@@ -1423,9 +1423,9 @@
       ],
       "evidence": "https://quicksearch.lib.iastate.edu/nde/openurl?vid=01IASU_INST%3A01IASU_NDE&institution=01IASU_INST",
       "code": "01IASU_INST",
-      "route": "zotero-url",
+      "route": "seed",
       "host": "na03.alma.exlibrisgroup.com",
-      "status": "answers-without-indicator",
+      "status": "verified",
       "source": "zotero",
       "resolverUrl": "https://quicksearch.lib.iastate.edu/openurl/01IASU_INST/01IASU_INST:01IASU",
       "product": "alma",
@@ -1548,7 +1548,7 @@
       "country": "US",
       "worksCount": 171067,
       "homepage": "https://icahn.mssm.edu",
-      "probedAt": "2026-10-19T17:35:14.629Z",
+      "probedAt": "2026-10-19T17:48:55.399Z",
       "domains": [
         "mssm.edu"
       ],
@@ -1559,7 +1559,7 @@
       "code": "01MSSM_INST",
       "route": "homepage>link",
       "host": "icahn-mssm.alma.exlibrisgroup.com",
-      "status": "answers-without-indicator",
+      "status": "verified",
       "services": 6,
       "packages": [
         "Nature",
@@ -1645,7 +1645,7 @@
       "country": "US",
       "worksCount": 179668,
       "homepage": "https://www.colorado.edu/",
-      "probedAt": "2026-10-19T17:35:14.629Z",
+      "probedAt": "2026-10-19T17:48:55.399Z",
       "domains": [
         "colorado.edu"
       ],
@@ -1987,7 +1987,7 @@
       "country": "US",
       "worksCount": 135294,
       "homepage": "https://www.umass.edu",
-      "probedAt": "2026-10-19T17:35:14.630Z",
+      "probedAt": "2026-10-19T17:48:55.400Z",
       "domains": [
         "umass.edu"
       ],
@@ -2066,7 +2066,7 @@
       "country": "US",
       "worksCount": 139224,
       "homepage": "https://missouri.edu/",
-      "probedAt": "2026-10-19T17:35:14.630Z",
+      "probedAt": "2026-10-19T17:48:55.400Z",
       "domains": [
         "missouri.edu"
       ],
@@ -2087,7 +2087,7 @@
       "country": "US",
       "worksCount": 123873,
       "homepage": "https://www.gwu.edu/",
-      "probedAt": "2026-10-19T17:35:15.675Z",
+      "probedAt": "2026-10-19T17:48:56.548Z",
       "domains": [
         "gwu.edu"
       ],
@@ -2343,7 +2343,7 @@
       "country": "US",
       "worksCount": 111161,
       "homepage": "https://www.byu.edu",
-      "probedAt": "2026-10-19T17:35:15.675Z",
+      "probedAt": "2026-10-19T17:48:56.548Z",
       "domains": [
         "byu.edu"
       ],
@@ -2447,7 +2447,7 @@
       "country": "US",
       "worksCount": 115703,
       "homepage": "https://ku.edu",
-      "probedAt": "2026-10-19T17:35:15.675Z",
+      "probedAt": "2026-10-19T17:48:56.548Z",
       "domains": [
         "ku.edu"
       ],
@@ -2927,7 +2927,7 @@
       "country": "US",
       "worksCount": 87674,
       "homepage": "https://louisville.edu",
-      "probedAt": "2026-10-19T17:35:15.675Z",
+      "probedAt": "2026-10-19T17:48:56.548Z",
       "domains": [
         "louisville.edu"
       ],
@@ -2948,7 +2948,7 @@
       "country": "US",
       "worksCount": 87110,
       "homepage": "https://www.ua.edu/",
-      "probedAt": "2026-10-19T17:35:15.675Z",
+      "probedAt": "2026-10-19T17:48:56.548Z",
       "domains": [
         "ua.edu"
       ],
@@ -3314,7 +3314,7 @@
       "country": "US",
       "worksCount": 82465,
       "homepage": "https://auburn.edu",
-      "probedAt": "2026-10-19T17:35:15.675Z",
+      "probedAt": "2026-10-19T17:48:56.548Z",
       "domains": [
         "auburn.edu"
       ],
@@ -3380,7 +3380,7 @@
       "country": "US",
       "worksCount": 66546,
       "homepage": "http://go.okstate.edu/",
-      "probedAt": "2026-10-19T17:35:15.675Z",
+      "probedAt": "2026-10-19T17:48:56.548Z",
       "domains": [],
       "links": [
         "http://go.okstate.edu/"
@@ -3399,7 +3399,7 @@
       "country": "US",
       "worksCount": 67940,
       "homepage": "https://www.rpi.edu",
-      "probedAt": "2026-10-19T17:35:15.849Z",
+      "probedAt": "2026-10-19T17:48:56.705Z",
       "domains": [
         "rpi.edu"
       ],
@@ -3572,7 +3572,7 @@
       "country": "US",
       "worksCount": 63546,
       "homepage": "https://www.utmb.edu",
-      "probedAt": "2026-10-19T17:35:15.849Z",
+      "probedAt": "2026-10-19T17:48:56.705Z",
       "domains": [
         "utmb.edu"
       ],
@@ -3583,7 +3583,7 @@
       "code": "01TEXASHEALTH_UTXMED",
       "route": "homepage>link",
       "host": "thslc-utxmed.alma.exlibrisgroup.com",
-      "status": "answers-without-indicator",
+      "status": "verified",
       "services": 16,
       "packages": [
         "SpringerLink eJournals",
@@ -3653,7 +3653,7 @@
       "country": "US",
       "worksCount": 60446,
       "homepage": "http://www.usu.edu/",
-      "probedAt": "2026-10-19T17:35:16.197Z",
+      "probedAt": "2026-10-19T17:48:56.766Z",
       "domains": [
         "usu.edu"
       ],
@@ -3786,7 +3786,7 @@
       "country": "US",
       "worksCount": 64943,
       "homepage": "https://olemiss.edu",
-      "probedAt": "2026-10-19T17:35:16.197Z",
+      "probedAt": "2026-10-19T17:48:56.766Z",
       "domains": [
         "olemiss.edu"
       ],
@@ -3941,7 +3941,7 @@
       "country": "DE",
       "worksCount": 329130,
       "homepage": "https://www.lmu.de",
-      "probedAt": "2026-10-19T17:35:16.197Z",
+      "probedAt": "2026-10-19T17:48:56.766Z",
       "domains": [
         "lmu.de"
       ],
@@ -4049,7 +4049,7 @@
       "country": "DK",
       "worksCount": 340742,
       "homepage": "https://www.ku.dk",
-      "probedAt": "2026-10-19T17:35:16.197Z",
+      "probedAt": "2026-10-19T17:48:56.766Z",
       "domains": [
         "ku.dk"
       ],
@@ -4251,7 +4251,7 @@
       "country": "DE",
       "worksCount": 272205,
       "homepage": "https://www.tum.de",
-      "probedAt": "2026-10-19T17:35:16.197Z",
+      "probedAt": "2026-10-19T17:48:56.766Z",
       "domains": [
         "tum.de"
       ],
@@ -4272,7 +4272,7 @@
       "country": "NL",
       "worksCount": 245956,
       "homepage": "https://www.uu.nl",
-      "probedAt": "2026-10-19T17:35:16.197Z",
+      "probedAt": "2026-10-19T17:48:56.766Z",
       "domains": [
         "uu.nl"
       ],
@@ -4293,7 +4293,7 @@
       "country": "DK",
       "worksCount": 251953,
       "homepage": "https://www.au.dk",
-      "probedAt": "2026-10-19T17:35:16.197Z",
+      "probedAt": "2026-10-19T17:48:56.766Z",
       "domains": [
         "au.dk"
       ],
@@ -4319,7 +4319,7 @@
       "country": "DE",
       "worksCount": 252744,
       "homepage": "https://www.uni-heidelberg.de",
-      "probedAt": "2026-10-19T17:35:16.197Z",
+      "probedAt": "2026-10-19T17:48:56.766Z",
       "domains": [
         "uni-heidelberg.de"
       ],
@@ -4340,7 +4340,7 @@
       "country": "NL",
       "worksCount": 222962,
       "homepage": "https://www.uva.nl",
-      "probedAt": "2026-10-19T17:35:17.258Z",
+      "probedAt": "2026-10-19T17:48:56.824Z",
       "domains": [
         "uva.nl"
       ],
@@ -4356,7 +4356,7 @@
         "Gale Academic OneFile",
         "Gale General OneFile"
       ],
-      "status": "answers-without-indicator",
+      "status": "verified",
       "primoSlug": null,
       "journal": "0028-0836"
     },
@@ -4395,7 +4395,7 @@
       "country": "FI",
       "worksCount": 222467,
       "homepage": "https://www.helsinki.fi/",
-      "probedAt": "2026-10-19T17:35:17.927Z",
+      "probedAt": "2026-10-19T17:48:56.974Z",
       "domains": [
         "helsinki.fi"
       ],
@@ -4405,11 +4405,11 @@
       "evidence": "https://helka.helsinki.fi/discovery/openurl?institution=358UOH_INST&vid=358UOH_INST:VU1",
       "code": "358UOH_INST",
       "host": "eu03.alma.exlibrisgroup.com",
-      "status": "answers-without-indicator",
+      "status": "verified",
       "source": "zotero",
       "resolverUrl": "https://helka.helsinki.fi/openurl/358UOH_INST/358UOH_INST:VU1",
       "product": "alma",
-      "route": "zotero-url",
+      "route": "seed",
       "services": 3,
       "packages": [
         "Nature Research (F)",
@@ -4424,7 +4424,7 @@
       "country": "IT",
       "worksCount": 281822,
       "homepage": "https://www.uniroma1.it",
-      "probedAt": "2026-10-19T17:35:18.745Z",
+      "probedAt": "2026-10-19T17:48:57.233Z",
       "domains": [
         "uniroma1.it"
       ],
@@ -4503,7 +4503,7 @@
       "country": "GB",
       "worksCount": 217237,
       "homepage": "https://www.bristol.ac.uk/",
-      "probedAt": "2026-10-19T17:35:18.745Z",
+      "probedAt": "2026-10-19T17:48:57.233Z",
       "domains": [
         "bristol.ac.uk"
       ],
@@ -4679,7 +4679,7 @@
       "country": "BE",
       "worksCount": 215014,
       "homepage": "https://www.ugent.be",
-      "probedAt": "2026-10-19T17:35:18.745Z",
+      "probedAt": "2026-10-19T17:48:57.233Z",
       "domains": [
         "ugent.be"
       ],
@@ -4688,9 +4688,9 @@
       ],
       "evidence": "https://eu06.alma.exlibrisgroup.com/view/uresolver/32RUG_INST/openurl",
       "code": "32RUG_INST",
-      "route": "manual (Opus subagent, 2026-10-19)-url",
+      "route": "seed",
       "host": "eu06.alma.exlibrisgroup.com",
-      "status": "answers-without-indicator",
+      "status": "verified",
       "source": "manual (Opus subagent, 2026-10-19)",
       "resolverUrl": "https://eu06.alma.exlibrisgroup.com/view/uresolver/32RUG_INST/openurl",
       "product": "alma",
@@ -4763,7 +4763,7 @@
       "country": "SE",
       "worksCount": 235367,
       "homepage": "https://www.lu.se",
-      "probedAt": "2026-10-19T17:35:19.213Z",
+      "probedAt": "2026-10-19T17:48:57.465Z",
       "domains": [
         "lu.se"
       ],
@@ -4813,7 +4813,7 @@
       "country": "NL",
       "worksCount": 194784,
       "homepage": "https://www.rug.nl",
-      "probedAt": "2026-10-19T17:35:19.213Z",
+      "probedAt": "2026-10-19T17:48:57.465Z",
       "domains": [
         "rug.nl"
       ],
@@ -4834,7 +4834,7 @@
       "country": "FR",
       "worksCount": 189282,
       "homepage": "https://www.univ-amu.fr/",
-      "probedAt": "2026-10-19T17:35:19.213Z",
+      "probedAt": "2026-10-19T17:48:57.465Z",
       "domains": [
         "univ-amu.fr"
       ],
@@ -4881,7 +4881,7 @@
       "country": "GB",
       "worksCount": 199897,
       "homepage": "https://www.gla.ac.uk/",
-      "probedAt": "2026-10-19T17:35:19.213Z",
+      "probedAt": "2026-10-19T17:48:57.465Z",
       "domains": [
         "gla.ac.uk"
       ],
@@ -4928,7 +4928,7 @@
       "country": "DE",
       "worksCount": 187678,
       "homepage": "https://www.kit.edu",
-      "probedAt": "2026-10-19T17:35:19.213Z",
+      "probedAt": "2026-10-19T17:48:57.465Z",
       "domains": [
         "kit.edu"
       ],
@@ -4948,7 +4948,7 @@
       "country": "GB",
       "worksCount": 185574,
       "homepage": "https://www.southampton.ac.uk/",
-      "probedAt": "2026-10-19T17:35:19.213Z",
+      "probedAt": "2026-10-19T17:48:57.465Z",
       "domains": [
         "southampton.ac.uk"
       ],
@@ -5136,7 +5136,7 @@
       "country": "DE",
       "worksCount": 161691,
       "homepage": "https://www.uni-stuttgart.de/",
-      "probedAt": "2026-10-19T17:35:19.213Z",
+      "probedAt": "2026-10-19T17:48:57.465Z",
       "domains": [
         "uni-stuttgart.de"
       ],
@@ -5157,7 +5157,7 @@
       "country": "FR",
       "worksCount": 161932,
       "homepage": "https://www.universite-paris-saclay.fr/",
-      "probedAt": "2026-10-19T17:35:19.857Z",
+      "probedAt": "2026-10-19T17:48:59.470Z",
       "domains": [
         "universite-paris-saclay.fr"
       ],
@@ -5242,7 +5242,7 @@
       "country": "FR",
       "worksCount": 155880,
       "homepage": null,
-      "probedAt": "2026-10-19T17:35:19.940Z",
+      "probedAt": "2026-10-19T17:48:59.479Z",
       "domains": [],
       "links": [],
       "evidence": null,
@@ -5259,7 +5259,7 @@
       "country": "IT",
       "worksCount": 179840,
       "homepage": "https://www.unina.it",
-      "probedAt": "2026-10-19T17:35:19.985Z",
+      "probedAt": "2026-10-19T17:48:59.610Z",
       "domains": [
         "unina.it"
       ],
@@ -5269,11 +5269,11 @@
       "evidence": "https://eu01.alma.exlibrisgroup.com/view/uresolver/39NAP_INST/openurl",
       "code": "39NAP_INST",
       "host": "eu01.alma.exlibrisgroup.com",
-      "status": "answers-without-indicator",
+      "status": "verified",
       "source": "manual (Opus subagent, 2026-10-19)",
       "resolverUrl": "https://eu01.alma.exlibrisgroup.com/view/uresolver/39NAP_INST/openurl",
       "product": "alma",
-      "route": "manual (Opus subagent, 2026-10-19)-url",
+      "route": "seed",
       "services": 7,
       "packages": [
         "SpringerLink Journals - AutoHoldings",
@@ -5306,7 +5306,7 @@
       "country": "DE",
       "worksCount": 164450,
       "homepage": "https://www.fau.de/",
-      "probedAt": "2026-10-19T17:35:20.052Z",
+      "probedAt": "2026-10-19T17:48:59.621Z",
       "domains": [
         "fau.de"
       ],
@@ -5512,7 +5512,7 @@
       "country": "CH",
       "worksCount": 147694,
       "homepage": "https://www.epfl.ch/",
-      "probedAt": "2026-10-19T17:35:20.053Z",
+      "probedAt": "2026-10-19T17:48:59.621Z",
       "domains": [
         "epfl.ch"
       ],
@@ -5528,7 +5528,7 @@
         "Materials Science &amp; Engineering Collection",
         "Nature"
       ],
-      "status": "answers-without-indicator",
+      "status": "verified",
       "primoSlug": "slsp-epfl",
       "journal": "0028-0836"
     },
@@ -5885,7 +5885,7 @@
       "country": "DE",
       "worksCount": 135078,
       "homepage": "https://www.hu-berlin.de/?set_language=en&cl=en",
-      "probedAt": "2026-10-19T17:35:20.099Z",
+      "probedAt": "2026-10-19T17:48:59.970Z",
       "domains": [
         "hu-berlin.de"
       ],
@@ -5922,7 +5922,7 @@
       "country": "SE",
       "worksCount": 129846,
       "homepage": "https://www.su.se",
-      "probedAt": "2026-10-19T17:35:20.099Z",
+      "probedAt": "2026-10-19T17:48:59.970Z",
       "domains": [
         "su.se"
       ],
@@ -5997,7 +5997,7 @@
       "country": "FR",
       "worksCount": 125392,
       "homepage": "https://www.univ-lyon1.fr",
-      "probedAt": "2026-10-19T17:35:20.099Z",
+      "probedAt": "2026-10-19T17:48:59.970Z",
       "domains": [
         "univ-lyon1.fr"
       ],
@@ -6044,7 +6044,7 @@
       "country": "DE",
       "worksCount": 127188,
       "homepage": "https://www.uni-mainz.de",
-      "probedAt": "2026-10-19T17:35:20.099Z",
+      "probedAt": "2026-10-19T17:48:59.970Z",
       "domains": [
         "uni-mainz.de"
       ],
@@ -6171,7 +6171,7 @@
       "country": "SE",
       "worksCount": 118386,
       "homepage": "https://www.kth.se",
-      "probedAt": "2026-10-19T17:35:20.596Z",
+      "probedAt": "2026-10-19T17:49:00.403Z",
       "domains": [
         "kth.se"
       ],
@@ -6246,7 +6246,7 @@
       "country": "DE",
       "worksCount": 127177,
       "homepage": "https://www.uni-leipzig.de/",
-      "probedAt": "2026-10-19T17:35:20.804Z",
+      "probedAt": "2026-10-19T17:49:00.892Z",
       "domains": [
         "uni-leipzig.de"
       ],
@@ -6344,7 +6344,7 @@
       "country": "GB",
       "worksCount": 114112,
       "homepage": "https://www.qub.ac.uk",
-      "probedAt": "2026-10-19T17:35:22.130Z",
+      "probedAt": "2026-10-19T17:49:02.375Z",
       "domains": [
         "qub.ac.uk"
       ],
@@ -6365,7 +6365,7 @@
       "country": "DE",
       "worksCount": 114218,
       "homepage": "https://www.tu.berlin",
-      "probedAt": "2026-10-19T17:35:22.130Z",
+      "probedAt": "2026-10-19T17:49:02.375Z",
       "domains": [
         "tu-berlin.de"
       ],
@@ -6629,7 +6629,7 @@
       "country": "FR",
       "worksCount": 109387,
       "homepage": "https://www.unistra.fr",
-      "probedAt": "2026-10-19T17:35:23.253Z",
+      "probedAt": "2026-10-19T17:49:05.397Z",
       "domains": [
         "unistra.fr"
       ],
@@ -6650,7 +6650,7 @@
       "country": "GB",
       "worksCount": 106164,
       "homepage": "http://www.lshtm.ac.uk/",
-      "probedAt": "2026-10-19T17:35:23.253Z",
+      "probedAt": "2026-10-19T17:49:05.397Z",
       "domains": [
         "lshtm.ac.uk"
       ],
@@ -6666,7 +6666,7 @@
         "Springer Nature Read and Publish 2026-2028: Nature Read",
         "Free E- Journals"
       ],
-      "status": "answers-without-indicator",
+      "status": "verified",
       "primoSlug": null,
       "journal": "0028-0836"
     },
@@ -6794,7 +6794,7 @@
       "country": "IE",
       "worksCount": 106549,
       "homepage": "https://www.ucd.ie",
-      "probedAt": "2026-10-19T17:35:23.735Z",
+      "probedAt": "2026-10-19T17:49:05.584Z",
       "domains": [
         "ucd.ie"
       ],
@@ -6815,7 +6815,7 @@
       "country": "FR",
       "worksCount": 103668,
       "homepage": "https://www.univ-tlse3.fr",
-      "probedAt": "2026-10-19T17:35:23.735Z",
+      "probedAt": "2026-10-19T17:49:05.584Z",
       "domains": [
         "univ-tlse3.fr"
       ],
@@ -6836,7 +6836,7 @@
       "country": "ES",
       "worksCount": 102668,
       "homepage": "https://www.ehu.eus",
-      "probedAt": "2026-10-19T17:35:25.041Z",
+      "probedAt": "2026-10-19T17:49:05.832Z",
       "domains": [
         "ehu.eus"
       ],
@@ -7012,7 +7012,7 @@
       "country": "FR",
       "worksCount": 96685,
       "homepage": "https://www.univ-nantes.fr/",
-      "probedAt": "2026-10-19T17:35:25.041Z",
+      "probedAt": "2026-10-19T17:49:05.832Z",
       "domains": [
         "univ-nantes.fr"
       ],
@@ -7059,7 +7059,7 @@
       "country": "IE",
       "worksCount": 96879,
       "homepage": "https://www.tcd.ie/",
-      "probedAt": "2026-10-19T17:35:25.041Z",
+      "probedAt": "2026-10-19T17:49:05.832Z",
       "domains": [
         "tcd.ie"
       ],
@@ -7098,7 +7098,7 @@
       "country": "GB",
       "worksCount": 96217,
       "homepage": "https://www.abdn.ac.uk",
-      "probedAt": "2026-10-19T17:35:25.041Z",
+      "probedAt": "2026-10-19T17:49:05.832Z",
       "domains": [
         "abdn.ac.uk"
       ],
@@ -7184,7 +7184,7 @@
       "country": "DE",
       "worksCount": 95440,
       "homepage": "https://www.tu-darmstadt.de",
-      "probedAt": "2026-10-19T17:35:25.261Z",
+      "probedAt": "2026-10-19T17:49:08.967Z",
       "domains": [
         "tu-darmstadt.de"
       ],
@@ -7241,7 +7241,7 @@
       "country": "DE",
       "worksCount": 95556,
       "homepage": "https://www.uni-marburg.de/",
-      "probedAt": "2026-10-19T17:35:26.016Z",
+      "probedAt": "2026-10-19T17:49:09.224Z",
       "domains": [
         "uni-marburg.de"
       ],
@@ -7398,7 +7398,7 @@
       "country": "FR",
       "worksCount": 87948,
       "homepage": "https://www.univ-rennes.fr",
-      "probedAt": "2026-10-19T17:35:26.848Z",
+      "probedAt": "2026-10-19T17:49:09.700Z",
       "domains": [
         "univ-rennes.fr"
       ],
@@ -7419,7 +7419,7 @@
       "country": "ES",
       "worksCount": 87596,
       "homepage": "https://www.unizar.es",
-      "probedAt": "2026-10-19T17:35:26.848Z",
+      "probedAt": "2026-10-19T17:49:09.700Z",
       "domains": [
         "unizar.es"
       ],
@@ -7989,7 +7989,7 @@
       "country": "DE",
       "worksCount": 71675,
       "homepage": "https://www.uni-regensburg.de",
-      "probedAt": "2026-10-19T17:35:26.848Z",
+      "probedAt": "2026-10-19T17:49:09.700Z",
       "domains": [
         "uni-regensburg.de"
       ],
@@ -8010,7 +8010,7 @@
       "country": "ES",
       "worksCount": 80110,
       "homepage": "https://www.upv.es",
-      "probedAt": "2026-10-19T17:35:26.848Z",
+      "probedAt": "2026-10-19T17:49:09.700Z",
       "domains": [
         "upv.es"
       ],
@@ -8020,11 +8020,11 @@
       "evidence": "https://eu00.alma.exlibrisgroup.com/view/uresolver/34UPV_INST/openurl",
       "code": "34UPV_INST",
       "host": "eu00.alma.exlibrisgroup.com",
-      "status": "answers-without-indicator",
+      "status": "verified",
       "source": "manual (Opus subagent, 2026-10-19)",
       "resolverUrl": "https://eu00.alma.exlibrisgroup.com/view/uresolver/34UPV_INST/openurl",
       "product": "alma",
-      "route": "manual (Opus subagent, 2026-10-19)-url",
+      "route": "seed",
       "services": 4,
       "packages": [
         "Nature",
@@ -8251,7 +8251,7 @@
       "country": "SE",
       "worksCount": 63799,
       "homepage": "http://www.slu.se/en/",
-      "probedAt": "2026-10-19T17:35:29.078Z",
+      "probedAt": "2026-10-19T17:49:09.784Z",
       "domains": [],
       "links": [
         "http://www.slu.se/en/"
@@ -8259,7 +8259,7 @@
       "evidence": "https://slu.primo.exlibrisgroup.com/nde/openurl?vid=46SLUB_INST%3ASLUB_NDE&institution=46SLUB_INST",
       "code": "46SLUB_INST",
       "host": "slu.alma.exlibrisgroup.com",
-      "status": "answers-without-indicator",
+      "status": "verified",
       "source": "zotero",
       "resolverUrl": "https://slu.primo.exlibrisgroup.com/openurl/46SLUB_INST/46SLUB_INST:SLUB_V1",
       "product": "alma",
@@ -8420,7 +8420,7 @@
       "country": "DE",
       "worksCount": 63489,
       "homepage": "https://www.uni-bielefeld.de",
-      "probedAt": "2026-10-19T17:35:29.602Z",
+      "probedAt": "2026-10-19T17:49:10.609Z",
       "domains": [
         "uni-bielefeld.de"
       ],
@@ -8531,7 +8531,7 @@
       "country": "FR",
       "worksCount": 61574,
       "homepage": "https://www.polytechnique.edu/en",
-      "probedAt": "2026-10-19T17:35:29.980Z",
+      "probedAt": "2026-10-19T17:49:10.973Z",
       "domains": [
         "polytechnique.edu"
       ],
@@ -8542,7 +8542,7 @@
       "code": "33POLY_INST",
       "route": "homepage>link",
       "host": "eu06.alma.exlibrisgroup.com",
-      "status": "answers-without-indicator",
+      "status": "verified",
       "services": 5,
       "packages": [
         "Accès via la plateforme de l'éditeur",
@@ -8575,7 +8575,7 @@
       "country": "ES",
       "worksCount": 61358,
       "homepage": "https://www.um.es",
-      "probedAt": "2026-10-19T17:35:30.093Z",
+      "probedAt": "2026-10-19T17:49:11.366Z",
       "domains": [
         "um.es"
       ],
@@ -8658,7 +8658,7 @@
       "country": "ES",
       "worksCount": 60019,
       "homepage": "https://www.uniovi.es",
-      "probedAt": "2026-10-19T17:35:30.093Z",
+      "probedAt": "2026-10-19T17:49:11.366Z",
       "domains": [
         "uniovi.es"
       ],
@@ -8806,7 +8806,7 @@
       "country": "DE",
       "worksCount": 59806,
       "homepage": "https://www.uni-rostock.de/",
-      "probedAt": "2026-10-19T17:35:30.093Z",
+      "probedAt": "2026-10-19T17:49:11.366Z",
       "domains": [
         "uni-rostock.de"
       ],
@@ -8972,7 +8972,7 @@
       "country": "FR",
       "worksCount": 56031,
       "homepage": "https://www.parisnanterre.fr",
-      "probedAt": "2026-10-19T17:35:30.451Z",
+      "probedAt": "2026-10-19T17:49:11.579Z",
       "domains": [
         "parisnanterre.fr"
       ],
@@ -8993,7 +8993,7 @@
       "country": "GB",
       "worksCount": 55170,
       "homepage": "https://www.open.ac.uk",
-      "probedAt": "2026-10-19T17:35:30.451Z",
+      "probedAt": "2026-10-19T17:49:11.579Z",
       "domains": [
         "open.ac.uk"
       ],
@@ -9009,7 +9009,7 @@
         "Nature",
         "Gale Academic OneFile"
       ],
-      "status": "answers-without-indicator",
+      "status": "verified",
       "primoSlug": null,
       "journal": "0028-0836"
     },
@@ -9176,7 +9176,7 @@
       "country": "DE",
       "worksCount": 55102,
       "homepage": "https://www.ovgu.de",
-      "probedAt": "2026-10-19T17:35:31.688Z",
+      "probedAt": "2026-10-19T17:49:12.068Z",
       "domains": [
         "ovgu.de"
       ],
@@ -9582,7 +9582,7 @@
       "country": "ES",
       "worksCount": 34128,
       "homepage": "https://web.unican.es",
-      "probedAt": "2026-10-19T17:35:31.688Z",
+      "probedAt": "2026-10-19T17:49:12.068Z",
       "domains": [
         "unican.es"
       ],
@@ -9629,7 +9629,7 @@
       "country": "ES",
       "worksCount": 31503,
       "homepage": "https://www.uca.es",
-      "probedAt": "2026-10-19T17:35:31.688Z",
+      "probedAt": "2026-10-19T17:49:12.068Z",
       "domains": [
         "uca.es"
       ],
@@ -9650,7 +9650,7 @@
       "country": "ES",
       "worksCount": 30696,
       "homepage": "https://www.uji.es",
-      "probedAt": "2026-10-19T17:35:31.688Z",
+      "probedAt": "2026-10-19T17:49:12.068Z",
       "domains": [
         "uji.es"
       ],
@@ -9660,11 +9660,11 @@
       "evidence": "https://eu00.alma.exlibrisgroup.com/view/uresolver/34CVA_UJI/openurl",
       "code": "34CVA_UJI",
       "host": "eu00.alma.exlibrisgroup.com",
-      "status": "answers-without-indicator",
+      "status": "verified",
       "source": "manual (Opus subagent, 2026-10-19)",
       "resolverUrl": "https://eu00.alma.exlibrisgroup.com/view/uresolver/34CVA_UJI/openurl",
       "product": "alma",
-      "route": "manual (Opus subagent, 2026-10-19)-url",
+      "route": "seed",
       "services": 4,
       "packages": [
         "Text complet a ProQuest Central",
@@ -9705,7 +9705,7 @@
       "country": "ES",
       "worksCount": 31161,
       "homepage": "https://www.uib.cat/",
-      "probedAt": "2026-10-19T17:35:31.847Z",
+      "probedAt": "2026-10-19T17:49:12.360Z",
       "domains": [
         "uib.es"
       ],
@@ -9727,7 +9727,7 @@
       "country": "ES",
       "worksCount": 25501,
       "homepage": "https://www.ulpgc.es",
-      "probedAt": "2026-10-19T17:35:31.847Z",
+      "probedAt": "2026-10-19T17:49:12.360Z",
       "domains": [
         "ulpgc.es"
       ],
@@ -9910,7 +9910,7 @@
       "country": "ES",
       "worksCount": 20060,
       "homepage": "https://www.unavarra.es",
-      "probedAt": "2026-10-19T17:35:31.847Z",
+      "probedAt": "2026-10-19T17:49:12.360Z",
       "domains": [
         "unavarra.es"
       ],
@@ -10451,7 +10451,7 @@
       "country": "ES",
       "worksCount": 3889,
       "homepage": "https://www.ie.edu",
-      "probedAt": "2026-10-19T17:35:31.847Z",
+      "probedAt": "2026-10-19T17:49:12.360Z",
       "domains": [
         "ie.edu"
       ],
@@ -11116,7 +11116,7 @@
       "country": "ES",
       "worksCount": 777,
       "homepage": "https://www.uaoceu.es",
-      "probedAt": "2026-10-19T17:35:31.847Z",
+      "probedAt": "2026-10-19T17:49:12.360Z",
       "domains": [
         "uaoceu.es"
       ],
@@ -11262,7 +11262,7 @@
       "country": "ES",
       "worksCount": 501,
       "homepage": "https://www.unia.es",
-      "probedAt": "2026-10-19T17:35:31.847Z",
+      "probedAt": "2026-10-19T17:49:12.360Z",
       "domains": [
         "unia.es"
       ],
@@ -11629,7 +11629,7 @@
       "country": "ES",
       "worksCount": 228,
       "homepage": "https://www.esmuc.cat",
-      "probedAt": "2026-10-19T17:35:31.847Z",
+      "probedAt": "2026-10-19T17:49:12.360Z",
       "domains": [
         "esmuc.cat"
       ],
@@ -12257,7 +12257,7 @@
       "country": "ES",
       "worksCount": 57,
       "homepage": "https://www.csuc.cat",
-      "probedAt": "2026-10-19T17:35:31.847Z",
+      "probedAt": "2026-10-19T17:49:12.360Z",
       "domains": [
         "csuc.cat"
       ],
@@ -12921,7 +12921,7 @@
       "country": "ES",
       "worksCount": 1,
       "homepage": "https://www.cbua.es",
-      "probedAt": "2026-10-19T17:35:31.847Z",
+      "probedAt": "2026-10-19T17:49:12.360Z",
       "domains": [
         "cbua.es"
       ],
@@ -13036,7 +13036,7 @@
       "country": "CA",
       "worksCount": 384012,
       "homepage": "https://www.ubc.ca/",
-      "probedAt": "2026-10-19T17:35:31.847Z",
+      "probedAt": "2026-10-19T17:49:12.361Z",
       "domains": [
         "ubc.ca"
       ],
@@ -13086,7 +13086,7 @@
       "country": "CA",
       "worksCount": 304099,
       "homepage": "https://www.mcgill.ca",
-      "probedAt": "2026-10-19T17:35:31.847Z",
+      "probedAt": "2026-10-19T17:49:12.361Z",
       "domains": [
         "mcgill.ca"
       ],
@@ -13165,7 +13165,7 @@
       "country": "CA",
       "worksCount": 191491,
       "homepage": "https://www.umontreal.ca",
-      "probedAt": "2026-10-19T17:35:31.847Z",
+      "probedAt": "2026-10-19T17:49:12.361Z",
       "domains": [
         "umontreal.ca"
       ],
@@ -13212,7 +13212,7 @@
       "country": "AU",
       "worksCount": 278971,
       "homepage": "https://www.uq.edu.au",
-      "probedAt": "2026-10-19T17:35:31.847Z",
+      "probedAt": "2026-10-19T17:49:12.361Z",
       "domains": [
         "uq.edu.au"
       ],
@@ -13228,7 +13228,7 @@
         "Nature",
         "Research Library"
       ],
-      "status": "answers-without-indicator",
+      "status": "verified",
       "primoSlug": null,
       "journal": "0028-0836"
     },
@@ -13238,7 +13238,7 @@
       "country": "CA",
       "worksCount": 198717,
       "homepage": "https://www.ucalgary.ca",
-      "probedAt": "2026-10-19T17:35:32.775Z",
+      "probedAt": "2026-10-19T17:49:13.116Z",
       "domains": [
         "ucalgary.ca"
       ],
@@ -13254,7 +13254,7 @@
         "Nature",
         "Gale OneFile: CPI.Q"
       ],
-      "status": "answers-without-indicator",
+      "status": "verified",
       "primoSlug": "ucalgary",
       "journal": "0028-0836"
     },
@@ -13371,7 +13371,7 @@
       "country": "CA",
       "worksCount": 135653,
       "homepage": "https://www.ulaval.ca",
-      "probedAt": "2026-10-19T17:35:33.253Z",
+      "probedAt": "2026-10-19T17:49:13.311Z",
       "domains": [
         "ulaval.ca"
       ],
@@ -13444,7 +13444,7 @@
       "country": "CA",
       "worksCount": 174463,
       "homepage": "https://uwo.ca",
-      "probedAt": "2026-10-19T17:35:33.253Z",
+      "probedAt": "2026-10-19T17:49:13.311Z",
       "domains": [
         "uwo.ca"
       ],
@@ -13460,7 +13460,7 @@
         "Gale Academic OneFile",
         "Gale OneFile: CPI.Q"
       ],
-      "status": "answers-without-indicator",
+      "status": "verified",
       "primoSlug": "ocul-uwo",
       "journal": "0028-0836"
     },
@@ -13705,7 +13705,7 @@
       "country": "AU",
       "worksCount": 93365,
       "homepage": "https://www.deakin.edu.au",
-      "probedAt": "2026-10-19T17:35:34.018Z",
+      "probedAt": "2026-10-19T17:49:13.991Z",
       "domains": [
         "deakin.edu.au"
       ],
@@ -13998,7 +13998,7 @@
       "country": "CA",
       "worksCount": 77654,
       "homepage": "https://www.concordia.ca/",
-      "probedAt": "2026-10-19T17:35:34.018Z",
+      "probedAt": "2026-10-19T17:49:13.991Z",
       "domains": [
         "concordia.ca"
       ],
@@ -14129,7 +14129,7 @@
       "country": "CA",
       "worksCount": 63004,
       "homepage": "https://uqam.ca",
-      "probedAt": "2026-10-19T17:35:34.018Z",
+      "probedAt": "2026-10-19T17:49:13.991Z",
       "domains": [
         "uqam.ca"
       ],
@@ -14176,7 +14176,7 @@
       "country": "NZ",
       "worksCount": 60710,
       "homepage": "https://www.wgtn.ac.nz/",
-      "probedAt": "2026-10-19T17:35:34.018Z",
+      "probedAt": "2026-10-19T17:49:13.991Z",
       "domains": [
         "vuw.ac.nz"
       ],
@@ -14186,11 +14186,11 @@
       "evidence": "https://ap02.alma.exlibrisgroup.com/view/uresolver/64VUW_INST/openurl",
       "code": "64VUW_INST",
       "host": "ap02.alma.exlibrisgroup.com",
-      "status": "answers-without-indicator",
+      "status": "verified",
       "source": "manual (Opus subagent, 2026-10-19)",
       "resolverUrl": "https://ap02.alma.exlibrisgroup.com/view/uresolver/64VUW_INST/openurl",
       "product": "alma",
-      "route": "manual (Opus subagent, 2026-10-19)-url",
+      "route": "seed",
       "services": 26,
       "packages": [
         "Nature Journals",
@@ -14289,7 +14289,7 @@
       "country": "CA",
       "worksCount": 58898,
       "homepage": "https://www.usherbrooke.ca",
-      "probedAt": "2026-10-19T17:35:34.996Z",
+      "probedAt": "2026-10-19T17:49:14.042Z",
       "domains": [
         "usherbrooke.ca"
       ],
@@ -14339,7 +14339,7 @@
       "country": "NZ",
       "worksCount": 52186,
       "homepage": "https://www.canterbury.ac.nz",
-      "probedAt": "2026-10-19T17:35:34.996Z",
+      "probedAt": "2026-10-19T17:49:14.042Z",
       "domains": [
         "canterbury.ac.nz"
       ],
@@ -14360,7 +14360,7 @@
       "country": "NZ",
       "worksCount": 53088,
       "homepage": "https://www.massey.ac.nz",
-      "probedAt": "2026-10-19T17:35:34.996Z",
+      "probedAt": "2026-10-19T17:49:14.042Z",
       "domains": [
         "massey.ac.nz"
       ],
@@ -14439,7 +14439,7 @@
       "country": "CA",
       "worksCount": 38464,
       "homepage": "https://polymtl.ca",
-      "probedAt": "2026-10-19T17:35:34.996Z",
+      "probedAt": "2026-10-19T17:49:14.042Z",
       "domains": [
         "polymtl.ca"
       ],
@@ -14486,7 +14486,7 @@
       "country": "AU",
       "worksCount": 32277,
       "homepage": "http://www.ecu.edu.au/",
-      "probedAt": "2026-10-19T17:35:34.996Z",
+      "probedAt": "2026-10-19T17:49:14.042Z",
       "domains": [
         "ecu.edu.au"
       ],
@@ -14507,7 +14507,7 @@
       "country": "CA",
       "worksCount": 34896,
       "homepage": "https://unb.ca",
-      "probedAt": "2026-10-19T17:35:34.996Z",
+      "probedAt": "2026-10-19T17:49:14.042Z",
       "domains": [
         "unb.ca"
       ],
@@ -14528,7 +14528,7 @@
       "country": "AU",
       "worksCount": 32490,
       "homepage": "https://www.une.edu.au",
-      "probedAt": "2026-10-19T17:35:34.996Z",
+      "probedAt": "2026-10-19T17:49:14.042Z",
       "domains": [
         "une.edu.au"
       ],
@@ -14538,11 +14538,11 @@
       "evidence": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61UNE_INST/openurl",
       "code": "61UNE_INST",
       "host": "ap02.alma.exlibrisgroup.com",
-      "status": "answers-without-indicator",
+      "status": "verified",
       "source": "manual (Opus subagent, 2026-10-19)",
       "resolverUrl": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61UNE_INST/openurl",
       "product": "alma",
-      "route": "manual (Opus subagent, 2026-10-19)-url",
+      "route": "seed",
       "services": 17,
       "packages": [
         "Nature.com",
@@ -17197,7 +17197,7 @@
       "country": "GB",
       "worksCount": 28289,
       "homepage": "https://www.uwe.ac.uk",
-      "probedAt": "2026-10-19T17:35:36.498Z",
+      "probedAt": "2026-10-19T17:49:14.119Z",
       "domains": [
         "uwe.ac.uk"
       ],
@@ -17213,7 +17213,7 @@
         "SpringerLink Journals - AutoHoldings",
         "Nexis Uni"
       ],
-      "status": "answers-without-indicator",
+      "status": "verified",
       "primoSlug": "uwe",
       "journal": "0028-0836"
     },
@@ -17416,7 +17416,7 @@
       "country": "DK",
       "worksCount": 26526,
       "homepage": "https://ruc.dk",
-      "probedAt": "2026-10-19T17:35:37.280Z",
+      "probedAt": "2026-10-19T17:49:14.884Z",
       "domains": [
         "ruc.dk"
       ],
@@ -17742,7 +17742,7 @@
       "country": "BE",
       "worksCount": 23081,
       "homepage": "https://www.uhasselt.be",
-      "probedAt": "2026-10-19T17:35:37.280Z",
+      "probedAt": "2026-10-19T17:49:14.884Z",
       "domains": [
         "uhasselt.be"
       ],
@@ -17758,9 +17758,11 @@
         "SpringerLink Journals - AH (IP)",
         "SpringerLink Journals - AutoHoldings"
       ],
-      "status": "answers-without-indicator",
+      "status": "excluded",
       "primoSlug": "ec-europa-finder",
-      "journal": "0028-0836"
+      "journal": "0028-0836",
+      "source": "census review 2026-10-19",
+      "exclude": "the code found on its e-resources page (32EUC_INST on ec-europa-finder.alma…) is the European Commission library Find-eR, which the page links to, not the university's own resolver"
     },
     "https://ror.org/02ba3pt07": {
       "rorId": "https://ror.org/02ba3pt07",
@@ -17929,7 +17931,7 @@
       "country": "JP",
       "worksCount": 601240,
       "homepage": "https://www.u-tokyo.ac.jp",
-      "probedAt": "2026-10-19T17:35:37.476Z",
+      "probedAt": "2026-10-19T17:49:14.884Z",
       "domains": [],
       "links": [
         "https://www.u-tokyo.ac.jp"
@@ -17947,7 +17949,7 @@
       "country": "JP",
       "worksCount": 465567,
       "homepage": "http://www.kyoto-u.ac.jp/en",
-      "probedAt": "2026-10-19T17:35:37.732Z",
+      "probedAt": "2026-10-19T17:49:15.065Z",
       "domains": [],
       "links": [
         "http://www.kyoto-u.ac.jp/en"
@@ -17965,7 +17967,7 @@
       "country": "CN",
       "worksCount": 426488,
       "homepage": "https://www.zju.edu.cn",
-      "probedAt": "2026-10-19T17:35:37.768Z",
+      "probedAt": "2026-10-19T17:49:15.146Z",
       "domains": [
         "zju.edu.cn"
       ],
@@ -17985,7 +17987,7 @@
       "country": "JP",
       "worksCount": 318385,
       "homepage": "http://en.nagoya-u.ac.jp/",
-      "probedAt": "2026-10-19T17:35:37.768Z",
+      "probedAt": "2026-10-19T17:49:15.146Z",
       "domains": [],
       "links": [
         "http://en.nagoya-u.ac.jp/"
@@ -18003,7 +18005,7 @@
       "country": "JP",
       "worksCount": 329174,
       "homepage": "https://www.osaka-u.ac.jp",
-      "probedAt": "2026-10-19T17:35:38.560Z",
+      "probedAt": "2026-10-19T17:49:15.715Z",
       "domains": [
         "osaka-u.ac.jp"
       ],
@@ -18023,7 +18025,7 @@
       "country": "JP",
       "worksCount": 305339,
       "homepage": "http://www.tohoku.ac.jp/en/",
-      "probedAt": "2026-10-19T17:35:38.560Z",
+      "probedAt": "2026-10-19T17:49:15.715Z",
       "domains": [],
       "links": [
         "http://www.tohoku.ac.jp/en/"
@@ -18069,7 +18071,7 @@
       "country": "CN",
       "worksCount": 415506,
       "homepage": "https://www.sjtu.edu.cn",
-      "probedAt": "2026-10-19T17:35:39.051Z",
+      "probedAt": "2026-10-19T17:49:15.963Z",
       "domains": [
         "sjtu.edu.cn"
       ],
@@ -18116,7 +18118,7 @@
       "country": "JP",
       "worksCount": 275566,
       "homepage": "https://www.global.hokudai.ac.jp/",
-      "probedAt": "2026-10-19T17:35:39.051Z",
+      "probedAt": "2026-10-19T17:49:15.963Z",
       "domains": [],
       "links": [
         "https://www.global.hokudai.ac.jp/"
@@ -18149,7 +18151,7 @@
       "country": "SG",
       "worksCount": 290110,
       "homepage": "https://www.nus.edu.sg/",
-      "probedAt": "2026-10-19T17:35:39.567Z",
+      "probedAt": "2026-10-19T17:49:16.716Z",
       "domains": [
         "nus.edu.sg"
       ],
@@ -18168,7 +18170,7 @@
       "country": "CN",
       "worksCount": 275642,
       "homepage": "https://fudan.edu.cn",
-      "probedAt": "2026-10-19T17:35:39.567Z",
+      "probedAt": "2026-10-19T17:49:16.716Z",
       "domains": [
         "fudan.edu.cn"
       ],
@@ -18205,7 +18207,7 @@
       "country": "CN",
       "worksCount": 251450,
       "homepage": "https://scu.edu.cn",
-      "probedAt": "2026-10-19T17:35:39.567Z",
+      "probedAt": "2026-10-19T17:49:16.716Z",
       "domains": [
         "scu.edu.cn"
       ],
@@ -18225,7 +18227,7 @@
       "country": "CN",
       "worksCount": 326970,
       "homepage": "https://www.pku.edu.cn",
-      "probedAt": "2026-10-19T17:35:39.567Z",
+      "probedAt": "2026-10-19T17:49:16.716Z",
       "domains": [
         "pku.edu.cn"
       ],
@@ -18444,7 +18446,7 @@
       "country": "HK",
       "worksCount": 188659,
       "homepage": "https://www.hku.hk",
-      "probedAt": "2026-10-19T17:35:39.567Z",
+      "probedAt": "2026-10-19T17:49:16.716Z",
       "domains": [
         "hku.hk"
       ],
@@ -18456,7 +18458,7 @@
       "route": "subdomain",
       "primoSlug": "julac-hku",
       "host": "julac-hku.alma.exlibrisgroup.com",
-      "status": "answers-without-indicator",
+      "status": "verified",
       "services": 12,
       "packages": [
         "Gale In Context: Science",
@@ -18553,7 +18555,7 @@
       "country": "CN",
       "worksCount": 181713,
       "homepage": "https://www.jlu.edu.cn/",
-      "probedAt": "2026-10-19T17:35:40.549Z",
+      "probedAt": "2026-10-19T17:49:16.974Z",
       "domains": [
         "jlu.edu.cn"
       ],
@@ -18761,7 +18763,7 @@
       "country": "CN",
       "worksCount": 144096,
       "homepage": "https://www.ccmu.edu.cn",
-      "probedAt": "2026-10-19T17:35:40.549Z",
+      "probedAt": "2026-10-19T17:49:16.974Z",
       "domains": [
         "ccmu.edu.cn"
       ],
@@ -19058,7 +19060,7 @@
       "country": "CN",
       "worksCount": 102596,
       "homepage": "https://www.neu.edu.cn",
-      "probedAt": "2026-10-19T17:35:40.549Z",
+      "probedAt": "2026-10-19T17:49:16.974Z",
       "domains": [
         "neu.edu"
       ],
@@ -19249,7 +19251,7 @@
       "country": "CN",
       "worksCount": 98282,
       "homepage": "https://www.szu.edu.cn",
-      "probedAt": "2026-10-19T17:35:40.550Z",
+      "probedAt": "2026-10-19T17:49:16.974Z",
       "domains": [
         "szu.edu.cn"
       ],
@@ -21203,7 +21205,7 @@
       "country": "MX",
       "worksCount": 274336,
       "homepage": "http://www.unam.mx",
-      "probedAt": "2026-10-19T17:35:41.423Z",
+      "probedAt": "2026-10-19T17:49:17.988Z",
       "domains": [
         "unam.mx"
       ],
@@ -21305,7 +21307,7 @@
       "country": "CL",
       "worksCount": 118461,
       "homepage": "https://uchile.cl/",
-      "probedAt": "2026-10-19T17:35:41.423Z",
+      "probedAt": "2026-10-19T17:49:17.988Z",
       "domains": [
         "uchile.cl"
       ],
@@ -21317,7 +21319,7 @@
       "route": "homepage>link",
       "primoSlug": null,
       "host": "uchile.alma.exlibrisgroup.com",
-      "status": "answers-without-indicator",
+      "status": "verified",
       "services": 5,
       "packages": [
         "Nature",
@@ -21440,7 +21442,7 @@
       "country": "BR",
       "worksCount": 580536,
       "homepage": "https://www5.usp.br",
-      "probedAt": "2026-10-19T17:35:41.547Z",
+      "probedAt": "2026-10-19T17:49:18.227Z",
       "domains": [
         "usp.br"
       ],
@@ -22218,5 +22220,5 @@
       "status": "unresolved"
     }
   },
-  "generatedAt": "2026-10-19T17:35:52.208Z"
+  "generatedAt": "2026-10-19T17:49:43.041Z"
 }

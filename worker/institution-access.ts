@@ -158,8 +158,8 @@ function xmlKey(xml: string, id: string) {
 }
 
 /**
- * The resolver's `svc_dat=CTO` answer. Null when it carries no
- * `full_text_indicator`, which is not an answer about the journal at all.
+ * The resolver's `svc_dat=CTO` answer. Null when it carries no context
+ * object, which is not an answer about the journal at all.
  *
  * Alma lists every full-text service it knows and marks the ones it ruled
  * out for this request (`Filtered`, with a `Filter reason`), link included.
@@ -175,7 +175,12 @@ function xmlKey(xml: string, id: string) {
  */
 export function parseResolverAnswer(xml: unknown) {
   const indicator = xmlKey(String(xml), 'full_text_indicator');
-  if (indicator !== 'true' && indicator !== 'false') return null;
+  // A library set to send readers straight to one service answers with
+  // `available_services` = single_service and no indicator at all (Harvard,
+  // Helsinki, Amsterdam, 2026-10-19); its services still carry Alma's filter
+  // marks, so what is left unfiltered is the answer. Without even a context
+  // object there is no answer to read.
+  if (indicator !== 'true' && indicator !== 'false' && !/<context_object>/.test(String(xml))) return null;
   const matched = xmlKey(String(xml), 'rft.mms_id') !== null;
   const services = [];
   let restricted = false;
@@ -192,7 +197,8 @@ export function parseResolverAnswer(xml: unknown) {
       url: resolution ? httpsUrl(unescapeXml(resolution[1].trim())) : null,
     });
   }
-  return { fullText: indicator === 'true', matched, services, restricted };
+  const fullText = indicator === 'true' || indicator === 'false' ? indicator === 'true' : services.length > 0;
+  return { fullText, matched, services, restricted };
 }
 
 /** The most DOIs one GetFTR request may carry (Entitlement API v2.7). */
