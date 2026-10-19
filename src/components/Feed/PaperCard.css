@@ -1582,6 +1582,7 @@ button.pc-topics-pop-item:focus-visible {
   box-shadow: var(--shadow-xl);
   transition: transform 400ms cubic-bezier(0.32, 0.72, 0, 1), height 0.28s var(--ease-out-expo);
   will-change: transform, opacity;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Wider than a phone it is a centred dialog (RelatedPapersSheet.jsx): no
@@ -1799,21 +1800,18 @@ button.pc-topics-pop-item:focus-visible {
 .graph-edge.is-dimmed { stroke: rgba(17, 19, 24, 0.06); }
 
 /* Hover (RelatedPapersSheet's hoveredKey) and the selected node: the edge
-   takes its paper's ink and thickens, so the connection reads; the hit line
-   is its unpainted, wider twin for the pointer. */
+   takes its paper's ink and thickens, so the connection reads. */
 .graph-edge.is-hovered {
   stroke: var(--edge-accent, var(--accent-primary));
   stroke-width: 2;
   stroke-dasharray: none;
 }
 
-.graph-edge-hit {
-  fill: none;
-  stroke: transparent;
-  stroke-width: 12;
-  pointer-events: stroke;
-  cursor: pointer;
-}
+/* Links are picked by distance (`nearestCitationLink`), not by their 1px
+   stroke, so the lines themselves take no pointer. */
+.graph-lines { pointer-events: none; }
+
+.graph-plot[data-link-hovered] { cursor: pointer; }
 
 .graph-edge.is-gone {
   opacity: 0;
@@ -2132,6 +2130,37 @@ button.pc-topics-pop-item:focus-visible {
   transform: translateX(-50%);
 }
 
+/* A narrow plot gives each year a few pixels, so papers of the same year
+   cannot step aside and are left off the map; this row says how many and
+   leads to the list, which has them all. */
+.graph-off-map {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 18px;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: none;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .graph-off-map:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+}
+
 /* ── Where you are in the graph ── */
 .graph-trail {
   min-height: 40px;
@@ -2184,6 +2213,7 @@ button.pc-topics-pop-item:focus-visible {
 
 .graph-crumb {
   max-width: 190px;
+  min-height: 24px;
   overflow: hidden;
   border: 0;
   padding: 0;
@@ -2455,6 +2485,7 @@ button.pc-topics-pop-item:focus-visible {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 6px 0;
   scroll-behavior: smooth;
   animation: relatedContentIn 0.22s ease-out both;
@@ -3157,6 +3188,7 @@ button.pc-topics-pop-item:focus-visible {
   .graph-map { padding: 12px 14px 10px; }
   .graph-node-label { max-width: 84px; }
   .graph-trail { padding: 0 14px; }
+  .graph-off-map { padding: 0 14px; }
   .graph-crumb { max-width: 118px; }
   .graph-degraded { margin: 10px 14px 0; }
   .related-header .graph-view-button { width: 40px; height: 40px; }

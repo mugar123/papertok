@@ -101,7 +101,7 @@ test('the sheet\'s map/list switch is one Toggle, drawn by the sheet\'s own rule
   assert.match(jsx, /if \(!next\) setIsMapReturning\(true\);/);
   assert.equal((jsx.match(/setIsMapReturning\(false\);/g) || []).length, 3, 'appendToTrail, goBackTo and requestCentre clear it');
   // A list reached by a switch stands; only the panel's own arrival fades one in.
-  assert.equal((jsx.match(/setHasSwitched\(true\);/g) || []).length, 1, 'the view switch marks it');
+  assert.equal((jsx.match(/setHasSwitched\(true\);/g) || []).length, 2, 'the view switch and the off-map link mark it');
   assert.equal((jsx.match(/className=\{`related-list \$\{hasSwitched \? 'is-switched' : ''\}`\}/g) || []).length, 1, 'the list reads it');
   const returning = await read('./PaperCard.css');
   assert.match(returning, /\.related-list\.is-switched \{\s*animation: none;/);

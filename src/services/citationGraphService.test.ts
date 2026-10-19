@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { papersToBibTeX } from '../utils/readingLibrary.ts';
 import {
+  citationGraphExportPapers,
   getCitationGraph,
   getCitationGraphDoi,
   hydrateCitationGraphPaper,
@@ -149,4 +151,16 @@ test('a neighbourhood that failed is asked for again', async () => {
 
   assert.equal(calls, 2, 'the failure was remembered instead of retried');
   assert.equal(recovered!.counts.references, 12);
+});
+
+test('exports every neighbour as BibTeX and leaves an unknown year out', () => {
+  const graph = mapCitationGraphPayload({
+    references: [{ id: '10.1000/ref', doi: '10.1000/ref', title: 'Dated reference', year: 2020, published: '2020-03-01' }],
+    citations: [{ id: '10.1000/cite', doi: '10.1000/cite', title: 'Undated citation' }],
+  });
+  const [dated, undated] = papersToBibTeX(citationGraphExportPapers(graph)).split('\n\n');
+  assert.match(dated, /title = \{Dated reference\}/);
+  assert.match(dated, /year = \{2020\}/);
+  assert.match(undated, /title = \{Undated citation\}/);
+  assert.doesNotMatch(undated, /year =/);
 });

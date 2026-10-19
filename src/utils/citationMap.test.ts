@@ -5,6 +5,7 @@ import {
   buildCitationMapLayout,
   formatCitationTick,
   isMappableCitationPaper,
+  nearestCitationLink,
 } from './citationMap.ts';
 
 function paper(overrides: Partial<import('../models/Paper.ts').Paper> = {}) {
@@ -285,4 +286,17 @@ test('no star label lands on the centre chip', () => {
       : { left: node.x - half - geometry.labelWidth, right: node.x - half, top, bottom };
     assert.ok(!overlaps(label, chip), `${node.paper.id}'s label covers the chip`);
   }
+});
+
+test('a press picks the nearest link, not the one drawn last, and nothing out of reach', () => {
+  const center = { x: 100, y: 100 };
+  const nodes = [
+    { key: 'upper', x: 300, y: 90 },
+    { key: 'lower', x: 300, y: 110 },
+  ];
+  assert.equal(nearestCitationLink(nodes, center, { x: 250, y: 94 }), 'upper');
+  assert.equal(nearestCitationLink(nodes, center, { x: 250, y: 106 }), 'lower');
+  assert.equal(nearestCitationLink(nodes, center, { x: 250, y: 150 }), null);
+  assert.equal(nearestCitationLink(nodes, center, { x: 320, y: 110 }), 'lower', 'past the star the distance is to the star');
+  assert.equal(nearestCitationLink(nodes, center, { x: 330, y: 110 }), null);
 });
