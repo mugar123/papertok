@@ -39,6 +39,7 @@ export interface ResolverCitation {
  * a free proxy to the resolvers.
  */
 
+import { XMLValidator } from 'fast-xml-parser';
 import { institutionDomainOf } from '../src/utils/institutionDomain.ts';
 import { INSTITUTION_RESOLVERS } from './institution-resolvers.ts';
 import { cacheResponse } from './provider-runtime.ts';
@@ -53,8 +54,10 @@ const ACCESS_UNKNOWN_CACHE_SECONDS = 6 * 60 * 60;
 const RESOLVER_CITATION = 'article';
 // How the resolver's answer is read, in the cache keys of both routes that
 // read one: until 2026-10-19 a service Alma had filtered out for the date
-// still counted as access, and answers read that way must not be served on.
-export const RESOLVER_READING = 'filtered-services';
+// still counted as access, and then a single-service answer cut off before
+// its services read as a refusal; answers read either way must not be
+// served on.
+export const RESOLVER_READING = 'well-formed-answers';
 
 export async function handleInstitutionAccess(request: Request, env: WorkerEnv) {
   const url = new URL(request.url);
@@ -174,14 +177,18 @@ function xmlKey(xml: string, id: string) {
  * library lacks it.
  */
 export function parseResolverAnswer(xml: unknown) {
-  const indicator = xmlKey(String(xml), 'full_text_indicator');
-  // A library set to send readers straight to one service answers with
-  // `available_services` = single_service and no indicator at all (Harvard,
-  // Helsinki, Amsterdam, 2026-10-19); its services still carry Alma's filter
-  // marks, so what is left unfiltered is the answer. Without even a context
-  // object there is no answer to read.
-  if (indicator !== 'true' && indicator !== 'false' && !/<context_object>/.test(String(xml))) return null;
-  const matched = xmlKey(String(xml), 'rft.mms_id') !== null;
+  const text = String(xml);
+  // An answer cut off by the resolver or the network parses as far as it
+  // goes: a single-service answer cut before its services would read as a
+  // refusal. Only a complete document is read, and only one with a context
+  // object is an answer about the journal at all. A library set to send
+  // readers straight to one service answers with `available_services` =
+  // single_service and no indicator (Harvard, Helsinki, Amsterdam,
+  // 2026-10-19); its services still carry Alma's filter marks, so what is
+  // left unfiltered is the answer.
+  if (XMLValidator.validate(text) !== true || !/<context_object>/.test(text)) return null;
+  const indicator = xmlKey(text, 'full_text_indicator');
+  const matched = xmlKey(text, 'rft.mms_id') !== null;
   const services = [];
   let restricted = false;
   for (const [, attributes, body] of String(xml).matchAll(/<context_service\b([^>]*)>([\s\S]*?)<\/context_service>/g)) {

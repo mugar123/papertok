@@ -195,6 +195,14 @@ test('an unreadable resolver answer is a failed probe, not a missing subscriptio
   assert.equal(result.partial, true);
 });
 
+test('a single-service answer cut off before its services is a failed probe, not an empty list', async () => {
+  const truncated = '<uresolver_content><context_object><keys><key id="rft.mms_id">990001299870203941</key><key id="available_services">single_service</key></keys></context_object><context_services>';
+  const stub = upstreams({ resolver: (issn: string) => xml(issn === ISSN_OF.nature ? truncated : CTO_NONE) });
+  const result = await lookupInstitutionServices({ domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result.services, []);
+  assert.equal(result.partial, true);
+});
+
 test('is unavailable when every probe fails', async () => {
   const stub = upstreams({ resolver: () => new Response('down', { status: 503 }) });
   await assert.rejects(
@@ -389,7 +397,7 @@ test('the route caches a complete list for seven days under the library', async 
     ['library', '34BUC_USAL'],
     ['host', 'eu01.alma.exlibrisgroup.com'],
     ['catalogue', catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET)],
-    ['reading', 'filtered-services'],
+    ['reading', 'well-formed-answers'],
   ]);
   assert.match(servicePuts[0].response.headers.get('cache-control')!, /s-maxage=604800/);
 });
@@ -402,10 +410,10 @@ test('the cache key changes with the catalogue and the budget, and with nothing 
   assert.notEqual(catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET + 30), fingerprint);
   const swapped = SERVICE_CATALOGUE.map((entry, index) => (index === 0 ? { ...entry, doi: '10.1016/j.other.2021.1' } : entry));
   assert.notEqual(catalogueFingerprint(swapped, SUBREQUEST_BUDGET), fingerprint);
-  assert.deepEqual(servicesCacheParams({ domain: 'usal.es', entityId: ENTITY_ID }, {}), { library: '34BUC_USAL', host: 'eu01.alma.exlibrisgroup.com', catalogue: fingerprint, reading: 'filtered-services' });
+  assert.deepEqual(servicesCacheParams({ domain: 'usal.es', entityId: ENTITY_ID }, {}), { library: '34BUC_USAL', host: 'eu01.alma.exlibrisgroup.com', catalogue: fingerprint, reading: 'well-formed-answers' });
   assert.deepEqual(
     servicesCacheParams({ domain: 'usal.es', entityId: ENTITY_ID }, GETFTR_ENV),
-    { library: '34BUC_USAL', host: 'eu01.alma.exlibrisgroup.com', entityId: ENTITY_ID, catalogue: fingerprint, reading: 'filtered-services' },
+    { library: '34BUC_USAL', host: 'eu01.alma.exlibrisgroup.com', entityId: ENTITY_ID, catalogue: fingerprint, reading: 'well-formed-answers' },
   );
 });
 

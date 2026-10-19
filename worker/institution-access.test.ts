@@ -459,6 +459,21 @@ test('a resolver answer that cannot be read is an outage, not an unknown to reme
   );
 });
 
+// A single-service answer cut off after its context object: the journal
+// resolved, the services never arrived. Read as it stands it would be a
+// refusal; it is not an answer.
+const CTO_TRUNCATED = '<uresolver_content><context_object><keys><key id="rft.mms_id">990001299870203941</key><key id="available_services">single_service</key></keys></context_object><context_services>';
+
+test('an answer cut off before its services is no answer: an outage, not a refusal', async () => {
+  assert.equal(parseResolverAnswer(CTO_TRUNCATED), null);
+  assert.equal(parseResolverAnswer(CTO_SINGLE_SERVICE.slice(0, -40)), null);
+  const stub = upstreams({ resolver: () => xml(CTO_TRUNCATED) });
+  await assert.rejects(
+    lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl }),
+    error => (error as Error & { code?: string; status?: number }).code === 'ACCESS_LOOKUP_UNAVAILABLE' && (error as Error & { code?: string; status?: number }).status === 502,
+  );
+});
+
 test('the cache key carries the institution ids only when GetFTR can receive them', async () => {
   const { upstreamParams } = await import('./institution-access.ts');
   const query = { doi: DOI, domain: 'usal.es', entityId: 'https://idp.usal.es/entity', rorId: 'https://ror.org/02f40zc51' };
@@ -711,7 +726,7 @@ test('the route answers a signed-in reader and caches under the normalized DOI a
   assert.deepEqual(body, { status: 'entitled', collection: 'Elsevier ScienceDirect Journals Complete', url: ELSEVIER_URL });
   assert.equal(accessPuts.length, 1);
   const key = new URL(accessPuts[0].key);
-  assert.deepEqual([...key.searchParams], [['doi', DOI], ['library', '34BUC_USAL'], ['host', USAL_HOST], ['citation', 'article'], ['reading', 'filtered-services']]);
+  assert.deepEqual([...key.searchParams], [['doi', DOI], ['library', '34BUC_USAL'], ['host', USAL_HOST], ['citation', 'article'], ['reading', 'well-formed-answers']]);
   assert.match(accessPuts[0].response.headers.get('cache-control')!, /s-maxage=604800/);
 });
 
