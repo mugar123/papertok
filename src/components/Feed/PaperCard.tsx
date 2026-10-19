@@ -1268,7 +1268,6 @@ const PaperCard = memo(function PaperCard({
     });
     if (path) navigate(path);
   }, [analyticsSurface, navigate, position, publicMode, trackEvent]);
-  // The overflow topics, in a popover on desktop and a sheet on a phone.
   const topicsList = (
     <ul className="pc-topics-pop-list">
       {topicItems.map((item) => (

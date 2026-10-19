@@ -25,11 +25,6 @@ type ListRowProps = Omit<HTMLMotionProps<'div'>, 'title' | 'onClick'> & {
   children?: ReactNode;
 };
 
-/**
- * A ruled row: meta line, a serif title that is the row's keyboard opener,
- * whatever the caller adds under it, and actions on the right. The whole row
- * is a pointer target too; the title button carries the accessible name.
- */
 export function ListRow({ meta, title, titleLang, onOpen, actions, children, className, ...props }: ListRowProps) {
   const items = (meta ?? []).map((text, slot) => ({ text, slot })).filter((item): item is { text: string; slot: number } => Boolean(item.text));
   return (
@@ -61,7 +56,6 @@ export function ListRow({ meta, title, titleLang, onOpen, actions, children, cla
   );
 }
 
-/** A paper as a row: its field in colour, its year, and its title in the serif. */
 export function PaperListRow({ paper, style, ...props }: Omit<ListRowProps, 'meta' | 'title' | 'titleLang'> & { paper: Partial<Paper> }) {
   return (
     <ListRow
@@ -77,11 +71,6 @@ export function PaperListRow({ paper, style, ...props }: Omit<ListRowProps, 'met
   );
 }
 
-/**
- * A paper row's byline: author dots. With a pointer the names are a tooltip;
- * on a phone the dots are a button that opens a sheet of the authors, each a
- * link to their page. `onNavigate` runs before one of those links is followed.
- */
 export function ListRowAuthors({ paper, onNavigate }: { paper: Partial<Paper>; onNavigate?: () => void }) {
   const isPhone = useIsPhone();
   const authors = paper.authors ?? [];

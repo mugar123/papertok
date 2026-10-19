@@ -163,9 +163,6 @@
   outline-offset: -2px;
 }
 
-/* ─── Scope ───
-   Which kind of result the query asks for, chosen at the end of the field
-   behind a hairline: part of the query, not a second row of chrome. */
 .search-scope-rule {
   align-self: stretch;
   width: 1px;
@@ -498,7 +495,6 @@
   color: var(--text-primary);
 }
 
-/* Petri holds still here: the search page carries no motion. */
 .petri.search-initial-petri .onboarding-petri-body,
 .petri.search-outage-petri .onboarding-petri-body {
   animation: none;

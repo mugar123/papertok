@@ -18,7 +18,6 @@
   }
 }
 
-/* A hairline between rows, inset to the text so it never spans the row. */
 .list-row + .list-row::before {
   content: '';
   position: absolute;
@@ -68,10 +67,6 @@
   color: var(--text-primary);
 }
 
-/* The title is the row's keyboard opener; the row's own onClick is pointer
-   redundancy. The two-line clamp lives on the button, not on the paragraph:
-   -webkit-line-clamp only clips a box's own line boxes, and the text is
-   inside the button's box. */
 .list-row-title-btn {
   display: -webkit-box;
   width: 100%;

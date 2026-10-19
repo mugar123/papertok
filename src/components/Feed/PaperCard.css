@@ -842,7 +842,6 @@ button.pc-topics-pop-item:focus-visible {
   color: var(--text-tertiary);
 }
 
-/* The same rows in the phone's sheet, sized for the thumb. */
 .pc-topics-sheet .pc-topics-pop-list {
   overflow-y: auto;
 }
