@@ -8,10 +8,21 @@ declare const window: { location: { href: string }; history: { state: unknown; r
 export const IS_DEMO = false;
 
 import { initializeApp } from 'firebase/app';
-import { connectAuthEmulator, getAuth, GithubAuthProvider, GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+import {
+  browserLocalPersistence,
+  browserPopupRedirectResolver,
+  browserSessionPersistence,
+  connectAuthEmulator,
+  GithubAuthProvider,
+  GoogleAuthProvider,
+  indexedDBLocalPersistence,
+  initializeAuth,
+  signInWithCredential,
+} from 'firebase/auth';
 import { connectFirestoreEmulator, disableNetwork, enableNetwork, getFirestore } from 'firebase/firestore';
 import { isOffline, registerStallRecovery } from '../utils/boundedRead.ts';
 import { createStreamRecovery } from '../utils/streamRecovery.ts';
+import { deferPopupRedirectResolver, preparePopupRedirectResolver } from './popupRedirectResolver.ts';
 
 const firebaseConfig = {
   apiKey: "AIzaSyAQKtRz0-PJH7_xOBrFhGeQdbIAHkzV4Q0",
@@ -35,7 +46,22 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+// What `getAuth` sets up, with a popup resolver that loads its scripts when a
+// sign-in needs them instead of before Auth reports the session
+// (popupRedirectResolver.ts). Every popup and redirect call still finds it on
+// `auth`, so none of them passes a resolver.
+const auth = initializeAuth(app, {
+  persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence],
+  popupRedirectResolver: deferPopupRedirectResolver(browserPopupRedirectResolver),
+});
+
+// Starts loading what a Google or GitHub popup needs. Call it when buttons
+// that open one appear: on phones and in Safari, a popup whose load is still
+// running at the tap can open too late and be blocked.
+export function preparePopupSignIn() {
+  if (!IS_DEMO) preparePopupRedirectResolver(auth);
+}
+
 const googleProvider = new GoogleAuthProvider();
 const githubProvider = new GithubAuthProvider();
 // `user:email` is requested on purpose (F5). Without it GitHub only hands over

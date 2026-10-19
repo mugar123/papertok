@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
+import { preparePopupSignIn } from '../../services/firebase.ts';
 
 /**
  * Google and GitHub sign-in on the spot, for every place that offers the two
@@ -13,14 +14,21 @@ import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
  * reader who closed it would be left with buttons that do nothing. Pressing
  * again opens a fresh window, Firebase cancels the old one, and only the
  * latest attempt decides what the buttons show.
+ *
+ * `shown` says whether the buttons are on screen; the popup's scripts start
+ * loading then (preparePopupSignIn), so they are ready by the tap.
  */
 
-export function useProviderSignIn(surface: string) {
+export function useProviderSignIn(surface: string, shown = true) {
   const { signInWithGoogle, signInWithGitHub, error } = useAuth();
   const { trackEvent } = useAnalyticsConsent();
   const [pendingProvider, setPendingProvider] = useState<'google' | 'github' | null>(null);
   const [collision, setCollision] = useState<{ email: string } | null>(null);
   const latest = useRef(0);
+
+  useEffect(() => {
+    if (shown) preparePopupSignIn();
+  }, [shown]);
 
   const signIn = async (method: 'google' | 'github') => {
     const attempt = latest.current + 1;

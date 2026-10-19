@@ -308,7 +308,7 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
   const onLanding = shownStep === 'welcome';
   // The landing's account button opens the two providers under it, in place.
   const [accountOpen, setAccountOpen] = useState(false);
-  const { pendingProvider, collision, error: signInError, signIn } = useProviderSignIn('onboarding');
+  const { pendingProvider, collision, error: signInError, signIn } = useProviderSignIn('onboarding', accountOpen);
   const [selected, setSelected] = useState(() => new Set(normalizeGuestAreas(initialAreas)));
   const [selectedTopics, setSelectedTopics] = useState(() => new Set(normalizeGuestTopics(initialTopics, initialAreas)));
   const [expandedAreas, setExpandedAreas] = useState(() => new Set<string>());
