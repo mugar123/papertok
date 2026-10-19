@@ -250,8 +250,9 @@ test('SOURCE: on the university screen a typed address makes the primary the lin
   assert.doesNotMatch(bound, /onClick/);
   assert.match(code, /link: 'Continue',\s*verifying: 'Verifying…',\s*preparing: 'Preparing sign-in…',/);
   // The window opens on the link's own Auth instance, which has to be ready
-  // for it to open inside the press (InstitutionLink ignores the submit until then).
-  assert.match(code, /const linkPreparing = !usePopupReady\(linksOnPress \? institutionLinkReadiness\(\) : null\);/);
+  // for it to open inside the press (InstitutionLink ignores the submit until
+  // then). An address the account already proves opens no window and does not wait.
+  assert.match(code, /const linkPreparing = !usePopupReady\(linksOnPress \? institutionLinkReadiness\(\) : null\)\s*&& needsUniversityProof\(institutionEmail\);/);
   // With no address, or once linked, it is the screen's own: Start exploring.
   assert.match(primary[0], /label: saving \? COPY\.saving : stepCopy\.cta,/);
   assert.match(code, /<LibraryPreview still=\{still\} stamp=\{<PetriStamp \/>\} \/>/);

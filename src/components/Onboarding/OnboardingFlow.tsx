@@ -8,7 +8,7 @@ import { INTEREST_AREAS } from '../../data/categories.ts';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import InstitutionLink from '../Institution/InstitutionLink.tsx';
 import usePopupReady from '../../hooks/usePopupReady.ts';
-import { institutionLinkReadiness } from '../../services/institutionService.ts';
+import { institutionLinkReadiness, needsUniversityProof } from '../../services/institutionService.ts';
 import { AreaPicker, SubtopicsPicker, WelcomeCopy, WelcomeShell } from '../Public/WelcomeShell.tsx';
 import { LibraryPreview } from '../Public/GuestWelcomePreferences.tsx';
 import { GUEST_SEED_PER_AREA, guestSeedCategoriesForAreas, guestSeedSizeForAreas, readGuestInterests } from '../../utils/guestInterests.ts';
@@ -312,9 +312,10 @@ export default function OnboardingFlow() {
   // On the university screen an address typed and nothing linked yet makes
   // the primary the link's submit: Google's window has to open from a press.
   const linksOnPress = step === 'university' && !institution && institutionEmail.trim() !== '';
-  // Until that window can open inside the press, the form ignores the submit
-  // (InstitutionLink) and the primary says why.
-  const linkPreparing = !usePopupReady(linksOnPress ? institutionLinkReadiness() : null);
+  // Until that window can open inside the press, the form ignores a submit
+  // that would open it (InstitutionLink) and the primary says why.
+  const linkPreparing = !usePopupReady(linksOnPress ? institutionLinkReadiness() : null)
+    && needsUniversityProof(institutionEmail);
   return (
     <WelcomeShell
       // The way out of an account opened by mistake, beside the theme switch:

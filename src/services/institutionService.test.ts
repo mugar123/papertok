@@ -6,6 +6,7 @@ import {
   InstitutionLinkError,
   institutionLabel,
   linkInstitution,
+  needsUniversityProof,
   normalizeInstitution,
   unlinkInstitution,
 } from './institutionService.ts';
@@ -124,6 +125,26 @@ test('the press asks for Google\'s window before it awaits anything', async () =
   });
   assert.deepEqual(popup.log.at(-1), ['popup', true]);
   await linking;
+});
+
+// The link form and the onboarding's primary hold a press only while it would
+// open Google's window, so the answer has to be what linking then does.
+test('needsUniversityProof says whether linking that address opens Google\'s window', async () => {
+  const cases = [
+    { account: { email: 'alice@usal.es', emailVerified: true }, typed: 'Alice@USAL.es', opens: false },
+    { account: { email: 'alice@gmail.com', emailVerified: true }, typed: 'alice@usal.es', opens: true },
+    { account: { email: 'alice@usal.es', emailVerified: false }, typed: 'alice@usal.es', opens: true },
+    { account: { email: 'alice@usal.es', emailVerified: true }, typed: 'alice@cs.usal.es', opens: true },
+  ];
+  for (const { account, typed, opens } of cases) {
+    const currentUser = () => ({ uid: 'alice', ...account });
+    assert.equal(needsUniversityProof(typed, { currentUser }), opens, `${account.email} (verified: ${account.emailVerified}) typing ${typed}`);
+    const popup = popupStub({ email: typed.toLowerCase() });
+    await linkInstitution(typed, { ...BASE, ...popup.overrides, request: workerAnswering(200, { institution: INSTITUTION }).request, currentUser });
+    assert.equal(popup.log.some(([step]) => step === 'popup'), opens, `linking ${typed} as ${account.email}`);
+  }
+  // An account without an address proves no domain, not even an empty one.
+  assert.equal(needsUniversityProof('alice', { currentUser: () => ({ uid: 'alice', email: null, emailVerified: true }) }), true);
 });
 
 // The proof's sign-in must not outlive the tab. The second instance starts in

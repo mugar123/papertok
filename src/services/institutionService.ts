@@ -2,9 +2,10 @@ type InstitutionInput = Partial<Record<'domain' | 'rorId' | 'name' | 'acronym' |
 export type LinkedInstitution = NonNullable<ReturnType<typeof normalizeInstitution>>;
 type UniversityUser = Pick<import('firebase/auth').User, 'email' | 'getIdToken'>;
 type PopupReadiness = import('./popupRedirectResolver.ts').PopupReadiness;
+type SignedInAccount = Partial<Pick<import('firebase/auth').User, 'uid' | 'email' | 'emailVerified'>> | null;
 interface InstitutionOperations {
   isDemo?: boolean; request?: typeof authenticatedWorkerFetch; apiBase?: string;
-  currentUser?: () => Partial<Pick<import('firebase/auth').User, 'uid' | 'email' | 'emailVerified'>> | null;
+  currentUser?: () => SignedInAccount;
   secondaryAuth?(): object;
   provider?(): { setCustomParameters(params: import('firebase/auth').CustomParameters): void };
   popupSignIn?(instance: object, provider: unknown): Promise<{ user: UniversityUser }>;
@@ -150,6 +151,23 @@ async function postJson(api: ReturnType<typeof operations>, path: string, body: 
   return payload;
 }
 
+// The signed-in account's own verified address in that domain is the proof:
+// the Worker checks it on the session token.
+function accountProvesDomain(current: SignedInAccount, domain: string) {
+  return Boolean(domain && current?.emailVerified) && institutionDomainOf(current?.email) === domain;
+}
+
+/**
+ * Whether linking `email` needs Google's window for the university account:
+ * yes, unless the signed-in account's verified address is already in that
+ * domain. The link form and the onboarding's primary wait for the window
+ * (institutionLinkReadiness) only when it is needed. A malformed address
+ * counts as needing it; linking refuses it before any window either way.
+ */
+export function needsUniversityProof(email: string, overrides?: InstitutionOperations) {
+  return !accountProvesDomain(operations(overrides).currentUser(), institutionDomainOf(email));
+}
+
 /**
  * Signs into Google with the university account on the second instance and
  * hands back its ID token with the release that undoes the sign-in. The hint
@@ -191,7 +209,7 @@ export async function linkInstitution(email: string, overrides?: InstitutionOper
   const current = api.currentUser();
   if (!current) throw new InstitutionLinkError('AUTH_REQUIRED', 401);
 
-  if (current.emailVerified && institutionDomainOf(current.email) === domain) {
+  if (accountProvesDomain(current, domain)) {
     const payload = await postJson(api, '/institution/link', {});
     return normalizeInstitution(payload.institution);
   }

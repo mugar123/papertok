@@ -14,7 +14,7 @@ import InstitutionServices from './InstitutionServices.tsx';
 import GoogleMark from '../Public/GoogleMark.tsx';
 import { PreparingNote } from '../Public/ProviderSignIn.tsx';
 import usePopupReady from '../../hooks/usePopupReady.ts';
-import { institutionLinkReadiness } from '../../services/institutionService.ts';
+import { institutionLinkReadiness, needsUniversityProof } from '../../services/institutionService.ts';
 import './Institution.css';
 
 const COPY = {
@@ -40,8 +40,9 @@ const COPY = {
  * passes `showSubmit={false}` and a `formId` for its button's `form`, owns
  * the address through `email` / `onEmailChange` so it can tell whether one is
  * typed, and hears `onBusyChange` to say "Verifying…" while Google is open.
- * The form ignores a submit until Google's window can open inside the press,
- * so that caller reads institutionLinkReadiness to say "Preparing sign-in…".
+ * The form ignores a submit that would open Google's window until the window
+ * can open inside the press, so that caller reads institutionLinkReadiness and
+ * needsUniversityProof to say "Preparing sign-in…".
  * There, `linkedNote` adds a sentence after "Verified with …" once linked.
  */
 export default function InstitutionLink({
@@ -61,8 +62,10 @@ export default function InstitutionLink({
   const [busy, setBusy] = useState(false);
   useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
   // While the form shows, its Google window gets ready to open inside the
-  // press; until then a submit does nothing (usePopupReady).
+  // press (usePopupReady). Until then a submit that would open it is held; an
+  // address the account already proves opens none and goes through.
   const preparing = !usePopupReady(institution ? null : institutionLinkReadiness());
+  const held = preparing && needsUniversityProof(email);
   const preparingId = `${idPrefix}-preparing`;
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   // Linking swaps the form for the linked row and unlinking swaps it back, so
@@ -82,7 +85,7 @@ export default function InstitutionLink({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (busy || preparing) return;
+    if (busy || held) return;
     setBusy(true);
     setFeedback(null);
     pendingFocus.current = 'unlink';
@@ -180,12 +183,12 @@ export default function InstitutionLink({
             type="submit"
             variant="outline"
             className="institution-link-submit"
-            disabled={preparing}
+            disabled={held}
             focusableWhenDisabled
-            aria-disabled={busy || preparing || undefined}
-            aria-describedby={preparing ? preparingId : undefined}
+            aria-disabled={busy || held || undefined}
+            aria-describedby={held ? preparingId : undefined}
           >
-            {busy || preparing ? <span className="institution-link-spinner" aria-hidden="true" /> : <GoogleMark size={16} />}
+            {busy || held ? <span className="institution-link-spinner" aria-hidden="true" /> : <GoogleMark size={16} />}
             {busy ? COPY.submitting : COPY.submit}
           </Button>
         )}
