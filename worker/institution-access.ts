@@ -51,6 +51,10 @@ const ACCESS_UNKNOWN_CACHE_SECONDS = 6 * 60 * 60;
 // asked about the journal and year alone, and its link went to the journal's
 // home page. Those answers would otherwise be served for a week more.
 const RESOLVER_CITATION = 'article';
+// How the resolver's answer is read, in the cache keys of both routes that
+// read one: until 2026-10-19 a service Alma had filtered out for the date
+// still counted as access, and answers read that way must not be served on.
+export const RESOLVER_READING = 'filtered-services';
 
 export async function handleInstitutionAccess(request: Request, env: WorkerEnv) {
   const url = new URL(request.url);
@@ -58,7 +62,7 @@ export async function handleInstitutionAccess(request: Request, env: WorkerEnv) 
   const query = readAccessQuery(url.searchParams);
   const ttl = (payload: { status: string }) => (payload.status === 'unknown' ? ACCESS_UNKNOWN_CACHE_SECONDS : ACCESS_CACHE_SECONDS);
   return cacheResponse(request, origin, env, ttl, () => lookupInstitutionAccess(query, { env }), {
-    canonicalParams: { ...upstreamParams(query, env), citation: RESOLVER_CITATION },
+    canonicalParams: { ...upstreamParams(query, env), citation: RESOLVER_CITATION, reading: RESOLVER_READING },
   });
 }
 
@@ -156,13 +160,26 @@ function xmlKey(xml: string, id: string) {
 /**
  * The resolver's `svc_dat=CTO` answer. Null when it carries no
  * `full_text_indicator`, which is not an answer about the journal at all.
+ *
+ * Alma lists every full-text service it knows and marks the ones it ruled
+ * out for this request (`Filtered`, with a `Filter reason`), link included.
+ * A service filtered for the date is a collection whose coverage ends before
+ * the year asked about (Pau, Nature 2020: one package until 2012, answered
+ * `entitled` until 2026-10-19), so it is left out. A filter for any other
+ * reason (an IP range, a user group) hides a service the Worker cannot judge
+ * from outside, so `restricted` says the answer may be incomplete.
  */
 export function parseResolverAnswer(xml: unknown) {
   const indicator = xmlKey(String(xml), 'full_text_indicator');
   if (indicator !== 'true' && indicator !== 'false') return null;
   const services = [];
+  let restricted = false;
   for (const [, attributes, body] of String(xml).matchAll(/<context_service\b([^>]*)>([\s\S]*?)<\/context_service>/g)) {
     if (!/\bservice_type="getFullTxt"/.test(attributes)) continue;
+    if (xmlKey(body, 'Filtered') === 'true') {
+      if (!/date/i.test(xmlKey(body, 'Filter reason') || '')) restricted = true;
+      continue;
+    }
     const resolution = body.match(/<resolution_url>([^<]*)<\/resolution_url>/);
     services.push({
       name: xmlKey(body, 'package_public_name'),
@@ -170,7 +187,7 @@ export function parseResolverAnswer(xml: unknown) {
       url: resolution ? httpsUrl(unescapeXml(resolution[1].trim())) : null,
     });
   }
-  return { fullText: indicator === 'true', services };
+  return { fullText: indicator === 'true', services, restricted };
 }
 
 /** The most DOIs one GetFTR request may carry (Entitlement API v2.7). */
@@ -344,6 +361,9 @@ export async function lookupInstitutionAccess(
       const best = usable.find(service => !service.free) || usable[0];
       return { status: 'entitled', collection: best.name, url: best.url };
     }
+    // A service hidden by an IP or group filter may be the library's own
+    // subscription: no answer, rather than a refusal.
+    if (answer.restricted) continue;
     if (!answer.fullText) refusals += 1;
   }
   return issns.length && refusals === issns.length

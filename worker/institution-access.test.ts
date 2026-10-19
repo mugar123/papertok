@@ -229,12 +229,81 @@ test('parses the captured Cell answer into its two full-text services, unescaped
       },
       { name: 'Elsevier ScienceDirect Journals Complete', free: false, url: ELSEVIER_URL },
     ],
+    restricted: false,
   });
 });
 
 test('parses the captured control answer as no full text and anything else as no answer', () => {
-  assert.deepEqual(parseResolverAnswer(CTO_CONTROL), { fullText: false, services: [] });
+  assert.deepEqual(parseResolverAnswer(CTO_CONTROL), { fullText: false, services: [], restricted: false });
   assert.equal(parseResolverAnswer('<html>Service unavailable</html>'), null);
+});
+
+// Captured 2026-10-19 for the Université de Pau (33BUPAU_INST on eu03), Nature
+// 1476-4687, 2020, with the article's locators: the only service is one Alma
+// itself filtered out, since its coverage ended in 2012, and it still carries
+// a resolution URL. Keys the Worker does not read are left out.
+const PAU_URL = 'https://uppa.alma.exlibrisgroup.com/view/action/uresolver.do?operation=resolveService&package_service_id=19758124930006166&institutionId=6166&customerId=6165';
+const CTO_FILTERED_BY_DATE = `<uresolver_content xmlns="http://com/exlibris/urm/uresolver/xmlbeans/u" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <context_object>
+    <keys>
+      <key id="rft.jtitle">Nature</key>
+      <key id="rft.issn">1476-4687</key>
+      <key id="rft.date">2020</key>
+      <key id="full_text_indicator">false</key>
+    </keys>
+  </context_object>
+  <context_services>
+    <context_service service_type="getFullTxt" context_service_id="19758124930006166">
+      <keys>
+        <key id="package_public_name">Nature revues Istex</key>
+        <key id="Is_free">0</key>
+        <key id="Availability">Available from 01/01/1869 volume: 1 issue: 1 until 28/12/2012 volume: 492.&lt;br></key>
+        <key id="Filtered">true</key>
+        <key id="Filter reason">Date Filter</key>
+      </keys>
+      <resolution_url>${PAU_URL.replace(/&/g, '&amp;')}</resolution_url>
+    </context_service>
+  </context_services>
+</uresolver_content>`;
+
+// The same answer with a live subscription next to the filtered service.
+const NATURE_URL = 'https://uppa.alma.exlibrisgroup.com/view/action/uresolver.do?operation=resolveService&package_service_id=19758124940006166&institutionId=6166&customerId=6165';
+const CTO_FILTERED_AND_LIVE = CTO_FILTERED_BY_DATE
+  .replace('<key id="full_text_indicator">false</key>', '<key id="full_text_indicator">true</key>')
+  .replace('  </context_services>', `    <context_service service_type="getFullTxt" context_service_id="19758124940006166">
+      <keys>
+        <key id="package_public_name">Nature</key>
+        <key id="Is_free">0</key>
+      </keys>
+      <resolution_url>${NATURE_URL.replace(/&/g, '&amp;')}</resolution_url>
+    </context_service>
+  </context_services>`);
+
+// A filter that is not about the date. Alma's wording for its other filters
+// (IP, user group) was not captured; the Worker treats any reason but the
+// date as a restriction it cannot see through, so the wording here is only
+// a stand-in.
+const CTO_RESTRICTED = CTO_FILTERED_BY_DATE.replace('Date Filter', 'IP Filter');
+
+test('a service Alma filtered out for the date is no access: the Pau answer is a refusal', async () => {
+  assert.deepEqual(parseResolverAnswer(CTO_FILTERED_BY_DATE), { fullText: false, services: [], restricted: false });
+  const stub = upstreams({ resolver: () => xml(CTO_FILTERED_BY_DATE) });
+  const result = await lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result, { status: 'not-entitled', collection: null, url: null });
+  assert.equal(stub.resolverCalls().length, 2);
+});
+
+test('a live service next to a filtered one is the one reported', async () => {
+  const stub = upstreams({ resolver: () => xml(CTO_FILTERED_AND_LIVE) });
+  const result = await lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result, { status: 'entitled', collection: 'Nature', url: NATURE_URL });
+});
+
+test('a service filtered for a reason other than the date leaves the answer unknown, not refused', async () => {
+  assert.deepEqual(parseResolverAnswer(CTO_RESTRICTED), { fullText: false, services: [], restricted: true });
+  const stub = upstreams({ resolver: () => xml(CTO_RESTRICTED) });
+  const result = await lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result, { status: 'unknown', collection: null, url: null });
 });
 
 test('reports the subscription service rather than the free archive for an entitled journal', async () => {
@@ -539,7 +608,7 @@ test('the route answers a signed-in reader and caches under the normalized DOI a
   assert.deepEqual(body, { status: 'entitled', collection: 'Elsevier ScienceDirect Journals Complete', url: ELSEVIER_URL });
   assert.equal(accessPuts.length, 1);
   const key = new URL(accessPuts[0].key);
-  assert.deepEqual([...key.searchParams], [['doi', DOI], ['library', '34BUC_USAL'], ['citation', 'article']]);
+  assert.deepEqual([...key.searchParams], [['doi', DOI], ['library', '34BUC_USAL'], ['citation', 'article'], ['reading', 'filtered-services']]);
   assert.match(accessPuts[0].response.headers.get('cache-control')!, /s-maxage=604800/);
 });
 

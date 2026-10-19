@@ -21,6 +21,7 @@ import {
   ACCESS_CACHE_SECONDS,
   GETFTR_BATCH_SIZE,
   InstitutionAccessError,
+  RESOLVER_READING,
   findResolver,
   readInstitutionQuery,
   askGetFtrBatch,
@@ -166,7 +167,7 @@ export function catalogueFingerprint(entries: ReadonlyArray<Pick<ServiceEntry, '
  * kept seeing yesterday's 12 until the entry expired.
  */
 export function servicesCacheParams(query: InstitutionQuery, env: WorkerEnv) {
-  return { ...upstreamParams(query, env), catalogue: catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET) };
+  return { ...upstreamParams(query, env), catalogue: catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET), reading: RESOLVER_READING };
 }
 
 /** Whether a package name is the platform's or its publisher's own. */
@@ -190,7 +191,10 @@ async function probeResolver(entry: ServiceEntry, resolver: InstitutionResolver,
   const paid = answer.services.filter(service => service.url && !service.free);
   const own = paid.find(service => namesPlatform(service.name, entry));
   const subscription = own || paid[0];
-  return subscription ? { collection: subscription.name, ownPlatform: Boolean(own) } : null;
+  if (subscription) return { collection: subscription.name, ownPlatform: Boolean(own) };
+  // A service hidden by an IP or group filter is one this probe cannot see:
+  // the platform is unchecked, not absent.
+  return answer.restricted ? UNCHECKED : null;
 }
 
 /**
