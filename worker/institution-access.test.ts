@@ -333,6 +333,71 @@ test('an answer that did not resolve the journal is read, but as unmatched', () 
   assert.equal(parseResolverAnswer(CTO_CELL)!.matched, true);
 });
 
+// Captured 2026-10-19 on na03 for Harvard (01HVD_INST), Nature 2020. The
+// library sends readers straight to one service (`single_service`) and its
+// answer carries no `full_text_indicator`; the services still carry Alma's
+// filter marks. Cut to three services; keys the Worker does not read left out.
+const HARVARD_NATURE_URL = 'https://hvd.alma.exlibrisgroup.com/view/action/uresolver.do?operation=resolveService&package_service_id=126971641670003941&institutionId=3941&customerId=3940';
+const CTO_SINGLE_SERVICE = `<uresolver_content xmlns="http://com/exlibris/urm/uresolver/xmlbeans/u" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <context_object>
+    <keys>
+      <key id="rft.jtitle">Nature.</key>
+      <key id="available_services">single_service</key>
+      <key id="rft.issn">0028-0836</key>
+      <key id="rft.mms_id">990001299870203941</key>
+      <key id="rft.date">2020</key>
+    </keys>
+  </context_object>
+  <context_services>
+    <context_service service_type="getFullTxt" context_service_id="126971641670003941">
+      <keys>
+        <key id="package_public_name">Nature</key>
+        <key id="Is_free">0</key>
+        <key id="Availability">Available from 1869 volume: 1 issue: 1.&lt;br></key>
+      </keys>
+      <resolution_url>${HARVARD_NATURE_URL.replace(/&/g, '&amp;')}</resolution_url>
+    </context_service>
+    <context_service service_type="getFullTxt" context_service_id="126971641640003941">
+      <keys>
+        <key id="package_public_name">ProQuest Central</key>
+        <key id="Is_free">0</key>
+        <key id="Availability">Available from 01/07/1988 volume: 331.&lt;br>Most recent 1 year(s) not available.&lt;br></key>
+      </keys>
+      <resolution_url>https://hvd.alma.exlibrisgroup.com/view/action/uresolver.do?operation=resolveService&amp;package_service_id=126971641640003941&amp;institutionId=3941&amp;customerId=3940</resolution_url>
+    </context_service>
+    <context_service service_type="getFullTxt" context_service_id="126971641700003941">
+      <keys>
+        <key id="package_public_name">EBSCOhost Academic Search Premier</key>
+        <key id="Is_free">0</key>
+        <key id="Availability">Available from 06/05/1997 until 11/30/2015.&lt;br></key>
+        <key id="Filtered">true</key>
+        <key id="Filter reason">Date Filter</key>
+      </keys>
+      <resolution_url>https://hvd.alma.exlibrisgroup.com/view/action/uresolver.do?operation=resolveService&amp;package_service_id=126971641700003941&amp;institutionId=3941&amp;customerId=3940</resolution_url>
+    </context_service>
+  </context_services>
+</uresolver_content>`;
+
+// The same answer with only the filtered service left: nothing live.
+const CTO_SINGLE_SERVICE_FILTERED = CTO_SINGLE_SERVICE.replace(/<context_service service_type="getFullTxt" context_service_id="1269716416[47]0003941">[\s\S]*?<\/context_service>\n/g, '');
+
+test('an answer without an indicator is read from what it lists unfiltered', async () => {
+  const answer = parseResolverAnswer(CTO_SINGLE_SERVICE)!;
+  assert.equal(answer.fullText, true);
+  assert.equal(answer.matched, true);
+  assert.deepEqual(answer.services.map(service => service.name), ['Nature', 'ProQuest Central']);
+  const stub = upstreams({ resolver: () => xml(CTO_SINGLE_SERVICE) });
+  const result = await lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result, { status: 'entitled', collection: 'Nature', url: HARVARD_NATURE_URL });
+});
+
+test('an answer without an indicator whose services are all filtered is a refusal', async () => {
+  assert.deepEqual(parseResolverAnswer(CTO_SINGLE_SERVICE_FILTERED), { fullText: false, matched: true, services: [], restricted: false });
+  const stub = upstreams({ resolver: () => xml(CTO_SINGLE_SERVICE_FILTERED) });
+  const result = await lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result, { status: 'not-entitled', collection: null, url: null });
+});
+
 test('reports the subscription service rather than the free archive for an entitled journal', async () => {
   const stub = upstreams();
   const result = await lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });

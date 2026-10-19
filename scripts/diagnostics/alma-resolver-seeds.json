@@ -2528,5 +2528,12 @@
     "product": "other",
     "evidence": "https://bidi.unam.mx/",
     "notes": "BiDi UNAM and DGB link to Aleph catalogues (librunam.dgb.unam.mx, seriunam.dgb.unam.mx) and to EDS (profid=eds). I found no published OpenURL resolver and no evidence of Alma."
+  },
+  {
+    "rorId": "https://ror.org/04nbhqj75",
+    "name": "Hasselt University",
+    "country": "BE",
+    "source": "census review 2026-10-19",
+    "exclude": "the code found on its e-resources page (32EUC_INST on ec-europa-finder.alma…) is the European Commission library Find-eR, which the page links to, not the university's own resolver"
   }
 ]

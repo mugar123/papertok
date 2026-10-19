@@ -324,10 +324,7 @@ async function probeRegions(code, { host: known = null, region = null, primoSlug
     for (const journal of PROBE_JOURNALS) {
       const probe = await probeHost(host, code, journal);
       if (!probe) break;
-      if (!probe.answer) {
-        if (probe.listed > 0) return { ...probe, status: 'answers-without-indicator' };
-        break;
-      }
+      if (!probe.answer) break;
       if (!probe.answer.matched && probe.listed === 0) break;
       if (probe.listed > 0) return { ...probe, status: 'verified' };
       resolved ||= probe;

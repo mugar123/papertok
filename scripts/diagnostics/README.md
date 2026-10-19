@@ -471,8 +471,9 @@ in `alma-resolver-seeds.json` as `{ rorId, source, code?, host?, url?, product?,
 are verified the same way; `product` keeps what the directory lists (sfx, ebsco, 360link,
 worldcat, libkey) without assuming the library lacks Alma, and `exclude` keeps a library
 consortium out of the table. The census record, misses included, is `alma-resolver-census.json`:
-`verified` rows ship, `answers-without-indicator` rows are Alma libraries whose answer the Worker's
-parser cannot read yet, `compatibility-pending` rows only have a resolver of another product.
+`verified` rows ship (an answer without `full_text_indicator`, the `single_service` form, counts since
+2026-10-19: the Worker reads it from what it lists unfiltered), `answers-without-services` rows resolve
+the journals and list nothing, `compatibility-pending` rows only have a resolver of another product.
 
 ```bash
 node scripts/diagnostics/alma-resolver-census.mjs --countries US --limit 150

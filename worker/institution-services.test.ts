@@ -167,6 +167,18 @@ test('a service filtered for a reason other than the date leaves the platform un
   assert.equal(result.unchecked, SERVICE_CATALOGUE.length - SUBREQUEST_BUDGET + 1);
 });
 
+// A library that sends readers straight to one service answers without an
+// indicator (Harvard, 2026-10-19); the package it lists is still its own.
+const ctoSingleService = (...packages: string[]) => ctoWith(...packages)
+  .replace('<key id="full_text_indicator">true</key>', '<key id="available_services">single_service</key>\n    <key id="rft.mms_id">990001299870203941</key>');
+
+test('a platform answered without an indicator is listed from what it lists', async () => {
+  const stub = upstreams({ resolver: (issn: string) => xml(issn === ISSN_OF.nature ? ctoSingleService('Nature') : CTO_NONE) });
+  const result = await lookupInstitutionServices({ domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result.services.map(service => [service.id, service.collection, service.ownPlatform]), [['nature', 'Nature', true]]);
+  assert.equal(result.partial, false);
+});
+
 test('a probe cut short leaves its platform out and marks the list partial', async () => {
   const stub = upstreams({
     resolver: (issn: string) => (issn === ISSN_OF.wiley ? timeout() : xml(issn === ISSN_OF.ieee || issn === ISSN_OF.sciencedirect ? CTO_ENTITLED : CTO_NONE)),
