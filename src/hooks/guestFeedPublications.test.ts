@@ -14,6 +14,7 @@ import { awaitWithinGate } from '../utils/feedCitationGate.ts';
 import { abstractsInFlight, getOpenAlexEnrichmentId, needsOpenAlexEnrichment, mergeFeedAbstracts, mergeOpenAlexEnrichment, preserveFeedAbstracts } from '../utils/feedEnrichment.ts';
 import { mergeEuropePmcEnrichment } from '../services/europePmcService.ts';
 import { abstractWaitIds, openAbstractWait } from '../utils/feedAbstractWait.ts';
+import { dropPaperById } from './useGuestFeed.ts';
 
 const source = readFileSync(new URL('./useGuestFeed.ts', import.meta.url), 'utf8');
 const start = source.indexOf('function startGuestCandidateRequests(');
@@ -201,4 +202,32 @@ test('a guest card confirmed as a book leaves only if the guest has not reached 
     await new Promise(resolve => setTimeout(resolve, 20));
     assert.deepEqual(state.papers.map(paper => paper.id), kept);
   }
+});
+
+const dismissStart = source.indexOf('const dismissPaper = useCallback(');
+const dismissEnd = source.indexOf('\n  }, []);', dismissStart);
+assert.ok(dismissStart >= 0 && dismissEnd > dismissStart);
+const dismissCode = stripTypeScriptTypes(source.slice(dismissStart + 'const dismissPaper = useCallback('.length, dismissEnd) + '\n  }');
+
+test('a guest Skip before Crossref answers leaves the next card where the guest is, even if it is a book', async t => {
+  const article = (id: string, doi = `10.5555/${id}`) => PaperBuilder.create({ id, title: `Synthetic article ${id}`, doi, categories: ['math.AG'], abstract: 'Publisher text.', sources: { primary: 'openalex', enrichedBy: [] } });
+  const page = [article('first'), article('second'), article('third'), article('book', '10.1007/978-3-540-76956-9'), article('fourth'), article('later-book', '10.1007/978-3-319-04870-3')];
+  let answer!: () => void;
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    await new Promise<void>(resolve => { answer = resolve; });
+    const dois = new URL(String(input)).searchParams.get('filter')!.split(',').map(value => value.slice(4));
+    return Response.json({ message: { 'total-results': dois.length, items: dois.map(DOI => ({ DOI, type: DOI.startsWith('10.1007/') ? 'book' : 'journal-article' })) } });
+  });
+  const publications = await import(new URL('../services/feedPublicationService.ts?guest-dismissed', import.meta.url).href) as typeof import('../services/feedPublicationService.ts');
+  const { state, env, run } = guestLoader(page);
+  Object.assign(env, publications);
+  env.visiblePaperIdRef.current = 'third';
+  await run();
+  assert.deepEqual(state.papers.map(paper => paper.id), page.map(paper => paper.id));
+  const dismissPaper = new Function(...Object.keys(env), 'dropPaperById', `return (${dismissCode});`)(...Object.values(env), dropPaperById);
+  dismissPaper('third');
+  answer();
+  await new Promise(resolve => setTimeout(resolve, 20));
+  // 'book' now fills the skipped card's place; 'later-book' is two cards further.
+  assert.deepEqual(state.papers.map(paper => paper.id), ['first', 'second', 'book', 'fourth']);
 });

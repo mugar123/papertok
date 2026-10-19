@@ -47,11 +47,15 @@ export function isFeedPublication(paper: Partial<Paper>) {
 /**
  * Removes confirmed books and book reviews the reader has not reached. The
  * visible card and the one after it stay, since a swipe shows the next card
- * before the scroll reports it as visible.
+ * before the scroll reports it as visible. Before any report the reader is on
+ * the first card. A reported card that is no longer listed leaves their place
+ * unknown, so nothing is removed.
  */
 export function dropUnreachedPublications<T extends Partial<Paper>>(papers: T[], classified: Partial<Paper>[], visiblePaperId: string | null) {
+  const visible = papers.findIndex(paper => paper.id === visiblePaperId);
+  if (visiblePaperId && visible < 0) return papers;
   const excluded = new Set(classified.filter(paper => !isFeedPublication(paper)).map(paper => paper.id));
-  const lastReached = Math.max(0, papers.findIndex(paper => paper.id === visiblePaperId)) + 1;
+  const lastReached = Math.max(0, visible) + 1;
   const kept = papers.filter((paper, index) => index <= lastReached || !excluded.has(paper.id));
   return kept.length === papers.length ? papers : kept;
 }

@@ -272,7 +272,15 @@ export function useGuestFeed({ areas = [], topics = [], enabled = true }: { area
   // profile to train, and nothing that outlives the page. A visitor pressing
   // Skip used to get a sign-in prompt instead, which read as a dead button.
   const dismissPaper = useCallback((paperId: string) => {
-    setPapers((current) => dropPaperById(current, paperId));
+    setPapers((current) => {
+      // The next card slides into the skipped one's place without a scroll
+      // event, so it is reported here. A late Crossref answer reads the ref.
+      const index = current.findIndex(paper => paper.id === paperId);
+      if (index >= 0 && visiblePaperIdRef.current === paperId) {
+        visiblePaperIdRef.current = current[index + 1]?.id ?? current[index - 1]?.id ?? null;
+      }
+      return dropPaperById(current, paperId);
+    });
   }, []);
 
   // FeedContainer reports the card on screen, so a confirmed book is removed

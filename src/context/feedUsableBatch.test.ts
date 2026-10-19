@@ -37,6 +37,7 @@ function componentCallback(name: string, deps: string) {
 }
 const followCallback = componentCallback('followShownPapers', 'scheduleFeedSnapshotWrite');
 const restoreCallback = componentCallback('restoreFeedSnapshot', 'followShownPapers');
+const notInterestedCallback = componentCallback('markNotInterested', 'withInteractionId, reRankFeed, recordProfileEvent, user?.uid');
 const ref = <T>(current: T) => ({ current });
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -108,8 +109,13 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     return build(callback, withFollowUp())(...args);
   };
   const restore = (snapshot: { papers: FeedRecord[]; page: number; hasMore: boolean }) => build(restoreCallback, withFollowUp())(snapshot, 'top', 'cs.AI');
+  // Not interested in demo mode: nothing written to Firestore, no re-rank.
+  const dismiss = (paper: FeedRecord) => build(notInterestedCallback, {
+    ...env, user: null, IS_DEMO: true, demoSet: () => {}, withInteractionId: <T>(value: T) => value,
+    setNotInterestedIds: () => {}, papersRef: ref(state.papers), recordProfileEvent: () => {}, reRankFeed: () => {},
+  })(paper);
   const loadingAbstracts = () => abstractWaitIds(state.abstractWaits);
-  return { state, env, run, restore, loadingAbstracts };
+  return { state, env, run, restore, dismiss, loadingAbstracts };
 }
 
 test('the signed-in loader shows a page before Crossref answers, then drops only the books the reader has not reached', async t => {
@@ -147,6 +153,35 @@ test('the signed-in loader shows a page before Crossref answers, then drops only
     assert.equal(state.error, null);
     assert.deepEqual(state.papers.map(paper => paper.id), kept);
   }
+});
+
+test('a card dismissed before Crossref answers leaves its successor where the reader is, even if it is a book', async t => {
+  const page = [
+    { id: 'W568341909', doi: '10.1007/978-3-540-76956-9', title: 'Mathematical Theory of Feynman Path Integrals' },
+    { id: 'W3029239115', doi: '10.1016/j.indag.2021.09.002', title: 'Applications of Algebraic Combinatorics to Algebraic Geometry' },
+    { id: 'scientific-review', doi: '10.5555/review-feed', title: 'Synthetic scientific review', publicationType: 'review' },
+    { id: 'W93572185', doi: '10.1007/978-3-319-04870-3', title: 'Combinatorial algebraic geometry : Levico Terme, Italy 2013' },
+  ].map(work => ({ publicationType: 'article', abstract: '', authors: [], sources: { primary: 'openalex', enrichedBy: [] }, ...work }));
+  let answer!: () => void;
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    await new Promise<void>(resolve => { answer = resolve; });
+    const dois = new URL(String(input)).searchParams.get('filter')!.split(',').map(value => value.slice(4));
+    return Response.json({ message: { 'total-results': dois.length, items: dois.map(DOI => ({ DOI, type: DOI.startsWith('10.1007/') ? 'book' : 'journal-article' })) } });
+  });
+  const read = records('read', 3);
+  const { state, env, run, dismiss } = feed({ fast: [], slow: page, page: 1, papers: [...read] });
+  Object.assign(env, await freshPublications('dismissed-visible'));
+  // The reader is on the last card of the first page when the next one is added.
+  env.visiblePaperIdRef.current = read[2].id;
+  const loading = run(false);
+  await wait(100);
+  assert.deepEqual(state.papers.map(paper => paper.id), [...read.map(paper => paper.id), ...page.map(paper => paper.id)]);
+  await dismiss(read[2]);
+  answer();
+  await loading;
+  await wait(20);
+  // The first book now fills the dismissed card's place; the second is two cards further.
+  assert.deepEqual(state.papers.map(paper => paper.id), ['read-0', 'read-1', 'W568341909', 'W3029239115', 'scientific-review']);
 });
 
 test('an entirely excluded page advances pagination without restoring books through the seen bypass', async () => {

@@ -638,13 +638,15 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   }, [userPreferences, followedEntities]);
 
   // The card the reader is on, as FeedContainer reports it (on the restore
-  // after a reload and on every scroll). A ref, not state: it moves on every
-  // scroll event and nothing needs to re-render for it — reRankFeed reads it
-  // inside its functional setPapers.
+  // after a reload and on every scroll), or the successor markNotInterested
+  // moves it to. A ref, not state: it moves on every scroll event and nothing
+  // needs to re-render for it — reRankFeed reads it inside its functional
+  // setPapers.
   //
   // A preferences-change reset replaces the list without resetting this ref or
   // scrolling to top, so it can name a paper no longer in papers — then
-  // reRankFeed and the merge lock only the top few cards. Not enforced.
+  // reRankFeed and the merge lock only the top few cards, and a late Crossref
+  // answer removes no card. Not enforced.
   const visiblePaperIdRef = useRef<string | null>(null);
   // When the feed last moved. FeedContainer reports the visible paper from
   // its scroll handler, so this doubles as the scroll heartbeat the deferred
@@ -2092,14 +2094,16 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     setNotInterestedIds(newNotInterested);
     // The card being removed is the one the reader is on: its successor slides
     // into the viewport and is where they now are. Without it the re-rank below
-    // finds neither anchor — the removed id nor the ref that still names it —
-    // and falls back to the top, reshuffling everything under the reader
-    // (final review, 2026-09-04).
+    // finds no anchor in the removed id and falls back to the top, reshuffling
+    // everything under the reader (final review, 2026-09-04).
     const papers = papersRef.current;
     const removedIndex = papers.findIndex((p) => p.id === paper.id);
     const successorId = removedIndex >= 0
       ? (papers[removedIndex + 1]?.id ?? papers[removedIndex - 1]?.id ?? null)
       : null;
+    // The slide fires no scroll event, so FeedContainer does not report the
+    // successor. A late Crossref answer reads this ref to keep the reader's card.
+    if (visiblePaperIdRef.current === paper.id) visiblePaperIdRef.current = successorId;
     setPapers((prev) => prev.filter((p) => p.id !== paper.id));
     recordProfileEvent({
       paperId: paper.id,

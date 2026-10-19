@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Paper } from '../models/Paper.ts';
 import { OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
-import { classifyFeedPublications, isFeedPublication } from './feedPublicationService.ts';
+import { classifyFeedPublications, dropUnreachedPublications, isFeedPublication } from './feedPublicationService.ts';
 import { dribblingFetch } from '../test-support/deadlineHarness.ts';
 
 // Reduced from the OpenAlex and Crossref responses captured on 2026-10-18
@@ -308,4 +308,13 @@ test('a rate limit stops the batch and honors Retry-After across subsequent load
   t.mock.method(Date, 'now', () => now + 121_000);
   fetch.mock.mockImplementation(async (input: string | URL | Request) => typesResponse(input, 'book'));
   assert.deepEqual((await classifyFeedPublications([records[0]])).filter(isFeedPublication), []);
+});
+
+test('a reported card that is no longer listed leaves every card in place, since the reader could be on any of them', () => {
+  const papers = Array.from({ length: 8 }, (_, index) => paper(`10.5555/card-${index}`));
+  const classified = [paper(papers[6].doi!, 'book')];
+  // A preference reset can replace the list while the ref still names a card of the old one.
+  assert.equal(dropUnreachedPublications(papers, classified, '10.5555/replaced-card'), papers);
+  assert.deepEqual(dropUnreachedPublications(papers, classified, null).map(work => work.id), papers.filter((_, index) => index !== 6).map(work => work.id));
+  assert.deepEqual(dropUnreachedPublications(papers, classified, papers[5].id), papers);
 });
