@@ -1,4 +1,5 @@
 import { markAppForcedReload } from './appReload.ts'
+import { settleWithin } from './asyncTiming.ts'
 
 interface UpdateRegistration { installing?: object | null; update(): Promise<unknown>; }
 interface UpdateWindow extends Pick<EventTarget, 'addEventListener' | 'removeEventListener'> {
@@ -131,19 +132,37 @@ export async function noteDeployActivated(entryUrl: string) {
 }
 
 /**
- * Called on every route change. A hidden tab is not used as the moment: a
- * phone can suspend the page before the reload runs, and the forced-reload
- * mark expires after a minute (appReload.ts), so the feed would start over.
- * Hiding the tab is also how a reader switches apps with a paper open.
+ * How long a route-change reload waits for Firestore to acknowledge the writes
+ * already issued. Past it, the reload waits for the next route change.
  */
-export function reloadIfBehindDeploy(pathname: string) {
+const WRITES_SETTLE_MS = 1_000
+
+/**
+ * Called on every route change. `writesSettled` resolves once Firestore has
+ * acknowledged the writes issued so far. Firestore keeps those in memory only
+ * (services/firebase.ts), so a reload would drop them, and a route change can
+ * follow one closely: onboarding sends the email opt-in without awaiting it,
+ * then navigates to the feed. Writes still pending after WRITES_SETTLE_MS, or
+ * a dialog opened during the wait, leave the reload to the next route change.
+ * A route change during the wait makes its own decision.
+ *
+ * A hidden tab is not used as the moment: a phone can suspend the page before
+ * the reload runs, and the forced-reload mark expires after a minute
+ * (appReload.ts), so the feed would start over. Hiding the tab is also how a
+ * reader switches apps with a paper open.
+ */
+export async function reloadIfBehindDeploy(pathname: string, writesSettled: () => Promise<unknown>) {
   if (behindSince === null) return
   if (shouldReloadForDeploy(behindSince, { pathname, online: navigator.onLine !== false })) {
-    markAppForcedReload()
-    window.location.reload()
-    return
+    const writes = await settleWithin(writesSettled(), WRITES_SETTLE_MS)
+    if (writes.status === 'fulfilled' && window.location.pathname === pathname
+      && !document.querySelector('[aria-modal="true"]')) {
+      markAppForcedReload()
+      window.location.reload()
+      return
+    }
   }
-  // An offline route change still left the page, so the next one is the
-  // moment.
-  behindSince = pathname
+  // An offline route change, or one the reload could not follow, still left
+  // the page, so the next one is the moment.
+  behindSince = window.location.pathname
 }

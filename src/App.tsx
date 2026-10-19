@@ -4,6 +4,8 @@ import type { Paper } from './models/Paper.ts'
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
+import { waitForPendingWrites } from 'firebase/firestore'
+import { db } from './services/firebase.ts'
 import PageTransition from './components/Layout/PageTransition.tsx'
 import { PageTransitionCustomProvider, usePageTransitionCustom } from './hooks/usePageTransitionCustom.ts'
 import { useOverlayHistory } from './hooks/useOverlayHistory.ts'
@@ -134,10 +136,11 @@ function AppContent() {
     setSearchOpen(true)
   }, [])
   const location = useLocation()
-  // A deploy this tab is behind on is applied when the reader changes page
+  // A deploy this tab is behind on is applied when the reader changes page,
+  // after Firestore has acknowledged the writes already issued
   // (utils/serviceWorkerUpdates.ts).
   useEffect(() => {
-    reloadIfBehindDeploy(location.pathname)
+    void reloadIfBehindDeploy(location.pathname, () => waitForPendingWrites(db))
   }, [location.pathname])
   // The ONE place this is computed. Every PageTransition reads it from the
   // provider below, and AnimatePresence hands it to the page on its way out —

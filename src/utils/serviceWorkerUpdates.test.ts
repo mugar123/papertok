@@ -1,7 +1,10 @@
-import test from 'node:test'
+import test, { type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { runsPrecachedBuild, shouldReloadForDeploy, watchServiceWorkerUpdates, watchWorkerActivations } from './serviceWorkerUpdates.ts'
+import { APP_RELOAD_KEY } from './appReload.ts'
+import {
+  noteDeployActivated, reloadIfBehindDeploy, runsPrecachedBuild, shouldReloadForDeploy, watchServiceWorkerUpdates, watchWorkerActivations,
+} from './serviceWorkerUpdates.ts'
 
 function setup(update = async () => {}) {
   const windowTarget = new EventTarget() as EventTarget & { setInterval(callback: () => void, delay: number): number; clearInterval(id: number): void }
@@ -207,4 +210,75 @@ test('a worker that never finishes activating is not checked', () => {
   claim('B')('redundant')
   claim('C')('activated')
   assert.deepEqual(checked, ['C'])
+})
+
+function stubGlobal(t: TestContext, name: string, value: unknown) {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, name)
+  Object.defineProperty(globalThis, name, { configurable: true, value })
+  t.after(() => {
+    if (previous) Object.defineProperty(globalThis, name, previous)
+    else delete (globalThis as Record<string, unknown>)[name]
+  })
+}
+
+// A tab on the old build whose new worker precaches the next one, as far as
+// the module reads the browser: the location, the precache, the session
+// storage that holds the forced-reload mark, and any open dialog.
+function tabBehindDeploy(t: TestContext, pathname: string) {
+  const tab = { pathname, reloads: 0, dialog: null as object | null, session: new Map<string, string>() }
+  stubGlobal(t, 'window', {
+    location: { get pathname() { return tab.pathname }, reload: () => { tab.reloads++ } },
+    caches: cacheStorage({ [PRECACHE]: [NEW_ENTRY] }),
+    sessionStorage: {
+      getItem: (key: string) => tab.session.get(key) ?? null,
+      setItem: (key: string, value: string) => { tab.session.set(key, value) },
+      removeItem: (key: string) => { tab.session.delete(key) },
+    },
+  })
+  stubGlobal(t, 'navigator', { onLine: true, serviceWorker: { ready: Promise.resolve({ scope: SCOPE }) } })
+  stubGlobal(t, 'document', { querySelector: (selector: string) => (selector === '[aria-modal="true"]' ? tab.dialog : null) })
+  return tab
+}
+
+test('a route-change reload waits until Firestore has acknowledged the writes already issued', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const tab = tabBehindDeploy(t, '/onboarding')
+  await noteDeployActivated(OLD_ENTRY)
+
+  // Finishing onboarding: the email opt-in is still unacknowledged when the
+  // route moves to the feed.
+  let acknowledge!: () => void
+  const optIn = new Promise<void>((resolve) => { acknowledge = resolve })
+  tab.pathname = '/feed'
+  const reload = reloadIfBehindDeploy('/feed', () => optIn)
+  await settle()
+  assert.equal(tab.reloads, 0)
+  acknowledge()
+  await reload
+  assert.equal(tab.reloads, 1)
+  assert.ok(tab.session.has(APP_RELOAD_KEY), 'the reload is marked as the app\'s own')
+
+  // The fake reload left the tab in place, still behind. A write that is not
+  // acknowledged within a second holds the reload, unmarked, until the next
+  // route change.
+  tab.session.clear()
+  tab.pathname = '/lists'
+  const stalled = reloadIfBehindDeploy('/lists', () => new Promise(() => {}))
+  t.mock.timers.tick(1_000)
+  await stalled
+  assert.equal(tab.reloads, 1)
+  assert.equal(tab.session.has(APP_RELOAD_KEY), false)
+  tab.pathname = '/following'
+  await reloadIfBehindDeploy('/following', async () => {})
+  assert.equal(tab.reloads, 2)
+
+  // A paper opened while the writes settled holds it too.
+  tab.pathname = '/feed'
+  tab.dialog = {}
+  await reloadIfBehindDeploy('/feed', async () => {})
+  assert.equal(tab.reloads, 2)
+  tab.dialog = null
+  tab.pathname = '/lists'
+  await reloadIfBehindDeploy('/lists', async () => {})
+  assert.equal(tab.reloads, 3)
 })

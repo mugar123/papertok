@@ -177,5 +177,5 @@ test('SOURCE: the app marks every reload it gives itself, and applies the policy
 test('SOURCE: the app applies a pending deploy on route changes', async () => {
   const { readFile } = await import('node:fs/promises');
   const app = await readFile(new URL('../App.tsx', import.meta.url), 'utf8');
-  assert.match(app, /useEffect\(\(\) => \{\s*reloadIfBehindDeploy\(location\.pathname\)\s*\}, \[location\.pathname\]\)/);
+  assert.match(app, /useEffect\(\(\) => \{\s*void reloadIfBehindDeploy\(location\.pathname, \(\) => waitForPendingWrites\(db\)\)\s*\}, \[location\.pathname\]\)/);
 });
