@@ -6,6 +6,7 @@ import type { AddressInfo } from 'node:net';
 import { deleteApp, initializeApp } from 'firebase/app';
 import { connectAuthEmulator, inMemoryPersistence, initializeAuth, onAuthStateChanged } from 'firebase/auth';
 import type { Auth, Persistence, PopupRedirectResolver } from 'firebase/auth';
+import type { PopupReadiness } from './popupRedirectResolver.ts';
 import { deferPopupRedirectResolver, preparePopupRedirectResolver } from './popupRedirectResolver.ts';
 
 /**
@@ -116,7 +117,36 @@ test('Auth reports the session without waiting for the popup resolver to load', 
   assert.deepEqual(deferred.loads, []);
 });
 
-test('preparing loads the resolver of the given Auth, and a failed load is left to the popup', async (t) => {
+// A load the test finishes itself.
+function controlledLoad() {
+  let finish = () => {};
+  const promise = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  return { load: () => promise, finish: () => finish() };
+}
+
+const turnsReady = (readiness: PopupReadiness) => new Promise<void>(resolve => readiness.subscribe(resolve));
+
+test('on a phone, controls wait for the load and are let through the moment it finishes', async (t) => {
+  const load = controlledLoad();
+  const phone = firebaseResolver({ load: load.load });
+  const auth = startAuth(t, deferPopupRedirectResolver(phone.resolver));
+
+  const readiness = preparePopupRedirectResolver(auth);
+  assert.equal(readiness.ready, false, 'not ready before Auth has even reported');
+  const ready = turnsReady(readiness);
+  await auth.authStateReady();
+  await nextTurn();
+  assert.deepEqual(phone.loads, [auth]);
+  assert.equal(readiness.ready, false, 'not ready while the scripts load');
+
+  load.finish();
+  assert.equal(await settlesWithin(ready, 100), true);
+  assert.equal(readiness.ready, true);
+});
+
+test('a failed load lets presses through, leaving the load and its error to Firebase', async (t) => {
   const unhandled: unknown[] = [];
   const onUnhandled = (reason: unknown) => unhandled.push(reason);
   process.on('unhandledRejection', onUnhandled);
@@ -128,34 +158,56 @@ test('preparing loads the resolver of the given Auth, and a failed load is left 
     },
   });
   const auth = startAuth(t, deferPopupRedirectResolver(phone.resolver));
-  await auth.authStateReady();
+  const readiness = preparePopupRedirectResolver(auth);
 
-  await preparePopupRedirectResolver(auth);
+  assert.equal(await settlesWithin(turnsReady(readiness), 2000), true);
   // A rejection nobody handled is reported after this turn.
   await nextTurn();
 
+  assert.equal(readiness.ready, true);
   assert.deepEqual(phone.loads, [auth]);
   assert.deepEqual(unhandled, []);
 });
 
-test('where Firebase loads the resolver at the tap, preparing leaves it to the tap', async (t) => {
+test('a load that never finishes holds the controls for a bounded time only', async (t) => {
+  const phone = firebaseResolver();
+  const auth = startAuth(t, deferPopupRedirectResolver(phone.resolver));
+  await auth.authStateReady();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+
+  const readiness = preparePopupRedirectResolver(auth);
+  await nextTurn();
+  assert.deepEqual(phone.loads, [auth]);
+
+  // About as long as the load took on an emulated mid-range phone over Slow
+  // 4G: still worth waiting for.
+  t.mock.timers.tick(2_000);
+  assert.equal(readiness.ready, false);
+  // Nobody is held for half a minute.
+  t.mock.timers.tick(28_000);
+  assert.equal(readiness.ready, true);
+});
+
+test('where Firebase loads the resolver at the tap, nothing loads and no control waits', async (t) => {
   const desktop = firebaseResolver({ phone: false });
   const auth = startAuth(t, deferPopupRedirectResolver(desktop.resolver));
-  await preparePopupRedirectResolver(auth);
+
+  const readiness = preparePopupRedirectResolver(auth);
+  assert.equal(readiness.ready, true);
+  await auth.authStateReady();
+  await nextTurn();
 
   assert.deepEqual(desktop.loads, []);
 });
 
-// What Auth had reported each time the resolver started loading, and a load
-// that never finishes.
+// What Auth had reported each time the resolver started loading.
 function recordReports(t: TestContext) {
   const reports: string[] = [];
   const atLoad: string[][] = [];
   return {
     atLoad,
-    load: () => {
+    load: async () => {
       atLoad.push([...reports]);
-      return new Promise(() => {});
     },
     listen(auth: Auth) {
       t.after(onAuthStateChanged(auth, user => reports.push(user?.uid ?? 'nobody')));
@@ -169,7 +221,7 @@ test('with nobody signed in, the resolver loads after Auth has reported the sess
   const auth = startAuth(t, deferPopupRedirectResolver(phone.resolver));
   reported.listen(auth);
 
-  assert.equal(await settlesWithin(preparePopupRedirectResolver(auth), 2000), true);
+  assert.equal(await settlesWithin(turnsReady(preparePopupRedirectResolver(auth)), 2000), true);
 
   assert.deepEqual(phone.loads, [auth]);
   assert.deepEqual(reported.atLoad, [['nobody']]);
@@ -181,7 +233,7 @@ test('a restored session loads the resolver too, after Auth has reported the rea
   const auth = await startSignedIn(t, deferPopupRedirectResolver(phone.resolver));
   reported.listen(auth);
 
-  assert.equal(await settlesWithin(preparePopupRedirectResolver(auth), 2000), true);
+  assert.equal(await settlesWithin(turnsReady(preparePopupRedirectResolver(auth)), 2000), true);
 
   assert.equal(auth.currentUser?.uid, 'reader');
   assert.deepEqual(phone.loads, [auth]);

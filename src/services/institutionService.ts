@@ -1,11 +1,11 @@
 type InstitutionInput = Partial<Record<'domain' | 'rorId' | 'name' | 'acronym' | 'entityId' | 'verifiedAt', unknown>>;
 export type LinkedInstitution = NonNullable<ReturnType<typeof normalizeInstitution>>;
 type UniversityUser = Pick<import('firebase/auth').User, 'email' | 'getIdToken'>;
+type PopupReadiness = import('./popupRedirectResolver.ts').PopupReadiness;
 interface InstitutionOperations {
   isDemo?: boolean; request?: typeof authenticatedWorkerFetch; apiBase?: string;
   currentUser?: () => Partial<Pick<import('firebase/auth').User, 'uid' | 'email' | 'emailVerified'>> | null;
   secondaryAuth?(): object;
-  setPersistence?(instance: object, persistence: import('firebase/auth').Persistence): Promise<void>;
   provider?(): { setCustomParameters(params: import('firebase/auth').CustomParameters): void };
   popupSignIn?(instance: object, provider: unknown): Promise<{ user: UniversityUser }>;
   additionalUserInfo?(result: { user: UniversityUser }): { isNewUser: boolean } | null;
@@ -36,11 +36,12 @@ import {
   getAdditionalUserInfo,
   getAuth,
   inMemoryPersistence,
-  setPersistence,
+  initializeAuth,
   signInWithPopup,
   signOut,
 } from 'firebase/auth';
-import app, { auth, IS_DEMO } from './firebase.ts';
+import app, { auth, IS_DEMO, popupReadiness, popupRedirectResolver } from './firebase.ts';
+import { preparePopupRedirectResolver } from './popupRedirectResolver.ts';
 import { authenticatedWorkerFetch } from './workerApiClient.ts';
 import { institutionDomainOf } from '../utils/institutionDomain.ts';
 
@@ -86,7 +87,24 @@ export function institutionLabel(institution: Partial<LinkedInstitution> | null 
 
 function secondaryAuth() {
   const existing = getApps().find(candidate => candidate.name === SECONDARY_APP_NAME);
-  return getAuth(existing || initializeApp(app.options, SECONDARY_APP_NAME));
+  if (existing) return getAuth(existing);
+  // Kept in memory from the start: changing persistence at the press would
+  // touch storage first and open Google's window after the tap.
+  return initializeAuth(initializeApp(app.options, SECONDARY_APP_NAME), {
+    persistence: inMemoryPersistence,
+    popupRedirectResolver,
+  });
+}
+
+let linkReadiness: PopupReadiness | undefined;
+/**
+ * Whether the link's Google window would open inside the press. The second
+ * instance needs its own popup load, so the form starts it when it shows
+ * rather than at the press (popupRedirectResolver.ts).
+ */
+export function institutionLinkReadiness() {
+  linkReadiness ??= IS_DEMO ? popupReadiness : preparePopupRedirectResolver(secondaryAuth());
+  return linkReadiness;
 }
 
 function operations(overrides: InstitutionOperations = {}): Required<Omit<InstitutionOperations, 'apiBase'>> & { apiBase: string | undefined } {
@@ -98,7 +116,6 @@ function operations(overrides: InstitutionOperations = {}): Required<Omit<Instit
       : overrides.apiBase,
     currentUser: overrides.currentUser || (() => auth.currentUser),
     secondaryAuth: overrides.secondaryAuth || secondaryAuth,
-    setPersistence: overrides.setPersistence || setPersistence,
     provider: overrides.provider || (() => new GoogleAuthProvider()),
     popupSignIn: overrides.popupSignIn || signInWithPopup,
     additionalUserInfo: overrides.additionalUserInfo || getAdditionalUserInfo,
@@ -141,7 +158,6 @@ async function postJson(api: ReturnType<typeof operations>, path: string, body: 
  */
 async function proveWithUniversityAccount(api: ReturnType<typeof operations>, email: string, domain: string) {
   const secondary = api.secondaryAuth();
-  await api.setPersistence(secondary, inMemoryPersistence);
   const provider = api.provider();
   provider.setCustomParameters({ login_hint: email, hd: domain, prompt: 'select_account' });
   const result = await api.popupSignIn(secondary, provider);

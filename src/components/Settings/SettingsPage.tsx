@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react';
 import type { Icon } from '@phosphor-icons/react';
 import type { ReadingLevel } from '../../utils/userSettings.ts';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Bell,
@@ -32,7 +32,9 @@ import { ANALYTICS_CONSENT } from '../../services/analyticsService.ts';
 import { PAPER_REWRITE_LEVELS } from '../../services/paperRewriteService.ts';
 import { INTEREST_AREAS } from '../../data/categories.ts';
 import { SIGN_IN_PROVIDERS } from '../../services/authIdentityService.ts';
+import { popupReadiness } from '../../services/firebase.ts';
 import GoogleMark from '../Public/GoogleMark.tsx';
+import { PreparingNote } from '../Public/ProviderSignIn.tsx';
 import InstitutionDialog from '../Institution/InstitutionDialog.tsx';
 import InstitutionPill from '../Institution/InstitutionPill.tsx';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
@@ -46,6 +48,7 @@ import { RadioGroup, RadioGroupItem } from '../ui/radio-group.tsx';
 import { Switch } from '../ui/switch.tsx';
 import { Drawer, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import useIsPhone from '../../hooks/useIsPhone.ts';
+import usePopupReady from '../../hooks/usePopupReady.ts';
 import './SettingsPage.css';
 
 /**
@@ -209,6 +212,10 @@ function ProfileAccountPage() {
   const { user, signInProviders, linkSignInMethod, signOut, institution } = useAuth();
   // The method being connected, while its popup is open.
   const [linking, setLinking] = useState<string | null>(null);
+  // Until the window can open inside the press (usePopupReady), Connect is
+  // disabled but keeps focus.
+  const preparing = !usePopupReady(popupReadiness);
+  const preparingId = useId();
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [institutionOpen, setInstitutionOpen] = useState(false);
 
@@ -291,10 +298,12 @@ function ProfileAccountPage() {
                   size="sm"
                   className="settings-row-action"
                   onClick={() => handleLink(method)}
-                  disabled={Boolean(linking)}
+                  disabled={Boolean(linking) || preparing}
+                  focusableWhenDisabled={preparing}
                   aria-label={linking === method.id ? copy.connecting(method.label) : copy.connect(method.label)}
+                  aria-describedby={preparing ? preparingId : undefined}
                 >
-                  {linking === method.id
+                  {linking === method.id || preparing
                     ? <CircleNotch size={15} className="settings-spin" aria-hidden="true" />
                     : <LinkSimple size={15} aria-hidden="true" />}
                   {copy.connectShort}
@@ -302,6 +311,7 @@ function ProfileAccountPage() {
               )}
             </div>
           ))}
+          {preparing && <PreparingNote id={preparingId} />}
           <div className="settings-row">
             <div className="settings-row-content">
               <div className="settings-row-title-line">

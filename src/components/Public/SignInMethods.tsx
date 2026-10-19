@@ -1,9 +1,10 @@
+import { useId } from 'react';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import { Button } from '../ui/button.tsx';
 import GoogleMark from './GoogleMark.tsx';
 import { GithubMark } from '../ui/GithubMark.tsx';
 import { useProviderSignIn } from './useProviderSignIn.ts';
-import { CollisionNote, ProviderSpinner } from './ProviderSignIn.tsx';
+import { CollisionNote, PreparingNote, ProviderSpinner } from './ProviderSignIn.tsx';
 import './AuthPrompt.css';
 
 /**
@@ -12,18 +13,24 @@ import './AuthPrompt.css';
  * failure. They count as the `auth_prompt` surface.
  */
 export default function SignInMethods() {
-  const { pendingProvider, collision, error, signIn: handleSignIn } = useProviderSignIn('auth_prompt');
+  const { pendingProvider, collision, error, preparing, signIn: handleSignIn } = useProviderSignIn('auth_prompt');
+  const preparingId = useId();
   return (
     <>
+      {/* While preparing, the buttons stay focusable and say why they do
+          nothing (useProviderSignIn). */}
       <div className="auth-modal-methods">
         <Button
           variant="outline"
           size="lg"
           className="auth-provider w-full"
           onClick={() => handleSignIn('google')}
+          disabled={preparing}
+          focusableWhenDisabled
+          aria-describedby={preparing ? preparingId : undefined}
           id="google-sign-in-btn"
         >
-          {pendingProvider === 'google' ? (
+          {preparing || pendingProvider === 'google' ? (
             <ProviderSpinner />
           ) : (
             <GoogleMark className="auth-provider-icon" />
@@ -36,15 +43,19 @@ export default function SignInMethods() {
           size="lg"
           className="auth-provider w-full"
           onClick={() => handleSignIn('github')}
+          disabled={preparing}
+          focusableWhenDisabled
+          aria-describedby={preparing ? preparingId : undefined}
           id="github-sign-in-btn"
         >
-          {pendingProvider === 'github' ? (
+          {preparing || pendingProvider === 'github' ? (
             <ProviderSpinner />
           ) : (
             <GithubMark className="auth-provider-icon" />
           )}
           <span>{'Continue with GitHub'}</span>
         </Button>
+        {preparing && <PreparingNote id={preparingId} />}
       </div>
 
       {collision ? (

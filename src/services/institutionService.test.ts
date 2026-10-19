@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { institutionDomainOf } from '../utils/institutionDomain.ts';
 import {
   InstitutionLinkError,
@@ -38,7 +39,6 @@ function popupStub({ email = 'alice@usal.es', isNewUser = true } = {}) {
     log,
     overrides: {
       secondaryAuth: () => secondary,
-      setPersistence: async (instance, persistence) => { log.push(['persistence', instance === secondary, persistence?.type]); },
       provider: () => ({ setCustomParameters(params) { log.push(['params', params]); } }),
       popupSignIn: async (instance: { name: string; }) => { log.push(['popup', instance === secondary]); return { user: holder }; },
       additionalUserInfo: () => ({ isNewUser }),
@@ -105,12 +105,32 @@ test('a personal account proves the university through a second sign-in that is 
   assert.deepEqual(linked, INSTITUTION);
   assert.deepEqual(worker.calls, [{ url: 'https://worker.test/institution/link', body: { institutionToken: 'university-token' } }]);
   assert.deepEqual(popup.log, [
-    ['persistence', true, 'NONE'],
     ['params', { login_hint: 'alice@usal.es', hd: 'usal.es', prompt: 'select_account' }],
     ['popup', true],
     // Firebase had to create an account for the proof: it is removed again.
     ['delete', true],
   ]);
+});
+
+// Safari can block a window opened after the tap, so nothing is awaited
+// between the press and the request for Google's window.
+test('the press asks for Google\'s window before it awaits anything', async () => {
+  const popup = popupStub();
+  const linking = linkInstitution('alice@usal.es', {
+    ...BASE,
+    ...popup.overrides,
+    request: workerAnswering(200, { institution: INSTITUTION }).request,
+    currentUser: () => ({ uid: 'alice', email: 'alice@gmail.com', emailVerified: true }),
+  });
+  assert.deepEqual(popup.log.at(-1), ['popup', true]);
+  await linking;
+});
+
+// The proof's sign-in must not outlive the tab. The second instance starts in
+// memory, rather than switching to it at the press.
+test('SOURCE: the second instance keeps its sign-in in memory from the start', async () => {
+  const code = await readFile(new URL('./institutionService.ts', import.meta.url), 'utf8');
+  assert.match(code, /initializeAuth\(initializeApp\(app\.options, SECONDARY_APP_NAME\), \{\s*persistence: inMemoryPersistence,/);
 });
 
 test('an existing account used as proof is signed out of the second instance, not deleted', async () => {

@@ -92,3 +92,19 @@ test('the settings pages carry their own field and switch styles, with no public
   assert.match(dark[0], /--settings-panel-line:\s*var\(--border-strong\)/);
   assert.match(css, /\.profile-fields\s*\{[^}]*border:\s*1px solid var\(--settings-panel-line\)/);
 });
+
+/**
+ * Connect opens a Google or GitHub window. Opened after its scripts finish
+ * loading, it can land outside the press, where Safari blocks it, so the
+ * button waits for them (usePopupReady), focusable and described as preparing.
+ */
+test('Connect stays disabled but focusable until its window can open inside the press', async () => {
+  const jsx = await read('./SettingsPage.tsx');
+  assert.match(jsx, /const preparing = !usePopupReady\(popupReadiness\);/);
+  const connect = jsx.match(/<Button\b(?:(?!<Button\b)[\s\S])*?onClick=\{\(\) => handleLink\(method\)\}[\s\S]*?\n\s*>/)?.[0] ?? '';
+  assert.match(connect, /disabled=\{Boolean\(linking\) \|\| preparing\}/);
+  assert.match(connect, /focusableWhenDisabled=\{preparing\}/);
+  assert.match(connect, /aria-describedby=\{preparing \? preparingId : undefined\}/);
+  assert.match(jsx, /\{preparing && <PreparingNote id=\{preparingId\} \/>\}/);
+  assert.match(jsx, /\{linking === method\.id \|\| preparing\s*\? <CircleNotch\b/);
+});

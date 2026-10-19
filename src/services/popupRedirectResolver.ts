@@ -39,21 +39,63 @@ export function deferPopupRedirectResolver(resolver: PopupRedirectResolver) {
   return DeferredPopupRedirectResolver as unknown as PopupRedirectResolver;
 }
 
+/** Whether a popup of one Auth instance would open its window inside the press. */
+export interface PopupReadiness {
+  readonly ready: boolean;
+  /** Calls `onReady` once `ready` turns true. Returns the unsubscribe. */
+  subscribe(onReady: () => void): () => void;
+}
+
+// How long controls wait for the load. After that a press goes through as it
+// did before they waited: Firebase finishes the load at the press and reports
+// a blocked window itself. The load took about 2 s on an emulated mid-range
+// phone over Slow 4G.
+const LOAD_WAIT_MS = 10_000;
+
 /**
  * Once `auth` has reported the session, starts the load Firebase would have
  * made while Auth started, on the devices where it makes it (phones, Safari).
  *
  * A popup opens its window only after this load, and Safari can block a window
  * opened after the tap. As with `getAuth`, every visitor loads it, signed in or
- * not, so a sign-in, a provider link or a re-authentication finds it done. A
- * tap made before it finishes still opens the window late. On other desktop
- * browsers Firebase loads the resolver at the first popup, and this does
- * nothing.
+ * not. Until the load finishes or fails, or LOAD_WAIT_MS after this call,
+ * `ready` is false and the controls that open a popup ignore presses
+ * (usePopupReady). On other desktop browsers Firebase loads the resolver
+ * inside the first popup's press, so nothing loads here and `ready` is true
+ * from the start.
  */
-export async function preparePopupRedirectResolver(auth: Auth) {
-  await auth.authStateReady();
+export function preparePopupRedirectResolver(auth: Auth): PopupReadiness {
   const resolver = (auth as unknown as AuthInternals)._popupRedirectResolver;
-  // Firebase forgets a failed load, so the popup tries again and reports the
-  // error itself.
-  if (resolver?._loadBeforeTap) resolver._initialize(auth).catch(() => undefined);
+  const listeners = new Set<() => void>();
+  let ready = true;
+  if (resolver?._loadBeforeTap) {
+    ready = false;
+    const release = () => {
+      if (ready) return;
+      ready = true;
+      for (const listener of listeners) listener();
+      listeners.clear();
+    };
+    const deadline = setTimeout(release, LOAD_WAIT_MS);
+    auth.authStateReady()
+      .then(() => resolver._initialize(auth))
+      // Firebase forgets a failed load, so the popup tries again at the press
+      // and reports the error itself.
+      .catch(() => undefined)
+      .then(() => {
+        clearTimeout(deadline);
+        release();
+      });
+  }
+  return {
+    get ready() {
+      return ready;
+    },
+    subscribe(onReady) {
+      listeners.add(onReady);
+      return () => {
+        listeners.delete(onReady);
+      };
+    },
+  };
 }

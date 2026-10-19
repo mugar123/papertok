@@ -12,6 +12,9 @@ import { Label } from '../ui/label.tsx';
 import InstitutionPill from './InstitutionPill.tsx';
 import InstitutionServices from './InstitutionServices.tsx';
 import GoogleMark from '../Public/GoogleMark.tsx';
+import { PreparingNote } from '../Public/ProviderSignIn.tsx';
+import usePopupReady from '../../hooks/usePopupReady.ts';
+import { institutionLinkReadiness } from '../../services/institutionService.ts';
 import './Institution.css';
 
 const COPY = {
@@ -37,6 +40,8 @@ const COPY = {
  * passes `showSubmit={false}` and a `formId` for its button's `form`, owns
  * the address through `email` / `onEmailChange` so it can tell whether one is
  * typed, and hears `onBusyChange` to say "Verifying…" while Google is open.
+ * The form ignores a submit until Google's window can open inside the press,
+ * so that caller reads institutionLinkReadiness to say "Preparing sign-in…".
  * There, `linkedNote` adds a sentence after "Verified with …" once linked.
  */
 export default function InstitutionLink({
@@ -55,6 +60,10 @@ export default function InstitutionLink({
   const setEmail = controlled ? onEmailChange : setOwnEmail;
   const [busy, setBusy] = useState(false);
   useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
+  // While the form shows, its Google window gets ready to open inside the
+  // press; until then a submit does nothing (usePopupReady).
+  const preparing = !usePopupReady(institution ? null : institutionLinkReadiness());
+  const preparingId = `${idPrefix}-preparing`;
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   // Linking swaps the form for the linked row and unlinking swaps it back, so
   // the control that had focus is gone either way. Focus lands on the control
@@ -73,7 +82,7 @@ export default function InstitutionLink({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (busy) return;
+    if (busy || preparing) return;
     setBusy(true);
     setFeedback(null);
     pendingFocus.current = 'unlink';
@@ -164,11 +173,18 @@ export default function InstitutionLink({
           aria-describedby={feedback?.tone === 'error' ? `${hintId} ${feedbackId}` : hintId}
         />
         {showSubmit && (
-          <Button type="submit" variant="outline" className="institution-link-submit" aria-disabled={busy || undefined}>
-            {busy ? <span className="institution-link-spinner" aria-hidden="true" /> : <GoogleMark size={16} />}
+          <Button
+            type="submit"
+            variant="outline"
+            className="institution-link-submit"
+            aria-disabled={busy || preparing || undefined}
+            aria-describedby={preparing ? preparingId : undefined}
+          >
+            {busy || preparing ? <span className="institution-link-spinner" aria-hidden="true" /> : <GoogleMark size={16} />}
             {busy ? COPY.submitting : COPY.submit}
           </Button>
         )}
+        {showSubmit && preparing && <PreparingNote id={preparingId} />}
       </div>
       <p id={hintId} className="institution-link-hint">{COPY.hint}</p>
       {feedbackNode}
