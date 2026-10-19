@@ -1494,7 +1494,8 @@
     "host": "eu01.alma.exlibrisgroup.com",
     "url": "https://eu01.alma.exlibrisgroup.com/view/uresolver/45KBDK_KGL/openurl",
     "evidence": "https://www.kb.dk/",
-    "notes": "KU's library service is the Royal Danish Library (KB); kb.dk links soeg.kb.dk Primo VE with vid=45KBDK_KGL:KGL and eu01 answered with the indicator key (value false for Nature 2020) and 10 services. The KB code covers KU, but KU's own library pages were not checked for a separate code."
+    "notes": "KU's library service is the Royal Danish Library (KB); kb.dk links soeg.kb.dk Primo VE with vid=45KBDK_KGL:KGL and eu01 answered with the indicator key (value false for Nature 2020) and 10 services. The KB code covers KU, but KU's own library pages were not checked for a separate code.",
+    "exclude": "one Alma institution, the Royal Danish Library (45KBDK_KGL), serves both Copenhagen and Aarhus; its answer is institution-wide and does not show which university each licence covers"
   },
   {
     "rorId": "https://ror.org/0524sp257",
@@ -1706,5 +1707,29 @@
     "name": "Consorcio de Bibliotecas Universitarias de Andalucía (CBUA)",
     "source": "census review 2026-10-19",
     "exclude": "library consortium, not a university; its network code answers for the whole consortium"
+  },
+  {
+    "rorId": "https://ror.org/00vkhbp60",
+    "name": "Universitat Abat Oliba CEU",
+    "source": "census review 2026-10-19",
+    "exclude": "the code found on its library page is the CSUC consortium network code (34CSUC_NETWORK), which answers for the whole network, not for this university"
+  },
+  {
+    "rorId": "https://ror.org/053d21744",
+    "name": "Escola Superior de Música de Catalunya",
+    "source": "census review 2026-10-19",
+    "exclude": "the code found on its library page is the CSUC consortium network code (34CSUC_NETWORK), which answers for the whole network, not for this school"
+  },
+  {
+    "rorId": "https://ror.org/058nh3n50",
+    "name": "International University of Andalucía",
+    "source": "census review 2026-10-19",
+    "exclude": "the code found on its library page is the CBUA consortium network code (34CBUA_DNZ), which answers for the whole network, not for this university"
+  },
+  {
+    "rorId": "https://ror.org/01aj84f44",
+    "name": "Aarhus University",
+    "source": "census review 2026-10-19",
+    "exclude": "one Alma institution, the Royal Danish Library (45KBDK_KGL), serves both Copenhagen and Aarhus; its answer is institution-wide and does not show which university each licence covers"
   }
 ]
