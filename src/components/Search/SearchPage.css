@@ -312,12 +312,15 @@
   flex-shrink: 0;
 }
 
+/* One line: the provider, then what is missing. A narrow screen cuts the
+   detail short rather than growing the strip; the status reads it whole. */
 .search-service-copy {
-  display: flex;
   flex: 1;
-  flex-direction: column;
-  gap: 2px;
   min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .search-service-copy strong {
@@ -327,6 +330,7 @@
 }
 
 .search-service-copy span {
+  margin-left: var(--space-2);
   color: var(--text-secondary);
   font-size: var(--fs-xs);
 }

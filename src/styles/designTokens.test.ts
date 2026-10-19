@@ -24,8 +24,8 @@ import { readFile } from 'node:fs/promises';
 const INJECTED_PROPERTIES = new Map([
   // A row takes the research field of its paper, the same way a card or an
   // entity header does, so its rules are tinted by the data rather than by a
-  // decorative default. The lists page sets it per row.
-  ['--area-accent', '../components/Lists/ListsPage.tsx'],
+  // decorative default. The shared paper row sets it, for lists and search.
+  ['--area-accent', '../components/Lists/ListRow.tsx'],
   // A list's colour is the owner's choice, so it cannot be a token: the lists
   // page resolves it per list and sets it on the card. It is deliberately not
   // `--area-accent` — inside an open list both appear at once, the header

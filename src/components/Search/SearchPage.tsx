@@ -51,12 +51,9 @@ import PaperCard from '../Feed/PaperCard.tsx';
 import Petri from '../Onboarding/Petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { Button } from '../ui/button.tsx';
-import { ListRow, ListRowAuthors } from '../Lists/ListRow.tsx';
-import { getCategoryLabel } from '../../data/categories.ts';
-import { areaAccentForPaper } from '../../utils/areaAccent.ts';
+import { ListRow, ListRowAuthors, PaperListRow } from '../Lists/ListRow.tsx';
 import PaperOverlay from '../Feed/PaperOverlay.tsx';
 import PDFViewer from '../PDF/PDFViewer.tsx';
-import ScientificText from '../ScientificText.ts';
 import { Input } from '../ui/input.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
 import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle, DrawerTrigger } from '../ui/drawer.tsx';
@@ -657,6 +654,15 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
   const canRetryOutage = !(searchIssue?.rateLimited && openAlexRetryLabel);
   // One notice, always naming the provider that actually went down. The page
   // never claims "the search is unavailable": it knows it is running.
+  // Which scopes the strip's results are missing, in the words the scope
+  // picker uses, so a partial page says what it lacks.
+  const outageSections = joinNames(
+    (searchIssue?.sections || []).map(section => SEARCH_FILTER_OPTIONS.find(option => option.id === section)?.label.toLowerCase() ?? null),
+  );
+  const outageDetail = [
+    outageSections && `${outageSections.charAt(0).toUpperCase()}${outageSections.slice(1)} may be incomplete.`,
+    searchIssue?.rateLimited && openAlexRetryLabel && `Back in about ${openAlexRetryLabel}.`,
+  ].filter(Boolean).join(' ');
   const outageTitle = searchIssue?.rateLimited
     ? 'OpenAlex is temporarily unavailable'
     : `${outageSourceNames} did not respond`;
@@ -727,6 +733,12 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     updateQuery('', null, 'all');
   };
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // Focus goes back to the field: the control that was pressed unmounts while
+  // the search runs.
+  const retrySearch = () => {
+    performSearch(query.trim());
+    searchInputRef.current?.focus();
+  };
 
   return (
     <main className="search-page-container">
@@ -785,17 +797,15 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
       {outageShown && !outageEmptied && (
         <div className="search-service-state" role="status">
           <WarningCircle size={20} aria-hidden="true" />
-          <div className="search-service-copy">
+          <p className="search-service-copy">
             <strong>{outageTitle}</strong>
-            {searchIssue?.rateLimited && openAlexRetryLabel && (
-              <span>{`Back in about ${openAlexRetryLabel}.`}</span>
-            )}
-          </div>
+            {outageDetail && <span>{outageDetail}</span>}
+          </p>
           {canRetryOutage && (
             <button
               type="button"
               className="search-retry-btn"
-              onClick={() => { performSearch(query.trim()); searchInputRef.current?.focus(); }}
+              onClick={retrySearch}
               aria-label={'Retry search'}
               title={'Retry search'}
             >
@@ -847,7 +857,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                 art={<Petri pose="upset" className="search-outage-petri" />}
                 title={outageTitle}
                 actions={canRetryOutage && (
-                  <Button variant="outline" onClick={() => { performSearch(query.trim()); searchInputRef.current?.focus(); }}>
+                  <Button variant="outline" onClick={retrySearch}>
                     <ArrowClockwise size={16} aria-hidden="true" />
                     {'Try again'}
                   </Button>
@@ -1034,19 +1044,9 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                 <h3 className="search-section-title">{'Publications'}</h3>
                 {paperResults.map((paper) => {
                   return (
-                    <ListRow
-                      key={paper.id}
-                      style={{ '--area-accent': areaAccentForPaper(paper) }}
-                      meta={[
-                        (paper.categories?.length ?? 0) > 0 && getCategoryLabel(paper.categories![0]),
-                        paper.year ? String(paper.year) : null,
-                      ]}
-                      title={<ScientificText>{paper.title}</ScientificText>}
-                      titleLang="en"
-                      onOpen={() => setSelectedPaper(paper)}
-                    >
-                      {(paper.authors?.length ?? 0) > 0 && <ListRowAuthors authors={paper.authors!} />}
-                    </ListRow>
+                    <PaperListRow key={paper.id} paper={paper} onOpen={() => setSelectedPaper(paper)}>
+                      {(paper.authors?.length ?? 0) > 0 && <ListRowAuthors paper={paper} />}
+                    </PaperListRow>
                   );
                 })}
               </div>

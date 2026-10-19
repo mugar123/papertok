@@ -1,10 +1,18 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import type { HTMLMotionProps } from 'framer-motion';
-import type { PaperAuthor } from '../../models/Paper.ts';
+import type { Paper } from '../../models/Paper.ts';
 import { motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
 import { cn } from '../../lib/utils.ts';
+import { getCategoryLabel } from '../../data/categories.ts';
+import { areaAccentForPaper } from '../../utils/areaAccent.ts';
+import { authorExplorerPath } from '../../utils/explorerPaths.ts';
+import useIsPhone from '../../hooks/useIsPhone.ts';
 import AuthorDots from '../Feed/AuthorDots.tsx';
+import ScientificText from '../ScientificText.ts';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
+import { Drawer, DrawerContent, DrawerHandle, DrawerTitle, DrawerTrigger } from '../ui/drawer.tsx';
+import '../Feed/SharePanel.css';
 import './ListRow.css';
 
 type ListRowProps = Omit<HTMLMotionProps<'div'>, 'title' | 'onClick'> & {
@@ -53,9 +61,67 @@ export function ListRow({ meta, title, titleLang, onOpen, actions, children, cla
   );
 }
 
-/** A paper row's byline: author dots, with every name in a tooltip and for assistive tech. */
-export function ListRowAuthors({ authors }: { authors: Array<PaperAuthor | string> }) {
+/** A paper as a row: its field in colour, its year, and its title in the serif. */
+export function PaperListRow({ paper, style, ...props }: Omit<ListRowProps, 'meta' | 'title' | 'titleLang'> & { paper: Partial<Paper> }) {
+  return (
+    <ListRow
+      {...props}
+      style={{ ...style, '--area-accent': areaAccentForPaper(paper) } as CSSProperties}
+      meta={[
+        (paper.categories?.length ?? 0) > 0 && getCategoryLabel(paper.categories![0]),
+        paper.year ? String(paper.year) : null,
+      ]}
+      title={<ScientificText>{paper.title}</ScientificText>}
+      titleLang="en"
+    />
+  );
+}
+
+/**
+ * A paper row's byline: author dots. With a pointer the names are a tooltip;
+ * on a phone the dots are a button that opens a sheet of the authors, each a
+ * link to their page. `onNavigate` runs before one of those links is followed.
+ */
+export function ListRowAuthors({ paper, onNavigate }: { paper: Partial<Paper>; onNavigate?: () => void }) {
+  const isPhone = useIsPhone();
+  const authors = paper.authors ?? [];
   const names = authors.map(author => (typeof author === 'string' ? author : author.name)).filter(Boolean).join(', ');
+  if (isPhone) {
+    return (
+      <Drawer>
+        <DrawerTrigger
+          render={<button type="button" className="pc-author-avatars list-row-authors list-row-authors-btn" onClick={(event) => event.stopPropagation()} />}
+          aria-label={`Authors: ${names}`}
+        >
+          <AuthorDots authors={authors} />
+        </DrawerTrigger>
+        <DrawerContent className="pc-share-sheet" viewportProps={{ onClick: (event) => event.stopPropagation() }}>
+          <DrawerHandle />
+          <DrawerTitle render={<h3 />} className="pc-share-sheet-title">{'Authors'}</DrawerTitle>
+          <ul className="pc-share-list list-row-authors-sheet">
+            {authors.map((author, index) => {
+              const name = typeof author === 'string' ? author : author.name;
+              if (!name) return null;
+              const path = authorExplorerPath(author, paper);
+              const inner = (
+                <>
+                  <span className="pc-author-avatar" aria-hidden="true">{name.charAt(0).toUpperCase()}</span>
+                  {name}
+                </>
+              );
+              return (
+                <li key={index}>
+                  {path
+                    ? <Link to={path} className="pc-share-row list-row-authors-sheet-row" onClick={onNavigate}>{inner}</Link>
+                    : <span className="list-row-authors-sheet-row">{inner}</span>}
+                </li>
+              );
+            })}
+          </ul>
+        </DrawerContent>
+      </Drawer>
+    );
+  }
   return (
     <Tooltip>
       <TooltipTrigger render={<p className="pc-author-avatars list-row-authors" />}>

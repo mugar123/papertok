@@ -102,6 +102,32 @@
   max-width: 22rem;
 }
 
+.list-row-authors-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.list-row-authors-sheet {
+  max-height: 60dvh;
+  overflow-y: auto;
+}
+
+.list-row-authors-sheet-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 48px;
+  padding: 0 var(--space-3);
+  color: var(--text-primary);
+  font: 500 1rem/1.3 var(--font-body);
+}
+
+.list-row-authors-sheet-row .pc-author-avatar {
+  margin: 0;
+}
+
 .list-row-actions {
   flex: 0 0 auto;
   display: flex;
