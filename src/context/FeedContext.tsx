@@ -175,7 +175,9 @@ function readFeedSnapshot(userId: string | null | undefined, signature: string):
     if (!snapshot || snapshot.publicationPolicy !== 3 || Date.now() - snapshot.savedAt > FEED_SNAPSHOT_TTL_MS || !Array.isArray(snapshot.papers)) {
       return null;
     }
-    return snapshot;
+    // A card can be saved before Crossref answered, or kept because the reader
+    // was on it. Nothing is on screen before a restore, so a book known now leaves.
+    return { ...snapshot, papers: applyKnownPublicationTypes(snapshot.papers).filter(isFeedPublication) };
   } catch {
     return null;
   }
@@ -653,6 +655,58 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     visiblePaperIdRef.current = paperId || null;
     feedScrolledAtRef.current = Date.now();
   }, []);
+
+  // Requests that answer after cards are shown, from a fresh page or a
+  // restored snapshot, change those cards in place, and the feed cache and
+  // snapshot with them, while the account stays the same. Only the cards in
+  // `waiting` say their abstract is loading, so only they can receive one,
+  // until their requests settle. A confirmed book leaves only if the reader
+  // has not reached it. A null request has nothing left to answer.
+  const followShownPapers = useCallback(({ mode, sessionId, signature, waiting, openAlex, iCite, europePmc, recovery, publications }: {
+    mode: string; sessionId: number; signature: string; waiting: ReadonlySet<string>;
+    openAlex: ReturnType<typeof enrichPapersBatch> | null;
+    iCite: ReturnType<typeof fetchICiteMetrics> | null;
+    europePmc: ReturnType<typeof enrichPubmedIds> | null;
+    recovery: ReturnType<typeof recoverFeedAbstracts> | null;
+    publications: ReturnType<typeof classifyFeedPublications>;
+  }) => {
+    const update = (change: (current: Paper[]) => Paper[]) => {
+      if (feedSessionId.current !== sessionId) return;
+      setPapers(current => {
+        const next = change(current);
+        if (next === current) return current;
+        const cachedMode = feedCache.current[mode];
+        if (cachedMode) {
+          feedCache.current[mode] = { ...cachedMode, papers: next };
+          scheduleFeedSnapshotWrite(activeUserId.current, signature, feedCache.current[mode]);
+        }
+        return next;
+      });
+    };
+    const fillable = openAbstractWait(setAbstractWaits, waiting, [openAlex, europePmc, recovery].filter(request => request !== null));
+    openAlex?.then((records) => {
+      if (!records || Object.keys(records).length === 0) return;
+      const loading = fillable();
+      update(current => preserveFeedAbstracts(current, mergeOpenAlexEnrichment(current, records), loading));
+    });
+    iCite?.then((metrics) => {
+      if (!metrics || Object.keys(metrics).length === 0) return;
+      update(current => mergeICiteEnrichment(current, metrics));
+    });
+    europePmc?.then((records) => {
+      if (!records || records.size === 0) return;
+      const loading = fillable();
+      update(current => preserveFeedAbstracts(current, mergeEuropePmcEnrichment(current, records), loading));
+    });
+    recovery?.then((records) => {
+      if (records.length === 0) return;
+      const loading = fillable();
+      update(current => preserveFeedAbstracts(current, mergeFeedAbstracts(current, records), loading));
+    });
+    publications.then((classified) => {
+      update(current => dropUnreachedPublications(current, classified, visiblePaperIdRef.current));
+    });
+  }, [scheduleFeedSnapshotWrite]);
 
   const reRankFeed = useCallback((sourcePaperId: string | null = null) => {
     // A transition: reordering the unseen queue re-renders every card whose
@@ -1679,7 +1733,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       const nextHasMore = newPapers.length > 0;
 
       setPapers(nextPapers);
-      const loadingAbstracts = openAbstractWait(setAbstractWaits, abstractsComing, [enrichmentPromise, europePmcPromise, recoveryPromise]);
       setPage(nextPage);
       setHasMore(nextHasMore);
       autoRetryUsedRef.current = false; // successful load re-arms the safety retry
@@ -1706,29 +1759,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       }
       writeFeedSnapshot(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
 
-      // Responses after the paint update the shown cards in place, and the
-      // feed cache and snapshot with them.
-      const updateShownPapers = (update: (current: Paper[]) => Paper[]) => {
-        if (feedSessionId.current !== activeSessionId) return;
-        setPapers(current => {
-          const next = update(current);
-          if (next === current) return current;
-          const cachedMode = feedCache.current[activeMode];
-          if (cachedMode) {
-            feedCache.current[activeMode] = { ...cachedMode, papers: next };
-            scheduleFeedSnapshotWrite(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
-          }
-          return next;
-        });
-      };
-
-      if (enrichmentIds.length > 0) {
-        enrichmentPromise.then((lateEnrichment) => {
-          if (!lateEnrichment || Object.keys(lateEnrichment).length === 0) return;
-          const loading = loadingAbstracts();
-          updateShownPapers(current => preserveFeedAbstracts(current, mergeOpenAlexEnrichment(current, lateEnrichment), loading));
-        });
-      }
+      followShownPapers({
+        mode: activeMode, sessionId: activeSessionId, signature: preferenceSignature, waiting: abstractsComing,
+        openAlex: enrichmentIds.length > 0 && !gatedOpenAlex ? enrichmentPromise : null,
+        iCite: iCitePmids.length > 0 && !gatedICite ? iCitePromise : null,
+        europePmc: iCitePmids.length > 0 && !gatedEuropePmc ? europePmcPromise : null,
+        recovery: recovered ? null : recoveryPromise,
+        publications: publicationsPromise,
+      });
 
       // A short first screen should fill itself even before the reader reaches
       // the scroll sentinel. Use the same bounded pagination as excluded pages;
@@ -1740,33 +1778,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           }
         }, 0);
       }
-
-      if (iCitePmids.length > 0) {
-        iCitePromise.then((lateMetrics) => {
-          if (!lateMetrics || Object.keys(lateMetrics).length === 0) return;
-          updateShownPapers(current => mergeICiteEnrichment(current, lateMetrics));
-        });
-
-        europePmcPromise.then((lateRecords) => {
-          if (!lateRecords || lateRecords.size === 0) return;
-          const loading = loadingAbstracts();
-          updateShownPapers(current => preserveFeedAbstracts(current, mergeEuropePmcEnrichment(current, lateRecords), loading));
-        });
-      }
-
-      if (!recovered) {
-        recoveryPromise.then((records) => {
-          if (records.length === 0) return;
-          const loading = loadingAbstracts();
-          updateShownPapers(current => preserveFeedAbstracts(current, mergeFeedAbstracts(current, records), loading));
-        });
-      }
-
-      // A confirmed book or book review leaves only if the reader has not
-      // reached it; a card already on screen stays.
-      publicationsPromise.then((classified) => {
-        updateShownPapers(current => dropUnreachedPublications(current, classified, visiblePaperIdRef.current));
-      });
 
     } catch {
       if (requestId === feedRequestId.current) {
@@ -1792,8 +1803,48 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     userPreferences, page, papers, loading, feedMode,
     profileSignals, relatedCandidates, personalCandidates, isKnownPaper,
     calculateAndAttachScore, followedEntities, recommendationProfileReady,
-    scheduleFeedSnapshotWrite,
+    followShownPapers,
   ]);
+
+  // The account and interests whose snapshot is on screen. Both effects below
+  // restore on a cold mount; the second must not read the snapshot again once
+  // the first has shown it, or it would undo what the requests below applied.
+  const restoredFeedKeyRef = useRef('');
+  // A snapshot can be saved before its page's requests answered, and nothing
+  // restarts them after a reload. The restored cards ask again: Crossref for
+  // types still unknown, and the abstract sources for a card one can still fill.
+  const restoreFeedSnapshot = useCallback((snapshot: FeedSnapshot, mode: string, signature: string) => {
+    const key = `${activeUserId.current}:${signature}`;
+    if (restoredFeedKeyRef.current === key) return;
+    restoredFeedKeyRef.current = key;
+    feedCache.current[mode] = snapshot;
+    setPapers(snapshot.papers);
+    setPage(snapshot.page || 0);
+    setHasMore(snapshot.hasMore !== false);
+
+    const waiting = abstractsInFlight(snapshot.papers, { openAlex: true, europePmc: true, recovery: true });
+    const pending = snapshot.papers.filter(paper => waiting.has(paper.id));
+    const enrichmentIds = [...new Set(pending.filter(needsOpenAlexEnrichment).map(getOpenAlexEnrichmentId).filter(Boolean))];
+    const pmids = [...new Set(pending.map(paper => paper.pmid).filter(Boolean))] as string[];
+    followShownPapers({
+      mode, sessionId: feedSessionId.current, signature, waiting,
+      openAlex: enrichmentIds.length > 0
+        ? enrichPapersBatch(enrichmentIds, { timeoutMs: OPENALEX_FEED_REQUEST_TIMEOUT_MS }).catch((err): Awaited<ReturnType<typeof enrichPapersBatch>> => {
+          console.error('OpenAlex feed enrichment failed', err);
+          return {};
+        })
+        : null,
+      iCite: null,
+      europePmc: pmids.length > 0
+        ? enrichPubmedIds(pmids).catch((err) => {
+          console.warn('Europe PMC feed enrichment failed', err);
+          return new Map();
+        })
+        : null,
+      recovery: pending.length > 0 ? recoverFeedAbstracts(pending) : null,
+      publications: classifyFeedPublications(snapshot.papers),
+    });
+  }, [followShownPapers]);
 
   const preferencesSignatureRef = useRef<string | null>(null);
   const restoredSnapshotKeyRef = useRef('');
@@ -1807,18 +1858,16 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const snapshot = readFeedSnapshot(user?.uid, signature);
     const restoreTimer = setTimeout(() => {
       if (snapshot?.papers?.length) {
-        feedCache.current[feedMode] = snapshot;
-        setPapers(snapshot.papers);
-        setPage(snapshot.page || 0);
-        setHasMore(snapshot.hasMore !== false);
+        restoreFeedSnapshot(snapshot, feedMode, signature);
       } else if (restoreKey) {
+        restoredFeedKeyRef.current = '';
         setPapers([]);
         setPage(0);
         setHasMore(true);
       }
     }, 0);
     return () => clearTimeout(restoreTimer);
-  }, [feedMode, isKnownPaper, user?.uid, userPreferences]);
+  }, [feedMode, isKnownPaper, restoreFeedSnapshot, user?.uid, userPreferences]);
 
   // A changed set of interests must invalidate the cached feed and replace it.
   // A plain cold mount must not: restoring the snapshot and then firing a
@@ -1844,14 +1893,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     const isColdMount = preferencesSignatureRef.current === null;
     preferencesSignatureRef.current = signature;
+    if (isColdMount && restoredFeedKeyRef.current === `${activeUserId.current}:${signature}`) return;
     feedCache.current = {};
     const snapshot = readFeedSnapshot(user?.uid, signature);
     const refreshTimer = setTimeout(() => {
       if (snapshot?.papers?.length) {
-        feedCache.current[feedMode] = snapshot;
-        setPapers(snapshot.papers);
-        setPage(snapshot.page || 0);
-        setHasMore(snapshot.hasMore !== false);
+        restoreFeedSnapshot(snapshot, feedMode, signature);
         if (isColdMount) return;
       } else {
         setPapers([]);
@@ -1861,7 +1908,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       loadPapers(true, null, true);
     }, 0);
     return () => clearTimeout(refreshTimer);
-  }, [feedMode, feedRouteActive, isKnownPaper, loadPapers, recommendationProfileReady, user?.uid, userPreferences]);
+  }, [feedMode, feedRouteActive, isKnownPaper, loadPapers, recommendationProfileReady, restoreFeedSnapshot, user?.uid, userPreferences]);
 
   // The last following signature the FEED applied, or null while there is no
   // account to have one. Null, not '': the tree no longer remounts when the

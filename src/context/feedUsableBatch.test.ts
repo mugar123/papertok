@@ -28,6 +28,15 @@ const start = source.indexOf('async (reset = false, mode?: string | null, random
 const end = source.indexOf('\n  }, [\n    userPreferences, page, papers, loading, feedMode,', start);
 assert.ok(start >= 0 && end > start, 'the feed loader callback must exist');
 const callback = stripTypeScriptTypes(source.slice(start, end) + '\n  }');
+// The follow-up the loader and a snapshot restore share, run the same way.
+function componentCallback(name: string, deps: string) {
+  const from = source.indexOf(`const ${name} = useCallback(`);
+  const to = source.indexOf(`\n  }, [${deps}]);`, from);
+  assert.ok(from >= 0 && to > from, `${name} must exist`);
+  return stripTypeScriptTypes(source.slice(from + `const ${name} = useCallback(`.length, to) + '\n  }');
+}
+const followCallback = componentCallback('followShownPapers', 'scheduleFeedSnapshotWrite');
+const restoreCallback = componentCallback('restoreFeedSnapshot', 'followShownPapers');
 const ref = <T>(current: T) => ({ current });
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -87,17 +96,20 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     openAbstractWait, setAbstractWaits: (update: (current: typeof state.abstractWaits) => typeof state.abstractWaits) => { state.abstractWaits = update(state.abstractWaits); },
     scheduleFeedSnapshotWrite: (() => {}) as (userId: string, key: string, snapshot: { papers: Paper[] }) => void,
     logRankingBatch: () => {}, saveSeenPaperIds: () => {}, activeUserId: ref('test-user'),
-    autoRetryUsedRef: ref(false), feedCache: ref({}),
+    autoRetryUsedRef: ref(false), feedCache: ref<Record<string, unknown>>({}), restoredFeedKeyRef: ref(''),
     feedPreferenceSignature: (values: string[]) => values.join('|'), pendingSnapshotWritesRef: ref(new Map()),
     writeFeedSnapshot: () => {},
     loadPapersRef: ref((...args: unknown[]) => { state.continuations.push(args); }),
   };
+  const build = (code: string, scope: object) => new Function(...Object.keys(scope), `return (${code});`)(...Object.values(scope));
+  const withFollowUp = () => ({ ...env, followShownPapers: build(followCallback, env) });
   const run = (...args: unknown[]) => {
     Object.assign(env, { papers: state.papers, page: state.page, loading: state.loading });
-    return new Function(...Object.keys(env), `return (${callback});`)(...Object.values(env))(...args);
+    return build(callback, withFollowUp())(...args);
   };
+  const restore = (snapshot: { papers: FeedRecord[]; page: number; hasMore: boolean }) => build(restoreCallback, withFollowUp())(snapshot, 'top', 'cs.AI');
   const loadingAbstracts = () => abstractWaitIds(state.abstractWaits);
-  return { state, env, run, loadingAbstracts };
+  return { state, env, run, restore, loadingAbstracts };
 }
 
 test('the signed-in loader shows a page before Crossref answers, then drops only the books the reader has not reached', async t => {
@@ -383,4 +395,42 @@ test('signed-in Europe PMC text is on the first paint when it is fast, and repla
     assert.equal(state.papers[0].openAccess, true);
     assert.equal(loadingAbstracts().size, 0);
   }
+});
+
+test('a restored snapshot asks again for the abstract and the type its session had not received', async t => {
+  const visible = { ...records('visible', 1)[0], abstract: 'Source text.', sources: { primary: 'arxiv', enrichedBy: [] } };
+  const unchecked = { ...records('unchecked', 1)[0], id: 'W568341909', doi: '10.1007/978-3-540-76956-9', publicationType: 'article', abstract: 'Publisher text.', sources: { primary: 'openalex', enrichedBy: [] } };
+  const snapshot = { papers: [visible, electron, unchecked], page: 1, hasMore: true };
+  let answer!: () => void;
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    await new Promise<void>(resolve => { answer = resolve; });
+    const dois = new URL(String(input)).searchParams.get('filter')!.split(',').map(value => value.slice(4));
+    return Response.json({ message: { 'total-results': dois.length, items: dois.map(DOI => ({ DOI, type: 'book' })) } });
+  });
+  const { state, env, restore, loadingAbstracts } = feed();
+  Object.assign(env, await freshPublications('restored-snapshot'));
+  env.visiblePaperIdRef.current = visible.id;
+  const recovery = pendingRecords();
+  let recoveryRequests = 0;
+  env.recoverFeedAbstracts = () => { recoveryRequests += 1; return recovery.promise; };
+  let saved: Paper[] = [];
+  env.scheduleFeedSnapshotWrite = (_uid, _key, written) => { saved = written.papers; };
+
+  restore(snapshot);
+  restore(snapshot);
+  await wait(20);
+  assert.deepEqual(state.papers.map(paper => paper.id), [visible.id, electron.id, unchecked.id]);
+  assert.deepEqual([...loadingAbstracts()], [electron.id]);
+  assert.equal(recoveryRequests, 1, 'the second restore of the same snapshot sends nothing');
+
+  recovery.resolve([{ arxivId: '1109.5103', abstract: 'Recovered source text.', sources: { primary: 'arxiv', enrichedBy: [] } }]);
+  await tick();
+  assert.equal(state.papers[1].abstract, 'Recovered source text.');
+  assert.deepEqual([...loadingAbstracts()], []);
+
+  answer();
+  await wait(20);
+  // Crossref calls the third card a book; the reader is on the first.
+  assert.deepEqual(state.papers.map(paper => paper.id), [visible.id, electron.id]);
+  assert.deepEqual(saved.map(paper => paper.abstract), ['Source text.', 'Recovered source text.']);
 });
