@@ -1575,10 +1575,6 @@ button.pc-topics-pop-item:focus-visible {
   box-shadow: var(--shadow-xl);
   transition: transform 400ms cubic-bezier(0.32, 0.72, 0, 1), height 0.28s var(--ease-out-expo);
   will-change: transform, opacity;
-  /* The drawer is portalled out of `.pc`, which clears this for the card. A
-     link's tap target is a diagonal path, and the browser's highlight fills
-     its whole bounding box: a blue block over the map. The link thickening
-     and the peek opening are the feedback. */
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -2482,8 +2478,6 @@ button.pc-topics-pop-item:focus-visible {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  /* In the card, a flick past the last row must not carry on into the feed
-     and snap to the next paper. */
   overscroll-behavior: contain;
   padding: 6px 0;
   scroll-behavior: smooth;

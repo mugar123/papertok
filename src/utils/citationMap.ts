@@ -281,12 +281,6 @@ export function buildCitationMapLayout<T extends Partial<Paper>>({
   };
 }
 
-/**
- * The link nearest a press on the map, by distance to each straight line from
- * the centre to its star, or null when none is within `reach`. Links converge
- * on the centre and run a few pixels apart, so a hit area per line would hand
- * the press to whichever was drawn last.
- */
 export function nearestCitationLink<N extends { key: string; x: number; y: number }>(
   nodes: N[],
   center: { x: number; y: number },
