@@ -150,10 +150,21 @@ test('an unreadable precache counts as behind instead of failing', async () => {
 })
 
 test('a deploy the page is behind on waits until the reader leaves the page they were on', () => {
-  assert.equal(shouldReloadForDeploy(null, '/feed'), false)
-  assert.equal(shouldReloadForDeploy(null, '/lists'), false)
+  const online = true
+  assert.equal(shouldReloadForDeploy(null, { pathname: '/feed', online }), false)
+  assert.equal(shouldReloadForDeploy(null, { pathname: '/lists', online }), false)
   // Behind since /feed: re-renders and remounts on /feed do not reload.
-  assert.equal(shouldReloadForDeploy('/feed', '/feed'), false)
-  assert.equal(shouldReloadForDeploy('/feed', '/lists'), true)
-  assert.equal(shouldReloadForDeploy('/feed', '/public/paper/10.1234%2Fabc'), true)
+  assert.equal(shouldReloadForDeploy('/feed', { pathname: '/feed', online }), false)
+  assert.equal(shouldReloadForDeploy('/feed', { pathname: '/lists', online }), true)
+  assert.equal(shouldReloadForDeploy('/feed', { pathname: '/public/paper/10.1234%2Fabc', online }), true)
+})
+
+test('offline, the deploy reload waits for a route change taken online', () => {
+  // Behind since /feed, the reader taps Lists without a connection.
+  assert.equal(shouldReloadForDeploy('/feed', { pathname: '/lists', online: false }), false)
+  // That tap still left /feed, so /lists is now the page the reload waits on,
+  // and leaving it online reloads, back to /feed included.
+  assert.equal(shouldReloadForDeploy('/lists', { pathname: '/lists', online: true }), false)
+  assert.equal(shouldReloadForDeploy('/lists', { pathname: '/following', online: true }), true)
+  assert.equal(shouldReloadForDeploy('/lists', { pathname: '/feed', online: true }), true)
 })

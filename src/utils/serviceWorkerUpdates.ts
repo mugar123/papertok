@@ -79,9 +79,14 @@ export async function runsPrecachedBuild(entryUrl: string, scope: string, cacheS
  * worker took control, or null when the page already runs its build.
  * Reloading under that page would close an open reader or PDF and cut off an
  * AI explanation; a route change means the reader is leaving it anyway.
+ *
+ * Offline the reload waits. The page request would fail, the worker would
+ * answer with a cached document, and that fresh boot has no Firestore cache
+ * to read the profile from, so the reader would get the profile error screen
+ * in place of a session that still works.
  */
-export function shouldReloadForDeploy(behindSince: string | null, pathname: string) {
-  return behindSince !== null && pathname !== behindSince
+export function shouldReloadForDeploy(behindSince: string | null, { pathname, online }: { pathname: string; online: boolean }) {
+  return behindSince !== null && online && pathname !== behindSince
 }
 
 let behindSince: string | null = null
@@ -105,7 +110,13 @@ export async function noteDeployActivated(entryUrl: string) {
  * Hiding the tab is also how a reader switches apps with a paper open.
  */
 export function reloadIfBehindDeploy(pathname: string) {
-  if (!shouldReloadForDeploy(behindSince, pathname)) return
-  markAppForcedReload()
-  window.location.reload()
+  if (behindSince === null) return
+  if (shouldReloadForDeploy(behindSince, { pathname, online: navigator.onLine !== false })) {
+    markAppForcedReload()
+    window.location.reload()
+    return
+  }
+  // An offline route change still left the page, so the next one is the
+  // moment.
+  behindSince = pathname
 }
